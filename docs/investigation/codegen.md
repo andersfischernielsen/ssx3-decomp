@@ -36,9 +36,11 @@ from the CFG. A real decompilation should not ship this form.
 
 ## Known approximations
 
-- **FPU is not modelled.** COP1 arithmetic and compares lower to no-ops so the
-  init path can run. Real port needs a proper `f32`/`f64` model.
-- **`lq`/`sq`** (128-bit pair loads/stores) use only the low 64 bits.
+- **FPU** arithmetic/compares/moves and `lwc1/swc1/ldc1/sdc1` are modelled;
+  `cvt.s`/`cvt.d` are not (the decoder drops the source format), and
+  `adda`/`mula` etc. are approximated. See [`fpu.md`](fpu.md).
+- **MMI vector ops and COP2/VU0** are decoded but not lowered (they need 128-bit
+  GPRs). `recomp-stats --todo` lists them.- **`lq`/`sq`** (128-bit pair loads/stores) use only the low 64 bits.
 - **HI/LO** is `u64`, not the R5900's 128-bit accumulator pair; `madd` and friends
   are approximated.
 - **`clear fsa`/`clear fs`/`clear fcsr`** (Ghidra pseudo-ops for REGIMM/COP1

@@ -13,12 +13,28 @@ unblocks the most.
   non-accumulating forms).
 - ⬜ Full FCR31 (rounding, flags), FPU exceptions.
 
-## MMI / COP2 — ⬜
+## MMI / COP2 — 🟡
 
-- The decoder names only a handful of MMI ops; the rest are `mmi` with structure
-  preserved. Generate a complete mnemonic table **from the extension's Sleigh**
-  (`eecore.sinc`) into `docs/investigation/mmi.md`, then implement.
-- COP2/VU0 macro-mode arithmetic (`lqc2`/`sqc2` are done; `vadd` etc. are not).
+- The decoder now names the **full** MMI set (MMI0/1/2/3 = 78 ops) and the
+  non-group single-`fct` forms; `clear`/`moveq` aliases handled. See
+  `docs/investigation/mmi.md`.
+- Codegen lowering is the gap: MMI vector ops and COP2/VU0 macro ops need 128-bit
+  GPRs, which the current `Cpu` (`gpr: [u64; 32]`) does not have.
+- `recomp-stats --todo` lists what remains (~30k instructions, almost all VU0:
+  `cop2` 12k, `lqc2`/`sqc2` 13k, `qmtc2`/`qmfc2`/`cfc2`/`ctc2` ~1.8k, and 2,078
+  un-decoded COP1 encodings).
+
+## Lowering coverage
+
+`recomp-stats --todo`, after the FPU/load-store work:
+
+| | |
+| --- | --- |
+| instructions | 783,966 |
+| unsupported | 29,954 (3.8%) |
+
+The remaining unsupported set is the VU0/128-bit subsystem plus a few COP1
+formats — the next large piece of work.
 
 ## VU0/VU1 — ⬜
 
