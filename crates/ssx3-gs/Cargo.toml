@@ -6,4 +6,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+pollster = "1.0.1"
 ssx3-core.workspace = true
+wgpu = "30.0.1"
+winit = "0.30"

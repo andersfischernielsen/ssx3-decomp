@@ -68,6 +68,16 @@ cargo test
 Tests in `crates/ssx3-core/tests/` cover the memory model (LE accesses,
 cached/uncached aliases, mirroring), the syscall table, and — when
 `orig/SLUS_207.72` is present — the real ELF header and program-header load.
+`crates/ssx3-gs` unit-tests the GS register decoding.
+
+## Run
+
+```sh
+cargo run -p ssx3
+```
+
+This opens a `wgpu` window presenting GS VRAM. Set `SSX3_EXIT_AFTER_FRAMES=N`
+to exit after N redraws (used for smoke tests).
 
 ## Ghidra MCP
 
@@ -80,7 +90,7 @@ then serves a loopback HTTP backend on `127.0.0.1:8080`) and the program open.
 - [x] Extract `SLUS_207.72`, import with the R5900 language, auto-analyze
 - [x] Machine model: memory map, RAM/scratchpad/IOP RAM, syscall table
 - [x] Test suite, including validation against the real ELF
-- [ ] `wgpu` window presenting GS VRAM
+- [x] `wgpu` window presenting GS VRAM
 - [ ] R5900 → Rust recompiler (seed from the 11,844 Ghidra functions)
 - [ ] EE runtime: DMA, timers, INTC, GS/GIF packet path
 - [ ] GS rasterizer feeding `wgpu`
