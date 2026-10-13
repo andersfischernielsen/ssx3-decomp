@@ -1,0 +1,9 @@
+[package]
+name = "ssx3-gs"
+description = "Graphics Synthesizer model and wgpu presenter for SSX 3."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ssx3-core.workspace = true

@@ -1,0 +1,19 @@
+# Rust
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# Ghidra project (outside repo) / local scratch
+*.gpr
+*.rep/
+*.lock
+*.lock~
+
+# OS
+.DS_Store
+
+# Large originals: keep the extracted ELF, ignore the disc image itself
+*.iso
+
+# Extracted, copyrighted game data (recreate with tools/extract-from-iso.sh)
+/orig/
