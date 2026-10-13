@@ -69,37 +69,31 @@ fn decoder_matches_ghidra_for_every_corpus_function() {
             .by_address(start)
             .unwrap_or_else(|| panic!("{} is not a function entry", path.display()));
 
-        // Ghidra's body size may include embedded data (jump tables) and
-        // trailing alignment that a naive linear sweep will read as
-        // instructions. We require that we cover Ghidra's instructions exactly
-        // and that any extra tail is small.
-        let decoded = program.decode(f);
-        assert!(
-            decoded.len() >= golden.len(),
-            "decoded fewer instructions than Ghidra for {} at {start:08x}: {} < {}",
-            f.name,
-            decoded.len(),
-            golden.len()
+        // With authoritative boundaries the instruction address set must match
+        // Ghidra's exactly, and every word must agree.
+        let decoded = program.decode_with_addresses(f);
+        let got: std::collections::BTreeMap<u32, u32> = decoded
+            .iter()
+            .map(|(a, i)| (*a, i.word))
+            .collect();
+        let want: std::collections::BTreeSet<u32> = golden.iter().map(|(a, _)| *a).collect();
+        let got_addrs: std::collections::BTreeSet<u32> = got.keys().copied().collect();
+        assert_eq!(
+            got_addrs, want,
+            "instruction addresses differ from Ghidra for {} at {start:08x}",
+            f.name
         );
-        assert!(
-            decoded.len() - golden.len() <= 16,
-            "implausibly long tail for {} at {start:08x}: {} vs {}",
-            f.name,
-            decoded.len(),
-            golden.len()
-        );
-
-        // Same words, in the same order, indexed by address (Ghidra's listing
-        // can contain holes where it did not disassemble bytes).
         for (addr, word) in &golden {
-            let from_elf = program.elf.read_u32(*addr).unwrap();
-            assert_eq!(from_elf, *word, "word mismatch in {} at {addr:08x}", f.name);
-
-            let idx = ((addr - f.address) / 4) as usize;
-            assert!(idx < decoded.len(), "decoded short of {addr:08x} in {}", f.name);
             assert_eq!(
-                decoded[idx].word, *word,
-                "decoded word mismatch in {} at {addr:08x}",
+                got.get(addr),
+                Some(word),
+                "word mismatch in {} at {addr:08x}",
+                f.name
+            );
+            assert_eq!(
+                program.elf.read_u32(*addr).unwrap(),
+                *word,
+                "ELF word mismatch in {} at {addr:08x}",
                 f.name
             );
         }
