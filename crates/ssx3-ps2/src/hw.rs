@@ -367,8 +367,20 @@ impl Hw {
                 }
             }
             0x1000_3010 => self.gif_mode = v,
-            0x1000_3800..=0x1000_3BFF => self.vif0.write_reg(p - 0x1000_3800, v),
-            0x1000_3C00..=0x1000_3FFF => self.vif1.write_reg(p - 0x1000_3C00, v),
+            0x1000_3800..=0x1000_3BFF => {
+                self.vif0.write_reg(p - 0x1000_3800, v);
+                if !self.vif0.stalled() && self.vif0.pending_words() > 0 {
+                    self.vif0.resume(&mut self.vu0, &mut self.gs);
+                    self.vif_irq();
+                }
+            }
+            0x1000_3C00..=0x1000_3FFF => {
+                self.vif1.write_reg(p - 0x1000_3C00, v);
+                if !self.vif1.stalled() && self.vif1.pending_words() > 0 {
+                    self.vif1.resume(&mut self.vu1, &mut self.gs);
+                    self.vif_irq();
+                }
+            }
             0x1000_8000..=0x1000_DFFF => {
                 let Some(c) = CH_BASE.iter().position(|b| p & !0xFF == *b) else {
                     return;

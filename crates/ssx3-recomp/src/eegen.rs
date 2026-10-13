@@ -792,7 +792,7 @@ fn call_code(target: u32, ret: u32, shard: usize, ctx: &Ctx, _labels: &BTreeSet<
 /// does continue there. Starting from every return point and branch target that
 /// lies outside the known runs (and below `limit`, the next function's start),
 /// follow fallthrough and branches until an unconditional transfer.
-pub fn extend_runs(img: &dyn Image, f: &mut Func, limit: u32) -> usize {
+pub fn extend_runs(img: &dyn Image, f: &mut Func, limit: u32, seeds: &BTreeSet<u32>) -> usize {
     let mut have: BTreeSet<u32> = BTreeSet::new();
     for &(lo, hi) in &f.runs {
         let mut a = lo;
@@ -802,6 +802,14 @@ pub fn extend_runs(img: &dyn Image, f: &mut Func, limit: u32) -> usize {
         }
     }
     let mut work: Vec<u32> = Vec::new();
+    if !have.contains(&f.start) {
+        work.push(f.start);
+    }
+    for &a in seeds.range(f.start..limit) {
+        if !have.contains(&a) {
+            work.push(a);
+        }
+    }
     let seed = |pc: u32, w: u32, work: &mut Vec<u32>| match classify(pc, w) {
         Ctl::Branch { target, .. } => {
             work.push(target);

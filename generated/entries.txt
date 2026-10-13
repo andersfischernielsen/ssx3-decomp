@@ -1,0 +1,1 @@
+400b48  # function pointer called from 0x426768

@@ -56,13 +56,80 @@ fn main() {
         funcs.push(Func { start: f.address, end: f.end, runs });
     }
     funcs.sort_by_key(|f| f.start);
+
+    // New function entries: pointers from data into .text that no known
+    // function covers, plus entries recorded at run time (generated/entries.txt).
+    let text_end = 0x0042_e590u32;
+    let covered = |funcs: &[Func], a: u32| {
+        let i = funcs.partition_point(|f| f.start <= a);
+        i > 0 && a < funcs[i - 1].end
+    };
+    let mut new_entries: BTreeSet<u32> = BTreeSet::new();
+    let mut text_ptrs: BTreeSet<u32> = BTreeSet::new();
+    let mut a = 0x0043_ce00u32;
+    while a + 4 <= 0x004a_5bbc {
+        if let Some(v) = img.word(a) {
+            if v & 3 == 0 && (0x0010_0000..text_end).contains(&v) {
+                text_ptrs.insert(v);
+                if !covered(&funcs, v) {
+                    new_entries.insert(v);
+                }
+            }
+        }
+        a += 4;
+    }
+    // Address constants built in code: `lui rt, hi` followed (within a few
+    // instructions) by `addiu/ori rx, rt, lo` that lands in .text.
+    for f in funcs.clone() {
+        let mut lui: [Option<u32>; 32] = [None; 32];
+        for &(lo, hi) in &f.runs {
+            let mut a = lo;
+            while a < hi {
+                let w = img.word(a).unwrap_or(0);
+                let op = w >> 26;
+                let rs = ((w >> 21) & 31) as usize;
+                let rt = ((w >> 16) & 31) as usize;
+                if op == 0x0F {
+                    lui[rt] = Some((w & 0xFFFF) << 16);
+                } else if (op == 0x09 || op == 0x0D) && lui[rs].is_some() {
+                    let base = lui[rs].unwrap();
+                    let v = if op == 0x09 { base.wrapping_add(w as i16 as i32 as u32) } else { base | (w & 0xFFFF) };
+                    if v & 3 == 0 && (0x0010_0000..text_end).contains(&v) && !covered(&funcs, v) {
+                        new_entries.insert(v);
+                    }
+                }
+                a += 4;
+            }
+        }
+    }
+    let mut extra = BTreeSet::new();
+    if let Ok(s) = fs::read_to_string(root.join("generated/entries.txt")) {
+        for line in s.lines() {
+            let t = line.split('#').next().unwrap().trim();
+            if let Ok(v) = u32::from_str_radix(t.trim_start_matches("0x"), 16) {
+                extra.insert(v);
+                if !covered(&funcs, v) {
+                    new_entries.insert(v);
+                }
+            }
+        }
+    }
+    let discovered = new_entries.len();
+    for e in new_entries {
+        if !covered(&funcs, e) {
+            funcs.push(Func { start: e, end: e, runs: Vec::new() });
+        }
+    }
+    funcs.sort_by_key(|f| f.start);
+
     // Recover code Ghidra did not disassemble (after "noreturn" calls etc.).
     let starts: Vec<u32> = funcs.iter().map(|f| f.start).collect();
     let mut recovered = 0;
     for (i, f) in funcs.iter_mut().enumerate() {
-        let limit = starts.get(i + 1).copied().unwrap_or(0x0042_e590);
-        recovered += extend_runs(&img, f, limit);
+        let limit = starts.get(i + 1).copied().unwrap_or(text_end);
+        recovered += extend_runs(&img, f, limit, &text_ptrs);
     }
+    funcs.retain(|f| !f.runs.is_empty());
     let all_insns: HashSet<u32> = funcs
         .iter()
         .flat_map(|f| f.runs.iter().flat_map(|&(lo, hi)| (lo..hi).step_by(4)))
@@ -79,17 +146,6 @@ fn main() {
                 }
             }
             a += 4;
-        }
-    }
-
-    // Extra entry points found at run time.
-    let mut extra = BTreeSet::new();
-    if let Ok(s) = fs::read_to_string(root.join("generated/entries.txt")) {
-        for line in s.lines() {
-            let t = line.split('#').next().unwrap().trim();
-            if let Ok(v) = u32::from_str_radix(t.trim_start_matches("0x"), 16) {
-                extra.insert(v);
-            }
         }
     }
 
@@ -165,6 +221,7 @@ fn main() {
     println!("instructions : {}", totals.instructions);
     println!("invalid      : {}", totals.invalid);
     println!("labels       : {}", totals.labels);
+    println!("discovered   : {discovered} new function entries");
     println!("recovered    : {recovered} instructions beyond Ghidra's runs");
     println!("data refs    : {}", data_refs.len());
     println!("extra entries: {}", extra.len());
