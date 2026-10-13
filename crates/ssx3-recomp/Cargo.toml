@@ -1,0 +1,13 @@
+[package]
+name = "ssx3-recomp"
+description = "R5900 -> Rust recompilation: function inventory and code generation."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ssx3-core.workspace = true
+
+[[bin]]
+name = "recomp-stats"
+path = "src/bin/recomp_stats.rs"

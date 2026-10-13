@@ -53,10 +53,36 @@ The ELF is stripped, but because it was built with `-ffunction-sections`, its
 crates/
   ssx3-core/   Machine model: memory map, RAM, syscalls (no dependencies)
   ssx3-gs/     Graphics Synthesizer model + wgpu presenter
+  ssx3-recomp/ R5900 -> Rust recompiler; embedded function inventory
   ssx3/        The `ssx3` binary
+generated/     Exported inventory (functions.tsv/json) — build input
 orig/          Extracted SLUS_207.72 (gitignored)
 tools/         Helper scripts
+docs/          Reference notes (e.g. ps2-bible.md)
 ```
+
+## Function inventory
+
+`tools/export-ghidra-functions.py` pulls every function from the GhidraMCP
+backend and writes a canonical, sorted table:
+
+```sh
+python3 tools/export-ghidra-functions.py            # -> generated/functions.{json,tsv}
+```
+
+`generated/functions.tsv` (`<hex-address>\t<name>`) is embedded into
+`ssx3-recomp` at compile time. As of the current export it holds **11,844**
+functions, of which **75** have recovered names (`entry`, `SetGsCrt`,
+`AddIntcHandler`, `_Exit`, ...); the rest are Ghidra placeholders.
+
+Query it with the bundled CLI:
+
+```sh
+cargo run -p ssx3-recomp --bin recomp-stats            # summary + named list
+cargo run -p ssx3-recomp --bin recomp-stats -- 0x0012ab34
+cargo run -p ssx3-recomp --bin recomp-stats -- SetGsCrt
+```
+
 
 ## Build and test
 
@@ -91,6 +117,7 @@ then serves a loopback HTTP backend on `127.0.0.1:8080`) and the program open.
 - [x] Machine model: memory map, RAM/scratchpad/IOP RAM, syscall table
 - [x] Test suite, including validation against the real ELF
 - [x] `wgpu` window presenting GS VRAM
-- [ ] R5900 → Rust recompiler (seed from the 11,844 Ghidra functions)
+- [x] Export the function inventory (11,844 functions) from Ghidra
+- [ ] R5900 → Rust recompiler (translate the inventory to Rust functions)
 - [ ] EE runtime: DMA, timers, INTC, GS/GIF packet path
 - [ ] GS rasterizer feeding `wgpu`
