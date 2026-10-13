@@ -142,9 +142,22 @@ impl<'a> Emit<'a> {
             ("sync" | "nop" | "ei" | "di" | "cache" | "pref", _) => true,
             // Clearing ops for state we do not model (SA field, FPU registers).
             ("clear_sa", _) | ("clear_f", _) | ("clear_fcsr", _) => true,
-            // FPU arithmetic is not modelled yet; these are no-ops for now so the
-            // init path can run. See docs/investigation/codegen.md.
-            (m, _) if m.contains('.') => true,
+            // COP1 data moves.
+            ("mtc1", CopMove { rt, rd, .. }) => {
+                self.line(pc, &format!("c.set_f32({rd}, f32::from_bits(c.reg({rt}) as u32));"));
+                true
+            }
+            ("mfc1", CopMove { rt, rd, .. }) => {
+                self.line(pc, &format!("c.set_reg({rt}, (c.f32({rd}).to_bits() as i32) as i64 as u64);"));
+                true
+            }
+            ("cfc1", CopMove { rt, .. }) => {
+                self.line(pc, &format!("c.set_reg({rt}, c.fcr31_cc as u64);"));
+                true
+            }
+            ("ctc1", _) => true,
+            // COP1 arithmetic and compares.
+            (_, Cop1Arith { .. }) | (_, Cop1Cmp { .. }) => self.emit_cop1(pc, inst),
 
             ("addiu" | "addi" | "daddiu" | "daddi", RtRsImm { rt, rs, imm }) => {
                 self.line(
@@ -307,6 +320,61 @@ impl<'a> Emit<'a> {
         }
     }
 
+    /// Lower a COP1 arithmetic or compare instruction.
+    fn emit_cop1(&mut self, pc: u32, inst: &Instruction) -> bool {
+        use Operands::*;
+        let m = inst.mnemonic;
+        let (base, double) = if let Some(b) = m.strip_suffix(".s") {
+            (b, false)
+        } else if let Some(b) = m.strip_suffix(".d") {
+            (b, true)
+        } else {
+            (m, false)
+        };
+        let read = if double { "c.f64" } else { "c.f32" };
+        let setf = if double { "set_f64" } else { "set_f32" };
+
+        match inst.operands {
+            Cop1Arith { fd, fs, ft } => {
+                // NOTE: adda/suba/mula/diva are approximated as their non-accumulating
+                // forms; see docs/investigation/fpu.md.
+                let expr = match base {
+                    "add" | "adda" => "a + b",
+                    "sub" | "suba" => "a - b",
+                    "mul" | "mula" => "a * b",
+                    "div" | "diva" => "a / b",
+                    "abs" => "a.abs()",
+                    "neg" => "-a",
+                    "mov" => "a",
+                    "sqrt" => "a.sqrt()",
+                    _ => return false,
+                };
+                self.line(pc, &format!("let a = {read}({fs}); let b = {read}({ft});"));
+                self.line(pc, &format!("c.{setf}({fd}, {expr});"));
+                true
+            }
+            Cop1Cmp { fs, ft } => {
+                let cmp = match base {
+                    "c.f" | "c.sf" => "false",
+                    "c.un" => "a.is_nan() || b.is_nan()",
+                    "c.eq" | "c.seq" => "a == b",
+                    "c.ueq" => "a.is_nan() || b.is_nan() || a == b",
+                    "c.olt" => "a < b",
+                    "c.ult" => "a.is_nan() || b.is_nan() || a < b",
+                    "c.ole" => "a <= b",
+                    "c.ule" => "a.is_nan() || b.is_nan() || a <= b",
+                    "c.ngle" => "a.is_nan() || b.is_nan() || a > b",
+                    "c.ngl" => "a.is_nan() || b.is_nan() || !(a < b)",
+                    _ => return false,
+                };
+                self.line(pc, &format!("let a = {read}({fs}); let b = {read}({ft});"));
+                self.line(pc, &format!("c.fcr31_cc = {cmp};"));
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// Emit a `syscall`, folding the `$v1` number into a direct SDK call.
     fn emit_syscall(&mut self, pc: u32, v1: Option<u64>) {
         let n = v1.map(|v| v as u32);
@@ -387,8 +455,13 @@ impl<'a> Emit<'a> {
                 self.line(pc, &format!("c.set_reg(31, {fall:#010x});"));
                 self.line(pc, &format!("c.stop({pc:#010x}, 0, \"indirect call\"); return;"));
             }
+            ("bc1f" | "bc1t", Cop1Branch { offset }) => {
+                let target = branch_target(pc, offset);
+                let cond = if m == "bc1t" { "c.fcr31_cc" } else { "!c.fcr31_cc" };
+                self.line(pc, &format!("if {cond} {{ pc = {target:#010x}; }} else {{ pc = {fall:#010x}; }}"));
+            }
             _ => {
-                // bc1f/bc1t and eret: no FPU / no exceptions modelled yet.
+                // eret and anything else we cannot model yet.
                 self.line(pc, &format!("c.unimplemented({pc:#010x}, 0); return;"));
             }
         }

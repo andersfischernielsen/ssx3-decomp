@@ -40,6 +40,10 @@ pub struct Cpu {
     pub pc: u32,
     /// EE main memory and scratchpad.
     pub mem: Memory,
+    /// 32 FPU registers. `.s` values live in the low 32 bits.
+    pub fpr: [u64; 32],
+    /// FPU condition-code flag (bit 23 of FCR31), set by `c.*` and read by `bc1*`.
+    pub fcr31_cc: bool,
     /// Minimal CP0 state we model.
     pub cp0_status: u32,
     /// Count of executed instructions.
@@ -79,6 +83,8 @@ impl Cpu {
             lo: 0,
             pc: memory_map::ENTRY_POINT,
             mem,
+            fpr: [0; 32],
+            fcr31_cc: false,
             cp0_status: 0,
             steps: 0,
             step_limit: 50_000_000,
@@ -163,6 +169,32 @@ impl Cpu {
     }
     pub fn load_u32(&mut self, addr: u32) -> u64 {
         self.mem.read_u32(addr) as u64
+    }
+
+    // -- FPU helpers --------------------------------------------------------
+
+    /// Raw 64-bit contents of FPU register `n`.
+    pub fn fpr_bits(&self, n: u8) -> u64 {
+        self.fpr[(n & 31) as usize]
+    }
+
+    /// Read FPU register `n` as a single.
+    pub fn f32(&self, n: u8) -> f32 {
+        f32::from_bits(self.fpr[(n & 31) as usize] as u32)
+    }
+
+    /// Write FPU register `n` as a single (upper bits zeroed).
+    pub fn set_f32(&mut self, n: u8, v: f32) {
+        self.fpr[(n & 31) as usize] = v.to_bits() as u64;
+    }
+
+    /// Read FPU register pair `n` as a double.
+    pub fn f64(&self, n: u8) -> f64 {
+        f64::from_bits(self.fpr[(n & 31) as usize])
+    }
+
+    pub fn set_f64(&mut self, n: u8, v: f64) {
+        self.fpr[(n & 31) as usize] = v.to_bits();
     }
     pub fn load_i8(&mut self, addr: u32) -> u64 {
         self.mem.read_u8(addr) as i8 as i64 as u64
