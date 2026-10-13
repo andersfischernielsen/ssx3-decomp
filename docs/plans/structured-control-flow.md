@@ -47,6 +47,23 @@ embedded data is already excluded) and branch/jump targets.
    - A test asserts the structured output's reachable set matches Ghidra's
      boundaries for the corpus and ≥ N sampled functions.
 
+## Status
+
+Implemented (in `codegen.rs`):
+
+- CFG construction from the authoritative boundaries (leaders, successors).
+- Immediate post-dominators (bitset post-dominance + minimal candidate).
+- Recursive emitter: fall-through chains, forward `j`, `jal` (direct call),
+  `jr $ra` (`return`), and 2-way branches as `if/else` with the ip-dom join.
+
+Measured: **43/300** functions (14.3%) emit fully structured Rust; the rest fall
+back to the dispatcher. `entry` falls back because it contains a BSS-clear loop.
+
+**Next:** loop support. Detect back edges (target ≤ source), wrap the natural
+loop in `loop { … }`, turn back edges into `continue` and loop exits into
+`break`. That should lift coverage substantially (most compiled functions loop).
+
+
 ## Risks
 
 - Irreducible CFGs (rare from GCC but possible) need the labeled fallback, which

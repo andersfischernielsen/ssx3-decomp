@@ -88,3 +88,36 @@ fn every_emitted_function_is_syntactically_balanced() {
         assert_eq!(open, close, "unbalanced braces in {} @ {:08x}", f.name, f.address);
     }
 }
+
+#[test]
+fn some_functions_emit_structured_control_flow() {
+    // Functions without loops are emitted as structured Rust (no `match pc`).
+    let Some(p) = open_program() else { return };
+    let sample: Vec<_> = index().functions().iter().take(300).collect();
+    let translated: BTreeSet<u32> = sample.iter().map(|f| f.address).collect();
+    let mut structured = 0;
+    for f in &sample {
+        let src = codegen::emit_function(&p, f, &translated);
+        if !src.contains("match pc") {
+            assert!(!src.contains("pc = "), "structured code must not use pc");
+            structured += 1;
+        }
+    }
+    eprintln!("structured {structured}/{}", sample.len());
+    assert!(
+        structured * 100 >= sample.len() * 10,
+        "structured coverage regressed: {structured}/{}",
+        sample.len()
+    );
+}
+
+#[test]
+fn structured_function_has_no_dispatcher_or_pc() {
+    // A function known to structure (no loops): FUN_00424020.
+    let Some(p) = open_program() else { return };
+    let f = index().by_address(0x0042_4020).unwrap();
+    let translated: BTreeSet<u32> = [0x0042_4020u32].into_iter().collect();
+    let src = codegen::emit_function(&p, f, &translated);
+    assert!(!src.contains("match pc"), "expected structured output:\n{src}");
+    assert!(!src.contains("pc = "), "structured output must not use pc");
+}

@@ -9,7 +9,7 @@
 //! control flow (loops, `if`/`else`, no labels) from the CFG is the next stage,
 //! and the CFG this uses is already correct (authoritative boundaries + branches).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
 use crate::program::Program;
@@ -86,11 +86,19 @@ fn const_value(inst: &Instruction) -> Option<u64> {
 struct Emit<'a> {
     out: String,
     translated: &'a BTreeSet<u32>,
+    indent: usize,
+    /// Constant currently in `$v1`, tracked along a straight-line region.
+    v1: Option<u64>,
+    /// True when emitting the basic-block dispatcher (which uses a `pc` variable).
+    dispatcher: bool,
 }
 
 impl<'a> Emit<'a> {
     fn line(&mut self, pc: u32, s: &str) {
-        let _ = writeln!(self.out, "            {}", s.replace("$PC", &format!("{pc:#010x}")));
+        for _ in 0..self.indent {
+            self.out.push_str("    ");
+        }
+        let _ = writeln!(self.out, "{}", s.replace("$PC", &format!("{pc:#010x}")));
     }
 
     fn lower(&mut self, pc: u32, inst: &Instruction) -> bool {
@@ -409,7 +417,9 @@ impl<'a> Emit<'a> {
                 self.line(pc, "c.set_reg(2, r);");
             }
         }
-        self.line(pc, &format!("pc = {:#010x};", pc.wrapping_add(4)));
+        if self.dispatcher {
+            self.line(pc, &format!("pc = {:#010x};", pc.wrapping_add(4)));
+        }
     }
 
     fn emit_control(&mut self, pc: u32, inst: &Instruction, fall: u32) {
@@ -468,8 +478,7 @@ impl<'a> Emit<'a> {
     }
 }
 
-fn branch_target(pc: u32, offset: i16) -> u32 {
-    pc.wrapping_add(4)
+fn branch_target(pc: u32, offset: i16) -> u32 {    pc.wrapping_add(4)
         .wrapping_add((offset as i32 as u32).wrapping_mul(4))
 }
 
@@ -477,13 +486,421 @@ fn jump_target(pc: u32, field: u32) -> u32 {
     (pc.wrapping_add(4) & 0xF000_0000) | (field << 2)
 }
 
+/// Attempt to emit **structured** Rust for a function.
+///
+/// Returns `None` when the CFG cannot be structured yet (loops, irreducible flow,
+/// targets outside the decoded set), in which case the caller falls back to the
+/// basic-block dispatcher.
+fn structured_emit(
+    f: &Function,
+    decoded: &[(u32, Instruction)],
+    translated: &BTreeSet<u32>,
+) -> Option<String> {
+    let blocks = build_cfg(decoded)?;
+    let ipdom = compute_ipdom(&blocks);
+
+    let mut s = Struct {
+        e: Emit {
+            out: String::new(),
+            translated,
+            indent: 1,
+            v1: Option::None,
+            dispatcher: false,
+        },
+        blocks: &blocks,
+        decoded,
+        ipdom,
+        emitted: BTreeSet::new(),
+    };
+
+    let _ = writeln!(s.e.out, "/// {} @ {:08x}", f.name, f.address);
+    let _ = writeln!(s.e.out, "pub fn {}(c: &mut Cpu) {{", fn_name(f.address));
+
+    let stop: BTreeSet<usize> = BTreeSet::new();
+    if s.region(0, &stop).is_err() {
+        return Option::None;
+    }
+
+    let _ = writeln!(s.e.out, "}}");
+    Option::Some(s.e.out)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Kind {
+    Fall,
+    Branch,
+    Jump,
+    Call,
+    Ret,
+    Stop,
+}
+
+struct Blk {
+    start: u32,
+    lo: usize,
+    hi: usize,
+    /// Index of the control instruction, or `hi` for a fall-through block.
+    term: usize,
+    kind: Kind,
+    succ: [usize; 2],
+    nsucc: usize,
+}
+
+/// Static successor address of a control instruction, if any.
+fn static_target(pc: u32, inst: &Instruction) -> Option<u32> {
+    match inst.operands {
+        Operands::Branch { offset, .. }
+        | Operands::Branch1 { offset, .. }
+        | Operands::Cop1Branch { offset } => Some(branch_target(pc, offset)),
+        Operands::Jump { target } => Some(jump_target(pc, target)),
+        _ => Option::None,
+    }
+}
+
+fn build_cfg(decoded: &[(u32, Instruction)]) -> Option<Vec<Blk>> {
+    if decoded.is_empty() {
+        return Option::None;
+    }
+    let mut addr_to_idx: BTreeMap<u32, usize> = BTreeMap::new();
+    for (i, (a, _)) in decoded.iter().enumerate() {
+        addr_to_idx.insert(*a, i);
+    }
+
+    let mut leaders: BTreeSet<usize> = BTreeSet::new();
+    leaders.insert(0);
+    for i in 0..decoded.len() {
+        let inst = &decoded[i].1;
+        if is_control(inst.mnemonic) {
+            if i + 2 <= decoded.len() {
+                leaders.insert(i + 2);
+            }
+            if let Some(t) = static_target(decoded[i].0, inst) {
+                let ti = *addr_to_idx.get(&t)?;
+                leaders.insert(ti);
+            }
+        }
+    }
+    let starts: Vec<usize> = leaders.into_iter().filter(|&x| x < decoded.len()).collect();
+    // Map a decoded instruction index that is a leader to its block index.
+    let block_of: BTreeMap<usize, usize> = starts.iter().enumerate().map(|(k, &s)| (s, k)).collect();
+    let to_block = |di: usize| block_of.get(&di).copied().unwrap_or(usize::MAX);
+
+    let mut blocks: Vec<Blk> = Vec::with_capacity(starts.len());
+    for (bi, &lo) in starts.iter().enumerate() {
+        let hi = starts.get(bi + 1).copied().unwrap_or(decoded.len());
+        let mut term = hi;
+        for i in (lo..hi).rev() {
+            if is_control(decoded[i].1.mnemonic) {
+                term = i;
+                break;
+            }
+        }
+        blocks.push(Blk {
+            start: decoded[lo].0,
+            lo,
+            hi,
+            term,
+            kind: Kind::Fall,
+            succ: [usize::MAX, usize::MAX],
+            nsucc: 0,
+        });
+    }
+
+    for bi in 0..blocks.len() {
+        let (hi, term) = (blocks[bi].hi, blocks[bi].term);
+        if term >= hi {
+            blocks[bi].kind = Kind::Fall;
+            if bi + 1 < blocks.len() {
+                blocks[bi].succ[0] = bi + 1;
+                blocks[bi].nsucc = 1;
+            }
+            continue;
+        }
+        let pc = decoded[term].0;
+        let inst = &decoded[term].1;
+        let fall = addr_to_idx
+            .get(&pc.wrapping_add(8))
+            .map(|&di| to_block(di))
+            .unwrap_or(usize::MAX);
+        match inst.operands {
+            Operands::Branch { offset, .. }
+            | Operands::Branch1 { offset, .. }
+            | Operands::Cop1Branch { offset } => {
+                let taken = addr_to_idx
+                    .get(&branch_target(pc, offset))
+                    .map(|&di| to_block(di))
+                    .unwrap_or(usize::MAX);
+                blocks[bi].kind = Kind::Branch;
+                blocks[bi].succ = [taken, fall];
+                blocks[bi].nsucc = 2;
+            }
+            Operands::Jump { target } if inst.mnemonic == "j" => {
+                blocks[bi].kind = Kind::Jump;
+                blocks[bi].succ[0] = addr_to_idx
+                    .get(&jump_target(pc, target))
+                    .map(|&di| to_block(di))
+                    .unwrap_or(usize::MAX);
+                blocks[bi].nsucc = 1;
+            }
+            Operands::Jump { .. } if inst.mnemonic == "jal" => {
+                blocks[bi].kind = Kind::Call;
+                blocks[bi].succ[0] = fall;
+                blocks[bi].nsucc = 1;
+            }
+            Operands::Rs { rs } if inst.mnemonic == "jr" => {
+                blocks[bi].kind = if rs & 31 == 31 { Kind::Ret } else { Kind::Stop };
+            }
+            Operands::RdRs { .. } if inst.mnemonic == "jalr" => blocks[bi].kind = Kind::Stop,
+            _ if inst.mnemonic == "eret" => blocks[bi].kind = Kind::Stop,
+            _ => {
+                blocks[bi].kind = Kind::Fall;
+                if bi + 1 < blocks.len() {
+                    blocks[bi].succ[0] = bi + 1;
+                    blocks[bi].nsucc = 1;
+                }
+            }
+        }
+    }
+
+    for b in &blocks {
+        for k in 0..b.nsucc {
+            if b.succ[k] == usize::MAX {
+                return Option::None;
+            }
+        }
+    }
+    Option::Some(blocks)
+}
+
+/// Immediate post-dominators, or `None` when a block has no post-dominator.
+fn compute_ipdom(blocks: &[Blk]) -> Vec<Option<usize>> {
+    let n = blocks.len();
+    let mut post: Vec<Vec<bool>> = vec![vec![true; n]; n];
+    for i in 0..n {
+        if blocks[i].nsucc == 0 {
+            for v in post[i].iter_mut() {
+                *v = false;
+            }
+        }
+        post[i][i] = true;
+    }
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for i in 0..n {
+            if blocks[i].nsucc == 0 {
+                continue;
+            }
+            let mut acc = vec![true; n];
+            for k in 0..blocks[i].nsucc {
+                let s = blocks[i].succ[k];
+                for j in 0..n {
+                    acc[j] &= post[s][j];
+                }
+            }
+            acc[i] = true;
+            if acc != post[i] {
+                post[i] = acc;
+                changed = true;
+            }
+        }
+    }
+    let mut ipdom = vec![Option::None; n];
+    for i in 0..n {
+        for x in 0..n {
+            if x == i || !post[i][x] {
+                continue;
+            }
+            // x is the immediate post-dominator when every other post-dominator
+            // of i also post-dominates x.
+            let ok = (0..n).all(|z| z == i || !post[i][z] || z == x || post[z][x]);
+            if ok {
+                ipdom[i] = Some(x);
+                break;
+            }
+        }
+    }
+    ipdom
+}
+
+struct Struct<'a> {
+    e: Emit<'a>,
+    blocks: &'a [Blk],
+    decoded: &'a [(u32, Instruction)],
+    ipdom: Vec<Option<usize>>,
+    emitted: BTreeSet<usize>,
+}
+
+impl<'a> Struct<'a> {
+    /// Emit a straight-line run of instructions `[lo, hi)`.
+    fn normal(&mut self, lo: usize, hi: usize) -> Result<(), ()> {
+        for i in lo..hi {
+            let (pc, inst) = self.decoded[i];
+            self.e.line(pc, &format!("c.tick({pc:#010x}, {:#010x});", inst.word));
+            if inst.mnemonic == "syscall" {
+                self.e.emit_syscall(pc, self.e.v1);
+            } else if !self.e.lower(pc, &inst) {
+                return Err(());
+            } else if dest_reg(&inst) == Some(3) {
+                self.e.v1 = const_value(&inst);
+            }
+        }
+        Ok(())
+    }
+
+    /// Emit a block's body, including the control instruction and its delay slot
+    /// (the control *decision* is emitted by the structurer).
+    fn block_body(&mut self, bi: usize) -> Result<(), ()> {
+        let (lo, hi, term) = (self.blocks[bi].lo, self.blocks[bi].hi, self.blocks[bi].term);
+        self.normal(lo, term)?;
+        if term < hi {
+            let (pc, inst) = self.decoded[term];
+            self.e.line(pc, &format!("c.tick({pc:#010x}, {:#010x});", inst.word));
+            if term + 1 < hi {
+                let (dpc, dinst) = self.decoded[term + 1];
+                if !is_control(dinst.mnemonic) {
+                    self.e.line(dpc, &format!("c.tick({dpc:#010x}, {:#010x});", dinst.word));
+                    if !self.e.lower(dpc, &dinst) {
+                        return Err(());
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn region(&mut self, start: usize, stop: &BTreeSet<usize>) -> Result<(), ()> {
+        let mut cur = start;
+        let mut guard = 0usize;
+        loop {
+            guard += 1;
+            if guard > 100_000 {
+                return Err(());
+            }
+            if stop.contains(&cur) || self.emitted.contains(&cur) {
+                return Ok(());
+            }
+            self.emitted.insert(cur);
+            let b = &self.blocks[cur];
+            let (start_addr, kind, succ, nsucc, term, hi) =
+                (b.start, b.kind, b.succ, b.nsucc, b.term, b.hi);
+            self.block_body(cur)?;
+
+            match kind {
+                Kind::Ret => {
+                    self.e.line(start_addr, "return;");
+                    return Ok(());
+                }
+                Kind::Stop => {
+                    self.e.line(start_addr, &format!("c.stop({start_addr:#010x}, 0, \"unresolved control flow\"); return;"));
+                    return Ok(());
+                }
+                Kind::Fall => {
+                    if nsucc == 0 {
+                        return Ok(());
+                    }
+                    cur = succ[0];
+                }
+                Kind::Jump => {
+                    if succ[0] <= cur {
+                        return Err(()); // backward edge: a loop
+                    }
+                    cur = succ[0];
+                }
+                Kind::Call => {
+                    let (pc, inst) = self.decoded[term];
+                    let target = match inst.operands {
+                        Operands::Jump { target } => jump_target(pc, target),
+                        _ => return Err(()),
+                    };
+                    let fall = pc.wrapping_add(8);
+                    self.e.line(pc, &format!("c.set_reg(31, {fall:#010x});"));
+                    if self.e.translated.contains(&target) {
+                        self.e.line(pc, &format!("{}(c);", fn_name(target)));
+                    } else {
+                        self.e.line(pc, &format!("c.untranslated_call({pc:#010x}, {target:#010x}); return;"));
+                        return Ok(());
+                    }
+                    if nsucc == 0 {
+                        return Ok(());
+                    }
+                    cur = succ[0];
+                }
+                Kind::Branch => {
+                    let cond = self.branch_cond(cur)?;
+                    let join = self.ipdom[cur];
+                    let mut inner = stop.clone();
+                    if let Some(j) = join {
+                        inner.insert(j);
+                    }
+                    self.e.line(start_addr, &format!("if {cond} {{"));
+                    self.e.indent += 1;
+                    let saved = self.e.v1;
+                    self.e.v1 = Option::None;
+                    self.region(succ[0], &inner)?;
+                    self.e.v1 = Option::None;
+                    self.e.indent -= 1;
+                    self.e.line(start_addr, "} else {");
+                    self.e.indent += 1;
+                    self.region(succ[1], &inner)?;
+                    self.e.v1 = Option::None;
+                    self.e.indent -= 1;
+                    self.e.line(start_addr, "}");
+                    let _ = saved;
+                    match join {
+                        Some(j) if !stop.contains(&j) => cur = j,
+                        _ => return Ok(()),
+                    }
+                }
+            }
+            let _ = hi;
+        }
+    }
+
+    fn branch_cond(&self, bi: usize) -> Result<String, ()> {
+        let term = self.blocks[bi].term;
+        let (pc, inst) = self.decoded[term];
+        let _ = pc;
+        use Operands::*;
+        let m = inst.mnemonic;
+        let c = match (m, inst.operands) {
+            ("beq" | "beql", Branch { rs, rt, .. }) => format!("c.reg({rs}) == c.reg({rt})"),
+            ("bne" | "bnel", Branch { rs, rt, .. }) => format!("c.reg({rs}) != c.reg({rt})"),
+            (m, Branch1 { rs, .. }) => match m {
+                "blez" | "blezl" => format!("(c.reg({rs}) as i64) <= 0"),
+                "bgtz" | "bgtzl" => format!("(c.reg({rs}) as i64) > 0"),
+                "bltz" | "bltzl" | "bltzal" | "bltzall" => format!("(c.reg({rs}) as i64) < 0"),
+                _ => format!("(c.reg({rs}) as i64) >= 0"),
+            },
+            ("bc1t", _) => "c.fcr31_cc".to_string(),
+            ("bc1f", _) => "!c.fcr31_cc".to_string(),
+            _ => return Err(()),
+        };
+        Ok(c)
+    }
+}
+
 /// Emit a translated Rust function for `f`. `translated` is the set of function
 /// addresses that have generated bodies (for direct calls).
+///
+/// Structured control flow is attempted first; when it cannot be recovered the
+/// function falls back to a per-function basic-block dispatch (scaffolding).
 pub fn emit_function(program: &Program, f: &Function, translated: &BTreeSet<u32>) -> String {
     let decoded = program.decode_with_addresses(f);
+    if let Some(src) = structured_emit(f, &decoded, translated) {
+        return src;
+    }
+    emit_dispatcher(f, &decoded, translated)
+}
+
+/// Fallback: a per-function basic-block dispatcher over the function's own CFG.
+fn emit_dispatcher(f: &Function, decoded: &[(u32, Instruction)], translated: &BTreeSet<u32>) -> String {
     let mut e = Emit {
         out: String::new(),
         translated,
+        indent: 3,
+        v1: Option::None,
+        dispatcher: true,
     };
 
     let name = fn_name(f.address);
