@@ -1122,8 +1122,19 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
         }
         0x7E => ret(c, 0),
         0x7F => ret(c, crate::bus::RAM_SIZE as i64),
-        // FindAddress(table): the libkernel helper scans kernel memory; report "not found".
-        0x83 => ret(c, 0),
+        // FindAddress(start, end, value): libkernl's _InitSys (0x42c1f0) looks up two
+        // kernel syscall-table entries and loops until `found - 0x20c` (for 0x42c168)
+        // equals `found - 0x168` (for 0x42c130). Answer consistently so both agree on a
+        // fake table base in otherwise unused kernel RAM.
+        0x83 => {
+            const BASE: u32 = 0x8003_0000;
+            let off = match arg(c, 2) {
+                0x0042_c168 => 0x20c,
+                0x0042_c130 => 0x168,
+                _ => 0x100,
+            };
+            ret(c, (BASE + off) as i32 as i64)
+        }
         0x85 => ret(c, 0),
         0x4C..=0x4F => ret(c, 0),
         _ => {

@@ -45,14 +45,6 @@ we do not drive (`FindAddress` loop; see `codegen.md`).
 - **Assets are opaque.** A 2.3 GB custom archive format must be reverse-engineered
   before a level can load.
 
-## Calibration
-
-- PCSX2 — an **emulator**, strictly easier than a decompilation — is 20+ years of
-  continuous work.
-- Community **matching decompilations** of much simpler games (Mario 64, PS1
-  titles) are ~5–10 person-years each.
-- A PS2 3D game recompiled to *correct* native Rust is at the far end of that
-  scale. Realistically: **years for a focused team; effectively open-ended solo.**
 
 ## Shortest path to a first frame
 
@@ -81,3 +73,7 @@ authoritative decoder validated against Ghidra, a code generator, and coverage
 tooling (`recomp-stats --todo`). That is why mechanical coverage moved fast — but
 the distance from "translates 783,966 instructions" to "renders a snowboarder at
 60 fps" is mostly VU + GS + IOP + assets.
+
+## Questions: 
+
+Can we make faster progress with: https://github.com/snuri00/ps2-web-recomp? 

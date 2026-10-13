@@ -7,6 +7,7 @@
 //! the kernel, and the IOP services. See `docs/plans/playable-push.md`.
 
 pub mod bus;
+pub mod cop2;
 pub mod cpu;
 pub mod elf;
 pub mod fpu;

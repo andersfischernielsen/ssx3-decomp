@@ -44,6 +44,9 @@ pub struct Sif {
     pub trace: bool,
     pub loaded_modules: Vec<String>,
     pub unknown_servers: BTreeMap<u32, u32>,
+    /// Host pad state (active-high button bits) per port.
+    pub pad_buttons: [u16; 2],
+    pub loadfile_version: [u8; 4],
 }
 
 impl Default for Sif {
@@ -73,6 +76,8 @@ impl Sif {
             trace: std::env::var("SSX3_TRACE_SIF").is_ok(),
             loaded_modules: Vec::new(),
             unknown_servers: BTreeMap::new(),
+            pad_buttons: [0; 2],
+            loadfile_version: *b"3000",
         }
     }
 
@@ -142,7 +147,8 @@ pub fn set_reg(c: &mut Cpu, reg: u32, v: u32) {
     match reg {
         1 => c.sif.mainaddr = v,
         3 => c.sif.msflag |= v,
-        4 => c.sif.smflag &= !v,
+        // SMFLAG keeps SIFINIT|CMDINIT|BOOTEND set: our IOP is always booted.
+        4 => {}
         r if r & 0x8000_0000 != 0 => c.sif.sreg[(r & 31) as usize] = v,
         _ => {}
     }
@@ -190,6 +196,21 @@ pub fn set_dma(c: &mut Cpu, transfers: u32, count: u32) -> u32 {
 fn reboot(c: &mut Cpu, src: u32) {
     let path = c.bus.read_cstr(src + 24);
     eprintln!("[sif] IOP reboot: \"{path}\"");
+    // The replacement IOP image carries its own LOADFILE; libsif checks its
+    // version string ("PsIIloadfile" + 4 digits) after the reboot.
+    if let Some(img) = path.split_once(' ').map(|(_, p)| p.to_string()) {
+        if let Some(d) = c.sif.disc.as_mut() {
+            if let Some(e) = d.find(&img) {
+                let data = d.read_vec(e.sector, e.size.div_ceil(SECTOR as u32));
+                let tag = b"PsIIloadfile";
+                if let Some(i) = data.windows(tag.len()).position(|w| w == tag) {
+                    let v = &data[i + tag.len()..i + tag.len() + 4];
+                    c.sif.loadfile_version.copy_from_slice(v);
+                    eprintln!("[sif] LOADFILE version {}", String::from_utf8_lossy(v));
+                }
+            }
+        }
+    }
 }
 
 fn command(c: &mut Cpu, src: u32, size: u32) {
@@ -301,7 +322,10 @@ fn loadfile(c: &mut Cpu, method: u32, args: u32, _s: u32, ret: u32, _rs: u32) ->
             wr(c, ret + 4, 0);
         }
         0x09 => wr(c, ret, (-202i32) as u32),
-        0xFF => c.bus.write_bytes(ret, b"3000"),
+        0xFF => {
+            let v = c.sif.loadfile_version;
+            c.bus.write_bytes(ret, &v)
+        }
         _ => wr(c, ret, 0),
     }
     true

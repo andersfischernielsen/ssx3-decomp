@@ -16,3 +16,13 @@ pub fn rpc(c: &mut Cpu, method: u32, _args: u32, _ssize: u32, ret: u32, rsize: u
     }
     true
 }
+
+/// Host input: set or clear a button (libpad bit layout, active-high here).
+pub fn set_button(c: &mut Cpu, port: usize, bit: u16, pressed: bool) {
+    let b = &mut c.sif.pad_buttons[port & 1];
+    if pressed {
+        *b |= bit;
+    } else {
+        *b &= !bit;
+    }
+}

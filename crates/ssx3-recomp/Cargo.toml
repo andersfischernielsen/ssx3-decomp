@@ -19,3 +19,7 @@ path = "src/bin/recomp_gen.rs"
 [[bin]]
 name = "recomp-all"
 path = "src/bin/recomp_all.rs"
+
+[[bin]]
+name = "recomp-ee"
+path = "src/bin/recomp_ee.rs"

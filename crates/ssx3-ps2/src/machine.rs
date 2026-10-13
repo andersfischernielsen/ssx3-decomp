@@ -241,3 +241,18 @@ pub fn boot(c: &mut Cpu, elf: &[u8], argv0: &str) -> Result<u32, String> {
     c.next_event = 0;
     Ok(entry)
 }
+
+/// A computed jump (`jr`) left the current function's labels: either a jump
+/// into the middle of this function that isn't a known label (an error), or a
+/// tail jump to other code.
+pub fn jump_out(c: &mut Cpu, pc: u32, start: u32, end: u32) {
+    if pc >= start && pc < end {
+        bad_entry(c, pc);
+        return;
+    }
+    if !c.enter(pc) {
+        return;
+    }
+    call_indirect(c, pc);
+    c.leave();
+}
