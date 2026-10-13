@@ -27,6 +27,11 @@ fn main() {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
+    if let Ok(s) = std::env::var("SSX3_STEPS") {
+        if let Ok(n) = s.parse() {
+            cpu.step_limit = n;
+        }
+    }
 
     println!("running {:08x} ...", start);
     generated::run_entry(&mut cpu);

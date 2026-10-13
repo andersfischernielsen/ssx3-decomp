@@ -496,8 +496,22 @@ fn structured_emit(
     decoded: &[(u32, Instruction)],
     translated: &BTreeSet<u32>,
 ) -> Option<String> {
-    let blocks = build_cfg(decoded)?;
-    let ipdom = compute_ipdom(&blocks);
+    let dbg = std::env::var("SSX3_DEBUG_STRUCT").is_ok();
+    let fail = |why: &str| {
+        if dbg {
+            eprintln!("struct {} @ {:08x}: {why}", f.name, f.address);
+        }
+    };
+    let Some(blocks) = build_cfg(decoded) else {
+        fail("build_cfg None");
+        return Option::None;
+    };
+    let some_ipdom = compute_ipdom(&blocks);
+    let Some(headers) = compute_loops(&blocks) else {
+        fail("compute_loops None (multi-exit loop?)");
+        return Option::None;
+    };
+    let ipdom = some_ipdom;
 
     let mut s = Struct {
         e: Emit {
@@ -511,13 +525,15 @@ fn structured_emit(
         decoded,
         ipdom,
         emitted: BTreeSet::new(),
+        headers,
     };
 
     let _ = writeln!(s.e.out, "/// {} @ {:08x}", f.name, f.address);
     let _ = writeln!(s.e.out, "pub fn {}(c: &mut Cpu) {{", fn_name(f.address));
 
     let stop: BTreeSet<usize> = BTreeSet::new();
-    if s.region(0, &stop).is_err() {
+    if s.region(0, &stop, &[]).is_err() {
+        fail("region Err");
         return Option::None;
     }
 
@@ -530,6 +546,7 @@ enum Kind {
     Fall,
     Branch,
     Jump,
+    TailCall,
     Call,
     Ret,
     Stop,
@@ -575,8 +592,11 @@ fn build_cfg(decoded: &[(u32, Instruction)]) -> Option<Vec<Blk>> {
                 leaders.insert(i + 2);
             }
             if let Some(t) = static_target(decoded[i].0, inst) {
-                let ti = *addr_to_idx.get(&t)?;
-                leaders.insert(ti);
+                // Targets outside this function (callees, tail calls) are not
+                // basic-block leaders here; they are handled as calls.
+                if let Some(&ti) = addr_to_idx.get(&t) {
+                    leaders.insert(ti);
+                }
             }
         }
     }
@@ -635,12 +655,19 @@ fn build_cfg(decoded: &[(u32, Instruction)]) -> Option<Vec<Blk>> {
                 blocks[bi].nsucc = 2;
             }
             Operands::Jump { target } if inst.mnemonic == "j" => {
-                blocks[bi].kind = Kind::Jump;
-                blocks[bi].succ[0] = addr_to_idx
-                    .get(&jump_target(pc, target))
-                    .map(|&di| to_block(di))
-                    .unwrap_or(usize::MAX);
-                blocks[bi].nsucc = 1;
+                let t = jump_target(pc, target);
+                match addr_to_idx.get(&t) {
+                    Some(&di) => {
+                        blocks[bi].kind = Kind::Jump;
+                        blocks[bi].succ[0] = to_block(di);
+                        blocks[bi].nsucc = 1;
+                    }
+                    // A jump outside this function is a tail call.
+                    Option::None => {
+                        blocks[bi].kind = Kind::TailCall;
+                        blocks[bi].nsucc = 0;
+                    }
+                }
             }
             Operands::Jump { .. } if inst.mnemonic == "jal" => {
                 blocks[bi].kind = Kind::Call;
@@ -665,6 +692,13 @@ fn build_cfg(decoded: &[(u32, Instruction)]) -> Option<Vec<Blk>> {
     for b in &blocks {
         for k in 0..b.nsucc {
             if b.succ[k] == usize::MAX {
+                if std::env::var("SSX3_DEBUG_STRUCT").is_ok() {
+                    let (pc, inst) = decoded[b.term];
+                    eprintln!(
+                        "  unresolved successor: block {:08x} term {:08x} {} (k={k})",
+                        b.start, pc, inst.mnemonic
+                    );
+                }
                 return Option::None;
             }
         }
@@ -729,6 +763,67 @@ struct Struct<'a> {
     decoded: &'a [(u32, Instruction)],
     ipdom: Vec<Option<usize>>,
     emitted: BTreeSet<usize>,
+    /// Natural loops: header block index -> loop extent and exit.
+    headers: BTreeMap<usize, LoopInfo>,
+}
+
+/// A natural loop, approximated by `[lo, hi]` (block indices, address order).
+#[derive(Clone, Copy)]
+struct LoopInfo {
+    lo: usize,
+    hi: usize,
+    exit: Option<usize>,
+}
+
+/// How control leaves a region.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Flow {
+    /// Control continues at the given block.
+    Next(usize),
+    /// The path terminates here (return, stop, `break`, `continue`).
+    End,
+}
+
+/// Detect natural loops from back edges. Returns `None` if a loop has more than
+/// one exit (not yet supported).
+fn compute_loops(blocks: &[Blk]) -> Option<BTreeMap<usize, LoopInfo>> {
+    let mut backs: BTreeMap<usize, usize> = BTreeMap::new();
+    for b in 0..blocks.len() {
+        for k in 0..blocks[b].nsucc {
+            let s = blocks[b].succ[k];
+            if s <= b {
+                let e = backs.entry(s).or_insert(b);
+                if b > *e {
+                    *e = b;
+                }
+            }
+        }
+    }
+    let mut map = BTreeMap::new();
+    for (&h, &hi) in &backs {
+        let lo = h;
+        let mut exits: BTreeSet<usize> = BTreeSet::new();
+        for b in lo..=hi {
+            for k in 0..blocks[b].nsucc {
+                let x = blocks[b].succ[k];
+                if x < lo || x > hi {
+                    exits.insert(x);
+                }
+            }
+        }
+        if exits.len() > 1 {
+            return Option::None;
+        }
+        map.insert(
+            h,
+            LoopInfo {
+                lo,
+                hi,
+                exit: exits.iter().next().copied(),
+            },
+        );
+    }
+    Option::Some(map)
 }
 
 impl<'a> Struct<'a> {
@@ -769,43 +864,93 @@ impl<'a> Struct<'a> {
         Ok(())
     }
 
-    fn region(&mut self, start: usize, stop: &BTreeSet<usize>) -> Result<(), ()> {
+    fn region(
+        &mut self,
+        start: usize,
+        stop: &BTreeSet<usize>,
+        loops: &[usize],
+    ) -> Result<Flow, ()> {
         let mut cur = start;
         let mut guard = 0usize;
         loop {
             guard += 1;
-            if guard > 100_000 {
+            if guard > 200_000 {
                 return Err(());
             }
             if stop.contains(&cur) || self.emitted.contains(&cur) {
-                return Ok(());
+                return Ok(Flow::Next(cur));
             }
+
+            // Inside a loop: leaving the loop body breaks out of it.
+            if let Some(&h) = loops.last() {
+                let info = self.headers[&h];
+                if cur < info.lo || cur > info.hi {
+                    self.e.line(self.blocks[cur].start, "break;");
+                    return Ok(Flow::End);
+                }
+            }
+
+            // Enter a natural loop when we reach its header from outside.
+            if let Some(info) = self.headers.get(&cur).copied() {
+                if !loops.contains(&cur) {
+                    let start_addr = self.blocks[cur].start;
+                    self.e.line(start_addr, "loop {");
+                    self.e.indent += 1;
+                    self.e.line(start_addr, "if c.trap.is_some() { return; }");
+                    let mut inner = loops.to_vec();
+                    inner.push(cur);
+                    self.region(cur, stop, &inner)?;
+                    self.e.indent -= 1;
+                    self.e.line(start_addr, "}");
+                    // Continue the enclosing region at the loop's exit.
+                    match info.exit {
+                        Some(x) if !stop.contains(&x) => {
+                            cur = x;
+                            continue;
+                        }
+                        _ => return Ok(Flow::End),
+                    }
+                }
+            }
+
             self.emitted.insert(cur);
             let b = &self.blocks[cur];
-            let (start_addr, kind, succ, nsucc, term, hi) =
-                (b.start, b.kind, b.succ, b.nsucc, b.term, b.hi);
+            let (start_addr, kind, succ, nsucc, term) =
+                (b.start, b.kind, b.succ, b.nsucc, b.term);
             self.block_body(cur)?;
 
             match kind {
                 Kind::Ret => {
                     self.e.line(start_addr, "return;");
-                    return Ok(());
+                    return Ok(Flow::End);
                 }
                 Kind::Stop => {
                     self.e.line(start_addr, &format!("c.stop({start_addr:#010x}, 0, \"unresolved control flow\"); return;"));
-                    return Ok(());
+                    return Ok(Flow::End);
                 }
                 Kind::Fall => {
                     if nsucc == 0 {
-                        return Ok(());
+                        return Ok(Flow::End);
                     }
                     cur = succ[0];
                 }
                 Kind::Jump => {
-                    if succ[0] <= cur {
-                        return Err(()); // backward edge: a loop
+                    let t = succ[0];
+                    if let Some(&h) = loops.last() {
+                        if t == h {
+                            self.e.line(start_addr, "continue;");
+                            return Ok(Flow::End);
+                        }
+                        let info = self.headers[&h];
+                        if t < info.lo || t > info.hi {
+                            self.e.line(start_addr, "break;");
+                            return Ok(Flow::End);
+                        }
                     }
-                    cur = succ[0];
+                    if t <= cur {
+                        return Err(()); // a backward edge that is not a known loop
+                    }
+                    cur = t;
                 }
                 Kind::Call => {
                     let (pc, inst) = self.decoded[term];
@@ -817,14 +962,29 @@ impl<'a> Struct<'a> {
                     self.e.line(pc, &format!("c.set_reg(31, {fall:#010x});"));
                     if self.e.translated.contains(&target) {
                         self.e.line(pc, &format!("{}(c);", fn_name(target)));
+                        self.e.line(pc, "if c.trap.is_some() { return; }");
                     } else {
                         self.e.line(pc, &format!("c.untranslated_call({pc:#010x}, {target:#010x}); return;"));
-                        return Ok(());
+                        return Ok(Flow::End);
                     }
                     if nsucc == 0 {
-                        return Ok(());
+                        return Ok(Flow::End);
                     }
                     cur = succ[0];
+                }
+                Kind::TailCall => {
+                    let (pc, inst) = self.decoded[term];
+                    let target = match inst.operands {
+                        Operands::Jump { target } => jump_target(pc, target),
+                        _ => return Err(()),
+                    };
+                    if self.e.translated.contains(&target) {
+                        self.e.line(pc, &format!("{}(c);", fn_name(target)));
+                    } else {
+                        self.e.line(pc, &format!("c.untranslated_call({pc:#010x}, {target:#010x});"));
+                    }
+                    self.e.line(start_addr, "return;");
+                    return Ok(Flow::End);
                 }
                 Kind::Branch => {
                     let cond = self.branch_cond(cur)?;
@@ -835,26 +995,48 @@ impl<'a> Struct<'a> {
                     }
                     self.e.line(start_addr, &format!("if {cond} {{"));
                     self.e.indent += 1;
-                    let saved = self.e.v1;
                     self.e.v1 = Option::None;
-                    self.region(succ[0], &inner)?;
+                    let ft = self.arm(succ[0], &inner, loops)?;
                     self.e.v1 = Option::None;
                     self.e.indent -= 1;
                     self.e.line(start_addr, "} else {");
                     self.e.indent += 1;
-                    self.region(succ[1], &inner)?;
+                    let ff = self.arm(succ[1], &inner, loops)?;
                     self.e.v1 = Option::None;
                     self.e.indent -= 1;
                     self.e.line(start_addr, "}");
-                    let _ = saved;
+                    if ft == Flow::End && ff == Flow::End {
+                        return Ok(Flow::End);
+                    }
                     match join {
                         Some(j) if !stop.contains(&j) => cur = j,
-                        _ => return Ok(()),
+                        _ => return Ok(Flow::End),
                     }
                 }
             }
-            let _ = hi;
         }
+    }
+
+    /// Emit one arm of a branch. Back edges to the innermost loop become
+    /// `continue`, and jumps out of it become `break`.
+    fn arm(
+        &mut self,
+        s: usize,
+        stop: &BTreeSet<usize>,
+        loops: &[usize],
+    ) -> Result<Flow, ()> {
+        if let Some(&h) = loops.last() {
+            if s == h {
+                self.e.line(self.blocks[s].start, "continue;");
+                return Ok(Flow::End);
+            }
+            let info = self.headers[&h];
+            if s < info.lo || s > info.hi {
+                self.e.line(self.blocks[s].start, "break;");
+                return Ok(Flow::End);
+            }
+        }
+        self.region(s, stop, loops)
     }
 
     fn branch_cond(&self, bi: usize) -> Result<String, ()> {

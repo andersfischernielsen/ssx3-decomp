@@ -54,14 +54,20 @@ Implemented (in `codegen.rs`):
 - CFG construction from the authoritative boundaries (leaders, successors).
 - Immediate post-dominators (bitset post-dominance + minimal candidate).
 - Recursive emitter: fall-through chains, forward `j`, `jal` (direct call),
-  `jr $ra` (`return`), and 2-way branches as `if/else` with the ip-dom join.
+  `jr $ra` (`return`), 2-way branches as `if/else` with the ip-dom join, **natural
+  loops** (`loop { … }` with `continue` on back edges and `break` on exits) and
+  **tail calls** (`j` outside the function → call + `return`).
+- Trap guards (`if c.trap.is_some() { return; }`) at loop headers and after calls
+  so the runtime's step limit is honoured.
 
-Measured: **43/300** functions (14.3%) emit fully structured Rust; the rest fall
-back to the dispatcher. `entry` falls back because it contains a BSS-clear loop.
+Measured: **80/103** functions in the depth-4 closure emit fully structured Rust;
+the remaining 23 fall back to the dispatcher (multi-exit loops, `region` failures,
+or unresolved shapes). `entry` is fully structured and executes identically to the
+dispatcher (276k steps, `gp=0x4a30f0`).
 
-**Next:** loop support. Detect back edges (target ≤ source), wrap the natural
-loop in `loop { … }`, turn back edges into `continue` and loop exits into
-`break`. That should lift coverage substantially (most compiled functions loop).
+**Next:** raise coverage (multi-exit loops, `region` failures), then delete the
+dispatcher entirely once coverage is 100%.
+
 
 
 ## Risks

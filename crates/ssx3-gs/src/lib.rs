@@ -15,6 +15,11 @@ use ssx3_core::gs as gsmodel;
 
 pub use gsmodel::{DispFb, VRAM_SIZE};
 
+/// GIF packet interpreter: tag decoding, register writes and image transfers.
+pub mod gif;
+/// GS register addresses and GIF constants used by the interpreter.
+pub mod regs;
+
 /// VRAM is presented as a square `RGBA8` texture of this many pixels per side.
 pub const VRAM_DIM: u32 = 1024;
 
@@ -59,6 +64,8 @@ pub struct Gs {
     /// Display/environment registers we currently track.
     pub dispfb: [DispFb; 2],
     pub bgcolor: u32,
+    /// GIF packet interpreter state (transfer descriptors, `PRIM`, ...).
+    pub gif: gif::GifState,
 }
 
 impl Default for Gs {
@@ -73,6 +80,7 @@ impl Gs {
             vram: vec![0; VRAM_SIZE],
             dispfb: [DispFb::default(); 2],
             bgcolor: 0,
+            gif: gif::GifState::default(),
         }
     }
 
@@ -331,7 +339,9 @@ impl GsRenderer {
 
         let mut encoder = self
             .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("frame") });
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("frame"),
+            });
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("present"),
