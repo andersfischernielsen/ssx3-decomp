@@ -252,8 +252,9 @@ fn decode_regimm(w: u32, rs: u8, rt: u8, imm: u16) -> Instruction {
         0x11 => mk(w, "bgezal", one),
         0x12 => mk(w, "bltzall", one),
         0x13 => mk(w, "bgezall", one),
-        // `clear fsa`: REGIMM cond=25 clears the SA field (Ghidra: `clear sa`).
-        0x19 => mk(w, "clear_sa", Operands::None),
+        // REGIMM rt=0x18/0x19 are mtsab/mtsah (Ghidra: `clear fsa` when rs=0,imm=0).
+        0x18 => mk(w, "mtsab", Operands::None),
+        0x19 => mk(w, "mtsah", Operands::None),
         _ => un(w),
     }
 }
@@ -362,12 +363,16 @@ fn cop1_name(base: &str, suffix: char) -> Option<&'static str> {
 
 fn decode_cop2(w: u32, rs: u8, rt: u8, rd: u8, _funct: u8) -> Instruction {
     let funct = (w & 0x3F) as u8;
+    // COP2 `fmt` (= rs): 1 qmfc2, 2 cfc2, 5 qmtc2, 6 ctc2, 8 bc2*, 0x10.. macro.
     match rs {
-        0x00 => mk(w, "qmfc2", Operands::Cop2Move { rt, rd }),
-        0x01 => mk(w, "qmtc2", Operands::Cop2Move { rt, rd }),
+        0x01 => mk(w, "qmfc2", Operands::Cop2Move { rt, rd }),
         0x02 => mk(w, "cfc2", Operands::Cop2Move { rt, rd }),
-        0x04 => mk(w, "mtc2", Operands::Cop2Move { rt, rd }),
+        0x05 => mk(w, "qmtc2", Operands::Cop2Move { rt, rd }),
         0x06 => mk(w, "ctc2", Operands::Cop2Move { rt, rd }),
+        0x08 => {
+            let name = if rt & 1 == 0 { "bc2f" } else { "bc2t" };
+            mk(w, name, Operands::Cop1Branch { offset: w as u16 as i16 })
+        }
         // COP2 arithmetic (VU0 macro mode) is a large set; preserve structure.
         _ => mk(
             w,
@@ -378,55 +383,109 @@ fn decode_cop2(w: u32, rs: u8, rt: u8, rd: u8, _funct: u8) -> Instruction {
 }
 
 /// MMI group names (opcode 0x1C). `mmiop` is the `sa` field, `fct` the funct.
+/// MMI0 group (`fct == 0x08`), keyed by `mmiop`.
+const MMI0: &[(u8, &str)] = &[
+    (0x00, "paddw"), (0x01, "psubw"), (0x02, "pcgtw"), (0x03, "pmaxw"),
+    (0x04, "paddh"), (0x05, "psubh"), (0x06, "pcgth"), (0x07, "pmaxh"),
+    (0x08, "paddb"), (0x09, "psubb"), (0x0A, "pcgtb"),
+    (0x10, "paddsw"), (0x11, "psubsw"), (0x12, "pextlw"), (0x13, "ppacw"),
+    (0x14, "paddsh"), (0x15, "psubsh"), (0x16, "pextlh"), (0x17, "ppach"),
+    (0x18, "paddsb"), (0x19, "psubsb"), (0x1A, "pextlb"), (0x1B, "ppacb"),
+    (0x1E, "pext5"), (0x1F, "ppac5"),
+];
+
+/// MMI1 group (`fct == 0x28`), keyed by `mmiop`.
+const MMI1: &[(u8, &str)] = &[
+    (0x01, "pabsw"), (0x02, "pceqw"), (0x03, "pminw"), (0x04, "padsbh"),
+    (0x05, "pabsh"), (0x06, "pceqh"), (0x07, "pminh"), (0x0A, "pceqb"),
+    (0x10, "padduw"), (0x11, "psubuw"), (0x12, "pextuw"), (0x14, "padduh"),
+    (0x15, "psubuh"), (0x16, "pextuh"), (0x18, "paddub"), (0x19, "psubub"),
+    (0x1A, "pextub"), (0x1B, "qfsrv"),
+];
+
+/// MMI2 group (`fct == 0x09`), keyed by `mmiop`.
+const MMI2: &[(u8, &str)] = &[
+    (0x00, "pmaddw"), (0x02, "psllvw"), (0x03, "psrlvw"), (0x04, "pmsubw"),
+    (0x08, "pmfhi"), (0x09, "pmflo"), (0x0A, "pinth"), (0x0C, "pmultw"),
+    (0x0D, "pdivw"), (0x0E, "pcpyld"), (0x12, "pand"), (0x13, "pxor"),
+    (0x14, "pmaddh"), (0x15, "phmadh"), (0x18, "pmsubh"), (0x19, "phmsdh"),
+    (0x1A, "pexeh"), (0x1B, "prevh"), (0x1C, "pmulth"), (0x1D, "pdivbw"),
+    (0x1E, "pexew"), (0x1F, "prot3w"),
+];
+
+/// MMI3 group (`fct == 0x29`), keyed by `mmiop`.
+const MMI3: &[(u8, &str)] = &[
+    (0x00, "pmadduw"), (0x03, "psravw"), (0x08, "pmthi"), (0x09, "pmtlo"),
+    (0x0A, "pinteh"), (0x0C, "pmultuw"), (0x0D, "pdivuw"), (0x0E, "pcpyud"),
+    (0x12, "por"), (0x13, "pnor"), (0x1A, "pexch"), (0x1B, "pcpyh"),
+    (0x1E, "pexcw"),
+];
+
+/// The six `(mmiop, fct)` pairs that special-case on `rs`/`rt` (`clear`/`moveq`).
+fn mmi_special_pair(mmiop: u8, fct: u8) -> bool {
+    matches!(
+        (mmiop, fct),
+        (0x00, 0x08) | (0x04, 0x08) | (0x08, 0x08) | (0x10, 0x28) | (0x18, 0x28) | (0x12, 0x29)
+    )
+}
+
+/// Non-group MMI / Special2 forms selected directly by `fct`.
+fn mmi_base_name(fct: u8) -> Option<&'static str> {
+    Some(match fct {
+        0x00 => "madd",
+        0x01 => "maddu",
+        0x02 => "msub",
+        0x03 => "msubu",
+        0x04 => "plzcw",
+        0x10 => "mfhi1",
+        0x11 => "mthi1",
+        0x12 => "mflo1",
+        0x13 => "mtlo1",
+        0x18 => "mult1",
+        0x19 => "multu1",
+        0x1A => "div1",
+        0x1B => "divu1",
+        0x20 => "madd1",
+        0x21 => "maddu1",
+        0x30 => "pmfhl",
+        0x31 => "pmthl",
+        0x34 => "psllh",
+        0x36 => "psrlh",
+        0x37 => "psrah",
+        0x3C => "psllw",
+        0x3E => "psrlw",
+        0x3F => "psraw",
+        _ => return Option::None,
+    })
+}
+
+/// MMI group mnemonic for `(mmiop, fct)`, if the group and selector are known.
 fn mmi_mnemonic(mmiop: u8, fct: u8) -> Option<&'static str> {
-    // Base group: selected by `fct` alone when `mmiop` is part of the operand.
-    let base: Option<&'static str> = match fct {
-        0x00 => Some("madd"),
-        0x01 => Some("maddu"),
-        0x02 => Some("mul"),
-        0x04 => Some("plzcw"),
-        0x10 => Some("mfhi1"),
-        0x11 => Some("mthi1"),
-        0x12 => Some("mflo1"),
-        0x13 => Some("mtlo1"),
-        0x14 => Some("mult1"),
-        0x15 => Some("multu1"),
-        0x16 => Some("div1"),
-        0x17 => Some("divu1"),
-        0x18 => Some("madd1"),
-        0x19 => Some("maddu1"),
-        0x30 => Some("pmfhl"),
-        0x31 => Some("pmthl"),
-        0x34 => Some("psllh"),
-        0x36 => Some("psrlh"),
-        0x37 => Some("psrah"),
-        0x3C => Some("psllw"),
-        0x3E => Some("psrlw"),
-        0x3F => Some("psraw"),
-        _ => None,
+    let table: Option<&[(u8, &str)]> = match fct {
+        0x08 => Some(MMI0),
+        0x28 => Some(MMI1),
+        0x09 => Some(MMI2),
+        0x29 => Some(MMI3),
+        _ => Option::None,
     };
-    if let Some(b) = base {
-        return Some(b);
+    if let Some(t) = table {
+        if let Some((_, name)) = t.iter().find(|(m, _)| *m == mmiop) {
+            return Some(name);
+        }
     }
-    // MMI0 group (fct == 0x08): `mmiop` selects the operation. We name the
-    // ones confirmed against the emotion-engine Sleigh; the rest stay unnamed.
-    if fct == 0x08 {
-        return match mmiop {
-            0x08 => Some("paddb"),
-            0x04 => Some("paddh"),
-            0x18 => Some("paddsb"),
-            0x14 => Some("paddsh"),
-            _ => None,
-        };
-    }
-    // `clear rd` — mmiop=0x10, fct=0x28 with rs=rt=0.
-    if fct == 0x28 && mmiop == 0x10 {
-        return Some("clear");
-    }
-    None
+    mmi_base_name(fct)
 }
 
 fn decode_mmi(w: u32, rs: u8, rt: u8, rd: u8, mmiop: u8, fct: u8) -> Instruction {
+    // `clear rd` / `moveq rd, rs` aliases (six special pairs).
+    if mmi_special_pair(mmiop, fct) {
+        if rs != 0 && rt == 0 {
+            return mk(w, "moveq", Operands::RdRs { rd, rs });
+        }
+        if rs == 0 && rt == 0 {
+            return mk(w, "clear", Operands::Rd { rd });
+        }
+    }
     let operands = Operands::Mmi { mmiop, fct, rd, rs, rt };
     match mmi_mnemonic(mmiop, fct) {
         Some(name) => mk(w, name, operands),

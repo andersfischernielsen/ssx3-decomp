@@ -75,18 +75,27 @@ fn clear_is_the_mmi_pseudo_from_crt0() {
     // `clear at`: mmiop=0x10, fct=0x28, rd=1. This is the first instruction of
     // SLUS_207.72's entry.
     assert_eq!(mn(0x7000_0C28), "clear");
-    assert_eq!(
-        op(0x7000_0C28),
-        Operands::Mmi { mmiop: 0x10, fct: 0x28, rd: 1, rs: 0, rt: 0 }
-    );
+    // `clear` is an alias for `padduw rd, $0, $0`, so it carries `rd`.
+    assert_eq!(op(0x7000_0C28), Operands::Rd { rd: 1 });
 }
 
 #[test]
 fn unknown_mmi_keeps_its_structure() {
-    // An MMI encoding we do not name must still decode, not become .word.
-    let inst = decode(0x7129_4008);
+    // An MMI encoding we do not name (unassigned fct 0x0A) must still decode,
+    // not become .word.
+    let inst = decode(0x7000_000A);
     assert_eq!(inst.mnemonic, "mmi");
     assert!(inst.is_known());
+}
+
+#[test]
+fn mmi_groups_are_decoded() {
+    // MMI0 mmiop=0x08, fct=0x08 (both sources set) -> paddb.
+    assert_eq!(mn(0x7022_1A08), "paddb");
+    // MMI1 mmiop=0x10, fct=0x28 (both sources set) -> padduw.
+    assert_eq!(mn(0x7022_1C28), "padduw");
+    // MMI1 mmiop=0x10, fct=0x28 with rs=rt=0, rd=1 -> `clear at`.
+    assert_eq!(mn(0x7000_0C28), "clear");
 }
 
 #[test]
@@ -149,8 +158,9 @@ fn cop1_moves_and_arith_use_fpu_field_layout() {
 
 #[test]
 fn cop2_data_moves() {
-    assert_eq!(mn(0x4808_1000), "qmfc2");
-    assert_eq!(op(0x4808_1000), Operands::Cop2Move { rt: 8, rd: 2 });
+    // qmfc2 $t0, $v2: COP2 fmt=1, rt=8, vfs=2.
+    assert_eq!(mn(0x4828_1000), "qmfc2");
+    assert_eq!(op(0x4828_1000), Operands::Cop2Move { rt: 8, rd: 2 });
 }
 
 #[test]

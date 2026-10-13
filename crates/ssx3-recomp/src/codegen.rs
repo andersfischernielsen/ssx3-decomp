@@ -114,6 +114,10 @@ impl<'a> Emit<'a> {
                 self.line(pc, &format!("c.set_reg({rd}, 0);"));
                 true
             }
+            ("moveq", RdRs { rd, rs }) => {
+                self.line(pc, &format!("c.set_reg({rd}, c.reg({rs}));"));
+                true
+            }
             ("mthi", Rs { rs }) => {
                 self.line(pc, &format!("c.hi = c.reg({rs});"));
                 true
@@ -149,7 +153,7 @@ impl<'a> Emit<'a> {
             }
             ("sync" | "nop" | "ei" | "di" | "cache" | "pref", _) => true,
             // Clearing ops for state we do not model (SA field, FPU registers).
-            ("clear_sa", _) | ("clear_f", _) | ("clear_fcsr", _) => true,
+            ("mtsab", _) | ("mtsah", _) | ("clear_f", _) | ("clear_fcsr", _) => true,
             // COP1 data moves.
             ("mtc1", CopMove { rt, rd, .. }) => {
                 self.line(pc, &format!("c.set_f32({rd}, f32::from_bits(c.reg({rt}) as u32));"));
