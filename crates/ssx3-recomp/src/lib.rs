@@ -12,6 +12,7 @@
 //! files.
 
 pub mod boundaries;
+pub mod codegen;
 pub mod flow;
 pub mod program;
 pub mod r5900;

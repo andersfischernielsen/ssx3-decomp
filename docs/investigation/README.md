@@ -9,6 +9,8 @@ Each file is a topic; keep them factual and dated where it matters.
 | [`disc-and-image.md`](disc-and-image.md) | The ISO, the extracted ELF, the EE memory map |
 | [`function-inventory.md`](function-inventory.md) | The 11,844-function inventory and its TSV format |
 | [`r5900-decoder.md`](r5900-decoder.md) | Decoder coverage and R5900 encoding notes |
+| [`boundaries.md`](boundaries.md) | Authoritative instruction boundaries + recursive descent |
+| [`codegen.md`](codegen.md) | R5900 → Rust generation and the runtime/SDK boundary |
 | [`limitations.md`](limitations.md) | Known gaps in the current approach |
 
 Conventions: addresses are EE virtual addresses in hex; "the image" means

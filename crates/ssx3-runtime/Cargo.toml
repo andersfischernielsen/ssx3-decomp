@@ -1,0 +1,13 @@
+[package]
+name = "ssx3-runtime"
+description = "R5900 execution runtime (CPU state, memory, syscall dispatch) for recompiled SSX 3."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ssx3-core.workspace = true
+
+[[bin]]
+name = "ssx3-run"
+path = "src/bin/ssx3_run.rs"

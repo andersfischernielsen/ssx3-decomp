@@ -11,3 +11,7 @@ ssx3-core.workspace = true
 [[bin]]
 name = "recomp-stats"
 path = "src/bin/recomp_stats.rs"
+
+[[bin]]
+name = "recomp-gen"
+path = "src/bin/recomp_gen.rs"

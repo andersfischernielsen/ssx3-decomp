@@ -34,11 +34,21 @@ The ELF is stripped, but `-ffunction-sections` left mangled C++ names in section
 names (`RCMP5CODEC`, `RCMP7DECODER`, SONY PS2 codec classes, ...). These have not
 been applied to functions yet — a cheap, high-value naming pass.
 
+## Execution and code generation
+
+- **Control flow is scaffolding.** Generated functions use a per-function
+  basic-block dispatch (`match pc`). It is correct but not the target: structured
+  Rust (`loop`/`if`, no labels) must replace it.
+- **FPU not modelled.** COP1 arithmetic/compares lower to no-ops.
+- **`lq`/`sq`** use only the low 64 bits; **HI/LO** is `u64`, not the R5900's
+  128-bit pair, so `madd`/`pmfhl` and friends are approximated.
+- **`clear fsa`/`clear fs`/`clear fcsr`** (Ghidra pseudo-ops) are no-ops.
+- **Indirect `jr`/`jalr`** stop execution rather than resolve a target.
+- **Syscalls** that are not a compile-time constant fall back to a logging stub.
+
 ## Not yet modelled
 
-- R5900 branch-delay-slot semantics, HI/LO, and the register file / ABI (needed
-  before any translated code can run).
-- Syscall dispatch (table exists in `ssx3-core::syscall`; no runtime yet).
-- DMA, timers, INTC, and the GIF/GS packet path (VRAM is only presented, not
-  produced).
+- DMA, timers, INTC, and the GIF/GS packet path (VRAM is presented, not produced).
 - VU0/VU1 microcode (`.vutext` exists; no VU model).
+- The game beyond the entry call graph: only the functions `recomp-gen` has
+  translated can run; everything else stops at `untranslated_call`.

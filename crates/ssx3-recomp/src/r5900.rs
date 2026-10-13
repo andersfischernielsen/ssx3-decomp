@@ -252,6 +252,8 @@ fn decode_regimm(w: u32, rs: u8, rt: u8, imm: u16) -> Instruction {
         0x11 => mk(w, "bgezal", one),
         0x12 => mk(w, "bltzall", one),
         0x13 => mk(w, "bgezall", one),
+        // `clear fsa`: REGIMM cond=25 clears the SA field (Ghidra: `clear sa`).
+        0x19 => mk(w, "clear_sa", Operands::None),
         _ => un(w),
     }
 }
@@ -295,6 +297,14 @@ fn decode_cop1(w: u32, rs: u8, rt: u8, _rd: u8, _funct: u8) -> Instruction {
     let fs = (w >> 11) as u8 & 0x1F;
     let fd = (w >> 6) as u8 & 0x1F;
     let ft = rt & 0x1F;
+    // `clear fs` (Ghidra): fmt=W, ft=0, funct= corres 0 — zeroes an FPU register.
+    if rs == 0x04 && rt == 0 && funct == 0 {
+        return mk(w, "clear_f", Operands::Rd { rd: fs });
+    }
+    // `clear fs_fcr` (Ghidra): fmt=6, fs=31 — clears FCSR.
+    if rs == 0x06 && rt == 0 && fs == 31 {
+        return mk(w, "clear_fcsr", Operands::None);
+    }
     match rs {
         0x00 => mk(w, "mfc1", Operands::CopMove { rt, rd: fs, sel: 0 }),
         0x02 => mk(w, "cfc1", Operands::CopMove { rt, rd: fs, sel: 0 }),

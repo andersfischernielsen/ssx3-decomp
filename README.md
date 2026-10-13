@@ -53,8 +53,9 @@ The ELF is stripped, but because it was built with `-ffunction-sections`, its
 crates/
   ssx3-core/   Machine model: memory map, RAM, syscalls (no dependencies)
   ssx3-gs/     Graphics Synthesizer model + wgpu presenter
-  ssx3-recomp/ R5900 -> Rust recompiler; embedded function inventory
-  ssx3/        The `ssx3` binary
+  ssx3-recomp/ R5900 -> Rust recompiler; decoder, boundaries, code generator
+  ssx3-runtime/ Execution state, native SDK boundary, generated code
+  ssx3/        The `ssx3` binary (wgpu window)
 generated/     Exported inventory (functions.tsv/json) — build input
 generated/ghidra_disasm/  Ghidra disassembly golden corpus
 orig/          Extracted SLUS_207.72 (gitignored)
@@ -90,6 +91,24 @@ cargo run -p ssx3-recomp --bin recomp-stats -- SetGsCrt
 instructions. Across the whole image it decodes **99.74%** of 801,242
 instructions; the rest are preserved as raw words. See
 [`docs/investigation/r5900-decoder.md`](docs/investigation/r5900-decoder.md).
+
+## Recompiler and runtime
+
+This is a **recompiler, not an emulator**: the target is portable Rust the
+compiler could have produced. `ssx3-recomp::codegen` turns a function into a Rust
+function; syscalls are constant-folded into direct calls to the native SDK in
+`ssx3-runtime::sdk`, `jal`s become direct Rust calls, and nothing interprets
+instructions at runtime.
+
+```sh
+cargo run -p ssx3-recomp --bin recomp-gen -- --depth 4 --limit 400  # generate
+cargo run -p ssx3-runtime --bin ssx3-run                            # execute
+```
+
+Generated code lives in `crates/ssx3-runtime/src/generated.rs`. See
+[`docs/investigation/codegen.md`](docs/investigation/codegen.md) for what is
+generated, what is still scaffolding (structured control flow), and the known
+approximations.
 
 ## Investigation notes
 
@@ -133,6 +152,10 @@ then serves a loopback HTTP backend on `127.0.0.1:8080`) and the program open.
 - [x] `wgpu` window presenting GS VRAM
 - [x] Export the function inventory (11,844 functions) from Ghidra
 - [x] R5900 decoder (99.74% of 801,242 instructions), validated against Ghidra
-- [ ] R5900 → Rust recompiler (translate the inventory to Rust functions)
+- [x] Authoritative instruction boundaries + recursive descent
+- [x] Recompiler codegen + native SDK boundary; `entry` and its call graph run
+- [ ] Structured control flow (replace the basic-block dispatch scaffolding)
+- [ ] FPU, full MMI, and 128-bit HI/LO modelling
+- [ ] R5900 → Rust recompiler (translate the full inventory to Rust functions)
 - [ ] EE runtime: DMA, timers, INTC, GS/GIF packet path
 - [ ] GS rasterizer feeding `wgpu`
