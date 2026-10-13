@@ -1,0 +1,15 @@
+# Investigation notes
+
+Findings about decompiling **SSX 3 (USA)** (`SLUS_207.72`) as they are learned.
+Each file is a topic; keep them factual and dated where it matters.
+
+| File | Covers |
+| --- | --- |
+| [`ghidra-mcp.md`](ghidra-mcp.md) | Ghidra + GhidraMCP backend, endpoints, OpenCode wiring |
+| [`disc-and-image.md`](disc-and-image.md) | The ISO, the extracted ELF, the EE memory map |
+| [`function-inventory.md`](function-inventory.md) | The 11,844-function inventory and its TSV format |
+| [`r5900-decoder.md`](r5900-decoder.md) | Decoder coverage and R5900 encoding notes |
+| [`limitations.md`](limitations.md) | Known gaps in the current approach |
+
+Conventions: addresses are EE virtual addresses in hex; "the image" means
+`orig/SLUS_207.72`.

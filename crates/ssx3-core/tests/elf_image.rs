@@ -1,104 +1,86 @@
-//! Validates the machine model against the real `SLUS_207.72` image.
+//! Validates the ELF loader against the real `SLUS_207.72` image.
 //!
 //! The image is extracted from the disc by `tools/extract-from-iso.sh` into
-//! `orig/`. When it is absent (e.g. a fresh clone) the test skips rather than
-//! failing, so it stays useful locally without committing the copyrighted data.
+//! `orig/`. When it is absent (e.g. a fresh clone) each test skips rather than
+//! failing, so the suite stays useful without committing the copyrighted data.
 
-use std::fs;
 use std::path::Path;
 
+use ssx3_core::elf::Elf;
 use ssx3_core::memory_map;
-use ssx3_core::Memory;
 
 const ELF_PATH: &str = "../../orig/SLUS_207.72";
 
-fn rd_u16(b: &[u8], off: usize) -> u16 {
-    u16::from_le_bytes([b[off], b[off + 1]])
-}
-fn rd_u32(b: &[u8], off: usize) -> u32 {
-    u32::from_le_bytes([b[off], b[off + 1], b[off + 2], b[off + 3]])
+fn load() -> Option<Elf> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(ELF_PATH);
+    if !path.exists() {
+        eprintln!("skipping: {} not found (run tools/extract-from-iso.sh)", path.display());
+        return None;
+    }
+    Some(Elf::from_file(&path).expect("SLUS_207.72 should parse"))
 }
 
 #[test]
-fn real_elf_header_matches_known_facts() {
-    let path = Path::new(ENV_DIR).join(ELF_PATH);
-    let Ok(bytes) = fs::read(&path) else {
-        eprintln!("skipping: {} not found (run tools/extract-from-iso.sh)", path.display());
-        return;
-    };
+fn header_matches_known_facts() {
+    let Some(elf) = load() else { return };
+    assert_eq!(elf.entry, memory_map::ENTRY_POINT);
+    assert!(!elf.segments.is_empty());
+    let (lo, hi) = elf.image_range().unwrap();
+    assert!(lo >= memory_map::IMAGE_BASE);
+    // .text itself starts exactly at the image base.
+    assert_eq!(lo, memory_map::IMAGE_BASE);
+    assert!(hi > lo);
+}
 
-    // ELF identification.
-    assert_eq!(&bytes[0..4], b"\x7fELF");
-    assert_eq!(bytes[4], 1, "ELFCLASS32");
-    assert_eq!(bytes[5], 1, "ELFDATA2LSB");
-    assert_eq!(rd_u16(&bytes, 18), 8, "EM_MIPS");
+#[test]
+fn text_segment_covers_the_whole_image() {
+    let Some(elf) = load() else { return };
+    let text = elf
+        .segment_for(memory_map::ENTRY_POINT, 4)
+        .expect("entry must be inside a PT_LOAD segment");
+    assert!(text.flags & 1 != 0, "segment should be executable");
+    assert!(text.filesz as usize >= memory_map::SLUS_207_72[0].len() as usize / 2);
+}
 
-    // The values we recorded from Ghidra.
-    assert_eq!(rd_u32(&bytes, 24), memory_map::ENTRY_POINT);
-    assert!(
-        rd_u32(&bytes, 24) >= memory_map::IMAGE_BASE,
-        "entry inside image"
+#[test]
+fn entry_word_matches_ghidra_bytes() {
+    // Ghidra's disassembly of `entry` reports bytes "280c0070" at 00100008,
+    // i.e. the little-endian word 0x70000c28 (`clear at`, MMI mmiop=0x10 fct=0x28).
+    let Some(elf) = load() else { return };
+    assert_eq!(
+        elf.read(memory_map::ENTRY_POINT, 4).unwrap(),
+        &[0x28, 0x0c, 0x00, 0x70]
+    );
+    assert_eq!(elf.read_u32(memory_map::ENTRY_POINT).unwrap(), 0x7000_0c28);
+}
+
+#[test]
+fn loads_into_memory_and_entry_bytes_round_trip() {
+    let Some(elf) = load() else { return };
+    let mut mem = ssx3_core::Memory::new();
+    elf.load_into(&mut mem);
+    assert_eq!(
+        mem.read_u32(memory_map::ENTRY_POINT),
+        elf.read_u32(memory_map::ENTRY_POINT).unwrap()
     );
 }
 
-/// A tiny ELF32 program-header walker, enough to drop PT_LOAD segments into
-/// [`Memory`]. This is the seed of the loader the runtime will need.
-fn load_pt_load(bytes: &[u8], mem: &mut Memory) -> usize {
-    let phoff = rd_u32(bytes, 28) as usize;
-    let phentsize = rd_u16(bytes, 42) as usize;
-    let phnum = rd_u16(bytes, 44) as usize;
-
-    let mut loaded = 0;
-    for i in 0..phnum {
-        let ph = phoff + i * phentsize;
-        let p_type = rd_u32(bytes, ph);
-        if p_type != 1 {
-            continue; // PT_LOAD
-        }
-        let p_offset = rd_u32(bytes, ph + 4) as usize;
-        let p_vaddr = rd_u32(bytes, ph + 8);
-        let p_filesz = rd_u32(bytes, ph + 16) as usize;
-        mem.load(p_vaddr, &bytes[p_offset..p_offset + p_filesz]);
-        loaded += 1;
-    }
-    loaded
-}
-
 #[test]
-fn real_elf_loads_and_entry_bytes_match() {
-    let path = Path::new(ENV_DIR).join(ELF_PATH);
-    let Ok(bytes) = fs::read(&path) else {
-        eprintln!("skipping: {} not found", path.display());
+fn every_function_address_is_readable() {
+    let Some(elf) = load() else { return };
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../generated/functions.tsv");
+    let Ok(tsv) = std::fs::read_to_string(&path) else {
+        eprintln!("skipping: inventory not found");
         return;
     };
-
-    let mut mem = Memory::new();
-    let n = load_pt_load(&bytes, &mut mem);
-    assert!(n >= 1, "expected at least one PT_LOAD segment");
-
-    // The bytes at the entry address in memory must equal the bytes at the
-    // corresponding file offset. Find the segment covering the entry.
-    let phoff = rd_u32(&bytes, 28) as usize;
-    let phentsize = rd_u16(&bytes, 42) as usize;
-    let phnum = rd_u16(&bytes, 44) as usize;
-    for i in 0..phnum {
-        let ph = phoff + i * phentsize;
-        if rd_u32(&bytes, ph) != 1 {
-            continue;
-        }
-        let p_offset = rd_u32(&bytes, ph + 4) as usize;
-        let p_vaddr = rd_u32(&bytes, ph + 8);
-        let p_filesz = rd_u32(&bytes, ph + 16) as usize;
-        let end = p_vaddr + p_filesz as u32;
-        if (p_vaddr..end).contains(&memory_map::ENTRY_POINT) {
-            let file_off = p_offset + (memory_map::ENTRY_POINT - p_vaddr) as usize;
-            let expect = rd_u32(&bytes, file_off);
-            assert_eq!(mem.read_u32(memory_map::ENTRY_POINT), expect);
-            return;
-        }
+    let mut checked = 0;
+    for line in tsv.lines() {
+        let addr = u32::from_str_radix(line.split_once('\t').unwrap().0, 16).unwrap();
+        assert!(
+            elf.read_u32(addr).is_some(),
+            "function at {addr:08x} is not backed by the loaded image"
+        );
+        checked += 1;
     }
-    panic!("no PT_LOAD segment covers the entry point");
+    assert_eq!(checked, 11_844);
 }
-
-/// `CARGO_MANIFEST_DIR` is `crates/ssx3-core`; tests run from the crate root.
-const ENV_DIR: &str = env!("CARGO_MANIFEST_DIR");

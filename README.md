@@ -56,9 +56,10 @@ crates/
   ssx3-recomp/ R5900 -> Rust recompiler; embedded function inventory
   ssx3/        The `ssx3` binary
 generated/     Exported inventory (functions.tsv/json) — build input
+generated/ghidra_disasm/  Ghidra disassembly golden corpus
 orig/          Extracted SLUS_207.72 (gitignored)
 tools/         Helper scripts
-docs/          Reference notes (e.g. ps2-bible.md)
+docs/          Reference notes (docs/ps2-bible.md, docs/investigation/)
 ```
 
 ## Function inventory
@@ -82,6 +83,19 @@ cargo run -p ssx3-recomp --bin recomp-stats            # summary + named list
 cargo run -p ssx3-recomp --bin recomp-stats -- 0x0012ab34
 cargo run -p ssx3-recomp --bin recomp-stats -- SetGsCrt
 ```
+
+## R5900 decoder
+
+`ssx3-recomp::r5900` decodes the raw `.text` bytes from the ELF into structured
+instructions. Across the whole image it decodes **99.74%** of 801,242
+instructions; the rest are preserved as raw words. See
+[`docs/investigation/r5900-decoder.md`](docs/investigation/r5900-decoder.md).
+
+## Investigation notes
+
+Findings about the decompilation are recorded under
+[`docs/investigation/`](docs/investigation/): the GhidraMCP backend, the disc and
+memory map, the function inventory, the decoder, and known limitations.
 
 
 ## Build and test
@@ -118,6 +132,7 @@ then serves a loopback HTTP backend on `127.0.0.1:8080`) and the program open.
 - [x] Test suite, including validation against the real ELF
 - [x] `wgpu` window presenting GS VRAM
 - [x] Export the function inventory (11,844 functions) from Ghidra
+- [x] R5900 decoder (99.74% of 801,242 instructions), validated against Ghidra
 - [ ] R5900 → Rust recompiler (translate the inventory to Rust functions)
 - [ ] EE runtime: DMA, timers, INTC, GS/GIF packet path
 - [ ] GS rasterizer feeding `wgpu`

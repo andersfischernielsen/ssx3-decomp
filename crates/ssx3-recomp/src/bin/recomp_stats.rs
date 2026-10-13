@@ -1,14 +1,31 @@
-//! Small CLI over the embedded function inventory.
+//! Small CLI over the embedded function inventory and decoder.
 //!
 //! ```text
 //! recomp-stats                 # summary + list of named functions
 //! recomp-stats 0x0012ab34      # look up a function by address
 //! recomp-stats SetGsCrt        # search functions by name
+//! recomp-stats --coverage      # decode the whole image and report coverage
+//! recomp-stats --disasm entry  # disassemble a function
 //! ```
 
+use std::collections::BTreeMap;
+
 use ssx3_recomp::index;
+use ssx3_recomp::program::Program;
 
 fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.first().map(String::as_str) {
+        Some("--coverage") => coverage(args.get(1).map(String::as_str)),
+        Some("--disasm") => {
+            let name = args.get(1).cloned().unwrap_or_else(|| "entry".into());
+            disasm(&name);
+        }
+        _ => summary(&args),
+    }
+}
+
+fn summary(args: &[String]) {
     let idx = index();
     println!("functions : {}", idx.len());
     if let Some((lo, hi)) = idx.address_range() {
@@ -17,7 +34,6 @@ fn main() {
     println!("named     : {}", idx.named_count());
     println!("auto      : {}", idx.len() - idx.named_count());
 
-    let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first() {
         None => {
             println!("\nnamed functions:");
@@ -47,5 +63,61 @@ fn main() {
                 }
             }
         }
+    }
+}
+
+fn open_program(path: Option<&str>) -> Program {
+    let path = path.unwrap_or("orig/SLUS_207.72");
+    Program::open(path).unwrap_or_else(|e| {
+        eprintln!("could not open {path}: {e}");
+        eprintln!("run tools/extract-from-iso.sh first");
+        std::process::exit(1);
+    })
+}
+
+fn coverage(path: Option<&str>) {
+    let program = open_program(path);
+    let mut total = 0usize;
+    let mut known = 0usize;
+    let mut unknown_by_opcode: BTreeMap<u32, usize> = BTreeMap::new();
+
+    for f in program.functions() {
+        for inst in program.decode(f) {
+            total += 1;
+            if inst.is_known() {
+                known += 1;
+            } else {
+                *unknown_by_opcode.entry(inst.word >> 26).or_default() += 1;
+            }
+        }
+    }
+
+    let pct = 100.0 * known as f64 / total as f64;
+    println!("functions decoded : {}", program.functions().len());
+    println!("instructions      : {total}");
+    println!("  decoded         : {known} ({pct:.2}%)");
+    println!("  unrecognised    : {}", total - known);
+    if total > known {
+        println!("\nunrecognised by opcode:");
+        for (op, n) in &unknown_by_opcode {
+            println!("  opcode 0x{op:02x}: {n}");
+        }
+    }
+}
+
+fn disasm(name: &str) {
+    let program = open_program(None);
+    let f = match name.strip_prefix("0x").and_then(|h| u32::from_str_radix(h, 16).ok()) {
+        Some(addr) => index().by_address(addr),
+        None => index().search(name).next(),
+    }
+    .unwrap_or_else(|| {
+        eprintln!("no function matching {name:?}");
+        std::process::exit(1);
+    });
+    println!("{} @ {:08x} ({} bytes)", f.name, f.address, f.len());
+    for (i, inst) in program.decode(f).iter().enumerate() {
+        let addr = f.address + (i as u32) * 4;
+        println!("  {addr:08x}  {:08x}  {inst}", inst.word);
     }
 }

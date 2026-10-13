@@ -10,9 +10,11 @@
 //! This crate intentionally has no dependencies so it can be reused by the
 //! recompiler, the runtime, and tests alike.
 
+pub mod elf;
 pub mod gs;
 pub mod memory;
 pub mod memory_map;
 pub mod syscall;
 
+pub use elf::Elf;
 pub use memory::Memory;

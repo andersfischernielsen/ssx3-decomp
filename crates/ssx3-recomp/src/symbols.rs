@@ -1,15 +1,18 @@
 //! The function inventory of `SLUS_207.72`, exported from Ghidra.
 //!
 //! [`FunctionIndex`] is a sorted, deduplicated table of every function Ghidra
-//! recovered. Addresses are ascending, so lookups are a binary search.
+//! recovered, including its exact extents. Addresses are ascending, so lookups
+//! are a binary search.
 
 use std::sync::LazyLock;
 
-/// A single function as Ghidra names it.
+/// A single function as Ghidra recovered it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Function {
     /// Entry address in the EE address space.
     pub address: u32,
+    /// Exclusive end of the function body (Ghidra's `body_end` + 1).
+    pub end: u32,
     /// Symbol name (`entry`, `FUN_001001c8`, `SetGsCrt`, ...).
     pub name: &'static str,
 }
@@ -21,6 +24,20 @@ const AUTO_PREFIXES: &[&str] = &[
 ];
 
 impl Function {
+    /// Body length in bytes.
+    pub fn len(&self) -> u32 {
+        self.end.saturating_sub(self.address)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// True when `addr` lies within this function body.
+    pub fn contains(&self, addr: u32) -> bool {
+        (self.address..self.end).contains(&addr)
+    }
+
     /// True when the name looks like an auto-generated placeholder rather than
     /// a recovered/human name.
     pub fn is_auto_named(&self) -> bool {
@@ -33,7 +50,7 @@ impl Function {
     }
 }
 
-/// `generated/functions.tsv`: `<hex-address>\t<name>` per line, ascending.
+/// `generated/functions.tsv`: `<hex-address>\t<hex-end>\t<name>` per line.
 static TSV: &str = include_str!("../../../generated/functions.tsv");
 
 static INDEX: LazyLock<FunctionIndex> = LazyLock::new(|| FunctionIndex::parse(TSV));
@@ -49,20 +66,23 @@ pub struct FunctionIndex {
 }
 
 impl FunctionIndex {
-    /// Parse a `<hex>\t<name>` table. Lines must already be address-ascending;
-    /// this does not sort (that would hide export bugs).
+    /// Parse an `<hex-addr>\t<hex-end>\t<name>` table. Lines must already be
+    /// address-ascending; this does not sort (that would hide export bugs).
     pub fn parse(tsv: &'static str) -> Self {
         let mut functions = Vec::new();
         for line in tsv.lines() {
             if line.is_empty() {
                 continue;
             }
-            let (addr, name) = line
-                .split_once('\t')
-                .unwrap_or_else(|| panic!("malformed inventory line: {line:?}"));
-            let address = u32::from_str_radix(addr, 16)
-                .unwrap_or_else(|_| panic!("bad address {addr:?}"));
-            functions.push(Function { address, name });
+            let mut cols = line.split('\t');
+            let (addr, end, name) = match (cols.next(), cols.next(), cols.next()) {
+                (Some(a), Some(e), Some(n)) => (a, e, n),
+                _ => panic!("malformed inventory line: {line:?}"),
+            };
+            let address =
+                u32::from_str_radix(addr, 16).unwrap_or_else(|_| panic!("bad address {addr:?}"));
+            let end = u32::from_str_radix(end, 16).unwrap_or_else(|_| panic!("bad end {end:?}"));
+            functions.push(Function { address, end, name });
         }
         Self { functions }
     }
@@ -88,16 +108,15 @@ impl FunctionIndex {
             .map(|i| &self.functions[i])
     }
 
-    /// The function at or containing `address`, given a parallel list of
-    /// function end addresses is not tracked here — this returns the nearest
-    /// function at or below `address`.
+    /// The function containing `address` (entry inclusive, end exclusive).
     pub fn containing(&self, address: u32) -> Option<&Function> {
         let i = match self.functions.binary_search_by_key(&address, |f| f.address) {
             Ok(i) => i,
             Err(0) => return None,
             Err(i) => i - 1,
         };
-        Some(&self.functions[i])
+        let f = &self.functions[i];
+        f.contains(address).then_some(f)
     }
 
     /// All functions whose name contains `needle` (case-insensitive).
@@ -138,25 +157,32 @@ mod tests {
 
     #[test]
     fn parses_and_looks_up() {
-        let idx = FunctionIndex::parse("00100008\tentry\n001001c8\tFUN_001001c8\n");
+        let idx = FunctionIndex::parse(
+            "00100008\t001001c8\tentry\n001001c8\t001001d0\tFUN_001001c8\n",
+        );
         assert_eq!(idx.len(), 2);
         assert_eq!(idx.by_address(0x0010_0008).unwrap().name, "entry");
-        assert_eq!(idx.by_address(0x0010_01c8).unwrap().name, "FUN_001001c8");
+        assert_eq!(idx.by_address(0x0010_0008).unwrap().end, 0x0010_01c8);
+        assert_eq!(idx.by_address(0x0010_01c8).unwrap().len(), 8);
         assert!(idx.by_address(0x0010_0009).is_none());
         assert!(idx.is_sorted_unique());
     }
 
     #[test]
-    fn containing_finds_nearest_below() {
-        let idx = FunctionIndex::parse("00100008\tentry\n001001c8\tFUN_001001c8\n");
+    fn containing_respects_the_end() {
+        let idx = FunctionIndex::parse(
+            "00100008\t001001c8\tentry\n001001c8\t001001d0\tFUN_001001c8\n",
+        );
         assert_eq!(idx.containing(0x0010_0100).unwrap().name, "entry");
-        assert_eq!(idx.containing(0x0010_01ff).unwrap().name, "FUN_001001c8");
-        assert!(idx.containing(0x0000_0000).is_none());
+        // 0x001001d0 is past the end of FUN_001001c8.
+        assert!(idx.containing(0x0010_01d0).is_none());
     }
 
     #[test]
     fn auto_named_classification() {
-        let idx = FunctionIndex::parse("00100008\tentry\n001001c8\tFUN_001001c8\n");
+        let idx = FunctionIndex::parse(
+            "00100008\t001001c8\tentry\n001001c8\t001001d0\tFUN_001001c8\n",
+        );
         assert!(idx.by_address(0x0010_0008).unwrap().is_named());
         assert!(idx.by_address(0x0010_01c8).unwrap().is_auto_named());
     }
