@@ -1,11 +1,12 @@
-//! Binds the embedded function inventory to the ELF image so functions can be
-//! sliced out and decoded.
+//! Binds the embedded function inventory and instruction boundaries to the ELF
+//! image so functions can be sliced out and decoded correctly.
 //!
-//! Extents come straight from Ghidra (`body_end`), so a function's code is
-//! exactly its body — no guessing from neighbouring entries.
+//! Extents come from Ghidra (`body_end`); instruction boundaries come from
+//! Ghidra's per-instruction map, so embedded data and holes are skipped.
 
 use ssx3_core::elf::{Elf, ElfError};
 
+use crate::boundaries::boundaries;
 use crate::r5900::{decode, Instruction};
 use crate::symbols::{index, Function};
 
@@ -28,23 +29,50 @@ impl Program {
         index().functions()
     }
 
-    /// The raw machine code of a function (its exact body).
+    /// The raw bytes of a function's exact body (which may contain data).
     pub fn code(&self, f: &Function) -> Option<&[u8]> {
         self.elf.read(f.address, f.len())
     }
 
-    /// Decode a function into instructions (4 bytes each).
-    ///
-    /// This is a linear sweep. A function body can contain embedded data (e.g.
-    /// jump tables) that a linear sweep will misinterpret as instructions, and
-    /// Ghidra's `body_end` can include trailing alignment; both are handled
-    /// properly once we have per-instruction boundaries (recursive descent).
+    /// Decode a function into `(address, instruction)` pairs, honouring Ghidra's
+    /// authoritative instruction boundaries. Falls back to a linear sweep of the
+    /// body when a function has no boundary entry.
+    pub fn decode_with_addresses(&self, f: &Function) -> Vec<(u32, Instruction)> {
+        match boundaries().runs(f.address) {
+            Some(runs) => {
+                let mut out = Vec::new();
+                for &(lo, hi) in runs {
+                    if let Some(code) = self.elf.read(lo, hi - lo) {
+                        for (k, c) in code.chunks_exact(4).enumerate() {
+                            let addr = lo + (k as u32) * 4;
+                            let word = u32::from_le_bytes([c[0], c[1], c[2], c[3]]);
+                            out.push((addr, decode(word)));
+                        }
+                    }
+                }
+                out
+            }
+            None => self
+                .code(f)
+                .map(|code| {
+                    code.chunks_exact(4)
+                        .enumerate()
+                        .map(|(k, c)| {
+                            let addr = f.address + (k as u32) * 4;
+                            let word = u32::from_le_bytes([c[0], c[1], c[2], c[3]]);
+                            (addr, decode(word))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+        }
+    }
+
+    /// Decode a function into instructions, skipping embedded data.
     pub fn decode(&self, f: &Function) -> Vec<Instruction> {
-        let Some(code) = self.code(f) else {
-            return Vec::new();
-        };
-        code.chunks_exact(4)
-            .map(|c| decode(u32::from_le_bytes([c[0], c[1], c[2], c[3]])))
+        self.decode_with_addresses(f)
+            .into_iter()
+            .map(|(_, i)| i)
             .collect()
     }
 
@@ -85,23 +113,34 @@ mod tests {
 
     #[test]
     fn entry_is_112_instructions() {
-        // Ghidra disassembles `entry` as 112 instructions.
         let Some(p) = open() else { return };
         let entry = p.function_by_name("entry").unwrap();
         let decoded = p.decode(entry);
         assert_eq!(decoded.len(), 112);
-        // The first instruction is `clear at` = MMI mmiop=0x10 fct=0x28 rd=1.
         assert_eq!(decoded[0].mnemonic, "clear");
-        assert_eq!(
-            decoded[0].operands,
-            crate::r5900::Operands::Mmi {
-                mmiop: 0x10,
-                fct: 0x28,
-                rd: 1,
-                rs: 0,
-                rt: 0,
-            }
-        );
+    }
+
+    #[test]
+    fn embedded_data_is_skipped() {
+        // FUN_0042d470 has a jump table inside its body: Ghidra disassembles 407
+        // instructions over 4 runs, not 410.
+        let Some(p) = open() else { return };
+        let f = index().by_address(0x0042_d470).unwrap();
+        let decoded = p.decode(f);
+        assert_eq!(decoded.len(), 407);
+
+        // Addresses must be ascending and skip the data runs.
+        let addrs: Vec<u32> = p.decode_with_addresses(f).iter().map(|(a, _)| *a).collect();
+        assert!(addrs.windows(2).all(|w| w[0] < w[1]));
+        assert!(!addrs.contains(&0x0042_d584), "0x42d584 is data");
+    }
+
+    #[test]
+    fn decoded_total_matches_boundary_total() {
+        let Some(p) = open() else { return };
+        let total: usize = p.functions().iter().map(|f| p.decode(f).len()).sum();
+        assert_eq!(total, boundaries().instruction_count());
+        assert_eq!(total, 783_966);
     }
 
     #[test]

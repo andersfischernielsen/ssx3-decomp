@@ -11,8 +11,11 @@
 //! embedded at compile time, so the inventory is available without any runtime
 //! files.
 
+pub mod boundaries;
+pub mod flow;
 pub mod program;
 pub mod r5900;
 pub mod symbols;
 
+pub use boundaries::boundaries;
 pub use symbols::{index, Function, FunctionIndex};

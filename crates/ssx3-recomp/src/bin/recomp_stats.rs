@@ -10,6 +10,8 @@
 
 use std::collections::BTreeMap;
 
+use ssx3_recomp::boundaries::boundaries;
+use ssx3_recomp::flow;
 use ssx3_recomp::index;
 use ssx3_recomp::program::Program;
 
@@ -17,6 +19,7 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("--coverage") => coverage(args.get(1).map(String::as_str)),
+        Some("--flow") => flow_check(args.get(1).map(String::as_str)),
         Some("--disasm") => {
             let name = args.get(1).cloned().unwrap_or_else(|| "entry".into());
             disasm(&name);
@@ -103,6 +106,47 @@ fn coverage(path: Option<&str>) {
             println!("  opcode 0x{op:02x}: {n}");
         }
     }
+}
+
+fn flow_check(path: Option<&str>) {
+    use std::collections::BTreeSet;
+
+    let program = open_program(path);
+    let b = boundaries();
+
+    let mut exact = 0usize;
+    let mut matched = 0usize;
+    let mut extra = 0usize;
+    let mut missing = 0usize;
+    let mut total = 0usize;
+
+    for f in program.functions() {
+        let Some(runs) = b.runs(f.address) else { continue };
+        total += 1;
+        let max = (f.len() as usize / 4) + 64;
+        let d = flow::disassemble(&program.elf, f.address, max);
+
+        // Only compare within the function's body: recursive descent legitimately
+        // spills into neighbours via fall-through.
+        let ours: BTreeSet<u32> = d
+            .instructions
+            .range(f.address..f.end)
+            .map(|(a, _)| *a)
+            .collect();
+        let gh: BTreeSet<u32> = runs.iter().flat_map(|&(lo, hi)| (lo..hi).step_by(4)).collect();
+
+        matched += ours.intersection(&gh).count();
+        extra += ours.difference(&gh).count();
+        missing += gh.difference(&ours).count();
+        if ours == gh {
+            exact += 1;
+        }
+    }
+
+    let pct = 100.0 * exact as f64 / total.max(1) as f64;
+    println!("functions checked : {total}");
+    println!("exact match       : {exact} ({pct:.2}%)");
+    println!("instructions      : matched {matched}, extra {extra}, missing {missing}");
 }
 
 fn disasm(name: &str) {
