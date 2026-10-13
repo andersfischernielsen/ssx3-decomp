@@ -14,11 +14,11 @@ Status legend: ✅ done · 🟡 in progress · ⬜ not started
 | Recursive-descent cross-check | ✅ | 70.8% exact vs Ghidra |
 | ELF loader | ✅ | `ssx3-core::elf` |
 | Codegen + native SDK boundary | 🟡 | syscalls/direct calls done; **control flow is scaffolding** |
-| Structured control flow | 🟡 | see [`structured-control-flow.md`](structured-control-flow.md) |
+| Structured control flow | 🟡 | 73% of functions structured; rest fall back |
 | FPU (COP1) | 🟡 | arithmetic/compares/moves done; `cvt`, accumulator forms approximate |
-| MMI / COP2 breadth | ⬜ | most MMI ops unnamed/unsupported |
+| MMI / COP2 breadth | 🟡 | tables complete in the decoder; codegen lowering mostly pending |
 | Register promotion (SSA) | ⬜ | registers → typed locals |
-| Scale codegen to all functions | ⬜ | see [`scale-out.md`](scale-out.md) |
+| Scale codegen to all functions | ✅ | `recomp-all` emits all 11,844 (128 MB, 51 shards) |
 | GS/GIF → wgpu | ⬜ | VRAM is presented, nothing writes it |
 | VU0/VU1 | ⬜ | `.vutext` exists; no VU model |
 | DMA, timers, INTC | ⬜ | game spins waiting on these |

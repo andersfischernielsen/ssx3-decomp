@@ -91,6 +91,8 @@ struct Emit<'a> {
     v1: Option<u64>,
     /// True when emitting the basic-block dispatcher (which uses a `pc` variable).
     dispatcher: bool,
+    /// Prefix for direct calls into other functions (e.g. `crate::code::`).
+    call_prefix: &'a str,
 }
 
 impl<'a> Emit<'a> {
@@ -455,7 +457,8 @@ impl<'a> Emit<'a> {
                 let t = jump_target(pc, target);
                 self.line(pc, &format!("c.set_reg(31, {fall:#010x});"));
                 if self.translated.contains(&t) {
-                    self.line(pc, &format!("{}(c);", fn_name(t)));
+                    let pfx = self.call_prefix;
+                    self.line(pc, &format!("{pfx}{}(c);", fn_name(t)));
                     self.line(pc, &format!("pc = {fall:#010x};"));
                 } else {
                     self.line(pc, &format!("c.untranslated_call({pc:#010x}, {t:#010x}); return;"));
@@ -499,6 +502,7 @@ fn structured_emit(
     f: &Function,
     decoded: &[(u32, Instruction)],
     translated: &BTreeSet<u32>,
+    call_prefix: &str,
 ) -> Option<String> {
     let dbg = std::env::var("SSX3_DEBUG_STRUCT").is_ok();
     let fail = |why: &str| {
@@ -524,6 +528,7 @@ fn structured_emit(
             indent: 1,
             v1: Option::None,
             dispatcher: false,
+            call_prefix,
         },
         blocks: &blocks,
         decoded,
@@ -965,7 +970,8 @@ impl<'a> Struct<'a> {
                     let fall = pc.wrapping_add(8);
                     self.e.line(pc, &format!("c.set_reg(31, {fall:#010x});"));
                     if self.e.translated.contains(&target) {
-                        self.e.line(pc, &format!("{}(c);", fn_name(target)));
+                        let pfx = self.e.call_prefix;
+                        self.e.line(pc, &format!("{pfx}{}(c);", fn_name(target)));
                         self.e.line(pc, "if c.trap.is_some() { return; }");
                     } else {
                         self.e.line(pc, &format!("c.untranslated_call({pc:#010x}, {target:#010x}); return;"));
@@ -983,7 +989,8 @@ impl<'a> Struct<'a> {
                         _ => return Err(()),
                     };
                     if self.e.translated.contains(&target) {
-                        self.e.line(pc, &format!("{}(c);", fn_name(target)));
+                        let pfx = self.e.call_prefix;
+                        self.e.line(pc, &format!("{pfx}{}(c);", fn_name(target)));
                     } else {
                         self.e.line(pc, &format!("c.untranslated_call({pc:#010x}, {target:#010x});"));
                     }
@@ -1072,21 +1079,38 @@ impl<'a> Struct<'a> {
 /// Structured control flow is attempted first; when it cannot be recovered the
 /// function falls back to a per-function basic-block dispatch (scaffolding).
 pub fn emit_function(program: &Program, f: &Function, translated: &BTreeSet<u32>) -> String {
+    emit_function_with(program, f, translated, "")
+}
+
+/// Like [`emit_function`], but direct calls are prefixed with `call_prefix`
+/// (used when generated functions are sharded across modules).
+pub fn emit_function_with(
+    program: &Program,
+    f: &Function,
+    translated: &BTreeSet<u32>,
+    call_prefix: &str,
+) -> String {
     let decoded = program.decode_with_addresses(f);
-    if let Some(src) = structured_emit(f, &decoded, translated) {
+    if let Some(src) = structured_emit(f, &decoded, translated, call_prefix) {
         return src;
     }
-    emit_dispatcher(f, &decoded, translated)
+    emit_dispatcher(f, &decoded, translated, call_prefix)
 }
 
 /// Fallback: a per-function basic-block dispatcher over the function's own CFG.
-fn emit_dispatcher(f: &Function, decoded: &[(u32, Instruction)], translated: &BTreeSet<u32>) -> String {
+fn emit_dispatcher(
+    f: &Function,
+    decoded: &[(u32, Instruction)],
+    translated: &BTreeSet<u32>,
+    call_prefix: &str,
+) -> String {
     let mut e = Emit {
         out: String::new(),
         translated,
         indent: 3,
         v1: Option::None,
         dispatcher: true,
+        call_prefix,
     };
 
     let name = fn_name(f.address);

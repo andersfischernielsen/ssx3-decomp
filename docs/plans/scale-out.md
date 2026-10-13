@@ -33,6 +33,28 @@ will not comfortably compile that as one crate.
   reachable-set test passes.
 - The unsupported-lowering list is a tracked TODO with counts.
 
+## Status
+
+`recomp-all` emits the whole inventory into `generated/code/` (sharded by 64 KiB,
+`pub use`-re-exported in `mod.rs`, with a manifest). Latest run:
+
+| | |
+| --- | --- |
+| shards | 51 |
+| functions | 11,844 |
+| instructions | 783,966 |
+| structured | 8,737 (73%) |
+| unsupported lowering | 86,550 |
+| Rust | 128 MB |
+
+The output is gitignored (reproduce with `cargo run -p ssx3-recomp --bin
+recomp-all`) because it is far too large to compile as one crate and is fully
+derived from `generated/*.tsv` + the ELF.
+
+**Next:** drive down the 86,550 unsupported instructions (MMI vector ops, VU0
+macro ops), then compile a sampled shard to keep the pipeline honest.
+
+
 ## Risks
 
 - Compile time/size. Mitigate with sharding, `opt-level=0` for generated code,

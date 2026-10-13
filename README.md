@@ -110,6 +110,13 @@ Generated code lives in `crates/ssx3-runtime/src/generated.rs`. See
 generated, what is still scaffolding (structured control flow), and the known
 approximations.
 
+To translate the **whole inventory** (all 11,844 functions) into sharded Rust
+modules (not compiled by default):
+
+```sh
+cargo run -p ssx3-recomp --bin recomp-all          # -> generated/code/
+```
+
 ## Investigation notes
 
 Findings about the decompilation are recorded under

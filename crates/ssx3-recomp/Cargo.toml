@@ -15,3 +15,7 @@ path = "src/bin/recomp_stats.rs"
 [[bin]]
 name = "recomp-gen"
 path = "src/bin/recomp_gen.rs"
+
+[[bin]]
+name = "recomp-all"
+path = "src/bin/recomp_all.rs"
