@@ -11,6 +11,7 @@ Each file is a topic; keep them factual and dated where it matters.
 | [`r5900-decoder.md`](r5900-decoder.md) | Decoder coverage and R5900 encoding notes |
 | [`boundaries.md`](boundaries.md) | Authoritative instruction boundaries + recursive descent |
 | [`codegen.md`](codegen.md) | R5900 → Rust generation and the runtime/SDK boundary |
+| [`playability.md`](playability.md) | Distance to playable: subsystem status and calibration |
 | [`limitations.md`](limitations.md) | Known gaps in the current approach |
 
 Conventions: addresses are EE virtual addresses in hex; "the image" means

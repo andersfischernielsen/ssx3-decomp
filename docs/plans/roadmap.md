@@ -3,6 +3,9 @@
 Goal: decompile the whole of `SLUS_207.72` (11,844 functions, 783,966
 instructions) to portable Rust, plus the runtime subsystems the game needs.
 
+> For the honest distance from here to *playable*, see
+> [`../investigation/playability.md`](../investigation/playability.md).
+
 Status legend: ✅ done · 🟡 in progress · ⬜ not started
 
 | Phase | Status | Notes |
