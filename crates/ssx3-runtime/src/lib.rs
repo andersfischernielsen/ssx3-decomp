@@ -178,6 +178,12 @@ impl Cpu {
         self.fpr[(n & 31) as usize]
     }
 
+    /// Write raw 64-bit contents of FPU register `n` (used for integer results
+    /// of `cvt.*` and for `lwc1`/`swc1`).
+    pub fn set_fpr_bits(&mut self, n: u8, bits: u64) {
+        self.fpr[(n & 31) as usize] = bits;
+    }
+
     /// Read FPU register `n` as a single.
     pub fn f32(&self, n: u8) -> f32 {
         f32::from_bits(self.fpr[(n & 31) as usize] as u32)

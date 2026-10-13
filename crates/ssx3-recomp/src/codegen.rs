@@ -329,6 +329,52 @@ impl<'a> Emit<'a> {
                 true
             }
 
+            // Unaligned word/doubleword loads and stores (approximated as
+            // aligned accesses on a byte-addressed memory model).
+            ("lwl" | "lwr", Mem { rt, rs, offset }) => {
+                self.line(pc, &format!("let a_{pc:08x} = (c.reg({rs}) as i64).wrapping_add({offset}i64) as u32;"));
+                self.line(pc, &format!("let {t} = c.load_i32(a_{pc:08x}); c.set_reg({rt}, {t});"));
+                true
+            }
+            ("swl" | "swr", Mem { rt, rs, offset }) => {
+                self.line(pc, &format!("let a_{pc:08x} = (c.reg({rs}) as i64).wrapping_add({offset}i64) as u32;"));
+                self.line(pc, &format!("let {t} = c.reg({rt}); c.store_u32(a_{pc:08x}, {t});"));
+                true
+            }
+            ("ldl" | "ldr", Mem { rt, rs, offset }) => {
+                self.line(pc, &format!("let a_{pc:08x} = (c.reg({rs}) as i64).wrapping_add({offset}i64) as u32;"));
+                self.line(pc, &format!("let {t} = c.load_u64(a_{pc:08x}); c.set_reg({rt}, {t});"));
+                true
+            }
+            ("sdl" | "sdr", Mem { rt, rs, offset }) => {
+                self.line(pc, &format!("let a_{pc:08x} = (c.reg({rs}) as i64).wrapping_add({offset}i64) as u32;"));
+                self.line(pc, &format!("let {t} = c.reg({rt}); c.store_u64(a_{pc:08x}, {t});"));
+                true
+            }
+            // FPU loads/stores.
+            ("lwc1", Mem { rt, rs, offset }) => {
+                self.line(pc, &format!("let a_{pc:08x} = (c.reg({rs}) as i64).wrapping_add({offset}i64) as u32;"));
+                self.line(pc, &format!("let {t} = c.load_u32(a_{pc:08x}); c.set_fpr_bits({rt}, {t});"));
+                true
+            }
+            ("swc1", Mem { rt, rs, offset }) => {
+                self.line(pc, &format!("let a_{pc:08x} = (c.reg({rs}) as i64).wrapping_add({offset}i64) as u32;"));
+                self.line(pc, &format!("let {t} = c.fpr_bits({rt}); c.store_u32(a_{pc:08x}, {t});"));
+                true
+            }
+            ("ldc1", Mem { rt, rs, offset }) => {
+                self.line(pc, &format!("let a_{pc:08x} = (c.reg({rs}) as i64).wrapping_add({offset}i64) as u32;"));
+                self.line(pc, &format!("let {t} = c.load_u64(a_{pc:08x}); c.set_fpr_bits({rt}, {t});"));
+                true
+            }
+            ("sdc1", Mem { rt, rs, offset }) => {
+                self.line(pc, &format!("let a_{pc:08x} = (c.reg({rs}) as i64).wrapping_add({offset}i64) as u32;"));
+                self.line(pc, &format!("let {t} = c.fpr_bits({rt}); c.store_u64(a_{pc:08x}, {t});"));
+                true
+            }
+            // `break` is a trap; games use it for asserts. Treat as a no-op.
+            ("break", _) => true,
+
             ("syscall", _) => false, // handled in emit_function (needs the v1 constant)
             _ => false,
         }
@@ -348,6 +394,16 @@ impl<'a> Emit<'a> {
         let read = if double { "c.f64" } else { "c.f32" };
         let setf = if double { "set_f64" } else { "set_f32" };
 
+        // `cvt.w` (to word): the result is a 32-bit integer in the FPU register,
+        // not a float, so store the raw bits.
+        if base == "cvt.w" {
+            if let Operands::Cop1Arith { fd, fs, .. } = inst.operands {
+                self.line(pc, &format!("let x = {read}({fs}) as i32 as u32;"));
+                self.line(pc, &format!("c.set_fpr_bits({fd}, x as u64);"));
+                return true;
+            }
+        }
+
         match inst.operands {
             Cop1Arith { fd, fs, ft } => {
                 // NOTE: adda/suba/mula/diva are approximated as their non-accumulating
@@ -362,8 +418,7 @@ impl<'a> Emit<'a> {
                     "mov" => "a",
                     "sqrt" => "a.sqrt()",
                     _ => return false,
-                };
-                self.line(pc, &format!("let a = {read}({fs}); let b = {read}({ft});"));
+                };                self.line(pc, &format!("let a = {read}({fs}); let b = {read}({ft});"));
                 self.line(pc, &format!("c.{setf}({fd}, {expr});"));
                 true
             }
@@ -483,6 +538,25 @@ impl<'a> Emit<'a> {
             }
         }
     }
+}
+
+static EMPTY_SET: BTreeSet<u32> = BTreeSet::new();
+
+/// Whether [`crate::codegen`] can lower this instruction (used for coverage
+/// reporting). Control transfers and syscalls always lower.
+pub fn can_lower(inst: &Instruction) -> bool {
+    if inst.mnemonic == "syscall" || is_control(inst.mnemonic) {
+        return true;
+    }
+    let mut e = Emit {
+        out: String::new(),
+        translated: &EMPTY_SET,
+        indent: 0,
+        v1: Option::None,
+        dispatcher: false,
+        call_prefix: "",
+    };
+    e.lower(0, inst)
 }
 
 fn branch_target(pc: u32, offset: i16) -> u32 {    pc.wrapping_add(4)

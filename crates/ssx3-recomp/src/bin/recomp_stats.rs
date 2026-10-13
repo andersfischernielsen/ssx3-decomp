@@ -11,6 +11,7 @@
 use std::collections::BTreeMap;
 
 use ssx3_recomp::boundaries::boundaries;
+use ssx3_recomp::codegen;
 use ssx3_recomp::flow;
 use ssx3_recomp::index;
 use ssx3_recomp::program::Program;
@@ -20,6 +21,7 @@ fn main() {
     match args.first().map(String::as_str) {
         Some("--coverage") => coverage(args.get(1).map(String::as_str)),
         Some("--flow") => flow_check(args.get(1).map(String::as_str)),
+        Some("--todo") => todo_report(),
         Some("--disasm") => {
             let name = args.get(1).cloned().unwrap_or_else(|| "entry".into());
             disasm(&name);
@@ -105,6 +107,31 @@ fn coverage(path: Option<&str>) {
         for (op, n) in &unknown_by_opcode {
             println!("  opcode 0x{op:02x}: {n}");
         }
+    }
+}
+
+fn todo_report() {
+    use std::collections::BTreeMap;
+    let program = open_program(None);
+    let mut counts: BTreeMap<&'static str, usize> = BTreeMap::new();
+    let mut total = 0usize;
+    let mut unsupported = 0usize;
+    for f in program.functions() {
+        for inst in program.decode(f) {
+            total += 1;
+            if !codegen::can_lower(&inst) {
+                unsupported += 1;
+                *counts.entry(inst.mnemonic).or_default() += 1;
+            }
+        }
+    }
+    println!("instructions      : {total}");
+    println!("unsupported       : {unsupported}");
+    let mut v: Vec<_> = counts.into_iter().collect();
+    v.sort_by(|a, b| b.1.cmp(&a.1));
+    println!("\ntop unsupported mnemonics:");
+    for (m, c) in v.iter().take(40) {
+        println!("  {m:<16} {c}");
     }
 }
 
