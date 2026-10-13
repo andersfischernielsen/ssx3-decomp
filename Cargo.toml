@@ -5,6 +5,7 @@ members = [
     "crates/ssx3-gs",
     "crates/ssx3-recomp",
     "crates/ssx3-runtime",
+    "crates/ssx3-ps2",
     "crates/ssx3",
 ]
 

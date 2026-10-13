@@ -1,0 +1,8 @@
+[package]
+name = "ssx3-ps2"
+description = "PlayStation 2 machine model for running SSX 3: EE core, kernel HLE, DMAC, VIF/VU, GS, SIF/IOP HLE."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
