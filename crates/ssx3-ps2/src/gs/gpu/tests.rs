@@ -119,6 +119,7 @@ fn textured_copy_and_clut_match() {
 #[test]
 fn readback_after_gpu_drawing() {
     let Some((mut cpu, mut gpu)) = pair(3) else { return };
+    gpu.set_latent_readback(false);
     both(&mut cpu, &mut gpu, |gs| {
         frame(gs);
         gs.write_reg(0x00, 6);

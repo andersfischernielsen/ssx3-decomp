@@ -310,6 +310,15 @@ impl Gs {
         }
     }
 
+    /// GPU backend: whether local->host transfers of GPU-drawn data may be
+    /// served from the previous frame's copy instead of waiting for the GPU
+    /// (default on; `SSX3_GS_SYNC_READBACK=1` turns it off).
+    pub fn set_latent_readback(&mut self, on: bool) {
+        if let Some(g) = self.gpu.as_mut() {
+            g.latent_readback = on;
+        }
+    }
+
     /// GPU backend: wait until everything submitted has been drawn.
     pub fn gpu_wait_idle(&mut self) {
         if let Some(g) = self.gpu.as_mut() {

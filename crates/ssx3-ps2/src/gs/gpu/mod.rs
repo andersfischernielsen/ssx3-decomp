@@ -304,6 +304,8 @@ pub(crate) struct GpuGs {
     prof: Option<Prof>,
     /// Latent readbacks (see `latent_read`).
     latent: Latent,
+    /// Serve local->host transfers with `latent_read` (`SSX3_GS_SYNC_READBACK=1` turns it off).
+    pub(crate) latent_readback: bool,
     /// Per raster pass of the submission: primitives, tiles, entries.
     prof_info: Vec<(u32, u32, u32)>,
 }
@@ -552,6 +554,7 @@ impl GpuGs {
             touched: Vec::new(),
             stats: GpuStats::default(),
             prof_info: Vec::new(),
+            latent_readback: std::env::var_os("SSX3_GS_SYNC_READBACK").is_none(),
             latent: Latent {
                 buf: mk("gs-latent", VRAM_BYTES, U::MAP_READ | U::COPY_DST),
                 ready: Arc::new(std::sync::atomic::AtomicBool::new(false)),

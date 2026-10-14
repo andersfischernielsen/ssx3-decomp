@@ -213,8 +213,7 @@ impl Gs {
     /// GPU backend: serve a local->host transfer of GPU-drawn data from the
     /// previous frame (`GpuGs::latent_read`). False when it must be exact.
     fn latent_host_read(&mut self, surf: &Surface, x: u32, y: u32, w: u32, h: u32) -> bool {
-        static SYNC: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        if self.gpu.is_none() || *SYNC.get_or_init(|| std::env::var_os("SSX3_GS_SYNC_READBACK").is_some()) {
+        if !self.gpu.as_ref().is_some_and(|g| g.latent_readback) {
             return false;
         }
         if w == 0 || h == 0 {
