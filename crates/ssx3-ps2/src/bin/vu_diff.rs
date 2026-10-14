@@ -332,6 +332,67 @@ fn main() {
     }
     let recs = load(&args[2]).expect("capture");
     match cmd {
+        "kickhaz" => {
+            // XGKICK hazard scan: on hardware (and PCSX2) the GIF reads the
+            // packet while the program keeps running; we snapshot it at the
+            // XGKICK. Report kicked qwords the same program rewrites later,
+            // with the pair distance from the kick.
+            use ssx3_ps2::vu::decode::{decode_lower, Lower};
+            let mut hits = 0;
+            for (i, r) in recs.iter().enumerate() {
+                let mut vu = r.setup();
+                vu.budget = 4_000_000;
+                // (pair index of kick, qword range) and the data at kick time.
+                let mut kicks: Vec<(u64, u32, u32, Vec<u8>)> = Vec::new();
+                let mut first_write: Vec<Option<u64>> = Vec::new();
+                let mut n = 0u64;
+                let mut prev = vu.data.clone();
+                let mask = vu.code.len() as u32 - 1;
+                let nq = (vu.data.len() / 16) as u32;
+                reference::run_traced(&mut vu, r.pc, &mut |_| {}, &mut |v: &Vu, pc| {
+                    n += 1;
+                    // Writes since the previous pair into kicked ranges.
+                    if v.data != prev {
+                        for (k, (_, a, len, _)) in kicks.iter().enumerate() {
+                            if first_write[k].is_some() {
+                                continue;
+                            }
+                            for q in 0..*len {
+                                let o = (((a + q) % nq) * 16) as usize;
+                                if v.data[o..o + 16] != prev[o..o + 16] {
+                                    first_write[k] = Some(n);
+                                    break;
+                                }
+                            }
+                        }
+                        prev.copy_from_slice(&v.data);
+                    }
+                    let pc = pc & mask;
+                    let w = |o: u32| u32::from_le_bytes(v.code[o as usize..o as usize + 4].try_into().unwrap());
+                    let (lo, hi) = (w(pc), w(pc + 4));
+                    if hi & 0x8000_0000 == 0 {
+                        if let Lower::Xgkick { is } = decode_lower(lo) {
+                            let a = v.vi[is as usize & 15] as u32 % nq;
+                            let len = v.gif_packet(a).len() as u32;
+                            kicks.push((n, a, len, Vec::new()));
+                            first_write.push(None);
+                        }
+                    }
+                });
+                for (k, (kn, a, len, _)) in kicks.iter().enumerate() {
+                    if let Some(wn) = first_write[k] {
+                        hits += 1;
+                        println!(
+                            "#{i} {:016x} pc {:#06x}: kick at pair {kn} of qw {a:#x}+{len} rewritten {} pairs later",
+                            r.hash,
+                            r.pc,
+                            wn - kn
+                        );
+                    }
+                }
+            }
+            println!("{hits} kicked packets rewritten later in the same program");
+        }
         "cover" => {
             // Executed pairs per program over all records (reference tracer).
             let mut hit: BTreeMap<u64, std::collections::BTreeSet<u32>> = BTreeMap::new();
