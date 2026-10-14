@@ -145,7 +145,13 @@ impl Hw {
             sif_msflg: 0,
             sif_smflg: 0,
             sif_ctrl: 0,
-            gs: Gs::new(),
+            gs: {
+                // Batches may span GIF transfers; `run_frame` syncs before
+                // the host looks at VRAM.
+                let mut gs = Gs::new();
+                gs.set_deferred(true);
+                gs
+            },
             vif0: Vif::new(0),
             vif1: Vif::new(1),
             vu0: Vu::new(0),

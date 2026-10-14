@@ -37,7 +37,23 @@ fn main() {
             Some((p.first()?.parse().ok()?, u16::from_str_radix(p.get(1)?, 16).ok()?, p.get(2).and_then(|s| s.parse().ok()).unwrap_or(6)))
         })
         .collect();
+    // GS trace capture: SSX3_GS_CAPTURE="2380:4:/path/a.gstrace,4050:4:/path/b.gstrace"
+    // records frames 2380..2383 (and 4050..4053) for offline replay with
+    // `gs_replay`.
+    let captures: Vec<(u64, u64, String)> = std::env::var("SSX3_GS_CAPTURE")
+        .unwrap_or_default()
+        .split(',')
+        .filter_map(|e| {
+            let mut p = e.splitn(3, ':');
+            Some((p.next()?.parse().ok()?, p.next()?.parse().ok()?, p.next()?.to_string()))
+        })
+        .collect();
     for f in 1..=frames {
+        for (start, _, _) in &captures {
+            if f == *start {
+                c.bus.hw.gs.start_capture();
+            }
+        }
         let mut held = 0u16;
         for (at, bits, len) in &script {
             if f >= *at && f < at + len {
@@ -46,6 +62,15 @@ fn main() {
         }
         c.sif.pad_buttons[0] = held;
         let alive = ssx3_ps2::machine::run_frame(&mut c);
+        for (start, n, path) in &captures {
+            if f + 1 == start + n || (!alive && f >= *start && f < start + n) {
+                let trace = c.bus.hw.gs.finish_capture();
+                match std::fs::write(path, &trace) {
+                    Ok(()) => eprintln!("gs capture: frames {start}..{f} -> {path} ({} bytes)", trace.len()),
+                    Err(e) => eprintln!("gs capture: {path}: {e}"),
+                }
+            }
+        }
         if f % 60 == 0 || !alive {
             eprintln!("[{:6.1}s] {}", t0.elapsed().as_secs_f64(), game::status(&c));
         }

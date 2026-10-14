@@ -5,6 +5,9 @@ contract in `gs/mod.rs`: `new`, `write_priv`/`read_priv`, `gif_write`, `write_re
 `irq_pending`, `vblank`, `display`, `read_local`, and the public `vram: Vec<u32>`.
 Additions: `gif_path_busy`, `local_pending`, `raise_event`, `prims_drawn`, the
 `CSR_*` constants, and `gs::swizzle` (formats, `Surface`, `read_pixel`/`write_pixel`).
+Also added: `sync`, `set_deferred`, `vram_written`, `batch_stats`, and trace
+capture (`start_capture`/`finish_capture`, `gs::capture`). See
+`gs-performance.md`.
 
 The swizzle tables and several behaviours are ported from
 [ps2-web-recomp](https://github.com/snuri00/ps2-web-recomp) (MIT;
@@ -18,9 +21,15 @@ The swizzle tables and several behaviours are ported from
 | `swizzle.rs` | PSM constants, page/block/column tables, `Surface` addressing, pixel read/write |
 | `gif.rs` | GIFtag state machine per path (PACKED / REGLIST / IMAGE), PACKED register decoding |
 | `transfer.rs` | Host→local (IMAGE/HWREG), local→host (queued qwords), local→local |
-| `raster.rs` | Per-draw setup (`Draw`), primitives, texturing, the per-pixel pipeline |
+| `raster.rs` | Per-draw setup (`Draw`), primitive setup (`Prim`), texturing, the per-pixel pipeline, specialized span loops |
+| `batch.rs` | Primitive batching, dependency tracking, multithreaded and background drawing |
+| `pool.rs` | Worker pool (`std::thread`) |
+| `region.rs` | VRAM block sets used for dependency tracking |
+| `texcache.rs` | Cache of decoded (RGBA8) textures, invalidated by page write generations |
+| `capture.rs` | GS trace capture/replay (the `gs_replay` binary) |
+| `ref_raster.rs`, `diff_tests.rs` | Test-only: the original rasterizer and a differential test against it |
 | `display.rs` | PCRTC: PMODE/DISPFB/DISPLAY/SMODE2 → RGBA8 |
-| `tests.rs` | 28 unit tests, plus an ignored perf test |
+| `tests.rs` | Unit tests, plus an ignored perf test |
 
 ## VRAM and formats
 
@@ -148,10 +157,11 @@ When the frame is read as a blend destination:
 - CT24 reads with alpha 0x80.
 - CT16 alpha is 0x80 when bit 15 is set, otherwise 0.
 
-Performance: a release build does about 30 Mpix/s for textured, Gouraud,
-Z-tested, alpha-blended full-screen strips on one core, with no allocation per
-pixel. Run `cargo test -p ssx3-ps2 --release -- --ignored perf --nocapture` to
-measure it.
+Performance: primitives are batched and drawn by several threads, with exactly
+the serial per-pixel order (see `gs-performance.md`). Heavy in-game frames went
+from 250–530 ms to 35–42 ms on an M1. Two tools measure it:
+- `gs_replay`, which replays captured traces.
+- The ignored perf test: `cargo test -p ssx3-ps2 --release -- --ignored perf --nocapture`.
 
 ## Display
 

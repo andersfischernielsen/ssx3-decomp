@@ -225,6 +225,8 @@ pub fn set_gs_crt(c: &mut Cpu, interlace: u32, mode: u32, ffmd: u32) {
 pub fn run_frame(c: &mut Cpu) -> bool {
     c.sched.frame_ready = false;
     trampoline(c, None);
+    // Finish background rasterization so `vram` / `display()` are current.
+    c.bus.hw.gs.sync();
     c.kernel.halted.is_none()
 }
 

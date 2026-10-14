@@ -1,5 +1,7 @@
 //! Host<->local and local->local transfers (BITBLTBUF/TRXPOS/TRXREG/TRXDIR).
 
+use super::raster::{Mem, Pages, SurfRow};
+use super::region::Region;
 use super::swizzle::{bits_per_pixel, Surface};
 use super::Gs;
 use crate::Qword;
@@ -52,8 +54,13 @@ impl Gs {
     }
 
     pub(super) fn start_transfer(&mut self) {
+        self.end_upload();
         self.xfer = Xfer::default();
+        self.xfer_region = None;
         let p = self.xfer_params();
+        if self.regs.trxdir & 3 != 0 {
+            self.flush_wait();
+        }
         match self.regs.trxdir & 3 {
             0 => self.xfer.active = p.rrw != 0 && p.rrh != 0,
             1 => self.local_to_host(&p),
@@ -69,22 +76,43 @@ impl Gs {
         }
         let p = self.xfer_params();
         let surf = Surface::new(p.dpsm, p.dbp, p.dbw);
+        let first = self.xfer_region.is_none();
+        let r = self.xfer_region.take().unwrap_or_else(|| {
+            let mut r = Region::default();
+            if p.dsax + p.rrw > 2048 || p.dsay + p.rrh > 2048 {
+                r.add_pages(&Pages::ALL);
+            } else {
+                r.add_rect(&surf, p.dsax, p.dsay, p.dsax + p.rrw - 1, p.dsay + p.rrh - 1);
+            }
+            Box::new(r)
+        });
+        // Queued primitives must not see (or be overwritten by) this data.
+        self.before_vram_write(&r);
+        if first {
+            // Decoded textures in these pages are stale until the upload ends.
+            self.texcache.live = r.pages;
+            self.texcache.written(&r.pages);
+        }
+        self.xfer_region = Some(r);
         let bpp = bits_per_pixel(p.dpsm);
         let mut x = self.xfer.x;
         let mut y = self.xfer.y;
         let mut active = true;
-        let vram = &mut self.vram[..];
+        let m = Mem::new(&mut self.vram);
+        let mut row = SurfRow::new(&surf, (p.dsay + y) & 0x7FF);
         let mut put = |v: u32| {
             if !active {
                 return;
             }
-            surf.write(vram, (p.dsax + x) & 0x7FF, (p.dsay + y) & 0x7FF, v);
+            row.write(m, (p.dsax + x) & 0x7FF, v);
             x += 1;
             if x >= p.rrw {
                 x = 0;
                 y += 1;
                 if y >= p.rrh {
                     active = false;
+                } else {
+                    row = SurfRow::new(&surf, (p.dsay + y) & 0x7FF);
                 }
             }
         };
@@ -130,6 +158,18 @@ impl Gs {
         self.xfer.x = x;
         self.xfer.y = y;
         self.xfer.active = active;
+        if !active {
+            self.end_upload();
+        }
+    }
+
+    /// A host->local transfer ended (or was abandoned): its pages are final.
+    pub(super) fn end_upload(&mut self) {
+        if !self.texcache.live.is_empty() {
+            let live = self.texcache.live;
+            self.texcache.written(&live);
+            self.texcache.live = Pages::default();
+        }
     }
 
     fn local_to_host(&mut self, p: &Params) {
@@ -175,6 +215,14 @@ impl Gs {
                 tmp.push(src.read(&self.vram, (p.ssax + x) & 0x7FF, (p.ssay + y) & 0x7FF));
             }
         }
+        let pages = if p.dsax + p.rrw > 2048 || p.dsay + p.rrh > 2048 {
+            Pages::ALL
+        } else if p.rrw == 0 || p.rrh == 0 {
+            Pages::default()
+        } else {
+            Pages::rect(&dst, p.dsax, p.dsay, p.dsax + p.rrw - 1, p.dsay + p.rrh - 1)
+        };
+        self.texcache.written(&pages);
         let mut i = 0;
         for y in 0..p.rrh {
             for x in 0..p.rrw {
