@@ -55,7 +55,7 @@
 "end": "00101310"
 },
 {
-"name": "FUN_00101310",
+"name": "DangerMan_ctor",
 "address": "00101310",
 "end": "001013a4"
 },
@@ -415,7 +415,7 @@
 "end": "00108c24"
 },
 {
-"name": "FUN_00108c80",
+"name": "ComputerActorRider_ctor",
 "address": "00108c80",
 "end": "00108e88"
 },
@@ -935,7 +935,7 @@
 "end": "00113138"
 },
 {
-"name": "FUN_00113138",
+"name": "AirPredictor_ctor",
 "address": "00113138",
 "end": "0011316c"
 },
@@ -1195,7 +1195,7 @@
 "end": "00117244"
 },
 {
-"name": "FUN_00117248",
+"name": "RiderMetrix_ctor",
 "address": "00117248",
 "end": "0011728c"
 },
@@ -2050,7 +2050,7 @@
 "end": "00125c6c"
 },
 {
-"name": "FUN_00125c70",
+"name": "Player_ctor",
 "address": "00125c70",
 "end": "00125eb8"
 },
@@ -3600,7 +3600,7 @@
 "end": "001458c4"
 },
 {
-"name": "FUN_00145930",
+"name": "BENewPlayerInt_ctor",
 "address": "00145930",
 "end": "00145970"
 },
@@ -4120,7 +4120,7 @@
 "end": "00149860"
 },
 {
-"name": "FUN_00149860",
+"name": "BELibrary_ctor",
 "address": "00149860",
 "end": "001499a4"
 },
@@ -4675,7 +4675,7 @@
 "end": "0014f2a4"
 },
 {
-"name": "FUN_0014f418",
+"name": "BEOptionInt_ctor",
 "address": "0014f418",
 "end": "0014f454"
 },
@@ -5325,7 +5325,7 @@
 "end": "001549a4"
 },
 {
-"name": "FUN_001549a8",
+"name": "BEScoreInt_ctor",
 "address": "001549a8",
 "end": "001549dc"
 },
@@ -6170,7 +6170,7 @@
 "end": "0015c930"
 },
 {
-"name": "FUN_0015c930",
+"name": "AlgorithmList_ctor",
 "address": "0015c930",
 "end": "0015c940"
 },
@@ -6220,22 +6220,22 @@
 "end": "0015cd7c"
 },
 {
-"name": "FUN_0015cd80",
+"name": "ManualCamController_ctor",
 "address": "0015cd80",
 "end": "0015ce10"
 },
 {
-"name": "FUN_0015ce10",
+"name": "ManualCamController_dtor",
 "address": "0015ce10",
 "end": "0015ce94"
 },
 {
-"name": "FUN_0015ce98",
+"name": "ManualCamController_v03",
 "address": "0015ce98",
 "end": "0015cee4"
 },
 {
-"name": "FUN_0015cee8",
+"name": "ManualCamController_v04",
 "address": "0015cee8",
 "end": "0015cf24"
 },
@@ -6250,7 +6250,7 @@
 "end": "0015cfd0"
 },
 {
-"name": "FUN_0015cfe8",
+"name": "ManualCamController_v02",
 "address": "0015cfe8",
 "end": "0015d01c"
 },
@@ -6315,7 +6315,7 @@
 "end": "0015dc70"
 },
 {
-"name": "FUN_0015dc70",
+"name": "GameCamera_ctor",
 "address": "0015dc70",
 "end": "0015dd84"
 },
@@ -6410,7 +6410,7 @@
 "end": "0015fd04"
 },
 {
-"name": "FUN_0015fd08",
+"name": "ManualCamAlgo_ctor",
 "address": "0015fd08",
 "end": "0015fd44"
 },
@@ -6420,7 +6420,7 @@
 "end": "0015ffac"
 },
 {
-"name": "FUN_0015ffb0",
+"name": "EditorCamAlgo_ctor",
 "address": "0015ffb0",
 "end": "0015ffec"
 },
@@ -6450,62 +6450,62 @@
 "end": "00160438"
 },
 {
-"name": "FUN_00160438",
+"name": "ManualChaseCameraAlgorithm_ctor",
 "address": "00160438",
 "end": "00160474"
 },
 {
-"name": "FUN_00160478",
+"name": "ManualChaseCameraAlgorithm_v01",
 "address": "00160478",
 "end": "001604a0"
 },
 {
-"name": "FUN_001604b8",
+"name": "ManualChaseCameraAlgorithm_v05",
 "address": "001604b8",
 "end": "001606d4"
 },
 {
-"name": "FUN_001606d8",
+"name": "ManualChaseCameraAlgorithm_v03",
 "address": "001606d8",
 "end": "00160760"
 },
 {
-"name": "FUN_00160760",
+"name": "MatrixChaseCameraAlgorithm_ctor",
 "address": "00160760",
 "end": "001607a0"
 },
 {
-"name": "FUN_001607a0",
+"name": "MatrixChaseCameraAlgorithm_v01",
 "address": "001607a0",
 "end": "001607c8"
 },
 {
-"name": "FUN_001607e0",
+"name": "MatrixChaseCameraAlgorithm_v05",
 "address": "001607e0",
 "end": "00160ae8"
 },
 {
-"name": "FUN_00160ae8",
+"name": "MatrixChaseCameraAlgorithm_v03",
 "address": "00160ae8",
 "end": "00160b70"
 },
 {
-"name": "FUN_00160b70",
+"name": "RelativeChaseCameraAlgorithm_ctor",
 "address": "00160b70",
 "end": "00160bb8"
 },
 {
-"name": "FUN_00160bb8",
+"name": "RelativeChaseCameraAlgorithm_v01",
 "address": "00160bb8",
 "end": "00160be0"
 },
 {
-"name": "FUN_00160bf8",
+"name": "RelativeChaseCameraAlgorithm_v05",
 "address": "00160bf8",
 "end": "00160fd0"
 },
 {
-"name": "FUN_00160fd0",
+"name": "RelativeChaseCameraAlgorithm_v03",
 "address": "00160fd0",
 "end": "0016105c"
 },
@@ -6530,22 +6530,22 @@
 "end": "001616a4"
 },
 {
-"name": "FUN_001616a8",
+"name": "IdleChaseCameraAlgorithm_ctor",
 "address": "001616a8",
 "end": "001616e4"
 },
 {
-"name": "FUN_001616e8",
+"name": "IdleChaseCameraAlgorithm_v01",
 "address": "001616e8",
 "end": "00161710"
 },
 {
-"name": "FUN_00161728",
+"name": "IdleChaseCameraAlgorithm_v05",
 "address": "00161728",
 "end": "00161844"
 },
 {
-"name": "FUN_00161848",
+"name": "IdleChaseCameraAlgorithm_v03",
 "address": "00161848",
 "end": "00161950"
 },
@@ -6555,12 +6555,12 @@
 "end": "001619a8"
 },
 {
-"name": "FUN_001619a8",
+"name": "ChaseCamController_ctor",
 "address": "001619a8",
 "end": "00161a0c"
 },
 {
-"name": "FUN_00161a10",
+"name": "ChaseCamController_dtor",
 "address": "00161a10",
 "end": "00161a5c"
 },
@@ -6575,7 +6575,7 @@
 "end": "00161bb4"
 },
 {
-"name": "FUN_00161bb8",
+"name": "ChaseCamController_v02",
 "address": "00161bb8",
 "end": "00161e58"
 },
@@ -6860,12 +6860,12 @@
 "end": "00167ed0"
 },
 {
-"name": "FUN_00167f10",
+"name": "ManualCamAlgo_v01",
 "address": "00167f10",
 "end": "00167f40"
 },
 {
-"name": "FUN_00167f40",
+"name": "EditorCamAlgo_v01",
 "address": "00167f40",
 "end": "00167f70"
 },
@@ -6895,92 +6895,92 @@
 "end": "001682b8"
 },
 {
-"name": "FUN_001682b8",
+"name": "LazyChaseCameraAlgorithm_ctor",
 "address": "001682b8",
 "end": "001682f4"
 },
 {
-"name": "FUN_001682f8",
+"name": "LazyChaseCameraAlgorithm_v01",
 "address": "001682f8",
 "end": "00168320"
 },
 {
-"name": "FUN_00168338",
+"name": "LazyChaseCameraAlgorithm_v05",
 "address": "00168338",
 "end": "00168508"
 },
 {
-"name": "FUN_00168508",
+"name": "LazyChaseCameraAlgorithm_v03",
 "address": "00168508",
 "end": "00168650"
 },
 {
-"name": "FUN_00168650",
+"name": "LookBackChaseCameraAlgorithm_ctor",
 "address": "00168650",
 "end": "0016868c"
 },
 {
-"name": "FUN_00168690",
+"name": "LookBackChaseCameraAlgorithm_v01",
 "address": "00168690",
 "end": "001686b8"
 },
 {
-"name": "FUN_001686d0",
+"name": "LookBackChaseCameraAlgorithm_v05",
 "address": "001686d0",
 "end": "0016893c"
 },
 {
-"name": "FUN_00168940",
+"name": "LookBackChaseCameraAlgorithm_v03",
 "address": "00168940",
 "end": "001689c8"
 },
 {
-"name": "FUN_001689c8",
+"name": "MidRightChaseCameraAlgorithm_ctor",
 "address": "001689c8",
 "end": "00168a04"
 },
 {
-"name": "FUN_00168a08",
+"name": "MidRightChaseCameraAlgorithm_v01",
 "address": "00168a08",
 "end": "00168a30"
 },
 {
-"name": "FUN_00168a70",
+"name": "MidRightChaseCameraAlgorithm_v05",
 "address": "00168a70",
 "end": "00168c50"
 },
 {
-"name": "FUN_00168c50",
+"name": "MidRightChaseCameraAlgorithm_v03",
 "address": "00168c50",
 "end": "00168cd8"
 },
 {
-"name": "FUN_00168cd8",
+"name": "MidLeftChaseCameraAlgorithm_ctor",
 "address": "00168cd8",
 "end": "00168d14"
 },
 {
-"name": "FUN_00168d18",
+"name": "MidLeftChaseCameraAlgorithm_v01",
 "address": "00168d18",
 "end": "00168d40"
 },
 {
-"name": "FUN_00168d80",
+"name": "MidLeftChaseCameraAlgorithm_v05",
 "address": "00168d80",
 "end": "00168f60"
 },
 {
-"name": "FUN_00168f60",
+"name": "MidLeftChaseCameraAlgorithm_v03",
 "address": "00168f60",
 "end": "00168fe8"
 },
 {
-"name": "FUN_00168fe8",
+"name": "ScriptCamController_ctor",
 "address": "00168fe8",
 "end": "001690d0"
 },
 {
-"name": "FUN_001690d0",
+"name": "ScriptCamController_dtor",
 "address": "001690d0",
 "end": "0016918c"
 },
@@ -7000,7 +7000,7 @@
 "end": "00169364"
 },
 {
-"name": "FUN_00169368",
+"name": "ScriptCamController_v02",
 "address": "00169368",
 "end": "00169418"
 },
@@ -7020,7 +7020,7 @@
 "end": "001694b8"
 },
 {
-"name": "FUN_001694b8",
+"name": "ManualScriptCameraAlgo_ctor",
 "address": "001694b8",
 "end": "00169518"
 },
@@ -7045,7 +7045,7 @@
 "end": "00169cf8"
 },
 {
-"name": "FUN_00169cf8",
+"name": "TargetScriptCameraAlgo_ctor",
 "address": "00169cf8",
 "end": "00169d58"
 },
@@ -7070,7 +7070,7 @@
 "end": "0016a458"
 },
 {
-"name": "FUN_0016a458",
+"name": "SubjectScriptCameraAlgo_ctor",
 "address": "0016a458",
 "end": "0016a4b8"
 },
@@ -7095,7 +7095,7 @@
 "end": "0016ad38"
 },
 {
-"name": "FUN_0016ad38",
+"name": "AlgorithmicScriptCameraAlgo_ctor",
 "address": "0016ad38",
 "end": "0016ad98"
 },
@@ -7665,82 +7665,82 @@
 "end": "00176a68"
 },
 {
-"name": "FUN_00176a68",
+"name": "Default_2ChaseCameraAlgorithm_ctor",
 "address": "00176a68",
 "end": "00176aa4"
 },
 {
-"name": "FUN_00176aa8",
+"name": "Default_2ChaseCameraAlgorithm_v01",
 "address": "00176aa8",
 "end": "00176ad0"
 },
 {
-"name": "FUN_00176b10",
+"name": "Default_2ChaseCameraAlgorithm_v05",
 "address": "00176b10",
 "end": "00176ce0"
 },
 {
-"name": "FUN_00176ce0",
+"name": "Default_2ChaseCameraAlgorithm_v03",
 "address": "00176ce0",
 "end": "00176d68"
 },
 {
-"name": "FUN_00176d68",
+"name": "Default_3ChaseCameraAlgorithm_ctor",
 "address": "00176d68",
 "end": "00176da4"
 },
 {
-"name": "FUN_00176da8",
+"name": "Default_3ChaseCameraAlgorithm_v01",
 "address": "00176da8",
 "end": "00176dd0"
 },
 {
-"name": "FUN_00176e10",
+"name": "Default_3ChaseCameraAlgorithm_v05",
 "address": "00176e10",
 "end": "00176fdc"
 },
 {
-"name": "FUN_00176fe0",
+"name": "Default_3ChaseCameraAlgorithm_v03",
 "address": "00176fe0",
 "end": "00177068"
 },
 {
-"name": "FUN_00177068",
+"name": "Default_4ChaseCameraAlgorithm_ctor",
 "address": "00177068",
 "end": "001770a4"
 },
 {
-"name": "FUN_001770a8",
+"name": "Default_4ChaseCameraAlgorithm_v01",
 "address": "001770a8",
 "end": "001770d0"
 },
 {
-"name": "FUN_00177110",
+"name": "Default_4ChaseCameraAlgorithm_v05",
 "address": "00177110",
 "end": "001772dc"
 },
 {
-"name": "FUN_001772e0",
+"name": "Default_4ChaseCameraAlgorithm_v03",
 "address": "001772e0",
 "end": "00177368"
 },
 {
-"name": "FUN_00177368",
+"name": "DirectionNeChaseCameraAlgorithm_v05",
 "address": "00177368",
 "end": "001774c0"
 },
 {
-"name": "FUN_001774c0",
+"name": "DirectionNeChaseCameraAlgorithm_ctor",
 "address": "001774c0",
 "end": "0017751c"
 },
 {
-"name": "FUN_00177520",
+"name": "DirectionNeChaseCameraAlgorithm_v01",
 "address": "00177520",
 "end": "00177548"
 },
 {
-"name": "FUN_00177588",
+"name": "DirectionNeChaseCameraAlgorithm_v03",
 "address": "00177588",
 "end": "00177610"
 },
@@ -7760,12 +7760,12 @@
 "end": "00177e50"
 },
 {
-"name": "FUN_00177e50",
+"name": "SpokeChaseCameraAlgorithm_ctor",
 "address": "00177e50",
 "end": "00177e8c"
 },
 {
-"name": "FUN_00177e90",
+"name": "SpokeChaseCameraAlgorithm_v01",
 "address": "00177e90",
 "end": "00177eb8"
 },
@@ -7780,12 +7780,12 @@
 "end": "00178208"
 },
 {
-"name": "FUN_00178208",
+"name": "SpokeChaseCameraAlgorithm_v05",
 "address": "00178208",
 "end": "001783e0"
 },
 {
-"name": "FUN_001783e0",
+"name": "SpokeChaseCameraAlgorithm_v03",
 "address": "001783e0",
 "end": "00178520"
 },
@@ -7820,22 +7820,22 @@
 "end": "001789e8"
 },
 {
-"name": "FUN_001789e8",
+"name": "Post_Race_1ChaseCameraAlgorithm_ctor",
 "address": "001789e8",
 "end": "00178b70"
 },
 {
-"name": "FUN_00178b70",
+"name": "Post_Race_1ChaseCameraAlgorithm_v01",
 "address": "00178b70",
 "end": "00178b98"
 },
 {
-"name": "FUN_00178bb0",
+"name": "Post_Race_1ChaseCameraAlgorithm_v05",
 "address": "00178bb0",
 "end": "00178e90"
 },
 {
-"name": "FUN_00178e90",
+"name": "Post_Race_1ChaseCameraAlgorithm_v03",
 "address": "00178e90",
 "end": "00178f18"
 },
@@ -7945,7 +7945,7 @@
 "end": "0017b1ac"
 },
 {
-"name": "FUN_0017b1b0",
+"name": "DebugMenu_ctor",
 "address": "0017b1b0",
 "end": "0017b4dc"
 },
@@ -7985,7 +7985,7 @@
 "end": "0017d298"
 },
 {
-"name": "FUN_0017d298",
+"name": "LobbyMenu_ctor",
 "address": "0017d298",
 "end": "0017d3ac"
 },
@@ -8390,27 +8390,27 @@
 "end": "00181090"
 },
 {
-"name": "FUN_00181090",
+"name": "cFEStateCharSelect_ctor",
 "address": "00181090",
 "end": "00181144"
 },
 {
-"name": "FUN_00181148",
+"name": "cFEStateCharSelect_v04",
 "address": "00181148",
 "end": "00181238"
 },
 {
-"name": "FUN_00181238",
+"name": "cFEStateCharSelect_v05",
 "address": "00181238",
 "end": "001812a4"
 },
 {
-"name": "FUN_001812a8",
+"name": "cFEStateCharSelect_v07",
 "address": "001812a8",
 "end": "00181304"
 },
 {
-"name": "FUN_00181308",
+"name": "cFEStateCharSelect_v06",
 "address": "00181308",
 "end": "001813fc"
 },
@@ -8425,7 +8425,7 @@
 "end": "0018144c"
 },
 {
-"name": "FUN_00181450",
+"name": "cFEStateCharSelect_v08",
 "address": "00181450",
 "end": "0018161c"
 },
@@ -8450,12 +8450,12 @@
 "end": "00182220"
 },
 {
-"name": "FUN_00182220",
+"name": "cFEStateCheatCharSelect_ctor",
 "address": "00182220",
 "end": "00182420"
 },
 {
-"name": "FUN_00182420",
+"name": "cFEStateCheatCharSelect_v04",
 "address": "00182420",
 "end": "00182484"
 },
@@ -8480,12 +8480,12 @@
 "end": "001828c0"
 },
 {
-"name": "FUN_001828c0",
+"name": "cFEStateCharSetup_ctor",
 "address": "001828c0",
 "end": "00182928"
 },
 {
-"name": "FUN_00182928",
+"name": "cFEStateCharSetup_v04",
 "address": "00182928",
 "end": "00182c08"
 },
@@ -8520,17 +8520,17 @@
 "end": "00183238"
 },
 {
-"name": "FUN_00183238",
+"name": "cFEStateRiderDetail_ctor",
 "address": "00183238",
 "end": "001832a4"
 },
 {
-"name": "FUN_001832a8",
+"name": "cFEStateRiderDetail_v04",
 "address": "001832a8",
 "end": "001833d0"
 },
 {
-"name": "FUN_001833d0",
+"name": "cFEStateRiderDetail_v06",
 "address": "001833d0",
 "end": "00183550"
 },
@@ -8560,7 +8560,7 @@
 "end": "00183a94"
 },
 {
-"name": "FUN_00183a98",
+"name": "cFEStateUberTrick_ctor",
 "address": "00183a98",
 "end": "00183b08"
 },
@@ -8605,22 +8605,22 @@
 "end": "001849ac"
 },
 {
-"name": "FUN_001849b0",
+"name": "cFEStateUberTrick_v04",
 "address": "001849b0",
 "end": "00184b70"
 },
 {
-"name": "FUN_00184b70",
+"name": "cFEStateUberTrick_v05",
 "address": "00184b70",
 "end": "00184bb4"
 },
 {
-"name": "FUN_00184bb8",
+"name": "cFEStateUberTrick_v07",
 "address": "00184bb8",
 "end": "00184bdc"
 },
 {
-"name": "FUN_00184be0",
+"name": "cFEStateUberTrick_v06",
 "address": "00184be0",
 "end": "00184c5c"
 },
@@ -8645,22 +8645,22 @@
 "end": "001859d8"
 },
 {
-"name": "FUN_00185a18",
+"name": "cFEOptionsCredits_ctor",
 "address": "00185a18",
 "end": "00185a70"
 },
 {
-"name": "FUN_00185a70",
+"name": "cFEOptionsCredits_v01",
 "address": "00185a70",
 "end": "00185a98"
 },
 {
-"name": "FUN_00185a98",
+"name": "cFEOptionsCredits_v04",
 "address": "00185a98",
 "end": "00185ba0"
 },
 {
-"name": "FUN_00185ba0",
+"name": "cFEOptionsCredits_v06",
 "address": "00185ba0",
 "end": "00185f3c"
 },
@@ -8695,12 +8695,12 @@
 "end": "00186610"
 },
 {
-"name": "FUN_00186610",
+"name": "cFEStateEventSelect_ctor",
 "address": "00186610",
 "end": "00186654"
 },
 {
-"name": "FUN_00186658",
+"name": "cFEStateEventSelect_v04",
 "address": "00186658",
 "end": "00186708"
 },
@@ -8710,17 +8710,17 @@
 "end": "00186724"
 },
 {
-"name": "FUN_00186728",
+"name": "cFEStateEventSelect_v07",
 "address": "00186728",
 "end": "00186744"
 },
 {
-"name": "FUN_00186748",
+"name": "cFEStateEventSelect_v06",
 "address": "00186748",
 "end": "00186774"
 },
 {
-"name": "FUN_00186778",
+"name": "cFEStateEventSelect_v05",
 "address": "00186778",
 "end": "001867a4"
 },
@@ -8735,12 +8735,12 @@
 "end": "00186978"
 },
 {
-"name": "FUN_00186978",
+"name": "cFEStateEventSelect_v08",
 "address": "00186978",
 "end": "00186994"
 },
 {
-"name": "FUN_00186998",
+"name": "cFEStateEventSelect_v09",
 "address": "00186998",
 "end": "001869d8"
 },
@@ -8750,17 +8750,17 @@
 "end": "00186a04"
 },
 {
-"name": "FUN_00186a08",
+"name": "cFEStateMemCard_ctor",
 "address": "00186a08",
 "end": "00186b14"
 },
 {
-"name": "FUN_00186b18",
+"name": "cFEStateMemCard_dtor",
 "address": "00186b18",
 "end": "00186b44"
 },
 {
-"name": "FUN_00186b50",
+"name": "cFEStateMemCard_v04",
 "address": "00186b50",
 "end": "00186bec"
 },
@@ -8875,12 +8875,12 @@
 "end": "001887a0"
 },
 {
-"name": "FUN_001887a0",
+"name": "cFEStateOptions_ctor",
 "address": "001887a0",
 "end": "001887fc"
 },
 {
-"name": "FUN_00188800",
+"name": "cFEStateOptions_v04",
 "address": "00188800",
 "end": "00188870"
 },
@@ -8910,17 +8910,17 @@
 "end": "00188ee8"
 },
 {
-"name": "FUN_00188ee8",
+"name": "cFEStateOptionsGame_ctor",
 "address": "00188ee8",
 "end": "00188f24"
 },
 {
-"name": "FUN_00188f28",
+"name": "cFEStateOptionsGame_v04",
 "address": "00188f28",
 "end": "001895f0"
 },
 {
-"name": "FUN_001895f0",
+"name": "cFEStateOptionsGame_v06",
 "address": "001895f0",
 "end": "0018960c"
 },
@@ -8940,12 +8940,12 @@
 "end": "0018a258"
 },
 {
-"name": "FUN_0018a258",
+"name": "cFEStateOptionsSound_ctor",
 "address": "0018a258",
 "end": "0018a298"
 },
 {
-"name": "FUN_0018a298",
+"name": "cFEStateOptionsSound_v04",
 "address": "0018a298",
 "end": "0018a3d8"
 },
@@ -8955,7 +8955,7 @@
 "end": "0018a870"
 },
 {
-"name": "FUN_0018a870",
+"name": "cFEStateOptionsSound_v06",
 "address": "0018a870",
 "end": "0018a88c"
 },
@@ -8975,17 +8975,17 @@
 "end": "0018c0e4"
 },
 {
-"name": "FUN_0018c0e8",
+"name": "cFEStateOptionsHUD_ctor",
 "address": "0018c0e8",
 "end": "0018c128"
 },
 {
-"name": "FUN_0018c128",
+"name": "cFEStateOptionsHUD_v04",
 "address": "0018c128",
 "end": "0018c194"
 },
 {
-"name": "FUN_0018c198",
+"name": "cFEStateOptionsHUD_v06",
 "address": "0018c198",
 "end": "0018c1b4"
 },
@@ -9005,17 +9005,17 @@
 "end": "0018c658"
 },
 {
-"name": "FUN_0018c658",
+"name": "cFEStateOptionsController_ctor",
 "address": "0018c658",
 "end": "0018c69c"
 },
 {
-"name": "FUN_0018c6a0",
+"name": "cFEStateOptionsController_v04",
 "address": "0018c6a0",
 "end": "0018c8b8"
 },
 {
-"name": "FUN_0018c8b8",
+"name": "cFEStateOptionsController_v05",
 "address": "0018c8b8",
 "end": "0018c910"
 },
@@ -9055,12 +9055,12 @@
 "end": "0018d240"
 },
 {
-"name": "FUN_0018d240",
+"name": "cFEStateOptionsSaveLoad_ctor",
 "address": "0018d240",
 "end": "0018d280"
 },
 {
-"name": "FUN_0018d280",
+"name": "cFEStateOptionsSaveLoad_v04",
 "address": "0018d280",
 "end": "0018d2e4"
 },
@@ -9085,12 +9085,12 @@
 "end": "0018d7f0"
 },
 {
-"name": "FUN_0018d7f0",
+"name": "cFEStateOptionsDeviceSelect_ctor",
 "address": "0018d7f0",
 "end": "0018d864"
 },
 {
-"name": "FUN_0018d868",
+"name": "cFEStateOptionsDeviceSelect_v04",
 "address": "0018d868",
 "end": "0018ddd0"
 },
@@ -9145,12 +9145,12 @@
 "end": "0018eca0"
 },
 {
-"name": "FUN_0018eca0",
+"name": "cFEStateProfileLoad_ctor",
 "address": "0018eca0",
 "end": "0018edc4"
 },
 {
-"name": "FUN_0018edc8",
+"name": "cFEStateProfileLoad_v04",
 "address": "0018edc8",
 "end": "0018ee98"
 },
@@ -9200,7 +9200,7 @@
 "end": "0018fc70"
 },
 {
-"name": "FUN_0018fc70",
+"name": "cFEStateProfileLoad_v05",
 "address": "0018fc70",
 "end": "0018fc98"
 },
@@ -9235,12 +9235,12 @@
 "end": "00190854"
 },
 {
-"name": "FUN_00190858",
+"name": "cFEStateRiderBio_ctor",
 "address": "00190858",
 "end": "001908bc"
 },
 {
-"name": "FUN_001908c0",
+"name": "cFEStateRiderBio_v04",
 "address": "001908c0",
 "end": "00190a08"
 },
@@ -9280,7 +9280,7 @@
 "end": "00191360"
 },
 {
-"name": "FUN_00191360",
+"name": "cFEStateRuleSelect_ctor",
 "address": "00191360",
 "end": "001913b8"
 },
@@ -9290,12 +9290,12 @@
 "end": "00191938"
 },
 {
-"name": "FUN_00191938",
+"name": "cFEStateRuleSelect_v04",
 "address": "00191938",
 "end": "00191c44"
 },
 {
-"name": "FUN_00191c48",
+"name": "cFEStateRuleSelect_v06",
 "address": "00191c48",
 "end": "00191c64"
 },
@@ -9370,12 +9370,12 @@
 "end": "00192cfc"
 },
 {
-"name": "FUN_00192d00",
+"name": "cFEStateBraggingRights_ctor",
 "address": "00192d00",
 "end": "00192d80"
 },
 {
-"name": "FUN_00192d80",
+"name": "cFEStateBraggingRights_v04",
 "address": "00192d80",
 "end": "0019330c"
 },
@@ -9390,7 +9390,7 @@
 "end": "00193564"
 },
 {
-"name": "FUN_00193568",
+"name": "cFEStateBraggingRights_v06",
 "address": "00193568",
 "end": "00193650"
 },
@@ -9460,7 +9460,7 @@
 "end": "00194588"
 },
 {
-"name": "FUN_00194588",
+"name": "FEUICustom_v04",
 "address": "00194588",
 "end": "00194600"
 },
@@ -9475,17 +9475,17 @@
 "end": "00194734"
 },
 {
-"name": "FUN_00194738",
+"name": "cFEStateTitle_ctor",
 "address": "00194738",
 "end": "00194774"
 },
 {
-"name": "FUN_00194778",
+"name": "cFEStateTitle_v04",
 "address": "00194778",
 "end": "001947f4"
 },
 {
-"name": "FUN_001947f8",
+"name": "cFEStateTitle_v07",
 "address": "001947f8",
 "end": "001948a8"
 },
@@ -9505,12 +9505,12 @@
 "end": "00194a44"
 },
 {
-"name": "FUN_00194a60",
+"name": "cFEStateMainMenu_ctor",
 "address": "00194a60",
 "end": "00194aa4"
 },
 {
-"name": "FUN_00194aa8",
+"name": "cFEStateMainMenu_v04",
 "address": "00194aa8",
 "end": "00194bf0"
 },
@@ -9540,12 +9540,12 @@
 "end": "00195494"
 },
 {
-"name": "FUN_00195498",
+"name": "cFEStateBonusMaterial_ctor",
 "address": "00195498",
 "end": "001954d4"
 },
 {
-"name": "FUN_001954d8",
+"name": "cFEStateBonusMaterial_v04",
 "address": "001954d8",
 "end": "0019553c"
 },
@@ -9555,7 +9555,7 @@
 "end": "001955b8"
 },
 {
-"name": "FUN_001955e0",
+"name": "cFEStateBonusMaterial_v06",
 "address": "001955e0",
 "end": "001955fc"
 },
@@ -9575,12 +9575,12 @@
 "end": "0019587c"
 },
 {
-"name": "FUN_00195880",
+"name": "FELocale_ctor",
 "address": "00195880",
 "end": "001958ec"
 },
 {
-"name": "FUN_001958f0",
+"name": "FELocale_v01",
 "address": "001958f0",
 "end": "00195948"
 },
@@ -9600,7 +9600,7 @@
 "end": "00195a94"
 },
 {
-"name": "FUN_00195aa0",
+"name": "FELocale_v03",
 "address": "00195aa0",
 "end": "00195b70"
 },
@@ -9630,37 +9630,37 @@
 "end": "00195eb4"
 },
 {
-"name": "FUN_00195eb8",
+"name": "FELocale_v04",
 "address": "00195eb8",
 "end": "00195f6c"
 },
 {
-"name": "FUN_00195f70",
+"name": "FELocale_v05",
 "address": "00195f70",
 "end": "00195fec"
 },
 {
-"name": "FUN_00195ff0",
+"name": "cFEStateAudioOptions_ctor",
 "address": "00195ff0",
 "end": "00196144"
 },
 {
-"name": "FUN_00196148",
+"name": "cFEStateAudioOptions_v04",
 "address": "00196148",
 "end": "00196228"
 },
 {
-"name": "FUN_00196228",
+"name": "cFEStateAudioOptions_v05",
 "address": "00196228",
 "end": "001962a8"
 },
 {
-"name": "FUN_001962a8",
+"name": "cFEStateAudioOptions_v07",
 "address": "001962a8",
 "end": "00196374"
 },
 {
-"name": "FUN_00196378",
+"name": "cFEStateAudioOptions_v06",
 "address": "00196378",
 "end": "00196540"
 },
@@ -9675,27 +9675,27 @@
 "end": "00196b04"
 },
 {
-"name": "FUN_00196b90",
+"name": "cFEStateRequestLine_ctor",
 "address": "00196b90",
 "end": "00196dac"
 },
 {
-"name": "FUN_00196db0",
+"name": "cFEStateRequestLine_v04",
 "address": "00196db0",
 "end": "00196e80"
 },
 {
-"name": "FUN_00196e80",
+"name": "cFEStateRequestLine_v05",
 "address": "00196e80",
 "end": "00196f00"
 },
 {
-"name": "FUN_00196f00",
+"name": "cFEStateRequestLine_v06",
 "address": "00196f00",
 "end": "00196f50"
 },
 {
-"name": "FUN_00196f50",
+"name": "cFEStateRequestLine_v07",
 "address": "00196f50",
 "end": "00196f98"
 },
@@ -9810,27 +9810,27 @@
 "end": "00198da0"
 },
 {
-"name": "FUN_00198db8",
+"name": "cFEStateCharEquip_ctor",
 "address": "00198db8",
 "end": "00199144"
 },
 {
-"name": "FUN_00199148",
+"name": "cFEStateCharEquip_v01",
 "address": "00199148",
 "end": "0019923c"
 },
 {
-"name": "FUN_00199240",
+"name": "cFEStateCharEquip_v04",
 "address": "00199240",
 "end": "0019934c"
 },
 {
-"name": "FUN_00199350",
+"name": "cFEStateCharEquip_v05",
 "address": "00199350",
 "end": "001993a0"
 },
 {
-"name": "FUN_001993a0",
+"name": "cFEStateCharEquip_v06",
 "address": "001993a0",
 "end": "00199420"
 },
@@ -10060,7 +10060,7 @@
 "end": "0019cb38"
 },
 {
-"name": "FUN_0019cb38",
+"name": "BoltFileIndexManager_ctor",
 "address": "0019cb38",
 "end": "0019cb60"
 },
@@ -10410,7 +10410,7 @@
 "end": "001a0720"
 },
 {
-"name": "FUN_001a0720",
+"name": "FEUICustom_ctor",
 "address": "001a0720",
 "end": "001a07c4"
 },
@@ -10440,7 +10440,7 @@
 "end": "001a1ce4"
 },
 {
-"name": "FUN_001a1ce8",
+"name": "FEModule_ctor",
 "address": "001a1ce8",
 "end": "001a1d50"
 },
@@ -10495,22 +10495,22 @@
 "end": "001a2e1c"
 },
 {
-"name": "FUN_001a2e20",
+"name": "FEUISound_ctor",
 "address": "001a2e20",
 "end": "001a2e58"
 },
 {
-"name": "FUN_001a2e58",
+"name": "FEUISound_v02",
 "address": "001a2e58",
 "end": "001a2f34"
 },
 {
-"name": "FUN_001a2f38",
+"name": "OVUISound_ctor",
 "address": "001a2f38",
 "end": "001a2f70"
 },
 {
-"name": "FUN_001a2f70",
+"name": "OVUISound_v02",
 "address": "001a2f70",
 "end": "001a304c"
 },
@@ -10535,17 +10535,17 @@
 "end": "001a3218"
 },
 {
-"name": "FUN_001a3218",
+"name": "cFEStateMPCircuit_ctor",
 "address": "001a3218",
 "end": "001a3254"
 },
 {
-"name": "FUN_001a3258",
+"name": "cFEStateMPCircuit_v04",
 "address": "001a3258",
 "end": "001a32fc"
 },
 {
-"name": "FUN_001a3308",
+"name": "cFEStateMPCircuit_v06",
 "address": "001a3308",
 "end": "001a33a0"
 },
@@ -10570,7 +10570,7 @@
 "end": "001a358c"
 },
 {
-"name": "FUN_001a3590",
+"name": "FEAsyncManager_ctor",
 "address": "001a3590",
 "end": "001a35e4"
 },
@@ -10640,7 +10640,7 @@
 "end": "001a3dc8"
 },
 {
-"name": "FUN_001a3dc8",
+"name": "cFEStateNetMessenger_ctor",
 "address": "001a3dc8",
 "end": "001a3e30"
 },
@@ -10650,12 +10650,12 @@
 "end": "001a3e9c"
 },
 {
-"name": "FUN_001a3ea0",
+"name": "cFEStateNetMessenger_v01",
 "address": "001a3ea0",
 "end": "001a3f64"
 },
 {
-"name": "FUN_001a3f68",
+"name": "cFEStateNetMessenger_v04",
 "address": "001a3f68",
 "end": "001a3fdc"
 },
@@ -10670,7 +10670,7 @@
 "end": "001a4170"
 },
 {
-"name": "FUN_001a4170",
+"name": "cFEStateNetMessenger_v08",
 "address": "001a4170",
 "end": "001a41c0"
 },
@@ -10855,7 +10855,7 @@
 "end": "001a77a0"
 },
 {
-"name": "FUN_001a77a0",
+"name": "cFEStateReadMessagePopup_ctor",
 "address": "001a77a0",
 "end": "001a7844"
 },
@@ -11205,17 +11205,17 @@
 "end": "001ac00c"
 },
 {
-"name": "FUN_001ac010",
+"name": "cFEUseExistingAccount_ctor",
 "address": "001ac010",
 "end": "001ac064"
 },
 {
-"name": "FUN_001ac068",
+"name": "cFEUseExistingAccount_dtor",
 "address": "001ac068",
 "end": "001ac0b8"
 },
 {
-"name": "FUN_001ac0b8",
+"name": "cFEUseExistingAccount_v04",
 "address": "001ac0b8",
 "end": "001ac14c"
 },
@@ -11295,12 +11295,12 @@
 "end": "001ad130"
 },
 {
-"name": "FUN_001ad130",
+"name": "cFEStateSelectPersona_ctor",
 "address": "001ad130",
 "end": "001ad174"
 },
 {
-"name": "FUN_001ad178",
+"name": "cFEStateSelectPersona_v04",
 "address": "001ad178",
 "end": "001ad1e4"
 },
@@ -11360,22 +11360,22 @@
 "end": "001addd0"
 },
 {
-"name": "FUN_001addd0",
+"name": "cFEStateChallengePopup_ctor",
 "address": "001addd0",
 "end": "001ade88"
 },
 {
-"name": "FUN_001ade88",
+"name": "cFEStateChallengePopup_v04",
 "address": "001ade88",
 "end": "001adfb4"
 },
 {
-"name": "FUN_001adfb8",
+"name": "cFEStateChallengePopup_v07",
 "address": "001adfb8",
 "end": "001adfe4"
 },
 {
-"name": "FUN_001adfe8",
+"name": "cFEStateChallengePopup_v06",
 "address": "001adfe8",
 "end": "001ae0e0"
 },
@@ -11465,7 +11465,7 @@
 "end": "001afe04"
 },
 {
-"name": "FUN_001afe08",
+"name": "cFEStateChallengeReceivedPopup_ctor",
 "address": "001afe08",
 "end": "001afe64"
 },
@@ -11540,12 +11540,12 @@
 "end": "001b0f60"
 },
 {
-"name": "FUN_001b0f60",
+"name": "cFEStateOnlineCharacterSelect_ctor",
 "address": "001b0f60",
 "end": "001b0fac"
 },
 {
-"name": "FUN_001b0fb0",
+"name": "cFEStateOnlineCharacterSelect_v04",
 "address": "001b0fb0",
 "end": "001b1044"
 },
@@ -11555,7 +11555,7 @@
 "end": "001b1064"
 },
 {
-"name": "FUN_001b1068",
+"name": "cFEStateOnlineCharacterSelect_v07",
 "address": "001b1068",
 "end": "001b10f8"
 },
@@ -11575,7 +11575,7 @@
 "end": "001b1590"
 },
 {
-"name": "FUN_001b1590",
+"name": "cFEStateOnlineCharacterSelect_v08",
 "address": "001b1590",
 "end": "001b15d4"
 },
@@ -11620,17 +11620,17 @@
 "end": "001b1f84"
 },
 {
-"name": "FUN_001b1f88",
+"name": "cFEStateChatRoom_ctor",
 "address": "001b1f88",
 "end": "001b2044"
 },
 {
-"name": "FUN_001b2048",
+"name": "cFEStateChatRoom_v01",
 "address": "001b2048",
 "end": "001b2070"
 },
 {
-"name": "FUN_001b2070",
+"name": "cFEStateChatRoom_v04",
 "address": "001b2070",
 "end": "001b229c"
 },
@@ -11685,12 +11685,12 @@
 "end": "001b3490"
 },
 {
-"name": "FUN_001b3490",
+"name": "cFEStateChatRoom_v07",
 "address": "001b3490",
 "end": "001b3528"
 },
 {
-"name": "FUN_001b3528",
+"name": "cFEStateChatRoom_v06",
 "address": "001b3528",
 "end": "001b3564"
 },
@@ -11720,7 +11720,7 @@
 "end": "001b38d0"
 },
 {
-"name": "FUN_001b38d0",
+"name": "cFEStateChatRoom_v08",
 "address": "001b38d0",
 "end": "001b3978"
 },
@@ -11745,22 +11745,22 @@
 "end": "001b3f74"
 },
 {
-"name": "FUN_001b3f78",
+"name": "cFEStateNetConfig_ctor",
 "address": "001b3f78",
 "end": "001b4018"
 },
 {
-"name": "FUN_001b4018",
+"name": "cFEStateNetConfig_dtor",
 "address": "001b4018",
 "end": "001b40d0"
 },
 {
-"name": "FUN_001b40d0",
+"name": "cFEStateNetConfig_v04",
 "address": "001b40d0",
 "end": "001b4164"
 },
 {
-"name": "FUN_001b4168",
+"name": "cFEStateNetConfig_v05",
 "address": "001b4168",
 "end": "001b4194"
 },
@@ -11885,17 +11885,17 @@
 "end": "001b6284"
 },
 {
-"name": "FUN_001b6288",
+"name": "NetConfigAuthPopup_ctor",
 "address": "001b6288",
 "end": "001b6368"
 },
 {
-"name": "FUN_001b6368",
+"name": "NetConfigAuthPopup_dtor",
 "address": "001b6368",
 "end": "001b63e8"
 },
 {
-"name": "FUN_001b63e8",
+"name": "NetConfigAuthPopup_v04",
 "address": "001b63e8",
 "end": "001b65c0"
 },
@@ -11925,17 +11925,17 @@
 "end": "001b6a8c"
 },
 {
-"name": "FUN_001b6ab8",
+"name": "cFEStateAuthDNASError_ctor",
 "address": "001b6ab8",
 "end": "001b6b24"
 },
 {
-"name": "FUN_001b6b28",
+"name": "cFEStateAuthDNASError_v01",
 "address": "001b6b28",
 "end": "001b6b50"
 },
 {
-"name": "FUN_001b6b50",
+"name": "cFEStateAuthDNASError_v04",
 "address": "001b6b50",
 "end": "001b6bb4"
 },
@@ -11945,7 +11945,7 @@
 "end": "001b6c98"
 },
 {
-"name": "FUN_001b6c98",
+"name": "cFEStateAuthDNASError_v07",
 "address": "001b6c98",
 "end": "001b6e10"
 },
@@ -11960,17 +11960,17 @@
 "end": "001b6ea8"
 },
 {
-"name": "FUN_001b6ed0",
+"name": "cFEStateNetAccountMem_ctor",
 "address": "001b6ed0",
 "end": "001b702c"
 },
 {
-"name": "FUN_001b7030",
+"name": "cFEStateNetAccountMem_v01",
 "address": "001b7030",
 "end": "001b7084"
 },
 {
-"name": "FUN_001b7088",
+"name": "cFEStateNetAccountMem_v04",
 "address": "001b7088",
 "end": "001b70a4"
 },
@@ -12085,12 +12085,12 @@
 "end": "001b88f0"
 },
 {
-"name": "FUN_001b88f0",
+"name": "cFEStateCreateStep1_ctor",
 "address": "001b88f0",
 "end": "001b8960"
 },
 {
-"name": "FUN_001b8960",
+"name": "cFEStateCreateStep1_v04",
 "address": "001b8960",
 "end": "001b89e8"
 },
@@ -12100,7 +12100,7 @@
 "end": "001b8a04"
 },
 {
-"name": "FUN_001b8a08",
+"name": "cFEStateCreateStep1_v07",
 "address": "001b8a08",
 "end": "001b8a9c"
 },
@@ -12235,12 +12235,12 @@
 "end": "001ba3e0"
 },
 {
-"name": "FUN_001ba3e0",
+"name": "cFEStateCreateStep2_ctor",
 "address": "001ba3e0",
 "end": "001ba424"
 },
 {
-"name": "FUN_001ba428",
+"name": "cFEStateCreateStep2_v04",
 "address": "001ba428",
 "end": "001ba4e0"
 },
@@ -12385,12 +12385,12 @@
 "end": "001bbd08"
 },
 {
-"name": "FUN_001bbd08",
+"name": "cFEStateCreateDuplicate_ctor",
 "address": "001bbd08",
 "end": "001bbd5c"
 },
 {
-"name": "FUN_001bbd60",
+"name": "cFEStateCreateDuplicate_v04",
 "address": "001bbd60",
 "end": "001bbde0"
 },
@@ -12455,12 +12455,12 @@
 "end": "001bcb54"
 },
 {
-"name": "FUN_001bcb58",
+"name": "cFEStateLobbyMenu_ctor",
 "address": "001bcb58",
 "end": "001bcc2c"
 },
 {
-"name": "FUN_001bcc30",
+"name": "cFEStateLobbyMenu_v04",
 "address": "001bcc30",
 "end": "001bcca8"
 },
@@ -12470,7 +12470,7 @@
 "end": "001bcd14"
 },
 {
-"name": "FUN_001bcd18",
+"name": "cFEStateLobbyMenu_v07",
 "address": "001bcd18",
 "end": "001bce18"
 },
@@ -12595,12 +12595,12 @@
 "end": "001be7d4"
 },
 {
-"name": "FUN_001be7d8",
+"name": "cFEStateNetCreateRoomPopup_ctor",
 "address": "001be7d8",
 "end": "001be824"
 },
 {
-"name": "FUN_001be828",
+"name": "cFEStateNetCreateRoomPopup_v04",
 "address": "001be828",
 "end": "001be88c"
 },
@@ -12695,12 +12695,12 @@
 "end": "001bfbb8"
 },
 {
-"name": "FUN_001bfbb8",
+"name": "cFEStateOnlineMainMenu_ctor",
 "address": "001bfbb8",
 "end": "001bfbf8"
 },
 {
-"name": "FUN_001bfbf8",
+"name": "cFEStateOnlineMainMenu_v04",
 "address": "001bfbf8",
 "end": "001bfc9c"
 },
@@ -12755,7 +12755,7 @@
 "end": "001c0414"
 },
 {
-"name": "FUN_001c0418",
+"name": "cFEStateOnlineAgreement_ctor",
 "address": "001c0418",
 "end": "001c0460"
 },
@@ -12765,7 +12765,7 @@
 "end": "001c04a4"
 },
 {
-"name": "FUN_001c04a8",
+"name": "cFEStateOnlineAgreement_v04",
 "address": "001c04a8",
 "end": "001c0540"
 },
@@ -12775,7 +12775,7 @@
 "end": "001c0a24"
 },
 {
-"name": "FUN_001c0a28",
+"name": "cFEStateOnlineAgreement_dtor",
 "address": "001c0a28",
 "end": "001c0a80"
 },
@@ -12785,7 +12785,7 @@
 "end": "001c0b08"
 },
 {
-"name": "FUN_001c0b20",
+"name": "cFEStateOnlineAgreement_v07",
 "address": "001c0b20",
 "end": "001c0ce0"
 },
@@ -12810,12 +12810,12 @@
 "end": "001c0f40"
 },
 {
-"name": "FUN_001c0f40",
+"name": "cFEStateNetQuickPlayPopup_ctor",
 "address": "001c0f40",
 "end": "001c0fbc"
 },
 {
-"name": "FUN_001c0fc0",
+"name": "cFEStateNetQuickPlayPopup_v04",
 "address": "001c0fc0",
 "end": "001c1038"
 },
@@ -12865,12 +12865,12 @@
 "end": "001c1c4c"
 },
 {
-"name": "FUN_001c1c50",
+"name": "cFEStateNetSSXWorld_ctor",
 "address": "001c1c50",
 "end": "001c1c90"
 },
 {
-"name": "FUN_001c1c90",
+"name": "cFEStateNetSSXWorld_v04",
 "address": "001c1c90",
 "end": "001c1d0c"
 },
@@ -12895,12 +12895,12 @@
 "end": "001c20f4"
 },
 {
-"name": "FUN_001c20f8",
+"name": "cFEStateNetQuickMessages_ctor",
 "address": "001c20f8",
 "end": "001c2138"
 },
 {
-"name": "FUN_001c2138",
+"name": "cFEStateNetQuickMessages_v04",
 "address": "001c2138",
 "end": "001c21a0"
 },
@@ -12920,7 +12920,7 @@
 "end": "001c23bc"
 },
 {
-"name": "FUN_001c23c0",
+"name": "cFEStateNetQuickMessages_v07",
 "address": "001c23c0",
 "end": "001c2414"
 },
@@ -12965,7 +12965,7 @@
 "end": "001c2d18"
 },
 {
-"name": "FUN_001c2d18",
+"name": "cFEStateStats_ctor",
 "address": "001c2d18",
 "end": "001c2d90"
 },
@@ -12975,7 +12975,7 @@
 "end": "001c2e00"
 },
 {
-"name": "FUN_001c2e00",
+"name": "cFEStateStats_v04",
 "address": "001c2e00",
 "end": "001c2e6c"
 },
@@ -12995,7 +12995,7 @@
 "end": "001c32b8"
 },
 {
-"name": "FUN_001c32b8",
+"name": "cFEStateStats_v07",
 "address": "001c32b8",
 "end": "001c330c"
 },
@@ -13075,7 +13075,7 @@
 "end": "001c5018"
 },
 {
-"name": "FUN_001c5018",
+"name": "cFEStateNetNews_ctor",
 "address": "001c5018",
 "end": "001c5058"
 },
@@ -13085,7 +13085,7 @@
 "end": "001c5094"
 },
 {
-"name": "FUN_001c5098",
+"name": "cFEStateNetNews_v04",
 "address": "001c5098",
 "end": "001c5108"
 },
@@ -13100,7 +13100,7 @@
 "end": "001c5194"
 },
 {
-"name": "FUN_001c5198",
+"name": "cFEStateNetNews_v07",
 "address": "001c5198",
 "end": "001c530c"
 },
@@ -13190,22 +13190,22 @@
 "end": "001c5af8"
 },
 {
-"name": "FUN_001c5af8",
+"name": "cFEPopupConfirm_v04",
 "address": "001c5af8",
 "end": "001c5b64"
 },
 {
-"name": "FUN_001c5b68",
+"name": "cFEPopupConfirm_v05",
 "address": "001c5b68",
 "end": "001c5b88"
 },
 {
-"name": "FUN_001c5b88",
+"name": "cFEPopupConfirm_v06",
 "address": "001c5b88",
 "end": "001c5c30"
 },
 {
-"name": "FUN_001c5c30",
+"name": "cFEPopupConfirm_v07",
 "address": "001c5c30",
 "end": "001c5dd0"
 },
@@ -13500,7 +13500,7 @@
 "end": "001caba4"
 },
 {
-"name": "FUN_001caba8",
+"name": "cUIStateBuyPopup_ctor",
 "address": "001caba8",
 "end": "001cac30"
 },
@@ -13530,17 +13530,17 @@
 "end": "001cb02c"
 },
 {
-"name": "FUN_001cb030",
+"name": "cKeyboardPopup_ctor",
 "address": "001cb030",
 "end": "001cb138"
 },
 {
-"name": "FUN_001cb138",
+"name": "cKeyboardPopup_dtor",
 "address": "001cb138",
 "end": "001cb19c"
 },
 {
-"name": "FUN_001cb1a0",
+"name": "cKeyboardPopup_v04",
 "address": "001cb1a0",
 "end": "001cb204"
 },
@@ -13710,12 +13710,12 @@
 "end": "001cd2f0"
 },
 {
-"name": "FUN_001cd2f0",
+"name": "cKeyboardPopup_v06",
 "address": "001cd2f0",
 "end": "001cd344"
 },
 {
-"name": "FUN_001cd348",
+"name": "cKeyboardPopup_v07",
 "address": "001cd348",
 "end": "001cd704"
 },
@@ -13730,7 +13730,7 @@
 "end": "001cdb98"
 },
 {
-"name": "FUN_001cdb98",
+"name": "cKeyboardPopup_v08",
 "address": "001cdb98",
 "end": "001ce2a8"
 },
@@ -13930,7 +13930,7 @@
 "end": "001d1124"
 },
 {
-"name": "FUN_001d1128",
+"name": "cFEStateRewardGalleryPosters_ctor",
 "address": "001d1128",
 "end": "001d1198"
 },
@@ -13945,7 +13945,7 @@
 "end": "001d128c"
 },
 {
-"name": "FUN_001d12c8",
+"name": "cFEStateRewardGalleryTradingCards_ctor",
 "address": "001d12c8",
 "end": "001d1330"
 },
@@ -13960,7 +13960,7 @@
 "end": "001d1424"
 },
 {
-"name": "FUN_001d1460",
+"name": "cFEStateRewardGalleryConceptArts_ctor",
 "address": "001d1460",
 "end": "001d14c8"
 },
@@ -13975,7 +13975,7 @@
 "end": "001d15bc"
 },
 {
-"name": "FUN_001d15f8",
+"name": "cFEStateRewardGalleryVideos_ctor",
 "address": "001d15f8",
 "end": "001d1660"
 },
@@ -13990,7 +13990,7 @@
 "end": "001d1754"
 },
 {
-"name": "FUN_001d1790",
+"name": "cFEStateRewardGalleryToys_ctor",
 "address": "001d1790",
 "end": "001d17f8"
 },
@@ -14005,7 +14005,7 @@
 "end": "001d18ec"
 },
 {
-"name": "FUN_001d1928",
+"name": "cFEStateRewardGalleryCheatChars_ctor",
 "address": "001d1928",
 "end": "001d1990"
 },
@@ -14020,17 +14020,17 @@
 "end": "001d1aa0"
 },
 {
-"name": "FUN_001d1aa0",
+"name": "cFEStatePreviewReward_ctor",
 "address": "001d1aa0",
 "end": "001d1b64"
 },
 {
-"name": "FUN_001d1b68",
+"name": "cFEStatePreviewReward_v01",
 "address": "001d1b68",
 "end": "001d1c04"
 },
 {
-"name": "FUN_001d1c08",
+"name": "cFEStatePreviewReward_v04",
 "address": "001d1c08",
 "end": "001d1c98"
 },
@@ -14065,22 +14065,22 @@
 "end": "001d22ec"
 },
 {
-"name": "FUN_001d22f0",
+"name": "cFEStateVideoPlayer_ctor",
 "address": "001d22f0",
 "end": "001d2380"
 },
 {
-"name": "FUN_001d2380",
+"name": "cFEStateVideoPlayer_dtor",
 "address": "001d2380",
 "end": "001d23e0"
 },
 {
-"name": "FUN_001d23e0",
+"name": "cFEStateVideoPlayer_v04",
 "address": "001d23e0",
 "end": "001d242c"
 },
 {
-"name": "FUN_001d2430",
+"name": "cFEStateVideoPlayer_v05",
 "address": "001d2430",
 "end": "001d2468"
 },
@@ -14115,22 +14115,22 @@
 "end": "001d2678"
 },
 {
-"name": "FUN_001d2678",
+"name": "cFEStateMountainRoom_ctor",
 "address": "001d2678",
 "end": "001d28f8"
 },
 {
-"name": "FUN_001d28f8",
+"name": "cFEStateMountainRoom_dtor",
 "address": "001d28f8",
 "end": "001d298c"
 },
 {
-"name": "FUN_001d2990",
+"name": "cFEStateMountainRoom_v04",
 "address": "001d2990",
 "end": "001d2a8c"
 },
 {
-"name": "FUN_001d2a90",
+"name": "cFEStateMountainRoom_v06",
 "address": "001d2a90",
 "end": "001d2acc"
 },
@@ -14175,12 +14175,12 @@
 "end": "001d3780"
 },
 {
-"name": "FUN_001d3780",
+"name": "cFEStatePeakRoom_ctor",
 "address": "001d3780",
 "end": "001d3890"
 },
 {
-"name": "FUN_001d3890",
+"name": "cFEStatePeakRoom_v04",
 "address": "001d3890",
 "end": "001d38f4"
 },
@@ -14190,7 +14190,7 @@
 "end": "001d3c5c"
 },
 {
-"name": "FUN_001d3c60",
+"name": "cFEStatePeakRoom_v06",
 "address": "001d3c60",
 "end": "001d3c7c"
 },
@@ -14215,17 +14215,17 @@
 "end": "001d4268"
 },
 {
-"name": "FUN_001d4268",
+"name": "cFEStateTrophyRoom_ctor",
 "address": "001d4268",
 "end": "001d4364"
 },
 {
-"name": "FUN_001d4368",
+"name": "cFEStateTrophyRoom_v04",
 "address": "001d4368",
 "end": "001d43cc"
 },
 {
-"name": "FUN_001d43d0",
+"name": "cFEStateTrophyRoom_v06",
 "address": "001d43d0",
 "end": "001d43ec"
 },
@@ -14270,12 +14270,12 @@
 "end": "001d4bc8"
 },
 {
-"name": "FUN_001d4bc8",
+"name": "cFEStateRewardsRoom_ctor",
 "address": "001d4bc8",
 "end": "001d4c5c"
 },
 {
-"name": "FUN_001d4c60",
+"name": "cFEStateRewardsRoom_v04",
 "address": "001d4c60",
 "end": "001d4cd8"
 },
@@ -14295,12 +14295,12 @@
 "end": "001d5034"
 },
 {
-"name": "FUN_001d5038",
+"name": "cFEStateRelogin_ctor",
 "address": "001d5038",
 "end": "001d5074"
 },
 {
-"name": "FUN_001d5078",
+"name": "cFEStateRelogin_v04",
 "address": "001d5078",
 "end": "001d50dc"
 },
@@ -14590,7 +14590,7 @@
 "end": "001d99c4"
 },
 {
-"name": "FUN_001d99c8",
+"name": "cFEPopupConfirm_ctor",
 "address": "001d99c8",
 "end": "001d9a7c"
 },
@@ -14615,12 +14615,12 @@
 "end": "001d9d44"
 },
 {
-"name": "FUN_001d9d48",
+"name": "cFEStateNetHelpPopup_ctor",
 "address": "001d9d48",
 "end": "001d9db4"
 },
 {
-"name": "FUN_001d9db8",
+"name": "cFEStateNetHelpPopup_v04",
 "address": "001d9db8",
 "end": "001d9e1c"
 },
@@ -14645,7 +14645,7 @@
 "end": "001da234"
 },
 {
-"name": "FUN_001da238",
+"name": "cFEStateNetHelpPopup_v07",
 "address": "001da238",
 "end": "001da474"
 },
@@ -14880,7 +14880,7 @@
 "end": "001dcc08"
 },
 {
-"name": "FUN_001dcc08",
+"name": "FELocale_v02",
 "address": "001dcc08",
 "end": "001dcc38"
 },
@@ -15010,27 +15010,27 @@
 "end": "001dd83c"
 },
 {
-"name": "FUN_001dd840",
+"name": "cFEStateCharSelect_v01",
 "address": "001dd840",
 "end": "001dd868"
 },
 {
-"name": "FUN_001dd868",
+"name": "cFEStateCheatCharSelect_v01",
 "address": "001dd868",
 "end": "001dd890"
 },
 {
-"name": "FUN_001dd8a0",
+"name": "cFEStateCharSetup_v01",
 "address": "001dd8a0",
 "end": "001dd8c8"
 },
 {
-"name": "FUN_001dd8c8",
+"name": "cFEStateRiderDetail_v01",
 "address": "001dd8c8",
 "end": "001dd8f0"
 },
 {
-"name": "FUN_001dd8f0",
+"name": "cFEStateUberTrick_v01",
 "address": "001dd8f0",
 "end": "001dd918"
 },
@@ -15080,7 +15080,7 @@
 "end": "001ddeb4"
 },
 {
-"name": "FUN_001ddeb8",
+"name": "cFEPopupConfirm_v01",
 "address": "001ddeb8",
 "end": "001ddee0"
 },
@@ -15090,7 +15090,7 @@
 "end": "001ddf20"
 },
 {
-"name": "FUN_001ddf20",
+"name": "cFEStateOptions_v01",
 "address": "001ddf20",
 "end": "001ddf48"
 },
@@ -15100,7 +15100,7 @@
 "end": "001ddf80"
 },
 {
-"name": "FUN_001ddf80",
+"name": "cFEStateOptionsGame_v01",
 "address": "001ddf80",
 "end": "001ddfa8"
 },
@@ -15110,7 +15110,7 @@
 "end": "001ddfe8"
 },
 {
-"name": "FUN_001ddfe8",
+"name": "cFEStateOptionsSound_v01",
 "address": "001ddfe8",
 "end": "001de010"
 },
@@ -15120,7 +15120,7 @@
 "end": "001de050"
 },
 {
-"name": "FUN_001de050",
+"name": "cFEStateOptionsHUD_v01",
 "address": "001de050",
 "end": "001de078"
 },
@@ -15130,7 +15130,7 @@
 "end": "001de0bc"
 },
 {
-"name": "FUN_001de0c0",
+"name": "cFEStateOptionsController_v01",
 "address": "001de0c0",
 "end": "001de0e8"
 },
@@ -15140,12 +15140,12 @@
 "end": "001de128"
 },
 {
-"name": "FUN_001de128",
+"name": "cFEStateOptionsSaveLoad_v01",
 "address": "001de128",
 "end": "001de150"
 },
 {
-"name": "FUN_001de150",
+"name": "cFEStateOptionsDeviceSelect_v01",
 "address": "001de150",
 "end": "001de178"
 },
@@ -15165,7 +15165,7 @@
 "end": "001de218"
 },
 {
-"name": "FUN_001de218",
+"name": "cFEStateProfileLoad_v01",
 "address": "001de218",
 "end": "001de240"
 },
@@ -15225,7 +15225,7 @@
 "end": "001de528"
 },
 {
-"name": "FUN_001de528",
+"name": "cFEStateEventSelect_v01",
 "address": "001de528",
 "end": "001de550"
 },
@@ -15255,7 +15255,7 @@
 "end": "001de664"
 },
 {
-"name": "FUN_001de668",
+"name": "FEUICustom_v01",
 "address": "001de668",
 "end": "001de690"
 },
@@ -15265,7 +15265,7 @@
 "end": "001de6c8"
 },
 {
-"name": "FUN_001de6c8",
+"name": "cFEStateTitle_v01",
 "address": "001de6c8",
 "end": "001de6f0"
 },
@@ -15275,7 +15275,7 @@
 "end": "001de728"
 },
 {
-"name": "FUN_001de728",
+"name": "cFEStateMainMenu_v01",
 "address": "001de728",
 "end": "001de750"
 },
@@ -15285,7 +15285,7 @@
 "end": "001de788"
 },
 {
-"name": "FUN_001de788",
+"name": "cFEStateBonusMaterial_v01",
 "address": "001de788",
 "end": "001de7b0"
 },
@@ -15370,7 +15370,7 @@
 "end": "001df3b8"
 },
 {
-"name": "FUN_001df3b8",
+"name": "cFEStateRiderBio_v01",
 "address": "001df3b8",
 "end": "001df3e0"
 },
@@ -15380,7 +15380,7 @@
 "end": "001df418"
 },
 {
-"name": "FUN_001df418",
+"name": "cFEStateRuleSelect_v01",
 "address": "001df418",
 "end": "001df440"
 },
@@ -15395,7 +15395,7 @@
 "end": "001df4e4"
 },
 {
-"name": "FUN_001df4e8",
+"name": "cFEStateBraggingRights_dtor",
 "address": "001df4e8",
 "end": "001df578"
 },
@@ -15410,7 +15410,7 @@
 "end": "001df604"
 },
 {
-"name": "FUN_001df608",
+"name": "cFEStateOnlineMainMenu_v01",
 "address": "001df608",
 "end": "001df630"
 },
@@ -15420,7 +15420,7 @@
 "end": "001df678"
 },
 {
-"name": "FUN_001df678",
+"name": "cFEStateNetQuickPlayPopup_v01",
 "address": "001df678",
 "end": "001df6a0"
 },
@@ -15430,7 +15430,7 @@
 "end": "001df6e4"
 },
 {
-"name": "FUN_001df6e8",
+"name": "cFEStateNetSSXWorld_v01",
 "address": "001df6e8",
 "end": "001df710"
 },
@@ -15440,7 +15440,7 @@
 "end": "001df74c"
 },
 {
-"name": "FUN_001df750",
+"name": "cFEStateNetQuickMessages_v01",
 "address": "001df750",
 "end": "001df778"
 },
@@ -15450,7 +15450,7 @@
 "end": "001df7c8"
 },
 {
-"name": "FUN_001df7c8",
+"name": "cFEStateLobbyMenu_dtor",
 "address": "001df7c8",
 "end": "001df824"
 },
@@ -15460,7 +15460,7 @@
 "end": "001df874"
 },
 {
-"name": "FUN_001df878",
+"name": "cFEStateNetCreateRoomPopup_dtor",
 "address": "001df878",
 "end": "001df8e0"
 },
@@ -15470,7 +15470,7 @@
 "end": "001df95c"
 },
 {
-"name": "FUN_001df960",
+"name": "cFEStateNetHelpPopup_v01",
 "address": "001df960",
 "end": "001df988"
 },
@@ -15495,7 +15495,7 @@
 "end": "001dfb28"
 },
 {
-"name": "FUN_001dfb28",
+"name": "cFEStateRewardGalleryPosters_v01",
 "address": "001dfb28",
 "end": "001dfb84"
 },
@@ -15505,7 +15505,7 @@
 "end": "001dfbf8"
 },
 {
-"name": "FUN_001dfbf8",
+"name": "cFEStateRewardGalleryTradingCards_v01",
 "address": "001dfbf8",
 "end": "001dfc54"
 },
@@ -15515,7 +15515,7 @@
 "end": "001dfcc8"
 },
 {
-"name": "FUN_001dfcc8",
+"name": "cFEStateRewardGalleryConceptArts_v01",
 "address": "001dfcc8",
 "end": "001dfd24"
 },
@@ -15525,7 +15525,7 @@
 "end": "001dfd98"
 },
 {
-"name": "FUN_001dfd98",
+"name": "cFEStateRewardGalleryVideos_v01",
 "address": "001dfd98",
 "end": "001dfdf4"
 },
@@ -15535,7 +15535,7 @@
 "end": "001dfe68"
 },
 {
-"name": "FUN_001dfe68",
+"name": "cFEStateRewardGalleryToys_v01",
 "address": "001dfe68",
 "end": "001dfec4"
 },
@@ -15545,7 +15545,7 @@
 "end": "001dff38"
 },
 {
-"name": "FUN_001dff38",
+"name": "cFEStateRewardGalleryCheatChars_v01",
 "address": "001dff38",
 "end": "001dff94"
 },
@@ -15570,7 +15570,7 @@
 "end": "001e01b0"
 },
 {
-"name": "FUN_001e01b0",
+"name": "cFEStatePeakRoom_v01",
 "address": "001e01b0",
 "end": "001e01d8"
 },
@@ -15580,7 +15580,7 @@
 "end": "001e0210"
 },
 {
-"name": "FUN_001e0210",
+"name": "cFEStateTrophyRoom_v01",
 "address": "001e0210",
 "end": "001e0264"
 },
@@ -15590,7 +15590,7 @@
 "end": "001e02a0"
 },
 {
-"name": "FUN_001e02a0",
+"name": "cFEStateRewardsRoom_v01",
 "address": "001e02a0",
 "end": "001e02c8"
 },
@@ -15625,7 +15625,7 @@
 "end": "001e0548"
 },
 {
-"name": "FUN_001e0548",
+"name": "cFEStateAudioOptions_v01",
 "address": "001e0548",
 "end": "001e0570"
 },
@@ -15635,17 +15635,17 @@
 "end": "001e05b0"
 },
 {
-"name": "FUN_001e05b0",
+"name": "cFEStateRequestLine_v01",
 "address": "001e05b0",
 "end": "001e05d8"
 },
 {
-"name": "FUN_001e0740",
+"name": "FEUISound_v01",
 "address": "001e0740",
 "end": "001e0770"
 },
 {
-"name": "FUN_001e0780",
+"name": "OVUISound_v01",
 "address": "001e0780",
 "end": "001e07b0"
 },
@@ -15665,7 +15665,7 @@
 "end": "001e0858"
 },
 {
-"name": "FUN_001e0858",
+"name": "cFEStateMPCircuit_v01",
 "address": "001e0858",
 "end": "001e0880"
 },
@@ -15680,7 +15680,7 @@
 "end": "001e0914"
 },
 {
-"name": "FUN_001e0918",
+"name": "cFEStateSelectPersona_v01",
 "address": "001e0918",
 "end": "001e0940"
 },
@@ -15690,7 +15690,7 @@
 "end": "001e099c"
 },
 {
-"name": "FUN_001e09a0",
+"name": "cFEStateChallengePopup_dtor",
 "address": "001e09a0",
 "end": "001e09fc"
 },
@@ -15710,7 +15710,7 @@
 "end": "001e0b00"
 },
 {
-"name": "FUN_001e0b00",
+"name": "cFEStateOnlineCharacterSelect_v01",
 "address": "001e0b00",
 "end": "001e0b28"
 },
@@ -15735,7 +15735,7 @@
 "end": "001e0cf8"
 },
 {
-"name": "FUN_001e0cf8",
+"name": "cFEStateCreateStep1_dtor",
 "address": "001e0cf8",
 "end": "001e0d60"
 },
@@ -15745,7 +15745,7 @@
 "end": "001e0da4"
 },
 {
-"name": "FUN_001e0da8",
+"name": "cFEStateCreateStep2_v01",
 "address": "001e0da8",
 "end": "001e0dd0"
 },
@@ -15755,7 +15755,7 @@
 "end": "001e0e14"
 },
 {
-"name": "FUN_001e0e18",
+"name": "cFEStateCreateDuplicate_v01",
 "address": "001e0e18",
 "end": "001e0e40"
 },
@@ -15765,12 +15765,12 @@
 "end": "001e0e88"
 },
 {
-"name": "FUN_001e0e98",
+"name": "cFEStateStats_v01",
 "address": "001e0e98",
 "end": "001e0ec0"
 },
 {
-"name": "FUN_001e0ec8",
+"name": "cFEStateNetNews_v01",
 "address": "001e0ec8",
 "end": "001e0ef0"
 },
@@ -15780,7 +15780,7 @@
 "end": "001e0f30"
 },
 {
-"name": "FUN_001e0f30",
+"name": "cFEStateRelogin_v01",
 "address": "001e0f30",
 "end": "001e0f58"
 },
@@ -15790,7 +15790,7 @@
 "end": "001e0fb8"
 },
 {
-"name": "FUN_001e0fc0",
+"name": "cFEStateNetMessenger_v07",
 "address": "001e0fc0",
 "end": "001e0fec"
 },
@@ -16160,12 +16160,12 @@
 "end": "001e51cc"
 },
 {
-"name": "FUN_001e51d0",
+"name": "cOVState_ViewPopup_ctor",
 "address": "001e51d0",
 "end": "001e5244"
 },
 {
-"name": "FUN_001e5248",
+"name": "cOVState_ViewPopup_v04",
 "address": "001e5248",
 "end": "001e52ac"
 },
@@ -16175,7 +16175,7 @@
 "end": "001e52cc"
 },
 {
-"name": "FUN_001e52d0",
+"name": "cOVState_ViewPopup_v07",
 "address": "001e52d0",
 "end": "001e52f4"
 },
@@ -16380,12 +16380,12 @@
 "end": "001e9a30"
 },
 {
-"name": "FUN_001e9a30",
+"name": "cOVStateHUD1P_ctor",
 "address": "001e9a30",
 "end": "001e9acc"
 },
 {
-"name": "FUN_001e9ad0",
+"name": "cOVStateHUD1P_v04",
 "address": "001e9ad0",
 "end": "001ea92c"
 },
@@ -16465,7 +16465,7 @@
 "end": "001f30bc"
 },
 {
-"name": "FUN_001f30c0",
+"name": "LoadIndicator_ctor",
 "address": "001f30c0",
 "end": "001f30d8"
 },
@@ -16500,7 +16500,7 @@
 "end": "001f3700"
 },
 {
-"name": "FUN_001f3700",
+"name": "cFEStateLodge_ctor",
 "address": "001f3700",
 "end": "001f3790"
 },
@@ -16525,12 +16525,12 @@
 "end": "001f3ff8"
 },
 {
-"name": "FUN_001f3ff8",
+"name": "cFEStateLodgeRiderDetail_ctor",
 "address": "001f3ff8",
 "end": "001f404c"
 },
 {
-"name": "FUN_001f4050",
+"name": "cFEStateLodgeRiderDetail_v04",
 "address": "001f4050",
 "end": "001f4104"
 },
@@ -16555,12 +16555,12 @@
 "end": "001f4728"
 },
 {
-"name": "FUN_001f4728",
+"name": "cFEStateBuyAttrib_ctor",
 "address": "001f4728",
 "end": "001f4830"
 },
 {
-"name": "FUN_001f4830",
+"name": "cFEStateBuyAttrib_v04",
 "address": "001f4830",
 "end": "001f490c"
 },
@@ -16570,12 +16570,12 @@
 "end": "001f49d0"
 },
 {
-"name": "FUN_001f49d0",
+"name": "cFEStateBuyAttrib_v07",
 "address": "001f49d0",
 "end": "001f49f4"
 },
 {
-"name": "FUN_001f49f8",
+"name": "cFEStateBuyAttrib_v06",
 "address": "001f49f8",
 "end": "001f4a38"
 },
@@ -16625,22 +16625,22 @@
 "end": "001f54a4"
 },
 {
-"name": "FUN_001f54b0",
+"name": "cFEStateCareerStats_ctor",
 "address": "001f54b0",
 "end": "001f5504"
 },
 {
-"name": "FUN_001f5508",
+"name": "cFEStateCareerStats_v04",
 "address": "001f5508",
 "end": "001f55c0"
 },
 {
-"name": "FUN_001f55c0",
+"name": "cFEStateCareerStats_v07",
 "address": "001f55c0",
 "end": "001f55e4"
 },
 {
-"name": "FUN_001f55e8",
+"name": "cFEStateCareerStats_v06",
 "address": "001f55e8",
 "end": "001f5618"
 },
@@ -16650,7 +16650,7 @@
 "end": "001f56c4"
 },
 {
-"name": "FUN_001f56c8",
+"name": "cFEStateCareerStats_v08",
 "address": "001f56c8",
 "end": "001f5a34"
 },
@@ -17920,7 +17920,7 @@
 "end": "0021cb40"
 },
 {
-"name": "FUN_0021cb40",
+"name": "cOVState_ViewPopup_v01",
 "address": "0021cb40",
 "end": "0021cb68"
 },
@@ -17935,7 +17935,7 @@
 "end": "0021cc3c"
 },
 {
-"name": "FUN_0021cc40",
+"name": "cOVStateHUD1P_dtor",
 "address": "0021cc40",
 "end": "0021ccc4"
 },
@@ -18115,7 +18115,7 @@
 "end": "00220dd0"
 },
 {
-"name": "FUN_00220dd0",
+"name": "cFEStateLodgeRiderDetail_v01",
 "address": "00220dd0",
 "end": "00220df8"
 },
@@ -18125,7 +18125,7 @@
 "end": "00220e30"
 },
 {
-"name": "FUN_00220e30",
+"name": "cFEStateBuyAttrib_v01",
 "address": "00220e30",
 "end": "00220e58"
 },
@@ -18135,7 +18135,7 @@
 "end": "00220e90"
 },
 {
-"name": "FUN_00220e90",
+"name": "cFEStateCareerStats_v01",
 "address": "00220e90",
 "end": "00220eb8"
 },
@@ -18535,7 +18535,7 @@
 "end": "00224d9c"
 },
 {
-"name": "FUN_00224da0",
+"name": "cLunoTable_ctor",
 "address": "00224da0",
 "end": "00224dcc"
 },
@@ -18735,7 +18735,7 @@
 "end": "00229180"
 },
 {
-"name": "FUN_00229180",
+"name": "CrowdMan2d_ctor",
 "address": "00229180",
 "end": "00229278"
 },
@@ -18930,7 +18930,7 @@
 "end": "0022cce8"
 },
 {
-"name": "FUN_0022cce8",
+"name": "SectionMan_ctor",
 "address": "0022cce8",
 "end": "0022cd14"
 },
@@ -19085,7 +19085,7 @@
 "end": "0022e3b4"
 },
 {
-"name": "FUN_0022e3b8",
+"name": "GameViewMan_ctor",
 "address": "0022e3b8",
 "end": "0022e54c"
 },
@@ -19120,7 +19120,7 @@
 "end": "0022e964"
 },
 {
-"name": "FUN_0022e968",
+"name": "GameModule_ctor",
 "address": "0022e968",
 "end": "0022ebc8"
 },
@@ -19345,22 +19345,22 @@
 "end": "002326d8"
 },
 {
-"name": "FUN_00232720",
+"name": "cPreGameLoadScreen_ctor",
 "address": "00232720",
 "end": "00232738"
 },
 {
-"name": "FUN_00232738",
+"name": "cPreFELoadScreen_ctor",
 "address": "00232738",
 "end": "00232750"
 },
 {
-"name": "FUN_00232750",
+"name": "cPreGameLoadScreen_v01",
 "address": "00232750",
 "end": "00232780"
 },
 {
-"name": "FUN_00232780",
+"name": "cPreFELoadScreen_v01",
 "address": "00232780",
 "end": "002327b0"
 },
@@ -19390,32 +19390,32 @@
 "end": "00232b28"
 },
 {
-"name": "FUN_00232b28",
+"name": "StartScreen_v02",
 "address": "00232b28",
 "end": "00232c94"
 },
 {
-"name": "FUN_00232c98",
+"name": "StartScreen_v05",
 "address": "00232c98",
 "end": "00232cf8"
 },
 {
-"name": "FUN_00232cf8",
+"name": "StartScreen_v04",
 "address": "00232cf8",
 "end": "00232d14"
 },
 {
-"name": "FUN_00232d18",
+"name": "StartScreen_v06",
 "address": "00232d18",
 "end": "00232d50"
 },
 {
-"name": "FUN_00232d50",
+"name": "StartScreen_v03",
 "address": "00232d50",
 "end": "00232da8"
 },
 {
-"name": "FUN_00232da8",
+"name": "StartScreen_v07",
 "address": "00232da8",
 "end": "00232e1c"
 },
@@ -19875,7 +19875,7 @@
 "end": "00237060"
 },
 {
-"name": "FUN_00237060",
+"name": "InputSync_ctor",
 "address": "00237060",
 "end": "0023709c"
 },
@@ -20745,7 +20745,7 @@
 "end": "00242284"
 },
 {
-"name": "FUN_00242288",
+"name": "MCManager_ctor",
 "address": "00242288",
 "end": "002424c8"
 },
@@ -20755,7 +20755,7 @@
 "end": "002424fc"
 },
 {
-"name": "FUN_00242500",
+"name": "OcclusionMan_ctor",
 "address": "00242500",
 "end": "00242518"
 },
@@ -20825,7 +20825,7 @@
 "end": "00243a70"
 },
 {
-"name": "FUN_00243a80",
+"name": "PreStartScreen_v01",
 "address": "00243a80",
 "end": "00243ab0"
 },
@@ -20840,7 +20840,7 @@
 "end": "00243b50"
 },
 {
-"name": "FUN_00243b50",
+"name": "StartScreen_v01",
 "address": "00243b50",
 "end": "00243b80"
 },
@@ -21935,7 +21935,7 @@
 "end": "002533c4"
 },
 {
-"name": "FUN_002533c8",
+"name": "VidEnginePlayer_ctor",
 "address": "002533c8",
 "end": "00253414"
 },
@@ -22140,7 +22140,7 @@
 "end": "002558c0"
 },
 {
-"name": "FUN_002558c0",
+"name": "cCommSystem_ctor",
 "address": "002558c0",
 "end": "002559b0"
 },
@@ -22250,7 +22250,7 @@
 "end": "002561b4"
 },
 {
-"name": "FUN_002561b8",
+"name": "cFEStateAuthDNASCreate_ctor",
 "address": "002561b8",
 "end": "002561e0"
 },
@@ -22305,12 +22305,12 @@
 "end": "00256698"
 },
 {
-"name": "FUN_00256698",
+"name": "cDSockChannel_ctor",
 "address": "00256698",
 "end": "002566e4"
 },
 {
-"name": "FUN_002566e8",
+"name": "cDSockChannel_v01",
 "address": "002566e8",
 "end": "00256730"
 },
@@ -22335,12 +22335,12 @@
 "end": "00256994"
 },
 {
-"name": "FUN_00256998",
+"name": "cDSockChannel_v02",
 "address": "00256998",
 "end": "00256a00"
 },
 {
-"name": "FUN_00256a00",
+"name": "cDSockChannel_v03",
 "address": "00256a00",
 "end": "00256a58"
 },
@@ -22375,7 +22375,7 @@
 "end": "00256c78"
 },
 {
-"name": "FUN_00256c78",
+"name": "cGameComm_ctor",
 "address": "00256c78",
 "end": "00256edc"
 },
@@ -22655,7 +22655,7 @@
 "end": "002594cc"
 },
 {
-"name": "FUN_002594d0",
+"name": "LobbyMan_ctor",
 "address": "002594d0",
 "end": "00259624"
 },
@@ -23505,7 +23505,7 @@
 "end": "002640c0"
 },
 {
-"name": "FUN_002640c0",
+"name": "cSetupMan_ctor",
 "address": "002640c0",
 "end": "00264134"
 },
@@ -23635,7 +23635,7 @@
 "end": "002658e0"
 },
 {
-"name": "FUN_002658e0",
+"name": "cSharedLoginMan_ctor",
 "address": "002658e0",
 "end": "00265908"
 },
@@ -23855,7 +23855,7 @@
 "end": "002667e8"
 },
 {
-"name": "FUN_002667e8",
+"name": "cUsbKeyboard_ctor",
 "address": "002667e8",
 "end": "0026684c"
 },
@@ -23890,7 +23890,7 @@
 "end": "00266d00"
 },
 {
-"name": "FUN_00266d00",
+"name": "cVoipMan_ctor",
 "address": "00266d00",
 "end": "00266d10"
 },
@@ -24635,7 +24635,7 @@
 "end": "0026c458"
 },
 {
-"name": "FUN_0026c458",
+"name": "PlaybackMan_ctor",
 "address": "0026c458",
 "end": "0026c584"
 },
@@ -24735,7 +24735,7 @@
 "end": "0026d0a0"
 },
 {
-"name": "FUN_0026d0a0",
+"name": "ReplayCache_ctor",
 "address": "0026d0a0",
 "end": "0026d0e8"
 },
@@ -25060,7 +25060,7 @@
 "end": "0026efb8"
 },
 {
-"name": "FUN_0026efb8",
+"name": "Replay_ctor",
 "address": "0026efb8",
 "end": "0026f088"
 },
@@ -25505,7 +25505,7 @@
 "end": "00272788"
 },
 {
-"name": "FUN_00272788",
+"name": "InSeq_ctor",
 "address": "00272788",
 "end": "002728cc"
 },
@@ -26225,12 +26225,12 @@
 "end": "00277f20"
 },
 {
-"name": "FUN_00277f20",
+"name": "ScriptEngine_ctor",
 "address": "00277f20",
 "end": "002780b4"
 },
 {
-"name": "FUN_002780b8",
+"name": "ScriptEngine_v01",
 "address": "002780b8",
 "end": "00278210"
 },
@@ -26265,7 +26265,7 @@
 "end": "00278720"
 },
 {
-"name": "FUN_00278720",
+"name": "ScriptEngine_v05",
 "address": "00278720",
 "end": "00278914"
 },
@@ -26300,7 +26300,7 @@
 "end": "00278acc"
 },
 {
-"name": "FUN_00278ad0",
+"name": "ScriptEngine_v06",
 "address": "00278ad0",
 "end": "00278b94"
 },
@@ -26490,17 +26490,17 @@
 "end": "002797c8"
 },
 {
-"name": "FUN_002797c8",
+"name": "ScriptEngine_v07",
 "address": "002797c8",
 "end": "0027983c"
 },
 {
-"name": "FUN_00279840",
+"name": "ScriptEngine_v08",
 "address": "00279840",
 "end": "00279884"
 },
 {
-"name": "FUN_00279888",
+"name": "ScriptEngine_v09",
 "address": "00279888",
 "end": "002798c0"
 },
@@ -26515,7 +26515,7 @@
 "end": "00279a70"
 },
 {
-"name": "FUN_00279a70",
+"name": "ScriptEngine_v10",
 "address": "00279a70",
 "end": "00279ce0"
 },
@@ -26525,17 +26525,17 @@
 "end": "00279cfc"
 },
 {
-"name": "FUN_00279d00",
+"name": "ScriptEngine_v02",
 "address": "00279d00",
 "end": "00279da8"
 },
 {
-"name": "FUN_00279da8",
+"name": "ScriptEngine_v03",
 "address": "00279da8",
 "end": "00279e4c"
 },
 {
-"name": "FUN_00279e50",
+"name": "ScriptEngine_v04",
 "address": "00279e50",
 "end": "00279ed4"
 },
@@ -26955,7 +26955,7 @@
 "end": "0027d5e8"
 },
 {
-"name": "FUN_0027d5e8",
+"name": "ScriptObjCam_ctor",
 "address": "0027d5e8",
 "end": "0027d67c"
 },
@@ -26980,22 +26980,22 @@
 "end": "0027d7ec"
 },
 {
-"name": "FUN_0027d7f0",
+"name": "ScriptObjCam_v02",
 "address": "0027d7f0",
 "end": "0027d81c"
 },
 {
-"name": "FUN_0027d820",
+"name": "ScriptObjCam_v03",
 "address": "0027d820",
 "end": "0027d84c"
 },
 {
-"name": "FUN_0027d850",
+"name": "ScriptObjCam_v04",
 "address": "0027d850",
 "end": "0027d8d8"
 },
 {
-"name": "FUN_0027d8d8",
+"name": "ScriptObjCam_v05",
 "address": "0027d8d8",
 "end": "0027d96c"
 },
@@ -27625,7 +27625,7 @@
 "end": "002849b4"
 },
 {
-"name": "FUN_00284a28",
+"name": "ScriptObjCam_v01",
 "address": "00284a28",
 "end": "00284a44"
 },
@@ -27660,7 +27660,7 @@
 "end": "00284c68"
 },
 {
-"name": "FUN_00284c68",
+"name": "SSXAudioSystem_ctor",
 "address": "00284c68",
 "end": "0028520c"
 },
@@ -29960,7 +29960,7 @@
 "end": "002a8c20"
 },
 {
-"name": "FUN_002a8c20",
+"name": "PS2SoundManager_ctor",
 "address": "002a8c20",
 "end": "002a8c50"
 },
@@ -29970,17 +29970,17 @@
 "end": "002a8cac"
 },
 {
-"name": "FUN_002a8cb0",
+"name": "PS2SoundManager_v01",
 "address": "002a8cb0",
 "end": "002a8d90"
 },
 {
-"name": "FUN_002a8d90",
+"name": "PS2SoundManager_v02",
 "address": "002a8d90",
 "end": "002a8f4c"
 },
 {
-"name": "FUN_002a8f50",
+"name": "PS2SoundManager_v03",
 "address": "002a8f50",
 "end": "002a8f9c"
 },
@@ -29990,7 +29990,7 @@
 "end": "002a8fd4"
 },
 {
-"name": "FUN_002a8fd8",
+"name": "PS2SoundManager_v04",
 "address": "002a8fd8",
 "end": "002a9128"
 },
@@ -30835,7 +30835,7 @@
 "end": "002af8dc"
 },
 {
-"name": "FUN_002af8e0",
+"name": "SpeechBank_ctor",
 "address": "002af8e0",
 "end": "002af8fc"
 },
@@ -30855,7 +30855,7 @@
 "end": "002afa68"
 },
 {
-"name": "FUN_002afa68",
+"name": "SpeechInstance_ctor",
 "address": "002afa68",
 "end": "002afb38"
 },
@@ -30940,7 +30940,7 @@
 "end": "002b0ce0"
 },
 {
-"name": "FUN_002b0ce0",
+"name": "SPCH_Init",
 "address": "002b0ce0",
 "end": "002b0d9c"
 },
@@ -31055,12 +31055,12 @@
 "end": "002b1a94"
 },
 {
-"name": "FUN_002b1a98",
+"name": "cSongConfiguration_ctor",
 "address": "002b1a98",
 "end": "002b1b64"
 },
 {
-"name": "FUN_002b1b68",
+"name": "cSongConfiguration_dtor",
 "address": "002b1b68",
 "end": "002b1b98"
 },
@@ -31070,7 +31070,7 @@
 "end": "002b1c50"
 },
 {
-"name": "FUN_002b1c50",
+"name": "SongInstance_ctor",
 "address": "002b1c50",
 "end": "002b1f74"
 },
@@ -31520,7 +31520,7 @@
 "end": "002b58d0"
 },
 {
-"name": "FUN_002b58d0",
+"name": "WorldTriggerManager_ctor",
 "address": "002b58d0",
 "end": "002b5988"
 },
@@ -31660,7 +31660,7 @@
 "end": "002b6aa0"
 },
 {
-"name": "FUN_002b6aa0",
+"name": "cWorldSound_ctor",
 "address": "002b6aa0",
 "end": "002b6adc"
 },
@@ -31875,7 +31875,7 @@
 "end": "002bb12c"
 },
 {
-"name": "FUN_002bb130",
+"name": "cWorldPainterMan_ctor",
 "address": "002bb130",
 "end": "002bb13c"
 },
@@ -31970,72 +31970,72 @@
 "end": "002bc500"
 },
 {
-"name": "FUN_002bc6f8",
+"name": "tWPIGD_MusicTrigger_ctor",
 "address": "002bc6f8",
 "end": "002bc728"
 },
 {
-"name": "FUN_002bc728",
+"name": "tWPIGD_Mix_ctor",
 "address": "002bc728",
 "end": "002bc750"
 },
 {
-"name": "FUN_002bc750",
+"name": "tWPIGD_Ambience_ctor",
 "address": "002bc750",
 "end": "002bc778"
 },
 {
-"name": "FUN_002bc778",
+"name": "tWPIGD_Speech_ctor",
 "address": "002bc778",
 "end": "002bc7a0"
 },
 {
-"name": "FUN_002bc7a0",
+"name": "tWPIGD_Camera_ctor",
 "address": "002bc7a0",
 "end": "002bc7c8"
 },
 {
-"name": "FUN_002bc7c8",
+"name": "tWPIGD_Fog_ctor",
 "address": "002bc7c8",
 "end": "002bc82c"
 },
 {
-"name": "FUN_002bc830",
+"name": "tWPIGD_LightGlow_ctor",
 "address": "002bc830",
 "end": "002bc890"
 },
 {
-"name": "FUN_002bc890",
+"name": "tWPIGD_ScreenTint_ctor",
 "address": "002bc890",
 "end": "002bc8e8"
 },
 {
-"name": "FUN_002bc8e8",
+"name": "tWPIGD_SkyBox_ctor",
 "address": "002bc8e8",
 "end": "002bc910"
 },
 {
-"name": "FUN_002bc910",
+"name": "tWPIGD_Sun_ctor",
 "address": "002bc910",
 "end": "002bc980"
 },
 {
-"name": "FUN_002bc980",
+"name": "tWPIGD_Surface_ctor",
 "address": "002bc980",
 "end": "002bc9ac"
 },
 {
-"name": "FUN_002bc9b0",
+"name": "tWPIGD_Lighting_ctor",
 "address": "002bc9b0",
 "end": "002bcaf4"
 },
 {
-"name": "FUN_002bcaf8",
+"name": "tWPIGD_Weather_ctor",
 "address": "002bcaf8",
 "end": "002bcbcc"
 },
 {
-"name": "FUN_002bcbd0",
+"name": "tWPIGD_Danger_ctor",
 "address": "002bcbd0",
 "end": "002bcc00"
 },
@@ -32265,17 +32265,17 @@
 "end": "002c0404"
 },
 {
-"name": "FUN_002c0408",
+"name": "WorldPainterQuery_ctor",
 "address": "002c0408",
 "end": "002c06bc"
 },
 {
-"name": "FUN_002c06c0",
+"name": "WorldPainterQuery_v01",
 "address": "002c06c0",
 "end": "002c0774"
 },
 {
-"name": "FUN_002c0778",
+"name": "WorldPainterQuery_v02",
 "address": "002c0778",
 "end": "002c0a10"
 },
@@ -32540,7 +32540,7 @@
 "end": "002c3fa8"
 },
 {
-"name": "FUN_002c3fa8",
+"name": "cPS2MemCard_ctor",
 "address": "002c3fa8",
 "end": "002c3fdc"
 },
@@ -32970,7 +32970,7 @@
 "end": "002c7474"
 },
 {
-"name": "FUN_002c7478",
+"name": "cPS2ConsoleConfig_ctor",
 "address": "002c7478",
 "end": "002c76c0"
 },
@@ -33280,7 +33280,7 @@
 "end": "002cc018"
 },
 {
-"name": "FUN_002cc018",
+"name": "MenuSys_ctor",
 "address": "002cc018",
 "end": "002cc044"
 },
@@ -33990,7 +33990,7 @@
 "end": "002d21c0"
 },
 {
-"name": "FUN_002d21c0",
+"name": "SSXStatsMan_ctor",
 "address": "002d21c0",
 "end": "002d21cc"
 },
@@ -34525,7 +34525,7 @@
 "end": "002db6d4"
 },
 {
-"name": "FUN_002db6d8",
+"name": "cCrowdRender2D_ctor",
 "address": "002db6d8",
 "end": "002db700"
 },
@@ -34550,7 +34550,7 @@
 "end": "002db9c4"
 },
 {
-"name": "FUN_002db9c8",
+"name": "cCrowdAnim2D_ctor",
 "address": "002db9c8",
 "end": "002dba08"
 },
@@ -34565,7 +34565,7 @@
 "end": "002dbd0c"
 },
 {
-"name": "FUN_002dbd10",
+"name": "FXLoader_ctor",
 "address": "002dbd10",
 "end": "002dbee0"
 },
@@ -34825,7 +34825,7 @@
 "end": "002e4224"
 },
 {
-"name": "FUN_002e4228",
+"name": "cTransitionMan_ctor",
 "address": "002e4228",
 "end": "002e42cc"
 },
@@ -34870,7 +34870,7 @@
 "end": "002e46c8"
 },
 {
-"name": "FUN_002e46c8",
+"name": "cTransitionMan_v02",
 "address": "002e46c8",
 "end": "002e47e4"
 },
@@ -34940,17 +34940,17 @@
 "end": "002e591c"
 },
 {
-"name": "FUN_002e5920",
+"name": "SnowFall_ctor",
 "address": "002e5920",
 "end": "002e5d14"
 },
 {
-"name": "FUN_002e5d18",
+"name": "SnowFall_v01",
 "address": "002e5d18",
 "end": "002e5da0"
 },
 {
-"name": "FUN_002e5da0",
+"name": "SnowFall_v02",
 "address": "002e5da0",
 "end": "002e6008"
 },
@@ -35035,7 +35035,7 @@
 "end": "002ea66c"
 },
 {
-"name": "FUN_002ea670",
+"name": "cCutSceneTransitionMan_ctor",
 "address": "002ea670",
 "end": "002ea6b4"
 },
@@ -35065,7 +35065,7 @@
 "end": "002ea8fc"
 },
 {
-"name": "FUN_002ea900",
+"name": "cCutSceneTransitionMan_v02",
 "address": "002ea900",
 "end": "002eaa24"
 },
@@ -35140,12 +35140,12 @@
 "end": "002ec414"
 },
 {
-"name": "FUN_002ec418",
+"name": "LensFX_ctor",
 "address": "002ec418",
 "end": "002ec44c"
 },
 {
-"name": "FUN_002ec450",
+"name": "LensFX_v01",
 "address": "002ec450",
 "end": "002ec478"
 },
@@ -35160,12 +35160,12 @@
 "end": "002ec9e0"
 },
 {
-"name": "FUN_002ec9e0",
+"name": "cBoltOnFXInterface_ctor",
 "address": "002ec9e0",
 "end": "002eca64"
 },
 {
-"name": "FUN_002eca68",
+"name": "cBoltOnFXInterface_ctor_2",
 "address": "002eca68",
 "end": "002ecaec"
 },
@@ -35175,7 +35175,7 @@
 "end": "002ecb24"
 },
 {
-"name": "FUN_002ecb28",
+"name": "cBoltOnFXInterface_dtor",
 "address": "002ecb28",
 "end": "002ecbc0"
 },
@@ -35620,22 +35620,22 @@
 "end": "002f03c4"
 },
 {
-"name": "FUN_002f03c8",
+"name": "PS2AIVisualEffectsMan_ctor",
 "address": "002f03c8",
 "end": "002f0438"
 },
 {
-"name": "FUN_002f0438",
+"name": "PS2AIVisualEffectsMan_v01",
 "address": "002f0438",
 "end": "002f04ac"
 },
 {
-"name": "FUN_002f04b0",
+"name": "PS2AIVisualEffectsMan_v02",
 "address": "002f04b0",
 "end": "002f04dc"
 },
 {
-"name": "FUN_002f04e0",
+"name": "PS2AIVisualEffectsMan_v03",
 "address": "002f04e0",
 "end": "002f050c"
 },
@@ -35645,7 +35645,7 @@
 "end": "002f0544"
 },
 {
-"name": "FUN_002f0548",
+"name": "PS2VisualEffectsMan_ctor",
 "address": "002f0548",
 "end": "002f081c"
 },
@@ -35690,12 +35690,12 @@
 "end": "002f1764"
 },
 {
-"name": "FUN_002f1768",
+"name": "cAttachedDynamicEmitter_ctor",
 "address": "002f1768",
 "end": "002f17a8"
 },
 {
-"name": "FUN_002f17a8",
+"name": "cAttachedDynamicEmitter_v04",
 "address": "002f17a8",
 "end": "002f17d0"
 },
@@ -35710,7 +35710,7 @@
 "end": "002f184c"
 },
 {
-"name": "FUN_002f1850",
+"name": "AttachedEmitterFX_ctor",
 "address": "002f1850",
 "end": "002f1890"
 },
@@ -35725,7 +35725,7 @@
 "end": "002f193c"
 },
 {
-"name": "FUN_002f1940",
+"name": "AttachedEmitterFX_dtor",
 "address": "002f1940",
 "end": "002f19ec"
 },
@@ -35805,12 +35805,12 @@
 "end": "002f354c"
 },
 {
-"name": "FUN_002f3550",
+"name": "cSplashManager_ctor",
 "address": "002f3550",
 "end": "002f3618"
 },
 {
-"name": "FUN_002f3618",
+"name": "cSplashManager_v01",
 "address": "002f3618",
 "end": "002f3640"
 },
@@ -35835,7 +35835,7 @@
 "end": "002f39e0"
 },
 {
-"name": "FUN_002f39e0",
+"name": "cSplashManager_v02",
 "address": "002f39e0",
 "end": "002f3e24"
 },
@@ -35895,7 +35895,7 @@
 "end": "002f517c"
 },
 {
-"name": "FUN_002f5180",
+"name": "WorldLightMan_ctor",
 "address": "002f5180",
 "end": "002f5230"
 },
@@ -36025,7 +36025,7 @@
 "end": "002f7a4c"
 },
 {
-"name": "FUN_002f7a68",
+"name": "BoardSparkEmitter_ctor",
 "address": "002f7a68",
 "end": "002f7a70"
 },
@@ -36150,7 +36150,7 @@
 "end": "002f81b8"
 },
 {
-"name": "FUN_002f81b8",
+"name": "cCutSceneTransitionMan_v01",
 "address": "002f81b8",
 "end": "002f81d4"
 },
@@ -36835,12 +36835,12 @@
 "end": "00307124"
 },
 {
-"name": "FUN_00307128",
+"name": "WScriptMission_ctor",
 "address": "00307128",
 "end": "003071c8"
 },
 {
-"name": "FUN_003071c8",
+"name": "WScriptMission_v01",
 "address": "003071c8",
 "end": "003071f0"
 },
@@ -36850,7 +36850,7 @@
 "end": "0030723c"
 },
 {
-"name": "FUN_00307240",
+"name": "WScriptMission_v02",
 "address": "00307240",
 "end": "003072ac"
 },
@@ -36875,12 +36875,12 @@
 "end": "00307594"
 },
 {
-"name": "FUN_00307598",
+"name": "WScriptProcess_ctor",
 "address": "00307598",
 "end": "00307738"
 },
 {
-"name": "FUN_00307738",
+"name": "WScriptProcess_v01",
 "address": "00307738",
 "end": "003077f8"
 },
@@ -36975,7 +36975,7 @@
 "end": "00307dc4"
 },
 {
-"name": "FUN_00307dc8",
+"name": "WScriptProcess_v02",
 "address": "00307dc8",
 "end": "00307e10"
 },
@@ -37105,7 +37105,7 @@
 "end": "003087cc"
 },
 {
-"name": "FUN_003087d0",
+"name": "WScriptMan_ctor",
 "address": "003087d0",
 "end": "003088d4"
 },
@@ -37695,7 +37695,7 @@
 "end": "0030d4b8"
 },
 {
-"name": "FUN_0030d4b8",
+"name": "RiderModel_ctor",
 "address": "0030d4b8",
 "end": "0030d540"
 },
@@ -37830,7 +37830,7 @@
 "end": "00311044"
 },
 {
-"name": "FUN_00311048",
+"name": "AnimDataBase_ctor",
 "address": "00311048",
 "end": "00311084"
 },
@@ -37850,12 +37850,12 @@
 "end": "00311220"
 },
 {
-"name": "FUN_00311220",
+"name": "cAdfDataSource_ctor",
 "address": "00311220",
 "end": "0031124c"
 },
 {
-"name": "FUN_00311250",
+"name": "AdfDataSource_ctor",
 "address": "00311250",
 "end": "00311290"
 },
@@ -37880,7 +37880,7 @@
 "end": "003115e0"
 },
 {
-"name": "FUN_003115e0",
+"name": "AIAnimEventMap_ctor",
 "address": "003115e0",
 "end": "0031170c"
 },
@@ -38045,7 +38045,7 @@
 "end": "00313508"
 },
 {
-"name": "FUN_00313508",
+"name": "AnimSequence_ctor",
 "address": "00313508",
 "end": "003135ac"
 },
@@ -38265,7 +38265,7 @@
 "end": "00314d60"
 },
 {
-"name": "FUN_00314d98",
+"name": "GameAnimMap_ctor",
 "address": "00314d98",
 "end": "00314dac"
 },
@@ -38335,7 +38335,7 @@
 "end": "00316898"
 },
 {
-"name": "FUN_00316898",
+"name": "BigFile_ctor",
 "address": "00316898",
 "end": "003168ac"
 },
@@ -38465,12 +38465,12 @@
 "end": "00317618"
 },
 {
-"name": "FUN_00317618",
+"name": "StrHashElf",
 "address": "00317618",
 "end": "00317670"
 },
 {
-"name": "FUN_00317670",
+"name": "StrHash",
 "address": "00317670",
 "end": "00317690"
 },
@@ -38560,17 +38560,17 @@
 "end": "00317e30"
 },
 {
-"name": "FUN_00317e30",
+"name": "operator_new_named",
 "address": "00317e30",
 "end": "00317e4c"
 },
 {
-"name": "FUN_00317e50",
+"name": "__builtin_delete",
 "address": "00317e50",
 "end": "00317e98"
 },
 {
-"name": "FUN_00317e98",
+"name": "EA_MemFree",
 "address": "00317e98",
 "end": "00317ee0"
 },
@@ -38610,17 +38610,17 @@
 "end": "00317fe4"
 },
 {
-"name": "FUN_00317fe8",
+"name": "cBXString_ctor_copy",
 "address": "00317fe8",
 "end": "00318040"
 },
 {
-"name": "FUN_00318040",
+"name": "cBXString_AllocBuffer",
 "address": "00318040",
 "end": "003180b4"
 },
 {
-"name": "FUN_003180b8",
+"name": "cBXString_Release",
 "address": "003180b8",
 "end": "0031811c"
 },
@@ -38630,7 +38630,7 @@
 "end": "00318184"
 },
 {
-"name": "FUN_00318188",
+"name": "cBXString_AllocBeforeWrite",
 "address": "00318188",
 "end": "003181e8"
 },
@@ -38640,12 +38640,12 @@
 "end": "00318260"
 },
 {
-"name": "FUN_00318260",
+"name": "cBXString_dtor",
 "address": "00318260",
 "end": "003182d8"
 },
 {
-"name": "FUN_003182d8",
+"name": "cBXString_ctor_cstr",
 "address": "003182d8",
 "end": "00318350"
 },
@@ -38655,17 +38655,17 @@
 "end": "003183d4"
 },
 {
-"name": "FUN_003183d8",
+"name": "cBXString_AssignCopy",
 "address": "003183d8",
 "end": "00318444"
 },
 {
-"name": "FUN_00318448",
+"name": "cBXString_assign",
 "address": "00318448",
 "end": "003184e4"
 },
 {
-"name": "FUN_003184e8",
+"name": "cBXString_assign_cstr",
 "address": "003184e8",
 "end": "00318540"
 },
@@ -38905,12 +38905,12 @@
 "end": "00319a90"
 },
 {
-"name": "FUN_00319a90",
+"name": "MEM_AllocInternal",
 "address": "00319a90",
 "end": "00319b48"
 },
 {
-"name": "FUN_00319b48",
+"name": "MEM_FreeInternal",
 "address": "00319b48",
 "end": "00319b98"
 },
@@ -39645,7 +39645,7 @@
 "end": "00321428"
 },
 {
-"name": "FUN_00321428",
+"name": "InputParser_ctor",
 "address": "00321428",
 "end": "003214fc"
 },
@@ -39920,17 +39920,17 @@
 "end": "00326df0"
 },
 {
-"name": "FUN_00326df0",
+"name": "PS2Pad_ctor",
 "address": "00326df0",
 "end": "00326e50"
 },
 {
-"name": "FUN_00326e50",
+"name": "PS2Pad_v01",
 "address": "00326e50",
 "end": "00326eb0"
 },
 {
-"name": "FUN_00326eb0",
+"name": "PS2Pad_v02",
 "address": "00326eb0",
 "end": "00327738"
 },
@@ -39940,7 +39940,7 @@
 "end": "00327800"
 },
 {
-"name": "FUN_00327810",
+"name": "AIFwdDiffCache_ctor",
 "address": "00327810",
 "end": "00327828"
 },
@@ -40635,22 +40635,22 @@
 "end": "00341388"
 },
 {
-"name": "FUN_00341388",
+"name": "Boost_ctor",
 "address": "00341388",
 "end": "00341544"
 },
 {
-"name": "FUN_00341548",
+"name": "Boost_ctor_2",
 "address": "00341548",
 "end": "003415a4"
 },
 {
-"name": "FUN_003415a8",
+"name": "Boost_v01",
 "address": "003415a8",
 "end": "003415d0"
 },
 {
-"name": "FUN_003415d0",
+"name": "Boost_v02",
 "address": "003415d0",
 "end": "0034176c"
 },
@@ -40670,12 +40670,12 @@
 "end": "00341a9c"
 },
 {
-"name": "FUN_00341aa0",
+"name": "AnimObject_ctor",
 "address": "00341aa0",
 "end": "00341c7c"
 },
 {
-"name": "FUN_00341c80",
+"name": "AnimObject_ctor_2",
 "address": "00341c80",
 "end": "00341cec"
 },
@@ -40720,12 +40720,12 @@
 "end": "003421a0"
 },
 {
-"name": "FUN_003421a0",
+"name": "AnimTeeter_ctor",
 "address": "003421a0",
 "end": "003422e4"
 },
 {
-"name": "FUN_003422e8",
+"name": "AnimTeeter_ctor_2",
 "address": "003422e8",
 "end": "00342354"
 },
@@ -40745,17 +40745,17 @@
 "end": "00342768"
 },
 {
-"name": "FUN_00342768",
+"name": "BoostModifier_ctor",
 "address": "00342768",
 "end": "00342804"
 },
 {
-"name": "FUN_00342808",
+"name": "BoostModifier_ctor_2",
 "address": "00342808",
 "end": "00342880"
 },
 {
-"name": "FUN_00342880",
+"name": "BoostModifier_v02",
 "address": "00342880",
 "end": "003429dc"
 },
@@ -40780,7 +40780,7 @@
 "end": "00342d10"
 },
 {
-"name": "FUN_00342d10",
+"name": "Debounce_ctor",
 "address": "00342d10",
 "end": "00342d88"
 },
@@ -40810,12 +40810,12 @@
 "end": "00343010"
 },
 {
-"name": "FUN_00343010",
+"name": "Conveyor_ctor",
 "address": "00343010",
 "end": "003430d0"
 },
 {
-"name": "FUN_003430d0",
+"name": "Conveyor_ctor_2",
 "address": "003430d0",
 "end": "0034312c"
 },
@@ -40835,17 +40835,17 @@
 "end": "00343764"
 },
 {
-"name": "FUN_00343768",
+"name": "Counter_ctor",
 "address": "00343768",
 "end": "003437bc"
 },
 {
-"name": "FUN_003437c0",
+"name": "Counter_ctor_2",
 "address": "003437c0",
 "end": "0034381c"
 },
 {
-"name": "FUN_00343820",
+"name": "Counter_v02",
 "address": "00343820",
 "end": "00343864"
 },
@@ -40855,7 +40855,7 @@
 "end": "00343a64"
 },
 {
-"name": "FUN_00343a68",
+"name": "CrowdMan3d_ctor",
 "address": "00343a68",
 "end": "00343b28"
 },
@@ -41075,12 +41075,12 @@
 "end": "00345c8c"
 },
 {
-"name": "FUN_00345c90",
+"name": "DynamicParticleModifier_ctor",
 "address": "00345c90",
 "end": "00345d7c"
 },
 {
-"name": "FUN_00345d80",
+"name": "DynamicParticleModifier_ctor_2",
 "address": "00345d80",
 "end": "00345e88"
 },
@@ -41110,17 +41110,17 @@
 "end": "00346120"
 },
 {
-"name": "FUN_00346120",
+"name": "HaloModifier_ctor",
 "address": "00346120",
 "end": "003461bc"
 },
 {
-"name": "FUN_003461c0",
+"name": "HaloModifier_ctor_2",
 "address": "003461c0",
 "end": "00346228"
 },
 {
-"name": "FUN_00346228",
+"name": "HaloModifier_dtor",
 "address": "00346228",
 "end": "00346258"
 },
@@ -41245,17 +41245,17 @@
 "end": "00348d94"
 },
 {
-"name": "FUN_00348d98",
+"name": "FloatRail_ctor",
 "address": "00348d98",
 "end": "00348f9c"
 },
 {
-"name": "FUN_00348fa0",
+"name": "FloatRail_ctor_2",
 "address": "00348fa0",
 "end": "003490b0"
 },
 {
-"name": "FUN_003490b0",
+"name": "FloatRail_v01",
 "address": "003490b0",
 "end": "0034910c"
 },
@@ -41285,17 +41285,17 @@
 "end": "00349b44"
 },
 {
-"name": "FUN_00349b48",
+"name": "SpringRail_ctor",
 "address": "00349b48",
 "end": "00349db0"
 },
 {
-"name": "FUN_00349db0",
+"name": "SpringRail_ctor_2",
 "address": "00349db0",
 "end": "00349eb8"
 },
 {
-"name": "FUN_00349eb8",
+"name": "SpringRail_v01",
 "address": "00349eb8",
 "end": "00349f14"
 },
@@ -41415,12 +41415,12 @@
 "end": "0034c424"
 },
 {
-"name": "FUN_0034c428",
+"name": "cFlagManager_ctor",
 "address": "0034c428",
 "end": "0034c4b4"
 },
 {
-"name": "FUN_0034c4b8",
+"name": "cFlagManager_dtor",
 "address": "0034c4b8",
 "end": "0034c548"
 },
@@ -41435,7 +41435,7 @@
 "end": "0034c664"
 },
 {
-"name": "FUN_0034c668",
+"name": "cFlagManager_v02",
 "address": "0034c668",
 "end": "0034c7f4"
 },
@@ -41460,17 +41460,17 @@
 "end": "0034cab4"
 },
 {
-"name": "FUN_0034cab8",
+"name": "Fence_ctor",
 "address": "0034cab8",
 "end": "0034cb7c"
 },
 {
-"name": "FUN_0034cb80",
+"name": "Fence_dtor",
 "address": "0034cb80",
 "end": "0034cbe8"
 },
 {
-"name": "FUN_0034cbe8",
+"name": "Fence_ctor_2",
 "address": "0034cbe8",
 "end": "0034cc7c"
 },
@@ -41485,7 +41485,7 @@
 "end": "0034ce44"
 },
 {
-"name": "FUN_0034ce48",
+"name": "Fence_v02",
 "address": "0034ce48",
 "end": "0034cf94"
 },
@@ -41585,17 +41585,17 @@
 "end": "0034ebdc"
 },
 {
-"name": "FUN_0034ec58",
+"name": "Floating_ctor",
 "address": "0034ec58",
 "end": "0034ed88"
 },
 {
-"name": "FUN_0034ed88",
+"name": "Floating_ctor_2",
 "address": "0034ed88",
 "end": "0034ee64"
 },
 {
-"name": "FUN_0034ee68",
+"name": "Floating_v01",
 "address": "0034ee68",
 "end": "0034eeb8"
 },
@@ -41725,7 +41725,7 @@
 "end": "003506d8"
 },
 {
-"name": "FUN_003506d8",
+"name": "DeadNode_ctor",
 "address": "003506d8",
 "end": "0035074c"
 },
@@ -41735,17 +41735,17 @@
 "end": "00350b98"
 },
 {
-"name": "FUN_00350b98",
+"name": "DeadFade_ctor",
 "address": "00350b98",
 "end": "00350bdc"
 },
 {
-"name": "FUN_00350be0",
+"name": "DeadFade_dtor",
 "address": "00350be0",
 "end": "00350c34"
 },
 {
-"name": "FUN_00350c38",
+"name": "DeadFade_v02",
 "address": "00350c38",
 "end": "00350c90"
 },
@@ -41795,7 +41795,7 @@
 "end": "0035102c"
 },
 {
-"name": "FUN_00351030",
+"name": "InstancesMan_ctor",
 "address": "00351030",
 "end": "0035111c"
 },
@@ -41905,12 +41905,12 @@
 "end": "00352168"
 },
 {
-"name": "FUN_00352168",
+"name": "MeshAnim_ctor",
 "address": "00352168",
 "end": "00352208"
 },
 {
-"name": "FUN_00352208",
+"name": "MeshAnim_v01",
 "address": "00352208",
 "end": "00352230"
 },
@@ -41920,7 +41920,7 @@
 "end": "003524fc"
 },
 {
-"name": "FUN_00352500",
+"name": "MeshAnim_v02",
 "address": "00352500",
 "end": "00352704"
 },
@@ -41945,7 +41945,7 @@
 "end": "00352aa4"
 },
 {
-"name": "FUN_00352aa8",
+"name": "ModifierBlock_ctor",
 "address": "00352aa8",
 "end": "00352ae8"
 },
@@ -42085,12 +42085,12 @@
 "end": "00353abc"
 },
 {
-"name": "FUN_00353ac0",
+"name": "SkyBox_ctor",
 "address": "00353ac0",
 "end": "00353ae8"
 },
 {
-"name": "FUN_00353ae8",
+"name": "SkyBox_v01",
 "address": "00353ae8",
 "end": "00353b10"
 },
@@ -42565,12 +42565,12 @@
 "end": "00356dac"
 },
 {
-"name": "FUN_00356db0",
+"name": "Object_ctor",
 "address": "00356db0",
 "end": "00356e60"
 },
 {
-"name": "FUN_00356e60",
+"name": "Object_ctor_2",
 "address": "00356e60",
 "end": "00356e94"
 },
@@ -42580,17 +42580,17 @@
 "end": "00356eb4"
 },
 {
-"name": "FUN_00356eb8",
+"name": "PositionModifier_ctor",
 "address": "00356eb8",
 "end": "00356f10"
 },
 {
-"name": "FUN_00356f10",
+"name": "PositionModifier_ctor_2",
 "address": "00356f10",
 "end": "00356f64"
 },
 {
-"name": "FUN_00356f68",
+"name": "PositionModifier_ctor_3",
 "address": "00356f68",
 "end": "00356fec"
 },
@@ -42600,12 +42600,12 @@
 "end": "00357034"
 },
 {
-"name": "FUN_00357038",
+"name": "ParentModifier_ctor",
 "address": "00357038",
 "end": "00357090"
 },
 {
-"name": "FUN_00357090",
+"name": "ParentModifier_ctor_2",
 "address": "00357090",
 "end": "00357104"
 },
@@ -42625,17 +42625,17 @@
 "end": "003572dc"
 },
 {
-"name": "FUN_003572e0",
+"name": "MagnetModifier_ctor",
 "address": "003572e0",
 "end": "00357358"
 },
 {
-"name": "FUN_00357358",
+"name": "MagnetModifier_ctor_2",
 "address": "00357358",
 "end": "003573f8"
 },
 {
-"name": "FUN_003573f8",
+"name": "MagnetModifier_v02",
 "address": "003573f8",
 "end": "00357528"
 },
@@ -42655,17 +42655,17 @@
 "end": "0035774c"
 },
 {
-"name": "FUN_00357750",
+"name": "AvaSplineModifier_ctor",
 "address": "00357750",
 "end": "00357798"
 },
 {
-"name": "FUN_00357798",
+"name": "AvaSplineModifier_ctor_2",
 "address": "00357798",
 "end": "00357820"
 },
 {
-"name": "FUN_00357820",
+"name": "AvaSplineModifier_v02",
 "address": "00357820",
 "end": "00357844"
 },
@@ -42680,12 +42680,12 @@
 "end": "00357918"
 },
 {
-"name": "FUN_00357918",
+"name": "Particle_ctor",
 "address": "00357918",
 "end": "0035794c"
 },
 {
-"name": "FUN_00357950",
+"name": "Particle_v02",
 "address": "00357950",
 "end": "003579a8"
 },
@@ -42695,7 +42695,7 @@
 "end": "003579c4"
 },
 {
-"name": "FUN_003579c8",
+"name": "MultiParticleMan_ctor",
 "address": "003579c8",
 "end": "003579fc"
 },
@@ -42810,17 +42810,17 @@
 "end": "003584ec"
 },
 {
-"name": "FUN_003584f0",
+"name": "RailMan_ctor",
 "address": "003584f0",
 "end": "00358588"
 },
 {
-"name": "FUN_00358588",
+"name": "RailMan_ctor_2",
 "address": "00358588",
 "end": "00358664"
 },
 {
-"name": "FUN_00358668",
+"name": "RailMan_dtor",
 "address": "00358668",
 "end": "003586fc"
 },
@@ -42850,12 +42850,12 @@
 "end": "00358c7c"
 },
 {
-"name": "FUN_00358c80",
+"name": "AnimCombo_ctor",
 "address": "00358c80",
 "end": "00358db0"
 },
 {
-"name": "FUN_00358db0",
+"name": "AnimCombo_ctor_2",
 "address": "00358db0",
 "end": "00358e50"
 },
@@ -42900,12 +42900,12 @@
 "end": "00359224"
 },
 {
-"name": "FUN_00359228",
+"name": "AnimDelta_ctor",
 "address": "00359228",
 "end": "00359270"
 },
 {
-"name": "FUN_00359270",
+"name": "AnimDelta_ctor_2",
 "address": "00359270",
 "end": "003592cc"
 },
@@ -42925,12 +42925,12 @@
 "end": "0035945c"
 },
 {
-"name": "FUN_00359460",
+"name": "SplineModifier_ctor",
 "address": "00359460",
 "end": "003595d8"
 },
 {
-"name": "FUN_003595d8",
+"name": "SplineModifier_ctor_2",
 "address": "003595d8",
 "end": "00359688"
 },
@@ -42940,12 +42940,12 @@
 "end": "00359698"
 },
 {
-"name": "FUN_00359698",
+"name": "SplineModifier_v02",
 "address": "00359698",
 "end": "0035982c"
 },
 {
-"name": "FUN_00359830",
+"name": "SplineModifier_v03",
 "address": "00359830",
 "end": "00359cf4"
 },
@@ -42960,17 +42960,17 @@
 "end": "00359f84"
 },
 {
-"name": "FUN_00359f88",
+"name": "MultiSplineModifier_ctor",
 "address": "00359f88",
 "end": "0035a114"
 },
 {
-"name": "FUN_0035a118",
+"name": "MultiSplineModifier_ctor_2",
 "address": "0035a118",
 "end": "0035a24c"
 },
 {
-"name": "FUN_0035a250",
+"name": "MultiSplineModifier_v01",
 "address": "0035a250",
 "end": "0035a328"
 },
@@ -42995,12 +42995,12 @@
 "end": "0035a560"
 },
 {
-"name": "FUN_0035a560",
+"name": "MultiSplineModifier_v02",
 "address": "0035a560",
 "end": "0035a5d8"
 },
 {
-"name": "FUN_0035a5d8",
+"name": "MultiSplineModifier_v03",
 "address": "0035a5d8",
 "end": "0035a5f4"
 },
@@ -43040,7 +43040,7 @@
 "end": "0035abf0"
 },
 {
-"name": "FUN_0035abf0",
+"name": "MultiSplineModifier_v04",
 "address": "0035abf0",
 "end": "0035ac20"
 },
@@ -43075,17 +43075,17 @@
 "end": "0035b704"
 },
 {
-"name": "FUN_0035b708",
+"name": "RailModifier_ctor",
 "address": "0035b708",
 "end": "0035ba84"
 },
 {
-"name": "FUN_0035ba88",
+"name": "RailModifier_ctor_2",
 "address": "0035ba88",
 "end": "0035bd6c"
 },
 {
-"name": "FUN_0035bd70",
+"name": "RailModifier_v01",
 "address": "0035bd70",
 "end": "0035c040"
 },
@@ -43100,12 +43100,12 @@
 "end": "0035c4e0"
 },
 {
-"name": "FUN_0035c4e0",
+"name": "RailModifier_v03",
 "address": "0035c4e0",
 "end": "0035c540"
 },
 {
-"name": "FUN_0035c540",
+"name": "RailModifier_v02",
 "address": "0035c540",
 "end": "0035c5a0"
 },
@@ -43160,7 +43160,7 @@
 "end": "0035da6c"
 },
 {
-"name": "FUN_0035da70",
+"name": "RollerModifier_ctor",
 "address": "0035da70",
 "end": "0035dde4"
 },
@@ -43170,7 +43170,7 @@
 "end": "0035df6c"
 },
 {
-"name": "FUN_0035df70",
+"name": "RollerModifier_ctor_2",
 "address": "0035df70",
 "end": "0035e1e0"
 },
@@ -43295,12 +43295,12 @@
 "end": "00360880"
 },
 {
-"name": "FUN_003608e8",
+"name": "DeadNode_v02",
 "address": "003608e8",
 "end": "00360910"
 },
 {
-"name": "FUN_00360a28",
+"name": "DeadNode_v01",
 "address": "00360a28",
 "end": "00360a50"
 },
@@ -43315,7 +43315,7 @@
 "end": "00360ae0"
 },
 {
-"name": "FUN_00360b00",
+"name": "RollerModifier_dtor",
 "address": "00360b00",
 "end": "00360b30"
 },
@@ -43325,7 +43325,7 @@
 "end": "00360c58"
 },
 {
-"name": "FUN_00360c78",
+"name": "DynamicParticleModifier_v04",
 "address": "00360c78",
 "end": "00360c94"
 },
@@ -43390,7 +43390,7 @@
 "end": "00361038"
 },
 {
-"name": "FUN_00361038",
+"name": "Object_v01",
 "address": "00361038",
 "end": "00361060"
 },
@@ -43450,22 +43450,22 @@
 "end": "00361458"
 },
 {
-"name": "FUN_00361488",
+"name": "BoostModifier_v01",
 "address": "00361488",
 "end": "003614b8"
 },
 {
-"name": "FUN_003614d0",
+"name": "Debounce_v01",
 "address": "003614d0",
 "end": "003614f8"
 },
 {
-"name": "FUN_00361500",
+"name": "Conveyor_v01",
 "address": "00361500",
 "end": "00361528"
 },
 {
-"name": "FUN_00361530",
+"name": "Counter_v01",
 "address": "00361530",
 "end": "00361558"
 },
@@ -43490,7 +43490,7 @@
 "end": "003618c4"
 },
 {
-"name": "FUN_003618c8",
+"name": "PositionModifier_v01",
 "address": "003618c8",
 "end": "003618f8"
 },
@@ -43500,12 +43500,12 @@
 "end": "00361984"
 },
 {
-"name": "FUN_00361988",
+"name": "ParentModifier_v01",
 "address": "00361988",
 "end": "003619b8"
 },
 {
-"name": "FUN_003619e0",
+"name": "MagnetModifier_v01",
 "address": "003619e0",
 "end": "00361a10"
 },
@@ -43515,12 +43515,12 @@
 "end": "00361aa4"
 },
 {
-"name": "FUN_00361aa8",
+"name": "AvaSplineModifier_v01",
 "address": "00361aa8",
 "end": "00361ad8"
 },
 {
-"name": "FUN_00361b18",
+"name": "SplineModifier_v01",
 "address": "00361b18",
 "end": "00361b48"
 },
@@ -43545,7 +43545,7 @@
 "end": "00361cf8"
 },
 {
-"name": "FUN_00361d50",
+"name": "Particle_v01",
 "address": "00361d50",
 "end": "00361d78"
 },
@@ -43815,7 +43815,7 @@
 "end": "00366fe8"
 },
 {
-"name": "FUN_00366fe8",
+"name": "TexMan_ctor",
 "address": "00366fe8",
 "end": "00367074"
 },
@@ -44200,7 +44200,7 @@
 "end": "00370018"
 },
 {
-"name": "FUN_00370018",
+"name": "Emitter_ctor",
 "address": "00370018",
 "end": "00370058"
 },
@@ -44295,27 +44295,27 @@
 "end": "003714b4"
 },
 {
-"name": "FUN_003714b8",
+"name": "mEmitter_ctor",
 "address": "003714b8",
 "end": "003714f4"
 },
 {
-"name": "FUN_003714f8",
+"name": "mEmitter_dtor",
 "address": "003714f8",
 "end": "00371544"
 },
 {
-"name": "FUN_00371548",
+"name": "mEmitter_v05",
 "address": "00371548",
 "end": "003715ac"
 },
 {
-"name": "FUN_003715b0",
+"name": "mEmitter_v01",
 "address": "003715b0",
 "end": "003715fc"
 },
 {
-"name": "FUN_00371600",
+"name": "mEmitter_v02",
 "address": "00371600",
 "end": "00371688"
 },
@@ -44360,7 +44360,7 @@
 "end": "003724fc"
 },
 {
-"name": "FUN_00372500",
+"name": "PS2VisualEffectsMan_v02",
 "address": "00372500",
 "end": "0037251c"
 },
@@ -44385,7 +44385,7 @@
 "end": "00372aa0"
 },
 {
-"name": "FUN_00372aa0",
+"name": "PathArrow_ctor",
 "address": "00372aa0",
 "end": "00372b1c"
 },
@@ -44475,7 +44475,7 @@
 "end": "003758f8"
 },
 {
-"name": "FUN_003758f8",
+"name": "BoaderShadow_ctor",
 "address": "003758f8",
 "end": "00375914"
 },
@@ -44490,7 +44490,7 @@
 "end": "003759e4"
 },
 {
-"name": "FUN_003759e8",
+"name": "DetailSystem_ctor",
 "address": "003759e8",
 "end": "003759fc"
 },
@@ -44505,7 +44505,7 @@
 "end": "00376264"
 },
 {
-"name": "FUN_00376268",
+"name": "PS2GraphicsMan_v03",
 "address": "00376268",
 "end": "003762f4"
 },
@@ -44520,7 +44520,7 @@
 "end": "003764c0"
 },
 {
-"name": "FUN_003764c0",
+"name": "PS2GraphicsMan_v04",
 "address": "003764c0",
 "end": "0037655c"
 },
@@ -44920,7 +44920,7 @@
 "end": "00385134"
 },
 {
-"name": "FUN_00385138",
+"name": "cPS2GridMesh_ctor",
 "address": "00385138",
 "end": "0038525c"
 },
@@ -45170,7 +45170,7 @@
 "end": "0038ae5c"
 },
 {
-"name": "FUN_0038ae60",
+"name": "PS2BezierMan_ctor",
 "address": "0038ae60",
 "end": "0038aeac"
 },
@@ -45710,7 +45710,7 @@
 "end": "00394d10"
 },
 {
-"name": "FUN_00394d50",
+"name": "DeferMan_ctor",
 "address": "00394d50",
 "end": "00394ecc"
 },
@@ -45730,12 +45730,12 @@
 "end": "00395268"
 },
 {
-"name": "FUN_00395268",
+"name": "PS2GraphicsMan_v01",
 "address": "00395268",
 "end": "00395284"
 },
 {
-"name": "FUN_00395288",
+"name": "PS2GraphicsMan_ctor",
 "address": "00395288",
 "end": "00395314"
 },
@@ -45805,17 +45805,17 @@
 "end": "003964f8"
 },
 {
-"name": "FUN_00396838",
+"name": "PS2VisualEffectsMan_v01",
 "address": "00396838",
 "end": "00396868"
 },
 {
-"name": "FUN_003968e8",
+"name": "PathArrow_v01",
 "address": "003968e8",
 "end": "00396918"
 },
 {
-"name": "FUN_00396928",
+"name": "DetailSystem_v01",
 "address": "00396928",
 "end": "00396958"
 },
@@ -45865,12 +45865,12 @@
 "end": "003972a0"
 },
 {
-"name": "FUN_003972a0",
+"name": "UIAnim_ctor",
 "address": "003972a0",
 "end": "003973a4"
 },
 {
-"name": "FUN_003973a8",
+"name": "UIAnim_dtor",
 "address": "003973a8",
 "end": "0039743c"
 },
@@ -45980,7 +45980,7 @@
 "end": "00397b08"
 },
 {
-"name": "FUN_00397b08",
+"name": "UIEngine_ctor",
 "address": "00397b08",
 "end": "00397b70"
 },
@@ -46115,7 +46115,7 @@
 "end": "00399768"
 },
 {
-"name": "FUN_00399768",
+"name": "UIListBox_ctor",
 "address": "00399768",
 "end": "0039981c"
 },
@@ -46800,7 +46800,7 @@
 "end": "003a0344"
 },
 {
-"name": "FUN_003a0348",
+"name": "UIText_ctor",
 "address": "003a0348",
 "end": "003a03f0"
 },
@@ -46885,7 +46885,7 @@
 "end": "003a1148"
 },
 {
-"name": "FUN_003a1148",
+"name": "cUITextScroll_ctor",
 "address": "003a1148",
 "end": "003a11b8"
 },
@@ -46995,12 +46995,12 @@
 "end": "003a3280"
 },
 {
-"name": "FUN_003a3280",
+"name": "UIVector_ctor",
 "address": "003a3280",
 "end": "003a32f0"
 },
 {
-"name": "FUN_003a32f0",
+"name": "UIVector_dtor",
 "address": "003a32f0",
 "end": "003a3394"
 },
@@ -47205,7 +47205,7 @@
 "end": "003a5654"
 },
 {
-"name": "FUN_003a5658",
+"name": "UIListBox_v01",
 "address": "003a5658",
 "end": "003a56a0"
 },
@@ -47240,7 +47240,7 @@
 "end": "003a5da4"
 },
 {
-"name": "FUN_003a5da8",
+"name": "UIText_v01",
 "address": "003a5da8",
 "end": "003a5df0"
 },
@@ -47290,7 +47290,7 @@
 "end": "003a629c"
 },
 {
-"name": "FUN_003a62a0",
+"name": "cUITextScroll_v01",
 "address": "003a62a0",
 "end": "003a6330"
 },
@@ -47370,7 +47370,7 @@
 "end": "003a6688"
 },
 {
-"name": "FUN_003a6688",
+"name": "World_ctor",
 "address": "003a6688",
 "end": "003a673c"
 },
@@ -47540,7 +47540,7 @@
 "end": "003a77b0"
 },
 {
-"name": "FUN_003a77b0",
+"name": "SectionAllocator_ctor",
 "address": "003a77b0",
 "end": "003a77cc"
 },
@@ -47560,7 +47560,7 @@
 "end": "003a7a20"
 },
 {
-"name": "FUN_003a7a20",
+"name": "WorldMemman_ctor",
 "address": "003a7a20",
 "end": "003a7aa4"
 },
@@ -47580,7 +47580,7 @@
 "end": "003a7bd8"
 },
 {
-"name": "FUN_003a7bd8",
+"name": "cHullPage_ctor",
 "address": "003a7bd8",
 "end": "003a7c2c"
 },
@@ -47590,7 +47590,7 @@
 "end": "003a7c84"
 },
 {
-"name": "FUN_003a7c88",
+"name": "SectionTable_ctor",
 "address": "003a7c88",
 "end": "003a7d80"
 },
@@ -47600,7 +47600,7 @@
 "end": "003a7dd0"
 },
 {
-"name": "FUN_003a7dd0",
+"name": "cWorldCache_ctor",
 "address": "003a7dd0",
 "end": "003a7e38"
 },
@@ -47960,7 +47960,7 @@
 "end": "003ac7c4"
 },
 {
-"name": "FUN_003ac7c8",
+"name": "cWScriptCache_ctor",
 "address": "003ac7c8",
 "end": "003ac7fc"
 },
@@ -48520,7 +48520,7 @@
 "end": "003b12fc"
 },
 {
-"name": "FUN_003b1300",
+"name": "MPEG2_Get_Bits",
 "address": "003b1300",
 "end": "003b133c"
 },
@@ -48535,7 +48535,7 @@
 "end": "003b13d8"
 },
 {
-"name": "FUN_003b13d8",
+"name": "MPEG2_Get_Hdr",
 "address": "003b13d8",
 "end": "003b1494"
 },
@@ -48545,17 +48545,17 @@
 "end": "003b14f0"
 },
 {
-"name": "FUN_003b14f0",
+"name": "MPEG2_sequence_header",
 "address": "003b14f0",
 "end": "003b16dc"
 },
 {
-"name": "FUN_003b16e0",
+"name": "MPEG2_group_of_pictures_header",
 "address": "003b16e0",
 "end": "003b17a8"
 },
 {
-"name": "FUN_003b17a8",
+"name": "MPEG2_picture_header",
 "address": "003b17a8",
 "end": "003b1878"
 },
@@ -48565,47 +48565,47 @@
 "end": "003b1984"
 },
 {
-"name": "FUN_003b1988",
+"name": "MPEG2_extension_and_user_data",
 "address": "003b1988",
 "end": "003b1aac"
 },
 {
-"name": "FUN_003b1ab0",
+"name": "MPEG2_sequence_extension",
 "address": "003b1ab0",
 "end": "003b1cbc"
 },
 {
-"name": "FUN_003b1cc0",
+"name": "MPEG2_sequence_display_extension",
 "address": "003b1cc0",
 "end": "003b1d54"
 },
 {
-"name": "FUN_003b1d58",
+"name": "MPEG2_quant_matrix_extension",
 "address": "003b1d58",
 "end": "003b1edc"
 },
 {
-"name": "FUN_003b1ee0",
+"name": "MPEG2_sequence_scalable_extension",
 "address": "003b1ee0",
 "end": "003b1fc4"
 },
 {
-"name": "FUN_003b1fc8",
+"name": "MPEG2_picture_display_extension",
 "address": "003b1fc8",
 "end": "003b20b8"
 },
 {
-"name": "FUN_003b20b8",
+"name": "MPEG2_picture_coding_extension",
 "address": "003b20b8",
 "end": "003b222c"
 },
 {
-"name": "FUN_003b2230",
+"name": "MPEG2_picture_spatial_scalable_extension",
 "address": "003b2230",
 "end": "003b22f4"
 },
 {
-"name": "FUN_003b22f8",
+"name": "MPEG2_picture_temporal_scalable_extension",
 "address": "003b22f8",
 "end": "003b2318"
 },
@@ -48615,7 +48615,7 @@
 "end": "003b235c"
 },
 {
-"name": "FUN_003b2360",
+"name": "MPEG2_marker_bit",
 "address": "003b2360",
 "end": "003b237c"
 },
@@ -48625,12 +48625,12 @@
 "end": "003b239c"
 },
 {
-"name": "FUN_003b23a0",
+"name": "MPEG2_copyright_extension",
 "address": "003b23a0",
 "end": "003b2440"
 },
 {
-"name": "FUN_003b2440",
+"name": "MPEG2_Update_Temporal_Reference_Tacking_Data",
 "address": "003b2440",
 "end": "003b2528"
 },
@@ -51165,7 +51165,7 @@
 "end": "003d11b8"
 },
 {
-"name": "FUN_003d11b8",
+"name": "PATH_status",
 "address": "003d11b8",
 "end": "003d1470"
 },
@@ -51240,7 +51240,7 @@
 "end": "003d2068"
 },
 {
-"name": "FUN_003d2068",
+"name": "PATHI_copyevent",
 "address": "003d2068",
 "end": "003d2134"
 },
@@ -52965,7 +52965,7 @@
 "end": "003e52ac"
 },
 {
-"name": "FUN_003e52b0",
+"name": "THREAD_yieldticks",
 "address": "003e52b0",
 "end": "003e5394"
 },
@@ -53015,12 +53015,12 @@
 "end": "003e56fc"
 },
 {
-"name": "FUN_003e5700",
+"name": "EAMutex_Lock",
 "address": "003e5700",
 "end": "003e5760"
 },
 {
-"name": "FUN_003e5760",
+"name": "EAMutex_Unlock",
 "address": "003e5760",
 "end": "003e57cc"
 },
@@ -53120,7 +53120,7 @@
 "end": "003e60e8"
 },
 {
-"name": "FUN_003e60e8",
+"name": "EA_FatalError",
 "address": "003e60e8",
 "end": "003e6188"
 },
@@ -53160,12 +53160,12 @@
 "end": "003e6444"
 },
 {
-"name": "FUN_003e6448",
+"name": "EA_MemSet",
 "address": "003e6448",
 "end": "003e6574"
 },
 {
-"name": "FUN_003e6574",
+"name": "EA_MemCopy",
 "address": "003e6574",
 "end": "003e668c"
 },
@@ -55185,12 +55185,12 @@
 "end": "003fdaac"
 },
 {
-"name": "FUN_003fdab0",
+"name": "sceGsResetPath",
 "address": "003fdab0",
 "end": "003fdb18"
 },
 {
-"name": "FUN_003fdb18",
+"name": "sceGsSyncPath",
 "address": "003fdb18",
 "end": "003fde2c"
 },
@@ -55215,12 +55215,12 @@
 "end": "003fdf84"
 },
 {
-"name": "FUN_003fdf88",
+"name": "sceDmaGetChan",
 "address": "003fdf88",
 "end": "003fdfb0"
 },
 {
-"name": "FUN_003fdfb0",
+"name": "sceDmaReset",
 "address": "003fdfb0",
 "end": "003fe08c"
 },
@@ -55230,47 +55230,47 @@
 "end": "003fe268"
 },
 {
-"name": "FUN_003fe2b8",
+"name": "sceDmaSend",
 "address": "003fe2b8",
 "end": "003fe320"
 },
 {
-"name": "FUN_003fe320",
+"name": "sceDmaSendN",
 "address": "003fe320",
 "end": "003fe394"
 },
 {
-"name": "FUN_003fe398",
+"name": "sceDmaSendI",
 "address": "003fe398",
 "end": "003fe40c"
 },
 {
-"name": "FUN_003fe410",
+"name": "sceDmaRecv",
 "address": "003fe410",
 "end": "003fe458"
 },
 {
-"name": "FUN_003fe458",
+"name": "sceDmaRecvN",
 "address": "003fe458",
 "end": "003fe4d4"
 },
 {
-"name": "FUN_003fe4d8",
+"name": "sceDmaRecvI",
 "address": "003fe4d8",
 "end": "003fe558"
 },
 {
-"name": "FUN_003fe558",
+"name": "sceDmaSync",
 "address": "003fe558",
 "end": "003fe590"
 },
 {
-"name": "FUN_003fe590",
+"name": "sceDmaWatch",
 "address": "003fe590",
 "end": "003fe5c4"
 },
 {
-"name": "FUN_003fe5c8",
+"name": "sceDmaPause",
 "address": "003fe5c8",
 "end": "003fe660"
 },
@@ -55280,7 +55280,7 @@
 "end": "003fe68c"
 },
 {
-"name": "FUN_003fe690",
+"name": "sceDevVu0Reset",
 "address": "003fe690",
 "end": "003fe6a4"
 },
@@ -55335,7 +55335,7 @@
 "end": "003febbc"
 },
 {
-"name": "FUN_003febc0",
+"name": "sceDevVu1Reset",
 "address": "003febc0",
 "end": "003febd4"
 },
@@ -55375,7 +55375,7 @@
 "end": "003ff060"
 },
 {
-"name": "FUN_003ff060",
+"name": "sceDevVif0Reset",
 "address": "003ff060",
 "end": "003ff084"
 },
@@ -55415,7 +55415,7 @@
 "end": "003ff684"
 },
 {
-"name": "FUN_003ff688",
+"name": "scePadEnd",
 "address": "003ff688",
 "end": "003ff708"
 },
@@ -55425,7 +55425,7 @@
 "end": "003ff8ec"
 },
 {
-"name": "FUN_003ff8f0",
+"name": "scePadPortClose",
 "address": "003ff8f0",
 "end": "003ff9a8"
 },
@@ -55440,82 +55440,82 @@
 "end": "003ffbbc"
 },
 {
-"name": "FUN_003ffbc0",
+"name": "scePadGetState",
 "address": "003ffbc0",
 "end": "003ffc38"
 },
 {
-"name": "FUN_003ffc70",
+"name": "scePadSetReqState",
 "address": "003ffc70",
 "end": "003ffcd4"
 },
 {
-"name": "FUN_003ffcd8",
+"name": "scePadGetReqState",
 "address": "003ffcd8",
 "end": "003ffd28"
 },
 {
-"name": "FUN_003ffd60",
+"name": "scePadInfoAct",
 "address": "003ffd60",
 "end": "003ffe80"
 },
 {
-"name": "FUN_003fffa0",
+"name": "scePadInfoMode",
 "address": "003fffa0",
 "end": "004000d8"
 },
 {
-"name": "FUN_004000d8",
+"name": "scePadSetMainMode",
 "address": "004000d8",
 "end": "0040018c"
 },
 {
-"name": "FUN_00400190",
+"name": "scePadSetActDirect",
 "address": "00400190",
 "end": "00400250"
 },
 {
-"name": "FUN_00400250",
+"name": "scePadSetActAlign",
 "address": "00400250",
 "end": "00400328"
 },
 {
-"name": "FUN_00400328",
+"name": "scePadGetButtonMask",
 "address": "00400328",
 "end": "004003dc"
 },
 {
-"name": "FUN_004003e0",
+"name": "scePadSetButtonInfo",
 "address": "004003e0",
 "end": "00400490"
 },
 {
-"name": "FUN_00400490",
+"name": "scePadInfoPressMode",
 "address": "00400490",
 "end": "004004ec"
 },
 {
-"name": "FUN_004004f0",
+"name": "scePadEnterPressMode",
 "address": "004004f0",
 "end": "00400544"
 },
 {
-"name": "FUN_004005a0",
+"name": "scePadSetVrefParam",
 "address": "004005a0",
 "end": "0040066c"
 },
 {
-"name": "FUN_00400670",
+"name": "scePadGetPortMax",
 "address": "00400670",
 "end": "004006d4"
 },
 {
-"name": "FUN_004006d8",
+"name": "scePadGetSlotMax",
 "address": "004006d8",
 "end": "00400740"
 },
 {
-"name": "FUN_00400740",
+"name": "scePadGetModVersion",
 "address": "00400740",
 "end": "004007a4"
 },
@@ -55625,7 +55625,7 @@
 "end": "00401bf0"
 },
 {
-"name": "FUN_00401bf0",
+"name": "sceCdDiskReady",
 "address": "00401bf0",
 "end": "00401df4"
 },
@@ -55635,7 +55635,7 @@
 "end": "00401fd8"
 },
 {
-"name": "FUN_00401fd8",
+"name": "sceCdGetToc",
 "address": "00401fd8",
 "end": "00402268"
 },
@@ -55645,12 +55645,12 @@
 "end": "00402300"
 },
 {
-"name": "FUN_00402300",
+"name": "sceCdGetError",
 "address": "00402300",
 "end": "00402398"
 },
 {
-"name": "FUN_00402398",
+"name": "sceCdPowerOff",
 "address": "00402398",
 "end": "0040244c"
 },
@@ -55665,47 +55665,47 @@
 "end": "00402618"
 },
 {
-"name": "FUN_00402618",
+"name": "sceCdTrayReq",
 "address": "00402618",
 "end": "00402704"
 },
 {
-"name": "FUN_00402708",
+"name": "sceMpegInit",
 "address": "00402708",
 "end": "004027b8"
 },
 {
-"name": "FUN_004027b8",
+"name": "sceMpegCreate",
 "address": "004027b8",
 "end": "004029c4"
 },
 {
-"name": "FUN_004029d0",
+"name": "sceMpegAddBs",
 "address": "004029d0",
 "end": "00402a0c"
 },
 {
-"name": "FUN_00402a10",
+"name": "sceMpegGetPicture",
 "address": "00402a10",
 "end": "00402a58"
 },
 {
-"name": "FUN_00402a58",
+"name": "sceMpegGetPictureRAW8",
 "address": "00402a58",
 "end": "00402a9c"
 },
 {
-"name": "FUN_00402aa0",
+"name": "sceMpegGetPictureRAW8xy",
 "address": "00402aa0",
 "end": "00402af0"
 },
 {
-"name": "FUN_00402b38",
+"name": "sceMpegIsEnd",
 "address": "00402b38",
 "end": "00402b44"
 },
 {
-"name": "FUN_00402b58",
+"name": "sceMpegReset",
 "address": "00402b58",
 "end": "00402bb0"
 },
@@ -55715,7 +55715,7 @@
 "end": "00402c04"
 },
 {
-"name": "FUN_00402c08",
+"name": "sceMpegAddCallback",
 "address": "00402c08",
 "end": "00402c2c"
 },
@@ -56105,17 +56105,17 @@
 "end": "004093fc"
 },
 {
-"name": "FUN_00409400",
+"name": "sceIpuStopDMA",
 "address": "00409400",
 "end": "004094e4"
 },
 {
-"name": "FUN_004094e8",
+"name": "sceIpuRestartDMA",
 "address": "004094e8",
 "end": "00409638"
 },
 {
-"name": "FUN_00409638",
+"name": "sceIpuSync",
 "address": "00409638",
 "end": "004096a0"
 },
@@ -56125,7 +56125,7 @@
 "end": "00409704"
 },
 {
-"name": "FUN_00409708",
+"name": "sceIpuInit",
 "address": "00409708",
 "end": "00409940"
 },
@@ -56135,7 +56135,7 @@
 "end": "00409b0c"
 },
 {
-"name": "FUN_00409b10",
+"name": "sceMcEnd",
 "address": "00409b10",
 "end": "00409b5c"
 },
@@ -56145,7 +56145,7 @@
 "end": "00409b90"
 },
 {
-"name": "FUN_00409b90",
+"name": "sceMcChangeThreadPriority",
 "address": "00409b90",
 "end": "00409c48"
 },
@@ -56155,32 +56155,32 @@
 "end": "00409d0c"
 },
 {
-"name": "FUN_00409d10",
+"name": "sceMcOpen",
 "address": "00409d10",
 "end": "00409e34"
 },
 {
-"name": "FUN_00409e38",
+"name": "sceMcMkdir",
 "address": "00409e38",
 "end": "00409e6c"
 },
 {
-"name": "FUN_00409e70",
+"name": "sceMcClose",
 "address": "00409e70",
 "end": "00409f28"
 },
 {
-"name": "FUN_00409f28",
+"name": "sceMcSeek",
 "address": "00409f28",
 "end": "0040a000"
 },
 {
-"name": "FUN_0040a090",
+"name": "sceMcRead",
 "address": "0040a090",
 "end": "0040a1a4"
 },
 {
-"name": "FUN_0040a1a8",
+"name": "sceMcWrite",
 "address": "0040a1a8",
 "end": "0040a31c"
 },
@@ -56190,22 +56190,22 @@
 "end": "0040a360"
 },
 {
-"name": "FUN_0040a360",
+"name": "sceMcSync",
 "address": "0040a360",
 "end": "0040a440"
 },
 {
-"name": "FUN_0040a498",
+"name": "sceMcGetInfo",
 "address": "0040a498",
 "end": "0040a614"
 },
 {
-"name": "FUN_0040a618",
+"name": "sceMcUdCheckNewCard",
 "address": "0040a618",
 "end": "0040a684"
 },
 {
-"name": "FUN_0040a688",
+"name": "sceMcGetDir",
 "address": "0040a688",
 "end": "0040a7d0"
 },
@@ -56215,47 +56215,47 @@
 "end": "0040a854"
 },
 {
-"name": "FUN_0040a858",
+"name": "sceMcChdir",
 "address": "0040a858",
 "end": "0040a998"
 },
 {
-"name": "FUN_0040a998",
+"name": "sceMcFormat",
 "address": "0040a998",
 "end": "0040aa64"
 },
 {
-"name": "FUN_0040aa68",
+"name": "sceMcDelete",
 "address": "0040aa68",
 "end": "0040ab80"
 },
 {
-"name": "FUN_0040ab80",
+"name": "sceMcFlush",
 "address": "0040ab80",
 "end": "0040ac38"
 },
 {
-"name": "FUN_0040ac38",
+"name": "sceMcSetFileInfo",
 "address": "0040ac38",
 "end": "0040ae00"
 },
 {
-"name": "FUN_0040ae00",
+"name": "sceMcRename",
 "address": "0040ae00",
 "end": "0040af58"
 },
 {
-"name": "FUN_0040af58",
+"name": "sceMcUnformat",
 "address": "0040af58",
 "end": "0040b024"
 },
 {
-"name": "FUN_0040b028",
+"name": "sceMcGetEntSpace",
 "address": "0040b028",
 "end": "0040b130"
 },
 {
-"name": "FUN_0040b130",
+"name": "sceSifMInitRpc",
 "address": "0040b130",
 "end": "0040b1f4"
 },
@@ -56295,7 +56295,7 @@
 "end": "0040b6cc"
 },
 {
-"name": "FUN_0040b6d0",
+"name": "sceSifMCallRpc",
 "address": "0040b6d0",
 "end": "0040b934"
 },
@@ -56400,37 +56400,37 @@
 "end": "0040c028"
 },
 {
-"name": "FUN_0040c028",
+"name": "sceUsbKbInit",
 "address": "0040c028",
 "end": "0040c220"
 },
 {
-"name": "FUN_0040c220",
+"name": "sceUsbKbEnd",
 "address": "0040c220",
 "end": "0040c2e8"
 },
 {
-"name": "FUN_0040c2e8",
+"name": "sceUsbKbGetInfo",
 "address": "0040c2e8",
 "end": "0040c390"
 },
 {
-"name": "FUN_0040c390",
+"name": "sceUsbKbRead",
 "address": "0040c390",
 "end": "0040c46c"
 },
 {
-"name": "FUN_0040c470",
+"name": "sceUsbKbGetLocation",
 "address": "0040c470",
 "end": "0040c54c"
 },
 {
-"name": "FUN_0040c550",
+"name": "sceUsbKbSetLEDStatus",
 "address": "0040c550",
 "end": "0040c628"
 },
 {
-"name": "FUN_0040c628",
+"name": "sceUsbKbSetLEDMode",
 "address": "0040c628",
 "end": "0040c724"
 },
@@ -56505,102 +56505,102 @@
 "end": "0040d588"
 },
 {
-"name": "FUN_0040d588",
+"name": "tanf",
 "address": "0040d588",
 "end": "0040d610"
 },
 {
-"name": "FUN_0040d610",
+"name": "log",
 "address": "0040d610",
 "end": "0040d758"
 },
 {
-"name": "FUN_0040d758",
+"name": "expf",
 "address": "0040d758",
 "end": "0040d8cc"
 },
 {
-"name": "FUN_0040d8d0",
+"name": "fmodf",
 "address": "0040d8d0",
 "end": "0040da0c"
 },
 {
-"name": "FUN_0040da10",
+"name": "logf",
 "address": "0040da10",
 "end": "0040db58"
 },
 {
-"name": "FUN_0040db58",
+"name": "__ieee754_log",
 "address": "0040db58",
 "end": "0040e044"
 },
 {
-"name": "FUN_0040e048",
+"name": "__ieee754_expf",
 "address": "0040e048",
 "end": "0040e2fc"
 },
 {
-"name": "FUN_0040e300",
+"name": "__ieee754_fmodf",
 "address": "0040e300",
 "end": "0040e550"
 },
 {
-"name": "FUN_0040e550",
+"name": "__ieee754_logf",
 "address": "0040e550",
 "end": "0040e874"
 },
 {
-"name": "FUN_0040e878",
+"name": "__ieee754_rem_pio2f",
 "address": "0040e878",
 "end": "0040ec58"
 },
 {
-"name": "FUN_0040ec58",
+"name": "__kernel_rem_pio2f",
 "address": "0040ec58",
 "end": "0040f5a4"
 },
 {
-"name": "FUN_0040f5a8",
+"name": "__kernel_tanf",
 "address": "0040f5a8",
 "end": "0040f83c"
 },
 {
-"name": "FUN_0040f840",
+"name": "isnan",
 "address": "0040f840",
 "end": "0040f878"
 },
 {
-"name": "FUN_0040f878",
+"name": "matherr",
 "address": "0040f878",
 "end": "0040f89c"
 },
 {
-"name": "FUN_0040f8a0",
+"name": "fabsf",
 "address": "0040f8a0",
 "end": "0040f8bc"
 },
 {
-"name": "FUN_0040f8c0",
+"name": "finitef",
 "address": "0040f8c0",
 "end": "0040f8e4"
 },
 {
-"name": "FUN_0040f8e8",
+"name": "floorf",
 "address": "0040f8e8",
 "end": "0040f9cc"
 },
 {
-"name": "FUN_0040f9d0",
+"name": "isnanf",
 "address": "0040f9d0",
 "end": "0040f9f4"
 },
 {
-"name": "FUN_0040f9f8",
+"name": "scalbnf",
 "address": "0040f9f8",
 "end": "0040fb58"
 },
 {
-"name": "FUN_0040fb58",
+"name": "copysignf",
 "address": "0040fb58",
 "end": "0040fb88"
 },
@@ -56725,17 +56725,17 @@
 "end": "00411340"
 },
 {
-"name": "FUN_00411340",
+"name": "__fixunssfdi",
 "address": "00411340",
 "end": "00411434"
 },
 {
-"name": "FUN_00411438",
+"name": "__floatdidf",
 "address": "00411438",
 "end": "004114d0"
 },
 {
-"name": "FUN_004114d0",
+"name": "__muldi3",
 "address": "004114d0",
 "end": "00411530"
 },
@@ -56745,77 +56745,77 @@
 "end": "00411b08"
 },
 {
-"name": "FUN_00411b08",
+"name": "__pack_d",
 "address": "00411b08",
 "end": "00411c34"
 },
 {
-"name": "FUN_00411c38",
+"name": "__unpack_d",
 "address": "00411c38",
 "end": "00411cd4"
 },
 {
-"name": "FUN_00411cd8",
+"name": "_fpadd_parts_d",
 "address": "00411cd8",
 "end": "00411f18"
 },
 {
-"name": "FUN_00411f18",
+"name": "__adddf3",
 "address": "00411f18",
 "end": "00411f70"
 },
 {
-"name": "FUN_00411f70",
+"name": "__subdf3",
 "address": "00411f70",
 "end": "00411fd4"
 },
 {
-"name": "FUN_00411fd8",
+"name": "__muldf3",
 "address": "00411fd8",
 "end": "00412280"
 },
 {
-"name": "FUN_00412280",
+"name": "__divdf3",
 "address": "00412280",
 "end": "004123e8"
 },
 {
-"name": "FUN_004123e8",
+"name": "__fpcmp_parts_d",
 "address": "004123e8",
 "end": "004124fc"
 },
 {
-"name": "FUN_00412500",
+"name": "__cmpdf2",
 "address": "00412500",
 "end": "0041254c"
 },
 {
-"name": "FUN_00412550",
+"name": "__floatsidf",
 "address": "00412550",
 "end": "00412608"
 },
 {
-"name": "FUN_00412608",
+"name": "__fixdfsi",
 "address": "00412608",
 "end": "0041269c"
 },
 {
-"name": "FUN_004126a0",
+"name": "__fixunsdfsi",
 "address": "004126a0",
 "end": "00412740"
 },
 {
-"name": "FUN_00412740",
+"name": "__negdf2",
 "address": "00412740",
 "end": "00412778"
 },
 {
-"name": "FUN_00412778",
+"name": "__make_dp",
 "address": "00412778",
 "end": "004127a4"
 },
 {
-"name": "FUN_004127a8",
+"name": "__truncdfsf2",
 "address": "004127a8",
 "end": "004127fc"
 },
@@ -56890,7 +56890,7 @@
 "end": "00412e68"
 },
 {
-"name": "FUN_00412e80",
+"name": "__tf13bad_exception",
 "address": "00412e80",
 "end": "00412ed0"
 },
@@ -56900,82 +56900,82 @@
 "end": "00412f00"
 },
 {
-"name": "FUN_00412f18",
+"name": "__tf9exception",
 "address": "00412f18",
 "end": "00412f58"
 },
 {
-"name": "FUN_00412f58",
+"name": "__pack_f",
 "address": "00412f58",
 "end": "00413064"
 },
 {
-"name": "FUN_00413068",
+"name": "__unpack_f",
 "address": "00413068",
 "end": "004130f8"
 },
 {
-"name": "FUN_004130f8",
+"name": "_fpadd_parts_f",
 "address": "004130f8",
 "end": "0041332c"
 },
 {
-"name": "FUN_00413330",
+"name": "__addsf3",
 "address": "00413330",
 "end": "00413388"
 },
 {
-"name": "FUN_00413388",
+"name": "__subsf3",
 "address": "00413388",
 "end": "004133ec"
 },
 {
-"name": "FUN_004133f0",
+"name": "__mulsf3",
 "address": "004133f0",
 "end": "004135e4"
 },
 {
-"name": "FUN_004135e8",
+"name": "__divsf3",
 "address": "004135e8",
 "end": "00413748"
 },
 {
-"name": "FUN_00413748",
+"name": "__fpcmp_parts_f",
 "address": "00413748",
 "end": "0041385c"
 },
 {
-"name": "FUN_00413860",
+"name": "__cmpsf2",
 "address": "00413860",
 "end": "004138ac"
 },
 {
-"name": "FUN_004138b0",
+"name": "__floatsisf",
 "address": "004138b0",
 "end": "00413968"
 },
 {
-"name": "FUN_00413968",
+"name": "__fixsfsi",
 "address": "00413968",
 "end": "004139f4"
 },
 {
-"name": "FUN_004139f8",
+"name": "__fixunssfsi",
 "address": "004139f8",
 "end": "00413a90"
 },
 {
-"name": "FUN_00413a90",
+"name": "__negsf2",
 "address": "00413a90",
 "end": "00413ac8"
 },
 {
-"name": "FUN_00413ac8",
+"name": "__make_fp",
 "address": "00413ac8",
 "end": "00413af4"
 },
 {
-"name": "FUN_00413af8",
+"name": "__extendsfdf2",
 "address": "00413af8",
 "end": "00413b38"
 },
@@ -57105,7 +57105,7 @@
 "end": "00414ee0"
 },
 {
-"name": "FUN_00414f00",
+"name": "__tf17__class_type_info",
 "address": "00414f00",
 "end": "00414f50"
 },
@@ -57115,7 +57115,7 @@
 "end": "00414f6c"
 },
 {
-"name": "FUN_00414f90",
+"name": "__tf14__si_type_info",
 "address": "00414f90",
 "end": "00414fe0"
 },
@@ -57125,7 +57125,7 @@
 "end": "00414ffc"
 },
 {
-"name": "FUN_00415018",
+"name": "__tf16__user_type_info",
 "address": "00415018",
 "end": "00415068"
 },
@@ -57140,7 +57140,7 @@
 "end": "004150b8"
 },
 {
-"name": "FUN_004150d0",
+"name": "__tf10bad_typeid",
 "address": "004150d0",
 "end": "00415120"
 },
@@ -57150,7 +57150,7 @@
 "end": "00415150"
 },
 {
-"name": "FUN_00415168",
+"name": "__tf8bad_cast",
 "address": "00415168",
 "end": "004151b8"
 },
@@ -57160,7 +57160,7 @@
 "end": "004151d8"
 },
 {
-"name": "FUN_004151f8",
+"name": "__tf9type_info",
 "address": "004151f8",
 "end": "00415238"
 },
@@ -57190,7 +57190,7 @@
 "end": "00415924"
 },
 {
-"name": "FUN_00415ca8",
+"name": "__tf17__array_type_info",
 "address": "00415ca8",
 "end": "00415cf8"
 },
@@ -57200,7 +57200,7 @@
 "end": "00415d14"
 },
 {
-"name": "FUN_00415d18",
+"name": "__tf16__ptmd_type_info",
 "address": "00415d18",
 "end": "00415d68"
 },
@@ -57210,7 +57210,7 @@
 "end": "00415d84"
 },
 {
-"name": "FUN_00415d88",
+"name": "__tf16__ptmf_type_info",
 "address": "00415d88",
 "end": "00415dd8"
 },
@@ -57220,7 +57220,7 @@
 "end": "00415df4"
 },
 {
-"name": "FUN_00415df8",
+"name": "__tf16__func_type_info",
 "address": "00415df8",
 "end": "00415e48"
 },
@@ -57230,7 +57230,7 @@
 "end": "00415e64"
 },
 {
-"name": "FUN_00415e68",
+"name": "__tf19__builtin_type_info",
 "address": "00415e68",
 "end": "00415eb8"
 },
@@ -57240,7 +57240,7 @@
 "end": "00415ed4"
 },
 {
-"name": "FUN_00415ed8",
+"name": "__tf16__attr_type_info",
 "address": "00415ed8",
 "end": "00415f28"
 },
@@ -57250,7 +57250,7 @@
 "end": "00415f44"
 },
 {
-"name": "FUN_00415f48",
+"name": "__tf19__pointer_type_info",
 "address": "00415f48",
 "end": "00415f98"
 },
@@ -57260,67 +57260,67 @@
 "end": "00415fb4"
 },
 {
-"name": "FUN_00415fb8",
+"name": "__getreent",
 "address": "00415fb8",
 "end": "00415fc4"
 },
 {
-"name": "FUN_00415fc8",
+"name": "memcmp",
 "address": "00415fc8",
 "end": "0041605c"
 },
 {
-"name": "FUN_0041605c",
+"name": "memcpy",
 "address": "0041605c",
 "end": "0041610c"
 },
 {
-"name": "FUN_0041610c",
+"name": "memmove",
 "address": "0041610c",
 "end": "00416210"
 },
 {
-"name": "FUN_00416210",
+"name": "memset",
 "address": "00416210",
 "end": "004162d0"
 },
 {
-"name": "FUN_004162d0",
+"name": "strcat",
 "address": "004162d0",
 "end": "00416404"
 },
 {
-"name": "FUN_00416404",
+"name": "strchr",
 "address": "00416404",
 "end": "004165a8"
 },
 {
-"name": "FUN_004165a8",
+"name": "strcmp",
 "address": "004165a8",
 "end": "004166f4"
 },
 {
-"name": "FUN_004166f4",
+"name": "strcpy",
 "address": "004166f4",
 "end": "00416810"
 },
 {
-"name": "FUN_00416810",
+"name": "strlen",
 "address": "00416810",
 "end": "00416958"
 },
 {
-"name": "FUN_00416958",
+"name": "strncat",
 "address": "00416958",
 "end": "00416b14"
 },
 {
-"name": "FUN_00416b18",
+"name": "strncmp",
 "address": "00416b18",
 "end": "00416ce0"
 },
 {
-"name": "FUN_00416ce0",
+"name": "strncpy",
 "address": "00416ce0",
 "end": "00416eac"
 },
@@ -57355,12 +57355,12 @@
 "end": "00417574"
 },
 {
-"name": "FUN_00417578",
+"name": "_printf_r",
 "address": "00417578",
 "end": "004175c4"
 },
 {
-"name": "FUN_004175c8",
+"name": "printf",
 "address": "004175c8",
 "end": "00417628"
 },
@@ -57375,12 +57375,12 @@
 "end": "004177b0"
 },
 {
-"name": "FUN_004177b0",
+"name": "_sprintf_r",
 "address": "004177b0",
 "end": "00417828"
 },
 {
-"name": "FUN_00417828",
+"name": "sprintf",
 "address": "00417828",
 "end": "004178a8"
 },
@@ -57420,12 +57420,12 @@
 "end": "004186c4"
 },
 {
-"name": "FUN_004186c8",
+"name": "vsprintf",
 "address": "004186c8",
 "end": "0041871c"
 },
 {
-"name": "FUN_00418720",
+"name": "vsnprintf",
 "address": "00418720",
 "end": "0041878c"
 },
@@ -57435,27 +57435,27 @@
 "end": "004187a0"
 },
 {
-"name": "FUN_004187a0",
+"name": "atof",
 "address": "004187a0",
 "end": "004187bc"
 },
 {
-"name": "FUN_004187c0",
+"name": "atoi",
 "address": "004187c0",
 "end": "004187e8"
 },
 {
-"name": "FUN_004187e8",
+"name": "bsearch",
 "address": "004187e8",
 "end": "004188bc"
 },
 {
-"name": "FUN_004188c0",
+"name": "malloc",
 "address": "004188c0",
 "end": "00418910"
 },
 {
-"name": "FUN_00418910",
+"name": "free",
 "address": "00418910",
 "end": "00418958"
 },
@@ -57465,12 +57465,12 @@
 "end": "00418ca4"
 },
 {
-"name": "FUN_00418ca8",
+"name": "__malloc_lock",
 "address": "00418ca8",
 "end": "00418d08"
 },
 {
-"name": "FUN_00418d08",
+"name": "__malloc_unlock",
 "address": "00418d08",
 "end": "00418d48"
 },
@@ -57505,22 +57505,22 @@
 "end": "00418ef4"
 },
 {
-"name": "FUN_00418ef8",
+"name": "qsort",
 "address": "00418ef8",
 "end": "004198d4"
 },
 {
-"name": "FUN_004198d8",
+"name": "_strtod_r",
 "address": "004198d8",
 "end": "0041a7e8"
 },
 {
-"name": "FUN_0041a7e8",
+"name": "strtod",
 "address": "0041a7e8",
 "end": "0041a814"
 },
 {
-"name": "FUN_0041a818",
+"name": "strtof",
 "address": "0041a818",
 "end": "0041a83c"
 },
@@ -57535,37 +57535,37 @@
 "end": "0041aa84"
 },
 {
-"name": "FUN_0041aa88",
+"name": "strcasecmp",
 "address": "0041aa88",
 "end": "0041ab04"
 },
 {
-"name": "FUN_0041ab08",
+"name": "strcspn",
 "address": "0041ab08",
 "end": "0041ab78"
 },
 {
-"name": "FUN_0041ab78",
+"name": "strncasecmp",
 "address": "0041ab78",
 "end": "0041ac3c"
 },
 {
-"name": "FUN_0041ac40",
+"name": "strpbrk",
 "address": "0041ac40",
 "end": "0041acc0"
 },
 {
-"name": "FUN_0041acc0",
+"name": "strrchr",
 "address": "0041acc0",
 "end": "0041ad0c"
 },
 {
-"name": "FUN_0041ad10",
+"name": "strspn",
 "address": "0041ad10",
 "end": "0041ad80"
 },
 {
-"name": "FUN_0041ad80",
+"name": "strstr",
 "address": "0041ad80",
 "end": "0041adfc"
 },
@@ -57600,12 +57600,12 @@
 "end": "0041b658"
 },
 {
-"name": "FUN_0041b658",
+"name": "vfprintf_dispatch",
 "address": "0041b658",
 "end": "0041b724"
 },
 {
-"name": "FUN_0041b728",
+"name": "_vfprintf_r",
 "address": "0041b728",
 "end": "0041c788"
 },
@@ -57625,7 +57625,7 @@
 "end": "0041ca70"
 },
 {
-"name": "FUN_0041ca70",
+"name": "_vfiprintf_r",
 "address": "0041ca70",
 "end": "0041d990"
 },
@@ -57635,12 +57635,12 @@
 "end": "0041dbf4"
 },
 {
-"name": "FUN_0041dbf8",
+"name": "_malloc_r",
 "address": "0041dbf8",
 "end": "0041e33c"
 },
 {
-"name": "FUN_0041e340",
+"name": "_free_r",
 "address": "0041e340",
 "end": "0041e634"
 },
@@ -57650,17 +57650,17 @@
 "end": "0041e7a4"
 },
 {
-"name": "FUN_0041e7a8",
+"name": "_strtol_r",
 "address": "0041e7a8",
 "end": "0041e9dc"
 },
 {
-"name": "FUN_0041e9e0",
+"name": "strtol",
 "address": "0041e9e0",
 "end": "0041ea14"
 },
 {
-"name": "FUN_0041ea18",
+"name": "tolower",
 "address": "0041ea18",
 "end": "0041ea38"
 },
@@ -57680,7 +57680,7 @@
 "end": "0041ec6c"
 },
 {
-"name": "FUN_0041ec70",
+"name": "memchr",
 "address": "0041ec70",
 "end": "0041ed60"
 },
@@ -57730,7 +57730,7 @@
 "end": "0041fd70"
 },
 {
-"name": "FUN_0041fd70",
+"name": "_sbrk_r",
 "address": "0041fd70",
 "end": "0041fdcc"
 },
@@ -57785,82 +57785,82 @@
 "end": "0042050c"
 },
 {
-"name": "FUN_00420510",
+"name": "_Balloc",
 "address": "00420510",
 "end": "004205b8"
 },
 {
-"name": "FUN_004205b8",
+"name": "_Bfree",
 "address": "004205b8",
 "end": "004205ec"
 },
 {
-"name": "FUN_004205f0",
+"name": "__multadd",
 "address": "004205f0",
 "end": "004206f8"
 },
 {
-"name": "FUN_004206f8",
+"name": "__s2b",
 "address": "004206f8",
 "end": "0042082c"
 },
 {
-"name": "FUN_00420830",
+"name": "__hi0bits",
 "address": "00420830",
 "end": "004208b4"
 },
 {
-"name": "FUN_004208b8",
+"name": "__lo0bits",
 "address": "004208b8",
 "end": "00420978"
 },
 {
-"name": "FUN_00420978",
+"name": "__i2b",
 "address": "00420978",
 "end": "004209b0"
 },
 {
-"name": "FUN_004209b0",
+"name": "__multiply",
 "address": "004209b0",
 "end": "00420bc4"
 },
 {
-"name": "FUN_00420bc8",
+"name": "__pow5mult",
 "address": "00420bc8",
 "end": "00420cc8"
 },
 {
-"name": "FUN_00420cc8",
+"name": "__lshift",
 "address": "00420cc8",
 "end": "00420e28"
 },
 {
-"name": "FUN_00420e28",
+"name": "__mcmp",
 "address": "00420e28",
 "end": "00420e90"
 },
 {
-"name": "FUN_00420e90",
+"name": "__mdiff",
 "address": "00420e90",
 "end": "00421020"
 },
 {
-"name": "FUN_00421020",
+"name": "__ulp",
 "address": "00421020",
 "end": "004210e8"
 },
 {
-"name": "FUN_004210e8",
+"name": "__b2d",
 "address": "004210e8",
 "end": "00421280"
 },
 {
-"name": "FUN_00421280",
+"name": "__d2b",
 "address": "00421280",
 "end": "004213fc"
 },
 {
-"name": "FUN_00421400",
+"name": "__ratio",
 "address": "00421400",
 "end": "004214c0"
 },
@@ -57895,12 +57895,12 @@
 "end": "00421e60"
 },
 {
-"name": "FUN_00421f20",
+"name": "_realloc_r",
 "address": "00421f20",
 "end": "0042249c"
 },
 {
-"name": "FUN_004224a0",
+"name": "_calloc_r",
 "address": "004224a0",
 "end": "0042255c"
 },
@@ -57910,7 +57910,7 @@
 "end": "0042277c"
 },
 {
-"name": "FUN_00422780",
+"name": "_dtoa_r",
 "address": "00422780",
 "end": "00423964"
 },
@@ -58305,22 +58305,22 @@
 "end": "004245f0"
 },
 {
-"name": "FUN_004245f0",
+"name": "_SyncDCache",
 "address": "004245f0",
 "end": "00424694"
 },
 {
-"name": "FUN_00424698",
+"name": "SyncDCache",
 "address": "00424698",
 "end": "00424714"
 },
 {
-"name": "FUN_00424730",
+"name": "_InvalidDCache",
 "address": "00424730",
 "end": "004247d4"
 },
 {
-"name": "FUN_004247d8",
+"name": "InvalidDCache",
 "address": "004247d8",
 "end": "00424854"
 },
@@ -58345,22 +58345,22 @@
 "end": "00424a20"
 },
 {
-"name": "FUN_00424a20",
+"name": "iEnableIntc",
 "address": "00424a20",
 "end": "00424a40"
 },
 {
-"name": "FUN_00424a40",
+"name": "iDisableIntc",
 "address": "00424a40",
 "end": "00424a60"
 },
 {
-"name": "FUN_00424a60",
+"name": "iEnableDmac",
 "address": "00424a60",
 "end": "00424a80"
 },
 {
-"name": "FUN_00424a80",
+"name": "iDisableDmac",
 "address": "00424a80",
 "end": "00424aa0"
 },
@@ -58460,12 +58460,12 @@
 "end": "00425c60"
 },
 {
-"name": "FUN_00425c60",
+"name": "scePrintf",
 "address": "00425c60",
 "end": "00425cc0"
 },
 {
-"name": "FUN_00425cf0",
+"name": "sceSifGetSreg",
 "address": "00425cf0",
 "end": "00425d08"
 },
@@ -58475,12 +58475,12 @@
 "end": "00425fb8"
 },
 {
-"name": "FUN_00425fb8",
+"name": "sceSifExitCmd",
 "address": "00425fb8",
 "end": "00425fec"
 },
 {
-"name": "FUN_00425ff0",
+"name": "sceSifSetCmdBuffer",
 "address": "00425ff0",
 "end": "00426008"
 },
@@ -58490,12 +58490,12 @@
 "end": "0042604c"
 },
 {
-"name": "FUN_00426050",
+"name": "sceSifRemoveCmdHandler",
 "address": "00426050",
 "end": "00426078"
 },
 {
-"name": "FUN_00426078",
+"name": "_sceSifSendCmd",
 "address": "00426078",
 "end": "004261ac"
 },
@@ -58505,7 +58505,7 @@
 "end": "004261ec"
 },
 {
-"name": "FUN_004261f0",
+"name": "isceSifSendCmd",
 "address": "004261f0",
 "end": "0042622c"
 },
@@ -58515,7 +58515,7 @@
 "end": "00426358"
 },
 {
-"name": "FUN_00426358",
+"name": "sceSifWriteBackDCache",
 "address": "00426358",
 "end": "00426404"
 },
@@ -58590,7 +58590,7 @@
 "end": "00426f04"
 },
 {
-"name": "FUN_00426f08",
+"name": "sceSifCheckStatRpc",
 "address": "00426f08",
 "end": "00426f44"
 },
