@@ -919,6 +919,23 @@ fn decode(@builtin(global_invocation_id) gid: vec3<u32>) {
     decoded[params.b.x + i] = conv(st, tex_read(t.surf, params.b.y + i % w, params.b.z + i / w));
 }
 
+// Host->local pixels into GPU-drawn pages: params a = (surface base,
+// packed, pages per row, count), b = (DSAX, DSAY, RRW, first pixel index),
+// c.x = offset of the values in `data`.
+@compute @workgroup_size(64)
+fn pixels(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x + gid.y * 32768u * 64u;
+    if (i >= params.a.w) {
+        return;
+    }
+    let p = params.a.y;
+    let s = Surf(params.a.x, p & 0xFFFFu, (p >> 16u) & 7u, (p >> 19u) & 7u, (p >> 22u) & 3u, (p >> 24u) & 7u, params.a.z);
+    let k = params.b.w + i;
+    let x = (params.b.x + k % params.b.z) & 0x7FFu;
+    let y = (params.b.y + k / params.b.z) & 0x7FFu;
+    write_at(s, locate(s, x, y), data[params.c.x + i]);
+}
+
 // ------------------------------------------------------------------ display
 
 // PCRTC readout (display.rs). params: a = (w, h, row_div, flags), where

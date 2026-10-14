@@ -95,7 +95,16 @@ impl Gs {
             Box::new(r)
         });
         // Queued primitives must not see (or be overwritten by) this data.
-        self.before_vram_write(&r);
+        // Formats that store whole words cover whole pages of the mirror.
+        let whole = matches!(surf.kind, super::swizzle::Kind::W32 | super::swizzle::Kind::H16 | super::swizzle::Kind::B8 | super::swizzle::Kind::N4);
+        // GPU backend: partial-word formats (CT24, T8H, T4HL/HH) into pages
+        // drawn on the GPU are written on the GPU instead of reading back.
+        let direct = !whole && self.gpu.as_mut().is_some_and(|g| g.direct_upload(&r, &self.vram));
+        if !direct {
+            self.before_vram_write_full(&r, whole);
+        }
+        let start = self.xfer.y * p.rrw + self.xfer.x;
+        let mut vals: Vec<u32> = Vec::new();
         if first {
             // Decoded textures in these pages are stale until the upload ends.
             self.texcache.live = r.pages;
@@ -112,7 +121,11 @@ impl Gs {
             if !active {
                 return;
             }
-            row.write(m, (p.dsax + x) & 0x7FF, v);
+            if direct {
+                vals.push(v);
+            } else {
+                row.write(m, (p.dsax + x) & 0x7FF, v);
+            }
             x += 1;
             if x >= p.rrw {
                 x = 0;
@@ -166,6 +179,10 @@ impl Gs {
         self.xfer.x = x;
         self.xfer.y = y;
         self.xfer.active = active;
+        if direct && !vals.is_empty() {
+            let g = self.gpu.as_mut().expect("gpu");
+            g.pixel_write(&surf, [p.dsax, p.dsay, p.rrw, start], &vals);
+        }
         if !active {
             self.end_upload();
         }
@@ -193,9 +210,35 @@ impl Gs {
         }
     }
 
+    /// GPU backend: serve a local->host transfer of GPU-drawn data from the
+    /// previous frame (`GpuGs::latent_read`). False when it must be exact.
+    fn latent_host_read(&mut self, surf: &Surface, x: u32, y: u32, w: u32, h: u32) -> bool {
+        static SYNC: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        if self.gpu.is_none() || *SYNC.get_or_init(|| std::env::var_os("SSX3_GS_SYNC_READBACK").is_some()) {
+            return false;
+        }
+        if w == 0 || h == 0 {
+            return true;
+        }
+        let mut r = Region::default();
+        if x + w > 2048 || y + h > 2048 {
+            r.add_rect(surf, 0, 0, 2047, 2047);
+        } else {
+            r.add_rect(surf, x, y, x + w - 1, y + h - 1);
+        }
+        let g = self.gpu.as_mut().expect("gpu");
+        if !g.gpu_dirty.hits(&r.pages) && !g.batch_writes(&r) {
+            return false;
+        }
+        g.latent_read(&r.pages, &mut self.vram);
+        true
+    }
+
     fn local_to_host(&mut self, p: &Params) {
         let surf = Surface::new(p.spsm, p.sbp, p.sbw);
-        self.before_rect_read(&surf, p.ssax, p.ssay, p.rrw, p.rrh);
+        if !self.latent_host_read(&surf, p.ssax, p.ssay, p.rrw, p.rrh) {
+            self.before_rect_read(&surf, p.ssax, p.ssay, p.rrw, p.rrh);
+        }
         let bpp = bits_per_pixel(p.spsm);
         let total_bits = p.rrw as u64 * p.rrh as u64 * bpp as u64;
         let mut bytes: Vec<u8> = Vec::with_capacity(total_bits.div_ceil(8) as usize + 16);

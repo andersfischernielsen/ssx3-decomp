@@ -159,6 +159,9 @@ async fn create_context() -> Result<GpuContext, String> {
         })
         .await
         .map_err(|e| format!("request_device: {e}"))?;
+    device.set_device_lost_callback(|reason, msg| {
+        eprintln!("[gs] GPU device lost ({reason:?}): {msg}");
+    });
     Ok(GpuContext {
         instance,
         adapter,
@@ -206,6 +209,10 @@ pub struct GpuStats {
     /// Primitives and tile list entries per kind (triangle, sprite, line, point).
     pub kind_prims: [u64; 4],
     pub kind_entries: [u64; 4],
+    /// Host->local pixels written on the GPU (partial-word formats).
+    pub direct_upload_pixels: u64,
+    /// Local->host transfers served from the previous frame's copy.
+    pub latent_reads: u64,
     /// Texture levels decoded, and their texels.
     pub decodes: u64,
     pub decoded_texels: u64,
@@ -219,6 +226,8 @@ enum Cmd {
     /// Copy VRAM words `lo..hi` into the snapshot buffer.
     Snapshot { lo: u32, hi: u32 },
     Raster { slot: u32, tiles: u32 },
+    /// Write `n` host->local pixels (see `pixel_write`).
+    Pixels { slot: u32, n: u32 },
     /// Decode `n` texels of a texture level into the decoded buffer.
     Decode { slot: u32, n: u32 },
     Display { slot: u32, w: u32, h: u32 },
@@ -273,6 +282,7 @@ pub(crate) struct GpuGs {
     raster_pipe: wgpu::ComputePipeline,
     display_pipe: wgpu::ComputePipeline,
     decode_pipe: wgpu::ComputePipeline,
+    pixels_pipe: wgpu::ComputePipeline,
 
     arena: Vec<u32>,
     slots: Vec<[u32; 16]>,
@@ -292,6 +302,8 @@ pub(crate) struct GpuGs {
     touched: Vec<u32>,
     pub(crate) stats: GpuStats,
     prof: Option<Prof>,
+    /// Latent readbacks (see `latent_read`).
+    latent: Latent,
     /// Per raster pass of the submission: primitives, tiles, entries.
     prof_info: Vec<(u32, u32, u32)>,
 }
@@ -379,6 +391,35 @@ fn page_span(p: &Pages) -> Option<(u32, u32)> {
     let lo = lo.0 as u32 * 64 + lo.1.trailing_zeros();
     let hi = hi.0 as u32 * 64 + 63 - hi.1.leading_zeros();
     Some((lo, hi + 1))
+}
+
+/// The latent readback buffer (see `GpuGs::latent_read`).
+struct Latent {
+    buf: wgpu::Buffer,
+    /// Set when the mapping of the last copy completed.
+    ready: Arc<std::sync::atomic::AtomicBool>,
+    /// Pages of the copy in flight or mapped.
+    pending: Option<Pages>,
+    /// Pages read this frame.
+    want: Pages,
+}
+
+/// Runs `[a, b)` of consecutive pages in a set.
+fn page_runs(p: &Pages) -> Vec<(u32, u32)> {
+    let mut runs = Vec::new();
+    let mut pg = 0;
+    while pg < 512 {
+        if !page_set(p, pg) {
+            pg += 1;
+            continue;
+        }
+        let start = pg;
+        while pg < 512 && page_set(p, pg) {
+            pg += 1;
+        }
+        runs.push((start, pg));
+    }
+    runs
 }
 
 fn page_set(p: &Pages, pg: u32) -> bool {
@@ -477,6 +518,7 @@ impl GpuGs {
         let raster_pipe = pipe("raster");
         let display_pipe = pipe("display");
         let decode_pipe = pipe("decode");
+        let pixels_pipe = pipe("pixels");
         let bind_group = Self::make_bind_group(dev, &bgl, [&vram, &tables, &data, &params, &snap, &out, &dec]);
         Some(GpuGs {
             ctx,
@@ -493,6 +535,7 @@ impl GpuGs {
             raster_pipe,
             display_pipe,
             decode_pipe,
+            pixels_pipe,
             arena: Vec::with_capacity(1 << 20),
             slots: Vec::new(),
             cmds: Vec::new(),
@@ -509,6 +552,12 @@ impl GpuGs {
             touched: Vec::new(),
             stats: GpuStats::default(),
             prof_info: Vec::new(),
+            latent: Latent {
+                buf: mk("gs-latent", VRAM_BYTES, U::MAP_READ | U::COPY_DST),
+                ready: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                pending: None,
+                want: Pages::default(),
+            },
             prof: (profiling() && dev.features().contains(wgpu::Features::TIMESTAMP_QUERY)).then(|| Prof {
                 qs: dev.create_query_set(&wgpu::QuerySetDescriptor {
                     label: Some("gs-timestamps"),
@@ -1141,6 +1190,67 @@ impl GpuGs {
         self.batch.prims > 0 && (r.pages.hits(&self.batch.read) || self.batch.write.hits(r))
     }
 
+    /// Host->local data for `r` in a partial-word format: when those pages
+    /// were drawn on the GPU, write the pixels on the GPU (`pixel_write`)
+    /// rather than reading the pages back. Returns whether to do so.
+    pub(crate) fn direct_upload(&mut self, r: &Region, vram: &[u32]) -> bool {
+        if std::env::var_os("SSX3_GS_NO_DIRECT").is_some() {
+            return false;
+        }
+        if !self.gpu_dirty.hits(&r.pages) && !self.batch_writes(r) {
+            return false;
+        }
+        if self.batch_touches(r) {
+            self.stats.transfer_closes += 1;
+            self.close(vram);
+        }
+        // Earlier CPU writes to these pages go first.
+        self.emit_uploads(vram);
+        self.gpu_dirty.union(&r.pages);
+        let pages = r.pages;
+        self.decoded.retain(|_, (_, pg)| !pg.hits(&pages));
+        true
+    }
+
+    /// Queue host->local pixels: `pos` = (DSAX, DSAY, RRW, index of the
+    /// first pixel in the transfer rectangle).
+    pub(crate) fn pixel_write(&mut self, s: &Surface, pos: [u32; 4], vals: &[u32]) {
+        // GIF delivers images in small pieces: extend the previous write
+        // when this continues it.
+        if let Some(Cmd::Pixels { slot, n }) = self.cmds.last_mut() {
+            let p = &mut self.slots[*slot as usize];
+            let sw = surf_words(s);
+            if p[..3] == sw
+                && p[4..7] == pos[..3]
+                && p[7] + p[3] == pos[3]
+                && (p[8] + p[3]) as usize == self.arena.len()
+            {
+                self.arena.extend_from_slice(vals);
+                p[3] += vals.len() as u32;
+                *n += vals.len() as u32;
+                self.stats.direct_upload_pixels += vals.len() as u64;
+                return;
+            }
+        }
+        let at = self.arena.len() as u32;
+        self.arena.extend_from_slice(vals);
+        let sw = surf_words(s);
+        if trace_readback() {
+            eprintln!("[gs-gpu] pixel write {} px at {pos:?} surf {sw:x?}", vals.len());
+        }
+        let mut p = [0u32; 16];
+        p[..4].copy_from_slice(&[sw[0], sw[1], sw[2], vals.len() as u32]);
+        p[4..8].copy_from_slice(&pos);
+        p[8] = at;
+        let slot = self.slots.len() as u32;
+        self.slots.push(p);
+        self.cmds.push(Cmd::Pixels {
+            slot,
+            n: vals.len() as u32,
+        });
+        self.stats.direct_upload_pixels += vals.len() as u64;
+    }
+
     /// Whether the open batch writes blocks of `r`.
     pub(crate) fn batch_writes(&mut self, r: &Region) -> bool {
         self.batch.prims > 0 && self.batch.write.hits(r)
@@ -1266,6 +1376,16 @@ impl GpuGs {
                     pass.set_bind_group(0, &self.bind_group, &[slot * SLOT as u32]);
                     pass.dispatch_workgroups(tiles.min(32768), tiles.div_ceil(32768), 1);
                 }
+                Cmd::Pixels { slot, n } => {
+                    let mut pass = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                        label: Some("gs-pixels"),
+                        timestamp_writes: None,
+                    });
+                    pass.set_pipeline(&self.pixels_pipe);
+                    pass.set_bind_group(0, &self.bind_group, &[slot * SLOT as u32]);
+                    let groups = n.div_ceil(64);
+                    pass.dispatch_workgroups(groups.min(32768), groups.div_ceil(32768), 1);
+                }
                 Cmd::Decode { slot, n } => {
                     let mut pass = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
                         label: Some("gs-decode"),
@@ -1335,10 +1455,62 @@ impl GpuGs {
     /// Close the batch and submit everything (no waiting).
     pub(crate) fn submit(&mut self, vram: &[u32]) {
         self.close(vram);
+        let want = self.latent.want;
+        if !want.is_empty() && self.latent.pending.is_none() {
+            // Copy the pages local->host transfers read this frame, as they
+            // are once the frame is drawn, for the next frame's transfers.
+            let runs = page_runs(&want);
+            let bpp = PAGE_WORDS as u64 * 4;
+            self.submit_with(|s, enc| {
+                for &(a, b) in &runs {
+                    let off = a as u64 * bpp;
+                    enc.copy_buffer_to_buffer(&s.vram, off, &s.latent.buf, off, (b - a) as u64 * bpp);
+                }
+            });
+            let ready = self.latent.ready.clone();
+            ready.store(false, std::sync::atomic::Ordering::Release);
+            self.latent.buf.slice(..).map_async(wgpu::MapMode::Read, move |r| {
+                ready.store(r.is_ok(), std::sync::atomic::Ordering::Release);
+            });
+            self.latent.pending = Some(want);
+            self.latent.want = Pages::default();
+            return;
+        }
         if !self.cmds.is_empty() {
             self.submit_with(|_, _| {});
         }
     }
+
+    /// Serve a local->host transfer of GPU-drawn `pages` without waiting
+    /// for the GPU: the mirror gets those pages as they were at the end of
+    /// the previous frame (when that copy has arrived), and the pages are
+    /// copied again at the end of this frame. SSX 3 reads small rectangles
+    /// of the Z buffer every frame (light flare occlusion); a synchronous
+    /// readback would make the CPU wait for the whole frame's drawing.
+    /// `SSX3_GS_SYNC_READBACK=1` disables this.
+    pub(crate) fn latent_read(&mut self, pages: &Pages, vram: &mut [u32]) {
+        self.latent.want.union(pages);
+        self.stats.latent_reads += 1;
+        let Some(have) = self.latent.pending else { return };
+        let _ = self.ctx.device.poll(wgpu::PollType::Poll);
+        if !self.latent.ready.load(std::sync::atomic::Ordering::Acquire) {
+            return;
+        }
+        {
+            let view = self.latent.buf.slice(..).get_mapped_range().expect("latent map");
+            // Only pages the GPU drew: the others are current in the mirror.
+            let pg = pages_and(&have, &self.gpu_dirty);
+            for (a, b) in page_runs(&pg) {
+                let (wa, wb) = (a as usize * PAGE_WORDS, b as usize * PAGE_WORDS);
+                for (d, c) in vram[wa..wb].iter_mut().zip(view[wa * 4..wb * 4].chunks_exact(4)) {
+                    *d = u32::from_le_bytes([c[0], c[1], c[2], c[3]]);
+                }
+            }
+        }
+        self.latent.buf.unmap();
+        self.latent.pending = None;
+    }
+
 
     /// Wait until the GPU has finished everything submitted.
     pub(crate) fn wait_idle(&mut self) {

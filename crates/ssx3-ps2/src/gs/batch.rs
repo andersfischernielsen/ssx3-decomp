@@ -474,6 +474,13 @@ impl Gs {
     /// Before overwriting the `x0..=x1` × `y0..=y1` rectangle of `surf`
     /// (`r`): finish drawing whatever reads or writes it.
     pub(super) fn before_vram_write(&mut self, r: &Region) {
+        self.before_vram_write_full(r, false);
+    }
+
+    /// `before_vram_write`, where `whole_words` says the write stores whole
+    /// 32-bit words for every block of `r` (so fully covered pages need not
+    /// be read back first on the GPU backend).
+    pub(super) fn before_vram_write_full(&mut self, r: &Region, whole_words: bool) {
         if let Some(g) = self.gpu.as_mut() {
             // The CPU writes the mirror and whole pages are uploaded later,
             // so the pages must be current in the mirror first.
@@ -481,8 +488,19 @@ impl Gs {
                 g.note_transfer_close();
                 g.close(&self.vram);
             }
-            if g.gpu_dirty.hits(&r.pages) {
-                g.readback(&r.pages, &mut self.vram, "cpu write");
+            let mut need = r.pages;
+            if whole_words {
+                let full = r.full_pages();
+                for (n, f) in need.0.iter_mut().zip(full.0) {
+                    *n &= !f;
+                }
+            }
+            if g.gpu_dirty.hits(&need) {
+                g.readback(&need, &mut self.vram, "cpu write");
+            }
+            // Whole pages are uploaded, so the GPU's copy is replaced.
+            for (d, p) in g.gpu_dirty.0.iter_mut().zip(r.pages.0) {
+                *d &= !p;
             }
             g.cpu_dirty.union(&r.pages);
             return;
