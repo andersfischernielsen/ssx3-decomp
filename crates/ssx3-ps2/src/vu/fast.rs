@@ -56,7 +56,7 @@ fn mac_of<const D: u8>(v: &[u32; 4], e: &[Exc; 4]) -> u32 {
 macro_rules! fmac2 {
     ($name:ident, $f:path) => {
         #[inline(always)]
-        pub fn $name<const D: u8>(s: &[u32; 4], t: &[u32; 4]) -> ([u32; 4], u32) {
+        pub fn $name<const D: u8, const NS: bool, const NT: bool>(s: &[u32; 4], t: &[u32; 4]) -> ([u32; 4], u32) {
             let mut v = [0u32; 4];
             let mut e = [Exc::default(); 4];
             for l in 0..4 {
@@ -72,7 +72,11 @@ macro_rules! fmac2 {
 macro_rules! fmac3 {
     ($name:ident, $f:path) => {
         #[inline(always)]
-        pub fn $name<const D: u8>(a: &[u32; 4], s: &[u32; 4], t: &[u32; 4]) -> ([u32; 4], u32) {
+        pub fn $name<const D: u8, const NA: bool, const NS: bool, const NT: bool>(
+            a: &[u32; 4],
+            s: &[u32; 4],
+            t: &[u32; 4],
+        ) -> ([u32; 4], u32) {
             let mut v = [0u32; 4];
             let mut e = [Exc::default(); 4];
             for l in 0..4 {
@@ -99,10 +103,12 @@ fmac3!(msub4, float::msub);
 #[cfg(target_arch = "aarch64")]
 mod neon_ops {
     use super::super::simd::{self, load, store};
+    // `NS`, `NT`, `NA`: whether an operand must be normalised (false when
+    // the translator knows it holds an FMAC/ITOF result).
     macro_rules! neon2 {
         ($name:ident, |$s:ident, $t:ident| $e:expr) => {
             #[inline(always)]
-            pub fn $name<const D: u8>(s: &[u32; 4], t: &[u32; 4]) -> ([u32; 4], u32) {
+            pub fn $name<const D: u8, const NS: bool, const NT: bool>(s: &[u32; 4], t: &[u32; 4]) -> ([u32; 4], u32) {
                 let ($s, $t) = (load(s), load(t));
                 let r = $e;
                 (store(r.v), simd::mac::<D>(&r))
@@ -110,22 +116,36 @@ mod neon_ops {
         };
     }
     macro_rules! neon3 {
-        ($name:ident, $f:path) => {
+        ($name:ident, $f:ident) => {
             #[inline(always)]
-            pub fn $name<const D: u8>(a: &[u32; 4], s: &[u32; 4], t: &[u32; 4]) -> ([u32; 4], u32) {
-                let r = $f(load(a), load(s), load(t));
+            pub fn $name<const D: u8, const NA: bool, const NS: bool, const NT: bool>(
+                a: &[u32; 4],
+                s: &[u32; 4],
+                t: &[u32; 4],
+            ) -> ([u32; 4], u32) {
+                let r = simd::$f::<NA, NS, NT>(load(a), load(s), load(t));
                 (store(r.v), simd::mac::<D>(&r))
             }
         };
     }
-    neon2!(add4, |s, t| simd::add(s, t));
-    neon2!(sub4, |s, t| simd::add(s, simd::neg(t)));
-    neon2!(mul4, |s, t| simd::mul(s, t));
-    neon3!(madd4, simd::madd);
-    neon3!(msub4, simd::msub);
+    neon2!(add4, |s, t| simd::add_k::<NS, NT>(s, t));
+    // (Negating keeps a normal operand normal.)
+    neon2!(sub4, |s, t| simd::add_k::<NS, NT>(s, simd::neg(t)));
+    neon2!(mul4, |s, t| simd::mul_k::<NS, NT>(s, t));
+    neon3!(madd4, madd_k);
+    neon3!(msub4, msub_k);
+
+    #[inline(always)]
+    pub fn itof4<const F: i32>(s: &[u32; 4]) -> [u32; 4] {
+        store(simd::itof::<F>(load(s)))
+    }
+    #[inline(always)]
+    pub fn ftoi4<const F: i32>(s: &[u32; 4]) -> [u32; 4] {
+        store(simd::ftoi::<F>(load(s)))
+    }
 }
 #[cfg(target_arch = "aarch64")]
-pub use neon_ops::{add4, madd4, msub4, mul4, sub4};
+pub use neon_ops::{add4, ftoi4, itof4, madd4, msub4, mul4, sub4};
 
 #[inline(always)]
 pub fn max4(s: &[u32; 4], t: &[u32; 4]) -> [u32; 4] {
@@ -135,10 +155,12 @@ pub fn max4(s: &[u32; 4], t: &[u32; 4]) -> [u32; 4] {
 pub fn min4(s: &[u32; 4], t: &[u32; 4]) -> [u32; 4] {
     std::array::from_fn(|l| float::min(s[l], t[l]))
 }
+#[cfg(not(target_arch = "aarch64"))]
 #[inline(always)]
 pub fn itof4<const F: i32>(s: &[u32; 4]) -> [u32; 4] {
     std::array::from_fn(|l| float::from_fixed(s[l] as i32, F))
 }
+#[cfg(not(target_arch = "aarch64"))]
 #[inline(always)]
 pub fn ftoi4<const F: i32>(s: &[u32; 4]) -> [u32; 4] {
     std::array::from_fn(|l| float::to_fixed(s[l], F))
@@ -155,7 +177,7 @@ pub mod cold {
         ($name:ident) => {
             #[inline(never)]
             pub fn $name<const D: u8>(s: &[u32; 4], t: &[u32; 4]) -> ([u32; 4], u32) {
-                super::$name::<D>(s, t)
+                super::$name::<D, true, true>(s, t)
             }
         };
     }
@@ -163,7 +185,7 @@ pub mod cold {
         ($name:ident) => {
             #[inline(never)]
             pub fn $name<const D: u8>(a: &[u32; 4], s: &[u32; 4], t: &[u32; 4]) -> ([u32; 4], u32) {
-                super::$name::<D>(a, s, t)
+                super::$name::<D, true, true, true>(a, s, t)
             }
         };
     }
@@ -301,6 +323,21 @@ impl Vu {
             | (((mac & 0x0f00 != 0) as u32) << 2)
             | (((mac & 0xf000 != 0) as u32) << 3);
         self.status = (self.status & !0xf) | s | (s << 6);
+    }
+
+    /// Commit a run of FMAC ops at once: `last` is the final MAC, `acc` the
+    /// OR of all their MACs (the sticky status bits are an OR, so this equals
+    /// committing them one by one).
+    #[inline(always)]
+    pub fn mac_commit(&mut self, last: u32, acc: u32) {
+        let nib = |m: u32| {
+            ((m & 0x000f != 0) as u32)
+                | (((m & 0x00f0 != 0) as u32) << 1)
+                | (((m & 0x0f00 != 0) as u32) << 2)
+                | (((m & 0xf000 != 0) as u32) << 3)
+        };
+        self.mac = last;
+        self.status = (self.status & !0xf) | nib(last) | (nib(acc) << 6);
     }
 
     /// Flags no flag op can observe before they would be visible anyway:

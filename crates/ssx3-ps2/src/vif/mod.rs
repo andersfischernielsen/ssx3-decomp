@@ -324,16 +324,18 @@ impl Vif {
         let (cl, wl) = self.cl_wl();
         let fill_mode = wl > cl;
         let qwords = (vu.data.len() / 16) as u32;
-        let bytes: Vec<u8> = data.iter().flat_map(|w| w.to_le_bytes()).collect();
+        // Elements are read straight from the little-endian words (they are
+        // naturally aligned: 32-bit at word, 16-bit at half-word offsets).
         let mut bitpos = 0usize;
         let elem_bits = 32usize >> vl;
         let mut read = |bits: usize| -> u32 {
             let b = bitpos / 8;
             bitpos += bits;
+            let w = data[b / 4] >> (8 * (b % 4));
             match bits {
-                32 => u32::from_le_bytes(bytes[b..b + 4].try_into().unwrap()),
+                32 => w,
                 16 => {
-                    let h = u16::from_le_bytes(bytes[b..b + 2].try_into().unwrap());
+                    let h = w as u16;
                     if usn || vl == 3 {
                         h as u32
                     } else {
@@ -341,7 +343,7 @@ impl Vif {
                     }
                 }
                 _ => {
-                    let x = bytes[b];
+                    let x = w as u8;
                     if usn {
                         x as u32
                     } else {
@@ -350,6 +352,16 @@ impl Vif {
                 }
             }
         };
+        if vn == 3 && vl == 0 && !masked && self.mode == 0 && !fill_mode && cl == wl {
+            // V4-32 to consecutive qwords: a plain copy (the common case).
+            for i in 0..num as usize {
+                let o = (((addr + i as u32) & (qwords - 1)) * 16) as usize;
+                for j in 0..4 {
+                    vu.data[o + j * 4..o + j * 4 + 4].copy_from_slice(&data[i * 4 + j].to_le_bytes());
+                }
+            }
+            return;
+        }
         let mut cyc = 0u32;
         for _ in 0..num {
             let fill = fill_mode && cyc >= cl;

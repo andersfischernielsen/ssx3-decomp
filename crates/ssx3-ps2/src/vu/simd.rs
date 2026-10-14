@@ -50,6 +50,18 @@ fn norm(x: uint32x4_t) -> uint32x4_t {
     }
 }
 
+/// `norm` when `N`; the translator passes `N = false` for operands it knows
+/// are already normalised (FMAC and ITOF results), where `norm` is the
+/// identity.
+#[inline(always)]
+fn opnd<const N: bool>(x: uint32x4_t) -> uint32x4_t {
+    if N {
+        norm(x)
+    } else {
+        x
+    }
+}
+
 #[inline(always)]
 fn mantissa(x: uint32x4_t) -> uint32x4_t {
     unsafe { vorrq_u32(vandq_u32(x, k(0x7f_ffff)), k(0x80_0000)) }
@@ -71,9 +83,15 @@ fn pack(sign: uint32x4_t, e: int32x4_t, m: uint32x4_t) -> R {
 /// a * b, truncating (`float::mul`).
 #[inline(always)]
 pub fn mul(a: uint32x4_t, b: uint32x4_t) -> R {
+    mul_k::<true, true>(a, b)
+}
+
+/// `mul`; `NA`/`NB` false skip normalising an operand known to be normal.
+#[inline(always)]
+pub fn mul_k<const NA: bool, const NB: bool>(a: uint32x4_t, b: uint32x4_t) -> R {
     unsafe {
-        let a = norm(a);
-        let b = norm(b);
+        let a = opnd::<NA>(a);
+        let b = opnd::<NB>(b);
         let sign = vandq_u32(veorq_u32(a, b), k(SIGN));
         let ea = vandq_u32(vshrq_n_u32::<23>(a), k(0xff));
         let eb = vandq_u32(vshrq_n_u32::<23>(b), k(0xff));
@@ -102,9 +120,15 @@ pub fn mul(a: uint32x4_t, b: uint32x4_t) -> R {
 /// a + b, truncating with one guard bit (`float::add`).
 #[inline(always)]
 pub fn add(a: uint32x4_t, b: uint32x4_t) -> R {
+    add_k::<true, true>(a, b)
+}
+
+/// `add`; `NA`/`NB` false skip normalising an operand known to be normal.
+#[inline(always)]
+pub fn add_k<const NA: bool, const NB: bool>(a: uint32x4_t, b: uint32x4_t) -> R {
     unsafe {
-        let a = norm(a);
-        let b = norm(b);
+        let a = opnd::<NA>(a);
+        let b = opnd::<NB>(b);
         let aa = vandq_u32(a, k(ABS));
         let ba = vandq_u32(b, k(ABS));
         let swap = vcgtq_u32(ba, aa);
@@ -159,8 +183,14 @@ pub fn neg(x: uint32x4_t) -> uint32x4_t {
 /// acc + a*b (`float::madd`): O from either step, U from the add.
 #[inline(always)]
 pub fn madd(acc: uint32x4_t, a: uint32x4_t, b: uint32x4_t) -> R {
-    let p = mul(a, b);
-    let r = add(acc, p.v);
+    madd_k::<true, true, true>(acc, a, b)
+}
+
+/// `madd`; the product is always normal, so the add never normalises it.
+#[inline(always)]
+pub fn madd_k<const NC: bool, const NA: bool, const NB: bool>(acc: uint32x4_t, a: uint32x4_t, b: uint32x4_t) -> R {
+    let p = mul_k::<NA, NB>(a, b);
+    let r = add_k::<NC, false>(acc, p.v);
     R {
         v: r.v,
         o: unsafe { vorrq_u32(p.o, r.o) },
@@ -171,12 +201,51 @@ pub fn madd(acc: uint32x4_t, a: uint32x4_t, b: uint32x4_t) -> R {
 /// acc - a*b (`float::msub`).
 #[inline(always)]
 pub fn msub(acc: uint32x4_t, a: uint32x4_t, b: uint32x4_t) -> R {
-    let p = mul(a, b);
-    let r = add(acc, neg(p.v));
+    msub_k::<true, true, true>(acc, a, b)
+}
+
+#[inline(always)]
+pub fn msub_k<const NC: bool, const NA: bool, const NB: bool>(acc: uint32x4_t, a: uint32x4_t, b: uint32x4_t) -> R {
+    let p = mul_k::<NA, NB>(a, b);
+    let r = add_k::<NC, false>(acc, neg(p.v));
     R {
         v: r.v,
         o: unsafe { vorrq_u32(p.o, r.o) },
         u: r.u,
+    }
+}
+
+/// ITOFn (`float::from_fixed`): exact for |v| < 2^24, else truncated.
+#[inline(always)]
+pub fn itof<const F: i32>(x: uint32x4_t) -> uint32x4_t {
+    unsafe {
+        let s = vandq_u32(x, k(SIGN));
+        // |i32::MIN| stays 0x8000_0000, which is right as an unsigned value.
+        let ab = vreinterpretq_u32_s32(vabsq_s32(vreinterpretq_s32_u32(x)));
+        let lz = vclzq_u32(ab);
+        let m = vshlq_u32(ab, vreinterpretq_s32_u32(lz));
+        let mant = vandq_u32(vshrq_n_u32::<8>(m), k(0x7f_ffff));
+        let e = vsubq_u32(k((158 - F) as u32), lz);
+        let r = vorrq_u32(vorrq_u32(s, vshlq_n_u32::<23>(e)), mant);
+        vbicq_u32(r, vceqq_u32(ab, k(0)))
+    }
+}
+
+/// FTOIn (`float::to_fixed`): truncate toward zero, saturate.
+#[inline(always)]
+pub fn ftoi<const F: i32>(x: uint32x4_t) -> uint32x4_t {
+    unsafe {
+        let x = norm(x);
+        let e8 = vandq_u32(vshrq_n_u32::<23>(x), k(0xff));
+        let e = vreinterpretq_s32_u32(vaddq_u32(e8, k(F as u32)));
+        let neg = vtstq_u32(x, k(SIGN));
+        let shift = vsubq_s32(e, vdupq_n_s32(150));
+        let v = vshlq_u32(mantissa(x), shift);
+        let v = vbslq_u32(neg, vreinterpretq_u32_s32(vnegq_s32(vreinterpretq_s32_u32(v))), v);
+        let sat = vbslq_u32(neg, k(0x8000_0000), k(0x7fff_ffff));
+        let big = vcgeq_s32(e, vdupq_n_s32(158));
+        let zero = vorrq_u32(vceqq_u32(e8, k(0)), vcleq_s32(e, vdupq_n_s32(126)));
+        vbicq_u32(vbslq_u32(big, sat, v), zero)
     }
 }
 
@@ -271,6 +340,32 @@ mod tests {
             check("mul", mul(va, vb), &|l| float::mul_ref(a[l], b[l]));
             check("madd", madd(vc, va, vb), &|l| float::madd(c[l], a[l], b[l]));
             check("msub", msub(vc, va, vb), &|l| float::msub(c[l], a[l], b[l]));
+            // Normalised operands may skip `norm` (as the translator does
+            // for FMAC results).
+            let n = |x: &[u32; 4]| -> [u32; 4] { std::array::from_fn(|l| float::norm_in(x[l])) };
+            let (na, nb, nc) = (load(&n(&a)), load(&n(&b)), load(&n(&c)));
+            check("madd_k", madd_k::<false, false, false>(nc, na, nb), &|l| float::madd(c[l], a[l], b[l]));
+            check("msub_k", msub_k::<false, false, false>(nc, na, nb), &|l| float::msub(c[l], a[l], b[l]));
+            check("add_k", add_k::<false, false>(na, nb), &|l| float::add_ref(a[l], b[l]));
+            // ITOF / FTOI.
+            for (fr, x) in [(0, a), (4, b), (12, c), (15, a)] {
+                let it = match fr {
+                    0 => store(itof::<0>(load(&x))),
+                    4 => store(itof::<4>(load(&x))),
+                    12 => store(itof::<12>(load(&x))),
+                    _ => store(itof::<15>(load(&x))),
+                };
+                let ft = match fr {
+                    0 => store(ftoi::<0>(load(&x))),
+                    4 => store(ftoi::<4>(load(&x))),
+                    12 => store(ftoi::<12>(load(&x))),
+                    _ => store(ftoi::<15>(load(&x))),
+                };
+                for l in 0..4 {
+                    assert_eq!(it[l], float::from_fixed(x[l] as i32, fr), "itof{fr} {:#010x}", x[l]);
+                    assert_eq!(ft[l], float::to_fixed(x[l], fr), "ftoi{fr} {:#010x}", x[l]);
+                }
+            }
             let r = madd(vc, va, vb);
             let v = store(r.v);
             let mut want = 0u32;
