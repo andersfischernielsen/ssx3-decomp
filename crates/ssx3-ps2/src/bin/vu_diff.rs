@@ -9,6 +9,7 @@
 //!   vu_diff list  <capture>                 one line per record
 //!   vu_diff find  <capture> <hex word>      records whose XGKICK packets contain a word
 //!   vu_diff digest <capture> [--ref-model]  full-state hash per record
+//!   vu_diff dis   <capture> <index> [from to]  decoded program of a record
 //!   vu_diff qstall <capture> [-v]           records changed by the pair Q stall, explained
 
 use ssx3_ps2::vu::capture::{load, read_kicks, ArchState, Reader, Record};
@@ -686,6 +687,31 @@ fn main() {
             println!("per program (unit, hash, pc): records / differing");
             for ((u, h, pc), (n, bad)) in &per_prog {
                 println!("  vu{u} {h:016x} {pc:#06x}: {n} / {bad}");
+            }
+        }
+        "dis" => {
+            // Decoded program of a record: `dis <capture> <index> [from to]`.
+            use ssx3_ps2::vu::decode::{decode_lower, decode_upper};
+            let r = &recs[args[3].parse::<usize>().unwrap()];
+            let hex = |i: usize, d: u32| {
+                args.get(i).map_or(d, |s| u32::from_str_radix(s.trim_start_matches("0x"), 16).unwrap())
+            };
+            let (from, to) = (hex(4, 0), hex(5, r.code.len() as u32));
+            for pc in (from..to.min(r.code.len() as u32)).step_by(8) {
+                let p = pc as usize;
+                let lo = u32::from_le_bytes(r.code[p..p + 4].try_into().unwrap());
+                let hi = u32::from_le_bytes(r.code[p + 4..p + 8].try_into().unwrap());
+                let flags = format!(
+                    "{}{}",
+                    if hi & 0x8000_0000 != 0 { "I" } else { "" },
+                    if hi & 0x4000_0000 != 0 { "E" } else { "" }
+                );
+                let lower = if hi & 0x8000_0000 != 0 {
+                    format!("LOI {lo:#010x}")
+                } else {
+                    format!("{:?}", decode_lower(lo))
+                };
+                println!("{pc:04x} {flags:2} {:?} | {lower}", decode_upper(hi));
             }
         }
         "trace" => {

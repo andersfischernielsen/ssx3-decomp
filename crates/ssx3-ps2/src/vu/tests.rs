@@ -441,6 +441,33 @@ fn waitq_translation_stalls_before_upper() {
     }
 }
 
+/// Clip flags reach FC* ops 4 cycles after CLIP, like MAC/status (PCSX2
+/// microVU and interpreter). With 3, VU0's bounding-box test (`27649fa5`
+/// 0x0570: CLIP a, CLIP b, then FCGET 4 and 3 pairs later) saw only half of
+/// the box corners and culled visible meshes (`race-geometry.md`).
+#[test]
+fn clip_flags_visible_after_four_cycles() {
+    let clip = |fs: u32, ft: u32| 0x01c0_0000 | ft << 16 | fs << 11 | 0x1ff; // CLIPw.xyz
+    let fcget = |it: u32| 0x1c << 25 | it << 16;
+    let mut vu = interp_vu(1);
+    load_prog(
+        &mut vu,
+        &[
+            (clip(1, 1), LNOP),
+            (UNOP, LNOP),
+            (UNOP, LNOP),
+            (UNOP, fcget(1)),        // 3 pairs after the CLIP: old flags
+            (EBIT | UNOP, fcget(2)), // 4 pairs after: the new judgement
+            (UNOP, LNOP),
+        ],
+    );
+    vu.vf[1] = fv([2.0, 0.0, 0.0, 1.0]); // x > |w|: +x
+    vu.start(0);
+    assert!(vu.run(100, &mut |_| {}));
+    assert_eq!(vu.vi[1], 0);
+    assert_eq!(vu.vi[2], 1);
+}
+
 /// Branch paths for the VI-backup tests: 0x28 [E] vi7 = 1 (fall-through),
 /// 0x38 [E] vi7 = 2 (taken, `off` 3 from a branch at 0x18).
 fn vi_backup_tail(p: &mut Vec<(u32, u32)>) {

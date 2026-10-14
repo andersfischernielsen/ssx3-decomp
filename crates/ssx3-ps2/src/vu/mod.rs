@@ -180,10 +180,14 @@ const EMPTY_STAGE: Stage = Stage {
 /// FMAC result latency (cycles) for the stall model.
 const FMAC_LATENCY: u64 = 4;
 
-/// Clip flags become visible to FC* ops 3 pairs after CLIP (as in
-/// ps2-web-recomp's `FlagPipe`; MAC/status use FMAC_LATENCY = 4). A
-/// constant: the translator's flag analysis depends on it.
-const CLIP_LATENCY: u64 = 3;
+/// Clip flags become visible to FC* ops 4 cycles after CLIP, like MAC and
+/// status (PCSX2: microVU `mVUsetFlags` writes the clip instance at
+/// `cycles + 4`; the interpreter flushes the FMAC pipe entry holding the
+/// clip flags after 4 cycles). It was 3 (ps2-web-recomp's `FlagPipe`), which
+/// made VU0's bounding-box test (`27649fa5` 0x0570) read only 4 of the 8
+/// corners and cull visible meshes (`race-geometry.md`). The translator's
+/// flag analysis (3-pair window) needs this to be at most 4.
+const CLIP_LATENCY: u64 = 4;
 const DIV_LATENCY: u64 = 7;
 const SQRT_LATENCY: u64 = 7;
 const RSQRT_LATENCY: u64 = 13;
