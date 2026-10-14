@@ -639,7 +639,21 @@ impl Hw {
                 self.ch[c].qwc = 0;
             }
             _ if c == ch::VIF1 && to_mem && mode == 0 => {
-                // VIF1 → memory (GS download path). Rare; complete empty.
+                // VIF1 → memory: the GS download path (a local→host
+                // TRXDIR=1 transfer fills the GS readback FIFO; the game
+                // DMAs it out through VIF1, e.g. to measure how much of the
+                // sun is visible). Short reads leave the rest of the
+                // destination untouched, as the FIFO would stall.
+                let n = self.ch[c].qwc;
+                let madr = self.ch[c].madr;
+                let data = self.gs.read_local(n as usize);
+                for (i, v) in data.iter().enumerate() {
+                    mem_q_write(ram, spr, madr + i as u32 * 16, madr & 0x8000_0000 != 0, *v);
+                }
+                if std::env::var_os("SSX3_TRACE_DOWNLOAD").is_some() {
+                    eprintln!("[vif1-download] qwc {n} -> {madr:#x}: got {} qwords", data.len());
+                }
+                self.ch[c].madr += n * 16;
                 self.ch[c].qwc = 0;
             }
             _ => {
