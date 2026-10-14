@@ -76,6 +76,16 @@ pub struct Sched {
 /// Indirect jump/call into another function (or a resume point).
 #[inline(never)]
 pub fn call_indirect(c: &mut Cpu, target: u32) {
+    if std::env::var_os("SSX3_TRACE_MIDCALL").is_some() {
+        let t = funcs();
+        let i = t.partition_point(|e| e.start <= target);
+        if i > 0 && t[i - 1].start != target && target < t[i - 1].end {
+            eprintln!(
+                "[midcall] {target:#x} inside fn {:#x} (ra {:#x}, thread {})",
+                t[i - 1].start, c.g[31][0] as u32, c.kernel.current
+            );
+        }
+    }
     match lookup(target) {
         Some(f) => f(c),
         None => miss(c, target),
