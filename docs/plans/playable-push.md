@@ -97,3 +97,15 @@ Runtime misses are appended to `generated/entries.txt` automatically; rerun
       run time); 1,109 functions named (`naming.md`), emitted as `pub use` aliases.
 - In flight: GS performance (tile-parallel rasterizer + capture/replay),
   IOP recompilation + SPU2 audio (`SSX3_IOP=1`).
+- 2026-10-14 (late morning):
+  11. **GS 7–13× faster** (tile-parallel, bit-identical) + mipmapping: races run
+      ~20 fps in the software rasterizer (was ~2).
+  12. **Audio**: SNDDRV/LIBSD IRX statically recompiled (`crates/ssx3-iop`,
+      `recomp-iop`) on a native IOP kernel + SPU2 model; music/SFX in menus and
+      races; on by default (`SSX3_IOP=0` falls back to HLE stubs).
+  13. VU VI-backup quirk now follows PCSX2 exactly (`_vuBackupVI`): fixes terrain
+      microcode overrun that fed vertex data into CLAMP (striped terrain).
+  14. **Structured decompilation output** (`recomp-ee --structured`): host-thread
+      runtime + Ramsey structuring, 97% of functions as `if`/`loop` Rust; runs
+      the game (verification to the race in progress).
+- Fresh checkout: `tools/bootstrap.sh` (stub generated crates, then recomp).
