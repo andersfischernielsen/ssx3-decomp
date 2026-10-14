@@ -705,7 +705,25 @@ impl Vu {
         if r == 0 {
             return;
         }
-        self.vi_backup_next = Some((r, self.vi[r as usize]));
+        self.vi[r as usize] = v;
+    }
+
+    /// VI write that a following conditional branch observes as the *old*
+    /// value. Per PCSX2 (`_vuBackupVI` in VUops.cpp) only the integer ALU ops
+    /// (IADD/IADDI/IADDIU/ISUB/ISUBIU/IAND/IOR), MTIR and the auto-increment
+    /// LQI/LQD/SQI/SQD do this — not ILW/ILWR, flag ops or links. Repeated
+    /// writes to the same register keep the oldest value.
+    #[inline]
+    fn set_vi_bk(&mut self, r: u8, v: u16) {
+        let r = r & 15;
+        if r == 0 {
+            return;
+        }
+        let old = match self.vi_backup {
+            Some((b, o)) if b == r => o,
+            _ => self.vi[r as usize],
+        };
+        self.vi_backup_next = Some((r, old));
         self.vi[r as usize] = v;
     }
 
@@ -978,11 +996,11 @@ impl Vu {
         let a = self.vi[is as usize & 15];
         let v = self.load_q(a as i32);
         self.lower_write(ft, dest, v);
-        self.set_vi(is, a.wrapping_add(1));
+        self.set_vi_bk(is, a.wrapping_add(1));
     }
     pub fn lqd(&mut self, dest: u8, ft: u8, is: u8) {
         let a = self.vi[is as usize & 15].wrapping_sub(1);
-        self.set_vi(is, a);
+        self.set_vi_bk(is, a);
         let v = self.load_q(a as i32);
         self.lower_write(ft, dest, v);
     }
@@ -990,44 +1008,44 @@ impl Vu {
         let a = self.vi[it as usize & 15];
         let v = self.vf[fs as usize & 31];
         self.store_q(a as i32, dest, v);
-        self.set_vi(it, a.wrapping_add(1));
+        self.set_vi_bk(it, a.wrapping_add(1));
     }
     pub fn sqd(&mut self, dest: u8, fs: u8, it: u8) {
         let a = self.vi[it as usize & 15].wrapping_sub(1);
-        self.set_vi(it, a);
+        self.set_vi_bk(it, a);
         let v = self.vf[fs as usize & 31];
         self.store_q(a as i32, dest, v);
     }
 
     pub fn iaddiu(&mut self, it: u8, is: u8, imm: u16) {
-        self.set_vi(it, self.vi[is as usize & 15].wrapping_add(imm));
+        self.set_vi_bk(it, self.vi[is as usize & 15].wrapping_add(imm));
     }
     pub fn isubiu(&mut self, it: u8, is: u8, imm: u16) {
-        self.set_vi(it, self.vi[is as usize & 15].wrapping_sub(imm));
+        self.set_vi_bk(it, self.vi[is as usize & 15].wrapping_sub(imm));
     }
     pub fn iadd(&mut self, id: u8, is: u8, it: u8) {
-        self.set_vi(
+        self.set_vi_bk(
             id,
             self.vi[is as usize & 15].wrapping_add(self.vi[it as usize & 15]),
         );
     }
     pub fn isub(&mut self, id: u8, is: u8, it: u8) {
-        self.set_vi(
+        self.set_vi_bk(
             id,
             self.vi[is as usize & 15].wrapping_sub(self.vi[it as usize & 15]),
         );
     }
     pub fn iaddi(&mut self, it: u8, is: u8, imm: i8) {
-        self.set_vi(
+        self.set_vi_bk(
             it,
             self.vi[is as usize & 15].wrapping_add(imm as i16 as u16),
         );
     }
     pub fn iand(&mut self, id: u8, is: u8, it: u8) {
-        self.set_vi(id, self.vi[is as usize & 15] & self.vi[it as usize & 15]);
+        self.set_vi_bk(id, self.vi[is as usize & 15] & self.vi[it as usize & 15]);
     }
     pub fn ior(&mut self, id: u8, is: u8, it: u8) {
-        self.set_vi(id, self.vi[is as usize & 15] | self.vi[it as usize & 15]);
+        self.set_vi_bk(id, self.vi[is as usize & 15] | self.vi[it as usize & 15]);
     }
 
     pub fn fceq(&mut self, imm: u32) {
@@ -1122,7 +1140,7 @@ impl Vu {
         self.lower_write(ft, dest, [s[1], s[2], s[3], s[0]]);
     }
     pub fn mtir(&mut self, it: u8, fs: u8, fsf: u8) {
-        self.set_vi(it, self.vf[fs as usize & 31][fsf as usize & 3] as u16);
+        self.set_vi_bk(it, self.vf[fs as usize & 31][fsf as usize & 3] as u16);
     }
     pub fn mfir(&mut self, dest: u8, ft: u8, is: u8) {
         let v = self.vi[is as usize & 15] as i16 as i32 as u32;
@@ -1428,10 +1446,8 @@ impl Vu {
 /// Clamp helper exposed for tests and the EE FPU (`MAX` = largest PS2 float).
 pub const PS2_MAX: u32 = MAX;
 
-/// The branch-reads-old-VI quirk. Off by default: ps2-web-recomp (which runs
-/// GT4/GoW2 correctly) has no such behaviour, and with it SSX 3's terrain VU1
-/// program overruns its vertex loop by one iteration. SSX3_VU_VI_BACKUP=1
-/// re-enables it for experiments.
+/// The branch-reads-old-VI quirk (see `set_vi_bk`). On by default;
+/// SSX3_VU_VI_BACKUP=0 disables it for experiments.
 fn vi_backup_enabled() -> bool {
     static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *E.get_or_init(|| std::env::var("SSX3_VU_VI_BACKUP").is_ok_and(|v| v != "0"))

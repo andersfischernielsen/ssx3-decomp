@@ -58,6 +58,14 @@ impl Gs {
         self.xfer = Xfer::default();
         self.xfer_region = None;
         let p = self.xfer_params();
+        if std::env::var_os("SSX3_TRACE_XFER").is_some() {
+            let b = self.regs.bitbltbuf;
+            eprintln!(
+                "[xfer] dir {} sbp {:#x} sbw {} spsm {:#x} -> dbp {:#x} dbw {} dpsm {:#x} pos {:#x} size {:#x}",
+                self.regs.trxdir & 3, b & 0x3fff, (b >> 16) & 0x3f, (b >> 24) & 0x3f,
+                (b >> 32) & 0x3fff, (b >> 48) & 0x3f, (b >> 56) & 0x3f, self.regs.trxpos, self.regs.trxreg
+            );
+        }
         if self.regs.trxdir & 3 != 0 {
             self.flush_wait();
         }
