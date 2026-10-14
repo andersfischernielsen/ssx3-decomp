@@ -140,3 +140,7 @@ Runtime misses are appended to `generated/entries.txt` automatically; rerun
   per-primitive allocations, VIF unpack and upload re-hashing fixes. Every
   captured VU invocation replays to an identical full-state digest; all
   screenshots of the race run are byte-identical.
+- VU performance merged on top of PATH3: the scripted run to frame 9000 takes
+  171 s headless (was 296 s) and all 18 screenshots are byte-identical to the
+  pre-merge run. Races ~54 fps headless; remaining frame time is split
+  VU ~38% / GS CPU side ~28% / EE ~14% (`vu-performance.md`).
