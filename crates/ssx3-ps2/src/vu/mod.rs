@@ -40,9 +40,12 @@
 pub mod capture;
 pub mod decode;
 pub mod exec;
+pub mod fast;
 pub mod float;
 pub mod recomp;
 pub mod reference;
+#[cfg(target_arch = "aarch64")]
+pub mod simd;
 #[cfg(test)]
 mod tests;
 
@@ -163,14 +166,9 @@ const EMPTY_STAGE: Stage = Stage {
 const FMAC_LATENCY: u64 = 4;
 
 /// Clip flags become visible to FC* ops 3 pairs after CLIP (as in
-/// ps2-web-recomp's `FlagPipe`; MAC/status use FMAC_LATENCY = 4).
-/// Override with SSX3_VU_CLIP_LATENCY for experiments.
-fn clip_latency() -> u64 {
-    static L: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
-    *L.get_or_init(|| {
-        std::env::var("SSX3_VU_CLIP_LATENCY").ok().and_then(|v| v.parse().ok()).unwrap_or(3)
-    })
-}
+/// ps2-web-recomp's `FlagPipe`; MAC/status use FMAC_LATENCY = 4). A
+/// constant: the translator's flag analysis depends on it.
+const CLIP_LATENCY: u64 = 3;
 const DIV_LATENCY: u64 = 7;
 const SQRT_LATENCY: u64 = 7;
 const RSQRT_LATENCY: u64 = 13;
@@ -250,6 +248,11 @@ pub struct Vu {
     stage: Stage,
     vi_backup: Option<(u8, u16)>,
     vi_backup_next: Option<(u8, u16)>,
+    /// Translated code's VI backup (`fast::vi_bk`): register (0 = none),
+    /// old value, and the index of the pair that wrote it.
+    fbk_reg: u8,
+    fbk_old: u16,
+    fbk_tag: u64,
 }
 
 impl Vu {
@@ -299,6 +302,9 @@ impl Vu {
             stage: EMPTY_STAGE,
             vi_backup: None,
             vi_backup_next: None,
+            fbk_reg: 0,
+            fbk_old: 0,
+            fbk_tag: 0,
         };
         vu.vf[0] = [0, 0, 0, ONE];
         vu.register_programs(generated::PROGRAMS);
@@ -330,6 +336,7 @@ impl Vu {
         self.stage = EMPTY_STAGE;
         self.vi_backup = None;
         self.vi_backup_next = None;
+        self.fbk_reg = 0;
         self.vf_ready = [[0; 4]; 32];
         self.ready_max = 0;
     }
@@ -476,6 +483,7 @@ impl Vu {
         self.stage = EMPTY_STAGE;
         self.vi_backup = None;
         self.vi_backup_next = None;
+        self.fbk_reg = 0;
     }
 
     /// Run the started program for at most `max_cycles` instruction pairs.
@@ -638,7 +646,7 @@ impl Vu {
         }
         if let (Some(_), true) = (st.clip, pipelined) {
             let c = self.clip;
-            self.clip_pipe.push_back((self.cycle + clip_latency(), c));
+            self.clip_pipe.push_back((self.cycle + CLIP_LATENCY, c));
         }
         if changed {
             if pipelined {

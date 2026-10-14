@@ -361,7 +361,7 @@ fn ibit_translation_emits_loi_after_upper() {
         .flat_map(|(hi, lo)| lo.to_le_bytes().into_iter().chain(hi.to_le_bytes()))
         .collect();
     let src = recomp::translate_program(&bytes, 0);
-    let add = src.find("vu.add(0b1000, 1, 0, Src::I)").expect("upper");
+    let add = src.find("add4::<0b1000>(&vu.vf[0], &[vu.i; 4])").expect("upper");
     let loi = src.find("vu.loi(0x3f800000)").expect("loi");
     assert!(add < loi, "LOI must follow the upper op:\n{src}");
 }
