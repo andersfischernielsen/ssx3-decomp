@@ -49,6 +49,8 @@ on night one (see the log below).
 - 2026-10-14 (morning):
   6. **In race** (`in-race-first.png`, `racing.png`): HUD, rivals, speed, position.
   7. Broken 3D geometry fixed: VU clip flags must become visible after 3 pairs, not 4
+     (evening: reverted to 4, as in PCSX2, once VF stalls were modelled; 3 culled
+     visible meshes, see `race-geometry.md`)
      (`race-start-fixed.png`). Found with the `SSX3_GIF_STATS` tap (far vertices
      14k → 0).
   8. FPU made bit-exact (round toward zero, integer-key compares).
@@ -134,16 +136,33 @@ on night one (see the log below).
   72% down the course (frame 14000) the view is mostly empty blue sky with a
   sliver of geometry (`race-72pct-blank-view.png`). Montage of frames
   10000-19500 every 500: `race-full-montage.png` (stretched polygons throughout).
+- **Race geometry fixed: the course renders like the real game**
+  (`race-geometry.md`, `race-geometry-after-montage.png`,
+  `race-geometry-full-race.png`). Two VU timing bugs:
+  1. "Girders": a pair whose lower op is WAITQ (or DIV/SQRT/RSQRT behind a
+     pending one) must stall *before* its upper op, so `MADDq` in the
+     near-plane clipper (`d159716b` 0x1710) reads the new Q. We ran the upper
+     first; clipped vertices stayed behind the eye. `vu.stall_q()` is emitted
+     in the fast translator; `vu_diff qstall` explains every changed capture
+     record.
+  2. Dark slabs / missing scenery: clip flags must reach FC* ops after 4
+     cycles (PCSX2), not 3. VU0's bounding-box test read only half the
+     corners and culled meshes that were on screen.
+  The race plays out identically (same times/places/speeds); a full race
+  holding Cross finishes (6th, 4:12) with the view complete throughout,
+  including the old 72% blank stretch. Headless run to frame 20000: 685 s
+  (more geometry is drawn now; machine shared with another build).
 
-## Next steps (as of 2026-10-14 evening)
+## Next steps (as of 2026-10-14 night)
 
-1. Stretched race geometry / dark sky rectangles (agent; `race-geometry.md`).
+1. (done) Stretched race geometry / dark sky rectangles (`race-geometry.md`).
+   Re-measure race fps now that culled meshes are drawn.
 2. 60 fps: frame time is VU ~38%, GS CPU side ~28%, EE ~14%. Biggest lever is
    running GS work on its own thread (PCSX2 MTGS style) with sync points at
    readbacks/CSR/vram reads; then texture upload (`transfer_bytes`, per-pixel
    swizzle) and `GpuGs::push`/`Pages::rect`.
-3. A race finishes (done). Next: the blank view at ~72% of Snow Jam; career
-   mode progression; the other courses.
+3. A race finishes (done; the ~72% blank view was the clip-latency culling
+   bug). Next: career mode progression; the other courses.
 4. (done) No VU0 macro op decodes at run time any more: `c.vu0_macro` appears
    nowhere in `generated/ee`.
 

@@ -137,10 +137,13 @@ VCALLMS and VCALLMSR.
   it (`race-geometry.md`).
 - **P:** the EFU ops use the manual's latencies, for example ESADD 11,
   ERSQRT 18, EATAN 54 and EEXP 44. WAITP stalls until P is ready.
-- **Flags:** MAC and status flags become visible to FMxxx/FSxxx 4 cycles
-  after the op that sets them, clip flags to FCxxx after 3 (a constant now:
-  the translator's flag analysis depends on it; `SSX3_VU_CLIP_LATENCY` is
-  gone). This uses a snapshot pipeline.
+- **Flags:** MAC, status and clip flags become visible to FMxxx/FSxxx/FCxxx
+  4 cycles after the op that sets them, as in PCSX2 (microVU `mVUsetFlags`,
+  interpreter FMAC pipe). Clip used to be 3; that made VU0's bounding-box
+  test read half the box corners and cull visible meshes
+  (`race-geometry.md`). The latency is a constant: the translator's flag
+  analysis (3-pair window) needs it to be at most 4. This uses a snapshot
+  pipeline.
   FSSET and FCSET rewrite both the in-flight snapshots and the current flags.
 - **VI-backup quirk (PCSX2 `VI_BACKUP`):** suppose the pair just before a
   conditional branch writes a VI the branch reads, with IADD/IADDI/IADDIU/
