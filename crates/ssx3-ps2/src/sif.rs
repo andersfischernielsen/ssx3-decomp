@@ -202,6 +202,10 @@ pub fn set_dma(c: &mut Cpu, transfers: u32, count: u32) -> u32 {
 
 fn reboot(c: &mut Cpu, src: u32) {
     let path = c.bus.read_cstr(src + 24);
+    if path.is_empty() {
+        // Not a reboot request: plain data DMA'd to IOP address 0.
+        return;
+    }
     eprintln!("[sif] IOP reboot: \"{path}\"");
     // The replacement IOP image carries its own LOADFILE; libsif checks its
     // version string ("PsIIloadfile" + 4 digits) after the reboot.
