@@ -497,10 +497,16 @@ fn bcd(v: u32) -> u8 {
 fn cd_scmd(c: &mut Cpu, method: u32, _a: u32, _s: u32, ret: u32, rsize: u32) -> bool {
     match method {
         0x01 => {
-            let secs = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
+            // Fixed RTC by default so runs are reproducible (the game may seed
+            // randomness from it); SSX3_REAL_CLOCK=1 uses the host clock.
+            let secs = if std::env::var_os("SSX3_REAL_CLOCK").is_some() {
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0)
+            } else {
+                12 * 3600
+            };
             let (s, m, h) = ((secs % 60) as u32, (secs / 60 % 60) as u32, (secs / 3600 % 24) as u32);
             wr(c, ret, 1);
             c.bus.write_bytes(ret + 4, &[0, bcd(s), bcd(m), bcd((h + 9) % 24), 0, bcd(14), bcd(10), bcd(26)]);
