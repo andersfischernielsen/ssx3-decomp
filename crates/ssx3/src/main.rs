@@ -31,6 +31,7 @@ struct App {
     started: Instant,
     exit_after: Option<u64>,
     shots: u64,
+    fps_mark: Instant,
 }
 
 fn pad_bit(k: KeyCode) -> Option<u16> {
@@ -94,6 +95,12 @@ impl ApplicationHandler for App {
                 let alive = ssx3_ps2::machine::run_frame(&mut self.cpu);
                 if self.cpu.sched.frames % 60 == 0 {
                     eprintln!("[{:6.1}s] {}", self.started.elapsed().as_secs_f64(), game::status(&self.cpu));
+                    let now = Instant::now();
+                    let fps = 60.0 / now.duration_since(self.fps_mark).as_secs_f64().max(1e-6);
+                    self.fps_mark = now;
+                    if let Some(w) = self.window.as_ref() {
+                        w.set_title(&format!("SSX 3 (USA) — native recompilation — {fps:.0} fps"));
+                    }
                 }
                 if !alive {
                     eprintln!("halted: {:?}", self.cpu.kernel.halted);
@@ -142,6 +149,7 @@ fn main() {
         started: Instant::now(),
         exit_after: std::env::var("SSX3_EXIT_AFTER_FRAMES").ok().and_then(|s| s.parse().ok()),
         shots: 0,
+        fps_mark: Instant::now(),
     };
     if let Err(e) = event_loop.run_app(&mut app) {
         eprintln!("event loop error: {e}");
