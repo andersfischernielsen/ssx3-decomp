@@ -127,6 +127,13 @@ fn main() {
         scan("vu1data", &c.bus.hw.vu1.data);
         scan("spr", &c.bus.spr);
     }
+    // Debug: SSX3_RAM_DUMP=path writes the 32 MiB of EE RAM at exit (compare
+    // with a PCSX2 dump via tools/pine.py).
+    if let Ok(path) = std::env::var("SSX3_RAM_DUMP") {
+        if let Err(e) = std::fs::write(&path, &c.bus.ram[..]) {
+            eprintln!("SSX3_RAM_DUMP {path}: {e}");
+        }
+    }
     ssx3_ps2::iop_bridge::shutdown(&mut c);
     // Debug: SSX3_PEEK="addr:words,addr:words" dumps EE memory at exit
     // (an address of the form gp+N is taken relative to $gp).

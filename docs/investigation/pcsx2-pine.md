@@ -31,3 +31,13 @@ frame numbers: e.g. compare the camera/rider/matrix structures in EE RAM once
 both sides are at the same race position, or compare static per-course data
 (display lists, vertex source buffers, VIF packets built by the EE) which does
 not depend on the RNG.
+
+## First comparison (2026-10-14)
+
+PCSX2 paused in a Snow Jam race (pause menu; course stays resident) vs our
+headless run at frame 5000 (`SSX3_RAM_DUMP=path`, written at exit). Dumping all
+32 MiB over PINE takes ~18 s. Per-MiB 4 KiB-page comparison: 1–3 MiB (code +
+static data) identical; 10–24 MiB largely page-identical (same course loaded
+at the same addresses); 25–28 MiB entirely different (dynamic / per-frame or
+rider-dependent data); 5–9 MiB mixed. Same layout means word-level diffs of the
+course/geometry regions are meaningful.
