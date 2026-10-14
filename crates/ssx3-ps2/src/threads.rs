@@ -88,6 +88,9 @@ pub fn spawn(c: &mut Cpu, id: i32) {
             // returns early (longjmp-like returns, shared epilogues); resume
             // at `c.pc` until the thread returns to its exit sentinel.
             loop {
+                if c.cycles >= c.next_event {
+                    c.event();
+                }
                 let pc = c.pc;
                 crate::machine::call_indirect(c, pc);
                 if c.pc == crate::kernel::THREAD_EXIT || c.kernel.halted.is_some() {
