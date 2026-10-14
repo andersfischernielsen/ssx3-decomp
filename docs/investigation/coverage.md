@@ -27,6 +27,6 @@ cursor), Previews, Online.
 | Single Event → Peak 1 → Race → Happiness (head-to-head, 2 riders) | Down ×2 at 3200/3250 | ✅ no misses (row 2) |
 | Single Event → Peak 1 → Freestyle (Snow Jam freestyle vs opponent, scoring, timer) | `3000:0040:6` before the mode Cross at 3100 | ✅ no misses (row 3) |
 | Peaks 2 and 3, their events | `2850:0010:6` (Up) before the peak Cross: "LOCKED: Get a Peak 2 pass in Conquer the Mountain mode" | ⬜ needs career progress (win passes in Conquer The Mountain) or a progressed save |
-| Other Peak 1 freestyle events | Down in the event list after Freestyle | ⬜ |
+| Peak 1 Freestyle events: R&B (slopestyle), Crow's Nest (Big Air), The Junction (Super Pipe), Happiness Jam | Freestyle, then Down ×k (40 frames apart) after 3150 | ✅ all four, no misses; Big Air runs to its "Final run" card (`coverage-peak1-freestyle.png`) |
 | Career progression (events in Conquer The Mountain, unlocks, shop) | | ⬜ |
 | Replays, records, "Next event", "Restart" from results | | ⬜ |
