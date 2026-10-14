@@ -49,6 +49,8 @@ pub struct Sif {
     pub loadfile_version: [u8; 4],
     pub pads: Vec<crate::pad::OpenPort>,
     pub pad_frame: u32,
+    /// EA's SNDDRV ('SND') has been bound; it then expects periodic ticks.
+    pub snd_bound: bool,
 }
 
 impl Default for Sif {
@@ -82,6 +84,7 @@ impl Sif {
             loadfile_version: *b"3000",
             pads: Vec::new(),
             pad_frame: 0,
+            snd_bound: false,
         }
     }
 
@@ -243,6 +246,9 @@ fn command(c: &mut Cpu, src: u32, size: u32) {
         0x8000_0009 => {
             // Bind: record, packet, rpc, client, server id.
             let (record, packet, rpc, client, server) = (w[4], w[5], w[6], w[7], w[8]);
+            if server == 0x0053_4E44 {
+                c.sif.snd_bound = true;
+            }
             let known = server_for(server).is_some();
             if !known {
                 *c.sif.unknown_servers.entry(server).or_default() += 1;
@@ -285,6 +291,16 @@ fn command(c: &mut Cpu, src: u32, size: u32) {
             c.bus.write_bytes(dst, &data);
             let r = rend(w[1], record, packet, rpc, receive, 0x8000_000C, 0, 0, 0);
             send(c, &r);
+        }
+        // EA SNDDRV user command 0. Type 1 = "upload this block to SPU RAM"
+        // (id at +0x14, see 0x3c4450); the driver acknowledges with user
+        // command 1, type 2, opt = id (handled at 0x3c1578 → 0x3c4918).
+        0 => {
+            if w[4] == 1 {
+                send(c, &[0x14, 0, 1, w[5], 2]);
+            } else if c.sif.trace {
+                eprintln!("[snd] user cmd type {}", w[4]);
+            }
         }
         _ => {
             if c.sif.trace {
@@ -494,6 +510,10 @@ fn cd_ncmd(c: &mut Cpu, method: u32, args: u32, _s: u32, ret: u32, rsize: u32) -
             if rsize >= 4 {
                 wr(c, ret, 0);
             }
+            if c.sif.trace {
+                let mode = rd(c, args + 12);
+                eprintln!("[cdvdfsv] read lsn {sector:#x} count {count} -> {dst:#x} mode {mode:#x} args {args:#x}");
+            }
             read_sectors_to_ee(c, sector, count, dst);
         }
         0x04 => wr(c, ret, 1),
@@ -573,6 +593,15 @@ fn mcserv(c: &mut Cpu, method: u32, _a: u32, _s: u32, ret: u32, rsize: u32) -> b
         wr(c, ret, (-10i32) as u32);
     }
     true
+}
+
+/// Per-VBlank IOP activity: EA's sound driver tick. SNDDRV sends user SIF
+/// command 1 with type 0 every audio frame; the EE handler (0x3c1578) signals
+/// the sound thread (0x3c19a8), which mixes and DMAs its next command buffer.
+pub fn vblank(c: &mut Cpu) {
+    if c.sif.snd_bound {
+        send(c, &[0x14, 0, 1, 0, 0]);
+    }
 }
 
 /// EA's SNDDRV ('SND'): accept every request.

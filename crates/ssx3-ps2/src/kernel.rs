@@ -133,6 +133,9 @@ pub struct Kernel {
     pub trace_threads: bool,
     pub halted: Option<String>,
     pub syscall_counts: BTreeMap<u32, u64>,
+    /// Cycles consumed per thread (profiling).
+    pub thread_cycles: BTreeMap<i32, u64>,
+    pub last_switch: u64,
 }
 
 impl Default for Kernel {
@@ -167,6 +170,8 @@ impl Kernel {
             trace_threads: std::env::var("SSX3_TRACE_THREADS").is_ok(),
             halted: None,
             syscall_counts: BTreeMap::new(),
+            thread_cycles: BTreeMap::new(),
+            last_switch: 0,
         }
     }
 
@@ -247,6 +252,9 @@ fn switch_to(c: &mut Cpu, next: Option<i32>) {
     if Some(cur) == next {
         return;
     }
+    let spent = c.cycles - c.kernel.last_switch;
+    *c.kernel.thread_cycles.entry(cur).or_default() += spent;
+    c.kernel.last_switch = c.cycles;
     let ctx = save_context(c);
     if let Some(t) = c.kernel.threads.get_mut(&cur) {
         if t.status != Status::Dormant {

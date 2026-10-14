@@ -58,6 +58,18 @@ fn main() {
             break;
         }
     }
+    if std::env::var("SSX3_VRAM_DUMP").is_ok() {
+        use ssx3_ps2::gs::swizzle::{read_pixel, PSMCT32};
+        let mut v = vec![0u32; 1024 * 1024];
+        for y in 0..1024 {
+            for x in 0..1024 {
+                v[y * 1024 + x] = read_pixel(&c.bus.hw.gs.vram, PSMCT32, 0, 16, x as u32, y as u32) | 0xff00_0000;
+            }
+        }
+        let _ = std::fs::write(format!("{shot_dir}/vram.png"), png::encode(1024, 1024, &v));
+        let regs: Vec<String> = [0x00u32, 0x20, 0x70, 0x80, 0x90, 0xa0, 0xe0].iter().map(|o| format!("{o:#x}={:#x}", c.bus.hw.gs.read_priv(*o))).collect();
+        eprintln!("gs priv: {}", regs.join(" "));
+    }
     eprintln!("halted: {:?}", c.kernel.halted);
     eprint!("{}", game::dump(&c));
     eprintln!("syscalls: {:?}", c.kernel.syscall_counts.iter().map(|(k, v)| format!("{}={v}", ssx3_ps2::kernel::syscall_name(*k))).collect::<Vec<_>>());
