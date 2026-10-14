@@ -266,6 +266,9 @@ impl Vif {
         let vif1 = self.index == 1;
         let done = vu.run(self.vu_budget, &mut |p: &[Qword]| {
             if vif1 {
+                if crate::gifstats::enabled() {
+                    crate::gifstats::scan(p);
+                }
                 gs.gif_write(1, p)
             }
         });

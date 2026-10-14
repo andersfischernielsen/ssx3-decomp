@@ -46,6 +46,10 @@ fn main() {
         }
         c.sif.pad_buttons[0] = held;
         let alive = ssx3_ps2::machine::run_frame(&mut c);
+        if ssx3_ps2::gifstats::enabled() && f % 50 == 0 {
+            let (pk, v, adc, far) = ssx3_ps2::gifstats::take();
+            eprintln!("[gif] frames {}..{f}: path1 packets {pk} verts {v} adc {adc} far {far}", f - 50);
+        }
         if f % 60 == 0 || !alive {
             eprintln!("[{:6.1}s] {}", t0.elapsed().as_secs_f64(), game::status(&c));
         }

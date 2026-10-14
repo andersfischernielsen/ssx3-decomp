@@ -1,8 +1,24 @@
 //! R5900 FPU (COP1) semantics. Single precision only, with PS2 rules: there
 //! are no infinities or NaNs (exponent 255 is an ordinary large number), and
 //! denormals are flushed to zero. Overflowing results clamp to ±`0x7f7fffff`.
+//! Rounding is toward zero; arithmetic shares the bit-exact integer routines in
+//! `vu::float` (ported from ps2-web-recomp `fpu.hpp`, MIT).
 
 use crate::cpu::{sx, Cpu};
+use crate::vu::float as F;
+
+/// Total order used by PS2 compares: sign-magnitude as an integer, denormals
+/// read as zero (ps2-web-recomp `fp::key`).
+#[inline]
+fn key(x: u32) -> i32 {
+    let x = if x & 0x7f80_0000 == 0 { x & 0x8000_0000 } else { x };
+    let m = (x & 0x7fff_ffff) as i32;
+    if x & 0x8000_0000 != 0 {
+        -m
+    } else {
+        m
+    }
+}
 
 pub const FMAX: u32 = 0x7f7f_ffff;
 /// FCR31 condition bit (set by `c.*.s`, read by `bc1f/bc1t`).
@@ -66,32 +82,22 @@ impl Cpu {
     }
 
     pub fn add_s(&mut self, fd: usize, fs: usize, ft: usize) {
-        self.f[fd] = wr(rd(self.f[fs]) + rd(self.f[ft]));
+        self.f[fd] = F::add(self.f[fs], self.f[ft]).0;
     }
     pub fn sub_s(&mut self, fd: usize, fs: usize, ft: usize) {
-        self.f[fd] = wr(rd(self.f[fs]) - rd(self.f[ft]));
+        self.f[fd] = F::sub(self.f[fs], self.f[ft]).0;
     }
     pub fn mul_s(&mut self, fd: usize, fs: usize, ft: usize) {
-        self.f[fd] = wr(rd(self.f[fs]) * rd(self.f[ft]));
+        self.f[fd] = F::mul(self.f[fs], self.f[ft]).0;
     }
     pub fn div_s(&mut self, fd: usize, fs: usize, ft: usize) {
-        let (a, b) = (rd(self.f[fs]), rd(self.f[ft]));
-        self.f[fd] = if b == 0.0 {
-            ((self.f[fs] ^ self.f[ft]) & 0x8000_0000) | FMAX
-        } else {
-            wr(a / b)
-        };
+        self.f[fd] = F::div(self.f[fs], self.f[ft]).value;
     }
     pub fn sqrt_s(&mut self, fd: usize, ft: usize) {
-        self.f[fd] = wr(rd(self.f[ft]).abs().sqrt());
+        self.f[fd] = F::sqrt(self.f[ft]).value;
     }
     pub fn rsqrt_s(&mut self, fd: usize, fs: usize, ft: usize) {
-        let b = rd(self.f[ft]).abs().sqrt();
-        self.f[fd] = if b == 0.0 {
-            (self.f[fs] & 0x8000_0000) | FMAX
-        } else {
-            wr(rd(self.f[fs]) / b)
-        };
+        self.f[fd] = F::rsqrt(self.f[fs], self.f[ft]).value;
     }
     pub fn abs_s(&mut self, fd: usize, fs: usize) {
         self.f[fd] = self.f[fs] & 0x7fff_ffff;
@@ -103,45 +109,38 @@ impl Cpu {
         self.f[fd] = self.f[fs] ^ 0x8000_0000;
     }
     pub fn adda_s(&mut self, fs: usize, ft: usize) {
-        self.facc = wr(rd(self.f[fs]) + rd(self.f[ft]));
+        self.facc = F::add(self.f[fs], self.f[ft]).0;
     }
     pub fn suba_s(&mut self, fs: usize, ft: usize) {
-        self.facc = wr(rd(self.f[fs]) - rd(self.f[ft]));
+        self.facc = F::sub(self.f[fs], self.f[ft]).0;
     }
     pub fn mula_s(&mut self, fs: usize, ft: usize) {
-        self.facc = wr(rd(self.f[fs]) * rd(self.f[ft]));
+        self.facc = F::mul(self.f[fs], self.f[ft]).0;
     }
     pub fn madd_s(&mut self, fd: usize, fs: usize, ft: usize) {
-        self.f[fd] = wr(rd(self.facc) + rd(wr(rd(self.f[fs]) * rd(self.f[ft]))));
+        self.f[fd] = F::add(self.facc, F::mul(self.f[fs], self.f[ft]).0).0;
     }
     pub fn msub_s(&mut self, fd: usize, fs: usize, ft: usize) {
-        self.f[fd] = wr(rd(self.facc) - rd(wr(rd(self.f[fs]) * rd(self.f[ft]))));
+        self.f[fd] = F::sub(self.facc, F::mul(self.f[fs], self.f[ft]).0).0;
     }
     pub fn madda_s(&mut self, fs: usize, ft: usize) {
-        self.facc = wr(rd(self.facc) + rd(wr(rd(self.f[fs]) * rd(self.f[ft]))));
+        self.facc = F::add(self.facc, F::mul(self.f[fs], self.f[ft]).0).0;
     }
     pub fn msuba_s(&mut self, fs: usize, ft: usize) {
-        self.facc = wr(rd(self.facc) - rd(wr(rd(self.f[fs]) * rd(self.f[ft]))));
+        self.facc = F::sub(self.facc, F::mul(self.f[fs], self.f[ft]).0).0;
     }
     pub fn max_s(&mut self, fd: usize, fs: usize, ft: usize) {
-        self.f[fd] = if rd(self.f[fs]) >= rd(self.f[ft]) { self.f[fs] } else { self.f[ft] };
+        self.f[fd] = F::max(self.f[fs], self.f[ft]);
     }
     pub fn min_s(&mut self, fd: usize, fs: usize, ft: usize) {
-        self.f[fd] = if rd(self.f[fs]) <= rd(self.f[ft]) { self.f[fs] } else { self.f[ft] };
+        self.f[fd] = F::min(self.f[fs], self.f[ft]);
     }
     /// `cvt.w.s`: truncate toward zero, saturating.
     pub fn cvt_w_s(&mut self, fd: usize, fs: usize) {
-        let v = self.f[fs];
-        self.f[fd] = if v & 0x7f80_0000 <= 0x4e80_0000 {
-            rd(v) as i32 as u32
-        } else if v & 0x8000_0000 != 0 {
-            0x8000_0000
-        } else {
-            0x7fff_ffff
-        };
+        self.f[fd] = F::to_fixed(self.f[fs], 0);
     }
     pub fn cvt_s_w(&mut self, fd: usize, fs: usize) {
-        self.f[fd] = wr(self.f[fs] as i32 as f32);
+        self.f[fd] = F::from_fixed(self.f[fs] as i32, 0);
     }
     fn set_cc(&mut self, c: bool) {
         if c {
@@ -154,15 +153,15 @@ impl Cpu {
         self.set_cc(false);
     }
     pub fn c_eq_s(&mut self, fs: usize, ft: usize) {
-        let c = rd(self.f[fs]) == rd(self.f[ft]);
+        let c = key(self.f[fs]) == key(self.f[ft]);
         self.set_cc(c);
     }
     pub fn c_lt_s(&mut self, fs: usize, ft: usize) {
-        let c = rd(self.f[fs]) < rd(self.f[ft]);
+        let c = key(self.f[fs]) < key(self.f[ft]);
         self.set_cc(c);
     }
     pub fn c_le_s(&mut self, fs: usize, ft: usize) {
-        let c = rd(self.f[fs]) <= rd(self.f[ft]);
+        let c = key(self.f[fs]) <= key(self.f[ft]);
         self.set_cc(c);
     }
 }

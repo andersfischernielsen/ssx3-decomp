@@ -11,6 +11,7 @@ pub mod cop2;
 pub mod cpu;
 pub mod elf;
 pub mod fpu;
+pub mod gifstats;
 pub mod gs;
 pub mod hw;
 pub mod ipu;
