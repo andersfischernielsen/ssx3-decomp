@@ -13,6 +13,7 @@ pub mod elf;
 pub mod fpu;
 pub mod gs;
 pub mod hw;
+pub mod ipu;
 pub mod iso;
 pub mod kernel;
 pub mod machine;

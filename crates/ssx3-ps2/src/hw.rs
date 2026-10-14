@@ -6,6 +6,7 @@
 //! ps2-web-recomp's `dmac.cpp`.
 
 use crate::gs::Gs;
+use crate::ipu::{self, Ipu};
 use crate::vif::Vif;
 use crate::vu::Vu;
 use crate::Qword;
@@ -87,6 +88,8 @@ pub struct Hw {
     pub vif1: Vif,
     pub vu0: Vu,
     pub vu1: Vu,
+    /// IPU (MPEG decoder); its DMA channels 3/4 are driven via `ipu::dma`.
+    pub ipu: Ipu,
     /// Current EE cycle count, refreshed by the CPU before I/O accesses.
     pub now: u64,
     /// Set when an interrupt source changed; the CPU then services events.
@@ -150,6 +153,7 @@ impl Hw {
             vif1: Vif::new(1),
             vu0: Vu::new(0),
             vu1: Vu::new(1),
+            ipu: Ipu::new(),
             now: 0,
             irq_dirty: false,
             sio_line: Vec::new(),
@@ -225,7 +229,7 @@ impl Hw {
                     _ => 0,
                 }
             }
-            0x1000_2000..=0x1000_2FFF => 0, // IPU: idle
+            0x1000_2000..=0x1000_2FFF => self.ipu.read32(p & 0xFFF),
             0x1000_3000 => self.gif_ctrl,
             0x1000_3010 => self.gif_mode,
             0x1000_3020 => 0, // GIF_STAT: idle, no path active
@@ -290,6 +294,14 @@ impl Hw {
     pub fn read128(&mut self, p: u32) -> Qword {
         match p {
             0x1000_6000 => self.gs.read_local(1).first().copied().unwrap_or(0),
+            0x1000_7000 => {
+                // IPU out FIFO (CPU read; no DMA attached for this access).
+                let q = self.ipu.read_fifo(1, &mut ipu::NoDma).first().copied().unwrap_or(0);
+                if self.ipu.take_irq() {
+                    self.raise(int::IPU);
+                }
+                q
+            }
             0x1100_0000..=0x1100_FFFF => {
                 let (mem, off) = self.vu_mem(p);
                 u128::from_le_bytes(mem[off..off + 16].try_into().unwrap())
@@ -359,7 +371,9 @@ impl Hw {
                     _ => {}
                 }
             }
-            0x1000_2000..=0x1000_2FFF => {} // IPU commands: ignored for now
+            0x1000_2000..=0x1000_2FFF => {
+                self.with_ipu(ram, spr, |ipu, dma| ipu.write32(p & 0xFFF, v, dma));
+            }
             0x1000_3000 => {
                 self.gif_ctrl = v & 8;
                 if v & 1 != 0 {
@@ -472,7 +486,7 @@ impl Hw {
                 self.gs.gif_write(3, &[v]);
                 self.irq_dirty = true;
             }
-            0x1000_7010 => {} // IPU in FIFO
+            0x1000_7010 => self.with_ipu(ram, spr, |ipu, dma| ipu.write_fifo(&[v], dma)),
             0x1100_0000..=0x1100_FFFF => {
                 let (mem, off) = self.vu_mem(p);
                 mem[off..off + 16].copy_from_slice(&v.to_le_bytes());
@@ -482,6 +496,25 @@ impl Hw {
                 self.write64(p + 8, (v >> 64) as u64, ram, spr);
             }
         }
+    }
+
+    /// Run an IPU access with DMA channels 3/4 attached, then post channel
+    /// completions (D_STAT) and the IPU command-done interrupt (INTC 8).
+    fn with_ipu<T>(
+        &mut self,
+        ram: &mut [u8],
+        spr: &mut [u8],
+        f: impl FnOnce(&mut Ipu, &mut dyn ipu::IpuDma) -> T,
+    ) -> T {
+        let (r, done) = ipu::dma::run(&mut self.ipu, &mut self.ch, ram, spr, f);
+        if done != 0 {
+            self.d_stat |= done;
+            self.irq_dirty = true;
+        }
+        if self.ipu.take_irq() {
+            self.raise(int::IPU);
+        }
+        r
     }
 
     fn vif_irq(&mut self) {
@@ -506,7 +539,15 @@ impl Hw {
                 // EE only arms them. Leave STR set so the IOP side can see it.
                 return;
             }
-            ch::FROM_IPU | ch::TO_IPU => {}
+            ch::FROM_IPU | ch::TO_IPU => {
+                // The IPU pulls from toIPU / pushes into fromIPU as it decodes;
+                // the channels complete (STR clear, D_STAT) from `with_ipu`.
+                let done = ipu::dma::started(&mut self.ipu, &mut self.ch, c);
+                self.d_stat |= done;
+                self.irq_dirty = true;
+                self.with_ipu(ram, spr, |ipu, dma| ipu.step(dma));
+                return;
+            }
             ch::FROM_SPR => {
                 // SPR → RAM, normal mode (chain/dest-chain treated as normal).
                 let n = self.ch[c].qwc;
