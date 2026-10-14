@@ -241,6 +241,8 @@ pub struct Vu {
     flag_pipe: VecDeque<FlagSnap>,
     /// Clip flags have their own (shorter) latency: (ready cycle, value).
     clip_pipe: VecDeque<(u64, u32)>,
+    /// Max over `vf_ready` (kept incrementally so `flush` is O(1)).
+    ready_max: u64,
     stage: Stage,
     vi_backup: Option<(u8, u16)>,
     vi_backup_next: Option<(u8, u16)>,
@@ -288,6 +290,7 @@ impl Vu {
             p_pend: None,
             flag_pipe: VecDeque::with_capacity(8),
             clip_pipe: VecDeque::with_capacity(8),
+            ready_max: 0,
             stage: EMPTY_STAGE,
             vi_backup: None,
             vi_backup_next: None,
@@ -323,6 +326,7 @@ impl Vu {
         self.vi_backup = None;
         self.vi_backup_next = None;
         self.vf_ready = [[0; 4]; 32];
+        self.ready_max = 0;
     }
 
     pub fn register_programs(&mut self, table: &'static [ProgramEntry]) {
@@ -569,6 +573,7 @@ impl Vu {
                     if st.dest & (8 >> l) != 0 {
                         self.vf[r as usize][l] = st.value[l];
                         self.vf_ready[r as usize][l] = self.cycle + FMAC_LATENCY;
+                        self.ready_max = self.ready_max.max(self.cycle + FMAC_LATENCY);
                     }
                 }
             }
@@ -676,10 +681,8 @@ impl Vu {
         self.vis_mac = self.mac;
         self.vis_status = self.status;
         self.vis_clip = self.clip;
-        if let Some(c) = self.vf_ready.iter().flatten().max() {
-            if *c > self.cycle {
-                self.cycle = *c;
-            }
+        if self.ready_max > self.cycle {
+            self.cycle = self.ready_max;
         }
     }
 
@@ -753,6 +756,7 @@ impl Vu {
             if dest & (8 >> l) != 0 {
                 self.vf[ft as usize][l] = *val;
                 self.vf_ready[ft as usize][l] = self.cycle + FMAC_LATENCY;
+                self.ready_max = self.ready_max.max(self.cycle + FMAC_LATENCY);
             }
         }
     }

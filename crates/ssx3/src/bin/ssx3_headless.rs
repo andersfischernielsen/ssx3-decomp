@@ -154,6 +154,33 @@ fn main() {
             eprintln!("peek {a:#x} (gp {gp:#x}): {}", w.join(" "));
         }
     }
+    // SSX3_TEXDUMP="tbp:tbw:psm:w:h:cbp" (hex tbp/psm/cbp) writes the texture
+    // (palettised via a CT32 CSM1 CLUT at cbp) to <shots>/tex.png.
+    if let Ok(spec) = std::env::var("SSX3_TEXDUMP") {
+        use ssx3_ps2::gs::swizzle::{read_pixel, PSMCT32};
+        let p: Vec<u32> = spec.split(':').map(|x| u32::from_str_radix(x, 16).unwrap_or(0)).collect();
+        let (tbp, tbw, psm, w, h, cbp) = (p[0], p[1], p[2], p[3], p[4], p[5]);
+        let vram = &c.bus.hw.gs.vram;
+        let clut = |i: u32| -> u32 {
+            // CSM1, CT32: 16-colour = 8x2 block; 256-colour = 16x16 with bit 3/4 swap.
+            let (x, y) = if psm == 0x14 || psm == 0x24 || psm == 0x2c {
+                (i % 8, i / 8)
+            } else {
+                let j = (i & 0xe7) | ((i & 0x08) << 1) | ((i & 0x10) >> 1);
+                (j % 16, j / 16)
+            };
+            read_pixel(vram, PSMCT32, cbp, 1, x, y)
+        };
+        let mut img = vec![0u32; (w * h) as usize];
+        for y in 0..h {
+            for x in 0..w {
+                let v = read_pixel(vram, psm, tbp, tbw, x, y);
+                let col = if psm == 0 { v } else { clut(v) };
+                img[(y * w + x) as usize] = col | 0xff00_0000;
+            }
+        }
+        let _ = std::fs::write(format!("{shot_dir}/tex.png"), png::encode(w, h, &img));
+    }
     eprintln!("halted: {:?}", c.kernel.halted);
     eprint!("{}", game::dump(&c));
     eprintln!("syscalls: {:?}", c.kernel.syscall_counts.iter().map(|(k, v)| format!("{}={v}", ssx3_ps2::kernel::syscall_name(*k))).collect::<Vec<_>>());
