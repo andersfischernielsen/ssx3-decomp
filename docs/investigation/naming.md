@@ -1088,3 +1088,528 @@ lines of Python.
 003d11b8	PATH_status	strings
 003d2068	PATHI_copyevent	strings
 ```
+
+# Pass 2
+
+Status: pass 2 renamed **3,512 functions** in the open Ghidra project. 3,215 of them were
+`FUN_` and 297 replaced earlier names (mostly pass-1 `Class_vNN` slots that now carry a
+real method name, plus a few corrections). After the pass, named functions went from
+about 1,110 to **4,325 of 11,844**. `generated/functions.{tsv,json}` was re-exported.
+
+Confidence is recorded for every rename: 1,350 are "high" (anchored by a string, an
+allocation tag, an RPC/command number, an SDK structure, or an unambiguous vtable slot
+whose base meaning was established) and 2,162 are "med" (behaviour read from the
+decompilation; the name describes what the function does, but it is not a recovered
+symbol). Med names never invent behaviour; a few use invented *class* names, listed below.
+
+## Method
+
+1. **Bulk dumps** through the HTTP backend into a scratch dir: function list, disassembly
+   of all 11,844 functions, the data sections (`/read_memory`, 4 KiB pages), all strings,
+   and the decompilation of every function (cached as one file per function).
+   A local index gave the call graph, lui/addiu-resolved data and string references, and
+   virtual call sites (`lw fn,8k+4(vptr)` ... `jalr fn` = slot k).
+2. **Full vtable scan.** gcc 2.95 vtables (`{short delta; short idx; fnptr}` entries, entry 0
+   zero) were scanned across `.data/.rodata/.sdata` accepting any `.text` pointer, not just
+   Ghidra function starts: 711 vtables, 9,740 slots. vptr stores (`sw <vt>,off(this)`) in
+   1,205 functions gave a class hierarchy (a ctor's first call that stores a vptr at the
+   same lowest offset is its base ctor, or inline base stores precede the final store).
+3. **Slot semantics per base class.** For each base, the meaning of the slots was taken from
+   the code that drives them (state machines, managers, list walkers, stream save/load) and
+   from the base implementations; then every override in the family was renamed
+   consistently (`cFEStateMainMenu_v12` -> `cFEStateMainMenu_Update`).
+4. **Per-area review.** The binary was split into nine address ranges, each analysed
+   separately (strings, allocation tags, call context, struct offsets, SDK knowledge) into a
+   proposals file `addr / name / confidence / evidence`. A merge script checked identifiers,
+   per-address conflicts, global uniqueness against the live Ghidra names, and that only
+   `FUN_*` or `*_vNN` names were replaced; it then applied everything through
+   `rename_function_by_address`.
+
+## Counts by area
+
+| Area | Range | Renamed | high | med | replaced earlier names |
+|---|---|---:|---:|---:|---:|
+| Gameplay core (AI/race manager, riders, RiderMetrix, BE back end) | 0x100000-0x158000 | 186 | 103 | 83 | 0 |
+| Cameras | 0x158000-0x180000 | 231 | 116 | 115 | 49 |
+| Front end + UI engine | 0x180000-0x228000, 0x396000-0x3a8000 | 813 | 452 | 361 | 183 |
+| App modules, load screens, online game layer | 0x228000-0x268000 | 194 | 84 | 110 | 13 |
+| Replay, script system, game-side audio | 0x268000-0x2b0000 | 254 | 103 | 151 | 12 |
+| World painter, memcard, MenuSys, VFX, world scripts | 0x2b0000-0x310000 | 536 | 87 | 449 | 17 |
+| Anim, EA core, input, world objects/modifiers, renderer | 0x310000-0x396000 | 490 | 182 | 308 | 21 |
+| EA libraries (AV/RCMP, MPEG2, SHP, RefPack, SND, PATH, EAFile, DirtySock) | 0x3a8000-0x3f8000 | 440 | 107 | 333 | 0 |
+| Sony runtime, newlib/libgcc, C++ EH runtime | 0x3f8000-0x42e600 | 368 | 116 | 252 | 2 |
+| **Total** | | **3,512** | **1,350** | **2,162** | **297** |
+
+## Class hierarchy and slot meanings
+
+Slot numbers are vtable indices (slot k's pointer is at vt+8k+4). "vptr +N" is the offset
+of the vptr in the object. Names marked (inv.) are invented class names for bases that
+have no allocation tag or string; they were applied with med confidence.
+
+**UI / front end**
+- `UIObject` (inv., vt 0x494bd8, ctor 0x39fb30) is the widget base. Widgets come from the
+  factory 0x39d078: `cUIGroup` 0x4949e8 (-> `UIMenu` 0x494928), `UIPair`, `UIIcon`,
+  `UIListBox`, `UIText`, `cUITextScroll`, `UIVector`, `cUISlider`, `cUIProgress`, `cUIScroll`.
+  Widget slots: 1 dtor, 7 SetFocus, 9 SetVisible, 10 Load, 12 SetAnimParam, 14 FindById,
+  15 HandleInput, 16 RefreshText, 17 Render, 19 UpdateAnim.
+- `UIScreen` 0x494670, `UIThread` 0x4946a0 (animation playback). 0x494cc0 is the intrusive
+  list node, 0x494c98 the list.
+- `UIState` (inv., vt 0x4946c8, ctors 0x39e2a0/0x39e318, vptr +8). Driven by
+  `UIStateMgr_ProcessStates` (0x39ecb0), phase in bits 8-13 of flags +0x1c:
+  Init -> TransitionIn -> OnActivate -> active (Update each frame) -> TransitionOut ->
+  OnDeactivate -> Shutdown -> delete. Slots: 1 dtor, 4 Init (creates the screen),
+  5 Shutdown, 6 OnActivate, 7 TransitionIn, 8 HandleInput, 9 PostInput, 10 TransitionOut,
+  11 OnDeactivate, 12 Update, 14 OnRender, 15 Render, 16 OnAnimEvent, 17 OnChildEvent
+  (0x15 popup opened / 0x16 closed), 18 OnWidgetCreated, 19 OnWidgetAction (5 select,
+  6 back), 20 OnWidgetNotify.
+  - `cFEState` (vt 0x46d0d0): MainMenu, Title, Options*, CharSelect, Lodge*, ... ;
+    `cFEStateRewardGallery` 0x46a3c8 -> the six RewardGallery* screens;
+    an unnamed net-FE base 0x46b808 (32 slots) -> all online screens, `cFEStateLogin`
+    0x468388 -> `cFEStateRelogin`; popups `cFEPopupSelectMultiplayerMode`,
+    `cFEPopupScreenPos`, `cFEPopupVideoCalibration`, `cFEPopupOptionReset`,
+    `cFEStateBackground` (named from inline allocation tags).
+  - `cOVStateOverlay` (vt 0x474e08): every in-race overlay, and the memory-card base
+    0x46c980 (MemCard, ProfileLoad, OptionsDeviceSelect). Overlay/FE classes without a known
+    class name use a synthetic prefix from the screen they load: `OVScreen<Screen>_*`,
+    `FEScreen<Screen>_*` (136 functions, med).
+
+**Application**
+- `App` (vt 0x48dbe8) -> `SSXApp` (vptr +0x5c): 3 Init, 4 Shutdown, 5 VSync ring resync,
+  6 consume tick, 7 VSync tick.
+- `AppModule` (inv., vt 0x47d980, ctor 0x231cd0): 1 dtor, 2 Load (allocates the
+  module's systems, e.g. `GameModule_Load`), 3 Unload, 4 TryExit (polled), 5 Enter,
+  6 Update, 7 Render. Subclasses: GameModule, FEModule, StartScreen, PreStartScreen,
+  InitLoadScreen, cPreGameLoadScreen, cPreFELoadScreen, cGameLoadScreen, cFELoadScreen.
+
+**Gameplay**
+- "AI" race manager (alloc tag "AI", ctor 0x1286a0, vt 0x458488 at +0xcc): 1 dtor, 2 Init,
+  3 Update, 4 Render, 5 Restart, 6 CreatePlayers, 7 SaveState, 8 LoadState. Race state
+  machine states 1..7 = GameInit, Freeride, PreRace, Countdown, Race, EndRace, Shutdown,
+  each an embedded object with slots Enter/Exit/Update.
+- `Player` / `ComputerActorRider` derive from `RiderBase` (inv., vt 0x458710 at +0xde8:
+  1 GetControlInput, 2 SaveState, 3 LoadState) and share the virtual base `Rider` (inv.,
+  ctor 0x11b698; position +0x110, velocity +0x1e0, RiderModel +0x780, AirPredictor +0x788,
+  RiderMetrix +0x790). Rider FX mixins (cAngerFX, cBoardWakeFX, cSpeedBoostStreamerFX,
+  cAirStreamerFX, ...) also hang off this virtual base.
+- `BELibrary` singleton (485 callers) with phase objects whose slot 1 is GetInterface(id):
+  ids 0..13 = BENewRaceInt, BENewPlayerInt, (2 unnamed), BECharInt, BEOptionInt, BESaveInt,
+  BEBAGTInt, BENetworkInt, BEScoreInt, BEBoltInt, BEMissionInt, BEEconInt,
+  BEAggressionInt, BERewardInt. Interface slots 2 Reset, 3 SaveState, 4 LoadState.
+
+**Cameras**
+- `CameraBase` (vt 0x45b8b0) -> `GameCamera`: 1 dtor, 2 Init, 3 Update. GameCamera owns the
+  manual/chase/script controllers at +0xa4/+0xa8/+0xac (active at +0xa0).
+- `CamController` (vt 0x45b938): 1 dtor, 2 Update, 3 ResetForRider, 4 Reset.
+- `CameraAlgorithm` (vt 0x45bde0): 1 dtor, 2 GetView (pure), 3 ResetForRider, 4 Reset,
+  5 Update, 8 PostUpdate, 9 Tick, 12 SetTarget. Under it `RiderCameraAlgorithm` (inv.)
+  -> `ChaseCameraAlgorithm` (14 chase algorithms + Spline, Superpipe) and
+  `BoundedCameraAlgorithmBase` (inv.); `ManualCamAlgoBase` -> ManualCamAlgo/EditorCamAlgo;
+  `ScriptCameraAlgo` -> Manual/Target/Subject/Algorithmic. `ChaseCamController_SetAlgorithm`
+  (0x15d078) is the camera-id factory.
+
+**World**
+- `GameProcess` (inv., vt 0x491f00, priority list at 0x4a5988): 1 dtor, 2 Update,
+  3 PostUpdate, 4 Render, 12 Save. Subclasses cTransitionMan, SnowFall, cSplashManager,
+  cFlagManager, SkyBox, cCutSceneTransitionMan, and `TypedProcess` (inv.) ->
+  `SyncProcess` (inv.) -> RailMan and `WorldObj` (inv., 46 slots: 2 Update, 4 Render,
+  12 Save, 33 BuildMatrices, 34 KillRestorable, 35 Kill; every class has a stream-loading
+  `_ctor_2`): MeshAnim, Fence, Flag, FlexBridge, Counter, Conveyor, Boost, DeadFade,
+  DeadNode, RestoreNode, Hide, `FlexRail` -> SpringRail/FloatRail, and `ModObj` (inv.,
+  owns a ModifierBlock) -> Object, Particle, Floating, Debounce.
+- Transform modifiers (Position, Parent, Spline, MultiSpline, AvaSpline, Magnet, Roller):
+  2 Update, 3 UpdateTransform, 18 GetMatrix, 27 Save.
+- tWPIGD_* world-painter data: 63 inherited "return 0" getters (not Ghidra functions), then
+  64 SaveState, 65 LoadState, 66 Blend.
+- VFX component base (vt 0x488680): 1 dtor, 2 Update, 3 Render; the PS2(AI)VisualEffectsMan
+  managers fan out to ~17 components (named `Vfx<Tag>_*` from allocation tags).
+- `cPS2MemCard` (vt 0x486f78) is an async state machine with Request*/Do* pairs
+  (Open, Seek, Read, Write, Flush, Close, Mkdir, Delete, Format, ListDir).
+- MenuSys debug-menu framework: page stack, `MenuSysPage` 0x486ed0, `MenuSysItem` 0x486f28
+  with 20 item subclasses (Bool, Enum, Submenu, Int, Float, Color, Vector, ...).
+
+**Script, replay, audio**
+- ScriptEngine (vt 0x4821b8) over two bases (0x482528, 0x4824b8); slots 1 dtor, 5 Update,
+  7/8/9 Load/Cancel/Unload script bank. scdat loading (`ScriptEngine_LoadMaster`,
+  `LoadMainScripts`, `LoadWorldScripts`), bank managers for 'scr'/'anm'/'snd' data.
+- `ReplayStream` (vt 0x481898): 1 Write, 2 Read, 3/4 Read Object/Node ref,
+  5/6 Write Object/Node ref, 7 dtor.
+- Audio classes use virtual inheritance over the base vt 0x483c00 (bound to
+  PS2SoundManager). PS2SoundManager (vt 0x4835f8): 1 Init, 2 SetOutputMode, 3 Shutdown,
+  4 AllocSpuBlock, 8 dtor.
+
+**Libraries**
+- EA libs (0x3ad000-0x3f7500): `AV_Player_*`/`AV_Audio_*` movie player; RCMP codec classes
+  (from `.gnu.linkonce` symbol names: `PS2_SONY_CODEC_INTERNAL`, `RCMP::DECODER`,
+  `RCMP::AV_MS_TIMER`); MPEG2 bitstream (mpeg2decode names); `SHP_*` (.ssh/.fsh shapes,
+  DXT, GS swizzle); `EAC_*`/`RefPack_*` decompression; EA SND (`SND_*`, `SNDSTRM_*`,
+  `SNDMIDI_*`, `SNDENC_*`; RPC id 'SND' 0x534e44); PATH interactive music (`PATH_*`);
+  `SPCH_*`; `UStr_*` (UCS-2); EAFile (`EAFile_Queue*`, `AsyncFile_*`, `StreamFile_*`,
+  `BigFile_*`); `EATimer_*`, `EAThread_*`; DirtySock (`TagField*` lobbytagfield API,
+  `NetConnStatus`, `NetConnMAC`, `DirtyRpc_*` IOP transport).
+- Sony/runtime (0x3f8000+): libscf (`sceScfGet*`, newly found), eeio `sce*` file calls
+  by RPC number, sifrpc server side, iopheap/loadfile, deci2, libdev VU/VIF helpers, libusbkb
+  extras, libmpeg internals (`libmpeg_*`), gcc 2.95 EH (`__throw`, `frame.c`), C++ RTTI
+  runtime, newlib stdio/scanf/locale, `__udivdi3`/`__umoddi3`/`__divdi3`/`__moddi3`,
+  `DnasRel_*` (DNAS ELF relocator).
+
+## Corrections to earlier names
+
+- `sceCdSearchFile` (0x400ea8) takes a layer argument: renamed `sceCdLayerSearchFile`;
+  the wrapper at 0x4011c0 that passes layer 0 is the real `sceCdSearchFile`.
+- `PS2VisualEffectsMan_v01/_v02` were slots of the member component allocated as "Tube",
+  not of the manager: now `VfxTube_dtor`/`VfxTube_Update`. The pass-1 rule "lowest-offset
+  vptr store in the ctor" can pick up members built inline in a ctor; other `_vNN` names
+  from such ctors may have the same issue.
+- `DeadNode_v02` (0x3608e8) is the shared WorldObj slot 2: `WorldObj_Update`.
+- `mEmitter_v01/v02/v05` -> FreeData/ResetParticles/AllocData; `PS2GraphicsMan_v01/v03/v04`
+  -> dtor/Shutdown/SelectDisplayMode; `PS2Pad_v01/v02` -> dtor/Update.
+- Pass-1 uncertain candidates now resolved: 64-bit divide helpers, `sceSifMBindRpc`/
+  `sceSifMTermRpc`, `scePadSetWarningLevel` (med), MPEG2 `Show_Bits`/`Flush_Buffer`/
+  `next_start_code`, `PATH_ExecuteAction` (0x3cfc30), libdev VU/VIF helpers.
+- Not changed but suspicious: `cFEStateAuthDNASCreate_ctor` (0x2561b8) builds the DNAS auth
+  object allocated with tag 'DNASMAN'; `BoardSparkEmitter_ctor` looks like a generic
+  particle-system ctor shared by Emitter and DynamicEmitter; `InitLoadScreen_Enter`
+  (0x232568) is in AppModule slot 2, so it is really a Load.
+
+## Finding for the recompiler
+
+About **1,300 vtable slot targets are not function starts in Ghidra** (out of 9,740 slots
+scanned). Most are tiny virtuals (`jr ra` stubs such as 0x3a5aa8-0x3a5b40, 0x2bc500+8k,
+0x360720-0x360a20) or real method bodies (many Rider/Player and FE overlay slots,
+0x1406b0-0x140c80, 0x1de860, 0x1d93d8, ...). Also undefined: 0x411530 (`__pure_virtual`),
+the `.gnu.linkonce` RCMP functions at 0x42e020-0x42e4c8, `sceSifRegisterRpc` (~0x426fdc),
+and some jump-table case blocks outside their function bodies. These can't be named
+until functions are created there, and they are indirect-call targets.
+
+## Uncertain candidates (not applied)
+
+- Gameplay: 0x14edd8 (BE interface id 2, tag 'BECharInt' but its own vtable);
+  0x113aa0/0x113ad8 (probably AirPredictor Save/LoadState); ComputerActorRider sub-state
+  think handlers 0x10a960, 0x10ad78, 0x10aa70, 0x10b590, 0x10b250, 0x10b790, 0x10aed8,
+  0x10b750; RiderBase state Enter/Exit targets; RiderMetrix event handlers
+  0x119368-0x119e38; DangerMan/FocusMan internals 0x101728-0x101b60.
+- Cameras: chase pipeline steps 0x162998 ... 0x166f90; bound-object virtuals
+  0x16e560/0x16f068/0x16fbb8; trigger shape readers 0x171a20-0x171d10.
+- App/net: GameModule state serialisation 0x231348/0x2314d0 (direction unknown); race
+  start/finish sequencers ('finishov' 0x233cd8, 'StartlightBegin' 0x234ad0,
+  'StartgateOpen' 0x234c68); about 100 DirtySock lobby callbacks 0x259xxx-0x265xxx;
+  NetGameUtil/NetGameLink candidates 0x3e6e08/0x3e6f40/0x3e6fc8 and
+  0x3e66f0/0x3e6958/0x3e6b10/0x3e6c80/0x3e67f8.
+- Script: InSeq bytecode interpreter 0x272300-0x2752a0 (no dispatch table to anchor
+  opcode names); script command wrappers 0x275dd8-0x2779xx.
+- Audio: SSXAudioSystem gameplay logic 0x28c000-0x2a6000; BankMonitor 0x2acd08/0x2acfe0;
+  SND channel params 0x3b8700/0x3b8838/0x3b8978; SND mixer/encoder kernels
+  0x3bc000-0x3c0800 and the EE DSP chain 0x3c9000-0x3cf000; SPCH scheduler 0x3d7ec8...
+- World: four unnamed rider FX mixins (ctors 0x2e3680, 0x2eaae0, 0x2f0e88, 0x2f6238);
+  collision/sphere-tree code 0x327900-0x341300 (~130 functions, no strings);
+  PS2GraphicsMan draw slots 71-100; dlmalloc independent_calloc/comalloc/valloc/pvalloc
+  at 0x31f810/0x31f838/0x31faa8/0x31fb00 (order unknown).
+- Libraries: network-config module 0x3f8000-0x3fcf98 ('EA Login', icon.sys);
+  IOP heap RPC 4-9 (0x42ac10, 0x42ae18-0x42afe8); libmc 0x409c48/0x409b60;
+  float/printf helpers 0x41af88, 0x41ed60, 0x41f9d8; C++ dtors 0x412e38/0x412ed0.
+- About 600 FE functions remain `FUN_` (large handlers without strings; FEUIInput,
+  FEModule and LobbyMenu families near 0x180000).
+
+## Renames of existing names in pass 2
+
+```
+0015ce98	ManualCamController_v03 -> ManualCamController_ResetForRider
+0015cee8	ManualCamController_v04 -> ManualCamController_Reset
+0015cfe8	ManualCamController_v02 -> ManualCamController_Update
+00160478	ManualChaseCameraAlgorithm_v01 -> ManualChaseCameraAlgorithm_dtor
+001604b8	ManualChaseCameraAlgorithm_v05 -> ManualChaseCameraAlgorithm_Update
+001606d8	ManualChaseCameraAlgorithm_v03 -> ManualChaseCameraAlgorithm_ResetForRider
+001607a0	MatrixChaseCameraAlgorithm_v01 -> MatrixChaseCameraAlgorithm_dtor
+001607e0	MatrixChaseCameraAlgorithm_v05 -> MatrixChaseCameraAlgorithm_Update
+00160ae8	MatrixChaseCameraAlgorithm_v03 -> MatrixChaseCameraAlgorithm_ResetForRider
+00160bb8	RelativeChaseCameraAlgorithm_v01 -> RelativeChaseCameraAlgorithm_dtor
+00160bf8	RelativeChaseCameraAlgorithm_v05 -> RelativeChaseCameraAlgorithm_Update
+00160fd0	RelativeChaseCameraAlgorithm_v03 -> RelativeChaseCameraAlgorithm_ResetForRider
+001616e8	IdleChaseCameraAlgorithm_v01 -> IdleChaseCameraAlgorithm_dtor
+00161728	IdleChaseCameraAlgorithm_v05 -> IdleChaseCameraAlgorithm_Update
+00161848	IdleChaseCameraAlgorithm_v03 -> IdleChaseCameraAlgorithm_ResetForRider
+00161bb8	ChaseCamController_v02 -> ChaseCamController_Update
+00167f10	ManualCamAlgo_v01 -> ManualCamAlgo_dtor
+00167f40	EditorCamAlgo_v01 -> EditorCamAlgo_dtor
+001682f8	LazyChaseCameraAlgorithm_v01 -> LazyChaseCameraAlgorithm_dtor
+00168338	LazyChaseCameraAlgorithm_v05 -> LazyChaseCameraAlgorithm_Update
+00168508	LazyChaseCameraAlgorithm_v03 -> LazyChaseCameraAlgorithm_ResetForRider
+00168690	LookBackChaseCameraAlgorithm_v01 -> LookBackChaseCameraAlgorithm_dtor
+001686d0	LookBackChaseCameraAlgorithm_v05 -> LookBackChaseCameraAlgorithm_Update
+00168940	LookBackChaseCameraAlgorithm_v03 -> LookBackChaseCameraAlgorithm_ResetForRider
+00168a08	MidRightChaseCameraAlgorithm_v01 -> MidRightChaseCameraAlgorithm_dtor
+00168a70	MidRightChaseCameraAlgorithm_v05 -> MidRightChaseCameraAlgorithm_Update
+00168c50	MidRightChaseCameraAlgorithm_v03 -> MidRightChaseCameraAlgorithm_ResetForRider
+00168d18	MidLeftChaseCameraAlgorithm_v01 -> MidLeftChaseCameraAlgorithm_dtor
+00168d80	MidLeftChaseCameraAlgorithm_v05 -> MidLeftChaseCameraAlgorithm_Update
+00168f60	MidLeftChaseCameraAlgorithm_v03 -> MidLeftChaseCameraAlgorithm_ResetForRider
+00169368	ScriptCamController_v02 -> ScriptCamController_Update
+00176aa8	Default_2ChaseCameraAlgorithm_v01 -> Default_2ChaseCameraAlgorithm_dtor
+00176b10	Default_2ChaseCameraAlgorithm_v05 -> Default_2ChaseCameraAlgorithm_Update
+00176ce0	Default_2ChaseCameraAlgorithm_v03 -> Default_2ChaseCameraAlgorithm_ResetForRider
+00176da8	Default_3ChaseCameraAlgorithm_v01 -> Default_3ChaseCameraAlgorithm_dtor
+00176e10	Default_3ChaseCameraAlgorithm_v05 -> Default_3ChaseCameraAlgorithm_Update
+00176fe0	Default_3ChaseCameraAlgorithm_v03 -> Default_3ChaseCameraAlgorithm_ResetForRider
+001770a8	Default_4ChaseCameraAlgorithm_v01 -> Default_4ChaseCameraAlgorithm_dtor
+00177110	Default_4ChaseCameraAlgorithm_v05 -> Default_4ChaseCameraAlgorithm_Update
+001772e0	Default_4ChaseCameraAlgorithm_v03 -> Default_4ChaseCameraAlgorithm_ResetForRider
+00177368	DirectionNeChaseCameraAlgorithm_v05 -> DirectionNeChaseCameraAlgorithm_Update
+00177520	DirectionNeChaseCameraAlgorithm_v01 -> DirectionNeChaseCameraAlgorithm_dtor
+00177588	DirectionNeChaseCameraAlgorithm_v03 -> DirectionNeChaseCameraAlgorithm_ResetForRider
+00177e90	SpokeChaseCameraAlgorithm_v01 -> SpokeChaseCameraAlgorithm_dtor
+00178208	SpokeChaseCameraAlgorithm_v05 -> SpokeChaseCameraAlgorithm_Update
+001783e0	SpokeChaseCameraAlgorithm_v03 -> SpokeChaseCameraAlgorithm_ResetForRider
+00178b70	Post_Race_1ChaseCameraAlgorithm_v01 -> Post_Race_1ChaseCameraAlgorithm_dtor
+00178bb0	Post_Race_1ChaseCameraAlgorithm_v05 -> Post_Race_1ChaseCameraAlgorithm_Update
+00178e90	Post_Race_1ChaseCameraAlgorithm_v03 -> Post_Race_1ChaseCameraAlgorithm_ResetForRider
+00181148	cFEStateCharSelect_v04 -> cFEStateCharSelect_Init
+00181238	cFEStateCharSelect_v05 -> cFEStateCharSelect_Shutdown
+001812a8	cFEStateCharSelect_v07 -> cFEStateCharSelect_TransitionIn
+00181308	cFEStateCharSelect_v06 -> cFEStateCharSelect_OnActivate
+00181450	cFEStateCharSelect_v08 -> cFEStateCharSelect_HandleInput
+00182420	cFEStateCheatCharSelect_v04 -> cFEStateCheatCharSelect_Init
+00182928	cFEStateCharSetup_v04 -> cFEStateCharSetup_Init
+001832a8	cFEStateRiderDetail_v04 -> cFEStateRiderDetail_Init
+001833d0	cFEStateRiderDetail_v06 -> cFEStateRiderDetail_OnActivate
+001849b0	cFEStateUberTrick_v04 -> cFEStateUberTrick_Init
+00184b70	cFEStateUberTrick_v05 -> cFEStateUberTrick_Shutdown
+00184bb8	cFEStateUberTrick_v07 -> cFEStateUberTrick_TransitionIn
+00184be0	cFEStateUberTrick_v06 -> cFEStateUberTrick_OnActivate
+00185a70	cFEOptionsCredits_v01 -> cFEOptionsCredits_dtor
+00185a98	cFEOptionsCredits_v04 -> cFEOptionsCredits_Init
+00185ba0	cFEOptionsCredits_v06 -> cFEOptionsCredits_OnActivate
+00186658	cFEStateEventSelect_v04 -> cFEStateEventSelect_Init
+00186728	cFEStateEventSelect_v07 -> cFEStateEventSelect_TransitionIn
+00186748	cFEStateEventSelect_v06 -> cFEStateEventSelect_OnActivate
+00186778	cFEStateEventSelect_v05 -> cFEStateEventSelect_Shutdown
+00186978	cFEStateEventSelect_v08 -> cFEStateEventSelect_HandleInput
+00186998	cFEStateEventSelect_v09 -> cFEStateEventSelect_PostInput
+00186b50	cFEStateMemCard_v04 -> cFEStateMemCard_Init
+00188800	cFEStateOptions_v04 -> cFEStateOptions_Init
+00188f28	cFEStateOptionsGame_v04 -> cFEStateOptionsGame_Init
+001895f0	cFEStateOptionsGame_v06 -> cFEStateOptionsGame_OnActivate
+0018a298	cFEStateOptionsSound_v04 -> cFEStateOptionsSound_Init
+0018a870	cFEStateOptionsSound_v06 -> cFEStateOptionsSound_OnActivate
+0018c128	cFEStateOptionsHUD_v04 -> cFEStateOptionsHUD_Init
+0018c198	cFEStateOptionsHUD_v06 -> cFEStateOptionsHUD_OnActivate
+0018c6a0	cFEStateOptionsController_v04 -> cFEStateOptionsController_Init
+0018c8b8	cFEStateOptionsController_v05 -> cFEStateOptionsController_Shutdown
+0018d280	cFEStateOptionsSaveLoad_v04 -> cFEStateOptionsSaveLoad_Init
+0018d868	cFEStateOptionsDeviceSelect_v04 -> cFEStateOptionsDeviceSelect_Init
+0018edc8	cFEStateProfileLoad_v04 -> cFEStateProfileLoad_Init
+0018fc70	cFEStateProfileLoad_v05 -> cFEStateProfileLoad_Shutdown
+001908c0	cFEStateRiderBio_v04 -> cFEStateRiderBio_Init
+00191938	cFEStateRuleSelect_v04 -> cFEStateRuleSelect_Init
+00191c48	cFEStateRuleSelect_v06 -> cFEStateRuleSelect_OnActivate
+00192d80	cFEStateBraggingRights_v04 -> cFEStateBraggingRights_Init
+00193568	cFEStateBraggingRights_v06 -> cFEStateBraggingRights_OnActivate
+00194778	cFEStateTitle_v04 -> cFEStateTitle_Init
+001947f8	cFEStateTitle_v07 -> cFEStateTitle_TransitionIn
+00194aa8	cFEStateMainMenu_v04 -> cFEStateMainMenu_Init
+001954d8	cFEStateBonusMaterial_v04 -> cFEStateBonusMaterial_Init
+001955e0	cFEStateBonusMaterial_v06 -> cFEStateBonusMaterial_OnActivate
+00196148	cFEStateAudioOptions_v04 -> cFEStateAudioOptions_Init
+00196228	cFEStateAudioOptions_v05 -> cFEStateAudioOptions_Shutdown
+001962a8	cFEStateAudioOptions_v07 -> cFEStateAudioOptions_TransitionIn
+00196378	cFEStateAudioOptions_v06 -> cFEStateAudioOptions_OnActivate
+00196db0	cFEStateRequestLine_v04 -> cFEStateRequestLine_Init
+00196e80	cFEStateRequestLine_v05 -> cFEStateRequestLine_Shutdown
+00196f00	cFEStateRequestLine_v06 -> cFEStateRequestLine_OnActivate
+00196f50	cFEStateRequestLine_v07 -> cFEStateRequestLine_TransitionIn
+00199148	cFEStateCharEquip_v01 -> cFEStateCharEquip_dtor
+00199240	cFEStateCharEquip_v04 -> cFEStateCharEquip_Init
+00199350	cFEStateCharEquip_v05 -> cFEStateCharEquip_Shutdown
+001993a0	cFEStateCharEquip_v06 -> cFEStateCharEquip_OnActivate
+001a3258	cFEStateMPCircuit_v04 -> cFEStateMPCircuit_Init
+001a3308	cFEStateMPCircuit_v06 -> cFEStateMPCircuit_OnActivate
+001a3ea0	cFEStateNetMessenger_v01 -> cFEStateNetMessenger_dtor
+001a3f68	cFEStateNetMessenger_v04 -> cFEStateNetMessenger_Init
+001a4170	cFEStateNetMessenger_v08 -> cFEStateNetMessenger_HandleInput
+001ac0b8	cFEUseExistingAccount_v04 -> cFEUseExistingAccount_Init
+001ad178	cFEStateSelectPersona_v04 -> cFEStateSelectPersona_Init
+001ade88	cFEStateChallengePopup_v04 -> cFEStateChallengePopup_Init
+001adfb8	cFEStateChallengePopup_v07 -> cFEStateChallengePopup_TransitionIn
+001adfe8	cFEStateChallengePopup_v06 -> cFEStateChallengePopup_OnActivate
+001b0fb0	cFEStateOnlineCharacterSelect_v04 -> cFEStateOnlineCharacterSelect_Init
+001b1068	cFEStateOnlineCharacterSelect_v07 -> cFEStateOnlineCharacterSelect_TransitionIn
+001b1590	cFEStateOnlineCharacterSelect_v08 -> cFEStateOnlineCharacterSelect_HandleInput
+001b2048	cFEStateChatRoom_v01 -> cFEStateChatRoom_dtor
+001b2070	cFEStateChatRoom_v04 -> cFEStateChatRoom_Init
+001b3490	cFEStateChatRoom_v07 -> cFEStateChatRoom_TransitionIn
+001b3528	cFEStateChatRoom_v06 -> cFEStateChatRoom_OnActivate
+001b38d0	cFEStateChatRoom_v08 -> cFEStateChatRoom_HandleInput
+001b40d0	cFEStateNetConfig_v04 -> cFEStateNetConfig_Init
+001b4168	cFEStateNetConfig_v05 -> cFEStateNetConfig_Shutdown
+001b63e8	NetConfigAuthPopup_v04 -> NetConfigAuthPopup_Init
+001b6b28	cFEStateAuthDNASError_v01 -> cFEStateAuthDNASError_dtor
+001b6b50	cFEStateAuthDNASError_v04 -> cFEStateAuthDNASError_Init
+001b6c98	cFEStateAuthDNASError_v07 -> cFEStateAuthDNASError_TransitionIn
+001b7030	cFEStateNetAccountMem_v01 -> cFEStateNetAccountMem_dtor
+001b7088	cFEStateNetAccountMem_v04 -> cFEStateNetAccountMem_Init
+001b8960	cFEStateCreateStep1_v04 -> cFEStateCreateStep1_Init
+001b8a08	cFEStateCreateStep1_v07 -> cFEStateCreateStep1_TransitionIn
+001ba428	cFEStateCreateStep2_v04 -> cFEStateCreateStep2_Init
+001bbd60	cFEStateCreateDuplicate_v04 -> cFEStateCreateDuplicate_Init
+001bcc30	cFEStateLobbyMenu_v04 -> cFEStateLobbyMenu_Init
+001bcd18	cFEStateLobbyMenu_v07 -> cFEStateLobbyMenu_TransitionIn
+001be828	cFEStateNetCreateRoomPopup_v04 -> cFEStateNetCreateRoomPopup_Init
+001bfbf8	cFEStateOnlineMainMenu_v04 -> cFEStateOnlineMainMenu_Init
+001c04a8	cFEStateOnlineAgreement_v04 -> cFEStateOnlineAgreement_Init
+001c0b20	cFEStateOnlineAgreement_v07 -> cFEStateOnlineAgreement_TransitionIn
+001c0fc0	cFEStateNetQuickPlayPopup_v04 -> cFEStateNetQuickPlayPopup_Init
+001c1c90	cFEStateNetSSXWorld_v04 -> cFEStateNetSSXWorld_Init
+001c2138	cFEStateNetQuickMessages_v04 -> cFEStateNetQuickMessages_Init
+001c23c0	cFEStateNetQuickMessages_v07 -> cFEStateNetQuickMessages_TransitionIn
+001c2e00	cFEStateStats_v04 -> cFEStateStats_Init
+001c32b8	cFEStateStats_v07 -> cFEStateStats_TransitionIn
+001c5098	cFEStateNetNews_v04 -> cFEStateNetNews_Init
+001c5198	cFEStateNetNews_v07 -> cFEStateNetNews_TransitionIn
+001cb1a0	cKeyboardPopup_v04 -> cKeyboardPopup_Init
+001cd2f0	cKeyboardPopup_v06 -> cKeyboardPopup_OnActivate
+001cd348	cKeyboardPopup_v07 -> cKeyboardPopup_TransitionIn
+001cdb98	cKeyboardPopup_v08 -> cKeyboardPopup_HandleInput
+001d1b68	cFEStatePreviewReward_v01 -> cFEStatePreviewReward_dtor
+001d1c08	cFEStatePreviewReward_v04 -> cFEStatePreviewReward_Init
+001d23e0	cFEStateVideoPlayer_v04 -> cFEStateVideoPlayer_Init
+001d2430	cFEStateVideoPlayer_v05 -> cFEStateVideoPlayer_Shutdown
+001d2990	cFEStateMountainRoom_v04 -> cFEStateMountainRoom_Init
+001d2a90	cFEStateMountainRoom_v06 -> cFEStateMountainRoom_OnActivate
+001d3890	cFEStatePeakRoom_v04 -> cFEStatePeakRoom_Init
+001d3c60	cFEStatePeakRoom_v06 -> cFEStatePeakRoom_OnActivate
+001d4368	cFEStateTrophyRoom_v04 -> cFEStateTrophyRoom_Init
+001d43d0	cFEStateTrophyRoom_v06 -> cFEStateTrophyRoom_OnActivate
+001d4c60	cFEStateRewardsRoom_v04 -> cFEStateRewardsRoom_Init
+001d5078	cFEStateRelogin_v04 -> cFEStateRelogin_Init
+001d9db8	cFEStateNetHelpPopup_v04 -> cFEStateNetHelpPopup_Init
+001da238	cFEStateNetHelpPopup_v07 -> cFEStateNetHelpPopup_TransitionIn
+001dd840	cFEStateCharSelect_v01 -> cFEStateCharSelect_dtor
+001dd868	cFEStateCheatCharSelect_v01 -> cFEStateCheatCharSelect_dtor
+001dd8a0	cFEStateCharSetup_v01 -> cFEStateCharSetup_dtor
+001dd8c8	cFEStateRiderDetail_v01 -> cFEStateRiderDetail_dtor
+001dd8f0	cFEStateUberTrick_v01 -> cFEStateUberTrick_dtor
+001ddeb8	cFEPopupConfirm_v01 -> cFEPopupConfirm_dtor
+001ddf20	cFEStateOptions_v01 -> cFEStateOptions_dtor
+001ddf80	cFEStateOptionsGame_v01 -> cFEStateOptionsGame_dtor
+001ddfe8	cFEStateOptionsSound_v01 -> cFEStateOptionsSound_dtor
+001de050	cFEStateOptionsHUD_v01 -> cFEStateOptionsHUD_dtor
+001de0c0	cFEStateOptionsController_v01 -> cFEStateOptionsController_dtor
+001de128	cFEStateOptionsSaveLoad_v01 -> cFEStateOptionsSaveLoad_dtor
+001de150	cFEStateOptionsDeviceSelect_v01 -> cFEStateOptionsDeviceSelect_dtor
+001de218	cFEStateProfileLoad_v01 -> cFEStateProfileLoad_dtor
+001de528	cFEStateEventSelect_v01 -> cFEStateEventSelect_dtor
+001de6c8	cFEStateTitle_v01 -> cFEStateTitle_dtor
+001de728	cFEStateMainMenu_v01 -> cFEStateMainMenu_dtor
+001de788	cFEStateBonusMaterial_v01 -> cFEStateBonusMaterial_dtor
+001df3b8	cFEStateRiderBio_v01 -> cFEStateRiderBio_dtor
+001df418	cFEStateRuleSelect_v01 -> cFEStateRuleSelect_dtor
+001df608	cFEStateOnlineMainMenu_v01 -> cFEStateOnlineMainMenu_dtor
+001df678	cFEStateNetQuickPlayPopup_v01 -> cFEStateNetQuickPlayPopup_dtor
+001df6e8	cFEStateNetSSXWorld_v01 -> cFEStateNetSSXWorld_dtor
+001df750	cFEStateNetQuickMessages_v01 -> cFEStateNetQuickMessages_dtor
+001df960	cFEStateNetHelpPopup_v01 -> cFEStateNetHelpPopup_dtor
+001dfb28	cFEStateRewardGalleryPosters_v01 -> cFEStateRewardGalleryPosters_dtor
+001dfbf8	cFEStateRewardGalleryTradingCards_v01 -> cFEStateRewardGalleryTradingCards_dtor
+001dfcc8	cFEStateRewardGalleryConceptArts_v01 -> cFEStateRewardGalleryConceptArts_dtor
+001dfd98	cFEStateRewardGalleryVideos_v01 -> cFEStateRewardGalleryVideos_dtor
+001dfe68	cFEStateRewardGalleryToys_v01 -> cFEStateRewardGalleryToys_dtor
+001dff38	cFEStateRewardGalleryCheatChars_v01 -> cFEStateRewardGalleryCheatChars_dtor
+001e01b0	cFEStatePeakRoom_v01 -> cFEStatePeakRoom_dtor
+001e0210	cFEStateTrophyRoom_v01 -> cFEStateTrophyRoom_dtor
+001e02a0	cFEStateRewardsRoom_v01 -> cFEStateRewardsRoom_dtor
+001e0548	cFEStateAudioOptions_v01 -> cFEStateAudioOptions_dtor
+001e05b0	cFEStateRequestLine_v01 -> cFEStateRequestLine_dtor
+001e0858	cFEStateMPCircuit_v01 -> cFEStateMPCircuit_dtor
+001e0918	cFEStateSelectPersona_v01 -> cFEStateSelectPersona_dtor
+001e0b00	cFEStateOnlineCharacterSelect_v01 -> cFEStateOnlineCharacterSelect_dtor
+001e0da8	cFEStateCreateStep2_v01 -> cFEStateCreateStep2_dtor
+001e0e18	cFEStateCreateDuplicate_v01 -> cFEStateCreateDuplicate_dtor
+001e0e98	cFEStateStats_v01 -> cFEStateStats_dtor
+001e0ec8	cFEStateNetNews_v01 -> cFEStateNetNews_dtor
+001e0f30	cFEStateRelogin_v01 -> cFEStateRelogin_dtor
+001e0fc0	cFEStateNetMessenger_v07 -> cFEStateNetMessenger_TransitionIn
+001e5248	cOVState_ViewPopup_v04 -> cOVState_ViewPopup_Init
+001e52d0	cOVState_ViewPopup_v07 -> cOVState_ViewPopup_TransitionIn
+001e9ad0	cOVStateHUD1P_v04 -> cOVStateHUD1P_Init
+001f4050	cFEStateLodgeRiderDetail_v04 -> cFEStateLodgeRiderDetail_Init
+001f4830	cFEStateBuyAttrib_v04 -> cFEStateBuyAttrib_Init
+001f49d0	cFEStateBuyAttrib_v07 -> cFEStateBuyAttrib_TransitionIn
+001f49f8	cFEStateBuyAttrib_v06 -> cFEStateBuyAttrib_OnActivate
+001f5508	cFEStateCareerStats_v04 -> cFEStateCareerStats_Init
+001f55c0	cFEStateCareerStats_v07 -> cFEStateCareerStats_TransitionIn
+001f55e8	cFEStateCareerStats_v06 -> cFEStateCareerStats_OnActivate
+001f56c8	cFEStateCareerStats_v08 -> cFEStateCareerStats_HandleInput
+0021cb40	cOVState_ViewPopup_v01 -> cOVState_ViewPopup_dtor
+00220dd0	cFEStateLodgeRiderDetail_v01 -> cFEStateLodgeRiderDetail_dtor
+00220e30	cFEStateBuyAttrib_v01 -> cFEStateBuyAttrib_dtor
+00220e90	cFEStateCareerStats_v01 -> cFEStateCareerStats_dtor
+00232750	cPreGameLoadScreen_v01 -> cPreGameLoadScreen_dtor
+00232780	cPreFELoadScreen_v01 -> cPreFELoadScreen_dtor
+00232b28	StartScreen_v02 -> StartScreen_Load
+00232c98	StartScreen_v05 -> StartScreen_Enter
+00232cf8	StartScreen_v04 -> StartScreen_TryExit
+00232d18	StartScreen_v06 -> StartScreen_Update
+00232d50	StartScreen_v03 -> StartScreen_Unload
+00232da8	StartScreen_v07 -> StartScreen_Render
+00243a80	PreStartScreen_v01 -> PreStartScreen_dtor
+00243b50	StartScreen_v01 -> StartScreen_dtor
+002566e8	cDSockChannel_v01 -> cDSockChannel_dtor
+00256998	cDSockChannel_v02 -> cDSockChannel_Disconnect
+00256a00	cDSockChannel_v03 -> cDSockChannel_Update
+002780b8	ScriptEngine_v01 -> ScriptEngine_dtor
+00278720	ScriptEngine_v05 -> ScriptEngine_Update
+002797c8	ScriptEngine_v07 -> ScriptEngine_LoadScriptBank
+00279840	ScriptEngine_v08 -> ScriptEngine_CancelScriptBank
+00279888	ScriptEngine_v09 -> ScriptEngine_UnloadScriptBank
+0027d850	ScriptObjCam_v04 -> ScriptObjCam_Activate
+0027d8d8	ScriptObjCam_v05 -> ScriptObjCam_Deactivate
+00284a28	ScriptObjCam_v01 -> ScriptObjCam_dtor
+002a8cb0	PS2SoundManager_v01 -> PS2SoundManager_Init
+002a8d90	PS2SoundManager_v02 -> PS2SoundManager_SetOutputMode
+002a8f50	PS2SoundManager_v03 -> PS2SoundManager_Shutdown
+002a8fd8	PS2SoundManager_v04 -> PS2SoundManager_AllocSpuBlock
+002c06c0	WorldPainterQuery_v01 -> WorldPainterQuery_dtor
+002c0778	WorldPainterQuery_v02 -> WorldPainterQuery_UpdateAtPos
+002e46c8	cTransitionMan_v02 -> cTransitionMan_Update
+002e5d18	SnowFall_v01 -> SnowFall_dtor
+002e5da0	SnowFall_v02 -> SnowFall_Update
+002ea900	cCutSceneTransitionMan_v02 -> cCutSceneTransitionMan_Update
+002ec450	LensFX_v01 -> LensFX_dtor
+002f0438	PS2AIVisualEffectsMan_v01 -> PS2AIVisualEffectsMan_dtor
+002f04b0	PS2AIVisualEffectsMan_v02 -> PS2AIVisualEffectsMan_Update
+002f04e0	PS2AIVisualEffectsMan_v03 -> PS2AIVisualEffectsMan_Render
+002f3618	cSplashManager_v01 -> cSplashManager_dtor
+002f39e0	cSplashManager_v02 -> cSplashManager_Update
+002f81b8	cCutSceneTransitionMan_v01 -> cCutSceneTransitionMan_dtor
+003071c8	WScriptMission_v01 -> WScriptMission_dtor
+00307738	WScriptProcess_v01 -> WScriptProcess_dtor
+00326e50	PS2Pad_v01 -> PS2Pad_dtor
+00326eb0	PS2Pad_v02 -> PS2Pad_Update
+003415d0	Boost_v02 -> Boost_Update
+00343820	Counter_v02 -> Counter_Update
+0034c668	cFlagManager_v02 -> cFlagManager_Update
+0034ce48	Fence_v02 -> Fence_Update
+00350c38	DeadFade_v02 -> DeadFade_Update
+00352500	MeshAnim_v02 -> MeshAnim_Update
+003573f8	MagnetModifier_v02 -> MagnetModifier_Update
+00357820	AvaSplineModifier_v02 -> AvaSplineModifier_Update
+00357950	Particle_v02 -> Particle_Update
+00359698	SplineModifier_v02 -> SplineModifier_Update
+00359830	SplineModifier_v03 -> SplineModifier_UpdateTransform
+0035a560	MultiSplineModifier_v02 -> MultiSplineModifier_Update
+003608e8	DeadNode_v02 -> WorldObj_Update
+00371548	mEmitter_v05 -> mEmitter_AllocData
+003715b0	mEmitter_v01 -> mEmitter_FreeData
+00371600	mEmitter_v02 -> mEmitter_ResetParticles
+00372500	PS2VisualEffectsMan_v02 -> VfxTube_Update
+00376268	PS2GraphicsMan_v03 -> PS2GraphicsMan_Shutdown
+003764c0	PS2GraphicsMan_v04 -> PS2GraphicsMan_SelectDisplayMode
+00395268	PS2GraphicsMan_v01 -> PS2GraphicsMan_dtor
+00396838	PS2VisualEffectsMan_v01 -> VfxTube_dtor
+003a5658	UIListBox_v01 -> UIListBox_dtor
+003a5da8	UIText_v01 -> UIText_dtor
+003a62a0	cUITextScroll_v01 -> cUITextScroll_dtor
+00400ea8	sceCdSearchFile -> sceCdLayerSearchFile
+004011c0	sceCdSearchFile_Layer0 -> sceCdSearchFile
+```
+
+The remaining 3,215 pass-2 names (previously `FUN_`) are in `generated/functions.tsv`.

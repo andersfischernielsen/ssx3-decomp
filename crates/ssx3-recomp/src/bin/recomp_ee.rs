@@ -210,7 +210,7 @@ fn main() {
             let ok = n.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
                 && n.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
                 && !n.starts_with("f_")
-                && !matches!(n.as_str(), "entry" | "main" | "loop" | "match" | "type" | "move" | "ref" | "box")
+                && !RUST_RESERVED.contains(&n.as_str())
                 && name_count[n] == 1;
             ok.then(|| (f.start, n.clone()))
         })
@@ -315,3 +315,13 @@ fn main() {
         Err(e) => eprintln!("iop          : not generated ({e})"),
     }
 }
+
+/// Names that can't be used as Rust function identifiers in generated code
+/// (keywords, plus `entry`/`main` to avoid confusion with the host binary).
+const RUST_RESERVED: &[&str] = &[
+    "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum", "extern", "false",
+    "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref", "return",
+    "self", "Self", "static", "struct", "super", "trait", "true", "type", "unsafe", "use", "where", "while",
+    "abstract", "become", "box", "do", "final", "macro", "override", "priv", "typeof", "unsized", "virtual",
+    "yield", "try", "gen", "union", "entry", "main", "c", "sx", "Cpu",
+];
