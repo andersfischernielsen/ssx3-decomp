@@ -855,7 +855,7 @@ fn mip_levels(t0: &Tex, ctx: &super::Ctx) -> Option<Box<Mip>> {
     let tex1 = ctx.tex1;
     let mxl = ((tex1 >> 2) & 7).min(6) as u32;
     let mmin = ((tex1 >> 6) & 7) as u32;
-    if mxl == 0 || !(2..=5).contains(&mmin) {
+    if mxl == 0 || !(2..=5).contains(&mmin) || no_mipmap() {
         return None;
     }
     // Base pointer (blocks) and width (64-texel units) of each level:
@@ -2070,4 +2070,10 @@ fn tri_rows<const TX: u8>(
 fn tex_trace() -> bool {
     static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *E.get_or_init(|| std::env::var("SSX3_TRACE_TEX").is_ok())
+}
+
+/// Debug: SSX3_NO_MIPMAP=1 always samples level 0.
+fn no_mipmap() -> bool {
+    static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *E.get_or_init(|| std::env::var_os("SSX3_NO_MIPMAP").is_some())
 }
