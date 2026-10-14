@@ -144,7 +144,8 @@ on night one (see the log below).
    swizzle) and `GpuGs::push`/`Pages::rect`.
 3. A race finishes (done). Next: the blank view at ~72% of Snow Jam; career
    mode progression; the other courses.
-4. Remaining runtime COP2 macro decodes (14 ops) → static.
+4. (done) No VU0 macro op decodes at run time any more: `c.vu0_macro` appears
+   nowhere in `generated/ee`.
 
 ## How to resume
 
