@@ -256,15 +256,15 @@ fn ret(c: &mut Cpu, v: i64) {
 }
 
 fn switch_to(c: &mut Cpu, next: Option<i32>) {
-    let cur = c.kernel.current;
+    let cur = m!(c).kernel.current;
     if Some(cur) == next {
         return;
     }
-    let spent = c.cycles - c.kernel.last_switch;
-    *c.kernel.thread_cycles.entry(cur).or_default() += spent;
-    c.kernel.last_switch = c.cycles;
+    let spent = c.cycles - m!(c).kernel.last_switch;
+    *m!(c).kernel.thread_cycles.entry(cur).or_default() += spent;
+    m!(c).kernel.last_switch = c.cycles;
     let ctx = save_context(c);
-    if let Some(t) = c.kernel.threads.get_mut(&cur) {
+    if let Some(t) = m!(c).kernel.threads.get_mut(&cur) {
         if t.status != Status::Dormant {
             t.ctx = ctx;
             if t.status == Status::Run {
@@ -274,24 +274,24 @@ fn switch_to(c: &mut Cpu, next: Option<i32>) {
     }
     match next {
         Some(id) => {
-            let t = c.kernel.threads.get_mut(&id).unwrap();
+            let t = m!(c).kernel.threads.get_mut(&id).unwrap();
             t.status = Status::Run;
             let ctx = t.ctx;
-            c.kernel.current = id;
+            m!(c).kernel.current = id;
             load_context(c, &ctx);
-            if c.kernel.trace_threads {
+            if m!(c).kernel.trace_threads {
                 eprintln!("[thread] -> {id} at {:#010x}", ctx.pc);
             }
         }
         None => {
-            c.kernel.current = 0;
+            m!(c).kernel.current = 0;
             c.pc = IDLE;
-            if c.kernel.trace_threads {
+            if m!(c).kernel.trace_threads {
                 eprintln!("[thread] -> idle");
             }
         }
     }
-    if c.kernel.host_threads {
+    if m!(c).kernel.host_threads {
         // The calling host thread's own token: robust even when `cur` was
         // just removed (ExitDeleteThread) or this is the frame driver.
         let from = crate::threads::my_token();
@@ -307,28 +307,28 @@ fn switch_to(c: &mut Cpu, next: Option<i32>) {
 
 /// Baton token of guest thread `id`'s host thread (0 = main host thread).
 pub fn token_of(c: &Cpu, id: i32) -> i32 {
-    c.kernel.tokens.get(&id).copied().unwrap_or(0)
+    mr!(c).kernel.tokens.get(&id).copied().unwrap_or(0)
 }
 
 fn token_or_spawn(c: &mut Cpu, id: i32) -> i32 {
-    if let Some(t) = c.kernel.tokens.get(&id) {
+    if let Some(t) = m!(c).kernel.tokens.get(&id) {
         return *t;
     }
-    let t = c.kernel.next_token;
-    c.kernel.next_token += 1;
-    c.kernel.tokens.insert(id, t);
+    let t = m!(c).kernel.next_token;
+    m!(c).kernel.next_token += 1;
+    m!(c).kernel.tokens.insert(id, t);
     crate::threads::spawn(c, t);
     t
 }
 
 pub fn reschedule(c: &mut Cpu) {
-    c.kernel.reschedule = false;
-    if c.kernel.in_handler {
+    m!(c).kernel.reschedule = false;
+    if m!(c).kernel.in_handler {
         return;
     }
-    let cur = c.kernel.current;
-    let best = c.kernel.best_ready();
-    if best == Some(cur) && c.kernel.threads.get(&cur).is_some_and(|t| t.status == Status::Run) {
+    let cur = m!(c).kernel.current;
+    let best = m!(c).kernel.best_ready();
+    if best == Some(cur) && m!(c).kernel.threads.get(&cur).is_some_and(|t| t.status == Status::Run) {
         return;
     }
     switch_to(c, best);
@@ -336,7 +336,7 @@ pub fn reschedule(c: &mut Cpu) {
 
 fn block_current(c: &mut Cpu, w: WaitType, id: i32) {
     let ctx = save_context(c);
-    if let Some(t) = c.kernel.cur() {
+    if let Some(t) = m!(c).kernel.cur() {
         t.status = Status::Wait;
         t.wait = w;
         t.wait_id = id;
@@ -350,8 +350,8 @@ fn block_current(c: &mut Cpu, w: WaitType, id: i32) {
 pub fn run_guest(c: &mut Cpu, address: u32, a: [u32; 4], gp: u32) -> u32 {
     let saved = save_context(c);
     let saved_depth = c.depth;
-    let nested = c.kernel.in_handler;
-    c.kernel.in_handler = true;
+    let nested = m!(c).kernel.in_handler;
+    m!(c).kernel.in_handler = true;
     let status = c.cop0[12];
     c.cop0[12] = (status & !0x10001) | 2;
     for (i, v) in a.iter().enumerate() {
@@ -369,21 +369,21 @@ pub fn run_guest(c: &mut Cpu, address: u32, a: [u32; 4], gp: u32) -> u32 {
     load_context(c, &saved);
     c.depth = saved_depth;
     c.cop0[12] = status;
-    c.kernel.in_handler = nested;
+    m!(c).kernel.in_handler = nested;
     result
 }
 
 fn add_handler(c: &mut Cpu, dmac: bool) {
     let h = Handler {
-        id: c.kernel.next_handler,
+        id: m!(c).kernel.next_handler,
         cause: arg(c, 0),
         address: arg(c, 1),
         arg: arg(c, 3),
         gp: c.g[28][0] as u32,
     };
-    c.kernel.next_handler += 1;
+    m!(c).kernel.next_handler += 1;
     let next = arg(c, 2) as i32;
-    let list = if dmac { &mut c.kernel.dmac_handlers } else { &mut c.kernel.intc_handlers };
+    let list = if dmac { &mut m!(c).kernel.dmac_handlers } else { &mut m!(c).kernel.intc_handlers };
     if next == 0 {
         list.insert(0, h);
     } else if next == -1 {
@@ -397,7 +397,7 @@ fn add_handler(c: &mut Cpu, dmac: bool) {
 
 fn remove_handler(c: &mut Cpu, dmac: bool) {
     let id = arg(c, 1) as i32;
-    let list = if dmac { &mut c.kernel.dmac_handlers } else { &mut c.kernel.intc_handlers };
+    let list = if dmac { &mut m!(c).kernel.dmac_handlers } else { &mut m!(c).kernel.intc_handlers };
     list.retain(|h| h.id != id);
     ret(c, 0);
 }
@@ -410,22 +410,22 @@ pub fn interrupts_enabled(c: &Cpu) -> bool {
 /// Deliver pending interrupts and alarms, then reschedule if needed. Called
 /// from [`crate::machine::service_events`] outside handlers.
 pub fn service(c: &mut Cpu) {
-    if c.kernel.in_handler {
+    if m!(c).kernel.in_handler {
         return;
     }
     run_alarms(c);
     if interrupts_enabled(c) {
         for _ in 0..16 {
-            let intc = c.bus.hw.intc_pending();
-            let dmac = c.bus.hw.dmac_pending();
+            let intc = m!(c).hw.intc_pending();
+            let dmac = m!(c).hw.dmac_pending();
             if intc == 0 && dmac == 0 {
                 break;
             }
             if dmac != 0 {
                 let chn = dmac.trailing_zeros();
-                c.bus.hw.d_stat &= !(1 << chn);
+                m!(c).hw.d_stat &= !(1 << chn);
                 let hs: Vec<Handler> =
-                    c.kernel.dmac_handlers.iter().filter(|h| h.cause == chn).copied().collect();
+                    m!(c).kernel.dmac_handlers.iter().filter(|h| h.cause == chn).copied().collect();
                 for h in hs {
                     if (run_guest(c, h.address, [chn, h.arg, 0, 0], h.gp) as i32) < 0 {
                         break;
@@ -436,9 +436,9 @@ pub fn service(c: &mut Cpu) {
                 }
             } else {
                 let cause = intc.trailing_zeros();
-                c.bus.hw.i_stat &= !(1 << cause);
+                m!(c).hw.i_stat &= !(1 << cause);
                 let hs: Vec<Handler> =
-                    c.kernel.intc_handlers.iter().filter(|h| h.cause == cause).copied().collect();
+                    m!(c).kernel.intc_handlers.iter().filter(|h| h.cause == cause).copied().collect();
                 for h in hs {
                     if (run_guest(c, h.address, [cause, h.arg, 0, 0], h.gp) as i32) < 0 {
                         break;
@@ -447,7 +447,7 @@ pub fn service(c: &mut Cpu) {
             }
         }
     }
-    if c.kernel.reschedule || (c.pc & !UNWIND) == IDLE {
+    if m!(c).kernel.reschedule || (c.pc & !UNWIND) == IDLE {
         reschedule(c);
     }
 }
@@ -455,40 +455,40 @@ pub fn service(c: &mut Cpu) {
 fn run_alarms(c: &mut Cpu) {
     loop {
         let now = c.cycles;
-        let due = c.kernel.alarms.iter().find(|(_, a)| a.due <= now).map(|(id, a)| (*id, *a));
+        let due = m!(c).kernel.alarms.iter().find(|(_, a)| a.due <= now).map(|(id, a)| (*id, *a));
         let Some((id, a)) = due else { break };
-        c.kernel.alarms.remove(&id);
+        m!(c).kernel.alarms.remove(&id);
         let hsync = (now / crate::machine::HSYNC_CYCLES) as u32;
         run_guest(c, a.callback, [id as u32, hsync, a.arg, 0], a.gp);
-        c.kernel.reschedule = true;
+        m!(c).kernel.reschedule = true;
     }
 }
 
 /// Earliest pending alarm deadline (for the event scheduler).
 pub fn next_alarm(c: &Cpu) -> Option<u64> {
-    c.kernel.alarms.values().map(|a| a.due).min()
+    mr!(c).kernel.alarms.values().map(|a| a.due).min()
 }
 
 /// Called at VBlank start (SetVSyncFlag support).
 pub fn on_vblank_start(c: &mut Cpu) {
-    let flag = c.kernel.vsync_flag;
+    let flag = m!(c).kernel.vsync_flag;
     if flag == 0 {
         return;
     }
     c.bus.write32(flag, 1);
-    if c.kernel.vsync_data != 0 {
-        let csr = c.bus.hw.gs.read_priv(0x1000);
-        let d = c.kernel.vsync_data;
+    if m!(c).kernel.vsync_data != 0 {
+        let csr = m!(c).hw.gs.read_priv(0x1000);
+        let d = m!(c).kernel.vsync_data;
         c.bus.write64(d, csr);
     }
-    c.kernel.vsync_flag = 0;
-    c.kernel.vsync_data = 0;
+    m!(c).kernel.vsync_flag = 0;
+    m!(c).kernel.vsync_data = 0;
 }
 
 /// Create the boot thread (id 1) running at `entry`.
 pub fn start_main_thread(c: &mut Cpu, entry: u32, argc: u32, argv: u32) {
-    c.kernel.boot_argc = argc;
-    c.kernel.boot_argv = argv;
+    m!(c).kernel.boot_argc = argc;
+    m!(c).kernel.boot_argv = argv;
     let t = Thread {
         id: 1,
         status: Status::Run,
@@ -508,20 +508,20 @@ pub fn start_main_thread(c: &mut Cpu, entry: u32, argc: u32, argv: u32) {
         order: 0,
         ctx: Context::default(),
     };
-    c.kernel.threads.insert(1, t);
-    c.kernel.current = 1;
+    m!(c).kernel.threads.insert(1, t);
+    m!(c).kernel.current = 1;
     c.pc = entry;
     c.g[4][0] = sx(argc);
     c.g[5][0] = sx(argv);
     c.g[31][0] = sx(THREAD_EXIT);
     c.cop0[12] = 0x7001_0C01;
     c.cop0[15] = 0x2E20;
-    c.bus.hw.vu0.vf[0][3] = 0x3F80_0000;
-    c.bus.hw.vu1.vf[0][3] = 0x3F80_0000;
+    m!(c).hw.vu0.vf[0][3] = 0x3F80_0000;
+    m!(c).hw.vu1.vf[0][3] = 0x3F80_0000;
 }
 
 fn signal_sema(c: &mut Cpu, id: i32, interrupt: bool) {
-    let Some(s) = c.kernel.semas.get_mut(&id) else {
+    let Some(s) = m!(c).kernel.semas.get_mut(&id) else {
         ret(c, -1);
         return;
     };
@@ -531,7 +531,7 @@ fn signal_sema(c: &mut Cpu, id: i32, interrupt: bool) {
     }
     ret(c, id as i64);
     if let Some(w) = waiter {
-        c.kernel.release(w, id as i64);
+        m!(c).kernel.release(w, id as i64);
         if !interrupt {
             reschedule(c);
         }
@@ -539,9 +539,9 @@ fn signal_sema(c: &mut Cpu, id: i32, interrupt: bool) {
 }
 
 fn wait_sema(c: &mut Cpu, id: i32) {
-    let in_handler = c.kernel.in_handler;
-    let cur = c.kernel.current;
-    let Some(s) = c.kernel.semas.get_mut(&id) else {
+    let in_handler = m!(c).kernel.in_handler;
+    let cur = m!(c).kernel.current;
+    let Some(s) = m!(c).kernel.semas.get_mut(&id) else {
         ret(c, -1);
         return;
     };
@@ -562,11 +562,11 @@ fn wait_sema(c: &mut Cpu, id: i32) {
 
 fn create_thread(c: &mut Cpu) -> i32 {
     let p = arg(c, 0);
-    let id = lowest_free(&c.kernel.threads, 256);
+    let id = lowest_free(&m!(c).kernel.threads, 256);
     if id < 0 {
         return -1;
     }
-    let heap = c.kernel.cur().map(|t| t.heap).unwrap_or(0);
+    let heap = m!(c).kernel.cur().map(|t| t.heap).unwrap_or(0);
     let rd = |c: &mut Cpu, o: u32| c.bus.read32(p + o);
     let t = Thread {
         id,
@@ -587,24 +587,24 @@ fn create_thread(c: &mut Cpu) -> i32 {
         order: 0,
         ctx: Context::default(),
     };
-    if c.kernel.trace_threads {
+    if m!(c).kernel.trace_threads {
         eprintln!(
             "[thread] create {id} entry {:#010x} stack {:#010x}+{:#x} prio {}",
             t.entry, t.stack, t.stack_size, t.priority
         );
     }
-    c.kernel.threads.insert(id, t);
+    m!(c).kernel.threads.insert(id, t);
     id
 }
 
 fn exit_current(c: &mut Cpu, remove: bool) {
-    let id = c.kernel.current;
-    if let Some(t) = c.kernel.threads.get_mut(&id) {
+    let id = m!(c).kernel.current;
+    if let Some(t) = m!(c).kernel.threads.get_mut(&id) {
         t.status = Status::Dormant;
     }
     if remove {
-        c.kernel.threads.remove(&id);
-        c.kernel.current = 0;
+        m!(c).kernel.threads.remove(&id);
+        m!(c).kernel.current = 0;
     }
     reschedule(c);
 }
@@ -706,8 +706,8 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
     if interrupt_variant {
         n = 0u32.wrapping_sub(n);
     }
-    *c.kernel.syscall_counts.entry(n).or_default() += 1;
-    if c.kernel.trace_syscalls {
+    *m!(c).kernel.syscall_counts.entry(n).or_default() += 1;
+    if m!(c).kernel.trace_syscalls {
         eprintln!(
             "[sys] {}({n:#04x}) {:08x} {:08x} {:08x} {:08x} from {pc:#010x} thread {}",
             syscall_name(n),
@@ -715,7 +715,7 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
             arg(c, 1),
             arg(c, 2),
             arg(c, 3),
-            c.kernel.current
+            m!(c).kernel.current
         );
     }
     // Syscalls redirected with SetSyscall to translated game code.
@@ -736,12 +736,13 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
             ret(c, 0)
         }
         0x04 => {
-            c.kernel.halted = Some(format!("Exit({})", arg(c, 0) as i32));
+            let a0 = arg(c, 0);
+            m!(c).kernel.halted = Some(format!("Exit({})", a0 as i32));
             c.pc = IDLE | UNWIND;
         }
         0x06 | 0x07 => {
             let path = c.bus.read_cstr(arg(c, 0));
-            c.kernel.halted = Some(format!("LoadExecPS2({path})"));
+            m!(c).kernel.halted = Some(format!("LoadExecPS2({path})"));
             c.pc = IDLE | UNWIND;
         }
         0x10 => add_handler(c, false),
@@ -751,42 +752,43 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
         0x14 | 0x1A | 0x15 | 0x1B => {
             let bit = 1u32 << (arg(c, 0) & 31);
             let enable = n == 0x14 || n == 0x1A;
-            let was = c.bus.hw.i_mask & bit != 0;
+            let was = m!(c).hw.i_mask & bit != 0;
             if enable {
-                c.bus.hw.i_mask |= bit;
+                m!(c).hw.i_mask |= bit;
             } else {
-                c.bus.hw.i_mask &= !bit;
+                m!(c).hw.i_mask &= !bit;
             }
-            c.bus.hw.irq_dirty = true;
+            m!(c).hw.irq_dirty = true;
             ret(c, (was != enable) as i64)
         }
         0x16 | 0x1C | 0x17 | 0x1D => {
             let bit = 1u32 << (16 + (arg(c, 0) & 15));
             let enable = n == 0x16 || n == 0x1C;
-            let was = c.bus.hw.d_stat & bit != 0;
+            let was = m!(c).hw.d_stat & bit != 0;
             if enable {
-                c.bus.hw.d_stat |= bit;
+                m!(c).hw.d_stat |= bit;
             } else {
-                c.bus.hw.d_stat &= !bit;
+                m!(c).hw.d_stat &= !bit;
             }
-            c.bus.hw.irq_dirty = true;
+            m!(c).hw.irq_dirty = true;
             ret(c, (was != enable) as i64)
         }
         0x18 | 0x1E | 0xFC | 0xFE => {
-            let id = lowest_free(&c.kernel.alarms, 64);
+            let id = lowest_free(&m!(c).kernel.alarms, 64);
             if id < 0 {
                 ret(c, -1);
             } else {
                 let due = c.cycles
                     + (arg(c, 0) & 0xFFFF) as u64 * crate::machine::HSYNC_CYCLES;
                 let a = Alarm { callback: arg(c, 1), arg: arg(c, 2), gp: c.g[28][0] as u32, due };
-                c.kernel.alarms.insert(id, a);
+                m!(c).kernel.alarms.insert(id, a);
                 c.next_event = c.next_event.min(due);
                 ret(c, id as i64);
             }
         }
         0x19 | 0x1F | 0xFD | 0xFF => {
-            c.kernel.alarms.remove(&(arg(c, 0) as i32));
+            let a0 = arg(c, 0);
+            m!(c).kernel.alarms.remove(&(a0 as i32));
             ret(c, 0)
         }
         0x20 => {
@@ -794,13 +796,15 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
             ret(c, id as i64)
         }
         0x21 => {
-            c.kernel.threads.remove(&(arg(c, 0) as i32));
+            let a0 = arg(c, 0);
+            m!(c).kernel.threads.remove(&(a0 as i32));
             ret(c, 0)
         }
         0x22 => {
-            let id = c.kernel.thread_id(arg(c, 0) as i32);
+            let a0 = arg(c, 0);
+            let id = m!(c).kernel.thread_id(a0 as i32);
             let a1 = arg(c, 1);
-            let Some(t) = c.kernel.threads.get_mut(&id) else {
+            let Some(t) = m!(c).kernel.threads.get_mut(&id) else {
                 ret(c, -1);
                 return;
             };
@@ -814,31 +818,33 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
             t.wakeups = 0;
             t.wait = WaitType::None;
             // A (re)started thread gets a fresh host thread in host-thread mode.
-            c.kernel.tokens.remove(&id);
+            m!(c).kernel.tokens.remove(&id);
             ret(c, id as i64);
-            c.kernel.make_ready(id);
+            m!(c).kernel.make_ready(id);
             reschedule(c);
         }
         0x23 => exit_current(c, false),
         0x24 => exit_current(c, true),
         0x25 | 0x26 => {
-            let id = c.kernel.thread_id(arg(c, 0) as i32);
-            let ok = c.kernel.threads.contains_key(&id);
-            for s in c.kernel.semas.values_mut() {
+            let a0 = arg(c, 0);
+            let id = m!(c).kernel.thread_id(a0 as i32);
+            let ok = m!(c).kernel.threads.contains_key(&id);
+            for s in m!(c).kernel.semas.values_mut() {
                 s.waiters.retain(|w| *w != id);
             }
-            if let Some(t) = c.kernel.threads.get_mut(&id) {
+            if let Some(t) = m!(c).kernel.threads.get_mut(&id) {
                 t.status = Status::Dormant;
                 t.wait = WaitType::None;
             }
             ret(c, if ok { 0 } else { -1 })
         }
         0x29 | 0x2A => {
-            let id = c.kernel.thread_id(arg(c, 0) as i32);
+            let a0 = arg(c, 0);
+            let id = m!(c).kernel.thread_id(a0 as i32);
             let prio = (arg(c, 1) as i32) & 127;
-            c.kernel.order += 1;
-            let order = c.kernel.order;
-            let Some(t) = c.kernel.threads.get_mut(&id) else {
+            m!(c).kernel.order += 1;
+            let order = m!(c).kernel.order;
+            let Some(t) = m!(c).kernel.threads.get_mut(&id) else {
                 ret(c, -1);
                 return;
             };
@@ -851,20 +857,20 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
             if n == 0x29 {
                 reschedule(c);
             } else {
-                c.kernel.reschedule = true;
+                m!(c).kernel.reschedule = true;
             }
         }
         0x2B | 0x2C => {
             let prio = (arg(c, 0) as i32) & 127;
             ret(c, prio as i64);
-            c.kernel.order += 1;
-            let order = c.kernel.order;
-            let cur = c.kernel.current;
-            let cur_prio = c.kernel.threads.get(&cur).map(|t| t.priority);
+            m!(c).kernel.order += 1;
+            let order = m!(c).kernel.order;
+            let cur = m!(c).kernel.current;
+            let cur_prio = m!(c).kernel.threads.get(&cur).map(|t| t.priority);
             if cur_prio == Some(prio) {
-                c.kernel.threads.get_mut(&cur).unwrap().order = order;
+                m!(c).kernel.threads.get_mut(&cur).unwrap().order = order;
             } else {
-                let first = c
+                let first = m!(c)
                     .kernel
                     .threads
                     .values()
@@ -872,42 +878,44 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
                     .min_by_key(|t| t.order)
                     .map(|t| t.id);
                 if let Some(f) = first {
-                    c.kernel.threads.get_mut(&f).unwrap().order = order;
+                    m!(c).kernel.threads.get_mut(&f).unwrap().order = order;
                 }
             }
             if n == 0x2B {
                 reschedule(c);
             } else {
-                c.kernel.reschedule = true;
+                m!(c).kernel.reschedule = true;
             }
         }
         0x2D | 0x2E => {
-            let id = c.kernel.thread_id(arg(c, 0) as i32);
-            let waiting = c
+            let a0 = arg(c, 0);
+            let id = m!(c).kernel.thread_id(a0 as i32);
+            let waiting = m!(c)
                 .kernel
                 .threads
                 .get(&id)
                 .is_some_and(|t| matches!(t.status, Status::Wait | Status::WaitSuspend));
             if waiting {
-                for s in c.kernel.semas.values_mut() {
+                for s in m!(c).kernel.semas.values_mut() {
                     s.waiters.retain(|w| *w != id);
                 }
-                c.kernel.release(id, -418);
+                m!(c).kernel.release(id, -418);
                 if n == 0x2D {
                     reschedule(c);
                 }
             }
-            let ok = c.kernel.threads.contains_key(&id);
+            let ok = m!(c).kernel.threads.contains_key(&id);
             ret(c, if ok { id as i64 } else { -1 })
         }
         0x2F => {
-            let id = c.kernel.current;
+            let id = m!(c).kernel.current;
             ret(c, id as i64)
         }
         0x30 | 0x31 => {
-            let id = c.kernel.thread_id(arg(c, 0) as i32);
+            let a0 = arg(c, 0);
+            let id = m!(c).kernel.thread_id(a0 as i32);
             let p = arg(c, 1);
-            let Some(t) = c.kernel.threads.get(&id).cloned() else {
+            let Some(t) = m!(c).kernel.threads.get(&id).cloned() else {
                 ret(c, -1);
                 return;
             };
@@ -937,9 +945,9 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
             ret(c, t.status as i64)
         }
         0x32 => {
-            let id = c.kernel.current;
+            let id = m!(c).kernel.current;
             ret(c, id as i64);
-            let t = c.kernel.threads.get_mut(&id).unwrap();
+            let t = m!(c).kernel.threads.get_mut(&id).unwrap();
             if t.wakeups > 0 {
                 t.wakeups -= 1;
             } else {
@@ -947,13 +955,14 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
             }
         }
         0x33 | 0x34 => {
-            let id = c.kernel.thread_id(arg(c, 0) as i32);
-            let Some(t) = c.kernel.threads.get_mut(&id) else {
+            let a0 = arg(c, 0);
+            let id = m!(c).kernel.thread_id(a0 as i32);
+            let Some(t) = m!(c).kernel.threads.get_mut(&id) else {
                 ret(c, -1);
                 return;
             };
             if t.wait == WaitType::Sleep {
-                c.kernel.release(id, id as i64);
+                m!(c).kernel.release(id, id as i64);
                 ret(c, id as i64);
                 if n == 0x33 {
                     reschedule(c);
@@ -964,14 +973,16 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
             }
         }
         0x35 | 0x36 => {
-            let id = c.kernel.thread_id(arg(c, 0) as i32);
-            let r = c.kernel.threads.get_mut(&id).map(|t| std::mem::take(&mut t.wakeups));
+            let a0 = arg(c, 0);
+            let id = m!(c).kernel.thread_id(a0 as i32);
+            let r = m!(c).kernel.threads.get_mut(&id).map(|t| std::mem::take(&mut t.wakeups));
             ret(c, r.map(|w| w as i64).unwrap_or(-1))
         }
         0x37 | 0x38 => {
-            let id = c.kernel.thread_id(arg(c, 0) as i32);
-            let cur = c.kernel.current;
-            if let Some(t) = c.kernel.threads.get_mut(&id) {
+            let a0 = arg(c, 0);
+            let id = m!(c).kernel.thread_id(a0 as i32);
+            let cur = m!(c).kernel.current;
+            if let Some(t) = m!(c).kernel.threads.get_mut(&id) {
                 if id != cur {
                     if t.status == Status::Wait {
                         t.status = Status::WaitSuspend;
@@ -986,9 +997,10 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
             }
         }
         0x39 | 0x3A => {
-            let id = c.kernel.thread_id(arg(c, 0) as i32);
+            let a0 = arg(c, 0);
+            let id = m!(c).kernel.thread_id(a0 as i32);
             let mut ready = false;
-            let ok = if let Some(t) = c.kernel.threads.get_mut(&id) {
+            let ok = if let Some(t) = m!(c).kernel.threads.get_mut(&id) {
                 if t.suspends > 0 {
                     t.suspends -= 1;
                     if t.suspends == 0 {
@@ -1004,7 +1016,7 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
                 false
             };
             if ready {
-                c.kernel.make_ready(id);
+                m!(c).kernel.make_ready(id);
                 if n == 0x39 {
                     reschedule(c);
                 }
@@ -1014,17 +1026,18 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
         0x3C => {
             let (gp, stack, size, args) = (arg(c, 0), arg(c, 1), arg(c, 2), arg(c, 3));
             let top = if stack == 0xFFFF_FFFF { crate::bus::RAM_SIZE as u32 - 0x1000 } else { stack + size };
-            if let Some(t) = c.kernel.cur() {
+            if let Some(t) = m!(c).kernel.cur() {
                 t.stack = top - size;
                 t.stack_size = size;
                 t.gp = gp;
             }
             if args != 0 {
                 // argc/argv block: argc, argv[16], strings.
-                let argc = c.kernel.boot_argc.min(16);
+                let argc = m!(c).kernel.boot_argc.min(16);
                 let mut payload = args + 4 + 16 * 4;
                 for i in 0..argc {
-                    let from = c.bus.read32(c.kernel.boot_argv + 4 * i);
+                    let argv = m!(c).kernel.boot_argv;
+                    let from = c.bus.read32(argv + 4 * i);
                     let s = c.bus.read_cstr(from);
                     c.bus.write32(args + 4 + 4 * i, payload);
                     let mut bytes = s.into_bytes();
@@ -1039,17 +1052,17 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
         0x3D => {
             let (start, size) = (arg(c, 0), arg(c, 1));
             let heap = if size == 0xFFFF_FFFF {
-                c.kernel.cur().map(|t| t.stack).unwrap_or(0)
+                m!(c).kernel.cur().map(|t| t.stack).unwrap_or(0)
             } else {
                 start + size
             };
-            if let Some(t) = c.kernel.cur() {
+            if let Some(t) = m!(c).kernel.cur() {
                 t.heap = heap;
             }
             ret(c, heap as i32 as i64)
         }
         0x3E => {
-            let h = c.kernel.cur().map(|t| t.heap).unwrap_or(0);
+            let h = m!(c).kernel.cur().map(|t| t.heap).unwrap_or(0);
             ret(c, h as i32 as i64)
         }
         0x40 => {
@@ -1062,20 +1075,20 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
                 option: c.bus.read32(p + 20),
                 waiters: VecDeque::new(),
             };
-            let id = lowest_free(&c.kernel.semas, 256);
+            let id = lowest_free(&m!(c).kernel.semas, 256);
             if id > 0 {
-                c.kernel.semas.insert(id, s);
+                m!(c).kernel.semas.insert(id, s);
             }
             ret(c, id as i64)
         }
         0x41 => {
             let id = arg(c, 0) as i32;
-            let Some(s) = c.kernel.semas.remove(&id) else {
+            let Some(s) = m!(c).kernel.semas.remove(&id) else {
                 ret(c, -1);
                 return;
             };
             for w in s.waiters {
-                c.kernel.release(w, -425);
+                m!(c).kernel.release(w, -425);
             }
             ret(c, id as i64);
             reschedule(c);
@@ -1085,7 +1098,7 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
         0x44 => wait_sema(c, arg(c, 0) as i32),
         0x45 | 0x46 => {
             let id = arg(c, 0) as i32;
-            match c.kernel.semas.get_mut(&id) {
+            match m!(c).kernel.semas.get_mut(&id) {
                 Some(s) if s.count > 0 => {
                     s.count -= 1;
                     ret(c, id as i64)
@@ -1096,7 +1109,7 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
         0x47 | 0x48 => {
             let id = arg(c, 0) as i32;
             let p = arg(c, 1);
-            let Some(s) = c.kernel.semas.get(&id).cloned() else {
+            let Some(s) = m!(c).kernel.semas.get(&id).cloned() else {
                 ret(c, -1);
                 return;
             };
@@ -1109,28 +1122,31 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
         }
         0x4A => {
             let v = c.bus.read32(arg(c, 0));
-            c.kernel.osd_config = v;
+            m!(c).kernel.osd_config = v;
             ret(c, 0)
         }
         0x4B => {
-            let v = c.kernel.osd_config;
+            let v = m!(c).kernel.osd_config;
             c.bus.write32(arg(c, 0), v);
             ret(c, 0)
         }
         // TLB setup and kernel patching done by _InitSys: accept and ignore.
         0x55..=0x5A | 0x5B | 0x64 | 0x68 | 0x6B => ret(c, 0),
         0x70 => {
-            let v = c.bus.hw.gs.read_priv(0x1010);
+            let v = m!(c).hw.gs.read_priv(0x1010);
             ret(c, v as i64)
         }
         0x71 => {
-            let old = c.bus.hw.gs.read_priv(0x1010);
-            c.bus.hw.gs.write_priv(0x1010, arg(c, 0) as u64);
+            let old = m!(c).hw.gs.read_priv(0x1010);
+            let a0 = arg(c, 0);
+            m!(c).hw.gs.write_priv(0x1010, a0 as u64);
             ret(c, old as i64)
         }
         0x73 => {
-            c.kernel.vsync_flag = arg(c, 0);
-            c.kernel.vsync_data = arg(c, 1);
+            let a0 = arg(c, 0);
+            m!(c).kernel.vsync_flag = a0;
+            let a1 = arg(c, 1);
+            m!(c).kernel.vsync_data = a1;
             ret(c, 0)
         }
         0x74 => {

@@ -11,16 +11,7 @@
 use crate::cpu::{Cpu, UNWIND};
 use crate::kernel::{self, HANDLER_RETURN, IDLE, THREAD_EXIT};
 
-pub type GuestFn = fn(&mut Cpu);
-
-/// One translated function: `[start, end)` and its entry point. A function
-/// accepts any `pc` inside its range that is a block label.
-#[derive(Clone, Copy)]
-pub struct FnEntry {
-    pub start: u32,
-    pub end: u32,
-    pub f: GuestFn,
-}
+pub use ssx3_ee_rt::funcs::{call_indirect, has_code, lookup, register_functions, FnEntry, GuestFn};
 
 /// EE clock and NTSC video timing.
 pub const EE_CLOCK: u64 = 294_912_000;
@@ -28,34 +19,6 @@ pub const FRAME_CYCLES: u64 = EE_CLOCK * 1001 / 60_000; // 59.94 Hz
 pub const HSYNC_CYCLES: u64 = FRAME_CYCLES / 263;
 /// VBlank lasts ~22 lines on NTSC.
 pub const VBLANK_CYCLES: u64 = HSYNC_CYCLES * 22;
-
-static mut FUNCS: &[FnEntry] = &[];
-
-/// Register the generated function table (sorted by `start`). Called once at
-/// startup by the game crate.
-pub fn register_functions(table: &'static [FnEntry]) {
-    // SAFETY: called once before any guest code runs, single-threaded.
-    unsafe { FUNCS = table };
-}
-
-fn funcs() -> &'static [FnEntry] {
-    // SAFETY: written once at startup.
-    unsafe { FUNCS }
-}
-
-pub fn lookup(pc: u32) -> Option<GuestFn> {
-    let t = funcs();
-    let i = t.partition_point(|e| e.start <= pc);
-    if i == 0 {
-        return None;
-    }
-    let e = &t[i - 1];
-    (pc < e.end).then_some(e.f)
-}
-
-pub fn has_code(pc: u32) -> bool {
-    lookup(pc).is_some()
-}
 
 /// Per-machine scheduling state that lives outside `Cpu`'s architectural part.
 #[derive(Default)]
@@ -73,49 +36,30 @@ pub struct Sched {
     pub trace_calls: bool,
 }
 
-/// Indirect jump/call into another function (or a resume point).
 /// A debug switch read once (`getenv` takes a process-wide lock and scans
 /// the environment: far too slow for paths taken per call).
 fn env_flag(cell: &'static std::sync::OnceLock<bool>, name: &str) -> bool {
     *cell.get_or_init(|| std::env::var_os(name).is_some())
 }
 
-#[inline(never)]
-pub fn call_indirect(c: &mut Cpu, target: u32) {
-    static MIDCALL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    if env_flag(&MIDCALL, "SSX3_TRACE_MIDCALL") {
-        let t = funcs();
-        let i = t.partition_point(|e| e.start <= target);
-        if i > 0 && t[i - 1].start != target && target < t[i - 1].end {
-            eprintln!(
-                "[midcall] {target:#x} inside fn {:#x} (ra {:#x}, thread {})",
-                t[i - 1].start, c.g[31][0] as u32, c.kernel.current
-            );
-        }
-    }
-    match lookup(target) {
-        Some(f) => f(c),
-        None => miss(c, target),
-    }
-}
-
-fn miss(c: &mut Cpu, target: u32) {
-    *c.sched.misses.entry(target).or_default() += 1;
+/// No translated code at `target` (hook for `call_indirect`).
+pub fn miss(c: &mut Cpu, target: u32) {
+    *m!(c).sched.misses.entry(target).or_default() += 1;
     fatal(c, target, "no translated code at target");
 }
 
 /// Stop the machine with a diagnostic.
 pub fn fatal(c: &mut Cpu, pc: u32, msg: &str) {
-    if c.kernel.halted.is_none() {
+    if m!(c).kernel.halted.is_none() {
         let ra = c.g[31][0] as u32;
         eprintln!(
             "[fatal] {msg} at {pc:#010x} (ra {ra:#010x}, thread {}, cycles {})",
-            c.kernel.current, c.cycles
+            m!(c).kernel.current, c.cycles
         );
-        c.kernel.halted = Some(format!("{msg} at {pc:#010x}"));
+        m!(c).kernel.halted = Some(format!("{msg} at {pc:#010x}"));
     }
     c.pc = IDLE | UNWIND;
-    if c.kernel.host_threads && c.kernel.current != 0 {
+    if m!(c).kernel.host_threads && m!(c).kernel.current != 0 {
         // Park this guest host thread forever; the frame driver sees `halted`.
         let me = crate::threads::my_token();
         crate::threads::handoff(me, 0);
@@ -136,10 +80,10 @@ pub fn trampoline(c: &mut Cpu, stop: Option<u32>) {
         if Some(c.pc) == stop {
             return;
         }
-        if c.kernel.halted.is_some() {
+        if m!(c).kernel.halted.is_some() {
             return;
         }
-        if stop.is_none() && c.sched.frame_ready {
+        if stop.is_none() && m!(c).sched.frame_ready {
             return;
         }
         match c.pc {
@@ -191,52 +135,52 @@ fn idle(c: &mut Cpu) {
 /// Advance hardware time and deliver interrupts. Returns true when the current
 /// thread must unwind (thread switch, or the host wants a frame).
 pub fn service_events(c: &mut Cpu) -> bool {
-    c.bus.hw.now = c.cycles;
+    m!(c).hw.now = c.cycles;
     // VBlank start/end.
-    if c.cycles >= c.sched.next_vblank {
-        c.sched.next_vblank += FRAME_CYCLES;
-        c.sched.next_vblank_end = c.cycles + VBLANK_CYCLES;
-        c.sched.in_vblank = true;
-        c.sched.frames += 1;
-        c.sched.field ^= 1;
-        let field = c.sched.field;
-        c.bus.hw.gs.vblank(field);
-        c.bus.hw.raise(crate::hw::int::VBON);
+    if c.cycles >= m!(c).sched.next_vblank {
+        m!(c).sched.next_vblank += FRAME_CYCLES;
+        m!(c).sched.next_vblank_end = c.cycles + VBLANK_CYCLES;
+        m!(c).sched.in_vblank = true;
+        m!(c).sched.frames += 1;
+        m!(c).sched.field ^= 1;
+        let field = m!(c).sched.field;
+        m!(c).hw.gs.vblank(field);
+        m!(c).hw.raise(crate::hw::int::VBON);
         kernel::on_vblank_start(c);
         crate::pad::refresh(c);
         crate::sif::vblank(c);
-        c.sched.frame_ready = true;
+        m!(c).sched.frame_ready = true;
     }
-    if c.sched.in_vblank && c.cycles >= c.sched.next_vblank_end {
-        c.sched.in_vblank = false;
-        c.bus.hw.raise(crate::hw::int::VBOF);
+    if m!(c).sched.in_vblank && c.cycles >= m!(c).sched.next_vblank_end {
+        m!(c).sched.in_vblank = false;
+        m!(c).hw.raise(crate::hw::int::VBOF);
     }
-    c.bus.hw.timers_service();
-    if c.bus.hw.gs.irq_pending() {
-        c.bus.hw.raise(crate::hw::int::GS);
+    m!(c).hw.timers_service();
+    if m!(c).hw.gs.irq_pending() {
+        m!(c).hw.raise(crate::hw::int::GS);
     }
     crate::iop_bridge::sync(c); // recompiled IOP (SSX3_IOP=1); no-op otherwise
     crate::sif::pump(c);
-    c.bus.hw.irq_dirty = false;
+    m!(c).hw.irq_dirty = false;
     kernel::service(c);
     // Schedule the next check.
-    let mut next = c.sched.next_vblank;
-    if c.sched.in_vblank {
-        next = next.min(c.sched.next_vblank_end);
+    let mut next = m!(c).sched.next_vblank;
+    if m!(c).sched.in_vblank {
+        next = next.min(m!(c).sched.next_vblank_end);
     }
     if let Some(a) = kernel::next_alarm(c) {
         next = next.min(a.max(c.cycles + 1));
     }
-    if let Some(t) = c.bus.hw.next_timer_event() {
+    if let Some(t) = m!(c).hw.next_timer_event() {
         next = next.min(t.max(c.cycles + 1));
     }
     // Poll at least every ~20k cycles so pending I/O interrupts get delivered.
     next = next.min(c.cycles + 20_000);
     c.next_event = next;
-    let want_frame = c.sched.frame_ready && !c.kernel.in_handler;
-    if c.kernel.host_threads {
+    let want_frame = m!(c).sched.frame_ready && !m!(c).kernel.in_handler;
+    if m!(c).kernel.host_threads {
         // Return the baton to the frame driver; resume here next frame.
-        if want_frame && c.kernel.current != 0 {
+        if want_frame && m!(c).kernel.current != 0 {
             let me = crate::threads::my_token();
             if me != 0 {
                 crate::threads::handoff(me, 0);
@@ -252,32 +196,32 @@ pub fn service_events(c: &mut Cpu) -> bool {
 
 /// SetGsCrt(interlace, mode, field/frame).
 pub fn set_gs_crt(c: &mut Cpu, interlace: u32, mode: u32, ffmd: u32) {
-    c.sched.gs_crt = (interlace, mode, ffmd);
+    m!(c).sched.gs_crt = (interlace, mode, ffmd);
     // SMODE2: INT bit 0, FFMD bit 1.
-    c.bus.hw.gs.write_priv(0x20, (interlace & 1) as u64 | ((ffmd & 1) as u64) << 1);
+    m!(c).hw.gs.write_priv(0x20, (interlace & 1) as u64 | ((ffmd & 1) as u64) << 1);
 }
 
 /// Run until the next VBlank (one video field) or until the machine halts.
 /// Returns false once halted.
 pub fn run_frame(c: &mut Cpu) -> bool {
-    c.sched.frame_ready = false;
-    if c.kernel.host_threads {
+    m!(c).sched.frame_ready = false;
+    if m!(c).kernel.host_threads {
         run_frame_threads(c);
     } else {
         trampoline(c, None);
     }
     // Finish background rasterization so `vram` / `display()` are current.
-    c.bus.hw.gs.sync();
-    c.kernel.halted.is_none()
+    m!(c).hw.gs.sync();
+    m!(c).kernel.halted.is_none()
 }
 
 /// Host-thread mode frame driver (runs on the main host thread, token 0).
 fn run_frame_threads(c: &mut Cpu) {
     loop {
-        if c.kernel.halted.is_some() || c.sched.frame_ready {
+        if m!(c).kernel.halted.is_some() || m!(c).sched.frame_ready {
             return;
         }
-        if c.kernel.current == 0 {
+        if m!(c).kernel.current == 0 {
             // Idle: no runnable guest thread. Jump to the next event.
             c.pc = IDLE;
             if c.cycles < c.next_event {
@@ -285,13 +229,13 @@ fn run_frame_threads(c: &mut Cpu) {
             }
             service_events(c);
         } else {
-            let cur = c.kernel.current;
+            let cur = m!(c).kernel.current;
             let tok = kernel::token_of(c, cur);
             let tok = if tok == 0 {
                 // First run of this guest thread: its context is live in `c`.
-                let t = c.kernel.next_token;
-                c.kernel.next_token += 1;
-                c.kernel.tokens.insert(cur, t);
+                let t = m!(c).kernel.next_token;
+                m!(c).kernel.next_token += 1;
+                m!(c).kernel.tokens.insert(cur, t);
                 crate::threads::spawn(c, t);
                 t
             } else {
@@ -313,7 +257,7 @@ pub fn boot(c: &mut Cpu, elf: &[u8], argv0: &str) -> Result<u32, String> {
     c.bus.write_bytes(s, &bytes);
     c.bus.write32(argv, s);
     kernel::start_main_thread(c, entry, 1, argv);
-    c.sched.next_vblank = FRAME_CYCLES;
+    m!(c).sched.next_vblank = FRAME_CYCLES;
     c.next_event = 0;
     Ok(entry)
 }
@@ -326,7 +270,7 @@ pub fn jump_out(c: &mut Cpu, pc: u32, start: u32, end: u32) {
     if env_flag(&JUMPOUT, "SSX3_TRACE_JUMPOUT") {
         eprintln!(
             "[jump_out] pc {pc:#x} from fn {start:#x}..{end:#x} ra {:#x} thread {}",
-            c.g[31][0] as u32, c.kernel.current
+            c.g[31][0] as u32, m!(c).kernel.current
         );
     }
     if pc >= start && pc < end {
@@ -339,7 +283,7 @@ pub fn jump_out(c: &mut Cpu, pc: u32, start: u32, end: u32) {
         c.pc = pc;
         return;
     }
-    if c.kernel.host_threads {
+    if m!(c).kernel.host_threads {
         // No depth cap in host-thread mode: there is no trampoline to defer to.
         c.pc = pc;
         call_indirect(c, pc);

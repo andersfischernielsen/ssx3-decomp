@@ -2,15 +2,19 @@
 //!
 //! The PlayStation 2 platform layer for the SSX 3 recompilation: everything
 //! that is hardware or firmware rather than game code. Game code (EE and VU
-//! microcode) is translated to Rust by `ssx3-recomp`; it runs against [`Cpu`]
-//! and calls into this crate for instruction semantics, memory-mapped I/O,
-//! the kernel, and the IOP services. See `docs/plans/playable-push.md`.
+//! microcode) is translated to Rust by `ssx3-recomp`. Generated EE code is
+//! compiled against the small core crate `ssx3-ee-rt` ([`Cpu`], instruction
+//! semantics, RAM fast paths); this crate plugs into it as the
+//! [`Platform`](ssx3_ee_rt::Platform) behind memory-mapped I/O, VU0, syscalls
+//! and events ([`platform`]), so changing it does not recompile generated
+//! code. See `docs/investigation/crate-split.md` and
+//! `docs/plans/playable-push.md`.
 
-pub mod bus;
-pub mod cop2;
-pub mod cpu;
+pub use ssx3_ee_rt::{bus, cpu, fpu, mmi};
+// First, so its `m!`/`mr!` macros are in scope in every module below.
+#[macro_use]
+pub mod platform;
 pub mod elf;
-pub mod fpu;
 pub mod gifstats;
 pub mod gs;
 pub mod hw;
@@ -19,17 +23,14 @@ pub mod ipu;
 pub mod iso;
 pub mod kernel;
 pub mod machine;
-pub mod mmi;
 pub mod pad;
 pub mod sif;
 pub mod threads;
 pub mod vif;
 pub mod vu;
 
-pub use cpu::Cpu;
-
-/// One 128-bit quadword as moved by DMA, GIF and VIF.
-pub type Qword = u128;
+pub use platform::{new_cpu, Machine};
+pub use ssx3_ee_rt::{Cpu, Qword};
 
 /// Debug: `SSX3_TRACE_PATH3=<from>:<to>` logs GIF DMA tags, VIF1
 /// MSKPATH3/FLUSH*/DIRECT/MSCAL commands and GIF packets per path, in order,

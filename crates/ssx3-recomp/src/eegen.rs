@@ -1,9 +1,10 @@
-//! EE code generator: R5900 machine code → Rust, against `ssx3_ps2::Cpu`.
+//! EE code generator: R5900 machine code → Rust, against `ssx3_ee_rt::Cpu`.
 //!
 //! Every instruction of every function in the inventory is lowered to Rust at
 //! build time; nothing is decoded at run time. Simple ALU operations are
 //! emitted inline; loads/stores, multiply/divide, MMI, FPU and COP2 call the
-//! semantics library in `ssx3-ps2`.
+//! semantics library in `ssx3-ee-rt` (the stable core; the hardware model in
+//! `ssx3-ps2` is reached through its `Platform` trait object and hooks).
 //!
 //! ## Control flow
 //!
@@ -360,7 +361,7 @@ fn lower_cop2(w: u32, rs: u32, rt: u32, rd: u32) -> Option<String> {
                 0x38 => format!("c.vcallms({:#x});", ((w >> 6) & 0x7FFF) * 8),
                 0x39 => "c.vcallmsr();".into(),
                 _ => match ssx3_ps2::vu::recomp::macro_source(w) {
-                    Some(src) => format!("{{ {} }}", src.replace("vu.", "c.bus.hw.vu0.")),
+                    Some(src) => src.replacen("vu.", "c.vu0().", 1),
                     None => format!("c.vu0_macro({w:#010x});"),
                 },
             }
@@ -626,7 +627,7 @@ pub fn emit_function_named(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, o
                         st.invalid += 1;
                         let _ = writeln!(
                             body,
-                            "                ssx3_ps2::machine::fatal(c, {pc:#010x}, \"invalid instruction {w:#010x}\"); return;"
+                            "                c.fatal({pc:#010x}, \"invalid instruction {w:#010x}\"); return;"
                         );
                         terminated = true;
                         break;
@@ -692,13 +693,13 @@ pub fn emit_function_named(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, o
                         }
                         let _ = writeln!(
                             body,
-                            "                c.pc = t; ssx3_ps2::machine::call_indirect(c, t); if c.pc != {ret:#010x} {{ return; }}"
+                            "                c.pc = t; call_indirect(c, t); if c.pc != {ret:#010x} {{ return; }}"
                         );
                     }
                     _ => {
                         let _ = writeln!(
                             body,
-                            "                c.pc = {ret:#010x}; ssx3_ps2::kernel::syscall(c, {pc:#010x}); if c.pc != {ret:#010x} {{ return; }}"
+                            "                c.pc = {ret:#010x}; c.syscall({pc:#010x}); if c.pc != {ret:#010x} {{ return; }}"
                         );
                         let _ = writeln!(body, "                if c.cycles >= c.next_event {{ c.event(); }}");
                     }
@@ -768,7 +769,7 @@ pub fn emit_function_named(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, o
                     let _ = writeln!(body, "                {ds}");
                     let _ = writeln!(
                         body,
-                        "                if !c.enter(t) {{ return; }} ssx3_ps2::machine::call_indirect(c, t); c.leave(); if c.pc != {:#010x} {{ return; }}",
+                        "                if !c.enter(t) {{ return; }} call_indirect(c, t); c.leave(); if c.pc != {:#010x} {{ return; }}",
                         pc + 8
                     );
                     if inside(pc + 8) {
@@ -780,7 +781,7 @@ pub fn emit_function_named(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, o
                 Ctl::Syscall => {
                     let _ = writeln!(
                         body,
-                        "                c.pc = {:#010x}; ssx3_ps2::kernel::syscall(c, {pc:#010x}); if c.pc != {:#010x} {{ return; }}",
+                        "                c.pc = {:#010x}; c.syscall({pc:#010x}); if c.pc != {:#010x} {{ return; }}",
                         pc + 4,
                         pc + 4
                     );
@@ -817,7 +818,7 @@ pub fn emit_function_named(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, o
     }
     let _ = writeln!(
         out,
-        "            _ => {{ ssx3_ps2::machine::jump_out(c, pc, {:#010x}, {:#010x}); return; }}",
+        "            _ => {{ c.jump_out(pc, {:#010x}, {:#010x}); return; }}",
         f.start, f.end
     );
     let _ = writeln!(out, "        }}");
@@ -847,7 +848,7 @@ fn direct_callee(target: u32, shard: usize, ctx: &Ctx) -> String {
             Some(n) => format!("{n}(c)"),
             None => format!("{}(c)", fn_name(target)),
         },
-        _ => format!("ssx3_ps2::machine::call_indirect(c, {target:#010x})"),
+        _ => format!("call_indirect(c, {target:#010x})"),
     }
 }
 

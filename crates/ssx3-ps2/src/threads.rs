@@ -93,7 +93,7 @@ pub fn spawn(c: &mut Cpu, id: i32) {
                 }
                 let pc = c.pc;
                 crate::machine::call_indirect(c, pc);
-                if c.pc == crate::kernel::THREAD_EXIT || c.kernel.halted.is_some() {
+                if c.pc == crate::kernel::THREAD_EXIT || m!(c).kernel.halted.is_some() {
                     break;
                 }
             }

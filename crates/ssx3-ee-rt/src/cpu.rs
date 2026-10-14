@@ -7,13 +7,13 @@
 //! Keeping the semantics in one hand-written library keeps the generated code
 //! small and lets every instruction be lowered exactly.
 //!
-//! `Cpu` also owns the rest of the machine (bus, kernel, VUs), so generated
-//! functions take a single `&mut Cpu`.
+//! `Cpu` also owns the rest of the machine, as a `Box<dyn Platform>` in
+//! [`Bus::plat`] plus the [`Hooks`], so generated functions take a single
+//! `&mut Cpu`.
 
 use crate::bus::Bus;
-use crate::kernel::Kernel;
-use crate::machine::Sched;
-use crate::sif::Sif;
+use crate::platform::{NullPlatform, Platform};
+use crate::vu0::Vu0;
 
 /// Sign-extend a 32-bit result to 64 bits (MIPS64 convention for 32-bit ops).
 #[inline(always)]
@@ -61,6 +61,51 @@ pub mod reg {
 /// Bit 0 of `pc` set by the kernel means "unwind to the trampoline".
 pub const UNWIND: u32 = 1;
 
+/// Machine operations that need the whole `Cpu` (they run guest code, switch
+/// threads, or touch kernel state). Installed by the hardware model.
+#[derive(Clone, Copy)]
+pub struct Hooks {
+    /// Advance hardware time and deliver interrupts (`Cpu::event`). Returns
+    /// true when the current thread must unwind.
+    pub event: fn(&mut Cpu) -> bool,
+    /// `syscall` at `pc` (on entry `c.pc` is the return address).
+    pub syscall: fn(&mut Cpu, u32),
+    /// A computed jump left a function's labels: `(pc, fn start, fn end)`.
+    pub jump_out: fn(&mut Cpu, u32, u32, u32),
+    /// Stop the machine with a diagnostic at `pc`.
+    pub fatal: fn(&mut Cpu, u32, &str),
+    /// No translated code at the target of an indirect call (`pc`).
+    pub miss: fn(&mut Cpu, u32),
+}
+
+fn no_event(_: &mut Cpu) -> bool {
+    false
+}
+fn no_syscall(_: &mut Cpu, pc: u32) {
+    panic!("syscall at {pc:#x} without a platform");
+}
+fn no_jump_out(_: &mut Cpu, pc: u32, _: u32, _: u32) {
+    panic!("jump_out to {pc:#x} without a platform");
+}
+fn no_fatal(_: &mut Cpu, pc: u32, msg: &str) {
+    panic!("{msg} at {pc:#x}");
+}
+fn no_miss(_: &mut Cpu, pc: u32) {
+    panic!("no translated code at {pc:#x}");
+}
+
+impl Hooks {
+    /// Hooks for a CPU without a machine (unit tests): events are no-ops,
+    /// everything else panics.
+    pub const DETACHED: Hooks = Hooks {
+        event: no_event,
+        syscall: no_syscall,
+        jump_out: no_jump_out,
+        fatal: no_fatal,
+        miss: no_miss,
+    };
+}
+
 pub struct Cpu {
     /// 32 × 128-bit GPRs as `[low64, high64]`. Non-MMI ops touch only `[0]`.
     pub g: [[u64; 2]; 32],
@@ -83,16 +128,16 @@ pub struct Cpu {
     pub next_event: u64,
     /// Host call depth; capped so deep guest recursion unwinds to the trampoline.
     pub depth: u32,
+    /// RAM, scratchpad, and the hardware model (`bus.plat`).
     pub bus: Bus,
-    pub kernel: Kernel,
-    pub sif: Sif,
-    pub sched: Sched,
+    pub hooks: Hooks,
 }
 
 const MAX_DEPTH: u32 = 160;
 
 impl Cpu {
-    pub fn new() -> Box<Self> {
+    /// A CPU attached to `plat`, with `hooks` for syscalls and events.
+    pub fn new(plat: Box<dyn Platform>, hooks: Hooks) -> Box<Self> {
         Box::new(Self {
             g: [[0; 2]; 32],
             hi: [0; 2],
@@ -106,11 +151,39 @@ impl Cpu {
             cycles: 0,
             next_event: 0,
             depth: 0,
-            bus: Bus::new(),
-            kernel: Kernel::new(),
-            sif: Sif::new(),
-            sched: Sched::default(),
+            bus: Bus::new(plat),
+            hooks,
         })
+    }
+
+    /// A CPU with no hardware ([`NullPlatform`], [`Hooks::DETACHED`]), for
+    /// unit tests of instruction semantics.
+    pub fn detached() -> Box<Self> {
+        Self::new(Box::new(NullPlatform::default()), Hooks::DETACHED)
+    }
+
+    /// VU0 (COP2 macro mode) on the hardware model.
+    #[inline(always)]
+    pub fn vu0(&mut self) -> &mut dyn Vu0 {
+        &mut *self.bus.plat
+    }
+
+    /// `syscall` at `pc` (generated code sets `c.pc` to the return address first).
+    #[inline(always)]
+    pub fn syscall(&mut self, pc: u32) {
+        (self.hooks.syscall)(self, pc)
+    }
+
+    /// Stop the machine with a diagnostic.
+    #[inline(never)]
+    pub fn fatal(&mut self, pc: u32, msg: &str) {
+        (self.hooks.fatal)(self, pc, msg)
+    }
+
+    /// A computed jump (`jr`) left the current function's labels.
+    #[inline(never)]
+    pub fn jump_out(&mut self, pc: u32, start: u32, end: u32) {
+        (self.hooks.jump_out)(self, pc, start, end)
     }
 
     // ---------------------------------------------------------------- calls
@@ -135,8 +208,9 @@ impl Cpu {
 
     /// Generated code calls this when `cycles >= next_event` (at backward
     /// branches and calls). Returns true if the current thread must unwind.
+    #[inline(always)]
     pub fn event(&mut self) -> bool {
-        crate::machine::service_events(self)
+        (self.hooks.event)(self)
     }
 
     // ------------------------------------------------------------- memory
@@ -163,12 +237,12 @@ impl Cpu {
             let o = (a & !3) as usize;
             return sx(u32::from_le_bytes(self.bus.ram[o..o + 4].try_into().unwrap()));
         }
-        self.bus.hw.now = self.cycles;
+        self.bus.plat.set_now(self.cycles);
         sx(self.bus.read32(a))
     }
     #[inline(always)]
     pub fn lwu(&mut self, a: u32) -> u64 {
-        self.bus.hw.now = self.cycles;
+        self.bus.plat.set_now(self.cycles);
         self.bus.read32(a) as u64
     }
     #[inline(always)]
@@ -197,9 +271,9 @@ impl Cpu {
             self.bus.ram[o..o + 4].copy_from_slice(&(v as u32).to_le_bytes());
             return;
         }
-        self.bus.hw.now = self.cycles;
+        self.bus.plat.set_now(self.cycles);
         self.bus.write32(a, v as u32);
-        if self.bus.hw.irq_dirty {
+        if self.bus.plat.irq_dirty() {
             self.next_event = self.cycles;
         }
     }
@@ -295,13 +369,12 @@ impl Cpu {
     pub fn lqc2(&mut self, ft: usize, a: u32) {
         let v = self.bus.read128(a);
         if ft != 0 {
-            for i in 0..4 {
-                self.bus.hw.vu0.vf[ft][i] = (v >> (32 * i)) as u32;
-            }
+            let r = [v as u32, (v >> 32) as u32, (v >> 64) as u32, (v >> 96) as u32];
+            self.bus.plat.set_vf(ft, r);
         }
     }
     pub fn sqc2(&mut self, ft: usize, a: u32) {
-        let r = self.bus.hw.vu0.vf[ft];
+        let r = self.bus.plat.vf(ft);
         let v = (r[0] as u128) | (r[1] as u128) << 32 | (r[2] as u128) << 64 | (r[3] as u128) << 96;
         self.bus.write128(a, v);
     }
@@ -380,6 +453,6 @@ impl Cpu {
 
     /// `break` / unhandled trap: log and stop the machine.
     pub fn brk(&mut self, pc: u32, code: u32) {
-        crate::machine::fatal(self, pc, &format!("break {code:#x}"));
+        self.fatal(pc, &format!("break {code:#x}"));
     }
 }

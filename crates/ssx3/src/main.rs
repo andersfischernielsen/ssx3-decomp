@@ -103,8 +103,8 @@ impl App {
                 ];
             }
         }
-        self.cpu.sif.pad_buttons[0] = buttons;
-        self.cpu.sif.pad_sticks[0] = sticks;
+        ssx3_ps2::m!(self.cpu).sif.pad_buttons[0] = buttons;
+        ssx3_ps2::m!(self.cpu).sif.pad_sticks[0] = sticks;
     }
 }
 
@@ -138,7 +138,7 @@ impl ApplicationHandler for App {
             .with_title("SSX 3 (USA) — native recompilation")
             .with_inner_size(winit::dpi::LogicalSize::new(960.0, 672.0));
         let window = Arc::new(event_loop.create_window(attrs).expect("window"));
-        let gs = self.cpu.bus.hw.gs.core().gpu_context();
+        let gs = ssx3_ps2::m!(self.cpu).hw.gs.core().gpu_context();
         self.gpu_ctx = gs;
         self.presenter = Some(pollster::block_on(Presenter::new(window.clone(), gs)));
         self.window = Some(window);
@@ -155,7 +155,7 @@ impl ApplicationHandler for App {
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(code) = event.physical_key {
                     if code == KeyCode::F12 && event.state == ElementState::Pressed {
-                        let (w, h) = self.cpu.bus.hw.gs.core().display(&mut self.frame);
+                        let (w, h) = ssx3_ps2::m!(self.cpu).hw.gs.core().display(&mut self.frame);
                         let path = format!("/tmp/ssx3-shot-{}.png", self.shots);
                         self.shots += 1;
                         let _ = std::fs::write(&path, png::encode(w, h, &self.frame));
@@ -173,7 +173,7 @@ impl ApplicationHandler for App {
             WindowEvent::RedrawRequested => {
                 self.update_pad();
                 let alive = ssx3_ps2::machine::run_frame(&mut self.cpu);
-                if self.cpu.sched.frames % 60 == 0 {
+                if ssx3_ps2::m!(self.cpu).sched.frames % 60 == 0 {
                     eprintln!("[{:6.1}s] {}", self.started.elapsed().as_secs_f64(), game::status(&self.cpu));
                     let now = Instant::now();
                     let fps = 60.0 / now.duration_since(self.fps_mark).as_secs_f64().max(1e-6);
@@ -183,11 +183,11 @@ impl ApplicationHandler for App {
                     }
                 }
                 if !alive {
-                    eprintln!("halted: {:?}", self.cpu.kernel.halted);
+                    eprintln!("halted: {:?}", ssx3_ps2::m!(self.cpu).kernel.halted);
                     event_loop.exit();
                     return;
                 }
-                let gs = &mut self.cpu.bus.hw.gs;
+                let gs = &mut ssx3_ps2::m!(self.cpu).hw.gs;
                 match self.presenter.as_mut() {
                     // GPU GS: the frame stays on the GPU. The display pass
                     // is queued on the GS thread right behind this frame's
@@ -215,7 +215,7 @@ impl ApplicationHandler for App {
                     None => {}
                 }
                 if let Some(n) = self.exit_after {
-                    if self.cpu.sched.frames >= n {
+                    if ssx3_ps2::m!(self.cpu).sched.frames >= n {
                         event_loop.exit();
                     }
                 }

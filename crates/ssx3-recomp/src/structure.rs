@@ -169,7 +169,7 @@ pub fn emit_structured(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, exter
                     if !ds.is_empty() {
                         let _ = writeln!(code, "{ds}");
                     }
-                    let _ = writeln!(code, "c.pc = t; ssx3_ps2::machine::call_indirect(c, t);");
+                    let _ = writeln!(code, "c.pc = t; call_indirect(c, t);");
                     after_call(&mut code, ret);
                     if !inside(ret) {
                         term = Term::Leave(tail_pub(ret, shard, ctx));
@@ -184,7 +184,7 @@ pub fn emit_structured(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, exter
                 }
                 Ctl::Syscall => {
                     let ret = pc + 4;
-                    let _ = writeln!(code, "c.pc = {ret:#010x}; ssx3_ps2::kernel::syscall(c, {pc:#010x});");
+                    let _ = writeln!(code, "c.pc = {ret:#010x}; c.syscall({pc:#010x});");
                     after_call(&mut code, ret);
                     let _ = writeln!(code, "if c.cycles >= c.next_event {{ c.event(); }}");
                     if !inside(ret) {
@@ -255,7 +255,7 @@ pub fn emit_structured(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, exter
                             prelude: String::new(),
                             targets: switch_targets.clone(),
                             other: format!(
-                                "ssx3_ps2::machine::jump_out(c, t, {:#010x}, {:#010x}); return;",
+                                "c.jump_out(t, {:#010x}, {:#010x}); return;",
                                 f.start, f.end
                             ),
                         };

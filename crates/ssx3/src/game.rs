@@ -14,17 +14,17 @@ pub fn boot(skip_movies_default: bool) -> Box<Cpu> {
     machine::register_functions(&ssx3_ee::FUNCTIONS);
     // Recompiled IOP sound modules; used when SSX3_IOP=1 (see iop_bridge.rs).
     ssx3_iop::register_generated(&ssx3_iop_gen::GENERATED);
-    let mut c = Cpu::new();
-    c.kernel.host_threads = ssx3_ee::HOST_THREADS;
+    let mut c = ssx3_ps2::new_cpu();
+    ssx3_ps2::m!(c).kernel.host_threads = ssx3_ee::HOST_THREADS;
     // The GPU rasterizer is the default for the game (falls back to the CPU
     // when no adapter is usable); SSX3_GS=cpu forces the software path.
     if std::env::var("SSX3_GS").is_err() {
-        c.bus.hw.gs.core().set_backend(ssx3_ps2::gs::Backend::Gpu);
+        ssx3_ps2::m!(c).hw.gs.core().set_backend(ssx3_ps2::gs::Backend::Gpu);
     }
     let iso = std::env::var("SSX3_ISO")
         .map(PathBuf::from)
         .unwrap_or_else(|_| repo_root().join("SSX 3 (USA).iso"));
-    if let Err(e) = c.sif.open_disc(iso.clone()) {
+    if let Err(e) = ssx3_ps2::m!(c).sif.open_disc(iso.clone()) {
         eprintln!("warning: cannot open disc image {}: {e}", iso.display());
     }
     let elf_path = repo_root().join("orig/SLUS_207.72");
@@ -44,18 +44,18 @@ pub fn boot(skip_movies_default: bool) -> Box<Cpu> {
 
 /// One-line status summary.
 pub fn status(c: &Cpu) -> String {
-    let threads: Vec<String> = c
+    let threads: Vec<String> = ssx3_ps2::mr!(c)
         .kernel
         .threads
         .values()
-        .map(|t| format!("{}:{:?}@{:x}p{}", t.id, t.status, if t.id == c.kernel.current { c.pc } else { t.ctx.pc }, t.priority))
+        .map(|t| format!("{}:{:?}@{:x}p{}", t.id, t.status, if t.id == ssx3_ps2::mr!(c).kernel.current { c.pc } else { t.ctx.pc }, t.priority))
         .collect();
     format!(
         "frame {} cycles {}M thread {} prims {} | {}",
-        c.sched.frames,
+        ssx3_ps2::mr!(c).sched.frames,
         c.cycles / 1_000_000,
-        c.kernel.current,
-        c.bus.hw.gs.prims_drawn(),
+        ssx3_ps2::mr!(c).kernel.current,
+        ssx3_ps2::mr!(c).hw.gs.prims_drawn(),
         threads.join(" ")
     )
 }
@@ -63,8 +63,8 @@ pub fn status(c: &Cpu) -> String {
 /// Multi-line dump of every thread and semaphore.
 pub fn dump(c: &Cpu) -> String {
     let mut out = String::new();
-    for t in c.kernel.threads.values() {
-        let (pc, ra, sp) = if t.id == c.kernel.current {
+    for t in ssx3_ps2::mr!(c).kernel.threads.values() {
+        let (pc, ra, sp) = if t.id == ssx3_ps2::mr!(c).kernel.current {
             (c.pc, c.g[31][0] as u32, c.g[29][0] as u32)
         } else {
             (t.ctx.pc, t.ctx.g[31][0] as u32, t.ctx.g[29][0] as u32)
@@ -90,8 +90,8 @@ pub fn dump(c: &Cpu) -> String {
         }
         out += &format!("    stack: {}\n", bt.join(" "));
     }
-    out += &format!("  cpu per thread (Mcycles): {:?}\n", c.kernel.thread_cycles.iter().map(|(k, v)| (*k, v / 1_000_000)).collect::<Vec<_>>());
-    for (id, s) in &c.kernel.semas {
+    out += &format!("  cpu per thread (Mcycles): {:?}\n", ssx3_ps2::mr!(c).kernel.thread_cycles.iter().map(|(k, v)| (*k, v / 1_000_000)).collect::<Vec<_>>());
+    for (id, s) in &ssx3_ps2::mr!(c).kernel.semas {
         if !s.waiters.is_empty() {
             out += &format!("  sema {id} count {} waiters {:?}\n", s.count, s.waiters);
         }

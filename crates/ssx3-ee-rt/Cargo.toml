@@ -1,0 +1,11 @@
+[package]
+name = "ssx3-ee-rt"
+description = "EE runtime core for recompiled SSX 3 code: R5900 state and instruction semantics, guest memory fast paths, the function table, and the Platform trait the hardware model implements."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Deliberately no dependencies: every crate of generated EE code depends on
+# this one, so it must only change when instruction semantics change (see
+# docs/investigation/crate-split.md).
+[dependencies]

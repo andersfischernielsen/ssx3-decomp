@@ -109,13 +109,13 @@ fn wr(c: &mut Cpu, a: u32, v: u32) {
 
 /// Queue a raw IOP → EE packet (used by the recompiled IOP).
 pub(crate) fn send_raw(c: &mut Cpu, bytes: Vec<u8>) {
-    c.sif.outgoing.push_back(bytes);
+    m!(c).sif.outgoing.push_back(bytes);
     pump(c);
 }
 
 fn send(c: &mut Cpu, words: &[u32]) {
     let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
-    c.sif.outgoing.push_back(bytes);
+    m!(c).sif.outgoing.push_back(bytes);
     pump(c);
 }
 
@@ -128,53 +128,53 @@ fn rend(dest: u32, record: u32, packet: u32, rpc: u32, client: u32, command: u32
 
 /// Deliver the next queued packet to the EE once it acknowledged the last.
 pub fn pump(c: &mut Cpu) {
-    if !c.sif.processed || c.sif.outgoing.is_empty() || c.sif.ee_recv == 0 {
+    if !m!(c).sif.processed || m!(c).sif.outgoing.is_empty() || m!(c).sif.ee_recv == 0 {
         return;
     }
-    let p = c.sif.outgoing.pop_front().unwrap();
-    if c.sif.trace {
+    let p = m!(c).sif.outgoing.pop_front().unwrap();
+    if m!(c).sif.trace {
         let w: Vec<String> = p.chunks(4).take(12).map(|b| format!("{:08x}", u32::from_le_bytes(b.try_into().unwrap()))).collect();
         eprintln!("[sif] -> ee {}", w.join(" "));
     }
-    let at = c.sif.ee_recv;
+    let at = m!(c).sif.ee_recv;
     c.bus.write_bytes(at, &p);
-    c.sif.processed = false;
-    c.bus.hw.d_stat |= 1 << 5;
-    c.bus.hw.irq_dirty = true;
+    m!(c).sif.processed = false;
+    m!(c).hw.d_stat |= 1 << 5;
+    m!(c).hw.irq_dirty = true;
     c.next_event = c.cycles;
 }
 
 pub fn packet_processed(c: &mut Cpu) {
-    c.sif.processed = true;
+    m!(c).sif.processed = true;
     pump(c);
 }
 
 pub fn get_reg(c: &mut Cpu, reg: u32) -> u32 {
     match reg {
-        1 => c.sif.mainaddr,
+        1 => m!(c).sif.mainaddr,
         2 => CMD_BUFFER,
-        3 => c.sif.msflag,
-        4 => c.sif.smflag,
+        3 => m!(c).sif.msflag,
+        4 => m!(c).sif.smflag,
         0x8000_0000 => 0,
         0x8000_0002 => 1,
-        r if r & 0x8000_0000 != 0 => c.sif.sreg[(r & 31) as usize],
+        r if r & 0x8000_0000 != 0 => m!(c).sif.sreg[(r & 31) as usize],
         _ => 0,
     }
 }
 
 pub fn set_reg(c: &mut Cpu, reg: u32, v: u32) {
     match reg {
-        1 => c.sif.mainaddr = v,
-        3 => c.sif.msflag |= v,
+        1 => m!(c).sif.mainaddr = v,
+        3 => m!(c).sif.msflag |= v,
         // SMFLAG keeps SIFINIT|CMDINIT|BOOTEND set: our IOP is always booted.
         4 => {}
-        r if r & 0x8000_0000 != 0 => c.sif.sreg[(r & 31) as usize] = v,
+        r if r & 0x8000_0000 != 0 => m!(c).sif.sreg[(r & 31) as usize] = v,
         _ => {}
     }
 }
 
 pub fn dma_stat(c: &mut Cpu, id: u32) -> i32 {
-    if id + 1 == c.sif.ee_dma_id && c.cycles < c.sif.ee_dma_done {
+    if id + 1 == m!(c).sif.ee_dma_id && c.cycles < m!(c).sif.ee_dma_done {
         0
     } else {
         -1
@@ -192,7 +192,7 @@ pub fn set_dma(c: &mut Cpu, transfers: u32, count: u32) -> u32 {
         let size = rd(c, base + 8) & 0x7FFF_FFFF;
         bytes += size as u64;
         if dst == RPC_RECV_ADDR {
-            c.sif.data_addr = src;
+            m!(c).sif.data_addr = src;
         } else if dst == 0 {
             reboot(c, src);
         } else if dst == CMD_BUFFER {
@@ -201,14 +201,14 @@ pub fn set_dma(c: &mut Cpu, transfers: u32, count: u32) -> u32 {
             // Plain EE→IOP data: mirror into IOP RAM.
             let data = c.bus.read_bytes(src, size as usize);
             let o = (dst & 0x1F_FFFF) as usize;
-            let end = (o + data.len()).min(c.bus.hw_iop_ram_len());
+            let end = (o + data.len()).min(m!(c).iop.len());
             let n = end.saturating_sub(o);
-            c.bus.iop_ram_mut()[o..end].copy_from_slice(&data[..n]);
+            m!(c).iop[o..end].copy_from_slice(&data[..n]);
         }
     }
-    c.sif.ee_dma_done = c.sif.ee_dma_done.max(c.cycles) + 256 + bytes * 2;
-    let id = c.sif.ee_dma_id;
-    c.sif.ee_dma_id += 1;
+    m!(c).sif.ee_dma_done = m!(c).sif.ee_dma_done.max(c.cycles) + 256 + bytes * 2;
+    let id = m!(c).sif.ee_dma_id;
+    m!(c).sif.ee_dma_id += 1;
     id
 }
 
@@ -222,13 +222,13 @@ fn reboot(c: &mut Cpu, src: u32) {
     // The replacement IOP image carries its own LOADFILE; libsif checks its
     // version string ("PsIIloadfile" + 4 digits) after the reboot.
     if let Some(img) = path.split_once(' ').map(|(_, p)| p.to_string()) {
-        if let Some(d) = c.sif.disc.as_mut() {
+        if let Some(d) = m!(c).sif.disc.as_mut() {
             if let Some(e) = d.find(&img) {
                 let data = d.read_vec(e.sector, e.size.div_ceil(SECTOR as u32));
                 let tag = b"PsIIloadfile";
                 if let Some(i) = data.windows(tag.len()).position(|w| w == tag) {
                     let v = &data[i + tag.len()..i + tag.len() + 4];
-                    c.sif.loadfile_version.copy_from_slice(v);
+                    m!(c).sif.loadfile_version.copy_from_slice(v);
                     eprintln!("[sif] LOADFILE version {}", String::from_utf8_lossy(v));
                 }
             }
@@ -239,13 +239,13 @@ fn reboot(c: &mut Cpu, src: u32) {
 fn command(c: &mut Cpu, src: u32, size: u32) {
     let w: Vec<u32> = (0..14).map(|i| rd(c, src + i * 4)).collect();
     let cid = w[2];
-    if c.sif.trace {
+    if m!(c).sif.trace {
         let s: Vec<String> = w.iter().map(|x| format!("{x:08x}")).collect();
         eprintln!("[sif] ee -> cmd {}", s.join(" "));
     }
     let _ = size;
     // SSX3_IOP=1: commands for the recompiled IOP modules go there instead.
-    let data_addr = c.sif.data_addr;
+    let data_addr = m!(c).sif.data_addr;
     if crate::iop_bridge::command(c, &w, data_addr, src) {
         return;
     }
@@ -253,12 +253,12 @@ fn command(c: &mut Cpu, src: u32, size: u32) {
         0x8000_0001 => {
             // SET_SREG from the EE. IOP modules acknowledge their init handshakes by
             // setting the same register on the EE side; echo it back.
-            c.sif.sreg[(w[4] & 31) as usize] = w[5];
+            m!(c).sif.sreg[(w[4] & 31) as usize] = w[5];
             send(c, &[24, 0, CMD_SET_SREG, 0, w[4], w[5]]);
         }
         0x8000_0002 => {
             if w[3] == 0 {
-                c.sif.ee_recv = w[4] & 0x01FF_FFFF;
+                m!(c).sif.ee_recv = w[4] & 0x01FF_FFFF;
             } else {
                 send(c, &[24, 0, CMD_SET_SREG, 0, 0, 1]);
             }
@@ -268,13 +268,13 @@ fn command(c: &mut Cpu, src: u32, size: u32) {
             // Bind: record, packet, rpc, client, server id.
             let (record, packet, rpc, client, server) = (w[4], w[5], w[6], w[7], w[8]);
             if server == 0x0053_4E44 {
-                c.sif.snd_bound = true;
+                m!(c).sif.snd_bound = true;
             }
             let known = server_for(server).is_some();
             if !known {
-                *c.sif.unknown_servers.entry(server).or_default() += 1;
+                *m!(c).sif.unknown_servers.entry(server).or_default() += 1;
             }
-            if c.sif.trace || !known {
+            if m!(c).sif.trace || !known {
                 eprintln!("[sif] bind {server:#010x}{}", if known { "" } else { " (no HLE server; answering generically)" });
             }
             let r = rend(w[1], record, packet, rpc, client, 0x8000_0009, server ^ SERVER_XOR, RPC_RECV_ADDR, 0xDEAD_CAFE);
@@ -284,14 +284,14 @@ fn command(c: &mut Cpu, src: u32, size: u32) {
             // Call: record, packet, rpc, client, fno, ssize, recv, rsize, rmode, server.
             let (record, packet, rpc, client) = (w[4], w[5], w[6], w[7]);
             let (fno, ssize, recv, rsize, server) = (w[8], w[9], w[10], w[11], w[13] ^ SERVER_XOR);
-            let args = c.sif.data_addr;
-            if c.sif.trace {
+            let args = m!(c).sif.data_addr;
+            if m!(c).sif.trace {
                 eprintln!("[sif] call {server:#010x} fn {fno:#x} send {ssize} recv {recv:#x}/{rsize}");
             }
             let done = match server_for(server) {
                 Some(f) => f(c, fno, args, ssize, recv & 0x01FF_FFFF, rsize),
                 None => {
-                    *c.sif.unknown_servers.entry(server).or_default() += 1;
+                    *m!(c).sif.unknown_servers.entry(server).or_default() += 1;
                     if rsize > 0 {
                         let z = vec![0u8; rsize as usize];
                         c.bus.write_bytes(recv, &z);
@@ -308,7 +308,7 @@ fn command(c: &mut Cpu, src: u32, size: u32) {
             // Get other data: copy IOP memory to EE.
             let (record, packet, rpc, receive, srca, dst, n) = (w[4], w[5], w[6], w[7], w[8], w[9], w[10]);
             let o = (srca & 0x1F_FFFF) as usize;
-            let data = c.bus.iop_ram_mut()[o..(o + n as usize).min(0x20_0000)].to_vec();
+            let data = m!(c).iop[o..(o + n as usize).min(0x20_0000)].to_vec();
             c.bus.write_bytes(dst, &data);
             let r = rend(w[1], record, packet, rpc, receive, 0x8000_000C, 0, 0, 0);
             send(c, &r);
@@ -319,12 +319,12 @@ fn command(c: &mut Cpu, src: u32, size: u32) {
         0 => {
             if w[4] == 1 {
                 send(c, &[0x14, 0, 1, w[5], 2]);
-            } else if c.sif.trace {
+            } else if m!(c).sif.trace {
                 eprintln!("[snd] user cmd type {}", w[4]);
             }
         }
         _ => {
-            if c.sif.trace {
+            if m!(c).sif.trace {
                 eprintln!("[sif] unhandled command {cid:#010x}");
             }
         }
@@ -357,25 +357,25 @@ fn loadfile(c: &mut Cpu, method: u32, args: u32, _s: u32, ret: u32, _rs: u32) ->
             let path = c.bus.read_cstr(args + 8);
             eprintln!("[loadfile] {path}");
             if let Some((id, result)) = crate::iop_bridge::load_module(c, &path) {
-                c.sif.loaded_modules.push(path);
+                m!(c).sif.loaded_modules.push(path);
                 wr(c, ret, id);
                 wr(c, ret + 4, result);
                 return true;
             }
-            c.sif.loaded_modules.push(path);
-            let id = c.sif.loaded_modules.len() as u32 + 1;
+            m!(c).sif.loaded_modules.push(path);
+            let id = m!(c).sif.loaded_modules.len() as u32 + 1;
             wr(c, ret, id);
             wr(c, ret + 4, 0);
         }
         0x06 => {
-            c.sif.loaded_modules.push("<buffer>".into());
-            let id = c.sif.loaded_modules.len() as u32 + 1;
+            m!(c).sif.loaded_modules.push("<buffer>".into());
+            let id = m!(c).sif.loaded_modules.len() as u32 + 1;
             wr(c, ret, id);
             wr(c, ret + 4, 0);
         }
         0x09 => wr(c, ret, (-202i32) as u32),
         0xFF => {
-            let v = c.sif.loadfile_version;
+            let v = m!(c).sif.loadfile_version;
             c.bus.write_bytes(ret, &v)
         }
         _ => wr(c, ret, 0),
@@ -387,10 +387,10 @@ fn iopheap(c: &mut Cpu, method: u32, args: u32, _s: u32, ret: u32, _rs: u32) -> 
     match method {
         1 | 4 => {
             let size = (rd(c, args) + 255) & !255;
-            let a = c.sif.iop_heap;
-            c.sif.iop_heap += size;
-            if c.sif.iop_heap > 0x1F_0000 {
-                c.sif.iop_heap = 0x10_0000;
+            let a = m!(c).sif.iop_heap;
+            m!(c).sif.iop_heap += size;
+            if m!(c).sif.iop_heap > 0x1F_0000 {
+                m!(c).sif.iop_heap = 0x10_0000;
             }
             wr(c, ret, a)
         }
@@ -407,15 +407,15 @@ fn fileio(c: &mut Cpu, method: u32, args: u32, _s: u32, ret: u32, _rs: u32) -> b
         0 => {
             let path = c.bus.read_cstr(args + 4);
             let found = if path.to_ascii_lowercase().starts_with("cdrom") {
-                c.sif.disc.as_mut().and_then(|d| d.find(&path))
+                m!(c).sif.disc.as_mut().and_then(|d| d.find(&path))
             } else {
                 None
             };
             let r = match found {
                 Some(e) if !e.dir => {
-                    let fd = c.sif.next_fd;
-                    c.sif.next_fd += 1;
-                    c.sif.fds.insert(fd, (e.sector, e.size, 0));
+                    let fd = m!(c).sif.next_fd;
+                    m!(c).sif.next_fd += 1;
+                    m!(c).sif.fds.insert(fd, (e.sector, e.size, 0));
                     fd
                 }
                 _ => -2,
@@ -425,16 +425,16 @@ fn fileio(c: &mut Cpu, method: u32, args: u32, _s: u32, ret: u32, _rs: u32) -> b
         }
         1 => {
             let fd = word(c, 0) as i32;
-            if c.sif.fds.remove(&fd).is_some() { 0 } else { -9 }
+            if m!(c).sif.fds.remove(&fd).is_some() { 0 } else { -9 }
         }
         2 => {
             let (fd, buf, n) = (word(c, 0) as i32, word(c, 1), word(c, 2));
-            match c.sif.fds.get(&fd).copied() {
+            match m!(c).sif.fds.get(&fd).copied() {
                 Some((sector, size, pos)) => {
                     let n = n.min(size.saturating_sub(pos));
                     let data = read_file(c, sector, pos, n);
                     c.bus.write_bytes(buf, &data);
-                    c.sif.fds.insert(fd, (sector, size, pos + n));
+                    m!(c).sif.fds.insert(fd, (sector, size, pos + n));
                     n as i32
                 }
                 None => -9,
@@ -443,7 +443,7 @@ fn fileio(c: &mut Cpu, method: u32, args: u32, _s: u32, ret: u32, _rs: u32) -> b
         3 => word(c, 2) as i32,
         4 => {
             let (fd, off, whence) = (word(c, 0) as i32, word(c, 1) as i32, word(c, 2));
-            match c.sif.fds.get(&fd).copied() {
+            match m!(c).sif.fds.get(&fd).copied() {
                 Some((sector, size, pos)) => {
                     let base = match whence {
                         0 => 0,
@@ -451,7 +451,7 @@ fn fileio(c: &mut Cpu, method: u32, args: u32, _s: u32, ret: u32, _rs: u32) -> b
                         _ => size as i64,
                     };
                     let np = (base + off as i64).clamp(0, size as i64) as u32;
-                    c.sif.fds.insert(fd, (sector, size, np));
+                    m!(c).sif.fds.insert(fd, (sector, size, np));
                     np as i32
                 }
                 None => -9,
@@ -467,7 +467,7 @@ fn fileio(c: &mut Cpu, method: u32, args: u32, _s: u32, ret: u32, _rs: u32) -> b
 }
 
 fn read_file(c: &mut Cpu, sector: u32, pos: u32, n: u32) -> Vec<u8> {
-    let Some(d) = c.sif.disc.as_mut() else {
+    let Some(d) = m!(c).sif.disc.as_mut() else {
         return vec![0; n as usize];
     };
     let first = sector + pos / SECTOR as u32;
@@ -479,7 +479,7 @@ fn read_file(c: &mut Cpu, sector: u32, pos: u32, n: u32) -> Vec<u8> {
 
 /// Read `count` sectors from the disc into EE memory at `dst`.
 pub fn read_sectors_to_ee(c: &mut Cpu, sector: u32, count: u32, dst: u32) {
-    let data = match c.sif.disc.as_mut() {
+    let data = match m!(c).sif.disc.as_mut() {
         Some(d) => d.read_vec(sector, count),
         None => vec![0; count as usize * SECTOR],
     };
@@ -546,7 +546,7 @@ fn cd_ncmd(c: &mut Cpu, method: u32, args: u32, _s: u32, ret: u32, rsize: u32) -
             if rsize >= 4 {
                 wr(c, ret, 0);
             }
-            if c.sif.trace {
+            if m!(c).sif.trace {
                 let mode = rd(c, args + 12);
                 eprintln!("[cdvdfsv] read lsn {sector:#x} count {count} -> {dst:#x} mode {mode:#x} args {args:#x}");
             }
@@ -558,17 +558,17 @@ fn cd_ncmd(c: &mut Cpu, method: u32, args: u32, _s: u32, ret: u32, rsize: u32) -
             let cmd = rd(c, args + 12);
             match cmd {
                 1 => {
-                    c.sif.stream_pos = sector;
+                    m!(c).sif.stream_pos = sector;
                     wr(c, ret, 1)
                 }
                 2 => {
-                    let pos = c.sif.stream_pos;
-                    c.sif.stream_pos += count;
+                    let pos = m!(c).sif.stream_pos;
+                    m!(c).sif.stream_pos += count;
                     wr(c, ret, count);
                     read_sectors_to_ee(c, pos, count, dst);
                 }
                 4 | 9 => {
-                    c.sif.stream_pos = sector;
+                    m!(c).sif.stream_pos = sector;
                     wr(c, ret, 1)
                 }
                 6 => wr(c, ret, sector),
@@ -580,13 +580,13 @@ fn cd_ncmd(c: &mut Cpu, method: u32, args: u32, _s: u32, ret: u32, rsize: u32) -
             if rsize >= 4 {
                 wr(c, ret, 0);
             }
-            let data = match c.sif.disc.as_mut() {
+            let data = match m!(c).sif.disc.as_mut() {
                 Some(d) => d.read_vec(sector, count),
                 None => vec![0; count as usize * SECTOR],
             };
             let o = (dst & 0x1F_FFFF) as usize;
             let end = (o + data.len()).min(0x20_0000);
-            c.bus.iop_ram_mut()[o..end].copy_from_slice(&data[..end - o]);
+            m!(c).iop[o..end].copy_from_slice(&data[..end - o]);
         }
         0x0E => wr(c, ret, 2),
         _ => {
@@ -604,7 +604,7 @@ fn cd_misc(_c: &mut Cpu, _m: u32, _a: u32, _s: u32, _r: u32, _rs: u32) -> bool {
 fn cd_search(c: &mut Cpu, _m: u32, args: u32, size: u32, ret: u32, _rs: u32) -> bool {
     let off = if size == 0x124 { 0x20 } else { 0x24 };
     let path = c.bus.read_cstr(args + off);
-    let found = c.sif.disc.as_mut().and_then(|d| d.find(&path));
+    let found = m!(c).sif.disc.as_mut().and_then(|d| d.find(&path));
     if let Some(e) = &found {
         wr(c, args, e.sector);
         wr(c, args + 4, e.size);
@@ -621,7 +621,7 @@ fn cd_ready(c: &mut Cpu, _m: u32, _a: u32, _s: u32, ret: u32, _rs: u32) -> bool 
 
 /// Memory card server: report no card present.
 fn mcserv(c: &mut Cpu, method: u32, _a: u32, _s: u32, ret: u32, rsize: u32) -> bool {
-    if c.sif.trace {
+    if m!(c).sif.trace {
         eprintln!("[mcserv] method {method:#x}");
     }
     if rsize >= 4 {
@@ -636,14 +636,14 @@ fn mcserv(c: &mut Cpu, method: u32, _a: u32, _s: u32, ret: u32, rsize: u32) -> b
 /// the sound thread (0x3c19a8), which mixes and DMAs its next command buffer.
 pub fn vblank(c: &mut Cpu) {
     crate::iop_bridge::vblank(c);
-    if c.sif.snd_bound {
+    if m!(c).sif.snd_bound {
         send(c, &[0x14, 0, 1, 0, 0]);
     }
 }
 
 /// EA's SNDDRV ('SND'): accept every request.
 fn snd(c: &mut Cpu, method: u32, _a: u32, _s: u32, ret: u32, rsize: u32) -> bool {
-    if c.sif.trace {
+    if m!(c).sif.trace {
         eprintln!("[snd] method {method:#x} recv {rsize}");
     }
     if rsize > 0 {

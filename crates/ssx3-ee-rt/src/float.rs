@@ -6,6 +6,10 @@
 //! Rounding is toward zero (the FMAC keeps a single guard bit and no sticky
 //! bit, which is what the integer add below reproduces).
 //!
+//! Lives in the EE core (`ssx3-ee-rt`) because the FPU uses it too; the VU
+//! (in `ssx3-ps2`) calls it across the crate boundary, so everything on a hot
+//! path is `#[inline]`.
+//!
 //! The integer add/mul and fixed-point conversions are ported from
 //! `ps2-web-recomp` (`runtime/include/ps2/fpu.hpp`, MIT licence,
 //! https://github.com/snuri00/ps2-web-recomp), adapted to report flags.
@@ -183,6 +187,7 @@ fn raw_key(x: u32) -> i32 {
 /// MAX: compares and returns the *raw* operand bits, so denormals (e.g.
 /// integer colour data moved with `MAX.xyzw vfX, vfY, vfY`) pass through
 /// unchanged (PCSX2 microVU `MIN_MAX_PS`; the VU does not flush here).
+#[inline]
 pub fn max(a: u32, b: u32) -> u32 {
     if raw_key(a) > raw_key(b) {
         a
@@ -192,6 +197,7 @@ pub fn max(a: u32, b: u32) -> u32 {
 }
 
 /// MINI: like [`max`], raw bits.
+#[inline]
 pub fn min(a: u32, b: u32) -> u32 {
     if raw_key(b) > raw_key(a) {
         a
@@ -201,6 +207,7 @@ pub fn min(a: u32, b: u32) -> u32 {
 }
 
 /// FTOIn: truncate toward zero, saturate to i32.
+#[inline]
 pub fn to_fixed(x: u32, fraction: i32) -> u32 {
     let x = norm_in(x);
     if exponent(x) == 0 {
@@ -225,6 +232,7 @@ pub fn to_fixed(x: u32, fraction: i32) -> u32 {
 }
 
 /// Convert an f64 to PS2 float bits, truncating the mantissa.
+#[inline]
 pub fn from_f64(d: f64) -> u32 {
     let bits = d.to_bits();
     let sign = ((bits >> 32) as u32) & SIGN;
@@ -236,12 +244,14 @@ pub fn from_f64(d: f64) -> u32 {
     pack(sign, e - 1023 + 127, (bits >> 29) as u32, &mut exc)
 }
 
+#[inline]
 pub fn to_f64(x: u32) -> f64 {
     let x = norm_in(x);
     f32::from_bits(x) as f64
 }
 
 /// ITOFn.
+#[inline]
 pub fn from_fixed(v: i32, fraction: i32) -> u32 {
     from_f64(v as f64 / (1u64 << fraction) as f64)
 }
@@ -254,6 +264,7 @@ pub struct DivResult {
     pub div0: bool,
 }
 
+#[inline]
 pub fn div(a: u32, b: u32) -> DivResult {
     let a = norm_in(a);
     let b = norm_in(b);
@@ -278,6 +289,7 @@ pub fn div(a: u32, b: u32) -> DivResult {
     }
 }
 
+#[inline]
 pub fn sqrt(b: u32) -> DivResult {
     let b = norm_in(b);
     let invalid = b & SIGN != 0 && b & ABS != 0;
@@ -294,6 +306,7 @@ pub fn sqrt(b: u32) -> DivResult {
     }
 }
 
+#[inline]
 pub fn rsqrt(a: u32, b: u32) -> DivResult {
     let a = norm_in(a);
     let b = norm_in(b);
@@ -322,6 +335,7 @@ pub fn rsqrt(a: u32, b: u32) -> DivResult {
 }
 
 /// Generic EFU result conversion (results are clamped / flushed).
+#[inline]
 pub fn efu(v: f64) -> u32 {
     if v.is_nan() {
         return MAX;

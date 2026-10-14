@@ -1046,23 +1046,21 @@ pub fn registry_source(ts: &[Translation]) -> String {
     s
 }
 
-/// Rust source for one EE COP2 macro-mode instruction (VU0), with `vu.` as the
-/// receiver, or `None` if it cannot be expressed statically (the caller then
-/// falls back to `Vu::macro_op`). Mirrors `Vu::macro_op` exactly.
+/// Rust source for one EE COP2 macro-mode instruction (VU0) as a single
+/// call on the EE core's `ssx3_ee_rt::vu0::Vu0` with `vu.` as the receiver
+/// (e.g. `vu.madd(0b1110, 1, 2, Src::Bc(3, W));`), or `None` if it cannot be
+/// expressed statically (the caller then falls back to `Vu::macro_op`). The
+/// `Vu0` implementation (`crate::platform`) brackets the op with
+/// `macro_begin` / `macro_end_upper|lower`, which mirrors `Vu::macro_op`.
 pub fn macro_source(word: u32) -> Option<String> {
-    match decode_macro(word) {
-        Macro::Upper(u) => {
-            // VNOP has no call; keep the begin/end so pipeline state matches macro_op.
-            let c = upper_call(&u).unwrap_or_default();
-            Some(format!("vu.macro_begin(); {c} vu.macro_end_upper();"))
-        }
-        Macro::Lower(l) => {
-            let c = lower_call(&l)?.replace("PC", "0");
-            if c.contains("kick") {
-                return None;
-            }
-            Some(format!("vu.macro_begin(); {c} vu.macro_end_lower();"))
-        }
-        _ => None,
+    let c = match decode_macro(word) {
+        // VNOP still advances the macro-mode pipeline like any upper op.
+        Macro::Upper(u) => upper_call(&u).unwrap_or_else(|| "vu.vnop();".into()),
+        Macro::Lower(l) => lower_call(&l)?,
+        _ => return None,
+    };
+    if c.contains("kick") || c.contains("PC") {
+        return None;
     }
+    Some(c)
 }
