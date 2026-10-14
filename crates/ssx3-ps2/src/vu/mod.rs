@@ -256,6 +256,9 @@ pub struct Vu {
     /// Differential testing only (`vu_diff --ref-model`): DIV/SQRT/RSQRT and
     /// EFU results land immediately, like ps2-web-recomp's interpreter.
     pub instant_qp: bool,
+    /// Differential testing only (`vu_diff qstall`): `false` restores the
+    /// old ordering, where a pair's Q wait ran after its upper op.
+    pub pair_q_stall: bool,
 
     vf_ready: [[u64; 4]; 32],
     q_pend: Option<Pending>,
@@ -316,6 +319,7 @@ impl Vu {
             errors: 0,
             last_error: None,
             instant_qp: false,
+            pair_q_stall: true,
             vf_ready: [[0; 4]; 32],
             q_pend: None,
             p_pend: None,
@@ -647,7 +651,14 @@ impl Vu {
         // Same as WAITQ, just earlier in the pair (the lower's own wait then
         // finds nothing pending). Flags and P retire by cycle count at their
         // next observer, so they need no work here.
-        self.waitq();
+        if self.pair_q_stall {
+            self.waitq();
+        }
+    }
+
+    /// Ready cycle of the DIV-unit result in flight, if any (diagnostics).
+    pub fn q_pending_ready(&self) -> Option<u64> {
+        self.q_pend.map(|p| p.ready)
     }
 
     /// LOI: the I bit's immediate. Called after the pair's upper op, which

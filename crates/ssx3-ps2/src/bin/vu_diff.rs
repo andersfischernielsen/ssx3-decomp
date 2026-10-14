@@ -8,6 +8,8 @@
 //!   vu_diff trace <capture> <index>         per-pair trace (reference-format)
 //!   vu_diff list  <capture>                 one line per record
 //!   vu_diff find  <capture> <hex word>      records whose XGKICK packets contain a word
+//!   vu_diff digest <capture> [--ref-model]  full-state hash per record
+//!   vu_diff qstall <capture> [-v]           records changed by the pair Q stall, explained
 
 use ssx3_ps2::vu::capture::{load, read_kicks, ArchState, Reader, Record};
 use ssx3_ps2::vu::{reference, Vu};
@@ -321,6 +323,81 @@ fn synth(out: &str, seeds: u64, sane: bool) {
     eprintln!("synth: {n} records -> {out}");
 }
 
+/// Full-state FNV digest of a translated replay, plus a digest of the values
+/// only (no cycle count), the pair count and the cycle count.
+fn digest(r: &Record, pair_q_stall: bool) -> (u64, u64, u64, u64) {
+    let mut vu = r.setup();
+    vu.instant_qp = ref_model();
+    vu.pair_q_stall = pair_q_stall;
+    let c0 = vu.cycle;
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    let eat = |h: &mut u64, b: &[u8]| {
+        for x in b {
+            *h ^= *x as u64;
+            *h = h.wrapping_mul(0x100_0000_01b3);
+        }
+    };
+    let mut kh: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut nk = 0u64;
+    vu.run(4_000_000, &mut |p: &[Qword]| {
+        nk += 1;
+        for q in p {
+            eat(&mut kh, &q.to_le_bytes());
+        }
+        eat(&mut kh, &(p.len() as u64).to_le_bytes());
+    });
+    let e = ArchState::of(&vu);
+    eat(&mut h, &kh.to_le_bytes());
+    eat(&mut h, &nk.to_le_bytes());
+    for v in e.vf.iter().chain(std::iter::once(&e.acc)) {
+        for x in v {
+            eat(&mut h, &x.to_le_bytes());
+        }
+    }
+    for x in e.vi {
+        eat(&mut h, &x.to_le_bytes());
+    }
+    for x in [e.q, e.p, e.i, e.r, e.mac, e.status, e.clip, e.tpc, vu.vis_mac, vu.vis_status, vu.vis_clip] {
+        eat(&mut h, &x.to_le_bytes());
+    }
+    eat(&mut h, &vu.data);
+    for x in [vu.pairs, vu.errors, vu.running as u64] {
+        eat(&mut h, &x.to_le_bytes());
+    }
+    let values = h;
+    eat(&mut h, &(vu.cycle - c0).to_le_bytes());
+    (h, values, vu.pairs, vu.cycle - c0)
+}
+
+/// Reference run of `r` (with the fix): how many executed Q-wait pairs
+/// found a Q result in flight that was not yet due before the pair, split
+/// into those whose upper op reads Q and the rest (non-NOP uppers only).
+fn qstall_hits(r: &Record) -> (u64, u64) {
+    use ssx3_ps2::vu::decode::{decode_lower, decode_upper, lower_waits_q, Upper};
+    use ssx3_ps2::vu::Src;
+    let mut vu = r.setup();
+    vu.instant_qp = ref_model();
+    vu.budget = 4_000_000;
+    let mut before = (vu.q_pending_ready(), vu.cycle);
+    let (mut q, mut t) = (0u64, 0u64);
+    reference::run_traced(&mut vu, r.pc, &mut |_| {}, &mut |v: &Vu, pc| {
+        let pc = pc as usize;
+        let lo = u32::from_le_bytes(v.code[pc..pc + 4].try_into().unwrap());
+        let hi = u32::from_le_bytes(v.code[pc + 4..pc + 8].try_into().unwrap());
+        let waits = hi & 0x8000_0000 == 0 && lower_waits_q(&decode_lower(lo));
+        // `before.1` is the cycle before begin_pair's VF stall: a superset.
+        if waits && before.0.is_some_and(|rdy| rdy > before.1) {
+            match decode_upper(hi) {
+                Upper::Nop => {}
+                Upper::Fmac { src: Src::Q, .. } => q += 1,
+                _ => t += 1,
+            }
+        }
+        before = (v.q_pending_ready(), v.cycle);
+    });
+    (q, t)
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let cmd = args.get(1).map(String::as_str).unwrap_or("");
@@ -466,46 +543,55 @@ fn main() {
             // produces (kicks, end state, data, pairs, cycles, errors,
             // visible flags). Diff two runs to check a VU change is exact.
             for (i, r) in recs.iter().enumerate() {
-                let c0 = 0u64;
-                let mut vu = r.setup();
-                vu.instant_qp = ref_model();
-                let c0 = c0 + vu.cycle;
-                let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-                let eat = |h: &mut u64, b: &[u8]| {
-                    for x in b {
-                        *h ^= *x as u64;
-                        *h = h.wrapping_mul(0x100_0000_01b3);
-                    }
-                };
-                let mut kh: u64 = 0xcbf2_9ce4_8422_2325;
-                let mut nk = 0u64;
-                vu.run(4_000_000, &mut |p: &[Qword]| {
-                    nk += 1;
-                    for q in p {
-                        eat(&mut kh, &q.to_le_bytes());
-                    }
-                    eat(&mut kh, &(p.len() as u64).to_le_bytes());
-                });
-                let e = ArchState::of(&vu);
-                eat(&mut h, &kh.to_le_bytes());
-                eat(&mut h, &nk.to_le_bytes());
-                for v in e.vf.iter().chain(std::iter::once(&e.acc)) {
-                    for x in v {
-                        eat(&mut h, &x.to_le_bytes());
-                    }
-                }
-                for x in e.vi {
-                    eat(&mut h, &x.to_le_bytes());
-                }
-                for x in [e.q, e.p, e.i, e.r, e.mac, e.status, e.clip, e.tpc, vu.vis_mac, vu.vis_status, vu.vis_clip] {
-                    eat(&mut h, &x.to_le_bytes());
-                }
-                eat(&mut h, &vu.data);
-                for x in [vu.pairs, vu.cycle - c0, vu.errors, vu.running as u64] {
-                    eat(&mut h, &x.to_le_bytes());
-                }
-                println!("{i} {h:016x} pairs {} cycles {}", vu.pairs, vu.cycle - c0);
+                let (h, _, pairs, cycles) = digest(r, true);
+                println!("{i} {h:016x} pairs {pairs} cycles {cycles}");
             }
+        }
+        "qstall" => {
+            // The pair Q-stall fix (race-geometry.md): replay every record
+            // with and without it and check that only records that run a
+            // WAITQ/DIV/SQRT/RSQRT pair with a pending, not yet due Q result
+            // change, and that values (not just cycles) change only where
+            // that pair's upper op reads Q.
+            let verbose = args.iter().any(|a| a == "-v");
+            let (mut n, mut same, mut cyc_only, mut val) = (0, 0, 0, 0);
+            let (mut bad, mut hit_q, mut hit_t, mut hit_q_same) = (0, 0, 0, 0);
+            for (i, r) in recs.iter().enumerate() {
+                n += 1;
+                let (h1, v1, ..) = digest(r, true);
+                let (h0, v0, ..) = digest(r, false);
+                let (q, t) = qstall_hits(r);
+                if q > 0 {
+                    hit_q += 1;
+                } else if t > 0 {
+                    hit_t += 1;
+                }
+                if h1 == h0 {
+                    same += 1;
+                    if q > 0 {
+                        hit_q_same += 1;
+                    }
+                } else if v1 == v0 {
+                    cyc_only += 1;
+                    if q + t == 0 {
+                        bad += 1;
+                        println!("record {i}: cycles changed but no stalling Q-wait pair");
+                    }
+                } else {
+                    val += 1;
+                    if q == 0 {
+                        bad += 1;
+                        println!("record {i}: values changed but no Q-reading Q-wait pair stalled");
+                    }
+                }
+                if verbose && (q + t > 0 || h1 != h0) {
+                    println!("record {i} pc {:#06x}: q-read stalls {q}, other stalls {t}, changed {}", r.pc, h1 != h0);
+                }
+            }
+            println!("{n} records: {same} identical, {cyc_only} cycles only, {val} values");
+            println!("  run a stalling Q-wait pair whose upper reads Q: {hit_q} ({hit_q_same} of them identical)");
+            println!("  run only stalling Q-wait pairs with other uppers: {hit_t}");
+            println!("  unexplained: {bad}");
         }
         "bench" => {
             // VU-only throughput: replay every record `iters` times.
