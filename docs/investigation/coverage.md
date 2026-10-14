@@ -29,4 +29,17 @@ cursor), Previews, Online.
 | Peaks 2 and 3, their events | `2850:0010:6` (Up) before the peak Cross: "LOCKED: Get a Peak 2 pass in Conquer the Mountain mode" | ⬜ needs career progress (win passes in Conquer The Mountain) or a progressed save |
 | Peak 1 Freestyle events: R&B (slopestyle), Crow's Nest (Big Air), The Junction (Super Pipe), Happiness Jam | Freestyle, then Down ×k (40 frames apart) after 3150 | ✅ all four, no misses; Big Air runs to its "Final run" card (`coverage-peak1-freestyle.png`) |
 | Career progression (events in Conquer The Mountain, unlocks, shop) | | ⬜ |
-| Replays, records, "Next event", "Restart" from results | | ⬜ |
+| Results → Replay | race script to 20000, then `20100:0040:6,20200:4000:8` | ✅ replay viewer (web-cam, help overlay), no misses |
+| Records, "Next event", "Restart" from results | | ⬜ |
+
+## Progressed save (2026-10-15)
+
+`saves/ssx-3.28551.xps` (SharkPort export of `BASLUS-20772-GAM0001`, found
+online by the owner; Conquer The Mountain complete) was imported into a fresh
+card with mymcplus (`pip install mymcplus`; `mymcplus card.ps2 format`, then
+`mymcplus card.ps2 import save.xps`) and installed as `saves/ssx3-mc0.ps2`
+(the previous, unformatted card is kept as `saves/ssx3-mc0.ps2.bak-*`). The
+game loads it at boot: character select defaults to Mac with all stats 11.0,
+Peak 2/3 unlocked. Scripted runs now navigate one screen the same way as
+before (same Cross timings). With all peaks open in Single Event, peaks 2/3
+are covered through free play instead of career mode.
