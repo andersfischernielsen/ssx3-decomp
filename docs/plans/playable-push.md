@@ -130,3 +130,10 @@ Runtime misses are appended to `generated/entries.txt` automatically; rerun
   invocations (`vu-differential.md`): fixed I-bit ordering (upper reads the old I),
   MAX/MINI raw-bit semantics (integer vertex colours were zeroed: course now
   shaded), VI-backup default; `SSX3_RTC` pins the clock for reproducible runs.
+- **Race and menu textures fixed: PATH3 masking** (`race-textures.md`). SSX 3
+  queues each frame's texture uploads in one GIF DMA chain and releases one
+  packet per `MSKPATH3 0`/`MSKPATH3 1` pulse in the VIF1 stream. All of them
+  used to land at once, so draws sampled the last texture uploaded to a
+  shared VRAM slot through their own CLUT (noise on the race walls, the
+  smeared sky panel, wrong menu images). New debug tools:
+  `gs_replay --draws`, `SSX3_TRACE_PATH3`.

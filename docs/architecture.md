@@ -48,6 +48,7 @@ natively.
 | EE generator, threading modes, structured output | `investigation/recompiler-v2.md` |
 | function names (Ghidra passes) | `investigation/naming.md` |
 | GS, performance, capture/replay | `investigation/gs.md`, `investigation/gs-performance.md` |
+| texture streaming, PATH3 masking | `investigation/race-textures.md` |
 | VU/VIF, microcode translation | `investigation/vu-vif.md` |
 | IPU (movies) | `investigation/ipu.md` |
 | IOP recompilation, SPU2 audio | `investigation/iop-audio.md` |

@@ -167,7 +167,8 @@ VCALLMS and VCALLMSR.
 - **Registers:** STAT (DBF, FQC, VPS, MRK, VIS, INT, ER1), FBRST (RST, STP,
   STC), ERR, MARK, CYCLE, MODE, NUM, MASK, CODE, ITOPS, BASE, OFST, TOPS,
   ITOP, TOP, R0–R3 and C0–C3, at the documented offsets.
-- **Commands:** NOP, STCYCL, OFFSET, BASE, ITOP, STMOD, MSKPATH3 (recorded),
+- **Commands:** NOP, STCYCL, OFFSET, BASE, ITOP, STMOD, MSKPATH3 (VIF1: masks
+  PATH3 in the GS, `race-textures.md`),
   MARK, FLUSHE, FLUSH, FLUSHA (no-ops), MSCAL, MSCALF, MSCNT, STMASK, STROW,
   STCOL, MPG (calls `Vu::write_code`), DIRECT/DIRECTHL (`gs.gif_write(2, ..)`,
   VIF1 only) and UNPACK.
@@ -194,7 +195,8 @@ VCALLMS and VCALLMSR.
 - **Not modelled:**
   - the M, D and T upper bits (debug breaks)
   - VU0's view of VU1 registers at 0x4000
-  - XGKICK/PATH3 arbitration
+  - XGKICK/PATH3 arbitration (MSKPATH3 masking is modelled; packet-level
+    interleaving is not)
   - integer-register latencies
   - stalls on ACC
 - **Timing differences from PCSX2:** the stall model is per VF field with
