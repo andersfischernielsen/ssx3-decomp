@@ -71,7 +71,7 @@ pub fn refresh(c: &mut Cpu) {
         d[0] = 0;
         d[1] = 0x73;
         d[2..4].copy_from_slice(&buttons.to_le_bytes());
-        d[4..8].copy_from_slice(&[0x80, 0x80, 0x80, 0x80]);
+        d[4..8].copy_from_slice(&c.sif.pad_sticks[(p.port & 1) as usize]);
         d[0x58..0x5c].copy_from_slice(&frame.to_le_bytes());
         d[0x60..0x64].copy_from_slice(&32u32.to_le_bytes());
         d[0x64] = 2; // modeConfig: mode table available
@@ -99,4 +99,9 @@ pub fn set_button(c: &mut Cpu, port: usize, bit: u16, pressed: bool) {
     } else {
         *b &= !bit;
     }
+}
+
+/// Host input: an analog stick axis (`axis` 0..4 = rx, ry, lx, ly; 0x80 = centre).
+pub fn set_stick(c: &mut Cpu, port: usize, axis: usize, value: u8) {
+    c.sif.pad_sticks[port & 1][axis & 3] = value;
 }

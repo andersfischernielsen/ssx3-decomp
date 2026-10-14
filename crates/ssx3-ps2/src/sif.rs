@@ -46,6 +46,8 @@ pub struct Sif {
     pub unknown_servers: BTreeMap<u32, u32>,
     /// Host pad state (active-high button bits) per port.
     pub pad_buttons: [u16; 2],
+    /// Host analog sticks per port: rx, ry, lx, ly (0x80 = centre).
+    pub pad_sticks: [[u8; 4]; 2],
     pub loadfile_version: [u8; 4],
     pub pads: Vec<crate::pad::OpenPort>,
     pub pad_frame: u32,
@@ -83,6 +85,7 @@ impl Sif {
             loaded_modules: Vec::new(),
             unknown_servers: BTreeMap::new(),
             pad_buttons: [0; 2],
+            pad_sticks: [[0x80; 4]; 2],
             loadfile_version: *b"3000",
             pads: Vec::new(),
             pad_frame: 0,

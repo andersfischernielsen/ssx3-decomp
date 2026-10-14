@@ -20,7 +20,7 @@
 //!
 //! Buttons come from the host as the libpad bit layout, active high
 //! (bit 0 Select … bit 15 Square); on the wire they are active low, low byte
-//! first. Sticks are centred (no analog input from the host yet).
+//! first. Sticks come from the host too (`sticks`, 0x80 = centre).
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {

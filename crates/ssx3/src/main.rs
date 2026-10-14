@@ -5,6 +5,7 @@
 //!
 //! Keys (pad 1): arrows = d-pad, X = Cross, Z = Square, S = Circle, A = Triangle,
 //! Enter = Start, Right Shift = Select, Q/W = L1/R1, 1/2 = L2/R2.
+//! Game controllers (via gilrs) map to pad 1 too, analog sticks included.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -32,6 +33,74 @@ struct App {
     exit_after: Option<u64>,
     shots: u64,
     fps_mark: Instant,
+    /// Pad 1 buttons held on the keyboard / on a game controller (libpad bits).
+    keys: u16,
+    gilrs: Option<gilrs::Gilrs>,
+}
+
+/// libpad button bit for a controller button.
+fn gamepad_bit(b: gilrs::Button) -> Option<u16> {
+    use gilrs::Button::*;
+    Some(match b {
+        Select => 1 << 0,
+        LeftThumb => 1 << 1,
+        RightThumb => 1 << 2,
+        Start => 1 << 3,
+        DPadUp => 1 << 4,
+        DPadRight => 1 << 5,
+        DPadDown => 1 << 6,
+        DPadLeft => 1 << 7,
+        LeftTrigger2 => 1 << 8,
+        RightTrigger2 => 1 << 9,
+        LeftTrigger => 1 << 10,
+        RightTrigger => 1 << 11,
+        North => 1 << 12,
+        East => 1 << 13,
+        South => 1 << 14,
+        West => 1 << 15,
+        _ => return None,
+    })
+}
+
+impl App {
+    /// Merge keyboard and controller state into pad 1.
+    fn update_pad(&mut self) {
+        let mut buttons = self.keys;
+        let mut sticks = [0x80u8; 4];
+        if let Some(g) = self.gilrs.as_mut() {
+            while g.next_event().is_some() {}
+            if let Some((_, pad)) = g.gamepads().next() {
+                for (b, bit) in [
+                    gilrs::Button::Select, gilrs::Button::LeftThumb, gilrs::Button::RightThumb,
+                    gilrs::Button::Start, gilrs::Button::DPadUp, gilrs::Button::DPadRight,
+                    gilrs::Button::DPadDown, gilrs::Button::DPadLeft, gilrs::Button::LeftTrigger2,
+                    gilrs::Button::RightTrigger2, gilrs::Button::LeftTrigger, gilrs::Button::RightTrigger,
+                    gilrs::Button::North, gilrs::Button::East, gilrs::Button::South, gilrs::Button::West,
+                ]
+                .into_iter()
+                .filter_map(|b| gamepad_bit(b).map(|bit| (b, bit)))
+                {
+                    if pad.is_pressed(b) {
+                        buttons |= bit;
+                    }
+                }
+                // PS2 sticks: 0 = left/up, 0xFF = right/down; gilrs Y is up-positive.
+                let axis = |a: gilrs::Axis, flip: bool| {
+                    let v = pad.value(a);
+                    let v = if flip { -v } else { v };
+                    ((v.clamp(-1.0, 1.0) * 127.5) + 127.5).round() as u8
+                };
+                sticks = [
+                    axis(gilrs::Axis::RightStickX, false),
+                    axis(gilrs::Axis::RightStickY, true),
+                    axis(gilrs::Axis::LeftStickX, false),
+                    axis(gilrs::Axis::LeftStickY, true),
+                ];
+            }
+        }
+        self.cpu.sif.pad_buttons[0] = buttons;
+        self.cpu.sif.pad_sticks[0] = sticks;
+    }
 }
 
 fn pad_bit(k: KeyCode) -> Option<u16> {
@@ -87,12 +156,16 @@ impl ApplicationHandler for App {
                         eprintln!("screenshot: {path}");
                     }
                     if let Some(bit) = pad_bit(code) {
-                        let pressed = event.state == ElementState::Pressed;
-                        ssx3_ps2::pad::set_button(&mut self.cpu, 0, bit, pressed);
+                        if event.state == ElementState::Pressed {
+                            self.keys |= bit;
+                        } else {
+                            self.keys &= !bit;
+                        }
                     }
                 }
             }
             WindowEvent::RedrawRequested => {
+                self.update_pad();
                 let alive = ssx3_ps2::machine::run_frame(&mut self.cpu);
                 if self.cpu.sched.frames % 60 == 0 {
                     eprintln!("[{:6.1}s] {}", self.started.elapsed().as_secs_f64(), game::status(&self.cpu));
@@ -166,6 +239,8 @@ fn main() {
         exit_after: std::env::var("SSX3_EXIT_AFTER_FRAMES").ok().and_then(|s| s.parse().ok()),
         shots: 0,
         fps_mark: Instant::now(),
+        keys: 0,
+        gilrs: gilrs::Gilrs::new().map_err(|e| eprintln!("no game controller support: {e}")).ok(),
     };
     if let Err(e) = event_loop.run_app(&mut app) {
         eprintln!("event loop error: {e}");

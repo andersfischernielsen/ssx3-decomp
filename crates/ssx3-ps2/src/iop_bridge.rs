@@ -82,8 +82,9 @@ fn with_iop<R>(c: &mut Cpu, f: impl FnOnce(&mut Iop) -> R) -> Option<R> {
     std::mem::swap(&mut c.bus.iop, &mut side.iop.ram);
     side.iop.ee_ram = c.bus.ram.as_ptr();
     side.iop.ee_ram_len = c.bus.ram.len();
-    for (pad, &b) in side.iop.sio2.pads.iter_mut().zip(c.sif.pad_buttons.iter()) {
-        pad.buttons = b;
+    for (i, pad) in side.iop.sio2.pads.iter_mut().enumerate().take(2) {
+        pad.buttons = c.sif.pad_buttons[i];
+        pad.sticks = c.sif.pad_sticks[i];
     }
     let r = f(&mut side.iop);
     side.iop.ee_ram = std::ptr::null();
