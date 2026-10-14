@@ -53,7 +53,8 @@ fn main() {
             .runs(f.address)
             .map(|r| r.to_vec())
             .unwrap_or_else(|| vec![(f.address, f.end)]);
-        funcs.push(Func { start: f.address, end: f.end, runs });
+        let name = (!f.is_auto_named()).then(|| f.name.to_string());
+        funcs.push(Func { start: f.address, end: f.end, runs, name });
     }
     funcs.sort_by_key(|f| f.start);
 
@@ -117,7 +118,7 @@ fn main() {
     let discovered = new_entries.len();
     for e in new_entries {
         if !covered(&funcs, e) {
-            funcs.push(Func { start: e, end: e, runs: Vec::new() });
+            funcs.push(Func { start: e, end: e, runs: Vec::new(), name: None });
         }
     }
     funcs.sort_by_key(|f| f.start);
@@ -189,6 +190,18 @@ fn main() {
             totals.invalid += st.invalid;
             totals.labels += st.labels;
             code.push('\n');
+        }
+        // Readable aliases for recovered names.
+        let mut seen = BTreeSet::new();
+        for f in funcs.iter().filter(|f| shard_of[&f.start] == s) {
+            if let Some(n) = &f.name {
+                let ok = n.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+                    && n.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                    && !n.starts_with("f_");
+                if ok && seen.insert(n.clone()) {
+                    let _ = writeln!(code, "pub use self::{} as {n};", fn_name(f.start));
+                }
+            }
         }
         bytes += code.len();
         fs::write(dir.join("src/lib.rs"), code).unwrap();

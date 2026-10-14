@@ -10475,7 +10475,7 @@
 "end": "001a279c"
 },
 {
-"name": "FUN_001a27a0",
+"name": "ssx_BootMoviesUpdate",
 "address": "001a27a0",
 "end": "001a2b00"
 },
@@ -18650,12 +18650,12 @@
 "end": "00226830"
 },
 {
-"name": "FUN_00226830",
+"name": "SSXApp_ctor",
 "address": "00226830",
 "end": "00226900"
 },
 {
-"name": "FUN_00226900",
+"name": "SSXApp_Init",
 "address": "00226900",
 "end": "00226b60"
 },
@@ -18680,7 +18680,7 @@
 "end": "00227f58"
 },
 {
-"name": "FUN_00227f58",
+"name": "SSXApp_Tick",
 "address": "00227f58",
 "end": "00227f7c"
 },
@@ -18710,7 +18710,7 @@
 "end": "002282cc"
 },
 {
-"name": "FUN_002282d0",
+"name": "SSXApp_BootLoad",
 "address": "002282d0",
 "end": "00228a74"
 },
@@ -18730,7 +18730,7 @@
 "end": "00228ee0"
 },
 {
-"name": "FUN_00228ee0",
+"name": "ssx_LoadNetModules",
 "address": "00228ee0",
 "end": "00229180"
 },
@@ -19310,12 +19310,12 @@
 "end": "00232324"
 },
 {
-"name": "FUN_00232328",
+"name": "PreStartScreen_ctor",
 "address": "00232328",
 "end": "00232344"
 },
 {
-"name": "FUN_00232348",
+"name": "PreStartScreen_Update",
 "address": "00232348",
 "end": "00232488"
 },
@@ -19330,12 +19330,12 @@
 "end": "00232568"
 },
 {
-"name": "FUN_00232568",
+"name": "InitLoadScreen_Enter",
 "address": "00232568",
 "end": "00232588"
 },
 {
-"name": "FUN_00232588",
+"name": "InitLoadScreen_Update",
 "address": "00232588",
 "end": "00232650"
 },
@@ -19385,7 +19385,7 @@
 "end": "00232ae0"
 },
 {
-"name": "FUN_00232ae0",
+"name": "StartScreen_ctor",
 "address": "00232ae0",
 "end": "00232b28"
 },
@@ -38375,7 +38375,7 @@
 "end": "00316bdc"
 },
 {
-"name": "FUN_00316cd0",
+"name": "App_ctor",
 "address": "00316cd0",
 "end": "00316d24"
 },
@@ -38385,12 +38385,12 @@
 "end": "00316d5c"
 },
 {
-"name": "FUN_00316d60",
+"name": "App_Run_MainLoop",
 "address": "00316d60",
 "end": "00316ef8"
 },
 {
-"name": "FUN_00316ef8",
+"name": "App_SetNextState",
 "address": "00316ef8",
 "end": "00316f00"
 },
@@ -38410,7 +38410,7 @@
 "end": "00317348"
 },
 {
-"name": "FUN_00317348",
+"name": "App_VSyncTick",
 "address": "00317348",
 "end": "003173fc"
 },
@@ -38555,7 +38555,7 @@
 "end": "00317d70"
 },
 {
-"name": "FUN_00317d70",
+"name": "EA_MemAllocNamed",
 "address": "00317d70",
 "end": "00317e30"
 },
@@ -38845,7 +38845,7 @@
 "end": "0031960c"
 },
 {
-"name": "FUN_00319610",
+"name": "ssx_IopInit",
 "address": "00319610",
 "end": "00319660"
 },
@@ -38855,12 +38855,12 @@
 "end": "0031968c"
 },
 {
-"name": "FUN_00319690",
+"name": "ssx_BuildModulePath",
 "address": "00319690",
 "end": "00319718"
 },
 {
-"name": "FUN_00319718",
+"name": "ssx_LoadIopModule",
 "address": "00319718",
 "end": "00319790"
 },
@@ -38880,7 +38880,7 @@
 "end": "0031981c"
 },
 {
-"name": "FUN_00319820",
+"name": "ssx_IopReboot",
 "address": "00319820",
 "end": "003198a0"
 },
@@ -38890,7 +38890,7 @@
 "end": "00319910"
 },
 {
-"name": "FUN_00319930",
+"name": "ssx_InstallPowerOffHandler",
 "address": "00319930",
 "end": "003199d0"
 },
@@ -38985,7 +38985,7 @@
 "end": "0031a48c"
 },
 {
-"name": "FUN_0031a490",
+"name": "PS2ExecMan_VBlankEndIntc",
 "address": "0031a490",
 "end": "0031a6b8"
 },
@@ -38995,7 +38995,7 @@
 "end": "0031a6d8"
 },
 {
-"name": "FUN_0031a6d8",
+"name": "PS2ExecMan_Init",
 "address": "0031a6d8",
 "end": "0031a91c"
 },
@@ -39015,7 +39015,7 @@
 "end": "0031aa54"
 },
 {
-"name": "FUN_0031aa58",
+"name": "PS2ExecMan_WaitFrame",
 "address": "0031aa58",
 "end": "0031aac8"
 },
@@ -39035,17 +39035,17 @@
 "end": "0031ab30"
 },
 {
-"name": "FUN_0031abd0",
+"name": "PS2ExecMan_VBlankSignal",
 "address": "0031abd0",
 "end": "0031ac04"
 },
 {
-"name": "FUN_0031ac08",
+"name": "PS2ExecMan_VSyncThread",
 "address": "0031ac08",
 "end": "0031ac5c"
 },
 {
-"name": "FUN_0031ac60",
+"name": "PS2ExecMan_WorkerThread",
 "address": "0031ac60",
 "end": "0031acd4"
 },
@@ -39065,12 +39065,12 @@
 "end": "0031adb0"
 },
 {
-"name": "FUN_0031adb0",
+"name": "ssx_SystemInit",
 "address": "0031adb0",
 "end": "0031af7c"
 },
 {
-"name": "FUN_0031af80",
+"name": "ssx_main",
 "address": "0031af80",
 "end": "0031b008"
 },
@@ -44500,7 +44500,7 @@
 "end": "00375a3c"
 },
 {
-"name": "FUN_00375a40",
+"name": "Renderer_Init",
 "address": "00375a40",
 "end": "00376264"
 },
@@ -44640,7 +44640,7 @@
 "end": "0037bd94"
 },
 {
-"name": "FUN_0037bd98",
+"name": "Renderer_SetDisplayMode",
 "address": "0037bd98",
 "end": "0037c194"
 },
@@ -44835,7 +44835,7 @@
 "end": "003825c0"
 },
 {
-"name": "FUN_003825c0",
+"name": "Renderer_VBlankStartIntc",
 "address": "003825c0",
 "end": "003825f4"
 },
@@ -44845,7 +44845,7 @@
 "end": "0038264c"
 },
 {
-"name": "FUN_00382650",
+"name": "Renderer_Vif1DmacHandler",
 "address": "00382650",
 "end": "00382684"
 },
@@ -44870,12 +44870,12 @@
 "end": "0038275c"
 },
 {
-"name": "FUN_00382760",
+"name": "Renderer_DmaKickThread",
 "address": "00382760",
 "end": "00382af0"
 },
 {
-"name": "FUN_00382af0",
+"name": "Renderer_SetDisplayRegs",
 "address": "00382af0",
 "end": "00383770"
 },
@@ -48840,7 +48840,7 @@
 "end": "003b5154"
 },
 {
-"name": "FUN_003b5158",
+"name": "SND_Init",
 "address": "003b5158",
 "end": "003b531c"
 },
@@ -49780,7 +49780,7 @@
 "end": "003c1b7c"
 },
 {
-"name": "FUN_003c1b80",
+"name": "SND_IopInit",
 "address": "003c1b80",
 "end": "003c2264"
 },
@@ -52000,12 +52000,12 @@
 "end": "003dcbd8"
 },
 {
-"name": "FUN_003dcbd8",
+"name": "EAFile_Startup",
 "address": "003dcbd8",
 "end": "003dcc84"
 },
 {
-"name": "FUN_003dcc88",
+"name": "EAFile_Init",
 "address": "003dcc88",
 "end": "003dcd94"
 },
@@ -52130,7 +52130,7 @@
 "end": "003dde74"
 },
 {
-"name": "FUN_003dde78",
+"name": "EAFile_SetRootPath",
 "address": "003dde78",
 "end": "003ddf80"
 },
@@ -52140,7 +52140,7 @@
 "end": "003ddfa4"
 },
 {
-"name": "FUN_003ddfa8",
+"name": "EAFile_ServiceQueue",
 "address": "003ddfa8",
 "end": "003de41c"
 },
@@ -52680,7 +52680,7 @@
 "end": "003e2768"
 },
 {
-"name": "FUN_003e2768",
+"name": "EAFile_BigFindEntry",
 "address": "003e2768",
 "end": "003e2cdc"
 },
@@ -52745,12 +52745,12 @@
 "end": "003e3098"
 },
 {
-"name": "FUN_003e3098",
+"name": "EAFile_ResolvePath",
 "address": "003e3098",
 "end": "003e3208"
 },
 {
-"name": "FUN_003e3208",
+"name": "EAFile_PlatformOpen",
 "address": "003e3208",
 "end": "003e32f4"
 },
@@ -52760,7 +52760,7 @@
 "end": "003e3350"
 },
 {
-"name": "FUN_003e3350",
+"name": "EAFile_PlatformRead",
 "address": "003e3350",
 "end": "003e33ac"
 },
@@ -52820,12 +52820,12 @@
 "end": "003e3afc"
 },
 {
-"name": "FUN_003e3b00",
+"name": "EAFile_CdIssueRead",
 "address": "003e3b00",
 "end": "003e3bdc"
 },
 {
-"name": "FUN_003e3be0",
+"name": "EAFile_CdReadThread",
 "address": "003e3be0",
 "end": "003e3d74"
 },
@@ -52840,7 +52840,7 @@
 "end": "003e403c"
 },
 {
-"name": "FUN_003e4040",
+"name": "EAFile_CdInit",
 "address": "003e4040",
 "end": "003e44b0"
 },
@@ -52850,12 +52850,12 @@
 "end": "003e4508"
 },
 {
-"name": "FUN_003e4508",
+"name": "EAFile_CdLookup",
 "address": "003e4508",
 "end": "003e4648"
 },
 {
-"name": "FUN_003e4648",
+"name": "EAFile_CdRead",
 "address": "003e4648",
 "end": "003e48d8"
 },
@@ -52885,7 +52885,7 @@
 "end": "003e4aa0"
 },
 {
-"name": "FUN_003e4af0",
+"name": "EATimer_Init",
 "address": "003e4af0",
 "end": "003e4d64"
 },
@@ -52945,7 +52945,7 @@
 "end": "003e5098"
 },
 {
-"name": "FUN_003e50c8",
+"name": "EAThread_Create",
 "address": "003e50c8",
 "end": "003e519c"
 },
@@ -53040,7 +53040,7 @@
 "end": "003e5928"
 },
 {
-"name": "FUN_003e5928",
+"name": "EATimer_ServiceCallbacks",
 "address": "003e5928",
 "end": "003e5a10"
 },
@@ -55175,12 +55175,12 @@
 "end": "003fd80c"
 },
 {
-"name": "FUN_003fd910",
+"name": "sceGsResetGraph",
 "address": "003fd910",
 "end": "003fdaa0"
 },
 {
-"name": "FUN_003fdaa0",
+"name": "sceGsGetGParam",
 "address": "003fdaa0",
 "end": "003fdaac"
 },
@@ -55405,7 +55405,7 @@
 "end": "003ff4a4"
 },
 {
-"name": "FUN_003ff4a8",
+"name": "scePadInit",
 "address": "003ff4a8",
 "end": "003ff5e8"
 },
@@ -55420,7 +55420,7 @@
 "end": "003ff708"
 },
 {
-"name": "FUN_003ff708",
+"name": "scePadPortOpen",
 "address": "003ff708",
 "end": "003ff8ec"
 },
@@ -55435,7 +55435,7 @@
 "end": "003ffa08"
 },
 {
-"name": "FUN_003ffa58",
+"name": "scePadRead",
 "address": "003ffa58",
 "end": "003ffbbc"
 },
@@ -55535,7 +55535,7 @@
 "end": "004008a0"
 },
 {
-"name": "FUN_004008a0",
+"name": "sceCdCallback",
 "address": "004008a0",
 "end": "00400908"
 },
@@ -55550,7 +55550,7 @@
 "end": "00400a78"
 },
 {
-"name": "FUN_00400a78",
+"name": "sceCdInitEeCB",
 "address": "00400a78",
 "end": "00400b44"
 },
@@ -55565,7 +55565,7 @@
 "end": "00400d58"
 },
 {
-"name": "FUN_00400d58",
+"name": "sceCdPOffCallback",
 "address": "00400d58",
 "end": "00400dd8"
 },
@@ -55580,7 +55580,7 @@
 "end": "00400ea8"
 },
 {
-"name": "FUN_00400ea8",
+"name": "sceCdSearchFile",
 "address": "00400ea8",
 "end": "004011bc"
 },
@@ -55600,7 +55600,7 @@
 "end": "004013e8"
 },
 {
-"name": "FUN_004013e8",
+"name": "sceCdSync",
 "address": "004013e8",
 "end": "00401488"
 },
@@ -55615,7 +55615,7 @@
 "end": "00401668"
 },
 {
-"name": "FUN_00401718",
+"name": "sceCdInit",
 "address": "00401718",
 "end": "004019f8"
 },
@@ -55630,7 +55630,7 @@
 "end": "00401df4"
 },
 {
-"name": "FUN_00401df8",
+"name": "sceCdRead",
 "address": "00401df8",
 "end": "00401fd8"
 },
@@ -55640,7 +55640,7 @@
 "end": "00402268"
 },
 {
-"name": "FUN_00402268",
+"name": "sceCdGetDiskType",
 "address": "00402268",
 "end": "00402300"
 },
@@ -55655,12 +55655,12 @@
 "end": "0040244c"
 },
 {
-"name": "FUN_00402450",
+"name": "sceCdMmode",
 "address": "00402450",
 "end": "00402520"
 },
 {
-"name": "FUN_00402520",
+"name": "sceCdReadClock",
 "address": "00402520",
 "end": "00402618"
 },
@@ -56085,7 +56085,7 @@
 "end": "00408ca8"
 },
 {
-"name": "FUN_00408df0",
+"name": "libmpeg_IpuCscDma",
 "address": "00408df0",
 "end": "00408fb0"
 },
@@ -56130,7 +56130,7 @@
 "end": "00409940"
 },
 {
-"name": "FUN_00409940",
+"name": "sceMcInit",
 "address": "00409940",
 "end": "00409b0c"
 },
@@ -56610,12 +56610,12 @@
 "end": "0040fbdc"
 },
 {
-"name": "FUN_0040fbe0",
+"name": "__do_global_ctors",
 "address": "0040fbe0",
 "end": "0040fc90"
 },
 {
-"name": "FUN_0040fc90",
+"name": "__main",
 "address": "0040fc90",
 "end": "0040fcb0"
 },
@@ -58325,22 +58325,22 @@
 "end": "00424854"
 },
 {
-"name": "FUN_00424880",
+"name": "DisableIntc",
 "address": "00424880",
 "end": "004248e8"
 },
 {
-"name": "FUN_004248e8",
+"name": "EnableIntc",
 "address": "004248e8",
 "end": "00424950"
 },
 {
-"name": "FUN_00424950",
+"name": "DisableDmac",
 "address": "00424950",
 "end": "004249b8"
 },
 {
-"name": "FUN_004249b8",
+"name": "EnableDmac",
 "address": "004249b8",
 "end": "00424a20"
 },
@@ -58370,7 +58370,7 @@
 "end": "00424b78"
 },
 {
-"name": "FUN_00424b78",
+"name": "libkernl_InitThreadHelper",
 "address": "00424b78",
 "end": "00424c4c"
 },
@@ -58470,7 +58470,7 @@
 "end": "00425d08"
 },
 {
-"name": "FUN_00425d38",
+"name": "sceSifInitCmd",
 "address": "00425d38",
 "end": "00425fb8"
 },
@@ -58485,7 +58485,7 @@
 "end": "00426008"
 },
 {
-"name": "FUN_00426020",
+"name": "sceSifAddCmdHandler",
 "address": "00426020",
 "end": "0042604c"
 },
@@ -58500,7 +58500,7 @@
 "end": "004261ac"
 },
 {
-"name": "FUN_004261b0",
+"name": "sceSifSendCmd",
 "address": "004261b0",
 "end": "004261ec"
 },
@@ -58520,7 +58520,7 @@
 "end": "00426404"
 },
 {
-"name": "FUN_00426408",
+"name": "sceSifInitRpc",
 "address": "00426408",
 "end": "004265a4"
 },
@@ -58580,12 +58580,12 @@
 "end": "00426b48"
 },
 {
-"name": "FUN_00426b48",
+"name": "sceSifBindRpc",
 "address": "00426b48",
 "end": "00426c88"
 },
 {
-"name": "FUN_00426d18",
+"name": "sceSifCallRpc",
 "address": "00426d18",
 "end": "00426f04"
 },
@@ -58665,7 +58665,7 @@
 "end": "00427a8c"
 },
 {
-"name": "FUN_00427a90",
+"name": "sceFsInit",
 "address": "00427a90",
 "end": "00427c94"
 },
@@ -58680,27 +58680,27 @@
 "end": "00427d5c"
 },
 {
-"name": "FUN_00427d60",
+"name": "sceOpen",
 "address": "00427d60",
 "end": "00427fe4"
 },
 {
-"name": "FUN_00427fe8",
+"name": "sceClose",
 "address": "00427fe8",
 "end": "00428164"
 },
 {
-"name": "FUN_00428168",
+"name": "sceLseek",
 "address": "00428168",
 "end": "004283a0"
 },
 {
-"name": "FUN_004283a0",
+"name": "sceRead",
 "address": "004283a0",
 "end": "00428600"
 },
 {
-"name": "FUN_00428600",
+"name": "sceWrite",
 "address": "00428600",
 "end": "004288c0"
 },
@@ -58820,12 +58820,12 @@
 "end": "0042ab18"
 },
 {
-"name": "FUN_0042ab18",
+"name": "sceSifInitIopHeap",
 "address": "0042ab18",
 "end": "0042aba0"
 },
 {
-"name": "FUN_0042aba0",
+"name": "sceSifAllocIopHeap",
 "address": "0042aba0",
 "end": "0042ac10"
 },
@@ -58875,7 +58875,7 @@
 "end": "0042b064"
 },
 {
-"name": "FUN_0042b068",
+"name": "sceSifLoadFileInit",
 "address": "0042b068",
 "end": "0042b168"
 },
@@ -58905,7 +58905,7 @@
 "end": "0042b6d0"
 },
 {
-"name": "FUN_0042b6d0",
+"name": "sceSifSearchModuleByName",
 "address": "0042b6d0",
 "end": "0042b770"
 },
@@ -58930,7 +58930,7 @@
 "end": "0042ba64"
 },
 {
-"name": "FUN_0042ba68",
+"name": "sceSifLoadModule",
 "address": "0042ba68",
 "end": "0042ba88"
 },
@@ -58970,22 +58970,22 @@
 "end": "0042bf30"
 },
 {
-"name": "FUN_0042bf30",
+"name": "sceSifSyncIop",
 "address": "0042bf30",
 "end": "0042bf68"
 },
 {
-"name": "FUN_0042bf68",
+"name": "sceSifRebootIop",
 "address": "0042bf68",
 "end": "0042c078"
 },
 {
-"name": "FUN_0042c078",
+"name": "DIntr",
 "address": "0042c078",
 "end": "0042c0c0"
 },
 {
-"name": "FUN_0042c0c0",
+"name": "EIntr",
 "address": "0042c0c0",
 "end": "0042c0d8"
 },
@@ -59020,7 +59020,7 @@
 "end": "0042c300"
 },
 {
-"name": "FUN_0042c300",
+"name": "_InitSys",
 "address": "0042c300",
 "end": "0042c33c"
 },
@@ -59175,7 +59175,7 @@
 "end": "0042cc94"
 },
 {
-"name": "RFU086_WaitEvnetFlag",
+"name": "_SetTLBEntry",
 "address": "0042ccb8",
 "end": "0042ccc8"
 },

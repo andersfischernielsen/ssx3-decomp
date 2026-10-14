@@ -34,6 +34,8 @@ pub struct Func {
     pub start: u32,
     pub end: u32,
     pub runs: Vec<(u32, u32)>,
+    /// Recovered symbol name (from Ghidra), if not an auto-generated one.
+    pub name: Option<String>,
 }
 
 pub fn fn_name(addr: u32) -> String {
@@ -555,6 +557,9 @@ pub fn emit_function(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, out: &m
     st.labels = labels.len();
 
     let name = fn_name(f.start);
+    if let Some(sym) = &f.name {
+        let _ = writeln!(out, "/// `{sym}`");
+    }
     let _ = writeln!(out, "pub fn {name}(c: &mut Cpu) {{");
     if labels.len() == 1 && simple_straight(&insns) {
         // Fast path: a single-entry function with no internal labels.
