@@ -140,6 +140,12 @@ on night one (see the log below).
   171 s → 88 s, race frames 4320–4680 40 → 80 fps headless, all 18
   screenshots byte-identical (also with `SSX3_MTGS=0`, the synchronous path).
 
+- MTGS merged (`gs-mtgs.md`): GS on its own host thread. Agent measured the
+  9000-frame run 171 s -> 88 s and race 39.6 -> 80 fps headless, byte-identical
+  with `SSX3_MTGS` on and off. Re-verified after merge on overnight-playable:
+  all 18 shots identical to `long3` (157 s while another agent was compiling).
+  Race is now bound by VU1 + EE, not the GS.
+
 ## Next steps (as of 2026-10-14 evening)
 
 1. Stretched race geometry / dark sky rectangles (agent; `race-geometry.md`).
