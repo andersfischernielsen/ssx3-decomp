@@ -33,10 +33,13 @@ fn repo_root() -> PathBuf {
 
 fn main() {
     let mut shards = 16usize;
+    let mut threads = false;
     let args: Vec<String> = std::env::args().collect();
     let mut i = 1;
     while i < args.len() {
-        if args[i] == "--shards" {
+        if args[i] == "--threads" {
+            threads = true;
+        } else if args[i] == "--shards" {
             shards = args[i + 1].parse().expect("--shards N");
             i += 1;
         }
@@ -163,9 +166,9 @@ fn main() {
 
     // Cross-function branch targets must be labels where they land.
     for f in &funcs {
-        extra.extend(targets(&img, f));
+        extra.extend(targets(&img, f, threads));
     }
-    let ctx = Ctx { shard_of: &shard_of, data_refs: &data_refs, extra_labels: &extra };
+    let ctx = Ctx { shard_of: &shard_of, data_refs: &data_refs, extra_labels: &extra, threads };
     let out_root = root.join("generated/ee");
     let _ = fs::remove_dir_all(&out_root);
     let mut totals = Stats::default();
@@ -232,6 +235,7 @@ fn main() {
         );
     }
     lib.push_str("];\n");
+    let _ = writeln!(lib, "\n/// True when generated for host-thread mode (`ssx3_ps2::threads`).\npub const HOST_THREADS: bool = {threads};");
     fs::write(game.join("src/lib.rs"), lib).unwrap();
 
     println!("functions    : {}", funcs.len());

@@ -491,6 +491,9 @@ pub struct Ctx<'a> {
     pub data_refs: &'a BTreeSet<u32>,
     /// Extra entry points discovered at run time (`generated/entries.txt`).
     pub extra_labels: &'a BTreeSet<u32>,
+    /// Host-thread mode (`ssx3_ps2::threads`): no unwinding, so calls and
+    /// syscalls continue inline and return points are not labels.
+    pub threads: bool,
 }
 
 /// Statistics for one emitted function.
@@ -536,12 +539,12 @@ pub fn emit_function(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, out: &m
                     labels.insert(target);
                 }
             }
-            Ctl::Call { .. } | Ctl::CallReg { .. } => {
+            Ctl::Call { .. } | Ctl::CallReg { .. } if !ctx.threads => {
                 if inside(pc + 8) {
                     labels.insert(pc + 8);
                 }
             }
-            Ctl::Syscall => {
+            Ctl::Syscall if !ctx.threads => {
                 if inside(pc + 4) {
                     labels.insert(pc + 4);
                 }
@@ -651,6 +654,51 @@ pub fn emit_function(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, out: &m
                     tail(target, shard, ctx)
                 }
             };
+            if ctx.threads && matches!(ctl, Ctl::Call { .. } | Ctl::CallReg { .. } | Ctl::Syscall) {
+                let ret = if ctl == Ctl::Syscall { pc + 4 } else { pc + 8 };
+                match ctl {
+                    Ctl::Call { target } => {
+                        let ds = delay_code(&mut st);
+                        let callee = direct_callee(target, shard, ctx);
+                        let _ = writeln!(body, "                c.g[31][0] = sx({ret:#010x});");
+                        if !ds.is_empty() {
+                            let _ = writeln!(body, "                {ds}");
+                        }
+                        let _ = writeln!(
+                            body,
+                            "                c.pc = {target:#010x}; {callee}; if c.pc != {ret:#010x} {{ pc = c.pc; continue; }}"
+                        );
+                    }
+                    Ctl::CallReg { rd, rs } => {
+                        let ds = delay_code(&mut st);
+                        let _ = writeln!(body, "                let t = c.g[{rs}][0] as u32;");
+                        if rd != 0 {
+                            let _ = writeln!(body, "                c.g[{rd}][0] = sx({ret:#010x});");
+                        }
+                        if !ds.is_empty() {
+                            let _ = writeln!(body, "                {ds}");
+                        }
+                        let _ = writeln!(
+                            body,
+                            "                c.pc = t; ssx3_ps2::machine::call_indirect(c, t); if c.pc != {ret:#010x} {{ pc = c.pc; continue; }}"
+                        );
+                    }
+                    _ => {
+                        let _ = writeln!(
+                            body,
+                            "                c.pc = {ret:#010x}; ssx3_ps2::kernel::syscall(c, {pc:#010x}); if c.pc != {ret:#010x} {{ pc = c.pc; continue; }}"
+                        );
+                        let _ = writeln!(body, "                if c.cycles >= c.next_event {{ c.event(); }}");
+                    }
+                }
+                if !inside(ret) {
+                    let _ = writeln!(body, "                {}", tail(ret, shard, ctx));
+                    terminated = true;
+                    break;
+                }
+                i = index[&ret];
+                continue;
+            }
             match ctl {
                 Ctl::Branch { target, likely, link } => {
                     let cond = branch_cond(w);
@@ -773,6 +821,9 @@ fn simple_straight(_insns: &[(u32, u32)]) -> bool {
 /// Code for a tail jump to `target` outside the current function.
 fn tail(target: u32, shard: usize, ctx: &Ctx) -> String {
     let callee = direct_callee(target, shard, ctx);
+    if ctx.threads {
+        return format!("c.pc = {target:#010x}; {callee}; return;");
+    }
     format!(
         "if !c.enter({target:#010x}) {{ return; }} {callee}; c.leave(); return;"
     )
@@ -788,6 +839,9 @@ fn direct_callee(target: u32, shard: usize, ctx: &Ctx) -> String {
 /// Code for a call to `target` returning to `ret`.
 fn call_code(target: u32, ret: u32, shard: usize, ctx: &Ctx, _labels: &BTreeSet<u32>, _f: &Func) -> String {
     let callee = direct_callee(target, shard, ctx);
+    if ctx.threads {
+        return format!("c.pc = {target:#010x}; {callee}; if c.pc != {ret:#010x} {{ pc = c.pc; continue; }}");
+    }
     format!(
         "if !c.enter({target:#010x}) {{ return; }} {callee}; c.leave(); if c.pc != {ret:#010x} {{ return; }}"
     )
@@ -883,7 +937,7 @@ pub fn extend_runs(img: &dyn Image, f: &mut Func, limit: u32, seeds: &BTreeSet<u
 /// Every static control-flow target in `f`: branch and jump targets and
 /// return points. Used to make cross-function targets labels of whichever
 /// function contains them.
-pub fn targets(img: &dyn Image, f: &Func) -> Vec<u32> {
+pub fn targets(img: &dyn Image, f: &Func, threads: bool) -> Vec<u32> {
     let mut out = Vec::new();
     for &(lo, hi) in &f.runs {
         let mut a = lo;
@@ -894,12 +948,18 @@ pub fn targets(img: &dyn Image, f: &Func) -> Vec<u32> {
                         out.push(target);
                         out.push(a + 8);
                     }
-                    Ctl::Jump { target } | Ctl::Call { target } => {
+                    Ctl::Jump { target } => {
                         out.push(target);
                         out.push(a + 8);
                     }
-                    Ctl::CallReg { .. } => out.push(a + 8),
-                    Ctl::Syscall => out.push(a + 4),
+                    Ctl::Call { target } => {
+                        out.push(target);
+                        if !threads {
+                            out.push(a + 8);
+                        }
+                    }
+                    Ctl::CallReg { .. } if !threads => out.push(a + 8),
+                    Ctl::Syscall if !threads => out.push(a + 4),
                     _ => {}
                 }
             }

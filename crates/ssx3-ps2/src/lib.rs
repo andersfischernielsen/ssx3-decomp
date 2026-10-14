@@ -21,6 +21,7 @@ pub mod machine;
 pub mod mmi;
 pub mod pad;
 pub mod sif;
+pub mod threads;
 pub mod vif;
 pub mod vu;
 

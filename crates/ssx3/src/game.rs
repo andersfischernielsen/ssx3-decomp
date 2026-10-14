@@ -13,6 +13,7 @@ pub fn repo_root() -> PathBuf {
 pub fn boot() -> Box<Cpu> {
     machine::register_functions(&ssx3_ee::FUNCTIONS);
     let mut c = Cpu::new();
+    c.kernel.host_threads = ssx3_ee::HOST_THREADS;
     let iso = std::env::var("SSX3_ISO")
         .map(PathBuf::from)
         .unwrap_or_else(|_| repo_root().join("SSX 3 (USA).iso"));

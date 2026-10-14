@@ -136,6 +136,11 @@ pub struct Kernel {
     /// Cycles consumed per thread (profiling).
     pub thread_cycles: BTreeMap<i32, u64>,
     pub last_switch: u64,
+    /// Host-thread mode (see `threads.rs`): guest thread id → baton token of
+    /// its host thread. Token 0 is the main (frame-driving) host thread.
+    pub host_threads: bool,
+    pub tokens: BTreeMap<i32, i32>,
+    pub next_token: i32,
 }
 
 impl Default for Kernel {
@@ -172,6 +177,9 @@ impl Kernel {
             syscall_counts: BTreeMap::new(),
             thread_cycles: BTreeMap::new(),
             last_switch: 0,
+            host_threads: false,
+            tokens: BTreeMap::new(),
+            next_token: 1,
         }
     }
 
@@ -283,7 +291,32 @@ fn switch_to(c: &mut Cpu, next: Option<i32>) {
             }
         }
     }
+    if c.kernel.host_threads {
+        let from = token_of(c, cur);
+        let to = match next {
+            Some(id) => token_or_spawn(c, id),
+            None => 0,
+        };
+        crate::threads::handoff(from, to);
+        return;
+    }
     c.pc |= UNWIND;
+}
+
+/// Baton token of guest thread `id`'s host thread (0 = main host thread).
+pub fn token_of(c: &Cpu, id: i32) -> i32 {
+    c.kernel.tokens.get(&id).copied().unwrap_or(0)
+}
+
+fn token_or_spawn(c: &mut Cpu, id: i32) -> i32 {
+    if let Some(t) = c.kernel.tokens.get(&id) {
+        return *t;
+    }
+    let t = c.kernel.next_token;
+    c.kernel.next_token += 1;
+    c.kernel.tokens.insert(id, t);
+    crate::threads::spawn(c, t);
+    t
 }
 
 pub fn reschedule(c: &mut Cpu) {
@@ -777,6 +810,8 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
             t.priority = t.init_priority;
             t.wakeups = 0;
             t.wait = WaitType::None;
+            // A (re)started thread gets a fresh host thread in host-thread mode.
+            c.kernel.tokens.remove(&id);
             ret(c, id as i64);
             c.kernel.make_ready(id);
             reschedule(c);

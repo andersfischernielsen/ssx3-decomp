@@ -98,6 +98,11 @@ pub fn fatal(c: &mut Cpu, pc: u32, msg: &str) {
         c.kernel.halted = Some(format!("{msg} at {pc:#010x}"));
     }
     c.pc = IDLE | UNWIND;
+    if c.kernel.host_threads && c.kernel.current != 0 {
+        // Park this guest host thread forever; the frame driver sees `halted`.
+        let me = kernel::token_of(c, c.kernel.current);
+        crate::threads::handoff(me, 0);
+    }
 }
 
 /// Called from a generated function whose dispatcher got a `pc` that is not
@@ -211,6 +216,16 @@ pub fn service_events(c: &mut Cpu) -> bool {
     next = next.min(c.cycles + 20_000);
     c.next_event = next;
     let want_frame = c.sched.frame_ready && !c.kernel.in_handler;
+    if c.kernel.host_threads {
+        // Return the baton to the frame driver; resume here next frame.
+        if want_frame && c.kernel.current != 0 {
+            let me = kernel::token_of(c, c.kernel.current);
+            if me != 0 {
+                crate::threads::handoff(me, 0);
+            }
+        }
+        return false;
+    }
     if want_frame {
         c.pc |= UNWIND;
     }
@@ -228,8 +243,43 @@ pub fn set_gs_crt(c: &mut Cpu, interlace: u32, mode: u32, ffmd: u32) {
 /// Returns false once halted.
 pub fn run_frame(c: &mut Cpu) -> bool {
     c.sched.frame_ready = false;
-    trampoline(c, None);
+    if c.kernel.host_threads {
+        run_frame_threads(c);
+    } else {
+        trampoline(c, None);
+    }
     c.kernel.halted.is_none()
+}
+
+/// Host-thread mode frame driver (runs on the main host thread, token 0).
+fn run_frame_threads(c: &mut Cpu) {
+    loop {
+        if c.kernel.halted.is_some() || c.sched.frame_ready {
+            return;
+        }
+        if c.kernel.current == 0 {
+            // Idle: no runnable guest thread. Jump to the next event.
+            c.pc = IDLE;
+            if c.cycles < c.next_event {
+                c.cycles = c.next_event;
+            }
+            service_events(c);
+        } else {
+            let cur = c.kernel.current;
+            let tok = kernel::token_of(c, cur);
+            let tok = if tok == 0 {
+                // First run of this guest thread: its context is live in `c`.
+                let t = c.kernel.next_token;
+                c.kernel.next_token += 1;
+                c.kernel.tokens.insert(cur, t);
+                crate::threads::spawn(c, t);
+                t
+            } else {
+                tok
+            };
+            crate::threads::handoff(0, tok);
+        }
+    }
 }
 
 /// Load the executable's segments and start the main thread at its entry.
