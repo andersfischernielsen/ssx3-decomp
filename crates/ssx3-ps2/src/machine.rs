@@ -331,6 +331,12 @@ pub fn jump_out(c: &mut Cpu, pc: u32, start: u32, end: u32) {
         c.pc = pc;
         return;
     }
+    if c.kernel.host_threads {
+        // No depth cap in host-thread mode: there is no trampoline to defer to.
+        c.pc = pc;
+        call_indirect(c, pc);
+        return;
+    }
     if !c.enter(pc) {
         return;
     }
