@@ -3,7 +3,7 @@
 //! (`vu_diff`). Not used by the game at runtime; install it explicitly with
 //! `vu.fallback = Some(reference::run_program)`.
 
-use super::decode::{decode_lower, decode_upper, pair_reads};
+use super::decode::{decode_lower, decode_upper, lower_waits_q, pair_reads};
 use super::exec::{exec_lower, exec_upper};
 use super::{Vu, VuExit};
 use crate::Qword;
@@ -41,6 +41,9 @@ pub fn run_traced(
         let lower = if ibit { None } else { Some(decode_lower(lo)) };
         let reads = pair_reads(&upper, lower.as_ref());
         vu.begin_pair(&reads);
+        if lower.as_ref().is_some_and(lower_waits_q) {
+            vu.stall_q();
+        }
         exec_upper(vu, &upper);
         if ibit {
             vu.loi(lo);

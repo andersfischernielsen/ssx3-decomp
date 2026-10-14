@@ -131,13 +131,19 @@ VCALLMS and VCALLMSR.
   (LQ, MOVE, MFIR, …) also use 4 cycles. ACC and VI are not tracked.
 - **Q:** DIV and SQRT take 7 cycles, RSQRT takes 13. Until then, an upper op
   reading Q sees the old value. WAITQ, or a new DIV-unit op, stalls until the
-  result lands.
+  result lands. The stall happens *before* the pair (`vu.stall_q()`, emitted
+  between `begin_pair` and the upper op), so an upper op reading Q in the
+  WAITQ/DIV pair sees the new Q, as in PCSX2. The course clipper depends on
+  it (`race-geometry.md`).
 - **P:** the EFU ops use the manual's latencies, for example ESADD 11,
   ERSQRT 18, EATAN 54 and EEXP 44. WAITP stalls until P is ready.
-- **Flags:** MAC and status flags become visible to FMxxx/FSxxx 4 cycles
-  after the op that sets them, clip flags to FCxxx after 3 (a constant now:
-  the translator's flag analysis depends on it; `SSX3_VU_CLIP_LATENCY` is
-  gone). This uses a snapshot pipeline.
+- **Flags:** MAC, status and clip flags become visible to FMxxx/FSxxx/FCxxx
+  4 cycles after the op that sets them, as in PCSX2 (microVU `mVUsetFlags`,
+  interpreter FMAC pipe). Clip used to be 3; that made VU0's bounding-box
+  test read half the box corners and cull visible meshes
+  (`race-geometry.md`). The latency is a constant: the translator's flag
+  analysis (3-pair window) needs it to be at most 4. This uses a snapshot
+  pipeline.
   FSSET and FCSET rewrite both the in-flight snapshots and the current flags.
 - **VI-backup quirk (PCSX2 `VI_BACKUP`):** suppose the pair just before a
   conditional branch writes a VI the branch reads, with IADD/IADDI/IADDIU/
@@ -210,8 +216,9 @@ VCALLMS and VCALLMSR.
   - integer-register latencies
   - stalls on ACC
 - **Timing differences from PCSX2:** the stall model is per VF field with
-  4-cycle latency. There are no branch penalties, and a DIV-unit stall
-  happens inside the pair instead of before it. Code that depends on exact
+  4-cycle latency. There are no branch penalties, and the P (EFU) wait
+  happens inside the pair instead of before it (only lower ops read P, so
+  this changes no values). Code that depends on exact
   cycle counts can still see different Q, P or flag timing than PCSX2.
 - **Budgets:** translated code charges the pair budget once per block, at the
   block's start. The interpreter charges per pair.

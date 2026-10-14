@@ -9,7 +9,9 @@
 //! Any pc the function does not cover returns `VuExit::Jump(pc)` so the
 //! runtime can re-dispatch (e.g. a JR into another upload).
 
-use super::decode::{decode_lower, decode_macro, decode_upper, pair_reads, Flow, Fmac, Lower, Macro, Upper};
+use super::decode::{
+    decode_lower, decode_macro, decode_upper, lower_waits_q, pair_reads, Flow, Fmac, Lower, Macro, Upper,
+};
 use super::exec::{lower_call, upper_call};
 use super::{program_hash, Src};
 use std::collections::BTreeSet;
@@ -467,7 +469,7 @@ pub fn translate(code: &[u8], base_pc: u32) -> Translation {
 fn defer_cycles(body: &str) -> String {
     const USES: &[&str] = &[
         "vu.cycle", "ready", "flags_push", "clip_commit", "q_sync", "p_sync", "flags_sync", "vu.div(",
-        "vu.sqrt(", "vu.rsqrt(", "waitq", "waitp", "efu_", "end_program", "flush",
+        "vu.sqrt(", "vu.rsqrt(", "waitq", "stall_q", "waitp", "efu_", "end_program", "flush",
     ];
     let mut out = String::with_capacity(body.len());
     let mut n = 0u64;
@@ -623,6 +625,13 @@ impl Emitter<'_> {
             }
             e.push_str(");");
             o(out, &e);
+        }
+        // A Q wait (WAITQ, or DIV/SQRT/RSQRT behind a pending one) stalls
+        // the whole pair before its upper op, so an upper reading Q here sees
+        // the new Q (PCSX2; SSX 3's near-plane clipper relies on it, see
+        // `docs/investigation/race-geometry.md`).
+        if p.lower.as_ref().is_some_and(lower_waits_q) {
+            o(out, "vu.stall_q();");
         }
         let look = f.ahead;
         let near_exit = look.end || look.dyn_;

@@ -5,7 +5,14 @@
 //! ```sh
 //! gs_replay TRACE [--gpu] [--sync] [--iters N] [--png OUT.png] [--write-golden FILE] [--golden FILE]
 //! gs_replay TRACE --compare [--diff-png OUT.png] [--png-cpu A.png] [--png OUT.png]
+//! gs_replay TRACE --draws DIR [--events]
+//! gs_replay TRACE --packets [--far PIXELS]
 //! ```
+//!
+//! `--packets` lists every PATH1/PATH2 PACKED GIF tag with its vertices in
+//! window coordinates (relative to XYOFFSET_1), Z, Q and ADC; vertices far
+//! outside the window are marked `FAR`. Negative Q on a drawn vertex means
+//! the VU kicked a point behind the eye.
 //!
 //! A "frame" is everything between two VBlank events. After each VBlank (and at
 //! the end of the trace) a 64-bit hash of all of VRAM is taken; `--write-golden`
@@ -250,6 +257,97 @@ fn draws(path: &str, bytes: &[u8], dir: &str) {
     println!("{seg} segments written to {dir}");
 }
 
+/// `--packets`: decode every PATH1/PATH2 PACKED GIF packet in the trace and
+/// print each tag with its vertices (window coordinates relative to
+/// XYOFFSET_1, Z, Q, ADC). Vertices further than `--far N` pixels (default
+/// 2048) outside the 640x448 window are marked `FAR`.
+fn packets(path: &str, bytes: &[u8], far: f64) {
+    let Trace { events, .. } = Trace::parse(bytes).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let mut ofs = [(0f64, 0f64); 2];
+    let mut seg = 0;
+    for (ei, ev) in events.iter().enumerate() {
+        let (p, data) = match ev {
+            Event::Gif { path, data } if *path != 3 => (*path, data),
+            Event::VBlank { .. } => {
+                seg += 1;
+                continue;
+            }
+            _ => continue,
+        };
+        let mut i = 0;
+        while i < data.len() {
+            let tag = data[i];
+            i += 1;
+            let nloop = (tag & 0x7fff) as usize;
+            let pre = (tag >> 46) & 1 != 0;
+            let prim = ((tag >> 47) & 0x7ff) as u64;
+            let flg = ((tag >> 58) & 3) as u32;
+            let nreg = match ((tag >> 60) & 0xf) as usize {
+                0 => 16,
+                n => n,
+            };
+            let regs = (tag >> 64) as u64;
+            if flg != 0 {
+                // REGLIST / IMAGE: skip.
+                let n = if flg == 1 { (nloop * nreg).div_ceil(2) } else { nloop };
+                i += n;
+                continue;
+            }
+            let mut cur_prim = if pre { prim } else { u64::MAX };
+            let mut q = 1.0f32;
+            let mut verts = Vec::new();
+            let mut ad = Vec::new();
+            for _ in 0..nloop {
+                for r in 0..nreg {
+                    if i >= data.len() {
+                        break;
+                    }
+                    let d = data[i];
+                    i += 1;
+                    match (regs >> (4 * r)) & 0xf {
+                        0 => cur_prim = d as u64 & 0x7ff,
+                        2 => q = f32::from_bits((d >> 64) as u32),
+                        4 | 5 => {
+                            let x = (d & 0xffff) as u32;
+                            let y = ((d >> 32) & 0xffff) as u32;
+                            let z = ((d >> 64) & 0xffff_ffff) as u32;
+                            let adc = (d >> 111) & 1 != 0;
+                            verts.push((x, y, z, q, adc));
+                        }
+                        0xe => {
+                            let a = ((d >> 64) & 0xff) as u8;
+                            let v = d as u64;
+                            if a == 0x18 || a == 0x19 {
+                                ofs[(a - 0x18) as usize] =
+                                    ((v & 0xffff) as f64 / 16.0, ((v >> 32) & 0xffff) as f64 / 16.0);
+                            }
+                            ad.push((a, v));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            let ctx = if cur_prim != u64::MAX { ((cur_prim >> 9) & 1) as usize } else { 0 };
+            let (ox, oy) = ofs[ctx];
+            let mut line = format!("seg {seg} ev {ei} path {p} prim {cur_prim:#x} nloop {nloop} nreg {nreg}");
+            for (a, v) in &ad {
+                line += &format!(" ad[{a:#x}]={v:#x}");
+            }
+            println!("{line}");
+            for (k, (x, y, z, q, adc)) in verts.iter().enumerate() {
+                let sx = *x as f64 / 16.0 - ox;
+                let sy = *y as f64 / 16.0 - oy;
+                let is_far = sx < -far || sx > 640.0 + far || sy < -far || sy > 448.0 + far;
+                println!(
+                    "  v{k:3} x {sx:9.2} y {sy:9.2} z {z:#010x} q {q:12.6e} adc {}{}",
+                    *adc as u8,
+                    if is_far { " FAR" } else { "" }
+                );
+            }
+        }
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let Some(path) = args.get(1) else {
@@ -267,6 +365,11 @@ fn main() {
     let flag = |name: &str| args.iter().any(|a| a == name);
     let iters: usize = opt("--iters").and_then(|s| s.parse().ok()).unwrap_or(1).max(1);
     let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    if flag("--packets") {
+        let far = opt("--far").and_then(|s| s.parse().ok()).unwrap_or(2048.0);
+        packets(path, &bytes, far);
+        return;
+    }
     if let Some(dir) = opt("--draws") {
         draws(path, &bytes, &dir);
         return;

@@ -366,6 +366,108 @@ fn ibit_translation_emits_loi_after_upper() {
     assert!(add < loi, "LOI must follow the upper op:\n{src}");
 }
 
+fn up_mulq(dest: u32, fd: u32, fs: u32) -> u32 {
+    dest << 21 | fs << 11 | fd << 6 | 0x1c
+}
+const WAITQ: u32 = 0x8000_03bf;
+
+/// DIV, then `MULq.x vf3, vf1, Q` in the same pair as `lower`, then `MULq.y`
+/// one pair later. vf1 = (1, 4, -9, 0), vf2.x = 10.
+fn q_wait_prog(lower: u32) -> [(u32, u32); 4] {
+    [
+        (UNOP, div(2, 0, 1, 1)),        // DIV Q, vf2.x, vf1.y  (10 / 4)
+        (up_mulq(8, 3, 1), lower),      // MULq.x vf3, vf1, Q | lower
+        (EBIT | up_mulq(4, 3, 1), LNOP), // MULq.y vf3, vf1, Q [E]
+        (UNOP, LNOP),
+    ]
+}
+
+/// Regression (race "girders", `docs/investigation/race-geometry.md`): a
+/// WAITQ stalls its whole pair *before* the upper op, so an upper op reading
+/// Q in the WAITQ pair sees the new Q (PCSX2 microVU `mVU_WAITQ` pass 1
+/// folds the wait into the pair stall; the interpreter tests lower stalls
+/// before running the upper). SSX 3's near-plane clipper interpolates with
+/// `MADD.xyzw vf21, vf22, Q` + `WAITQ`; with the old Q the clipped vertex
+/// landed behind the eye and drew a long sliver across the screen.
+#[test]
+fn waitq_pair_upper_reads_new_q() {
+    let mut vu = interp_vu(1);
+    load_prog(&mut vu, &q_wait_prog(WAITQ));
+    vu.vf[1] = fv([1.0, 4.0, -9.0, 0.0]);
+    vu.vf[2] = fv([10.0, 0.0, 0.0, 0.0]);
+    vu.q = f(100.0);
+    vu.start(0);
+    assert!(vu.run(100, &mut |_| {}));
+    assert_eq!(vu.vf[3][0], f(2.5), "upper in the WAITQ pair sees the new Q");
+    assert_eq!(vu.vf[3][1], f(10.0));
+}
+
+/// A second DIV issued while the first is in flight also stalls the pair
+/// first: its upper sees the first DIV's result (SSX 3 software-pipelines
+/// DIV in `d159716b`).
+#[test]
+fn div_pair_upper_reads_previous_div_result() {
+    let mut vu = interp_vu(1);
+    // second DIV: Q = vf2.x / vf1.x = 10
+    load_prog(&mut vu, &q_wait_prog(div(2, 0, 1, 0)));
+    vu.vf[1] = fv([1.0, 4.0, -9.0, 0.0]);
+    vu.vf[2] = fv([10.0, 0.0, 0.0, 0.0]);
+    vu.q = f(100.0);
+    vu.start(0);
+    assert!(vu.run(100, &mut |_| {}));
+    assert_eq!(vu.vf[3][0], f(2.5), "first DIV landed before the upper");
+    // The second DIV is still in flight one pair later: old (first) Q.
+    assert_eq!(vu.vf[3][1], f(4.0 * 2.5));
+    assert_eq!(vu.q, f(10.0));
+}
+
+/// The translator emits the Q stall between `begin_pair` and the upper op.
+#[test]
+fn waitq_translation_stalls_before_upper() {
+    let bytes: Vec<u8> = q_wait_prog(WAITQ)
+        .iter()
+        .flat_map(|(hi, lo)| lo.to_le_bytes().into_iter().chain(hi.to_le_bytes()))
+        .collect();
+    let src = recomp::translate_program(&bytes, 0);
+    // Fast arm (from 0x0000) and the single-pair arm of the WAITQ pair
+    // (0x0008): `stall_q` comes before the MULq's Q read, and that read
+    // comes before the lower's own `waitq`.
+    for start in ["0x0000 => {", "0x0008 => {"] {
+        let arm = &src[src.find(start).expect("arm")..];
+        let stall = arm.find("vu.stall_q();").expect("stall_q");
+        let q = arm.find("&[vu.q; 4]").expect("Q read");
+        let wait = arm.find("vu.waitq();").expect("waitq");
+        assert!(stall < q && q < wait, "stall_q, upper, waitq in order:\n{arm}");
+    }
+}
+
+/// Clip flags reach FC* ops 4 cycles after CLIP, like MAC/status (PCSX2
+/// microVU and interpreter). With 3, VU0's bounding-box test (`27649fa5`
+/// 0x0570: CLIP a, CLIP b, then FCGET 4 and 3 pairs later) saw only half of
+/// the box corners and culled visible meshes (`race-geometry.md`).
+#[test]
+fn clip_flags_visible_after_four_cycles() {
+    let clip = |fs: u32, ft: u32| 0x01c0_0000 | ft << 16 | fs << 11 | 0x1ff; // CLIPw.xyz
+    let fcget = |it: u32| 0x1c << 25 | it << 16;
+    let mut vu = interp_vu(1);
+    load_prog(
+        &mut vu,
+        &[
+            (clip(1, 1), LNOP),
+            (UNOP, LNOP),
+            (UNOP, LNOP),
+            (UNOP, fcget(1)),        // 3 pairs after the CLIP: old flags
+            (EBIT | UNOP, fcget(2)), // 4 pairs after: the new judgement
+            (UNOP, LNOP),
+        ],
+    );
+    vu.vf[1] = fv([2.0, 0.0, 0.0, 1.0]); // x > |w|: +x
+    vu.start(0);
+    assert!(vu.run(100, &mut |_| {}));
+    assert_eq!(vu.vi[1], 0);
+    assert_eq!(vu.vi[2], 1);
+}
+
 /// Branch paths for the VI-backup tests: 0x28 [E] vi7 = 1 (fall-through),
 /// 0x38 [E] vi7 = 2 (taken, `off` 3 from a branch at 0x18).
 fn vi_backup_tail(p: &mut Vec<(u32, u32)>) {

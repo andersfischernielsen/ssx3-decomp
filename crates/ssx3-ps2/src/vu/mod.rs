@@ -24,6 +24,8 @@
 //! ```text
 //! vu.begin_pair(&[(fs, fieldmask), ...]); // stall on not-yet-ready VF fields,
 //!                                         // retire Q/P/flag pipelines
+//! vu.stall_q();                           // only if the lower is WAITQ/DIV/
+//!                                         // SQRT/RSQRT: Q lands before the upper
 //! vu.madd(0b1110, 1, 2, Src::Bc(3, W));   // upper: computed from OLD state, staged
 //! vu.loi(imm);                            // only for I-bit pairs (after the upper:
 //!                                         // it reads the old I)
@@ -178,10 +180,14 @@ const EMPTY_STAGE: Stage = Stage {
 /// FMAC result latency (cycles) for the stall model.
 const FMAC_LATENCY: u64 = 4;
 
-/// Clip flags become visible to FC* ops 3 pairs after CLIP (as in
-/// ps2-web-recomp's `FlagPipe`; MAC/status use FMAC_LATENCY = 4). A
-/// constant: the translator's flag analysis depends on it.
-const CLIP_LATENCY: u64 = 3;
+/// Clip flags become visible to FC* ops 4 cycles after CLIP, like MAC and
+/// status (PCSX2: microVU `mVUsetFlags` writes the clip instance at
+/// `cycles + 4`; the interpreter flushes the FMAC pipe entry holding the
+/// clip flags after 4 cycles). It was 3 (ps2-web-recomp's `FlagPipe`), which
+/// made VU0's bounding-box test (`27649fa5` 0x0570) read only 4 of the 8
+/// corners and cull visible meshes (`race-geometry.md`). The translator's
+/// flag analysis (3-pair window) needs this to be at most 4.
+const CLIP_LATENCY: u64 = 4;
 const DIV_LATENCY: u64 = 7;
 const SQRT_LATENCY: u64 = 7;
 const RSQRT_LATENCY: u64 = 13;
@@ -254,6 +260,9 @@ pub struct Vu {
     /// Differential testing only (`vu_diff --ref-model`): DIV/SQRT/RSQRT and
     /// EFU results land immediately, like ps2-web-recomp's interpreter.
     pub instant_qp: bool,
+    /// Differential testing only (`vu_diff qstall`): `false` restores the
+    /// old ordering, where a pair's Q wait ran after its upper op.
+    pub pair_q_stall: bool,
 
     vf_ready: [[u64; 4]; 32],
     q_pend: Option<Pending>,
@@ -314,6 +323,7 @@ impl Vu {
             errors: 0,
             last_error: None,
             instant_qp: false,
+            pair_q_stall: true,
             vf_ready: [[0; 4]; 32],
             q_pend: None,
             p_pend: None,
@@ -630,6 +640,29 @@ impl Vu {
         self.cycle = need;
         self.advance();
         self.stage = EMPTY_STAGE;
+    }
+
+    /// The pair's lower op is WAITQ, DIV, SQRT or RSQRT: the whole pair
+    /// stalls until a pending DIV-unit result lands, *before* the upper op
+    /// runs, so an upper op reading Q in that pair sees the new Q. PCSX2
+    /// does the same: microVU `analyzeQreg`/`mVU_WAITQ` fold the Q wait into
+    /// the pair's stall (`mVUincCycles` swaps the Q instance before the
+    /// upper), and the interpreter's `_vuTestLowerStalls` runs before
+    /// `_vuTestUpperStalls`/the upper op. SSX 3's near-plane clipper
+    /// (`d159716b` 0x1710) is `MADD.xyzw vf21, vf22, Q` + `WAITQ`.
+    #[inline]
+    pub fn stall_q(&mut self) {
+        // Same as WAITQ, just earlier in the pair (the lower's own wait then
+        // finds nothing pending). Flags and P retire by cycle count at their
+        // next observer, so they need no work here.
+        if self.pair_q_stall {
+            self.waitq();
+        }
+    }
+
+    /// Ready cycle of the DIV-unit result in flight, if any (diagnostics).
+    pub fn q_pending_ready(&self) -> Option<u64> {
+        self.q_pend.map(|p| p.ready)
     }
 
     /// LOI: the I bit's immediate. Called after the pair's upper op, which
