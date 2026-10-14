@@ -9,6 +9,7 @@
 pub mod bus;
 pub mod cop2;
 pub mod cpu;
+pub mod ee_timers;
 pub mod elf;
 pub mod fpu;
 pub mod gs;

@@ -193,6 +193,7 @@ pub fn service_events(c: &mut Cpu) -> bool {
         c.bus.hw.raise(crate::hw::int::GS);
     }
     crate::iop_bridge::sync(c); // recompiled IOP (SSX3_IOP=1); no-op otherwise
+    let timer_due = crate::ee_timers::service(c); // RCNT compare IRQs (opt-in, see ee_timers.rs)
     crate::sif::pump(c);
     c.bus.hw.irq_dirty = false;
     kernel::service(c);
@@ -203,6 +204,9 @@ pub fn service_events(c: &mut Cpu) -> bool {
     }
     if let Some(a) = kernel::next_alarm(c) {
         next = next.min(a.max(c.cycles + 1));
+    }
+    if let Some(t) = timer_due {
+        next = next.min(t.max(c.cycles + 1));
     }
     // Poll at least every ~20k cycles so pending I/O interrupts get delivered.
     next = next.min(c.cycles + 20_000);

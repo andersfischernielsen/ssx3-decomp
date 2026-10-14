@@ -66,7 +66,9 @@ Reference design: `snuri00/ps2-web-recomp` (MIT); notes in
 - 2026-10-14 (later): **real audio path.** The disc's LIBSD.IRX and SNDDRV.IRX are
   statically recompiled (`recomp-iop`) and run on a native IOP kernel with an SPU2
   model and cpal output, behind `SSX3_IOP=1` (`docs/investigation/iop-audio.md`).
-  Sound effects and race ambience play; music streams do not start yet (EE-side).
+  Title/menu music and sound effects play. Music also needed EE RCNT compare
+  interrupts (EA's timer task table runs the stream service), added opt-in in
+  `ee_timers.rs` (on with `SSX3_IOP=1` or `SSX3_EE_TIMER_IRQ=1`).
 
 ## How to resume
 

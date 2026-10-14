@@ -112,32 +112,50 @@ rates (`SNDIOP_ee24_iop24_spu48` …) into the AutoDMA buffers at IOP
 and acknowledged with command 1 type 2 after the SPU DMA (`sceSdVoiceTrans`)
 completes. One 'SND' RPC call (init) is made.
 
+### Music needed the EE timer interrupt
+
+The first runs had sound effects but no music, with or without the
+recompiled IOP. Music is EA's interactive "path" streaming (`.mus` files in
+`MUSIC.BIG`/`MUSIC2.BIG`, `SongInstance_ctor` `0x2b1c50`, stream open
+`0x3d25f0`): the stream opened (title: `data/audio/music2.big|data\audio\charsel.mus`)
+but never read past the BIG table of contents. The stream service is a
+periodic task (`0x2ae020`, registered by `0x2ae048` in EA's timer task table
+at `0x51ed98`), and that table only runs from `EATimer`'s RCNT1 compare
+interrupt (INTC 10, handler `0x3e4db8`, `EATimer_Init(60)` at `0x3e4c50`).
+`hw.rs` models the EE counters but never raised TIM0..3, so EA's tick
+counter `0x450dd0` stayed 0 and no timer task ever ran.
+
+`crates/ssx3-ps2/src/ee_timers.rs` adds RCNT compare interrupts (CMPE,
+`EQUF`, ZRET/wrap periods, next-deadline scheduling), called from
+`machine::service_events` (2 lines). It is opt-in: on with `SSX3_IOP=1` or
+`SSX3_EE_TIMER_IRQ=1`, off otherwise, because it changes EE behaviour (three
+other timer tasks — `0x31ad20`, `0x3e33b0`, `0x3b5450` — now run as well).
+
 Observed (headless, `SSX3_IOP=1`):
 
-* boot → title → main menu → race start works as before (same frames).
-* START on the title plays the confirm sound; every menu selection plays its
-  sound; the race (Snow Jam) has continuous audio from the course load on.
-  Captured WAVs: low zero-crossing rate (≈0.02 vs 0.5 for noise), spectral
-  flatness ≈0.1, strongly correlated stereo — structured sound, not noise.
+* boot → title → main menu → race start still works.
+* Title and main menu: **music** from the title screen on (≈18 s into the
+  run), mixed by the EE, streamed through SNDDRV's AutoDMA input (status
+  line `level: input ≈1300`). Menu cursor/confirm sound effects play from SPU
+  voices on top. 
+* Analysis of the main-menu capture (30–39 s of the run): rms ≈5,100,
+  peak ≈26,000, zero-crossing rate 0.023 (white noise ≈0.5), spectral
+  flatness 0.18, onset autocorrelation peaks at 0.48 s / 0.96 s / 1.92 s
+  (**125 BPM**, 4-beat bars; r = 0.56), stereo with a small side component
+  (side/mid 0.05), no discontinuities at the 256-sample AutoDMA block edges.
+  That is beat-structured music, not noise or garbage.
+* The race (Snow Jam; the HUD's "EA RADIO BIG" box changes tracks, e.g.
+  "Andy Hunter — Go") has music, ambience and effects; onset periodicity
+  0.44 s / 0.89 s / 1.78 s (≈136 BPM). Loud moments reach full scale (peak
+  ±32767 in a few seconds of a 78 s capture).
 
 ## Gaps
 
-* **No music yet (EE-side, also without `SSX3_IOP`).** The race HUD shows
-  "EA RADIO BIG — Kinky — Mas" and the title screen reads the MUSIC2.BIG
-  table of contents (6 single-sector reads at frame ~1000), but no stream
-  data is ever read afterwards (no further `sceCdRead` of MUSIC/MUSIC2.BIG,
-  no EE→IOP uploads during the race). The EE mixer therefore sends silent
-  PCM in the tag buffer: SNDDRV's AutoDMA input carries zeros throughout
-  (status line `level: input 0`). Everything that comes from SPU voices
-  (menu/race sound effects, ambience) plays. The HLE path shows the same
-  disc-read pattern, so the stall is in the EE stream reader (EA SND stream
-  API at `0x3d25f0`, opened from `SongInstance_ctor` `0x2b1c50` /
-  `0x2b21e0`), not in the IOP. Next step: trace why the stream never issues
-  reads (async load handle at music manager `+0x5438` stays 0).
-
 * Reverb (`ESA/EEA`, effect volumes) is not modelled; voice dry/wet routing
   (`VMIX*`, `MMIX`) is ignored (every voice is mixed dry).
-* Core 0 output is summed with core 1 instead of feeding core 1's input.
+* Core 0's output feeds core 1 as a plain sum (no `MMIX` gating, no `AVOL`).
+* Output occasionally saturates in the race (no reverb/wet split, all voices
+  dry); real hardware mixes at similar levels, but this is unverified.
 * Interpolation is linear (hardware: 4-point Gaussian).
 * Timing: one IOP cycle per instruction; native calls cost a flat 8 cycles.
 * Only the libraries these two modules import are implemented; other
@@ -159,7 +177,7 @@ SSX3_IOP=1 SSX3_WAV=/tmp/ssx3.wav SSX3_INPUT="950:0010:8,1000:4000:8,1600:0008:8
 SSX3_IOP=1 cargo run --profile game -p ssx3           # windowed, with sound
 ```
 
-Env: `SSX3_IOP=1` enable; `SSX3_AUDIO=0/1` output device (headless defaults
+Env: `SSX3_IOP=1` enable (also turns on EE timer IRQs, see above); `SSX3_AUDIO=0/1` output device (headless defaults
 to off); `SSX3_WAV=path` capture; `SSX3_TRACE_IOP` (thread switches, every
 import call, SIF traffic); `SSX3_TRACE_SPU2` (register writes, DMA). The
 headless status line prints an `iop …` summary every 60 frames.
