@@ -131,7 +131,7 @@ then serves a loopback HTTP backend on `127.0.0.1:8080`) and the program open.
 
 ## Investigation notes
 
-Findings are recorded under [`docs/investigation/`](docs/investigation/): the boot path, naming, the recompiler, GS, VU/VIF, IPU, the ps2-web-recomp notes, and earlier decoder and boundary work. Plans live in [`docs/plans/`](docs/plans/).
+Findings are recorded under [`docs/investigation/`](docs/investigation/): the boot path, naming, the recompiler, GS, VU/VIF, IPU, the ps2-web-recomp notes, and earlier decoder and boundary work. Plans live in [`docs/plans/`](docs/plans/); the long-term phases (full static recompilation → typed Rust → native port) are in [`docs/plans/roadmap.md`](docs/plans/roadmap.md).
 
 ## Tests
 
