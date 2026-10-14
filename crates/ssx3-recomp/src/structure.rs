@@ -127,7 +127,7 @@ pub fn emit_structured(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, exter
             let after_call = |code: &mut String, ret: u32| {
                 let _ = writeln!(
                     code,
-                    "if c.pc != {ret:#010x} {{ let t = c.pc; ssx3_ps2::machine::call_indirect(c, t); return; }}"
+                    "if c.pc != {ret:#010x} {{ return; }}"
                 );
             };
             match ctl {
@@ -205,7 +205,7 @@ pub fn emit_structured(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, exter
                     if link {
                         // bal/bltzal...: a conditional call, then continue at pc+8.
                         let call = format!(
-                            "c.pc = {target:#010x}; {}; if c.pc != {:#010x} {{ let t = c.pc; ssx3_ps2::machine::call_indirect(c, t); return; }}",
+                            "c.pc = {target:#010x}; {}; if c.pc != {:#010x} {{ return; }}",
                             direct_callee_pub(target, shard, ctx),
                             pc + 8
                         );

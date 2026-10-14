@@ -670,7 +670,7 @@ pub fn emit_function_named(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, o
                         }
                         let _ = writeln!(
                             body,
-                            "                c.pc = {target:#010x}; {callee}; if c.pc != {ret:#010x} {{ pc = c.pc; continue; }}"
+                            "                c.pc = {target:#010x}; {callee}; if c.pc != {ret:#010x} {{ return; }}"
                         );
                     }
                     Ctl::CallReg { rd, rs } => {
@@ -684,13 +684,13 @@ pub fn emit_function_named(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, o
                         }
                         let _ = writeln!(
                             body,
-                            "                c.pc = t; ssx3_ps2::machine::call_indirect(c, t); if c.pc != {ret:#010x} {{ pc = c.pc; continue; }}"
+                            "                c.pc = t; ssx3_ps2::machine::call_indirect(c, t); if c.pc != {ret:#010x} {{ return; }}"
                         );
                     }
                     _ => {
                         let _ = writeln!(
                             body,
-                            "                c.pc = {ret:#010x}; ssx3_ps2::kernel::syscall(c, {pc:#010x}); if c.pc != {ret:#010x} {{ pc = c.pc; continue; }}"
+                            "                c.pc = {ret:#010x}; ssx3_ps2::kernel::syscall(c, {pc:#010x}); if c.pc != {ret:#010x} {{ return; }}"
                         );
                         let _ = writeln!(body, "                if c.cycles >= c.next_event {{ c.event(); }}");
                     }
@@ -844,7 +844,7 @@ fn direct_callee(target: u32, shard: usize, ctx: &Ctx) -> String {
 fn call_code(target: u32, ret: u32, shard: usize, ctx: &Ctx, _labels: &BTreeSet<u32>, _f: &Func) -> String {
     let callee = direct_callee(target, shard, ctx);
     if ctx.threads {
-        return format!("c.pc = {target:#010x}; {callee}; if c.pc != {ret:#010x} {{ pc = c.pc; continue; }}");
+        return format!("c.pc = {target:#010x}; {callee}; if c.pc != {ret:#010x} {{ return; }}");
     }
     format!(
         "if !c.enter({target:#010x}) {{ return; }} {callee}; c.leave(); if c.pc != {ret:#010x} {{ return; }}"

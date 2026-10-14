@@ -513,6 +513,7 @@ pub fn start_main_thread(c: &mut Cpu, entry: u32, argc: u32, argv: u32) {
     c.pc = entry;
     c.g[4][0] = sx(argc);
     c.g[5][0] = sx(argv);
+    c.g[31][0] = sx(THREAD_EXIT);
     c.cop0[12] = 0x7001_0C01;
     c.cop0[15] = 0x2E20;
     c.bus.hw.vu0.vf[0][3] = 0x3F80_0000;

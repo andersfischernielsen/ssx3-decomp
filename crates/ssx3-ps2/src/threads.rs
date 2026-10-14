@@ -84,8 +84,16 @@ pub fn spawn(c: &mut Cpu, id: i32) {
             wait_for(id);
             // SAFETY: we hold the baton.
             let c = unsafe { &mut *p.0 };
-            let entry = c.pc;
-            crate::machine::call_indirect(c, entry);
+            // Base trampoline: a frame whose return address doesn't match
+            // returns early (longjmp-like returns, shared epilogues); resume
+            // at `c.pc` until the thread returns to its exit sentinel.
+            loop {
+                let pc = c.pc;
+                crate::machine::call_indirect(c, pc);
+                if c.pc == crate::kernel::THREAD_EXIT || c.kernel.halted.is_some() {
+                    break;
+                }
+            }
             // Falling off the entry function = ExitThread.
             c.g[3][0] = 0x23;
             crate::kernel::syscall(c, crate::kernel::THREAD_EXIT);
