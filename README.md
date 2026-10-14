@@ -11,8 +11,8 @@ translated to Rust at build time and runs on a native PS2 platform layer:
 - the IOP services
 
 **Status (2026-10-14):** the game boots, plays its intro movies, runs the menus,
-loads a course and **races**: HUD, rivals, and position and speed tracking all
-work. Gaps remain: speed (software GS), audio, memory cards, and some rendering
+loads a course and **races** with music and sound effects: HUD, rivals, and
+position and speed tracking all work. Gaps remain: speed (software GS), audio, memory cards, and some rendering
 issues. Screenshots and the full log are in
 [`docs/plans/playable-push.md`](docs/plans/playable-push.md).
 
@@ -38,15 +38,16 @@ Headless runs, scripted input and the debug switches are documented in
 
 | crate | role |
 | --- | --- |
-| `ssx3-recomp` | Function inventory + boundaries (from Ghidra), R5900 decoder, and **`recomp-ee`**. The generator lowers all ~808k instructions in 13.3k functions to Rust, sharded into 16 crates under `generated/ee/`; see [`docs/investigation/recompiler-v2.md`](docs/investigation/recompiler-v2.md). |
+| `ssx3-recomp` | Function inventory and boundaries (from Ghidra), the R5900 decoder, and **`recomp-ee`**. The generator lowers all ~808k instructions in 13.3k functions to **structured Rust**: 97% of functions become `if`/`loop` code with no `pc` variable, and the rest use block dispatch. Output is sharded into 16 crates under `generated/ee/`; see [`docs/investigation/recompiler-v2.md`](docs/investigation/recompiler-v2.md). `recomp-iop` does the same for the game's IOP sound modules. |
 | `ssx3-ps2` | The platform layer: instruction semantics (128-bit GPRs, MMI, bit-exact FPU, COP2), the bus and MMIO, DMAC, timers and INTC, the HLE EE kernel (threads, semaphores, handlers, alarms), SIF with the IOP services (loadfile, fileio, cdvdfsv, padman, EA SNDDRV protocol), VIF/VU (VU microcode is statically translated in `generated/vu/`), GS (software rasterizer), and IPU (MPEG). |
 | `ssx3` | Front ends: the windowed `ssx3` (winit + wgpu) and `ssx3-headless` (scripted input, screenshots, diagnostics). |
 | `ssx3-core`, `ssx3-gs`, `ssx3-runtime` | Earlier scaffolding (memory model, first codegen); superseded by the above. |
 
-Guest threads, interrupts and calls follow the unwind/trampoline model ported
-from [ps2-web-recomp](https://github.com/snuri00/ps2-web-recomp) (MIT). Each
-guest call is a Rust call; a thread switch unwinds to a trampoline that
-re-enters the recompiled code at the saved `pc`.
+Each guest thread runs on its own host thread, and a baton ensures only one runs
+at a time. A guest call is a plain Rust call, and a thread switch blocks inside
+the syscall. `recomp-ee --unwind` generates the original resumable form, which
+uses the unwind/trampoline model from
+[ps2-web-recomp](https://github.com/snuri00/ps2-web-recomp) (MIT).
 
 ## What the disc actually contains
 
