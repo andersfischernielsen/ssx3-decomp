@@ -112,3 +112,12 @@ Runtime misses are appended to `generated/entries.txt` automatically; rerun
   In flight (agents): race texture noise (`race-textures.md`), VU1 performance
   (`vu-performance.md`). Open: walls/course still show a blocky noise texture
   after the MAX/MINI fix; race ~20 fps.
+- Long scripted race (hold Cross from frame 4600): at frame 7000 the rider is
+  **1st of 6, 42 s in, 22% down the course, 52 mph** with no misses or halts
+  (`docs/investigation/race-42s-first-place.png`). Visible issues: salmon
+  untextured slabs, a dark rectangle over the sky. The run stopped at frame
+  7140 (killed externally, not a game halt).
+- Window front end: game controllers via gilrs (buttons + analog sticks),
+  boot movies play by default in the window.
+- Build hygiene: worktree agents each compile the full generated crates; cap
+  with `CARGO_BUILD_JOBS=3` + `nice`, at most two heavy builds at once.
