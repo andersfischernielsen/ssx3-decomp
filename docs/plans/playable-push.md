@@ -88,3 +88,7 @@ Runtime misses are appended to `generated/entries.txt` automatically; rerun
       run time); 1,109 functions named (`naming.md`), emitted as `pub use` aliases.
 - In flight: GS performance (tile-parallel rasterizer + capture/replay),
   IOP recompilation + SPU2 audio (`SSX3_IOP=1`).
+- VU differential testing against ps2-web-recomp's interpreter on captured game
+  invocations (`vu-differential.md`): fixed I-bit ordering (upper reads the old I),
+  MAX/MINI raw-bit semantics (integer vertex colours were zeroed: course now
+  shaded), VI-backup default; `SSX3_RTC` pins the clock for reproducible runs.

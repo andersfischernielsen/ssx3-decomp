@@ -405,7 +405,9 @@ fn main() {
                 });
             }
             for e in ssx3_ps2::vu::generated::PROGRAMS {
-                let n = hit.get(&e.hash).map_or(0, |s| s.len());
+                let n = hit
+                    .get(&e.hash)
+                    .map_or(0, |s| s.iter().filter(|&&pc| pc >= e.start && pc < e.start + e.len).count());
                 println!("{:016x}: {n} / {} pairs executed", e.hash, e.len / 8);
             }
         }
