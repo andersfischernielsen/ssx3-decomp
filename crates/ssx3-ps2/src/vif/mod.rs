@@ -185,6 +185,17 @@ impl Vif {
         let imm = cmd & 0xffff;
         self.code = cmd;
         self.commands[op as usize] += 1;
+        if self.index == 1 && op >= 0x10 && !matches!(op, 0x20 | 0x30 | 0x31) {
+            // PATH3 runs alongside the VIF: while it is unmasked, waiting
+            // GIF DMA data goes before the VIF's next transfer, flush or
+            // microprogram. NOPs and register settings take a cycle or two:
+            // SSX 3 puts `MSKPATH3 0`, NOPs and `MSKPATH3 1` together to
+            // release a single packet.
+            gs.path3_flow();
+        }
+        if crate::trace_path3() && self.index == 1 && matches!(op, 0x06 | 0x10 | 0x11 | 0x13 | 0x14 | 0x15 | 0x17 | 0x50 | 0x51) {
+            eprintln!("[p3] vif1 cmd {cmd:#010x}");
+        }
         match op {
             0x00 => {}
             0x01 => self.cycle = imm,
@@ -196,7 +207,12 @@ impl Vif {
             0x03 => self.base = imm & 0x3ff,
             0x04 => self.itops = imm & 0x3ff,
             0x05 => self.mode = imm & 3,
-            0x06 => self.path3_masked = (imm >> 15) & 1 != 0,
+            0x06 => {
+                self.path3_masked = (imm >> 15) & 1 != 0;
+                if self.index == 1 {
+                    gs.set_path3_mask(self.path3_masked);
+                }
+            }
             0x07 => {
                 self.mark = imm;
                 self.stat |= STAT_MRK;

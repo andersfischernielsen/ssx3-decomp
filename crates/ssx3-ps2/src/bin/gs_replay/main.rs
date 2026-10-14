@@ -178,6 +178,78 @@ fn compare(path: &str, bytes: &[u8], opt: &dyn Fn(&str) -> Option<String>) -> bo
     true
 }
 
+/// `--draws DIR`: replay on the CPU, log every draw setup, and per frame
+/// segment write `DIR/fNN.txt` (one line per setup) plus `DIR/fNN.png`
+/// (the displayed image after the segment) and each distinct texture as
+/// `DIR/tex_<tex0>_<hash>.png`.
+fn draws(path: &str, bytes: &[u8], dir: &str) {
+    let Trace { mut gs, events } = Trace::parse(bytes).unwrap_or_else(|e| panic!("{path}: {e}"));
+    std::fs::create_dir_all(dir).unwrap();
+    gs.draw_log = Some(Vec::new());
+    let mut seg = 0;
+    let mut written = std::collections::HashSet::new();
+    let mut dump = |gs: &mut Gs, seg: usize| {
+        gs.sync();
+        let log = gs.draw_log.replace(Vec::new()).unwrap();
+        let mut txt = String::new();
+        for (i, e) in log.iter().enumerate() {
+            let t = e.tex0;
+            let mut name = String::from("-");
+            if let Some((w, h, img)) = &e.image {
+                let mut hsh: u64 = 0xcbf2_9ce4_8422_2325;
+                for &v in img {
+                    hsh = (hsh ^ v as u64).wrapping_mul(0x100_0000_01B3);
+                }
+                name = format!("tex_{t:016x}_{:08x}.png", hsh as u32);
+                if written.insert(name.clone()) {
+                    let opaque: Vec<u32> = img.iter().map(|v| v | 0xFF00_0000).collect();
+                    std::fs::write(format!("{dir}/{name}"), png::encode(*w, *h, &opaque)).unwrap();
+                }
+            }
+            txt += &format!(
+                "{i:5} prim {:#05x} prims {:5} bbox {:?} tbp {:#x} tbw {} psm {:#x} tw {} th {} tcc {} tfx {} cbp {:#x} cpsm {:#x} csm {} csa {} cld {} | tex1 {:#x} clamp {:#x} frame {:#x} alpha {:#x} test {:#x} {name}\n",
+                e.prim, e.prims, e.bbox,
+                t & 0x3fff, (t >> 14) & 0x3f, (t >> 20) & 0x3f, (t >> 26) & 0xf, (t >> 30) & 0xf,
+                (t >> 34) & 1, (t >> 35) & 3, (t >> 37) & 0x3fff, (t >> 51) & 0xf, (t >> 55) & 1,
+                (t >> 56) & 0x1f, (t >> 61) & 7, e.tex1, e.clamp, e.frame, e.alpha, e.test
+            );
+        }
+        std::fs::write(format!("{dir}/f{seg:02}.txt"), txt).unwrap();
+        let mut img = Vec::new();
+        let (w, h) = gs.display(&mut img);
+        std::fs::write(format!("{dir}/f{seg:02}.png"), png::encode(w, h, &img)).unwrap();
+    };
+    // --events: also print the event stream with the draw setups it creates
+    // (and, with SSX3_TRACE_XFER, the transfers) in order.
+    let verbose = std::env::args().any(|a| a == "--events");
+    for ev in &events {
+        let before = gs.draw_log.as_ref().map_or(0, |l| l.len());
+        ev.apply(&mut gs);
+        if verbose {
+            match ev {
+                Event::Gif { path, data } => println!("[ev] gif path {path} {} qw", data.len()),
+                Event::Reg { addr, value } => println!("[ev] reg {addr:#x} = {value:#x}"),
+                Event::Priv { offset, value } => println!("[ev] priv {offset:#x} = {value:#x}"),
+                Event::VBlank { .. } => println!("[ev] vblank (segment {seg})"),
+                _ => {}
+            }
+            for e in &gs.draw_log.as_ref().unwrap()[before..] {
+                let t = e.tex0;
+                println!(
+                    "[draw] prim {:#x} tbp {:#x} psm {:#x} cbp {:#x} tme {}",
+                    e.prim, t & 0x3fff, (t >> 20) & 0x3f, (t >> 37) & 0x3fff, (e.prim >> 4) & 1
+                );
+            }
+        }
+        if let Event::VBlank { .. } = ev {
+            dump(&mut gs, seg);
+            seg += 1;
+        }
+    }
+    dump(&mut gs, seg);
+    println!("{seg} segments written to {dir}");
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let Some(path) = args.get(1) else {
@@ -195,6 +267,10 @@ fn main() {
     let flag = |name: &str| args.iter().any(|a| a == name);
     let iters: usize = opt("--iters").and_then(|s| s.parse().ok()).unwrap_or(1).max(1);
     let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    if let Some(dir) = opt("--draws") {
+        draws(path, &bytes, &dir);
+        return;
+    }
     if flag("--compare") {
         std::process::exit(if compare(path, &bytes, &opt) { 0 } else { 1 });
     }

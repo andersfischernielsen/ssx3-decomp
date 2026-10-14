@@ -31,6 +31,11 @@ pub fn set_frame(f: u64) {
     FRAME.store(f, Ordering::Relaxed);
 }
 
+/// The frame number last given to `set_frame`.
+pub fn frame() -> u64 {
+    FRAME.load(Ordering::Relaxed)
+}
+
 /// Architectural VU state (what a program can observe or produce).
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct ArchState {

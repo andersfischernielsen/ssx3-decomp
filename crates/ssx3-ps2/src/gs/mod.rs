@@ -190,6 +190,34 @@ pub struct Gs {
     pub(crate) capture: Option<Box<capture::Recorder>>,
     /// GPU rasterization backend; `None` for the CPU rasterizer.
     pub(crate) gpu: Option<Box<gpu::GpuGs>>,
+    /// Debug: when `Some`, every draw setup (with the decoded texture at the
+    /// time of its first primitive) is appended here (`gs_replay --draws`).
+    pub draw_log: Option<Vec<DrawLog>>,
+    /// PATH3 (GIF DMA channel 2) data the GIF has not accepted yet because
+    /// PATH3 is masked (see `path3_dma`).
+    pub(crate) p3_queue: VecDeque<Qword>,
+    /// MSKPATH3 from VIF1 (GIF_STAT.M3P) and GIF_MODE.M3R.
+    pub(crate) p3_mask_vif: bool,
+    pub(crate) p3_mask_reg: bool,
+    /// PATH3 is inside a GIF packet (a mask only stops it at the end of one).
+    pub(crate) p3_mid: bool,
+}
+
+/// One draw setup recorded by `Gs::draw_log`.
+#[derive(Clone, Debug, Default)]
+pub struct DrawLog {
+    pub prim: u64,
+    pub tex0: u64,
+    pub tex1: u64,
+    pub clamp: u64,
+    pub frame: u64,
+    pub alpha: u64,
+    pub test: u64,
+    /// Primitives drawn with this setup, and their screen bounding box.
+    pub prims: u32,
+    pub bbox: [i32; 4],
+    /// The whole texture (2^TW x 2^TH, capped at 1024) decoded to RGBA8.
+    pub image: Option<(u32, u32, Vec<u32>)>,
 }
 
 /// Which rasterizer draws primitives.
@@ -253,6 +281,11 @@ impl Gs {
             prims_drawn: 0,
             capture: None,
             gpu: None,
+            draw_log: None,
+            p3_queue: VecDeque::new(),
+            p3_mask_vif: false,
+            p3_mask_reg: false,
+            p3_mid: false,
         }
     }
 
@@ -450,11 +483,114 @@ impl Gs {
         if let Some(c) = &mut self.capture {
             c.gif(path, data);
         }
+        if crate::trace_path3() {
+            eprintln!("[p3] gif path {path} {} qw", data.len());
+        }
         for &q in data {
             self.gif_qword(path, q);
         }
         if !self.deferred {
             self.flush_wait();
+        }
+    }
+
+    /// GIF DMA (channel 2) data for PATH3. The GIF takes it at once unless
+    /// PATH3 is masked (VIF1 MSKPATH3 or GIF_MODE.M3R); a mask stops PATH3
+    /// only at the end of a GIF packet (a tag with EOP and its data), and the
+    /// rest waits in the channel until the mask is lifted (PCSX2
+    /// `Gif_Unit::CanDoPath3`). SSX 3 relies on this to upload several
+    /// textures to the same VRAM block within one frame: each upload is
+    /// released by an MSKPATH3 0 placed in the VIF1 stream just before the
+    /// draws that use it.
+    pub fn path3_dma(&mut self, data: &[Qword]) {
+        if !path3_mask_enabled() {
+            self.gif_write(3, data);
+            return;
+        }
+        self.p3_queue.extend(data.iter().copied());
+        self.pump_path3();
+    }
+
+    /// MSKPATH3 from VIF1. Lifting the mask lets PATH3 start its next
+    /// packet at once; anything after that packet only flows once the VIF
+    /// moves on with PATH3 still unmasked (`path3_flow`). SSX 3 releases
+    /// one texture packet per `MSKPATH3 0` / `MSKPATH3 1` pair: on hardware
+    /// the packet starts in the gap between the two, and the new mask only
+    /// takes effect at its end.
+    pub fn set_path3_mask(&mut self, masked: bool) {
+        self.p3_mask_vif = masked;
+        if !masked {
+            self.pump_path3_packets(1);
+        }
+    }
+
+    /// The VIF1 stream advanced (or a transfer ended) with PATH3 unmasked:
+    /// everything waiting flows.
+    pub fn path3_flow(&mut self) {
+        if !self.p3_queue.is_empty() {
+            self.pump_path3();
+        }
+    }
+
+    /// GIF_MODE.M3R.
+    pub fn set_path3_mask_reg(&mut self, masked: bool) {
+        self.p3_mask_reg = masked;
+        self.pump_path3();
+    }
+
+    /// GIF_CTRL.RST: drop PATH3 data waiting behind a mask.
+    pub fn path3_reset(&mut self) {
+        self.p3_queue.clear();
+        self.p3_mid = false;
+        self.paths[3] = gif::GifPath::default();
+    }
+
+    /// Qwords of PATH3 DMA data waiting behind a mask.
+    pub fn path3_pending(&self) -> usize {
+        self.p3_queue.len()
+    }
+
+    /// GIF_STAT bits this GS knows: M3R (0), M3P (1), P3Q (6: PATH3 waiting),
+    /// FQC (28:24).
+    pub fn gif_stat(&self) -> u32 {
+        let q = self.p3_queue.len().min(16) as u32;
+        (self.p3_mask_reg as u32) | (self.p3_mask_vif as u32) << 1 | ((q > 0) as u32) << 6 | q << 24
+    }
+
+    fn pump_path3(&mut self) {
+        self.pump_path3_packets(usize::MAX);
+    }
+
+    /// Feed up to `max` more packets (finishing an open one first), stopping
+    /// at a packet end while PATH3 is masked.
+    fn pump_path3_packets(&mut self, max: usize) {
+        let mut packets = 0;
+        while !self.p3_queue.is_empty() {
+            if !self.p3_mid && (self.p3_mask_vif || self.p3_mask_reg || packets >= max) {
+                return;
+            }
+            // Feed up to the end of the current packet.
+            let (mut left, mut eop) = self.paths[3].qwords_left();
+            let mut n = 0;
+            let mut mid = self.p3_mid;
+            for &q in self.p3_queue.iter() {
+                n += 1;
+                if left == 0 {
+                    (left, eop) = gif::GifPath::tag_qwords(q);
+                } else {
+                    left -= 1;
+                }
+                mid = left != 0 || !eop;
+                if !mid {
+                    break;
+                }
+            }
+            let chunk: Vec<Qword> = self.p3_queue.drain(..n).collect();
+            if !self.p3_mid {
+                packets += 1;
+            }
+            self.gif_write(3, &chunk);
+            self.p3_mid = mid;
         }
     }
 
@@ -805,4 +941,11 @@ impl Gs {
 fn clamp_trace() -> bool {
     static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *E.get_or_init(|| std::env::var("SSX3_TRACE_CLAMP").is_ok())
+}
+
+/// `SSX3_PATH3_MASK=0` lets PATH3 DMA through immediately, ignoring
+/// MSKPATH3/M3R (the old behaviour).
+fn path3_mask_enabled() -> bool {
+    static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *E.get_or_init(|| std::env::var("SSX3_PATH3_MASK").map_or(true, |v| v != "0"))
 }

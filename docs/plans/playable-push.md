@@ -121,3 +121,10 @@ Runtime misses are appended to `generated/entries.txt` automatically; rerun
   boot movies play by default in the window.
 - Build hygiene: worktree agents each compile the full generated crates; cap
   with `CARGO_BUILD_JOBS=3` + `nice`, at most two heavy builds at once.
+- **Race and menu textures fixed: PATH3 masking** (`race-textures.md`). SSX 3
+  queues each frame's texture uploads in one GIF DMA chain and releases one
+  packet per `MSKPATH3 0`/`MSKPATH3 1` pulse in the VIF1 stream. All of them
+  used to land at once, so draws sampled the last texture uploaded to a
+  shared VRAM slot through their own CLUT (noise on the race walls, the
+  smeared sky panel, wrong menu images). New debug tools:
+  `gs_replay --draws`, `SSX3_TRACE_PATH3`.

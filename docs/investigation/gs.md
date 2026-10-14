@@ -55,6 +55,10 @@ The swizzle tables and several behaviours are ported from
 
 ## GIF
 
+PATH3 DMA goes through `path3_dma`, which queues the data while PATH3 is
+masked (see Known gaps and `race-textures.md`). `gif_write(3, ..)` itself
+is immediate; trace replay and the GIF FIFO at 0x10006000 use it.
+
 - Each path (1..=3, clamped) has its own tag state, so packets can be split
   across `gif_write` calls. NLOOP=0 tags are consumed with no data. Each tag
   resets internal Q to 1.0. PRE writes PRIM in PACKED mode.
@@ -173,6 +177,10 @@ When the frame is read as a blend destination:
 - CT24 reads with alpha 0x80.
 - CT16 alpha is 0x80 when bit 15 is set, otherwise 0.
 
+Debugging textures: `gs_replay TRACE --draws DIR [--events]` writes each
+frame's draw setups, plus every texture as VRAM held it at the draw, decoded
+through the draw's palette (`Gs::draw_log`). See `race-textures.md`.
+
 Performance: primitives are batched and drawn by several threads, with exactly
 the serial per-pixel order (see `gs-performance.md`). Heavy in-game frames went
 from 250–530 ms to 35–42 ms on an M1. Two tools measure it:
@@ -209,8 +217,12 @@ from 250–530 ms to 35–42 ms on an M1. Two tools measure it:
 - TRXPOS DIR is ignored, and so are the hardware's overlapping-copy quirks.
 - Local→host is generated in one go when TRXDIR=1 is written. There is no FINISH
   or BUSDIR handshake beyond storing BUSDIR.
-- GIF path arbitration (PATH3 masking, IMT, path priority) is left to the
-  machine. Paths are handled independently and immediately.
+- GIF path arbitration: PATH3 masking is modelled (`Gs::path3_dma`,
+  `set_path3_mask`, `set_path3_mask_reg`; see `race-textures.md`). GIF DMA
+  data waits behind VIF1 MSKPATH3 or GIF_MODE.M3R. A mask stops PATH3 only
+  at a packet end, and each unmask releases one packet. IMT interleaving and
+  path priority are not modelled: PATH1/2 data and released PATH3 packets
+  are handled immediately, in call order.
 - No HSYNC/EDW event generation, and no NFIELD.
 - The display ignores DX/DY offsets, PMODE.CRTMD, EXTBUF/EXTWRITE feedback, and
   circuits with different geometry when merging.
