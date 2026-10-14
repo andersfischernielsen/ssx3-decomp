@@ -78,6 +78,17 @@ fn main() {
     let unk: Vec<String> = c.bus.hw.unknown.iter().take(40).map(|(a, n)| format!("{a:08x}x{n}")).collect();
     eprintln!("unknown mmio: {}", unk.join(" "));
     eprintln!("misses: {:x?}", c.sched.misses);
+    if !c.sched.misses.is_empty() {
+        // Record new entry points for the next `recomp-ee` run.
+        use std::io::Write;
+        let path = game::repo_root().join("generated/entries.txt");
+        if let Ok(mut f) = std::fs::OpenOptions::new().append(true).create(true).open(&path) {
+            for pc in c.sched.misses.keys() {
+                let _ = writeln!(f, "{pc:x}  # runtime miss (ra {:#x})", c.g[31][0] as u32);
+            }
+        }
+        eprintln!("recorded {} new entry point(s) in generated/entries.txt", c.sched.misses.len());
+    }
     if !c.bus.hw.sio_line.is_empty() {
         eprintln!("sio: {}", String::from_utf8_lossy(&c.bus.hw.sio_line));
     }

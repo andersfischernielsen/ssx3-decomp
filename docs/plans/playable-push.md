@@ -47,3 +47,31 @@ Reference design: `snuri00/ps2-web-recomp` (MIT); notes in
 
 - 2026-10-14: crate skeleton, plan written; research agents mapping the boot path
   (`docs/investigation/boot-path.md`) and the reference design.
+- 2026-10-14 (night): **architecture corrected to full recompilation** (no EE
+  interpreter): `recomp-ee` lowers all EE code to Rust (`recompiler-v2.md`),
+  `ssx3-ps2` is only the hardware/firmware layer, VU microcode is statically
+  translated too (`vu-vif.md`). Milestones reached, in order:
+  1. Boot through `_InitSys` (FindAddress answered consistently), SIF init, IOP
+     reboot (LOADFILE version read from `DNAS271.IMG`), all IOP module loads.
+  2. First pixels: the loading icon (`docs/investigation/first-pixels-loading-icon.png`).
+  3. First UI: memory-card prompt (`first-ui-memcard-prompt.png`); pad input works
+     (native padman writing `pad_data` frames each VBlank).
+  4. EA SNDDRV protocol emulated (per-frame tick, upload acks) → main menu,
+     character select with a VU1-rendered 3D rider (`character-select.png`).
+  5. Course loads; race briefing over the 3D course (`race-briefing.png`).
+- Open items: IPU (agent working; movies skipped with `SSX3_SKIP_MOVIES` until
+  then), GS speed (software rasterizer: ~2 fps in 3D scenes), audio output,
+  memory card (reports "no card").
+
+## How to resume
+
+```sh
+cargo run --release -p ssx3-recomp --bin recomp-ee   # regenerate generated/ee
+tools/run-headless.sh 2400 --shot-every 100          # screenshots → /tmp/ssx3-shots
+SSX3_INPUT="950:0010:8,1000:4000:8,1600:0008:8,2000:4000:8,2500:4000:8,2700:4000:8,2900:4000:8,3100:4000:8,3300:4000:8,3500:4000:8,3700:4000:8,4250:4000:8" \
+  ./target/game/ssx3-headless 4700 --shot-every 100  # scripted path into a race
+cargo run --profile game -p ssx3                     # windowed (keyboard pad)
+```
+Runtime misses are appended to `generated/entries.txt` automatically; rerun
+`recomp-ee` after a miss. Debug env: `SSX3_TRACE_SIF`, `SSX3_TRACE_SYSCALLS`,
+`SSX3_TRACE_THREADS`, `SSX3_VRAM_DUMP`, `SSX3_INPUT`, `SSX3_SKIP_MOVIES=0`.
