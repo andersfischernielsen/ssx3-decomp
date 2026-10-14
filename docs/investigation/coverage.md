@@ -26,6 +26,7 @@ cursor), Previews, Online.
 | Single Event → Peak 1 → Race → Metro-City | race script with `3200:0040:6` before the event Cross at 3300 | ✅ no misses, renders correctly (`coverage-peak1-events.png` row 1) |
 | Single Event → Peak 1 → Race → Happiness (head-to-head, 2 riders) | Down ×2 at 3200/3250 | ✅ no misses (row 2) |
 | Single Event → Peak 1 → Freestyle (Snow Jam freestyle vs opponent, scoring, timer) | `3000:0040:6` before the mode Cross at 3100 | ✅ no misses (row 3) |
-| Peaks 2 and 3, their events; other freestyle events | locked on this save? | ⬜ |
+| Peaks 2 and 3, their events | `2850:0010:6` (Up) before the peak Cross: "LOCKED: Get a Peak 2 pass in Conquer the Mountain mode" | ⬜ needs career progress (win passes in Conquer The Mountain) or a progressed save |
+| Other Peak 1 freestyle events | Down in the event list after Freestyle | ⬜ |
 | Career progression (events in Conquer The Mountain, unlocks, shop) | | ⬜ |
 | Replays, records, "Next event", "Restart" from results | | ⬜ |
