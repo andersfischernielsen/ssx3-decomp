@@ -128,6 +128,11 @@ on night one (see the log below).
   171 s headless (was 296 s) and all 18 screenshots are byte-identical to the
   pre-merge run. Races ~54 fps headless; remaining frame time is split
   VU ~38% / GS CPU side ~28% / EE ~14% (`vu-performance.md`).
+- **A full race completes**: the scripted run (holding Cross) reaches the
+  "Snow Jam - Race / Single Event Results" screen at frame 20000 (6th, 3:49)
+  in 452 s headless, no halts or misses (`race-complete-results.png`). Around
+  72% down the course (frame 14000) the view is mostly empty blue sky with a
+  sliver of geometry (`race-72pct-blank-view.png`): to investigate.
 
 ## Next steps (as of 2026-10-14 evening)
 
@@ -136,7 +141,8 @@ on night one (see the log below).
    running GS work on its own thread (PCSX2 MTGS style) with sync points at
    readbacks/CSR/vram reads; then texture upload (`transfer_bytes`, per-pixel
    swizzle) and `GpuGs::push`/`Pages::rect`.
-3. Does a race finish (results screen, career progression)? Long scripted run.
+3. A race finishes (done). Next: the blank view at ~72% of Snow Jam; career
+   mode progression; the other courses.
 4. Remaining runtime COP2 macro decodes (14 ops) → static.
 
 ## How to resume
