@@ -23,8 +23,9 @@
 //! ```text
 //! vu.begin_pair(&[(fs, fieldmask), ...]); // stall on not-yet-ready VF fields,
 //!                                         // retire Q/P/flag pipelines
-//! vu.loi(imm);                            // only for I-bit pairs
 //! vu.madd(0b1110, 1, 2, Src::Bc(3, W));   // upper: computed from OLD state, staged
+//! vu.loi(imm);                            // only for I-bit pairs (after the upper:
+//!                                         // it reads the old I)
 //! vu.lq(0b1111, 4, 1, 2);                 // lower: executes against OLD state
 //! vu.end_pair();                          // commit upper (wins over a lower write
 //!                                         // to the same VF), flags, cycle += 1
@@ -565,7 +566,8 @@ impl Vu {
         self.stage = EMPTY_STAGE;
     }
 
-    /// LOI: the I bit's immediate, visible to the upper op of the same pair.
+    /// LOI: the I bit's immediate. Called after the pair's upper op, which
+    /// reads the old I (as in PCSX2); visible from the next pair on.
     #[inline]
     pub fn loi(&mut self, imm: u32) {
         self.i = imm;

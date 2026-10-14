@@ -281,6 +281,11 @@ fn emit_pair(out: &mut String, p: &Pair, branch: bool, comment: bool) -> bool {
         write!(r, "({reg}, 0b{m:04b})").unwrap();
     }
     writeln!(out, "{ind}vu.begin_pair(&[{r}]);").unwrap();
+    if let Some(c) = upper_call(&p.upper) {
+        writeln!(out, "{ind}{}", c.replace("PC", &format!("{:#06x}", p.pc))).unwrap();
+    }
+    // LOI after the upper op: the upper of an I-bit pair reads the *old* I
+    // (PCSX2 `_vu1Exec` / microVU `doIbit`; SSX 3 microcode relies on it).
     if p.hi & 0x8000_0000 != 0 {
         writeln!(
             out,
@@ -289,9 +294,6 @@ fn emit_pair(out: &mut String, p: &Pair, branch: bool, comment: bool) -> bool {
             f32::from_bits(p.lo)
         )
         .unwrap();
-    }
-    if let Some(c) = upper_call(&p.upper) {
-        writeln!(out, "{ind}{}", c.replace("PC", &format!("{:#06x}", p.pc))).unwrap();
     }
     let mut is_branch = false;
     if let Some(l) = p.lower {

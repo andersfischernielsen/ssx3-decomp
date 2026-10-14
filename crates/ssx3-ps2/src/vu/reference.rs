@@ -41,10 +41,10 @@ pub fn run_traced(
         let lower = if ibit { None } else { Some(decode_lower(lo)) };
         let reads = pair_reads(&upper, lower.as_ref());
         vu.begin_pair(&reads);
+        exec_upper(vu, &upper);
         if ibit {
             vu.loi(lo);
         }
-        exec_upper(vu, &upper);
         let taken = match lower {
             Some(l) => exec_lower(vu, &l, pc, kick),
             None => None,

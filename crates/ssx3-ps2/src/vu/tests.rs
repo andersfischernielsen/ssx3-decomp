@@ -298,6 +298,50 @@ fn micro_program_branch_delay_slot_ebit() {
     assert_eq!(vu.vi[2], 3);
 }
 
+/// ADDi.<dest> fd, fs, I (upper funct 0x22).
+fn up_addi(dest: u32, fd: u32, fs: u32) -> u32 {
+    dest << 21 | fs << 11 | fd << 6 | 0x22
+}
+
+const IBIT: u32 = 0x8000_0000;
+const EBIT: u32 = 0x4000_0000;
+
+fn ibit_prog() -> [(u32, u32); 4] {
+    [
+        (IBIT | up_addi(8, 1, 0), f(1.0)),        // ADDi.x vf1, vf0, I  | LOI 1.0
+        (IBIT | up_addi(4, 1, 0), f(2.0)),        // ADDi.y vf1, vf0, I  | LOI 2.0
+        (IBIT | EBIT | up_addi(2, 1, 0), f(3.0)), // ADDi.z vf1, vf0, I  | LOI 3.0  [E]
+        (UNOP, LNOP),
+    ]
+}
+
+/// Regression (found by the differential test against ps2-web-recomp and
+/// PCSX2): the upper op of an I-bit pair reads the *old* I; LOI's value is
+/// visible from the next pair on (PCSX2 `_vu1Exec`, microVU `doIbit`).
+#[test]
+fn ibit_upper_reads_old_i() {
+    let mut vu = interp_vu(1);
+    load_prog(&mut vu, &ibit_prog());
+    vu.i = f(5.0);
+    vu.start(0);
+    assert!(vu.run(100, &mut |_| {}));
+    assert_eq!(&vu.vf[1][..3], &fv([5.0, 1.0, 2.0, 0.0])[..3]);
+    assert_eq!(vu.i, f(3.0));
+}
+
+/// The translator emits LOI after the upper call, so translated code agrees.
+#[test]
+fn ibit_translation_emits_loi_after_upper() {
+    let bytes: Vec<u8> = ibit_prog()
+        .iter()
+        .flat_map(|(hi, lo)| lo.to_le_bytes().into_iter().chain(hi.to_le_bytes()))
+        .collect();
+    let src = recomp::translate_program(&bytes, 0);
+    let add = src.find("vu.add(0b1000, 1, 0, Src::I)").expect("upper");
+    let loi = src.find("vu.loi(0x3f800000)").expect("loi");
+    assert!(add < loi, "LOI must follow the upper op:\n{src}");
+}
+
 #[test]
 fn branch_reads_old_vi_written_by_previous_pair() {
     let mut vu = interp_vu(1);
