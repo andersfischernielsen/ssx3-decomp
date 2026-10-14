@@ -16,6 +16,11 @@ pub fn boot() -> Box<Cpu> {
     ssx3_iop::register_generated(&ssx3_iop_gen::GENERATED);
     let mut c = Cpu::new();
     c.kernel.host_threads = ssx3_ee::HOST_THREADS;
+    // The GPU rasterizer is the default for the game (falls back to the CPU
+    // when no adapter is usable); SSX3_GS=cpu forces the software path.
+    if std::env::var("SSX3_GS").is_err() {
+        c.bus.hw.gs.set_backend(ssx3_ps2::gs::Backend::Gpu);
+    }
     let iso = std::env::var("SSX3_ISO")
         .map(PathBuf::from)
         .unwrap_or_else(|_| repo_root().join("SSX 3 (USA).iso"));
