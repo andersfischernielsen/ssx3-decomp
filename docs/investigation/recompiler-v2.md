@@ -79,3 +79,22 @@ Ported from ps2-web-recomp's design (MIT):
 - Timing is one cycle per instruction.
 - The block-dispatch form is correct but not idiomatic Rust. Structured control
   flow and register promotion come later; correctness comes first.
+
+## Future direction: structured output via host threads
+
+The block-dispatch form exists because a thread switch must be able to resume
+any function at any return point after the host stack unwinds. If each EE
+thread instead ran on its own host thread (PS2Recomp's approach, one runnable
+at a time, handed off with a condvar baton), no frame would ever unwind.
+Functions could then be emitted as **structured Rust** (loops and ifs, with
+GPRs promoted to typed locals across calls by the ABI), which is a much more
+readable decompilation:
+
+- Interrupt handlers run nested on the current host thread.
+- The depth cap goes away.
+- Thread switches cost a condvar handoff, a few microseconds each, at a few
+  thousand switches per second.
+
+Prerequisites are a structuring pass over the CFG (the old `codegen.rs` reached
+86% structured functions) and an ABI-aware register promotion. The current
+form stays the correctness baseline to diff against.
