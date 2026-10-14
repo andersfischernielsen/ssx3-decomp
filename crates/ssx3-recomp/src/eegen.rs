@@ -44,7 +44,7 @@ pub fn fn_name(addr: u32) -> String {
 
 /// How control leaves an instruction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Ctl {
+pub enum Ctl {
     /// Not a control transfer.
     None,
     /// Conditional branch (with delay slot). `likely`: delay slot only if taken.
@@ -506,6 +506,11 @@ pub struct Stats {
 
 /// Emit one function. `shard` is the index of the crate it is emitted into.
 pub fn emit_function(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, out: &mut String) -> Stats {
+    emit_function_named(img, f, shard, ctx, out, &fn_name(f.start))
+}
+
+/// `emit_function` with an explicit Rust name (dispatch twins of structured functions).
+pub fn emit_function_named(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, out: &mut String, name: &str) -> Stats {
     let mut st = Stats::default();
     // Instruction list in address order.
     let mut insns: Vec<(u32, u32)> = Vec::new();
@@ -559,7 +564,6 @@ pub fn emit_function(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, out: &m
     }
     st.labels = labels.len();
 
-    let name = fn_name(f.start);
     if let Some(sym) = &f.name {
         let _ = writeln!(out, "/// `{sym}`");
     }
@@ -972,4 +976,18 @@ pub fn targets(img: &dyn Image, f: &Func, threads: bool) -> Vec<u32> {
 /// Validate lowering coverage over a word stream (used by tests and stats).
 pub fn is_lowerable(pc: u32, w: u32) -> bool {
     classify(pc, w) != Ctl::None || lower(pc, w).is_some()
+}
+
+// Helpers shared with `structure.rs`.
+pub fn classify_pub(pc: u32, w: u32) -> Ctl {
+    classify(pc, w)
+}
+pub fn branch_cond_pub(w: u32) -> String {
+    branch_cond(w)
+}
+pub fn direct_callee_pub(target: u32, shard: usize, ctx: &Ctx) -> String {
+    direct_callee(target, shard, ctx)
+}
+pub fn tail_pub(target: u32, shard: usize, ctx: &Ctx) -> String {
+    tail(target, shard, ctx)
 }

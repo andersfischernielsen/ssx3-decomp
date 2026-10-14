@@ -17,6 +17,7 @@ pub mod eegen;
 pub mod flow;
 pub mod program;
 pub mod r5900;
+pub mod structure;
 pub mod symbols;
 
 pub use boundaries::boundaries;

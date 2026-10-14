@@ -16,7 +16,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use ssx3_core::elf::Elf;
-use ssx3_recomp::eegen::{emit_function, extend_runs, fn_name, targets, Ctx, Func, Image, Stats};
+use ssx3_recomp::eegen::{emit_function, emit_function_named, extend_runs, fn_name, targets, Ctx, Func, Image, Stats};
 use ssx3_recomp::{boundaries, index};
 
 struct ElfImage(Elf);
@@ -34,11 +34,15 @@ fn repo_root() -> PathBuf {
 fn main() {
     let mut shards = 16usize;
     let mut threads = false;
+    let mut structured = false;
     let args: Vec<String> = std::env::args().collect();
     let mut i = 1;
     while i < args.len() {
         if args[i] == "--threads" {
             threads = true;
+        } else if args[i] == "--structured" {
+            threads = true;
+            structured = true;
         } else if args[i] == "--shards" {
             shards = args[i + 1].parse().expect("--shards N");
             i += 1;
@@ -165,9 +169,26 @@ fn main() {
     }
 
     // Cross-function branch targets must be labels where they land.
+    let mut external: BTreeSet<u32> = BTreeSet::new();
     for f in &funcs {
-        extra.extend(targets(&img, f, threads));
+        let ts = targets(&img, f, threads);
+        for &t in &ts {
+            if t < f.start || t >= f.end {
+                external.insert(t);
+            }
+        }
+        extra.extend(ts);
     }
+    external.extend(data_refs.iter().copied());
+    if let Ok(s) = fs::read_to_string(root.join("generated/entries.txt")) {
+        for line in s.lines() {
+            let t = line.split('#').next().unwrap().trim();
+            if let Ok(v) = u32::from_str_radix(t.trim_start_matches("0x"), 16) {
+                external.insert(v);
+            }
+        }
+    }
+    let mut structured_count = 0usize;
     let ctx = Ctx { shard_of: &shard_of, data_refs: &data_refs, extra_labels: &extra, threads };
     let out_root = root.join("generated/ee");
     let _ = fs::remove_dir_all(&out_root);
@@ -188,6 +209,20 @@ fn main() {
         code.push_str("#![allow(unused_imports, unused_mut, unused_variables, unused_assignments, unreachable_code, unused_parens, clippy::all)]\n");
         code.push_str("use ssx3_ps2::Cpu;\nuse ssx3_ps2::cpu::sx;\nuse ssx3_ps2::vu::{Src, W, X, Y, Z};\nuse ssx3_ps2::vu::decode::Efu;\n\n");
         for f in funcs.iter().filter(|f| shard_of[&f.start] == s) {
+            if structured {
+                if let Some(src) = ssx3_recomp::structure::emit_structured(&img, f, s, &ctx, &external) {
+                    code.push_str(&src);
+                    structured_count += 1;
+                    if external.range(f.start + 1..f.end).next().is_some() {
+                        let twin = format!("{}__entries", fn_name(f.start));
+                        let st = emit_function_named(&img, f, s, &ctx, &mut code, &twin);
+                        totals.invalid += st.invalid;
+                    }
+                    totals.instructions += f.runs.iter().map(|r| ((r.1 - r.0) / 4) as usize).sum::<usize>();
+                    code.push('\n');
+                    continue;
+                }
+            }
             let st = emit_function(&img, f, s, &ctx, &mut code);
             totals.instructions += st.instructions;
             totals.invalid += st.invalid;
@@ -247,5 +282,8 @@ fn main() {
     println!("data refs    : {}", data_refs.len());
     println!("extra entries: {}", extra.len());
     println!("shards       : {shards}");
+    if structured {
+        println!("structured   : {structured_count} of {} functions", funcs.len());
+    }
     println!("rust bytes   : {bytes}");
 }
