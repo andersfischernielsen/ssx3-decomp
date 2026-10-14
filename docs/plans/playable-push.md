@@ -63,6 +63,11 @@ Reference design: `snuri00/ps2-web-recomp` (MIT); notes in
   then), GS speed (software rasterizer: ~2 fps in 3D scenes), audio output,
   memory card (reports "no card").
 
+- 2026-10-14 (later): **real audio path.** The disc's LIBSD.IRX and SNDDRV.IRX are
+  statically recompiled (`recomp-iop`) and run on a native IOP kernel with an SPU2
+  model and cpal output, behind `SSX3_IOP=1` (`docs/investigation/iop-audio.md`).
+  Sound effects and race ambience play; music streams do not start yet (EE-side).
+
 ## How to resume
 
 ```sh
@@ -71,6 +76,8 @@ tools/run-headless.sh 2400 --shot-every 100          # screenshots → /tmp/ssx3
 SSX3_INPUT="950:0010:8,1000:4000:8,1600:0008:8,2000:4000:8,2500:4000:8,2700:4000:8,2900:4000:8,3100:4000:8,3300:4000:8,3500:4000:8,3700:4000:8,4250:4000:8" \
   ./target/game/ssx3-headless 4700 --shot-every 100  # scripted path into a race
 cargo run --profile game -p ssx3                     # windowed (keyboard pad)
+SSX3_IOP=1 cargo run --profile game -p ssx3          # ... with the recompiled sound driver
+SSX3_IOP=1 SSX3_WAV=/tmp/a.wav ./target/game/ssx3-headless 2400   # capture audio headless
 ```
 Runtime misses are appended to `generated/entries.txt` automatically; rerun
 `recomp-ee` after a miss. Debug env: `SSX3_TRACE_SIF`, `SSX3_TRACE_SYSCALLS`,

@@ -85,12 +85,26 @@ fn main() {
         let gp = c.g[28][0] as u32;
         for item in spec.split(',') {
             let (a, n) = item.split_once(':').unwrap_or((item, "4"));
+            let (iop, a) = match a.strip_prefix("iop") {
+                Some(r) => (true, r),
+                None => (false, a),
+            };
             let a = match a.strip_prefix("gp+") {
                 Some(o) => gp.wrapping_add(u32::from_str_radix(o.trim_start_matches("0x"), 16).unwrap_or(0)),
                 None => u32::from_str_radix(a.trim_start_matches("0x"), 16).unwrap_or(0),
             };
             let n: u32 = n.parse().unwrap_or(4);
-            let w: Vec<String> = (0..n).map(|i| format!("{:08x}", c.bus.ram_u32((a + 4 * i) & 0x01FF_FFFF))).collect();
+            let w: Vec<String> = (0..n)
+                .map(|i| {
+                    let o = (a + 4 * i) as usize;
+                    let v = if iop {
+                        u32::from_le_bytes(c.bus.iop[o & 0x1F_FFFC..(o & 0x1F_FFFC) + 4].try_into().unwrap())
+                    } else {
+                        c.bus.ram_u32((a + 4 * i) & 0x01FF_FFFF)
+                    };
+                    format!("{v:08x}")
+                })
+                .collect();
             eprintln!("peek {a:#x} (gp {gp:#x}): {}", w.join(" "));
         }
     }

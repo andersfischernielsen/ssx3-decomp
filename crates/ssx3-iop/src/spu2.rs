@@ -711,12 +711,14 @@ pub fn tick(c: &mut Iop) {
             }
         }
         for n in 0..BATCH {
+            s.stats[2] += sc[n][0].unsigned_abs() as u64;
             rings[core][4][n] = clamp16(sc[n][0]);
             rings[core][5][n] = clamp16(sc[n][1]);
         }
         for n in 0..BATCH {
             let (mut l, mut r) = (sc[n][0], sc[n][1]);
             let (il, ir) = s.render_input(core, &mut l, &mut r);
+            s.stats[1] += il.unsigned_abs() as u64;
             sc[n] = [l, r];
             if core == 0 {
                 rings[0][0][n] = il;
@@ -727,19 +729,16 @@ pub fn tick(c: &mut Iop) {
     }
     let mut out = [0i16; BATCH * 2];
     for n in 0..BATCH {
-        let mut mix = [0i32; 2];
-        for core in 0..2 {
-            let l = sum[core][n][0] * master(s.cores[core].mvol[0]) >> 15;
-            let r = sum[core][n][1] * master(s.cores[core].mvol[1]) >> 15;
-            if core == 0 {
-                rings[1][0][n] = clamp16(l);
-                rings[1][1][n] = clamp16(r);
-            }
-            mix[0] += l;
-            mix[1] += r;
-        }
-        out[n * 2] = clamp16(mix[0]);
-        out[n * 2 + 1] = clamp16(mix[1]);
+        // Core 0's output (after its MVOL) is core 1's external input; core
+        // 1's output (after its MVOL) is the DAC.
+        let l0 = clamp16(sum[0][n][0] * master(s.cores[0].mvol[0]) >> 15) as i32;
+        let r0 = clamp16(sum[0][n][1] * master(s.cores[0].mvol[1]) >> 15) as i32;
+        rings[1][0][n] = l0 as i16;
+        rings[1][1][n] = r0 as i16;
+        let l = (sum[1][n][0] + l0) * master(s.cores[1].mvol[0]) >> 15;
+        let r = (sum[1][n][1] + r0) * master(s.cores[1].mvol[1]) >> 15;
+        out[n * 2] = clamp16(l);
+        out[n * 2 + 1] = clamp16(r);
     }
     s.write_rings(0, &rings[0]);
     s.write_rings(1, &rings[1]);
@@ -761,7 +760,11 @@ pub fn tick(c: &mut Iop) {
 
 /// One-line voice summary for diagnostics.
 pub fn describe(s: &Spu2) -> String {
-    let mut out = String::new();
+    let mut out = format!(
+        "level: input {} voices {} | ",
+        s.stats[1] / s.ticks.max(1) / BATCH as u64,
+        s.stats[2] / s.ticks.max(1) / BATCH as u64
+    );
     for (ci, k) in s.cores.iter().enumerate() {
         let active = k.voices.iter().filter(|v| v.phase != Phase::Off).count();
         out += &format!(
