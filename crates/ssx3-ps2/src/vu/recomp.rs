@@ -425,7 +425,8 @@ pub fn registry_source(ts: &[Translation]) -> String {
 pub fn macro_source(word: u32) -> Option<String> {
     match decode_macro(word) {
         Macro::Upper(u) => {
-            let c = upper_call(&u)?;
+            // VNOP has no call; keep the begin/end so pipeline state matches macro_op.
+            let c = upper_call(&u).unwrap_or_default();
             Some(format!("vu.macro_begin(); {c} vu.macro_end_upper();"))
         }
         Macro::Lower(l) => {
