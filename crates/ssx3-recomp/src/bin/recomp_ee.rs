@@ -33,13 +33,20 @@ fn repo_root() -> PathBuf {
 
 fn main() {
     let mut shards = 16usize;
-    let mut threads = false;
-    let mut structured = false;
+    // Default: structured Rust on the host-thread runtime. `--unwind` selects
+    // the original resumable block-dispatch form; `--threads` dispatch form
+    // on host threads.
+    let mut threads = true;
+    let mut structured = true;
     let args: Vec<String> = std::env::args().collect();
     let mut i = 1;
     while i < args.len() {
-        if args[i] == "--threads" {
+        if args[i] == "--unwind" {
+            threads = false;
+            structured = false;
+        } else if args[i] == "--threads" {
             threads = true;
+            structured = false;
         } else if args[i] == "--structured" {
             threads = true;
             structured = true;
