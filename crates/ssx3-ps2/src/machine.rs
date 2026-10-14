@@ -189,6 +189,7 @@ pub fn service_events(c: &mut Cpu) -> bool {
         c.sched.in_vblank = false;
         c.bus.hw.raise(crate::hw::int::VBOF);
     }
+    c.bus.hw.timers_service();
     if c.bus.hw.gs.irq_pending() {
         c.bus.hw.raise(crate::hw::int::GS);
     }
@@ -202,6 +203,9 @@ pub fn service_events(c: &mut Cpu) -> bool {
     }
     if let Some(a) = kernel::next_alarm(c) {
         next = next.min(a.max(c.cycles + 1));
+    }
+    if let Some(t) = c.bus.hw.next_timer_event() {
+        next = next.min(t.max(c.cycles + 1));
     }
     // Poll at least every ~20k cycles so pending I/O interrupts get delivered.
     next = next.min(c.cycles + 20_000);

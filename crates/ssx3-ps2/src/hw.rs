@@ -62,6 +62,8 @@ pub struct Timer {
     /// Counter value at `base` (in EE cycles).
     pub count_at_base: u32,
     pub base: u64,
+    /// EE cycle at which the next compare/overflow interrupt fires.
+    pub irq_at: Option<u64>,
 }
 
 pub struct Hw {
@@ -215,6 +217,70 @@ impl Hw {
         self.timers[i].base = self.now;
     }
 
+    /// Compute when timer `i` next raises a compare (CMPE) or overflow (OVFE)
+    /// interrupt, from the state at `self.now`.
+    fn timer_schedule(&mut self, i: usize) {
+        let t = self.timers[i];
+        if t.mode & 0x80 == 0 || t.mode & 0x300 == 0 {
+            self.timers[i].irq_at = None;
+            return;
+        }
+        let count = self.timer_count(i) as u64;
+        let mut ticks = u64::MAX;
+        if t.mode & 0x100 != 0 {
+            let comp = t.comp as u64;
+            ticks = if comp > count { comp - count } else { 0x1_0000 - count + comp };
+        }
+        if t.mode & 0x200 != 0 {
+            ticks = ticks.min(0x1_0000 - count);
+        }
+        let ticks = ticks.max(1);
+        self.timers[i].irq_at = Some(self.now + ticks * Self::timer_div(t.mode));
+    }
+
+    /// Fire due timer interrupts (EQUF/OVFF + INTC TIMn). `self.now` must be current.
+    pub fn timers_service(&mut self) {
+        let now = self.now;
+        for i in 0..4 {
+            for _ in 0..64 {
+                let Some(at) = self.timers[i].irq_at else { break };
+                if at > now {
+                    break;
+                }
+                // Evaluate the timer at the firing instant.
+                self.now = at;
+                let count = self.timer_count(i);
+                let t = self.timers[i];
+                let mut flag = 0;
+                if t.mode & 0x100 != 0 && (count == t.comp || (t.mode & 0x40 != 0 && count == 0)) {
+                    flag |= 0x400;
+                }
+                if t.mode & 0x200 != 0 && count == 0 && flag == 0 {
+                    flag |= 0x800;
+                }
+                if flag == 0 {
+                    flag = if t.mode & 0x100 != 0 { 0x400 } else { 0x800 };
+                }
+                if t.mode & flag == 0 {
+                    self.raise(9 + i as u32);
+                }
+                self.timers[i].mode |= flag;
+                // Step past the event so the next one is found.
+                self.timers[i].count_at_base = count;
+                self.timers[i].base = at;
+                self.now = at + Self::timer_div(t.mode);
+                self.timer_schedule(i);
+                self.now = now;
+            }
+        }
+        self.now = now;
+    }
+
+    /// Earliest pending timer interrupt.
+    pub fn next_timer_event(&self) -> Option<u64> {
+        self.timers.iter().filter_map(|t| t.irq_at).min()
+    }
+
     // -------------------------------------------------------------- reads
 
     pub fn read32(&mut self, p: u32) -> u32 {
@@ -359,14 +425,20 @@ impl Hw {
                     0x00 => {
                         self.timers[i].count_at_base = v & 0xffff;
                         self.timers[i].base = self.now;
+                        self.timer_schedule(i);
                     }
                     0x10 => {
                         self.timer_rebase(i);
                         // Writing 1 to EQUF/OVFF clears them.
                         let flags = self.timers[i].mode & 0xC00 & !(v & 0xC00);
                         self.timers[i].mode = (v & 0x3FF) | flags;
+                        self.timer_schedule(i);
                     }
-                    0x20 => self.timers[i].comp = v & 0xffff,
+                    0x20 => {
+                        self.timer_rebase(i);
+                        self.timers[i].comp = v & 0xffff;
+                        self.timer_schedule(i);
+                    }
                     0x30 => self.timers[i].hold = v & 0xffff,
                     _ => {}
                 }

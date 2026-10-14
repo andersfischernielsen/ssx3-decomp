@@ -126,10 +126,12 @@ impl Cpu {
             let o = (a & !3) as usize;
             return sx(u32::from_le_bytes(self.bus.ram[o..o + 4].try_into().unwrap()));
         }
+        self.bus.hw.now = self.cycles;
         sx(self.bus.read32(a))
     }
     #[inline(always)]
     pub fn lwu(&mut self, a: u32) -> u64 {
+        self.bus.hw.now = self.cycles;
         self.bus.read32(a) as u64
     }
     #[inline(always)]
@@ -158,7 +160,11 @@ impl Cpu {
             self.bus.ram[o..o + 4].copy_from_slice(&(v as u32).to_le_bytes());
             return;
         }
-        self.bus.write32(a, v as u32)
+        self.bus.hw.now = self.cycles;
+        self.bus.write32(a, v as u32);
+        if self.bus.hw.irq_dirty {
+            self.next_event = self.cycles;
+        }
     }
     #[inline(always)]
     pub fn sd(&mut self, a: u32, v: u64) {
