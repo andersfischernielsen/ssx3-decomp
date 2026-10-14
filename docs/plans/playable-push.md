@@ -75,3 +75,16 @@ cargo run --profile game -p ssx3                     # windowed (keyboard pad)
 Runtime misses are appended to `generated/entries.txt` automatically; rerun
 `recomp-ee` after a miss. Debug env: `SSX3_TRACE_SIF`, `SSX3_TRACE_SYSCALLS`,
 `SSX3_TRACE_THREADS`, `SSX3_VRAM_DUMP`, `SSX3_INPUT`, `SSX3_SKIP_MOVIES=0`.
+- 2026-10-14 (morning):
+  6. **In race** (`in-race-first.png`, `racing.png`): HUD, rivals, speed, position.
+  7. Broken 3D geometry fixed: VU clip flags must become visible after 3 pairs, not 4
+     (`race-start-fixed.png`). Found with the `SSX3_GIF_STATS` tap (far vertices
+     14k → 0).
+  8. FPU made bit-exact (round toward zero, integer-key compares).
+  9. EE timer compare/overflow interrupts: the game's master clock (Timer 1
+     handler 0x3e4db8) now runs; boot movies play through the IPU
+     (`movie-eabig.png`).
+  10. Static VU0 macro lowering (14 of ~10k COP2 macro ops still decode at
+      run time); 1,109 functions named (`naming.md`), emitted as `pub use` aliases.
+- In flight: GS performance (tile-parallel rasterizer + capture/replay),
+  IOP recompilation + SPU2 audio (`SSX3_IOP=1`).
