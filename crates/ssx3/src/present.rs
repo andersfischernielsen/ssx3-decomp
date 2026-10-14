@@ -1,5 +1,10 @@
 //! `wgpu` presenter for frames produced by the GS (`Gs::display`).
 //! Adapted from the VRAM presenter in `ssx3-gs`.
+//!
+//! With the GPU GS backend (`SSX3_GS=gpu`) the presenter uses the GS's own
+//! wgpu device and draws the frame straight from the GS's display buffer
+//! (`Gs::display_gpu`, `render_gpu`), so frames never round-trip through
+//! the CPU.
 
 use std::sync::Arc;
 
@@ -39,6 +44,65 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 }
 "#;
 
+/// Presents a GPU GS frame: RGBA8 words in a storage buffer.
+const BUFFER_SHADER: &str = r#"
+@group(0) @binding(0) var<storage, read> frame: array<u32>;
+// (width, height, 1 if the surface is sRGB)
+@group(0) @binding(1) var<uniform> dims: vec4<u32>;
+
+struct VsOut {
+    @builtin(position) pos: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) i: u32) -> VsOut {
+    var p = array<vec2<f32>, 3>(
+        vec2<f32>(-1.0, -1.0),
+        vec2<f32>( 3.0, -1.0),
+        vec2<f32>(-1.0,  3.0),
+    );
+    var uv = array<vec2<f32>, 3>(
+        vec2<f32>(0.0, 1.0),
+        vec2<f32>(2.0, 1.0),
+        vec2<f32>(0.0, -1.0),
+    );
+    var out: VsOut;
+    out.pos = vec4<f32>(p[i], 0.0, 1.0);
+    out.uv = uv[i];
+    return out;
+}
+
+fn to_linear(c: vec3<f32>) -> vec3<f32> {
+    return select(pow((c + 0.055) / 1.055, vec3<f32>(2.4)), c / 12.92, c <= vec3<f32>(0.04045));
+}
+
+@fragment
+fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+    let w = dims.x;
+    let h = dims.y;
+    let x = min(u32(max(in.uv.x, 0.0) * f32(w)), w - 1u);
+    let y = min(u32(max(in.uv.y, 0.0) * f32(h)), h - 1u);
+    let c = frame[y * w + x];
+    var rgb = vec3<f32>(f32(c & 0xFFu), f32((c >> 8u) & 0xFFu), f32((c >> 16u) & 0xFFu)) / 255.0;
+    if (dims.z != 0u) {
+        // The texture path samples an sRGB texture (decoding to linear) into
+        // an sRGB surface (encoding again); do the same.
+        rgb = to_linear(rgb);
+    }
+    return vec4<f32>(rgb, 1.0);
+}
+"#;
+
+/// The pipeline and bindings for presenting a GPU GS frame buffer.
+struct BufferPath {
+    pipeline: wgpu::RenderPipeline,
+    bgl: wgpu::BindGroupLayout,
+    dims: wgpu::Buffer,
+    /// Bind group for the last frame buffer seen.
+    bound: Option<(wgpu::Buffer, wgpu::BindGroup)>,
+}
+
 #[derive(Debug)]
 pub enum PresentError {
     Reconfigured,
@@ -58,34 +122,49 @@ pub struct Presenter {
     sampler: wgpu::Sampler,
     tex: wgpu::Texture,
     tex_size: (u32, u32),
+    buffer_path: BufferPath,
     // Keep the window handle alive for as long as the surface exists.
     _window: Arc<Window>,
 }
 
 impl Presenter {
-    /// Create the device and render pipeline for `window`.
-    pub async fn new(window: Arc<Window>) -> Self {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-        let surface = instance
-            .create_surface(window.clone())
-            .expect("create surface");
-
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                compatible_surface: Some(&surface),
-                ..Default::default()
-            })
-            .await
-            .expect("request adapter");
-
-        let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor {
-                label: Some("ssx3"),
-                ..Default::default()
-            })
-            .await
-            .expect("request device");
+    /// Create the device and render pipeline for `window`. With `gs`
+    /// (the GPU GS backend's device), present with that device so GS frames
+    /// can be shown without leaving the GPU.
+    pub async fn new(window: Arc<Window>, gs: Option<&'static ssx3_ps2::gs::gpu::GpuContext>) -> Self {
+        let shared = gs.and_then(|ctx| {
+            let surface = ctx.instance.create_surface(window.clone()).ok()?;
+            if !ctx.adapter.is_surface_supported(&surface) {
+                eprintln!("[present] GS device cannot present to this window; using a separate device");
+                return None;
+            }
+            Some((surface, ctx.adapter.clone(), ctx.device.clone(), ctx.queue.clone()))
+        });
+        let (surface, adapter, device, queue) = match shared {
+            Some(s) => s,
+            None => {
+                let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+                let surface = instance
+                    .create_surface(window.clone())
+                    .expect("create surface");
+                let adapter = instance
+                    .request_adapter(&wgpu::RequestAdapterOptions {
+                        power_preference: wgpu::PowerPreference::HighPerformance,
+                        compatible_surface: Some(&surface),
+                        ..Default::default()
+                    })
+                    .await
+                    .expect("request adapter");
+                let (device, queue) = adapter
+                    .request_device(&wgpu::DeviceDescriptor {
+                        label: Some("ssx3"),
+                        ..Default::default()
+                    })
+                    .await
+                    .expect("request device");
+                (surface, adapter, device, queue)
+            }
+        };
 
         let size = window.inner_size();
         let width = size.width.max(1);
@@ -193,6 +272,7 @@ impl Presenter {
             cache: None,
         });
 
+        let buffer_path = BufferPath::new(&device, config.format);
         Self {
             surface,
             device,
@@ -204,8 +284,38 @@ impl Presenter {
             sampler,
             tex,
             tex_size: (640, 448),
+            buffer_path,
             _window: window,
         }
+    }
+
+    /// Whether `frame` (from `Gs::display_gpu`) lives on this presenter's device.
+    pub fn same_device(&self, gs: Option<&'static ssx3_ps2::gs::gpu::GpuContext>) -> bool {
+        gs.is_some_and(|c| c.device == self.device)
+    }
+
+    /// Draw a GPU GS frame (on this presenter's device) to the window.
+    pub fn render_gpu(&mut self, frame: &ssx3_ps2::gs::gpu::GpuFrame) -> Result<(), PresentError> {
+        let srgb = self.config.format.is_srgb() as u32;
+        let dims = [frame.width, frame.height, srgb, 0u32];
+        let bytes: Vec<u8> = dims.iter().flat_map(|v| v.to_le_bytes()).collect();
+        self.queue.write_buffer(&self.buffer_path.dims, 0, &bytes);
+        let bp = &mut self.buffer_path;
+        if bp.bound.as_ref().is_none_or(|(b, _)| *b != frame.buffer) {
+            let bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("gs-frame-bg"),
+                layout: &bp.bgl,
+                entries: &[
+                    wgpu::BindGroupEntry { binding: 0, resource: frame.buffer.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 1, resource: bp.dims.as_entire_binding() },
+                ],
+            });
+            bp.bound = Some((frame.buffer.clone(), bg));
+        }
+        let Some((_, bg)) = &self.buffer_path.bound else { unreachable!() };
+        let bg = bg.clone();
+        let pipeline = self.buffer_path.pipeline.clone();
+        self.draw_fullscreen(&pipeline, &bg)
     }
 
     /// Resize the swapchain to the window's new size.
@@ -259,6 +369,12 @@ impl Presenter {
             wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
         );
 
+        let (pipeline, bg) = (self.pipeline.clone(), self.bind_group.clone());
+        self.draw_fullscreen(&pipeline, &bg)
+    }
+
+    /// Acquire the next surface texture and draw a fullscreen triangle.
+    fn draw_fullscreen(&mut self, pipeline: &wgpu::RenderPipeline, bind_group: &wgpu::BindGroup) -> Result<(), PresentError> {
         let frame = self.surface.get_current_texture();
         let acquired = match frame {
             wgpu::CurrentSurfaceTexture::Success(t)
@@ -303,8 +419,8 @@ impl Presenter {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &self.bind_group, &[]);
+            pass.set_pipeline(pipeline);
+            pass.set_bind_group(0, bind_group, &[]);
             pass.draw(0..3, 0..1);
         }
 
@@ -314,3 +430,79 @@ impl Presenter {
     }
 }
 
+
+impl BufferPath {
+    fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> BufferPath {
+        let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("gs-frame-bgl"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("gs-frame-present"),
+            source: wgpu::ShaderSource::Wgsl(BUFFER_SHADER.into()),
+        });
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("gs-frame-layout"),
+            bind_group_layouts: &[Some(&bgl)],
+            immediate_size: 0,
+        });
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("gs-frame-pipeline"),
+            layout: Some(&layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
+        let dims = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("gs-frame-dims"),
+            size: 16,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        BufferPath {
+            pipeline,
+            bgl,
+            dims,
+            bound: None,
+        }
+    }
+}

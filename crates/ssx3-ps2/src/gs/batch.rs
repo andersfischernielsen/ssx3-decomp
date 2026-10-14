@@ -198,6 +198,10 @@ impl Gs {
         let Some(mut p) = raster::setup(&d, 0, prim, verts) else {
             return;
         };
+        if let Some(g) = self.gpu.as_mut() {
+            g.push(&d, &p, prim, verts, &self.vram);
+            return;
+        }
         if !d.row_parallel || p.x1 >= d.fb_width || (d.z_used && p.x1 >= d.zb_width) {
             // Not splittable by rows; pixels beyond the buffer width alias
             // other rows.
@@ -391,6 +395,11 @@ impl Gs {
     /// worker pool in the background (see `wait_inflight`); the previous
     /// background batch is always finished first.
     pub(super) fn flush(&mut self) {
+        if let Some(g) = self.gpu.as_mut() {
+            // GPU: close the batch; it is submitted at `sync` / `vblank`.
+            g.close(&self.vram);
+            return;
+        }
         self.wait_inflight();
         if self.batch.is_empty() {
             return;
@@ -465,6 +474,19 @@ impl Gs {
     /// Before overwriting the `x0..=x1` × `y0..=y1` rectangle of `surf`
     /// (`r`): finish drawing whatever reads or writes it.
     pub(super) fn before_vram_write(&mut self, r: &Region) {
+        if let Some(g) = self.gpu.as_mut() {
+            // The CPU writes the mirror and whole pages are uploaded later,
+            // so the pages must be current in the mirror first.
+            if g.batch_touches(r) {
+                g.note_transfer_close();
+                g.close(&self.vram);
+            }
+            if g.gpu_dirty.hits(&r.pages) {
+                g.readback(&r.pages, &mut self.vram, "cpu write");
+            }
+            g.cpu_dirty.union(&r.pages);
+            return;
+        }
         if !self.batch.is_empty() && self.batch.touches(r) {
             self.batch.stats.transfer_flushes += 1;
             self.flush();
@@ -476,6 +498,17 @@ impl Gs {
 
     /// Before reading a rectangle of `surf`: finish drawing whatever writes it.
     pub(super) fn before_vram_read(&mut self, surf: &Surface, x0: u32, y0: u32, x1: u32, y1: u32) {
+        if let Some(g) = self.gpu.as_mut() {
+            let mut r = Region::default();
+            r.add_rect(surf, x0, y0, x1, y1);
+            if g.batch_writes(&r) {
+                g.close(&self.vram);
+            }
+            if g.gpu_dirty.hits(&r.pages) {
+                g.readback(&r.pages, &mut self.vram, "cpu read");
+            }
+            return;
+        }
         let inflight = self.batch.inflight.is_some();
         if self.batch.is_empty() && !inflight {
             return;
@@ -544,19 +577,19 @@ impl InFlight {
 /// the block-level set is only built when a page-level test hits.
 #[derive(Default)]
 pub(crate) struct WriteSet {
-    pages: Pages,
+    pub(crate) pages: Pages,
     fine: Region,
     pending: Vec<(Surface, [u32; 4])>,
 }
 
 impl WriteSet {
-    fn add(&mut self, s: &Surface, rect: [u32; 4], pages: &Pages) {
+    pub(crate) fn add(&mut self, s: &Surface, rect: [u32; 4], pages: &Pages) {
         self.pages.union(pages);
         self.pending.push((*s, rect));
     }
 
     /// Whether a written block is in `r`.
-    fn hits(&mut self, r: &Region) -> bool {
+    pub(crate) fn hits(&mut self, r: &Region) -> bool {
         if !r.pages.hits(&self.pages) {
             return false;
         }
@@ -566,7 +599,7 @@ impl WriteSet {
         self.fine.hits(r)
     }
 
-    fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.pages = Pages::default();
         self.fine.clear();
         self.pending.clear();

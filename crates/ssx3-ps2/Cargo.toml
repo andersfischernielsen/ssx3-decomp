@@ -7,3 +7,5 @@ license.workspace = true
 
 [dependencies]
 ssx3-iop = { path = "../ssx3-iop" }
+pollster = "1.0.1"
+wgpu = "30.0.1"

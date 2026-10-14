@@ -340,7 +340,8 @@ fn snapshot(gs: &Gs) -> Vec<u8> {
 }
 
 fn restore(r: &mut R) -> Result<Gs, String> {
-    let mut gs = Gs::new();
+    // Always the CPU backend; `Gs::set_backend` switches (uploading VRAM).
+    let mut gs = Gs::new_cpu();
     let n = r.u32()? as usize;
     if n != gs.vram.len() {
         return Err(format!("unexpected VRAM size {n}"));
@@ -426,6 +427,7 @@ impl Gs {
     /// Snapshot the GS and start logging every call into it (see `capture`).
     pub fn start_capture(&mut self) {
         self.sync();
+        self.sync_vram();
         let snap = snapshot(self);
         let mut buf = Vec::with_capacity(snap.len() + (1 << 20));
         let mut w = W(&mut buf);

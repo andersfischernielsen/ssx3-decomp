@@ -19,6 +19,7 @@
 pub mod batch;
 pub mod capture;
 mod display;
+pub mod gpu;
 mod gif;
 mod pool;
 mod raster;
@@ -187,6 +188,17 @@ pub struct Gs {
     pub prims_drawn: u64,
     /// Trace recorder while a capture is running (see `capture`).
     pub(crate) capture: Option<Box<capture::Recorder>>,
+    /// GPU rasterization backend; `None` for the CPU rasterizer.
+    pub(crate) gpu: Option<Box<gpu::GpuGs>>,
+}
+
+/// Which rasterizer draws primitives.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Backend {
+    /// The software rasterizer (the reference).
+    Cpu,
+    /// The wgpu compute rasterizer (`gs::gpu`).
+    Gpu,
 }
 
 impl Drop for Gs {
@@ -203,7 +215,18 @@ impl Default for Gs {
 }
 
 impl Gs {
+    /// A GS with the backend chosen by `SSX3_GS` (`gpu` or `cpu`, default
+    /// `cpu`). Falls back to the CPU when no GPU is usable.
     pub fn new() -> Self {
+        let mut gs = Self::new_cpu();
+        if std::env::var("SSX3_GS").is_ok_and(|v| v.eq_ignore_ascii_case("gpu")) {
+            gs.set_backend(Backend::Gpu);
+        }
+        gs
+    }
+
+    /// A GS drawing with the CPU rasterizer, whatever `SSX3_GS` says.
+    pub fn new_cpu() -> Self {
         Self {
             vram: vec![0; swizzle::VRAM_WORDS],
             pr: Priv {
@@ -229,7 +252,80 @@ impl Gs {
             texcache: texcache::TexCache::default(),
             prims_drawn: 0,
             capture: None,
+            gpu: None,
         }
+    }
+
+    /// Switch rasterizer. Returns false if the GPU backend is unavailable
+    /// (the CPU one stays). VRAM carries over in both directions.
+    pub fn set_backend(&mut self, b: Backend) -> bool {
+        match (b, self.gpu.is_some()) {
+            (Backend::Gpu, false) => {
+                self.flush_wait();
+                match gpu::GpuGs::new() {
+                    Some(g) => {
+                        // `GpuGs::new` marks every page for upload.
+                        self.gpu = Some(Box::new(g));
+                        true
+                    }
+                    None => false,
+                }
+            }
+            (Backend::Cpu, true) => {
+                self.sync_vram();
+                self.gpu = None;
+                self.texcache.written(&raster::Pages::ALL);
+                true
+            }
+            _ => true,
+        }
+    }
+
+    pub fn backend(&self) -> Backend {
+        if self.gpu.is_some() {
+            Backend::Gpu
+        } else {
+            Backend::Cpu
+        }
+    }
+
+    /// GPU backend statistics (`None` on the CPU backend).
+    pub fn gpu_stats(&self) -> Option<gpu::GpuStats> {
+        self.gpu.as_ref().map(|g| g.stats)
+    }
+
+    /// The device the GPU backend draws with (for presenting its frames).
+    pub fn gpu_context(&self) -> Option<&'static gpu::GpuContext> {
+        self.gpu.as_ref().map(|g| g.device())
+    }
+
+    /// GPU backend: make `vram` current (reads back every page drawn on the
+    /// GPU since the last readback). A no-op on the CPU backend, where
+    /// `sync()` already does this.
+    pub fn sync_vram(&mut self) {
+        self.flush_wait();
+        if let Some(g) = self.gpu.as_mut() {
+            let dirty = g.gpu_dirty;
+            g.readback(&dirty, &mut self.vram, "sync_vram");
+        }
+    }
+
+    /// GPU backend: wait until everything submitted has been drawn.
+    pub fn gpu_wait_idle(&mut self) {
+        if let Some(g) = self.gpu.as_mut() {
+            g.submit(&self.vram);
+            g.wait_idle();
+        }
+    }
+
+    /// GPU backend: evaluate the display circuits on the GPU and return the
+    /// image's buffer (no VRAM readback). `None` on the CPU backend or when
+    /// nothing is displayed.
+    pub fn display_gpu(&mut self) -> Option<gpu::GpuFrame> {
+        self.flush_wait();
+        let setup = display::gpu_setup(self).ok()?;
+        let g = self.gpu.as_mut()?;
+        Some(g.display_gpu(&setup, &self.vram))
     }
 
     // ---------------------------------------------------------------- privileged
@@ -319,6 +415,9 @@ impl Gs {
             c.vblank(field);
         }
         self.flush_wait();
+        if let Some(g) = self.gpu.as_mut() {
+            g.submit(&self.vram);
+        }
         self.pr.csr |= CSR_VSINT;
         if field & 1 != 0 {
             self.pr.csr |= CSR_FIELD;
@@ -382,15 +481,26 @@ impl Gs {
     }
 
     /// Wait for all queued drawing to land in `vram`.
+    /// On the GPU backend this submits the queued work without waiting, and
+    /// `vram` is only current after `sync_vram()`.
     pub fn sync(&mut self) {
         self.flush_wait();
+        if let Some(g) = self.gpu.as_mut() {
+            g.submit(&self.vram);
+        }
     }
 
     /// Tell the GS that `vram` was modified directly (not through GIF or
     /// register writes), so cached decoded textures are dropped.
+    /// On the GPU backend `vram` then replaces the GPU's copy entirely, so
+    /// call `sync_vram()` before modifying it.
     pub fn vram_written(&mut self) {
         self.flush_wait();
         self.texcache.written(&raster::Pages::ALL);
+        if let Some(g) = self.gpu.as_mut() {
+            g.cpu_dirty = raster::Pages::ALL;
+            g.gpu_dirty = raster::Pages::default();
+        }
     }
 
     /// Deferred mode lets primitive batches span `gif_write` calls, which
@@ -662,7 +772,23 @@ impl Gs {
 
     // ---------------------------------------------------------------- display
 
-    pub fn display(&self, out: &mut Vec<u32>) -> (u32, u32) {
+    /// On the GPU backend the image is produced on the GPU and read back.
+    pub fn display(&mut self, out: &mut Vec<u32>) -> (u32, u32) {
+        if self.gpu.is_some() {
+            self.flush_wait();
+            match display::gpu_setup(self) {
+                Ok(setup) => {
+                    let g = self.gpu.as_mut().expect("gpu");
+                    g.display_read(&setup, &self.vram, out);
+                    return (setup.w, setup.h);
+                }
+                Err((w, h)) => {
+                    out.clear();
+                    out.resize((w * h) as usize, 0xFF00_0000);
+                    return (w, h);
+                }
+            }
+        }
         display::render(self, out)
     }
 }

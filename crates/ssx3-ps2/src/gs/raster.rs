@@ -213,7 +213,7 @@ pub(crate) enum FbFmt {
 
 /// Blend equation classes with a cheaper evaluation.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Blend {
+pub(crate) enum Blend {
     /// A == B and D == Cs: `(X - X) * C >> 7 + Cs` is just Cs.
     Src,
     /// A = Cs, B = Cd, D = Cd.
@@ -222,7 +222,7 @@ enum Blend {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum TexKind {
+pub(crate) enum TexKind {
     C32,
     C24,
     C16,
@@ -231,83 +231,83 @@ enum TexKind {
 
 #[derive(Clone)]
 pub(crate) struct Tex {
-    surf: Surface,
-    kind: TexKind,
-    tw: i32,
-    th: i32,
-    wms: u32,
-    wmt: u32,
-    minu: i32,
-    maxu: i32,
-    minv: i32,
-    maxv: i32,
-    ta0: u32,
-    ta1: u32,
-    aem: bool,
-    palette: Box<[u32; 256]>,
-    pal_mask: usize,
-    mag_linear: bool,
-    min_linear: bool,
-    lcm: bool,
-    l: u32,
-    k: f32,
+    pub(crate) surf: Surface,
+    pub(crate) kind: TexKind,
+    pub(crate) tw: i32,
+    pub(crate) th: i32,
+    pub(crate) wms: u32,
+    pub(crate) wmt: u32,
+    pub(crate) minu: i32,
+    pub(crate) maxu: i32,
+    pub(crate) minv: i32,
+    pub(crate) maxv: i32,
+    pub(crate) ta0: u32,
+    pub(crate) ta1: u32,
+    pub(crate) aem: bool,
+    pub(crate) palette: Box<[u32; 256]>,
+    pub(crate) pal_mask: usize,
+    pub(crate) mag_linear: bool,
+    pub(crate) min_linear: bool,
+    pub(crate) lcm: bool,
+    pub(crate) l: u32,
+    pub(crate) k: f32,
     /// `(1 << tw)` and `(1 << th)` as f64.
-    scale_s: f64,
-    scale_t: f64,
+    pub(crate) scale_s: f64,
+    pub(crate) scale_t: f64,
 }
 
 /// Mipmapping state (MXL > 0 with a MIPMAP minification filter).
 pub(crate) struct Mip {
     /// MXL: highest level.
-    mxl: u32,
+    pub(crate) mxl: u32,
     /// MMIN 2..=5: within-level filter (4 and 5: bilinear) and level
     /// selection (odd: blend the two nearest levels).
-    mmin: u32,
+    pub(crate) mmin: u32,
     /// Levels 1..=MXL (level 0 is `Draw::tex`).
-    levels: Vec<Tex>,
+    pub(crate) levels: Vec<Tex>,
 }
 
 pub(crate) struct Draw {
-    iip: bool,
-    fge: bool,
-    abe: bool,
-    fst: bool,
+    pub(crate) iip: bool,
+    pub(crate) fge: bool,
+    pub(crate) abe: bool,
+    pub(crate) fst: bool,
     pub(crate) fb: Surface,
-    fb_fmt: FbFmt,
-    fbmsk: u32,
+    pub(crate) fb_fmt: FbFmt,
+    pub(crate) fbmsk: u32,
     pub(crate) zb: Surface,
-    zmax: u32,
+    pub(crate) zmax: u32,
     pub(crate) zte: bool,
-    ztst: u32,
-    zmsk: bool,
-    ate: bool,
-    atst: u32,
-    aref: i32,
-    afail: u32,
-    date: bool,
-    datm: bool,
-    blend: Blend,
-    ba: u32,
-    bb: u32,
-    bc: u32,
-    bd: u32,
-    fix: i32,
-    pabe: bool,
-    colclamp: bool,
-    fba: bool,
-    sx0: i32,
-    sx1: i32,
-    sy0: i32,
-    sy1: i32,
-    scanmsk: u32,
-    dither: Option<[[i32; 4]; 4]>,
-    ofx: i32,
-    ofy: i32,
-    tfx: u32,
-    tcc: bool,
-    fogcol: [i32; 3],
-    tex: Option<Tex>,
-    mip: Option<Box<Mip>>,
+    pub(crate) ztst: u32,
+    pub(crate) zmsk: bool,
+    pub(crate) ate: bool,
+    pub(crate) atst: u32,
+    pub(crate) aref: i32,
+    pub(crate) afail: u32,
+    pub(crate) date: bool,
+    pub(crate) datm: bool,
+    pub(crate) blend: Blend,
+    pub(crate) ba: u32,
+    pub(crate) bb: u32,
+    pub(crate) bc: u32,
+    pub(crate) bd: u32,
+    pub(crate) fix: i32,
+    pub(crate) pabe: bool,
+    pub(crate) colclamp: bool,
+    pub(crate) fba: bool,
+    pub(crate) sx0: i32,
+    pub(crate) sx1: i32,
+    pub(crate) sy0: i32,
+    pub(crate) sy1: i32,
+    pub(crate) scanmsk: u32,
+    pub(crate) dither: Option<[[i32; 4]; 4]>,
+    pub(crate) ofx: i32,
+    pub(crate) ofy: i32,
+    pub(crate) tfx: u32,
+    pub(crate) tcc: bool,
+    pub(crate) fogcol: [i32; 3],
+    pub(crate) tex: Option<Tex>,
+    pub(crate) mip: Option<Box<Mip>>,
     /// VRAM pages the frame / Z buffer may write (scissor rectangle), and the
     /// texture may read.
     pub(crate) fb_pages: Pages,
@@ -344,7 +344,7 @@ fn expand16(c: u32, ta0: u32, ta1: u32, aem: bool) -> u32 {
 }
 
 /// Range of texel coordinates a wrap mode can produce.
-fn wrap_range(mode: u32, size_log: i32, min: i32, max: i32) -> (u32, u32) {
+pub(crate) fn wrap_range(mode: u32, size_log: i32, min: i32, max: i32) -> (u32, u32) {
     match mode {
         0 | 1 => (0, (1u32 << size_log) - 1),
         2 => (min as u32, max.max(min) as u32),
@@ -637,17 +637,17 @@ impl Draw {
 /// Interpolated fragment inputs.
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Frag {
-    r: i32,
-    g: i32,
-    b: i32,
-    a: i32,
+    pub(crate) r: i32,
+    pub(crate) g: i32,
+    pub(crate) b: i32,
+    pub(crate) a: i32,
     /// Texel-space coordinates.
-    u: f32,
-    v: f32,
+    pub(crate) u: f32,
+    pub(crate) v: f32,
     /// Interpolated Q (mipmap LOD).
-    q: f32,
-    f: i32,
-    z: f64,
+    pub(crate) q: f32,
+    pub(crate) f: i32,
+    pub(crate) z: f64,
 }
 
 // --------------------------------------------------------------------- texturing
@@ -1271,16 +1271,16 @@ fn pixel_checked(m: Mem, d: &Draw, rows: Rows, x: i32, y: i32, f: &Frag, linear:
 
 // --------------------------------------------------------------------- primitives
 
-const R: usize = 0;
-const G: usize = 1;
-const B: usize = 2;
-const A: usize = 3;
-const S: usize = 4;
-const T: usize = 5;
-const Q: usize = 6;
-const F: usize = 7;
-const Z: usize = 8;
-const NATTR: usize = 9;
+pub(crate) const R: usize = 0;
+pub(crate) const G: usize = 1;
+pub(crate) const B: usize = 2;
+pub(crate) const A: usize = 3;
+pub(crate) const S: usize = 4;
+pub(crate) const T: usize = 5;
+pub(crate) const Q: usize = 6;
+pub(crate) const F: usize = 7;
+pub(crate) const Z: usize = 8;
+pub(crate) const NATTR: usize = 9;
 
 fn attrs(d: &Draw, v: &Vertex) -> [f64; NATTR] {
     let (s, t, q) = if d.fst {
@@ -1303,7 +1303,7 @@ fn attrs(d: &Draw, v: &Vertex) -> [f64; NATTR] {
 
 /// Texture coordinates from interpolated S, T, Q.
 #[inline(always)]
-fn tex_uv(d: &Draw, s: f64, t: f64, q: f64) -> (f32, f32) {
+pub(crate) fn tex_uv(d: &Draw, s: f64, t: f64, q: f64) -> (f32, f32) {
     match &d.tex {
         Some(tx) => {
             if d.fst {
@@ -1558,18 +1558,18 @@ pub(crate) fn sprite_rows_local(d: &Draw, p: &Prim) -> bool {
 
 /// Triangle setup: clipped bounding box, edge functions, attribute planes.
 pub(crate) struct TriSetup {
-    bx0: i32,
-    bx1: i32,
-    by0: i32,
+    pub(crate) bx0: i32,
+    pub(crate) bx1: i32,
+    pub(crate) by0: i32,
     /// Edge function at (bx0, by0) and its steps per pixel in x and y.
-    e0: [i64; 3],
-    edx: [i64; 3],
-    edy: [i64; 3],
+    pub(crate) e0: [i64; 3],
+    pub(crate) edx: [i64; 3],
+    pub(crate) edy: [i64; 3],
     /// `a0 + dadx * (bx0 - ox)`: the attribute at column bx0, row oy.
-    c: [f64; NATTR],
-    dadx: [f64; NATTR],
-    dady: [f64; NATTR],
-    oy: f64,
+    pub(crate) c: [f64; NATTR],
+    pub(crate) dadx: [f64; NATTR],
+    pub(crate) dady: [f64; NATTR],
+    pub(crate) oy: f64,
 }
 
 pub(crate) enum Shape {
@@ -1996,7 +1996,7 @@ fn sprite_rows<const TX: u8>(
 
 /// First and last x offset (from bx0) where `e + dx * i >= 0`, for i >= 0.
 #[inline(always)]
-fn edge_span(e: i64, dx: i64, lo: &mut i64, hi: &mut i64) {
+pub(crate) fn edge_span(e: i64, dx: i64, lo: &mut i64, hi: &mut i64) {
     if dx > 0 {
         if e < 0 {
             // smallest i with e + dx*i >= 0

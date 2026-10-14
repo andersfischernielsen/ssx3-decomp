@@ -95,6 +95,8 @@ fn main() {
             break;
         }
     }
+    // GPU GS backend: bring the CPU copy of VRAM up to date for the dumps.
+    c.bus.hw.gs.sync_vram();
     if std::env::var("SSX3_VRAM_DUMP").is_ok() {
         use ssx3_ps2::gs::swizzle::{read_pixel, PSMCT32};
         let mut v = vec![0u32; 1024 * 1024];

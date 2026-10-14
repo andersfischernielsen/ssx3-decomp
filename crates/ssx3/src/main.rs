@@ -63,7 +63,8 @@ impl ApplicationHandler for App {
             .with_title("SSX 3 (USA) — native recompilation")
             .with_inner_size(winit::dpi::LogicalSize::new(960.0, 672.0));
         let window = Arc::new(event_loop.create_window(attrs).expect("window"));
-        self.presenter = Some(pollster::block_on(Presenter::new(window.clone())));
+        let gs = self.cpu.bus.hw.gs.gpu_context();
+        self.presenter = Some(pollster::block_on(Presenter::new(window.clone(), gs)));
         self.window = Some(window);
     }
 
@@ -100,9 +101,24 @@ impl ApplicationHandler for App {
                     event_loop.exit();
                     return;
                 }
-                let (w, h) = self.cpu.bus.hw.gs.display(&mut self.frame);
-                if let Some(p) = self.presenter.as_mut() {
-                    let _ = p.render(w, h, &self.frame);
+                let gs = &mut self.cpu.bus.hw.gs;
+                let ctx = gs.gpu_context();
+                match self.presenter.as_mut() {
+                    // GPU GS: the frame stays on the GPU.
+                    Some(p) if p.same_device(ctx) => match gs.display_gpu() {
+                        Some(frame) => {
+                            let _ = p.render_gpu(&frame);
+                        }
+                        None => {
+                            let (w, h) = gs.display(&mut self.frame);
+                            let _ = p.render(w, h, &self.frame);
+                        }
+                    },
+                    Some(p) => {
+                        let (w, h) = gs.display(&mut self.frame);
+                        let _ = p.render(w, h, &self.frame);
+                    }
+                    None => {}
                 }
                 if let Some(n) = self.exit_after {
                     if self.cpu.sched.frames >= n {

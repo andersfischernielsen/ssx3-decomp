@@ -180,8 +180,22 @@ impl Gs {
         }
     }
 
+    /// Before reading the `w` x `h` rectangle at (x, y) of `surf` (which may
+    /// wrap at 2048): make it current in `vram` (GPU backend).
+    fn before_rect_read(&mut self, surf: &Surface, x: u32, y: u32, w: u32, h: u32) {
+        if w == 0 || h == 0 {
+            return;
+        }
+        if x + w > 2048 || y + h > 2048 {
+            self.before_vram_read(surf, 0, 0, 2047, 2047);
+        } else {
+            self.before_vram_read(surf, x, y, x + w - 1, y + h - 1);
+        }
+    }
+
     fn local_to_host(&mut self, p: &Params) {
         let surf = Surface::new(p.spsm, p.sbp, p.sbw);
+        self.before_rect_read(&surf, p.ssax, p.ssay, p.rrw, p.rrh);
         let bpp = bits_per_pixel(p.spsm);
         let total_bits = p.rrw as u64 * p.rrh as u64 * bpp as u64;
         let mut bytes: Vec<u8> = Vec::with_capacity(total_bits.div_ceil(8) as usize + 16);
@@ -216,6 +230,7 @@ impl Gs {
     fn local_to_local(&mut self, p: &Params) {
         let src = Surface::new(p.spsm, p.sbp, p.sbw);
         let dst = Surface::new(p.dpsm, p.dbp, p.dbw);
+        self.before_rect_read(&src, p.ssax, p.ssay, p.rrw, p.rrh);
         // Read everything first so overlapping copies behave deterministically.
         let mut tmp = Vec::with_capacity((p.rrw * p.rrh) as usize);
         for y in 0..p.rrh {
@@ -231,6 +246,11 @@ impl Gs {
             Pages::rect(&dst, p.dsax, p.dsay, p.dsax + p.rrw - 1, p.dsay + p.rrh - 1)
         };
         self.texcache.written(&pages);
+        if self.gpu.is_some() {
+            let mut r = Region::default();
+            r.add_pages(&pages);
+            self.before_vram_write(&r);
+        }
         let mut i = 0;
         for y in 0..p.rrh {
             for x in 0..p.rrw {
