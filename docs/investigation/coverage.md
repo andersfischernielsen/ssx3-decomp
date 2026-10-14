@@ -5,6 +5,11 @@ misses are recorded in `generated/entries.txt`). Scripted headless runs with
 the memory card present; input `frame:buttons:duration` (libpad bits: 0008
 Start, 0010 Up, 0040 Down, 4000 Cross).
 
+Single Event menu chain (Cross presses in the race script): 2000 main →
+2500 character → 2700 setup "Continue" → 2900 peak (Peak 1; Peak 2/3 listed) →
+3100 mode (Race / Freestyle) → 3300 event (Race: Snow Jam, Metro-City,
+Happiness) → 3500 "My Rules" Continue → 3700 loading card → 4250 start.
+
 Main menu (frame ~1700 after Start at 1600): Single Event, Conquer The
 Mountain, Multi Play (greyed: needs a second controller; skipped by the
 cursor), Previews, Online.
@@ -18,6 +23,9 @@ cursor), Previews, Online.
 | Online → network configuration | Down ×3 from Single Event, then Cross | ✅ no misses; shows "memory card … unformatted" for the network-config lookup although saves work (probably a BWNETCNF/mc getInfo detail; online is dead anyway) |
 | Previews | not reached yet | ⬜ |
 | Multi Play (2 controllers) | needs pad 2 input in `SSX3_INPUT` | ⬜ |
-| Other Single Event types (freestyle, slopestyle, superpipe, big air), other courses | | ⬜ |
+| Single Event → Peak 1 → Race → Metro-City | race script with `3200:0040:6` before the event Cross at 3300 | ✅ no misses, renders correctly (`coverage-peak1-events.png` row 1) |
+| Single Event → Peak 1 → Race → Happiness (head-to-head, 2 riders) | Down ×2 at 3200/3250 | ✅ no misses (row 2) |
+| Single Event → Peak 1 → Freestyle (Snow Jam freestyle vs opponent, scoring, timer) | `3000:0040:6` before the mode Cross at 3100 | ✅ no misses (row 3) |
+| Peaks 2 and 3, their events; other freestyle events | locked on this save? | ⬜ |
 | Career progression (events in Conquer The Mountain, unlocks, shop) | | ⬜ |
 | Replays, records, "Next event", "Restart" from results | | ⬜ |
