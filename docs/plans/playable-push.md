@@ -147,6 +147,15 @@ on night one (see the log below).
 4. (done) No VU0 macro op decodes at run time any more: `c.vu0_macro` appears
    nowhere in `generated/ee`.
 
+5. **Build-time split (after the geometry and MTGS agents merge)**: every
+   `ssx3-ps2` change recompiles all ~79 MB of generated EE crates (2–5 min with
+   3 jobs, >10 min when agents build concurrently). Split a small, stable core
+   crate (Cpu registers, FPU/MMI/COP2 semantics, memory access) that generated
+   code depends on; GS/VU/VIF/DMA/kernel move behind a narrow interface it calls
+   (MMIO, syscalls, COP2/VU0), so hardware-model changes only rebuild that crate
+   and relink. Also consider lower opt-level for generated crates in dev and a
+   shared sccache for worktree agents.
+
 ## How to resume
 
 ```sh
