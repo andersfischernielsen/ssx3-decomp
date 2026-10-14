@@ -14,6 +14,7 @@ pub mod fpu;
 pub mod gifstats;
 pub mod gs;
 pub mod hw;
+pub mod iop_bridge;
 pub mod ipu;
 pub mod iso;
 pub mod kernel;

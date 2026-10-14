@@ -1,0 +1,9 @@
+[package]
+name = "ssx3-iop"
+description = "PS2 IOP for SSX 3: R3000 state for statically recompiled IRX modules, native IOP kernel/libraries, SPU2 and host audio output."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cpal = "0.15"

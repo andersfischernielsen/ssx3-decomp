@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 ssx3-core.workspace = true
 ssx3-ps2 = { path = "../ssx3-ps2" }
+ssx3-iop = { path = "../ssx3-iop" }
 
 [[bin]]
 name = "recomp-stats"
@@ -24,3 +25,7 @@ path = "src/bin/recomp_all.rs"
 [[bin]]
 name = "recomp-ee"
 path = "src/bin/recomp_ee.rs"
+
+[[bin]]
+name = "recomp-iop"
+path = "src/bin/recomp_iop.rs"

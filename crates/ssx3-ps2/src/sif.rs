@@ -51,6 +51,8 @@ pub struct Sif {
     pub pad_frame: u32,
     /// EA's SNDDRV ('SND') has been bound; it then expects periodic ticks.
     pub snd_bound: bool,
+    /// Recompiled IOP (`SSX3_IOP=1`), see `iop_bridge.rs`.
+    pub iop: Option<Box<crate::iop_bridge::IopSide>>,
 }
 
 impl Default for Sif {
@@ -85,6 +87,7 @@ impl Sif {
             pads: Vec::new(),
             pad_frame: 0,
             snd_bound: false,
+            iop: None,
         }
     }
 
@@ -99,6 +102,12 @@ fn rd(c: &mut Cpu, a: u32) -> u32 {
 }
 fn wr(c: &mut Cpu, a: u32, v: u32) {
     c.bus.set_ram_u32(a & 0x01FF_FFFF, v);
+}
+
+/// Queue a raw IOP → EE packet (used by the recompiled IOP).
+pub(crate) fn send_raw(c: &mut Cpu, bytes: Vec<u8>) {
+    c.sif.outgoing.push_back(bytes);
+    pump(c);
 }
 
 fn send(c: &mut Cpu, words: &[u32]) {
@@ -232,6 +241,11 @@ fn command(c: &mut Cpu, src: u32, size: u32) {
         eprintln!("[sif] ee -> cmd {}", s.join(" "));
     }
     let _ = size;
+    // SSX3_IOP=1: commands for the recompiled IOP modules go there instead.
+    let data_addr = c.sif.data_addr;
+    if crate::iop_bridge::command(c, &w, data_addr, src) {
+        return;
+    }
     match cid {
         0x8000_0001 => {
             // SET_SREG from the EE. IOP modules acknowledge their init handshakes by
@@ -339,6 +353,12 @@ fn loadfile(c: &mut Cpu, method: u32, args: u32, _s: u32, ret: u32, _rs: u32) ->
         0x00 => {
             let path = c.bus.read_cstr(args + 8);
             eprintln!("[loadfile] {path}");
+            if let Some((id, result)) = crate::iop_bridge::load_module(c, &path) {
+                c.sif.loaded_modules.push(path);
+                wr(c, ret, id);
+                wr(c, ret + 4, result);
+                return true;
+            }
             c.sif.loaded_modules.push(path);
             let id = c.sif.loaded_modules.len() as u32 + 1;
             wr(c, ret, id);

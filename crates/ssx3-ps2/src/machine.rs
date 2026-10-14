@@ -198,6 +198,7 @@ pub fn service_events(c: &mut Cpu) -> bool {
     if c.bus.hw.gs.irq_pending() {
         c.bus.hw.raise(crate::hw::int::GS);
     }
+    crate::iop_bridge::sync(c); // recompiled IOP (SSX3_IOP=1); no-op otherwise
     crate::sif::pump(c);
     c.bus.hw.irq_dirty = false;
     kernel::service(c);

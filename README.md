@@ -24,7 +24,7 @@ issues. Screenshots and the full log are in
 
 ```sh
 tools/extract-from-iso.sh "SSX 3 (USA).iso"            # -> orig/SLUS_207.72 (keep the ISO in the repo root)
-cargo run --release -p ssx3-recomp --bin recomp-ee     # translate the EE code -> generated/ee/ (~79 MB of Rust)
+tools/bootstrap.sh                                     # translate EE + IOP code -> generated/ee/ (~79 MB of Rust)
 cargo run --profile game -p ssx3                       # play (window; ~2 min first build)
 ```
 

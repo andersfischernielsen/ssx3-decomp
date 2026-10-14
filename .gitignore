@@ -24,3 +24,5 @@
 /.claude/
 # Recompiled EE code (reproduce with: cargo run --release -p ssx3-recomp --bin recomp-ee)
 /generated/ee/
+# Recompiled IOP modules (reproduce with: cargo run --release -p ssx3-recomp --bin recomp-iop)
+/generated/iop/

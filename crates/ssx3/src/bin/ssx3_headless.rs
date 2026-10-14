@@ -24,6 +24,11 @@ fn main() {
     let shot_dir = std::env::var("SSX3_SHOTS").unwrap_or_else(|_| "/tmp/ssx3-shots".into());
     let _ = std::fs::create_dir_all(&shot_dir);
 
+    // Headless runs do not open the audio device unless asked (SSX3_AUDIO=1);
+    // SSX3_WAV=file.wav records the IOP's audio output.
+    if std::env::var_os("SSX3_AUDIO").is_none() {
+        std::env::set_var("SSX3_AUDIO", "0");
+    }
     let mut c = game::boot();
     let t0 = Instant::now();
     let mut img = Vec::new();
@@ -77,6 +82,9 @@ fn main() {
         }
         if f % 60 == 0 || !alive {
             eprintln!("[{:6.1}s] {}", t0.elapsed().as_secs_f64(), game::status(&c));
+            if let Some(s) = ssx3_ps2::iop_bridge::status(&c) {
+                eprintln!("          {s}");
+            }
         }
         if shot_every > 0 && f % shot_every == 0 {
             let (w, h) = c.bus.hw.gs.display(&mut img);
@@ -115,6 +123,36 @@ fn main() {
         scan("ram", &c.bus.ram);
         scan("vu1data", &c.bus.hw.vu1.data);
         scan("spr", &c.bus.spr);
+    }
+    ssx3_ps2::iop_bridge::shutdown(&mut c);
+    // Debug: SSX3_PEEK="addr:words,addr:words" dumps EE memory at exit
+    // (an address of the form gp+N is taken relative to $gp).
+    if let Ok(spec) = std::env::var("SSX3_PEEK") {
+        let gp = c.g[28][0] as u32;
+        for item in spec.split(',') {
+            let (a, n) = item.split_once(':').unwrap_or((item, "4"));
+            let (iop, a) = match a.strip_prefix("iop") {
+                Some(r) => (true, r),
+                None => (false, a),
+            };
+            let a = match a.strip_prefix("gp+") {
+                Some(o) => gp.wrapping_add(u32::from_str_radix(o.trim_start_matches("0x"), 16).unwrap_or(0)),
+                None => u32::from_str_radix(a.trim_start_matches("0x"), 16).unwrap_or(0),
+            };
+            let n: u32 = n.parse().unwrap_or(4);
+            let w: Vec<String> = (0..n)
+                .map(|i| {
+                    let o = (a + 4 * i) as usize;
+                    let v = if iop {
+                        u32::from_le_bytes(c.bus.iop[o & 0x1F_FFFC..(o & 0x1F_FFFC) + 4].try_into().unwrap())
+                    } else {
+                        c.bus.ram_u32((a + 4 * i) & 0x01FF_FFFF)
+                    };
+                    format!("{v:08x}")
+                })
+                .collect();
+            eprintln!("peek {a:#x} (gp {gp:#x}): {}", w.join(" "));
+        }
     }
     eprintln!("halted: {:?}", c.kernel.halted);
     eprint!("{}", game::dump(&c));
