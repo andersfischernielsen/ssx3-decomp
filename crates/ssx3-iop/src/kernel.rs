@@ -411,9 +411,7 @@ pub fn exit_thread(c: &mut Iop) {
         if let Some(m) = t.module_start.take() {
             if let Some(module) = c.k.modules.get_mut(&m) {
                 module.result = Some(v0);
-                if c.trace || true {
-                    eprintln!("[iop] module {} started, result {}", module.name, v0 as i32);
-                }
+                eprintln!("[iop] module {} started, result {}", module.name, v0 as i32);
             }
         }
     }
