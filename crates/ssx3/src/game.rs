@@ -42,3 +42,25 @@ pub fn status(c: &Cpu) -> String {
         threads.join(" ")
     )
 }
+
+/// Multi-line dump of every thread and semaphore.
+pub fn dump(c: &Cpu) -> String {
+    let mut out = String::new();
+    for t in c.kernel.threads.values() {
+        let (pc, ra, sp) = if t.id == c.kernel.current {
+            (c.pc, c.g[31][0] as u32, c.g[29][0] as u32)
+        } else {
+            (t.ctx.pc, t.ctx.g[31][0] as u32, t.ctx.g[29][0] as u32)
+        };
+        out += &format!(
+            "  thread {} {:?} prio {} entry {:#x} pc {:#x} ra {:#x} sp {:#x} wait {:?}/{}\n",
+            t.id, t.status, t.priority, t.entry, pc, ra, sp, t.wait, t.wait_id
+        );
+    }
+    for (id, s) in &c.kernel.semas {
+        if !s.waiters.is_empty() {
+            out += &format!("  sema {id} count {} waiters {:?}\n", s.count, s.waiters);
+        }
+    }
+    out
+}

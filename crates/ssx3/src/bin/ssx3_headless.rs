@@ -42,6 +42,7 @@ fn main() {
         }
     }
     eprintln!("halted: {:?}", c.kernel.halted);
+    eprint!("{}", game::dump(&c));
     eprintln!("syscalls: {:?}", c.kernel.syscall_counts.iter().map(|(k, v)| format!("{}={v}", ssx3_ps2::kernel::syscall_name(*k))).collect::<Vec<_>>());
     eprintln!("modules: {:?}", c.sif.loaded_modules);
     eprintln!("unknown sif servers: {:x?}", c.sif.unknown_servers);

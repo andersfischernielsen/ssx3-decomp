@@ -222,7 +222,12 @@ fn command(c: &mut Cpu, src: u32, size: u32) {
     }
     let _ = size;
     match cid {
-        0x8000_0001 => c.sif.sreg[(w[4] & 31) as usize] = w[5],
+        0x8000_0001 => {
+            // SET_SREG from the EE. IOP modules acknowledge their init handshakes by
+            // setting the same register on the EE side; echo it back.
+            c.sif.sreg[(w[4] & 31) as usize] = w[5];
+            send(c, &[24, 0, CMD_SET_SREG, 0, w[4], w[5]]);
+        }
         0x8000_0002 => {
             if w[3] == 0 {
                 c.sif.ee_recv = w[4] & 0x01FF_FFFF;

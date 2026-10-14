@@ -872,6 +872,35 @@ pub fn extend_runs(img: &dyn Image, f: &mut Func, limit: u32, seeds: &BTreeSet<u
     added
 }
 
+/// Every static control-flow target in `f`: branch and jump targets and
+/// return points. Used to make cross-function targets labels of whichever
+/// function contains them.
+pub fn targets(img: &dyn Image, f: &Func) -> Vec<u32> {
+    let mut out = Vec::new();
+    for &(lo, hi) in &f.runs {
+        let mut a = lo;
+        while a < hi {
+            if let Some(w) = img.word(a) {
+                match classify(a, w) {
+                    Ctl::Branch { target, .. } => {
+                        out.push(target);
+                        out.push(a + 8);
+                    }
+                    Ctl::Jump { target } | Ctl::Call { target } => {
+                        out.push(target);
+                        out.push(a + 8);
+                    }
+                    Ctl::CallReg { .. } => out.push(a + 8),
+                    Ctl::Syscall => out.push(a + 4),
+                    _ => {}
+                }
+            }
+            a += 4;
+        }
+    }
+    out
+}
+
 /// Validate lowering coverage over a word stream (used by tests and stats).
 pub fn is_lowerable(pc: u32, w: u32) -> bool {
     classify(pc, w) != Ctl::None || lower(pc, w).is_some()

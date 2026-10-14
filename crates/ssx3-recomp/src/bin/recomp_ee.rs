@@ -16,7 +16,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use ssx3_core::elf::Elf;
-use ssx3_recomp::eegen::{emit_function, extend_runs, fn_name, Ctx, Func, Image, Stats};
+use ssx3_recomp::eegen::{emit_function, extend_runs, fn_name, targets, Ctx, Func, Image, Stats};
 use ssx3_recomp::{boundaries, index};
 
 struct ElfImage(Elf);
@@ -160,6 +160,10 @@ fn main() {
         acc += f.runs.iter().map(|r| ((r.1 - r.0) / 4) as usize).sum::<usize>();
     }
 
+    // Cross-function branch targets must be labels where they land.
+    for f in &funcs {
+        extra.extend(targets(&img, f));
+    }
     let ctx = Ctx { shard_of: &shard_of, data_refs: &data_refs, extra_labels: &extra };
     let out_root = root.join("generated/ee");
     let _ = fs::remove_dir_all(&out_root);
