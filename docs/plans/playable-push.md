@@ -126,3 +126,7 @@ Runtime misses are appended to `generated/entries.txt` automatically; rerun
 - 2026-10-14 (midday): **memory card saving** — SIO2MAN/PADMAN/MCMAN/MCSERV
   recompiled on the IOP runtime with a SIO2 + DualShock 2 + 8 MB card model
   (`saves/ssx3-mc0.ps2`); save and load verified (`sio2-memcard.md`).
+- VU differential testing against ps2-web-recomp's interpreter on captured game
+  invocations (`vu-differential.md`): fixed I-bit ordering (upper reads the old I),
+  MAX/MINI raw-bit semantics (integer vertex colours were zeroed: course now
+  shaded), VI-backup default; `SSX3_RTC` pins the clock for reproducible runs.

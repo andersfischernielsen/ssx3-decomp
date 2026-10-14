@@ -298,28 +298,140 @@ fn micro_program_branch_delay_slot_ebit() {
     assert_eq!(vu.vi[2], 3);
 }
 
+/// Regression (differential test, race capture): MAX/MINI compare and return
+/// raw bits like PCSX2's integer MIN_MAX_PS. SSX 3 moves integer vertex
+/// colours with `MAX.xyzw vf9, vf4, vf4`; flushing denormals zeroed them.
+#[test]
+fn max_mini_pass_raw_bits() {
+    let mut vu = Vu::new(1);
+    vu.vf[4] = [0x63, 0x51, 0x62, 0x80];
+    one_upper(&mut vu, |v| v.max(0b1111, 9, 4, Src::Vec(4)));
+    assert_eq!(vu.vf[9], [0x63, 0x51, 0x62, 0x80]);
+    one_upper(&mut vu, |v| v.mini(0b1111, 10, 4, Src::Vec(4)));
+    assert_eq!(vu.vf[10], [0x63, 0x51, 0x62, 0x80]);
+    // Ordering is sign-magnitude on the raw pattern: -1 < -0 < +0 < denormal < 1.
+    vu.vf[1] = [f(-1.0), 0x8000_0000, 0, 5];
+    vu.vf[2] = [0x8000_0000, 0, 7, f(1.0)];
+    one_upper(&mut vu, |v| v.max(0b1111, 3, 1, Src::Vec(2)));
+    assert_eq!(vu.vf[3], [0x8000_0000, 0, 7, f(1.0)]);
+    one_upper(&mut vu, |v| v.mini(0b1111, 3, 1, Src::Vec(2)));
+    assert_eq!(vu.vf[3], [f(-1.0), 0x8000_0000, 0, 5]);
+    // Exponent-255 patterns are not clamped by MAX/MINI.
+    vu.vf[1] = [0x7f90_0000, 0xff90_0000, 0, 0];
+    one_upper(&mut vu, |v| v.max(0b1100, 3, 1, Src::Bc(0, X)));
+    assert_eq!(&vu.vf[3][..2], &[0x7f90_0000, 0]);
+}
+
+/// ADDi.<dest> fd, fs, I (upper funct 0x22).
+fn up_addi(dest: u32, fd: u32, fs: u32) -> u32 {
+    dest << 21 | fs << 11 | fd << 6 | 0x22
+}
+
+const IBIT: u32 = 0x8000_0000;
+const EBIT: u32 = 0x4000_0000;
+
+fn ibit_prog() -> [(u32, u32); 4] {
+    [
+        (IBIT | up_addi(8, 1, 0), f(1.0)),        // ADDi.x vf1, vf0, I  | LOI 1.0
+        (IBIT | up_addi(4, 1, 0), f(2.0)),        // ADDi.y vf1, vf0, I  | LOI 2.0
+        (IBIT | EBIT | up_addi(2, 1, 0), f(3.0)), // ADDi.z vf1, vf0, I  | LOI 3.0  [E]
+        (UNOP, LNOP),
+    ]
+}
+
+/// Regression (found by the differential test against ps2-web-recomp and
+/// PCSX2): the upper op of an I-bit pair reads the *old* I; LOI's value is
+/// visible from the next pair on (PCSX2 `_vu1Exec`, microVU `doIbit`).
+#[test]
+fn ibit_upper_reads_old_i() {
+    let mut vu = interp_vu(1);
+    load_prog(&mut vu, &ibit_prog());
+    vu.i = f(5.0);
+    vu.start(0);
+    assert!(vu.run(100, &mut |_| {}));
+    assert_eq!(&vu.vf[1][..3], &fv([5.0, 1.0, 2.0, 0.0])[..3]);
+    assert_eq!(vu.i, f(3.0));
+}
+
+/// The translator emits LOI after the upper call, so translated code agrees.
+#[test]
+fn ibit_translation_emits_loi_after_upper() {
+    let bytes: Vec<u8> = ibit_prog()
+        .iter()
+        .flat_map(|(hi, lo)| lo.to_le_bytes().into_iter().chain(hi.to_le_bytes()))
+        .collect();
+    let src = recomp::translate_program(&bytes, 0);
+    let add = src.find("vu.add(0b1000, 1, 0, Src::I)").expect("upper");
+    let loi = src.find("vu.loi(0x3f800000)").expect("loi");
+    assert!(add < loi, "LOI must follow the upper op:\n{src}");
+}
+
+/// Branch paths for the VI-backup tests: 0x28 [E] vi7 = 1 (fall-through),
+/// 0x38 [E] vi7 = 2 (taken, `off` 3 from a branch at 0x18).
+fn vi_backup_tail(p: &mut Vec<(u32, u32)>) {
+    p.push((UNOP, LNOP)); // 0x20 delay slot
+    p.push((EBIT | UNOP, iaddiu(7, 0, 1))); // 0x28 not taken
+    p.push((UNOP, LNOP));
+    p.push((EBIT | UNOP, iaddiu(7, 0, 2))); // 0x38 taken
+    p.push((UNOP, LNOP));
+}
+
+/// PCSX2 `_vuBackupVI`: a conditional branch reads the old value of a VI
+/// written by an integer ALU op in the immediately preceding pair.
+/// (This test used to pass either way; the quirk was in fact disabled.)
 #[test]
 fn branch_reads_old_vi_written_by_previous_pair() {
     let mut vu = interp_vu(1);
-    let prog = [
-        (UNOP, iaddiu(1, 0, 1)), // vi1 = 1
-        (UNOP, LNOP),
-        (UNOP, iaddi(1, 1, -1)),               // vi1 = 0
-        (UNOP, ibne(0, 1, 2)),                 // reads OLD vi1 (1) -> taken to 0x30
-        (UNOP, LNOP),                          // delay
-        (0x4000_0000 | UNOP, iaddiu(7, 0, 1)), // 0x28 not-taken path
-        (UNOP, LNOP),
-        (0x4000_0000 | UNOP, iaddiu(7, 0, 2)), // 0x38 taken path (0x18+8+2*8=0x30?)
-        (UNOP, LNOP),
+    let mut p = vec![
+        (UNOP, iaddiu(1, 0, 1)), // 0x00 vi1 = 1
+        (UNOP, LNOP),            // 0x08
+        (UNOP, iaddi(1, 1, -1)), // 0x10 vi1 = 0
+        (UNOP, ibne(0, 1, 3)),   // 0x18 reads OLD vi1 (1) -> taken to 0x38
     ];
-    // ibne at 0x18: target = 0x18 + 8 + 2*8 = 0x30.
-    let mut p = prog.to_vec();
-    p[6] = (0x4000_0000 | UNOP, iaddiu(7, 0, 2)); // 0x30
-    p[7] = (UNOP, LNOP);
+    vi_backup_tail(&mut p);
     load_prog(&mut vu, &p);
     vu.start(0);
     assert!(vu.run(100, &mut |_| {}));
     assert_eq!(vu.vi[7], 2);
+}
+
+/// microVU `analyzeBranchVI`: no backup when the branch pair stalls.
+#[test]
+fn stalled_branch_reads_current_vi() {
+    let mut vu = interp_vu(1);
+    let mut p = vec![
+        (UNOP, iaddiu(1, 0, 1)),               // 0x00 vi1 = 1
+        (up_add(15, 1, 0, 0), LNOP),           // 0x08 vf1 = vf0 + vf0
+        (UNOP, iaddi(1, 1, -1)),               // 0x10 vi1 = 0
+        (up_add(15, 2, 1, 1), ibne(0, 1, 3)),  // 0x18 stalls on vf1 -> current vi1 (0)
+    ];
+    vi_backup_tail(&mut p);
+    load_prog(&mut vu, &p);
+    vu.start(0);
+    assert!(vu.run(100, &mut |_| {}));
+    assert_eq!(vu.vi[7], 1);
+}
+
+/// JR is not subject to the VI backup (PCSX2 `_vuJR`, `mVUanalyzeJump`).
+#[test]
+fn jr_reads_current_vi() {
+    let jr = |is: u32| 0x24 << 25 | is << 11;
+    let mut vu = interp_vu(1);
+    let p = [
+        (UNOP, iaddiu(2, 0, 5)),               // 0x00 vi2 = 5 (0x28)
+        (UNOP, LNOP),                          // 0x08
+        (UNOP, iaddiu(2, 0, 6)),               // 0x10 vi2 = 6 (0x30)
+        (UNOP, jr(2)),                         // 0x18 -> 0x30
+        (UNOP, LNOP),                          // 0x20 delay
+        (EBIT | UNOP, iaddiu(7, 0, 1)),        // 0x28 old target
+        (EBIT | UNOP, iaddiu(8, 0, 2)),        // 0x30 new target
+        (UNOP, LNOP),
+        (UNOP, LNOP),
+    ];
+    load_prog(&mut vu, &p);
+    vu.start(0);
+    assert!(vu.run(100, &mut |_| {}));
+    assert_eq!((vu.vi[7], vu.vi[8]), (0, 2));
 }
 
 #[test]

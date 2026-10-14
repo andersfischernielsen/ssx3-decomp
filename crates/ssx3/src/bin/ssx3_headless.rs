@@ -66,6 +66,7 @@ fn main() {
             }
         }
         c.sif.pad_buttons[0] = held;
+        ssx3_ps2::vu::capture::set_frame(f);
         let alive = ssx3_ps2::machine::run_frame(&mut c);
         if ssx3_ps2::gifstats::enabled() && f % 50 == 0 {
             let (pk, v, adc, far) = ssx3_ps2::gifstats::take();

@@ -23,8 +23,9 @@
 //! ```text
 //! vu.begin_pair(&[(fs, fieldmask), ...]); // stall on not-yet-ready VF fields,
 //!                                         // retire Q/P/flag pipelines
-//! vu.loi(imm);                            // only for I-bit pairs
 //! vu.madd(0b1110, 1, 2, Src::Bc(3, W));   // upper: computed from OLD state, staged
+//! vu.loi(imm);                            // only for I-bit pairs (after the upper:
+//!                                         // it reads the old I)
 //! vu.lq(0b1111, 4, 1, 2);                 // lower: executes against OLD state
 //! vu.end_pair();                          // commit upper (wins over a lower write
 //!                                         // to the same VF), flags, cycle += 1
@@ -36,11 +37,11 @@
 //! (unless an explicit [`Vu::fallback`] executor is installed — the test
 //! oracle in `reference` is one).
 
+pub mod capture;
 pub mod decode;
 pub mod exec;
 pub mod float;
 pub mod recomp;
-#[cfg(test)]
 pub mod reference;
 #[cfg(test)]
 mod tests;
@@ -234,6 +235,9 @@ pub struct Vu {
     /// Count of runtime errors (missing translation, unknown op ...).
     pub errors: u64,
     pub last_error: Option<String>,
+    /// Differential testing only (`vu_diff --ref-model`): DIV/SQRT/RSQRT and
+    /// EFU results land immediately, like ps2-web-recomp's interpreter.
+    pub instant_qp: bool,
 
     vf_ready: [[u64; 4]; 32],
     q_pend: Option<Pending>,
@@ -285,6 +289,7 @@ impl Vu {
             fallback: None,
             errors: 0,
             last_error: None,
+            instant_qp: false,
             vf_ready: [[0; 4]; 32],
             q_pend: None,
             p_pend: None,
@@ -418,6 +423,22 @@ impl Vu {
         }
     }
 
+    /// Replace the upload segment layout (capture replay): `(start, end)`
+    /// byte ranges, oldest first, over the current code memory.
+    pub fn set_segments(&mut self, segs: &[(u32, u32)]) {
+        self.segments = segs
+            .iter()
+            .enumerate()
+            .map(|(k, &(start, end))| CodeSegment {
+                start,
+                end,
+                serial: k as u64 + 1,
+                hash: None,
+            })
+            .collect();
+        self.seg_serial = segs.len() as u64;
+    }
+
     /// Hash of the code segment containing `pc` (cached).
     pub fn segment_hash(&mut self, pc: u32) -> Option<u64> {
         let idx = self
@@ -544,12 +565,18 @@ impl Vu {
                 }
             }
         }
+        if need > self.cycle {
+            // microVU (analyzeBranchVI): a branch that stalls reads the
+            // current VI, not the backed-up one.
+            self.vi_backup = None;
+        }
         self.cycle = need;
         self.advance();
         self.stage = EMPTY_STAGE;
     }
 
-    /// LOI: the I bit's immediate, visible to the upper op of the same pair.
+    /// LOI: the I bit's immediate. Called after the pair's upper op, which
+    /// reads the old I (as in PCSX2); visible from the next pair on.
     #[inline]
     pub fn loi(&mut self, imm: u32) {
         self.i = imm;
@@ -1126,9 +1153,10 @@ impl Vu {
     pub fn ibgez(&self, is: u8) -> bool {
         (self.vi_br(is) as i16) >= 0
     }
-    /// JR / JALR target (byte address).
+    /// JR / JALR target (byte address). No VI backup here: PCSX2's
+    /// interpreter (`_vuJR`) and microVU (`mVUanalyzeJump`) read the current VI.
     pub fn jr_target(&self, is: u8) -> u32 {
-        (self.vi_br(is) as u32 * 8) & self.code_mask()
+        (self.vi[is as usize & 15] as u32 * 8) & self.code_mask()
     }
     /// BAL / JALR link: `it = return_pc / 8`.
     pub fn link(&mut self, it: u8, return_pc: u32) {
@@ -1165,7 +1193,7 @@ impl Vu {
             invalid: r.invalid,
             div0: r.div0,
         };
-        if macro_mode {
+        if macro_mode || self.instant_qp {
             self.apply_q(p);
         } else {
             self.q_pend = Some(p);
@@ -1237,6 +1265,10 @@ impl Vu {
                 self.cycle = p.ready;
             }
             self.p = p.value;
+        }
+        if self.instant_qp {
+            self.p = value;
+            return;
         }
         self.p_pend = Some(Pending {
             value,
@@ -1451,8 +1483,9 @@ impl Vu {
 pub const PS2_MAX: u32 = MAX;
 
 /// The branch-reads-old-VI quirk (see `set_vi_bk`). On by default;
-/// SSX3_VU_VI_BACKUP=0 disables it for experiments.
+/// SSX3_VU_VI_BACKUP=0 disables it for experiments. (Until the differential
+/// test, the default was accidentally off: `is_ok_and` on an unset variable.)
 fn vi_backup_enabled() -> bool {
     static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *E.get_or_init(|| std::env::var("SSX3_VU_VI_BACKUP").is_ok_and(|v| v != "0"))
+    *E.get_or_init(|| std::env::var("SSX3_VU_VI_BACKUP").map_or(true, |v| v != "0"))
 }

@@ -40,7 +40,7 @@ Game microcode is not interpreted at runtime. Here is how it runs:
    increments `vu.errors`, and stops the VU. Nothing is interpreted silently.
    `vu.fallback: Option<ProgramFn>` exists so you can install an executor
    explicitly. Tests install the oracle this way.
-5. **Oracle:** `vu::reference` (`cfg(test)` only) is a pair interpreter. It
+5. **Oracle:** `vu::reference` (always built; the game never installs it) is a pair interpreter. It
    uses the same decoder and the same semantic methods. The test
    `oracle_translated_matches_reference_on_vutext` runs the compiled
    translations against it on all 7 real programs, from every entry point
@@ -70,8 +70,8 @@ Each instruction pair in generated code looks like this:
 
 ```rust
 vu.begin_pair(&[(fs, mask), ...]); // stall model + retire Q/P/flag pipelines
-vu.loi(imm);                       // I-bit pairs: the upper of the same pair sees the new I
 vu.madd(0b1110, 1, 2, Src::Bc(3, W)); // upper: computed from old state, staged
+vu.loi(imm);                       // I-bit pairs, after the upper: it reads the OLD I
 vu.lq(0b1111, 4, 1, 2);            // lower: runs against old state
 vu.end_pair();                     // commit upper; it wins over a lower write to the same VF
 ```
@@ -108,6 +108,10 @@ VCALLMS and VCALLMSR.
 - **Status:** Z S U O come from the MAC, and their sticky copies are bits 6..9.
   The DIV unit sets I (bit 4) and D (bit 5), with sticky copies in bits 10 and 11.
 - **FTOI:** truncates and saturates to i32. **ITOF:** truncates.
+- **MAX/MINI:** compare the raw bit patterns as sign-magnitude integers and
+  return the raw operand: no denormal flush, no exponent-255 clamp (PCSX2
+  microVU `MIN_MAX_PS`). SSX 3 copies integer vertex colours with
+  `MAX.xyzw vfX, vfY, vfY`.
 - **CLIP:** compares |w| against x, y and z, producing 6 bits that shift into
   the 24-bit clip flags.
 
@@ -126,8 +130,11 @@ VCALLMS and VCALLMSR.
   4 cycles after the op that sets them. This uses a snapshot pipeline.
   FSSET and FCSET rewrite both the in-flight snapshots and the current flags.
 - **VI-backup quirk (PCSX2 `VI_BACKUP`):** suppose the pair just before a
-  conditional branch or JR/JALR writes a VI the branch reads. The branch then
-  sees the old value.
+  conditional branch writes a VI the branch reads, with IADD/IADDI/IADDIU/
+  ISUB/ISUBIU/IAND/IOR, MTIR or LQI/LQD/SQI/SQD. The branch then sees the
+  old value, unless the branch pair stalls (microVU). JR/JALR read the
+  current VI. On by default (`SSX3_VU_VI_BACKUP=0` disables); no SSX 3
+  program contains the pattern.
 - At the end of a program (after the E delay slot), every pipeline drains.
   `tpc` is set to the pair after the delay slot.
 - XGKICK runs immediately. It reads GIF tags from `vi[is]*16` and keeps going
@@ -203,5 +210,7 @@ VCALLMS and VCALLMSR.
 - **VIF:** MARK does not stall. STAT.VEW is never set, because VU runs are
   synchronous. Invalid commands set ER1 and are skipped, and the VIF does
   not stall on them. VIF0 DIRECT is rejected.
+- **Differential testing** against ps2-web-recomp's interpreter on captured
+  game invocations: [`vu-differential.md`](vu-differential.md).
 - **Tests skip without the ELF:** the decode-coverage and oracle tests are
   skipped when `orig/SLUS_207.72` is absent.
