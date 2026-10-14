@@ -72,7 +72,7 @@ fn ensure(c: &mut Cpu) {
     iop.cycles = c.cycles / 8;
     iop.spu.next_tick = iop.cycles + ssx3_iop::spu2::BATCH as u64 * ssx3_iop::spu2::CYCLES_PER_SAMPLE;
     iop.spu.sink = Some(ssx3_iop::audio::Sink::from_env());
-    eprintln!("[iop] recompiled IOP enabled (sound modules run as translated code)");
+    eprintln!("[iop] recompiled IOP enabled (the game's IRX modules run as translated code)");
     c.sif.iop = Some(Box::new(IopSide { iop, syncs: 0, expected_servers: Vec::new() }));
 }
 
@@ -130,9 +130,6 @@ pub fn load_module(c: &mut Cpu, path: &str) -> Option<(u32, u32)> {
             side.iop.sio2.card = ssx3_iop::memcard::MemoryCard::from_env();
         }
     }
-    if let Some((_, ids)) = MODULE_SERVERS.iter().find(|(m, _)| *m == name) {
-        c.sif.iop.as_mut().unwrap().expected_servers.extend_from_slice(ids);
-    }
     let r = with_iop(c, |iop| -> Result<(i32, u32), String> {
         let id = kernel::load_module(iop, &bytes, path)?;
         // Run the start thread to completion (module_start does not wait on the EE).
@@ -149,7 +146,12 @@ pub fn load_module(c: &mut Cpu, path: &str) -> Option<(u32, u32)> {
         Err("module start did not finish".into())
     })?;
     match r {
-        Ok((id, res)) => Some((id as u32 + 100, res)),
+        Ok((id, res)) => {
+            if let Some((_, ids)) = MODULE_SERVERS.iter().find(|(m, _)| *m == name) {
+                c.sif.iop.as_mut().unwrap().expected_servers.extend_from_slice(ids);
+            }
+            Some((id as u32 + 100, res))
+        }
         Err(e) => {
             eprintln!("[iop] cannot start {name}: {e}");
             None

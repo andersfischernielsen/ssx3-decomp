@@ -18,7 +18,7 @@ Rust, the same way as the EE code, and run against native firmware.
 
 | piece | where | what |
 | --- | --- | --- |
-| IRX loader | `crates/ssx3-iop/src/irx.rs` | parses the ELF + `.iopmod`, relocates (`R_MIPS_32/26/HI16/LO16`, v1 and v2 pairing), finds import (`0x41E00000`) and export (`0x41C00000`) tables, symbols, and every code address that data or `%hi/%lo` pairs produce. Fixed load addresses (`irx::layout`): LIBSD `0x20000`, SNDDRV `0x30000`, native heap `0x50000..0x100000`. Shared by generator and runtime. |
+| IRX loader | `crates/ssx3-iop/src/irx.rs` | parses the ELF + `.iopmod`, relocates (`R_MIPS_32/26/HI16/LO16`, v1 and v2 pairing), finds import (`0x41E00000`) and export (`0x41C00000`) tables, symbols, and every code address that data or `%hi/%lo` pairs produce. Fixed load addresses (`irx::layout`): LIBSD `0x20000`, SNDDRV `0x30000` (since then also SIO2MAN, MCSERV, PADMAN, MCMAN, see `sio2-memcard.md`), native heap `0x80000..0x100000` (was `0x50000`). Shared by generator and runtime. |
 | R3000 → Rust generator | `crates/ssx3-recomp/src/iopgen.rs`, bin `recomp-iop` | per-function block dispatchers over labels, same unwind/trampoline model as `eegen.rs`. Output: crate `ssx3-iop-gen` in `generated/iop/modules/` (gitignored) + `report.txt`. `recomp-ee` also runs this step. |
 | IOP state + runtime | `crates/ssx3-iop/src/lib.rs` | `Iop`: 32-bit GPRs, HI/LO, 2 MiB RAM, scratchpad, I/O dispatch; trampoline, nested native→guest calls, scheduler loop `Iop::run(target)`. |
 | kernel | `kernel.rs`, `imports.rs` | threads (priorities, FIFO), sleep/wakeup, delay, semaphores, event flags, alarms, first-fit allocator, interrupt handler table, module start. All 45 imports the two modules use (sysmem, loadcore, intrman, thbase, thsemap, thevent, sifman, sifcmd, sysclib). |
@@ -163,7 +163,7 @@ Observed (headless, `SSX3_IOP=1`):
 * The cpal device runs free: when the game runs slower than real time the
   ring buffer underflows (gaps), when faster it drops samples. No resampling
   to emulation speed.
-* Other IRX (SIO2MAN, PADMAN, MCMAN, CDVD) stay HLE.
+* SIO2MAN, PADMAN, MCMAN and MCSERV are recompiled too now (`sio2-memcard.md`); CDVD and the network modules stay HLE.
 
 ## How to run
 

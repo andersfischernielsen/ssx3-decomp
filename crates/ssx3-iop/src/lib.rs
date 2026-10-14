@@ -3,7 +3,8 @@
 //! The PlayStation 2 I/O processor for the SSX 3 recompilation.
 //!
 //! The game's sound modules (`LIBSD.IRX`, Sony's sound library, and
-//! `SNDDRV.IRX`, EA's driver) are translated from R3000A machine code to Rust
+//! `SNDDRV.IRX`, EA's driver) and its controller / memory card modules
+//! (`SIO2MAN`, `PADMAN`, `MCMAN`, `MCSERV`) are translated from R3000A machine code to Rust
 //! at build time by `recomp-iop` (`ssx3-recomp/src/iopgen.rs`) into
 //! `generated/iop/`. That code runs against [`Iop`]: 32-bit registers, 2 MiB of
 //! IOP RAM, and the native firmware in this crate:
@@ -13,6 +14,8 @@
 //!   intrman, thbase, thevent, sifcmd, sifman, sysclib, ...);
 //! * [`sif`]: the IOP end of SIF (command handlers, RPC servers);
 //! * [`hw`]: INTC and DMA controller; [`spu2`]: the sound processor;
+//! * [`sio2`]: the controller/memory card port, with a [`ds2`] DualShock 2
+//!   and a [`memcard`] 8 MB card backed by a host file;
 //! * [`audio`]: host output (cpal) and WAV capture.
 //!
 //! Execution model (same as the EE side, see `docs/investigation/recompiler-v2.md`):

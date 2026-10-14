@@ -109,3 +109,13 @@ Runtime misses are appended to `generated/entries.txt` automatically; rerun
       runtime + Ramsey structuring, 97% of functions as `if`/`loop` Rust; runs
       the game (verification to the race in progress).
 - Fresh checkout: `tools/bootstrap.sh` (stub generated crates, then recomp).
+- 2026-10-14 (afternoon):
+  15. **Memory card saving + native pads**: the disc's SIO2MAN, PADMAN, MCMAN
+      and MCSERV are recompiled too and drive a SIO2 model with a DualShock 2
+      and an 8 MB memory card backed by `saves/ssx3-mc0.ps2`
+      (`docs/investigation/sio2-memcard.md`). The boot "No memory card"
+      prompt is gone; Options → Save/Load formats the card and saves
+      ("Save complete."), a later run loads it ("Load complete.").
+      `SSX3_IOP_SIO2=0` returns to the HLE pad/mc servers, `SSX3_MEMCARD=none`
+      empties the slot. The race script still works (each press lands one
+      screen earlier; see the doc for the old-pacing variant).

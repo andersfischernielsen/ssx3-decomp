@@ -298,10 +298,11 @@ pub fn get_other_data(c: &mut Iop) {
     let data = c.ee_read(src, size as usize);
     c.write_bytes(dst, &data);
     if rd != 0 {
-        // SifRpcReceiveData_t: src 0x28, dest 0x2c, size 0x30.
-        c.set_ram32(rd + 0x28, src);
-        c.set_ram32(rd + 0x2C, dst);
-        c.set_ram32(rd + 0x30, size);
+        // SifRpcReceiveData_t: header (pkt_addr, rpc_id, sema_id, mode),
+        // then src, dest, size.
+        c.set_ram32(rd + 0x10, src);
+        c.set_ram32(rd + 0x14, dst);
+        c.set_ram32(rd + 0x18, size);
     }
     if c.trace {
         eprintln!("[iop-sif] get other data ee {src:#x} -> iop {dst:#x} ({size} bytes)");
