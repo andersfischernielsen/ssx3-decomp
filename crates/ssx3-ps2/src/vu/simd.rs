@@ -249,6 +249,16 @@ pub fn ftoi<const F: i32>(x: uint32x4_t) -> uint32x4_t {
     }
 }
 
+/// Lanes `D` (bit 3 = x) from `a`, the others from `b`.
+#[inline(always)]
+pub fn select<const D: u8>(a: &[u32; 4], b: &[u32; 4]) -> [u32; 4] {
+    unsafe {
+        let m = |bit: u8| if D & bit != 0 { u32::MAX } else { 0 };
+        let mask = [m(8), m(4), m(2), m(1)];
+        store(vbslq_u32(vld1q_u32(mask.as_ptr()), load(a), load(b)))
+    }
+}
+
 /// MAC flags (Z S U O nibbles, x = high bit) of the lanes in `D`.
 #[inline(always)]
 pub fn mac<const D: u8>(r: &R) -> u32 {

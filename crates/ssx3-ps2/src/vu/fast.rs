@@ -216,6 +216,29 @@ pub mod cold {
     }
 }
 
+/// `d[l] = v[l]` for the lanes in `D`. On AArch64 a partial write is one
+/// 128-bit read-select-write, so a later full-register load forwards from
+/// a single store (partial lane stores would stall it).
+#[inline(always)]
+fn merge<const D: u8>(d: &mut [u32; 4], v: &[u32; 4]) {
+    #[cfg(target_arch = "aarch64")]
+    {
+        if D == 0b1111 {
+            *d = *v;
+        } else if D != 0 {
+            *d = super::simd::select::<D>(v, d);
+        }
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        for l in 0..4 {
+            if D & (8 >> l) != 0 {
+                d[l] = v[l];
+            }
+        }
+    }
+}
+
 /// CLIP judgement bits of `s.xyz` against `|w|` (see `Vu::clipw`).
 #[inline(always)]
 pub fn clip(s: [u32; 4], w: u32) -> u32 {
@@ -254,36 +277,12 @@ impl Vu {
     /// Write lanes `D` of VF `r` (r != 0).
     #[inline(always)]
     pub fn put_vf<const D: u8>(&mut self, r: usize, v: &[u32; 4]) {
-        let d = &mut self.vf[r & 31];
-        if D & 8 != 0 {
-            d[0] = v[0];
-        }
-        if D & 4 != 0 {
-            d[1] = v[1];
-        }
-        if D & 2 != 0 {
-            d[2] = v[2];
-        }
-        if D & 1 != 0 {
-            d[3] = v[3];
-        }
+        merge::<D>(&mut self.vf[r & 31], v);
     }
 
     #[inline(always)]
     pub fn put_acc<const D: u8>(&mut self, v: &[u32; 4]) {
-        let d = &mut self.acc;
-        if D & 8 != 0 {
-            d[0] = v[0];
-        }
-        if D & 4 != 0 {
-            d[1] = v[1];
-        }
-        if D & 2 != 0 {
-            d[2] = v[2];
-        }
-        if D & 1 != 0 {
-            d[3] = v[3];
-        }
+        merge::<D>(&mut self.acc, v);
     }
 
     /// The fields `F` of VF `r` are ready FMAC_LATENCY cycles from now.
