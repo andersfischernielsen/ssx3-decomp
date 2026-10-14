@@ -36,7 +36,7 @@ pub struct IopSide {
 pub fn enabled() -> bool {
     static ON: OnceLock<bool> = OnceLock::new();
     *ON.get_or_init(|| {
-        let want = std::env::var("SSX3_IOP").map(|v| v != "0").unwrap_or(false);
+        let want = std::env::var("SSX3_IOP").map(|v| v != "0").unwrap_or(true);
         if want && ssx3_iop::generated().is_none() {
             eprintln!("[iop] SSX3_IOP set but no recompiled IOP code is registered; using the HLE IOP");
             return false;
