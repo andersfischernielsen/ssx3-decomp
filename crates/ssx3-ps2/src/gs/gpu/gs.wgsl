@@ -3,7 +3,7 @@
 // The design follows ps2-web-recomp's WebGPU GS (runtime/src/gs/gpu/gs.wgsl,
 // MIT, Copyright (c) 2026 Samir Nuri, https://github.com/snuri00/ps2-web-recomp):
 // the 4 MiB of GS local memory live in a storage buffer in the native
-// swizzled layout, primitives are binned on the CPU into 16x16 pixel tiles,
+// swizzled layout, primitives are binned on the CPU into pixel tiles (8x8 here; the reference uses 16x16),
 // and one workgroup per tile walks the tile's primitives in submission order
 // with one thread per pixel, so every pixel sees the primitives in the
 // original order. Sub-word writes use atomics; texture reads come from a
@@ -865,14 +865,16 @@ fn draw_prim(p: u32, x: i32, y: i32) {
 // params.a = (tile records, tile count, snapshot lo word, snapshot hi word).
 // A tile record is [origin (tx | ty << 16), first list entry, count]; list
 // entries are primitive record offsets. The workgroup loads the list and the
-// bounding boxes into workgroup memory 256 entries at a time, so the
+// bounding boxes into workgroup memory one tile-size chunk at a time, so the
 // per-primitive loop (most primitives miss most pixels of a tile) does not
 // wait on global memory.
-var<workgroup> sh_p: array<u32, 256>;
-var<workgroup> sh_lo: array<u32, 256>;
-var<workgroup> sh_hi: array<u32, 256>;
+const TILE: u32 = 8u;
+const TILE_PX: u32 = TILE * TILE;
+var<workgroup> sh_p: array<u32, TILE_PX>;
+var<workgroup> sh_lo: array<u32, TILE_PX>;
+var<workgroup> sh_hi: array<u32, TILE_PX>;
 
-@compute @workgroup_size(16, 16)
+@compute @workgroup_size(TILE, TILE)
 fn raster(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>, @builtin(local_invocation_index) li: u32) {
     let ti = wid.x + wid.y * 32768u;
     if (ti >= params.a.y) {
@@ -880,12 +882,12 @@ fn raster(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) l
     }
     let rec = params.a.x + ti * 3u;
     let origin = data[rec];
-    let x = i32((origin & 0xFFFFu) * 16u + lid.x);
-    let y = i32((origin >> 16u) * 16u + lid.y);
+    let x = i32((origin & 0xFFFFu) * TILE + lid.x);
+    let y = i32((origin >> 16u) * TILE + lid.y);
     let first = data[rec + 1u];
     let count = data[rec + 2u];
-    for (var base = 0u; base < count; base = base + 256u) {
-        let n = min(256u, count - base);
+    for (var base = 0u; base < count; base = base + TILE_PX) {
+        let n = min(TILE_PX, count - base);
         workgroupBarrier();
         if (li < n) {
             let p = data[first + base + li];

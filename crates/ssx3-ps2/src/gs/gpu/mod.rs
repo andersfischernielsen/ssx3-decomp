@@ -5,7 +5,8 @@
 //! (`runtime/src/gs/gpu/gpu.cpp` and `gs.wgsl`, MIT, Copyright (c) 2026
 //! Samir Nuri, <https://github.com/snuri00/ps2-web-recomp>): VRAM in the
 //! native swizzled layout as a storage buffer, primitives binned on the CPU
-//! into 16x16 pixel tiles, one workgroup per tile walking its primitives in
+//! into pixel tiles (8x8 here, 16x16 in the reference; 8x8 measured
+//! ~15% faster on an M1), one workgroup per tile walking its primitives in
 //! submission order, and a snapshot of VRAM for primitives that sample what
 //! their batch draws. Everything else (GIF, registers, transfers, CLUT
 //! loads, primitive setup with `raster::setup`) stays on the CPU and is
@@ -62,7 +63,9 @@ const S_DEC: usize = 42;
 const PRIM_WORDS: usize = 41;
 /// Uniform slot stride (min_uniform_buffer_offset_alignment upper bound).
 const SLOT: u64 = 256;
-const TILES_X: usize = 128;
+/// Tile size (log2 pixels); must match `TILE` in gs.wgsl.
+const TILE_SHIFT: i32 = 3;
+const TILES_X: usize = 2048 >> TILE_SHIFT;
 /// Keep at most this many submissions in flight.
 const MAX_INFLIGHT: usize = 3;
 /// Close a batch after this many primitives (bounds the data buffer).
@@ -292,7 +295,7 @@ pub(crate) struct GpuGs {
     last_draw: Option<(Arc<Draw>, u32)>,
     palettes: HashMap<u64, u32>,
     /// Textures decoded in this submission: texel offset and VRAM pages.
-    decoded: HashMap<raster::TexKey, (u32, Pages)>,
+    decoded: HashMap<DecKey, (u32, Pages)>,
     dec_used: u32,
     pub(crate) cpu_dirty: Pages,
     pub(crate) gpu_dirty: Pages,
@@ -394,6 +397,9 @@ fn page_span(p: &Pages) -> Option<(u32, u32)> {
     let hi = hi.0 as u32 * 64 + 63 - hi.1.leading_zeros();
     Some((lo, hi + 1))
 }
+
+/// Identity of a decoded texture level (see `plan_decodes`).
+type DecKey = ([u32; 3], [u32; 4], u32, u32);
 
 /// The latent readback buffer (see `GpuGs::latent_read`).
 struct Latent {
@@ -841,14 +847,14 @@ impl GpuGs {
         if bx0 > bx1 || by0 > by1 {
             return;
         }
-        let (tx0, tx1) = ((bx0 >> 4) as u16, (bx1 >> 4) as u16);
-        let (ty0, ty1) = ((by0 >> 4) as u16, (by1 >> 4) as u16);
+        let (tx0, tx1) = ((bx0 >> TILE_SHIFT) as u16, (bx1 >> TILE_SHIFT) as u16);
+        let (ty0, ty1) = ((by0 >> TILE_SHIFT) as u16, (by1 >> TILE_SHIFT) as u16);
         if let Shape::Tri(t) = &p.shape {
             if tx1 - tx0 >= 2 && ty1 > ty0 {
                 // Narrow each tile row to the triangle's extent in it.
                 for ty in ty0..=ty1 {
-                    let ja = ((ty as i32) << 4).max(p.y0) - t.by0;
-                    let jb = (((ty as i32) << 4) + 15).min(p.y1) - t.by0;
+                    let ja = ((ty as i32) << TILE_SHIFT).max(p.y0) - t.by0;
+                    let jb = (((ty as i32) << TILE_SHIFT) + (1 << TILE_SHIFT) - 1).min(p.y1) - t.by0;
                     let w = (p.x1 - t.bx0) as i64;
                     let (mut lo, mut hi) = (0i64, w);
                     for k in 0..3 {
@@ -860,8 +866,8 @@ impl GpuGs {
                     if lo > hi {
                         continue;
                     }
-                    let a = ((t.bx0 as i64 + lo) >> 4) as u16;
-                    let b = ((t.bx0 as i64 + hi) >> 4) as u16;
+                    let a = ((t.bx0 as i64 + lo) >> TILE_SHIFT) as u16;
+                    let b = ((t.bx0 as i64 + hi) >> TILE_SHIFT) as u16;
                     self.batch.spans.push(Span { prim: off, ty, tx0: a, tx1: b });
                 }
                 return;
@@ -1160,7 +1166,14 @@ impl GpuGs {
                 if (*fetches as u32) < texels / 2 && texels > 4096 {
                     continue;
                 }
-                let key = raster::tex_key(t, rect);
+                // Surface, rectangle, conversion; palettes are deduplicated in
+                // the arena, so their offset identifies their contents.
+                let key: DecKey = (
+                    surf_words(t.surface()),
+                    rect,
+                    t.kind as u32 | (t.aem as u32) << 2 | t.ta0 << 8 | t.ta1 << 16,
+                    self.arena[*st as usize + 18],
+                );
                 let off = match self.decoded.get(&key) {
                     Some(&(off, _)) => off,
                     None => {
