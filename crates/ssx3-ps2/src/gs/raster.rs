@@ -744,6 +744,9 @@ impl Decoded {
     pub(crate) fn bytes(&self) -> usize {
         self.data.len() * 4
     }
+    pub(crate) fn into_data(self) -> Vec<u32> {
+        self.data
+    }
 }
 
 /// Largest texture rectangle (in texels) worth decoding.

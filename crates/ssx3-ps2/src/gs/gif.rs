@@ -16,6 +16,40 @@ pub(crate) struct GifPath {
 }
 
 impl GifPath {
+    /// Data qwords a GIF tag carries, and its EOP flag.
+    pub(crate) fn tag_qwords(tag: Qword) -> (u64, bool) {
+        let lo = tag as u64;
+        let nloop = lo & 0x7FFF;
+        let nreg = match (lo >> 60) & 0xF {
+            0 => 16,
+            n => n,
+        };
+        let n = match (lo >> 58) & 3 {
+            0 => nloop * nreg,
+            1 => (nloop * nreg).div_ceil(2),
+            _ => nloop,
+        };
+        (n, (lo >> 15) & 1 != 0)
+    }
+
+    /// Data qwords left in the current tag (0 when idle), and its EOP flag.
+    pub(crate) fn qwords_left(&self) -> (u64, bool) {
+        if !self.active {
+            return (0, self.eop);
+        }
+        let (nloop, loop_, nreg, reg) = (self.nloop as u64, self.loop_ as u64, self.nreg as u64, self.reg as u64);
+        let n = match self.flg {
+            0 => (nloop - loop_) * nreg - reg,
+            1 => {
+                let total = nloop * nreg;
+                let done = loop_ * nreg + reg;
+                total.div_ceil(2) - done / 2
+            }
+            _ => nloop - loop_,
+        };
+        (n, self.eop)
+    }
+
     #[inline]
     fn cur_reg(&self) -> u8 {
         ((self.regs >> (self.reg * 4)) & 0xF) as u8
@@ -54,6 +88,9 @@ impl Gs {
             p.loop_ = 0;
             p.reg = 0;
             p.active = p.nloop != 0;
+            if crate::trace_path3() && path != 1 {
+                eprintln!("[p3]   tag path {path} nloop {} flg {} nreg {} eop {}", p.nloop, p.flg, p.nreg, p.eop);
+            }
             let pre = (lo >> 46) & 1 != 0;
             let flg = p.flg;
             // Each GIFtag resets the internal Q to 1.0.

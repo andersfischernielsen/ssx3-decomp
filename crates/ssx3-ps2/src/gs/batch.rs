@@ -188,16 +188,53 @@ fn estimate(p: &Prim) -> u64 {
 }
 
 impl Gs {
+    /// Debug (`draw_log`): record the current draw setup and its texture.
+    fn log_draw(&mut self) {
+        self.flush();
+        self.wait_inflight();
+        let d = self.draw.clone().expect("draw setup");
+        let attr = if self.regs.prmodecont & 1 != 0 { self.regs.prim } else { (self.regs.prim & 7) | (self.regs.prmode & !7) };
+        let ctx = &self.regs.ctx[((attr >> 9) & 1) as usize];
+        let mut e = super::DrawLog {
+            prim: attr,
+            tex0: ctx.tex0,
+            tex1: ctx.tex1,
+            clamp: ctx.clamp,
+            frame: ctx.frame,
+            alpha: ctx.alpha,
+            test: ctx.test,
+            ..Default::default()
+        };
+        if let (Some(t), None) = (d.tex.as_ref(), self.gpu.as_ref()) {
+            let w = (1u32 << t.tw).min(1024);
+            let h = (1u32 << t.th).min(1024);
+            let dec = raster::decode(&self.vram, t, [0, 0, w - 1, h - 1]);
+            e.image = Some((w, h, dec.into_data()));
+        }
+        self.draw_log.as_mut().expect("log").push(e);
+    }
+
     /// Queue a kicked primitive for drawing.
     pub(super) fn draw_primitive(&mut self, prim: u32, verts: &[Vertex]) {
         self.prims_drawn += 1;
         if self.draw.is_none() {
             self.draw = Some(Arc::new(Draw::build(&self.regs, &self.clut)));
+            if self.draw_log.is_some() {
+                self.log_draw();
+            }
         }
         let d = self.draw.clone().expect("draw setup");
         let Some(mut p) = raster::setup(&d, 0, prim, verts) else {
             return;
         };
+        if let Some(e) = self.draw_log.as_mut().and_then(|l| l.last_mut()) {
+            if e.prims == 0 {
+                e.bbox = [p.x0, p.y0, p.x1, p.y1];
+            } else {
+                e.bbox = [e.bbox[0].min(p.x0), e.bbox[1].min(p.y0), e.bbox[2].max(p.x1), e.bbox[3].max(p.y1)];
+            }
+            e.prims += 1;
+        }
         if let Some(g) = self.gpu.as_mut() {
             g.push(&d, &p, prim, verts, &self.vram);
             return;

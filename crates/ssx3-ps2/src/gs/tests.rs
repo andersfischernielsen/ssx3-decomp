@@ -947,3 +947,93 @@ fn mipmap_mtba_addresses() {
     let t1 = tex1(true, 1, 2, 0, 16) | 1 << 9;
     assert_eq!(mip_sprite(&mut gs, t1, 1.0, true), 0x80AA_BBCC);
 }
+
+/// A host->local CT32 upload of an 8x8 block of `color` at `dbp`, as PATH3
+/// DMA data: an A+D packet without EOP, then the IMAGE packet with EOP.
+fn upload_packets(dbp: u32, color: u32) -> Vec<Qword> {
+    let mut q = vec![giftag(4, false, 0, 1, 0xE)];
+    q.push(ad_q(0x50, (dbp as u64) << 32 | 1u64 << 48));
+    q.push(ad_q(0x51, 0));
+    q.push(ad_q(0x52, 8 | 8u64 << 32));
+    q.push(ad_q(0x53, 0));
+    let data: Vec<u8> = (0..64).flat_map(|_| color.to_le_bytes()).collect();
+    let img = bytes_to_qwords(&data);
+    q.push(giftag(img.len() as u32, true, 2, 0, 0));
+    q.extend(img);
+    q
+}
+
+fn texel(gs: &Gs, dbp: u32) -> u32 {
+    read_pixel(&gs.vram, PSMCT32, dbp, 1, 3, 3)
+}
+
+#[test]
+fn path3_mask_holds_dma_until_unmasked() {
+    // SSX 3 queues several uploads to the same block in one GIF DMA chain
+    // and releases them one by one with MSKPATH3 from the VIF1 stream.
+    let mut gs = Gs::new_cpu();
+    gs.set_path3_mask(true);
+    gs.path3_dma(&upload_packets(0x100, 0x1111_1111));
+    assert_eq!(texel(&gs, 0x100), 0, "masked PATH3 must not reach VRAM");
+    assert!(gs.path3_pending() > 0);
+    assert_eq!(gs.gif_stat() & 2, 2, "M3P");
+    gs.set_path3_mask(false);
+    assert_eq!(texel(&gs, 0x100), 0x1111_1111);
+    assert_eq!(gs.path3_pending(), 0);
+    // Masking again holds the next upload while the first stays visible.
+    gs.set_path3_mask(true);
+    gs.path3_dma(&upload_packets(0x100, 0x2222_2222));
+    assert_eq!(texel(&gs, 0x100), 0x1111_1111);
+    gs.set_path3_mask(false);
+    assert_eq!(texel(&gs, 0x100), 0x2222_2222);
+    // GIF_MODE.M3R masks as well.
+    gs.set_path3_mask_reg(true);
+    gs.path3_dma(&upload_packets(0x100, 0x3333_3333));
+    assert_eq!(texel(&gs, 0x100), 0x2222_2222);
+    gs.set_path3_mask_reg(false);
+    assert_eq!(texel(&gs, 0x100), 0x3333_3333);
+}
+
+#[test]
+fn path3_mask_waits_for_end_of_packet() {
+    // A mask set in the middle of a packet stops PATH3 only after the EOP
+    // tag's data; a tag without EOP does not end the packet.
+    let mut gs = Gs::new_cpu();
+    let a = upload_packets(0x100, 0x4444_4444);
+    let b = upload_packets(0x200, 0x5555_5555);
+    gs.path3_dma(&a[..3]); // A+D tag and two of its registers
+    gs.set_path3_mask(true);
+    let mut rest = a[3..].to_vec();
+    rest.extend(&b);
+    gs.path3_dma(&rest);
+    assert_eq!(texel(&gs, 0x100), 0x4444_4444, "the open packet completes");
+    assert_eq!(texel(&gs, 0x200), 0, "the next packet waits");
+    assert_eq!(gs.path3_pending(), b.len());
+    gs.set_path3_mask(false);
+    assert_eq!(texel(&gs, 0x200), 0x5555_5555);
+}
+
+#[test]
+fn path3_unmask_pulse_releases_one_packet() {
+    // `MSKPATH3 0` immediately followed by `MSKPATH3 1` (SSX 3's VIF1
+    // stream before each textured batch) lets exactly one packet through.
+    let mut gs = Gs::new_cpu();
+    gs.set_path3_mask(true);
+    let mut q = upload_packets(0x100, 0x6666_6666);
+    q.extend(upload_packets(0x100, 0x7777_7777));
+    gs.path3_dma(&q);
+    assert_eq!(texel(&gs, 0x100), 0);
+    gs.set_path3_mask(false);
+    gs.set_path3_mask(true);
+    assert_eq!(texel(&gs, 0x100), 0x6666_6666, "first texture for the first batch");
+    gs.set_path3_mask(false);
+    gs.set_path3_mask(true);
+    assert_eq!(texel(&gs, 0x100), 0x7777_7777, "second texture for the next batch");
+    assert_eq!(gs.path3_pending(), 0);
+    // Left unmasked, the VIF moving on lets everything flow.
+    gs.path3_dma(&upload_packets(0x100, 0x1234_5678));
+    gs.path3_dma(&upload_packets(0x200, 0x1234_5678));
+    gs.set_path3_mask(false);
+    gs.path3_flow();
+    assert_eq!(texel(&gs, 0x200), 0x1234_5678);
+}

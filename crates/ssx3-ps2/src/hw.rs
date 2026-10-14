@@ -304,7 +304,7 @@ impl Hw {
             0x1000_2000..=0x1000_2FFF => self.ipu.read32(p & 0xFFF),
             0x1000_3000 => self.gif_ctrl,
             0x1000_3010 => self.gif_mode,
-            0x1000_3020 => 0, // GIF_STAT: idle, no path active
+            0x1000_3020 => self.gs.gif_stat() | (self.gif_mode & 4), // GIF_STAT (IMT mirrors GIF_MODE)
             0x1000_3800..=0x1000_3BFF => self.vif0.read_reg(p - 0x1000_3800),
             0x1000_3C00..=0x1000_3FFF => self.vif1.read_reg(p - 0x1000_3C00),
             0x1000_8000..=0x1000_DFFF => {
@@ -456,9 +456,13 @@ impl Hw {
                 self.gif_ctrl = v & 8;
                 if v & 1 != 0 {
                     self.gif_ctrl = 0;
+                    self.gs.path3_reset();
                 }
             }
-            0x1000_3010 => self.gif_mode = v,
+            0x1000_3010 => {
+                self.gif_mode = v;
+                self.gs.set_path3_mask_reg(v & 1 != 0);
+            }
             0x1000_3800..=0x1000_3BFF => {
                 self.vif0.write_reg(p - 0x1000_3800, v);
                 if !self.vif0.stalled() && self.vif0.pending_words() > 0 {
@@ -609,6 +613,9 @@ impl Hw {
     /// Run a DMA transfer to completion.
     fn dma_start(&mut self, c: usize, ram: &mut [u8], spr: &mut [u8]) {
         let chcr = self.ch[c].chcr;
+        if crate::trace_path3() && (c == ch::GIF || c == ch::VIF1) {
+            eprintln!("[p3] dma start ch{c} chcr {chcr:#x} madr {:#x} tadr {:#x} qwc {} gif_mode {:#x} d_ctrl {:#x}", self.ch[c].madr, self.ch[c].tadr, self.ch[c].qwc, self.gif_mode, self.d_ctrl);
+        }
         let mode = (chcr >> 2) & 3;
         let to_mem = chcr & 1 == 0;
         match c {
@@ -657,6 +664,10 @@ impl Hw {
                 }
             }
         }
+        if c == ch::VIF1 {
+            // The VIF1 stream ended: an unmasked PATH3 drains.
+            self.gs.path3_flow();
+        }
         self.ch[c].chcr &= !0x100;
         self.d_stat |= 1 << c;
         self.irq_dirty = true;
@@ -683,7 +694,7 @@ impl Hw {
                 self.vif1.write(data, &mut self.vu1, &mut self.gs);
                 self.vif_irq();
             }
-            ch::GIF => self.gs.gif_write(3, data),
+            ch::GIF => self.gs.path3_dma(data),
             ch::TO_SPR => {
                 for (i, v) in data.iter().enumerate() {
                     let a = (self.ch[c].sadr + i as u32 * 16) & 0x3FFF;
@@ -723,6 +734,9 @@ impl Hw {
             let addr = ((tag >> 32) & 0x7fff_fff0) as u32;
             let tag_spr = (tag >> 63) & 1 != 0;
             self.ch[c].chcr = (self.ch[c].chcr & 0xffff) | (((tag as u32) >> 16) << 16);
+            if crate::trace_path3() && c == ch::GIF {
+                eprintln!("[p3] gif dmatag {:#x}: id {id} qwc {qwc} addr {addr:#x} irq {irq}", tadr);
+            }
             if tte && (c == ch::VIF0 || c == ch::VIF1) {
                 // The upper 64 bits of the tag are VIFcodes.
                 let t = tag & !0xffff_ffff_ffff_ffffu128;
