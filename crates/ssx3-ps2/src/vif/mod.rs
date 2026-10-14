@@ -74,6 +74,56 @@ pub struct Vif {
     irq: bool,
 }
 
+/// UNPACK of format V(VN+1)-(32>>VL) (VL 3: V4-5) without mask, mode or
+/// cycle skipping, to `num` consecutive qwords from `addr` (wrapping):
+/// the same element decoding as the general loop in `Vif::unpack`.
+fn unpack_plain<const VN: u32, const VL: u32>(data: &[u32], num: usize, addr: u32, qwords: u32, usn: bool, dst: &mut [u8]) {
+    let n = VN as usize + 1;
+    let elem = |e: usize| -> u32 {
+        match VL {
+            0 => data[e],
+            1 => {
+                let h = (data[e / 2] >> (16 * (e % 2))) as u16;
+                if usn {
+                    h as u32
+                } else {
+                    h as i16 as i32 as u32
+                }
+            }
+            _ => {
+                let x = (data[e / 4] >> (8 * (e % 4))) as u8;
+                if usn {
+                    x as u32
+                } else {
+                    x as i8 as i32 as u32
+                }
+            }
+        }
+    };
+    for i in 0..num {
+        let v: [u32; 4] = if VL == 3 {
+            let c = (data[i / 2] >> (16 * (i % 2))) & 0xffff;
+            [(c & 0x1f) << 3, ((c >> 5) & 0x1f) << 3, ((c >> 10) & 0x1f) << 3, ((c >> 15) & 1) << 7]
+        } else {
+            let b = i * n;
+            match n {
+                1 => [elem(b); 4],
+                2 => {
+                    let (x, y) = (elem(b), elem(b + 1));
+                    [x, y, x, y]
+                }
+                3 => [elem(b), elem(b + 1), elem(b + 2), 0],
+                _ => [elem(b), elem(b + 1), elem(b + 2), elem(b + 3)],
+            }
+        };
+        let o = (((addr + i as u32) & (qwords - 1)) * 16) as usize;
+        let q: &mut [u8; 16] = (&mut dst[o..o + 16]).try_into().unwrap();
+        for j in 0..4 {
+            q[j * 4..j * 4 + 4].copy_from_slice(&v[j].to_le_bytes());
+        }
+    }
+}
+
 impl Vif {
     pub fn new(index: usize) -> Self {
         Self {
@@ -352,15 +402,29 @@ impl Vif {
                 }
             }
         };
-        if vn == 3 && vl == 0 && !masked && self.mode == 0 && !fill_mode && cl == wl {
-            // V4-32 to consecutive qwords: a plain copy (the common case).
-            for i in 0..num as usize {
-                let o = (((addr + i as u32) & (qwords - 1)) * 16) as usize;
-                for j in 0..4 {
-                    vu.data[o + j * 4..o + j * 4 + 4].copy_from_slice(&data[i * 4 + j].to_le_bytes());
-                }
+        if !masked && self.mode == 0 && cl == wl {
+            // Unmasked, plain mode, consecutive qwords (the common case):
+            // decoding monomorphised per format.
+            let f = match (vn, vl) {
+                (0, 0) => unpack_plain::<0, 0>,
+                (0, 1) => unpack_plain::<0, 1>,
+                (0, 2) => unpack_plain::<0, 2>,
+                (1, 0) => unpack_plain::<1, 0>,
+                (1, 1) => unpack_plain::<1, 1>,
+                (1, 2) => unpack_plain::<1, 2>,
+                (2, 0) => unpack_plain::<2, 0>,
+                (2, 1) => unpack_plain::<2, 1>,
+                (2, 2) => unpack_plain::<2, 2>,
+                (3, 0) => unpack_plain::<3, 0>,
+                (3, 1) => unpack_plain::<3, 1>,
+                (3, 2) => unpack_plain::<3, 2>,
+                (3, 3) => unpack_plain::<3, 3>,
+                _ => unpack_plain::<0, 3>,
+            };
+            if vl != 3 || vn == 3 {
+                f(data, num as usize, addr, qwords, usn, &mut vu.data);
+                return;
             }
-            return;
         }
         let mut cyc = 0u32;
         for _ in 0..num {

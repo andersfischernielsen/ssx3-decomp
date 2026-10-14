@@ -230,6 +230,8 @@ pub struct Vu {
     pub programs: HashMap<u64, &'static ProgramEntry>,
     /// Explicit executor used when no translation exists (None at runtime).
     pub fallback: Option<ProgramFn>,
+    /// Most recently looked-up registry entry (`lookup`).
+    last_program: Option<&'static ProgramEntry>,
     /// Count of runtime errors (missing translation, unknown op ...).
     pub errors: u64,
     pub last_error: Option<String>,
@@ -290,6 +292,7 @@ impl Vu {
             seg_serial: 0,
             programs: HashMap::new(),
             fallback: None,
+            last_program: None,
             errors: 0,
             last_error: None,
             instant_qp: false,
@@ -342,6 +345,7 @@ impl Vu {
     }
 
     pub fn register_programs(&mut self, table: &'static [ProgramEntry]) {
+        self.last_program = None;
         for e in table {
             self.programs.insert(e.hash, e);
         }
@@ -469,7 +473,16 @@ impl Vu {
 
     pub fn lookup(&mut self, pc: u32) -> Option<ProgramFn> {
         let h = self.segment_hash(pc)?;
-        let e = self.programs.get(&h)?;
+        // One-entry cache in front of the (SipHash) registry map: a frame
+        // runs the same program for hundreds of MSCALs.
+        let e = match self.last_program {
+            Some(e) if e.hash == h => e,
+            _ => {
+                let e = *self.programs.get(&h)?;
+                self.last_program = Some(e);
+                e
+            }
+        };
         (pc >= e.start && pc < e.start + e.len && pc & 7 == 0).then_some(e.func)
     }
 
@@ -886,55 +899,72 @@ impl Vu {
         };
     }
 
+    /// The second operand as four lanes.
+    #[inline]
+    fn src_vec(&self, src: Src) -> [u32; 4] {
+        match src {
+            Src::Vec(t) => self.vf[t as usize & 31],
+            Src::Bc(t, f) => [self.vf[t as usize & 31][f as usize & 3]; 4],
+            Src::Q => [self.q; 4],
+            Src::I => [self.i; 4],
+        }
+    }
+
+    /// Stage a four-lane FMAC result (`fast::*4` with all lanes computed);
+    /// only the `dest` lanes are written and flagged.
+    #[inline]
+    fn stage_v(&mut self, target: Target, dest: u8, (value, mac): ([u32; 4], u32)) {
+        self.stage = Stage {
+            target,
+            dest,
+            value,
+            mac: Some(mac & (dest as u32 & 0xf) * 0x1111),
+            clip: None,
+        };
+    }
+
+    // FMAC ops (micro mode via the reference interpreter, and macro mode
+    // from the EE): four lanes at once with the same arithmetic as the
+    // translated code (`fast.rs`, NEON on AArch64).
     pub fn add(&mut self, dest: u8, fd: u8, fs: u8, src: Src) {
-        self.stage_fmac(Target::Vf(fd), dest, |v, l| {
-            float::add(v.vf[fs as usize][l], v.src(src, l))
-        });
+        let r = fast::add4::<0b1111, true, true>(&self.vf[fs as usize & 31], &self.src_vec(src));
+        self.stage_v(Target::Vf(fd), dest, r);
     }
     pub fn adda(&mut self, dest: u8, fs: u8, src: Src) {
-        self.stage_fmac(Target::Acc, dest, |v, l| {
-            float::add(v.vf[fs as usize][l], v.src(src, l))
-        });
+        let r = fast::add4::<0b1111, true, true>(&self.vf[fs as usize & 31], &self.src_vec(src));
+        self.stage_v(Target::Acc, dest, r);
     }
     pub fn sub(&mut self, dest: u8, fd: u8, fs: u8, src: Src) {
-        self.stage_fmac(Target::Vf(fd), dest, |v, l| {
-            float::sub(v.vf[fs as usize][l], v.src(src, l))
-        });
+        let r = fast::sub4::<0b1111, true, true>(&self.vf[fs as usize & 31], &self.src_vec(src));
+        self.stage_v(Target::Vf(fd), dest, r);
     }
     pub fn suba(&mut self, dest: u8, fs: u8, src: Src) {
-        self.stage_fmac(Target::Acc, dest, |v, l| {
-            float::sub(v.vf[fs as usize][l], v.src(src, l))
-        });
+        let r = fast::sub4::<0b1111, true, true>(&self.vf[fs as usize & 31], &self.src_vec(src));
+        self.stage_v(Target::Acc, dest, r);
     }
     pub fn mul(&mut self, dest: u8, fd: u8, fs: u8, src: Src) {
-        self.stage_fmac(Target::Vf(fd), dest, |v, l| {
-            float::mul(v.vf[fs as usize][l], v.src(src, l))
-        });
+        let r = fast::mul4::<0b1111, true, true>(&self.vf[fs as usize & 31], &self.src_vec(src));
+        self.stage_v(Target::Vf(fd), dest, r);
     }
     pub fn mula(&mut self, dest: u8, fs: u8, src: Src) {
-        self.stage_fmac(Target::Acc, dest, |v, l| {
-            float::mul(v.vf[fs as usize][l], v.src(src, l))
-        });
+        let r = fast::mul4::<0b1111, true, true>(&self.vf[fs as usize & 31], &self.src_vec(src));
+        self.stage_v(Target::Acc, dest, r);
     }
     pub fn madd(&mut self, dest: u8, fd: u8, fs: u8, src: Src) {
-        self.stage_fmac(Target::Vf(fd), dest, |v, l| {
-            float::madd(v.acc[l], v.vf[fs as usize][l], v.src(src, l))
-        });
+        let r = fast::madd4::<0b1111, true, true, true>(&self.acc, &self.vf[fs as usize & 31], &self.src_vec(src));
+        self.stage_v(Target::Vf(fd), dest, r);
     }
     pub fn madda(&mut self, dest: u8, fs: u8, src: Src) {
-        self.stage_fmac(Target::Acc, dest, |v, l| {
-            float::madd(v.acc[l], v.vf[fs as usize][l], v.src(src, l))
-        });
+        let r = fast::madd4::<0b1111, true, true, true>(&self.acc, &self.vf[fs as usize & 31], &self.src_vec(src));
+        self.stage_v(Target::Acc, dest, r);
     }
     pub fn msub(&mut self, dest: u8, fd: u8, fs: u8, src: Src) {
-        self.stage_fmac(Target::Vf(fd), dest, |v, l| {
-            float::msub(v.acc[l], v.vf[fs as usize][l], v.src(src, l))
-        });
+        let r = fast::msub4::<0b1111, true, true, true>(&self.acc, &self.vf[fs as usize & 31], &self.src_vec(src));
+        self.stage_v(Target::Vf(fd), dest, r);
     }
     pub fn msuba(&mut self, dest: u8, fs: u8, src: Src) {
-        self.stage_fmac(Target::Acc, dest, |v, l| {
-            float::msub(v.acc[l], v.vf[fs as usize][l], v.src(src, l))
-        });
+        let r = fast::msub4::<0b1111, true, true, true>(&self.acc, &self.vf[fs as usize & 31], &self.src_vec(src));
+        self.stage_v(Target::Acc, dest, r);
     }
     pub fn max(&mut self, dest: u8, fd: u8, fs: u8, src: Src) {
         self.stage_plain(Target::Vf(fd), dest, |v, l| {

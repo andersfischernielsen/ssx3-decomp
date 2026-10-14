@@ -301,3 +301,44 @@ fn registers_and_direct() {
     vif.write_reg(0x10, 1); // reset
     assert_eq!(vif.read_reg(0x40), 0);
 }
+
+/// The plain UNPACK path (no mask, plain mode, CL == WL) against the general
+/// loop (forced with MASK = 0, i.e. every element selects data): all
+/// formats, signed and unsigned, random payloads, wrapping addresses.
+#[test]
+fn unpack_plain_path_matches_general() {
+    let mut x: u32 = 0x1234_5678;
+    let mut rnd = move || {
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        x
+    };
+    for vn in 0..4u32 {
+        for vl in 0..4u32 {
+            if vl == 3 && vn != 3 {
+                continue;
+            }
+            for usn in [false, true] {
+                let num = 1 + rnd() % 40;
+                let addr = 1000 + rnd() % 24; // wraps past 1024
+                let bits = (32 >> vl) * (vn + 1) * num;
+                let words = bits.div_ceil(32) as usize;
+                let payload: Vec<u32> = (0..words).map(|_| rnd()).collect();
+                let run = |masked: bool| {
+                    let (mut vif, mut vu, mut gs) = setup();
+                    let mut s = vec![STCYCL_44];
+                    if masked {
+                        s.push(0x2000_0000); // STMASK 0
+                        s.push(0);
+                    }
+                    s.push(unpack(vn, vl, num, addr, usn, false, masked));
+                    s.extend_from_slice(&payload);
+                    vif.write(&pack(&s), &mut vu, &mut gs);
+                    vu.data.clone()
+                };
+                assert!(run(false) == run(true), "V{}-{} usn {usn}", vn + 1, 32 >> vl);
+            }
+        }
+    }
+}
