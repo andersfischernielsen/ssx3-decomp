@@ -477,10 +477,17 @@ fn bcd(v: u32) -> u8 {
 fn cd_scmd(c: &mut Cpu, method: u32, _a: u32, _s: u32, ret: u32, rsize: u32) -> bool {
     match method {
         0x01 => {
-            let secs = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
+            // SSX3_RTC=<unix secs> pins the clock (the game seeds its RNG
+            // from it, e.g. the rider line-up): reproducible runs.
+            let secs = std::env::var("SSX3_RTC")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or_else(|| {
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0)
+                });
             let (s, m, h) = ((secs % 60) as u32, (secs / 60 % 60) as u32, (secs / 3600 % 24) as u32);
             wr(c, ret, 1);
             c.bus.write_bytes(ret + 4, &[0, bcd(s), bcd(m), bcd((h + 9) % 24), 0, bcd(14), bcd(10), bcd(26)]);
