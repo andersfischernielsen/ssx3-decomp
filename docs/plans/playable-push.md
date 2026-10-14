@@ -128,3 +128,8 @@ Runtime misses are appended to `generated/entries.txt` automatically; rerun
   shared VRAM slot through their own CLUT (noise on the race walls, the
   smeared sky panel, wrong menu images). New debug tools:
   `gs_replay --draws`, `SSX3_TRACE_PATH3`.
+- After the PATH3 merge: scripted race runs to frame 9000 (1:16 race time, 2nd
+  place, 35% down the course) in 296 s headless with no halts or misses
+  (`race-116s-after-path3.png`). Fixed-clock runs are pixel-deterministic.
+  Next: stretched geometry ("girders", dark sky rectangles), agent on
+  `race-geometry.md`.
