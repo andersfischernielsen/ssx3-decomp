@@ -99,13 +99,10 @@ pub fn mul_k<const NA: bool, const NB: bool>(a: uint32x4_t, b: uint32x4_t) -> R 
         let mb = mantissa(b);
         let plo = vmull_u32(vget_low_u32(ma), vget_low_u32(mb));
         let phi = vmull_high_u32(ma, mb);
-        let tlo = vshrq_n_u64::<47>(plo);
-        let thi = vshrq_n_u64::<47>(phi);
-        let n23 = vdupq_n_u64(23);
-        let mlo = vshlq_u64(plo, vnegq_s64(vreinterpretq_s64_u64(vaddq_u64(tlo, n23))));
-        let mhi = vshlq_u64(phi, vnegq_s64(vreinterpretq_s64_u64(vaddq_u64(thi, n23))));
-        let m = vuzp1q_u32(vreinterpretq_u32_u64(mlo), vreinterpretq_u32_u64(mhi));
-        let top = vuzp1q_u32(vreinterpretq_u32_u64(tlo), vreinterpretq_u32_u64(thi));
+        // product >> 23 fits 25 bits; bit 24 is the product's bit 47.
+        let m25 = vshrn_high_n_u64::<23>(vshrn_n_u64::<23>(plo), phi);
+        let top = vshrq_n_u32::<24>(m25);
+        let m = vshlq_u32(m25, vnegq_s32(vreinterpretq_s32_u32(top)));
         let e = vsubq_u32(vaddq_u32(vaddq_u32(ea, eb), top), k(127));
         let r = pack(sign, vreinterpretq_s32_u32(e), m);
         let zero = vorrq_u32(vceqq_u32(ea, k(0)), vceqq_u32(eb, k(0)));
@@ -139,8 +136,10 @@ pub fn add_k<const NA: bool, const NB: bool>(a: uint32x4_t, b: uint32x4_t) -> R 
         let diff = vsubq_u32(e, vshrq_n_u32::<23>(la));
         let ma = vshlq_n_u32::<1>(mantissa(ha));
         let ml = vshlq_n_u32::<1>(mantissa(la));
+        // ml < 2^25, so any shift of 25 or more gives 0 (the scalar
+        // `diff > 25` case); clamp so the signed shift count stays valid.
         let sh = vnegq_s32(vreinterpretq_s32_u32(vminq_u32(diff, k(31))));
-        let mb = vbicq_u32(vshlq_u32(ml, sh), vcgtq_u32(diff, k(25)));
+        let mb = vshlq_u32(ml, sh);
         let sub = vtstq_u32(veorq_u32(a, b), k(SIGN));
         // Subtraction: renormalise left by the leading zeros.
         let ms = vsubq_u32(ma, mb);
