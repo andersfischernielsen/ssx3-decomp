@@ -100,7 +100,7 @@ pub fn fatal(c: &mut Cpu, pc: u32, msg: &str) {
     c.pc = IDLE | UNWIND;
     if c.kernel.host_threads && c.kernel.current != 0 {
         // Park this guest host thread forever; the frame driver sees `halted`.
-        let me = kernel::token_of(c, c.kernel.current);
+        let me = crate::threads::my_token();
         crate::threads::handoff(me, 0);
     }
 }
@@ -219,7 +219,7 @@ pub fn service_events(c: &mut Cpu) -> bool {
     if c.kernel.host_threads {
         // Return the baton to the frame driver; resume here next frame.
         if want_frame && c.kernel.current != 0 {
-            let me = kernel::token_of(c, c.kernel.current);
+            let me = crate::threads::my_token();
             if me != 0 {
                 crate::threads::handoff(me, 0);
             }

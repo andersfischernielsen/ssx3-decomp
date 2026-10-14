@@ -30,6 +30,16 @@ fn baton() -> &'static Baton {
     B.get_or_init(|| Baton { holder: Mutex::new(0), cv: Condvar::new() })
 }
 
+thread_local! {
+    /// Baton token of the calling host thread (0 = main/frame driver).
+    static MY_TOKEN: std::cell::Cell<i32> = const { std::cell::Cell::new(0) };
+}
+
+/// The calling host thread's baton token.
+pub fn my_token() -> i32 {
+    MY_TOKEN.with(|t| t.get())
+}
+
 #[derive(Clone, Copy)]
 struct CpuPtr(*mut Cpu);
 // SAFETY: access is serialized by the baton.
@@ -70,6 +80,7 @@ pub fn spawn(c: &mut Cpu, id: i32) {
         .stack_size(64 << 20)
         .spawn(move || {
             let p = p;
+            MY_TOKEN.with(|t| t.set(id));
             wait_for(id);
             // SAFETY: we hold the baton.
             let c = unsafe { &mut *p.0 };

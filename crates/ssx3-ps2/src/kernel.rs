@@ -292,7 +292,9 @@ fn switch_to(c: &mut Cpu, next: Option<i32>) {
         }
     }
     if c.kernel.host_threads {
-        let from = token_of(c, cur);
+        // The calling host thread's own token: robust even when `cur` was
+        // just removed (ExitDeleteThread) or this is the frame driver.
+        let from = crate::threads::my_token();
         let to = match next {
             Some(id) => token_or_spawn(c, id),
             None => 0,
