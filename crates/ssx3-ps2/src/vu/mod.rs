@@ -160,6 +160,16 @@ const EMPTY_STAGE: Stage = Stage {
 
 /// FMAC result latency (cycles) for the stall model.
 const FMAC_LATENCY: u64 = 4;
+
+/// Clip flags become visible to FC* ops 3 pairs after CLIP (as in
+/// ps2-web-recomp's `FlagPipe`; MAC/status use FMAC_LATENCY = 4).
+/// Override with SSX3_VU_CLIP_LATENCY for experiments.
+fn clip_latency() -> u64 {
+    static L: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    *L.get_or_init(|| {
+        std::env::var("SSX3_VU_CLIP_LATENCY").ok().and_then(|v| v.parse().ok()).unwrap_or(3)
+    })
+}
 const DIV_LATENCY: u64 = 7;
 const SQRT_LATENCY: u64 = 7;
 const RSQRT_LATENCY: u64 = 13;
@@ -229,6 +239,8 @@ pub struct Vu {
     q_pend: Option<Pending>,
     p_pend: Option<Pending>,
     flag_pipe: VecDeque<FlagSnap>,
+    /// Clip flags have their own (shorter) latency: (ready cycle, value).
+    clip_pipe: VecDeque<(u64, u32)>,
     stage: Stage,
     vi_backup: Option<(u8, u16)>,
     vi_backup_next: Option<(u8, u16)>,
@@ -275,6 +287,7 @@ impl Vu {
             q_pend: None,
             p_pend: None,
             flag_pipe: VecDeque::with_capacity(8),
+            clip_pipe: VecDeque::with_capacity(8),
             stage: EMPTY_STAGE,
             vi_backup: None,
             vi_backup_next: None,
@@ -305,6 +318,7 @@ impl Vu {
         self.q_pend = None;
         self.p_pend = None;
         self.flag_pipe.clear();
+        self.clip_pipe.clear();
         self.stage = EMPTY_STAGE;
         self.vi_backup = None;
         self.vi_backup_next = None;
@@ -585,6 +599,10 @@ impl Vu {
             self.clip = ((self.clip << 6) | c) & 0xff_ffff;
             changed = true;
         }
+        if let (Some(_), true) = (st.clip, pipelined) {
+            let c = self.clip;
+            self.clip_pipe.push_back((self.cycle + clip_latency(), c));
+        }
         if changed {
             if pipelined {
                 self.flag_pipe.push_back(FlagSnap {
@@ -630,7 +648,13 @@ impl Vu {
             self.flag_pipe.pop_front();
             self.vis_mac = f.mac;
             self.vis_status = (self.vis_status & STATUS_DIV) | (f.status & STATUS_FMAC);
-            self.vis_clip = f.clip;
+        }
+        while let Some(&(ready, c)) = self.clip_pipe.front() {
+            if ready > self.cycle {
+                break;
+            }
+            self.clip_pipe.pop_front();
+            self.vis_clip = c;
         }
     }
 
@@ -643,6 +667,7 @@ impl Vu {
             self.p = p.value;
         }
         self.flag_pipe.clear();
+        self.clip_pipe.clear();
         self.vis_mac = self.mac;
         self.vis_status = self.status;
         self.vis_clip = self.clip;
@@ -1013,6 +1038,7 @@ impl Vu {
         for s in self.flag_pipe.iter_mut() {
             s.clip = c;
         }
+        self.clip_pipe.clear();
     }
     pub fn fcget(&mut self, it: u8) {
         self.set_vi(it, (self.vis_clip & 0xfff) as u16);
