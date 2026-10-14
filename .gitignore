@@ -26,3 +26,5 @@
 /generated/ee/
 # Recompiled IOP modules (reproduce with: cargo run --release -p ssx3-recomp --bin recomp-iop)
 /generated/iop/
+# Memory card images written by the game (SSX3_MEMCARD)
+/saves/

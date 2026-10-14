@@ -629,6 +629,7 @@ fn mcserv(c: &mut Cpu, method: u32, _a: u32, _s: u32, ret: u32, rsize: u32) -> b
 /// command 1 with type 0 every audio frame; the EE handler (0x3c1578) signals
 /// the sound thread (0x3c19a8), which mixes and DMAs its next command buffer.
 pub fn vblank(c: &mut Cpu) {
+    crate::iop_bridge::vblank(c);
     if c.sif.snd_bound {
         send(c, &[0x14, 0, 1, 0, 0]);
     }

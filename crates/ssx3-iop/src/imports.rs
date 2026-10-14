@@ -4,8 +4,8 @@
 //! Export indices are those of the IOP libraries the modules were linked
 //! against (sysmem 1.1, intrman 1.2, thbase 1.2, sifcmd 1.1, ...); names and
 //! semantics follow ps2-web-recomp `runtime/src/iop/libs.cpp` and `sif.cpp`
-//! (MIT). Only what SNDDRV.IRX and LIBSD.IRX use is implemented; anything
-//! else logs once and returns 0.
+//! (MIT). Only what the recompiled modules (LIBSD, SNDDRV, SIO2MAN, PADMAN,
+//! MCMAN, MCSERV) use is implemented; anything else logs once and returns 0.
 
 use crate::irx::LIBRARIES;
 use crate::kernel::{self, Wait};
@@ -158,6 +158,39 @@ fn dispatch(c: &mut Iop, lib: usize, idx: u32) {
             kernel::exit_thread(c);
             c.pc |= UNWIND;
         }
+        ("thbase", 10) | ("thbase", 11) => {
+            let id = c.arg(0) as i32;
+            if id == c.k.current || !c.k.threads.contains_key(&id) {
+                return v0(c, E_UNKNOWN_THREAD);
+            }
+            kernel::terminate(c, id);
+            v0(c, 0);
+        }
+        ("thbase", 22) | ("thbase", 23) => {
+            let (id, p) = (c.arg(0) as i32, c.arg(1));
+            let id = if id == 0 { c.k.current } else { id };
+            let Some(t) = c.k.threads.get(&id) else { return v0(c, E_UNKNOWN_THREAD) };
+            // iop_thread_info_t: attr, option, status, entry, stack, stackSize,
+            // gpReg, initPriority, currentPriority, waitType, waitId, wakeupCount.
+            let status = match t.status {
+                kernel::Status::Run => 1,
+                kernel::Status::Ready => 2,
+                kernel::Status::Wait => 4,
+                kernel::Status::Dormant => 0x10,
+            };
+            let (wt, wid) = match t.wait {
+                Wait::None => (0, 0),
+                Wait::Sleep => (1, 0),
+                Wait::Delay => (2, 0),
+                Wait::Sema(s) => (3, s),
+                Wait::Event(e) => (4, e),
+            };
+            let w = [t.attr, t.option, status, t.entry, t.stack, t.stack_size, t.gp, t.init_prio as u32, t.prio as u32, wt, wid as u32, t.wakeups as u32];
+            for (i, v) in w.iter().enumerate() {
+                c.set_ram32(p + 4 * i as u32, *v);
+            }
+            v0(c, 0);
+        }
         ("thbase", 14) | ("thbase", 15) => {
             let (id, prio) = (c.arg(0) as i32, c.arg(1) as i32);
             let id = if id == 0 { c.k.current } else { id };
@@ -297,6 +330,16 @@ fn dispatch(c: &mut Iop, lib: usize, idx: u32) {
                 v0(c, E_SEMA_ZERO)
             }
         }
+        ("thsemap", 11) | ("thsemap", 12) => {
+            let (id, p) = (c.arg(0) as i32, c.arg(1));
+            let Some(s) = c.k.semas.get(&id) else { return v0(c, E_UNKNOWN_SEMA) };
+            // iop_sema_info_t: attr, option, initCount, maxCount, currentCount, numWaitThreads.
+            let w = [s.attr, s.option, 0, s.max as u32, s.count as u32, s.waiters.len() as u32];
+            for (i, v) in w.iter().enumerate() {
+                c.set_ram32(p + 4 * i as u32, *v);
+            }
+            v0(c, 0);
+        }
         // ------------------------------------------------------- thevent
         ("thevent", 4) => {
             let p = c.arg(0);
@@ -393,6 +436,10 @@ fn dispatch(c: &mut Iop, lib: usize, idx: u32) {
         ("sifcmd", 19) => sif::set_rpc_queue(c),
         ("sifcmd", 20) => sif::get_next_request(c),
         ("sifcmd", 21) => sif::exec_request(c),
+        ("sifcmd", 22) => sif::rpc_loop(c),
+        ("sifcmd", 23) => sif::get_other_data(c),
+        ("sifcmd", 24) => sif::remove_rpc(c),
+        ("sifcmd", 25) => sif::remove_rpc_queue(c),
         // ------------------------------------------------------- sysclib
         ("sysclib", 8) => {
             let ch = c.arg(0) as u8;
@@ -450,6 +497,129 @@ fn dispatch(c: &mut Iop, lib: usize, idx: u32) {
             c.r[2] = n as u32;
         }
         ("sysclib", 27) => c.r[2] = c.read_cstr(c.arg(0), 0x10000).len() as u32,
+        ("sysclib", 20) => {
+            let (d, s) = (c.arg(0), c.arg(1));
+            let n = c.read_cstr(d, 0x10000).len() as u32;
+            let mut b = c.read_cstr(s, 0x10000).into_bytes();
+            b.push(0);
+            c.write_bytes(d + n, &b);
+            c.r[2] = d;
+        }
+        ("sysclib", 22) | ("sysclib", 29) => {
+            let (a, b) = (c.arg(0), c.arg(1));
+            let n = if idx == 29 { c.arg(2) as usize } else { usize::MAX };
+            let mut r = 0i32;
+            let mut i = 0usize;
+            while i < n {
+                let (x, y) = (c.lbu(a + i as u32), c.lbu(b + i as u32));
+                if x != y {
+                    r = x as i32 - y as i32;
+                    break;
+                }
+                if x == 0 {
+                    break;
+                }
+                i += 1;
+            }
+            v0(c, r);
+        }
+        ("sysclib", 23) => {
+            let (d, s) = (c.arg(0), c.arg(1));
+            let mut b = c.read_cstr(s, 0x10000).into_bytes();
+            b.push(0);
+            c.write_bytes(d, &b);
+            c.r[2] = d;
+        }
+        ("sysclib", 30) => {
+            let (d, s, n) = (c.arg(0), c.arg(1), c.arg(2) as usize);
+            let mut b = c.read_cstr(s, n).into_bytes();
+            b.resize(n, 0);
+            c.write_bytes(d, &b);
+            c.r[2] = d;
+        }
+        ("sysclib", 36) => {
+            let (s, endp, base) = (c.arg(0), c.arg(1), c.arg(2));
+            let text = c.read_cstr(s, 64);
+            let (v, used) = strtol(&text, base);
+            if endp != 0 {
+                c.set_ram32(endp, s + used as u32);
+            }
+            v0(c, v);
+        }
+        // ------------------------------------------------------- dmacman
+        ("dmacman", 28) => {
+            let (ch, addr, size, count, dir) = (c.arg(0), c.arg(1), c.arg(2), c.arg(3), c.arg(4));
+            crate::hw::dma_request(c, ch as usize, addr, size, count, dir != 0);
+            v0(c, 1);
+        }
+        ("dmacman", 32) => {
+            let ch = c.arg(0);
+            crate::hw::dma_transfer(c, ch as usize);
+            v0(c, 0);
+        }
+        ("dmacman", 33) => {
+            let (ch, v) = (c.arg(0), c.arg(1) & 7);
+            let (reg, sh) = if ch < 7 { (&mut c.hw.dpcr, ch * 4) } else { (&mut c.hw.dpcr2, (ch - 7) * 4) };
+            *reg = (*reg & !(7 << sh)) | (v << sh);
+            v0(c, 0);
+        }
+        ("dmacman", 34) | ("dmacman", 35) => {
+            let ch = c.arg(0);
+            let (reg, bit) = if ch < 7 { (&mut c.hw.dpcr, 1 << (ch * 4 + 3)) } else { (&mut c.hw.dpcr2, 1 << ((ch - 7) * 4 + 3)) };
+            if idx == 34 {
+                *reg |= bit;
+            } else {
+                *reg &= !bit;
+            }
+            v0(c, 0);
+        }
+        // ------------------------------------------------------- vblank
+        ("vblank", 8) => {
+            let (edge, prio, handler, arg) = (c.arg(0), c.arg(1) as i32, c.arg(2), c.arg(3));
+            eprintln!("[iop] RegisterVblankHandler({edge}, {prio}, {handler:#x}, {arg:#x})");
+            let h = kernel::VblankHandler { edge, prio, handler, arg };
+            let at = c.k.vblank.iter().position(|x| x.prio > prio).unwrap_or(c.k.vblank.len());
+            c.k.vblank.insert(at, h);
+            v0(c, 0);
+        }
+        ("vblank", 9) => {
+            let (edge, handler) = (c.arg(0), c.arg(1));
+            c.k.vblank.retain(|h| !(h.edge == edge && h.handler == handler));
+            v0(c, 0);
+        }
+        // ------------------------------------------------------- modload
+        // SetCheckKelfPathCallback (MCMAN registers its "mc0:" KELF check).
+        ("modload", 13) => v0(c, 0),
+        // ------------------------------------------------------- ioman
+        // AddDrv / DelDrv: MCMAN's "mc" device. The EE reaches the card
+        // through MCSERV's RPC, not through ioman, so nothing is routed here.
+        ("ioman", 20) => {
+            let drv = c.arg(0);
+            let name = c.read_cstr(c.ram32(drv), 16);
+            eprintln!("[iop] AddDrv(\"{name}\")");
+            v0(c, 0);
+        }
+        ("ioman", 21) => v0(c, 0),
+        // ------------------------------------------------------- secrman
+        // SecrSetMcCommandHandler / SecrSetMcDevIDHandler: remembered only.
+        ("secrman", 4) | ("secrman", 5) => v0(c, 0),
+        // SecrAuthCard(port, slot, cnum): the MagicGate exchange is not
+        // modelled; the card is genuine.
+        ("secrman", 6) => {
+            if c.trace {
+                eprintln!("[iop] SecrAuthCard({}, {}, {})", c.arg(0), c.arg(1), c.arg(2));
+            }
+            v0(c, 1);
+        }
+        // ------------------------------------------------------- cdvdman
+        // sceCdReadClock(sceCdCLOCK *): same fixed clock as the EE side's
+        // HLE cdvd server (2026-10-14 12:00:00 JST, BCD).
+        ("cdvdman", 24) => {
+            let p = c.arg(0);
+            let bcd = |v: u32| (((v / 10) << 4) | (v % 10)) as u8;
+            c.write_bytes(p, &[0, bcd(0), bcd(0), bcd(21), 0, bcd(14), bcd(10), bcd(26)]);
+            v0(c, 1);
+        }
         _ => {
             let n = c.k.missing.entry((lib, idx)).or_default();
             *n += 1;
@@ -459,6 +629,41 @@ fn dispatch(c: &mut Iop, lib: usize, idx: u32) {
             v0(c, 0);
         }
     }
+}
+
+/// C `strtol` over `s`: (value, bytes consumed).
+fn strtol(s: &str, base: u32) -> (i32, usize) {
+    let b = s.as_bytes();
+    let mut i = 0;
+    while i < b.len() && b[i].is_ascii_whitespace() {
+        i += 1;
+    }
+    let mut neg = false;
+    if i < b.len() && (b[i] == b'-' || b[i] == b'+') {
+        neg = b[i] == b'-';
+        i += 1;
+    }
+    let mut base = base;
+    if (base == 0 || base == 16) && b.get(i) == Some(&b'0') && matches!(b.get(i + 1), Some(b'x' | b'X')) {
+        i += 2;
+        base = 16;
+    } else if base == 0 && b.get(i) == Some(&b'0') {
+        base = 8;
+    } else if base == 0 {
+        base = 10;
+    }
+    let start = i;
+    let mut v: i64 = 0;
+    while i < b.len() {
+        let Some(d) = (b[i] as char).to_digit(base) else { break };
+        v = (v * base as i64 + d as i64).min(i32::MAX as i64 + 1);
+        i += 1;
+    }
+    if i == start {
+        return (0, 0);
+    }
+    let v = if neg { -v } else { v };
+    (v.clamp(i32::MIN as i64, i32::MAX as i64) as i32, i)
 }
 
 fn event_matches(have: u32, bits: u32, mode: u32) -> bool {

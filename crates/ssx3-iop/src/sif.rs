@@ -11,9 +11,13 @@ use std::collections::{BTreeMap, VecDeque};
 
 use crate::irx::layout;
 use crate::kernel::{Status, Wait};
-use crate::{Iop, EXEC_FINISH, UNWIND};
+use crate::{Iop, EXEC_FINISH, RPC_LOOP, UNWIND};
 
 pub const CMD_REND: u32 = 0x8000_0008;
+pub const SERVER_XOR: u32 = 0xACAC_ACAC;
+/// How long a bind to a server that is not registered yet is held before
+/// the IOP answers "no such server" (the EE libraries then retry).
+const BIND_PATIENCE: u64 = crate::CLOCK / 2;
 
 #[derive(Clone, Debug)]
 pub enum Incoming {
@@ -21,6 +25,9 @@ pub enum Incoming {
     UserCmd { cid: u32, packet: Vec<u8> },
     /// `sceSifCallRpc` from the EE: the call packet words and the send data.
     Call { words: [u32; 14], data: Vec<u8> },
+    /// `sceSifBindRpc` from the EE (packet words); answered once the server
+    /// is registered.
+    Bind { words: [u32; 14] },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -47,6 +54,8 @@ pub struct IopSif {
     /// Requests handed out by `sceSifGetNextRequest`, by server data address.
     active: BTreeMap<u32, Request>,
     pub incoming: VecDeque<Incoming>,
+    /// Binds waiting for their server: (packet words, IOP time received).
+    pending_binds: Vec<([u32; 14], u64)>,
     pub sreg: [u32; 32],
     next_dma_id: u32,
     pub calls: u64,
@@ -65,8 +74,18 @@ impl IopSif {
 
 /// Process EE → IOP traffic received since the last service point.
 pub fn service(c: &mut Iop) {
+    if !c.sif.pending_binds.is_empty() {
+        let pending = std::mem::take(&mut c.sif.pending_binds);
+        for (words, t) in pending {
+            answer_bind(c, words, t);
+        }
+    }
     while let Some(m) = c.sif.incoming.pop_front() {
         match m {
+            Incoming::Bind { words } => {
+                let now = c.cycles;
+                answer_bind(c, words, now);
+            }
             Incoming::UserCmd { cid, packet } => {
                 c.sif.user_cmds += 1;
                 let Some(&(handler, data)) = c.sif.cmd_handlers.get(&cid) else {
@@ -95,6 +114,24 @@ pub fn service(c: &mut Iop) {
             }
         }
     }
+}
+
+/// Reply to a bind if the server exists (or give up after a while).
+fn answer_bind(c: &mut Iop, w: [u32; 14], since: u64) {
+    let sid = w[8];
+    let found = c.sif.servers.contains_key(&sid);
+    if !found && c.cycles < since + BIND_PATIENCE {
+        c.sif.pending_binds.push((w, since));
+        return;
+    }
+    if c.trace || !found {
+        eprintln!("[iop-sif] bind {sid:#010x}: {}", if found { "ok" } else { "no such server" });
+    }
+    // The server field is the server's id XOR a constant: call packets carry
+    // it back and the host maps it to the server again.
+    let (server, buf, cbuf) = if found { (sid ^ SERVER_XOR, 0xDEAD_BEF0, 0xDEAD_CAFE) } else { (0, 0, 0) };
+    let r = [48u32, w[1], CMD_REND, 0, w[4], w[5], w[6], w[7], 0x8000_0009, server, buf, cbuf];
+    c.out.packets.push(r.iter().flat_map(|v| v.to_le_bytes()).collect());
 }
 
 /// `WakeupThread` semantics: wake a sleeping thread or count a wakeup.
@@ -137,6 +174,10 @@ pub fn set_rpc_queue(c: &mut Iop) {
 
 pub fn get_next_request(c: &mut Iop) {
     let qd = c.arg(0);
+    next_request(c, qd);
+}
+
+fn next_request(c: &mut Iop, qd: u32) {
     let Some(req) = c.sif.requests.get_mut(&qd).and_then(|q| q.pop_front()) else {
         c.r[2] = 0;
         return;
@@ -210,6 +251,75 @@ pub fn exec_finish(c: &mut Iop) {
         c.out.packets.push(p);
     }
     c.pc = ra;
+}
+
+/// `sceSifRpcLoop(qd)`: serve requests forever. Runs natively: each request
+/// is executed with [`RPC_LOOP`] as its return address, and an idle loop
+/// sleeps with its context resuming at [`RPC_LOOP`].
+pub fn rpc_loop(c: &mut Iop) {
+    let qd = c.arg(0);
+    let cur = c.k.current;
+    match c.k.threads.get_mut(&cur) {
+        Some(t) => t.rpc_qd = qd,
+        None => {
+            let ra = c.r[31];
+            c.fatal(ra, "sceSifRpcLoop outside a thread");
+            return;
+        }
+    }
+    rpc_loop_step(c, qd);
+}
+
+pub fn rpc_loop_resume(c: &mut Iop) {
+    let cur = c.k.current;
+    let qd = c.k.threads.get(&cur).map(|t| t.rpc_qd).unwrap_or(0);
+    rpc_loop_step(c, qd);
+}
+
+fn rpc_loop_step(c: &mut Iop, qd: u32) {
+    next_request(c, qd);
+    let sd = c.r[2];
+    c.r[31] = RPC_LOOP;
+    if sd == 0 {
+        let cur = c.k.current;
+        if let Some(t) = c.k.threads.get_mut(&cur) {
+            t.wakeups = 0;
+        }
+        crate::kernel::block(c, Wait::Sleep);
+        return;
+    }
+    c.r[4] = sd;
+    exec_request(c);
+}
+
+/// `sceSifGetOtherData(rd, src, dest, size, mode)`: copy EE memory to the IOP.
+pub fn get_other_data(c: &mut Iop) {
+    let (rd, src, dst, size) = (c.arg(0), c.arg(1), c.arg(2), c.arg(3));
+    let data = c.ee_read(src, size as usize);
+    c.write_bytes(dst, &data);
+    if rd != 0 {
+        // SifRpcReceiveData_t: header (pkt_addr, rpc_id, sema_id, mode),
+        // then src, dest, size.
+        c.set_ram32(rd + 0x10, src);
+        c.set_ram32(rd + 0x14, dst);
+        c.set_ram32(rd + 0x18, size);
+    }
+    if c.trace {
+        eprintln!("[iop-sif] get other data ee {src:#x} -> iop {dst:#x} ({size} bytes)");
+    }
+    c.r[2] = 0;
+}
+
+pub fn remove_rpc(c: &mut Iop) {
+    let sd = c.arg(0);
+    c.sif.servers.retain(|_, s| s.sd != sd);
+    c.r[2] = sd;
+}
+
+pub fn remove_rpc_queue(c: &mut Iop) {
+    let qd = c.arg(0);
+    c.sif.queues.remove(&qd);
+    c.r[2] = qd;
 }
 
 pub fn add_cmd_handler(c: &mut Iop) {
