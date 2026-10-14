@@ -80,7 +80,7 @@ Ported from ps2-web-recomp's design (MIT):
 - The block-dispatch form is correct but not idiomatic Rust. Structured control
   flow and register promotion come later; correctness comes first.
 
-## Future direction: structured output via host threads
+## Structured output via host threads (implemented: `--threads`, `--structured`)
 
 The block-dispatch form exists because a thread switch must be able to resume
 any function at any return point after the host stack unwinds. If each EE
@@ -98,3 +98,29 @@ readable decompilation:
 Prerequisites are a structuring pass over the CFG (the old `codegen.rs` reached
 86% structured functions) and an ABI-aware register promotion. The current
 form stays the correctness baseline to diff against.
+
+### Status (2026-10-14)
+
+Both modes are implemented and run the game. Default output is unchanged
+until the structured build has passed the full race path:
+
+```sh
+cargo run --release -p ssx3-recomp --bin recomp-ee -- --threads      # host threads, dispatch form
+cargo run --release -p ssx3-recomp --bin recomp-ee -- --structured   # host threads + structured Rust
+```
+
+- **Runtime** (`ssx3-ps2/src/threads.rs`):
+  - one host thread per EE thread, plus a baton. Each host thread knows its own
+    token through a thread-local, which fixed a deadlock when a thread exits
+    with removal;
+  - `machine::run_frame` is the token-0 frame driver and idle loop;
+  - `kernel::switch_to` hands the baton over instead of unwinding.
+- **Generator** (`ssx3-recomp/src/structure.rs`, Ramsey's algorithm):
+  - **95% of functions are structured** (12,622 of 13,306), and the output
+    shrinks from 79 MB to 56 MB;
+  - the rest have jump tables (`jr` through a register other than `$ra`) or
+    irreducible control flow, and keep the dispatch form;
+  - a function that can be entered other than at its start gets a dispatch
+    twin, `f_X__entries`, for those entries.
+- **Result:** it reaches character select with identical GS output (primitive
+  counts match).
