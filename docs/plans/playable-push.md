@@ -75,8 +75,9 @@ Reference design: `snuri00/ps2-web-recomp` (MIT); notes in
 ```sh
 cargo run --release -p ssx3-recomp --bin recomp-ee   # regenerate generated/ee
 tools/run-headless.sh 2400 --shot-every 100          # screenshots → /tmp/ssx3-shots
-SSX3_INPUT="950:0010:8,1000:4000:8,1600:0008:8,2000:4000:8,2500:4000:8,2700:4000:8,2900:4000:8,3100:4000:8,3300:4000:8,3500:4000:8,3700:4000:8,4250:4000:8" \
+SSX3_INPUT="1600:0008:8,2000:4000:8,2500:4000:8,2700:4000:8,2900:4000:8,3100:4000:8,3300:4000:8,3500:4000:8,3700:4000:8,4250:4000:8" \
   ./target/game/ssx3-headless 4700 --shot-every 100  # scripted path into a race
+# (with the memory card present there is no boot prompt; with SSX3_MEMCARD=none prepend 950:0010:8,1000:4000:8)
 cargo run --profile game -p ssx3                     # windowed (keyboard pad)
 SSX3_IOP=1 cargo run --profile game -p ssx3          # ... with the recompiled sound driver
 SSX3_IOP=1 SSX3_WAV=/tmp/a.wav ./target/game/ssx3-headless 2400   # capture audio headless
@@ -119,3 +120,6 @@ Runtime misses are appended to `generated/entries.txt` automatically; rerun
       `SSX3_IOP_SIO2=0` returns to the HLE pad/mc servers, `SSX3_MEMCARD=none`
       empties the slot. The race script still works (each press lands one
       screen earlier; see the doc for the old-pacing variant).
+- 2026-10-14 (midday): **memory card saving** — SIO2MAN/PADMAN/MCMAN/MCSERV
+  recompiled on the IOP runtime with a SIO2 + DualShock 2 + 8 MB card model
+  (`saves/ssx3-mc0.ps2`); save and load verified (`sio2-memcard.md`).
