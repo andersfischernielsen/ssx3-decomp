@@ -366,28 +366,72 @@ fn ibit_translation_emits_loi_after_upper() {
     assert!(add < loi, "LOI must follow the upper op:\n{src}");
 }
 
+/// Branch paths for the VI-backup tests: 0x28 [E] vi7 = 1 (fall-through),
+/// 0x38 [E] vi7 = 2 (taken, `off` 3 from a branch at 0x18).
+fn vi_backup_tail(p: &mut Vec<(u32, u32)>) {
+    p.push((UNOP, LNOP)); // 0x20 delay slot
+    p.push((EBIT | UNOP, iaddiu(7, 0, 1))); // 0x28 not taken
+    p.push((UNOP, LNOP));
+    p.push((EBIT | UNOP, iaddiu(7, 0, 2))); // 0x38 taken
+    p.push((UNOP, LNOP));
+}
+
+/// PCSX2 `_vuBackupVI`: a conditional branch reads the old value of a VI
+/// written by an integer ALU op in the immediately preceding pair.
+/// (This test used to pass either way; the quirk was in fact disabled.)
 #[test]
 fn branch_reads_old_vi_written_by_previous_pair() {
     let mut vu = interp_vu(1);
-    let prog = [
-        (UNOP, iaddiu(1, 0, 1)), // vi1 = 1
-        (UNOP, LNOP),
-        (UNOP, iaddi(1, 1, -1)),               // vi1 = 0
-        (UNOP, ibne(0, 1, 2)),                 // reads OLD vi1 (1) -> taken to 0x30
-        (UNOP, LNOP),                          // delay
-        (0x4000_0000 | UNOP, iaddiu(7, 0, 1)), // 0x28 not-taken path
-        (UNOP, LNOP),
-        (0x4000_0000 | UNOP, iaddiu(7, 0, 2)), // 0x38 taken path (0x18+8+2*8=0x30?)
-        (UNOP, LNOP),
+    let mut p = vec![
+        (UNOP, iaddiu(1, 0, 1)), // 0x00 vi1 = 1
+        (UNOP, LNOP),            // 0x08
+        (UNOP, iaddi(1, 1, -1)), // 0x10 vi1 = 0
+        (UNOP, ibne(0, 1, 3)),   // 0x18 reads OLD vi1 (1) -> taken to 0x38
     ];
-    // ibne at 0x18: target = 0x18 + 8 + 2*8 = 0x30.
-    let mut p = prog.to_vec();
-    p[6] = (0x4000_0000 | UNOP, iaddiu(7, 0, 2)); // 0x30
-    p[7] = (UNOP, LNOP);
+    vi_backup_tail(&mut p);
     load_prog(&mut vu, &p);
     vu.start(0);
     assert!(vu.run(100, &mut |_| {}));
     assert_eq!(vu.vi[7], 2);
+}
+
+/// microVU `analyzeBranchVI`: no backup when the branch pair stalls.
+#[test]
+fn stalled_branch_reads_current_vi() {
+    let mut vu = interp_vu(1);
+    let mut p = vec![
+        (UNOP, iaddiu(1, 0, 1)),               // 0x00 vi1 = 1
+        (up_add(15, 1, 0, 0), LNOP),           // 0x08 vf1 = vf0 + vf0
+        (UNOP, iaddi(1, 1, -1)),               // 0x10 vi1 = 0
+        (up_add(15, 2, 1, 1), ibne(0, 1, 3)),  // 0x18 stalls on vf1 -> current vi1 (0)
+    ];
+    vi_backup_tail(&mut p);
+    load_prog(&mut vu, &p);
+    vu.start(0);
+    assert!(vu.run(100, &mut |_| {}));
+    assert_eq!(vu.vi[7], 1);
+}
+
+/// JR is not subject to the VI backup (PCSX2 `_vuJR`, `mVUanalyzeJump`).
+#[test]
+fn jr_reads_current_vi() {
+    let jr = |is: u32| 0x24 << 25 | is << 11;
+    let mut vu = interp_vu(1);
+    let p = [
+        (UNOP, iaddiu(2, 0, 5)),               // 0x00 vi2 = 5 (0x28)
+        (UNOP, LNOP),                          // 0x08
+        (UNOP, iaddiu(2, 0, 6)),               // 0x10 vi2 = 6 (0x30)
+        (UNOP, jr(2)),                         // 0x18 -> 0x30
+        (UNOP, LNOP),                          // 0x20 delay
+        (EBIT | UNOP, iaddiu(7, 0, 1)),        // 0x28 old target
+        (EBIT | UNOP, iaddiu(8, 0, 2)),        // 0x30 new target
+        (UNOP, LNOP),
+        (UNOP, LNOP),
+    ];
+    load_prog(&mut vu, &p);
+    vu.start(0);
+    assert!(vu.run(100, &mut |_| {}));
+    assert_eq!((vu.vi[7], vu.vi[8]), (0, 2));
 }
 
 #[test]

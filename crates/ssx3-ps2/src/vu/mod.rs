@@ -561,6 +561,11 @@ impl Vu {
                 }
             }
         }
+        if need > self.cycle {
+            // microVU (analyzeBranchVI): a branch that stalls reads the
+            // current VI, not the backed-up one.
+            self.vi_backup = None;
+        }
         self.cycle = need;
         self.advance();
         self.stage = EMPTY_STAGE;
@@ -1144,9 +1149,10 @@ impl Vu {
     pub fn ibgez(&self, is: u8) -> bool {
         (self.vi_br(is) as i16) >= 0
     }
-    /// JR / JALR target (byte address).
+    /// JR / JALR target (byte address). No VI backup here: PCSX2's
+    /// interpreter (`_vuJR`) and microVU (`mVUanalyzeJump`) read the current VI.
     pub fn jr_target(&self, is: u8) -> u32 {
-        (self.vi_br(is) as u32 * 8) & self.code_mask()
+        (self.vi[is as usize & 15] as u32 * 8) & self.code_mask()
     }
     /// BAL / JALR link: `it = return_pc / 8`.
     pub fn link(&mut self, it: u8, return_pc: u32) {
@@ -1473,8 +1479,9 @@ impl Vu {
 pub const PS2_MAX: u32 = MAX;
 
 /// The branch-reads-old-VI quirk (see `set_vi_bk`). On by default;
-/// SSX3_VU_VI_BACKUP=0 disables it for experiments.
+/// SSX3_VU_VI_BACKUP=0 disables it for experiments. (Until the differential
+/// test, the default was accidentally off: `is_ok_and` on an unset variable.)
 fn vi_backup_enabled() -> bool {
     static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *E.get_or_init(|| std::env::var("SSX3_VU_VI_BACKUP").is_ok_and(|v| v != "0"))
+    *E.get_or_init(|| std::env::var("SSX3_VU_VI_BACKUP").map_or(true, |v| v != "0"))
 }
