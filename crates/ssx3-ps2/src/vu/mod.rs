@@ -232,6 +232,9 @@ pub struct Vu {
     pub fallback: Option<ProgramFn>,
     /// Most recently looked-up registry entry (`lookup`).
     last_program: Option<&'static ProgramEntry>,
+    /// Recently hashed uploads: (load address, bytes, hash) (`segment_hash`).
+    hash_memo: Vec<(u32, Box<[u8]>, u64)>,
+    hash_memo_next: usize,
     /// Count of runtime errors (missing translation, unknown op ...).
     pub errors: u64,
     pub last_error: Option<String>,
@@ -293,6 +296,8 @@ impl Vu {
             programs: HashMap::new(),
             fallback: None,
             last_program: None,
+            hash_memo: Vec::new(),
+            hash_memo_next: 0,
             errors: 0,
             last_error: None,
             instant_qp: false,
@@ -460,7 +465,25 @@ impl Vu {
         if let Some(h) = s.hash {
             return Some(h);
         }
-        let h = program_hash(s.start, &self.code[s.start as usize..s.end as usize]);
+        let (start, bytes) = (s.start, &self.code[s.start as usize..s.end as usize]);
+        // The game re-uploads the same few programs every frame. Comparing
+        // against copies of recently hashed uploads (memcmp) is far cheaper
+        // than FNV over up to 16 KiB byte by byte.
+        let h = match self.hash_memo.iter().find(|(a, b, _)| *a == start && b[..] == *bytes) {
+            Some(&(_, _, h)) => h,
+            None => {
+                let h = program_hash(start, bytes);
+                let copy: Box<[u8]> = bytes.into();
+                if self.hash_memo.len() < 8 {
+                    self.hash_memo.push((start, copy, h));
+                } else {
+                    let k = self.hash_memo_next % 8;
+                    self.hash_memo[k] = (start, copy, h);
+                    self.hash_memo_next += 1;
+                }
+                h
+            }
+        };
         self.segments[idx].hash = Some(h);
         Some(h)
     }
