@@ -58,7 +58,8 @@ impl Gs {
         self.xfer = Xfer::default();
         self.xfer_region = None;
         let p = self.xfer_params();
-        if std::env::var_os("SSX3_TRACE_XFER").is_some() {
+        static TRACE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        if *TRACE.get_or_init(|| std::env::var_os("SSX3_TRACE_XFER").is_some()) {
             let b = self.regs.bitbltbuf;
             eprintln!(
                 "[xfer] dir {} sbp {:#x} sbw {} spsm {:#x} -> dbp {:#x} dbw {} dpsm {:#x} pos {:#x} size {:#x}",

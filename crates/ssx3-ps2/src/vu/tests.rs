@@ -361,7 +361,7 @@ fn ibit_translation_emits_loi_after_upper() {
         .flat_map(|(hi, lo)| lo.to_le_bytes().into_iter().chain(hi.to_le_bytes()))
         .collect();
     let src = recomp::translate_program(&bytes, 0);
-    let add = src.find("vu.add(0b1000, 1, 0, Src::I)").expect("upper");
+    let add = src.find("(&vu.vf[0], &[vu.i; 4])").expect("upper");
     let loi = src.find("vu.loi(0x3f800000)").expect("loi");
     assert!(add < loi, "LOI must follow the upper op:\n{src}");
 }
@@ -429,10 +429,16 @@ fn waitq_translation_stalls_before_upper() {
         .flat_map(|(hi, lo)| lo.to_le_bytes().into_iter().chain(hi.to_le_bytes()))
         .collect();
     let src = recomp::translate_program(&bytes, 0);
-    let mul = src.find("vu.mul(0b1000, 3, 1, Src::Q)").expect("upper");
-    let stall = src[..mul].rfind("vu.stall_q()").expect("stall_q before the upper");
-    let begin = src[..mul].rfind("vu.begin_pair").expect("begin_pair");
-    assert!(begin < stall, "stall_q follows begin_pair:\n{src}");
+    // Fast arm (from 0x0000) and the single-pair arm of the WAITQ pair
+    // (0x0008): `stall_q` comes before the MULq's Q read, and that read
+    // comes before the lower's own `waitq`.
+    for start in ["0x0000 => {", "0x0008 => {"] {
+        let arm = &src[src.find(start).expect("arm")..];
+        let stall = arm.find("vu.stall_q();").expect("stall_q");
+        let q = arm.find("&[vu.q; 4]").expect("Q read");
+        let wait = arm.find("vu.waitq();").expect("waitq");
+        assert!(stall < q && q < wait, "stall_q, upper, waitq in order:\n{arm}");
+    }
 }
 
 /// Branch paths for the VI-backup tests: 0x28 [E] vi7 = 1 (fall-through),

@@ -18,7 +18,8 @@
 //!
 //! Micro programs are *not* interpreted at runtime. `recomp::translate_program`
 //! turns each microcode upload into Rust (`generated/vu/`), one function per
-//! upload with a `match pc` over basic blocks. Each instruction pair becomes
+//! upload with a `match pc` over basic blocks. The per-pair model is the
+//! sequence below (this is what the reference interpreter and macro mode run):
 //!
 //! ```text
 //! vu.begin_pair(&[(fs, fieldmask), ...]); // stall on not-yet-ready VF fields,
@@ -33,6 +34,18 @@
 //!                                         // to the same VF), flags, cycle += 1
 //! ```
 //!
+//! Translated code produces exactly the same state, but the translator
+//! resolves most of that bookkeeping at translate time and emits straight-line
+//! calls into [`fast`] (see its module docs and
+//! `docs/investigation/vu-performance.md`):
+//!
+//! ```text
+//! let (u, um) = fast::madd4::<0b1111, false, true, true>(&vu.acc, &vu.vf[6], &[vu.vf[20][1]; 4]);
+//! let lv = vu.ldq((vu.vi[6].wrapping_add(0) as u32)); vu.vi_set(9, lv[2] as u16);
+//! vu.put_acc::<0b1111>(&u);
+//! fl = um; fa |= um;          // MAC/status committed before the next observer
+//! ```
+//!
 //! `run()` finds the translated function through [`Vu::programs`] keyed by the
 //! FNV-1a hash of the uploaded code segment containing the start pc (see
 //! [`Vu::write_code`]). With no translation, the VU logs an error and stops
@@ -42,9 +55,12 @@
 pub mod capture;
 pub mod decode;
 pub mod exec;
+pub mod fast;
 pub mod float;
 pub mod recomp;
 pub mod reference;
+#[cfg(target_arch = "aarch64")]
+pub mod simd;
 #[cfg(test)]
 mod tests;
 
@@ -165,14 +181,9 @@ const EMPTY_STAGE: Stage = Stage {
 const FMAC_LATENCY: u64 = 4;
 
 /// Clip flags become visible to FC* ops 3 pairs after CLIP (as in
-/// ps2-web-recomp's `FlagPipe`; MAC/status use FMAC_LATENCY = 4).
-/// Override with SSX3_VU_CLIP_LATENCY for experiments.
-fn clip_latency() -> u64 {
-    static L: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
-    *L.get_or_init(|| {
-        std::env::var("SSX3_VU_CLIP_LATENCY").ok().and_then(|v| v.parse().ok()).unwrap_or(3)
-    })
-}
+/// ps2-web-recomp's `FlagPipe`; MAC/status use FMAC_LATENCY = 4). A
+/// constant: the translator's flag analysis depends on it.
+const CLIP_LATENCY: u64 = 3;
 const DIV_LATENCY: u64 = 7;
 const SQRT_LATENCY: u64 = 7;
 const RSQRT_LATENCY: u64 = 13;
@@ -234,6 +245,11 @@ pub struct Vu {
     pub programs: HashMap<u64, &'static ProgramEntry>,
     /// Explicit executor used when no translation exists (None at runtime).
     pub fallback: Option<ProgramFn>,
+    /// Most recently looked-up registry entry (`lookup`).
+    last_program: Option<&'static ProgramEntry>,
+    /// Recently hashed uploads: (load address, bytes, hash) (`segment_hash`).
+    hash_memo: Vec<(u32, Box<[u8]>, u64)>,
+    hash_memo_next: usize,
     /// Count of runtime errors (missing translation, unknown op ...).
     pub errors: u64,
     pub last_error: Option<String>,
@@ -252,6 +268,11 @@ pub struct Vu {
     stage: Stage,
     vi_backup: Option<(u8, u16)>,
     vi_backup_next: Option<(u8, u16)>,
+    /// Translated code's VI backup (`fast::vi_bk`): register (0 = none),
+    /// old value, and the index of the pair that wrote it.
+    fbk_reg: u8,
+    fbk_old: u16,
+    fbk_tag: u64,
 }
 
 impl Vu {
@@ -289,6 +310,9 @@ impl Vu {
             seg_serial: 0,
             programs: HashMap::new(),
             fallback: None,
+            last_program: None,
+            hash_memo: Vec::new(),
+            hash_memo_next: 0,
             errors: 0,
             last_error: None,
             instant_qp: false,
@@ -301,6 +325,9 @@ impl Vu {
             stage: EMPTY_STAGE,
             vi_backup: None,
             vi_backup_next: None,
+            fbk_reg: 0,
+            fbk_old: 0,
+            fbk_tag: 0,
         };
         vu.vf[0] = [0, 0, 0, ONE];
         vu.register_programs(generated::PROGRAMS);
@@ -332,11 +359,13 @@ impl Vu {
         self.stage = EMPTY_STAGE;
         self.vi_backup = None;
         self.vi_backup_next = None;
+        self.fbk_reg = 0;
         self.vf_ready = [[0; 4]; 32];
         self.ready_max = 0;
     }
 
     pub fn register_programs(&mut self, table: &'static [ProgramEntry]) {
+        self.last_program = None;
         for e in table {
             self.programs.insert(e.hash, e);
         }
@@ -451,7 +480,25 @@ impl Vu {
         if let Some(h) = s.hash {
             return Some(h);
         }
-        let h = program_hash(s.start, &self.code[s.start as usize..s.end as usize]);
+        let (start, bytes) = (s.start, &self.code[s.start as usize..s.end as usize]);
+        // The game re-uploads the same few programs every frame. Comparing
+        // against copies of recently hashed uploads (memcmp) is far cheaper
+        // than FNV over up to 16 KiB byte by byte.
+        let h = match self.hash_memo.iter().find(|(a, b, _)| *a == start && b[..] == *bytes) {
+            Some(&(_, _, h)) => h,
+            None => {
+                let h = program_hash(start, bytes);
+                let copy: Box<[u8]> = bytes.into();
+                if self.hash_memo.len() < 8 {
+                    self.hash_memo.push((start, copy, h));
+                } else {
+                    let k = self.hash_memo_next % 8;
+                    self.hash_memo[k] = (start, copy, h);
+                    self.hash_memo_next += 1;
+                }
+                h
+            }
+        };
         self.segments[idx].hash = Some(h);
         Some(h)
     }
@@ -464,7 +511,16 @@ impl Vu {
 
     pub fn lookup(&mut self, pc: u32) -> Option<ProgramFn> {
         let h = self.segment_hash(pc)?;
-        let e = self.programs.get(&h)?;
+        // One-entry cache in front of the (SipHash) registry map: a frame
+        // runs the same program for hundreds of MSCALs.
+        let e = match self.last_program {
+            Some(e) if e.hash == h => e,
+            _ => {
+                let e = *self.programs.get(&h)?;
+                self.last_program = Some(e);
+                e
+            }
+        };
         (pc >= e.start && pc < e.start + e.len && pc & 7 == 0).then_some(e.func)
     }
 
@@ -478,6 +534,7 @@ impl Vu {
         self.stage = EMPTY_STAGE;
         self.vi_backup = None;
         self.vi_backup_next = None;
+        self.fbk_reg = 0;
     }
 
     /// Run the started program for at most `max_cycles` instruction pairs.
@@ -587,15 +644,10 @@ impl Vu {
     /// (`d159716b` 0x1710) is `MADD.xyzw vf21, vf22, Q` + `WAITQ`.
     #[inline]
     pub fn stall_q(&mut self) {
-        if let Some(p) = self.q_pend {
-            if p.ready > self.cycle {
-                self.cycle = p.ready;
-            }
-            self.advance();
-            if let Some(p) = self.q_pend.take() {
-                self.apply_q(p);
-            }
-        }
+        // Same as WAITQ, just earlier in the pair (the lower's own wait then
+        // finds nothing pending). Flags and P retire by cycle count at their
+        // next observer, so they need no work here.
+        self.waitq();
     }
 
     /// LOI: the I bit's immediate. Called after the pair's upper op, which
@@ -661,7 +713,7 @@ impl Vu {
         }
         if let (Some(_), true) = (st.clip, pipelined) {
             let c = self.clip;
-            self.clip_pipe.push_back((self.cycle + clip_latency(), c));
+            self.clip_pipe.push_back((self.cycle + CLIP_LATENCY, c));
         }
         if changed {
             if pipelined {
@@ -901,55 +953,72 @@ impl Vu {
         };
     }
 
+    /// The second operand as four lanes.
+    #[inline]
+    fn src_vec(&self, src: Src) -> [u32; 4] {
+        match src {
+            Src::Vec(t) => self.vf[t as usize & 31],
+            Src::Bc(t, f) => [self.vf[t as usize & 31][f as usize & 3]; 4],
+            Src::Q => [self.q; 4],
+            Src::I => [self.i; 4],
+        }
+    }
+
+    /// Stage a four-lane FMAC result (`fast::*4` with all lanes computed);
+    /// only the `dest` lanes are written and flagged.
+    #[inline]
+    fn stage_v(&mut self, target: Target, dest: u8, (value, mac): ([u32; 4], u32)) {
+        self.stage = Stage {
+            target,
+            dest,
+            value,
+            mac: Some(mac & (dest as u32 & 0xf) * 0x1111),
+            clip: None,
+        };
+    }
+
+    // FMAC ops (micro mode via the reference interpreter, and macro mode
+    // from the EE): four lanes at once with the same arithmetic as the
+    // translated code (`fast.rs`, NEON on AArch64).
     pub fn add(&mut self, dest: u8, fd: u8, fs: u8, src: Src) {
-        self.stage_fmac(Target::Vf(fd), dest, |v, l| {
-            float::add(v.vf[fs as usize][l], v.src(src, l))
-        });
+        let r = fast::add4::<0b1111, true, true>(&self.vf[fs as usize & 31], &self.src_vec(src));
+        self.stage_v(Target::Vf(fd), dest, r);
     }
     pub fn adda(&mut self, dest: u8, fs: u8, src: Src) {
-        self.stage_fmac(Target::Acc, dest, |v, l| {
-            float::add(v.vf[fs as usize][l], v.src(src, l))
-        });
+        let r = fast::add4::<0b1111, true, true>(&self.vf[fs as usize & 31], &self.src_vec(src));
+        self.stage_v(Target::Acc, dest, r);
     }
     pub fn sub(&mut self, dest: u8, fd: u8, fs: u8, src: Src) {
-        self.stage_fmac(Target::Vf(fd), dest, |v, l| {
-            float::sub(v.vf[fs as usize][l], v.src(src, l))
-        });
+        let r = fast::sub4::<0b1111, true, true>(&self.vf[fs as usize & 31], &self.src_vec(src));
+        self.stage_v(Target::Vf(fd), dest, r);
     }
     pub fn suba(&mut self, dest: u8, fs: u8, src: Src) {
-        self.stage_fmac(Target::Acc, dest, |v, l| {
-            float::sub(v.vf[fs as usize][l], v.src(src, l))
-        });
+        let r = fast::sub4::<0b1111, true, true>(&self.vf[fs as usize & 31], &self.src_vec(src));
+        self.stage_v(Target::Acc, dest, r);
     }
     pub fn mul(&mut self, dest: u8, fd: u8, fs: u8, src: Src) {
-        self.stage_fmac(Target::Vf(fd), dest, |v, l| {
-            float::mul(v.vf[fs as usize][l], v.src(src, l))
-        });
+        let r = fast::mul4::<0b1111, true, true>(&self.vf[fs as usize & 31], &self.src_vec(src));
+        self.stage_v(Target::Vf(fd), dest, r);
     }
     pub fn mula(&mut self, dest: u8, fs: u8, src: Src) {
-        self.stage_fmac(Target::Acc, dest, |v, l| {
-            float::mul(v.vf[fs as usize][l], v.src(src, l))
-        });
+        let r = fast::mul4::<0b1111, true, true>(&self.vf[fs as usize & 31], &self.src_vec(src));
+        self.stage_v(Target::Acc, dest, r);
     }
     pub fn madd(&mut self, dest: u8, fd: u8, fs: u8, src: Src) {
-        self.stage_fmac(Target::Vf(fd), dest, |v, l| {
-            float::madd(v.acc[l], v.vf[fs as usize][l], v.src(src, l))
-        });
+        let r = fast::madd4::<0b1111, true, true, true>(&self.acc, &self.vf[fs as usize & 31], &self.src_vec(src));
+        self.stage_v(Target::Vf(fd), dest, r);
     }
     pub fn madda(&mut self, dest: u8, fs: u8, src: Src) {
-        self.stage_fmac(Target::Acc, dest, |v, l| {
-            float::madd(v.acc[l], v.vf[fs as usize][l], v.src(src, l))
-        });
+        let r = fast::madd4::<0b1111, true, true, true>(&self.acc, &self.vf[fs as usize & 31], &self.src_vec(src));
+        self.stage_v(Target::Acc, dest, r);
     }
     pub fn msub(&mut self, dest: u8, fd: u8, fs: u8, src: Src) {
-        self.stage_fmac(Target::Vf(fd), dest, |v, l| {
-            float::msub(v.acc[l], v.vf[fs as usize][l], v.src(src, l))
-        });
+        let r = fast::msub4::<0b1111, true, true, true>(&self.acc, &self.vf[fs as usize & 31], &self.src_vec(src));
+        self.stage_v(Target::Vf(fd), dest, r);
     }
     pub fn msuba(&mut self, dest: u8, fs: u8, src: Src) {
-        self.stage_fmac(Target::Acc, dest, |v, l| {
-            float::msub(v.acc[l], v.vf[fs as usize][l], v.src(src, l))
-        });
+        let r = fast::msub4::<0b1111, true, true, true>(&self.acc, &self.vf[fs as usize & 31], &self.src_vec(src));
+        self.stage_v(Target::Acc, dest, r);
     }
     pub fn max(&mut self, dest: u8, fd: u8, fs: u8, src: Src) {
         self.stage_plain(Target::Vf(fd), dest, |v, l| {

@@ -66,7 +66,7 @@ branch in an E pair. The translator would flag these as `unsupported`.
 
 ## VU semantic library (`vu/mod.rs`)
 
-Each instruction pair in generated code looks like this:
+The per-pair model (what the reference interpreter and macro mode run):
 
 ```rust
 vu.begin_pair(&[(fs, mask), ...]); // stall model + retire Q/P/flag pipelines
@@ -75,6 +75,14 @@ vu.loi(imm);                       // I-bit pairs, after the upper: it reads the
 vu.lq(0b1111, 4, 1, 2);            // lower: runs against old state
 vu.end_pair();                     // commit upper; it wins over a lower write to the same VF
 ```
+
+Translated code (since 2026-10-14 evening) computes the same state but
+resolves the bookkeeping at translate time: it checks only VF fields that
+can still be in flight, retires Q/P/flags only before ops that observe them,
+writes ready times and flag snapshots only when something can see them,
+defers MAC/status commits within a block, and does the FMAC arithmetic four
+lanes at a time (NEON on AArch64). See [`vu-performance.md`](vu-performance.md)
+for the analyses, the equivalence argument and the checks.
 
 There is one public method per operation:
 
@@ -129,8 +137,10 @@ VCALLMS and VCALLMSR.
   it (`race-geometry.md`).
 - **P:** the EFU ops use the manual's latencies, for example ESADD 11,
   ERSQRT 18, EATAN 54 and EEXP 44. WAITP stalls until P is ready.
-- **Flags:** MAC, status and clip flags become visible to FMxxx/FSxxx/FCxxx
-  4 cycles after the op that sets them. This uses a snapshot pipeline.
+- **Flags:** MAC and status flags become visible to FMxxx/FSxxx 4 cycles
+  after the op that sets them, clip flags to FCxxx after 3 (a constant now:
+  the translator's flag analysis depends on it; `SSX3_VU_CLIP_LATENCY` is
+  gone). This uses a snapshot pipeline.
   FSSET and FCSET rewrite both the in-flight snapshots and the current flags.
 - **VI-backup quirk (PCSX2 `VI_BACKUP`):** suppose the pair just before a
   conditional branch writes a VI the branch reads, with IADD/IADDI/IADDIU/

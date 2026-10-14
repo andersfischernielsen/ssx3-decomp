@@ -46,22 +46,6 @@ on night one (see the log below).
   Title/menu music and sound effects play. Music also needed EE RCNT compare
   interrupts (EA's timer task table runs the stream service), added opt-in in
   `ee_timers.rs` (on with `SSX3_IOP=1` or `SSX3_EE_TIMER_IRQ=1`).
-
-## How to resume
-
-```sh
-cargo run --release -p ssx3-recomp --bin recomp-ee   # regenerate generated/ee
-tools/run-headless.sh 2400 --shot-every 100          # screenshots → /tmp/ssx3-shots
-SSX3_INPUT="1600:0008:8,2000:4000:8,2500:4000:8,2700:4000:8,2900:4000:8,3100:4000:8,3300:4000:8,3500:4000:8,3700:4000:8,4250:4000:8" \
-  ./target/game/ssx3-headless 4700 --shot-every 100  # scripted path into a race
-# (with the memory card present there is no boot prompt; with SSX3_MEMCARD=none prepend 950:0010:8,1000:4000:8)
-cargo run --profile game -p ssx3                     # windowed (keyboard pad)
-SSX3_IOP=1 cargo run --profile game -p ssx3          # ... with the recompiled sound driver
-SSX3_IOP=1 SSX3_WAV=/tmp/a.wav ./target/game/ssx3-headless 2400   # capture audio headless
-```
-Runtime misses are appended to `generated/entries.txt` automatically; rerun
-`recomp-ee` after a miss. Debug env: `SSX3_TRACE_SIF`, `SSX3_TRACE_SYSCALLS`,
-`SSX3_TRACE_THREADS`, `SSX3_VRAM_DUMP`, `SSX3_INPUT`, `SSX3_SKIP_MOVIES=0`.
 - 2026-10-14 (morning):
   6. **In race** (`in-race-first.png`, `racing.png`): HUD, rivals, speed, position.
   7. Broken 3D geometry fixed: VU clip flags must become visible after 3 pairs, not 4
@@ -128,3 +112,60 @@ Runtime misses are appended to `generated/entries.txt` automatically; rerun
   shared VRAM slot through their own CLUT (noise on the race walls, the
   smeared sky panel, wrong menu images). New debug tools:
   `gs_replay --draws`, `SSX3_TRACE_PATH3`.
+- After the PATH3 merge: scripted race runs to frame 9000 (1:16 race time, 2nd
+  place, 35% down the course) in 296 s headless with no halts or misses
+  (`race-116s-after-path3.png`). Fixed-clock runs are pixel-deterministic.
+  Next: stretched geometry ("girders", dark sky rectangles), agent on
+  `race-geometry.md`.
+- 2026-10-14 (evening): **translated VU 3.5× faster, races 23.8 → 53.7 fps**
+  headless (GPU GS, fixed RTC; `vu-performance.md`). Translate-time analysis
+  of stalls / ready times / Q-P-flag observers, deferred MAC/status, NEON
+  four-lane FMAC (bit-identical), NEON macro-mode VU0, plus getenv-per-call,
+  per-primitive allocations, VIF unpack and upload re-hashing fixes. Every
+  captured VU invocation replays to an identical full-state digest; all
+  screenshots of the race run are byte-identical.
+- VU performance merged on top of PATH3: the scripted run to frame 9000 takes
+  171 s headless (was 296 s) and all 18 screenshots are byte-identical to the
+  pre-merge run. Races ~54 fps headless; remaining frame time is split
+  VU ~38% / GS CPU side ~28% / EE ~14% (`vu-performance.md`).
+- **A full race completes**: the scripted run (holding Cross) reaches the
+  "Snow Jam - Race / Single Event Results" screen at frame 20000 (6th, 3:49)
+  in 452 s headless, no halts or misses (`race-complete-results.png`). Around
+  72% down the course (frame 14000) the view is mostly empty blue sky with a
+  sliver of geometry (`race-72pct-blank-view.png`). Montage of frames
+  10000-19500 every 500: `race-full-montage.png` (stretched polygons throughout).
+
+## Next steps (as of 2026-10-14 evening)
+
+1. Stretched race geometry / dark sky rectangles (agent; `race-geometry.md`).
+2. 60 fps: frame time is VU ~38%, GS CPU side ~28%, EE ~14%. Biggest lever is
+   running GS work on its own thread (PCSX2 MTGS style) with sync points at
+   readbacks/CSR/vram reads; then texture upload (`transfer_bytes`, per-pixel
+   swizzle) and `GpuGs::push`/`Pages::rect`.
+3. A race finishes (done). Next: the blank view at ~72% of Snow Jam; career
+   mode progression; the other courses.
+4. (done) No VU0 macro op decodes at run time any more: `c.vu0_macro` appears
+   nowhere in `generated/ee`.
+
+## How to resume
+
+```sh
+tools/bootstrap.sh                                   # fresh checkout: stub crates, then recomp-ee/iop
+cargo run --release -p ssx3-recomp --bin recomp-ee   # regenerate generated/ee (+ IOP modules)
+cargo build --profile game -p ssx3                   # ~5 min after a platform change (all EE crates)
+tools/run-headless.sh 2400 --shot-every 100          # screenshots → /tmp/ssx3-shots (SSX3_SHOTS=dir)
+SSX3_INPUT="1600:0008:8,2000:4000:8,2500:4000:8,2700:4000:8,2900:4000:8,3100:4000:8,3300:4000:8,3500:4000:8,3700:4000:8,4250:4000:8,4600:4000:3000" \
+  ./target/game/ssx3-headless 9000 --shot-every 500  # scripted path into a race, holding Cross
+# (with the memory card present there is no boot prompt; with SSX3_MEMCARD=none prepend 950:0010:8,1000:4000:8)
+cargo run --profile game -p ssx3                     # windowed (keyboard or game controller)
+SSX3_WAV=/tmp/a.wav ./target/game/ssx3-headless 2400 # capture audio headless
+```
+Input script: `frame:buttons(hex libpad bits):duration`. Runs are deterministic
+(fixed RTC; `SSX3_RTC=<secs>` / `SSX3_REAL_CLOCK=1` change that).
+Runtime misses are appended to `generated/entries.txt` automatically; rerun
+`recomp-ee` after a miss. Debug env: `SSX3_TRACE_SIF`, `SSX3_TRACE_SYSCALLS`,
+`SSX3_TRACE_THREADS`, `SSX3_TRACE_PATH3`, `SSX3_VRAM_DUMP`, `SSX3_GS_CAPTURE`
+(+ `gs_replay`), `SSX3_VU_CAPTURE` (+ `vu_diff`), `SSX3_SKIP_MOVIES`, `SSX3_GS=cpu`.
+Machine limits: worktree agents each build all generated crates; use
+`CARGO_BUILD_JOBS=3 nice -n 10`, at most two heavy builds at once, and delete
+finished worktrees' `target/`.
