@@ -12,7 +12,8 @@ translated to Rust at build time and runs on a native PS2 platform layer:
 
 **Status (2026-10-14):** the game boots, plays its intro movies, runs the menus,
 loads a course and **races** with music and sound effects: HUD, rivals, and
-position and speed tracking all work. It saves to and loads from an emulated memory card (`saves/ssx3-mc0.ps2`). Gaps remain: speed (software GS), audio, and some rendering
+position and speed tracking all work. It also **saves and loads** to a
+file-backed memory card, and 4,325 of 11,844 functions carry recovered names. It saves to and loads from an emulated memory card (`saves/ssx3-mc0.ps2`). Gaps remain: speed (software GS), audio, and some rendering
 issues. Screenshots and the full log are in
 [`docs/plans/playable-push.md`](docs/plans/playable-push.md).
 
