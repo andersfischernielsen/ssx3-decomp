@@ -132,7 +132,8 @@ on night one (see the log below).
   "Snow Jam - Race / Single Event Results" screen at frame 20000 (6th, 3:49)
   in 452 s headless, no halts or misses (`race-complete-results.png`). Around
   72% down the course (frame 14000) the view is mostly empty blue sky with a
-  sliver of geometry (`race-72pct-blank-view.png`): to investigate.
+  sliver of geometry (`race-72pct-blank-view.png`). Montage of frames
+  10000-19500 every 500: `race-full-montage.png` (stretched polygons throughout).
 
 ## Next steps (as of 2026-10-14 evening)
 
