@@ -27,7 +27,7 @@ use super::float::{self, Exc, ABS, SIGN};
 use super::{FlagSnap, Vu, CLIP_LATENCY, FMAC_LATENCY, STATUS_DIV, STATUS_FMAC};
 
 #[cfg_attr(target_arch = "aarch64", allow(dead_code))]
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 fn lane_mac(l: u32, v: u32, e: Exc) -> u32 {
     let b = 3 - l;
     (((v & ABS == 0) as u32) << b)
@@ -38,7 +38,7 @@ fn lane_mac(l: u32, v: u32, e: Exc) -> u32 {
 
 /// MAC flags of the lanes in `D` (bit 3 = x) from per-lane results.
 #[cfg_attr(target_arch = "aarch64", allow(dead_code))]
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 fn mac_of<const D: u8>(v: &[u32; 4], e: &[Exc; 4]) -> u32 {
     let mut mac = 0;
     for l in 0..4 {
@@ -55,7 +55,7 @@ fn mac_of<const D: u8>(v: &[u32; 4], e: &[Exc; 4]) -> u32 {
 #[allow(unused_macros)]
 macro_rules! fmac2 {
     ($name:ident, $f:path) => {
-        #[inline(always)]
+        #[cfg_attr(not(debug_assertions), inline(always))]
         pub fn $name<const D: u8, const NS: bool, const NT: bool>(s: &[u32; 4], t: &[u32; 4]) -> ([u32; 4], u32) {
             let mut v = [0u32; 4];
             let mut e = [Exc::default(); 4];
@@ -71,7 +71,7 @@ macro_rules! fmac2 {
 #[allow(unused_macros)]
 macro_rules! fmac3 {
     ($name:ident, $f:path) => {
-        #[inline(always)]
+        #[cfg_attr(not(debug_assertions), inline(always))]
         pub fn $name<const D: u8, const NA: bool, const NS: bool, const NT: bool>(
             a: &[u32; 4],
             s: &[u32; 4],
@@ -107,7 +107,7 @@ mod neon_ops {
     // the translator knows it holds an FMAC/ITOF result).
     macro_rules! neon2 {
         ($name:ident, |$s:ident, $t:ident| $e:expr) => {
-            #[inline(always)]
+            #[cfg_attr(not(debug_assertions), inline(always))]
             pub fn $name<const D: u8, const NS: bool, const NT: bool>(s: &[u32; 4], t: &[u32; 4]) -> ([u32; 4], u32) {
                 let ($s, $t) = (load(s), load(t));
                 let r = $e;
@@ -117,7 +117,7 @@ mod neon_ops {
     }
     macro_rules! neon3 {
         ($name:ident, $f:ident) => {
-            #[inline(always)]
+            #[cfg_attr(not(debug_assertions), inline(always))]
             pub fn $name<const D: u8, const NA: bool, const NS: bool, const NT: bool>(
                 a: &[u32; 4],
                 s: &[u32; 4],
@@ -135,11 +135,11 @@ mod neon_ops {
     neon3!(madd4, madd_k);
     neon3!(msub4, msub_k);
 
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub fn itof4<const F: i32>(s: &[u32; 4]) -> [u32; 4] {
         store(simd::itof::<F>(load(s)))
     }
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub fn ftoi4<const F: i32>(s: &[u32; 4]) -> [u32; 4] {
         store(simd::ftoi::<F>(load(s)))
     }
@@ -147,25 +147,25 @@ mod neon_ops {
 #[cfg(target_arch = "aarch64")]
 pub use neon_ops::{add4, ftoi4, itof4, madd4, msub4, mul4, sub4};
 
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 pub fn max4(s: &[u32; 4], t: &[u32; 4]) -> [u32; 4] {
     std::array::from_fn(|l| float::max(s[l], t[l]))
 }
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 pub fn min4(s: &[u32; 4], t: &[u32; 4]) -> [u32; 4] {
     std::array::from_fn(|l| float::min(s[l], t[l]))
 }
 #[cfg(not(target_arch = "aarch64"))]
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 pub fn itof4<const F: i32>(s: &[u32; 4]) -> [u32; 4] {
     std::array::from_fn(|l| float::from_fixed(s[l] as i32, F))
 }
 #[cfg(not(target_arch = "aarch64"))]
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 pub fn ftoi4<const F: i32>(s: &[u32; 4]) -> [u32; 4] {
     std::array::from_fn(|l| float::to_fixed(s[l], F))
 }
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 pub fn abs4(s: &[u32; 4]) -> [u32; 4] {
     std::array::from_fn(|l| s[l] & ABS)
 }
@@ -219,7 +219,7 @@ pub mod cold {
 /// `d[l] = v[l]` for the lanes in `D`. On AArch64 a partial write is one
 /// 128-bit read-select-write, so a later full-register load forwards from
 /// a single store (partial lane stores would stall it).
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 fn merge<const D: u8>(d: &mut [u32; 4], v: &[u32; 4]) {
     #[cfg(target_arch = "aarch64")]
     {
@@ -240,7 +240,7 @@ fn merge<const D: u8>(d: &mut [u32; 4], v: &[u32; 4]) {
 }
 
 /// CLIP judgement bits of `s.xyz` against `|w|` (see `Vu::clipw`).
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 pub fn clip(s: [u32; 4], w: u32) -> u32 {
     let w = float::norm_in(w) & ABS;
     let wk = w as i32;
@@ -266,7 +266,7 @@ impl Vu {
     /// Stall until cycle `need` (the max of the ready times of the fields
     /// this pair reads). A stalling pair sees no VI backup (microVU
     /// `analyzeBranchVI`), as in `begin_pair`.
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub fn stall(&mut self, need: u64) {
         if need > self.cycle {
             self.cycle = need;
@@ -275,18 +275,18 @@ impl Vu {
     }
 
     /// Write lanes `D` of VF `r` (r != 0).
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub fn put_vf<const D: u8>(&mut self, r: usize, v: &[u32; 4]) {
         merge::<D>(&mut self.vf[r & 31], v);
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub fn put_acc<const D: u8>(&mut self, v: &[u32; 4]) {
         merge::<D>(&mut self.acc, v);
     }
 
     /// The fields `F` of VF `r` are ready FMAC_LATENCY cycles from now.
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub fn ready<const F: u8>(&mut self, r: usize) {
         let t = self.cycle + FMAC_LATENCY;
         let d = &mut self.vf_ready[r & 31];
@@ -305,7 +305,7 @@ impl Vu {
     }
 
     /// A VF write near a program end or dynamic jump: `flush` must see it.
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub fn ready_max_now(&mut self) {
         let t = self.cycle + FMAC_LATENCY;
         if t > self.ready_max {
@@ -314,7 +314,7 @@ impl Vu {
     }
 
     /// Commit an FMAC op's MAC flags and the status bits derived from them.
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub fn set_mac(&mut self, mac: u32) {
         self.mac = mac;
         let s = ((mac & 0x000f != 0) as u32)
@@ -327,7 +327,7 @@ impl Vu {
     /// Commit a run of FMAC ops at once: `last` is the final MAC, `acc` the
     /// OR of all their MACs (the sticky status bits are an OR, so this equals
     /// committing them one by one).
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub fn mac_commit(&mut self, last: u32, acc: u32) {
         let nib = |m: u32| {
             ((m & 0x000f != 0) as u32)
@@ -341,7 +341,7 @@ impl Vu {
 
     /// Flags no flag op can observe before they would be visible anyway:
     /// make them visible now. Older queued snapshots are superseded.
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub fn flags_eager(&mut self) {
         self.vis_mac = self.mac;
         self.vis_status = (self.vis_status & STATUS_DIV) | (self.status & STATUS_FMAC);
@@ -351,7 +351,7 @@ impl Vu {
     }
 
     /// Queue the current flags, visible FMAC_LATENCY cycles from now.
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub fn flags_push(&mut self) {
         self.retire_flags();
         self.flag_pipe.push_back(FlagSnap {
@@ -363,7 +363,7 @@ impl Vu {
     }
 
     /// CLIP: shift in the judgement bits; queue them or make them visible.
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub fn clip_commit(&mut self, c: u32, push: bool) {
         self.clip = ((self.clip << 6) | c) & 0xff_ffff;
         if push {
@@ -379,7 +379,7 @@ impl Vu {
         }
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     fn retire_flags(&mut self) {
         while let Some(f) = self.flag_pipe.front() {
             if f.ready > self.cycle {
@@ -392,7 +392,7 @@ impl Vu {
         }
     }
 
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     fn retire_clip(&mut self) {
         while let Some(&(ready, c)) = self.clip_pipe.front() {
             if ready > self.cycle {
@@ -404,14 +404,14 @@ impl Vu {
     }
 
     /// Before a flag op: retire the flag snapshots that are due.
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub fn flags_sync(&mut self) {
         self.retire_flags();
         self.retire_clip();
     }
 
     /// Before an op that reads Q or the status flags: land a due DIV result.
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub fn q_sync(&mut self) {
         if let Some(p) = self.q_pend {
             if p.ready <= self.cycle {
@@ -422,7 +422,7 @@ impl Vu {
     }
 
     /// Before MFP: land a due EFU result.
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub fn p_sync(&mut self) {
         if let Some(p) = self.p_pend {
             if p.ready <= self.cycle {
@@ -434,7 +434,7 @@ impl Vu {
 
     /// VI write that the next pair's conditional branch reads as the old
     /// value (`set_vi_bk`). `tag` is this pair's index (`pairs` numbering).
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub fn vi_bk(&mut self, r: u8, v: u16, tag: u64) {
         let r = r & 15;
         let old = if self.fbk_reg == r && self.fbk_tag.wrapping_add(1) == tag {
@@ -449,7 +449,7 @@ impl Vu {
     }
 
     /// VI `r` (!= 0) as read by the conditional branch of pair `tag`.
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub fn vi_brf(&self, r: u8, tag: u64) -> u16 {
         let r = r & 15;
         if self.fbk_reg == r && self.fbk_tag.wrapping_add(1) == tag && super::vi_backup_enabled() {
@@ -460,19 +460,19 @@ impl Vu {
     }
 
     /// Plain VI write (ILW, flag ops, links, XTOP): no backup.
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub fn vi_set(&mut self, r: u8, v: u16) {
         self.set_vi(r, v);
     }
 
     /// Byte offset of data qword `a` (wrapping at the end of data memory).
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     fn qoff(&self, a: u32) -> usize {
         ((a & (self.data_qwords() - 1)) as usize) * 16
     }
 
     /// Load the qword at qword address `a`.
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub fn ldq(&self, a: u32) -> [u32; 4] {
         let o = self.qoff(a);
         let b: &[u8; 16] = self.data[o..o + 16].try_into().unwrap();
@@ -485,7 +485,7 @@ impl Vu {
     }
 
     /// Store lanes `D` of `v` at qword address `a`.
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub fn stq<const D: u8>(&mut self, a: u32, v: &[u32; 4]) {
         let o = self.qoff(a);
         let b: &mut [u8; 16] = (&mut self.data[o..o + 16]).try_into().unwrap();
@@ -504,7 +504,7 @@ impl Vu {
     }
 
     /// RNEXT: step the LFSR and return R.
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub fn r_next(&mut self) -> u32 {
         self.lfsr_step();
         self.r

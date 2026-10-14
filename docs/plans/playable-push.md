@@ -130,3 +130,10 @@ Runtime misses are appended to `generated/entries.txt` automatically; rerun
   invocations (`vu-differential.md`): fixed I-bit ordering (upper reads the old I),
   MAX/MINI raw-bit semantics (integer vertex colours were zeroed: course now
   shaded), VI-backup default; `SSX3_RTC` pins the clock for reproducible runs.
+- 2026-10-14 (evening): **translated VU 3.5× faster, races 23.8 → 53.7 fps**
+  headless (GPU GS, fixed RTC; `vu-performance.md`). Translate-time analysis
+  of stalls / ready times / Q-P-flag observers, deferred MAC/status, NEON
+  four-lane FMAC (bit-identical), NEON macro-mode VU0, plus getenv-per-call,
+  per-primitive allocations, VIF unpack and upload re-hashing fixes. Every
+  captured VU invocation replays to an identical full-state digest; all
+  screenshots of the race run are byte-identical.

@@ -60,7 +60,7 @@ fn pack(sign: u32, e: i32, m: u32, exc: &mut Exc) -> u32 {
 /// Branch-free form of [`add_ref`] (the straightforward port, kept as the
 /// test reference): both paths are computed and the result selected, so
 /// the hot FMAC loop has no data-dependent branches.
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 pub fn add(a: u32, b: u32) -> (u32, Exc) {
     let a = norm_in(a);
     let b = norm_in(b);
@@ -116,13 +116,13 @@ pub fn add(a: u32, b: u32) -> (u32, Exc) {
     }
 }
 
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 pub fn sub(a: u32, b: u32) -> (u32, Exc) {
     add(a, b ^ SIGN)
 }
 
 /// a * b, truncating. Branch-free form of [`mul_ref`].
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 pub fn mul(a: u32, b: u32) -> (u32, Exc) {
     let a = norm_in(a);
     let b = norm_in(b);
@@ -145,7 +145,7 @@ pub fn mul(a: u32, b: u32) -> (u32, Exc) {
 }
 
 /// acc + a*b (product truncated first, as the FMAC does).
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 pub fn madd(acc: u32, a: u32, b: u32) -> (u32, Exc) {
     let (p, e1) = mul(a, b);
     let (r, e2) = add(acc, p);
@@ -159,7 +159,7 @@ pub fn madd(acc: u32, a: u32, b: u32) -> (u32, Exc) {
 }
 
 /// acc - a*b.
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 pub fn msub(acc: u32, a: u32, b: u32) -> (u32, Exc) {
     let (p, e1) = mul(a, b);
     let (r, e2) = sub(acc, p);

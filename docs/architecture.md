@@ -49,6 +49,7 @@ natively.
 | function names (Ghidra passes) | `investigation/naming.md` |
 | GS, performance, capture/replay | `investigation/gs.md`, `investigation/gs-performance.md` |
 | VU/VIF, microcode translation | `investigation/vu-vif.md` |
+| VU translation performance (fast path, NEON, checks) | `investigation/vu-performance.md` |
 | IPU (movies) | `investigation/ipu.md` |
 | IOP recompilation, SPU2 audio | `investigation/iop-audio.md` |
 | reference design notes | `investigation/ps2-web-recomp-notes.md` |

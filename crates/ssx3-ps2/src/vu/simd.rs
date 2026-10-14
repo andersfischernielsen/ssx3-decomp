@@ -21,17 +21,17 @@ pub struct R {
     pub u: uint32x4_t,
 }
 
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 fn k(x: u32) -> uint32x4_t {
     unsafe { vdupq_n_u32(x) }
 }
 
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 pub fn load(x: &[u32; 4]) -> uint32x4_t {
     unsafe { vld1q_u32(x.as_ptr()) }
 }
 
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 pub fn store(v: uint32x4_t) -> [u32; 4] {
     let mut o = [0u32; 4];
     unsafe { vst1q_u32(o.as_mut_ptr(), v) };
@@ -39,7 +39,7 @@ pub fn store(v: uint32x4_t) -> [u32; 4] {
 }
 
 /// Denormal -> ±0, exponent 255 -> ±max (`float::norm_in`).
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 fn norm(x: uint32x4_t) -> uint32x4_t {
     unsafe {
         let e = vandq_u32(vshrq_n_u32::<23>(x), k(0xff));
@@ -53,7 +53,7 @@ fn norm(x: uint32x4_t) -> uint32x4_t {
 /// `norm` when `N`; the translator passes `N = false` for operands it knows
 /// are already normalised (FMAC and ITOF results), where `norm` is the
 /// identity.
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 fn opnd<const N: bool>(x: uint32x4_t) -> uint32x4_t {
     if N {
         norm(x)
@@ -62,13 +62,13 @@ fn opnd<const N: bool>(x: uint32x4_t) -> uint32x4_t {
     }
 }
 
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 fn mantissa(x: uint32x4_t) -> uint32x4_t {
     unsafe { vorrq_u32(vandq_u32(x, k(0x7f_ffff)), k(0x80_0000)) }
 }
 
 /// `pack` for normal-path results: clamp / flush and the O, U masks.
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 fn pack(sign: uint32x4_t, e: int32x4_t, m: uint32x4_t) -> R {
     unsafe {
         let o = vcgeq_s32(e, vdupq_n_s32(255));
@@ -81,13 +81,13 @@ fn pack(sign: uint32x4_t, e: int32x4_t, m: uint32x4_t) -> R {
 }
 
 /// a * b, truncating (`float::mul`).
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 pub fn mul(a: uint32x4_t, b: uint32x4_t) -> R {
     mul_k::<true, true>(a, b)
 }
 
 /// `mul`; `NA`/`NB` false skip normalising an operand known to be normal.
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 pub fn mul_k<const NA: bool, const NB: bool>(a: uint32x4_t, b: uint32x4_t) -> R {
     unsafe {
         let a = opnd::<NA>(a);
@@ -115,13 +115,13 @@ pub fn mul_k<const NA: bool, const NB: bool>(a: uint32x4_t, b: uint32x4_t) -> R 
 }
 
 /// a + b, truncating with one guard bit (`float::add`).
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 pub fn add(a: uint32x4_t, b: uint32x4_t) -> R {
     add_k::<true, true>(a, b)
 }
 
 /// `add`; `NA`/`NB` false skip normalising an operand known to be normal.
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 pub fn add_k<const NA: bool, const NB: bool>(a: uint32x4_t, b: uint32x4_t) -> R {
     unsafe {
         let a = opnd::<NA>(a);
@@ -174,19 +174,19 @@ pub fn add_k<const NA: bool, const NB: bool>(a: uint32x4_t, b: uint32x4_t) -> R 
     }
 }
 
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 pub fn neg(x: uint32x4_t) -> uint32x4_t {
     unsafe { veorq_u32(x, k(SIGN)) }
 }
 
 /// acc + a*b (`float::madd`): O from either step, U from the add.
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 pub fn madd(acc: uint32x4_t, a: uint32x4_t, b: uint32x4_t) -> R {
     madd_k::<true, true, true>(acc, a, b)
 }
 
 /// `madd`; the product is always normal, so the add never normalises it.
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 pub fn madd_k<const NC: bool, const NA: bool, const NB: bool>(acc: uint32x4_t, a: uint32x4_t, b: uint32x4_t) -> R {
     let p = mul_k::<NA, NB>(a, b);
     let r = add_k::<NC, false>(acc, p.v);
@@ -198,12 +198,12 @@ pub fn madd_k<const NC: bool, const NA: bool, const NB: bool>(acc: uint32x4_t, a
 }
 
 /// acc - a*b (`float::msub`).
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 pub fn msub(acc: uint32x4_t, a: uint32x4_t, b: uint32x4_t) -> R {
     msub_k::<true, true, true>(acc, a, b)
 }
 
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 pub fn msub_k<const NC: bool, const NA: bool, const NB: bool>(acc: uint32x4_t, a: uint32x4_t, b: uint32x4_t) -> R {
     let p = mul_k::<NA, NB>(a, b);
     let r = add_k::<NC, false>(acc, neg(p.v));
@@ -215,7 +215,7 @@ pub fn msub_k<const NC: bool, const NA: bool, const NB: bool>(acc: uint32x4_t, a
 }
 
 /// ITOFn (`float::from_fixed`): exact for |v| < 2^24, else truncated.
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 pub fn itof<const F: i32>(x: uint32x4_t) -> uint32x4_t {
     unsafe {
         let s = vandq_u32(x, k(SIGN));
@@ -231,7 +231,7 @@ pub fn itof<const F: i32>(x: uint32x4_t) -> uint32x4_t {
 }
 
 /// FTOIn (`float::to_fixed`): truncate toward zero, saturate.
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 pub fn ftoi<const F: i32>(x: uint32x4_t) -> uint32x4_t {
     unsafe {
         let x = norm(x);
@@ -249,7 +249,7 @@ pub fn ftoi<const F: i32>(x: uint32x4_t) -> uint32x4_t {
 }
 
 /// Lanes `D` (bit 3 = x) from `a`, the others from `b`.
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 pub fn select<const D: u8>(a: &[u32; 4], b: &[u32; 4]) -> [u32; 4] {
     unsafe {
         let m = |bit: u8| if D & bit != 0 { u32::MAX } else { 0 };
@@ -259,7 +259,7 @@ pub fn select<const D: u8>(a: &[u32; 4], b: &[u32; 4]) -> [u32; 4] {
 }
 
 /// MAC flags (Z S U O nibbles, x = high bit) of the lanes in `D`.
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
 pub fn mac<const D: u8>(r: &R) -> u32 {
     unsafe {
         let lane = |x: u32, y: u32, z: u32, w: u32| -> uint32x4_t {

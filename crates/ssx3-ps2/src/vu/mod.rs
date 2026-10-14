@@ -18,7 +18,8 @@
 //!
 //! Micro programs are *not* interpreted at runtime. `recomp::translate_program`
 //! turns each microcode upload into Rust (`generated/vu/`), one function per
-//! upload with a `match pc` over basic blocks. Each instruction pair becomes
+//! upload with a `match pc` over basic blocks. The per-pair model is the
+//! sequence below (this is what the reference interpreter and macro mode run):
 //!
 //! ```text
 //! vu.begin_pair(&[(fs, fieldmask), ...]); // stall on not-yet-ready VF fields,
@@ -29,6 +30,18 @@
 //! vu.lq(0b1111, 4, 1, 2);                 // lower: executes against OLD state
 //! vu.end_pair();                          // commit upper (wins over a lower write
 //!                                         // to the same VF), flags, cycle += 1
+//! ```
+//!
+//! Translated code produces exactly the same state, but the translator
+//! resolves most of that bookkeeping at translate time and emits straight-line
+//! calls into [`fast`] (see its module docs and
+//! `docs/investigation/vu-performance.md`):
+//!
+//! ```text
+//! let (u, um) = fast::madd4::<0b1111, false, true, true>(&vu.acc, &vu.vf[6], &[vu.vf[20][1]; 4]);
+//! let lv = vu.ldq((vu.vi[6].wrapping_add(0) as u32)); vu.vi_set(9, lv[2] as u16);
+//! vu.put_acc::<0b1111>(&u);
+//! fl = um; fa |= um;          // MAC/status committed before the next observer
 //! ```
 //!
 //! `run()` finds the translated function through [`Vu::programs`] keyed by the
