@@ -853,3 +853,97 @@ fn perf_fullscreen() {
         10.0 * 640.0 * 448.0 / dt.as_secs_f64() / 1e6
     );
 }
+
+// ------------------------------------------------------------------ mipmapping
+
+/// Solid-colour CT32 mip chain: 16x16 level 0 at block 0x2000 (TBW 1),
+/// 8x8 level 1 at 0x2100, 4x4 level 2 at 0x2200 (MIPTBP1, TBW 1).
+const MIP_COLORS: [u32; 3] = [0x8010_2030, 0x8040_5060, 0x8070_8090];
+
+fn mip_setup(gs: &mut Gs) {
+    setup_frame(gs);
+    for (l, base) in [0x2000u32, 0x2100, 0x2200].into_iter().enumerate() {
+        let n = 16 >> l;
+        let data: Vec<u8> = (0..n * n).flat_map(|_| MIP_COLORS[l].to_le_bytes()).collect();
+        upload(gs, base, 1, PSMCT32, 0, 0, n, n, &data);
+    }
+    let miptbp1 = 0x2100u64 | 1 << 14 | 0x2200u64 << 20 | 1 << 34;
+    ad(gs, &[(0x34, miptbp1)]);
+}
+
+/// TEX1: LCM, MXL, MMAG, MMIN, L and K (in 1/16 units).
+fn tex1(lcm: bool, mxl: u64, mmin: u64, l: u64, k16: i32) -> u64 {
+    lcm as u64 | mxl << 2 | 1 << 5 | mmin << 6 | l << 19 | ((k16 as u64) & 0xFFF) << 32
+}
+
+/// Draw an 8x8 decal sprite with the mip chain; returns the pixel colour.
+fn mip_sprite(gs: &mut Gs, tex1: u64, q: f32, fst: bool) -> u32 {
+    let tex0 = 0x2000u64 | 1 << 14 | (PSMCT32 as u64) << 20 | 4 << 26 | 4 << 30 | 1 << 34 | 1 << 35;
+    let rgbaq = 0x8080_8080u64 | (q.to_bits() as u64) << 32;
+    let st = |s: f32, t: f32| (s * q).to_bits() as u64 | ((t * q).to_bits() as u64) << 32;
+    ad(
+        gs,
+        &[
+            (0x06, tex0),
+            (0x14, tex1),
+            (0x00, 6 | 1 << 4 | (fst as u64) << 8),
+            (0x01, rgbaq),
+            (0x02, st(0.0, 0.0)),
+            (0x03, 0),
+            (0x05, xyz(0, 0, 0)),
+            (0x02, st(1.0, 1.0)),
+            (0x03, 16 * 16 | (16 * 16) << 16),
+            (0x05, xyz(8, 8, 0)),
+        ],
+    );
+    fb(gs, 3, 3)
+}
+
+fn mix(a: u32, b: u32, w: u32) -> u32 {
+    (0..4).fold(0, |o, i| {
+        let (x, y) = ((a >> (i * 8)) & 0xFF, (b >> (i * 8)) & 0xFF);
+        o | ((x * (256 - w) + y * w + 128) >> 8) << (i * 8)
+    })
+}
+
+#[test]
+fn mipmap_level_selection_lcm() {
+    let mut gs = Gs::new();
+    mip_setup(&mut gs);
+    // NEAREST_MIPMAP_NEAREST, LOD = K.
+    assert_eq!(mip_sprite(&mut gs, tex1(true, 2, 2, 0, 16), 1.0, true), MIP_COLORS[1]);
+    assert_eq!(mip_sprite(&mut gs, tex1(true, 2, 2, 0, 24), 1.0, true), MIP_COLORS[2]);
+    // LOD clamps to MXL.
+    assert_eq!(mip_sprite(&mut gs, tex1(true, 1, 2, 0, 80), 1.0, true), MIP_COLORS[1]);
+    // LOD <= 0 magnifies level 0.
+    assert_eq!(mip_sprite(&mut gs, tex1(true, 2, 2, 0, -16), 1.0, true), MIP_COLORS[0]);
+    // MIPMAP_LINEAR blends floor(LOD) and the next level by the fraction.
+    let got = mip_sprite(&mut gs, tex1(true, 2, 3, 0, 8), 1.0, true);
+    assert_eq!(got, mix(MIP_COLORS[0], MIP_COLORS[1], 128));
+    let got = mip_sprite(&mut gs, tex1(true, 2, 5, 0, 20), 1.0, true);
+    assert_eq!(got, mix(MIP_COLORS[1], MIP_COLORS[2], 64));
+    // Without a mipmap filter (MMIN 1) level 0 is used whatever the LOD.
+    assert_eq!(mip_sprite(&mut gs, tex1(true, 2, 1, 0, 32), 1.0, true), MIP_COLORS[0]);
+}
+
+#[test]
+fn mipmap_lod_from_q() {
+    let mut gs = Gs::new();
+    mip_setup(&mut gs);
+    // LOD = log2(1/Q) << L + K: Q = 1/4 -> 2; Q = 1/2, L = 1 -> 2; K shifts.
+    assert_eq!(mip_sprite(&mut gs, tex1(false, 2, 2, 0, 0), 0.25, false), MIP_COLORS[2]);
+    assert_eq!(mip_sprite(&mut gs, tex1(false, 2, 2, 1, 0), 0.5, false), MIP_COLORS[2]);
+    assert_eq!(mip_sprite(&mut gs, tex1(false, 2, 2, 0, -16), 0.25, false), MIP_COLORS[1]);
+    assert_eq!(mip_sprite(&mut gs, tex1(false, 2, 2, 0, 0), 1.0, false), MIP_COLORS[0]);
+}
+
+#[test]
+fn mipmap_mtba_addresses() {
+    let mut gs = Gs::new();
+    mip_setup(&mut gs);
+    // MTBA: level 1 follows level 0 (16x16x32 bits = 4 blocks), TBW 1.
+    let data: Vec<u8> = (0..64).flat_map(|_| 0x80AA_BBCCu32.to_le_bytes()).collect();
+    upload(&mut gs, 0x2004, 1, PSMCT32, 0, 0, 8, 8, &data);
+    let t1 = tex1(true, 1, 2, 0, 16) | 1 << 9;
+    assert_eq!(mip_sprite(&mut gs, t1, 1.0, true), 0x80AA_BBCC);
+}

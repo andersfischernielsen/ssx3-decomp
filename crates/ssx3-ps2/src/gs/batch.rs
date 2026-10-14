@@ -364,7 +364,7 @@ impl Gs {
     fn draw_alone(&mut self, d: &Draw, p: &Prim) {
         self.batch.stats.serial_prims += 1;
         self.sync();
-        raster::raster(Mem::new(&mut self.vram), d, p, Rows::All, None);
+        raster::raster(Mem::new(&mut self.vram), d, p, Rows::All, &[]);
         let (x0, y0, x1, y1) = (p.x0 as u32, p.y0 as u32, p.x1 as u32, p.y1 as u32);
         let mut pages = raster::Pages::rect(&d.fb, x0, y0, x1, y1);
         if d.z_used {
@@ -405,17 +405,21 @@ impl Gs {
         for p in self.batch.prims.iter().filter(|p| !p.direct) {
             fetches[p.draw as usize] += p.area as u64 * if p.linear { 4 } else { 1 };
         }
-        let mut decs: Vec<Option<Arc<Decoded>>> = vec![None; n];
+        let mut decs: Vec<Vec<Option<Arc<Decoded>>>> = vec![Vec::new(); n];
         for (i, dec) in decs.iter_mut().enumerate() {
-            let d = &self.batch.draws[i];
-            if fetches[i] > 0 && d.tex_surface().is_some() {
-                *dec = self.texcache.get(&self.vram, d, fetches[i].max(16 * 1024));
+            if fetches[i] > 0 {
+                let budget = fetches[i].max(16 * 1024);
+                for t in self.batch.draws[i].tex_levels() {
+                    dec.push(self.texcache.get(&self.vram, t, budget));
+                }
             }
         }
         // Primitives sampling decoded copies no longer read their textures
         // from VRAM, so uploads may overwrite them while the batch draws.
         let all_decoded = (0..n).all(|i| {
-            fetches[i] == 0 || self.batch.draws[i].tex_surface().is_none() || decs[i].is_some()
+            fetches[i] == 0
+                || self.batch.draws[i].tex_surface().is_none()
+                || decs[i].iter().all(Option::is_some)
         });
         let job = Arc::new(Job {
             draws: std::mem::take(&mut self.batch.draws),
@@ -492,15 +496,15 @@ struct Job {
     draws: Vec<Arc<Draw>>,
     prims: Vec<Prim>,
     bins: Vec<Vec<u32>>,
-    decs: Vec<Option<Arc<Decoded>>>,
+    decs: Vec<Vec<Option<Arc<Decoded>>>>,
     m: Mem,
 }
 
 impl Job {
     fn draw_prim(&self, p: &Prim, rows: Rows) {
         let i = p.draw as usize;
-        let dec = if p.direct { None } else { self.decs[i].as_deref() };
-        raster::raster(self.m, &self.draws[i], p, rows, dec);
+        let decs: &[_] = if p.direct { &[] } else { &self.decs[i] };
+        raster::raster(self.m, &self.draws[i], p, rows, decs);
     }
 
     /// Draw every primitive, all rows.

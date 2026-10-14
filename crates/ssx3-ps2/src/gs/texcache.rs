@@ -12,7 +12,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use super::raster::{self, Decoded, Draw, Pages, TexKey};
+use super::raster::{self, Decoded, Pages, Tex, TexKey};
 
 /// Total decoded bytes kept before the cache is emptied.
 const MAX_BYTES: usize = 96 << 20;
@@ -74,12 +74,12 @@ impl TexCache {
         ok
     }
 
-    /// Decoded texels for `d`'s texture as VRAM is now, if it is decodable.
+    /// Decoded texels of texture (level) `t` as VRAM is now, if decodable.
     /// A texture not cached yet is only decoded if it has at most `budget`
     /// texels (decoding costs about as much as sampling each texel once).
-    pub(crate) fn get(&mut self, vram: &[u32], d: &Draw, budget: u64) -> Option<Arc<Decoded>> {
-        let rect = raster::decode_rect(d)?;
-        let key = raster::tex_key(d, rect);
+    pub(crate) fn get(&mut self, vram: &[u32], t: &Tex, budget: u64) -> Option<Arc<Decoded>> {
+        let rect = raster::decode_rect(t)?;
+        let key = raster::tex_key(t, rect);
         if let Some(e) = self.entries.get(&key) {
             if self.valid(e) {
                 self.stats.0 += 1;
@@ -90,12 +90,11 @@ impl TexCache {
         if area > budget {
             return None;
         }
-        let ts = d.tex_surface().expect("textured draw");
-        let pages = Pages::rect(ts, rect[0], rect[1], rect[2], rect[3]);
+        let pages = Pages::rect(t.surface(), rect[0], rect[1], rect[2], rect[3]);
         if pages.hits(&self.live) {
             return None;
         }
-        let dec = Arc::new(raster::decode(vram, d, rect));
+        let dec = Arc::new(raster::decode(vram, t, rect));
         self.stats.1 += 1;
         self.stats.2 += (dec.bytes() / 4) as u64;
         if self.bytes + dec.bytes() > MAX_BYTES {

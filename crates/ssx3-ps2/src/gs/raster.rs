@@ -16,6 +16,7 @@
 
 use super::swizzle::{self, Kind, Surface, VRAM_WORDS};
 use super::{Regs, Vertex};
+use std::sync::Arc;
 
 // --------------------------------------------------------------------- memory
 
@@ -228,6 +229,7 @@ enum TexKind {
     Pal,
 }
 
+#[derive(Clone)]
 pub(crate) struct Tex {
     surf: Surface,
     kind: TexKind,
@@ -252,6 +254,17 @@ pub(crate) struct Tex {
     /// `(1 << tw)` and `(1 << th)` as f64.
     scale_s: f64,
     scale_t: f64,
+}
+
+/// Mipmapping state (MXL > 0 with a MIPMAP minification filter).
+pub(crate) struct Mip {
+    /// MXL: highest level.
+    mxl: u32,
+    /// MMIN 2..=5: within-level filter (4 and 5: bilinear) and level
+    /// selection (odd: blend the two nearest levels).
+    mmin: u32,
+    /// Levels 1..=MXL (level 0 is `Draw::tex`).
+    levels: Vec<Tex>,
 }
 
 pub(crate) struct Draw {
@@ -294,6 +307,7 @@ pub(crate) struct Draw {
     tcc: bool,
     fogcol: [i32; 3],
     tex: Option<Tex>,
+    mip: Option<Box<Mip>>,
     /// VRAM pages the frame / Z buffer may write (scissor rectangle), and the
     /// texture may read.
     pub(crate) fb_pages: Pages,
@@ -466,6 +480,8 @@ impl Draw {
             None
         };
 
+        let mip = tex.as_ref().and_then(|t0| mip_levels(t0, ctx));
+
         let fb = Surface::new(fpsm, fbp, fbw);
         let zb = Surface::new(zpsm, zbp, fbw);
         let zte = (test >> 16) & 1 != 0;
@@ -484,14 +500,12 @@ impl Draw {
         } else {
             Pages::default()
         };
-        let tex_pages = match &tex {
-            Some(t) => {
-                let (u0, u1) = wrap_range(t.wms, t.tw, t.minu, t.maxu);
-                let (v0, v1) = wrap_range(t.wmt, t.th, t.minv, t.maxv);
-                Pages::rect(&t.surf, u0, v0, u1, v1)
-            }
-            None => Pages::default(),
-        };
+        let mut tex_pages = Pages::default();
+        for t in tex.iter().chain(mip.iter().flat_map(|m| m.levels.iter())) {
+            let (u0, u1) = wrap_range(t.wms, t.tw, t.minu, t.maxu);
+            let (v0, v1) = wrap_range(t.wmt, t.th, t.minv, t.maxv);
+            tex_pages.union(&Pages::rect(&t.surf, u0, v0, u1, v1));
+        }
         let wraps = fb_pages == Pages::ALL || zb_pages == Pages::ALL;
         let row_kind = |k: Kind| matches!(k, Kind::W32 | Kind::W24 | Kind::H16);
         let mut row_parallel = row_kind(fb.kind) && (!z_used || row_kind(zb.kind)) && !wraps;
@@ -551,6 +565,7 @@ impl Draw {
                 ((regs.fogcol >> 16) & 0xFF) as i32,
             ],
             tex,
+            mip,
             fb_pages,
             zb_pages,
             tex_pages,
@@ -562,6 +577,14 @@ impl Draw {
 
     pub(crate) fn tex_surface(&self) -> Option<&Surface> {
         self.tex.as_ref().map(|t| &t.surf)
+    }
+
+    /// Texture levels sampled: level 0, then mipmap levels 1..=MXL.
+    pub(crate) fn tex_levels(&self) -> Vec<&Tex> {
+        self.tex
+            .iter()
+            .chain(self.mip.iter().flat_map(|m| m.levels.iter()))
+            .collect()
     }
 
 
@@ -608,6 +631,8 @@ pub(crate) struct Frag {
     /// Texel-space coordinates.
     u: f32,
     v: f32,
+    /// Interpolated Q (mipmap LOD).
+    q: f32,
     f: i32,
     z: f64,
 }
@@ -625,6 +650,10 @@ fn wrap(c: i32, mode: u32, size_log: i32, min: i32, max: i32) -> i32 {
 }
 
 impl Tex {
+    pub(crate) fn surface(&self) -> &Surface {
+        &self.surf
+    }
+
     /// Raw texel value to RGBA8 (TEXA expansion, palette lookup).
     #[inline(always)]
     fn conv(&self, raw: u32) -> u32 {
@@ -707,10 +736,9 @@ impl Decoded {
 /// Largest texture rectangle (in texels) worth decoding.
 const DECODE_MAX: u32 = 512 * 1024;
 
-/// The texel rectangle `Decoded` covers for `d`'s texture, or `None` if
-/// untextured or too large to decode.
-pub(crate) fn decode_rect(d: &Draw) -> Option<[u32; 4]> {
-    let t = d.tex.as_ref()?;
+/// The texel rectangle `Decoded` covers for a texture (level), or `None`
+/// if it is too large to decode.
+pub(crate) fn decode_rect(t: &Tex) -> Option<[u32; 4]> {
     let (u0, u1) = wrap_range(t.wms, t.tw, t.minu, t.maxu);
     let (v0, v1) = wrap_range(t.wmt, t.th, t.minv, t.maxv);
     let area = (u1 - u0 + 1) * (v1 - v0 + 1);
@@ -727,8 +755,7 @@ pub(crate) struct TexKey {
     palette: Option<Box<[u32; 256]>>,
 }
 
-pub(crate) fn tex_key(d: &Draw, rect: [u32; 4]) -> TexKey {
-    let t = d.tex.as_ref().expect("textured draw");
+pub(crate) fn tex_key(t: &Tex, rect: [u32; 4]) -> TexKey {
     TexKey {
         surf: surf_key(&t.surf),
         rect,
@@ -737,9 +764,8 @@ pub(crate) fn tex_key(d: &Draw, rect: [u32; 4]) -> TexKey {
     }
 }
 
-/// Decode `rect` of `d`'s texture from `vram`.
-pub(crate) fn decode(vram: &[u32], d: &Draw, rect: [u32; 4]) -> Decoded {
-    let t = d.tex.as_ref().expect("textured draw");
+/// Decode `rect` of texture (level) `t` from `vram`.
+pub(crate) fn decode(vram: &[u32], t: &Tex, rect: [u32; 4]) -> Decoded {
     let [u0, v0, u1, v1] = rect;
     let w = u1 - u0 + 1;
     let h = v1 - v0 + 1;
@@ -810,6 +836,104 @@ fn sample_dec(dec: &Decoded, t: &Tex, u: f32, v: f32, linear: bool) -> u32 {
     bilerp(c00, c10, c01, c11, fx, fy)
 }
 
+/// Mipmap levels 1..=MXL from TEX1 / MIPTBP1 / MIPTBP2, when MXL > 0 and
+/// MMIN selects a mipmap filter.
+fn mip_levels(t0: &Tex, ctx: &super::Ctx) -> Option<Box<Mip>> {
+    let tex1 = ctx.tex1;
+    let mxl = ((tex1 >> 2) & 7).min(6) as u32;
+    let mmin = ((tex1 >> 6) & 7) as u32;
+    if mxl == 0 || !(2..=5).contains(&mmin) {
+        return None;
+    }
+    // Base pointer (blocks) and width (64-texel units) of each level:
+    // MIPTBP1 holds levels 1-3 and MIPTBP2 levels 4-6, 20 bits per level.
+    // With TEX1.MTBA, levels 1-3 instead follow each other in memory after
+    // level 0, each half as wide.
+    let field = |reg: u64, i: u32| {
+        let v = reg >> (i * 20);
+        ((v & 0x3FFF) as u32, ((v >> 14) & 0x3F) as u32)
+    };
+    let mtba = (tex1 >> 9) & 1 != 0;
+    let bpp = swizzle::bits_per_pixel(t0.surf.psm);
+    let (mut bp, mut bw) = ((ctx.tex0 & 0x3FFF) as u32, ((ctx.tex0 >> 14) & 0x3F) as u32);
+    let mut levels = Vec::with_capacity(mxl as usize);
+    for l in 1..=mxl {
+        let (lbp, lbw) = if l <= 3 && mtba {
+            // Size of the previous level, in 256-byte blocks.
+            let w = 1u32 << (t0.tw - l as i32 + 1).max(0);
+            let h = 1u32 << (t0.th - l as i32 + 1).max(0);
+            bp += (w * h * bpp).div_ceil(8 * 256);
+            bw = (bw / 2).max(1);
+            (bp, bw)
+        } else if l <= 3 {
+            field(ctx.miptbp1, l - 1)
+        } else {
+            field(ctx.miptbp2, l - 4)
+        };
+        let mut t = t0.clone();
+        t.surf = Surface::new(t0.surf.psm, lbp, lbw);
+        t.tw = (t0.tw - l as i32).max(0);
+        t.th = (t0.th - l as i32).max(0);
+        t.minu >>= l;
+        t.maxu >>= l;
+        t.minv >>= l;
+        t.maxv >>= l;
+        t.scale_s = (1 << t.tw) as f64;
+        t.scale_t = (1 << t.th) as f64;
+        levels.push(t);
+    }
+    Some(Box::new(Mip { mxl, mmin, levels }))
+}
+
+/// Sample a mipmapped texture. LOD is K (TEX1.LCM=1) or
+/// `log2(1/|Q|) * 2^L + K` for the pixel's Q. LOD <= 0 magnifies level 0
+/// with MMAG; otherwise MMIN picks the nearest level (2, 4) or blends the
+/// two nearest (3, 5), with nearest (2, 3) or bilinear (4, 5) sampling
+/// inside a level and LOD clamped to MXL. Level `l` is sampled at
+/// texel coordinates `(u, v) / 2^l`.
+#[inline(always)]
+fn sample_mip(m: Mem, t0: &Tex, mip: &Mip, decs: &[Option<Arc<Decoded>>], f: &Frag) -> u32 {
+    let lod = if t0.lcm {
+        t0.k
+    } else {
+        let q = f.q.abs();
+        let q = if q > 0.0 { q } else { 1.0 };
+        (1.0 / q).log2() * (1u32 << t0.l) as f32 + t0.k
+    };
+    let level = |l: u32, linear: bool| {
+        let t = if l == 0 { t0 } else { &mip.levels[l as usize - 1] };
+        let scale = 1.0 / (1u32 << l) as f32;
+        let (u, v) = (f.u * scale, f.v * scale);
+        match decs.get(l as usize) {
+            Some(Some(dec)) => sample_dec(dec, t, u, v, linear),
+            _ => sample(m, t, u, v, linear),
+        }
+    };
+    if lod.is_nan() || lod <= 0.0 {
+        return level(0, t0.mag_linear);
+    }
+    let linear = mip.mmin >= 4;
+    let lod = lod.min(mip.mxl as f32);
+    if mip.mmin & 1 == 0 {
+        // *_MIPMAP_NEAREST: the nearest level.
+        return level(((lod + 0.5) as u32).min(mip.mxl), linear);
+    }
+    // *_MIPMAP_LINEAR: blend levels floor(LOD) and floor(LOD) + 1.
+    let l0 = lod as u32;
+    let c0 = level(l0, linear);
+    let w = ((lod - l0 as f32) * 256.0) as u32;
+    if l0 >= mip.mxl || w == 0 {
+        return c0;
+    }
+    let c1 = level(l0 + 1, linear);
+    let mut out = 0;
+    for sh in [0, 8, 16, 24] {
+        let (a, b) = ((c0 >> sh) & 0xFF, (c1 >> sh) & 0xFF);
+        out |= ((a * (256 - w) + b * w + 128) >> 8) << sh;
+    }
+    out
+}
+
 /// Per channel: `((c00*(256-fx) + c10*fx)*(256-fy) +
 /// (c01*(256-fx) + c11*fx)*fy + 0x8000) >> 16`, computed two channels per
 /// u64 (32-bit lanes; every intermediate
@@ -842,8 +966,8 @@ fn bilerp(c00: u32, c10: u32, c01: u32, c11: u32, fx: u32, fy: u32) -> u32 {
 
 /// Per-row state of the pixel pipeline.
 struct RowCtx<'a> {
-    /// Pre-decoded texels of the draw's texture, if available.
-    dec: Option<&'a Decoded>,
+    /// Pre-decoded texels per texture level, where available.
+    decs: &'a [Option<Arc<Decoded>>],
     fb: SurfRow,
     zb: SurfRow,
     dith: [i32; 4],
@@ -851,9 +975,9 @@ struct RowCtx<'a> {
 
 impl<'a> RowCtx<'a> {
     #[inline(always)]
-    fn new(d: &Draw, y: i32, dec: Option<&'a Decoded>) -> RowCtx<'a> {
+    fn new(d: &Draw, y: i32, decs: &'a [Option<Arc<Decoded>>]) -> RowCtx<'a> {
         RowCtx {
-            dec,
+            decs,
             fb: SurfRow::new(&d.fb, y as u32),
             zb: SurfRow::new(&d.zb, y as u32),
             dith: match &d.dither {
@@ -880,9 +1004,14 @@ const TX_LINEAR: u8 = 2;
 /// The same, sampling pre-decoded texels (`Decoded`).
 const TX_NEAREST_DEC: u8 = 3;
 const TX_LINEAR_DEC: u8 = 4;
+/// Mipmapped: level and filter chosen per pixel.
+const TX_MIP: u8 = 5;
 
 #[inline(always)]
 fn tex_mode(d: &Draw, linear: bool, dec: bool) -> u8 {
+    if d.mip.is_some() {
+        return TX_MIP;
+    }
     match (&d.tex, linear, dec) {
         (None, _, _) => TX_NONE,
         (Some(_), false, false) => TX_NEAREST,
@@ -898,6 +1027,7 @@ fn pixel(m: Mem, d: &Draw, rc: &RowCtx, x: i32, f: &Frag, linear: bool) {
     match tex_mode(d, linear, false) {
         TX_NONE => pixel_g::<TX_NONE>(m, d, rc, x, f.z, || *f),
         TX_NEAREST => pixel_g::<TX_NEAREST>(m, d, rc, x, f.z, || *f),
+        TX_MIP => pixel_g::<TX_MIP>(m, d, rc, x, f.z, || *f),
         _ => pixel_g::<TX_LINEAR>(m, d, rc, x, f.z, || *f),
     }
 }
@@ -957,11 +1087,15 @@ fn pixel_g<const TX: u8>(
     let (mut r, mut g, mut b, mut a) = (f.r, f.g, f.b, f.a);
 
     if let (true, Some(t)) = (TX != TX_NONE, &d.tex) {
-        let c = match (TX, rc.dec) {
-            (TX_NEAREST_DEC | TX_LINEAR_DEC, Some(dec)) => {
+        let c = match (TX, rc.decs.first()) {
+            (TX_MIP, _) => match &d.mip {
+                Some(mip) => sample_mip(m, t, mip, rc.decs, &f),
+                None => 0,
+            },
+            (TX_NEAREST_DEC | TX_LINEAR_DEC, Some(Some(dec))) => {
                 sample_dec(dec, t, f.u, f.v, TX == TX_LINEAR_DEC)
             }
-            _ => sample(m, t, f.u, f.v, TX == TX_LINEAR),
+            _ => sample(m, t, f.u, f.v, TX == TX_LINEAR || TX == TX_LINEAR_DEC),
         };
         let tr = (c & 0xFF) as i32;
         let tg = ((c >> 8) & 0xFF) as i32;
@@ -1118,7 +1252,7 @@ fn pixel_checked(m: Mem, d: &Draw, rows: Rows, x: i32, y: i32, f: &Frag, linear:
     if x < d.sx0 || x > d.sx1 || !row_visible(d, y) || !rows.owns(y) {
         return;
     }
-    let rc = RowCtx::new(d, y, None);
+    let rc = RowCtx::new(d, y, &[]);
     pixel(m, d, &rc, x, f, linear);
 }
 
@@ -1181,6 +1315,7 @@ fn frag(d: &Draw, at: &[f64; NATTR]) -> Frag {
         a: at[A] as i32,
         u,
         v,
+        q: at[Q] as f32,
         f: at[F] as i32,
         z: at[Z],
     }
@@ -1254,6 +1389,9 @@ fn wrap_span_i(lo: i64, hi: i64, mode: u32, size_log: i32, min: i32, max: i32) -
 /// for STQ when all Q share a sign, since S/Q over a triangle stays within
 /// the vertex values). `None` means the whole texture.
 pub(crate) fn prim_tex_rect(d: &Draw, p: &Prim, prim: u32, verts: &[Vertex]) -> Option<[u32; 4]> {
+    if d.mip.is_some() {
+        return None;
+    }
     let t = d.tex.as_ref()?;
     if let Shape::Sprite {
         px0,
@@ -1356,6 +1494,9 @@ fn texel_span(c: f32, linear: bool) -> (i64, i64) {
 /// that do not wrap into other rows. Rows can then still be drawn in
 /// parallel: each band's reads and writes stay in submission order.
 pub(crate) fn sprite_rows_local(d: &Draw, p: &Prim) -> bool {
+    if d.mip.is_some() {
+        return false;
+    }
     let (
         Some(t),
         Shape::Sprite {
@@ -1719,7 +1860,8 @@ fn tri_setup(d: &Draw, verts: &[Vertex]) -> Option<(i32, i32, i32, Box<TriSetup>
 
 /// Draw the rows of `p` selected by `rows`. `dec`, when given, holds the
 /// decoded texels of `d`'s texture (they must match VRAM).
-pub(crate) fn raster(m: Mem, d: &Draw, p: &Prim, rows: Rows, dec: Option<&Decoded>) {
+pub(crate) fn raster(m: Mem, d: &Draw, p: &Prim, rows: Rows, decs: &[Option<Arc<Decoded>>]) {
+    let dec = decs.first().and_then(|x| x.as_deref()).is_some();
     let linear = p.linear;
     match &p.shape {
         Shape::Point { x, y, f } => pixel_checked(m, d, rows, *x, *y, f, linear),
@@ -1771,20 +1913,22 @@ pub(crate) fn raster(m: Mem, d: &Draw, p: &Prim, rows: Rows, dec: Option<&Decode
                 dtdy: *dtdy,
                 base,
             };
-            match tex_mode(d, linear, dec.is_some()) {
-                TX_NONE => sprite_rows::<TX_NONE>(m, d, &sp, p, rows, dec),
-                TX_NEAREST => sprite_rows::<TX_NEAREST>(m, d, &sp, p, rows, dec),
-                TX_LINEAR => sprite_rows::<TX_LINEAR>(m, d, &sp, p, rows, dec),
-                TX_NEAREST_DEC => sprite_rows::<TX_NEAREST_DEC>(m, d, &sp, p, rows, dec),
-                _ => sprite_rows::<TX_LINEAR_DEC>(m, d, &sp, p, rows, dec),
+            match tex_mode(d, linear, dec) {
+                TX_NONE => sprite_rows::<TX_NONE>(m, d, &sp, p, rows, decs),
+                TX_NEAREST => sprite_rows::<TX_NEAREST>(m, d, &sp, p, rows, decs),
+                TX_LINEAR => sprite_rows::<TX_LINEAR>(m, d, &sp, p, rows, decs),
+                TX_NEAREST_DEC => sprite_rows::<TX_NEAREST_DEC>(m, d, &sp, p, rows, decs),
+                TX_LINEAR_DEC => sprite_rows::<TX_LINEAR_DEC>(m, d, &sp, p, rows, decs),
+                _ => sprite_rows::<TX_MIP>(m, d, &sp, p, rows, decs),
             }
         }
-        Shape::Tri(t) => match tex_mode(d, linear, dec.is_some()) {
-            TX_NONE => tri_rows::<TX_NONE>(m, d, t, p, rows, dec),
-            TX_NEAREST => tri_rows::<TX_NEAREST>(m, d, t, p, rows, dec),
-            TX_LINEAR => tri_rows::<TX_LINEAR>(m, d, t, p, rows, dec),
-            TX_NEAREST_DEC => tri_rows::<TX_NEAREST_DEC>(m, d, t, p, rows, dec),
-            _ => tri_rows::<TX_LINEAR_DEC>(m, d, t, p, rows, dec),
+        Shape::Tri(t) => match tex_mode(d, linear, dec) {
+            TX_NONE => tri_rows::<TX_NONE>(m, d, t, p, rows, decs),
+            TX_NEAREST => tri_rows::<TX_NEAREST>(m, d, t, p, rows, decs),
+            TX_LINEAR => tri_rows::<TX_LINEAR>(m, d, t, p, rows, decs),
+            TX_NEAREST_DEC => tri_rows::<TX_NEAREST_DEC>(m, d, t, p, rows, decs),
+            TX_LINEAR_DEC => tri_rows::<TX_LINEAR_DEC>(m, d, t, p, rows, decs),
+            _ => tri_rows::<TX_MIP>(m, d, t, p, rows, decs),
         },
     }
 }
@@ -1807,20 +1951,25 @@ fn sprite_rows<const TX: u8>(
     sp: &SpriteRows,
     p: &Prim,
     rows: Rows,
-    dec: Option<&Decoded>,
+    decs: &[Option<Arc<Decoded>>],
 ) {
     rows.each(p.y0, p.y1, |py| {
         if !row_visible(d, py) {
             return;
         }
-        let rc = RowCtx::new(d, py, dec);
+        let rc = RowCtx::new(d, py, decs);
         if TX != TX_NONE {
             let t = sp.a0[T] + sp.dtdy * ((py * 16 - sp.y0) as f64 / 16.0);
             for px in sp.px0..=sp.px1 {
                 let s = sp.a0[S] + sp.dsdx * ((px * 16 - sp.x0) as f64 / 16.0);
                 let frag = || {
                     let (u, v) = tex_uv(d, s, t, sp.q);
-                    Frag { u, v, ..*sp.base }
+                    Frag {
+                        u,
+                        v,
+                        q: sp.q as f32,
+                        ..*sp.base
+                    }
                 };
                 pixel_g::<TX>(m, d, &rc, px, sp.base.z, frag);
             }
@@ -1857,7 +2006,7 @@ fn tri_rows<const TX: u8>(
     t: &TriSetup,
     p: &Prim,
     rows: Rows,
-    dec: Option<&Decoded>,
+    decs: &[Option<Arc<Decoded>>],
 ) {
     let tex = TX != TX_NONE;
     let want_f = d.fge;
@@ -1877,7 +2026,7 @@ fn tri_rows<const TX: u8>(
         }
         let dyf = y as f64 - t.oy;
         let ra: [f64; NATTR] = std::array::from_fn(|k| t.c[k] + t.dady[k] * dyf);
-        let rc = RowCtx::new(d, y, dec);
+        let rc = RowCtx::new(d, y, decs);
         for i in lo..=hi {
             let x = t.bx0 + i as i32;
             let dxp = i as f64;
@@ -1891,12 +2040,9 @@ fn tri_rows<const TX: u8>(
                     ..Frag::default()
                 };
                 if tex {
-                    (f.u, f.v) = tex_uv(
-                        d,
-                        ra[S] + t.dadx[S] * dxp,
-                        ra[T] + t.dadx[T] * dxp,
-                        ra[Q] + t.dadx[Q] * dxp,
-                    );
+                    let q = ra[Q] + t.dadx[Q] * dxp;
+                    (f.u, f.v) = tex_uv(d, ra[S] + t.dadx[S] * dxp, ra[T] + t.dadx[T] * dxp, q);
+                    f.q = q as f32;
                 }
                 if want_f {
                     f.f = (ra[F] + t.dadx[F] * dxp) as i32;

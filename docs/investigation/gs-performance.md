@@ -177,6 +177,18 @@ primitives write (bounding boxes in the frame and Z buffers) and read
 - `gs/region.rs` has a test that checks block sets against per-pixel addresses
   for every format, including unaligned base pointers.
 
+## Mipmapping (follow-up)
+
+Mipmapping (`raster::Mip`, `sample_mip`; see `gs.md`) was added after these
+measurements, and it changes rendering by design.
+- Its golden hashes differ from the original rasterizer for primitives that use
+  MXL > 0 with a mipmap filter. In `race4500` and `race4800` that is about 2% of
+  the screen, mostly distant geometry.
+- Hashes for `charsel` and `course`, which use no mipmapping, are unchanged.
+- It costs about 10% in the race frames (`race4500` 39.8 → 44.4 ms,
+  `race4800` 34.6 → 38.4 ms with 8 threads). Each pixel needs one or two levels
+  of bilinear sampling and a `log2`.
+
 ## Where the time goes now
 
 Single-threaded, in the race frames, most time is in the textured triangle span

@@ -128,10 +128,23 @@ Texturing:
   REGION_CLAMP, and REGION_REPEAT as `(u & MINU) | MAXU`.
 - **Filtering:**
   - Nearest filtering is always available.
-  - Bilinear filtering (8-bit weights) is chosen per primitive. The LOD comes
-    from TEX1 (LCM/K, or `log2(1/q)<<L + K` using the average vertex Q). LOD ≤ 0
-    uses MMAG; otherwise MMIN, where 1, 4 and 5 count as linear.
-  - There is no mipmapping: level 0 is always sampled.
+  - Without mipmapping, bilinear filtering (8-bit weights) is chosen per
+    primitive. The LOD comes from TEX1 (LCM/K, or `log2(1/q)<<L + K` using the
+    average vertex Q). LOD ≤ 0 uses MMAG; otherwise MMIN, where 1, 4 and 5 count
+    as linear.
+- **Mipmapping** applies when MXL > 0 and MMIN is 2–5. The LOD is computed per
+  pixel: K when LCM=1, otherwise `log2(1/|Q|) * 2^L + K`.
+  - LOD ≤ 0 samples level 0 with MMAG.
+  - Otherwise LOD is clamped to MXL. MMIN 2/4 (`*_MIPMAP_NEAREST`) picks the
+    nearest level, `round(LOD)`.
+  - MMIN 3/5 (`*_MIPMAP_LINEAR`) blends `floor(LOD)` and the next level by the
+    8-bit fraction.
+  - Inside a level, MMIN 2/3 use nearest sampling and 4/5 use bilinear.
+  - Level `l` has base pointer and width from MIPTBP1 (levels 1–3) and MIPTBP2
+    (4–6), or from MTBA for levels 1–3, where each level follows the previous
+    one at half the width.
+  - The level is `2^TW >> l` by `2^TH >> l` texels, sampled at `(u, v) / 2^l`.
+    Region clamp/repeat bounds shift right by `l`.
 - **Formats:**
   - CT32/24/16/16S, Z formats read as colour, and T8/T4/T8H/T4HL/T4HH through a
     palette resolved per draw (256 or 16 `u32` entries).
@@ -180,8 +193,9 @@ from 250–530 ms to 35–42 ms on an M1. Two tools measure it:
 
 ## Known gaps
 
-- No mipmapping (MXL, MIPTBP and MTBA are stored but unused). LOD is chosen per
-  primitive, not per pixel.
+- Mipmapping: MTBA address computation is a best guess (levels packed one after
+  another, width halved). Without a mipmap MMIN, the MMAG/MMIN choice is still
+  made per primitive.
 - No antialiasing (AA1), and no PRIM.FIX fragment control.
 - Rasterization is approximate rather than bit-exact:
   - Colours interpolate in f64 rather than the GS's fixed-point DDA, so they can
