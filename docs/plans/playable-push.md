@@ -108,4 +108,7 @@ Runtime misses are appended to `generated/entries.txt` automatically; rerun
   14. **Structured decompilation output** (`recomp-ee --structured`): host-thread
       runtime + Ramsey structuring, 97% of functions as `if`/`loop` Rust; runs
       the game (verification to the race in progress).
+- GPU GS backend (`SSX3_GS=gpu`, `docs/investigation/gs-gpu.md`): wgpu compute
+  rasterizer, visually identical to the CPU GS on all traces and in a full
+  headless run to frame 4800; races are now VU-bound (~22 fps headless).
 - Fresh checkout: `tools/bootstrap.sh` (stub generated crates, then recomp).
