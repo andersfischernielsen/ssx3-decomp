@@ -305,6 +305,12 @@ pub fn boot(c: &mut Cpu, elf: &[u8], argv0: &str) -> Result<u32, String> {
 /// into the middle of this function that isn't a known label (an error), or a
 /// tail jump to other code.
 pub fn jump_out(c: &mut Cpu, pc: u32, start: u32, end: u32) {
+    if std::env::var_os("SSX3_TRACE_JUMPOUT").is_some() {
+        eprintln!(
+            "[jump_out] pc {pc:#x} from fn {start:#x}..{end:#x} ra {:#x} thread {}",
+            c.g[31][0] as u32, c.kernel.current
+        );
+    }
     if pc >= start && pc < end {
         bad_entry(c, pc);
         return;
