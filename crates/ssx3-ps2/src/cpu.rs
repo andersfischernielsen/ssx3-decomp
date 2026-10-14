@@ -21,6 +21,43 @@ pub fn sx(v: u32) -> u64 {
     v as i32 as i64 as u64
 }
 
+/// ABI names for GPR indices, used by generated code (`c.g[SP][0]`).
+#[allow(missing_docs)]
+pub mod reg {
+    pub const ZERO: usize = 0;
+    pub const AT: usize = 1;
+    pub const V0: usize = 2;
+    pub const V1: usize = 3;
+    pub const A0: usize = 4;
+    pub const A1: usize = 5;
+    pub const A2: usize = 6;
+    pub const A3: usize = 7;
+    pub const T0: usize = 8;
+    pub const T1: usize = 9;
+    pub const T2: usize = 10;
+    pub const T3: usize = 11;
+    pub const T4: usize = 12;
+    pub const T5: usize = 13;
+    pub const T6: usize = 14;
+    pub const T7: usize = 15;
+    pub const S0: usize = 16;
+    pub const S1: usize = 17;
+    pub const S2: usize = 18;
+    pub const S3: usize = 19;
+    pub const S4: usize = 20;
+    pub const S5: usize = 21;
+    pub const S6: usize = 22;
+    pub const S7: usize = 23;
+    pub const T8: usize = 24;
+    pub const T9: usize = 25;
+    pub const K0: usize = 26;
+    pub const K1: usize = 27;
+    pub const GP: usize = 28;
+    pub const SP: usize = 29;
+    pub const FP: usize = 30;
+    pub const RA: usize = 31;
+}
+
 /// Bit 0 of `pc` set by the kernel means "unwind to the trampoline".
 pub const UNWIND: u32 = 1;
 

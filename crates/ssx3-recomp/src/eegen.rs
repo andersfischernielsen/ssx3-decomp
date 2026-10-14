@@ -210,6 +210,8 @@ pub fn lower(pc: u32, w: u32) -> Option<String> {
             0x20 | 0x21 => set(rd, format!("sx({}.wrapping_add({}))", r32(rs), r32(rt))),
             0x22 | 0x23 => set(rd, format!("sx({}.wrapping_sub({}))", r32(rs), r32(rt))),
             0x24 => set(rd, format!("{} & {}", r64(rs), r64(rt))),
+            0x25 if rt == 0 => set(rd, r64(rs)), // move
+            0x25 if rs == 0 => set(rd, r64(rt)),
             0x25 => set(rd, format!("{} | {}", r64(rs), r64(rt))),
             0x26 => set(rd, format!("{} ^ {}", r64(rs), r64(rt))),
             0x27 => set(rd, format!("!({} | {})", r64(rs), r64(rt))),
@@ -217,6 +219,8 @@ pub fn lower(pc: u32, w: u32) -> Option<String> {
             0x29 => format!("c.sa = {} as u32;", r64(rs)),
             0x2A => set(rd, format!("(({} as i64) < ({} as i64)) as u64", r64(rs), r64(rt))),
             0x2B => set(rd, format!("({} < {}) as u64", r64(rs), r64(rt))),
+            0x2C | 0x2D if rt == 0 => set(rd, r64(rs)), // move
+            0x2C | 0x2D if rs == 0 => set(rd, r64(rt)),
             0x2C | 0x2D => set(rd, format!("{}.wrapping_add({})", r64(rs), r64(rt))),
             0x2E | 0x2F => set(rd, format!("{}.wrapping_sub({})", r64(rs), r64(rt))),
             0x30..=0x36 => String::new(), // traps: not modelled
@@ -234,10 +238,12 @@ pub fn lower(pc: u32, w: u32) -> Option<String> {
             0x19 => format!("c.mtsah({rs}, {});", imm),
             _ => return None,
         },
+        0x08 | 0x09 if rs == 0 => set(rt, format!("{:#x}", simm as i64 as u64)), // li
         0x08 | 0x09 => set(rt, format!("sx({}.wrapping_add({:#x}))", r32(rs), simm as i32 as u32)),
         0x0A => set(rt, format!("(({} as i64) < {}i64) as u64", r64(rs), simm)),
         0x0B => set(rt, format!("({} < {:#x}u64) as u64", r64(rs), simm as i64 as u64)),
         0x0C => set(rt, format!("{} & {:#x}", r64(rs), imm)),
+        0x0D if rs == 0 => set(rt, format!("{:#x}", imm)),
         0x0D => set(rt, format!("{} | {:#x}", r64(rs), imm)),
         0x0E => set(rt, format!("{} ^ {:#x}", r64(rs), imm)),
         0x0F => set(rt, format!("{:#x}", (((imm as u32) << 16) as i32 as i64) as u64)),
@@ -494,6 +500,8 @@ pub struct Ctx<'a> {
     /// Host-thread mode (`ssx3_ps2::threads`): no unwinding, so calls and
     /// syscalls continue inline and return points are not labels.
     pub threads: bool,
+    /// Recovered, globally unique symbol names usable as Rust identifiers.
+    pub names: &'a BTreeMap<u32, String>,
 }
 
 /// Statistics for one emitted function.
@@ -835,7 +843,10 @@ fn tail(target: u32, shard: usize, ctx: &Ctx) -> String {
 
 fn direct_callee(target: u32, shard: usize, ctx: &Ctx) -> String {
     match ctx.shard_of.get(&target) {
-        Some(&s) if s == shard => format!("{}(c)", fn_name(target)),
+        Some(&s) if s == shard => match ctx.names.get(&target) {
+            Some(n) => format!("{n}(c)"),
+            None => format!("{}(c)", fn_name(target)),
+        },
         _ => format!("ssx3_ps2::machine::call_indirect(c, {target:#010x})"),
     }
 }
@@ -990,4 +1001,62 @@ pub fn direct_callee_pub(target: u32, shard: usize, ctx: &Ctx) -> String {
 }
 pub fn tail_pub(target: u32, shard: usize, ctx: &Ctx) -> String {
     tail(target, shard, ctx)
+}
+
+const ABI: [&str; 32] = [
+    "ZERO", "AT", "V0", "V1", "A0", "A1", "A2", "A3", "T0", "T1", "T2", "T3", "T4", "T5", "T6", "T7",
+    "S0", "S1", "S2", "S3", "S4", "S5", "S6", "S7", "T8", "T9", "K0", "K1", "GP", "SP", "FP", "RA",
+];
+
+/// Readability pass over emitted code: `c.g[29]` → `c.g[SP]`, and
+/// `wrapping_add(<negative hex>)` → `wrapping_sub(<magnitude>)`.
+pub fn prettify(code: &str) -> String {
+    let b = code.as_bytes();
+    let mut out = String::with_capacity(code.len());
+    let mut i = 0;
+    while i < b.len() {
+        if code[i..].starts_with("c.g[") {
+            let start = i + 4;
+            let mut j = start;
+            while j < b.len() && b[j].is_ascii_digit() {
+                j += 1;
+            }
+            if j > start && j < b.len() && b[j] == b']' {
+                let n: usize = code[start..j].parse().unwrap_or(99);
+                if n < 32 {
+                    out.push_str("c.g[");
+                    out.push_str(ABI[n]);
+                    out.push(']');
+                    i = j + 1;
+                    continue;
+                }
+            }
+        }
+        if code[i..].starts_with(".wrapping_add(0x") {
+            let start = i + ".wrapping_add(0x".len();
+            let mut j = start;
+            while j < b.len() && b[j].is_ascii_hexdigit() {
+                j += 1;
+            }
+            let digits = &code[start..j];
+            if j < b.len() && b[j] == b')' && (digits.len() == 8 || digits.len() == 16) {
+                if let Ok(v) = u64::from_str_radix(digits, 16) {
+                    let neg = if digits.len() == 8 {
+                        (v as u32 >= 0x8000_0000).then(|| (v as u32).wrapping_neg() as u64)
+                    } else {
+                        (v >= 0x8000_0000_0000_0000).then(|| v.wrapping_neg())
+                    };
+                    if let Some(m) = neg {
+                        out.push_str(&format!(".wrapping_sub({m:#x})"));
+                        i = j + 1;
+                        continue;
+                    }
+                }
+            }
+        }
+        let ch = code[i..].chars().next().unwrap();
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+    out
 }
