@@ -22,11 +22,14 @@
 //! [`Iop::run`] with the IOP time that corresponds to the EE clock.
 
 pub mod audio;
+pub mod ds2;
 pub mod hw;
 pub mod imports;
 pub mod irx;
 pub mod kernel;
+pub mod memcard;
 pub mod sif;
+pub mod sio2;
 pub mod spu2;
 
 use std::collections::BTreeMap;
@@ -39,6 +42,11 @@ pub const RETURN_MAGIC: u32 = 0xFFFF_FF00;
 pub const THREAD_EXIT: u32 = 0xFFFF_FF10;
 /// Return address of RPC server functions run by `sceSifExecRequest`.
 pub const EXEC_FINISH: u32 = 0xFFFF_FF20;
+/// Resume point of a thread inside `sceSifRpcLoop` (after a request, or
+/// when woken while waiting for one).
+pub const RPC_LOOP: u32 = 0xFFFF_FF30;
+/// Length of the vertical blanking interval in IOP cycles (NTSC: ~22 lines).
+pub const VBLANK_CYCLES: u64 = 52_000;
 
 pub const RAM_SIZE: usize = 0x20_0000;
 /// IOP clock: EE / 8 = 36.864 MHz.
@@ -130,6 +138,7 @@ pub struct Iop {
     pub k: kernel::Kernel,
     pub hw: hw::Hw,
     pub spu: spu2::Spu2,
+    pub sio2: sio2::Sio2,
     pub sif: sif::IopSif,
     pub out: Outbox,
     pub halted: Option<String>,
@@ -144,7 +153,18 @@ pub struct Iop {
     io_regs: BTreeMap<u32, u32>,
     /// Per-function-start call statistics are not kept; instructions retired.
     pub instructions: u64,
+    /// VBlank starts signalled by the host (EE VBlank) and not yet delivered.
+    pub vblank_pending: u32,
+    pub vblanks: u64,
+    /// EE main RAM, readable while the IOP runs (`sceSifGetOtherData`); set by
+    /// the host around [`Iop::run`], null otherwise.
+    pub ee_ram: *const u8,
+    pub ee_ram_len: usize,
 }
+
+// SAFETY: `ee_ram` is only dereferenced while the host lends EE RAM to a
+// running IOP (single-threaded, see `ssx3-ps2/src/iop_bridge.rs`).
+unsafe impl Send for Iop {}
 
 impl Iop {
     pub fn new() -> Box<Self> {
@@ -162,6 +182,7 @@ impl Iop {
             k: kernel::Kernel::new(),
             hw: hw::Hw::default(),
             spu: spu2::Spu2::new(),
+            sio2: sio2::Sio2::new(),
             sif: sif::IopSif::default(),
             out: Outbox::default(),
             halted: None,
@@ -172,7 +193,27 @@ impl Iop {
             unknown_io: BTreeMap::new(),
             io_regs: BTreeMap::new(),
             instructions: 0,
+            vblank_pending: 0,
+            vblanks: 0,
+            ee_ram: std::ptr::null(),
+            ee_ram_len: 0,
         })
+    }
+
+    /// Copy `n` bytes of EE RAM (zeros if the host did not provide it).
+    pub fn ee_read(&self, a: u32, n: usize) -> Vec<u8> {
+        let mut v = vec![0u8; n];
+        if self.ee_ram.is_null() {
+            return v;
+        }
+        let o = (a & 0x01FF_FFFF) as usize;
+        let end = (o + n).min(self.ee_ram_len);
+        if o < end {
+            // SAFETY: the host keeps `ee_ram` valid while the IOP runs.
+            let src = unsafe { std::slice::from_raw_parts(self.ee_ram.add(o), end - o) };
+            v[..end - o].copy_from_slice(src);
+        }
+        v
     }
 
     // ------------------------------------------------------------ calls
@@ -519,6 +560,7 @@ impl Iop {
         }
         sif::service(self);
         if !self.k.intr_suspended || self.k.current == 0 {
+            kernel::vblank_start(self);
             hw::deliver_interrupts(self);
         }
         kernel::reschedule(self);
@@ -552,6 +594,10 @@ pub fn trampoline(c: &mut Iop, stop: Option<u32>) {
             }
             EXEC_FINISH => {
                 sif::exec_finish(c);
+                continue;
+            }
+            RPC_LOOP => {
+                sif::rpc_loop_resume(c);
                 continue;
             }
             _ => {}

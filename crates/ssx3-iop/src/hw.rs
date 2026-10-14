@@ -153,12 +153,54 @@ fn start_dma(c: &mut Iop, ch: usize) {
         crate::spu2::dma(c, if ch == 4 { 0 } else { 1 }, d.madr, words, d.chcr & 1 != 0, ch as u32);
         return;
     }
+    if ch == 11 || ch == 12 {
+        // SIO2 in (memory → SIO2) / out (SIO2 → memory): instant.
+        let block = ((d.bcr & 0xFFFF) * 4) as usize;
+        let bytes = (words * 4) as usize;
+        if c.sio2.trace {
+            eprintln!("[sio2] dma ch {ch} madr {:#x} bcr {:#x} chcr {:#x}", d.madr, d.bcr, d.chcr);
+        }
+        if ch == 11 {
+            let data = c.read_bytes(d.madr, bytes);
+            c.sio2.dma_in(&data, block);
+        } else {
+            let data = c.sio2.dma_out(bytes);
+            c.write_bytes(d.madr, &data);
+        }
+        c.hw.dma[ch].madr = d.madr.wrapping_add(bytes as u32);
+        let at = c.cycles + 16 + words as u64;
+        c.k.schedule(at, Timed::DmaDone(ch as u32));
+        return;
+    }
     eprintln!("[iop-dma] channel {ch} not emulated (madr {:#x} bcr {:#x} chcr {:#x})", d.madr, d.bcr, d.chcr);
     let at = c.cycles + 64;
     c.k.schedule(at, Timed::DmaDone(ch as u32));
 }
 
+/// dmacman `dmac_request`: program a channel without starting it.
+pub fn dma_request(c: &mut Iop, ch: usize, madr: u32, words: u32, blocks: u32, to_device: bool) {
+    if ch >= c.hw.dma.len() {
+        return;
+    }
+    let d = &mut c.hw.dma[ch];
+    d.madr = madr & 0x00FF_FFFF;
+    d.bcr = (words & 0xFFFF) | (blocks << 16);
+    d.chcr = 0x200 | to_device as u32;
+}
+
+/// dmacman `dmac_transfer`: start a programmed channel.
+pub fn dma_transfer(c: &mut Iop, ch: usize) {
+    if ch >= c.hw.dma.len() {
+        return;
+    }
+    c.hw.dma[ch].chcr |= 0x0100_0000;
+    start_dma(c, ch);
+}
+
 pub fn read(c: &mut Iop, a: u32, _size: u32) -> Option<u32> {
+    if let Some(v) = c.sio2.read(a) {
+        return Some(v);
+    }
     Some(match a {
         0x1F80_1070 => c.hw.istat,
         0x1F80_1074 => c.hw.imask,
@@ -188,6 +230,12 @@ pub fn read(c: &mut Iop, a: u32, _size: u32) -> Option<u32> {
 }
 
 pub fn write(c: &mut Iop, a: u32, v: u32, size: u32) -> bool {
+    if (crate::sio2::BASE..crate::sio2::END).contains(&a) {
+        if c.sio2.write(a, v) {
+            c.hw.raise(crate::sio2::LINE_SIO2);
+        }
+        return true;
+    }
     match a {
         0x1F80_1070 => c.hw.istat &= v,
         0x1F80_1074 => c.hw.imask = v,

@@ -62,6 +62,8 @@ pub struct Thread {
     /// Set for a module's start thread: module id.
     pub module_start: Option<i32>,
     pub cycles: u64,
+    /// Queue served by `sceSifRpcLoop` in this thread.
+    pub rpc_qd: u32,
 }
 
 pub struct Sema {
@@ -85,6 +87,17 @@ pub enum Timed {
     Alarm(u64),
     DmaDone(u32),
     SifDmaCallback(u32, u32),
+    VBlankEnd,
+}
+
+/// `RegisterVblankHandler` entry (vblank.irx).
+#[derive(Clone, Copy, Debug)]
+pub struct VblankHandler {
+    /// 0: start of VBlank, 1: end.
+    pub edge: u32,
+    pub prio: i32,
+    pub handler: u32,
+    pub arg: u32,
 }
 
 pub struct Module {
@@ -127,6 +140,7 @@ pub struct Kernel {
     pub libraries: BTreeMap<String, u32>,
     pub tty: String,
     pub missing: BTreeMap<(usize, u32), u64>,
+    pub vblank: Vec<VblankHandler>,
 }
 
 impl Kernel {
@@ -152,6 +166,7 @@ impl Kernel {
             libraries: BTreeMap::new(),
             tty: String::new(),
             missing: BTreeMap::new(),
+            vblank: Vec::new(),
         }
     }
 
@@ -261,6 +276,7 @@ impl Kernel {
                 ev_result: 0,
                 module_start: None,
                 cycles: 0,
+                rpc_qd: 0,
             },
         );
         id
@@ -450,6 +466,35 @@ pub fn timed_event(c: &mut Iop, ev: Timed) {
         Timed::SifDmaCallback(f, arg) => {
             c.call_guest(f, &[arg]);
         }
+        Timed::VBlankEnd => run_vblank_handlers(c, 1),
+    }
+}
+
+/// Deliver a pending VBlank start (signalled by the host) to the vblank.irx
+/// handlers and schedule the matching VBlank end.
+pub fn vblank_start(c: &mut Iop) {
+    if c.vblank_pending == 0 || c.in_handler > 0 {
+        return;
+    }
+    c.vblank_pending = 0;
+    c.vblanks += 1;
+    run_vblank_handlers(c, 0);
+    let at = c.cycles + crate::VBLANK_CYCLES;
+    c.k.schedule(at, Timed::VBlankEnd);
+}
+
+/// Run the handlers registered for `edge` in priority order; a handler that
+/// returns 0 is removed (vblank.irx semantics).
+fn run_vblank_handlers(c: &mut Iop, edge: u32) {
+    let hs: Vec<VblankHandler> = c.k.vblank.iter().copied().filter(|h| h.edge == edge).collect();
+    for h in hs {
+        if c.halted.is_some() {
+            return;
+        }
+        let keep = c.call_guest(h.handler, &[h.arg]);
+        if keep == 0 {
+            c.k.vblank.retain(|x| !(x.edge == h.edge && x.handler == h.handler && x.arg == h.arg));
+        }
     }
 }
 
@@ -503,4 +548,20 @@ pub fn tty(c: &mut Iop, s: &str) {
             c.k.tty.push(ch);
         }
     }
+}
+
+/// `TerminateThread`: make another thread dormant, dropping its waits.
+pub fn terminate(c: &mut Iop, id: i32) {
+    for s in c.k.semas.values_mut() {
+        s.waiters.retain(|&t| t != id);
+    }
+    for e in c.k.events.values_mut() {
+        e.waiters.retain(|&t| t != id);
+    }
+    if let Some(t) = c.k.threads.get_mut(&id) {
+        t.status = Status::Dormant;
+        t.wait = Wait::None;
+        t.exec_stack.clear();
+    }
+    c.k.switch_pending = true;
 }

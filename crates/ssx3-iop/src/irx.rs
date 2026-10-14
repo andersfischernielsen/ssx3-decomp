@@ -27,8 +27,28 @@ pub const EXPORT_MAGIC: u32 = 0x41C0_0000;
 /// IOP allocator hands out `HEAP_START..HEAP_END`. The EE's IOP heap RPC
 /// (an HLE server in `ssx3-ps2`) keeps using `0x10_0000` and up.
 pub mod layout {
-    pub const MODULES: &[(&str, u32)] = &[("LIBSD", 0x0002_0000), ("SNDDRV", 0x0003_0000)];
-    pub const HEAP_START: u32 = 0x0005_0000;
+    ///
+    /// | module  | base      | end (text+data+bss) |
+    /// | ------- | --------- | ------------------- |
+    /// | LIBSD   | `0x20000` | `0x25b50` |
+    /// | SNDDRV  | `0x30000` | `0x45c70` |
+    /// | SIO2MAN | `0x48000` | `0x48ff0` |
+    /// | MCSERV  | `0x4a000` | `0x4d760` |
+    /// | PADMAN  | `0x4e000` | `0x57910` |
+    /// | MCMAN   | `0x58000` | `0x7f274` |
+    pub const MODULES: &[(&str, u32)] = &[
+        ("LIBSD", 0x0002_0000),
+        ("SNDDRV", 0x0003_0000),
+        ("SIO2MAN", 0x0004_8000),
+        ("MCSERV", 0x0004_A000),
+        ("PADMAN", 0x0004_E000),
+        ("MCMAN", 0x0005_8000),
+    ];
+    /// Modules that drive the SIO2 port (pads, memory cards). They can be
+    /// switched off as a group (`SSX3_IOP_SIO2=0`): the HLE servers in
+    /// `ssx3-ps2` then answer the EE.
+    pub const SIO2_MODULES: &[&str] = &["SIO2MAN", "PADMAN", "MCMAN", "MCSERV"];
+    pub const HEAP_START: u32 = 0x0008_0000;
     pub const HEAP_END: u32 = 0x0010_0000;
     pub const INTR_STACK: u32 = 0x0001_D000;
     pub const CMD_RECV: u32 = 0x0001_E000;
@@ -385,7 +405,7 @@ pub fn module_name_of(path: &str) -> String {
 /// `imports::call(c, LIB, index)` with these numeric ids.
 pub const LIBRARIES: &[&str] = &[
     "sysmem", "loadcore", "intrman", "thbase", "thsemap", "thevent", "thmsgbx", "sifman", "sifcmd", "sysclib", "stdio",
-    "timrman", "dmacman", "vblank", "ssbusc", "modload",
+    "timrman", "dmacman", "vblank", "ssbusc", "modload", "ioman", "secrman", "cdvdman",
 ];
 
 pub fn library_id(name: &str) -> Option<usize> {
