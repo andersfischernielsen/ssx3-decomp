@@ -33,13 +33,19 @@ fn main() {
     let t0 = Instant::now();
     let mut img = Vec::new();
     // Scripted input: SSX3_INPUT="300:4000:10,400:0008:10" presses Cross (0x4000)
-    // at frame 300 for 10 frames, then Start (0x0008) at frame 400.
-    let script: Vec<(u64, u16, u64)> = std::env::var("SSX3_INPUT")
+    // at frame 300 for 10 frames, then Start (0x0008) at frame 400. An optional
+    // fourth field picks the pad (1 or 2; default 1): "500:0008:8:2".
+    let script: Vec<(u64, u16, u64, usize)> = std::env::var("SSX3_INPUT")
         .unwrap_or_default()
         .split(',')
         .filter_map(|e| {
             let p: Vec<&str> = e.split(':').collect();
-            Some((p.first()?.parse().ok()?, u16::from_str_radix(p.get(1)?, 16).ok()?, p.get(2).and_then(|s| s.parse().ok()).unwrap_or(6)))
+            Some((
+                p.first()?.parse().ok()?,
+                u16::from_str_radix(p.get(1)?, 16).ok()?,
+                p.get(2).and_then(|s| s.parse().ok()).unwrap_or(6),
+                p.get(3).and_then(|s| s.parse::<usize>().ok()).map_or(0, |n| (n.max(1) - 1) & 1),
+            ))
         })
         .collect();
     // GS trace capture: SSX3_GS_CAPTURE="2380:4:/path/a.gstrace,4050:4:/path/b.gstrace"
@@ -59,13 +65,13 @@ fn main() {
                 c.bus.hw.gs.core().start_capture();
             }
         }
-        let mut held = 0u16;
-        for (at, bits, len) in &script {
+        let mut held = [0u16; 2];
+        for (at, bits, len, pad) in &script {
             if f >= *at && f < at + len {
-                held |= bits;
+                held[*pad] |= bits;
             }
         }
-        c.sif.pad_buttons[0] = held;
+        c.sif.pad_buttons = held;
         ssx3_ps2::vu::capture::set_frame(f);
         let alive = ssx3_ps2::machine::run_frame(&mut c);
         if ssx3_ps2::gifstats::enabled() && f % 50 == 0 {

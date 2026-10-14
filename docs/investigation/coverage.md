@@ -21,8 +21,8 @@ cursor), Previews, Online.
 | Single Event → Race → Snow Jam, full race to results | `playable-push.md` race script, to frame 20000 | ✅ no misses; renders correctly after the WAITQ + clip-latency fixes (`race-geometry.md`) |
 | Conquer The Mountain → character select → intro flight → free ride (0/44 collectibles) | `1600:0008:8,1800:0040:6,1900:4000:8,2300:4000:8,…` every 400 frames to 4300 | ✅ no misses (`coverage-conquer-the-mountain.png`; taken before the geometry fix) |
 | Online → network configuration | Down ×3 from Single Event, then Cross | ✅ no misses; shows "memory card … unformatted" for the network-config lookup although saves work (probably a BWNETCNF/mc getInfo detail; online is dead anyway) |
-| Previews | not reached yet | ⬜ |
-| Multi Play (2 controllers) | needs pad 2 input in `SSX3_INPUT` | ⬜ |
+| Previews → trailer list (NFS Underground, NFL Street, NBA Street Vol. 2) → trailer playback (EA Games logo, disclaimer) | Down ×2 from Single Event (Multi Play is skipped), Cross | ✅ no misses |
+| Multi Play (2 controllers) | `SSX3_INPUT` now takes an optional 4th field for the pad (`frame:bits:len:2`) | ⬜ greyed out: the SIO2 model has pad 2 unplugged (`pads[1].connected = false`, `crates/ssx3-iop/src/sio2.rs`). Make it pluggable (env + second gilrs controller in the window) after the crate split, since `ssx3-iop` changes rebuild all generated crates today |
 | Single Event → Peak 1 → Race → Metro-City | race script with `3200:0040:6` before the event Cross at 3300 | ✅ no misses, renders correctly (`coverage-peak1-events.png` row 1) |
 | Single Event → Peak 1 → Race → Happiness (head-to-head, 2 riders) | Down ×2 at 3200/3250 | ✅ no misses (row 2) |
 | Single Event → Peak 1 → Freestyle (Snow Jam freestyle vs opponent, scoring, timer) | `3000:0040:6` before the mode Cross at 3100 | ✅ no misses (row 3) |
