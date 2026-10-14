@@ -308,6 +308,12 @@ pub fn jump_out(c: &mut Cpu, pc: u32, start: u32, end: u32) {
         bad_entry(c, pc);
         return;
     }
+    // `jr t9`-style returns: a computed jump to the current return address is
+    // a return, not a tail call into the caller.
+    if pc == c.g[31][0] as u32 {
+        c.pc = pc;
+        return;
+    }
     if !c.enter(pc) {
         return;
     }
