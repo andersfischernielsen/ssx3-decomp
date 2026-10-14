@@ -1,8 +1,23 @@
-# Sun glare shows through objects (open, parked 2026-10-15)
+# Light glows and flares show through geometry (open, parked 2026-10-15)
 
-Symptom: the sun's glare/lens flare is drawn at full strength over objects in
-front of it (rider, halfpipe walls, stadium roof), e.g. Snow Jam race start
-and Peak 2/3 freestyle events. Everything else renders correctly.
+Status: **parked by the owner; must be fixed before the project is done**
+(final task in `../plans/roadmap.md`).
+
+Symptoms: not only the sun. Every light effect that should be hidden by
+geometry is drawn at full strength on top of it:
+
+- the sun's glare/lens flare over the rider, halfpipe walls and the stadium
+  roof (`flare-occlusion-sun.png`: Snow Jam race start);
+- point-light glows and star flares through solid terrain: with the camera
+  pressed against a dark rock face, a pink star flare and blue glows still
+  draw over the rock (`flare-occlusion-rock.png`: Peak 3 freestyle, 0:42).
+
+Everything else renders correctly. The likely common cause is the game's
+visibility test for light sources (GS readback below): if it reports every
+light as fully visible, every glow is drawn unoccluded. Check also whether
+the glow sprites themselves rely on Z testing against the scene (ZTST/ZBUF
+state, Z buffer contents and format, draw order) in case part of the effect
+is a plain depth-test problem.
 
 Findings so far:
 

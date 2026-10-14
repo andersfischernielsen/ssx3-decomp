@@ -50,8 +50,9 @@ the owner's machine at full speed. Progress log and resume instructions:
 Done when: all courses and modes play correctly at 60 fps natively, with no
 misses, and visuals match PCSX2.
 
-Known issues parked by the owner (2026-10-15) so phase 2 can start: sun glare
-not occluded (`../investigation/sun-occlusion.md`); Multi Play needs pad 2
+Known issues parked by the owner (2026-10-15) so phase 2 can start: light
+glows and flares (sun, point lights) show through geometry
+(`../investigation/flare-occlusion.md`); Multi Play needs pad 2
 plugged into the SIO2 model; race ~41 fps headless after the geometry fixes.
 
 ## Phase 2: "Rust-ify": readable, typed source ⬜
@@ -101,6 +102,16 @@ latent readback / CPU fallback), wasm size and speed, NEON → simd128 or scalar
 user-supplied ISO and browser-storage memory card. Phase 3 removes most of
 these. Cheap insurance meanwhile: keep `--unwind` mode working and avoid new
 blocking GPU readbacks.
+
+## Final task (required before the project is called done) ⬜
+
+- **Light glows/flares must be occluded by geometry** (sun glare, point-light
+  glows and star flares currently draw through the rider, walls, roofs and
+  terrain): `../investigation/flare-occlusion.md`. Parked by the owner on
+  2026-10-15 so the Rust-ification could start, but explicitly required.
+  Fix it in whichever phase owns rendering at that point (in the emulated GS
+  path if still present; otherwise in the native renderer) and confirm
+  against PCSX2.
 
 ## Verification (applies to every phase)
 

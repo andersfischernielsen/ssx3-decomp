@@ -193,6 +193,10 @@ results, all VU0 macro ops static. Long-term phases: `roadmap.md`.
 3. **Coverage** (`../investigation/coverage.md`): other courses and event
    types, career progression, Previews, Multi Play, replays.
 
+4. **Final task, parked (owner, 2026-10-15)**: light glows/flares (sun,
+   point lights) draw through geometry; must be fixed before the project is
+   done (`../investigation/flare-occlusion.md`, `roadmap.md` final task).
+
 ## How to resume
 
 ```sh
