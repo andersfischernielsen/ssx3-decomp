@@ -99,6 +99,23 @@ fn main() {
         let regs: Vec<String> = [0x00u32, 0x20, 0x70, 0x80, 0x90, 0xa0, 0xe0].iter().map(|o| format!("{o:#x}={:#x}", c.bus.hw.gs.read_priv(*o))).collect();
         eprintln!("gs priv: {}", regs.join(" "));
     }
+    if let Ok(v) = std::env::var("SSX3_MEMSCAN") {
+        let want = u64::from_str_radix(v.trim_start_matches("0x"), 16).unwrap_or(0);
+        let scan = |name: &str, mem: &[u8]| {
+            let mut hits = 0;
+            for o in (0..mem.len().saturating_sub(16)).step_by(8) {
+                let lo = u64::from_le_bytes(mem[o..o + 8].try_into().unwrap());
+                if lo == want && hits < 20 {
+                    let hi = u64::from_le_bytes(mem[o + 8..o + 16].try_into().unwrap());
+                    eprintln!("[memscan] {name}+{o:#x}: {lo:#018x} next {hi:#018x}");
+                    hits += 1;
+                }
+            }
+        };
+        scan("ram", &c.bus.ram);
+        scan("vu1data", &c.bus.hw.vu1.data);
+        scan("spr", &c.bus.spr);
+    }
     eprintln!("halted: {:?}", c.kernel.halted);
     eprint!("{}", game::dump(&c));
     eprintln!("syscalls: {:?}", c.kernel.syscall_counts.iter().map(|(k, v)| format!("{}={v}", ssx3_ps2::kernel::syscall_name(*k))).collect::<Vec<_>>());

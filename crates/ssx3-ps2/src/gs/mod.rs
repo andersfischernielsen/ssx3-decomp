@@ -465,7 +465,12 @@ impl Gs {
                 r.ctx[c].tex0 = value;
                 self.load_clut(value);
             }
-            0x08 | 0x09 => r.ctx[(addr - 0x08) as usize].clamp = value,
+            0x08 | 0x09 => {
+                if clamp_trace() && (value & 0xC) == 0xC {
+                    eprintln!("[gs] CLAMP_{} = {value:#018x} (region-repeat v)", addr - 7);
+                }
+                r.ctx[(addr - 0x08) as usize].clamp = value
+            }
             0x14 | 0x15 => r.ctx[(addr - 0x14) as usize].tex1 = value,
             0x16 | 0x17 => {
                 let c = (addr - 0x16) as usize;
@@ -660,4 +665,9 @@ impl Gs {
     pub fn display(&self, out: &mut Vec<u32>) -> (u32, u32) {
         display::render(self, out)
     }
+}
+
+fn clamp_trace() -> bool {
+    static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *E.get_or_init(|| std::env::var("SSX3_TRACE_CLAMP").is_ok())
 }

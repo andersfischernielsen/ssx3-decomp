@@ -404,6 +404,19 @@ impl Draw {
 
         let tme = attr & 0x10 != 0;
         let tex0 = ctx.tex0;
+        if tme && tex_trace() {
+            use std::sync::Mutex;
+            static SEEN: Mutex<Option<std::collections::HashSet<(u64, u64, u64)>>> = Mutex::new(None);
+            let mut g = SEEN.lock().unwrap();
+            let set = g.get_or_insert_with(Default::default);
+            if set.len() < 4000 && set.insert((tex0, ctx.clamp, ctx.tex1)) {
+                eprintln!(
+                    "[tex] tbp {:#x} tbw {} psm {:#x} tw {} th {} cbp {:#x} cpsm {:#x} csm {} | clamp {:#x} | tex1 {:#x} | attr {attr:#x}",
+                    tex0 & 0x3fff, (tex0 >> 14) & 0x3f, (tex0 >> 20) & 0x3f, (tex0 >> 26) & 0xf, (tex0 >> 30) & 0xf,
+                    (tex0 >> 37) & 0x3fff, (tex0 >> 51) & 0xf, (tex0 >> 55) & 1, ctx.clamp, ctx.tex1
+                );
+            }
+        }
         let tex = if tme {
             let tbp = (tex0 & 0x3FFF) as u32;
             let tbw = ((tex0 >> 14) & 0x3F) as u32;
@@ -2052,4 +2065,9 @@ fn tri_rows<const TX: u8>(
             pixel_g::<TX>(m, d, &rc, x, fz, frag);
         }
     });
+}
+
+fn tex_trace() -> bool {
+    static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *E.get_or_init(|| std::env::var("SSX3_TRACE_TEX").is_ok())
 }

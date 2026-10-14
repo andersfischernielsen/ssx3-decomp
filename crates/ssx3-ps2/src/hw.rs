@@ -664,6 +664,16 @@ impl Hw {
 
     /// Deliver source data to the channel's peripheral.
     fn dma_sink(&mut self, c: usize, data: &[Qword], ram: &mut [u8], spr: &mut [u8]) {
+        if let Some(want) = watch_qword() {
+            for (k, q) in data.iter().enumerate() {
+                if (*q as u64) == want || ((*q >> 64) as u64) == want || ((*q >> 32) as u64) == want {
+                    eprintln!(
+                        "[dma-watch] ch{c} qword {k}/{} = {q:#034x} madr {:#x} tadr {:#x}",
+                        data.len(), self.ch[c].madr, self.ch[c].tadr
+                    );
+                }
+            }
+        }
         match c {
             ch::VIF0 => {
                 self.vif0.write(data, &mut self.vu0, &mut self.gs);
@@ -763,4 +773,16 @@ impl Hw {
         self.ch[c].chcr = (self.ch[c].chcr & !0x30) | (asp << 4);
         self.ch[c].qwc = 0;
     }
+}
+
+/// Debug: `SSX3_WATCH_QWORD=<hex low64>` logs DMA'd qwords with that low half.
+fn watch_qword() -> Option<u64> {
+    static W: std::sync::OnceLock<Option<u64>> = std::sync::OnceLock::new();
+    *W.get_or_init(|| {
+        std::env::var("SSX3_WATCH_QWORD").ok().and_then(|v| u64::from_str_radix(v.trim_start_matches("0x"), 16).ok())
+    })
+}
+
+pub fn watch_qword_pub() -> Option<u64> {
+    watch_qword()
 }

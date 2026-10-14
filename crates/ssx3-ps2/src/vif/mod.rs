@@ -264,7 +264,22 @@ impl Vif {
         vu.vif_itop = self.itop;
         vu.start(pc);
         let vif1 = self.index == 1;
+        let watch = crate::hw::watch_qword_pub();
+        let mut hit: Option<(usize, u128)> = None;
         let done = vu.run(self.vu_budget, &mut |p: &[Qword]| {
+            if let Some(w) = watch {
+                if let Some((k, q)) = p.iter().enumerate().find(|(_, q)| **q as u64 == w) {
+                    if hit.is_none() {
+                        static ONCE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+                        if !ONCE.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                            for (i, x) in p.iter().enumerate().take(48) {
+                                eprintln!("[vu-pkt] {i:3}: {x:#034x}");
+                            }
+                        }
+                    }
+                    hit = Some((k, *q));
+                }
+            }
             if vif1 {
                 if crate::gifstats::enabled() {
                     crate::gifstats::scan(p);
@@ -272,6 +287,9 @@ impl Vif {
                 gs.gif_write(1, p)
             }
         });
+        if let Some((k, q)) = hit {
+            eprintln!("[vu-watch] vu{} program entry {pc:#06x} hash {:#018x} kicked {q:#034x} at packet qword {k}", self.index, vu.segment_hash_pub(pc));
+        }
         if !done {
             eprintln!(
                 "[vif{}] VU program at {pc:#06x} exceeded {} pairs; stopped",

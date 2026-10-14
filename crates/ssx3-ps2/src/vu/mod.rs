@@ -430,6 +430,11 @@ impl Vu {
     }
 
     /// The translated function covering `pc`, if any.
+    /// Debug: hash of the upload containing `pc` (0 if none).
+    pub fn segment_hash_pub(&mut self, pc: u32) -> u64 {
+        self.segment_hash(pc).unwrap_or(0)
+    }
+
     pub fn lookup(&mut self, pc: u32) -> Option<ProgramFn> {
         let h = self.segment_hash(pc)?;
         let e = self.programs.get(&h)?;
@@ -709,6 +714,9 @@ impl Vu {
     #[inline]
     fn vi_br(&self, r: u8) -> u16 {
         let r = r & 15;
+        if !vi_backup_enabled() {
+            return self.vi[r as usize];
+        }
         match self.vi_backup {
             Some((b, old)) if b == r => old,
             _ => self.vi[r as usize],
@@ -1419,3 +1427,12 @@ impl Vu {
 
 /// Clamp helper exposed for tests and the EE FPU (`MAX` = largest PS2 float).
 pub const PS2_MAX: u32 = MAX;
+
+/// The branch-reads-old-VI quirk. Off by default: ps2-web-recomp (which runs
+/// GT4/GoW2 correctly) has no such behaviour, and with it SSX 3's terrain VU1
+/// program overruns its vertex loop by one iteration. SSX3_VU_VI_BACKUP=1
+/// re-enables it for experiments.
+fn vi_backup_enabled() -> bool {
+    static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *E.get_or_init(|| std::env::var("SSX3_VU_VI_BACKUP").is_ok_and(|v| v != "0"))
+}
