@@ -44,3 +44,11 @@ Next steps:
    pixels into a flare intensity.
 3. Compare with PCSX2 (PINE: the same buffer in PCSX2 RAM during a race) to
    confirm what the data should look like.
+
+Note (2026-10-15): in PCSX2 (paused in a Snow Jam race, pause menu) the same
+address 0x1467200 holds float records (e.g. 11.0, 5.0, 142.0, 16.0, 8.0) and
+pointers like 0x00d63304, not pixel data. So either the download target is a
+heap buffer that sits elsewhere in PCSX2's run (heap layouts differ between
+runs), or it is reused while paused. Before comparing contents, find the
+destination pointer in game code (the VIF1 download's MADR source) and read
+it from PCSX2 at the same game state.
