@@ -117,3 +117,35 @@ pub(super) fn render(gs: &Gs, out: &mut Vec<u32>) -> (u32, u32) {
     }
     (w, h)
 }
+
+/// The display as GPU parameters (`gpu::DisplaySetup`), or `Err((w, h))`
+/// when nothing is displayed (black at that size).
+pub(super) fn gpu_setup(gs: &Gs) -> Result<super::gpu::DisplaySetup, (u32, u32)> {
+    let pmode = gs.pr.pmode;
+    let en = [pmode & 1 != 0, pmode & 2 != 0];
+    let c = [circuit(gs, 0), circuit(gs, 1)];
+    let primary = if en[0] && c[0].is_some() {
+        0
+    } else if en[1] && c[1].is_some() {
+        1
+    } else {
+        return Err(c[0].as_ref().map(|c| (c.w, c.h)).unwrap_or((640, 448)));
+    };
+    let p = c[primary].as_ref().unwrap();
+    let merge = en[0] && en[1] && c[0].is_some() && c[1].is_some();
+    let words = |c: &Circuit| super::gpu::circuit_words(&c.surf, c.is16, c.dbx, c.dby, c.w, c.h);
+    let mut circuits = [0u32; 16];
+    circuits[..8].copy_from_slice(&words(p));
+    if let Some(c2) = &c[1] {
+        circuits[8..].copy_from_slice(&words(c2));
+    }
+    Ok(super::gpu::DisplaySetup {
+        w: p.w,
+        h: p.h,
+        row_div: if gs.pr.smode2 & 3 == 3 { 2 } else { 1 },
+        flags: merge as u32 | ((pmode & 0x80 != 0) as u32) << 1 | ((pmode & 0x20 != 0) as u32) << 2,
+        alp: ((pmode >> 8) & 0xFF) as u32,
+        bg: gs.pr.bgcolor as u32 & 0xFF_FFFF,
+        circuits,
+    })
+}

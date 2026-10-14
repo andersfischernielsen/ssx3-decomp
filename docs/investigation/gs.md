@@ -9,6 +9,9 @@ Also added: `sync`, `set_deferred`, `vram_written`, `batch_stats`, and trace
 capture (`start_capture`/`finish_capture`, `gs::capture`). See
 `gs-performance.md`.
 
+A GPU rasterization backend (wgpu compute, `SSX3_GS=gpu`) shares
+everything except the pixel pipeline; see `gs-gpu.md`.
+
 The swizzle tables and several behaviours are ported from
 [ps2-web-recomp](https://github.com/snuri00/ps2-web-recomp) (MIT;
 `runtime/src/gs/{gs,gif,raster}.cpp`). Those in turn match PCSX2 GSdx.

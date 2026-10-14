@@ -13,6 +13,8 @@ Each file is a topic; keep them factual and dated where it matters.
 | [`codegen.md`](codegen.md) | R5900 → Rust generation and the runtime/SDK boundary |
 | [`playability.md`](playability.md) | Distance to playable: subsystem status and calibration |
 | [`limitations.md`](limitations.md) | Known gaps in the current approach |
+| [`gs.md`](gs.md), [`gs-performance.md`](gs-performance.md) | Software GS and its parallel rasterizer |
+| [`gs-gpu.md`](gs-gpu.md) | GPU (wgpu compute) GS backend, `SSX3_GS=gpu` |
 
 Conventions: addresses are EE virtual addresses in hex; "the image" means
 `orig/SLUS_207.72`.

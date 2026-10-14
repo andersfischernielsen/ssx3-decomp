@@ -140,6 +140,17 @@ impl Region {
         y0
     }
 
+    /// Pages all of whose blocks are in the set.
+    pub(crate) fn full_pages(&self) -> Pages {
+        let mut full = Pages::default();
+        each_page(&self.pages, |p| {
+            if self.blocks[p >> 1] & half(p) == half(p) {
+                full.add(p as u32);
+            }
+        });
+        full
+    }
+
     pub(crate) fn union(&mut self, o: &Region) {
         let blocks = &mut self.blocks;
         each_page(&o.pages, |p| blocks[p >> 1] |= o.blocks[p >> 1] & half(p));

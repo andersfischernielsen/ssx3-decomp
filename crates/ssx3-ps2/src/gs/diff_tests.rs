@@ -6,25 +6,25 @@ use super::swizzle::*;
 use super::{ref_raster, Gs, Vertex};
 
 /// xorshift64*
-struct Rng(u64);
+pub(super) struct Rng(pub(super) u64);
 
 impl Rng {
-    fn next(&mut self) -> u64 {
+    pub(super) fn next(&mut self) -> u64 {
         self.0 ^= self.0 >> 12;
         self.0 ^= self.0 << 25;
         self.0 ^= self.0 >> 27;
         self.0.wrapping_mul(0x2545_F491_4F6C_DD1D)
     }
-    fn below(&mut self, n: u64) -> u64 {
+    pub(super) fn below(&mut self, n: u64) -> u64 {
         self.next() % n
     }
-    fn pick<T: Copy>(&mut self, v: &[T]) -> T {
+    pub(super) fn pick<T: Copy>(&mut self, v: &[T]) -> T {
         v[self.below(v.len() as u64) as usize]
     }
-    fn chance(&mut self, pct: u64) -> bool {
+    pub(super) fn chance(&mut self, pct: u64) -> bool {
         self.below(100) < pct
     }
-    fn f32_in(&mut self, lo: f32, hi: f32) -> f32 {
+    pub(super) fn f32_in(&mut self, lo: f32, hi: f32) -> f32 {
         lo + (hi - lo) * (self.below(1 << 24) as f32 / (1 << 24) as f32)
     }
 }
@@ -35,7 +35,7 @@ const TEX_PSMS: &[u32] = &[
     PSMZ32, PSMZ16,
 ];
 
-fn random_state(r: &mut Rng, gs: &mut Gs, fbp: u64, fbw: u64) {
+pub(super) fn random_state(r: &mut Rng, gs: &mut Gs, fbp: u64, fbw: u64) {
     let ctx = 0u8; // context 1 registers; PRIM.CTXT picks
     for c in 0..2u8 {
         let fpsm = r.pick(FB_PSMS) as u64;
@@ -100,7 +100,7 @@ fn random_state(r: &mut Rng, gs: &mut Gs, fbp: u64, fbw: u64) {
     gs.write_reg(0x22, r.pick(&[0u64, 0, 2, 3]));
 }
 
-fn random_vertex(r: &mut Rng, w: u32) -> Vertex {
+pub(super) fn random_vertex(r: &mut Rng, w: u32) -> Vertex {
     let span = (w + 64) * 16;
     Vertex {
         x: r.below(span as u64) as u32 + if r.chance(50) { 0 } else { 8 << 4 },
