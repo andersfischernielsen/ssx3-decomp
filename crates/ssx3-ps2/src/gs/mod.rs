@@ -21,6 +21,7 @@ pub mod capture;
 mod display;
 pub mod gpu;
 mod gif;
+pub mod mtgs;
 mod pool;
 mod raster;
 mod region;
@@ -31,6 +32,8 @@ mod transfer;
 #[cfg(test)]
 mod diff_tests;
 #[cfg(test)]
+mod mtgs_tests;
+#[cfg(test)]
 mod ref_raster;
 #[cfg(test)]
 mod tests;
@@ -40,6 +43,7 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use swizzle::Surface;
+pub use mtgs::{Mtgs, MtgsStats};
 
 /// CSR event bits.
 pub const CSR_SIGNAL: u64 = 1 << 0;
@@ -182,6 +186,8 @@ pub struct Gs {
     deferred: bool,
     /// Blocks the active host->local transfer writes (computed on demand).
     pub(crate) xfer_region: Option<Box<region::Region>>,
+    /// Scratch for decoded host->local pixel values.
+    pub(crate) xfer_vals: Vec<u32>,
     /// Decoded textures (see `texcache`).
     pub(crate) texcache: texcache::TexCache,
     /// Count of primitives drawn (statistics).
@@ -277,6 +283,7 @@ impl Gs {
             batch: batch::Batch::default(),
             deferred: false,
             xfer_region: None,
+            xfer_vals: Vec::new(),
             texcache: texcache::TexCache::default(),
             prims_drawn: 0,
             capture: None,
@@ -486,8 +493,23 @@ impl Gs {
         if crate::trace_path3() {
             eprintln!("[p3] gif path {path} {} qw", data.len());
         }
-        for &q in data {
-            self.gif_qword(path, q);
+        let mut i = 0;
+        while i < data.len() {
+            let p = &mut self.paths[path];
+            if p.active && p.flg >= 2 {
+                // IMAGE data: hand the whole run to the transfer at once
+                // (the same as qword by qword: nothing else happens between).
+                let n = ((p.nloop - p.loop_) as usize).min(data.len() - i);
+                p.loop_ += n as u32;
+                if p.loop_ >= p.nloop {
+                    p.active = false;
+                }
+                self.transfer_bytes(qword_bytes(&data[i..i + n]));
+                i += n;
+            } else {
+                self.gif_qword(path, data[i]);
+                i += 1;
+            }
         }
         if !self.deferred {
             self.flush_wait();
@@ -936,6 +958,14 @@ impl Gs {
         }
         display::render(self, out)
     }
+}
+
+/// The bytes of `q` in memory order (little-endian qwords).
+#[cfg(target_endian = "little")]
+fn qword_bytes(q: &[Qword]) -> &[u8] {
+    // SAFETY: u128 has no padding; on little-endian targets its memory
+    // layout is `to_le_bytes`.
+    unsafe { std::slice::from_raw_parts(q.as_ptr() as *const u8, q.len() * 16) }
 }
 
 fn clamp_trace() -> bool {

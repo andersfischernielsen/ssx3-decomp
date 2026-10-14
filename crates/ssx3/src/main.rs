@@ -36,6 +36,11 @@ struct App {
     /// Pad 1 buttons held on the keyboard / on a game controller (libpad bits).
     keys: u16,
     gilrs: Option<gilrs::Gilrs>,
+    /// Ticket of the previous frame's display request (MTGS): the window
+    /// shows frame N-1 (or newer) while the GS thread finishes frame N.
+    pending_display: Option<u64>,
+    /// The GS's wgpu device (GPU backend).
+    gpu_ctx: Option<&'static ssx3_ps2::gs::gpu::GpuContext>,
 }
 
 /// libpad button bit for a controller button.
@@ -133,7 +138,8 @@ impl ApplicationHandler for App {
             .with_title("SSX 3 (USA) — native recompilation")
             .with_inner_size(winit::dpi::LogicalSize::new(960.0, 672.0));
         let window = Arc::new(event_loop.create_window(attrs).expect("window"));
-        let gs = self.cpu.bus.hw.gs.gpu_context();
+        let gs = self.cpu.bus.hw.gs.core().gpu_context();
+        self.gpu_ctx = gs;
         self.presenter = Some(pollster::block_on(Presenter::new(window.clone(), gs)));
         self.window = Some(window);
     }
@@ -149,7 +155,7 @@ impl ApplicationHandler for App {
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(code) = event.physical_key {
                     if code == KeyCode::F12 && event.state == ElementState::Pressed {
-                        let (w, h) = self.cpu.bus.hw.gs.display(&mut self.frame);
+                        let (w, h) = self.cpu.bus.hw.gs.core().display(&mut self.frame);
                         let path = format!("/tmp/ssx3-shot-{}.png", self.shots);
                         self.shots += 1;
                         let _ = std::fs::write(&path, png::encode(w, h, &self.frame));
@@ -182,20 +188,28 @@ impl ApplicationHandler for App {
                     return;
                 }
                 let gs = &mut self.cpu.bus.hw.gs;
-                let ctx = gs.gpu_context();
                 match self.presenter.as_mut() {
-                    // GPU GS: the frame stays on the GPU.
-                    Some(p) if p.same_device(ctx) => match gs.display_gpu() {
-                        Some(frame) => {
-                            let _ = p.render_gpu(&frame);
+                    // GPU GS: the frame stays on the GPU. The display pass
+                    // is queued on the GS thread right behind this frame's
+                    // drawing; the previous request's frame (or a newer
+                    // one) is presented, so the guest never waits for the
+                    // GS thread to finish the frame it just produced.
+                    Some(p) if p.same_device(self.gpu_ctx) => {
+                        let ticket = gs.request_display();
+                        let prev = self.pending_display.replace(ticket).unwrap_or(ticket);
+                        match gs.take_display(prev) {
+                            Some(Some(frame)) => {
+                                let _ = p.render_gpu(&frame);
+                            }
+                            Some(None) => {
+                                let (w, h) = gs.core().display(&mut self.frame);
+                                let _ = p.render(w, h, &self.frame);
+                            }
+                            None => {} // nothing new: keep the last image
                         }
-                        None => {
-                            let (w, h) = gs.display(&mut self.frame);
-                            let _ = p.render(w, h, &self.frame);
-                        }
-                    },
+                    }
                     Some(p) => {
-                        let (w, h) = gs.display(&mut self.frame);
+                        let (w, h) = gs.core().display(&mut self.frame);
                         let _ = p.render(w, h, &self.frame);
                     }
                     None => {}
@@ -240,6 +254,8 @@ fn main() {
         shots: 0,
         fps_mark: Instant::now(),
         keys: 0,
+        pending_display: None,
+        gpu_ctx: None,
         gilrs: gilrs::Gilrs::new().map_err(|e| eprintln!("no game controller support: {e}")).ok(),
     };
     if let Err(e) = event_loop.run_app(&mut app) {

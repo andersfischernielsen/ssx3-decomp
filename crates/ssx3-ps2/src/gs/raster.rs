@@ -135,6 +135,30 @@ impl SurfRow {
         m.wr(w, v);
     }
 
+    /// `write` of `vals` to pixels `x0, x0 + 1, ...` of this row, with the
+    /// format dispatch done once per run (host->local uploads).
+    pub(crate) fn write_run(&self, m: Mem, x0: u32, vals: &[u32]) {
+        macro_rules! run {
+            (|$slot:ident, $s:ident, $v:ident| $e:expr) => {
+                for (j, &$v) in vals.iter().enumerate() {
+                    let (w, $s) = self.locate(x0.wrapping_add(j as u32));
+                    let $slot = m.rd(w);
+                    m.wr(w, $e);
+                }
+            };
+        }
+        match self.kind {
+            Kind::W32 => run!(|_slot, _s, v| v),
+            Kind::W24 => run!(|slot, _s, v| (slot & 0xFF00_0000) | (v & 0x00FF_FFFF)),
+            Kind::H16 => run!(|slot, s, v| (slot & !(0xFFFF << s)) | ((v & 0xFFFF) << s)),
+            Kind::B8 => run!(|slot, s, v| (slot & !(0xFF << s)) | ((v & 0xFF) << s)),
+            Kind::N4 => run!(|slot, s, v| (slot & !(0xF << s)) | ((v & 0xF) << s)),
+            Kind::Hi8 => run!(|slot, _s, v| (slot & 0x00FF_FFFF) | (v << 24)),
+            Kind::Hl4 => run!(|slot, _s, v| (slot & 0xF0FF_FFFF) | ((v & 0xF) << 24)),
+            Kind::Hh4 => run!(|slot, _s, v| (slot & 0x0FFF_FFFF) | ((v & 0xF) << 28)),
+        }
+    }
+
     #[inline(always)]
     fn write_masked_at(&self, m: Mem, at: (usize, u32), value: u32, keep: u32) {
         if keep == 0 {
@@ -1600,7 +1624,8 @@ pub(crate) enum Shape {
         dtdy: f64,
         base: Frag,
     },
-    Tri(Box<TriSetup>),
+    /// Inline, not boxed: a heap allocation per triangle was measurable.
+    Tri(TriSetup),
 }
 
 /// A primitive ready to be rasterized.
@@ -1781,7 +1806,7 @@ pub(crate) fn setup(d: &Draw, draw: u32, prim: u32, verts: &[Vertex]) -> Option<
     }
 }
 
-fn tri_setup(d: &Draw, verts: &[Vertex]) -> Option<(i32, i32, i32, Box<TriSetup>)> {
+fn tri_setup(d: &Draw, verts: &[Vertex]) -> Option<(i32, i32, i32, TriSetup)> {
     let mut p = [(0i64, 0i64); 3];
     let mut a = [[0.0f64; NATTR]; 3];
     for i in 0..3 {
@@ -1859,7 +1884,7 @@ fn tri_setup(d: &Draw, verts: &[Vertex]) -> Option<(i32, i32, i32, Box<TriSetup>
         by0,
         by1,
         bx1,
-        Box::new(TriSetup {
+        TriSetup {
             bx0,
             bx1,
             by0,
@@ -1870,7 +1895,7 @@ fn tri_setup(d: &Draw, verts: &[Vertex]) -> Option<(i32, i32, i32, Box<TriSetup>
             dadx,
             dady,
             oy,
-        }),
+        },
     ))
 }
 

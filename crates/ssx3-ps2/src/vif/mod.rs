@@ -29,7 +29,7 @@
 #[cfg(test)]
 mod tests;
 
-use crate::gs::Gs;
+use crate::gs::Mtgs as Gs;
 use crate::vu::Vu;
 use crate::Qword;
 
