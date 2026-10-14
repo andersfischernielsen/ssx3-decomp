@@ -30,6 +30,8 @@ enum Edge {
 }
 
 enum Term {
+    /// Computed jump within the function: `match t { targets… , _ => out }`.
+    Switch { prelude: String, targets: Vec<u32>, other: String },
     Goto(Edge),
     Cond { prelude: String, cond: String, then_extra: String, taken: Edge, fall: Edge },
     Leave(String),
@@ -61,6 +63,7 @@ pub fn emit_structured(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, exter
     // fallthrough of every branch.
     let mut starts: BTreeSet<u32> = BTreeSet::new();
     starts.insert(f.start);
+    let mut has_switch = false;
     for &(pc, w) in &insns {
         match classify_pub(pc, w) {
             Ctl::Branch { target, link, .. } => {
@@ -76,13 +79,24 @@ pub fn emit_structured(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, exter
                     starts.insert(target);
                 }
             }
-            Ctl::JumpReg { rs } if rs != 31 => return None, // jump table
+            Ctl::JumpReg { rs } if rs != 31 => has_switch = true,
             _ => {}
         }
         if !is_lowerable(pc, w) {
             return None;
         }
     }
+
+    // Jump-table targets: in-function addresses that data refers to.
+    let switch_targets: Vec<u32> = if has_switch {
+        ctx.data_refs.range(f.start..f.end).copied().filter(|a| inside(*a)).collect()
+    } else {
+        Vec::new()
+    };
+    if has_switch && switch_targets.is_empty() {
+        return None;
+    }
+    starts.extend(switch_targets.iter().copied());
 
     // Build blocks.
     let mut blocks: BTreeMap<u32, Block> = BTreeMap::new();
@@ -230,12 +244,22 @@ pub fn emit_structured(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, exter
                 }
                 Ctl::JumpReg { rs } => {
                     count += delay.is_some() as usize;
-                    debug_assert_eq!(rs, 31);
                     let _ = writeln!(code, "let t = c.g[{rs}][0] as u32;");
                     if !ds.is_empty() {
                         let _ = writeln!(code, "{ds}");
                     }
-                    term = Term::Leave("c.pc = t; return;".into());
+                    if rs == 31 {
+                        term = Term::Leave("c.pc = t; return;".into());
+                    } else {
+                        term = Term::Switch {
+                            prelude: String::new(),
+                            targets: switch_targets.clone(),
+                            other: format!(
+                                "ssx3_ps2::machine::jump_out(c, t, {:#010x}, {:#010x}); return;",
+                                f.start, f.end
+                            ),
+                        };
+                    }
                     break;
                 }
                 Ctl::Stop => {
@@ -265,6 +289,7 @@ pub fn emit_structured(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, exter
                     v.push(*t);
                 }
             }
+            Term::Switch { targets, .. } => v.extend(targets.iter().copied()),
             _ => {}
         }
         v
@@ -420,6 +445,19 @@ impl Gen<'_> {
                         let _ = writeln!(out, "{s}");
                     }
                     Term::Goto(e) => self.edge(x, e, out, depth),
+                    Term::Switch { prelude, targets, other } => {
+                        if !prelude.is_empty() {
+                            let _ = writeln!(out, "{prelude}");
+                        }
+                        let _ = writeln!(out, "match t {{");
+                        for &y in targets {
+                            let _ = writeln!(out, "{y:#010x} => {{");
+                            self.edge(x, &Edge::To(y), out, depth + 1);
+                            let _ = writeln!(out, "}}");
+                        }
+                        let _ = writeln!(out, "_ => {{ {other} }}");
+                        let _ = writeln!(out, "}}");
+                    }
                     Term::Cond { prelude, cond, then_extra, taken, fall } => {
                         if !prelude.is_empty() {
                             let _ = writeln!(out, "{prelude}");
