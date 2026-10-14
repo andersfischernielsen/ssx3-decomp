@@ -55,78 +55,97 @@ fn pack(sign: u32, e: i32, m: u32, exc: &mut Exc) -> u32 {
     }
 }
 
-/// a + b, truncating.
+/// a + b, truncating (one guard bit, no sticky bit).
+///
+/// Branch-free form of [`add_ref`] (the straightforward port, kept as the
+/// test reference): both paths are computed and the result selected, so
+/// the hot FMAC loop has no data-dependent branches.
+#[cfg_attr(not(debug_assertions), inline(always))]
 pub fn add(a: u32, b: u32) -> (u32, Exc) {
-    let mut exc = Exc::default();
-    let mut a = norm_in(a);
-    let mut b = norm_in(b);
-    let mut aa = a & ABS;
-    let mut ba = b & ABS;
-    if ba == 0 {
-        return (if aa != 0 { a } else { a & b }, exc);
-    }
-    if aa == 0 {
-        return (b, exc);
-    }
-    if ba > aa {
-        std::mem::swap(&mut a, &mut b);
-        std::mem::swap(&mut aa, &mut ba);
-    }
-    let mut e = (aa >> 23) as i32;
-    let diff = e - (ba >> 23) as i32;
-    let mut ma = mantissa(aa) << 1;
-    let mb = if diff > 25 {
-        0
+    let a = norm_in(a);
+    let b = norm_in(b);
+    let aa = a & ABS;
+    let ba = b & ABS;
+    // Larger magnitude first.
+    let swap = ba > aa;
+    let hi = if swap { b } else { a };
+    let lo = if swap { a } else { b };
+    let ha = hi & ABS;
+    let la = lo & ABS;
+    let e = (ha >> 23) as i32;
+    let diff = e - (la >> 23) as i32;
+    let ma = mantissa(ha) << 1;
+    let ml = mantissa(la) << 1;
+    let mb = if diff > 25 { 0 } else { ml >> (diff as u32 & 31) };
+    let sub = (a ^ b) & SIGN != 0;
+    // Subtraction: renormalise left.
+    let ms = ma - mb;
+    let lz = ms.leading_zeros() as i32 - 7;
+    let ms = ms << (lz as u32 & 31);
+    // Addition: one carry bit.
+    let mad = ma + mb;
+    let carry = (mad >> 25) & 1;
+    let (m, e) = if sub {
+        (ms, e - lz)
     } else {
-        (mantissa(ba) << 1) >> diff
+        (mad >> carry, e + carry as i32)
     };
-    if (a ^ b) & SIGN != 0 {
-        ma -= mb;
-        if ma == 0 {
-            return (0, exc);
+    let sign = hi & SIGN;
+    let o = e >= 255;
+    let u = e <= 0;
+    let normal = sign | (((e as u32) & 0xff) << 23) | ((m >> 1) & 0x7f_ffff);
+    let packed = if o { sign | MAX } else if u { sign } else { normal };
+    // Exact cancellation and zero operands bypass rounding and flags.
+    let cancel = sub && ma == mb;
+    let special = ba == 0 || aa == 0 || cancel;
+    let sp = if ba == 0 {
+        if aa != 0 {
+            a
+        } else {
+            a & b
         }
-        let shift = ma.leading_zeros() as i32 - 7;
-        ma <<= shift;
-        e -= shift;
+    } else if aa == 0 {
+        b
     } else {
-        ma += mb;
-        if ma & 0x200_0000 != 0 {
-            ma >>= 1;
-            e += 1;
-        }
+        0
+    };
+    if special {
+        (sp, Exc::default())
+    } else {
+        (packed, Exc { o, u })
     }
-    let r = pack(a & SIGN, e, ma >> 1, &mut exc);
-    (r, exc)
 }
 
+#[cfg_attr(not(debug_assertions), inline(always))]
 pub fn sub(a: u32, b: u32) -> (u32, Exc) {
     add(a, b ^ SIGN)
 }
 
-/// a * b, truncating.
+/// a * b, truncating. Branch-free form of [`mul_ref`].
+#[cfg_attr(not(debug_assertions), inline(always))]
 pub fn mul(a: u32, b: u32) -> (u32, Exc) {
-    let mut exc = Exc::default();
     let a = norm_in(a);
     let b = norm_in(b);
     let sign = (a ^ b) & SIGN;
     let ea = exponent(a) as i32;
     let eb = exponent(b) as i32;
+    let m = mantissa(a) as u64 * mantissa(b) as u64;
+    let top = (m >> 47) as u32 & 1;
+    let m = (m >> (23 + top)) as u32;
+    let e = ea + eb - 127 + top as i32;
+    let o = e >= 255;
+    let u = e <= 0;
+    let normal = sign | (((e as u32) & 0xff) << 23) | (m & 0x7f_ffff);
+    let packed = if o { sign | MAX } else if u { sign } else { normal };
     if ea == 0 || eb == 0 {
-        return (sign, exc);
-    }
-    let mut m = mantissa(a) as u64 * mantissa(b) as u64;
-    let mut e = ea + eb - 127;
-    if m >> 47 != 0 {
-        m >>= 24;
-        e += 1;
+        (sign, Exc::default())
     } else {
-        m >>= 23;
+        (packed, Exc { o, u })
     }
-    let r = pack(sign, e, m as u32, &mut exc);
-    (r, exc)
 }
 
 /// acc + a*b (product truncated first, as the FMAC does).
+#[cfg_attr(not(debug_assertions), inline(always))]
 pub fn madd(acc: u32, a: u32, b: u32) -> (u32, Exc) {
     let (p, e1) = mul(a, b);
     let (r, e2) = add(acc, p);
@@ -140,6 +159,7 @@ pub fn madd(acc: u32, a: u32, b: u32) -> (u32, Exc) {
 }
 
 /// acc - a*b.
+#[cfg_attr(not(debug_assertions), inline(always))]
 pub fn msub(acc: u32, a: u32, b: u32) -> (u32, Exc) {
     let (p, e1) = mul(a, b);
     let (r, e2) = sub(acc, p);
@@ -312,6 +332,77 @@ pub fn efu(v: f64) -> u32 {
     from_f64(v)
 }
 
+// ---- reference implementations (differential tests) ----
+
+#[doc(hidden)]
+/// a + b, truncating (straightforward port; reference for [`add`]).
+pub fn add_ref(a: u32, b: u32) -> (u32, Exc) {
+    let mut exc = Exc::default();
+    let mut a = norm_in(a);
+    let mut b = norm_in(b);
+    let mut aa = a & ABS;
+    let mut ba = b & ABS;
+    if ba == 0 {
+        return (if aa != 0 { a } else { a & b }, exc);
+    }
+    if aa == 0 {
+        return (b, exc);
+    }
+    if ba > aa {
+        std::mem::swap(&mut a, &mut b);
+        std::mem::swap(&mut aa, &mut ba);
+    }
+    let mut e = (aa >> 23) as i32;
+    let diff = e - (ba >> 23) as i32;
+    let mut ma = mantissa(aa) << 1;
+    let mb = if diff > 25 {
+        0
+    } else {
+        (mantissa(ba) << 1) >> diff
+    };
+    if (a ^ b) & SIGN != 0 {
+        ma -= mb;
+        if ma == 0 {
+            return (0, exc);
+        }
+        let shift = ma.leading_zeros() as i32 - 7;
+        ma <<= shift;
+        e -= shift;
+    } else {
+        ma += mb;
+        if ma & 0x200_0000 != 0 {
+            ma >>= 1;
+            e += 1;
+        }
+    }
+    let r = pack(a & SIGN, e, ma >> 1, &mut exc);
+    (r, exc)
+}
+
+#[doc(hidden)]
+/// a * b, truncating (reference for [`mul`]).
+pub fn mul_ref(a: u32, b: u32) -> (u32, Exc) {
+    let mut exc = Exc::default();
+    let a = norm_in(a);
+    let b = norm_in(b);
+    let sign = (a ^ b) & SIGN;
+    let ea = exponent(a) as i32;
+    let eb = exponent(b) as i32;
+    if ea == 0 || eb == 0 {
+        return (sign, exc);
+    }
+    let mut m = mantissa(a) as u64 * mantissa(b) as u64;
+    let mut e = ea + eb - 127;
+    if m >> 47 != 0 {
+        m >>= 24;
+        e += 1;
+    } else {
+        m >>= 23;
+    }
+    let r = pack(sign, e, m as u32, &mut exc);
+    (r, exc)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -352,5 +443,54 @@ mod tests {
         assert_eq!(to_fixed(f(-1e20), 0), 0x8000_0000);
         assert_eq!(from_fixed(28, 4), f(1.75));
         assert_eq!(from_fixed(-3, 0), f(-3.0));
+    }
+
+    /// The branch-free `add`/`mul` against the straightforward ports, on
+    /// random words and on operands built to hit every path (equal and
+    /// nearby exponents, cancellation, zeros, denormals, exponent 255,
+    /// overflow and underflow). SSX3_FLOAT_ITERS raises the count.
+    #[test]
+    fn branch_free_matches_reference() {
+        let iters: u64 = std::env::var("SSX3_FLOAT_ITERS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(400_000);
+        let mut x: u64 = 0x9e37_79b9_7f4a_7c15;
+        let mut next = move || {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            x
+        };
+        let word = |r: u64, near: u32| -> u32 {
+            let sign = ((r >> 1) as u32 & 1) << 31;
+            let exp = match r % 8 {
+                0 => 0,
+                1 => 255,
+                2 => 1 + (r >> 8) as u32 % 3,
+                3 => 252 + (r >> 8) as u32 % 3,
+                _ => (near as i32 + ((r >> 8) % 61) as i32 - 30).clamp(0, 255) as u32,
+            };
+            let man = match (r >> 16) % 4 {
+                0 => 0,
+                1 => 0x7f_ffff,
+                _ => (r >> 24) as u32 & 0x7f_ffff,
+            };
+            sign | exp << 23 | man
+        };
+        for i in 0..iters {
+            let (r1, r2, r3) = (next(), next(), next());
+            let (a, b) = if i % 4 == 0 {
+                (r1 as u32, r2 as u32)
+            } else {
+                let near = (r3 % 256) as u32;
+                (word(r1, near), word(r2, near))
+            };
+            assert_eq!(add(a, b), add_ref(a, b), "add {a:#010x} {b:#010x}");
+            assert_eq!(mul(a, b), mul_ref(a, b), "mul {a:#010x} {b:#010x}");
+            // Exact cancellation and sign-of-zero cases.
+            assert_eq!(add(a, a ^ SIGN), add_ref(a, a ^ SIGN));
+            assert_eq!(add(a, a), add_ref(a, a));
+        }
     }
 }

@@ -393,6 +393,25 @@ fn main() {
             }
             println!("{hits} kicked packets rewritten later in the same program");
         }
+        "hot" => {
+            // Executed pairs per (program, pc), hottest first.
+            let mut hit: BTreeMap<(u64, u32), u64> = BTreeMap::new();
+            let mut total = 0u64;
+            for r in &recs {
+                let mut vu = r.setup();
+                vu.budget = 4_000_000;
+                reference::run_traced(&mut vu, r.pc, &mut |_| {}, &mut |_, pc| {
+                    *hit.entry((r.hash, pc)).or_default() += 1;
+                    total += 1;
+                });
+            }
+            let mut v: Vec<_> = hit.into_iter().collect();
+            v.sort_by(|a, b| b.1.cmp(&a.1));
+            let n: usize = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(60);
+            for ((h, pc), c) in v.iter().take(n) {
+                println!("{h:016x} {pc:#06x} {c:9} {:5.2}%", 100.0 * *c as f64 / total as f64);
+            }
+        }
         "cover" => {
             // Executed pairs per program over all records (reference tracer).
             let mut hit: BTreeMap<u64, std::collections::BTreeSet<u32>> = BTreeMap::new();
@@ -427,10 +446,94 @@ fn main() {
                 );
             }
         }
+        "digest" => {
+            // One line per record: FNV-1a over everything the replay
+            // produces (kicks, end state, data, pairs, cycles, errors,
+            // visible flags). Diff two runs to check a VU change is exact.
+            for (i, r) in recs.iter().enumerate() {
+                let c0 = 0u64;
+                let mut vu = r.setup();
+                vu.instant_qp = ref_model();
+                let c0 = c0 + vu.cycle;
+                let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+                let eat = |h: &mut u64, b: &[u8]| {
+                    for x in b {
+                        *h ^= *x as u64;
+                        *h = h.wrapping_mul(0x100_0000_01b3);
+                    }
+                };
+                let mut kh: u64 = 0xcbf2_9ce4_8422_2325;
+                let mut nk = 0u64;
+                vu.run(4_000_000, &mut |p: &[Qword]| {
+                    nk += 1;
+                    for q in p {
+                        eat(&mut kh, &q.to_le_bytes());
+                    }
+                    eat(&mut kh, &(p.len() as u64).to_le_bytes());
+                });
+                let e = ArchState::of(&vu);
+                eat(&mut h, &kh.to_le_bytes());
+                eat(&mut h, &nk.to_le_bytes());
+                for v in e.vf.iter().chain(std::iter::once(&e.acc)) {
+                    for x in v {
+                        eat(&mut h, &x.to_le_bytes());
+                    }
+                }
+                for x in e.vi {
+                    eat(&mut h, &x.to_le_bytes());
+                }
+                for x in [e.q, e.p, e.i, e.r, e.mac, e.status, e.clip, e.tpc, vu.vis_mac, vu.vis_status, vu.vis_clip] {
+                    eat(&mut h, &x.to_le_bytes());
+                }
+                eat(&mut h, &vu.data);
+                for x in [vu.pairs, vu.cycle - c0, vu.errors, vu.running as u64] {
+                    eat(&mut h, &x.to_le_bytes());
+                }
+                println!("{i} {h:016x} pairs {} cycles {}", vu.pairs, vu.cycle - c0);
+            }
+        }
+        "bench" => {
+            // VU-only throughput: replay every record `iters` times.
+            let iters: usize = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(5);
+            let mut best = f64::MAX;
+            let mut pairs = 0u64;
+            for _ in 0..iters {
+                // Hash the code segments up front (cached in-game until the
+                // next upload) so only execution is timed.
+                let vus: Vec<Vu> = recs
+                    .iter()
+                    .map(|r| {
+                        let mut vu = r.setup();
+                        vu.segment_hash_pub(r.pc);
+                        vu
+                    })
+                    .collect();
+                let t = std::time::Instant::now();
+                pairs = 0;
+                for mut vu in vus {
+                    let mut n = 0usize;
+                    vu.run(4_000_000, &mut |p: &[Qword]| n += p.len());
+                    pairs += vu.pairs;
+                    std::hint::black_box(n);
+                }
+                best = best.min(t.elapsed().as_secs_f64());
+            }
+            println!(
+                "{} records, {pairs} pairs: best {:.1} ms ({:.2} ns/pair)",
+                recs.len(),
+                best * 1e3,
+                best * 1e9 / pairs as f64
+            );
+        }
         "self" => {
             let mut bad = 0;
             for (i, r) in recs.iter().enumerate() {
-                let (o, _) = replay(r);
+                let (o, vu) = replay(r);
+                if vu.cycle != r.cycles && r.cycles != 0 {
+                    bad += 1;
+                    println!("#{i}: cycles: ours {} recorded {}", vu.cycle, r.cycles);
+                    continue;
+                }
                 let rec = Out {
                     kicks: r.kicks.clone(),
                     end: r.end.clone(),

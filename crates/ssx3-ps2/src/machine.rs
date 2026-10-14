@@ -74,9 +74,16 @@ pub struct Sched {
 }
 
 /// Indirect jump/call into another function (or a resume point).
+/// A debug switch read once (`getenv` takes a process-wide lock and scans
+/// the environment: far too slow for paths taken per call).
+fn env_flag(cell: &'static std::sync::OnceLock<bool>, name: &str) -> bool {
+    *cell.get_or_init(|| std::env::var_os(name).is_some())
+}
+
 #[inline(never)]
 pub fn call_indirect(c: &mut Cpu, target: u32) {
-    if std::env::var_os("SSX3_TRACE_MIDCALL").is_some() {
+    static MIDCALL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if env_flag(&MIDCALL, "SSX3_TRACE_MIDCALL") {
         let t = funcs();
         let i = t.partition_point(|e| e.start <= target);
         if i > 0 && t[i - 1].start != target && target < t[i - 1].end {
@@ -315,7 +322,8 @@ pub fn boot(c: &mut Cpu, elf: &[u8], argv0: &str) -> Result<u32, String> {
 /// into the middle of this function that isn't a known label (an error), or a
 /// tail jump to other code.
 pub fn jump_out(c: &mut Cpu, pc: u32, start: u32, end: u32) {
-    if std::env::var_os("SSX3_TRACE_JUMPOUT").is_some() {
+    static JUMPOUT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if env_flag(&JUMPOUT, "SSX3_TRACE_JUMPOUT") {
         eprintln!(
             "[jump_out] pc {pc:#x} from fn {start:#x}..{end:#x} ra {:#x} thread {}",
             c.g[31][0] as u32, c.kernel.current

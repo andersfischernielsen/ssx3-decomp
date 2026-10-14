@@ -133,3 +133,10 @@ Runtime misses are appended to `generated/entries.txt` automatically; rerun
   (`race-116s-after-path3.png`). Fixed-clock runs are pixel-deterministic.
   Next: stretched geometry ("girders", dark sky rectangles), agent on
   `race-geometry.md`.
+- 2026-10-14 (evening): **translated VU 3.5× faster, races 23.8 → 53.7 fps**
+  headless (GPU GS, fixed RTC; `vu-performance.md`). Translate-time analysis
+  of stalls / ready times / Q-P-flag observers, deferred MAC/status, NEON
+  four-lane FMAC (bit-identical), NEON macro-mode VU0, plus getenv-per-call,
+  per-primitive allocations, VIF unpack and upload re-hashing fixes. Every
+  captured VU invocation replays to an identical full-state digest; all
+  screenshots of the race run are byte-identical.

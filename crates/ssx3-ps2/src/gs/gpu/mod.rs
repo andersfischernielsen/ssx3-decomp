@@ -291,6 +291,8 @@ pub(crate) struct GpuGs {
     slots: Vec<[u32; 16]>,
     cmds: Vec<Cmd>,
     batch: GBatch,
+    /// Scratch texel region for the read-after-write test in `push`.
+    scratch: Region,
     /// Setup record of the last draw state, by identity.
     last_draw: Option<(Arc<Draw>, u32)>,
     palettes: HashMap<u64, u32>,
@@ -548,6 +550,7 @@ impl GpuGs {
             slots: Vec::new(),
             cmds: Vec::new(),
             batch: GBatch::default(),
+            scratch: Region::default(),
             last_draw: None,
             palettes: HashMap::new(),
             decoded: HashMap::new(),
@@ -749,10 +752,9 @@ impl GpuGs {
         }
         // Different mapping of pages the batch draws to.
         if self.batch.prims > 0 {
-            let mut mine = vec![(raster::surf_key(&d.fb), fb_pages)];
-            if d.z_used {
-                mine.push((raster::surf_key(&d.zb), zb_pages));
-            }
+            // (No heap allocation: this runs for every primitive.)
+            let both = [(raster::surf_key(&d.fb), fb_pages), (raster::surf_key(&d.zb), zb_pages)];
+            let mine = &both[..if d.z_used { 2 } else { 1 }];
             let alias = mine.iter().any(|(k, pg)| {
                 self.batch
                     .surfs
@@ -768,12 +770,14 @@ impl GpuGs {
         // blocks the batch writes.
         if let Some(ts) = d.tex_surface() {
             if self.batch.prims > 0 && d.tex_pages.hits(&self.batch.write.pages) {
-                let mut r = Region::default();
+                // Reused scratch region (a fresh one is a 2 KiB allocation).
+                let r = &mut self.scratch;
+                r.clear();
                 match raster::prim_tex_rect(d, p, prim, verts) {
                     Some([u0, v0, u1, v1]) => r.add_rect(ts, u0, v0, u1, v1),
                     None => r.add_pages(&d.tex_pages),
                 }
-                if self.batch.write.hits(&r) {
+                if self.batch.write.hits(&self.scratch) {
                     self.stats.raw_closes += 1;
                     self.close(vram);
                 }
