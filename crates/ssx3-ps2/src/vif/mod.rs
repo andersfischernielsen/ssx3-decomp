@@ -263,10 +263,14 @@ impl Vif {
         vu.vif_top = self.top;
         vu.vif_itop = self.itop;
         vu.start(pc);
+        let mut cap = crate::vu::capture::begin(vu, pc);
         let vif1 = self.index == 1;
         let watch = crate::hw::watch_qword_pub();
         let mut hit: Option<(usize, u128)> = None;
         let done = vu.run(self.vu_budget, &mut |p: &[Qword]| {
+            if let Some(c) = cap.as_mut() {
+                c.kicks.push(p.to_vec());
+            }
             if let Some(w) = watch {
                 if let Some((k, q)) = p.iter().enumerate().find(|(_, q)| **q as u64 == w) {
                     if hit.is_none() {
@@ -298,6 +302,9 @@ impl Vif {
             vu.flush();
             vu.running = false;
             self.errors += 1;
+        }
+        if let Some(c) = cap {
+            crate::vu::capture::end(c, vu);
         }
     }
 

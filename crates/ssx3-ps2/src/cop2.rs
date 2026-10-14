@@ -36,8 +36,13 @@ impl Cpu {
     }
     /// `vcallms`: run a VU0 microprogram to completion.
     pub fn vcallms(&mut self, addr: u32) {
-        self.bus.hw.vu0.start(addr);
-        self.bus.hw.vu0.run(1_000_000, &mut |_| {});
+        let vu = &mut self.bus.hw.vu0;
+        vu.start(addr);
+        let cap = crate::vu::capture::begin(vu, vu.tpc);
+        vu.run(1_000_000, &mut |_| {});
+        if let Some(c) = cap {
+            crate::vu::capture::end(c, vu);
+        }
     }
     pub fn vcallmsr(&mut self) {
         let a = self.bus.hw.vu0.read_ctrl(27) * 8;

@@ -36,11 +36,11 @@
 //! (unless an explicit [`Vu::fallback`] executor is installed — the test
 //! oracle in `reference` is one).
 
+pub mod capture;
 pub mod decode;
 pub mod exec;
 pub mod float;
 pub mod recomp;
-#[cfg(test)]
 pub mod reference;
 #[cfg(test)]
 mod tests;
@@ -234,6 +234,9 @@ pub struct Vu {
     /// Count of runtime errors (missing translation, unknown op ...).
     pub errors: u64,
     pub last_error: Option<String>,
+    /// Differential testing only (`vu_diff --ref-model`): DIV/SQRT/RSQRT and
+    /// EFU results land immediately, like ps2-web-recomp's interpreter.
+    pub instant_qp: bool,
 
     vf_ready: [[u64; 4]; 32],
     q_pend: Option<Pending>,
@@ -283,6 +286,7 @@ impl Vu {
             fallback: None,
             errors: 0,
             last_error: None,
+            instant_qp: false,
             vf_ready: [[0; 4]; 32],
             q_pend: None,
             p_pend: None,
@@ -412,6 +416,22 @@ impl Vu {
                 hash: None,
             });
         }
+    }
+
+    /// Replace the upload segment layout (capture replay): `(start, end)`
+    /// byte ranges, oldest first, over the current code memory.
+    pub fn set_segments(&mut self, segs: &[(u32, u32)]) {
+        self.segments = segs
+            .iter()
+            .enumerate()
+            .map(|(k, &(start, end))| CodeSegment {
+                start,
+                end,
+                serial: k as u64 + 1,
+                hash: None,
+            })
+            .collect();
+        self.seg_serial = segs.len() as u64;
     }
 
     /// Hash of the code segment containing `pc` (cached).
@@ -1161,7 +1181,7 @@ impl Vu {
             invalid: r.invalid,
             div0: r.div0,
         };
-        if macro_mode {
+        if macro_mode || self.instant_qp {
             self.apply_q(p);
         } else {
             self.q_pend = Some(p);
@@ -1233,6 +1253,10 @@ impl Vu {
                 self.cycle = p.ready;
             }
             self.p = p.value;
+        }
+        if self.instant_qp {
+            self.p = value;
+            return;
         }
         self.p_pend = Some(Pending {
             value,
