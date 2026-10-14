@@ -59,7 +59,7 @@ impl Gs {
             // Each GIFtag resets the internal Q to 1.0.
             self.internal_q = 1.0;
             if pre && flg == 0 {
-                self.write_reg(0x00, (lo >> 47) & 0x7FF);
+                self.reg(0x00, (lo >> 47) & 0x7FF);
             }
             return;
         }
@@ -78,7 +78,7 @@ impl Gs {
                     let reg = p.cur_reg();
                     p.step();
                     if reg < 0xE {
-                        self.write_reg(reg, half);
+                        self.reg(reg, half);
                     }
                 }
             }
@@ -99,47 +99,47 @@ impl Gs {
         let w2 = hi as u32;
         let w3 = (hi >> 32) as u32;
         match reg {
-            0x0 => self.write_reg(0x00, lo & 0x7FF),
+            0x0 => self.reg(0x00, lo & 0x7FF),
             0x1 => {
                 let v = (w0 & 0xFF) as u64
                     | ((w1 & 0xFF) as u64) << 8
                     | ((w2 & 0xFF) as u64) << 16
                     | ((w3 & 0xFF) as u64) << 24
                     | (self.internal_q.to_bits() as u64) << 32;
-                self.write_reg(0x01, v);
+                self.reg(0x01, v);
             }
             0x2 => {
                 self.internal_q = f32::from_bits(w2);
-                self.write_reg(0x02, lo);
+                self.reg(0x02, lo);
             }
-            0x3 => self.write_reg(0x03, (w0 & 0x3FFF) as u64 | ((w1 & 0x3FFF) as u64) << 16),
+            0x3 => self.reg(0x03, (w0 & 0x3FFF) as u64 | ((w1 & 0x3FFF) as u64) << 16),
             0x4 => {
                 let v = (w0 & 0xFFFF) as u64
                     | ((w1 & 0xFFFF) as u64) << 16
                     | (((w2 >> 4) & 0xFF_FFFF) as u64) << 32
                     | (((w3 >> 4) & 0xFF) as u64) << 56;
                 let adc = (hi >> 47) & 1 != 0;
-                self.write_reg(if adc { 0x0C } else { 0x04 }, v);
+                self.reg(if adc { 0x0C } else { 0x04 }, v);
             }
             0x5 => {
                 let v = (w0 & 0xFFFF) as u64 | ((w1 & 0xFFFF) as u64) << 16 | (w2 as u64) << 32;
                 let adc = (hi >> 47) & 1 != 0;
-                self.write_reg(if adc { 0x0D } else { 0x05 }, v);
+                self.reg(if adc { 0x0D } else { 0x05 }, v);
             }
-            0x6..=0x9 => self.write_reg(reg, lo),
-            0xA => self.write_reg(0x0A, (((w3 >> 4) & 0xFF) as u64) << 56),
+            0x6..=0x9 => self.reg(reg, lo),
+            0xA => self.reg(0x0A, (((w3 >> 4) & 0xFF) as u64) << 56),
             0xC => {
                 let v = (w0 & 0xFFFF) as u64
                     | ((w1 & 0xFFFF) as u64) << 16
                     | (((w2 >> 4) & 0xFF_FFFF) as u64) << 32
                     | (((w3 >> 4) & 0xFF) as u64) << 56;
-                self.write_reg(0x0C, v);
+                self.reg(0x0C, v);
             }
             0xD => {
                 let v = (w0 & 0xFFFF) as u64 | ((w1 & 0xFFFF) as u64) << 16 | (w2 as u64) << 32;
-                self.write_reg(0x0D, v);
+                self.reg(0x0D, v);
             }
-            0xE => self.write_reg((hi & 0xFF) as u8, lo),
+            0xE => self.reg((hi & 0xFF) as u8, lo),
             _ => {} // 0xB reserved, 0xF NOP
         }
     }

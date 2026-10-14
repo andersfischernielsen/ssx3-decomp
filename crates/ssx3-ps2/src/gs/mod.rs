@@ -16,17 +16,27 @@
 //! Swizzle tables and several semantics are ported from ps2-web-recomp
 //! (MIT, https://github.com/snuri00/ps2-web-recomp) and PCSX2 GSdx behaviour.
 
+pub mod batch;
+pub mod capture;
 mod display;
 mod gif;
+mod pool;
 mod raster;
+mod region;
+mod texcache;
 pub mod swizzle;
 mod transfer;
 
+#[cfg(test)]
+mod diff_tests;
+#[cfg(test)]
+mod ref_raster;
 #[cfg(test)]
 mod tests;
 
 use crate::Qword;
 use std::collections::VecDeque;
+use std::sync::Arc;
 
 use swizzle::Surface;
 
@@ -164,9 +174,26 @@ pub struct Gs {
     pub(crate) xfer: transfer::Xfer,
     pub(crate) readback: VecDeque<Qword>,
     /// Cached per-draw setup; `None` when registers changed since last build.
-    pub(crate) draw: Option<Box<raster::Draw>>,
+    pub(crate) draw: Option<Arc<raster::Draw>>,
+    /// Primitives set up but not yet drawn (see `batch`).
+    pub(crate) batch: batch::Batch,
+    /// Keep batches across calls; `vram` is then only current after `sync`.
+    deferred: bool,
+    /// Blocks the active host->local transfer writes (computed on demand).
+    pub(crate) xfer_region: Option<Box<region::Region>>,
+    /// Decoded textures (see `texcache`).
+    pub(crate) texcache: texcache::TexCache,
     /// Count of primitives drawn (statistics).
     pub prims_drawn: u64,
+    /// Trace recorder while a capture is running (see `capture`).
+    pub(crate) capture: Option<Box<capture::Recorder>>,
+}
+
+impl Drop for Gs {
+    fn drop(&mut self) {
+        // Background rasterization writes into `vram`.
+        self.wait_inflight();
+    }
 }
 
 impl Default for Gs {
@@ -196,13 +223,21 @@ impl Gs {
             xfer: transfer::Xfer::default(),
             readback: VecDeque::new(),
             draw: None,
+            batch: batch::Batch::default(),
+            deferred: false,
+            xfer_region: None,
+            texcache: texcache::TexCache::default(),
             prims_drawn: 0,
+            capture: None,
         }
     }
 
     // ---------------------------------------------------------------- privileged
 
     pub fn write_priv(&mut self, offset: u32, value: u64) {
+        if let Some(c) = &mut self.capture {
+            c.privileged(offset, value);
+        }
         let p = &mut self.pr;
         match offset & 0x1FF0 {
             0x0000 => p.pmode = value,
@@ -262,10 +297,13 @@ impl Gs {
 
     /// GS soft reset (CSR.RESET): drops GIF/vertex/transfer state, keeps VRAM.
     fn reset(&mut self) {
+        self.flush_wait();
+        self.end_upload();
         self.pr.csr = CSR_FIXED;
         self.paths = [gif::GifPath::default(); 4];
         self.vcount = 0;
         self.xfer = transfer::Xfer::default();
+        self.xfer_region = None;
         self.readback.clear();
         self.draw = None;
     }
@@ -277,6 +315,10 @@ impl Gs {
     }
 
     pub fn vblank(&mut self, field: u32) {
+        if let Some(c) = &mut self.capture {
+            c.vblank(field);
+        }
+        self.flush_wait();
         self.pr.csr |= CSR_VSINT;
         if field & 1 != 0 {
             self.pr.csr |= CSR_FIELD;
@@ -287,6 +329,9 @@ impl Gs {
 
     /// Raise a CSR event (also used for HSYNC/EDW by the machine if desired).
     pub fn raise_event(&mut self, bit: u64) {
+        if let Some(c) = &mut self.capture {
+            c.raise(bit);
+        }
         self.pr.csr |= bit & 0x1F;
     }
 
@@ -294,8 +339,14 @@ impl Gs {
 
     pub fn gif_write(&mut self, path: usize, data: &[Qword]) {
         let path = path.min(3);
+        if let Some(c) = &mut self.capture {
+            c.gif(path, data);
+        }
         for &q in data {
             self.gif_qword(path, q);
+        }
+        if !self.deferred {
+            self.flush_wait();
         }
     }
 
@@ -306,6 +357,9 @@ impl Gs {
 
     /// Pop up to `max` quadwords of a pending local->host transfer.
     pub fn read_local(&mut self, max: usize) -> Vec<Qword> {
+        if let Some(c) = &mut self.capture {
+            c.read_local(max);
+        }
         let n = max.min(self.readback.len());
         self.readback.drain(..n).collect()
     }
@@ -318,6 +372,40 @@ impl Gs {
     // ---------------------------------------------------------------- registers
 
     pub fn write_reg(&mut self, addr: u8, value: u64) {
+        if let Some(c) = &mut self.capture {
+            c.reg(addr, value);
+        }
+        self.reg(addr, value);
+        if !self.deferred {
+            self.flush_wait();
+        }
+    }
+
+    /// Wait for all queued drawing to land in `vram`.
+    pub fn sync(&mut self) {
+        self.flush_wait();
+    }
+
+    /// Tell the GS that `vram` was modified directly (not through GIF or
+    /// register writes), so cached decoded textures are dropped.
+    pub fn vram_written(&mut self) {
+        self.flush_wait();
+        self.texcache.written(&raster::Pages::ALL);
+    }
+
+    /// Deferred mode lets primitive batches span `gif_write` calls, which
+    /// gives the rasterizer threads much more work per batch. `vram` (and
+    /// `display`) are then only current after `sync()` or `vblank()`.
+    /// Off by default: every call leaves `vram` complete.
+    pub fn set_deferred(&mut self, on: bool) {
+        self.deferred = on;
+        if !on {
+            self.flush_wait();
+        }
+    }
+
+    /// Register write from inside the GS (GIF), not recorded by captures.
+    pub(crate) fn reg(&mut self, addr: u8, value: u64) {
         match addr {
             0x00 => {
                 self.regs.prim = value & 0x7FF;
@@ -490,15 +578,6 @@ impl Gs {
         }
     }
 
-    fn draw_primitive(&mut self, prim: u32, verts: &[Vertex]) {
-        if self.draw.is_none() {
-            self.draw = Some(Box::new(raster::Draw::build(&self.regs, &self.clut)));
-        }
-        let draw = self.draw.as_deref().expect("draw setup");
-        raster::draw(&mut self.vram, draw, prim, verts);
-        self.prims_drawn += 1;
-    }
-
     // ---------------------------------------------------------------- CLUT
 
     fn load_clut(&mut self, tex0: u64) {
@@ -546,6 +625,12 @@ impl Gs {
         } else {
             (Surface::new(cpsm_full, cbp, 1), 0, 0)
         };
+        // The CLUT is read now: queued drawing into it must land first.
+        if csm2 {
+            self.before_vram_read(&surf, cou, cov, cou + entries - 1, cov);
+        } else {
+            self.before_vram_read(&surf, 0, 0, 15, 15);
+        }
         for i in 0..entries {
             let (x, y) = if csm2 {
                 (cou + i, cov)

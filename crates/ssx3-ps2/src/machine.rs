@@ -248,6 +248,8 @@ pub fn run_frame(c: &mut Cpu) -> bool {
     } else {
         trampoline(c, None);
     }
+    // Finish background rasterization so `vram` / `display()` are current.
+    c.bus.hw.gs.sync();
     c.kernel.halted.is_none()
 }
 

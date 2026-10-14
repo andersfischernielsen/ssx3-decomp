@@ -5,6 +5,9 @@ contract in `gs/mod.rs`: `new`, `write_priv`/`read_priv`, `gif_write`, `write_re
 `irq_pending`, `vblank`, `display`, `read_local`, and the public `vram: Vec<u32>`.
 Additions: `gif_path_busy`, `local_pending`, `raise_event`, `prims_drawn`, the
 `CSR_*` constants, and `gs::swizzle` (formats, `Surface`, `read_pixel`/`write_pixel`).
+Also added: `sync`, `set_deferred`, `vram_written`, `batch_stats`, and trace
+capture (`start_capture`/`finish_capture`, `gs::capture`). See
+`gs-performance.md`.
 
 The swizzle tables and several behaviours are ported from
 [ps2-web-recomp](https://github.com/snuri00/ps2-web-recomp) (MIT;
@@ -18,9 +21,15 @@ The swizzle tables and several behaviours are ported from
 | `swizzle.rs` | PSM constants, page/block/column tables, `Surface` addressing, pixel read/write |
 | `gif.rs` | GIFtag state machine per path (PACKED / REGLIST / IMAGE), PACKED register decoding |
 | `transfer.rs` | Host→local (IMAGE/HWREG), local→host (queued qwords), local→local |
-| `raster.rs` | Per-draw setup (`Draw`), primitives, texturing, the per-pixel pipeline |
+| `raster.rs` | Per-draw setup (`Draw`), primitive setup (`Prim`), texturing, the per-pixel pipeline, specialized span loops |
+| `batch.rs` | Primitive batching, dependency tracking, multithreaded and background drawing |
+| `pool.rs` | Worker pool (`std::thread`) |
+| `region.rs` | VRAM block sets used for dependency tracking |
+| `texcache.rs` | Cache of decoded (RGBA8) textures, invalidated by page write generations |
+| `capture.rs` | GS trace capture/replay (the `gs_replay` binary) |
+| `ref_raster.rs`, `diff_tests.rs` | Test-only: the original rasterizer and a differential test against it |
 | `display.rs` | PCRTC: PMODE/DISPFB/DISPLAY/SMODE2 → RGBA8 |
-| `tests.rs` | 28 unit tests, plus an ignored perf test |
+| `tests.rs` | Unit tests, plus an ignored perf test |
 
 ## VRAM and formats
 
@@ -119,10 +128,23 @@ Texturing:
   REGION_CLAMP, and REGION_REPEAT as `(u & MINU) | MAXU`.
 - **Filtering:**
   - Nearest filtering is always available.
-  - Bilinear filtering (8-bit weights) is chosen per primitive. The LOD comes
-    from TEX1 (LCM/K, or `log2(1/q)<<L + K` using the average vertex Q). LOD ≤ 0
-    uses MMAG; otherwise MMIN, where 1, 4 and 5 count as linear.
-  - There is no mipmapping: level 0 is always sampled.
+  - Without mipmapping, bilinear filtering (8-bit weights) is chosen per
+    primitive. The LOD comes from TEX1 (LCM/K, or `log2(1/q)<<L + K` using the
+    average vertex Q). LOD ≤ 0 uses MMAG; otherwise MMIN, where 1, 4 and 5 count
+    as linear.
+- **Mipmapping** applies when MXL > 0 and MMIN is 2–5. The LOD is computed per
+  pixel: K when LCM=1, otherwise `log2(1/|Q|) * 2^L + K`.
+  - LOD ≤ 0 samples level 0 with MMAG.
+  - Otherwise LOD is clamped to MXL. MMIN 2/4 (`*_MIPMAP_NEAREST`) picks the
+    nearest level, `round(LOD)`.
+  - MMIN 3/5 (`*_MIPMAP_LINEAR`) blends `floor(LOD)` and the next level by the
+    8-bit fraction.
+  - Inside a level, MMIN 2/3 use nearest sampling and 4/5 use bilinear.
+  - Level `l` has base pointer and width from MIPTBP1 (levels 1–3) and MIPTBP2
+    (4–6), or from MTBA for levels 1–3, where each level follows the previous
+    one at half the width.
+  - The level is `2^TW >> l` by `2^TH >> l` texels, sampled at `(u, v) / 2^l`.
+    Region clamp/repeat bounds shift right by `l`.
 - **Formats:**
   - CT32/24/16/16S, Z formats read as colour, and T8/T4/T8H/T4HL/T4HH through a
     palette resolved per draw (256 or 16 `u32` entries).
@@ -148,10 +170,11 @@ When the frame is read as a blend destination:
 - CT24 reads with alpha 0x80.
 - CT16 alpha is 0x80 when bit 15 is set, otherwise 0.
 
-Performance: a release build does about 30 Mpix/s for textured, Gouraud,
-Z-tested, alpha-blended full-screen strips on one core, with no allocation per
-pixel. Run `cargo test -p ssx3-ps2 --release -- --ignored perf --nocapture` to
-measure it.
+Performance: primitives are batched and drawn by several threads, with exactly
+the serial per-pixel order (see `gs-performance.md`). Heavy in-game frames went
+from 250–530 ms to 35–42 ms on an M1. Two tools measure it:
+- `gs_replay`, which replays captured traces.
+- The ignored perf test: `cargo test -p ssx3-ps2 --release -- --ignored perf --nocapture`.
 
 ## Display
 
@@ -170,8 +193,9 @@ measure it.
 
 ## Known gaps
 
-- No mipmapping (MXL, MIPTBP and MTBA are stored but unused). LOD is chosen per
-  primitive, not per pixel.
+- Mipmapping: MTBA address computation is a best guess (levels packed one after
+  another, width halved). Without a mipmap MMIN, the MMAG/MMIN choice is still
+  made per primitive.
 - No antialiasing (AA1), and no PRIM.FIX fragment control.
 - Rasterization is approximate rather than bit-exact:
   - Colours interpolate in f64 rather than the GS's fixed-point DDA, so they can
