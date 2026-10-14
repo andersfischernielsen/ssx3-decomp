@@ -6,3 +6,4 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+ssx3-iop = { path = "../ssx3-iop" }

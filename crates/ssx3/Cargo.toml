@@ -21,5 +21,7 @@ ssx3-core.workspace = true
 ssx3-gs.workspace = true
 ssx3-ps2 = { path = "../ssx3-ps2" }
 ssx3-ee = { path = "../../generated/ee/game" }
+ssx3-iop = { path = "../ssx3-iop" }
+ssx3-iop-gen = { path = "../../generated/iop/modules" }
 wgpu = "30.0.1"
 winit = "0.30.13"

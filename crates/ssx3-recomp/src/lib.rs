@@ -15,6 +15,7 @@ pub mod boundaries;
 pub mod codegen;
 pub mod eegen;
 pub mod flow;
+pub mod iopgen;
 pub mod program;
 pub mod r5900;
 pub mod symbols;

@@ -231,4 +231,11 @@ fn main() {
     println!("extra entries: {}", extra.len());
     println!("shards       : {shards}");
     println!("rust bytes   : {bytes}");
+
+    // The IOP sound modules (recomp-iop) are part of the same build.
+    let iso = std::env::var("SSX3_ISO").map(PathBuf::from).unwrap_or_else(|_| root.join("SSX 3 (USA).iso"));
+    match ssx3_recomp::iopgen::generate_from_disc(&iso, &root.join("generated/iop/modules")) {
+        Ok(o) => println!("iop          : {} functions, {} instructions -> generated/iop/modules", o.functions, o.instructions),
+        Err(e) => eprintln!("iop          : not generated ({e})"),
+    }
 }

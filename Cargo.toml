@@ -6,8 +6,10 @@ members = [
     "crates/ssx3-recomp",
     "crates/ssx3-runtime",
     "crates/ssx3-ps2",
+    "crates/ssx3-iop",
     "crates/ssx3",
     "generated/ee/*",
+    "generated/iop/*",
 ]
 
 [workspace.package]

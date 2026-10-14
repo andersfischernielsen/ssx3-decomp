@@ -12,6 +12,8 @@ pub fn repo_root() -> PathBuf {
 /// Create the machine, load the disc and the executable, start the main thread.
 pub fn boot() -> Box<Cpu> {
     machine::register_functions(&ssx3_ee::FUNCTIONS);
+    // Recompiled IOP sound modules; used when SSX3_IOP=1 (see iop_bridge.rs).
+    ssx3_iop::register_generated(&ssx3_iop_gen::GENERATED);
     let mut c = Cpu::new();
     let iso = std::env::var("SSX3_ISO")
         .map(PathBuf::from)
