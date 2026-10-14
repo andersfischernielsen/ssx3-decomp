@@ -153,7 +153,7 @@ impl ApplicationHandler for App {
 
 fn main() {
     env_logger::init();
-    let cpu = game::boot();
+    let cpu = game::boot(false);
     let event_loop = EventLoop::new().expect("event loop");
     event_loop.set_control_flow(ControlFlow::Poll);
     let mut app = App {

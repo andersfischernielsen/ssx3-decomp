@@ -32,6 +32,11 @@ cargo run --profile game -p ssx3                       # play (window; ~2 min fi
 Keys: arrows = d-pad, X = Cross, Z = Square, S = Circle, A = Triangle,
 Enter = Start, Right Shift = Select, Q/W = L1/R1, 1/2 = L2/R2, F12 = screenshot.
 
+Useful switches: `SSX3_SKIP_MOVIES=1` skips the boot movies (the headless runner
+skips them by default), `SSX3_GS=cpu` uses the software rasterizer instead of
+the wgpu one, `SSX3_MEMCARD=<path>` picks the memory card file (default
+`saves/ssx3-mc0.ps2`), `SSX3_REAL_CLOCK=1` uses the host clock.
+
 Headless runs, scripted input and the debug switches are documented in
 [`docs/plans/playable-push.md`](docs/plans/playable-push.md#how-to-resume).
 

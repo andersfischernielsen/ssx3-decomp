@@ -29,7 +29,7 @@ fn main() {
     if std::env::var_os("SSX3_AUDIO").is_none() {
         std::env::set_var("SSX3_AUDIO", "0");
     }
-    let mut c = game::boot();
+    let mut c = game::boot(true);
     let t0 = Instant::now();
     let mut img = Vec::new();
     // Scripted input: SSX3_INPUT="300:4000:10,400:0008:10" presses Cross (0x4000)

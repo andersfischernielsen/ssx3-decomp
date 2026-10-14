@@ -10,7 +10,7 @@ pub fn repo_root() -> PathBuf {
 }
 
 /// Create the machine, load the disc and the executable, start the main thread.
-pub fn boot() -> Box<Cpu> {
+pub fn boot(skip_movies_default: bool) -> Box<Cpu> {
     machine::register_functions(&ssx3_ee::FUNCTIONS);
     // Recompiled IOP sound modules; used when SSX3_IOP=1 (see iop_bridge.rs).
     ssx3_iop::register_generated(&ssx3_iop_gen::GENERATED);
@@ -30,11 +30,13 @@ pub fn boot() -> Box<Cpu> {
     let elf_path = repo_root().join("orig/SLUS_207.72");
     let elf = std::fs::read(&elf_path).unwrap_or_else(|e| panic!("{}: {e}", elf_path.display()));
     machine::boot(&mut c, &elf, "cdrom0:\\SLUS_207.72;1").expect("boot");
-    // Temporary debug switch until the IPU (MPEG decoder) lands: the boot
-    // movies are selected by a bitmask at gp-0x1724 (0x4a19cc; initial value 7 =
-    // EA logo | THX | intro, read by ssx_BootMoviesUpdate 0x1a27a0). Clearing it
-    // skips them. SSX3_SKIP_MOVIES=0 keeps them.
-    if std::env::var("SSX3_SKIP_MOVIES").map(|v| v != "0").unwrap_or(true) {
+    // The boot movies are selected by a bitmask at gp-0x1724 (0x4a19cc;
+    // initial value 7 = EA logo | THX | intro, read by ssx_BootMoviesUpdate
+    // 0x1a27a0). Clearing it skips them: the headless runner does by default
+    // (scripted input timings assume it), the window plays them.
+    // SSX3_SKIP_MOVIES=0/1 overrides either.
+    let skip = std::env::var("SSX3_SKIP_MOVIES").map(|v| v != "0").unwrap_or(skip_movies_default);
+    if skip {
         c.bus.write32(0x004a_19cc, 0);
     }
     c
