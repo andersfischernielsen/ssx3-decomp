@@ -1,12 +1,52 @@
 # ssx3-decomp
 
-Native **Rust** recompilation of **SSX 3 (USA)** — serial `SLUS_207.72` — with a
-`wgpu` renderer. The reference binary is the PlayStation 2 Emotion Engine
-(R5900) ELF extracted from the retail disc image.
+Native **Rust** static recompilation of **SSX 3 (USA)** (serial `SLUS_207.72`).
+Every instruction of the game's Emotion Engine code and its VU microcode is
+translated to Rust at build time and runs on a native PS2 platform layer:
+
+- kernel
+- DMA, VIF and GIF
+- a software GS
+- the IPU
+- the IOP services
+
+**Status (2026-10-14):** the game boots, plays its intro movies, runs the menus,
+loads a course and **races**: HUD, rivals, and position and speed tracking all
+work. Gaps remain: speed (software GS), audio, memory cards, and some rendering
+issues. Screenshots and the full log are in
+[`docs/plans/playable-push.md`](docs/plans/playable-push.md).
 
 > SSX 3 is © EA. This repository contains no copyrighted game data. The disc
 > image and the extracted ELF are **not** committed; see
 > [`tools/extract-from-iso.sh`](tools/extract-from-iso.sh).
+
+## Quick start
+
+```sh
+tools/extract-from-iso.sh "SSX 3 (USA).iso"            # -> orig/SLUS_207.72 (keep the ISO in the repo root)
+cargo run --release -p ssx3-recomp --bin recomp-ee     # translate the EE code -> generated/ee/ (~79 MB of Rust)
+cargo run --profile game -p ssx3                       # play (window; ~2 min first build)
+```
+
+Keys: arrows = d-pad, X = Cross, Z = Square, S = Circle, A = Triangle,
+Enter = Start, Right Shift = Select, Q/W = L1/R1, 1/2 = L2/R2, F12 = screenshot.
+
+Headless runs, scripted input and the debug switches are documented in
+[`docs/plans/playable-push.md`](docs/plans/playable-push.md#how-to-resume).
+
+## Architecture
+
+| crate | role |
+| --- | --- |
+| `ssx3-recomp` | Function inventory + boundaries (from Ghidra), R5900 decoder, and **`recomp-ee`**. The generator lowers all ~808k instructions in 13.3k functions to Rust, sharded into 16 crates under `generated/ee/`; see [`docs/investigation/recompiler-v2.md`](docs/investigation/recompiler-v2.md). |
+| `ssx3-ps2` | The platform layer: instruction semantics (128-bit GPRs, MMI, bit-exact FPU, COP2), the bus and MMIO, DMAC, timers and INTC, the HLE EE kernel (threads, semaphores, handlers, alarms), SIF with the IOP services (loadfile, fileio, cdvdfsv, padman, EA SNDDRV protocol), VIF/VU (VU microcode is statically translated in `generated/vu/`), GS (software rasterizer), and IPU (MPEG). |
+| `ssx3` | Front ends: the windowed `ssx3` (winit + wgpu) and `ssx3-headless` (scripted input, screenshots, diagnostics). |
+| `ssx3-core`, `ssx3-gs`, `ssx3-runtime` | Earlier scaffolding (memory model, first codegen); superseded by the above. |
+
+Guest threads, interrupts and calls follow the unwind/trampoline model ported
+from [ps2-web-recomp](https://github.com/snuri00/ps2-web-recomp) (MIT). Each
+guest call is a Rust call; a thread switch unwinds to a trampoline that
+re-enters the recompiled code at the saved `pc`.
 
 ## What the disc actually contains
 
@@ -47,22 +87,6 @@ The ELF is stripped, but because it was built with `-ffunction-sections`, its
 `.gnu.linkonce.t.*` **section names still carry mangled C++ symbol names**
 (e.g. `RCMP5CODEC`, `RCMP7DECODER`), which is a free naming source.
 
-## Layout
-
-```
-crates/
-  ssx3-core/   Machine model: memory map, RAM, syscalls (no dependencies)
-  ssx3-gs/     Graphics Synthesizer model + wgpu presenter
-  ssx3-recomp/ R5900 -> Rust recompiler; decoder, boundaries, code generator
-  ssx3-runtime/ Execution state, native SDK boundary, generated code
-  ssx3/        The `ssx3` binary (wgpu window)
-generated/     Exported inventory (functions.tsv/json) — build input
-generated/ghidra_disasm/  Ghidra disassembly golden corpus
-orig/          Extracted SLUS_207.72 (gitignored)
-tools/         Helper scripts
-docs/          Reference notes (docs/ps2-bible.md, docs/investigation/)
-```
-
 ## Function inventory
 
 `tools/export-ghidra-functions.py` pulls every function from the GhidraMCP
@@ -92,77 +116,18 @@ instructions. Across the whole image it decodes **99.74%** of 801,242
 instructions; the rest are preserved as raw words. See
 [`docs/investigation/r5900-decoder.md`](docs/investigation/r5900-decoder.md).
 
-## Recompiler and runtime
-
-This is a **recompiler, not an emulator**: the target is portable Rust the
-compiler could have produced. `ssx3-recomp::codegen` turns a function into a Rust
-function; syscalls are constant-folded into direct calls to the native SDK in
-`ssx3-runtime::sdk`, `jal`s become direct Rust calls, and nothing interprets
-instructions at runtime.
-
-```sh
-cargo run -p ssx3-recomp --bin recomp-gen -- --depth 4 --limit 400  # generate
-cargo run -p ssx3-runtime --bin ssx3-run                            # execute
-```
-
-Generated code lives in `crates/ssx3-runtime/src/generated.rs`. See
-[`docs/investigation/codegen.md`](docs/investigation/codegen.md) for what is
-generated, what is still scaffolding (structured control flow), and the known
-approximations.
-
-To translate the **whole inventory** (all 11,844 functions) into sharded Rust
-modules (not compiled by default):
-
-```sh
-cargo run -p ssx3-recomp --bin recomp-all          # -> generated/code/
-```
-
-## Investigation notes
-
-Findings about the decompilation are recorded under
-[`docs/investigation/`](docs/investigation/): the GhidraMCP backend, the disc and
-memory map, the function inventory, the decoder, and known limitations.
-
-
-## Build and test
-
-```sh
-cargo build
-cargo test
-```
-
-Tests in `crates/ssx3-core/tests/` cover the memory model (LE accesses,
-cached/uncached aliases, mirroring), the syscall table, and — when
-`orig/SLUS_207.72` is present — the real ELF header and program-header load.
-`crates/ssx3-gs` unit-tests the GS register decoding.
-
-## Run
-
-```sh
-cargo run -p ssx3
-```
-
-This opens a `wgpu` window presenting GS VRAM. Set `SSX3_EXIT_AFTER_FRAMES=N`
-to exit after N redraws (used for smoke tests).
-
 ## Ghidra MCP
 
 OpenCode is configured with the `ghidra` MCP server (LaurieWired GhidraMCP).
 For it to work, Ghidra must be running with the **GhidraMCPPlugin** enabled (it
 then serves a loopback HTTP backend on `127.0.0.1:8080`) and the program open.
 
-## Roadmap
+## Investigation notes
 
-- [x] Extract `SLUS_207.72`, import with the R5900 language, auto-analyze
-- [x] Machine model: memory map, RAM/scratchpad/IOP RAM, syscall table
-- [x] Test suite, including validation against the real ELF
-- [x] `wgpu` window presenting GS VRAM
-- [x] Export the function inventory (11,844 functions) from Ghidra
-- [x] R5900 decoder (99.74% of 801,242 instructions), validated against Ghidra
-- [x] Authoritative instruction boundaries + recursive descent
-- [x] Recompiler codegen + native SDK boundary; `entry` and its call graph run
-- [ ] Structured control flow (replace the basic-block dispatch scaffolding)
-- [ ] FPU, full MMI, and 128-bit HI/LO modelling
-- [ ] R5900 → Rust recompiler (translate the full inventory to Rust functions)
-- [ ] EE runtime: DMA, timers, INTC, GS/GIF packet path
-- [ ] GS rasterizer feeding `wgpu`
+Findings are recorded under [`docs/investigation/`](docs/investigation/): the boot path, naming, the recompiler, GS, VU/VIF, IPU, the ps2-web-recomp notes, and earlier decoder and boundary work. Plans live in [`docs/plans/`](docs/plans/).
+
+## Tests
+
+```sh
+cargo test -p ssx3-ps2 -p ssx3-recomp -p ssx3-core
+```
