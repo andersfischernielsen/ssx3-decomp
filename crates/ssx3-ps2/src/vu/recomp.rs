@@ -9,7 +9,7 @@
 //! Any pc the function does not cover returns `VuExit::Jump(pc)` so the
 //! runtime can re-dispatch (e.g. a JR into another upload).
 
-use super::decode::{decode_lower, decode_upper, pair_reads, Flow, Lower, Upper};
+use super::decode::{decode_lower, decode_macro, decode_upper, pair_reads, Flow, Lower, Macro, Upper};
 use super::exec::{lower_call, upper_call};
 use super::program_hash;
 use std::collections::BTreeSet;
@@ -417,4 +417,24 @@ pub fn registry_source(ts: &[Translation]) -> String {
     }
     writeln!(s, "];").unwrap();
     s
+}
+
+/// Rust source for one EE COP2 macro-mode instruction (VU0), with `vu.` as the
+/// receiver, or `None` if it cannot be expressed statically (the caller then
+/// falls back to `Vu::macro_op`). Mirrors `Vu::macro_op` exactly.
+pub fn macro_source(word: u32) -> Option<String> {
+    match decode_macro(word) {
+        Macro::Upper(u) => {
+            let c = upper_call(&u)?;
+            Some(format!("vu.macro_begin(); {c} vu.macro_end_upper();"))
+        }
+        Macro::Lower(l) => {
+            let c = lower_call(&l)?.replace("PC", "0");
+            if c.contains("kick") {
+                return None;
+            }
+            Some(format!("vu.macro_begin(); {c} vu.macro_end_lower();"))
+        }
+        _ => None,
+    }
 }

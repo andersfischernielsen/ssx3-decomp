@@ -1292,6 +1292,23 @@ impl Vu {
 
     /// Execute one COP2 macro instruction. VCALLMS/VCALLMSR are ignored (the
     /// EE calls `start`). Results and flags are visible immediately.
+    /// Statically translated macro ops (see `recomp::macro_source`) bracket
+    /// their per-op call with these, matching `macro_op`.
+    #[inline]
+    pub fn macro_begin(&mut self) {
+        self.stage = EMPTY_STAGE;
+    }
+    #[inline]
+    pub fn macro_end_upper(&mut self) {
+        self.commit_stage(false);
+        self.flush();
+    }
+    #[inline]
+    pub fn macro_end_lower(&mut self) {
+        self.vi_backup_next = None;
+        self.flush();
+    }
+
     pub fn macro_op(&mut self, word: u32) {
         match decode::decode_macro(word) {
             decode::Macro::Upper(u) => {
