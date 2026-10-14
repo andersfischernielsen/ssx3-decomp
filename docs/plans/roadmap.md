@@ -50,6 +50,10 @@ the owner's machine at full speed. Progress log and resume instructions:
 Done when: all courses and modes play correctly at 60 fps natively, with no
 misses, and visuals match PCSX2.
 
+Known issues parked by the owner (2026-10-15) so phase 2 can start: sun glare
+not occluded (`../investigation/sun-occlusion.md`); Multi Play needs pad 2
+plugged into the SIO2 model; race ~41 fps headless after the geometry fixes.
+
 ## Phase 2: "Rust-ify": readable, typed source ⬜
 
 Turn machine-shaped Rust into source a person can read and change.
