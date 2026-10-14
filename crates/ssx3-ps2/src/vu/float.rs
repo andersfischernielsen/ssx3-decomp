@@ -152,30 +152,31 @@ pub fn msub(acc: u32, a: u32, b: u32) -> (u32, Exc) {
     )
 }
 
+/// Raw sign-magnitude order of the bit pattern (no denormal flush, no
+/// exponent-255 clamp): PCSX2 microVU `MIN_MAX_PS` integer compare.
 #[inline]
-fn key(x: u32) -> i32 {
-    let x = norm_in(x);
-    let m = (x & ABS) as i32;
-    if x & SIGN != 0 {
-        -m
-    } else {
-        m
-    }
+fn raw_key(x: u32) -> i32 {
+    let x = x as i32;
+    x ^ (((x >> 31) as u32) >> 1) as i32
 }
 
+/// MAX: compares and returns the *raw* operand bits, so denormals (e.g.
+/// integer colour data moved with `MAX.xyzw vfX, vfY, vfY`) pass through
+/// unchanged (PCSX2 microVU `MIN_MAX_PS`; the VU does not flush here).
 pub fn max(a: u32, b: u32) -> u32 {
-    if key(a) >= key(b) {
-        norm_in(a)
+    if raw_key(a) > raw_key(b) {
+        a
     } else {
-        norm_in(b)
+        b
     }
 }
 
+/// MINI: like [`max`], raw bits.
 pub fn min(a: u32, b: u32) -> u32 {
-    if key(a) <= key(b) {
-        norm_in(a)
+    if raw_key(b) > raw_key(a) {
+        a
     } else {
-        norm_in(b)
+        b
     }
 }
 

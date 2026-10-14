@@ -298,6 +298,30 @@ fn micro_program_branch_delay_slot_ebit() {
     assert_eq!(vu.vi[2], 3);
 }
 
+/// Regression (differential test, race capture): MAX/MINI compare and return
+/// raw bits like PCSX2's integer MIN_MAX_PS. SSX 3 moves integer vertex
+/// colours with `MAX.xyzw vf9, vf4, vf4`; flushing denormals zeroed them.
+#[test]
+fn max_mini_pass_raw_bits() {
+    let mut vu = Vu::new(1);
+    vu.vf[4] = [0x63, 0x51, 0x62, 0x80];
+    one_upper(&mut vu, |v| v.max(0b1111, 9, 4, Src::Vec(4)));
+    assert_eq!(vu.vf[9], [0x63, 0x51, 0x62, 0x80]);
+    one_upper(&mut vu, |v| v.mini(0b1111, 10, 4, Src::Vec(4)));
+    assert_eq!(vu.vf[10], [0x63, 0x51, 0x62, 0x80]);
+    // Ordering is sign-magnitude on the raw pattern: -1 < -0 < +0 < denormal < 1.
+    vu.vf[1] = [f(-1.0), 0x8000_0000, 0, 5];
+    vu.vf[2] = [0x8000_0000, 0, 7, f(1.0)];
+    one_upper(&mut vu, |v| v.max(0b1111, 3, 1, Src::Vec(2)));
+    assert_eq!(vu.vf[3], [0x8000_0000, 0, 7, f(1.0)]);
+    one_upper(&mut vu, |v| v.mini(0b1111, 3, 1, Src::Vec(2)));
+    assert_eq!(vu.vf[3], [f(-1.0), 0x8000_0000, 0, 5]);
+    // Exponent-255 patterns are not clamped by MAX/MINI.
+    vu.vf[1] = [0x7f90_0000, 0xff90_0000, 0, 0];
+    one_upper(&mut vu, |v| v.max(0b1100, 3, 1, Src::Bc(0, X)));
+    assert_eq!(&vu.vf[3][..2], &[0x7f90_0000, 0]);
+}
+
 /// ADDi.<dest> fd, fs, I (upper funct 0x22).
 fn up_addi(dest: u32, fd: u32, fs: u32) -> u32 {
     dest << 21 | fs << 11 | fd << 6 | 0x22
