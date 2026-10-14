@@ -27,7 +27,8 @@ pub mod pad;
 pub mod sif;
 pub mod threads;
 pub mod vif;
-pub mod vu;
+/// The Vector Units live in their own crate (build times); see `ssx3-vu`.
+pub use ssx3_vu::vu;
 
 pub use platform::{new_cpu, Machine};
 pub use ssx3_ee_rt::{Cpu, Qword};

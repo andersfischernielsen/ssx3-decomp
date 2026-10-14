@@ -1,0 +1,12 @@
+[package]
+name = "ssx3-vu"
+description = "PS2 Vector Units for SSX 3: VU state, pipeline/timing model, per-op semantics, macro mode, and the statically translated VU microcode (generated/vu)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Its own crate so that changes elsewhere in the hardware model (GS, kernel,
+# DMA, ...) do not recompile the ~5.5 MB of translated microcode
+# (docs/investigation/crate-split.md).
+[dependencies]
+ssx3-ee-rt = { path = "../ssx3-ee-rt" }
