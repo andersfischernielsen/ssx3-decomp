@@ -33,7 +33,7 @@ fn setup() -> (Vif, Vu, Gs) {
     let mut vu = Vu::new(1);
     vu.programs.clear();
     vu.fallback = Some(reference::run_program);
-    (Vif::new(1), vu, Gs::new())
+    (Vif::new(1), vu, Gs::new(crate::gs::Gs::new()))
 }
 
 const STCYCL_44: u32 = 0x0100_0404;
@@ -275,7 +275,7 @@ fn interrupt_bit_stalls_until_stc() {
 fn mscal_without_translation_logs_and_stops() {
     let mut vif = Vif::new(1);
     let mut vu = Vu::new(1);
-    let mut gs = Gs::new();
+    let mut gs = Gs::new(crate::gs::Gs::new());
     upload_and_call(&mut vif, &mut vu, &mut gs, false);
     assert!(vu.errors >= 1);
     assert!(!vu.running);

@@ -84,6 +84,10 @@ impl Gs {
             return;
         }
         let p = self.xfer_params();
+        if self.xfer.x >= p.rrw || self.xfer.y >= p.rrh {
+            // TRXREG shrank under an active transfer: nothing fits.
+            return;
+        }
         let surf = Surface::new(p.dpsm, p.dbp, p.dbw);
         let first = self.xfer_region.is_none();
         let r = self.xfer_region.take().unwrap_or_else(|| {
@@ -105,45 +109,17 @@ impl Gs {
             self.before_vram_write_full(&r, whole);
         }
         let start = self.xfer.y * p.rrw + self.xfer.x;
-        let mut vals: Vec<u32> = Vec::new();
         if first {
             // Decoded textures in these pages are stale until the upload ends.
             self.texcache.live = r.pages;
             self.texcache.written(&r.pages);
         }
         self.xfer_region = Some(r);
-        let bpp = bits_per_pixel(p.dpsm);
-        let mut x = self.xfer.x;
-        let mut y = self.xfer.y;
-        let mut active = true;
-        let m = Mem::new(&mut self.vram);
-        let mut row = SurfRow::new(&surf, (p.dsay + y) & 0x7FF);
-        let mut put = |v: u32| {
-            if !active {
-                return;
-            }
-            if direct {
-                vals.push(v);
-            } else {
-                row.write(m, (p.dsax + x) & 0x7FF, v);
-            }
-            x += 1;
-            if x >= p.rrw {
-                x = 0;
-                y += 1;
-                if y >= p.rrh {
-                    active = false;
-                } else {
-                    row = SurfRow::new(&surf, (p.dsay + y) & 0x7FF);
-                }
-            }
-        };
-        match bpp {
-            32 => {
-                for c in data.chunks_exact(4) {
-                    put(u32::from_le_bytes([c[0], c[1], c[2], c[3]]));
-                }
-            }
+        // Decode the pixel values, then write them row by row.
+        let mut vals = std::mem::take(&mut self.xfer_vals);
+        vals.clear();
+        match bits_per_pixel(p.dpsm) {
+            32 => vals.extend(data.chunks_exact(4).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))),
             24 => {
                 let xf = &mut self.xfer;
                 for &b in data {
@@ -151,32 +127,44 @@ impl Gs {
                     xf.ncarry += 1;
                     if xf.ncarry == 3 {
                         xf.ncarry = 0;
-                        put(u32::from_le_bytes([
-                            xf.carry[0],
-                            xf.carry[1],
-                            xf.carry[2],
-                            0,
-                        ]));
+                        vals.push(u32::from_le_bytes([xf.carry[0], xf.carry[1], xf.carry[2], 0]));
                     }
                 }
             }
-            16 => {
-                for c in data.chunks_exact(2) {
-                    put(u16::from_le_bytes([c[0], c[1]]) as u32);
-                }
-            }
-            8 => {
-                for &b in data {
-                    put(b as u32);
-                }
-            }
+            16 => vals.extend(data.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]]) as u32)),
+            8 => vals.extend(data.iter().map(|&b| b as u32)),
             _ => {
                 for &b in data {
-                    put((b & 0xF) as u32);
-                    put((b >> 4) as u32);
+                    vals.push((b & 0xF) as u32);
+                    vals.push((b >> 4) as u32);
                 }
             }
         }
+        let (mut x, mut y) = (self.xfer.x, self.xfer.y);
+        // Pixels left in the rectangle; data beyond it is ignored.
+        let left = (p.rrh - y) as u64 * p.rrw as u64 - x as u64;
+        let n = (vals.len() as u64).min(left) as usize;
+        vals.truncate(n);
+        if direct {
+            let pos = start as u64 + n as u64;
+            x = (pos % p.rrw as u64) as u32;
+            y = (pos / p.rrw as u64) as u32;
+        } else {
+            let m = Mem::new(&mut self.vram);
+            let mut k = 0;
+            while k < n {
+                let row = SurfRow::new(&surf, (p.dsay + y) & 0x7FF);
+                let cnt = ((p.rrw - x) as usize).min(n - k);
+                row.write_run(m, p.dsax + x, &vals[k..k + cnt]);
+                k += cnt;
+                x += cnt as u32;
+                if x >= p.rrw {
+                    x = 0;
+                    y += 1;
+                }
+            }
+        }
+        let active = y < p.rrh;
         self.xfer.x = x;
         self.xfer.y = y;
         self.xfer.active = active;
@@ -184,6 +172,7 @@ impl Gs {
             let g = self.gpu.as_mut().expect("gpu");
             g.pixel_write(&surf, [p.dsax, p.dsay, p.rrw, start], &vals);
         }
+        self.xfer_vals = vals;
         if !active {
             self.end_upload();
         }

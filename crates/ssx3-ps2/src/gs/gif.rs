@@ -50,6 +50,91 @@ impl GifPath {
         (n, self.eop)
     }
 
+    /// Advance the tag state over `data` exactly as `Gs::gif_qword` does,
+    /// without register or transfer side effects, calling `on_ad(addr,
+    /// value)` for every A+D write. The MTGS guest side uses it to know
+    /// PATH3 packet boundaries and SIGNAL/FINISH/LABEL without the GS thread.
+    /// Runs without A+D descriptors, REGLIST and IMAGE data are skipped in
+    /// bulk.
+    pub(crate) fn scan(&mut self, data: &[Qword], mut on_ad: impl FnMut(u8, u64)) {
+        let mut i = 0;
+        while i < data.len() {
+            if !self.active {
+                let q = data[i];
+                let lo = q as u64;
+                self.nloop = (lo & 0x7FFF) as u32;
+                self.eop = (lo >> 15) & 1 != 0;
+                self.flg = ((lo >> 58) & 3) as u32;
+                self.nreg = ((lo >> 60) & 0xF) as u32;
+                if self.nreg == 0 {
+                    self.nreg = 16;
+                }
+                self.regs = (q >> 64) as u64;
+                self.loop_ = 0;
+                self.reg = 0;
+                self.active = self.nloop != 0;
+                i += 1;
+                continue;
+            }
+            let left = data.len() - i;
+            let (nloop, nreg) = (self.nloop as u64, self.nreg as u64);
+            let pos = self.loop_ as u64 * nreg + self.reg as u64;
+            let total = nloop * nreg;
+            match self.flg {
+                0 => {
+                    let mask = if nreg >= 16 { u64::MAX } else { (1u64 << (nreg * 4)) - 1 };
+                    // Any descriptor in use equal to 0xE (A+D)? Flip the low
+                    // bit of each nibble: 0xE becomes 0xF.
+                    let y = self.regs ^ 0x1111_1111_1111_1111;
+                    let has_ad = y & y >> 1 & y >> 2 & y >> 3 & 0x1111_1111_1111_1111 & mask != 0;
+                    if !has_ad {
+                        let n = (total - pos).min(left as u64);
+                        self.set_pos(pos + n, total);
+                        i += n as usize;
+                    } else {
+                        let q = data[i];
+                        if self.cur_reg() == 0xE {
+                            on_ad(((q >> 64) as u64 & 0xFF) as u8, q as u64);
+                        }
+                        self.step();
+                        i += 1;
+                    }
+                }
+                1 => {
+                    // Two registers per qword; an odd count pads the last one.
+                    let n = (total - pos).div_ceil(2).min(left as u64);
+                    self.set_pos((pos + 2 * n).min(total), total);
+                    i += n as usize;
+                }
+                _ => {
+                    let n = (nloop - self.loop_ as u64).min(left as u64);
+                    self.loop_ += n as u32;
+                    if self.loop_ >= self.nloop {
+                        self.active = false;
+                    }
+                    i += n as usize;
+                }
+            }
+        }
+    }
+
+    /// Move a PACKED/REGLIST tag to register position `pos` (of `total`),
+    /// as repeated `step`s would.
+    fn set_pos(&mut self, pos: u64, total: u64) {
+        let nreg = self.nreg as u64;
+        self.loop_ = (pos / nreg) as u32;
+        self.reg = (pos % nreg) as u32;
+        if pos >= total {
+            self.active = false;
+        }
+    }
+
+    /// Field-wise equality (the MTGS consistency check).
+    pub(crate) fn same(&self, o: &GifPath) -> bool {
+        (self.active, self.nloop, self.loop_, self.nreg, self.reg, self.flg, self.regs, self.eop)
+            == (o.active, o.nloop, o.loop_, o.nreg, o.reg, o.flg, o.regs, o.eop)
+    }
+
     #[inline]
     fn cur_reg(&self) -> u8 {
         ((self.regs >> (self.reg * 4)) & 0xF) as u8

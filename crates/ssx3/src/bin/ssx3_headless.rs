@@ -56,7 +56,7 @@ fn main() {
     for f in 1..=frames {
         for (start, _, _) in &captures {
             if f == *start {
-                c.bus.hw.gs.start_capture();
+                c.bus.hw.gs.core().start_capture();
             }
         }
         let mut held = 0u16;
@@ -74,7 +74,7 @@ fn main() {
         }
         for (start, n, path) in &captures {
             if f + 1 == start + n || (!alive && f >= *start && f < start + n) {
-                let trace = c.bus.hw.gs.finish_capture();
+                let trace = c.bus.hw.gs.core().finish_capture();
                 match std::fs::write(path, &trace) {
                     Ok(()) => eprintln!("gs capture: frames {start}..{f} -> {path} ({} bytes)", trace.len()),
                     Err(e) => eprintln!("gs capture: {path}: {e}"),
@@ -88,7 +88,7 @@ fn main() {
             }
         }
         if shot_every > 0 && f % shot_every == 0 {
-            let (w, h) = c.bus.hw.gs.display(&mut img);
+            let (w, h) = c.bus.hw.gs.core().display(&mut img);
             let path = format!("{shot_dir}/frame{f:05}.png");
             let _ = std::fs::write(&path, png::encode(w, h, &img));
         }
@@ -97,15 +97,17 @@ fn main() {
         }
     }
     // GPU GS backend: bring the CPU copy of VRAM up to date for the dumps.
-    c.bus.hw.gs.sync_vram();
+    c.bus.hw.gs.core().sync_vram();
     if std::env::var("SSX3_VRAM_DUMP").is_ok() {
         use ssx3_ps2::gs::swizzle::{read_pixel, PSMCT32};
         let mut v = vec![0u32; 1024 * 1024];
+        let gs = c.bus.hw.gs.core();
         for y in 0..1024 {
             for x in 0..1024 {
-                v[y * 1024 + x] = read_pixel(&c.bus.hw.gs.vram, PSMCT32, 0, 16, x as u32, y as u32) | 0xff00_0000;
+                v[y * 1024 + x] = read_pixel(&gs.vram, PSMCT32, 0, 16, x as u32, y as u32) | 0xff00_0000;
             }
         }
+        drop(gs);
         let _ = std::fs::write(format!("{shot_dir}/vram.png"), png::encode(1024, 1024, &v));
         let regs: Vec<String> = [0x00u32, 0x20, 0x70, 0x80, 0x90, 0xa0, 0xe0].iter().map(|o| format!("{o:#x}={:#x}", c.bus.hw.gs.read_priv(*o))).collect();
         eprintln!("gs priv: {}", regs.join(" "));
@@ -163,7 +165,8 @@ fn main() {
         use ssx3_ps2::gs::swizzle::{read_pixel, PSMCT32};
         let p: Vec<u32> = spec.split(':').map(|x| u32::from_str_radix(x, 16).unwrap_or(0)).collect();
         let (tbp, tbw, psm, w, h, cbp) = (p[0], p[1], p[2], p[3], p[4], p[5]);
-        let vram = &c.bus.hw.gs.vram;
+        let gs = c.bus.hw.gs.core();
+        let vram = &gs.vram;
         let clut = |i: u32| -> u32 {
             // CSM1, CT32: 16-colour = 8x2 block; 256-colour = 16x16 with bit 3/4 swap.
             let (x, y) = if psm == 0x14 || psm == 0x24 || psm == 0x2c {

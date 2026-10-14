@@ -134,14 +134,18 @@ on night one (see the log below).
   72% down the course (frame 14000) the view is mostly empty blue sky with a
   sliver of geometry (`race-72pct-blank-view.png`). Montage of frames
   10000-19500 every 500: `race-full-montage.png` (stretched polygons throughout).
+- **GS on its own host thread (MTGS, `gs-mtgs.md`)**: the guest queues GIF
+  and register traffic; CSR/SIGLBLID/IRQ and PATH3/GIF_STAT stay on the
+  guest side, readbacks/display/captures sync. Scripted 9000-frame run
+  171 s → 88 s, race frames 4320–4680 40 → 80 fps headless, all 18
+  screenshots byte-identical (also with `SSX3_MTGS=0`, the synchronous path).
 
 ## Next steps (as of 2026-10-14 evening)
 
 1. Stretched race geometry / dark sky rectangles (agent; `race-geometry.md`).
-2. 60 fps: frame time is VU ~38%, GS CPU side ~28%, EE ~14%. Biggest lever is
-   running GS work on its own thread (PCSX2 MTGS style) with sync points at
-   readbacks/CSR/vram reads; then texture upload (`transfer_bytes`, per-pixel
-   swizzle) and `GpuGs::push`/`Pages::rect`.
+2. 60 fps: done headless (races ~80 fps with MTGS, `gs-mtgs.md`). The GS
+   thread is ~45% busy in races; the guest (VU1 on ee-thread-6, then EE) is
+   the critical path now.
 3. A race finishes (done). Next: the blank view at ~72% of Snow Jam; career
    mode progression; the other courses.
 4. (done) No VU0 macro op decodes at run time any more: `c.vu0_macro` appears

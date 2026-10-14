@@ -85,7 +85,7 @@ pub struct Hw {
     pub sif_msflg: u32,
     pub sif_smflg: u32,
     pub sif_ctrl: u32,
-    pub gs: Gs,
+    pub gs: crate::gs::Mtgs,
     pub vif0: Vif,
     pub vif1: Vif,
     pub vu0: Vu,
@@ -155,7 +155,7 @@ impl Hw {
                 // the host looks at VRAM.
                 let mut gs = Gs::new();
                 gs.set_deferred(true);
-                gs
+                crate::gs::Mtgs::new(gs)
             },
             vif0: Vif::new(0),
             vif1: Vif::new(1),
@@ -530,14 +530,7 @@ impl Hw {
                 mem[off..off + 4].copy_from_slice(&v.to_le_bytes());
             }
             0x1200_0000..=0x1200_1FFF => {
-                let a = p & 0x1FF8;
-                let cur = self.gs.read_priv(a);
-                let nv = if p & 4 != 0 {
-                    (cur & 0xffff_ffff) | (v as u64) << 32
-                } else {
-                    (cur & !0xffff_ffff) | v as u64
-                };
-                self.gs.write_priv(a, nv);
+                self.gs.write_priv32(p & 0x1FF8, p & 4 != 0, v);
                 self.irq_dirty = true;
             }
             _ => self.note_unknown(p),

@@ -19,7 +19,7 @@ pub fn boot(skip_movies_default: bool) -> Box<Cpu> {
     // The GPU rasterizer is the default for the game (falls back to the CPU
     // when no adapter is usable); SSX3_GS=cpu forces the software path.
     if std::env::var("SSX3_GS").is_err() {
-        c.bus.hw.gs.set_backend(ssx3_ps2::gs::Backend::Gpu);
+        c.bus.hw.gs.core().set_backend(ssx3_ps2::gs::Backend::Gpu);
     }
     let iso = std::env::var("SSX3_ISO")
         .map(PathBuf::from)
@@ -55,7 +55,7 @@ pub fn status(c: &Cpu) -> String {
         c.sched.frames,
         c.cycles / 1_000_000,
         c.kernel.current,
-        c.bus.hw.gs.prims_drawn,
+        c.bus.hw.gs.prims_drawn(),
         threads.join(" ")
     )
 }
