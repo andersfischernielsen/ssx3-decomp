@@ -27,7 +27,24 @@ fn main() {
     let mut c = game::boot();
     let t0 = Instant::now();
     let mut img = Vec::new();
+    // Scripted input: SSX3_INPUT="300:4000:10,400:0008:10" presses Cross (0x4000)
+    // at frame 300 for 10 frames, then Start (0x0008) at frame 400.
+    let script: Vec<(u64, u16, u64)> = std::env::var("SSX3_INPUT")
+        .unwrap_or_default()
+        .split(',')
+        .filter_map(|e| {
+            let p: Vec<&str> = e.split(':').collect();
+            Some((p.first()?.parse().ok()?, u16::from_str_radix(p.get(1)?, 16).ok()?, p.get(2).and_then(|s| s.parse().ok()).unwrap_or(6)))
+        })
+        .collect();
     for f in 1..=frames {
+        let mut held = 0u16;
+        for (at, bits, len) in &script {
+            if f >= *at && f < at + len {
+                held |= bits;
+            }
+        }
+        c.sif.pad_buttons[0] = held;
         let alive = ssx3_ps2::machine::run_frame(&mut c);
         if f % 60 == 0 || !alive {
             eprintln!("[{:6.1}s] {}", t0.elapsed().as_secs_f64(), game::status(&c));

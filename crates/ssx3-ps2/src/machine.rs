@@ -181,6 +181,7 @@ pub fn service_events(c: &mut Cpu) -> bool {
         c.bus.hw.gs.vblank(field);
         c.bus.hw.raise(crate::hw::int::VBON);
         kernel::on_vblank_start(c);
+        crate::pad::refresh(c);
         c.sched.frame_ready = true;
     }
     if c.sched.in_vblank && c.cycles >= c.sched.next_vblank_end {
