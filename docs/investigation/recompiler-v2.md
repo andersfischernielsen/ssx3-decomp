@@ -124,3 +124,28 @@ cargo run --release -p ssx3-recomp --bin recomp-ee -- --structured   # host thre
     twin, `f_X__entries`, for those entries.
 - **Result:** it reaches character select with identical GS output (primitive
   counts match).
+
+### Open bug in host-thread modes (2026-10-14)
+
+Both `--threads` and `--structured` reach character select. They then
+derail around frame ~2750 of the scripted path, just after confirming board
+selection:
+
+- **First symptom:** a return to `0x39cd7c` cascades up. That address is the
+  return point after the virtual call `jalr v1` in `FUN_0039cd30`, and that
+  frame is *not* on the stack when the mismatch appears. With "mismatched
+  returns propagate to the base trampoline" (current code), thread 1 then spins
+  at `0x39cd7c`. In thread mode, return points are not labels, so the base
+  trampoline can't resume there.
+- **Suspects:**
+  - an entry into a function at a non-start address that the generator doesn't
+    know about. Structured functions without an `__entries` twin always start
+    at their entry; dispatch functions would report `bad_entry`;
+  - jump tables whose case code lives in separate Ghidra functions (the
+    `0x3a0158` and `0x3a3808` dispatchers tail-jump into them), interacting
+    with the shared epilogue.
+- **Next step:** log every `call_indirect` whose target is not a function start
+  in thread mode, and compare call/return pairs against the unwind build on the
+  same input. RTC is now deterministic.
+
+The unwind-mode build (default) runs the full race path.
