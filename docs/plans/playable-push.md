@@ -164,6 +164,14 @@ on night one (see the log below).
   including the old 72% blank stretch. Headless run to frame 20000: 685 s
   (more geometry is drawn now; machine shared with another build).
 
+- Geometry fixes + MTGS together (2026-10-15, overnight-playable 5d59749+):
+  104 tests pass; full scripted race to frame 20000 in 299 s headless (vs
+  685 s for the geometry branch alone without MTGS), no halts or misses; the
+  race renders correctly throughout and finishes 5th, 3:36
+  (`race-complete-results-fixed.png`). Race frames 4320–4680: **41 fps**
+  headless (more geometry is drawn now; VU1 + EE bound). `SSX3_MTGS=0` gives
+  byte-identical shots to frame 12000 (MTGS deterministic).
+
 ## Next steps (as of 2026-10-14 night)
 
 1. Stretched race geometry / dark sky rectangles (agent; `race-geometry.md`).
