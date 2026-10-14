@@ -9,7 +9,9 @@
 //! Any pc the function does not cover returns `VuExit::Jump(pc)` so the
 //! runtime can re-dispatch (e.g. a JR into another upload).
 
-use super::decode::{decode_lower, decode_macro, decode_upper, pair_reads, Flow, Lower, Macro, Upper};
+use super::decode::{
+    decode_lower, decode_macro, decode_upper, lower_waits_q, pair_reads, Flow, Lower, Macro, Upper,
+};
 use super::exec::{lower_call, upper_call};
 use super::program_hash;
 use std::collections::BTreeSet;
@@ -281,6 +283,10 @@ fn emit_pair(out: &mut String, p: &Pair, branch: bool, comment: bool) -> bool {
         write!(r, "({reg}, 0b{m:04b})").unwrap();
     }
     writeln!(out, "{ind}vu.begin_pair(&[{r}]);").unwrap();
+    // A Q wait (WAITQ, DIV/SQRT/RSQRT) stalls the pair before its upper op.
+    if p.lower.as_ref().is_some_and(lower_waits_q) {
+        writeln!(out, "{ind}vu.stall_q();").unwrap();
+    }
     if let Some(c) = upper_call(&p.upper) {
         writeln!(out, "{ind}{}", c.replace("PC", &format!("{:#06x}", p.pc))).unwrap();
     }

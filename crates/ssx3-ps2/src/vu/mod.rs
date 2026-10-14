@@ -23,6 +23,8 @@
 //! ```text
 //! vu.begin_pair(&[(fs, fieldmask), ...]); // stall on not-yet-ready VF fields,
 //!                                         // retire Q/P/flag pipelines
+//! vu.stall_q();                           // only if the lower is WAITQ/DIV/
+//!                                         // SQRT/RSQRT: Q lands before the upper
 //! vu.madd(0b1110, 1, 2, Src::Bc(3, W));   // upper: computed from OLD state, staged
 //! vu.loi(imm);                            // only for I-bit pairs (after the upper:
 //!                                         // it reads the old I)
@@ -573,6 +575,27 @@ impl Vu {
         self.cycle = need;
         self.advance();
         self.stage = EMPTY_STAGE;
+    }
+
+    /// The pair's lower op is WAITQ, DIV, SQRT or RSQRT: the whole pair
+    /// stalls until a pending DIV-unit result lands, *before* the upper op
+    /// runs, so an upper op reading Q in that pair sees the new Q. PCSX2
+    /// does the same: microVU `analyzeQreg`/`mVU_WAITQ` fold the Q wait into
+    /// the pair's stall (`mVUincCycles` swaps the Q instance before the
+    /// upper), and the interpreter's `_vuTestLowerStalls` runs before
+    /// `_vuTestUpperStalls`/the upper op. SSX 3's near-plane clipper
+    /// (`d159716b` 0x1710) is `MADD.xyzw vf21, vf22, Q` + `WAITQ`.
+    #[inline]
+    pub fn stall_q(&mut self) {
+        if let Some(p) = self.q_pend {
+            if p.ready > self.cycle {
+                self.cycle = p.ready;
+            }
+            self.advance();
+            if let Some(p) = self.q_pend.take() {
+                self.apply_q(p);
+            }
+        }
     }
 
     /// LOI: the I bit's immediate. Called after the pair's upper op, which

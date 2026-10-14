@@ -905,6 +905,13 @@ pub fn upper_reads(u: &Upper, out: &mut Vec<(u8, u8)>) {
     }
 }
 
+/// A lower op that waits for the DIV unit (WAITQ, or a new DIV/SQRT/RSQRT
+/// while one is in flight). The wait stalls the whole pair before its upper
+/// op runs (see [`super::Vu::stall_q`]).
+pub fn lower_waits_q(l: &Lower) -> bool {
+    matches!(l, Lower::Waitq | Lower::Div { .. } | Lower::Sqrt { .. } | Lower::Rsqrt { .. })
+}
+
 /// VF fields read by a lower op (for the stall model).
 pub fn lower_reads(l: &Lower, out: &mut Vec<(u8, u8)>) {
     match *l {

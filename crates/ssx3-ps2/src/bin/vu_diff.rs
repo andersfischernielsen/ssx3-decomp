@@ -7,6 +7,7 @@
 //!   vu_diff cmp   <capture> <ref.out> [-v]  replay vs. reference output
 //!   vu_diff trace <capture> <index>         per-pair trace (reference-format)
 //!   vu_diff list  <capture>                 one line per record
+//!   vu_diff find  <capture> <hex word>      records whose XGKICK packets contain a word
 
 use ssx3_ps2::vu::capture::{load, read_kicks, ArchState, Reader, Record};
 use ssx3_ps2::vu::{reference, Vu};
@@ -411,6 +412,20 @@ fn main() {
                 println!("{:016x}: {n} / {} pairs executed", e.hash, e.len / 8);
             }
         }
+        "find" => {
+            // Records whose XGKICK packets contain a 32-bit word (hex),
+            // e.g. a Q value seen in a GS trace (`gs_replay --packets`).
+            let w = u32::from_str_radix(args[3].trim_start_matches("0x"), 16).expect("hex word");
+            for (i, r) in recs.iter().enumerate() {
+                for (k, p) in r.kicks.iter().enumerate() {
+                    for (j, q) in p.iter().enumerate() {
+                        if (0..4).any(|l| (*q >> (32 * l)) as u32 == w) {
+                            println!("#{i} vu{} pc {:#06x} hash {:016x} kick {k} qword {j}", r.unit, r.pc, r.hash);
+                        }
+                    }
+                }
+            }
+        }
         "list" => {
             for (i, r) in recs.iter().enumerate() {
                 println!(
@@ -508,6 +523,6 @@ fn main() {
                 println!("  acc  {:08x} {:08x} {:08x} {:08x}", a[0], a[1], a[2], a[3]);
             });
         }
-        _ => eprintln!("usage: vu_diff list|self|cmp|trace <capture> ..."),
+        _ => eprintln!("usage: vu_diff list|self|cmp|trace|find|cover|kickhaz <capture> ..."),
     }
 }

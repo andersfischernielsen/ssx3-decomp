@@ -366,6 +366,75 @@ fn ibit_translation_emits_loi_after_upper() {
     assert!(add < loi, "LOI must follow the upper op:\n{src}");
 }
 
+fn up_mulq(dest: u32, fd: u32, fs: u32) -> u32 {
+    dest << 21 | fs << 11 | fd << 6 | 0x1c
+}
+const WAITQ: u32 = 0x8000_03bf;
+
+/// DIV, then `MULq.x vf3, vf1, Q` in the same pair as `lower`, then `MULq.y`
+/// one pair later. vf1 = (1, 4, -9, 0), vf2.x = 10.
+fn q_wait_prog(lower: u32) -> [(u32, u32); 4] {
+    [
+        (UNOP, div(2, 0, 1, 1)),        // DIV Q, vf2.x, vf1.y  (10 / 4)
+        (up_mulq(8, 3, 1), lower),      // MULq.x vf3, vf1, Q | lower
+        (EBIT | up_mulq(4, 3, 1), LNOP), // MULq.y vf3, vf1, Q [E]
+        (UNOP, LNOP),
+    ]
+}
+
+/// Regression (race "girders", `docs/investigation/race-geometry.md`): a
+/// WAITQ stalls its whole pair *before* the upper op, so an upper op reading
+/// Q in the WAITQ pair sees the new Q (PCSX2 microVU `mVU_WAITQ` pass 1
+/// folds the wait into the pair stall; the interpreter tests lower stalls
+/// before running the upper). SSX 3's near-plane clipper interpolates with
+/// `MADD.xyzw vf21, vf22, Q` + `WAITQ`; with the old Q the clipped vertex
+/// landed behind the eye and drew a long sliver across the screen.
+#[test]
+fn waitq_pair_upper_reads_new_q() {
+    let mut vu = interp_vu(1);
+    load_prog(&mut vu, &q_wait_prog(WAITQ));
+    vu.vf[1] = fv([1.0, 4.0, -9.0, 0.0]);
+    vu.vf[2] = fv([10.0, 0.0, 0.0, 0.0]);
+    vu.q = f(100.0);
+    vu.start(0);
+    assert!(vu.run(100, &mut |_| {}));
+    assert_eq!(vu.vf[3][0], f(2.5), "upper in the WAITQ pair sees the new Q");
+    assert_eq!(vu.vf[3][1], f(10.0));
+}
+
+/// A second DIV issued while the first is in flight also stalls the pair
+/// first: its upper sees the first DIV's result (SSX 3 software-pipelines
+/// DIV in `d159716b`).
+#[test]
+fn div_pair_upper_reads_previous_div_result() {
+    let mut vu = interp_vu(1);
+    // second DIV: Q = vf2.x / vf1.x = 10
+    load_prog(&mut vu, &q_wait_prog(div(2, 0, 1, 0)));
+    vu.vf[1] = fv([1.0, 4.0, -9.0, 0.0]);
+    vu.vf[2] = fv([10.0, 0.0, 0.0, 0.0]);
+    vu.q = f(100.0);
+    vu.start(0);
+    assert!(vu.run(100, &mut |_| {}));
+    assert_eq!(vu.vf[3][0], f(2.5), "first DIV landed before the upper");
+    // The second DIV is still in flight one pair later: old (first) Q.
+    assert_eq!(vu.vf[3][1], f(4.0 * 2.5));
+    assert_eq!(vu.q, f(10.0));
+}
+
+/// The translator emits the Q stall between `begin_pair` and the upper op.
+#[test]
+fn waitq_translation_stalls_before_upper() {
+    let bytes: Vec<u8> = q_wait_prog(WAITQ)
+        .iter()
+        .flat_map(|(hi, lo)| lo.to_le_bytes().into_iter().chain(hi.to_le_bytes()))
+        .collect();
+    let src = recomp::translate_program(&bytes, 0);
+    let mul = src.find("vu.mul(0b1000, 3, 1, Src::Q)").expect("upper");
+    let stall = src[..mul].rfind("vu.stall_q()").expect("stall_q before the upper");
+    let begin = src[..mul].rfind("vu.begin_pair").expect("begin_pair");
+    assert!(begin < stall, "stall_q follows begin_pair:\n{src}");
+}
+
 /// Branch paths for the VI-backup tests: 0x28 [E] vi7 = 1 (fall-through),
 /// 0x38 [E] vi7 = 2 (taken, `off` 3 from a branch at 0x18).
 fn vi_backup_tail(p: &mut Vec<(u32, u32)>) {

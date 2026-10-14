@@ -123,7 +123,10 @@ VCALLMS and VCALLMSR.
   (LQ, MOVE, MFIR, …) also use 4 cycles. ACC and VI are not tracked.
 - **Q:** DIV and SQRT take 7 cycles, RSQRT takes 13. Until then, an upper op
   reading Q sees the old value. WAITQ, or a new DIV-unit op, stalls until the
-  result lands.
+  result lands. The stall happens *before* the pair (`vu.stall_q()`, emitted
+  between `begin_pair` and the upper op), so an upper op reading Q in the
+  WAITQ/DIV pair sees the new Q, as in PCSX2. The course clipper depends on
+  it (`race-geometry.md`).
 - **P:** the EFU ops use the manual's latencies, for example ESADD 11,
   ERSQRT 18, EATAN 54 and EEXP 44. WAITP stalls until P is ready.
 - **Flags:** MAC, status and clip flags become visible to FMxxx/FSxxx/FCxxx
@@ -200,8 +203,9 @@ VCALLMS and VCALLMSR.
   - integer-register latencies
   - stalls on ACC
 - **Timing differences from PCSX2:** the stall model is per VF field with
-  4-cycle latency. There are no branch penalties, and a DIV-unit stall
-  happens inside the pair instead of before it. Code that depends on exact
+  4-cycle latency. There are no branch penalties, and the P (EFU) wait
+  happens inside the pair instead of before it (only lower ops read P, so
+  this changes no values). Code that depends on exact
   cycle counts can still see different Q, P or flag timing than PCSX2.
 - **Budgets:** translated code charges the pair budget once per block, at the
   block's start. The interpreter charges per pair.
