@@ -1613,3 +1613,15 @@ until functions are created there, and they are indirect-call targets.
 ```
 
 The remaining 3,215 pass-2 names (previously `FUN_`) are in `generated/functions.tsv`.
+
+
+## Recovery after a Ghidra crash (2026-10-15)
+
+The Ghidra project on disk (`~/Desktop/ssx3-ghidra/SSX 3.gpr`) had last been
+saved right after import (2026-10-13 17:30), so a crash lost the analysis and
+all renames. Re-running auto-analysis reproduced exactly the 11,844 function
+starts of `generated/functions.tsv`, and `tools/import-ghidra-names.py`
+re-applied all 4,325 names from the TSV in ~40 s (4,248 renames, 0 failures).
+`generated/functions.tsv` is the committed source of truth for names; after a
+naming pass, re-export with `tools/export-ghidra-functions.py` **and save the
+program in Ghidra** (Cmd-S).
