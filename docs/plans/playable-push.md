@@ -172,33 +172,26 @@ on night one (see the log below).
   headless (more geometry is drawn now; VU1 + EE bound). `SSX3_MTGS=0` gives
   byte-identical shots to frame 12000 (MTGS deterministic).
 
-## Next steps (as of 2026-10-14 night)
+## Next steps (as of 2026-10-15 early morning)
 
-1. Stretched race geometry / dark sky rectangles (agent; `race-geometry.md`).
-2. 60 fps: done headless (races ~80 fps with MTGS, `gs-mtgs.md`). The GS
-   thread is ~45% busy in races; the guest (VU1 on ee-thread-6, then EE) is
-   the critical path now.
-3. A race finishes (done). Next: the blank view at ~72% of Snow Jam; career
-   mode progression; the other courses.
-1. (done) Stretched race geometry / dark sky rectangles (`race-geometry.md`).
-   Re-measure race fps now that culled meshes are drawn.
-2. 60 fps: frame time is VU ~38%, GS CPU side ~28%, EE ~14%. Biggest lever is
-   running GS work on its own thread (PCSX2 MTGS style) with sync points at
-   readbacks/CSR/vram reads; then texture upload (`transfer_bytes`, per-pixel
-   swizzle) and `GpuGs::push`/`Pages::rect`.
-3. A race finishes (done; the ~72% blank view was the clip-latency culling
-   bug). Next: career mode progression; the other courses.
-4. (done) No VU0 macro op decodes at run time any more: `c.vu0_macro` appears
-   nowhere in `generated/ee`.
+Done: race geometry (`race-geometry.md`), MTGS (`gs-mtgs.md`), full race to
+results, all VU0 macro ops static. Long-term phases: `roadmap.md`.
 
-5. **Build-time split (after the geometry and MTGS agents merge)**: every
-   `ssx3-ps2` change recompiles all ~79 MB of generated EE crates (2–5 min with
-   3 jobs, >10 min when agents build concurrently). Split a small, stable core
-   crate (Cpu registers, FPU/MMI/COP2 semantics, memory access) that generated
-   code depends on; GS/VU/VIF/DMA/kernel move behind a narrow interface it calls
-   (MMIO, syscalls, COP2/VU0), so hardware-model changes only rebuild that crate
-   and relink. Also consider lower opt-level for generated crates in dev and a
-   shared sccache for worktree agents.
+1. **Build-time split** (now; no agents running): every `ssx3-ps2` change
+   recompiles all ~79 MB of generated EE crates (2–5 min with 3 jobs, >10 min
+   when agents build concurrently). Split a small, stable core crate (Cpu
+   registers, FPU/MMI/COP2 semantics, memory access) that generated code
+   depends on; GS/VU/VIF/DMA/kernel move behind a narrow interface it calls
+   (MMIO, syscalls, COP2/VU0), so hardware-model changes only rebuild that
+   crate and relink. Also consider lower opt-level for generated crates in dev
+   and a shared sccache for worktree agents.
+2. **60 fps again**: with the geometry fixes more is drawn and races run ~41
+   fps headless (80 before). Guest-bound: VU1 microcode on ee-thread-6, then EE
+   code. Profile and optimise (VU1 is serial with the EE thread; consider
+   running VU1 microprograms concurrently with the EE where the game waits on
+   them, as real hardware does).
+3. **Coverage** (`../investigation/coverage.md`): other courses and event
+   types, career progression, Previews, Multi Play, replays.
 
 ## How to resume
 
