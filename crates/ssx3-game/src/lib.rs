@@ -38,6 +38,22 @@ pub mod state;
 pub mod util;
 #[cfg(feature = "dispatch")]
 pub mod dispatch;
+#[cfg(feature = "rider_states")]
+pub mod rider_states;
+#[cfg(feature = "skeleton")]
+pub mod skeleton;
+#[cfg(feature = "chase")]
+pub mod chase;
+#[cfg(feature = "ai")]
+pub mod ai;
+#[cfg(feature = "world")]
+pub mod world;
+#[cfg(feature = "ui")]
+pub mod ui;
+#[cfg(feature = "audio")]
+pub mod audio;
+#[cfg(feature = "containers")]
+pub mod containers;
 
 /// Replacements outside the work-package modules: (address, function, name).
 const CORE: &[(u32, GuestFn, &str)] = &[
@@ -65,6 +81,22 @@ pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     v.extend_from_slice(util::OVERRIDES);
     #[cfg(feature = "dispatch")]
     v.extend_from_slice(dispatch::OVERRIDES);
+    #[cfg(feature = "rider_states")]
+    v.extend_from_slice(rider_states::OVERRIDES);
+    #[cfg(feature = "skeleton")]
+    v.extend_from_slice(skeleton::OVERRIDES);
+    #[cfg(feature = "chase")]
+    v.extend_from_slice(chase::OVERRIDES);
+    #[cfg(feature = "ai")]
+    v.extend_from_slice(ai::OVERRIDES);
+    #[cfg(feature = "world")]
+    v.extend_from_slice(world::OVERRIDES);
+    #[cfg(feature = "ui")]
+    v.extend_from_slice(ui::OVERRIDES);
+    #[cfg(feature = "audio")]
+    v.extend_from_slice(audio::OVERRIDES);
+    #[cfg(feature = "containers")]
+    v.extend_from_slice(containers::OVERRIDES);
     v
 }
 
