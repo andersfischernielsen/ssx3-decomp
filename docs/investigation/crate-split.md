@@ -180,7 +180,10 @@ The IOP side was checked as well: `generated/iop/modules` (3.4 MB) depends on
   (107 s vs 113 s, back to back), no halts or misses.
 - `touch crates/ssx3-ps2/src/gs/raster.rs` + `cargo build --profile game -p
   ssx3`: **2.4 s**, recompiling only `ssx3_ps2`, `ssx3` and `ssx3_headless`.
-- Follow-up: `recomp-ee` depends on `ssx3-vu` (and with it the translated
-  microcode), so building the generator compiles the microcode in release mode
-  (~19 min cold). The generator only needs the VU decoder/op tables; move those
-  into a small crate (or `ssx3-ee-rt`) so `recomp-ee` builds in seconds.
+- Generator decoupled (same day): `ssx3-recomp` no longer depends on
+  `ssx3-ps2`. The translated microcode in `ssx3-vu` is behind the default
+  `microcode` feature and the recompiler uses `ssx3-vu` with
+  `default-features = false`; the ISO reader moved to `ssx3_core::iso`
+  (re-exported as `ssx3_ps2::iso`). `cargo build --release --bin recomp-ee`
+  now takes **4.9 s** (was ~19 min cold), regeneration output is unchanged,
+  and a GS edit rebuilds the game in 1.5 s.

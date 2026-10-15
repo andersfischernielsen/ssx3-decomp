@@ -66,6 +66,9 @@ pub mod simd;
 mod tests;
 
 /// Statically recompiled microcode (written by `src/bin/vu_recomp.rs`).
+/// Behind the default `microcode` feature so tools that only need the
+/// translator or the op tables (e.g. `recomp-ee`) don't compile it.
+#[cfg(feature = "microcode")]
 #[path = "../../../../generated/vu/mod.rs"]
 pub mod generated;
 
@@ -325,6 +328,7 @@ impl Vu {
             fbk_tag: 0,
         };
         vu.vf[0] = [0, 0, 0, ONE];
+        #[cfg(feature = "microcode")]
         vu.register_programs(generated::PROGRAMS);
         vu
     }

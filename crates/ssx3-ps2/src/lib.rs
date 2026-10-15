@@ -20,7 +20,7 @@ pub mod gs;
 pub mod hw;
 pub mod iop_bridge;
 pub mod ipu;
-pub mod iso;
+pub use ssx3_core::iso;
 pub mod kernel;
 pub mod machine;
 pub mod pad;

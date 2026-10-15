@@ -8,5 +8,11 @@ license.workspace = true
 # Its own crate so that changes elsewhere in the hardware model (GS, kernel,
 # DMA, ...) do not recompile the ~5.5 MB of translated microcode
 # (docs/investigation/crate-split.md).
+[features]
+default = ["microcode"]
+# The translated microcode in generated/vu (the game needs it; the recompiler
+# and other tools build without it).
+microcode = []
+
 [dependencies]
 ssx3-ee-rt = { path = "../ssx3-ee-rt" }

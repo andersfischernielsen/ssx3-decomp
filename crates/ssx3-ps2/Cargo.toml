@@ -6,6 +6,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+ssx3-core.workspace = true
 ssx3-ee-rt = { path = "../ssx3-ee-rt" }
 ssx3-vu = { path = "../ssx3-vu" }
 ssx3-iop = { path = "../ssx3-iop" }

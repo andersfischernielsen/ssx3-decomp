@@ -649,7 +649,7 @@ impl NameKey for Irx {
 /// Read the sound modules from the disc image, translate them, and write the
 /// crate `ssx3-iop-gen` to `out` (`generated/iop/modules`).
 pub fn generate_from_disc(iso: &std::path::Path, out: &std::path::Path) -> Result<Output, String> {
-    let mut disc = ssx3_ps2::iso::Disc::open(iso).map_err(|e| format!("{}: {e}", iso.display()))?;
+    let mut disc = ssx3_core::iso::Disc::open(iso).map_err(|e| format!("{}: {e}", iso.display()))?;
     let mut mods = Vec::new();
     for (name, base) in irx::layout::MODULES {
         let path = format!("cdrom0:\\DATA\\MODULES\\{name}.IRX;1");

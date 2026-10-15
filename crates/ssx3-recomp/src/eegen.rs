@@ -360,7 +360,7 @@ fn lower_cop2(w: u32, rs: u32, rt: u32, rd: u32) -> Option<String> {
             match funct {
                 0x38 => format!("c.vcallms({:#x});", ((w >> 6) & 0x7FFF) * 8),
                 0x39 => "c.vcallmsr();".into(),
-                _ => match ssx3_ps2::vu::recomp::macro_source(w) {
+                _ => match ssx3_vu::vu::recomp::macro_source(w) {
                     Some(src) => src.replacen("vu.", "c.vu0().", 1),
                     None => format!("c.vu0_macro({w:#010x});"),
                 },

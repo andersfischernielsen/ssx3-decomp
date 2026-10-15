@@ -13,6 +13,7 @@
 pub mod devices;
 pub mod elf;
 pub mod gs;
+pub mod iso;
 pub mod memory;
 pub mod memory_map;
 pub mod syscall;
