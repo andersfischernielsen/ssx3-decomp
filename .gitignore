@@ -25,6 +25,11 @@
 !/.claude/skills/
 # OpenCode delegate logs (scripts/delegate.sh)
 /.delegate/
+# Translated VU microcode and Ghidra disassembly listings: derived from the
+# game's code, so not committed (tools/bootstrap.sh regenerates the VU code;
+# tools/export-ghidra-disasm.py the listings, which only a recompiler test uses).
+/generated/vu/
+/generated/ghidra_disasm/
 # Recompiled EE code (reproduce with: cargo run --release -p ssx3-recomp --bin recomp-ee)
 /generated/ee/
 # Recompiled IOP modules (reproduce with: cargo run --release -p ssx3-recomp --bin recomp-iop)

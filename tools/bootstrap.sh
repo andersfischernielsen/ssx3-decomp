@@ -15,4 +15,10 @@ if [ ! -f generated/iop/modules/Cargo.toml ]; then
   printf '[package]\nname = "ssx3-iop-gen"\nversion = "0.1.0"\nedition = "2021"\npublish = false\n\n[dependencies]\nssx3-iop = { path = "../../../crates/ssx3-iop" }\n' > generated/iop/modules/Cargo.toml
   printf 'pub static GENERATED: ssx3_iop::Generated = ssx3_iop::Generated { functions: &[], stubs: &[], modules: &[] };\n' > generated/iop/modules/src/lib.rs
 fi
+if [ ! -f generated/vu/mod.rs ]; then
+  # Empty registry so ssx3-vu builds; vu_recomp then translates the microcode.
+  mkdir -p generated/vu
+  printf '//! Placeholder; tools/bootstrap.sh replaces it.\nuse crate::vu::ProgramEntry;\n\npub static PROGRAMS: &[ProgramEntry] = &[];\n' > generated/vu/mod.rs
+  cargo run --release -p ssx3-ps2 --bin vu_recomp
+fi
 cargo run --release -p ssx3-recomp --bin recomp-ee -- "$@"

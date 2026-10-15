@@ -17,9 +17,13 @@ file-backed memory card, and 4,325 of 11,844 functions carry recovered names. It
 issues. Screenshots and the full log are in
 [`docs/plans/playable-push.md`](docs/plans/playable-push.md).
 
-> SSX 3 is © EA. This repository contains no copyrighted game data. The disc
-> image and the extracted ELF are **not** committed; see
-> [`tools/extract-from-iso.sh`](tools/extract-from-iso.sh).
+> SSX 3 is © Electronic Arts; "SSX" is an EA trademark. This project is not
+> affiliated with or endorsed by EA. The repository contains no game data and
+> no game code: the disc image, the extracted executable and everything
+> translated from them (`generated/ee`, `generated/iop`, `generated/vu`) are
+> produced locally from **your own copy** of the game and are never committed
+> (see [`tools/extract-from-iso.sh`](tools/extract-from-iso.sh) and
+> [`tools/bootstrap.sh`](tools/bootstrap.sh)).
 
 ## Quick start
 
