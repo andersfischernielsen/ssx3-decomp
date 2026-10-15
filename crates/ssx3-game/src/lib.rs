@@ -14,6 +14,14 @@
 use ssx3_ee_rt::funcs::GuestFn;
 
 pub mod abi;
+#[cfg(feature = "oc4")]
+pub mod oc4;
+#[cfg(feature = "oc3")]
+pub mod oc3;
+#[cfg(feature = "oc2")]
+pub mod oc2;
+#[cfg(feature = "oc1")]
+pub mod oc1;
 pub mod call;
 #[cfg(test)]
 pub mod difftest;
@@ -54,6 +62,22 @@ pub mod ui;
 pub mod audio;
 #[cfg(feature = "containers")]
 pub mod containers;
+#[cfg(feature = "world_cache")]
+pub mod world_cache;
+#[cfg(feature = "replay_script")]
+pub mod replay_script;
+#[cfg(feature = "streaming")]
+pub mod streaming;
+#[cfg(feature = "graphics")]
+pub mod graphics;
+#[cfg(feature = "rider_logic")]
+pub mod rider_logic;
+#[cfg(feature = "world_painter")]
+pub mod world_painter;
+#[cfg(feature = "audio_system")]
+pub mod audio_system;
+#[cfg(feature = "snd_lib")]
+pub mod snd_lib;
 
 /// Replacements outside the work-package modules: (address, function, name).
 const CORE: &[(u32, GuestFn, &str)] = &[
@@ -97,6 +121,30 @@ pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     v.extend_from_slice(audio::OVERRIDES);
     #[cfg(feature = "containers")]
     v.extend_from_slice(containers::OVERRIDES);
+    #[cfg(feature = "world_cache")]
+    v.extend_from_slice(world_cache::OVERRIDES);
+    #[cfg(feature = "replay_script")]
+    v.extend_from_slice(replay_script::OVERRIDES);
+    #[cfg(feature = "streaming")]
+    v.extend_from_slice(streaming::OVERRIDES);
+    #[cfg(feature = "graphics")]
+    v.extend_from_slice(graphics::OVERRIDES);
+    #[cfg(feature = "rider_logic")]
+    v.extend_from_slice(rider_logic::OVERRIDES);
+    #[cfg(feature = "world_painter")]
+    v.extend_from_slice(world_painter::OVERRIDES);
+    #[cfg(feature = "audio_system")]
+    v.extend_from_slice(audio_system::OVERRIDES);
+    #[cfg(feature = "snd_lib")]
+    v.extend_from_slice(snd_lib::OVERRIDES);
+    #[cfg(feature = "oc1")]
+    v.extend_from_slice(oc1::OVERRIDES);
+    #[cfg(feature = "oc2")]
+    v.extend_from_slice(oc2::OVERRIDES);
+    #[cfg(feature = "oc3")]
+    v.extend_from_slice(oc3::OVERRIDES);
+    #[cfg(feature = "oc4")]
+    v.extend_from_slice(oc4::OVERRIDES);
     v
 }
 

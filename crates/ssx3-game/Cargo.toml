@@ -15,7 +15,7 @@ ssx3-ee = { path = "../../generated/ee/game" }
 # module behind a feature so packages can be developed in parallel without
 # breaking each other's builds; reviewed packages are added to `default`.
 [features]
-default = ["math", "anim", "camera", "state", "render", "sound", "util", "dispatch", "rider_states", "skeleton", "world", "ai", "ui", "audio", "containers"]
+default = ["math", "anim", "camera", "state", "render", "sound", "util", "dispatch", "rider_states", "skeleton", "world", "ai", "ui", "audio", "containers", "chase"]
 math = []
 anim = []
 camera = []
@@ -26,13 +26,26 @@ util = []
 dispatch = []
 rider_states = []
 skeleton = []
-chase = []
+# chase uses camera's typed views.
+chase = ["camera"]
 ai = []
 world = []
 ui = []
 audio = []
 containers = []
 
+snd_lib = []
+audio_system = []
+world_painter = []
+rider_logic = []
+graphics = []
+streaming = []
+replay_script = []
+world_cache = []
+oc1 = []
+oc2 = []
+oc3 = []
+oc4 = []
 [dev-dependencies]
 # A real machine (VU0 included) for the differential tests in src/difftest.rs.
 ssx3-ps2 = { path = "../ssx3-ps2" }
