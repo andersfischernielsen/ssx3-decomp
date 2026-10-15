@@ -18,6 +18,7 @@ pub fn boot(skip_movies_default: bool) -> Box<Cpu> {
     if n > 0 {
         eprintln!("[ssx3-game] {n} hand-written function(s) installed");
     }
+    ssx3_game::debug::install();
     // Phase 3: files from the host instead of the emulated CD.
     if ssx3_game::native_files::install() {
         eprintln!("[ssx3-game] native files on");

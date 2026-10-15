@@ -14,6 +14,8 @@
 use ssx3_ee_rt::funcs::GuestFn;
 
 pub mod abi;
+/// Debug-only overrides behind environment switches.
+pub mod debug;
 #[cfg(feature = "oc28")]
 pub mod oc28;
 #[cfg(feature = "oc27")]

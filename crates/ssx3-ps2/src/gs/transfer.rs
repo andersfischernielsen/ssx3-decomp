@@ -250,6 +250,17 @@ impl Gs {
         if let Some(lo) = nib {
             bytes.push(lo);
         }
+        if std::env::var_os("SSX3_TRACE_DOWNLOAD").is_some() {
+            let z = &self.regs.ctx[0].zbuf;
+            let f = &self.regs.ctx[0].frame;
+            let vals: Vec<u32> = bytes.chunks(3).map(|c| c.iter().rev().fold(0u32, |a, b| a << 8 | *b as u32)).collect();
+            eprintln!(
+                "[local->host] sbp {:#x} sbw {} spsm {:#x} at {},{} {}x{} | ctx0 zbuf zbp {:#x} psm {:#x} frame fbp {:#x} | max {:#x} nonzero {}/{}",
+                p.sbp, p.sbw, p.spsm, p.ssax, p.ssay, p.rrw, p.rrh,
+                (z & 0x1FF) << 5, (z >> 24) & 0xF, (f & 0x1FF) << 5,
+                vals.iter().max().copied().unwrap_or(0), vals.iter().filter(|v| **v != 0).count(), vals.len()
+            );
+        }
         bytes.resize(bytes.len().next_multiple_of(16), 0);
         self.readback.clear();
         for c in bytes.chunks_exact(16) {

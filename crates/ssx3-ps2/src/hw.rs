@@ -651,7 +651,8 @@ impl Hw {
                     mem_q_write(ram, spr, madr + i as u32 * 16, madr & 0x8000_0000 != 0, *v);
                 }
                 if std::env::var_os("SSX3_TRACE_DOWNLOAD").is_some() {
-                    eprintln!("[vif1-download] qwc {n} -> {madr:#x}: got {} qwords", data.len());
+                    let nz = data.iter().filter(|q| **q != 0).count();
+                    eprintln!("[vif1-download] qwc {n} -> {madr:#x}: got {} qwords, {nz} non-zero", data.len());
                 }
                 self.ch[c].madr += n * 16;
                 self.ch[c].qwc = 0;

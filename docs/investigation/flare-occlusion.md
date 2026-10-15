@@ -52,3 +52,45 @@ heap buffer that sits elsewhere in PCSX2's run (heap layouts differ between
 runs), or it is reused while paused. Before comparing contents, find the
 destination pointer in game code (the VIF1 download's MADR source) and read
 it from PCSX2 at the same game state.
+
+## Update 2026-10-16: the visibility test works; the sun case no longer reproduces
+
+**How light visibility works.**
+- Each frame, after the first chain phase, the render kick thread calls
+  `LensFX_UpdateCallback` → `LensFX_UpdateSourceVisibility` (0x2e3130). It runs a query,
+  `LensFX_v04` (0x2ec478), for every light source: the sun records at LensFX+0x6070, and the
+  per-emitter glows.
+- The query is a GS local→host copy of a 16×16 rectangle around the light from the **Z
+  buffer** (`sbp` = ZBUF base 0x1c00, PSMZ24, 3 bytes per pixel). The bytes go to
+  LensFX+0x6510 through the VIF1 download. That address is the 0x146db40 / 0x1467200 seen
+  above: the LensFX object lives at 0x1467630.
+- It counts the pixels inside the light's screen rectangle whose depth is ≤ the light's depth
+  (record float 9).
+- visibility = visible / total when the rectangle is fully on screen, otherwise
+  `max(0, (visible − half) / half)`. The result is stored per source (+0x6274).
+
+**What was checked.**
+- **The readback is right.** `SSX3_TRACE_DOWNLOAD=1` now also logs each transfer's surface and
+  value range. The game reads the real Z buffer: during the race-start sequence, values up to
+  0x1c9313, mostly non-zero. Example, frame 4400 at the start gate: the sun's query (401,154,
+  16×16) reads 256/256 pixels with depth around 0x3e800, far above the sun's depth of 3099. So
+  the sun is occluded, visibility is 0 (+0x6274 = 0), and no sun glare is drawn.
+- **Visibility drives the glows.** `SSX3_DEBUG_LENSFX_VIS=<f>` (`crates/ssx3-game/src/debug.rs`)
+  forces every query result. At 0 there are no glows; at 1 the frame looks exactly like the
+  bug report: a large sun glare over the rider and the stadium roof
+  (`flare-forced-visibility.png`, left 0 / right 1, frame 4400).
+- **The sun glare no longer reproduces.** Race-start frames 4480-4760, including 00:00:01,
+  the moment in `flare-occlusion-sun.png`, show no glare through the roof. With
+  `SSX3_GS_LATENT_READBACK=1` (the old default), only a small glow at frame 4480 differs.
+
+The earlier symptom was produced by a query that saw "fully visible", which is what an empty
+(all-zero) or stale readback gives: every pixel's depth 0 is ≤ the light's depth. The VIF1
+download now delivers the FIFO and readbacks are synchronous by default, so the query sees
+the current Z buffer.
+
+**Still open.** The point-light glows through rock (`flare-occlusion-rock.png`, Peak 3
+freestyle, 0:42) were not re-tested: the run's inputs are not recorded. Next step: reproduce a
+camera-against-terrain shot with a light behind it, with `SSX3_TRACE_DOWNLOAD=1`, and check
+that light's query and depth. A rock clipped by the near plane would leave no depth there, so
+the light would count as visible: compare with PCSX2 before treating that as a bug. Until this
+is confirmed in the windowed game, the final task stays open.
