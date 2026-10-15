@@ -309,10 +309,11 @@ pub(crate) struct GpuGs {
     prof: Option<Prof>,
     /// Latent readbacks (see `latent_read`).
     latent: Latent,
-    /// Serve local->host transfers with `latent_read`. Off by default: the
-    /// game consumes a GS download every frame (VIF1 → memory), and a latent
-    /// read returns data only if the GPU copy happens to be ready, which makes
-    /// runs nondeterministic. `SSX3_GS_LATENT_READBACK=1` turns it on.
+    /// Serve local->host transfers with `latent_read` (the previous frame's
+    /// copy, waited for if still in flight, so runs stay deterministic). On
+    /// by default: races run ~35 fps headless vs ~21 with synchronous
+    /// readbacks, which stall on the whole frame's drawing every frame (the
+    /// game reads Z around each light). `SSX3_GS_SYNC_READBACK=1` turns it off.
     pub(crate) latent_readback: bool,
     /// Per raster pass of the submission: primitives, tiles, entries.
     prof_info: Vec<(u32, u32, u32)>,
@@ -566,7 +567,7 @@ impl GpuGs {
             touched: Vec::new(),
             stats: GpuStats::default(),
             prof_info: Vec::new(),
-            latent_readback: std::env::var_os("SSX3_GS_LATENT_READBACK").is_some(),
+            latent_readback: std::env::var_os("SSX3_GS_SYNC_READBACK").is_none(),
             latent: Latent {
                 buf: mk("gs-latent", VRAM_BYTES, U::MAP_READ | U::COPY_DST),
                 ready: Arc::new(std::sync::atomic::AtomicBool::new(false)),
