@@ -185,6 +185,10 @@ on night one (see the log below).
   screenshots byte-identical; race 4320-4680 ~38-40 fps for both builds back
   to back. `recomp-ee` only rewrites changed shard files.
 
+- Crate split merged (`crate-split.md`): generated EE code depends only on the
+  new `ssx3-ee-rt` core; the VU lives in `ssx3-vu`. A GS or kernel change now
+  rebuilds in ~2-3 s (was 2-6 min); byte-identical screenshots; no fps cost.
+
 ## Next steps (as of 2026-10-15 early morning)
 
 Done: race geometry (`race-geometry.md`), MTGS (`gs-mtgs.md`), full race to

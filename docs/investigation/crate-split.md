@@ -131,7 +131,7 @@ previous probe (same sequence before and after).
 | VU function body (`Vu::flush`) | 342 s (19) | 153 s (2) | 155 s (3) |
 | VU struct field (`Vu`) | (not run) | 183 s (2) | 182 s (3) |
 | IOP (SPU2) body / field | n/a | 86 / 87 s (4) | **5 / 19 s** (4) |
-| EE core (`ssx3-ee-rt`) body | n/a | 194 s (22) | CORE_FINAL |
+| EE core (`ssx3-ee-rt`) body | n/a | 194 s (22) | not re-measured (recompiles all generated code) |
 | clean build of the game | 462 s | 590 s (after regenerating) | |
 
 "Crates" counts the crates cargo recompiled: before, every hardware change
@@ -149,7 +149,11 @@ Remaining slow cases:
 - **Core changes** recompile all generated code. The core only holds
   instruction semantics, so this should be rare.
 - **Regeneration** (`recomp-ee`) recompiles the shards whose output changed.
-  REGEN_LINE
+  After the merge (2026-10-15, main checkout) every shard changed (new call
+  spellings), so this was effectively a clean build: `recomp-ee` 19 min (almost
+  all of it compiling `ssx3-vu` with the translated microcode in release mode,
+  because the generator depends on it), then the game 39 min on a loaded
+  machine. Later regenerations only rebuild shards whose output changed.
 
 The IOP side was checked as well: `generated/iop/modules` (3.4 MB) depends on
 `ssx3-iop`, but rebuilding it runs in parallel with `ssx3-ps2` and costs
@@ -166,3 +170,17 @@ The IOP side was checked as well: `generated/iop/modules` (3.4 MB) depends on
 - To see what a change costs: `cargo build --profile game -p ssx3 -v` lists
   the crates being recompiled; after a hardware-only change it should not
   list any `ssx3-ee-s*`.
+
+## Verification after merging into overnight-playable (2026-10-15)
+
+- Merged as e5b2d28 (one conflict: the headless pad-2 input line), regenerated,
+  rebuilt.
+- Scripted race to frame 9000 with the progressed memory card: all 18
+  screenshots byte-identical between the pre-merge binary and the merged one
+  (107 s vs 113 s, back to back), no halts or misses.
+- `touch crates/ssx3-ps2/src/gs/raster.rs` + `cargo build --profile game -p
+  ssx3`: **2.4 s**, recompiling only `ssx3_ps2`, `ssx3` and `ssx3_headless`.
+- Follow-up: `recomp-ee` depends on `ssx3-vu` (and with it the translated
+  microcode), so building the generator compiles the microcode in release mode
+  (~19 min cold). The generator only needs the VU decoder/op tables; move those
+  into a small crate (or `ssx3-ee-rt`) so `recomp-ee` builds in seconds.
