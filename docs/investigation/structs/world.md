@@ -51,8 +51,8 @@ sets it to 1 when App+4 != 0).
 | 0x10 | World* | world | alloc 0x18 "World" | 0x542f00 | high |
 | 0x14 | SkyBox* | skyBox | alloc 0x18 "SkyBox" in GameModule_LoadWorld | 0x542ea0 | high |
 | 0x18 | cPS2FogParticleMan* | fogParticles | alloc 0x3010 "cPS2FogParticleMan", ctor 0x2dbf80, vt 0x4882e0 at +4 | 0x1464050 | high |
-| 0x1c | ? | | return of 0x2ec3e0() in LoadWorld | 0x1467070 | low |
-| 0x20 | "Nash"* (0xa8) | nash | alloc 0xa8 "Nash"; [2][2][2] array of 0x14-byte records, plus +0xa0/+0xa4. Passed to World load (0x3a6ae0), 0x334800 (collision range), WorldLightMan+0, and the world render. Probably a collision/hull query cache | 0x5b5b00 | tag high, meaning low |
+| 0x1c | LensFX* | lensFx | return of 0x2ec3e0() in LoadWorld = `EA_MemAllocNamed(0x6820, "LensFX")` + `LensFX_ctor` (round 2). Live +0x08/+0x0c = 512.0 / 448.0 (screen size) | 0x1467070 (headless 0x1467630) | high |
+| 0x20 | "Nash"* (0xa8) | nash | alloc 0xa8 "Nash"; [2][2][2] array of 0x14-byte records, plus +0xa0/+0xa4. Passed to World load (0x3a6ae0), 0x334800, WorldLightMan+0, and the world render. **Round 2: a loose-octree spatial hash for world objects**, see "Nash" below | 0x5b5b00 | high |
 | 0x24 | Font* | debugFont | alloc 0x84 "DebugFont", `data/fonts/debugfnt.sfn` | 0x5b3700 | high |
 | 0x28 | Replay* | replay | alloc 0x688 "Replay". *replay = replay mode (Update compares it with 3 and with <10) | 0x146d8a0 | high |
 | 0x2c | FXLoader* | fxLoader | alloc 1 "FXLoader" | 0x53ff10 | high |
@@ -74,7 +74,7 @@ sets it to 1 when App+4 != 0).
 | 0x74 | SnowFall* | snow | alloc 0x60, prio 2 | 0x58c900 | high |
 | 0x78 | SectionMan* | sectionMan | alloc 0x1d4 "SectionMan" in LoadWorld; Update checks +0x1d0 | 0x5c2a00 | high |
 | 0x7c | InputSync* | inputSync | alloc 0x44, only in netplay (`DAT_00534b30 != 0`) | 0 | high |
-| 0x80 | ? | | never written in the code read so far | 0x05010000 | low |
+| 0x80 | ? | (unused) | no load or store at offset 0x80..0x83 on a GameModule pointer in 0x228000-0x238000 (the only `0x80(reg)` hits there are AI `cpuCount` reads and the App+0x80 store at 0x2282b8). Same value in PCSX2 and in the headless dump, so it is probably a stale heap word | 0x05010000 | med |
 | 0x84 | GameViewMan* | views | alloc 0x38 "GameViewMan" | 0x56e140 | high |
 | 0x88 | InstancesMan* | instances | alloc 0x10, ctor(p, 0x80, 0x40) | 0x540760 | high |
 | 0x8c | OcclusionMan* | occlusion | alloc 0x114 | 0x5dd400 | high |
@@ -104,34 +104,73 @@ Ctor fields: +0x0c, +0x24, +0x48, +0x7c, +0x84 = 0, +0x228 (word 0x8a) = -1.
 
 ### GameModule state objects (embedded, 0x10..0x24 bytes each)
 
-Layout: `{int id; int ?; int ?; vptr @+0xc; ...}`. The base vt 0x47d6e8 (slot 1 dtor 0x243c80;
-slots 2..9 are `jr ra` stubs at 0x243cb0+8k). Slots used by GameModule_ProcessStateChange
-(0x230f40): **2 OverlayEnter, 3 OverlayUpdate, 5 Enter(arg), 6 Update, 7 Exit,
-8 IsOverlayDone**.
+Layout (round 2, corrected): `{int nextStateId; int nextStateArg; int local8; vptr @+0xc;
+state-local words from +0x10}`. Word 0/1 are not an id: they are the state that the
+shared helper 0x233aa0 (proposed `GameState_GotoNext`) requests with
+`GameModule_RequestState(gm, this[0], this[1], 0)` when the state is done. Enter
+functions overwrite them (state 10 picks 1 or 4, state 5 picks 12), so the live values
+show the flow. +0x08 is a "done" flag in the menu states (2, 7), written by the UI.
 
-| id | Offset | vt | Note |
-|---|---|---|---|
-| 1 | +0xb0 | 0x47d530 | ctor 0x234188. Overrides slots 5/6/7 (0x2341d0/0x2343b0/0x234750) |
-| 2 | +0xd0 | 0x47d270 | |
-| 3 | +0xe0 | 0x47d4d8 | |
-| 4 | +0xf0 | 0x47d480 | |
-| 5 | +0x100 | 0x47d5e0 | ctor 0x233c10 |
-| 6 | +0x118 | 0x47d690 | |
-| 7 | +0x128 | 0x47d218 | |
-| 8 | +0x138 | 0x47d638 | |
-| 9 | +0x148 | 0x47d588 | |
-| 10 | +0x158 | 0x47d428 | ctor 0x234ef8, own slots 2..7 (0x234f40..0x235868). Default after Load (state 10, or 0x10 for replay) |
-| 11 | +0x178 | 0x47d2c8 | ctor 0x236868. Used by SectionMan event switch (RequestState(11), overlay 10) |
-| 12 | +0x18c | 0x47d1c0 | |
-| 13 | +0x19c | 0x47d3d0 | |
-| 14 | +0x1b8 | 0x47d320 | ctor 0x236208 |
-| 15 | +0x1dc | 0x47d378 | |
-| 16 | +0x1ec | 0x47d168 | |
+The base vt 0x47d6e8 (slot 1 dtor 0x243c80; slots 2..9 are `jr ra` stubs at 0x243cb0+8k).
+Slots used by GameModule_ProcessStateChange (0x230f40): **2 OverlayEnter (+0x14),
+3 OverlayUpdate (+0x1c), 5 Enter(arg) (+0x2c), 6 Update (+0x34), 7 Exit (+0x3c),
+8 IsOverlayDone**. The old state's Exit runs before the new state's Enter; Update runs
+every frame, except when the current state is 3 and a new state is already pending.
 
-State names are unknown (no strings). The live current state at +0x200 = 0xcbfb10, which
-falls inside the id-14 object region, while +0x214 = 4. The id-to-offset map is taken from
-the switch in 0x230f40. The live pointer does not line up with the table, so check
-before relying on it (low).
+Names are proposals (no strings exist); evidence is the Enter/Update/Exit bodies.
+"AI n" is the `AI_SetRaceState(ai, n)` the state performs (1 GameInit, 2 Freeride,
+3 PreRace, 4 Countdown, 5 Race, 6 EndRace, 7 Shutdown); "BE phase" is
+`BELibrary_SetPhase` (0 PreRace, 1 Race, 2 PostRace interface, see `BELibrary_GetInstance`).
+
+| id | Offset | vt | Enter / Update / Exit | Proposed name | What it does | live next (+0/+4) | Conf |
+|---|---|---|---|---|---|---|---|
+| 1 | +0xb0 | 0x47d530 | 0x2341d0 / 0x2343b0 / 0x234750 | **PreRaceLoad** | Enter: AI 3, BE phase 0, `Replay_Reset`, pushes the race's characters into the BE player interface. Update is a 0..4 step machine: wait for the script engine, `AI_SetupComputerRiders`/`AI_SetupActorRiders`, `AI_LoadNextRider` until `AI_AreAllRidersLoaded`, wait for the intro script channel, then GotoNext. Exit: `AI_Restart(3)`, `WScriptMan_SpawnMissions`, AI 3, BE phase 1. Arg: 1 = entered from a free-ride event trigger (0x22d6c8), 2 = quick restart (0x2302a8) | 2 / 0 | high |
+| 2 | +0xd0 | 0x47d270 | 0x236bb0 / 0x236c48 / 0x236c88 | **PreRaceMenu** | Enter: `GameUI_OpenScreenForState(2)` (0x20a8f8: screen 8/9/0x14/0x15, or 0x11 in replay) and pushes pause mask 0x4428f4 on the pause stack (gp-0x6a0/0x5366e8), so the world is frozen. Update: GotoNext once +0x08 == 1. Exit pops the pause mask | 3 / 0 | med |
+| 3 | +0xe0 | 0x47d4d8 | 0x234ad0 / 0x234c68 / — | **Countdown** | Enter: BE phase 0, `Replay_Reset`, AI 4, plays script event "StartlightBegin". Update: shows `AI+0x1c / 60` each whole second; at 0 plays "StartgateOpen", tells the "hud" UI state, GotoNext. Free-ride/mode 4..6 skip straight to next | 4 / 0 | high |
+| 4 | +0xf0 | 0x47d480 | 0x234e20 / — / — | **Race** | Enter only: AI 5, `AI+0x14` = 1 (CPU riders active), `AI+0x8c` = 0, BE phase 1, closes the UI states. Racing itself is driven by the AI race state machine; `RaceStateRace_Update` requests GameModule state 5 when `AI_AllPlayersFinished` | 5 / 0 | high (live: curStateId 4) |
+| 5 | +0x100 | 0x47d5e0 | 0x233c50 / 0x233cd8 / 0x234008 | **Finish** | Enter: 0x26fa50(replay), closes UI, 180-frame timer at +0x14. Update: waits until every player's speed is below a gp threshold, then opens the "finishov" UI state; next = 12 if a finish cinematic exists (0x279248 > 0), else 7 | 7 / 0 | med |
+| 6 | +0x118 | 0x47d690 | 0x233b60 / — / (0x233b88, not a function) | **Quit** | Enter = `RequestState(10)`. Requested by 0x230488 (proposed `GameModule_QuitToLoadScreen`, which also `App_SetNextState`s a cPreFELoadScreen/cPreGameLoadScreen) | 8 / 0 | med |
+| 7 | +0x128 | 0x47d218 | 0x236da0 / 0x236e60 / 0x236ea0 | **Results** | Enter: clears BE per-player results, `GameUI_OpenScreenForState(7)` (post-race menu chosen from the BE event outcome). Update: when +0x08 == 1 → `RequestState(14, 2)` | 8 / 0 | med |
+| 8 | +0x138 | 0x47d638 | — / — / — | **Idle** | all slots are the base stubs | 0xb / 0 | high (no code) |
+| 9 | +0x148 | 0x47d588 | — / — / 0x236b38 | (**ResetAI**, unused?) | Exit only: `AI_Restart(3)`. No `RequestState(9)` call site found | 0xa / 0 | low |
+| 10 | +0x158 | 0x47d428 | 0x2355c0 / 0x2357f8 / 0x235868; overlay 0x234f40 / 0x235080 / 0x2355b0 | **Reset** | Default state after `GameModule_Load` (twice `RequestState(10)`) and after a section-event change (0x22dff0). Enter: `WScriptMan_Restart`/`_Shutdown`, BE phase 0, `AI+0x14`; next = 4 (straight to Race, free ride / events 0xe..0x10) or 1 (PreRaceLoad). Update waits for script channel 1 then GotoNext. As an *overlay* (`RequestOverlayState(10)` from the section-event switch) it reloads the world scripts (`ScriptEngine_UnloadWorldScripts`/`LoadWorldScripts`) | 1 / 0 | high |
+| 11 | +0x178 | 0x47d2c8 | 0x2368a0 / 0x236960 / 0x236af0 | **EventSwitchLoad** | Requested (immediate) by 0x22df50 together with overlay 10. Enter: BE phase 0, `Replay_Reset`. Update: waits for `SectionMan_IsEventLoaded(+0x1bc)`, places the player camera, waits for the fade, then `SectionMan_LoadEvent(…, 7)` | 0xa / 0 | med |
+| 12 | +0x18c | 0x47d1c0 | 0x236f08 / 0x236f40 / 0x236f90 | **FinishCinematic** | Enter: `SSXAudioSystem_PlayCharacterTune`, `AI+0x8c` = 1 (actor riders active). Update: GotoNext when script channel 0 is idle (0) or 5 | 7 / 0 | med |
+| 13 | +0x19c | 0x47d3d0 | 0x235aa0 / 0x235cc8 / 0x235f20 | **RestartRace** | Requested by the pause/results menus (0x20ccf8 option 1, 0x20d590). Enter: `GameModeMan_ResetMode`, re-sends characters to the BE, frees/rebuilds CPU riders. Update steps 0..3: `AI_RemoveComputerRiders`/`AI_SetupComputerRiders`, `AI_LoadNextRider` until loaded, camera cut + fade, GotoNext | 1 / 3 | med |
+| 14 | +0x1b8 | 0x47d320 | 0x236250 / 0x236418 / — | **EventSelect** | Arg 0/1/2/3 = entry mode (2 from Results, 1 and 2 from UI 0x2018a8/0x20cfd0, 0/2 from script 0x302210). Enter: AI 3, player boost meter = 0, `Rider_Reset`; opens UI screen 0x1f (arg 0) or 0x21 (arg 2). Update: when an event is chosen either `RequestState(15)` (same track) or `SectionMan_RequestEvent(track, 7)` (different track → state 11) | 4 / 0 | med |
+| 15 | +0x1dc | 0x47d378 | 0x236058 / 0x236198 / — | **WarpToEvent** | Requested by `OVScreenSession_OnWidgetAction` and state 14. Enter: `GameModeMan_StartMode(0xc)`, `Rider_PlaceAtMarker(player, BE-iface-10 marker, 2)`, a 1-second fade `TransitionEffect`. Update: `RequestState(1)` | 0xa / 0 | med |
+| 16 | +0x1ec | 0x47d168 | 0x236fe8 / (0x237030) / (0x237038) | **ReplayPlayback** | Load picks 0x10 instead of 10 in replay mode. Enter: script restart/shutdown, opens UI screen 0x11 (the replay HUD; 0x20ccf8 opens the same screen with `Replay_BeginPlayback`) | 4 / 0 (object is 0x10 bytes; the next words are GameModule +0x1fc/+0x200) | med |
+
+**The +0x200 "mismatch" is resolved:** the round-1 note subtracted wrongly. Live
+`+0x200` = 0xcbfb10 = GameModule 0xcbfa20 + **0xf0**, which is state 4 (Race) and matches
+`+0x214` = 4; `+0x1fc` = 0xcbfb00 = +0xe0 = state 3 (Countdown) and `+0x218` = 3. The
+headless dump at frame 5000 has the same values. The id-to-offset table above is correct
+(high).
+
+Typical flow: Load → 10 Reset → 1 PreRaceLoad → 2 PreRaceMenu → 3 Countdown → 4 Race →
+5 Finish → (12 FinishCinematic) → 7 Results → 14 EventSelect → 15/11 → 1 ...; restart
+from a menu goes through 13.
+
+#### "Nash" (GameModule+0x20, 0xa8 bytes): loose-octree spatial hash
+
+Built inline in `GameModule_Load` (0x22ec70..0x22ecf8): three nested loops over
+[2][2][2] records of 0x14 bytes, clearing each +0x10; then +0xa0 = +0xa4 = 0. Handed to
+`cPS2ChunkResolve` slot 2 (0x3aae40 stores it at resolver+0xc). When a world chunk with a
+bounding box is resolved (jump table 0x494fb0, e.g. 0x3aaec0, 0x3aafc8, 0x3ab200), the
+box goes through 0x328f28 (proposed `SpatialKey_FromAABB`): level = exponent of the
+largest box extent (min 11, i.e. cells of 2^11 = 2048 units), cell = floor(centre /
+2^level) per axis, raised one level at a time until the box fits in the cell ± a margin.
+The key's sign bits select one of the 8 records (x ≥ 0 → +0, else +0x50; y → +0x28;
+z → +0x14), and 0x328c20 (proposed `SpatialHash_Insert(root, type, obj, key)`) inserts it.
+
+| Off | Type | Meaning | Live (headless f5000) | Conf |
+|---|---|---|---|---|
+| 0x00 + 0x14·(4·(x<0) + 2·(y<0) + (z<0)) | `{i32 level; i32 ix, iy, iz; Node* root}` | root node per sign octant. Live: (+,+,−) = {14, 0, 0, −1, 0x5497c0}, (+,−,−) = {11, 0, −1, −1}, (−,+,−) = {19, −1, 0, −1}, (−,−,−) = {20, −1, −1, −1}; empty octants have root 0 | see left | high |
+| 0xa0 | i32 | 1 live (set after the world load) | 1 | low |
+| 0xa4 | AIFwdDiffCache* | `EA_MemAllocNamed(0x10, …)` + `AIFwdDiffCache_Init(p, 0x28)` in 0x334800 | 0x540810 | high |
+
+Word 0 of the first record reads 0x5ba200 live although its root is 0, so the +,+,+
+octant's key words are not reset when empty (low).
 
 ### Update/Render order (GameModule_Update 0x2306b8)
 
@@ -155,29 +194,30 @@ Live 0x5b3300, Race state.
 |---|---|---|---|---|---|
 | 0x00 | int | raceState | 1 GameInit .. 7 Shutdown (AI_SelectRaceState 0x113b48) | 5 (Race) | high |
 | 0x04 | int | prevRaceState | AI_SetRaceState; equal after the transition | 5 | high |
-| 0x08 | int | | counter | 0x256 | low |
-| 0x0c | int | raceTicks? | SectionMan restart writes 0 | 0x1a2 | med |
-| 0x10 | int | | Init 0 | 1 | low |
-| 0x14 | int | cpuActive | Update includes CPU riders only if != 0 | 1 | med |
-| 0x18 | int | | | -1 | low |
-| 0x1c | int | | Init 0 | 0 | low |
-| 0x20..0x24 | int[2] | | Init 0 | 0 | low |
+| 0x08 | int | frameCount | +1 at the end of every `AI_Update`; the AI's clock (`0x1298c8` returns it): relations every 6th frame, CPU target pick every 12th, gate push-off at `180 − frameCount`, time-limit checks every 60th | 0x256 (= RiderMetrix+0x168); headless 749 → 750 between frames 5000/5001 | high |
+| 0x0c | int | raceTicks | +1 per `RaceStateRace_Update`; PreRace Enter (0x113d18) zeroes it; scaled and compared with `Rider+0xb30` (start handicap) | 0x1a2; headless 569 = frameCount − 180 (the countdown) | high |
+| 0x10 | int | | Init 0; no reader found in the AI code | 1 | low |
+| 0x14 | int | cpuActive | Update includes CPU riders only if != 0; Freeride Enter (0x113ce8) clears it | 1 | high |
+| 0x18 | int | finishTimeout | -1 = off. In `0x12bb20` (time-limit rules, BE interface 7): once a player has finished (`Rider+0x470` ≥ 0) it is set to `min(54180 − frameCount, 7200)` frames; at 0 every unfinished player is force-finished (`Rider+0x480 = 1`, `0x125108`). frameCount ≥ 54180 (15 min) does the same | -1 | med |
+| 0x1c | int | countdownFrames | Countdown Enter (0x113d38) sets 180; `RaceStateCountdown_Update` decrements and enters Race (5) at 0; Exit clears | 0 | high |
+| 0x20..0x24 | int[2] | actorCharacters | character id of each scripted actor rider, read by `AI_CreateActorRiders` (`BENewPlayerInt_SetCharacter`) | 0 | med |
 | 0x28 | Rider*[6] | riders | Init clears 6 (0x28..0x3c); Update iterates `riders[i]->vt(+0x6c0)` for i < +0x78 | 0x14701a0, 0x18d0c40, ... | high |
 | 0x40 | Player*[2] | players | AI_Update: `players[i]+0x18` = rider | 0x146f390, 0 | high |
 | 0x48 | ComputerRider*[5] | cpu | Init clears 0x48..0x58 | 0x18cfcf0 .. 0x1912170 | high |
-| 0x5c | ActorRider* | actors[?] | iterated for +0x84 actors | 0x5aae00 | med |
-| 0x60 | float | | | 110.0 | low |
-| 0x64 | float | | | 133.0 | low |
-| 0x6c | int | | | 4 | low |
-| 0x70 | Rider-owner* | missionRider? | Init 0; used as the 2nd camera subject in one Update mode | 0 | low |
-| 0x74 | int | | ctor 0 | 1 | low |
+| 0x5c | ComputerActorRider*[] | actors | `AI_CreateActorRiders` appends at `+0x5c + 4·actorCount`; iterated for +0x84 actors. Not cleared by Init, so stale values remain when actorCount = 0 | 0x5aae00 (stale) | high |
+| 0x60 | | | slot after actors[0]; no code found that uses it as a float; the live 110.0 is stale data (headless: 0) | 110.0 | low |
+| 0x64 | | | as +0x60 (stale, headless 0) | 133.0 | low |
+| 0x6c | | | as +0x60 (stale, headless 0) | 4 | low |
+| 0x70 | Player* | missionRider | `AI_CreateMissionRider` 0x129c00 (a second `Player` whose input comes from `GameModule+0x34` +0x6c) stores it at `+0x70 + 4·missionCount`; in `AI_Update` the mission path runs only P1 and this rider | 0 | med |
+| 0x74 | int | positionMode | `AI_SetPositionMode` 0x128a48: 0 off (all `Rider+0xec` = 0), 1 race order by `distToFinish`, 2 by RiderMetrix score (+0x198); `AI_UpdateRacePositions` 0x10f998 runs every 6th frame when != 0 | 1 | high |
 | 0x78 | int | riderCount | Init 0 | 6 | high |
 | 0x7c | int | playerCount | | 1 | high |
 | 0x80 | int | cpuCount | Load: `if (+0x80 == 0) AI_SetupActorRiders` | 5 | high |
 | 0x84 | int | actorCount | | 0 | high |
-| 0x88 | int | | if >= 1 with players, Update takes the replay/playback path | 0 | med |
+| 0x88 | int | missionCount | riders created by `AI_CreateMissionRider` (max 1; it refuses when ≥ 1). When ≥ 1 with players, Update processes only P1 and the mission rider | 0 | high |
 | 0x8c | int | actorsActive | Load clears it after SetupActorRiders | 0 | med |
 | 0x90 | int | | Init 0 | 0 | low |
+| 0x94 | int | actorsRequested | `AI_CreateActorRiders` creates `+0x94 − +0x84` actors | 0 | med |
 | 0x98 | RaceState* | curStateObj | AI_SelectRaceState | 0x5b33c0 (= +0xc0) | high |
 | 0x9c | RaceState* | prevStateObj | Exit (slot 2 at +0x14) is called on it, then cleared | 0 | high |
 | 0xa0 | char* | stateName | "GameInit"/"Freeride"/"PreRace"/"Countdown"/"Race"/"EndRace"/"Shutdown" | 0x4a0e98 "Race" | high |
@@ -323,9 +363,9 @@ the five skies.
 | 0x1bc | int | current event/track id (Init 0x16). 0xe..0x10 are special-cased in 0x22d6c8 | 0 | high |
 | 0x1c0 | int | eventLoaded | 1 | high |
 | 0x1c4 | int | stream status 0 ok / 1 / 2 loading / 3 not ready | 0 | med |
-| 0x1c8 | int | | 0 | low |
+| 0x1c8 | int | eventSwitchFadePending: set to 1 by EventSelect (state 14) before `SectionMan_RequestEvent`; EventSwitchLoad (state 11) waits for the camera fade, clears it and calls `SectionMan_LoadEvent(+0x1bc, 7)` | 0 | med |
 | 0x1cc | int | restartPending; on completion calls AI slot 5 (Restart) | 0 | med |
-| 0x1d0 | int | enabled; GameModule_Update runs SectionMan_Update only when 0 (!) | 1 | med |
+| 0x1d0 | int | `idle`: SectionMan_Update (0x22ddec/0x22ddf8) stores 1 when no section load or event switch is in flight, else 0. Round 2: GameModule_Update runs the game (UI, state machine, process list) only when the views are ready (`GameViewMan_AllViewsReady` 0x22e920) **and** +0x1d0 == 1; otherwise it takes the loading path (world streaming, and while +0x1d0 == 0 also ProcessStateChange + SectionMan_Update, then flush). SectionMan_Update runs on both paths, so the round-1 polarity note was a misreading | 1 | med (store sites high, "idle" meaning med) |
 
 Methods: SectionMan_Init 0x22cd40 (maps logical names from BE interface 0 `0x144d38` to
 world section indices), SectionMan_LoadEvent 0x22d088 (synchronous, used by
@@ -459,16 +499,21 @@ rows 4 and 11 match.
 
 ## Open questions
 
-- GameModule state-object names (ids 1..16) and the mismatch between the live +0x200
-  pointer and the offset table.
-- "Nash" (0xa8) object semantics.
+- ~~GameModule state-object names (ids 1..16) and the mismatch between the live +0x200
+  pointer and the offset table.~~ Round 2: names proposed from the state bodies; the
+  mismatch was an arithmetic slip (+0x200 = +0xf0 = state 4). Still open: who sets the
+  +0x08 "done" flag of states 2 and 7 (a UI screen; not traced), and whether state 9 is
+  reachable.
+- ~~"Nash" (0xa8) object semantics.~~ Round 2: loose-octree spatial hash (8 sign-octant
+  roots + AIFwdDiffCache). Still open: the node layout behind 0x328c20 and who queries it
+  (WorldLightMan, the world render pass 0x22add8).
 - SectionStreamer +0x220 bounds hold unexpected live bytes.
 - SurfPropCache field meanings. Who loads the live values (probably tWPIGD_Surface or a
   world file)?
-- AI manager fields 0x08..0x24, 0x60..0x74, 0x88.
-- GameModule+0x80 and +0x1c.
-- SectionMan +0x1d0 polarity: Update runs SectionMan_Update only when +0x1d0 == 0, yet the
-  live value is 1 in-race.
+- AI manager: resolved in round 2 except +0x10 (Init 0, live 1, no reader found) and +0x60..+0x6c (stale data after the actors array; nothing reads them as floats).
+- ~~GameModule+0x80 and +0x1c.~~ Round 2: +0x1c = LensFX; +0x80 has no accessor (stale).
+- ~~SectionMan +0x1d0 polarity.~~ Round 2: it is an "idle / nothing loading" flag; the game
+  update runs when it is 1 (see the SectionMan table).
 
 ## Renames
 
@@ -522,3 +567,39 @@ cWorldCache_AllocResource, 0x3a8cd0 cWorldCache_ResolveResource, 0x3a8e20
 cWorldCache_ReleaseResource, 0x3a9000 SectionStreamer_Bind, 0x3a9258
 SectionStreamer_Update, 0x3a7598 WorldBlockPool_Init, 0x3a7878 SectionAllocator_Alloc,
 0x3aad98 cPS2ChunkResolve_Create, 0x22b008 (create function) GameModule_Render.
+
+## Proposed names (round 2, GameModule states and helpers)
+
+Not applied in Ghidra (another agent owns renames); decompiler comments only.
+
+| Address | Current | Proposed | Conf | Evidence |
+|---|---|---|---|---|
+| 0x233aa0 | FUN_00233aa0 | GameState_GotoNext | high | `if (this[0]) RequestState(gm, this[0], this[1], 0)`; called by most state Updates |
+| 0x2341d0 / 0x2343b0 / 0x234750 | FUN_* | GameStatePreRaceLoad_Enter / _Update / _Exit | high | vt 0x47d530 slots 5/6/7; rider setup/loading |
+| 0x236bb0 / 0x236c48 / 0x236c88 | FUN_* | GameStatePreRaceMenu_Enter / _Update / _Exit | med | vt 0x47d270; menu screen + pause-mask push/pop |
+| 0x234ad0 / 0x234c68 | FUN_* | GameStateCountdown_Enter / _Update | high | AI Countdown, "StartlightBegin"/"StartgateOpen" |
+| 0x234be8 | FUN_00234be8 | GameState_PlayScriptEvent | low | called with StrHash("StartlightBegin"/"StartgateOpen") |
+| 0x234e20 | FUN_00234e20 | GameStateRace_Enter | high | AI_SetRaceState(5), BE phase 1 |
+| 0x233c50 / 0x233cd8 / 0x234008 | FUN_* | GameStateFinish_Enter / _Update / _Exit | med | "finishov" UI state, speed threshold |
+| 0x233b60 | FUN_00233b60 | GameStateQuit_Enter | med | RequestState(10) |
+| 0x236da0 / 0x236e60 / 0x236ea0 | FUN_* | GameStateResults_Enter / _Update / _Exit | med | screen for state 7, then RequestState(14, 2) |
+| 0x236b38 | FUN_00236b38 | GameStateResetAI_Exit | low | AI vt slot 5 (Restart) with 3 |
+| 0x2355c0 / 0x2357f8 / 0x235868 | FUN_* | GameStateReset_Enter / _Update / _Exit | high | vt 0x47d428 slots 5-7; WScriptMan restart, picks next 1 or 4 |
+| 0x234f40 / 0x235080 / 0x2355b0 | FUN_* | GameStateReset_OverlayEnter / _OverlayUpdate / _IsOverlayDone | med | slots 2/3/8; world-script reload |
+| 0x2368a0 / 0x236960 / 0x236af0 | FUN_* | GameStateEventSwitch_Enter / _Update / _Exit | med | SectionMan_IsEventLoaded / LoadEvent |
+| 0x236f08 / 0x236f40 / 0x236f90 | FUN_* | GameStateFinishCinematic_Enter / _Update / _Exit | med | PlayCharacterTune, script channel 0 |
+| 0x235aa0 / 0x235cc8 / 0x235f20 | FUN_* | GameStateRestartRace_Enter / _Update / _Exit | med | GameModeMan_ResetMode, CPU rider rebuild |
+| 0x236250 / 0x236418 | FUN_* | GameStateEventSelect_Enter / _Update | med | UI 0x1f/0x21, RequestState(15) / SectionMan_RequestEvent |
+| 0x236058 / 0x236198 | FUN_* | GameStateWarpToEvent_Enter / _Update | med | Rider_PlaceAtMarker + fade, RequestState(1) |
+| 0x236fe8 | FUN_00236fe8 | GameStateReplay_Enter | med | UI screen 0x11 |
+| 0x230488 | FUN_00230488 | GameModule_QuitToLoadScreen | high | RequestState(6), App_SetNextState(cPreFELoadScreen / cPreGameLoadScreen) |
+| 0x2302a8 | FUN_002302a8 | GameModule_QuickRestart | med | clears every rider's boostMeter, RequestState(1, 2, immediate) |
+| 0x22d6c8 | FUN_0022d6c8 | SectionMan_OnEventTrigger | med | sets BE event/mode from the trigger arg, GameModeMan_StartMode, RequestState(1, 1) |
+| 0x22df50 | FUN_0022df50 | SectionMan_BeginEventSwitch | med | RequestState(11, immediate) + RequestOverlayState(10) |
+| 0x22dff0 | FUN_0022dff0 | SectionMan_FinishEventSwitch | med | AI Restart if +0x1cc, RequestState(10) |
+| 0x22e920 | FUN_0022e920 | GameViewMan_AllViewsReady | med | 1 iff every view's +0xb4 != 0 |
+| 0x20a8f8 | FUN_0020a8f8 | GameUI_OpenScreenForState | med | arg 2 (pre-race) / 7 (results) picks a screen id, then 0x20ab50 |
+| 0x20ab50 | FUN_0020ab50 | GameUI_OpenScreen | high | switch on id 1..0x28, allocates a UIState subclass, `UIStateMgr_SwitchStateImmediate` |
+| 0x328f28 | FUN_00328f28 | SpatialKey_FromAABB | high | level = float exponent of the largest extent (min 11), cell = floor(centre / 2^level), grows until the box fits |
+| 0x328c20 | FUN_00328c20 | SpatialHash_Insert | med | called with the Nash octant root and the key from 0x328f28 |
+| 0x2ec3e0 | FUN_002ec3e0 | LensFX_Create | high | alloc 0x6820 "LensFX" + LensFX_ctor |
