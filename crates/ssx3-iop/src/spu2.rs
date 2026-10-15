@@ -78,6 +78,13 @@ pub struct Voice {
     next: u32,
     block: [u32; 2],
     block_end: [bool; 2],
+    /// The block ends with "loop end" without "repeat" (flags 1, not 2):
+    /// playing past it releases the voice with its level forced to 0.
+    block_mute: [bool; 2],
+    /// Keyed on at least once. A voice keeps fetching and decoding (and NAX
+    /// keeps moving, e.g. through the safe loop at LSAX) after its envelope
+    /// has reached 0; only the output is silent.
+    running: bool,
     lsax_written: bool,
     key_on: bool,
     pub end: bool,
@@ -216,16 +223,13 @@ impl Spu2 {
         }
         voice.block[half] = at;
         voice.block_end[half] = flags & 1 != 0;
+        voice.block_mute[half] = flags & 1 != 0 && flags & 2 == 0;
         if flags & 4 != 0 && !voice.lsax_written {
             voice.lsax = at;
         }
         voice.next = (at + 8) & RAM_MASK;
         if flags & 1 != 0 {
             voice.next = voice.lsax;
-            if flags & 2 == 0 {
-                voice.phase = Phase::Release;
-                voice.env.level = 0;
-            }
         }
     }
 
@@ -233,6 +237,8 @@ impl Spu2 {
         {
             let voice = &mut self.cores[c].voices[v];
             voice.key_on = false;
+            voice.running = true;
+            voice.block_mute = [false; 2];
             voice.lsax_written = false;
             voice.end = false;
             voice.next = voice.ssa;
@@ -254,7 +260,7 @@ impl Spu2 {
         }
         let mut raw = raw;
         for n in 0..BATCH {
-            if self.cores[c].voices[v].phase == Phase::Off {
+            if !self.cores[c].voices[v].running {
                 break;
             }
             let (sample, wrapped) = {
@@ -274,8 +280,14 @@ impl Spu2 {
                     voice.position -= 28 << 12;
                     voice.buffer.0.copy_within(28..56, 0);
                     voice.end |= voice.block_end[0];
+                    if voice.block_mute[0] {
+                        // Played past a one-shot end: release, silent.
+                        voice.phase = Phase::Release;
+                        voice.env.level = 0;
+                    }
                     voice.block[0] = voice.block[1];
                     voice.block_end[0] = voice.block_end[1];
+                    voice.block_mute[0] = voice.block_mute[1];
                     let b = voice.block[0];
                     self.check_irq(b, 8);
                     self.decode_block(c, v, 1);
@@ -692,7 +704,7 @@ pub fn tick(c: &mut Iop) {
         let mut sc = sum[core];
         for v in 0..24 {
             let voice = &s.cores[core].voices[v];
-            if !voice.key_on && voice.phase == Phase::Off {
+            if !voice.key_on && !voice.running {
                 continue;
             }
             s.stats[0] += 1;

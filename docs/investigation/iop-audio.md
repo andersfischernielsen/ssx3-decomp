@@ -149,6 +149,21 @@ Observed (headless, `SSX3_IOP=1`):
   0.44 s / 0.89 s / 1.78 s (≈136 BPM). Loud moments reach full scale (peak
   ±32767 in a few seconds of a 78 s capture).
 
+### One-shot voices end like hardware (2026-10-15)
+
+A block with "loop end" but not "repeat" (flags 1, not 2) used to release the voice when it was
+*decoded*, one block early, so the last 28 samples were muted. The voice then went `Off` and
+stopped fetching, which froze NAX inside the sample.
+
+SNDDRV writes LSAX = 0x5000 (a silent safe loop) before every key-on and reports a voice as
+finished when its NAX is below 0x5040 (`phase3-sound.md` §2.3, §4). The game therefore never saw
+a one-shot sound end: at frame 5000 of the race, 42 of 48 SPU voices were still marked busy and
+none had ever reported finished.
+
+Now the mute happens when playback moves past that block, and a keyed voice keeps fetching (from
+LSAX) with its envelope at 0. On the same run, 14 voices are busy and 26 have reported finished
+and been released. The audio differs only where sound effects play.
+
 ## Gaps
 
 * Reverb (`ESA/EEA`, effect volumes) is not modelled; voice dry/wet routing
