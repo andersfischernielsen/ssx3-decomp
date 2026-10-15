@@ -334,11 +334,16 @@ impl Vif {
         vu.start(pc);
         let mut cap = crate::vu::capture::begin(vu, pc);
         let vif1 = self.index == 1;
+        // SSX3_VERIFY_MAT3: native type 3 program vs the translated one.
+        let mut mat3 = if vif1 { crate::mat3_verify::begin(vu, pc, self.top, self.itop) } else { None };
         let watch = crate::hw::watch_qword_pub();
         let mut hit: Option<(usize, u128)> = None;
         let done = vu.run(self.vu_budget, &mut |p: &[Qword]| {
             if let Some(c) = cap.as_mut() {
                 c.kicks.push(p.to_vec());
+            }
+            if let Some(m) = mat3.as_mut() {
+                m.kick(p);
             }
             if let Some(w) = watch {
                 if let Some((k, q)) = p.iter().enumerate().find(|(_, q)| **q as u64 == w) {
@@ -374,6 +379,9 @@ impl Vif {
         }
         if let Some(c) = cap {
             crate::vu::capture::end(c, vu);
+        }
+        if let (Some(m), true) = (mat3, done) {
+            crate::mat3_verify::end(m, vu);
         }
     }
 

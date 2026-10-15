@@ -426,3 +426,28 @@ Next:
 - **Stage 0b:** group calls by DeferMan bucket (state, textures, matrix) into the typed
   `Frame`.
 - **Stage 2A:** the first material natively, starting with type 3.
+
+### Stage 2A, type 3 (2026-10-16)
+
+`crates/ssx3-render/src/mat3.rs` is VU1 program d159716b in readable Rust. It covers every
+entry the game uses:
+- 0x12b8 float strips, with the guard-band test and a clear Sutherland–Hodgman clipper (plane
+  order z−, x−, x+, y+, y−; ping-pong buffers 0x392/0x3ad);
+- 0x3a08 ribbons;
+- the mesh family 0x2270/0x22c8/0x2320/0x2358 with SH lighting, all texgen modes and pass 2;
+- 0x2400 and the 0x3bf0 cubic line shape.
+
+Check (`SSX3_VERIFY_MAT3=1`, `crates/ssx3-ps2/src/mat3_verify.rs`): at every type-3 call the
+native code runs on a copy of VU1 memory and must produce the same XGKICK packets and the
+same 16 KiB of memory as the translated program. Menus plus race to frame 4800: **998,528
+calls, 0 mismatches**, all entries native, about 40,000 calls with clipped fans.
+
+Notes:
+- Nothing crosses calls except VU1 memory (`VuState` is empty).
+- Per-vertex Q and clip results never leak between vertices, so a vertex shader can
+  reproduce the maths.
+- Exactness depends on the original operation order (w, z, y, x in the strip loop; the
+  accumulator round trip), so the GPU version will be close, not bit-exact. `mat3.rs` is
+  the bit-exact CPU reference.
+- Declined, never seen in play: the pass-1 sphere map reads a stale vi11 pointer (a game
+  bug), and inputs whose original loops would never terminate.

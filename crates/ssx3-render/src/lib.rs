@@ -14,4 +14,5 @@
 //! calls.
 
 pub mod chain;
+pub mod mat3;
 pub mod vif;
