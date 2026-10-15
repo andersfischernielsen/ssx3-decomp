@@ -88,5 +88,21 @@ without breaking each other's builds:
 | date | function | notes |
 | --- | --- | --- |
 | 2026-10-15 | `Rider_BuildWorldMatrix` 0x11e098 | VU0 macro code → `rider::build_world_matrix` (quaternion normalise + matrix), 46 cycles; race to frame 9000 byte-identical (36 shots + full RAM) |
+| 2026-10-15 | A1 math (18), A2 rider & animation (20), A3 camera (13), A6 state/lists/input/replay (21) | written by four parallel agents in feature-gated modules, each with differential tests (200-2000 seeds; planted mistakes caught); integrated together: 73 replacements installed, race to frame 9000 byte-identical (36 shots + full RAM), all 69 tests pass |
 
-Next: the work packages in `phase2-candidates.md` (A1 math first).
+Lessons from the first packages:
+- `difftest` compares v1, the upper 64 bits of every GPR, f0/f1 and fcr31 as
+  hard state, so replacements reproduce incidental values (the FCC bit after
+  compares, v1 leftovers, 128-bit `lq` results). Each package does this in
+  marked lines at the end of a function.
+- Some originals write dead slots below `sp` (VU0/FPU spills); replacements
+  write the same values (`CameraBase_UpdateMatrices`,
+  `RiderHandplantState_Enter`).
+- Shared helpers each package wrote privately (to consolidate):
+  `set_fcc`, `mult` (LO/HI), `set_gpr128`/`set_word`, `arg64`, a `scramble`
+  randomiser and an edge-case float generator for `difftest`, a `.lit4`
+  constant loader, `Addr` loads/stores routed through `Cpu::lw/sw` (I/O
+  timing side effects), unaligned `ldl/ldr` helpers, `quat_rows` (shared by
+  rider and camera).
+
+Next: A4 render packets, A5 sound/files, then Tier B (loops and calls).

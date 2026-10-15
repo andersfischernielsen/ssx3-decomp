@@ -55,7 +55,12 @@ glows and flares (sun, point lights) show through geometry
 (`../investigation/flare-occlusion.md`); (Multi Play done 2026-10-15:
 `SSX3_PAD2=1`, split-screen race works); race ~41 fps headless after the geometry fixes.
 
-## Phase 2: "Rust-ify": readable, typed source ⬜
+## Phase 2: "Rust-ify": readable, typed source 🟡
+
+Progress (2026-10-15): override mechanism + differential tests
+(`../investigation/phase2-overrides.md`); 73 functions replaced by typed Rust,
+byte-identical; 9,715 of 11,844 functions named (pass 3); race-path structs
+mapped (`../investigation/structs/`).
 
 Turn machine-shaped Rust into source a person can read and change.
 
