@@ -268,6 +268,7 @@ impl Cpu {
     pub fn sw(&mut self, a: u32, v: u64) {
         if a < 0x0200_0000 {
             let o = (a & !3) as usize;
+            self.bus.mark(o);
             self.bus.ram[o..o + 4].copy_from_slice(&(v as u32).to_le_bytes());
             return;
         }

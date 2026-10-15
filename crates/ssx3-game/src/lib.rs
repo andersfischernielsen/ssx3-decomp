@@ -14,6 +14,38 @@
 use ssx3_ee_rt::funcs::GuestFn;
 
 pub mod abi;
+#[cfg(feature = "oc20")]
+pub mod oc20;
+#[cfg(feature = "oc19")]
+pub mod oc19;
+#[cfg(feature = "oc18")]
+pub mod oc18;
+#[cfg(feature = "oc17")]
+pub mod oc17;
+#[cfg(feature = "oc16")]
+pub mod oc16;
+#[cfg(feature = "oc15")]
+pub mod oc15;
+#[cfg(feature = "oc14")]
+pub mod oc14;
+#[cfg(feature = "oc13")]
+pub mod oc13;
+#[cfg(feature = "oc12")]
+pub mod oc12;
+#[cfg(feature = "oc11")]
+pub mod oc11;
+#[cfg(feature = "oc10")]
+pub mod oc10;
+#[cfg(feature = "oc9")]
+pub mod oc9;
+#[cfg(feature = "oc8")]
+pub mod oc8;
+#[cfg(feature = "oc7")]
+pub mod oc7;
+#[cfg(feature = "oc6")]
+pub mod oc6;
+#[cfg(feature = "oc5")]
+pub mod oc5;
 #[cfg(feature = "oc4")]
 pub mod oc4;
 #[cfg(feature = "oc3")]
@@ -145,6 +177,38 @@ pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     v.extend_from_slice(oc3::OVERRIDES);
     #[cfg(feature = "oc4")]
     v.extend_from_slice(oc4::OVERRIDES);
+    #[cfg(feature = "oc5")]
+    v.extend_from_slice(oc5::OVERRIDES);
+    #[cfg(feature = "oc6")]
+    v.extend_from_slice(oc6::OVERRIDES);
+    #[cfg(feature = "oc7")]
+    v.extend_from_slice(oc7::OVERRIDES);
+    #[cfg(feature = "oc8")]
+    v.extend_from_slice(oc8::OVERRIDES);
+    #[cfg(feature = "oc9")]
+    v.extend_from_slice(oc9::OVERRIDES);
+    #[cfg(feature = "oc10")]
+    v.extend_from_slice(oc10::OVERRIDES);
+    #[cfg(feature = "oc11")]
+    v.extend_from_slice(oc11::OVERRIDES);
+    #[cfg(feature = "oc12")]
+    v.extend_from_slice(oc12::OVERRIDES);
+    #[cfg(feature = "oc13")]
+    v.extend_from_slice(oc13::OVERRIDES);
+    #[cfg(feature = "oc14")]
+    v.extend_from_slice(oc14::OVERRIDES);
+    #[cfg(feature = "oc15")]
+    v.extend_from_slice(oc15::OVERRIDES);
+    #[cfg(feature = "oc16")]
+    v.extend_from_slice(oc16::OVERRIDES);
+    #[cfg(feature = "oc17")]
+    v.extend_from_slice(oc17::OVERRIDES);
+    #[cfg(feature = "oc18")]
+    v.extend_from_slice(oc18::OVERRIDES);
+    #[cfg(feature = "oc19")]
+    v.extend_from_slice(oc19::OVERRIDES);
+    #[cfg(feature = "oc20")]
+    v.extend_from_slice(oc20::OVERRIDES);
     v
 }
 

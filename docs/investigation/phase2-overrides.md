@@ -115,6 +115,8 @@ Lessons from the first packages:
 
 | 2026-10-15 | round 3: D3 chase camera (24, incl. the Apply* family; VU0 `Acc` + Q read-back helpers) | 355 replacements installed; race to frame 9000 byte-identical (36 shots + full RAM) |
 
+| 2026-10-15 | OpenCode waves (oc1-oc16) + round-4 packages E3-E8 (partly OpenCode, partly Claude): 323 accepted by the fast gate (`cargo nextest`, 5 s per test; 23 rejected), 3 duplicates removed | 655 replacements installed; race to frame 9000 byte-identical (36 shots + full RAM). Gate made fast: test machines without GS threads, dirty-page RAM comparison (`ssx3-ee-rt` feature `dirty-pages`, test builds only), cycle budget against runaways |
+
 Patterns established in round 2 (now shared, see below):
 - **Loops with event checks**: structured loops make the same back-edge
   `c.event()` checks with the same `c.pc`; functions the generator emitted

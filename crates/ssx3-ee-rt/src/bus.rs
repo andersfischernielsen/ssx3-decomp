@@ -13,6 +13,10 @@ pub const SPR_SIZE: usize = 16 * 1024;
 
 pub struct Bus {
     pub ram: Vec<u8>,
+    /// Test builds only (`dirty-pages`): one bit per 4 KiB RAM page written
+    /// through the bus, so differential tests compare only touched pages.
+    #[cfg(feature = "dirty-pages")]
+    pub dirty: Vec<u64>,
     pub spr: Vec<u8>,
     /// IOP RAM (2 MiB), visible to the EE at 0x1C00_0000.
     /// The hardware model behind memory-mapped I/O (and VU0, see
@@ -69,6 +73,8 @@ impl Bus {
     pub fn new(plat: Box<dyn Platform>) -> Self {
         Self {
             ram: vec![0; RAM_SIZE],
+            #[cfg(feature = "dirty-pages")]
+            dirty: vec![0; RAM_SIZE / 4096 / 64],
             spr: vec![0; SPR_SIZE],
             plat,
             unmapped: 0,
@@ -153,9 +159,24 @@ impl Bus {
         }
     }
 
+    /// Record a RAM write at offset `o` (test builds; no-op otherwise).
+    #[inline(always)]
+    pub fn mark(&mut self, o: usize) {
+        #[cfg(feature = "dirty-pages")]
+        {
+            let page = o >> 12;
+            self.dirty[page >> 6] |= 1 << (page & 63);
+        }
+        #[cfg(not(feature = "dirty-pages"))]
+        let _ = o;
+    }
+
     pub fn write8(&mut self, addr: u32, v: u8) {
         match target(addr) {
-            Target::Ram(o) => self.ram[o] = v,
+            Target::Ram(o) => {
+                self.mark(o);
+                self.ram[o] = v;
+            }
             Target::Spr(o) => self.spr[o] = v,
             Target::Io(p) => self.plat.write8(p, v, &mut self.ram, &mut self.spr),
             Target::None => self.miss(addr),
@@ -164,7 +185,10 @@ impl Bus {
 
     pub fn write16(&mut self, addr: u32, v: u16) {
         match target(addr & !1) {
-            Target::Ram(o) => self.ram[o..o + 2].copy_from_slice(&v.to_le_bytes()),
+            Target::Ram(o) => {
+                self.mark(o);
+                self.ram[o..o + 2].copy_from_slice(&v.to_le_bytes());
+            }
             Target::Spr(o) => self.spr[o..o + 2].copy_from_slice(&v.to_le_bytes()),
             Target::Io(p) => self.plat.write16(p, v, &mut self.ram, &mut self.spr),
             Target::None => self.miss(addr),
@@ -173,7 +197,10 @@ impl Bus {
 
     pub fn write32(&mut self, addr: u32, v: u32) {
         match target(addr & !3) {
-            Target::Ram(o) => self.ram[o..o + 4].copy_from_slice(&v.to_le_bytes()),
+            Target::Ram(o) => {
+                self.mark(o);
+                self.ram[o..o + 4].copy_from_slice(&v.to_le_bytes());
+            }
             Target::Spr(o) => self.spr[o..o + 4].copy_from_slice(&v.to_le_bytes()),
             Target::Io(p) => self.plat.write32(p, v, &mut self.ram, &mut self.spr),
             Target::None => self.miss(addr),
@@ -182,7 +209,10 @@ impl Bus {
 
     pub fn write64(&mut self, addr: u32, v: u64) {
         match target(addr & !7) {
-            Target::Ram(o) => self.ram[o..o + 8].copy_from_slice(&v.to_le_bytes()),
+            Target::Ram(o) => {
+                self.mark(o);
+                self.ram[o..o + 8].copy_from_slice(&v.to_le_bytes());
+            }
             Target::Spr(o) => self.spr[o..o + 8].copy_from_slice(&v.to_le_bytes()),
             Target::Io(p) => self.plat.write64(p, v, &mut self.ram, &mut self.spr),
             Target::None => self.miss(addr),
@@ -191,7 +221,10 @@ impl Bus {
 
     pub fn write128(&mut self, addr: u32, v: u128) {
         match target(addr & !15) {
-            Target::Ram(o) => self.ram[o..o + 16].copy_from_slice(&v.to_le_bytes()),
+            Target::Ram(o) => {
+                self.mark(o);
+                self.ram[o..o + 16].copy_from_slice(&v.to_le_bytes());
+            }
             Target::Spr(o) => self.spr[o..o + 16].copy_from_slice(&v.to_le_bytes()),
             Target::Io(p) => self.plat.write128(p, v, &mut self.ram, &mut self.spr),
             Target::None => self.miss(addr),
@@ -203,7 +236,10 @@ impl Bus {
         for (i, b) in bytes.iter().enumerate() {
             let a = addr.wrapping_add(i as u32);
             match target(a) {
-                Target::Ram(o) => self.ram[o] = *b,
+                Target::Ram(o) => {
+                self.mark(o);
+                self.ram[o] = *b;
+            }
                 Target::Spr(o) => self.spr[o] = *b,
                 _ => {}
             }
@@ -247,6 +283,7 @@ impl Bus {
 
     pub fn set_ram_u32(&mut self, addr: u32, v: u32) {
         let o = (addr & 0x01FF_FFFC) as usize;
+        self.mark(o);
         self.ram[o..o + 4].copy_from_slice(&v.to_le_bytes());
     }
 }

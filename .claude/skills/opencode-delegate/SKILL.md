@@ -126,6 +126,16 @@ Never trust the worker's own summary. For each write task:
 For read-only tasks: spot-check the claims against the code before relying
 on them.
 
+## Stopping workers
+
+Killing `opencode run` processes (or `delegate.sh`) does **not** stop the
+work: the sessions run inside OpenCode's background service
+(`opencode serve --service`, started by launchd) and keep editing files and
+starting `cargo` runs. To stop everything: kill the `opencode run` clients,
+then the service process (`pgrep -fl 'opencode serve'`), then any leftover
+`cargo`/`rustc`. Also never `pkill -f` a pattern that appears in your own
+command line (e.g. the repo path): it kills your own shell.
+
 ## 6. Clean up
 
 `scripts/delegate.sh --cleanup <task>` removes the worktree and its branch.

@@ -137,6 +137,14 @@ Add `use crate::{abi, guest::Addr}; use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::Cpu;` (and `crate::ps2f::FpuF32` if needed) and list each
 finished function: `(0x002c_c098, menu_sys_is_active, "MenuSys_IsActive"),`.
 
+## Test speed (gate)
+
+Integration accepts a function only if its test passes **and finishes within
+5 seconds** (run per test by `cargo nextest`, see `.config/nextest.toml`).
+So: keep seeds at 200-300, build fixtures cheaply, and don't let real
+callees run long loops on test data (prefer setups that take the short
+path, or fakes). A test that times out rejects the function.
+
 ## Commands
 
 Run your tests (replace `ocN` with your module/feature name):

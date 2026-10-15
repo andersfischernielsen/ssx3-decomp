@@ -8,4 +8,8 @@ license.workspace = true
 # Deliberately no dependencies: every crate of generated EE code depends on
 # this one, so it must only change when instruction semantics change (see
 # docs/investigation/crate-split.md).
+[features]
+# Track written RAM pages (differential tests only; see Bus::dirty).
+dirty-pages = []
+
 [dependencies]

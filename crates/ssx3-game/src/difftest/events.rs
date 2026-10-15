@@ -100,7 +100,7 @@ pub fn check_events(
     setup: &dyn Fn(&mut Cpu, u32) -> Events,
 ) {
     let (mut evented, mut event_seeds) = (0, 0);
-    for seed in 0..seeds {
+    for seed in 0..super::seed_count(seeds) {
         let r = compare(generated, hand, &|c| {
             setup(c, seed);
         });

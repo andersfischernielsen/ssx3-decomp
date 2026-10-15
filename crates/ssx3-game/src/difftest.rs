@@ -34,14 +34,39 @@ pub const GAME_GP: u32 = 0x004a_30f0;
 
 /// A fresh CPU on a fresh machine, with `sp`/`ra` set and events off.
 pub fn fresh() -> Box<Cpu> {
+    // Test machines never draw: no GS thread, no rasterizer worker pool.
+    // (Thousands of machines per test run would otherwise each spawn
+    // threads and oversubscribe the CPU.)
+    static LIGHT: std::sync::Once = std::sync::Once::new();
+    LIGHT.call_once(|| {
+        std::env::set_var("SSX3_MTGS", "0");
+        std::env::set_var("SSX3_GS_THREADS", "1");
+    });
     // Indirect calls (virtual methods, function pointers) resolve through the
     // generated function table.
     ssx3_ee_rt::funcs::register_functions(&ssx3_ee::FUNCTIONS);
     let mut c = ssx3_ps2::new_cpu();
     c.g[29][0] = SP as u64;
     c.g[31][0] = RA as u64;
-    c.next_event = u64::MAX;
+    // Cycle budget: generated loops call the event hook when `cycles >=
+    // next_event`, so a function (or a real callee) that runs away on test
+    // data fails fast instead of hanging the test run.
+    c.next_event = CYCLE_BUDGET;
+    c.hooks.event = budget_event;
     c
+}
+
+/// Cycles a single test machine may run before the test is failed as a
+/// runaway (a replacement takes tens to thousands; a game frame ~5 million).
+pub const CYCLE_BUDGET: u64 = 50_000_000;
+
+/// The event hook of test machines: fail past the budget, otherwise the
+/// machine's real event hook (event-delivery tests set `next_event` lower).
+fn budget_event(c: &mut Cpu) -> bool {
+    if c.cycles >= CYCLE_BUDGET {
+        panic!("cycle budget exceeded ({} cycles, pc {:#x}): runaway on test data", c.cycles, c.pc);
+    }
+    (ssx3_ps2::platform::HOOKS.event)(c)
 }
 
 /// Everything compared. `hard` differences fail a test; `soft` ones (VU0
@@ -117,7 +142,34 @@ pub fn compare(generated: GuestFn, hand: GuestFn, setup: &dyn Fn(&mut Cpu)) -> R
             }
         }
     }
-    for (name, ma, mb) in [("ram", &a.bus.ram, &b.bus.ram), ("spr", &a.bus.spr, &b.bus.spr)] {
+    // RAM: compare only pages written in either machine (`dirty-pages`);
+    // comparing all 32 MiB per seed made the tests memory-bandwidth bound.
+    let dirty: Vec<u64> = a.bus.dirty.iter().zip(&b.bus.dirty).map(|(x, y)| x | y).collect();
+    let pages = dirty
+        .iter()
+        .enumerate()
+        .flat_map(|(w, bits)| (0..64).filter(move |i| bits >> i & 1 != 0).map(move |i| w * 64 + i));
+    let mut ram_diffs = 0;
+    for page in pages {
+        let r = page * 4096..page * 4096 + 4096;
+        if a.bus.ram[r.clone()] != b.bus.ram[r.clone()] {
+            for i in r.step_by(4) {
+                if a.bus.ram[i..i + 4] != b.bus.ram[i..i + 4] {
+                    if ram_diffs < 8 {
+                        hard.push(format!("ram {i:#x}: {:02x?} vs {:02x?}", &a.bus.ram[i..i + 4], &b.bus.ram[i..i + 4]));
+                    }
+                    ram_diffs += 1;
+                }
+            }
+        }
+    }
+    if ram_diffs > 8 {
+        hard.push(format!("ram: {ram_diffs} differing words in total"));
+    }
+    for (name, ma, mb) in [("spr", &a.bus.spr, &b.bus.spr)] {
+        if ma == mb {
+            continue;
+        }
         let mut n = 0;
         for i in (0..ma.len()).step_by(4) {
             if ma[i..i + 4] != mb[i..i + 4] {
@@ -138,9 +190,20 @@ pub fn compare(generated: GuestFn, hand: GuestFn, setup: &dyn Fn(&mut Cpu)) -> R
     Report { hard, soft, lohi }
 }
 
+/// How many of a test's `seeds` to run: all by default (coverage
+/// assertions in many tests need them; a seed costs ~4 ms).
+/// `SSX3_DIFF_SEEDS=N` caps at N for a quick smoke run.
+pub fn seed_count(seeds: u32) -> u32 {
+    match std::env::var("SSX3_DIFF_SEEDS").ok().as_deref() {
+        Some("all") => seeds,
+        Some(v) => seeds.min(v.parse().unwrap_or(32)),
+        None => seeds,
+    }
+}
+
 /// Assert no hard differences over many `setup(seed)` states.
 pub fn check(generated: GuestFn, hand: GuestFn, seeds: u32, setup: &dyn Fn(&mut Cpu, u32)) {
-    for seed in 0..seeds {
+    for seed in 0..seed_count(seeds) {
         let r = compare(generated, hand, &|c| setup(c, seed));
         assert!(r.hard.is_empty(), "seed {seed}: {:#?}", r.hard);
     }
@@ -149,7 +212,7 @@ pub fn check(generated: GuestFn, hand: GuestFn, seeds: u32, setup: &dyn Fn(&mut 
 /// [`check`], and LO/HI must match too (for replacements of code with
 /// `mult`/`div`, whose LO/HI a later `mflo`/`mfhi` could read).
 pub fn check_lohi(generated: GuestFn, hand: GuestFn, seeds: u32, setup: &dyn Fn(&mut Cpu, u32)) {
-    for seed in 0..seeds {
+    for seed in 0..seed_count(seeds) {
         let r = compare(generated, hand, &|c| setup(c, seed));
         assert!(r.hard.is_empty(), "seed {seed}: {:#?}", r.hard);
         assert!(r.lohi.is_empty(), "seed {seed} (LO/HI): {:#?}", r.lohi);

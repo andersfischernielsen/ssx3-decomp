@@ -1,0 +1,6 @@
+# Phase 2 differential tests: each must be quick. A test running longer than
+# 5 s is killed and counts as failed (its function is not accepted).
+[profile.default]
+slow-timeout = { period = "5s", terminate-after = 1 }
+test-threads = 8
+fail-fast = false

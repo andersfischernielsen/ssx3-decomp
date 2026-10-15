@@ -69,7 +69,12 @@ fi
   echo "# task: $name"
   echo "# model: $model"
   echo "# dir: $dir"
-  echo "# mode: $(case $write in 1) echo write-worktree;; 2) echo write-here;; *) echo read-only;; esac)"
+  case $write in
+    1) mode=write-worktree ;;
+    2) mode=write-here ;;
+    *) mode=read-only ;;
+  esac
+  echo "# mode: $mode"
   echo "# started: $(date '+%Y-%m-%d %H:%M:%S')"
   echo "# --- prompt ---"
   echo "$prompt"
