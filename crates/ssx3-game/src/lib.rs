@@ -30,6 +30,10 @@ pub mod render;
 pub mod sound;
 #[cfg(feature = "state")]
 pub mod state;
+#[cfg(feature = "util")]
+pub mod util;
+#[cfg(feature = "dispatch")]
+pub mod dispatch;
 
 /// Replacements outside the work-package modules: (address, function, name).
 const CORE: &[(u32, GuestFn, &str)] = &[
@@ -53,6 +57,10 @@ pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     v.extend_from_slice(sound::OVERRIDES);
     #[cfg(feature = "state")]
     v.extend_from_slice(state::OVERRIDES);
+    #[cfg(feature = "util")]
+    v.extend_from_slice(util::OVERRIDES);
+    #[cfg(feature = "dispatch")]
+    v.extend_from_slice(dispatch::OVERRIDES);
     v
 }
 

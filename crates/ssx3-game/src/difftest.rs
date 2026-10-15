@@ -128,6 +128,54 @@ impl Rng {
     }
 }
 
+/// Random values in every register a function might read by accident: GPRs
+/// (both 64-bit halves; not zero/gp/sp/ra), FPRs, the FPU condition bit and
+/// VU0 VF1-VF31. Call before the test's own setup so incidental leftovers
+/// (v1, upper halves, FCC) are actually checked.
+pub fn scramble(c: &mut Cpu, r: &mut Rng) {
+    for reg in 1..32 {
+        if matches!(reg, 28 | 29 | 31) {
+            continue;
+        }
+        c.g[reg] = [
+            (r.next_u32() as u64) << 32 | r.next_u32() as u64,
+            (r.next_u32() as u64) << 32 | r.next_u32() as u64,
+        ];
+    }
+    for f in c.f.iter_mut() {
+        *f = r.next_u32();
+    }
+    c.fcr31 = if r.next_u32() & 1 != 0 { ssx3_ee_rt::fpu::FCC } else { 0 };
+    for reg in 1..32 {
+        let v = [r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()];
+        c.bus.plat.set_vf(reg, v);
+    }
+}
+
+/// Fill `words` 32-bit words at `addr` with random values.
+pub fn fill(c: &mut Cpu, r: &mut Rng, addr: u32, words: u32) {
+    for i in 0..words {
+        c.bus.write32(addr + i * 4, r.next_u32());
+    }
+}
+
+impl Rng {
+    /// A float bit pattern biased toward edge cases: ±0, denormals,
+    /// exponent 255 (PS2 has no inf/NaN), ±1, small integers and halves.
+    pub fn edge_f32(&mut self) -> u32 {
+        let sign = (self.next_u32() & 1) << 31;
+        match self.next_u32() % 10 {
+            0 => sign,
+            1 => sign | (self.next_u32() & 0x007f_ffff),
+            2 => sign | 0x7f80_0000 | (self.next_u32() & 0x007f_ffff),
+            3 => sign | 0x3f80_0000,
+            4 => sign | ((self.next_u32() % 64) as f32).to_bits(),
+            5 => sign | ((self.next_u32() % 64) as f32 + 0.5).to_bits(),
+            _ => self.f32(1000.0),
+        }
+    }
+}
+
 /// Write a quadword of four float bit patterns.
 pub fn put_vec(c: &mut Cpu, addr: u32, v: [u32; 4]) {
     let q = (v[0] as u128) | (v[1] as u128) << 32 | (v[2] as u128) << 64 | (v[3] as u128) << 96;

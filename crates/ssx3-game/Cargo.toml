@@ -22,6 +22,8 @@ camera = []
 render = []
 sound = []
 state = []
+util = []
+dispatch = []
 
 [dev-dependencies]
 # A real machine (VU0 included) for the differential tests in src/difftest.rs.

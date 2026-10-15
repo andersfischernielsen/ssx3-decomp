@@ -1,5 +1,10 @@
-//! Typed views of guest (EE) memory. Accesses go through the same bus paths
-//! as recompiled loads/stores, so RAM, scratchpad and I/O behave identically.
+//! Typed views of guest (EE) memory.
+//!
+//! Two families of accessors: `read_*`/`write_*` go straight to the bus (fine
+//! for RAM and scratchpad structs); `lb`..`sd` go through the same `Cpu`
+//! load/store paths as recompiled code, including the I/O timing side effects
+//! (use these when an address may be I/O, or to get the sign-extended 64-bit
+//! register value a load leaves).
 
 use crate::ps2f::{Vec4, VuF32};
 use ssx3_ee_rt::Cpu;
@@ -67,5 +72,63 @@ impl Addr {
     #[inline]
     pub fn write_vec4(self, c: &mut Cpu, v: Vec4) {
         c.bus.write128(self.0, v.to_bits())
+    }
+
+    // ------------------------------------------------ CPU load/store paths
+
+    /// `lb` (sign-extended to 64 bits).
+    #[inline]
+    pub fn lb(self, c: &mut Cpu) -> u64 {
+        c.lb(self.0)
+    }
+    /// `lbu`.
+    #[inline]
+    pub fn lbu(self, c: &mut Cpu) -> u64 {
+        c.lbu(self.0)
+    }
+    /// `lh` (sign-extended).
+    #[inline]
+    pub fn lh(self, c: &mut Cpu) -> u64 {
+        c.lh(self.0)
+    }
+    /// `lhu`.
+    #[inline]
+    pub fn lhu(self, c: &mut Cpu) -> u64 {
+        c.lhu(self.0)
+    }
+    /// `lw` (sign-extended).
+    #[inline]
+    pub fn lw(self, c: &mut Cpu) -> u64 {
+        c.lw(self.0)
+    }
+    /// `lwu`.
+    #[inline]
+    pub fn lwu(self, c: &mut Cpu) -> u64 {
+        c.lwu(self.0)
+    }
+    /// `ld`.
+    #[inline]
+    pub fn ld(self, c: &mut Cpu) -> u64 {
+        c.ld(self.0)
+    }
+    /// `sb` (low byte of `v`).
+    #[inline]
+    pub fn sb(self, c: &mut Cpu, v: u64) {
+        c.sb(self.0, v)
+    }
+    /// `sh`.
+    #[inline]
+    pub fn sh(self, c: &mut Cpu, v: u64) {
+        c.sh(self.0, v)
+    }
+    /// `sw`.
+    #[inline]
+    pub fn sw(self, c: &mut Cpu, v: u64) {
+        c.sw(self.0, v)
+    }
+    /// `sd`.
+    #[inline]
+    pub fn sd(self, c: &mut Cpu, v: u64) {
+        c.sd(self.0, v)
     }
 }
