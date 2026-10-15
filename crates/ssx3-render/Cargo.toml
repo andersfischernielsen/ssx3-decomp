@@ -1,0 +1,8 @@
+[package]
+name = "ssx3-render"
+description = "Phase 3 native renderer for SSX 3: the game's per-frame VIF1 DMA chain as typed draws (VU1 calls, GIF streams), for wgpu (docs/investigation/phase3-render.md)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]

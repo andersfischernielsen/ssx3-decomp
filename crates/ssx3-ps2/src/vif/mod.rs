@@ -326,6 +326,9 @@ impl Vif {
             }
         }
         self.itop = self.itops;
+        if self.index == 1 && crate::render_verify::enabled() {
+            crate::render_verify::program_start(Some(pc), self.top, self.itop, &vu.data);
+        }
         vu.vif_top = self.top;
         vu.vif_itop = self.itop;
         vu.start(pc);

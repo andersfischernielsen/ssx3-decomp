@@ -11,5 +11,6 @@ ssx3-ee-rt = { path = "../ssx3-ee-rt" }
 ssx3-vu = { path = "../ssx3-vu" }
 ssx3-iop = { path = "../ssx3-iop" }
 ssx3-snd = { path = "../ssx3-snd" }
+ssx3-render = { path = "../ssx3-render" }
 pollster = "1.0.1"
 wgpu = "30.0.1"

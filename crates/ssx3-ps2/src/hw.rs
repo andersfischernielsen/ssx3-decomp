@@ -719,6 +719,18 @@ impl Hw {
         let tte = self.ch[c].chcr & 0x40 != 0;
         let tie = self.ch[c].chcr & 0x80 != 0;
         let mut asp = (self.ch[c].chcr >> 4) & 3;
+        if c == ch::VIF1 && crate::render_verify::enabled() {
+            let n = self.ch[c].qwc;
+            let madr = self.ch[c].madr;
+            let pending: Vec<Qword> = (0..n).map(|i| mem_q(ram, spr, madr + i * 16, madr & 0x8000_0000 != 0)).collect();
+            let id = (self.ch[c].chcr >> 28) & 7;
+            if n > 0 && (id == 0 || id == 7) {
+                crate::render_verify::chain_start(&self.vif1, ram, spr, &pending, 0, false, false, 0, [0; 2]);
+            } else {
+                let asr = [self.ch[c].asr[0], self.ch[c].asr[1]];
+                crate::render_verify::chain_start(&self.vif1, ram, spr, &pending, self.ch[c].tadr, tte, tie, asp, asr);
+            }
+        }
         // If QWC is non-zero the channel first finishes the pending data.
         if self.ch[c].qwc > 0 {
             let n = self.ch[c].qwc;

@@ -403,3 +403,26 @@ Each stage is behind a switch, like `SSX3_NATIVE_FILES` / `SSX3_SND=native`: `SS
 13. MSCAL double-buffer parity has to be modelled in the stage-0 VIF interpreter (types 3 and 6). Prefer an exact port of the VIF TOPS/ITOPS toggling.
 14. Split-screen (`numViews` > 1): post passes run per view and viewport. The native passes must take the view rect from gm+0x59b0.
 15. FMV (`UploadToDrawBuffer`/`Gs_UploadImage`) and the loading icon: these sit outside DeferMan. They need a small separate seam: upload the RGBA frame as a texture and present.
+
+---
+
+## Progress
+
+### Stage 0a: the frame at the EE level (2026-10-16)
+
+`crates/ssx3-render` reads the frame the game hands to VIF1 without the hardware model:
+- `chain.rs`: the source-chain DMA walk;
+- `vif.rs`: the VIFcode interpreter into a virtual VU1 memory. Each MSCAL/MSCNT becomes a
+  `VuCall` {entry, TOP, ITOP, input qwords since the previous call}, and DIRECT becomes a GIF
+  stream.
+
+Check (`SSX3_VERIFY_VUCALLS=1`, `crates/ssx3-ps2/src/render_verify.rs`): at every VIF1 chain
+start the walker runs over EE memory. Every emulated microprogram start then compares entry,
+TOP/ITOP and each input qword with VU1 data memory. Boot → menus → race to frame 4800:
+**2,574,506 calls, 0 mismatches**, none missing or extra, over 9,490 chains, plus 742,123
+DIRECT packets.
+
+Next:
+- **Stage 0b:** group calls by DeferMan bucket (state, textures, matrix) into the typed
+  `Frame`.
+- **Stage 2A:** the first material natively, starting with type 3.
