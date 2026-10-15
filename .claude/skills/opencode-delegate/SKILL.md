@@ -45,6 +45,13 @@ semantics, float/cycle-exact replacements in `crates/ssx3-game`, or anything
 whose correctness is only checkable by a replay, unless you verify it with
 the replay yourself.
 
+Exception, with conditions: small Phase 2 replacements (trivial leaf
+functions) may go to workers because each one carries its own differential
+test, an objective gate (`docs/investigation/phase2-worker-guide.md`). You
+must still (1) read the diff, (2) run the module's tests yourself, and
+(3) run the full byte-identical replay before merging. Loops, calls and VU0
+code stay with Claude agents.
+
 ## 2. Isolation
 
 Every run passes `--auto` (a non-interactive worker can't answer permission
@@ -98,7 +105,10 @@ wait
 (With the Bash tool: one call with `run_in_background`, or several.) Mind the
 machine: workers that run cargo builds compete for CPU; keep builds in
 parallel workers to `cargo check -p <one crate>` and cap the number of
-concurrent build-running workers at ~2. Logs: `.delegate/logs/<task>.log`.
+concurrent build-running workers at ~2. Exception: workers that only rebuild
+the small `ssx3-game` crate in the shared target dir serialize on cargo's
+build lock, so up to ~8 (workers + agents) is fine; check `uptime` and back
+off if the load average stays above ~20. Logs: `.delegate/logs/<task>.log`.
 
 ## 5. Accepting a result
 
