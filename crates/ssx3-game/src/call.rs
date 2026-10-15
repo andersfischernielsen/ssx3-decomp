@@ -165,6 +165,18 @@ impl Frame {
         let a = self.at(c, off);
         c.lq(reg, a);
     }
+    /// `swc1 f, off(sp)` (FPU callee-saved registers, f20..f31).
+    #[inline]
+    pub fn save_fpr(self, c: &mut Cpu, f: usize, off: u32) {
+        let a = self.at(c, off);
+        c.swc1(f, a);
+    }
+    /// `lwc1 f, off(sp)`.
+    #[inline]
+    pub fn restore_fpr(self, c: &mut Cpu, f: usize, off: u32) {
+        let a = self.at(c, off);
+        c.lwc1(f, a);
+    }
     /// `ld ra, off(sp)`.
     #[inline]
     pub fn restore_ra(self, c: &mut Cpu, off: u32) {

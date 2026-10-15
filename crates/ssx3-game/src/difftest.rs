@@ -270,6 +270,23 @@ pub fn put_words(c: &mut Cpu, addr: u32, words: &[u32]) {
     }
 }
 
+/// Copy the game's loaded image (the ELF's PT_LOAD segment from
+/// `orig/SLUS_207.72`: code, constants, initialised data) into RAM, for tests
+/// whose real callees read game data (libc state, tables, `.lit4`).
+pub fn elf_image(c: &mut Cpu) {
+    static IMAGE: std::sync::OnceLock<(u32, Vec<u8>)> = std::sync::OnceLock::new();
+    let (vaddr, bytes) = IMAGE.get_or_init(|| {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../orig/SLUS_207.72");
+        let d = std::fs::read(path).expect("orig/SLUS_207.72");
+        let u32_at = |o: usize| u32::from_le_bytes(d[o..o + 4].try_into().unwrap());
+        let ph = u32_at(0x1c) as usize;
+        let (off, vaddr, size) = (u32_at(ph + 4) as usize, u32_at(ph + 8), u32_at(ph + 16) as usize);
+        (vaddr, d[off..off + size].to_vec())
+    });
+    let at = *vaddr as usize;
+    c.bus.ram[at..at + bytes.len()].copy_from_slice(bytes);
+}
+
 /// Write a quadword of four float bit patterns.
 pub fn put_vec(c: &mut Cpu, addr: u32, v: [u32; 4]) {
     let q = (v[0] as u128) | (v[1] as u128) << 32 | (v[2] as u128) << 64 | (v[3] as u128) << 96;
