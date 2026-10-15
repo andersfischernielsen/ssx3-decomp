@@ -1625,3 +1625,6554 @@ re-applied all 4,325 names from the TSV in ~40 s (4,248 renames, 0 failures).
 `generated/functions.tsv` is the committed source of truth for names; after a
 naming pass, re-export with `tools/export-ghidra-functions.py` **and save the
 program in Ghidra** (Cmd-S).
+
+
+# Pass 3
+
+Status: pass 3 (2026-10-15) named **5,242 more functions** in the open Ghidra project and
+corrected 5 earlier names. Named functions went from **4,473 to 9,715 of 11,844** (82 %);
+2,129 remain `FUN_`. `generated/functions.{tsv,json}` was re-exported afterwards, and the
+function extents are byte-identical to the previous export (only names changed).
+
+Confidence of the applied names: 1,012 high, 4,235 med (same meaning as in pass 2: "high" is
+anchored by a string, allocation tag, vtable slot of established meaning, RPC/syscall number,
+SDK/libc structure or a documented struct field; "med" describes behaviour read from the
+decompilation, usually with a named caller or callee as the anchor). 1,071 further
+proposals were "low" and were **not** applied; they are listed under "Uncertain candidates".
+
+## Method
+
+1. **Index.** The pass-2 scratch dumps (disassembly of all functions, data sections,
+   strings, per-function decompilation cache, vtable scan, vptr stores) were reused; the
+   function list was refreshed from Ghidra first (it matched the committed TSV exactly).
+2. **Vtable slots (mechanical, 304 names).** Every `FUN_` that is a slot target of a vtable
+   whose class is known (pass-1 ctor classes, or a vtable whose unique slots are already
+   named after one class) was named. When the same slot of the family's other vtables already
+   carries a method name, the method name was used (`cFEStateCharSetup_Shutdown`,
+   `DeadFade_Kill`, `UIPair_Accept`); otherwise `Class_vNN`. Inherited base implementations
+   shared by several vtables take the base class name (`ModObj_v24`). The "class from a
+   ctor's vptr stores" heuristic was dropped because ctors also store member vtables
+   (GameModule embeds about 12). Five of these names were later found wrong, because the
+   pass-2 parent map joins a few unrelated families (UIState, FEUIInput and WorldObj share a
+   root through it) and a secondary audio vtable; they were corrected (see below).
+3. **Per-function review.** The 7,067 remaining `FUN_` were written out as "cards" (size,
+   callers and callees with current names, strings, vtable membership plus what the sibling
+   classes call that slot, vptr stores, virtual-call slots, data pointers, decompiled C) and
+   split by address into 34 chunks of ~200 KB. Each chunk was reviewed independently
+   against `naming.md`, `structs/*.md` and the live name list, producing
+   `addr / name / confidence / evidence` proposals. Reviewers were told to skip anything
+   they could not name and never to invent class names (exceptions below).
+4. **Merge and apply.** A merge script checked identifier validity, that the target is
+   still `FUN_` (existing names only with an explicit override), per-address conflicts and
+   global uniqueness against the live names, then renamed through
+   `rename_function_by_address`. Chunks were applied as they finished so later reviewers saw
+   the new names. Proposed corrections of existing names were checked by hand before applying.
+
+## Counts by area
+
+| Area | Range | Renamed | high | med |
+|---|---|---:|---:|---:|
+| Gameplay core (riders, AI, BE back end) | 0x100000-0x158000 | 503 | 99 | 404 |
+| Cameras | 0x158000-0x180000 | 132 | 30 | 102 |
+| Front end + in-race overlays/HUD | 0x180000-0x228000 | 1,071 | 316 | 755 |
+| App modules, game states, online layer | 0x228000-0x268000 | 626 | 153 | 473 |
+| Replay, script, game-side audio | 0x268000-0x2b0000 | 631 | 22 | 609 |
+| World painter, memcard, VFX, world scripts | 0x2b0000-0x310000 | 605 | 96 | 509 |
+| Anim, EA core, collision, world objects, renderer | 0x310000-0x396000 | 705 | 185 | 520 |
+| UI engine, world streaming | 0x396000-0x3a8000 | 138 | 26 | 112 |
+| EA libraries (AV, RCMP, SND, PATH, SPCH, EAFile, DirtySock) | 0x3a8000-0x3f8000 | 674 | 66 | 608 |
+| Sony runtime, EA login-save lib, newlib/libgcc/C++ runtime | 0x3f8000-0x42e600 | 162 | 19 | 143 |
+| **Total** | | **5,247** | **1,012** | **4,235** |
+
+(5,247 = 5,242 previously `FUN_` + 5 corrected names.)
+
+By kind: 376 ctors/dtors, 360 vtable slots of still-unknown meaning (`_vNN`), 751
+getters/setters/predicates, 750 EA library / DirtySock / login-library functions, 46 Sony
+SDK functions, 26 libc/libm/libgcc/C++-runtime functions, 2,938 other methods and helpers.
+
+## What was identified (highlights)
+
+- **Race path.**
+  - **Riders:**
+    - ComputerActorRider think states (`ComputerActorRider_Think{Cruise,BoardPress,Prewind,NaturalAir,Spin,Gate,Railslide,Wipeout}`), cruise modes, trick choice and rubber-banding.
+    - Per-frame rider phases from `AI_Update`/`AI_Render` (`Rider_BeginFrame`, `Rider_UpdateImpacts`, `Rider_UpdateProgress`, `Rider_ProbeGround`, `Rider_UpdateVisibility`, ...).
+    - All rider state/sub-state SaveState/LoadState pairs and dtors, plus rider collisions and race paths (`Path_*`, `PathData_*`).
+  - **Race management:** FocusMan/DangerMan, GameModeMan and its mode handlers, GameModule save/load and the race start/finish states.
+  - **In-race HUD:** `HUD_*` draw helpers, `cOVStateHUD1P_*`, the race-progress table, `GameUI_*` and `MessageCenter_*`.
+  - **Cameras:** the chase pipeline (names from `structs/camera.md`), camera triggers and bound objects.
+  - **Collision:** `SphereTree`, `OverlapList`, the `Nash` loose octree and its `Cell` nodes.
+  - **Animation:** RiderModel, AnimController, AnimDataBase, GameAnimMap.
+  - **World:** world objects and modifiers, world painter getters, world-script built-ins (`WScriptFn_*`), WScriptMan/Process/Task, cWorldCache and its section streamer, `cStreamMan`.
+  - **Renderer:** DeferMan, TexMan/VRAM heap, depth-fog post pass, bezier patch cache, BoaderShadow, SH irradiance.
+- **Back end:** BE interface methods for all 14 interfaces, career/reward/mission/score data, BESaveInt save files, bolt-on DB.
+- **Front end:** cFEPopupConfirm and cKeyboardPopup, the net FE screens, reward gallery, CharEquip, BoltFile cache, FEUIInput (36 action slots), load-screen states, memcard UI callbacks.
+- **Audio (game side):** SSXAudioSystem volume channels, music and speech triggers, board loop sounds, BankMonitor, CrowdAudio, StreamBuffer/StreamArray, SpeechSystem, MusicPlayer.
+- **Libraries:**
+  - **EA audio:**
+    - SND codecs (PCM16, EA-XA ADPCM, EA MicroTalk), the EE software mixer, DSP nodes and EE effects.
+    - SNDSTRM streams; SNDENC is a real-time DTS encoder.
+    - PATH event queue and fades; SPCH event tables and queue.
+  - **EA files and memory:** EAFile/StreamFile/BigFile, EA MEM heap, HUFF encoder.
+  - **Movies:** AV subtitles, RCMP classes.
+  - **DirtySock:** NetGameLink, NetGameUtil, ProtoPing and ProtoAries (from DirtyRpc 4-char codes), LobbyApi, BuddyApi, TagField, Utf8.
+  - **Runtime:**
+    - The EA account-login memory-card save library (`SLogin*`).
+    - libmpeg internals, iopheap/loadfile, gcc 2.95 RTTI/EH classes, newlib helpers and kernel patch helpers.
+
+## Invented or synthetic names
+
+Most names reuse class names that already exist or come from an allocation tag. These
+prefixes are descriptive (applied at med) and have no symbol anchor. Rename them if real
+names turn up.
+
+- **Unnamed base classes:**
+  - `NetFEState_*` / `NetFE_*`: the net-FE screen base, vt 0x46b808.
+  - `MemCardUI_*`: memory-card message callbacks, each anchored by its `kT_MEM*` string.
+  - `FEScreenBlank_*`: vt 0x46b6f8.
+  - `cFEPopupConfirm_BaseCtor/BaseDtor`: the popup base, vt 0x46cbd8, tag "createPopup".
+  - Base-subobject ctors/dtors named after their only user: `*_BaseCtor` / `*_BaseDtor` / `*_BaseSave`.
+- **Game modes, states and overlays:**
+  - `GMHandler<N>_*`: the GameModeMan handler classes, by array index.
+  - `GameState<Name>_*`: GameModule's embedded states, using the names from `structs/world.md`.
+  - `OVScreenPauseMode1..6_*` and `OVScreenPauseFreeride_InitMode1..6`: the six pause-menu subclasses.
+  - `OVScreenFinishOv2`, `OVScreenSaveRecords`, `OVScreenBCFail`.
+- **Module prefixes over unnamed objects:**
+  - `EventSelect_*`: the component shared by cFEStateEventSelect and OVScreenMap.
+  - `RaceProgress_*`, `MessageCenter_*`, `HUD_*`, `GameUI_*`, `LoadIndicator_*`.
+  - `AIVfxProcess` / `VfxProcess` / `StatsProcess`: from world.md field names, because the allocation tags collide with existing class names.
+  - `Render2D_*`: the "2DRender" object.
+  - `InSeq_Instance*`, `InSeq_Channel*`, `InSeq_{Curve,Ramp,Span,Event}Track*`.
+  - `WorldBlockPool`, `BoltFile_*`, `FEModule_RiderPreview*`, `WScriptFn_*`, `LunoVM*`, `Nash_*`.
+  - `SLogin` / `SLoginStore` / `SLoginMc`: from the 'slogin' save directory.
+  - `ScriptCam_*`, `RiderBase_*{PowerUpTrail,AttackFX,CheatCode}`: the rider FX mixins.
+- **Names by number, not meaning:**
+  - Speech triggers by speaker and event id (`SSXAudioSystem_DJSay20C8`).
+  - `RiderAnim_UpdateSeqType00..0F`.
+  - `MCManager_StateNN`.
+  - `cDynamicSprayFX_UpdateEmitterN`.
+  - `WorldPainter_Get<Type><Offset>`.
+
+## Corrections to existing names
+
+| Address | Was | Now | Evidence |
+|---|---|---|---|
+| 0x1036a0 | `RiderAnim_OnAnimEvent` | `RiderAnim_UpdateSequence` | Switches on the anim-table update type and calls per-type sequence updaters; events fire only afterwards |
+| 0x194588 | `FEUICustom_v04` | `cFEStateTransition_Init` | Slot 4 of vt 0x46bb88, the UIState that `FEUICustom_ctor` allocates as 'cFEStateTransition' |
+| 0x1de668 | `FEUICustom_v01` | `cFEStateTransition_dtor` | Same vtable, slot 1 |
+| 0x251fc8 | `MEM_PrintBlockLine` | `MEM_PrintHeap` | Body is `MEM_DumpHeapInfo(heap, fmt, line printer)` |
+| 0x3d1038 | `PATH_SetVolume` | `PATH_SetPaused` | Calls `PATH_PlatSetPaused` and sets the global pause flag checked by `PATH_Update`. The volume setter is `PATH_SetVolumePercent` |
+
+Pass-3 slot names that were wrong and are now fixed (they were `FUN_` before this pass):
+
+- `SSXAudioSystem_ReleaseBank` became `SSXAudioSystem_v02`.
+- `Debounce_Render` became `Debounce_v15`.
+- `ModObj_Shutdown` became `ModObj_v05`.
+- `ModObj_Reset` became `ModObj_v14`.
+- `cFlagManager_ResetBoxes` became `cFlagManager_Load`.
+- `GameModule_v08` / `_v09` became `GameModule_SaveState` / `_LoadState`.
+
+**Suspicious, not changed:**
+
+- **Memory and RPC library names:**
+  - `RollerModifier_dtor` (0x360b00) is slot 1 of the base vtable 0x4913f8, not of RollerModifier's own vtable. The real one is 0x361c78, now `RollerModifier_v01`.
+  - `sceSifLoadModuleBuffer` (0x42b230) takes a 4th result argument, so it is probably `_sceSifLoadModuleBuffer`; 0x42b800 would then be the public one.
+  - `sceSifMBindRpc` (0x40b400) has 6 arguments, so it is probably `sceSifMBindRpcParam`, with 0x40b3d8 as the default-argument wrapper.
+- **Wrong class:**
+  - `cFEStateAuthDNASCreate_ctor` (0x2561b8) is really the DNASAuth construction (its body is `DNASAuth_Init`).
+  - `PS2ExecMan_ctor` (0x317458) stores 0x48dc30, probably a base-class vtable.
+  - `cPS2ConsoleConfig_v01` is that class's deleting dtor.
+  - `cPS2MemCard_v29` is the save-name wrapper around `RequestReadSave`.
+- **Naming conflicts:**
+  - `BENewRaceInt_SetGameMode` / `GetGameModeName` act on the debug menu's "Game Path" (World Circuit / Quick Play / Multiplayer). The debug "Game Mode" is the event type.
+  - The pass-2 `WorldObjFactory_*` names are entries of the same world-script built-in table (0x441f38) that pass 3 names `WScriptFn_*`.
+
+## Corrections to the documentation
+
+- **BE interface ids** (pass-2 "Class hierarchy" section). The jump table of the race-phase `GetInterface` (0x45a810) gives these ids:
+
+  | Id | Interface | Id | Interface |
+  |---:|---|---:|---|
+  | 0 | NewRace | 7 | Network |
+  | 1 | NewPlayer | 8 | Score |
+  | 2 | unnamed, 0x14edd8 (character DB, also tagged 'BECharInt') | 9 | Bolt |
+  | 3 | BECharInt (attributes) | 10 | Mission |
+  | 4 | Option | 11 | Econ |
+  | 5 | Save | 12 | Aggression |
+  | 6 | BAGT | 13 | Reward |
+
+  Pass 2 shifted ids 2 onward by one.
+- **0x272300-0x2752a0** is not a bytecode interpreter. It is the InSeq keyframe/track sequence player (heap, sequence pool, channels, four track types). The bytecode VM is the Luno VM (`LunoVM_Execute`, 0x2227d0), and world scripts call built-ins through table 0x441f38.
+- **0x3f6d98-0x3fcf98** is not a network-config module. It is EA's account-login memory-card save library (directory 'slogin', title 'EA Login', ACCT/PASS records encrypted with 'Copyright Electronic Arts').
+- **structs/rider.md:**
+  - Script-base slots 3/4 (0x123e30/0x123da8) do not attach and detach. 0x123da8 is a puppet update and 0x123e30 a script sound event; the attach/detach pair is 0x123640/0x123b48.
+  - +0x7c0 is a light set, not morph weights.
+  - 0x116120 is the Reset sub-state entry, not a forced wipeout.
+  - CAR+0xdf0 is the AI target speed from path speed markers.
+  - The 0x10c4f8/0x10c758 switch is on rider index, not difficulty.
+- **structs/world.md:**
+  - The hull streamer class is `cStreamMan` (tags 'cStreamMan CDBUFFER/DECOMPRESS').
+  - The `cPS2FogParticleMan` ctor 0x2dbf80 only stores the base vtable 0x488308.
+- **structs/render.md:** the slot labels 40 (SetFogMode) and 67 (AddLight) look wrong from their callers (display-option value and shadow submission).
+
+## Uncertain candidates (not applied)
+
+The table at the end of this section has 1,071 low-confidence proposals: address, proposed name, evidence. They are mostly:
+
+- names that would need an invented class name (KeyboardScreen, MemCardStateBase, Coll* volume classes, cPlayerPulseFX, ...);
+- guessed translation units for static initialisers;
+- event handlers whose trigger isn't visible locally;
+- byte-identical duplicates.
+
+Kernel syscall 0x83 at 0x42c1a8 (`FindAddress`) was also downgraded to low.
+
+Still `FUN_` after pass 3 (2,129 functions):
+
+- empty and identity stubs, and opaque single-field accessors;
+- large GS/VU drawing kernels without anchors (HUD quads, Nash classify);
+- SPCH sentence assembly;
+- unanchored callbacks in the lobby and memcard state machines;
+- methods of classes that have no name yet.
+
+## Reproducing
+
+Scratch scripts are not committed. The pipeline was:
+
+1. pass-2 dumps (see Pass 2);
+2. `vtprop.py` (the slot rule above);
+3. `cards.py` (per-function context);
+4. per-chunk review;
+5. `apply3.py` (validation + `rename_function_by_address`, logging every rename);
+6. `tools/export-ghidra-functions.py`;
+7. **save the program in Ghidra (Cmd-S)**, see the recovery note above.
+
+## Appendix: every pass-3 rename
+
+Format: `address  new name  confidence  evidence`. "(was X)" marks a replaced name.
+
+```
+001001c8	_exit	high	crt0 stub 'j Exit; move a0,zero' called only by exit and abort (SCE crt0 _exit)
+00100348	ComputerActorRider_ComputeSteer	med	steer value from velocity (vslot 2) vs direction to target (pos vslot 5); result *31 written to CruiseTurn bits 20-25
+00100610	ComputerActorRider_GetSteerTarget	med	returns Rider aiPathLookAhead(+0x4b0) + k*(aiPathNearest(+0x490)-pos); fed to steer computation by all cruise modes
+00100680	ComputerActorRider_CruiseFollowPath	med	cruise mode 1 (PMF table 0x43cf28): steer to AI path, speed (0x11)/press (0x13) markers, boost; switches to other modes
+001009e0	ComputerActorRider_CruiseApproachJump	med	cruise mode 0 (PMF 0x43cf20): when jump marker (0x10) ahead sets Jump bits 0xc000 and plans tricks; else back to mode 1
+00101728	DangerMan_AddDanger	med	fills a free (state 2) 0x1c-byte slot of DangerMan's 64-entry table (reset by DangerMan_Reset) for a world object handle, count +0x704++
+00101888	DangerMan_RemoveDanger	med	finds DangerMan entry with matching object handle (+0x18) and removes it; also called before re-adding
+00101900	DangerMan_AcquireZone	med	refcounted list +0xb58 with free list +0xb54 (DangerMan_Reset layout): find id or take free node, count++
+00101970	DangerMan_ReleaseZone	med	decrements refcount in list +0xb58, frees node; when list empty clears per-rider danger +0x70c/+0x710
+00101a10	DangerMan_GetRiderDanger	med	returns DangerMan +0x710[idx*0xc] (per-rider value set in DangerMan_Update); called from rider audio code 0x122cf0
+00101a28	FocusMan_CollectNodeObjects	med	recursive over 8 octree children; appends node objects passing visibility test to list; from FocusMan_Update
+00101b60	FocusMan_Update	high	AI_Update calls it with AI+0xa4 (FocusMan, world.md) right before DangerMan_Update(AI+0xa8); walks focus boxes, gathers octree objects
+001032c0	FocusMan_AddObject	med	appends object to FocusMan list +0xd8/+0xdc (cleared by FocusMan_Reset), sets flag 0x100; called from WorldObj_ctor path
+00103308	FocusMan_RemoveSectionObjects	med	removes list +0xdc entries whose byte +0x78 (section id) == arg; called from SectionMan_Update path
+001033f8	FocusMan_RemoveFocusBox	med	inverse of FocusMan_AddFocusBox: removes entry whose box ptr == arg, compacts 0x20-byte entries, +0xd0=-1; called from Rider_dtor
+00103480	FocusMan_SaveState	med	only caller WorldState_Write; writes +0xd0, focus box positions (0x10 each) and object list +0xd8/+0xdc via stream slots
+00103578	FocusMan_LoadState	med	only caller WorldState_Read; mirror of FocusMan_SaveState (stream read slots), re-flags objects 0x100
+001036a0	RiderAnim_UpdateSequence	med	was RiderAnim_OnAnimEvent: switch on AnimTable entry +4 calling per-type sequence updaters; events fired only afterwards (was RiderAnim_OnAnimEvent)
+00103918	RiderAnim_v03	high	vt 458458 slot 3 (class RiderAnim via slots 2/2)
+00103aa0	RiderAnim_FireSoundEvents	med	from RiderAnim_OnAnimEvent for local human riders: for each passed anim event flagged 0x8000 calls 0x104cc8 with event id
+00103be0	RiderAnim_ScrubSeq	med	sets sequence track 0 to anim A or B by sign of param and time = |param|*length, fades weight, removes when done
+00103cc8	RiderAnim_BlendSeq2	med	two-track blend: base anim + left/right anim by signed weight, advance, fade, remove when done
+00103e28	RiderAnim_BlendSeq4	med	picks two of four anims by a [-1,1] param in 0.5 steps and cross-blends tracks 0/1
+00103ff8	RiderAnim_PlaySeqThenLoop	med	advances track 0; when the intro anim ends switches to the loop anim and restarts time
+00104110	RiderAnim_UpdateSeqType03	med	RiderAnim_OnAnimEvent case 3: BlendSeq2 by rider slew +0x1fc (sign by +0x320)
+00104178	RiderAnim_UpdateSeqType04	med	RiderAnim_OnAnimEvent case 4: BlendSeq4 by rider slew +0x1fc
+00104238	RiderAnim_UpdateSeqType05	med	RiderAnim_OnAnimEvent case 5: BlendSeq2 by rider slew +0x238
+001042a8	RiderAnim_UpdateSeqType06	med	RiderAnim_OnAnimEvent case 6: BlendSeq2 by rider slew +0x214
+001042e0	RiderAnim_UpdateSeqType0A	med	RiderAnim_OnAnimEvent case 10: ScrubSeq by rider slew +0x238
+00104358	RiderAnim_UpdateSeqType07	med	RiderAnim_OnAnimEvent case 7: track time from max(|slew +0x2a4|,|+0x2b0|)
+001043f8	RiderAnim_UpdateSeqType0B	med	RiderAnim_OnAnimEvent case 11: maps anim 0x129..0x130 to blend anim, weight from slews +0x28c/+0x298
+001045b8	RiderAnim_UpdateSeqType0C	med	RiderAnim_OnAnimEvent case 12: wrapper of RiderAnim_PlaySeqThenLoop
+001045d8	RiderAnim_UpdateSeqType08	med	RiderAnim_OnAnimEvent case 8: track time from owner +0x2a0
+00104660	RiderAnim_UpdateSeqType09	med	RiderAnim_OnAnimEvent case 9: ScrubSeq by rider slew +0x244 (anims 0x15a/0x160 pairs)
+001046b0	RiderAnim_UpdateSeqType0F	med	RiderAnim_OnAnimEvent case 15: BlendSeq2 by 2*slew(+0x274)-1
+00104728	RiderAnim_UpdateSeqType0E	med	RiderAnim_OnAnimEvent case 14: track time from slew +0x268 (inverted for anims 0x19/0x21)
+001047f0	RiderAnim_UpdateSeqType0D	med	RiderAnim_OnAnimEvent case 13: track time from |slew +0x280| (inverted for anims 0x25/0x26)
+001048c0	RiderAnim_UpdateSeqType00	med	RiderAnim_OnAnimEvent case 0 (AnimTable entry +4 update type): advance track, fade, remove when finished
+00104940	RiderAnim_UpdateSeqType01	med	RiderAnim_OnAnimEvent case 1: advance track with rate fGp-0x7f40, fade, remove when finished
+001049c0	RiderAnim_UpdateSeqType02	med	RiderAnim_OnAnimEvent case 2: advance track with rate fGp-0x7f3c, fade, remove when finished
+00104cf8	RiderAnim_v04	high	vt 458458 slot 4 (class RiderAnim via slots 2/2)
+00104d50	RiderAnim_SetActor	med	counterpart of RiderAnim_SetRider: owner +0x64 = non-rider object, rider +0x60 = 0, model +0x54 = obj+8; from 0x19ed80 ('RiderAnim' alloc)
+00104d68	RiderAnim_SaveState	med	only caller RiderBase_SaveState; writes 0x50 bytes of RiderAnim then its 6 anim-sequence lists (+0x50)
+00104de0	RiderAnim_LoadState	med	only caller RiderBase_LoadState; reads 0x50 bytes, AnimSeqList_Clear/AnimSeqList_Load for the 6 lists at +0x50
+00104e70	Rider_FindWallContact	med	only caller Rider_HandleWallCollision; queries OverlapList +0x860 for contacts, returns penetration (-1 none), stores visited id +0x5b8
+00105398	Rider_HandleWallCollision	med	from Ground/Air/Railslide state PostUpdate: collision query on hull +0xaa0, records hit at +0x9e0/+0xa60, response 0x1057b8, hit sound, camera triggers
+00106848	Rider_TryStartRailslide	med	from 8 sub-state HandleInput fns: finds rail (0x108a48), sets main state 4 (Railslide) and sub 7/1/0xd, plays rail anims
+00107578	Rider_TryStartHandplant	med	OverlapList query type 2; on hit sets sub-state 0xb (Handplant) and main state 5 (Handplant); from Cruise/NaturalAir/Spin HandleInput
+00107888	Rider_CheckRiderCollisions	med	from state PostUpdates: for each other non-actor rider tests hull overlap (0x329f98), pushes both apart with Rider_Translate, resolves via 0x107e70
+00107e70	Rider_ResolveRiderCollision	med	only caller Rider_CheckRiderCollisions; decides bump/knockdown, calls aggression reporters 0x10e228..0x10e468 and Rider_StartWipeout
+00108a48	Rider_FindRail	med	OverlapList (+0x860) query type 1 within 300 (0x334680), validates via 0x1086b8; used by TryStartRailslide
+00108e88	ComputerActorRider_Init	high	rider.md 'init 0x108e88'; called from ComputerActorRider_ctor; clears AI brain fields, sets cruise mode PMF 0x43cf28, InitDifficulty, trick counts
+00108f88	ComputerActorRider_Init_2	med	trivial wrapper of ComputerActorRider_Init (no direct callers)
+0010a960	ComputerActorRider_ThinkCruise	high	ComputerActorRider_GetControlInput case subState 0 (Cruise); sets ResetPath bit12, Attack bits 18/19, then calls cruise mode PMF at +0xf44
+0010aa70	ComputerActorRider_ThinkPrewind	high	ComputerActorRider_GetControlInput case subState 2 (Prewind); scans AI path for jump marker (event 0x10) within +50
+0010ad78	ComputerActorRider_ThinkBoardPress	high	ComputerActorRider_GetControlInput case subState 1 (BoardPress); fills BoardPress/CruiseTurn fields of the control word
+0010aed8	ComputerActorRider_ThinkRailslide	high	ComputerActorRider_GetControlInput case subState 7 (Railslide); RailBalance bits 25-30, jump at marker
+0010b0e8	ComputerActorRider_UpdateSpinPlan	med	only caller ThinkSpin; checks planned spin/flip (+0xe38/+0xe3c) against Spin sub-state (owner+0x230) limits and remaining air time, cancels them
+0010b250	ComputerActorRider_ThinkSpin	high	ComputerActorRider_GetControlInput case subState 5 (Spin); picks trick index by remaining air time
+0010b590	ComputerActorRider_ThinkNaturalAir	high	ComputerActorRider_GetControlInput case subState 4 (NaturalAir); plans spins from AirPredictor air time (+0x98-+0xa0)
+0010b750	ComputerActorRider_ThinkWipeout	high	ComputerActorRider_GetControlInput case subState 8 (Wipeout); only sets bit 12 (ResetPath) from 0x10d1a0
+0010b790	ComputerActorRider_ThinkGate	high	ComputerActorRider_GetControlInput case subState 6 (Gate); writes GateAnticipate bits 12-17 from race frame counter
+0010b980	ComputerActorRider_FindJumpMarker	med	AI path (+0xab8) event query +300 for type 0x10; outputs flag bits and start/end points (+0xe50/+0xe60); used by Prewind/Cruise jump logic
+0010bb18	ComputerActorRider_FindSpeedMarker	med	AI path event type 0x11 within +600: writes target speed to CAR+0xdf0 compared with |vel| to brake/boost
+0010bbf8	ComputerActorRider_FindBoardPressMarker	med	AI path event type 0x13 within +50: direction flag; used by ThinkBoardPress and FollowPath to set BoardPress field
+0010bd10	ComputerActorRider_SelectTargetRider	med	picks nearest rider (relation dist<=700, angle-weighted) into CAR+0xe70 every 12th frame; drops it when far/off path
+0010bfa8	ComputerActorRider_PlanAirTricks	med	sets +0xe10 (do tricks), random-sign spin/flip plans +0xe38/+0xe3c, skip roll +0xe14; called at jump takeoff
+0010c0a8	ComputerActorRider_SetCruiseCrouch	med	writes CruiseCrouch (w0 bits 26-31) from speed thresholds and +0xdf8
+0010c140	ComputerActorRider_CrouchAndBoost	med	writes CruiseCrouch bits 26-31 plus BoostPressed|BoostHeld (0x30000)
+0010c258	ComputerActorRider_RollUberTrick	med	Rider+0xb2c bit0, track != 0xe, rand vs skill +0xdfc; gates the uber-trick picker in ChooseTrick
+0010c4f8	ComputerActorRider_ApplyDifficulty	med	switch on difficulty 1..5 sets skill +0xdfc, +0xdf8 and Rider +0xdc/+0xe0/+0xe4 rubber-band window
+0010c758	ComputerActorRider_InitDifficulty	med	called from AI_CreateComputerRiders and CAR init; reads BE race settings/track, calls ApplyDifficulty, scales skill per track
+0010cab8	ComputerActorRider_InitDifficulty_2	med	trivial wrapper of 0x10c758 called from CAR init 0x108e88
+0010cad8	ComputerActorRider_ChooseTrick	med	only caller ThinkSpin; tries uber / least-used / random trick pickers by remaining air time, returns trick index or -1
+0010cbe0	ComputerActorRider_PickRandomTrick	med	rand%15 trick, accepted if its anim length fits air time; counts +0xe7c[15]
+0010cd20	ComputerActorRider_PickFittedTrick	med	picks least-used trick 1..14 (counts +0xef4[15]) whose anim length fits remaining air time
+0010cf68	ComputerActorRider_PickUberTrick	med	requires uberTimer (+0x2f0)>0; picks least-used uber trick (counts +0xeb8[15]) that fits the air time
+0010d170	ComputerActorRider_ResetTrickCounts	med	clears the three 15-int trick usage arrays +0xe7c/+0xeb8/+0xef4; called from CAR init 0x108e88
+0010d1a0	ComputerActorRider_ShouldResetPath	med	result -> control word bit 12 (ResetPath, input.md); counts frames facing away from AI path heading (+0x4cc) / far off path / long air
+0010d410	ComputerActorRider_ScorePathBranch	med	CAR Rider vtable 0x458660 slot 20 (pure in Rider); called via vslot 20 by Rider_SelectAIPath; scores an AI path by speed class/flags/occupancy
+0010d8f8	ComputerActorRider_FindHumanRiderIndex	med	first relation record with valid(+0) and +4 (IsHuman, set by AI reset 0x10f3b8) set; -1 none
+0010d938	ComputerActorRider_IsFarBehindHuman	med	human.distToFinish - own < Rider+0xdc (negative window)
+0010d990	ComputerActorRider_IsFarAheadOfHuman	med	human.distToFinish - own > Rider+0xe0
+0010d9e8	ComputerActorRider_IsRivalTarget	med	Rider+0xf0 (rival set) && Rider+0xf8 (rival index, set by 0x10f878 from BEAggressionInt level 4) == idx
+0010dbf0	ComputerActorRider_FindAttackTarget	med	every 6th frame: rider within 200 at side angle with BEAggressionInt level>=3 -> Attack left/right; caller sets bits 18/19
+0010deb0	ComputerActorRider_GetHumanRider	med	AI+0x28[FindHumanRiderIndex] Rider*, 0 if none
+0010def0	ComputerActorRider_ComputeRubberBand	med	speed scale from human distToFinish minus own, windows Rider+0xdc/+0xe0 mode +0xe4; result to 0x120090 in GetControlInput
+0010e5d8	Rider_HandleRacePathEvent	med	only caller Rider_UpdateRaceProgress; event type 1 -> finish (0x125108) in race modes, type 0xb -> notify
+0010e770	Rider_v13	high	Rider vtable slot 13 (vt 0x458660 etc.); adds to +0x2e8 and triggers audio (rider.md slot 13)
+0010e7d0	Rider_v14	high	Rider vtable slot 14; adds to +0x2ec and triggers audio (rider.md slot 14)
+0010e830	Rider_v15	high	Rider vtable slot 15; in Air/Railslide adds trick score via RiderMetrix 0x119448 and Rider_AddBoost (rider.md slot 15)
+0010eb30	Rider_StartWipeout	med	ends with Rider_SetSubState(8 Wipeout) + Rider_SetMainState(2 Wipeout) and plays the given wipeout anim; boost from RiderMetrix
+0010f398	AI_ResetRiderRelations_2	med	wrapper of AI_ResetRiderRelations called from AI_ResetRiders
+0010f3b8	AI_ResetRiderRelations	med	for each rider clears the 6 relation records (+0x24 each), valid=other loaded, +4 = other IsHuman; +0x4d8=distToFinish, +0xe8=-1
+0010f878	AI_UpdateRivals	med	from AI_UpdateRiderRelations: per rider pair BEAggressionInt level -> Rider+0xfc, level 4 sets rival flag +0xf0 / index +0xf8
+0010f998	AI_UpdateRacePositions	med	sorts riders by distToFinish (+lap) or metrix score, writes place to Rider+0xec, notifies audio on place change
+0010fc30	AI_CountRidersOnPath	med	counts riders with vslot 9 (IsComputer) true whose aiPath (+0xab8) == arg
+00111890	RiderBase_ResetFX	high	calls Reset on all RiderBase FX mixins (cBoardWakeFX_Reset ... cDynamicSprayFX_Reset) at their rider.md offsets; from Rider_Reset/Place
+00111948	RiderBase_UpdateFX	high	calls Update on all RiderBase FX mixins (cBoardWakeFX_Update ...) at rider.md offsets
+001119f8	RiderBase_RenderFX	high	calls Render on all RiderBase FX mixins (cBoardWakeFX_Render ... cDynamicSprayFX_Render)
+00112588	Rider_GetAIPathLookAheadDist	med	returns 796.0 (arg!=0) or 200.0; used for aiPathLookAhead (+796, rider.md) in UpdateAIPathProgress
+001125a8	Rider_SaveAIPathLookAhead	med	copies aiPathLookAhead +0x4a0 to previous +0x4b0 (rider.md); only caller Rider_UpdateAIPathProgress
+001127f0	Rider_SelectRacePath	med	only caller Rider_UpdateRaceProgress; picks nearest candidate path from path set 0x4d33a0 into racePath +0xab4
+00112a50	Rider_SelectAIPath	med	picks AI path into +0xab8 (calls vslot 20 ScorePathBranch for CPU riders), recomputes +0x490/+0x4a0; from UpdateAIPathProgress
+00112d58	Rider_SnapToNearestAIPath	med	only caller RiderResetSub_HandleInput; nearest path from 0x4d33a0 into +0xab8, resets aiPathDist +0x4c0/+0x4c4 and look-ahead
+00112fb0	Rider_UpdateDistToFinish	med	only caller Rider_UpdateRaceProgress; distToFinish +0x4d0 = path length - dist, queries path events into overlaps +0x4dc/+0x59c
+00113128	Rider_GetDistToFinish	high	returns Rider+0x4d0 (distToFinish, rider.md)
+00113198	AirPredictor_Reset	high	AirPredictor_ctor and AirPredictor prime call it; clears +0x98..+0xac, landing normal/vel defaults, +0x30=-1 (rider.md)
+00113200	AirPredictor_Simulate	med	only caller AirPredictor_Update; steps the trajectory with collision queries to find landing point/normal
+001135b8	AirPredictor_Prime	high	rider.md: primed by RiderAirState_Enter/Rider_AddVelocity via 0x1135b8(targetSpeed, ap, &pos, &vel): Reset, +0xa8=speed, set launch
+00113618	AirPredictor_SetLaunchState	med	copies pos/vel to +0x70/+0x80 and +0x50/+0x60, +0xac=0; from Prime and Update
+00113648	AirPredictor_Update	med	per-frame from RiderAirState_Update/RiderHandplantState_Update; phase +0xac, air time +0x98, runs simulation 0x113200
+001139a0	AirPredictor_Step	med	callers are AirPredictor sim fns 0x113200/0x113648; pos+=vel*dt, vel+=gravity, clamp |vel| to AP+0xa8 target speed
+00113aa0	AirPredictor_SaveState	high	only caller RiderBase_SaveState; ReplayStream slot1 Write of 0xb0 bytes (AirPredictor size)
+00113ad8	AirPredictor_LoadState	high	only caller RiderBase_LoadState; ReplayStream slot2 Read of 0xb0 bytes (AirPredictor size)
+00113e80	Rider_SetSlew0Target	med	sets slewed param #0 (+0x1f0 cur/+0x1f4 step/+0x1f8 target), step scaled by speed and surface type; sub-state input handlers
+00113f38	Rider_SetSlew5Target	med	sets slewed param #5 (+0x22c/+0x230/+0x234) target and step; sub-state input handlers
+00113f88	Rider_SetSlew3And4Targets	med	sets slewed params #3 (+0x214..) and #4 (+0x220..) targets/steps; sub-state input handlers
+00114130	Rider_HandleBoostInput	med	boost pressed: sets boostActive +0x2fc from meter +0x2f8 level (0.25/0.625/1), drains meter, audio start/stop
+00114298	Rider_LaunchIntoAir	med	adds take-off velocity along ground normal/up (param = ollie charge), banks trick via 0x119e38, Rider_AddBoost; Prewind input / ground/rail PostUpdate
+00114cc0	Rider_TurnAroundIfBackward	med	if vel.groundForward below -k: rotates quat 180 about up, rebuilds matrix, Rider_ToggleStance
+00115168	Rider_ToggleStance	med	xors +0x320 (switch stance), sets anim root rotation, negates groundForward/side and lateral slews
+001158b8	Input_QuantizeStickDirection	med	deadzone then snaps (x,y) stick to multiples of param angle via atan/sincos, clamps to [-1,1]; Prewind/Spin input
+00116120	Rider_CheckResetPath	med	first call of every sub-state handler with ResetPath bit (input.md); sets Reset sub/Static main, WrongWay HUD for reason 1/4
+001161d0	Rider_TryEnterBoardPress	med	plays anim 0x18/0x20, sets +0x330 1/2, Rider_SetSubState(1 BoardPress)
+001162c8	Rider_TryEnterPrewind	med	on jump press/flag: exits BoardPress, Rider_SetSubState(2 Prewind)
+00116378	Rider_TryEnterFinishLine	med	if stateTimer +0x470 >= 0 -> Rider_SetSubState(10 FinishLine)
+00116938	Trick_GetGrabName	med	returns string table 0x43d160[i] ('Indy ','Method ','Mute ','Stalefish '...); used by cFEStateUberTrick
+00116950	Trick_BuildName	high	concatenates trick-name strings ('Switch ','Rail To ','180 '..'2520 ', grab names) selected by bitfields of a trick descriptor
+00116e08	Trick_GetBonusTrickName	med	finds id in 24-entry trick table 0x43d608, builds descriptor bits, Trick_BuildName
+00117138	cHUDFX_ShowDelayed	med	same as cHUDFX_Show but +4=-1.0 and +8=-delay (no callers)
+001171a8	cHUDFX_ShowNumberDelayed	med	same as cHUDFX_ShowNumber (sprintf number) but +4=-1.0 and +8=-delay
+00117520	RiderMetrix_SetBaseScore	med	sets +0x1c8 and adjusts score +0x198 by the delta; from AI player setup 0x12b498 (per-player start value)
+00117948	RiderMetrix_GetRoundedTrickPoints	med	(trick points +0x14 * multiplier +0x1c4 * k) rounded to 10; used by FinishTrick/UpdateTrickHUD
+00118ff8	RiderMetrix_ShowTrickName	med	Trick_BuildName into buffer then RiderMetrix_ShowHUDText
+001190f0	RiderMetrix_CountTrickRepeats	med	counts matches of trick descriptor in 10-entry history +0xa8 (ring idx +0xf8), then records it
+001193e0	RiderMetrix_OnRaceFinished	med	only caller rider finish fn 0x125108; RiderMetrix_BankCombo
+0011a168	RiderMetrix_AnnounceTrick	med	builds descriptor, bonus-table lookup -> points + HUD 0x32 + audio, repeat count, RiderMetrix_ShowTrickName
+0011a8c8	RiderMetrix_BuildTrickDesc	med	EA_MemSet desc 8 bytes then packs spin (+0x34)/flip (+0x38) degrees, grab, rail fields into bitfields
+0011b1a8	Trick_LookupBonusTrick	med	matches descriptor against 24-entry table 0x43d608 (10000/20000/30000 pts), sets id bits, returns points
+0011b678	Rider_LoadListCompare	med	qsort comparator (strcasecmp) passed by 0x11bd60/0x11be88 for LoadList entries
+0011bbe8	Rider_GetEquippedBolts	med	collects the character's bolt-on records (Bolts_GetCharBolts, equipped flag 0x10) into array; Rider_LoadStep
+0011bd60	Rider_AddBoltNamesToLoadList	med	adds unique bolt name strings (+0x28) to LoadList +0x894, qsort; Rider_LoadStep
+0011c138	Rider_LoadBoltModels	med	MdfFile over data, for each equipped bolt creates model by name, RiderModel_LoadVariant; Rider_LoadStep
+0011df18	Rider_ResetMotion	med	vel = forward*k (z 0), clears anim layer 2 weight, resets RiderBase FX, optional camera reset
+0011dfe0	Rider_RotateAroundAxis	med	quat +0x120 = axis-angle(param) * quat, Rider_BuildWorldMatrix
+0011e150	Rider_UpdateBounds	med	AABB +0x400/+0x410 from pos and axis offsets (rider.md)
+0011eb60	Rider_TickAnimation	med	anim controller update with time scale (+0x300 animTimeScale from 0x121700)
+0011eb98	Rider_UpdateSkeleton	med	pose/skeleton update writing renderMatrix +0x160, root override, leg IK (rider.md)
+0011f3d8	Rider_SolveLegIK	med	only caller Rider_UpdateSkeleton; per-leg bone IK on RiderModel+0x2c transforms
+0011ff18	Rider_GetControlInput	med	forwards to owner (+0x77c) RiderBase vslot 1 GetControlInput
+00120090	Rider_SetAnimTimeScale	med	moves +0x300 animTimeScale toward param by max step; ComputerActorRider_GetControlInput
+001200d0	Rider_UpdateBoostTimers	med	decays +0x2e8/+0x2ec, uber timer +0x2f0 and boost level +0x2f4/meter; phase 3 of AI_Update
+00120e50	Rider_RefreshOverlaps	med	OverlapList (+0x860) update with AABB +0x400, then nearby lights (0x122088)
+00120eb8	Rider_UpdateFX	med	wrapper: owner (+0x77c) RiderBase FX update 0x111948
+00120ed8	Rider_RefreshPose	med	AI_Update: Rider_BuildWorldMatrix + anim tick + skeleton unless puppet +0xac4
+00120f20	Rider_BeginFrame	med	AI_Update phase 1: clears per-frame flags, OverlapList, ground probe, Rider_UpdateTargetSpeed, stateTimer (rider.md)
+001210b0	Rider_UpdateImpacts	med	AI_Update phase 3: decays impulse +0x3e0/impact +0x3f0/+0x3f4, forced reset >4.5, boost timers
+00121700	Rider_UpdateAnimation	med	AI_Update phase 6: Rider_TickAnimation(+0x300) unless puppet +0xac4
+00121728	Rider_UpdatePose	med	AI_Update phase 6: Rider_UpdateSkeleton unless puppet +0xac4
+001217f8	Rider_UpdateModel	med	AI_Update phase 7: RiderModel (+0x780) update
+00121818	Rider_UpdateProgress	med	AI_Update phase 8: attach matrix, race/AI path progress, finish check, RiderMetrix_Update, focus box
+001218d0	Rider_UpdateSurfaceFX	med	AI_Update phase 9: material lookup +0x434 from +0x430, ground FX/sound
+00121950	Rider_UpdateHeadingAndAudio	med	AI_Update phase 10: audio update, smoothedHeading +0x5b4 low-pass, 0x122cf0
+00121f30	Rider_ComputeLOD	med	projects position, sets LOD +0x898 = 0/1/2 by screen size thresholds 6/10; from render
+00122088	Rider_FindNearbyLights	med	query GameModule+0x90 light manager at hips position, up to 8 handles into +0x794
+001220d8	Rider_BuildLightSet	med	builds light set at +0x7c0 from world lights at hips plus nearby lights +0x794 and owner +0xd30
+00122278	Rider_UpdateVisibility	med	AI_Render: frustum test of AABB +0x400/+0x410 sets visible flag +0xb18
+00122448	Rider_RenderModel	med	AI_Render: if visible +0xb18, LOD, light set, renders RiderModel at pos
+001225c0	Rider_PrepareLighting	med	AI_Render: if visible -> Rider_BuildLightSet
+001225f0	Rider_RenderShadow	med	AI_Render: if visible -> shadow draw 0x122898
+00122618	Rider_RenderFX	med	wrapper: owner (+0x77c) RiderBase FX render 0x1119f8 (cBoardWakeFX_Render...)
+00122638	Rider_RenderAttachedFX	med	AI_Render: AttachedEmitterFX (+0x88c) render
+00122658	Rider_ClearNearbyLights	med	EA_MemSet(+0x794,0,0x20) (8 light handles)
+00122898	Rider_DrawShadow	med	BoaderShadow (+0xaa8) draw from feet bones (+0x918/+0x8e8) and up axis
+00122c28	Rider_GetStartMarkerPos	med	PathData marker (type 1, rider index) from 0x4d33a0 -> vec4 w=1
+001231a8	Rider_IsOnGround	med	main state Ground, or Wipeout with owner+0x30 == 0
+00123640	Rider_AttachToScript	med	script vslot (8 vtables): FUN_0027f9f8, Void sub/Static main, puppet +0xac4=1, pose from script object matrix
+00123b48	Rider_DetachFromScript	med	script vslot pair of 0x123640: Rider_Reset, clears puppet +0xac4/+0xafc, restores bolt model parts, stops script sounds
+00123da8	Rider_UpdateFromScript	med	scriptable-base vt 0x459b90 slot 4: when puppet +0xac4, applies script track (0x124788) and sound events (0x125448)
+001241c0	Quat_FromEuler	med	three half-angle SinCos -> quaternion components (x,y,z order) into out
+001242b0	Rider_ProbeGround	med	ray along -normal under rider via OverlapList +0x860, updates ground normal history +0x370/+0x380, contact (rider.md)
+00125108	Rider_OnFinishRace	med	banks combo, finish frame +0x478, post-race camera (ChaseCamController_StartPostRaceCamera), audio
+00125228	Rider_CheckRaceFinish	med	AI_Update phase 8 finish check (rider.md): time limit -> +0x480=1 and Rider_OnFinishRace
+00125b18	Player_ApplyRumble	med	decays rumble pair (Player+0xdfc), PadDevice_StopActuators or sets actuators 0/1 via pad vslots
+001276f0	Player_GetTrickButton	high	returns 0..14 for InputBinding_EvalBool actions 0x1f-0x2d (Trick1-15, input.md), -1 none
+00127848	Player_GetUberGrindButton	high	returns 0..3 for actions 0x1b-0x1e (UberGrind1-4, input.md), -1 none
+001278e8	Player_UpdateRumble	med	Player Rider vtable slot 19; BE player check then Player_ApplyRumble(+0xdfc, pad +0xdf4)
+00129160	AI_UpdateRiderPoses	med	for all riders AI+0x28: anim tick, skeleton update, RiderModel update
+001298c8	AI_GetFrameCounter	med	returns GameModule(App+0x84)->AI(+0xc)+8 frame counter; 18 callers use it for staggering (frame%6==index)
+0012a2b0	AI_LoadTrackPaths	med	PathData_Free/LoadFile(0x4d33a0) then Rider_InitTrackPaths for every rider
+0012a340	AI_SetTrackPathsBuffer	med	mode checks then PathData_SetBuffer(0x4d33a0) and Rider_InitTrackPaths for every rider
+0012a4f0	AI_InitAllTrackPaths	med	Rider_InitTrackPaths(rider,0) for every rider AI+0x28
+0012b200	AI_FreeAnimDataSources	med	only caller AI_DestroyAllRiders; frees AdfDataSource(s) created by 0x12b280
+0012b280	AI_LoadAnimDataSources	high	strings 'data/char/anm.big','AdfDataSource': mounts big, AdfDataSource_ctor per slot; AI_Init
+0012b498	AI_ApplyPlayerRiderSettings	med	AI_CreatePlayers: game-mode flags -> boostMode +0x304, meter start +0xb24, +0xb28, aiSkill +0xb30, statsIndex +0xb34
+0012b698	AI_ApplyComputerRiderSettings	med	AI_CreateComputerRiders: same mode flags for CPU riders (+0x304,+0xb24,+0xb28,+0xb30)
+0012b788	AI_RefreshRiderOverlaps	med	only caller WorldState_Read; Rider_RefreshOverlaps for every rider
+0012bb20	AI_UpdateRaceTimeLimit	med	only caller AI_Update; in Race state counts frames vs 0xd3a4 / 2-min countdown after first finisher, then force-finishes riders (+0x480=1, 0x125108)
+0012c0c0	RiderGateSub_UpdateWaitPush	med	RiderGateSub_HandleInput phase 2; on forward stick plays gate anim 2 and sets phase 3
+0012c130	RiderGateSub_UpdatePush	med	RiderGateSub_HandleInput phase 3; after anim 2 >50% sets vel=forward*k and Ground state, then Cruise/NaturalAir sub
+0012c230	RiderGateSub_UpdateCharge	med	RiderGateSub_HandleInput phase 0; stick moves charge [4] toward target, when start allowed sets launch power [3] and phase 1
+0012c408	RiderGateSub_UpdateLaunch	med	RiderGateSub_HandleInput phase 1; ramps [4] to 1, sets vel=forward*[3] and Ground state, then anim 6 and Cruise/NaturalAir sub
+0012c558	RiderGateSub_SaveState	high	RiderBase_SaveState calls it with RiderBase+0x290 (RiderGateSub object per rider.md); writes state block via stream vslot
+0012c590	RiderGateSub_LoadState	high	RiderBase_LoadState calls it with RiderBase+0x290 (RiderGateSub object per rider.md); reads state block via stream vslot
+0012c9c0	RiderFinishLineSub_SaveState	high	RiderBase_SaveState calls it with RiderBase+0x360 (RiderFinishLineSub object per rider.md); writes state block via stream vslot
+0012c9f8	RiderFinishLineSub_LoadState	high	RiderBase_LoadState calls it with RiderBase+0x360 (RiderFinishLineSub object per rider.md); reads state block via stream vslot
+0012cd20	RiderWipeoutSub_UpdatePhase0	med	RiderWipeoutSub_HandleInput case 0 (tumble: tracks hips/board bones, starts wipeout state motion)
+0012d160	RiderWipeoutSub_UpdatePhase2	med	RiderWipeoutSub_HandleInput case 2 (camera shake by speed, anim speed)
+0012d4e8	RiderWipeoutSub_UpdatePhase1	med	RiderWipeoutSub_HandleInput case 1
+0012d848	RiderWipeoutSub_UpdateRecover	med	RiderWipeoutSub_HandleInput case 3; at anim end returns to Ground/Cruise or Air/Spin
+0012d9d8	RiderWipeoutSub_UpdatePhase4	med	RiderWipeoutSub_HandleInput case 4; when meter [0x1c]>=1 or finished or anim done calls 0x10f280 and 0x116120(r,0,2)
+0012e528	RiderWipeoutSub_UpdateAnimSpeed	med	sets layer-2 sequence rate (+0x90) from wipeout-state velocity length, returns it; 5 callers in WipeoutSub
+0012e708	RiderWipeoutSub_SaveState	high	RiderBase_SaveState calls it with RiderBase+0x2c0 (RiderWipeoutSub object per rider.md); writes state block via stream vslot
+0012e740	RiderWipeoutSub_LoadState	high	RiderBase_LoadState calls it with RiderBase+0x2c0 (RiderWipeoutSub object per rider.md); reads state block via stream vslot
+0012ee30	RiderPrewindSub_PlayDirectionalAnim	med	callers RiderPrewindSub_Enter/HandleInput; picks anim from table by stick angle (slews +0x2a4/+0x2b0) and +0x328
+0012f118	RiderPrewindSub_GetHUDAngle	med	called by RiderMetrix_UpdateTrickHUD with RiderBase+0x1f0 (Prewind); atan2 of slews +0x2b0/+0x2a4 with deadzone, out flag=centered
+0012f588	RiderResetSub_IsLocalPlayer	med	Reset sub (+8 Rider): isLocal(+0x87c) && viewIndex(+0x870)>=0 (rider.md fields)
+0012f5b0	RiderResetSub_SaveState	high	RiderBase_SaveState calls it with RiderBase+0x350 (RiderResetSub object per rider.md); writes state block via stream vslot
+0012f5e8	RiderResetSub_LoadState	high	RiderBase_LoadState calls it with RiderBase+0x350 (RiderResetSub object per rider.md); reads state block via stream vslot
+0012fbf0	RiderNaturalAirSub_SaveState	high	RiderBase_SaveState calls it with RiderBase+0x210 (RiderNaturalAirSub object per rider.md); writes state block via stream vslot
+0012fc28	RiderNaturalAirSub_LoadState	high	RiderBase_LoadState calls it with RiderBase+0x210 (RiderNaturalAirSub object per rider.md); reads state block via stream vslot
+0012fec8	RiderBoardPressSub_FlipStance	med	toggles Rider+0x320 stance, rebuilds anim mirror quat, swaps +0x328 1<->2, negates slews
+0012fff8	RiderBoardPressSub_HandleAirborne	med	BoardPress HandleInput check: if main state Air, moves to Spin sub (with boost); returns handled
+00130228	RiderBoardPressSub_UpdateStart	med	RiderBoardPressSub_HandleInput phase 0; on stick sets press slews and phase 1 (boost) else phase 3
+001303e0	RiderBoardPressSub_UpdatePress	med	RiderBoardPressSub_HandleInput phase 1; runs the press checks (jump, spin, balance) else ends -> phase 3
+001304d0	RiderBoardPressSub_UpdatePhase2	med	RiderBoardPressSub_HandleInput phase 2; only sets phase 1
+001304e0	RiderBoardPressSub_UpdateEnd	med	RiderBoardPressSub_HandleInput phase 3; after release anim returns to Cruise or Railslide sub, or re-presses
+001307b8	RiderBoardPressSub_CheckJump	med	on release of button 0x20000 after press: Air main state + Spin sub, ollie anim 0x1b/0x23
+00131598	RiderBoardPressSub_SaveState	high	RiderBase_SaveState calls it with RiderBase+0x1d0 (RiderBoardPressSub object per rider.md); writes state block via stream vslot
+001315d0	RiderBoardPressSub_LoadState	high	RiderBase_LoadState calls it with RiderBase+0x1d0 (RiderBoardPressSub object per rider.md); reads state block via stream vslot
+00131cc0	RiderCruiseSub_CheckAirborne	med	only caller RiderCruiseSub_HandleInput; if main state Air sets NaturalAir sub, returns true
+00132620	RiderRailslideSub_SetRail	med	RiderRailslideSub_HandleInput: new rail id; with uber timer and flag -> UberGrind sub (+0x394), else rail-change sound
+001326c8	RiderRailslideSub_PlayEnterAnim	med	callers pass RiderBase+0x2b0 (Railslide sub); plays grind anim 0x12/0x13/0x14 or 0x44-0x46 by +0x328
+00132770	RiderRailslideSub_CheckAirborne	med	only caller RiderRailslideSub_HandleInput; if Air and anim done -> NaturalAir or Spin sub
+00132840	RiderRailslideSub_SaveState	high	RiderBase_SaveState calls it with RiderBase+0x2b0 (RiderRailslideSub object per rider.md); writes state block via stream vslot
+00132878	RiderRailslideSub_LoadState	high	RiderBase_LoadState calls it with RiderBase+0x2b0 (RiderRailslideSub object per rider.md); reads state block via stream vslot
+001329b0	RiderHandplantSub_Init	med	caller 0x107578 (handplant detect); fills Handplant sub fields [0],[2] speed>k,[3] object flag,[4]; [5]=Rider
+00132fb8	RiderHandplantSub_PlayAnim	med	callers RiderHandplantSub_Enter/HandleInput; plays anim from table 0x459fc8[a][b], optionally flips rotation
+001330b8	RiderHandplantSub_SaveState	high	RiderBase_SaveState calls it with RiderBase+0x370 (RiderHandplantSub object per rider.md); writes state block via stream vslot
+001330f0	RiderHandplantSub_LoadState	high	RiderBase_LoadState calls it with RiderBase+0x370 (RiderHandplantSub object per rider.md); reads state block via stream vslot
+001352a8	RiderSpinSub_UpdateTrick	med	only caller RiderSpinSub_HandleInput; grab-trick phases (+4) per trick id, plays trick anims, Rider_AddBoost
+00135f70	RiderSpinSub_GetHUDDirAngle	med	called by RiderMetrix_UpdateTrickHUD with RiderBase+0x230 (Spin); atan2 of signs of +0x18/+0x1c, flag = no rotation
+001360c8	RiderSpinSub_GetHUDAngle	med	called by RiderMetrix_UpdateTrickHUD with RiderBase+0x230 (Spin); returns +0x50 unless sentinel, flag
+001361f8	RiderSpinSub_SaveState	high	RiderBase_SaveState calls it with RiderBase+0x230 (RiderSpinSub object per rider.md); writes state block via stream vslot
+00136230	RiderSpinSub_LoadState	high	RiderBase_LoadState calls it with RiderBase+0x230 (RiderSpinSub object per rider.md); reads state block via stream vslot
+001368e8	RiderUberGrindSub_SaveState	high	RiderBase_SaveState calls it with RiderBase+0x390 (RiderUberGrindSub object per rider.md); writes state block via stream vslot
+00136920	RiderUberGrindSub_LoadState	high	RiderBase_LoadState calls it with RiderBase+0x390 (RiderUberGrindSub object per rider.md); reads state block via stream vslot
+00136980	RiderWipeoutState_ctor	high	rider.md: Wipeout main-state ctor 0x136980; called from RiderBase_ctor, builds virtual base Rider (in-charge flag)
+00136ad0	RiderWipeoutState_dtor	high	vtables 0x4597b0/0x4597f8 same as RiderWipeoutState_ctor; frees +0x44 BoardSphereTree; called by Player/CAR/RiderBase dtors
+00136d40	RiderWipeoutState_EnableRootPoseOverride	med	called by RiderWipeoutSub_Enter (Wipeout state +0x30): sets Rider +0x130/+0x140 root pose and +0x150=1, stores vel/pos
+00136de0	RiderWipeoutState_SetVelocity	med	sets Rider vel +0x1e0; on ground (state[0]==0) removes normal component, in air primes AirPredictor (0x1135b8)
+00136f30	RiderWipeoutState_UpdateRootPose	med	RiderWipeoutState_Update every frame; if +0x150 integrates root override pos/rot (+0x130/+0x140) with gravity
+00137138	RiderWipeoutState_PostUpdateRootPose	med	RiderWipeoutState_PostUpdate every frame; if +0x150, collides BoardSphereTree (+0x44) with world
+00137750	RiderWipeoutState_UpdateAir	med	RiderWipeoutState_Update when state[0]!=0; AirPredictor step 0x113648, builds world matrix
+00137860	RiderWipeoutState_PostUpdateAir	med	RiderWipeoutState_PostUpdate when state[0]!=0; collision, Rider_Translate, AirPredictor
+00137d18	RiderWipeoutState_UpdateGround	med	RiderWipeoutState_Update when state[0]==0 (ground)
+00138640	RiderWipeoutState_PostUpdateGround	med	RiderWipeoutState_PostUpdate when state[0]==0
+00138960	RiderWipeoutState_CastGroundRay	med	ray +-200 along dir from pos via OverlapList(+0x860)/lineHint(+0x864); updates groundPolyId +0x430, +0xaac/+0xab0
+00138ad8	RiderWipeoutState_SaveState	high	RiderBase_SaveState calls it with RiderBase+0x30 (RiderWipeoutState object per rider.md); writes state block via stream vslot
+00138b10	RiderWipeoutState_LoadState	high	RiderBase_LoadState calls it with RiderBase+0x30 (RiderWipeoutState object per rider.md); reads state block via stream vslot
+00138ba0	RiderHandplantState_Setup	med	caller 0x107578 (handplant detect); object [0x28]=Rider (Handplant vbase +0xa0); start pos=Rider pos, target from arg
+00139970	RiderHandplantState_SaveState	high	RiderBase_SaveState calls it with RiderBase+0x110 (RiderHandplantState object per rider.md); writes state block via stream vslot
+001399a8	RiderHandplantState_LoadState	high	RiderBase_LoadState calls it with RiderBase+0x110 (RiderHandplantState object per rider.md); reads state block via stream vslot
+0013a7b0	RiderAirState_CastBoardRay	med	ray +-200 along up row from board_rootg bone via OverlapList(+0x860)/lineHint(+0x864); only caller RiderAirState_PostUpdate
+0013aa48	RiderAirState_CollideWalls	med	only caller RiderAirState_PostUpdate; hull (+0xaa0) vs OverlapList with wallHint (+0x868), Rider_Translate push-out
+0013acb0	RiderAirState_SaveState	high	RiderBase_SaveState calls it with RiderBase+0x20 (RiderAirState object per rider.md); writes state block via stream vslot
+0013ace8	RiderAirState_LoadState	high	RiderBase_LoadState calls it with RiderBase+0x20 (RiderAirState object per rider.md); reads state block via stream vslot
+0013c140	RiderRailslideState_CollideWalls	med	only caller RiderRailslideState_PostUpdate; hull (+0xaa0) vs OverlapList with wallHint (+0x868), Rider_Translate
+0013c5e0	RiderRailslideState_SaveState	high	RiderBase_SaveState calls it with RiderBase+0xb0 (RiderRailslideState object per rider.md); writes state block via stream vslot
+0013c618	RiderRailslideState_LoadState	high	RiderBase_LoadState calls it with RiderBase+0xb0 (RiderRailslideState object per rider.md); reads state block via stream vslot
+0013c650	RiderGroundState_ctor	high	rider.md: Ground main-state base ctor 0x13c650; called from RiderBase_ctor, virtual base Rider at +0x18
+0013d1b8	RiderGroundState_ProbeGround	med	only caller RiderGroundState_Update; copies groundNormal to prev (+0x380), multi-hit query along -normal via OverlapList/lineHint
+0013f488	RiderGroundState_CollideWalls	med	only caller RiderGroundState_PostUpdate; hull (+0xaa0) vs OverlapList with wallHint (+0x868), Rider_Translate
+0013f848	RiderGroundState_SaveState	high	RiderBase_SaveState calls it with RiderBase+0x0 (RiderGroundState object per rider.md); writes state block via stream vslot
+0013f880	RiderGroundState_LoadState	high	RiderBase_LoadState calls it with RiderBase+0x0 (RiderGroundState object per rider.md); reads state block via stream vslot
+0013f8f8	ObjPtrArray_MergeSort	med	recursive merge sort of pointer array keyed by uint at obj+0x78; wrapper 0x13fad8
+0013fad8	ObjPtrArray_Sort	med	sorts pointer range [a,b) into out via ObjPtrArray_MergeSort (size<2 handled inline); caller 0x101b60
+00140738	Rider_InitData	med	rider.md: data-base ctor called first by Rider_ctor for +0x000..+0x6c0; zeroes 19 slews +0x1f0, groundPolyId=-1, visitedIds[64]=-1
+00140968	Rider_GetHeading	med	atan2 of world-matrix forward row (+0x1b0/+0x1b4, rider.md) -> yaw
+00140cf0	Rider_SetBoostMode	high	writes Rider+0x304 (boostMode, rider.md) then calls Rider_ResetBoostMeter
+00140d80	RiderGroundState_dtor	high	restores Ground vtables 0x459a98/0x459ae0 (same as RiderGroundState_ctor), vbase +0x18; Rider_dtor if flag&2, delete if flag&1
+00140ee0	RiderAirState_dtor	high	vtables 0x4599a0/0x4599e8 = those RiderBase_ctor stores for the Air state (vbase RiderBase+0x24); dtor flags pattern
+00141040	RiderRailslideState_dtor	high	vtables 0x4598a8/0x4598f0 = RiderBase_ctor store for Railslide state (vbase RiderBase+0x100); dtor flags pattern
+001411c0	RiderStaticState_dtor	high	vtables 0x4596b8/0x459700 = RiderBase_ctor store for Static state (vbase RiderBase+0xa0); dtor flags pattern
+00141320	RiderHandplantState_dtor	high	vtables 0x4595c0/0x459608 same as RiderHandplantState_ctor 0x141480 (vbase +0xa0); dtor flags pattern
+00141480	RiderHandplantState_ctor	high	rider.md: Handplant main-state ctor 0x141480; called from RiderBase_ctor, vbase ptr +0xa0 (=+0x1b0 in RiderBase)
+001415c8	RiderCruiseSub_dtor	high	vtables 0x4594c8/0x459510 = RiderBase_ctor store for Cruise sub (vbase RiderBase+0x1c0); dtor flags pattern
+00141728	RiderBoardPressSub_dtor	high	vtables 0x4593d0/0x459418 = RiderBase_ctor store for BoardPress sub (vbase RiderBase+0x1e4); dtor flags pattern
+00141888	RiderPrewindSub_dtor	high	vtables 0x4592d8/0x459320 = RiderBase_ctor store for Prewind sub (vbase RiderBase+0x1f0); dtor flags pattern
+001419e8	RiderBumpSub_dtor	high	vtables 0x4591e0/0x459228 = RiderBase_ctor store for Bump sub (vbase RiderBase+0x200); dtor flags pattern
+00141b48	RiderNaturalAirSub_dtor	high	vtables 0x4590e8/0x459130 = RiderBase_ctor store for NaturalAir sub (vbase RiderBase+0x224); dtor flags pattern
+00141ca8	RiderSpinSub_dtor	high	vtables 0x458ff0/0x459038 = RiderBase_ctor store for Spin sub (vbase RiderBase+0x288); dtor flags pattern
+00141e08	RiderGateSub_dtor	high	vtables 0x458ef8/0x458f40 = RiderBase_ctor store for Gate sub (vbase RiderBase+0x2a4); dtor flags pattern
+00141f68	RiderRailslideSub_dtor	high	slot1 of vt 458e00, restored at RiderBase+0x2b8 (Railslide sub vbase ptr, rider.md); vbase ptr at this+8, Rider_dtor
+001420c8	RiderUberGrindSub_dtor	high	slot1 of vt 458d08, restored at RiderBase+0x398 (UberGrind sub vbase ptr, rider.md); vbase at this+8
+00142228	RiderWipeoutSub_dtor	high	slot1 of vt 458c10, restored at RiderBase+0x340 (Wipeout sub +0x2c0 vbase +0x80); same vt as ctor 0x142388
+00142388	RiderWipeoutSub_ctor	high	rider.md: Wipeout sub-state object +0x2c0 ctor 0x142388; called by RiderBase_ctor; builds Rider vbase at +0x90
+001424d0	RiderFinishLineSub_dtor	high	slot1 of vt 458b18, restored at RiderBase+0x364 (FinishLine sub +0x360 vbase +4)
+00142630	RiderResetSub_dtor	high	slot1 of vt 458a20, restored at RiderBase+0x358 (Reset sub +0x350 vbase +8)
+001428f0	RiderHandplantSub_dtor	high	slot1 of vt 458830, restored at RiderBase+0x384 (Handplant sub +0x370 vbase +0x14)
+00144c78	BENewRaceInt_GetTrackPeakByIndex	med	track table 0x43d950 (stride 100, names 'Snow Jam'..) field +0x54 = 0/1/2 peak per track; by index
+00144c98	BENewRaceInt_GetTrackPeak	med	track table 0x43d950 +0x54 (peak 0..2) for current track DAT_535c08 (GetTrack)
+00144df0	BENewRaceInt_SetEventType	med	sets DAT_535c10 (DebugMenu 'Game Mode:' prints table 0x43e7d0 'Race','Slope Style'..); validates vs game path, sets human/AI counts
+001451e8	BENewRaceInt_SetEvent	med	sets DAT_535c12 (DebugMenu 'Game Event:'); event table 0x43e978 stride 0x54 {type,'Race'..'Rival Time Chall.'}; returns type match
+00145340	BENewRaceInt_GetEventName	high	returns name in event table 0x43e97c+DAT_535c12*0x54; printed after DebugMenu 'Game Event: '
+00145398	BENewRaceInt_GetEventTypeName	high	returns 0x43e7d0+DAT_535c10*0x3c ('Race','Slope Style'..); printed after DebugMenu 'Game Mode: '
+001453b8	BENewRaceInt_GetEventTypeNameByIndex	med	returns 0x43e7d0+i*0x3c event-type name ('Race','Slope Style',...) by index
+001459b8	BENewPlayerInt_v01	high	vt 45ae28 slot 1 (class BENewPlayerInt via pass1)
+00145c38	BENewPlayerInt_GetFirstTimeWCFlag	high	DebugMenu_Render prints it after '1st Time WC Flag: '; profile char record 0x4a6ca8+prof*0x9b50+char*0xf88 +0
+00145cb0	BENewPlayerInt_SetFirstTimeWCFlag	high	writer of the same profile field read by GetFirstTimeWCFlag ('1st Time WC Flag: '); DebugMenu_Update toggles it
+001474e8	BENewPlayerInt_GetVibration	med	player slot flag bit1; Player rumble (0x1278e8) only runs when set; options controller listbox
+00147528	BENewPlayerInt_SetVibration	med	sets player slot flag bit1 from options controller listbox (see GetVibration)
+00147618	BENewPlayerInt_GetControlMap	high	DebugMenu_Render prints it after 'Control Map: '; player slot byte +0x13 (0x534ff3)
+00147658	BENewPlayerInt_SetControlMap	med	writes player slot byte +0x13 (Control Map, see GetControlMap); DebugMenu_Update/OptionsController
+00148098	BECharInt_Reset	high	BECharInt vt 0x45ad68 slot 2 (interface slot 2 = Reset); copies 7 attributes per char/profile into working table 0x535538
+00148158	BECharInt_GetSavedAttrib	med	cFEStateBuyAttrib_ctor; returns attribute N (0..6) from profile char record 0x4a7887 (source of BECharInt_Reset copy)
+001483a0	BECharInt_SetAttrib0	med	writes working attribute byte 0 of rider (0x535538+prof*0x46+char*7+0); from SetAllAttribs
+00148410	BECharInt_GetAttrib0	med	returns working attribute byte 0 of rider (0x535538+prof*0x46+char*7+0); one of the 7 averaged by GetOverallRating
+00148470	BECharInt_SetAttrib1	med	writes working attribute byte 1 of rider (0x535538+prof*0x46+char*7+1); from SetAllAttribs
+001484e0	BECharInt_GetAttrib1	med	returns working attribute byte 1 of rider (0x535538+prof*0x46+char*7+1); one of the 7 averaged by GetOverallRating
+00148540	BECharInt_SetAttrib2	med	writes working attribute byte 2 of rider (0x535538+prof*0x46+char*7+2); from SetAllAttribs
+001485b0	BECharInt_GetAttrib2	med	returns working attribute byte 2 of rider (0x535538+prof*0x46+char*7+2); one of the 7 averaged by GetOverallRating
+00148610	BECharInt_SetAttrib3	med	writes working attribute byte 3 of rider (0x535538+prof*0x46+char*7+3); from SetAllAttribs
+00148680	BECharInt_GetAttrib3	med	returns working attribute byte 3 of rider (0x535538+prof*0x46+char*7+3); one of the 7 averaged by GetOverallRating
+001486e0	BECharInt_SetAttrib4	med	writes working attribute byte 4 of rider (0x535538+prof*0x46+char*7+4); from SetAllAttribs
+00148750	BECharInt_GetAttrib4	med	returns working attribute byte 4 of rider (0x535538+prof*0x46+char*7+4); one of the 7 averaged by GetOverallRating
+001487b0	BECharInt_SetAttrib5	med	writes working attribute byte 5 of rider (0x535538+prof*0x46+char*7+5); from SetAllAttribs
+00148820	BECharInt_GetAttrib5	med	returns working attribute byte 5 of rider (0x535538+prof*0x46+char*7+5); one of the 7 averaged by GetOverallRating
+00148880	BECharInt_SetAttrib6	med	writes working attribute byte 6 of rider (0x535538+prof*0x46+char*7+6); from SetAllAttribs
+001488f0	BECharInt_GetAttrib6	med	returns working attribute byte 6 of rider (0x535538+prof*0x46+char*7+6); one of the 7 averaged by GetOverallRating
+00148950	BECharInt_GetOverallRating	med	average of the 7 attribute getters /5 /7, min 1; char select shows 'overall'
+00148aa8	BECharInt_SetAllAttribs	med	sets all 7 attributes of a rider to level*5 (AI_CreateMissionRider)
+00148b78	BECharInt_GetAttrib0ByChar	med	attribute byte 0 by (profile,char) at 0x535538; cFEStateCharSelect_UpdateAttributeBars
+00148bc8	BECharInt_GetAttrib1ByChar	med	attribute byte 1 by (profile,char) at 0x535538; cFEStateCharSelect_UpdateAttributeBars
+00148c18	BECharInt_GetAttrib2ByChar	med	attribute byte 2 by (profile,char) at 0x535538; cFEStateCharSelect_UpdateAttributeBars
+00148c68	BECharInt_GetAttrib3ByChar	med	attribute byte 3 by (profile,char) at 0x535538; cFEStateCharSelect_UpdateAttributeBars
+00148cb8	BECharInt_GetAttrib4ByChar	med	attribute byte 4 by (profile,char) at 0x535538; cFEStateCharSelect_UpdateAttributeBars
+00148d08	BECharInt_GetAttrib5ByChar	med	attribute byte 5 by (profile,char) at 0x535538; cFEStateCharSelect_UpdateAttributeBars
+00148d58	BECharInt_GetAttrib6ByChar	med	attribute byte 6 by (profile,char) at 0x535538; cFEStateCharSelect_UpdateAttributeBars
+00148d80	BECharInt_GetAttrib3Factor	med	attribute 3 (or arg) / per-char max 0x5308e3; 0.5 if slot flag bit2; physics callers
+00148e68	BECharInt_GetAttrib3Factor_2	med	attribute 3 (or arg) / per-char max 0x5308e3; 0.5 if slot flag bit2; physics callers
+00148f50	BECharInt_GetAttrib5Factor	med	attribute 5 (or arg) / per-char max 0x5308e5; 0.5 if slot flag bit2; physics callers
+00149038	BECharInt_GetAttrib5Factor_2	med	attribute 5 (or arg) / per-char max 0x5308e5; 0.5 if slot flag bit2; physics callers
+00149120	BECharInt_GetAttrib6Factor	med	attribute 6 (or arg) / per-char max 0x5308e6; 0.5 if slot flag bit2; physics callers
+00149208	BECharInt_GetAttrib6Factor_2	med	attribute 6 (or arg) / per-char max 0x5308e6; 0.5 if slot flag bit2; physics callers
+001492f0	BECharInt_GetAttrib6Factor_3	med	attribute 6 (or arg) / per-char max 0x5308e6; 0.5 if slot flag bit2; physics callers
+001493d8	BECharInt_GetAttrib1Factor	med	attribute 1 (or arg) / per-char max 0x5308e1; 0.5 if slot flag bit2; physics callers
+001494c0	BECharInt_GetAttrib0Factor	med	attribute 0 (or arg) / per-char max 0x5308e0; 0.5 if slot flag bit2; physics callers
+001495a8	BECharInt_GetAttrib4Factor	med	attribute 4 (or arg) / per-char max 0x5308e4; 0.5 if slot flag bit2; physics callers
+00149690	BECharInt_GetAttrib2Factor	med	attribute 2 (or arg) / per-char max 0x5308e2; 0.5 if slot flag bit2; physics callers
+0014ac30	BEBoltInt_GetRiderCharacter	med	trivial wrapper of BE_GetRiderCharacter; callers BEBoltInt methods (0x14ad50 via GetInterface(9))
+0014ac50	BEBoltInt_GetRiderProfile	med	trivial wrapper of BE_GetRiderProfile; callers BEBoltInt methods (0x14ad50 via GetInterface(9))
+0014ac70	BEBoltInt_GetRiderProfileAndChar	med	stores BE_GetRiderCharacter(rider) to *out and returns BE_GetRiderProfile(rider)
+0014acb0	BEBoltInt_SetBoltStates	med	BEBoltInt (iface 9); copies 0x834 bytes into profile char record +0x290 (per-bolt state array)
+0014ad50	BEBoltInt_GetRiderProfileData	med	BE_GetCharProfileData(this, profile(rider), char(rider)); iface 9 callers
+0014ae28	BEBoltInt_GetBoltStates	med	returns profile char record +0x290 bolt state array and its count (+0x28c) via out param
+0014ae60	BEBoltInt_GetRiderBoltStates	med	rider-index wrapper of BEBoltInt_GetBoltStates (0x14ae28)
+0014afb0	BEBoltInt_SetBoltEquipped	med	backs up bolt state, sets/clears flag 0x10 of bolt, validates (0x151c90/0x1521f0/0x1520e8), restores backup on failure
+0014bd78	Bolts_LoadGlobalDB	high	only content Bolts_LoadDB(0x4a6750) (the Bolts_GetDB object); called from FEModule_Load
+0014c2b0	Bolts_IndexBoltsByChar	med	Bolts_LoadDB/PrepareForGame: counts 0x38-byte bolts per char (+0x2c) and first index (+0xa4) used by Bolts_GetCharBolts
+0014c620	Bolts_InitDB	med	zeroes the 0x2c-byte Bolts DB object 0x4a6750 (Bolts_GetDB) in static init 0x15b028
+0014c658	Bolts_DestroyDB	med	Bolts_FreeDB then delete if flag&1 (dtor shape) for the Bolts DB object; static init/exit 0x15b028
+0014d448	Bolts_FindBoltIndex	med	returns index of the char's bolt whose id (+4) == arg (lookup table +0x4dc or linear scan), -1 if none
+0014d4c8	Bolts_CountChildren	med	counts the char's bolts whose parent (+6) == id (sorted scan or table +0x11c)
+0014d558	Bolts_FindFirstChild	med	returns first bolt of char whose parent (+6) == id (table +0x194 or scan)
+0014d608	Bolts_CollectChildren	med	recursively collects bolt records whose parent (+6) == id into out array, depth-limited
+0014d908	Bolts_IsDescendantOf	med	walks bolt parent chain (+6) via Bolts_FindBoltIndex until parent == id (1) or -1 (0)
+0014d9d0	Bolts_GetCharBolts_2	med	identical body to Bolts_GetCharBolts (db+4 + first(+0xa4)*0x38 if count(+0x2c)>0)
+0014e2c0	BENetworkInt_GetSyncDataSize	med	returns constant 0xc44, only caller cGameComm_ctor; matches size of buffer filled by 0x14e2c8/0x14e5c8 (+0xc3c,+0xc40 last fields)
+0014e2c8	BENetworkInt_PackPlayerData	med	iface 7 (BENetworkInt) via cGameComm_Update; copies slot map 0x5305b0, player slots 0x535b20, profile bolt states into buffer
+0014e5c8	BENetworkInt_UnpackPlayerData	med	inverse of 0x14e2c8: restores slot map/player slots/profile data from buffer, resets ifaces 0/1
+0014ee28	BE_GetRiderCharName	high	DebugMenu_Render prints it after 'Character: '; returns char DB entry 0x530970+char*0x88 (iface 2)
+0014ee58	BE_GetRiderDisplayName	med	iface 2; name at char DB 0x530990+char*0x88, or cheat-char table 0x43fa38 when alt char in 10..29; HUD/standings callers
+0014eec8	BE_GetCharDisplayName	med	(char, altChar) version of 0x14ee58: 0x43fa38+alt*8 if alt in 10..29 else 0x530990+char*0x88; char select/standings
+0014f458	BEOptionInt_SetSoundDefaults	med	BEOptionInt_ctor + cFEStateOptionsSound_OnChildEvent; resets sound bits of option word 0x535610 then calls own vslot 1
+0014f4f8	BEOptionInt_SetGameDefaults	med	BEOptionInt_ctor + cFEStateOptionsGame_OnChildEvent; resets game-option bits of 0x535610 then vslot 1
+0014f600	BEOptionInt_SetHUDDefaults	med	BEOptionInt_ctor + cFEStateOptionsHUD_OnChildEvent; clears HUD bits 30-31 of 0x535610 then vslot 1
+0014f678	BEOptionInt_GetQuickMessageKey	high	StrHash(sprintf('kT_206QuickMessage%d', i)); BEOptionInt (iface 4) callers incl. cFEStateNetQuickMessages
+0014f6a8	BEOptionInt_GetQuickMessage	med	returns custom quick message i (0x535617+i*0x40) or NULL if empty; cFEStateNetQuickMessages
+0014f6e8	BEOptionInt_ResetQuickMessage	med	writes localized text of key GetQuickMessageKey(i) into slot 0x535617+i*0x40 (UStr_ToEscapedAscii)
+0014f758	BEOptionInt_ResetQuickMessages	med	calls BEOptionInt_ResetQuickMessage for i=0..9
+0014f960	BEBAGTInt_v01	high	BEBAGTInt vt 0x45acd8 slot 1 (also called from BEBAGTInt_GetInstance); copies table 0x530ec0 into profile char records +0xbe6
+0014fad0	BEBAGTInt_Reset	high	BEBAGTInt vt 0x45acd8 slot 2 (interface slot 2 = Reset); copies profile char records +0xbe6 into working table 0x530ec0
+0014fc40	BEBAGTInt_ResetProfile	med	BEBAGTInt_Reset for one profile (10 chars, 0x1fe bytes each); called from 0x14de28 after BELibrary_ResetPlayerProfile
+00150928	BEEconInt_GetMoney	med	BEEconInt (iface 11, 15 callers incl. cFEStateUberTrick_UpdateCost); profile char record +0xac4; decreased by 0x150b48 on purchases
+00150960	BEEconInt_GetRiderMoney	med	rider-index version of BEEconInt_GetMoney (+0xac4); RiderMetrix_UpdateTrickHUD
+001509c0	BEEconInt_GetTotalEarned	med	profile char record +0xac8; only incremented (with +0xac4) by BEEconInt_AddMoney, never by spending
+001509f8	BEEconInt_GetRiderTotalEarned	med	rider-index version of BEEconInt_GetTotalEarned (+0xac8)
+00150a90	BEEconInt_AddMoney	med	adds amount to profile char record +0xac4 (money) and +0xac8 (total earned), returns new money
+00150ae0	BEEconInt_AddRiderMoney	med	rider-index wrapper of BEEconInt_AddMoney
+00150b48	BEEconInt_SpendMoney	med	subtracts amount from profile char record +0xac4, returns remainder; bolt/uber trick purchase callers
+00150c20	BEEconInt_BuyAttribute	med	deducts BEEconInt_GetAttributeCost(level) from money, increments attribute, then BECharInt vslot 2 (Reset)
+00150e50	BEEconInt_GetAttributeCost	med	returns cost table 0x440554[level*2]; cFEStateBuyAttrib_PostInput, BEEconInt_BuyAttribute
+00151a88	BE_InitCharProfileBoltMap	med	string 'Profile Bolts Map': allocs id->index map (+0x288), fills bolt state array +0x290 from Bolts_GetCharBolts, then defaults
+00151c90	BE_SetCharProfileBoltEquipped	med	sets/clears equip flag 0x10 of bolt id, recursing to unequip children/exclusive siblings (Bolts_FindFirstChild/CountChildren)
+00152700	BESaveInt_FreeSaveBuffer	med	frees the 'save file buffer' (gp e130) allocated by 0x152758/0x152950
+00152758	BESaveInt_BuildSystemSave	med	allocs 'save file buffer' 0xccc: options 0x535898, score data 0x535c18, pad vibration/control map; EA_Crc16 seed 0xfbea
+00152948	BESaveInt_GetSystemSaveSize	med	returns 0xccc = size of the 'save file buffer' built by 0x152758 and CRC-checked by 0x152bb0
+00152950	BESaveInt_BuildProfileSave	med	allocs 'save file buffer' 0x9b61: slot name, profile 0x4a6ca8+p*0x9b50, char; resets NewPlayer/BAGT/Mission/Score/Char; CRC16
+00152ba8	BESaveInt_GetProfileSaveSize	med	returns 0x9b61 = name(0xc)+profile(0x9b50)+char+crc, size used by 0x152950/0x152de0
+00152bb0	BESaveInt_LoadSystemSave	med	verifies EA_Crc16 then restores options 0x535898, score 0x535c18, pad flags; resets ifaces, SSXApp_LoadLocale
+00152de0	BESaveInt_LoadProfileSave	med	verifies EA_Crc16 of 0x9b61 buffer then restores profile name/data/char; resets NewPlayer/Char/BAGT ifaces
+00153050	BESaveInt_Destroy	med	only caller BELibrary_dtor; deletes BESaveInt instance (gp e12c) and frees save buffer (gp e130)
+00153498	BEMissionInt_GetCollectedCount	med	iface 10 (BEMissionInt) method; returns per-track popcount byte (+4) of the 64-bit collected mask at career table 0x4a6ca8
+001535c0	BEMissionInt_CountCollectedOnPeak	med	sums per-track collected counts over the 22 tracks whose peak (track table 0x43d950+0x54) == arg
+00153688	BEMissionInt_CountCollectedOnPeakFor	med	same as CountCollectedOnPeak but takes explicit profile/character indices
+00153708	BEMissionInt_CountCollectedBitsOnPeak	med	popcounts the 64-bit collected masks of tracks on a peak; online path defers to CountCollectedOnPeak
+00153858	BEMissionInt_GetCollectedMask	med	returns pointer to the 64-bit collected mask of a track in career table 0x4a6cb0
+001538e8	BEMissionInt_IsCollected	med	tests bit N of a track's collected mask; script caller 0x30c4a8 spawns DeadNode for already-collected items
+001539a8	BEMissionInt_SetCollectedMask	med	stores the 64-bit mask for a track and recomputes its popcount byte
+00153b00	BEMissionInt_SetCollected	med	sets bit N of a track's collected mask and recomputes the count byte; called from script 0x30c3e0
+00153c88	BEMissionInt_GetMissionText1	med	looks up mission row (0x43ee10, 0x24 stride) and localizes field +4 via App+0x8c slot 4; OVScreenBCStart
+00153cd8	BEMissionInt_GetMissionText2	med	localizes mission row field +8 via App+0x8c slot 4
+00153d28	BEMissionInt_GetMissionText3	med	localizes mission row field +0xc via App+0x8c slot 4; OVScreenBCStart
+00153d78	BEMissionInt_IsMissionComplete	med	bit 3 of per-character mission flags (0x4a6dc0); bit counted by the per-track/per-peak completion counters
+00153dd0	BEMissionInt_GetMissionFlag1	med	returns bit 1 of per-character mission flag word (0x4a6dc0 + idx*4)
+00153e28	BEMissionInt_GetMissionFlag0	med	returns bit 0 of per-character mission flag word (0x4a6dc0 + idx*4)
+00153e80	BEMissionInt_GetMissionFlag2	med	returns bit 2 of per-character mission flag word (0x4a6dc0 + idx*4)
+00153ed8	BEMissionInt_GetMissionFlag4	med	returns bit 4 of per-character mission flag word (0x4a6dc0 + idx*4)
+00153f30	BEMissionInt_GetMissionTrack	med	returns mission row field +0x10 (track index; compared with track indices in the counters)
+00154010	BEMissionInt_SetMissionFlag0	med	sets bit 0 of per-character mission flag word
+00154080	BEMissionInt_SetMissionFlag1	med	sets bit 1 of per-character mission flag word
+001540f0	BEMissionInt_SetMissionFlag2	med	sets bit 2 of per-character mission flag word
+00154160	BEMissionInt_SetMissionComplete	med	sets bit 3 (completion bit read by IsMissionComplete) of mission flag word
+001541d0	BEMissionInt_SetMissionFlag4	med	sets bit 4 of per-character mission flag word
+00154240	BEMissionInt_FindMission	med	linear search of the 88-row mission table 0x43ee10 by id, returns index or -1
+001542a0	BEMissionInt_CountMissionsOnTrack	med	counts mission rows whose track field (+0x10) == arg
+001542e0	BEMissionInt_CountCompletedOnTrack	med	counts missions on a track whose completion bit is set
+00154368	BEMissionInt_CountMissionsOnPeak	med	counts mission rows whose track's peak (0x43d950+0x54) == arg
+001543e0	BEMissionInt_CountCompletedOnPeak	med	counts completed missions whose track is on the given peak
+001544d0	BEMissionInt_CountCompletedOnPeakFor	med	same for explicit profile/character (reads bit 3 directly); online path calls CountCompletedOnPeak
+001545b0	BEMissionInt_GetNthMissionOnTrack	med	returns id of the N-th mission row whose track == arg
+001545f8	BEMissionInt_GetSessionType	med	searches session table 0x440770 ('ses_ABA1'.., 0x2c stride) by id, returns field +0x18; OVScreenSession map indicators
+00154678	BEMissionInt_GetSessionInfo	med	copies the 0x2c session row with given id from 0x440770 (default first row); OVScreenSession_CreateMapIndicators
+00154760	BEMissionInt_GetSessionName	med	returns pointer to name ('ses_XXXX') of session row with given id in 0x440770
+001547e8	BEMissionInt_SaveState	high	BEMissionInt vt 0x45adf8 slot 3 (interface slot 3 SaveState); writes 0x114 + 0x160 bytes career data to stream
+00154898	BEMissionInt_LoadState	high	BEMissionInt vt 0x45adf8 slot 4 (LoadState); reads the same blocks from stream
+001549e8	BEScoreInt_v02	high	vt 45aca8 slot 2 (class BEScoreInt via pass1)
+00154a58	BEScoreInt_UpdateBestStats	med	iface 8 (BEScoreInt) region; local profile only, calls UpdateRecords(rider,-1,-1); AI_ResetRiders/ResetRiderStats
+001550e8	BEScoreInt_GetHighScoreFor	med	returns score field (+0) of rank N in high-score table 0x14ab20(track,mode), 0x14-byte rows
+00155130	BEScoreInt_GetHighScore	med	same for current track/mode (0x5305f0, 0x535c12); OVScreenTopTimes/RacePre/FreestylePre Init
+00155208	BEScoreInt_GetHighScoreName	med	returns pointer to rank N row +8 (name) of current high-score table; OVScreenTopTimes_Init
+00155270	BEScoreInt_GetPlayerResult	med	returns this+0x20+slot*0xb0, the per-player result block filled by SubmitRaceResult
+00155288	BEScoreInt_GetBestRecords	med	returns career table 0x4a6ca8 + profile*0x9b50 + char*0xf88 + 0xde4, the best-stat records UpdateRecords writes
+001552b0	BEScoreInt_GetRecordLevel	med	returns byte career+0xbb8+N (record tier 0..3 written by UpdateRecordLevel)
+00155328	BEScoreInt_PlaceToMedal	med	maps place 0/1/2 to 1/2/3, else -1; only caller SubmitPlacement
+00155390	BEScoreInt_UpdateRecordLevel	med	computes tier 0..3 of a stat value against threshold table 0x440ed0 and raises career byte +3000+N
+00155420	BEScoreInt_UpdateRecords	med	compares 10 rider stats (rider+0x2c,0x18,0x1c,..) with career bests at +0xde4, stores max and track, updates tiers
+001558f8	BEScoreInt_GetEventBestPlace	med	byte +1 (best place, 0xff none) of per-(track,mode) event record at career+0xad0
+001559a8	BEScoreInt_RecordEventResult	med	wrapper calling 0x152528 on the rider's career block: marks event played, updates best place/podium counts
+00155ab0	BEAggressionInt_GetRivalState	med	BEAggressionInt region; byte career+0xbc1+rival*3 (2 if rival is the player's own character); AI rider relations
+00155b50	BEAggressionInt_GetRivalLevel	med	byte career+0xbc2+rival*3 (3 if self); callers AI_UpdateRiderRelations, cAngerFX_Update
+00155bf0	BEAggressionInt_AddAggression	med	adds 1/2/4/6 points by event type to career+0xbc3+rival*3, level = points/5 clamped by state
+00155e58	BEAggressionInt_DecayAll	med	for all players and 10 rivals subtracts 3 aggression points and recomputes level/state
+001560a0	BEAggressionInt_SaveState	high	BEAggressionInt vt 0x45ac48 slot 3 (interface SaveState): writes player count and 10x3 rival bytes per player
+001561b0	BEAggressionInt_LoadState	high	BEAggressionInt vt 0x45ac48 slot 4 (interface LoadState): reads the same
+001567b8	BE_ResetProfileCharacters	med	loops the 10 character blocks (0xf88) of a profile calling per-character reset 0x151600; BELibrary_ResetPlayerProfile/LoadCharDB
+00156810	BE_ResetProfileRivalries	med	loops 10 character blocks calling 0x1519e0 (resets rival bytes at +0xbc1 from defaults)
+00156858	BE_CopyProfileCharacters	med	EA_MemCopy of 10 0xf88 character blocks, keeps dst +0x288 pointer and rebuilds its index map from +0x290
+00156950	BE_BackupCharacter	med	copies one 0xf88 character block to backup 0x4c4090 and remembers its index
+00156988	BE_RestoreCharacter	med	copies backup 0x4c4090 back to the remembered character block
+00156a10	BERewardInt_LoadRewardsFile	med	RewardsFile_Load(0x4c3e98,1); called from cFEStateRewardGallery_Init path (iface 13)
+00156a38	BERewardInt_IsRewardsFileLoaded	med	rewards file handle == -1 and data ptr != 0
+00156a60	BERewardInt_IsBetterPlace	med	new != -1 && (old == -1 || new < old); used for medal/place comparisons
+00156a90	BERewardInt_GetSection0Entry	med	rewards file section 0 (+8) entry [b*3+a] (0xc bytes); PeakRoom/TrophyRoom widgets
+00156ae0	BERewardInt_GetSection1Entry	med	rewards file section 1 (+0xc) entry [a*4+b] (0xc bytes)
+00156b28	BERewardInt_GetSection2Entry	med	rewards file section 2 (+0x10) entry [b*3+a] (8 bytes); cFEStateMountainRoom_ctor
+00156b70	BERewardInt_GetSection0	med	returns rewards file +0x08 (section 0 pointer per RewardsFile_Parse)
+00156b90	BERewardInt_GetSection1	med	returns rewards file +0x0c (section 1)
+00156bb0	BERewardInt_GetSection2	med	returns rewards file +0x10 (section 2)
+00156bd0	BERewardInt_GetPosterTable	med	returns rewards file +0x14 (section 3 = posters, count +0x3c)
+00156bf0	BERewardInt_GetTradingCardTable	med	returns rewards file +0x18 (section 4 = trading cards, count +0x40)
+00156c10	BERewardInt_GetConceptArtTable	med	returns rewards file +0x1c (section 5 = concept art, count +0x44)
+00156c30	BERewardInt_GetToyTable	med	returns rewards file +0x20 (section 7 = toys, count +0x48)
+00156c50	BERewardInt_GetVideoTable	med	returns rewards file +0x24 (section 6 = videos, count +0x4c)
+00157080	BERewardInt_PickRandomLockedReward	med	random index of a still-locked reward of type 3..7 (count vs unlocked bits)
+00157210	BERewardInt_GetRewardTypeCount	med	switch on reward type 3..8 -> poster/card/concept/video/toy counts, 20 for type 8; cFEStateRewardsRoom_SetCountText
+001572b0	BERewardInt_GetPosterCount	med	rewards file +0x3c; cFEStateRewardGalleryPosters_InitButtons
+001572d0	BERewardInt_GetTradingCardCount	med	rewards file +0x40; cFEStateRewardGalleryTradingCards_InitButtons
+001572f0	BERewardInt_GetConceptArtCount	med	rewards file +0x44; cFEStateRewardGalleryConceptArts_InitButtons
+00157310	BERewardInt_GetToyCount	med	rewards file +0x48; cFEStateRewardGalleryToys_InitButtons
+00157330	BERewardInt_GetVideoCount	med	rewards file +0x4c; cFEStateRewardGalleryVideos_InitButtons
+00157370	BERewardInt_GetCheatCharCount	med	rewards file +0x50; cFEStateRewardGalleryCheatChars_InitButtons
+00157390	BERewardInt_CountSetBits	med	counts set bits among the first N bits of a byte array
+001573f0	BERewardInt_SetBit	med	sets bit N in a byte array; used by all reward unlock functions
+00157430	BERewardInt_TestBit	med	tests bit N in a byte array; used by all IsUnlocked functions
+00157468	BERewardInt_IsRewardUnlocked	med	switch on reward type 3..8 to the per-type unlocked-bit tests
+00157518	BERewardInt_CountUnlocked	med	switch on reward type 3..8 to the per-type unlocked counters; cFEStateRewardsRoom_SetCountText
+001575c0	BERewardInt_CountUnlockedPosters	med	CountSetBits(poster count, career+0xf30)
+00157620	BERewardInt_CountUnlockedTradingCards	med	CountSetBits(card count, career+0xf36)
+00157680	BERewardInt_CountUnlockedConceptArts	med	CountSetBits(concept art count, career+0xf45)
+001576e0	BERewardInt_CountUnlockedToys	med	CountSetBits(toy count, career+0xf53)
+00157740	BERewardInt_CountUnlockedVideos	med	CountSetBits(video count, career+0xf52)
+001577a0	BERewardInt_CountUnlockedRiderItems	med	CountSetBits(20, career+0xf57) (reward type 8); cFEStateRiderDetail/LodgeRiderDetail
+00157d60	BERewardInt_IsPosterUnlocked	med	TestBit(n, career+0xf30)
+00157da0	BERewardInt_IsTradingCardUnlocked	med	TestBit(n, career+0xf36)
+00157de0	BERewardInt_IsConceptArtUnlocked	med	TestBit(n, career+0xf45)
+00157e20	BERewardInt_IsToyUnlocked	med	TestBit(n, career+0xf53)
+00157e60	BERewardInt_IsVideoUnlocked	med	TestBit(n, career+0xf52)
+00157ee0	BERewardInt_IsRiderItemUnlocked	med	TestBit(n-10, career+0xf57); cFEStateCheatCharSelect_ctor
+00157f20	BERewardInt_UnlockReward	med	switch on reward type 3..8 to the per-type unlock functions
+00157fd0	BERewardInt_UnlockPoster	med	sets poster bit, optionally awards points via BEEconInt (iface 11), unlocks rider item 0x14 when all posters owned
+001580f8	BERewardInt_UnlockTradingCard	med	sets card bit, optional points, rider item 0x11 when all cards owned
+00158220	BERewardInt_UnlockConceptArt	med	sets concept-art bit, optional points, rider item 0x16 when all owned
+00158348	BERewardInt_UnlockToy	med	sets toy bit, optional points, rider item 0x13 when all owned
+00158470	BERewardInt_UnlockVideo	med	sets video bit (career+0xf52), optional points from section +0x24
+00158618	BERewardInt_UnlockRiderItem	med	sets bit n-10 of career+0xf57, optional points from rewards section +0x28
+00158870	BERewardInt_GetCollectibleThreshold	med	table 0x45afe8[peak][tier]; compared with collected counts in GetCollectibleTier
+00158890	BERewardInt_GetMissionThreshold	med	table 0x45b018[peak][tier]; compared with completed missions in GetMissionTier
+00158910	BERewardInt_GetEventBestPlace	med	byte +1 (best place) of event record career+0xad0 for (track,mode)
+001589b0	BERewardInt_GetCollectibleTier	med	first tier whose 0x45afe8 threshold <= BEMissionInt_CountCollectedBitsOnPeak, else -1
+00158a50	BERewardInt_GetMissionTier	med	first tier whose 0x45b018 threshold <= BEMissionInt_CountCompletedOnPeakFor, else -1
+00158f20	BERewardInt_GetNewRewards	med	returns static new-reward list 0x4c3ef0 (filled by AddNewReward)
+00158f30	BERewardInt_GetNewRewardTotal	med	CountNewRewards(0x4c3ef0)
+00159170	BERewardInt_GrantMedalReward	med	GetMedalRewardId then GrantReward unless IsRewardGranted
+00159cd0	BERewardInt_GrantReward	med	switch on reward id: unlocks random posters/cards/toys/concept art, rider items, records in new-reward list 0x4c3ef0
+0015a2e0	BERewardInt_IsRewardGranted	med	tests bit id in career+0xf28; checked before GrantReward
+0015a398	BERewardInt_GetTrackPeak	med	returns track table 0x43d950[n]+0x54 (peak index)
+0015a478	BERewardInt_GetRewardsFile	med	returns static rewards file object 0x4c3e98 (passed to RewardsFile_Load); 36 callers read section ptrs/counts
+0015a510	BERewardInt_ClearNewRewards	med	EA_MemSet(list,0,0x174), +4 = -1
+0015a628	BERewardInt_AddNewReward	med	records (rewardId,type,index) into list: sets type bit array bit and bumps count at +6+id*10+type
+0015a6f0	BERewardInt_CountNewRewards	med	sums the 32x10 count bytes at +6 of the new-reward list
+0015a750	BERewardInt_GetNewRewardCount	med	count byte +6+id*10+type of the new-reward list
+0015a768	BERewardInt_GetNewRewardBits	med	bit array pointer +0x174+type*4 of the new-reward list
+0015a778	RewardsFile_ctor	med	sets handle +0 = -1 and clears the section pointers/counts that RewardsFile_Parse fills
+0015a7d0	RewardsFile_dtor	high	RewardsFile_Unload then __builtin_delete if (flags&1)
+0015aec0	RewardsFile_PollLoad	med	if async handle >=0 and the load finished: RewardsFile_Parse the buffer, release it, handle=-1
+0015b028	BE_StaticInitDestroy	med	(init, 0xffff) static init/destroy: career tables 0x4a6ca8, rewards file 0x4c3e98, backup 0x4c4090; called by the two wrappers
+0015bb20	BENewRaceInt_DestroyInstance	med	deletes singleton gp-0x1f3c (set by BENewRaceInt_GetInstance) and clears it
+0015bc88	BENewPlayerInt_DestroyInstance	med	deletes singleton gp-0x1f30 (BENewPlayerInt_GetInstance) and clears it
+0015bcd0	BEMissionInt_DestroyInstance	med	deletes singleton gp-0x1eb8 (BEMissionInt_GetInstance) and clears it
+0015bd30	BEOptionInt_DestroyInstance	med	deletes singleton gp-0x1ee4 (BEOptionInt_GetInstance) and clears it
+0015c250	BENetworkInt_DestroyInstance	med	deletes singleton 0x4a1204 = gp-0x1eec (BENetworkInt_GetInstance) and clears it
+0015c678	BECharInt_DestroyInstance	med	deletes singleton 0x4a11c4 = gp-0x1f2c (BECharInt_GetInstance) and clears it
+0015c6e8	BEBAGTInt_DestroyInstance	med	deletes singleton 0x4a1210 = gp-0x1ee0 (BEBAGTInt_GetInstance) and clears it
+0015c738	BEScoreInt_DestroyInstance	med	deletes singleton 0x4a1248 = gp-0x1ea8 (BEScoreInt_GetInstance) and clears it
+0015c7e0	BEAggressionInt_DestroyInstance	med	deletes singleton 0x4a124c = gp-0x1ea4 (BEAggressionInt_GetInstance) and clears it
+0015c830	BEPreRace_DestroyInstance	med	BEPreRace vt 0x45ac18 slot 2; deletes singleton gp-0x1e98 (BEPreRace_GetInstance)
+0015c8b0	BEPostRace_DestroyInstance	med	BEPostRace vt 0x45abb8 slot 2; deletes singleton gp-0x1e9c (BEPostRace_GetInstance)
+0015c8f0	BE_GlobalCtors	med	StaticInitDestroy(1,0xffff); pointer in ctors list 0x43ce40
+0015c910	BE_GlobalDtors	med	StaticInitDestroy(0,0xffff); pointer in dtors list 0x43cee4
+0015d020	ChaseCamController_IsScriptCameraActive	high	camera.md: flags +0x30 bit 1 (script camera) set and override id +0x2c not 0x5d/0x3c; used by GameCamera_AvoidCollision
+0015f780	RiderCameraTarget_v23	high	vt 45b7a8 slot 23 (class RiderCameraTarget via slots 2/2)
+00161950	ChaseCamController_InitState	high	camera.md (proposed ChaseCamController_Reset): called by ctor; ids +0x1c/+0x28/+0x2c = 0x3d, +0x24 from gp table by index, clears +0x34..+0x40, +0x30 &= ~7
+00162998	ChaseCameraAlgorithm_UpdateHandplantFade	med	camera.md: +0x2c0 frame counter reset by Handplant flag, writes RiderCamState+0x48 fade weight
+00162a20	ChaseCameraAlgorithm_UpdateAirTransitions	med	camera.md: +0x2d4 was-airborne, +0x2d0 drop test, +0x2c4 = 15 at takeoff, +0x2cc AI frame stamp
+00162c78	ChaseCameraAlgorithm_UpdateChaseHeading	high	camera.md: 5-entry PID ring +0x340..+0x37c with gains +0x380..+0x388, updates heading +0x80
+00163450	ChaseCameraAlgorithm_ApplyHandplantHold	med	camera.md: saves look-at - eye in +0xb0 during Handplant, eases back over +0x1e0
+001635f8	ChaseCameraAlgorithm_ApplyJumpCurves	high	camera.md: builds/evaluates cCSICubicSpline +0x304..+0x328 (air-arc and takeoff-kick curves)
+001641c0	ChaseCameraAlgorithm_ApplyRailPullback	med	camera.md: target slot 24 rail flag -> +0x214, offsets eye by (600,300,100) x weight
+001643a8	ChaseCameraAlgorithm_ApplyLowSpeedHold	med	camera.md: state machine +0x300 / weight +0x248, below 15 km/h
+001646a0	ChaseCameraAlgorithm_ApplyRailAlign	med	camera.md: smooths an eye correction into +0xc0 while Railslide
+00164878	ChaseCameraAlgorithm_ApplyAirSwing	high	camera.md: spline +0x334, swing fields +0x22c..+0x244 for drops
+00165540	ChaseCameraAlgorithm_ApplyFixedDirection	med	only caller DirectionNeChaseCameraAlgorithm_Update; rotates fixed axis 0x4ff140 by angle arg (sincos half-angle quat) and puts eye at look-at - dir*dist
+00166640	ChaseCameraAlgorithm_ComputeAngles	med	from look-at - eye: pitch +0x54 = -atan(z/horiz), yaw +0x50 via asin against forward axis 0x4ff140
+00166f90	ChaseCameraAlgorithm_BuildOutputView	med	builds view matrix from desired eye +0x40 and angles +0x50/+0x54, writes output eye +0x60 and quat +0x70 (GetView fields); ComputeView/SnapToDefault
+00167d88	ChaseCameraAlgorithm_DefaultHeadingP	med	camera.md: returns gp constant stored into PID gain +0x380 by ctor
+00167d98	ChaseCameraAlgorithm_DefaultHeadingI	med	camera.md: returns gp constant for PID gain +0x384
+00167da8	ChaseCameraAlgorithm_DefaultHeadingD	med	camera.md: returns gp constant for PID gain +0x388
+00167db8	ChaseCameraAlgorithm_ClearHeadingRing	high	camera.md: fills the +0x340 ring (5 x error/output, zero integral)
+0016bd30	Math_WrapAngleClampHalfPi	med	x -= round(x/2pi)*2pi then clamp to [-pi/2, pi/2] (gp consts 1/2pi, 2pi, -pi/2, pi/2)
+0016bda0	Math_WrapAngleDeg	med	deg->rad, Math_WrapAnglePi, rad->deg (gp 0.01745 / 57.3)
+0016bde8	Math_WrapAngleClampDeg	med	deg->rad, Math_WrapAngleClampHalfPi, rad->deg
+0016bf20	CameraTriggerMan_ClearData	med	*this = 0 then CameraTriggerMan_ResetHeader; CameraTriggerMan_Reset/Unload
+0016c4f0	CameraTriggerMan_ReadBoundObjAction	med	CameraTrigger_ReadBoundObj, returns 0 on success else 5; only caller ReadTriggerAction
+0016c5d0	ActiveCameraTriggerList_ctor	med	head = 0; constructed for the two lists at CameraTriggerMan+0x14/+0x18 by its ctor
+0016c5e0	ActiveCameraTriggerList_dtor	high	ActiveCameraTriggerList_Clear then __builtin_delete if (flags&1); CameraTriggerMan dtor
+0016c800	CameraTriggerMan_ctor	med	from CameraTriggerMan_StaticInitDestroy (static 0x4c5830): clears header, 2 active lists +0x14, 2 trigger stacks +0x1c
+0016c888	CameraTriggerMan_dtor	med	from StaticInitDestroy(0): removes triggers, destroys the 2 active lists, header, delete if flags&1
+0016c968	CameraTriggerMan_ResetActive	med	clears both active lists and both trigger stacks, GameCamera_ResetAllChaseControllers; GameCamera_ResetAll
+0016c9b0	CameraTriggerMan_Unload	med	clears active lists/stacks, removes all triggers, ClearData, resets chase controllers; CameraTriggerMan_Reload/GameModule_Unload
+0016cbe0	CameraTriggerMan_RemoveAllTriggers	med	unregisters each trigger from the world grid, CameraTriggerMan_Destroy, clears lists; dtor/Unload/GameModule_Unload
+0016cdc8	CameraTriggerMan_Load	med	CameraTriggerMan_LoadFile then clears every trigger's +0x20 active flag
+0016d238	CameraTriggerMan_PushTriggerStack	med	appends id to stack (count++, top=id); CameraTriggerMan_UpdateForRider
+0016d260	CameraTriggerMan_PopTriggerStack	med	removes id from stack, reports whether the new top differs; CameraTriggerMan_UpdateForRider
+0016e560	CameraEllipseBoundObj_ClampPoint	med	vt 0x45c2a8 ('Camera Ellipse BoundObj') slot 6; transforms point into object space (1/scale) and writes back the clamped point
+0016f068	CameraBoxBoundObj_ClampPoint	med	vt 0x45c268 ('Camera Box BoundObj') slot 6; same slot as Ellipse/Line, rewrites *param_2
+0016fbb8	CameraLineBoundObj_ClampPoint	med	vt 0x45c228 ('Camera Line BoundObj') slot 6; projects point onto the segment and writes it back
+00170240	CameraLineBoundObj_GetWorldStart	med	transforms line bound obj start (+0x2c) to world; ChaseCamController_SetAlgorithm id 0x5b (Superpipe ctor arg 1)
+001707b0	CameraLineBoundObj_GetWorldEnd	med	transforms line end (+0x38) to world; Superpipe ctor arg 2
+001714e8	CameraTrigger_ReadActionType1	med	CameraTrigger_ReadAction case: type=1, reads 6 u32 + 0x2d2558 field + vec3
+001715a0	CameraTrigger_ReadActionType0	med	CameraTrigger_ReadAction case: type=0, reads u32 and 0x2d2558 field
+001715f8	CameraTrigger_ReadActionType2	med	CameraTrigger_ReadAction case: type=2, reads 5 u32
+00171680	CameraTrigger_ReadActionType3	med	CameraTrigger_ReadAction case: type=3, no payload
+00171a20	CameraEllipseBoundObj_Read	high	ReadBoundObj type 0 after alloc 'Camera Ellipse BoundObj': sets +0x28=0, reads vec3 x2 + 3 u32 through slots
+00171b10	CameraBoxBoundObj_Read	high	ReadBoundObj type 1 after alloc 'Camera Box BoundObj': +0x28=1, same fields
+00171c00	CameraLineBoundObj_Read	high	ReadBoundObj type 2 after alloc 'Camera Line BoundObj': +0x28=2, same fields plus endpoints +0x2c/+0x38
+00171d10	CameraTrigger_ReadPointBoundObj	high	only caller CameraTrigger_ReadBoundObj type 3 branch (tag 'Camera Point BoundObj'); sets type=3, reads position Vec3
+001721c0	CameraSphereTrigger_GetBounds	med	vt 45c350 (Camera Sphere Trigger) slot 6; writes AABB min/max = pos -/+ max(scale)
+00172278	CameraSphereTrigger_ContainsPoint	med	vt 45c350 slot 7 (called with rider pos by CameraTriggerMan_UpdateForRider); rotates point into local frame, returns bool
+00172840	CameraBoxTrigger_GetBounds	med	vt 45c300 (Camera Box Trigger) slot 6; writes AABB min/max = pos -/+ max(scale)
+001728f8	CameraBoxTrigger_ContainsPoint	med	vt 45c300 slot 7 (called with rider pos by CameraTriggerMan_UpdateForRider); rotation by 2 angles, returns inside test
+00172fe0	CameraTrigger_ReadSphereTriggerData	high	caller CameraTrigger_ReadSphereTrigger type 0 ('Camera Sphere Trigger'); sets type 0, reads pos/scale Vec3 + 3 u32
+001730d0	CameraTrigger_ReadBoxTriggerData	high	caller CameraTrigger_ReadSphereTrigger type 1 ('Camera Box Trigger'); sets type 1, reads pos/scale Vec3 + 3 u32
+001731c0	Vec3_MaxComponent	med	returns max of v[0],v[1],v[2]; used for trigger bounding radius
+00174848	CameraTriggerMan_CollectOctreeTriggersInBox	med	caller CameraTriggerMan_UpdateForRider; recursive loose-octree walk with cell AABB overlap test, adds containing triggers to active list
+00176890	CameraTriggerMan_CollectOctreeNodeTriggers	med	recursive over 8 children; for entries type 4 tests rider pos ContainsPoint, ActiveCameraTriggerList_Find/Add
+00177ef8	SpokeChaseCameraAlgorithm_GetFocusPoint	med	Spoke Update/Reset/ComputeDesiredEye; returns weighted rider pos + target vt slot-1 vector; Update adds up*37 for look-at (+0x20)
+00177fc0	SpokeChaseCameraAlgorithm_ComputeDesiredEye	med	only callers Spoke Update/ResetForRider; result written to algo +0x40 (desired eye); uses rider main state 5, normalizes dir, offsets 250 back
+001785f0	SuperpipeChaseCameraAlgorithm_ComputeDesiredEye	med	callers Superpipe Update/ResetForRider; result stored to algo +0x40 (desired eye); projects target onto pipe axis (+0x390/+0x3a0)
+00178758	SuperpipeChaseCameraAlgorithm_ComputeLookAt	med	callers Superpipe Update/ResetForRider; result stored to algo +0x20 (look-at) = target pos - 100*up const
+00179fc8	DebugMenu_IsTrackSelectable	med	only caller DebugMenu_InitWorldList; per track index: BENewRaceInt query ==1 or index 14..16; result sets item enabled flag
+0017abc8	DebugMenu_InitBackgroundList	med	called by DebugMenu_ctor on this+0x8c10 before DebugMenu_LoadBackgrounds; sets {tex=0,count=0,current=-1}
+0017abe0	DebugMenu_FreeBackgrounds	med	called by DebugMenu dtor (DebugMenu_v01) on +0x8c10; releases each texture handle via graphics vt, EA_MemFree array
+0017ac98	DebugMenu_SelectBackground	med	caller DebugMenu_Update; sets background list current index (+8) if in range else -1
+0017ae00	DebugMenu_DrawBackground	med	caller DebugMenu_Render; if current background valid draws full-screen 640x480 sprite via graphics vt
+0017d008	DebugMenu_SetGameMode	med	callers DebugMenu_ctor/Update; BENewRaceInt_SetGameMode + per-mode track setting (this+0x8c38[mode]) and commit
+0017d200	LobbyMenu_InitMessagePage	med	LobbyMenu_ctor builds this page at +0x604: MenuSysPage_ctor + MenuSysBackItem 'Continue'; page pushed on lobby errors
+0017d260	LobbyMenu_LobbyEventHook	med	called from LobbyMan_Update; forwards event to global LobbyMenu instance (gp+0x1da0) then FUN_00259230
+0017d6f0	LobbyMenu_OnLobbyEvent	med	switch on lobby event code (0xc9..0x115): login/persona/room/challenge state changes, pushes LobbyMenu pages
+0017da30	LobbyMenu_ShowError	med	event 0x102 handler: stores error code +0x1c14, sets error state per current state, pushes message page +0x604
+0017de70	LobbyMenu_StartNetRace	med	sets game mode 1, 0 AI riders, pad slots, formats peer IP '%d.%d.%d.%d', cCommSystem_CreateChannel, state 0x10
+0017e030	LobbyMenu_CreateAccount	med	menu callback: pops pages, stores user/pass, fills account fields (email 'please@get.lost') and calls lobby create-account
+0017e118	LobbyMenu_Login	med	menu callback: pops pages, stores user/pass (+0x1c04/+0x1c08), state 5, calls lobby login (FUN_0025c610 'SSX-PS2-2004')
+0017e1c0	LobbyMenu_CreatePersona	med	menu callback: pops pages, state 8, calls FUN_0025d1b8 (same API as cFEStateCreateDuplicate_SubmitPersonaName)
+0017e2f8	LobbyMenu_EnterRoom	med	menu callback: pops pages, state 0xb, calls FUN_0025d800 (same API as cFEStateLobbyMenu_EnterRoom)
+0017f2d0	DebugMenuModule_UpdateCursorTrail	med	only caller DebugMenuModule_v06 (update); advances sin-driven phases and writes next point of a 64-entry ring at +0x10 (index +0x210)
+0017f500	DebugMenuModule_DrawCursorTrail	med	only caller DebugMenuModule_Render; draws the 64 ring points (+0x10, idx +0x210) as fading 6x6 quads via FUN_0038ec40
+0017fa60	DebugMenuModule_Enter	high	vt 46d900 slot 5; family slot 5 = Enter (5 named siblings)
+0017fab0	DebugMenuModule_TryExit	med	vt 46d900 slot 4; family slot 4 mostly TryExit ({'TryExit': 6, 'TryExitWhenLoaded': 2})
+0017fb98	DebugMenuModule_v06	high	vt 46d900 slot 6 (class DebugMenuModule); family slot names disagree {'Update': 5, 'UpdateFade': 2}
+0017fbf0	DebugMenuModule_Render	high	vt 46d900 slot 7; family slot 7 = Render (4 named siblings)
+0017fe80	FEUIInput_IsStart	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 3: InputBinding_EvalBool(+0x18, 112=UIStart from InputMap action table)
+0017fea0	FEUIInput_IsSelect	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 4: InputBinding_EvalBool(+0x18, 113=UISelect from InputMap action table)
+0017fec0	FEUIInput_IsNext	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 5: InputBinding_EvalBool(+0x18, 122=UINext from InputMap action table)
+0017fee0	FEUIInput_IsPrevious	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 6: InputBinding_EvalBool(+0x18, 123=UIPrevious from InputMap action table)
+0017ff00	FEUIInput_IsOption	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 7: InputBinding_EvalBool(+0x18, 124=UIOption from InputMap action table)
+0017ff20	FEUIInput_IsMisc	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 8: InputBinding_EvalBool(+0x18, 125=UIMisc from InputMap action table)
+0017ff40	FEUIInput_IsNextHeld	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 9: InputBinding_EvalBool(+0x18, 151=UINextHeld from InputMap action table)
+0017ff60	FEUIInput_IsPreviousHeld	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 10: InputBinding_EvalBool(+0x18, 152=UIPreviousHeld from InputMap action table)
+0017ff80	FEUIInput_IsOptionHeld	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 11: InputBinding_EvalBool(+0x18, 153=UIOptionHeld from InputMap action table)
+0017ffa0	FEUIInput_IsMiscHeld	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 12: InputBinding_EvalBool(+0x18, 154=UIMiscHeld from InputMap action table)
+0017ffc0	FEUIInput_IsNextReleased	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 13: InputBinding_EvalBool(+0x18, 155=UINextReleased from InputMap action table)
+0017ffe0	FEUIInput_IsPreviousReleased	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 14: InputBinding_EvalBool(+0x18, 156=UIPreviousReleased from InputMap action table)
+00180000	FEUIInput_IsOptionReleased	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 15: InputBinding_EvalBool(+0x18, 157=UIOptionReleased from InputMap action table)
+00180020	FEUIInput_IsMiscReleased	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 16: InputBinding_EvalBool(+0x18, 158=UIMiscReleased from InputMap action table)
+00180040	FEUIInput_IsUp	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 17: InputBinding_EvalBool(+0x18, 114=UIUp from InputMap action table)
+00180060	FEUIInput_IsDown	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 18: InputBinding_EvalBool(+0x18, 115=UIDown from InputMap action table)
+00180080	FEUIInput_IsLeft	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 19: InputBinding_EvalBool(+0x18, 116=UILeft from InputMap action table)
+001800a0	FEUIInput_IsRight	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 20: InputBinding_EvalBool(+0x18, 117=UIRight from InputMap action table)
+001800c0	FEUIInput_IsUpHeld	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 21: InputBinding_EvalBool(+0x18, 147=UIUpHeld from InputMap action table)
+001800e0	FEUIInput_IsDownHeld	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 22: InputBinding_EvalBool(+0x18, 148=UIDownHeld from InputMap action table)
+00180100	FEUIInput_IsLeftHeld	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 23: InputBinding_EvalBool(+0x18, 149=UILeftHeld from InputMap action table)
+00180120	FEUIInput_IsRightHeld	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 24: InputBinding_EvalBool(+0x18, 150=UIRightHeld from InputMap action table)
+00180140	FEUIInput_IsRShift1	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 25: InputBinding_EvalBool(+0x18, 126=UIRShift1 from InputMap action table)
+00180160	FEUIInput_IsRShift2	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 26: InputBinding_EvalBool(+0x18, 127=UIRShift2 from InputMap action table)
+00180180	FEUIInput_IsLShift1	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 27: InputBinding_EvalBool(+0x18, 128=UILShift1 from InputMap action table)
+001801a0	FEUIInput_IsLShift2	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 28: InputBinding_EvalBool(+0x18, 129=UILShift2 from InputMap action table)
+001801c0	FEUIInput_IsRShift1Held	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 29: InputBinding_EvalBool(+0x18, 130=UIRShift1Held from InputMap action table)
+001801e0	FEUIInput_IsRShift2Held	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 30: InputBinding_EvalBool(+0x18, 131=UIRShift2Held from InputMap action table)
+00180200	FEUIInput_IsLShift1Held	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 31: InputBinding_EvalBool(+0x18, 132=UILShift1Held from InputMap action table)
+00180220	FEUIInput_IsLShift2Held	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 32: InputBinding_EvalBool(+0x18, 133=UILShift2Held from InputMap action table)
+00180240	FEUIInput_IsCamZoom	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 33: InputBinding_EvalBool(+0x18, 144=UICamZoom from InputMap action table)
+00180260	FEUIInput_IsCamPan	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 34: InputBinding_EvalBool(+0x18, 146=UICamPan from InputMap action table)
+00180280	FEUIInput_IsCamRotate	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 35: InputBinding_EvalBool(+0x18, 145=UICamRotate from InputMap action table)
+001802a0	FEUIInput_GetCamZoom	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 36: InputBinding_EvalFloat(+0x18, 144=UICamZoom from InputMap action table)
+001802c0	FEUIInput_GetCamPan	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 37: InputBinding_EvalFloat(+0x18, 146=UICamPan from InputMap action table)
+001802e0	FEUIInput_GetCamRotate	high	FEUIInput (tag 'FEUIInput', vt 46d1d0) slot 38: InputBinding_EvalFloat(+0x18, 145=UICamRotate from InputMap action table)
+00180300	FEUIInput_IsAnyButton	high	FEUIInput vt 46d1d0 slot 40: OR of EvalBool over UIUp..UIRight2, Next/Prev/Misc/Option, CamZoom/Pan/Rotate, Select
+001804b8	FEUIInput_PollUsbKeyboard	med	FEUIInput vt 46d1d0 slot 46: if cUsbKeyboard instance (gp+0x300) reads next key pair into +0x10/+0x14 via FUN_00266ba8, sets +0xc flag
+00181ef0	cFEStateCharSelect_UpdateRiderPreview	med	OnActivate/Update; FEModule_GetRiderPreview(+0x44), SetTransform, positions it and plays anim via AnimController
+00182c08	cFEStateCharSetup_Shutdown	high	vt 46cd90,46ce60 slot 5; family slot 5 = Shutdown (120 named siblings)
+00182db8	cFEStateCharSetup_InitRiderPreview	med	callers CharSetup_Init/RiderDetail_Init; sets 'rider name' text from character, GameCamera_SnapToDefaultChaseView, enables model, first update
+00182ec0	cFEStateCharSetup_UpdateRiderPreview	med	callers CharSetup_Update/RiderDetail_Update; same pose/anim update of FE rider preview as CharSelect variant (flag +0x4c)
+001831d0	cFEStateCharSetup_SetRiderPreviewActive	med	param 0 hides preview via FEModule_RiderPreviewSetVisible(FEModule_GetRiderPreview(+0x44),0) and clears +0x4c; else stores flag +0x4c
+00183de0	cFEStateUberTrick_RefreshTrickList	med	callers UberTrick TransitionIn/OnChildEvent/OnWidgetAction; fills 'Trick%02d' objects, help/instruction buttons 'InstBtn0..2','inst0..2'
+00186c98	cFEStateMemCard_ShowNotFormattedMsg	high	string 'kT_MEMOVNotFormattedPS2'; callback stored by cFEStateMemCard_ctor; formats text with card name and opens message (type 4)
+00186d60	cFEStateMemCard_ShowNotDetectedMsg	high	string 'kT_MEMFENotDetectedStartUpPS2' + Yes/Retry buttons; callback stored by cFEStateMemCard_ctor
+00187318	cFEStateMemCard_Finish	med	sets state +0x1c0=6 and calls SSXApp_StartFEModule once (+0x1ac guard)
+00187360	cFEStateMemCard_ShowNoSpaceMsg	high	string 'kT_MEMNoSpaceStartPS2' + 'kT_MEMOVRetry'; callback stored by cFEStateMemCard_ctor
+001874e8	cFEStateMemCard_v33	high	vt 46b570 slot 33 (class cFEStateMemCard via pass1)
+001876a8	cFEStateMemCard_v26	high	vt 46b570 slot 26 (class cFEStateMemCard via pass1)
+00187c18	FEScreenAutosavePopup_ctor	high	UIState_ctor_2 then stores vptr 46b4a0 (FEScreenAutosavePopup)
+00187d38	cFEStateOptions_ApplyCheatCode	med	only caller cFEStateOptions_OnWidgetAction; lower-cases entered string, StrHash compares to code table, unlocks chars/bolts/items via BE interfaces
+00188e58	cFEStateOptions_OpenResetPopup	high	EA_MemAllocNamed tag 'cFEPopupOptionReset' + vptr 46b3d0, UIStateMgr_PushPopup
+00189d60	cFEStateOptionsGame_RefreshListBoxes	med	caller cFEStateOptionsGame_OnChildEvent; sets UIListBox selections from saved option bitfields (copy of 535610)
+0018b380	cFEStateOptionsSound_RefreshControls	med	callers OptionsSound Init/OnChildEvent; fills speaker-mode listbox (kT_20SpeakerStereo/Surround/Mono/DTS) and On/Off lists from audio settings
+0018bef8	cFEStateOptionsSound_SetSpeakerMode	med	maps listbox value to audio mode; if changed saves volumes, SSXAudioSystem_Destroy/Create(mode), restores volumes, LoadFrontEndAudio
+0018c478	cFEStateOptionsHUD_RefreshSelection	med	callers OptionsHUD Init/OnChildEvent; shows menu items '1'..'3' and selects the one matching saved HUD option bits
+0018d108	cFEStateOptionsController_SetVibration	med	called from all OptionsController handlers; if pad (PadQueue+0x2eec[i]) type 2 sets both actuator strengths from params
+0018e178	cFEStateOptionsDeviceSelect_v37	high	vt 46c228 slot 37 (class cFEStateOptionsDeviceSelect via pass1)
+0018e2c0	cFEStateOptionsDeviceSelect_v38	high	vt 46c228 slot 38 (class cFEStateOptionsDeviceSelect via pass1)
+0018e368	cFEStateOptionsDeviceSelect_v39	high	vt 46c228 slot 39 (class cFEStateOptionsDeviceSelect via pass1)
+0018e478	cFEStateOptionsDeviceSelect_v33	high	vt 46c228 slot 33 (class cFEStateOptionsDeviceSelect via pass1)
+0018e510	cFEStateOptionsDeviceSelect_v26	high	vt 46c228 slot 26 (class cFEStateOptionsDeviceSelect via pass1)
+0018ea98	FEScreenSelectProfile_ctor	high	UIState_ctor then stores vptr 46c158 (FEScreenSelectProfile)
+0018ef70	cFEStateProfileLoad_v37	high	vt 46bfd0 slot 37 (class cFEStateProfileLoad via pass1)
+0018f0b8	cFEStateProfileLoad_v38	high	vt 46bfd0 slot 38 (class cFEStateProfileLoad via pass1)
+0018f168	cFEStateProfileLoad_v39	high	vt 46bfd0 slot 39 (class cFEStateProfileLoad via pass1)
+0018f278	cFEStateProfileLoad_v26	high	vt 46bfd0 slot 26 (class cFEStateProfileLoad via pass1)
+0018f2b8	cFEStateProfileLoad_RefreshProfileList	med	callers ProfileLoad_v26/FUN_0018f9d8; shows MCManager card error text ('Memory card text') and fills 'player%d','date%d','time%d' slots
+0018f9d8	cFEStateProfileLoad_RefreshSlots	med	if card present+formatted refreshes list (FUN_0018f2b8) else hides 'player1..6' slots
+0018faf0	cFEStateProfileLoad_v33	high	vt 46bfd0 slot 33 (class cFEStateProfileLoad via pass1)
+001913b8	cFEStateRuleSelect_FillRuleList	med	callers RuleSelect Init/OnWidgetNotify; per visible rule sets title text id and fills listbox options (On/Off, Yes/No, skill levels, numbers)
+00191e08	cFEStateRuleSelect_v21	high	vt 46b090 slot 21 (class cFEStateRuleSelect via pass1)
+00192088	cFEStateRuleSelect_SetRuleValue	med	switch on rule id 1..14 writes bit/value into race rule globals 5308b8/5308d0/5308d4
+00192240	cFEStateRuleSelect_GetRuleValue	med	switch on rule id 1..14 reads bit/value from rule globals 5308b8/5308d0/5308d4 (inverse of SetRuleValue); -1 default
+00193c00	cFEStateBraggingRights_v25	high	vt 46af68 slot 25 (class cFEStateBraggingRights via pass1)
+00194080	cFEStateBraggingRights_StartWaitAnim	med	starts screen thread 'wait 1' or 'wait 2' depending on flags +0x6f8/+0x72c
+00194138	cFEStateBraggingRights_v24	high	vt 46af68 slot 24 (class cFEStateBraggingRights via pass1)
+001941b0	cFEStateBraggingRights_v31	high	vt 46af68 slot 31 (class cFEStateBraggingRights via pass1)
+00194588	cFEStateTransition_Init	high	was FEUICustom_v04: slot 4 (Init) of vt 46bb88 (cFEStateTransition) (was FEUICustom_v04)
+00194600	cFEStateTransition_v16	med	vt 46bb88 (cFEStateTransition) slot 16; on 'start'/'None' messages clears/sets flag 8 at +0x1c and 0x40 at screen +0x54
+001946a8	cFEStateTransition_StartFade	med	vt 46bb88 slot 24; arg 0 starts 'transition' screen (+0x48) thread and plays FE sound 0xf, arg 1 starts 'whitefade' (+0x4c)
+001956f8	FEModule_BaseCtor	med	only caller FEModule_ctor; AppModule_ctor, vptr 46d878, CameraBase, FEModule_InitRiderPreviews, UIEngine ('UIEngine'), FXLoader ('FXLoader FE')
+001957d0	FEModule_BaseDtor	med	only caller FEModule_dtor; vt 46d878 slot 1: UIEngine_dtor, FXLoader dtor, FEModule_DestroyRiderPreviews, base vptr restore, delete
+00195948	FELocale_UnloadAllTables	med	callers FELocale_v01 (dtor)/v03; FELocale_UnloadTable for all 20 slots
+001959a8	FELocale_LoadTable	high	tag 'LocaleFile' alloc + LocStringTable_Load(path table 'data/locale/cmnamer.loc'..., idx) into slot +8+4*idx if empty
+00195a50	FELocale_UnloadTable	med	LocStringTable_dtor of slot +8+4*idx and clears it
+00195b70	FELocale_LoadCommonTable	med	caller SSXApp_LoadLocale; loads table 0..3 selected by language byte +1
+00195be0	FELocale_LoadFETables	med	callers FEModule_Load/FELocale_v03; sets +0x58=1, loads per-language tables 4-7, 8-11, 16-19
+00195d50	FELocale_UnloadFETables	med	caller GameModule_Enter; unless flag bit, unloads tables 4-7 and 16-19
+00195de0	FELocale_LoadGameTables	med	callers GameModule_Load/FELocale_v03; sets +0x58=2, loads per-language table 12-15
+00195e58	FELocale_UnloadGameTables	med	caller FEModule_Enter; unless flag bit, unloads tables 12-15
+00197ad8	cFEStateRequestLine_SortSongList	med	caller ctor; builds index list +0x4c: songs with bit set in +0x160 first, then the rest (count +0x14c)
+00197b88	cFEStateRequestLine_RefreshList	med	calls UpdateSongNames, UpdateSongIcons, UpdateScrollArrows, UpdateSongCount
+00197bc8	cFEStateRequestLine_UpdateSongNames	med	8 visible rows from scroll +0x150: show + set song title text, hide past end
+00197ca0	cFEStateRequestLine_UpdateSongIcons	med	8 rows: icon texture by song state (owned +0x158 / selected +0x160 / locked)
+00197db8	cFEStateRequestLine_UpdateScrollArrows	med	shows up arrow if scroll>0, down arrow if more than 8 entries below
+00198118	cFEStateRequestLine_UpdateSongCount	med	string 'kT_OVRCMNSongsInList'; counts bits in +0x158 and prints into text +0x1e4
+001981f8	cFEStateRequestLine_UpdateHelpText	med	sets help text id by song state: kT_HELPAudio1SongMin/kT_HELPAUDIOAvailBuy/kT_FAQRADIOBA etc
+00198340	cFEStateRequestLine_UpdateButtons	med	shows add/remove/buy button text 'kT_BTNAddSong'/'kT_BTNRemSong'/'kT_16BuyMusicTracks' for current song
+001985b0	cFEStateRequestLine_UpdateMoney	med	formats points +0x168 with FE_FormatMoney into text +0x1e0
+001986d0	cFEStateRequestLine_ShowSongInfo	med	'kT_OVRCMNSongBy' + artist, price via FE_FormatMoney or 'kT_OVRCMNFree'
+001988d8	cFEStateRequestLine_BuySong	med	charges via BE interface 0xd FUN_00158558 (stores new balance +0x168) and sets song bit in +0x160/+0x158
+00198a88	cFEStateRequestLine_GetSongTitle	med	audio system (FUN_0028b180)+0x118 song table lookup FUN_002b40f0; used for list row text
+00198ab8	cFEStateRequestLine_GetSongArtist	med	audio song table FUN_002b4120; formatted with 'kT_OVRCMNSongBy'
+00198ae8	cFEStateRequestLine_GetSongPrice	med	returns constant 5000; used as price in buy checks/ShowSongInfo
+00198af0	FE_FormatMoney	med	16 callers (buy popup, UberTrick cost, HUD); formats int with '$ ', sign and locale thousands separator (',' '.' ' ') into static buffer
+0019a1e0	cFEStateCharEquip_PollPreviewLoaded	med	CharEquip this; when preview bank loaded (FUN_0019e238) sets +0xa60=1 and refreshes item info
+0019a238	cFEStateCharEquip_ShowEquipMode	med	sets title 'kT_CMNEquipGear', toggles equip widgets; callers CharEquip_OnActivate/toggle
+0019a308	cFEStateCharEquip_ShowBuyMode	med	sets title 'kT_CMNBuyGear', toggles buy widgets; callers CharEquip_OnActivate/toggle
+0019a3d0	cFEStateCharEquip_ToggleBuyEquip	med	flips mode +200 between buy/equip, sets 'kT_CMNBuyGear'/'kT_CMNEquipGear' hint, rebuilds list
+0019a498	cFEStateCharEquip_ReleasePreview	med	callers CharEquip_dtor/RequestPreview; frees pending preview load +0xa6c, clears name +0x960
+0019a4e8	cFEStateCharEquip_RequestPreview	med	only caller CharEquip_OnWidgetAction; builds preview file name '%s_%s%s' for selected item, sets load delay
+0019a638	cFEStateCharEquip_UpdatePreview	med	only caller CharEquip_Update; counts down delay, starts preview load ('preview'), creates texture when loaded
+0019a798	cFEStateCharEquip_UpdateHelpText	med	sets help text 'kT_FEHELPItemAvailBuy'/'kT_HELPNoItemsCTM'/'kT_FEYourCurrentOutfit' for selected item
+0019a9b8	cFEStateCharEquip_RefreshItemInfo	med	CharEquip: buy mode (+200==1) -> RefreshBuyInfo else RefreshEquipInfo, then UpdateHelpText
+0019aa08	cFEStateCharEquip_RefreshEquipInfo	med	equip-mode info panel for selected item: shows preview texture and stat bar delta
+0019ab78	cFEStateCharEquip_RefreshBuyInfo	med	buy-mode info panel: shows preview and formatted price (+0xe*10) of selected item
+0019aca0	cFEStateCharEquip_RefreshRiderBolts	med	only caller CharEquip_OnWidgetAction; re-requests bolt textures for FE rider preview from char profile (FEModule_RiderPreviewRequestBoltTextures)
+0019ad18	cFEStateCharEquip_ScrollItemList	med	CharEquip: shifts 6 visible row widgets by delta (-6..6) and refills new rows (buy/equip row fillers)
+0019b180	cFEStateCharEquip_BuildItemList	med	fills item array +0x124 / count +0x958 from Bolts DB for category, filtered by buy/equip mode, qsort
+0019b458	cFEStateCharEquip_RemoveListItem	med	removes entry at index from item array +0x124, decrements +0x958, clamps menu scroll/selection
+0019b518	cFEStateCharEquip_FillEquipRows	med	fills up to 6 visible rows via FUN_0019b7e0 (equip row) from scroll top
+0019b598	cFEStateCharEquip_FillBuyRows	med	fills up to 6 visible rows via FUN_0019ba60 (buy row) from scroll top
+0019b618	cFEStateCharEquip_RefreshItemList	med	hides 6 rows, resets menu scroll, refills buy/equip rows, 'kT_FEEmpty' when list empty, sets selection
+0019b7e0	cFEStateCharEquip_SetEquipRow	med	fills one equip-mode list row: item name + stat delta computed by trial-equipping on char profile
+0019ba60	cFEStateCharEquip_SetBuyRow	med	fills one buy-mode list row: item name + affordable/unaffordable icon (price vs money +0xc0)
+0019bba0	cFEStateCharEquip_UpdateMoneyText	med	formats +0xc0 (money) with FUN_00198af0 into text widget +100
+0019bbe0	cFEStateCharEquip_SetCategoryTitle	med	sets +0x58 text to 'kT_FECategories' or the Bolts category name
+0019bc90	cFEStateCharEquip_UpdateStatBar	med	scales bar widget +0x70 by (+0xc4 - 1500)/(max - 1500)
+0019bd48	cFEStateCharEquip_UpdateStatPreviewBar	med	scales bar +0x74 by (+0xc4 + delta - 1500)/(max-1500), colour by over/under max
+0019be80	cFEStateCharEquip_BuySelectedItem	med	only caller CharEquip_OnChildEvent; BE interface 9 call with selected item, stores new money in +0xc0
+0019bee8	cFEStateCharEquip_EquipSelectedItem	med	only caller CharEquip_OnWidgetAction; equips selected item on char profile (FUN_0014afb0/FUN_0014aea8)
+0019bfe8	cFEStateCharEquip_UpdatePreviewCamera	med	callers CharEquip_Init/Update; computes rider-preview camera pose, GameCamera_SnapToDefaultChaseView
+0019c880	BoltFileIndexManager_AllocNode	med	pops node from free list +8000 (0x1f40) of 400x16-byte node pool; BoltFileIndexManager size 0x1f44
+0019c8d0	BoltFileIndexManager_GetPrevNode	med	node +0xc prev index -> pool + idx*16; BoltFileIndexManager hash chains
+0019c8f8	BoltFileIndexManager_GetNextNode	med	node +0xe next index -> pool + idx*16; BoltFileIndexManager hash chains
+0019c920	BoltFileIndexManager_NodeIndex	med	(node - pool) >> 4, -1 for null
+0019c938	BoltFileIndexManager_FindNode	med	hash key (a<<16|b) % 400 into buckets +0x1900, walks chain, optionally allocates new node
+0019ca70	BoltFileIndexManager_FreeNode	med	unlinks node from bucket chain and pushes on free list +8000
+0019cb60	BoltFileIndexManager_Reset	med	callers BoltFileIndexManager_ctor/BoltFile_CacheInit; clears 400 nodes, buckets, rebuilds free list
+0019cbe0	BoltFileIndexManager_GetModelSlot	med	returns node +10 (cache slot) if bit n of mask +6 set; used for type-8 (model) bolt files
+0019cc30	BoltFileIndexManager_SetModelSlot	med	sets/clears node +10 slot and bit n of mask +6; frees node when both masks empty
+0019cce8	BoltFileIndexManager_GetTextureSlot	med	returns node +8 (cache slot) if bit n of mask +4 set; used for type-0xb (texture) bolt files
+0019cd38	BoltFileIndexManager_SetTextureSlot	med	sets/clears node +8 slot and bit n of mask +4; frees node when both masks empty
+0019cdf0	BoltFile_CacheCtor	med	called from FEModule base ctor on FEModule+0x1a70; stores global instance, calls BoltFile_CacheInit
+0019ce20	BoltFile_CacheDtor	med	clears global instance, BoltFile_CacheShutdown, optional delete (dtor pattern)
+0019ce68	BoltFile_CacheInit	med	clears 10 banks x 256 slots (0x120 each), allocates 'BoltFileIndexManager' or resets it; caller FEModule_Load
+0019cf40	BoltFile_CacheShutdown	med	frees all 10x256 slots, deletes BoltFileIndexManager; caller FEModule_Unload
+0019d000	BoltFile_UnpackSlot	med	EAC_Unpack of loaded slot data into 'UncompressedData' buffer, updates byte budget +0xb4000
+0019d140	BoltFile_StartNextQueued	med	finds queued (state 3) slot with lowest sequence (own bank first) and starts its load
+0019d250	BoltFile_CacheUpdate	med	polls async loads (AsyncFile_IsDone), unpacks, starts next queued; caller ssx_BootMoviesUpdate
+0019d3b0	BoltFile_FindFreeSlot	med	returns empty slot or least-recently-used unreferenced slot in bank
+0019d428	BoltFile_FindSlotByName	med	strcmp of slot name (+4) over 256 slots of bank, -1 if not found
+0019d4b8	BoltFile_FreeSlot	med	cancels async read, frees data, resets slot fields and byte budget
+0019d578	BoltFile_EnsureBudget	med	evicts unreferenced loaded slots until used bytes + size < 10,000,000
+0019d738	BoltFile_EvictBytes	med	evicts unreferenced loaded slots until N bytes freed (alloc-failure retry path)
+0019d8b8	BoltFile_LoadSlot	med	allocates 'Bolt FileData' buffer and loads slot file sync (EAFile_LoadFileInto) or async (AsyncFile_LoadInto)
+0019da10	BoltFile_Acquire	med	finds or allocates slot for file name, sets type/async, refcount++, starts or queues load; 10 FE callers
+0019dc20	BoltFile_Release	med	refcount--; at 0 completes pending read and frees or marks idle; 18 callers
+0019dd10	BoltFile_CompareModelSlots	med	qsort comparator (address taken in BoltFile_PrioritizeModels): queued type-8 slots by name
+0019de18	BoltFile_CompareTextureSlots	med	qsort comparator (address taken in BoltFile_PrioritizeTextures): queued type-0xb slots by name
+0019df20	BoltFile_PrioritizeModels	med	qsorts bank slots, assigns load sequence to queued type-8 slots and starts loads
+0019e070	BoltFile_PrioritizeTextures	med	qsorts bank slots, assigns load sequence to queued type-0xb slots and starts loads
+0019e238	BoltFile_IsLoaded	med	slot state == 1
+0019e2b0	BoltFile_GetData	med	returns slot data (+0x104) if state == 1, else 0
+0019e330	BoltFile_DetachData	med	returns slot data pointer and clears it, subtracting size from byte budget
+0019e3d0	FEModule_RiderPreviewCtor	med	inits one 0xce0-byte FE rider preview slot (char -1, 256 texture entries, identity transforms); called from FEModule_InitRiderPreviews
+0019e498	FEModule_RiderPreviewDtor	med	unloads preview, frees 256 texture handles, optional delete; called from FEModule_DestroyRiderPreviews
+0019e538	FEModule_RiderPreviewSetVisible	med	0 clears +0xcc4/+0xcc8; else render flag +0xcc8 if model ready, otherwise pending +0xcc4; FEModule_RenderRiderPreviews checks +0xcc8
+0019e588	FEModule_RiderPreviewRequestChar	med	stores requested char/outfit (+0x309/+0x30a) and schedules a delayed reload (+0x335 = frame+4)
+0019e680	FEModule_RiderPreviewFindBones	high	looks up bones 'handleft','forearmleft',...,'board_rootg','board_childg' on preview model into +0xc7c..
+0019e960	FEModule_RiderPreviewLoadChar	med	(re)creates preview for char: allocs 'AttachedEmitterFX','cBoltOnFXInterface','AnimModel' RiderModel, requests bolt files
+0019eba0	FEModule_RiderPreviewUnload	med	deletes RiderModel/anim/FX objects, releases bolt files, resets char to -1
+0019ec68	FEModule_RiderPreviewReleaseBoltFiles	med	for each profile bolt releases cached texture+model files and clears BoltFileIndexManager slots
+0019ed80	FEModule_RiderPreviewSetupModel	med	RiderModel_Setup, allocs 'RiderAnim' AnimController and plays anim 0x1b2, then FindBones
+0019ee88	FEModule_RiderPreviewRender	med	per-character FE light set ('kaori','allegra','griff',...,'fe_map') then renders preview model and bolt-on FX
+0019f138	FEModule_RiderPreviewUpdate	med	drives preview load state machine (models->textures->setup->materials), handles delayed reload, ticks anim/FX
+0019f2d0	FEModule_RiderPreviewApplyTransform	med	writes stored pos/quat (+0xc30..+0xc6c) to model and board bones, sets +0x14 ready
+0019f3e8	FEModule_RiderPreviewSetTransform	med	copies pos (+0xc30) and quat (+0xc40) then ApplyTransform; callers CharSelect/CharSetup/UberTrick/CharEquip
+0019f418	FEModule_RiderPreviewMoveLocal	med	rotates vector by quat +0xc40 (VU0 cross-product form) and adds to pos +0xc30, then ApplyTransform
+0019f740	FEModule_RiderPreviewGetAnimId	med	AnimController_GetLayerAnimId(preview anim +0xc, layer 2)
+0019f760	FEModule_RiderPreviewGetAnimProgress	med	AnimController_GetLayerProgress(preview anim +0xc, layer 2)
+0019f878	FEModule_RiderPreviewFindTexture	med	strcmp name in preview texture table (+0x18 count, 12-byte entries) -> texture handle
+0019f908	FEModule_RiderPreviewLoadShapeTextures	med	for each entry of a SHPS bank creates (or updates) texture and adds it to the preview texture table
+0019fa78	FEModule_RiderPreviewReleaseBoltTextures	med	releases cached type-0xb bolt texture files of preview char (except category 6) via BoltFile_Release
+0019fbe0	FEModule_RiderPreviewRequestBoltTextures	med	requests texture bolt files (flag 0x10) via BoltFile_Acquire type 0xb, stores slots, prioritizes
+0019fd58	FEModule_RiderPreviewPollTextures	med	when all bolt texture files loaded, builds textures (LoadShapeTextures) and releases files; returns done
+0019ff00	FEModule_RiderPreviewRequestBoltModels	med	requests bolt model files (bolt +0x28) via BoltFile_Acquire type 8, stores slots, prioritizes
+001a0100	FEModule_RiderPreviewPollModels	med	when all model files loaded, MdfFile_CreateModelByName + RiderModel_LoadVariant per bolt, releases files
+001a03c0	FEModule_InitRiderPreviews	med	constructs the 2 rider preview slots (0xce0 each) at FEModule+0xb0; caller FEModule base ctor
+001a0420	FEModule_DestroyRiderPreviews	med	unloads and destroys the 2 rider preview slots (array delete pattern)
+001a0498	FEModule_SetRiderPreviewIndices	med	only caller FEModule_Load; sets slot +4 = 0,1 for the 2 rider previews
+001a04c8	FEModule_UnloadRiderPreviews	med	FEModule_RiderPreviewUnload on both slots; callers FEModule_Unload/DestroyRiderPreviews
+001a0508	FEModule_RequestPreviewChar	med	wrapper: FEModule_RiderPreviewRequestChar(slots + idx*0xce0, ...); callers CharSelect/CharSetup/RiderDetail/UberTrick/CharEquip
+001a0538	FEModule_GetRiderPreview_2	med	returns slots + idx*0xce0 (duplicate of FEModule_GetRiderPreview)
+001a0548	FEModule_GetRiderPreview	med	returns slots + idx*0xce0; 21 FE screen callers pass FEModule+0xb0
+001a0570	FEModule_SetPreviewVisible	med	wrapper: FEModule_RiderPreviewSetVisible(slots + idx*0xce0, flag)
+001a0598	FEModule_RenderRiderPreviews	med	only caller FEModule_Render; sets render states, renders each visible (+0xcc8) preview
+001a0608	FEModule_UpdateRiderPreviews	med	FEModule_RiderPreviewUpdate on both slots; caller ssx_BootMoviesUpdate
+001a0648	FEFlowState_Init	med	alloc tag 'FEFlowState': frees old, allocates and zeroes per-screen byte table (n entries); caller FEModule_Enter
+001a06b0	FEFlowState_Free	med	frees buffer +4 and clears size byte; callers FEFlowState_Alloc/FEModule_TryExit
+001a06f0	FEFlowState_GetMenuSelection	med	returns table[screen id]; only caller cFEState_OnActivate restores menu selection via UIMenu_SetSelection
+001a0708	FEFlowState_SetMenuSelection	med	table[screen id] = sel; caller cFEState_OnDeactivate stores menu selection (+0x95)
+001a07c8	FEUICustom_v03	high	vt 46d810 slot 3 (class FEUICustom via pass1)
+001a0830	FEUICustom_CreateState	med	FEUICustom vtable slot 4; switch on screen id allocating 'cFEStateMainMenu','cFEStateCharSelect',... state objects
+001a16c0	FEUICustom_v05	high	vt 46d810 slot 5 (class FEUICustom via pass1)
+001a2b00	FEModule_LoadAnimData	high	mounts 'data/char/anm.big', creates 'AdfDataSourceFE' AdfDataSource and registers it; caller FEModule_Load
+001a2bc0	FEModule_UnloadAnimData	med	unregisters/destroys the FE AdfDataSource, AnimDataBase_FreeChanCaches; caller FEModule_Unload
+001a2c40	FEModule_v08	high	vt 46d7c0 slot 8 (class FEModule via pass1)
+001a3050	FEScreenSelMulti_ctor	high	UIState_ctor then stores vptr 0x469248 (FEScreenSelMulti) at +8, screen id 0x16
+001a35e8	FEAsyncManager_dtor	med	unmounts 'data/ui/mapgfx.big' mounted by FEAsyncManager_ctor (+0x58c), optional delete; caller SSXApp_Shutdown
+001a3648	FEAsyncManager_Init	med	resets the 5 0x11c-byte async texture slots (state, handles -1); caller SSXApp_Init
+001a3698	FEAsyncManager_CancelAll	med	FEAsyncManager_Cancel on all 5 slots
+001a3768	FEAsyncManager_RequestPeakMap	med	sprintf name from '_map_peakA..' table + '.ssh' into slot, state 1; caller map screen helper
+001a38c0	FEAsyncManager_Cancel	med	per-slot: pending->idle, loading->wait read and free 'FE Async Texture' buffer, loaded->delayed release
+001a39c0	FEAsyncManager_GetState	med	returns slot state (+0x114 of 0x11c-byte slot)
+001a39d8	FEAsyncManager_SetState	med	sets slot state (+0x114 of 0x11c-byte slot)
+001a39f0	FEAsyncManager_Update	med	per slot: delayed texture release, start pending loads, on AsyncFile done creates texture ('map'); callers ssx_BootMoviesUpdate/GameModule_Update
+001a3bf0	FEAsyncManager_FindFreeSlot	med	first slot with state 0 of 5, else -1
+001a3c50	FEAsyncManager_FreeAll	med	releases textures and frees buffers of all 5 slots; caller GameModule_Unload
+001a3cd8	FEAsyncManager_LoadSlot	med	allocates 68000-byte 'FE Async Texture' buffer and loads slot file sync or async (AsyncFile_LoadInto)
+001a3e30	cFEStateNetMessenger_v32	high	vt 467f28 slot 32 (class cFEStateNetMessenger via pass1)
+001a4040	cFEStateNetMessenger_v25	high	vt 467f28 slot 25 (class cFEStateNetMessenger via pass1)
+001a4740	cFEStateNetMessenger_GetListIndex	med	returns scroll offset +0x6f4 + visible row
+001a4750	cFEStateNetMessenger_SubmitKeyboardInput	med	only caller NetMessenger_OnWidgetAction; popup type 1 -> FindUser(name), type 2 -> send text to selected buddy
+001a4810	cFEStateNetMessenger_FindUser	high	'kT_POPUP220PersonaNameLength' if name < 3 chars else 'kT_POPUP231SubmittingFind' popup and starts lookup
+001a4928	cFEStateNetMessenger_v33	high	vt 467f28 slot 33 (class cFEStateNetMessenger via pass1)
+001a49a0	cFEStateNetMessenger_v34	high	vt 467f28 slot 34 (class cFEStateNetMessenger via pass1)
+001a4b20	cFEStateNetMessenger_v35	high	vt 467f28 slot 35 (class cFEStateNetMessenger via pass1)
+001a4ce8	cFEStateNetMessenger_ShowUserFound	high	stores found user, shows 'kT_POPUP279UserFound' popup (id 0x809)
+001a4d90	cFEStateNetMessenger_ShowLookingForSelf	high	shows 'kT_279LookingForSelf' / 'kT_BTNOK' popup (id 0x808)
+001a4e28	cFEStateNetMessenger_ShowFindUserError	med	error codes 'name'/'pers' -> 'kT_POPUP279InvalidName' / 'kT_POPUP279UserNotFound' popups, else generic net error
+001a4fb0	cFEStateNetMessenger_OnFindUserResult	med	if pending popup id 0x807 (submitting find) -> ShowFindUserError, else generic net error handler
+001a5010	cFEStateNetMessenger_v31	high	vt 467f28 slot 31 (class cFEStateNetMessenger via pass1)
+001a5450	cFEStateNetMessenger_ClearNameList	med	deletes all cBXString entries of name vector +0x6e8..+0x6ec; callers NetMessenger_dtor/BuildBuddyList
+001a56d0	cFEStateNetMessenger_HasName	med	strcasecmp search of name vector +0x6e8, returns bool
+001a5768	cFEStateNetMessenger_FindName	med	strcasecmp search of name vector +0x6e8 for C string, returns index or -1
+001a5800	cFEStateNetMessenger_FindNameStr	med	strcasecmp search of name vector +0x6e8 for cBXString, returns index or -1
+001a5898	cFEStateNetMessenger_BuildBuddyList	med	rebuilds 'cBXString' name vector from BuddyMan lists, resets 'playerMenu' scroll
+001a5fb8	cFEStateNetMessenger_HighlightRow	med	shows 'ps2X%02d' cursor icon only on selected row of 15, recolours rows
+001a6070	cFEStateNetMessenger_ShowBuddyInfo	med	fills 'TextBuddyName'/'TextBuddyLocation' for selected buddy ('kT_279NoBuddies','kT_279PresenceOffline')
+001a63c8	cFEStateNetMessenger_SetRowIcon	high	shows one of 'IconMessage%02d'/'IconBlocked%02d'/'IconChallenge%02d' for row by mode
+001a6618	cFEStateNetMessenger_SetRowName	high	sets 'persona%02d' text of row and stores buddy index in widget +0x18
+001a66a8	cFEStateNetMessenger_SetRowColour	med	colours 'persona%02d'/'overlay%02d' of row by selection and buddy status
+001a6978	cFEStateNetMessenger_RefreshPlayerList	med	purges stale names, fills 15 visible rows, resizes 'playerMenu', updates info and highlight
+001a6ca0	cFEStateNetMessenger_UpdateNextIcons	med	shows 'ps2L1','TextEqGoToNext','IconNextChallenge'/'IconNextMessage' when something is pending
+001a6e70	cFEStateNetMessenger_RemoveStaleNames	med	removes names from vector +0x6e8 whose BuddyMan index lookup fails
+001a71b0	cFEStateNetMessenger_SetRow	med	sets row icon (message/blocked/challenge) and name for buddy, or blank row
+001a7390	cFEStateNetMessenger_ShowBuddyPresence	high	reads 'LOCID'/'SSX3ID' tag fields, shows 'kT_279PresenceOnline'/'...Lobby'/'...Racing' etc. location text
+001a7b40	cFEStateReadMessagePopup_v32	high	vt 467e18 slot 32 (class cFEStateReadMessagePopup via pass1)
+001a7d40	cFEStateReadMessagePopup_v31	high	vt 467e18 slot 31 (class cFEStateReadMessagePopup via pass1)
+001a7dd8	cFEStateReadMessagePopup_AddMessage	med	pushes message object into vector +0x6dc (max 31, deletes oldest); callers ReadMessagePopup helpers
+001a7ed8	cFEStateReadMessagePopup_AddSentMessage	med	only caller ReadMessagePopup_OnWidgetAction; allocs 'cPrivateMessage' (own name, text) and AddMessage
+001a7f78	cFEStateReadMessagePopup_LoadMessages	med	copies BuddyMan messages from sender +0x6d0 into 'cPrivateMessage' list; callers v31/TransitionIn
+001a81f0	cFEStateReadMessagePopup_RefreshText	high	sets 'TextFromX' ('kT_POPUP242PlayerID') and fills 'textScrollChat' with 'from: text' lines
+001a8500	NetFEState_ctor	med	inv. class (vt 46b808); UIState_ctor_2 then vptr 0x46b808 (unnamed net-FE base, inv. class name); 53 online-screen ctor callers
+001a85d0	NetFEState_dtor	med	inv. class (vt 46b808); vt 0x46b808 slot 1 (unnamed net-FE base, inv. class name); frees list +0x6cc, cBXString +0x6c0, UIState_dtor
+001a8768	NetFEState_Init	med	inv. class (vt 46b808); vt 0x46b808 slot 4 (Init), empty; inv. class name
+001a8770	NetFEState_Update	med	inv. class (vt 46b808); vt 0x46b808 slot 12 (Update): slots 27/28, UIState_Update, slot 24; inv. class name
+001a87d0	NetFEState_OnActivate	med	inv. class (vt 46b808); vt 0x46b808 slot 6 (OnActivate): slot 32, UIState_OnActivate, +0x48=1; inv. class name
+001a8830	NetFEState_v32	med	inv. class (vt 46b808); vt 0x46b808 slot 32: sets BuddyMan presence from slot 29 result; inv. class name
+001a8918	NetFEState_OnWidgetAction	med	inv. class (vt 46b808); vt 0x46b808 slot 19 (OnWidgetAction): action 7 pushes 'cFEStateNetHelpPopup'; inv. class name
+001a89b0	NetFEState_v26	med	inv. class (vt 46b808); vt 0x46b808 slot 26: when disconnected, deletes new child state (except ids 0x31/0x33/0x4d/0x4e) and shows net error
+001a8a40	NetFEState_GotoNextState	med	inv. class (vt 46b808); walks to root state, slot 25 gives next state, starts 'TransitionOut' and UIStateMgr_SwitchStateClosePopups; 47 callers
+001a8ae8	NetFEState_QueueNetEvent	med	only caller net-FE slot 24; clones event (vslot 2) into 'StlBlock' node appended to list +0x6cc
+001a8b88	NetFEState_OnNetEvent	med	net-FE base vt 46b808 slot 24; events 200..0x116 dispatched via slot 31 when ready (slot 30) else queued in +0x6cc list, then drained
+001a8e40	NetFEState_HandleNetEvent	med	net-FE base slot 31 (subclass _v31 call it); 0xdc->cFEStateLobbyMenu, 0xef->OnlineMainMenu, 0x102 'time' timeout / net error popups
+001a8f98	NetFEState_OnNetTimeout	med	only caller HandleNetEvent on 0x102 code 'time'; kT_POPUPCMNNetInterrupted popup (id 0x83e), disconnects buddy/lobby
+001a9090	NetFEState_OpenKeyboardStr	med	cKeyboardPopup via CreateKeyboardPopup + title set as C string (cKeyboardPopup +0x424) + initial text
+001a90f0	NetFEState_OpenKeyboardWStr	med	same as OpenKeyboardStr but title is UCS-2 string (UIText_SetWideString)
+001a9150	NetFEState_OpenKeyboardTextId	med	same as OpenKeyboardStr but title is text id (UIText_SetTextId); 9 net screen callers
+001a91b0	NetFEState_CreateKeyboardPopup	med	allocs 'cKeyboardPopup', pushes popup, stores at +0x69c, sets id/max length; target widget at +0x6a4
+001a9268	NetFEState_OnMessengerPopupEvent	med	OnChildEvent case child id 0x833 (NetMessenger popup id set in OpenMessenger); 0xf -> cFEStateOnlineCharacterSelect
+001a93d0	NetFEState_OnChildEventDefault	med	default of net-FE OnChildEvent: results 0xf-0x14 close top states; 0x16 (closed) clears popup ptr +0x6a0
+001a9438	NetFEState_OnMemCardLoginPopupEvent	med	OnChildEvent case id 0x832; on close opens cFEStateLogin (tag 'cFEStateLogin MemoryCard')
+001a94e0	NetFEState_OnKeyboardPopupEvent	med	OnChildEvent when child == keyboard popup +0x69c; on close (0x16) clears +0x69c
+001a9578	NetFEState_OnSessionLostPopupEvent	med	OnChildEvent case id 0x837 (ShowSessionLostPopup); returns to cFEStateChatRoom or cFEStateOnlineMainMenu
+001a9668	NetFEState_OnDisconnectedPopupEvent	med	OnChildEvent case id 0x83d (kT_POPUPCMNDisconnected); closes popups, goes to cFEStateLogin
+001a9710	NetFEState_OnNetInterruptedPopupEvent	med	OnChildEvent case id 0x83e (kT_POPUPCMNNetInterrupted); closes popups, goes to cFEStateNetConfig
+001a97b8	NetFEState_OnChildEvent	high	net-FE base vt 46b808 slot 17 (OnChildEvent); dispatches on child id +0x18 (0x832..0x83e)
+001a9890	NetFEState_SetSelectedUser	med	cBXString assign at +0x6c0; read back by GetSelectedUser for buddy actions (messenger/chatroom)
+001a98b0	NetFEState_GetSelectedUser	med	returns +0x6c0 user name used by buddy action handlers (challenge/message/add/block)
+001a98b8	NetFEState_MakePasswordMask	med	fills this+0x5c with '*' x strlen(arg) (max 63); callers SetPasswordText/SetConfirmPasswordText
+001a9930	NetFEState_ShowDisconnectedPopup	med	strings kT_POPUPCMNDisconnected / NetInterrupted; once-only flag +0x6ac, ids 0x83d/0x83e
+001a9a18	NetFEState_FillYesNoList	med	adds kT_CMNYes/kT_CMNNo items to listbox, selects by arg
+001a9ab8	NetFEState_FillOnOffList	med	adds kT_CMNOn/kT_CMNOff items to listbox, selects by arg
+001a9b58	NetFEState_OpenMessenger	med	allocs 'cFEStateNetMessenger', id 0x833, pushes popup
+001a9bc0	NetFEState_ShowPopup	med	pushes the shared popup (+0x6a0) unless already top; 64 callers after GetPopup
+001a9c50	NetFEState_GetPopup	med	creates (tag 'createPopup', 0x360) or resets the shared popup at +0x6a0
+001a9cc0	NetFEState_ShowNetErrorPopup	med	only caller HandleNetEvent 0x102; maps lobby error codes ('auth','badc',...) to kT_POPUPCMN* messages
+001aa9b0	NetFEState_UpdateMessageHints	med	net-FE slot 28; blinks IconMessageHint/IconChallengeHint/TextMessageCount
+001aab68	NetFEState_UpdateMessageCount	med	net-FE slot 27; every 60 frames polls buddy messages, sets TextMessageCount text
+001aad50	NetFE_SetQualityIcons	med	shows 'quality%d%c' bars 1-5 by ping (201/301/401/501 thresholds); callers challenge popup/chatroom
+001aaf90	cFEStateNetConfig_GetErrorText	med	only caller cFEStateNetConfig_v31; maps '-dev','-bsy',... to kT_POPUP200* localized text
+001ab108	NetFEState_ShowWaitPlayerPopup	med	string kT_OVRCMNWaitPlayer, popup id 0x836
+001ab178	NetFEState_ShowChallengeErrorPopup	med	kT_POPUPCMNBadVersion/ConnectionLost/DeclineChallenge... by event, popup id 0x835
+001ab288	NetFEState_ShowSessionLostPopup	med	kT_POPUPCMNConnectionLost/NotEstablish/ExitedChallenge, popup id 0x837 (handler returns to lobby)
+001ab370	NetFEState_ShowBuddyActionPopup	med	GetPopup + SetupBuddyActionPopup; sets +0x6c4 flag
+001ab3d0	NetFEState_RefreshBuddyActionPopup	med	re-fills buddy action popup (ids 0x80b/0x80c) while open and flag +0x6c4
+001ab478	NetFEState_SetupBuddyActionPopup	med	strings kT_TITLEChallenge, kT_POPUP235ReadMessage/AddMessenger/BlockUser, kT_235ReportAbuse
+001abb30	NetFEState_ReadOrSendMessage	med	if message from user: cFEStateReadMessagePopup else keyboard to send message
+001abcd0	NetFEState_OpenChallengePopup	med	pushes cFEStateChallengePopup or cFEStateChallengeReceivedPopup (ids 0x800/0x801/0x834)
+001abed8	NetFEState_ShowMaxBuddiesPopup	med	string kT_POPUP235MaxBuddiesExceeded, id 0x845
+001abf70	FEScreenBlank_ctor	med	net-FE ctor + vptr 46b6f8; slot 4 loads screen 'Blank'; base of cFEStateNetAccountMem
+001abfa8	FEScreenBlank_Init	med	vt 46b6f8 slot 4 (Init): UIEngine_CreateScreen 'Blank'
+001ac2b8	cFEUseExistingAccount_CheckPassword	med	string kT_POPUP210PasswordMissing; returns password non-empty
+001ac360	cFEUseExistingAccount_CheckAccountName	med	string kT_POPUP210AccountNameMissing; returns name non-empty
+001ac408	cFEUseExistingAccount_ValidateFields	med	CheckAccountName && CheckPassword
+001ac448	cFEUseExistingAccount_CheckEmail	med	string kT_POPUP210EmailMissing; checks +0x6dc string
+001ac4f0	cFEUseExistingAccount_v25	high	vt 469068 slot 25 (class cFEUseExistingAccount via pass1)
+001ac9c0	cFEUseExistingAccount_OnEmailPopupEvent	med	on 0xf stores entered email +0x6dc, shows kT_POPUP204RequestAccount, LobbyMan_Connect
+001accd0	cFEUseExistingAccount_OnSaveAccountAnswer	med	yes -> cFEStateNetAccountMem popup (id 0x82c), no -> cFEStateSelectPersona
+001acdd0	cFEUseExistingAccount_OnKeyboardDone	med	keyboard id 6 -> EnterAccountName text/+0x48; id 7 -> masked password/+0x4c
+001acef8	cFEUseExistingAccount_v31	high	vt 469068 slot 31 (class cFEUseExistingAccount via pass1)
+001ad208	cFEStateSelectPersona_SubmitPersona	med	kT_POPUP220PersonaNameLength (<3 chars) else kT_POPUP220SubmittingPersona + submit
+001ad4f0	cFEStateSelectPersona_v25	high	vt 468f50 slot 25 (class cFEStateSelectPersona via pass1)
+001ad9c8	cFEStateSelectPersona_v33	high	vt 468f50 slot 33 (class cFEStateSelectPersona via pass1)
+001ada30	cFEStateSelectPersona_v31	high	vt 468f50 slot 31 (class cFEStateSelectPersona via pass1)
+001adc30	cFEStateSelectPersona_OnSubmitResult	med	only caller cFEStateSelectPersona_v31: 'filt' profanity, 'dupl' -> cFEStateCreateDuplicate, 'inam'; else base
+001ae680	cFEStateChallengePopup_ApplySettings	med	reads settings listboxes into race options and BENewRaceInt_SetNumAIRiders
+001aebf0	cFEStateChallengePopup_v32	high	vt 468e38 slot 32 (class cFEStateChallengePopup via pass1)
+001af098	cFEStateChallengePopup_InitSettingLists	med	sets ranked/powerups/multipliers/point-icons/AI-rider listbox selections from race options
+001af3e0	cFEStateChallengePopup_v33	high	vt 468e38 slot 33 (class cFEStateChallengePopup via pass1)
+001af470	cFEStateChallengePopup_v31	high	vt 468e38 slot 31 (class cFEStateChallengePopup via pass1)
+001af688	cFEStateChallengePopup_ShowSetOptions	med	strings staticTextSetchallenge / kT_241SetChallengeOptions / TextSubmit
+001af930	NetFE_ClearPlayerStats	med	blanks TextPlayerName/Rank/NumGames/WinsRatio/Disconnects/ConQuality on a screen; both challenge popups
+001afa60	NetFE_ShowPlayerStats	med	fills TextPlayerRank/NumGames/WinsRatio/Disconnects (kT_OVRCMNRanking, kT_CMNWinRatio) from opponent record
+001afd88	NetFE_ShowPlayerConnQuality	med	TextPlayerConQuality = kT_CMNConnection + quality icons (NetFE_SetQualityIcons)
+001b00b8	cFEStateChallengeReceivedPopup_v32	high	vt 468d20 slot 32 (class cFEStateChallengeReceivedPopup via pass1)
+001b0628	cFEStateChallengeReceivedPopup_v33	high	vt 468d20 slot 33 (class cFEStateChallengeReceivedPopup via pass1)
+001b0708	cFEStateChallengeReceivedPopup_v31	high	vt 468d20 slot 31 (class cFEStateChallengeReceivedPopup via pass1)
+001b0c08	cFEStateChallengeReceivedPopup_ShowWaiting	med	sets +0x6d4, kT_OVRCMNWaitPlayer on staticTextSetchallenge, TextAccept/TextDecline state
+001b0d30	cFEStateChallengeReceivedPopup_ShowAcceptDecline	med	resets +0x6d4, re-enables TextAccept, TextDecline = kT_BTNDecline
+001b0f28	cFEStateOnlineCharacterSelect_CharToListIndex	med	index of character id in 10-entry display-order table 0x440f68 (same table fills the char listbox)
+001b14d8	cFEStateOnlineCharacterSelect_v25	high	vt 468c10 slot 25 (class cFEStateOnlineCharacterSelect via pass1)
+001b15d8	cFEStateOnlineCharacterSelect_v31	high	vt 468c10 slot 31 (class cFEStateOnlineCharacterSelect via pass1)
+001b1760	cFEStateOnlineCharacterSelect_ShowOpponentChar	med	string TextOpponentSelect set to character name (BE char interface)
+001b1b10	cFEStateOnlineCharacterSelect_ShowCharacter	med	loops 30 characters calling ShowCharStats, shows opponent name for selected
+001b1b98	cFEStateOnlineCharacterSelect_ShowCharStats	med	strings 0LeftValue/0LeftAttribute/0RightValue/0RightAttribute: 7 attribute bars per side
+001b22a0	cFEStateChatRoom_v32	high	vt 46ae58 slot 32 (class cFEStateChatRoom via pass1)
+001b2378	cFEStateChatRoom_RefreshPlayerList	med	strings PlayerListMenu / PlayerListItem%02d; fills player names, room title
+001b25e0	NetFE_FormatRoomName	med	splits 'category.name', maps category to kT_POPUP232Elite/Advanced/Voice/Beginner + name (UCS-2)
+001b27b0	cFEStateChatRoom_ShowPlayerInfo	med	TextPlayerName/TextRanking/TextGamesPlayed/TextWinRatio/TextDisconnects/TextOverallRanking for selected player
+001b2cd0	cFEStateChatRoom_AddChatLine	med	builds 'name<sep>text' cBXString into cUITextScroll +0x6f0 and scrolls
+001b2da0	cFEStateChatRoom_v25	high	vt 46ae58 slot 25 (class cFEStateChatRoom via pass1)
+001b33d8	cFEStateChatRoom_OnKeyboardDone	med	keyboard id 2 -> private message to selected user; id 4 -> room chat text
+001b35b0	cFEStateChatRoom_OnBuddyActionEvent	med	buddy action popup results: challenge/message/messenger/block/report (kT_POPUP235SubmittingAbuse)
+001b3978	cFEStateChatRoom_SelectPlayerByName	med	finds player index by strcmp in room list, UIMenu_SetSelection on PlayerListMenu
+001b3a30	cFEStateChatRoom_v31	high	vt 46ae58 slot 31 (class cFEStateChatRoom via pass1)
+001b3bf0	cFEStateChatRoom_UpdatePlayerQuality	med	per visible PlayerListItem%02d row: connection quality icons via NetFE_SetQualityIcons
+001b3d20	cFEStateChatRoom_HighlightPlayer	med	strings PlayerListItem%02d / whitebar%02d; moves highlight bar, ShowPlayerInfo
+001b45e8	cFEStateNetConfig_StartConnect	med	kT_POPUPCMNYourNetwork/NotDetected (0x843) or kT_POPUP200ConnectingISP (0x80e) + connect with selected config
+001b47c0	cFEStateNetConfig_ShowCheckingCardPopup	med	string kT_MEMFECheckingCardPS2 with port number, popup id 0x83f
+001b4888	cFEStateNetConfig_ShowCardErrorPopup	med	kT_MEMFENotDetectedFile/kT_MEMOVNotFormattedPS2/kT_MEMFECorruptPS2/kT_POPUP200DifferentPS2 + Retry/Continue
+001b4c40	cFEStateNetConfig_OnRetryPopupEvent	med	on 0xf resets port, ShowCheckingCardPopup, state 1
+001b4cd8	cFEStateNetConfig_LoadConfigList	med	string LBSettings; fills config name listboxes (+0x6e4/+0x6e8) from network config file entries
+001b4fa0	cFEStateNetConfig_HandleLoadError	med	maps config load result (-15/-200/...) to ShowCardErrorPopup ids 0x841/0x842
+001b5068	cFEStateNetConfig_SetListVisible	med	shows/hides config listboxes and menu items (+0x6e4..+0x6fc) by entry count
+001b5268	cFEStateNetConfig_StartCardScan	med	resets port and lists, ShowCheckingCardPopup, state +0x708 = 1; callers Init/OnWidgetAction
+001b54b8	cFEStateNetConfig_v25	high	vt 468b00 slot 25 (class cFEStateNetConfig via pass1)
+001b5bd8	cFEStateNetConfig_OnCreateConfigPopupEvent	med	on 0xf launches ssx_LoadNetGuiElf (network configuration GUI), string TextCreateConfig
+001b5e28	cFEStateNetConfig_v31	high	vt 468b00 slot 31 (class cFEStateNetConfig via pass1)
+001b6740	NetConfigAuthPopup_v24	high	vt 4689f0 slot 24 (class NetConfigAuthPopup via pass1)
+001b6e10	cFEStateAuthDNASError_v24	high	vt 4688e0 slot 24 (class cFEStateAuthDNASError via pass1)
+001b70d0	cFEStateNetAccountMem_SetState	med	memcard account save/load state machine: kT_MEMFECheckingCardPS2, OverWriteFile, FormatCardPS2, DeleteAccount popups
+001b7650	cFEStateNetAccountMem_ShowPopup	med	configures shared popup buttons/title/text and id, then ShowPopup; callers SetState/ShowErrorPopup
+001b7e40	cFEStateNetAccountMem_ShowErrorPopup	med	kT_MEMOVNotFormattedPS2/OnlineTooBigPS2/OnlineCorruptPS2/CardRemoved/FormatFailed popups
+001b8238	cFEStateNetAccountMem_FormatNotDetectedText	med	kT_MEMFENotDetectedFile/Size/kT_MEMOVNotDetectedPS2 text by state +0x6dc
+001b83c0	cFEStateNetAccountMem_FormatFailedText	med	kT_MEMOVLoadFailedPS2NGC/SaveFailed/DeleteFailedError/FormatFailed text by state +0x6dc
+001b8860	cFEStateNetAccountMem_v24	high	vt 4687d0 slot 24 (class cFEStateNetAccountMem via pass1)
+001b9088	cFEStateCreateStep1_v25	high	vt 4686c0 slot 25 (class cFEStateCreateStep1 via pass1)
+001b91c8	cFEStateCreateStep1_OnSaveAccountAnswer	med	yes -> cFEStateNetAccountMem popup (0x82c) with account; no -> cFEStateSelectPersona
+001b9488	cFEStateCreateStep1_v31	high	vt 4686c0 slot 31 (class cFEStateCreateStep1 via pass1)
+001b9558	cFEStateCreateStep1_AllFieldsFilled	med	true when name/password/confirm/email cBXStrings all non-empty
+001b9820	cFEStateCreateStep1_OnKeyboardDone	med	keyboard ids 10-13 -> name / masked password / confirm / email fields
+001b9950	cFEStateCreateStep1_SetTruncatedText	med	measures text with UIText font, truncates and appends ellipsis to fit width
+001b9b18	cFEStateCreateStep1_ValidateEmail	med	strings kT_POPUP210EmailMissing/EmailLength/EmailInvalid
+001b9cd8	cFEStateCreateStep1_IsEmailFormatValid	med	true when string contains '@' and '.'
+001b9d68	cFEStateCreateStep1_ValidateAccountName	med	strings kT_POPUP210AccountNameMissing/Length/Invalid (4-16 chars, alnum/space)
+001b9f68	cFEStateCreateStep1_CharInRange	med	only caller ValidateAccountName: lo <= c <= hi
+001b9fa0	cFEStateCreateStep1_ValidatePassword	med	strings kT_POPUP210PasswordMissing/Length/Match
+001ba110	cFEStateCreateStep1_ValidateFields	med	ValidateAccountName && ValidatePassword && ValidateEmail
+001ba178	cFEStateCreateStep1_BackupAccountInfo	med	copies password/confirm/email/flags from account (+0x6d0) to +0x6d4..; clears change flags
+001ba218	cFEStateCreateStep1_RestoreAccountInfo	med	inverse of BackupAccountInfo (writes saved fields back to account)
+001ba280	cFEStateCreateStep1_SubmitEdits	med	string kT_POPUP210EditingAccount; submits changed account or goes to SelectPersona
+001ba358	cFEStateCreateStep1_DetectChanges	med	compares fields with backup, sets account change flags +0x44/+0x48/+0x4c
+001ba8b8	cFEStateCreateStep2_v25	high	vt 4685b0 slot 25 (class cFEStateCreateStep2 via pass1)
+001ba9f8	cFEStateCreateStep2_SubmitAccount	med	string kT_POPUP211Submitting (0x820), create account or LobbyMan_Connect
+001bab28	cFEStateCreateStep2_v31	high	vt 4685b0 slot 31 (class cFEStateCreateStep2 via pass1)
+001bac90	cFEStateCreateStep2_OnSubmitResult	med	only caller cFEStateCreateStep2_v31: 'pmal' kT_POPUP211InvalidParentalEmail, 'dupl' -> CreateDuplicate, 'tooy' age
+001bb0e8	cFEStateCreateStep2_OnParentEmailEntered	med	on 0xf stores entered text in account +0x10 (parental email) and SubmitAccount
+001bb158	cFEStateCreateStep2_OnSaveAccountAnswer	med	yes -> cFEStateNetAccountMem (0x82c); no -> kT_POPUP201Verify login
+001bb840	cFEStateCreateStep2_FillDayList	med	listbox 1..GetDaysInMonth(month,year), clamps selected day
+001bb968	cFEStateCreateStep2_IsLeapYear	med	y%4==0 && (y%100!=0 || y%400==0)
+001bb9b0	cFEStateCreateStep2_GetDaysInMonth	med	Feb 28/29 via IsLeapYear, else 30/31 alternating with July/Aug shift
+001bba18	cFEStateCreateStep2_IsEmailFormatValid	med	true when string contains '@' and '.' (copy of Step1 helper, no callers)
+001bbaa8	cFEStateCreateStep2_ValidateFields	med	only caller OnWidgetAction; wraps CheckLegalAccepted
+001bbac8	cFEStateCreateStep2_CheckAge	med	strings kT_POPUP211UnderAge (<13) / kT_POPUP211Age13to17 + kT_POPUPParentEmail
+001bbc40	cFEStateCreateStep2_CheckLegalAccepted	med	string kT_POPUP211AcceptLegal
+001bc190	cFEStateCreateDuplicate_v25	high	vt 4684a0 slot 25 (class cFEStateCreateDuplicate via pass1)
+001bc290	cFEStateCreateDuplicate_SubmitAccount	med	string kT_POPUP211Submitting (0x820) + account create request (as CreateStep2)
+001bc400	cFEStateCreateDuplicate_FillNameSuggestions	med	string SelectName%d: up to 4 suggested names
+001bc4f0	cFEStateCreateDuplicate_v31	high	vt 4684a0 slot 31 (class cFEStateCreateDuplicate via pass1)
+001bc818	cFEStateCreateDuplicate_OnSaveAccountAnswer	med	yes -> cFEStateNetAccountMem (0x82c); no -> kT_POPUP201Verify login
+001bcca8	cFEStateLobbyMenu_v32	high	vt 46a7f8 slot 32 (class cFEStateLobbyMenu via pass1)
+001bd428	cFEStateLobbyMenu_OnKeyboardDone	med	keyboard id 8 (room password) -> RequestJoinRoom
+001bd540	cFEStateLobbyMenu_RequestJoinRoom	med	string kT_POPUP231EnteringRoom (0x829), joins room with optional password
+001bd610	cFEStateLobbyMenu_CreateRoom	med	kT_POPUP231UniqueRoom (empty name) else kT_POPUP231SubmittingCreateRoom (0x828) + create request
+001bd738	cFEStateLobbyMenu_v31	high	vt 46a7f8 slot 31 (class cFEStateLobbyMenu via pass1)
+001bd848	cFEStateLobbyMenu_OnNetResult	med	only caller cFEStateLobbyMenu_v31: pending popup 0x828 -> OnCreateRoomResult, 0x829 -> OnJoinRoomResult
+001bd8c8	cFEStateLobbyMenu_OnJoinRoomResult	med	'pass' kT_POPUP231RoomPassword/EnterPassword, 'full'/'urom' kT_POPUP231InvalidRoom
+001bda88	cFEStateLobbyMenu_OnCreateRoomResult	med	'filt' ProfanityRoom, 'dupl' AlreadyExists, 'full' kT_POPUP231MaxRooms
+001bdcf8	cFEStateLobbyMenu_OnCreateRoomPopupEvent	med	only caller cFEStateLobbyMenu_OnChildEvent for child 0x823; on event 0xf calls CreateRoom(name,pwd,...) from popup fields
+001bdd60	cFEStateLobbyMenu_PromptRoomPassword	med	child 0x82a event 0xf: opens keyboard popup with kT_POPUP231EnterPassword
+001bde48	cFEStateLobbyMenu_v25	high	vt 46a7f8 slot 25 (class cFEStateLobbyMenu via pass1)
+001bdf60	cFEStateLobbyMenu_ShowRoomTab	med	hides all 4 room-list widgets (+0x730) then shows the one whose id matches param
+001bdfd8	cFEStateLobbyMenu_HideRoomTabs	med	SetVisible(0) on the 4 widgets at +0x730
+001be038	cFEStateLobbyMenu_ClampRoomSelections	med	clamps saved selection of the 4 room list boxes (+0x708) to item count and reselects
+001be0a8	cFEStateLobbyMenu_RefreshRoomLists	high	clears the 4 room UIListBoxes, splits room names at '.', sorts into category lists; kT_231NoAvailableRooms
+001be510	cFEStateLobbyMenu_RefreshPlayerList	med	wrapper: fill player list (0x1be540) + update scroll arrows (0x1be720)
+001be540	cFEStateLobbyMenu_FillPlayerList	high	string kT_231PlayersInRoom; fills 10 player-name texts from lobby room user list
+001be720	cFEStateLobbyMenu_UpdatePlayerScrollArrows	med	shows up arrow if scroll offset>0, down arrow if offset+10 < player count
+001bec78	cFEStateNetCreateRoomPopup_ValidateRoomName	high	kT_POPUP231UniqueRoom error popup when room name empty; returns name non-empty
+001bed28	cFEStateNetCreateRoomPopup_v31	high	vt 46a6e8 slot 31 (class cFEStateNetCreateRoomPopup via pass1)
+001bed58	cFEStateNetCreateRoomPopup_v25	high	vt 46a6e8 slot 25 (class cFEStateNetCreateRoomPopup via pass1)
+001bee30	cFEStateLogin_ctor	high	stores vptr 0x468388 (cFEStateLogin) at +8 after net-FE base ctor; called by cFEStateRelogin_ctor
+001bf228	cFEStateLogin_v31	high	vt 468388 slot 31 (class cFEStateLogin via slots 4/4)
+001bf378	cFEStateLogin_v33	high	vt 468388 slot 33 (class cFEStateLogin via slots 4/4)
+001bf438	cFEStateLogin_OnAccountMemPopupEvent	med	child 0x82c (cFEStateNetAccountMem mode 3) event 0xf: refreshes TextUseAccount/TextDelectAccount/rectangles, Menu0000 selection
+001bf5a8	cFEStateLogin_OnDisconnectPopupEvent	med	child 0x848 (kT_POPUPCMNDisconnect yes/no) event 0xf: switches to new cFEStateNetConfig, disconnects buddy/lobby
+001bfae0	cFEStateLogin_v25	high	vt 468050,468388 slot 25 (class cFEStateLogin via pass1)
+001bfd98	cFEStateOnlineMainMenu_v25	high	vt 46ad48 slot 25 (class cFEStateOnlineMainMenu via pass1)
+001c0138	cFEStateOnlineMainMenu_OnLeavePopupEvent	med	child 0x82d (kT_POPUP230WarningLeaving) event 0xf: switches to cFEStateMainMenu, disconnects BuddyMan/LobbyMan
+001c0240	cFEStateOnlineMainMenu_OnDisconnectPopupEvent	med	child 0x846 (kT_POPUPCMNDisconnectServer) event 0xf: disconnects, pushes cFEStateNetAccountMem (0x832)
+001c0358	cFEStateOnlineMainMenu_v31	high	vt 46ad48 slot 31 (class cFEStateOnlineMainMenu via pass1)
+001c03d0	cFEStateOnlineAgreement_ctor_2	high	stores vptr 0x46ac38 (cFEStateOnlineAgreement) after net-FE base ctor
+001c0460	cFEStateOnlineAgreement_ctor_3	high	stores vptr 0x46ac38 (cFEStateOnlineAgreement) after net-FE base ctor (default args)
+001c0e88	cFEStateOnlineAgreement_v31	high	vt 46ac38 slot 31 (class cFEStateOnlineAgreement via pass1)
+001c0ea8	cFEStateOnlineAgreement_v25	high	vt 46ac38 slot 25 (class cFEStateOnlineAgreement via pass1)
+001c13e0	cFEStateNetQuickPlayPopup_SetOptionsHintVisible	med	SetVisible on Txt_Options and ps2Square widgets
+001c1488	cFEStateNetQuickPlayPopup_v25	high	vt 46ab28 slot 25 (class cFEStateNetQuickPlayPopup via pass1)
+001c19c8	cFEStateNetQuickPlayPopup_v31	high	vt 46ab28 slot 31 (class cFEStateNetQuickPlayPopup via pass1)
+001c1d30	cFEStateNetSSXWorld_v25	high	vt 46aa18 slot 25 (class cFEStateNetSSXWorld via pass1)
+001c21c0	cFEStateNetQuickMessages_v25	high	vt 46a908 slot 25 (class cFEStateNetQuickMessages via pass1)
+001c2418	cFEStateNetQuickMessages_RefreshAll	med	calls RefreshMessage for indices 0..9
+001c2468	cFEStateNetQuickMessages_RefreshMessage	high	'Q%d: ' + quick message text from BE interface 4, set into text widget i
+001c2578	cFEStateNetQuickMessages_SetTextEllipsized	med	only caller RefreshMessage; truncates string until it fits widget width, appends ellipsis (0x4a1bd0), sets text
+001c2a18	cFEStateNetQuickMessages_StoreEditedMessage	high	kT_POPUP206EmptyMessages on empty; copies keyboard text into quick-message slot, saves, refreshes
+001c2ba8	cFEStateNetQuickMessages_OnResetPopupEvent	med	child 0x83b (kT_POPUP206CheckResetMessages) yes: resets quick messages via BE interface 4, saves, refreshes
+001c2c50	cFEStateNetQuickMessages_OnSavePopupEvent	med	child 0x83a (kT_POPUP206SaveQuickMessage): yes -> cFEStateOptionsDeviceSelect, no -> cFEStateNetSSXWorld
+001c2d90	cFEStateStats_ctor_2	high	stores vptr 0x468278 (cFEStateStats) after net-FE base ctor
+001c2e70	cFEStateStats_v32	high	vt 468278 slot 32 (class cFEStateStats via pass1)
+001c3310	cFEStateStats_RefreshResults	high	ResultsMenu / personaItem0%i / resultsItem0%i / pointsItem0%i strings: fills 10 leaderboard rows
+001c3570	cFEStateStats_v25	high	vt 468278 slot 25 (class cFEStateStats via pass1)
+001c4538	cFEStateStats_SetEventCourseVisible	high	SetVisible on Txt_event/EventsMenu/EventList/txt_Course/CoursesMenu/CourseList/boxes
+001c47a8	cFEStateStats_FillEventList	high	EventList filled from category table (kT_CMNBackCountry) per category +0x6e0
+001c49c8	cFEStateStats_FillCourseList	high	CourseList filled with track names matching selected event; resets ResultsMenu
+001c4b78	cFEStateStats_ResetResultsPage	med	zeroes results scroll offset +0x6e8 (used by RefreshResults) and calls lobby-manager reset 0x25e348; 3 cFEStateStats callers
+001c4cd8	cFEStateStats_v31	high	vt 468278 slot 31 (class cFEStateStats via pass1)
+001c4d28	cFEStateStats_FocusNextColumn	med	cycles focus index +0x6e4 forward over 4 widgets, skipping disabled ones (recursive)
+001c4e40	cFEStateStats_FocusPrevColumn	med	cycles focus index +0x6e4 backward over 4 widgets, skipping disabled ones
+001c4f58	cFEStateStats_FormatTime	med	sprintf '%02d:%02d.%02d' min/sec/ms from ticks; only caller cFEStateStats_RefreshResults
+001c5058	cFEStateNetNews_ctor_2	high	stores vptr 0x468168 (cFEStateNetNews) after net-FE base ctor
+001c5108	cFEStateNetNews_v32	high	vt 468168 slot 32 (class cFEStateNetNews via pass1)
+001c5430	cFEStateNetNews_v31	high	vt 468168 slot 31 (class cFEStateNetNews via pass1)
+001c5540	cFEStateNetNews_v25	high	vt 468168 slot 25 (class cFEStateNetNews via pass1)
+001c55f8	cFEPopupConfirm_CfgCtor	med	popup config sub-object ctor: stores its vptr 0x46cca8 then resets fields (0x1c5630); embedded at popup+0xbc
+001c5630	cFEPopupConfirm_CfgReset	med	clears popup config (option count, text descriptors, 5 option-confirm entries); called by createPopup getter 0x1a9c50
+001c5750	cFEPopupConfirm_CfgDtor	med	vt 0x46cca8 slot 1 (config sub-object dtor), restores vptr, optional delete
+001c5780	cFEPopupConfirm_CfgSetOptionString	med	option i text descriptor = {2 (ascii), str}; type 2 -> UIText_SetString in 0x1c8050
+001c57a0	cFEPopupConfirm_CfgSetOptionWideString	med	option i text descriptor = {1 (wide), str}; type 1 -> UIText_SetWideString
+001c57c0	cFEPopupConfirm_CfgSetOptionTextId	high	option i text descriptor = {3, StrHash id}; callers pass StrHash('kT_BTNOK'/'kT_CMNYes'/'kT_CMNNo'); type 3 -> UIText_SetTextId
+001c5800	cFEPopupConfirm_CfgGetOption	med	returns &cfg.option[i] (cfg+0x24+i*8); used by option layout 0x1c7388
+001c5838	cFEPopupConfirm_CfgSetOptionConfirmWide	med	option-confirm entry i (cfg+0x54+i*0xc) = {1 wide text, arg}; entries open the 'Confirmation Popup'
+001c5860	cFEPopupConfirm_CfgClearOptionConfirm	med	clears option-confirm entry i (type 0)
+001c5878	cFEPopupConfirm_CfgSetOptionConfirmTextId	med	option-confirm entry i = {3 text id, arg}
+001c58d0	cFEPopupConfirm_CfgGetOptionConfirm	med	returns &cfg.optionConfirm[i] (cfg+0x54+i*0xc)
+001c58e8	cFEPopupConfirm_BaseCtor	med	ctor of popup base vt 0x46cbd8 (UIState_ctor_2, config at +0xbc); used by 'createPopup', 'Confirmation Popup', cFEPopupConfirm_ctor
+001c5a90	cFEPopupConfirm_BaseDtor	med	vt 0x46cbd8 slot 1; destroys two cBXStrings + config, UIState_dtor; called by cFEPopupConfirm_dtor
+001c5dd8	cFEPopupConfirm_Rebuild	med	if active: reset layout, apply config +0xbc, apply bg scale, call own slot 6; called after reusing popup (0x1a9bc0)
+001c6230	cFEPopupConfirm_FindWidgets	high	looks up whitefg/redbg/grey background/Big outline/.../popupText/popupTitle/EnterTextBox/Option%d and caches them + base positions
+001c66e8	cFEPopupConfirm_ApplyBackgroundStyle	med	style +0x31c (0 small,1 big,2 black bg): shows/hides background shape widgets, resets colours
+001c6b08	cFEPopupConfirm_ApplyConfig	med	copies config (id, flags, option-confirms) into popup and runs all layout passes (title, text, options, frame, text entry)
+001c6d30	cFEPopupConfirm_LayoutTextEntry	med	option count -1 mode: shows StaticTextBoxLabel/EnterTextBox/TextBoxPair/EnterBackground, measures, else hides them
+001c7040	cFEPopupConfirm_LayoutPostText	med	positions popupPost (+0x78) below body and word-wraps config text +0x4c
+001c70f0	cFEPopupConfirm_ResizeTextWidgets	med	sets size (slot 21) of popupText/popupPost/popupTitle from given width/height
+001c7258	cFEPopupConfirm_LayoutBodyText	med	positions popupText (+0x74), computes wrap width and word-wraps config text +4
+001c7388	cFEPopupConfirm_LayoutOptions	med	sets Option0..4 texts from config option descriptors, measures, hides unused options
+001c7620	cFEPopupConfirm_ComputeBackgroundScale	med	from content size and background style computes scale +0x278/+0x27c (padding 15/10 or 20/15)
+001c7738	cFEPopupConfirm_ApplyBackgroundScale	med	writes scale vector (+0x50) into background shape widgets for the current style
+001c78c0	cFEPopupConfirm_PositionBackground	med	positions background/outline/shadow shapes around content for the current style
+001c7be0	cFEPopupConfirm_GetCenteredX	med	(640 - width)/2 - baseX unless right-aligned flag +0x2cc
+001c7c20	cFEPopupConfirm_LayoutFrame	med	computes bg scale/position then offsets Menu/buttons/text/title/post widgets
+001c7eb0	cFEPopupConfirm_LayoutTextEntryBox	med	sizes EnterTextBox (+0x80) and scales EnterBackground (+0x8c) to fit popup width
+001c8050	cFEPopupConfirm_SetTextFromDesc	med	text descriptor {0 empty,1 wide,2 ascii,3 text id} -> UIText_SetWideString/SetString/SetTextId
+001c80e8	cFEPopupConfirm_DescToString	med	text descriptor -> cBXString (wide converted, text id looked up, fallback 'String %08x')
+001c8320	cFEPopupConfirm_MeasureDesc	med	measures text descriptor with widget font (Font_MeasureText/W), 'String %08x' fallback
+001c84a8	cFEPopupConfirm_MeasureLine	med	Font_MeasureText of an ascii line with widget scale, height from font line height
+001c8568	cFEPopupConfirm_MeasureLineW	med	Font_MeasureTextW of a wide line with widget scale, height from font line height
+001c8628	cFEPopupConfirm_GetWidgetSize	med	widget slot 20 (GetSize) -> rect width/height at +8/+0xc
+001c8678	cFEPopupConfirm_LayoutTitle	med	popupTitle (+0x7c): hidden if no title descriptor else set text, measure, add to content size
+001c8758	cFEPopupConfirm_LayoutMenu	med	centres Menu0000 (+0x6c) and TextBoxPair horizontally, aligns options
+001c88c8	cFEPopupConfirm_PositionButtons	med	positions buttons widget (+0x70) at base pos + menu offset
+001c8930	cFEPopupConfirm_SetWidgetAlign	med	sets alignment bits 13-18 of widget flags +0x14 and shifts x by half width
+001c8a38	cFEPopupConfirm_ResetLayout	med	restores cached base position/scale of all popup widgets before re-layout
+001c9038	cFEPopupConfirm_GetTextBoxSizeW	high	tag 'getTextBoxSize'; splits wide string at '\\\\'/CR and accumulates line sizes
+001c9210	cFEPopupConfirm_GetTextBoxSize	high	tag 'getTextBoxSize'; splits ascii string at '\\\\'/CR and accumulates line sizes
+001c93b0	cFEPopupConfirm_GetDescLineWrapSize	med	dispatches text descriptor to GetMessageLineWrapSize(W)
+001c94b0	cFEPopupConfirm_GetMessageLineWrapSizeW	med	wide variant of getMessageLineWrapSize (tag 'UITEXTTEMP'): width of text until it exceeds the widget width
+001c9648	cFEPopupConfirm_GetMessageLineWrapSize	high	tag 'getMessageLineWrapSize'
+001c97e0	cFEPopupConfirm_SetWrappedText	med	sets descriptor text into popupText/popupPost with word wrapping and adds height
+001c9938	cFEPopupConfirm_WordWrapW	med	inserts CR at last space when line exceeds widget width, measures, UIText_SetWideString
+001c9b28	cFEPopupConfirm_SetTextMeasured	med	GetTextBoxSize + UIText_SetString
+001c9b68	cFEPopupConfirm_AccumulateSize	med	size.w = max(size.w, rect.w); size.h += rect.h
+001c9b98	cFEPopupConfirm_OpenConfirmPopup	high	tag 'Confirmation Popup' with kT_CMNYes/kT_CMNNo using option-confirm entry i
+001c9cd0	cFEPopupConfirm_AdjustDrawLayer	med	adds param to draw-layer bits 8-12 of every popup widget flag word
+001ca150	cFEPopupConfirm_GetSelection	med	Menu0000 selected index (minus 1 if title row) or stored +0x168; caller 0x1ab3d0
+001ca180	cFEPopupConfirm_OnWidgetNotify	high	vt 0x46cbd8/0x46c890 slot 20 (OnWidgetNotify); highlights selected option colour
+001ca298	cFEPopupConfirm_OnWidgetAction	high	vt slot 19 (OnWidgetAction): select -> notify parent / Confirmation Popup / cKeyboardPopup, back -> 0x14
+001ca488	cFEPopupConfirm_HideWidget	med	null-checked widget SetVisible(0) (slot 9)
+001ca4c0	cFEPopupConfirm_ShowWidget	med	null-checked widget SetVisible(1) (slot 9)
+001ca4f8	cFEPopupConfirm_v24	high	vt 0x46cbd8/0x46c890 slot 24; forwards to parent state slot 24
+001ca528	cFEPopupConfirm_Update	high	vt slot 12 (Update): optional parent slot 12 call then UIState_Update
+001ca578	cFEPopupConfirm_Render	high	vt slot 15 (Render): UIState_Render
+001ca598	cFEPopupConfirm_OnChildEvent	high	vt slot 17 (OnChildEvent): closes on 0xf..0x14, keyboard popup 0x15/0x16 handling
+001ca6a0	cFEPopupConfirm_CheckAndFixTextEntry	high	tag 'checkAndFixTextEntry': truncates entry text with ellipsis to fit EnterTextBox
+001ca8a0	cUIStateBuyPopup_ResetParams	med	clears the buy-popup parameter block at +0x48; called twice by cUIStateBuyPopup_ctor
+001ca900	cUIStateBuyPopup_SetSongCreditParams	high	kT_OVRSong / kT_OVRCMNBuySongCredit into params; caller cFEStateRequestLine_OpenBuyPopup
+001ca980	cUIStateBuyPopup_SetMusicTrackParams	high	kT_OVRSong / kT_16BuyMusicTrack into params; caller cFEStateRequestLine_OpenBuyPopup
+001caa18	cUIStateBuyPopup_SetRewardItemParams	high	kT_OVRCMNBuyItem + Poster/Card/Art/Video/Toy/CheatChar colon label by reward type
+001cab10	cUIStateBuyPopup_SetItemParams	high	kT_CMNItemColon / kT_OVRCMNBuyItem; caller cFEStateCharEquip_OpenBuyPopup
+001caf58	cUIStateBuyPopup_SetUberTrickParams	high	kT_OVRCMNUbertrick / kT_OVRCMNBuyThisUber; caller cFEStateUberTrick_OnWidgetAction
+001cafc0	cUIStateBuyPopup_SetAttribParams	high	kT_OVRCMNBuyAttributesColon; caller cFEStateBuyAttrib_OnWidgetAction
+001cb3d0	cKeyboardPopup_v24	high	vt 46bec8 slot 24 (class cKeyboardPopup via pass1)
+001cb418	cKeyboardPopup_SetText	med	copies initial string into entry buffer +0x74, sets cursor/window, enables enter (0x37) by min length, refreshes keys; 11 callers before push
+001cb500	cKeyboardPopup_MoveLeft	med	cursor key +0x140 -1 with wrap to row end (+13) on 14-wide grid, skips '*' and disabled keys; caller cKeyboardPopup_HandleInput
+001cb650	cKeyboardPopup_MoveRight	med	cursor key +0x140 +1 with wrap to row start (-13), skips '*' and disabled keys
+001cb7f0	cKeyboardPopup_MoveUp	med	cursor key -14 with wrap to bottom row; special cases for function/digit/bottom rows
+001cb9b0	cKeyboardPopup_MoveDown	med	cursor key +14 with wrap to top row; special cases for top/row4/bottom rows
+001cbb70	cKeyboardPopup_MoveUpFromTopRow	med	MoveUp helper for keys 0..13: jumps to bottom-row keys 0x4b/0x4c/0x4f or column search
+001cbc48	cKeyboardPopup_MoveDownFromTopRow	med	MoveDown helper for keys 4/5 -> 0x10/0x12 or column search down
+001cbce8	cKeyboardPopup_MoveDownFromBottomRow	med	MoveDown helper for bottom keys 0x4b/0x4c wrapping to top rows
+001cbdb0	cKeyboardPopup_MoveUpFromDigitRow	med	MoveUp helper for keys 0xe..0x1b (digit row) to top row or bottom keys
+001cbf20	cKeyboardPopup_MoveUpFromBottomRow	med	MoveUp helper for keys 0x4c/0x4f -> 0x42 or column search up
+001cbfc0	cKeyboardPopup_MoveDownFromRow4	med	MoveDown helper for keys 0x38..0x45 -> bottom keys 0x4b/0x4c or column search
+001cc090	cKeyboardPopup_FindEnabledInColumnFromTop	med	starts 4 rows up (cursor-0x38) and steps +14 until IsKeyEnabled
+001cc0e0	cKeyboardPopup_FindEnabledInColumnFromBottom	med	starts 4 rows down (cursor+0x38 or given key) and steps -14 until IsKeyEnabled
+001cc140	cKeyboardPopup_StepUpToEnabledKey	med	steps cursor -14 until IsKeyEnabled
+001cc190	cKeyboardPopup_StepDownToEnabledKey	med	steps cursor +14 until IsKeyEnabled
+001cc1e0	cKeyboardPopup_PressKey	med	activates key +0x140: ESC closes, F-keys insert quick message, backspace/caps/shift/clear/enter/arrows, else types char
+001cc620	cKeyboardPopup_InsertChar	med	writes char at cursor +0x134 in buffer +0x74, advances cursor up to max length +0x60
+001cc7c8	cKeyboardPopup_TypeCurrentKey	med	InsertChar of current key's char from lower/upper layout tables (caps/shift)
+001cc848	cKeyboardPopup_RefreshEntryText	high	string 'EnterValue': updates scroll window and sets visible text (masked '*' when +0x70 password)
+001cc8d8	cKeyboardPopup_UpdateScrollWindow	high	strings EnterValue/ExtendCursorLeft/ExtendCursorRight: fits visible substring +0x138..+0x13c to field width
+001ccc30	cKeyboardPopup_UpdateCursor	high	strings EnterValue/CharacterCursor: sizes and positions caret widget at cursor character
+001cce98	cKeyboardPopup_MaskText	med	fills +0xf4 with '*' for strlen(param) (password display)
+001ccf00	cKeyboardPopup_SetStaticText	high	string 'StaticValue': UIText_SetString or stash in cBXString +0x424 before screen exists
+001ccf70	cKeyboardPopup_SetStaticWideText	high	tag 'cKeyboardPopup_setStatic' / 'StaticValue': UIText_SetWideString or stash copy +0x428
+001cd020	cKeyboardPopup_SetStaticTextId	high	string 'StaticValue': UIText_SetTextId or stash id +0x42c
+001cd088	cKeyboardPopup_SetMaxLength	med	clamps 0..63 into +0x60 (max chars used by InsertChar/AppendQuickMessage)
+001cd0b0	cKeyboardPopup_SetMinLength	med	clamps 0..63 into +0x64 (enter key enabled when strlen >= it, see SetText)
+001cd0d8	cKeyboardPopup_GetKeyWidgetName	high	builds 'keyboard_'/'cursor_' + key name (F%d, Lshift, clear, arrLeft, enter, space...) for key index
+001cd708	cKeyboardPopup_RefreshKeys	med	for all 0x54 keys sets label (case-dependent) and enabled colour, positions cursor highlight
+001cd9a0	cKeyboardPopup_SetSpecialKeyLabel	high	kT_POPUPKeyboardBackspace/CapsLock/Shift/Clear/Tab/Enter/Space/ESC labels for special keys
+001ce3c8	cKeyboardPopup_SetKeyEnabled	med	sets key enabled flag in lower (+0x148) and/or upper (+0x298) layout table; 29 callers (e.g. key 0x37 enter)
+001ce408	cKeyboardPopup_SetDigitKeysDisabled	med	SetKeyEnabled(!param) for keys 0xf..0x18 ('1'..'0') in table 1
+001ce468	cKeyboardPopup_SetFunctionKeysEnabled	med	SetKeyEnabled(param) for keys 0..13 (ESC, F1..F10) in both tables
+001ce4c8	cKeyboardPopup_ApplyFontScale	med	font render size = font base size * widget scale (+0x50)
+001ce520	cKeyboardPopup_EnsureCursorOnEnabledKey	med	if current key disabled, MoveDown
+001ce560	cKeyboardPopup_IsKeyEnabled	med	returns enabled flag of key from layout table chosen by caps/shift (+0x68/+0x6c), optional other-table out
+001ce5e0	cKeyboardPopup_AppendQuickMessage	med	F-key: appends quick message i (BE interface 4, as cFEStateNetQuickMessages) to entry, clamped to max length
+001ce6f0	cFEStateTrophyRoom_CountEventEntries	med	counts valid (>=0) entries (max 5) in trophy event table 0x45aad8[peak*0x28+type*10]
+001ce758	cFEStateTrophyRoom_SetEventName	high	sets event label: kT_OVRCMNEarnings/Collectibles, 'Happiness %s'/'Ruthless %s'/'Throne %s', kT_EventPk*Race/Jam, track name
+001ce9e0	cFEStateTrophyRoom_SetEventStatText	high	kT_CMNYouEarnedNum / kT_CMNColllectNum / kT_CMNChalCompNum / kT_OVRCMNYourBestTime / YourBestScore text for an event
+001ceea0	cFEStateRewardGallery_ctor	high	stores vptr 0x46a3c8 (cFEStateRewardGallery base) after UIState_ctor; called by all six RewardGallery* ctors
+001cfdd0	cFEStateRewardGallery_FindTextureByName	med	looks up name in loaded entry table (+0x7c, 12-byte entries) and returns texture handle or -1
+001cfe60	cFEStateRewardGallery_RequestShapeLoad	med	if slot 25 returns a file, queues async load (+0x8ec request id) and sets loading flag; only caller Init
+001cff10	cFEStateRewardGallery_PollShapeLoad	med	when async load completes: registers textures, frees request, sets loaded flag, refreshes page
+001cfff8	cFEStateRewardGallery_RegisterTextures	med	SHPS_GetEntryName for each shape entry, registers texture and stores name/handle table
+001d00c0	cFEStateRewardGallery_ReleaseTextures	med	releases registered textures and pending load; called by all RewardGallery dtors
+001d0238	cFEStateRewardGallery_CheckRewardsReady	med	only caller cFEStateRewardGallery_Update; polls BERewardInt ready, then InitButtons (slot 28) and computes page count
+001d0320	cFEStateRewardGallery_PurchaseItem	med	slot 30 of cFEStateRewardGallery vt 46a3c8; BERewardInt call(item,1), re-reads cash from BEEconInt, refreshes info/cash text
+001d03f8	cFEStateRewardGallery_ViewItem	high	slot 30-46 base methods; allocs 'cFEStateVideoPlayer' for type 6 else 'cFEStatePreviewReward' for selected item, PushPopup
+001d0510	cFEStateRewardGallery_OpenBuyPopup	high	slot 32; allocs 'cUIStateBuyPopup' with item name/price/cash and PushPopup
+001d05f0	cFEStateRewardGallery_IsItemOwned	med	slot 38; BERewardInt query on (rider, category, type, index); true -> 'ViewItem' help and real icon instead of questmark
+001d0648	cFEStateRewardGallery_UpdateHelpText	high	slot 33; picks 'kT_129HELPBuyItem'/'ViewItem'/'BuyInPeakN'/'SaveCashItem' help string for selection
+001d0890	cFEStateRewardGallery_RefreshRowIcons	med	slot 39; per column: item icon if owned, else 'questmark'/'dollar sign' texture; hides cells past item count
+001d0b00	cFEStateRewardGallery_RefreshPage	med	slot 40; calls slot 39 for every row then slots 46,45,44,41,42 (arrows, selection, counts, page text, item info)
+001d0bc8	cFEStateRewardGallery_UpdatePageText	high	slot 41; formats 'kT_OVRCMNPageOf' page x/y, shows 'L1_ps2'/'R1_ps2' when >1 page
+001d0d30	cFEStateRewardGallery_UpdateItemInfo	med	slot 42; sets item name text (+0x908) and price text (+0x90c, blank if owned)
+001d0e78	cFEStateRewardGallery_UpdateCashText	med	slot 43; formats cash (+0x54) into text widget +0x910
+001d0eb8	cFEStateRewardGallery_UpdateCountText	med	slot 44; sprintf owned count (+0x6c) and total (+0x68) into two text widgets
+001d0f30	cFEStateRewardGallery_UpdateSelection	med	slot 45; moves highlight widget (+0x8f8) over selected button (+0x8fc), sets its icon
+001d10a8	cFEStateRewardGallery_UpdateScrollArrows	med	slot 46; up arrow visible if first row>0, down arrow if more rows below
+001d11a8	cFEStateRewardGalleryPosters_v26	high	vt 46a248 slot 26 (class cFEStateRewardGalleryPosters via pass1)
+001d11f8	cFEStateRewardGalleryPosters_InitButtons	high	vt 46a248 slot 28; family slot 28 = InitButtons (1 named siblings)
+001d1340	cFEStateRewardGalleryTradingCards_v26	high	vt 46a0c8 slot 26 (class cFEStateRewardGalleryTradingCards via pass1)
+001d1390	cFEStateRewardGalleryTradingCards_InitButtons	high	vt 46a0c8 slot 28; family slot 28 = InitButtons (1 named siblings)
+001d14d8	cFEStateRewardGalleryConceptArts_v26	high	vt 469f48 slot 26 (class cFEStateRewardGalleryConceptArts via pass1)
+001d1528	cFEStateRewardGalleryConceptArts_InitButtons	high	vt 469f48 slot 28; family slot 28 = InitButtons (1 named siblings)
+001d1670	cFEStateRewardGalleryVideos_v26	high	vt 469dc8 slot 26 (class cFEStateRewardGalleryVideos via pass1)
+001d16c0	cFEStateRewardGalleryVideos_InitButtons	high	vt 469dc8 slot 28; family slot 28 = InitButtons (1 named siblings)
+001d1808	cFEStateRewardGalleryToys_v26	high	vt 469c48 slot 26 (class cFEStateRewardGalleryToys via pass1)
+001d1858	cFEStateRewardGalleryToys_InitButtons	high	vt 469c48 slot 28; family slot 28 = InitButtons (1 named siblings)
+001d1990	cFEStateRewardGalleryCheatChars_InitButtons	high	vt 469ac8 slot 28; family slot 28 = InitButtons (1 named siblings)
+001d1a60	cFEStateRewardGalleryCheatChars_v27	high	vt 469ac8 slot 27 (class cFEStateRewardGalleryCheatChars via pass1)
+001d20d8	cFEStatePreviewReward_SetItem	med	called by RewardGallery_ViewItem after cFEStatePreviewReward_ctor; stores type/item, requests image for types 3,4,5,7
+001d2150	cFEStatePreviewReward_RequestImage	med	only caller cFEStatePreviewReward_SetItem; async-loader request (type 9) for item file, handle -> +0x6c
+001d2198	cFEStatePreviewReward_PollImageLoad	med	only caller cFEStatePreviewReward_Update; when async load done builds texture, picks portrait/landscape widget, releases request
+001d2598	cFEStateVideoPlayer_SetMovie	med	called after cFEStateVideoPlayer_ctor (RewardGallery, BonusMaterial); strcpy movie name to +0x48 and optional 2nd name to +0x148
+001d25e8	cFEStateVideoPlayer_StartPlayback	med	only caller cFEStateVideoPlayer_Init; pauses audio, VidEnginePlayer_Open + VidEnginePlayer_Play
+001d2638	cFEStateVideoPlayer_Finish	med	only caller cFEStateVideoPlayer_Update; resumes audio and UIStateMgr_CloseTopStates
+001d3160	cFEStateMountainRoom_RequestImage	med	only caller cFEStateMountainRoom_ctor; async-loader request (type 10) if none pending, handle -> +0xbc
+001d31c0	cFEStateMountainRoom_PollImageLoad	med	only caller cFEStateMountainRoom_Update; when async load done builds texture into widget +0x50 and releases request
+001d32e0	cFEStateMountainRoom_ShowImage	med	callers MountainRoom_OnWidgetAction/PollImageLoad; makes image widgets +0x48 (+0x4c if texture loaded) visible
+001d3ec8	cFEStatePeakRoom_UpdateHelpText	med	only caller cFEStatePeakRoom_OnWidgetAction; BERewardInt query picks between two help strings (one 'kT_HELPSelectGoal')
+001d3f80	cFEStatePeakRoom_RefreshGoalList	med	only caller cFEStatePeakRoom_OnWidgetAction; hides 5 goal rows then fills visible ones with reward icons from BERewardInt
+001d47a0	cFEStateTrophyRoom_ShowTrophyImage	med	callers TrophyRoom_OnWidgetCreated/OnWidgetAction/LoadTrophyTextures; shows loaded trophy texture for index, else hides widget
+001d4890	cFEStateTrophyRoom_ShowTrophyInfo	med	only caller cFEStateTrophyRoom_OnWidgetAction; hides info widget +0x4c for 0, else shows and fills it for entry n-1
+001d4918	cFEStateTrophyRoom_RequestTrophyImages	med	only caller cFEStateTrophyRoom_ctor; issues async-loader requests (type 10) for up to 5 trophy images from BERewardInt
+001d4b20	cFEStateTrophyRoom_ReleaseTrophyImages	med	only caller cFEStateTrophyRoom_dtor; frees 5 textures and cancels pending async loads
+001d5138	cFEStateRelogin_v31	high	vt 468050 slot 31 (class cFEStateRelogin via pass1)
+001d5280	cFEStateRelogin_v33	high	vt 468050 slot 33 (class cFEStateRelogin via pass1)
+001d59a0	MemCardUI_WriteSaveData	med	MCManager callback [0] installed by memcard base init 1d5488; BELibrary_WriteSaveData into buffer, builds '%s-%s%04d' file name, starts write
+001d5c28	MemCardUI_ReadSaveChunk	med	MCManager callback [7]; on first chunk checks EA_Crc16 of save buffer vs stored CRC then BELibrary_ReadSaveData; copies up to 0x4000 bytes
+001d5df0	MemCardUI_BeginLoad	med	MCManager callback [6]; sets load flags, gets BESaveInt save buffer or allocs 'read buffer', starts card read (FUN_0023ca28)
+001d5f40	MemCardUI_ApplyLoadedData	med	MCManager callback [8]; hands loaded buffer to BESaveInt (iface 5), re-applies sound mode and volumes
+001d64c0	MemCardUI_ApplySoundMode	med	only caller MemCardUI_ApplyLoadedData; maps saved mode to output mode, recreates SSXAudioSystem keeping volumes, reloads FE audio
+001d66b0	MemCardUI_OnSaveDone	med	MCManager callback [3]; message 'kT_MEMOVSaveDone' with 'kT_CMNContinue' button
+001d67c8	MemCardUI_OnLoadDone	med	MCManager callback [10]; message 'kT_MEMOVLoadDone' with 'kT_CMNContinue' button
+001d68e8	MemCardUI_ConfirmOverwrite	med	MCManager callback [0x11]; formats 'kT_MEMOVOverWriteFile' with save title, shows confirm popup
+001d6ad0	MemCardUI_OnLoadFailed	med	MCManager callback [9]; message 'kT_MEMOVLoadFailedPS2NGC'
+001d6c28	MemCardUI_OnSaveFailed	med	MCManager callback [4]; message 'kT_MEMOVSaveFailed'
+001d6d88	MemCardUI_OnCardNotDetected	med	MCManager callback [0xf]; message 'kT_MEMOVNotDetectedPS2' with 'kT_MEMOVRetry'/'kT_BTNCancel' or Continue
+001d7010	MemCardUI_OnSaveCorrupt	med	MCManager callback [0x10]; message 'kT_MEMOVGameCorruptPS2'
+001d7190	MemCardUI_ShowCorruptSave	med	called from memcard OnChildEvent 1d8700; message 'kT_MEMCorruptSavePS2'
+001d7318	MemCardUI_ConfirmFormat	med	MCManager callback [0x12]; message 'kT_MEMFormatCardPS2' yes/no popup
+001d7420	MemCardUI_OnFormatDone	med	MCManager callback [0x14]; message 'kT_MEMOVFormatComplete'
+001d7548	MemCardUI_OnFormatFailed	med	MCManager callback [0x13]; message 'kT_MEMFEFormatFailed'
+001d7688	MemCardUI_ConfirmDelete	med	MCManager callback [0x15]; message 'kT_MEMConfirmDeletePS2' with save title
+001d77e8	MemCardUI_OnCardNotDetected2	med	MCManager callback [0x16]; message 'kT_MEMOVNotDetectedPS2' with Retry/Cancel (state 0x12)
+001d7998	MemCardUI_OnNotEnoughSpace	med	MCManager callback [0x18]; message 'kT_MEMFETooBigPS2' with free-space value
+001d7b18	MemCardUI_OnNotEnoughSpace2	med	MCManager callback [0x17]; same 'kT_MEMFETooBigPS2' message using a stack buffer
+001d7c68	MemCardUI_OnNameExists	med	MCManager callback [0x28]; message 'kT_FENameAlreadyExists'
+001d7d70	MemCardUI_OnDifferentCard	med	MCManager callback [0x2a]; message 'kT_MEMDifferentMemcardPS2'
+001d7ed0	MemCardUI_OnDeleteDone	med	MCManager callback [0xc]; message 'kT_MEMDeleteSuccess'
+001d8020	MemCardUI_OnDeleteFailed	med	MCManager callback [0xd]; message 'kT_MEMOVDeleteFailedError'
+001d8240	MemCardUI_OnNoCards	med	MCManager callback [0x27], also called by DeviceSelect/ProfileLoad; puts 'kT_MEMNoCardsPS2' into 'text box message'
+001d83a8	MemCardUI_CheckCardsPresent	med	MCManager callback [0x25]; if no card present shows 'kT_MEMNoCardsPS2', else switches screen mode 3
+001d9bd0	cFEPopupConfirm_v26	high	vt 46c890 slot 26 (class cFEPopupConfirm via pass1)
+001d9ca8	cFEPopupConfirm_v27	high	vt 46c890 slot 27 (class cFEPopupConfirm via pass1)
+001d9d18	cFEPopupConfirm_v25	high	vt 46c890 slot 25 (class cFEPopupConfirm via pass1)
+001d9e20	cFEStateNetHelpPopup_v24	high	vt 46a618 slot 24 (class cFEStateNetHelpPopup via pass1)
+001da110	cFEStateNetHelpPopup_BuildBodyText	med	only caller cFEStateNetHelpPopup_TransitionIn; concatenates up to 3 localized body strings (+0x58..) into text widget +0xac
+001da4a8	cFEStateNetHelpPopup_ClearFields	med	only caller cFEStateNetHelpPopup_ctor; zeroes counts/body ids, 7 button text ids, button icons = -1
+001da510	cFEStateNetHelpPopup_SetButtonHelp	med	called from 21 net-state slot-25 help setups; sets button line i text id (+0x68) and icon index (+0x84)
+001da528	cFEStateNetHelpPopup_SetNumButtons	med	called from 21 net-state slot-25 help setups; sets +0x48 = number of button lines shown by TransitionIn
+001da530	cFEStateNetHelpPopup_SetBodyText	med	called from 21 net-state slot-25 help setups; sets body text id i (+0x58), concatenated by BuildBodyText
+001da648	LobbyMenu_InitCreateAccountPage	med	MenuSysPage ctor (vt 46d690) built by Login Method page: 'Create Account' title, 'Login Name:'/'Password:' edit items
+001da7e8	LobbyMenu_InitLoginPage	med	MenuSysPage ctor (vt 46d6e8) built by Login Method page with action 'Login'; 'Login Name:'/'Password:' edit items
+001da988	LobbyMenu_InitLoginMethodPage	med	only caller LobbyMenu_ctor; MenuSysPage 'Login Method' with submenus Create Account / Login
+001daac8	LobbyMenu_InitCreatePersonaPage	med	MenuSysPage ctor (vt 46d588): 'Create Persona', 'Persona Name:' edit, 'Create' action
+001dabd0	LobbyMenu_InitDeletePersonaPage	med	MenuSysPage ctor (vt 46d5e0): 'Delete Persona' with 4 persona action items
+001dacb8	LobbyMenu_InitSelectPersonaPage	med	only caller LobbyMenu_ctor; MenuSysPage 'Select Persona' with 4 persona items + Create/Delete Persona submenus
+001dae20	LobbyMenu_InitSelectRoomPage	med	only caller LobbyMenu_ctor; MenuSysPage 'Select Room' with 12 room items
+001daf08	LobbyMenu_InitRoomOccupantsPage	med	only caller LobbyMenu_ctor; MenuSysPage 'Room Occupants' with 24 user items + action
+001db028	LobbyMenu_InitChatPage	med	only caller LobbyMenu_ctor; MenuSysPage 'Chat Menu' with 'Enter Chat:' edit and 14 canned chat lines
+001db148	LobbyMenu_InitChallengePage	med	only caller LobbyMenu_ctor; MenuSysPage "You've been Challenged!" with Accept/Decline
+001db2b0	LobbyMenu_InitAbortPage	med	only caller LobbyMenu_ctor; MenuSysPage with single 'Abort' action
+001db330	LobbyMenu_FillDeletePersonaPage	med	only caller LobbyMenu_FillPersonaPages; sets Delete Persona items from persona list (skips first), hides the rest
+001db418	LobbyMenu_FillPersonaPages	med	callers LobbyMenu_UpdateState; fills Select Persona items from persona list, toggles Create/Delete submenus by count
+001db528	LobbyMenu_FillRoomList	med	only caller LobbyMenu_UpdateState; fills room items from lobby, else 'Receiving Room List...'
+001db620	LobbyMenu_FillOccupantList	med	only caller LobbyMenu_UpdateState; fills user items from room, else 'No users in room...'
+001db718	StdList_Clear	med	callers LobbyMan_dtor and net-FE base dtor; frees every node of a circular sentinel list and relinks sentinel to itself
+001db778	StdVector_InsertAux	med	vector<4-byte> insert with grow-by-doubling, alloc tag 'StlBlock' (std::vector::_M_insert_aux)
+001db918	StdVector_InsertAux_2	med	identical vector<4-byte> insert instance, alloc tag 'StlBlock'
+001dbab8	LobbyMenu_OnAbortPageAction	med	slot 3 (item action) of Abort page vt 46d378; forwards to LobbyMenu handler
+001dbad8	LobbyMenu_OnChallengePageAction	med	slot 3 of Challenge page vt 46d3d0; item 0 -> accept handler, item 1 -> decline handler
+001dbb20	LobbyMenu_OnChatPageAction	med	slot 3 of Chat Menu page vt 46d428; sends selected chat line text
+001dbb48	LobbyMenu_OnOccupantsPageAction	med	slot 3 of Room Occupants page vt 46d480; id -2 (extra action item) and user items go to two LobbyMenu handlers
+001dbb90	LobbyMenu_OnSelectRoomPageAction	med	slot 3 of Select Room page vt 46d4d8; joins selected room (id >= 0)
+001dbbc0	LobbyMenu_OnSelectPersonaPageAction	med	slot 3 of Select Persona page vt 46d530; selects persona by item id
+001dbbe8	LobbyMenu_OnCreatePersonaPageAction	med	slot 3 of Create Persona page vt 46d588; passes persona name edit buffer (+0x180)
+001dbc10	LobbyMenu_OnDeletePersonaPageAction	med	slot 3 of Delete Persona page vt 46d5e0; deletes persona by item id
+001dbc38	LobbyMenu_OnCreateAccountPageAction	med	slot 3 of Create Account page vt 46d690; passes name (+0x180) and password (+0x1ac)
+001dbc68	LobbyMenu_OnLoginPageAction	med	slot 3 of Login page vt 46d6e8; passes name (+0x180) and password (+0x1ac)
+001dbc98	FrontEnd_StaticInitDestroy	med	gcc __static_initialization_and_destruction(init,0xffff) called by _GLOBAL_ I/D thunks 1e12b0/1e12d0; FE colour/matrix globals 4c63xx
+001dc990	Font_DrawTextVarargs	med	varargs wrapper: packs args and calls Font_DrawTextF; callers DebugMenu_Render
+001dc9d0	Font_DrawTextScaledVarargs	med	varargs wrapper: scales font size (+0x30/34 -> +0x38/3c), Font_DrawTextF, restores; caller DebugMenu_Render
+001dca40	Font_DrawTextCenteredVarargs	med	varargs wrapper around Font_DrawTextCenteredF; callers DebugMenu_Render, LobbyMenu_Render
+001dca80	Font_DrawTextRightVarargs	med	varargs wrapper around Font_DrawTextRightF; callers DebugMenu_Render, LobbyMenu_Render
+001dcc78	FEUICustom_dtor	high	slot 1 of FEUICustom vt 46d810 (deleting dtor; folded base-vptr store 46dd28 at +4, then __builtin_delete)
+001dcd00	DebugMenu_v01	high	vt 46d798 slot 1 (class DebugMenu via pass1)
+001dcda0	LobbyMenu_DestroyLoginPage	med	slot 1 (dtor) of Login page vt 46d6e8; destroys 6 items then MenuSysPage_dtor
+001dce20	LobbyMenu_DestroyCreateAccountPage	med	slot 1 (dtor) of Create Account page vt 46d690; destroys 6 items then MenuSysPage_dtor
+001dcea0	LobbyMenu_DestroyLoginMethodPage	med	slot 1 of Login Method page vt 46d638, called by LobbyMenu_dtor; destroys sub-pages and items
+001dcfc8	LobbyMenu_DestroyDeletePersonaPage	med	slot 1 (dtor) of Delete Persona page vt 46d5e0
+001dd060	LobbyMenu_DestroyCreatePersonaPage	med	slot 1 (dtor) of Create Persona page vt 46d588
+001dd0c8	LobbyMenu_DestroySelectPersonaPage	med	slot 1 of Select Persona page vt 46d530, called by LobbyMenu_dtor
+001dd258	LobbyMenu_DestroySelectRoomPage	med	slot 1 (dtor) of Select Room page vt 46d4d8
+001dd2f0	LobbyMenu_DestroyRoomOccupantsPage	med	slot 1 (dtor) of Room Occupants page vt 46d480
+001dd398	LobbyMenu_DestroyChatPage	med	slot 1 (dtor) of Chat Menu page vt 46d428
+001dd440	LobbyMenu_DestroyChallengePage	med	slot 1 (dtor) of Challenge page vt 46d3d0
+001dd4c0	LobbyMenu_DestroyAbortPage	med	slot 1 (dtor) of Abort page vt 46d378
+001dd6a8	cFEState_ctor_2	med	unreferenced ctor variant in implicit block: UIState_ctor(this,0) then vptr 46d0d0 (cFEState vt, cFEState_dtor slot 1)
+001dd6e0	cFEState_ctor_3	med	unreferenced ctor variant: UIState_ctor then vptr 46d0d0 (cFEState)
+001dd718	cFEState_ctor_4	med	unreferenced ctor variant: UIState_ctor_2 then vptr 46d0d0 (cFEState)
+001ddbd0	cFEPopupConfirm_BaseCtor_2	med	unreferenced ctor variant: UIState_ctor_2, vptr 46cbd8 (cFEPopupConfirm base, BaseDtor slot 1), cFEPopupConfirm_CfgCtor(+0xbc)
+001ddc48	cUIStateBuyPopup_ctor_2	med	unreferenced ctor variant: UIState_ctor_2, vptr 46cb08 (cUIStateBuyPopup), inits member +0x48
+001dde78	cFEPopupConfirm_ctor_2	med	unreferenced ctor variant: base ctor then vptr 46c890 (cFEPopupConfirm)
+001ddee8	cFEStateOptions_ctor_2	med	unreferenced ctor variant: UIState_ctor(this,0), vptr 46c7c0 (cFEStateOptions)
+001ddf48	cFEStateOptionsGame_ctor_2	med	unreferenced ctor variant: UIState_ctor(this,0), vptr 46c6f0 (cFEStateOptionsGame)
+001ddfb0	cFEStateOptionsSound_ctor_2	med	unreferenced ctor variant: UIState_ctor(this,0), vptr 46c620 (cFEStateOptionsSound)
+001de018	cFEStateOptionsHUD_ctor_2	med	unreferenced ctor variant: UIState_ctor(this,0), vptr 46c550 (cFEStateOptionsHUD)
+001de080	cFEStateOptionsController_ctor_2	med	unreferenced ctor variant: UIState_ctor(this,0), vptr 46c480 (cFEStateOptionsController)
+001de0f0	cFEStateOptionsSaveLoad_ctor_2	med	unreferenced ctor variant: UIState_ctor(this,0), vptr 46c3b0 (cFEStateOptionsSaveLoad)
+001de178	cFEStateOptionsDeviceSelect_ctor_2	med	unreferenced ctor variant: memcard base ctor 1d53b0 then vptr 46c228 (cFEStateOptionsDeviceSelect)
+001de1b8	FEScreenSelectProfile_ctor_2	med	unreferenced ctor variant: UIState_ctor(this,0), vptr 46c158 (FEScreenSelectProfile, FEScreenSelectProfile_dtor)
+001de240	cFEStateProfileLoad_ctor_2	med	unreferenced ctor variant: memcard base ctor 1d53b0 then vptr 46bfd0 (cFEStateProfileLoad)
+001de288	cKeyboardPopup_ctor_2	med	unreferenced ctor variant: UIState_ctor_2, vptr 46bec8 (cKeyboardPopup)
+001de4b0	cFEOptionsCredits_ctor_2	med	unreferenced ctor variant: UIState_ctor(this,0), vptr 46bdf8 (cFEOptionsCredits)
+001de4e8	cFEStateEventSelect_ctor_2	med	unreferenced ctor variant: UIState_ctor(this,0), vptr 46bd28 (cFEStateEventSelect), member init +0x48
+001de558	cFEStateBackground_ctor_2	med	unreferenced ctor variant: UIState_ctor(this,0), vptr 46bc58 (cFEStateBackground)
+001de590	cFEStateBackground_ctor_3	med	unreferenced ctor variant: UIState_ctor, vptr 46bc58 (cFEStateBackground)
+001de5f0	cFEStateTransition_ctor_2	med	unreferenced ctor variant: UIState_ctor(this,0), vptr 46bb88 (alloc tag 'cFEStateTransition' in FEUICustom_ctor)
+001de628	cFEStateTransition_ctor_3	med	unreferenced ctor variant: UIState_ctor, clears +0x48/+0x4c, vptr 46bb88 (cFEStateTransition)
+001de668	cFEStateTransition_dtor	high	was FEUICustom_v01: slot 1 of vt 46bb88, UIState allocated in FEUICustom_ctor with tag cFEStateTransition (was FEUICustom_v01)
+001de690	cFEStateTitle_ctor_2	med	unreferenced ctor variant: UIState_ctor(this,0), vptr 46bab8 (cFEStateTitle)
+001de6f0	cFEStateMainMenu_ctor_2	med	unreferenced ctor variant: UIState_ctor(this,0), vptr 46b9e8 (cFEStateMainMenu)
+001de750	cFEStateBonusMaterial_ctor_2	med	unreferenced ctor variant: UIState_ctor(this,0), vptr 46b918 (cFEStateBonusMaterial)
+001de7b0	NetFEState_ctor_2	med	unreferenced ctor variant: UIState_ctor_2, vptr 46b808 (NetFEState vt), same member init as NetFEState_ctor (StlBlock list head)
+001de8c8	FEScreenBlank_ctor_2	med	unreferenced ctor variant: NetFEState_ctor then vptr 46b6f8 (FEScreenBlank vt, slot 4 FEScreenBlank_Init)
+001de918	FEScreenBlank_dtor	high	slot 1 of FEScreenBlank vt 46b6f8; resets own vptr then chains NetFEState_dtor
+001de950	cFEStateMemCard_ctor_2	med	unreferenced ctor variant: memcard base ctor 1d53b0 then vptr 46b570 (cFEStateMemCard)
+001de990	FEScreenAutosavePopup_ctor_2	med	unreferenced ctor variant: UIState_ctor(this,0), vptr 46b4a0 (FEScreenAutosavePopup)
+001df380	cFEStateRiderBio_ctor_2	med	unreferenced ctor variant: UIState_ctor(this,0), vptr 46b160 (cFEStateRiderBio)
+001df3e0	cFEStateRuleSelect_ctor_2	med	unreferenced ctor variant: UIState_ctor(this,0), vptr 46b090 (cFEStateRuleSelect)
+001df470	cFEStateBraggingRights_ctor_2	med	unreferenced ctor variant: net-FE base ctor 1a8500 then vptr 46af68 (cFEStateBraggingRights)
+001df580	cFEStateChatRoom_ctor_2	med	unreferenced ctor variant: net-FE base ctor then vptr 46ae58 (cFEStateChatRoom)
+001df5c8	cFEStateOnlineMainMenu_ctor_2	med	unreferenced ctor variant: net-FE base ctor then vptr 46ad48 (cFEStateOnlineMainMenu)
+001df638	cFEStateNetQuickPlayPopup_ctor_2	med	unreferenced ctor variant: net-FE base ctor then vptr 46ab28 (cFEStateNetQuickPlayPopup)
+001df6a8	cFEStateNetSSXWorld_ctor_2	med	unreferenced ctor variant: net-FE base ctor then vptr 46aa18 (cFEStateNetSSXWorld)
+001df710	cFEStateNetQuickMessages_ctor_2	med	unreferenced ctor variant: net-FE base ctor then vptr 46a908 (cFEStateNetQuickMessages)
+001df780	cFEStateLobbyMenu_ctor_2	med	unreferenced ctor variant: net-FE base ctor then vptr 46a7f8 (cFEStateLobbyMenu)
+001df828	cFEStateNetCreateRoomPopup_ctor_2	med	unreferenced ctor variant: net-FE base ctor then vptr 46a6e8 (cFEStateNetCreateRoomPopup)
+001df900	cFEStateNetHelpPopup_ctor_2	med	unreferenced ctor variant: UIState_ctor(this,0), vptr 46a618 (cFEStateNetHelpPopup)
+001df9d8	cFEStateRewardGallery_ctor_2	med	unreferenced ctor variant: UIState_ctor(this,0), vptr 46a3c8 (cFEStateRewardGallery, _dtor at slot 1)
+001dfac8	cFEStateRewardGallery_v29	high	slot 29 of cFEStateRewardGallery vt 46a3c8 (empty in base); called by all RewardGallery dtors
+001dfaf0	cFEStateRewardGalleryPosters_ctor_2	med	unreferenced ctor variant: UIState_ctor(this,0), vptr 46a248 (cFEStateRewardGalleryPosters)
+001dfbc0	cFEStateRewardGalleryTradingCards_ctor_2	med	unreferenced ctor variant: UIState_ctor(this,0), vptr 46a0c8 (cFEStateRewardGalleryTradingCards)
+001dfc90	cFEStateRewardGalleryConceptArts_ctor_2	med	unreferenced ctor variant: UIState_ctor(this,0), vptr 469f48 (cFEStateRewardGalleryConceptArts)
+001dfd60	cFEStateRewardGalleryVideos_ctor_2	med	unreferenced ctor variant: UIState_ctor(this,0), vptr 469dc8 (cFEStateRewardGalleryVideos)
+001dfe30	cFEStateRewardGalleryToys_ctor_2	med	unreferenced ctor variant: UIState_ctor(this,0), vptr 469c48 (cFEStateRewardGalleryToys)
+001dff00	cFEStateRewardGalleryCheatChars_ctor_2	med	unreferenced ctor variant: UIState_ctor(this,0), vptr 469ac8 (cFEStateRewardGalleryCheatChars)
+001dffd0	cFEStatePreviewReward_ctor_2	med	unreferenced ctor variant: UIState_ctor(this,0), vptr 4699f8 (cFEStatePreviewReward)
+001e0098	cFEStateMountainRoom_ctor_2	med	unreferenced ctor variant: UIState_ctor(this,0), vptr 469858 (cFEStateMountainRoom)
+001e0178	cFEStatePeakRoom_ctor_2	med	unreferenced ctor variant: UIState_ctor(this,0), vptr 469788 (cFEStatePeakRoom)
+001e01d8	cFEStateTrophyRoom_ctor_2	med	unreferenced ctor variant: UIState_ctor(this,0), vptr 4696b8 (cFEStateTrophyRoom)
+001e0268	cFEStateRewardsRoom_ctor_2	med	unreferenced ctor variant: UIState_ctor(this,0), vptr 4695e8 (cFEStateRewardsRoom)
+001e0510	cFEStateAudioOptions_ctor_2	high	UIState_ctor + vptr 469448 (cFEStateAudioOptions) @+8; second ctor variant, no callers
+001e0578	cFEStateRequestLine_ctor_2	high	UIState_ctor + vptr 469378 (cFEStateRequestLine) @+8; second ctor variant
+001e07c0	FEScreenSelMulti_ctor_2	high	UIState_ctor + vptr 469248 (FEScreenSelMulti) @+8
+001e0820	cFEStateMPCircuit_ctor_2	high	UIState_ctor + vptr 469178 (cFEStateMPCircuit) @+8; second ctor variant
+001e0880	cFEUseExistingAccount_ctor_2	high	net-FE base ctor 1a8500 + vptr 469068 (cFEUseExistingAccount); same field init as cFEUseExistingAccount_ctor
+001e08d8	cFEStateSelectPersona_ctor_2	high	net-FE base ctor + vptr 468f50 (cFEStateSelectPersona) @+8
+001e0950	cFEStateChallengePopup_ctor_2	high	net-FE base ctor + vptr 468e38 (cFEStateChallengePopup) @+8
+001e0a08	cFEStateChallengeReceivedPopup_ctor_2	high	net-FE base ctor + vptr 468d20 (cFEStateChallengeReceivedPopup) @+8
+001e0ac0	cFEStateOnlineCharacterSelect_ctor_2	high	net-FE base ctor + vptr 468c10 (cFEStateOnlineCharacterSelect) @+8
+001e0b28	cFEStateNetConfig_ctor_2	high	net-FE base ctor + vptr 468b00 (cFEStateNetConfig) @+8, zeroes fields
+001e0bb0	NetConfigAuthPopup_ctor_2	high	net-FE base ctor + vptr 4689f0 (NetConfigAuthPopup) @+8
+001e0c30	cFEStateAuthDNASError_ctor_2	high	net-FE base ctor + vptr 4688e0 (cFEStateAuthDNASError) @+8
+001e0ca0	cFEStateCreateStep1_ctor_2	high	net-FE base ctor + vptr 4686c0 (cFEStateCreateStep1) @+8
+001e0d68	cFEStateCreateStep2_ctor_2	high	net-FE base ctor + vptr 4685b0 (cFEStateCreateStep2) @+8
+001e0dd8	cFEStateCreateDuplicate_ctor_2	high	net-FE base ctor + vptr 4684a0 (cFEStateCreateDuplicate) @+8
+001e0e48	cFEStateLogin_ctor_2	high	net-FE base ctor + vptr 468388 (cFEStateLogin) @+8 (0x1bee30 is the main ctor)
+001e0ef8	cFEStateRelogin_ctor_2	high	calls cFEStateLogin ctor 0x1bee30 then vptr 468050 (cFEStateRelogin) @+8
+001e0f60	cFEStateNetMessenger_ctor_2	high	net-FE base ctor + vptr 467f28 (cFEStateNetMessenger) @+8
+001e0ff0	cFEStateReadMessagePopup_ctor_2	high	net-FE base ctor + vptr 467e18 (cFEStateReadMessagePopup) @+8
+001e12f0	MessageCenter_InitGroupTable	med	fills 61x20-byte message group table 441630 (type,count...) and computes running first-message index per group
+001e1458	MessageCenter_Update	med	called from GameModule_Update; inits group table once, every 600 ticks triggers timed message groups
+001e14c0	MessageCenter_TriggerGroups	med	for each of 0x3d groups of type arg (or 5) whose sent flag is clear, calls (empty) trigger stub
+001e1ad0	MessageCenter_PickForeshadowMessage	high	alloc tag 'AddForeshadowMessage'; collects unposted messages of group not matching char, returns random one or 0x100
+001e1c10	MessageCenter_PostForeshadow	med	per-peak (0..2) checks flags 0x1c..0x21, picks group by char via PickForeshadowMessage and posts it
+001e2b38	MessageCenter_GetCharacterFlagId	med	switch character 0..9 -> flag id 0xc..0x15, else 0x3d
+001e2bb8	MessageCenter_CountGroupMessages	med	sums message count of groups of given type in table 441630 (only unlocked ones unless arg2)
+001e2c80	MessageCenter_GetGroupMessageId	med	returns message id at nth position among groups of given type in table 441630, -1 if none
+001e2d58	MessageCenter_IsMessageOfType	med	returns group-table type of message id's group (4c6c08[id].group) == arg
+001e2ea0	MessageCenter_GetSenderNameHash	high	strings kT_CHARMoby..kT_CHARViggo, kT_CMNDJAtomica, kT_FAQFolder: StrHash of sender name for index 0..12
+001e2fe0	MessageCenter_PostMessage	med	appends (id,variant) to player inbox (25 slots, drops oldest), clears read bit, notifies message-center overlay slot 24
+001e3100	MessageCenter_PickVariant	med	only caller PostMessage; random variant byte by message group type 3/4/5/8, else 0xff
+001e31b8	MessageCenter_RemoveMessage	med	shifts inbox entries down from index, keeps read bitmask +0xc8 in sync, decrements count +0xcc
+001e3268	MessageCenter_RemoveMessageById	med	finds inbox entry with id and removes it; caller cOVState_ViewPopup_OnWidgetAction
+001e32c8	MessageCenter_RemoveMessagesOfGroup	med	removes every inbox entry whose message belongs to given group
+001e3388	MessageCenter_FindMessage	med	returns inbox index of message id or -1
+001e33e8	MessageCenter_GetMessageCount	med	returns inbox count byte +0xcc
+001e3408	MessageCenter_GetUnreadCount	med	counts inbox entries whose read bit in +0xc8 is clear; feeds kT_OVRCMNUnread text
+001e3460	MessageCenter_GetFirstUnread	med	finds first inbox entry without read bit, stores index, returns its message id (-1 if none)
+001e35f0	MessageCenter_GetEntry	med	returns pointer to inbox entry n (inbox + n*8)
+001e3620	MessageCenter_GetMessageId	med	returns message id of inbox entry n
+001e3650	MessageCenter_GetMessageVariant	med	returns variant byte (+4) of inbox entry n
+001e39f8	MessageCenter_GetInbox	med	returns player-0 profile inbox via BENewPlayerInt (FUN_00147908); used by all inbox helpers
+001e3a30	MessageCenter_IsFlagSet	med	BENewPlayerInt profile bit test (bitset at profile+0xd0) for message flag id
+001e3a78	MessageCenter_SetFlag	med	BENewPlayerInt profile bit set/clear (FUN_00147a30) for message flag id
+001e3c00	OVScreenMessageCenter_ctor	high	UIState_ctor, vptr cOVStateOverlay 474e08 then OVScreenMessageCenter 474318; textures folder/minus folder/questmark
+001e4658	OVScreenMessageCenter_UpdateScrollArrows	med	shows/hides +0x15c/+0x160 widgets depending on scroll pos +0x174 and total messages > 8
+001e4758	OVScreenMessageCenter_UpdateCountText	high	strings kT_OVRCMNTotalMsg / kT_OVRCMNUnread, sprintf message count and unread count into text widgets
+001e4840	OVScreenMessageCenter_HideWidget	med	if widget non-null calls widget slot 9 SetVisible(0)
+001e4878	OVScreenMessageCenter_ShowWidget	med	if widget non-null calls widget slot 9 SetVisible(1)
+001e48b0	OVScreenMessageCenter_RefreshList	high	strings MessageNumbers/MessageFroms/MessageSubjects/UnreadMailBitmaps/NoMessages; fills 8 visible inbox rows
+001e4c78	OVScreenMessageCenter_SetRow	med	only caller RefreshList; fills one list row: unread icon, number text, sender name (GetSenderNameHash), subject
+001e4f70	OVScreenMessageCenter_SetRowSubject	high	strings kT_MSGSubjectBCFinishLoss/Win/Aggression/Foreshadow/BeatThePeak%d; sets row subject text id
+001e5148	OVScreenMessageCenter_DeleteMessage	med	only caller OnWidgetAction; RemoveMessage(index), fixes selection, refreshes list, counts and scroll arrows
+001e5428	cOVState_ViewPopup_ShowMessage	high	callers cOVState_ViewPopup_TransitionIn; strings kT_BTNKeepMsg/kT_MSGFAQNumber, sets number, sender, subject, body for msg +0x68
+001e55d0	cOVState_ViewPopup_SetSubject	med	only caller ShowMessage; variant subject for type-1 messages else text id from message table into +0x54
+001e5638	cOVState_ViewPopup_SetVariantSubject	high	strings kT_MSGSubjectBCFinishLoss/Win/Aggression/Foreshadow/BeatThePeak%d formatted with variant into +0x54
+001e5780	cOVState_ViewPopup_SetBody	med	only caller ShowMessage; sets +0x58 text widget to message-table body text id and shows it
+001e58e0	cOVState_ViewPopup_ShowNext	med	advances to next message in group or first unread inbox entry (marks read), then ShowMessage; closes popup if none
+001e7bb0	OVScreenFinishOv_Init	med	vt 473e00 slot 4 (Init); creates 'finishov' screen, cOVStateOverlay_Init, run times, place%d, medal (platinum/silver/bronze)
+001e8098	OVScreenFinishOv_Update	med	vt 473e00 slot 12 (Update); cOVStateOverlay_Update, timer +0x9c, after 1/3 s closes all states and continues
+001e8160	OVScreenFinishOv_OnWidgetAction	med	vt 473e00 slot 19 (OnWidgetAction); action 5 when ready closes all states and continues
+001e8200	OVScreenFinishOv2_Init	med	vt 473d28 slot 4 (Init); second 'finishov' overlay class, points total (kT_OVRCMNPointstotal), kT_HELPBeatChallPeakJam
+001e87b8	OVScreenFinishOv2_Update	med	vt 473d28 slot 12 (Update); same as OVScreenFinishOv_Update with other timer step
+001e8880	OVScreenFinishOv2_OnWidgetAction	med	vt 473d28 slot 19 (OnWidgetAction); action 5 when ready closes all states and continues
+001e91a8	HUD_GetElemColor	med	copies float4 color at +0x10 of 0x24-byte HUD layout element; used by cOVStateHUD1P_Render and HUD draw helpers
+001e91f8	HUD_GetElemPos	med	converts short x,y at +0/+2 of HUD layout element to float2
+001e9220	HUD_GetElemSize	med	short w,h at +4/+6 of HUD layout element to float2; negative -> size from texture arg (+4/+8)
+001e9290	HUD_GetElemScale	med	copies float2 at +8 of HUD layout element (scale applied to font/sprite)
+001e92a8	HUD_LayoutIconText	med	parses wide string with '@token' inline icons (table 4c8980 by StrHash), measures segments with Font_MeasureTextW
+001e94e0	HUD_SetIconText	med	UStr_FromAscii into +0x4c, sets font +8 and scale +0x10, then HUD_LayoutIconText
+001e9540	HUD_SetIconTextW	med	UStr_Copy wide text into +0x4c, sets font and scale, then HUD_LayoutIconText
+001e95a0	HUD_DrawIconText	med	draws laid-out icon text: aligns by h/v mode, Font_DrawTextW for segments and sprite quads for icons
+001ec1f0	cOVStateHUD1P_v24	high	vt 474160 slot 24 (class cOVStateHUD1P via pass1)
+001f10f8	HUD_AlignElemPos	med	computes screen x/y from pos,size,scale and alignment (x mirrored around 640 by flags) via 21e750/21e7a8
+001f1190	HUD_DrawSprite	med	draws textured quad (texture arg) at pos/size*scale with color via renderer slot 71
+001f1338	HUD_DrawRect	med	draws untextured colored quad (texture id -1) at pos/size*scale via renderer slot 71
+001f16c0	HUD_DrawTimeElem	med	gets pos/scale/color of HUD layout element (with optional scale/offset/color overrides) then HUD_DrawTime
+001f1840	HUD_DrawTime	med	string '.%02d'; draws m:ss.hh time with fixed-width digits using HUD font +0x42c, optional sign/suffix
+001f1b30	HUD_DrawTextElem	med	measures and draws ASCII text at HUD layout element (align from +0x20/+0x21, font blend +0x22), returns rect
+001f22e8	HUD_DrawTextElemW	med	wide-string version of HUD_DrawTextElem (Font_MeasureTextW/Font_DrawTextW)
+001f2aa0	HUD_DrawWrappedText	med	word-wraps ASCII text (Font_FindLineBreak, 50-char lines) into HUD layout element box and draws each line
+001f2db0	HUD_DrawWrappedTextW	med	wide version of HUD_DrawWrappedText (Font_FindLineBreakW)
+001f30d8	LoadIndicator_Init	med	follows LoadIndicator_ctor (same 4-word struct); caller GameModule_Enter; text kT_ovrcmnloading + 'fefont' font
+001f3170	LoadIndicator_Clear	med	zeroes the 4 LoadIndicator words; caller GameModule_TryExit
+001f3188	LoadIndicator_Update	med	caller GameModule_Update; while busy mask +4 nonzero advances phase +8, wrapping at 2.0
+001f31e0	LoadIndicator_Draw	med	caller GameModule_RenderUI; when busy draws pulsing loading text (Font_DrawTextW) over screen
+001f36c0	LoadIndicator_SetBusy	med	sets bit n of busy mask +4 (script/stream loaders)
+001f36d8	LoadIndicator_ClearBusy	med	clears bit n of busy mask +4, resets phase +8 when mask becomes 0
+001f4ea8	cFEStateBuyAttrib_UpdateLevelText	high	strings 'lvl%d','%d.%d'; writes level text for 7 attributes; callers cFEStateBuyAttrib_Init
+001f4fc0	cFEStateBuyAttrib_UpdateCostText	high	string 'cost%d'; cost per attribute from interface 0xb, hides when maxed
+001f50b0	cFEStateBuyAttrib_UpdateBars	high	strings 'Vector%d'/'under%d'; scales attribute bars (current and pending)
+001f5240	cFEStateBuyAttrib_UpdateTotalCost	high	string 'AttributeCost'; sets text from +0xa0
+001f52a0	cFEStateBuyAttrib_UpdateMoney	high	string 'CurrentMoney'; sets text from +0xa4
+001f5300	cFEStateBuyAttrib_CommitPurchase	med	caller OnChildEvent; deducts cost, hides PopupGroup, applies pending attribute points via interface 0xb, refreshes texts
+001f5da0	cFEStateCareerStats_ShowHighlightsPage	high	strings HL_arrowup/down, checkmark%d, checkbox%d, hlsec%d, '%s Monster Trick'
+001f60e0	cFEStateCareerStats_ShowRacePage	high	strings race_arrowup, race_medals, race_track%d, '%s Race', time%d, race_medal%d
+001f6490	cFEStateCareerStats_ShowFreestylePage	high	strings fs_arrowup, fs_medals, fs_track%d, '%s Jam', fs_points%d, fs_medal%d
+001f6840	cFEStateCareerStats_SetText	med	finds screen object by name and UIText_SetString; only caller ShowRecordsPage
+001f6890	cFEStateCareerStats_ShowRecordsPage	high	strings ko_event, handplants, ubers, superubers, ubergrinds, longrail, airtime, favoriteEvent
+001f6f30	cFEStateCareerStats_CountMedals	med	caller cFEStateCareerStats_Init; counts unlocked race/freestyle events into +0x58/+0x68 and medal bitmasks +0x60/+0x70
+001f76b8	OVScreenBCFail_Init	high	vt 4735b0 slot 4; creates '90bc_fail' screen, cOVStateOverlay_Init (sibling OVScreenBCStart loads '63bc_start')
+001f7770	OVScreenBCFail_OnWidgetCreated	med	vt 4735b0 slot 18; assigns action ids 0/1/2 to three named buttons
+001f7800	OVScreenBCFail_OnWidgetAction	med	vt 4735b0 slot 19; retry/quit handling, kT_HELPRaceToBottom
+001f8118	OVScreenTopTimes_v26	high	vt 4734d0 slot 26 (class OVScreenTopTimes via slots 5/5)
+001f8448	OVScreenPauseFreeride_TransitionIn	med	slot 7 shared by 6 pause-menu vtables (472c60..473098) whose Inits call OVScreenPauseFreeride_Init; transporticon groups
+001f85c0	OVScreenPauseFreeride_OnActivate	med	slot 6 shared by the 6 pause-menu vtables; sets item colors/highlight, then UIState_OnActivate
+001f8728	OVScreenPauseFreeride_Update	med	slot 12 shared by pause-menu vtables; blinks 'NewMail' when unread messages, handles trans_out
+001f88e8	OVScreenPauseFreeride_Shutdown	med	slot 5 shared by pause-menu vtables; clears +0xc4 then cOVStateOverlay_Shutdown
+001f8948	OVScreenPauseFreeride_OnWidgetAction	med	slot 19 shared by pause-menu vtables; focus/select items, opens cFEStateAudioOptions etc.
+001f8df8	OVScreenPauseFreeride_PlayIconAnim	med	only caller OnWidgetAction; starts/stops '%s' transporticon focus animation thread
+001f8ee0	OVScreenPauseFreeride_InitMode1	med	vt 473098 slot 4; copies 6 item ids from 478160, mode +0x110=1, then OVScreenPauseFreeride_Init
+001f8f48	OVScreenPauseFreeride_InitMode2	med	vt 472fc0 slot 4; 6 items from 478178, mode 2, then OVScreenPauseFreeride_Init
+001f8fb0	OVScreenPauseFreeride_InitMode3	med	vt 472ee8 slot 4; 7 items from 478140, mode 3, then OVScreenPauseFreeride_Init
+001f9018	OVScreenPauseFreeride_InitMode4	med	vt 472e10 slot 4; 5 items from 478190, mode 4, then OVScreenPauseFreeride_Init
+001f9080	OVScreenPauseFreeride_InitMode5	med	vt 472d38 slot 4; 5 items from 4781a8, mode 5, then OVScreenPauseFreeride_Init
+001f90e8	OVScreenPauseFreeride_InitMode6	med	vt 472c60 slot 4; 3 (or 2) items from 4781c0, mode 6, then OVScreenPauseFreeride_Init
+001fb2b8	OVScreenInGameError_HandleSelect	med	only caller OVScreenInGameError_OnWidgetAction; closes overlay, continue (action 4) or quit race
+001fb378	OVScreenInGameError_ShowContinueButton	high	strings Text_ContinueGame / kT_OVRContinueRacing; enables continue button and selects it
+001fd190	FE_GetEventNameText	high	strings kT_EventPk1Race..kT_EventAllPeakJam: localized event name for event type 6..11
+001fdbf0	OVScreenSaveReplay_ctor	high	memcard overlay base ctor (mode 1) + vptr 472440; Init loads '119Save Replay' with title_Save Replay
+001fdc30	OVScreenSaveReplay_Init	high	vt 472440 slot 4; screen '119Save Replay', shows title_Save Replay, hides title_Save Records
+001fde60	OVScreenSaveReplay_Shutdown	med	vt 472440 slot 5; memcard base shutdown then Replay_BeginPlayback
+001fdf00	OVScreenSaveReplay_v33	high	vt 472440 slot 33 (siblings cFEStateMemCard_v33/OVScreenProfileSavePDA_v33)
+001fdf40	OVScreenSaveReplay_v26	high	vt 472440 slot 26 (siblings cFEStateMemCard_v26/OVScreenProfileSavePDA_v26); card info refresh
+001fe4a8	OVScreenSaveReplay_v37	high	vt 472440 slot 37 (sibling OVScreenProfileSavePDA_v37); shows/hides x_save/o_delete/ps2sq buttons
+001fe5b0	OVScreenSaveReplay_v38	high	vt 472440 slot 38 (sibling OVScreenProfileSavePDA_v38); o_delete/ps2sq visibility
+001fe648	OVScreenSaveReplay_v39	high	vt 472440 slot 39 (sibling OVScreenProfileSavePDA_v39); x_save visibility
+001fe6e8	OVScreenSaveReplay_OnWidgetAction	med	vt 472440 slot 19; save/delete/select card slot actions
+001fe8f0	OVScreenSaveReplay_OnChildEvent	med	vt 472440 slot 17; on popup closed (0x16) in state 5 resumes replay, then base handler
+001fe968	OVScreenSaveRecords_ctor	high	memcard overlay base ctor (mode 2) + vptr 4722b8; Init shows title_Save Records
+001fe9a8	OVScreenSaveRecords_Init	high	vt 4722b8 slot 4; screen '119Save Replay' with title_Save Records shown, single card slot
+001fec40	OVScreenSaveRecords_Shutdown	med	vt 4722b8 slot 5; calls memcard base shutdown
+001fec60	OVScreenSaveRecords_v33	high	vt 4722b8 slot 33 (same body as OVScreenSaveReplay_v33)
+001feca0	OVScreenSaveRecords_v26	high	vt 4722b8 slot 26 (sibling memcard v26); card info refresh
+001ff170	OVScreenSaveRecords_v37	high	vt 4722b8 slot 37 (sibling memcard v37); x_save/o_delete/ps2sq visibility
+001ff278	OVScreenSaveRecords_v38	med	vt 4722b8 slot 38 (memcard-base family slot, cf. OVScreenProfileSavePDA_v38); vt is the 'Save Replay' screen showing title_Save Records (Init 0x1fe9a8)
+001ff310	OVScreenSaveRecords_v39	med	vt 4722b8 slot 39 (cf. OVScreenProfileSavePDA_v39); toggles 'x_save' button, stores +0x224; class = Save Records variant of '119Save Replay'
+001ff3b0	OVScreenSaveRecords_OnWidgetAction	med	vt 4722b8 slot 19 (UIState OnWidgetAction, 5 select/6 back/7); Save Records screen (Init 0x1fe9a8 shows title_Save Records)
+001ff7b8	OVScreenRewardList_GetEntryText	med	callers OVScreenRewardList_Init/ShowPage; builds text of reward entry N (kT_CMNCashEarnedNum, kT_REWBoardGraphic, kT_REWAccessory); idx -1 counts into +0x9c
+001ffd08	OVScreenRewardList_ShowPage	med	only caller OVScreenRewardList_OnActivate; fills 9 rows '0'..'8' via GetEntryText from first index, toggles up/down arrow objects
+00200388	EventSelect_GetEventRecord	med	copies 0x6c-byte event record (peak,index,type) from tables 0x4781d0/0x4786e0/0x478d38; result fed to BENewRaceInt_SetEventType/SetEvent
+002006b8	EventSelect_ctor	med	called on the embedded peak/event-select component (cFEStateEventSelect_ctor this+0x48, OVScreenMap ctors this+0x9c); caches current peak from track info
+00200700	EventSelect_Init	med	called by cFEStateEventSelect_Init and OVScreenMap_Init with (this+off, screen, owner); finds MapPic, PDATemplate, hides peak/pda objects
+002009d0	EventSelect_OnWidgetCreated	med	called by cFEStateEventSelect_OnWidgetCreated / OVScreenMap_OnWidgetCreated; sets 'SP_PeakList' menu selection to current peak
+00200a70	EventSelect_TransitionIn	med	called by cFEStateEventSelect_TransitionIn / OVScreenMap_TransitionIn
+00200ac0	EventSelect_OnActivate	med	called by cFEStateEventSelect_OnActivate / OVScreenMap_OnActivate
+00200af0	EventSelect_Shutdown	med	called by cFEStateEventSelect_Shutdown / OVScreenMap_Shutdown; frees map image slot, closes PDATemplate
+00200de8	EventSelect_SetupPeakTexts	med	only caller EventSelect_TransitionIn; fills Peak%dRaceGoal/FreestyleGoal/EarningsGoal and Peak%dRaceLoc%d texts for all peaks
+00201868	EventSelect_HideMapPic	med	hides object +0x2e4 (the 'MapPic' widget found in EventSelect_Init), clears +0x2dc, sets +0x2f0
+002018a8	EventSelect_OnWidgetAction	med	called by cFEStateEventSelect_OnWidgetAction / OVScreenMap_OnWidgetAction; ConfirmMenu_*, starts chosen event (GameModeMan_StartMode)
+00202738	EventSelect_OnWidgetNotify	med	called by cFEStateEventSelect_OnWidgetNotify / OVScreenMap_OnWidgetNotify
+00202768	EventSelect_HandleInput	med	called by cFEStateEventSelect_HandleInput / OVScreenMap_HandleInput (returns 0)
+00202770	EventSelect_PostInput	med	called by cFEStateEventSelect_PostInput / OVScreenMap_PostInput; refreshes lists on menu move per mode
+00202828	EventSelect_Update	med	called by cFEStateEventSelect_Update / OVScreenMap_Update; fades MapPic in, peak%doutline, 'P%dyou are here'
+00202ad8	EventSelect_UpdateModePanels	med	sets SubTitle text and shows SelectPeak/SelectPeakGoal/SelectEvent/Locks/Indicators panels per select mode
+002030a0	EventSelect_SetMode	med	stores select mode (peak/goal/event) global, hides SP_PeakList/SPG_Peak%dGoals/Peak%d*Locations lists, sets title text
+00203990	EventSelect_LoadMapImage	med	per mode unloads map slot +0x2d8 and loads mountain (FUN_001a36e8) or peak (FUN_001a3768) map image
+00203a58	EventSelect_UpdateConfirmPopup	med	shows/hides 'ConfirmPopup', sets ConfirmMenu selection and kT_OVRCMNGoPeakNow / kT_MAPTransArea texts
+00203cb8	EventSelect_SetMapTabMode	med	stores flag in *this, sets 'maptab text' to kT_BTNShowMap or kT_BTNShowInfo
+00203d40	EventSelect_RefreshPeakList	med	strings 'SP_PeakList Art','peaklist check%d','lock%d','kT_10HELPUnlockPeak2/3'; per-peak check/lock icons and help text
+00204ff0	EventSelect_GetMedalText	med	returns localized kT_CMNPlatinum/Gold/Silver/Bronze for medal index 0..3
+00205098	EventSelect_RefreshPeakGoals	med	strings 'SPG_Peak%dGoals','peakgoal check%d','peakgoal emptybox%d','SPG_EventGoalTitle'
+00206690	EventSelect_ShowEventPaths	med	strings 'peak1racepath'..'peak3fspath','peak%dracegroup', track ids 'ara1path'...; shows map path objects for events
+00207430	EventSelect_RefreshEventList	med	strings 'Peak%dRaceLocations','SE_box%d','SE_check%d','Peak Locations Art'; event list with medals/times
+00208bb8	OVScreenSession_HideMapPic	med	only caller OVScreenSession_OnWidgetAction; hides MapPic (+0xd0) and player indicator (+0xe0), +0xdc=1
+00208f10	OVScreenSession_LoadMapImage	med	only caller OVScreenSession_Init; unloads slot +0xc4 then loads current track map (FUN_001a37f8)
+00209e78	OVScreenSession_UpdateIndicators	med	callers OVScreenSession_TransitionIn/PostInput; reads 'SessionViewPoints' selection, shows selected map indicator (+0x104[i]) vs normal (+0xe4[i])
+00209fd0	OVScreenSession_HideIndicators	med	hides player indicator +0xe0 and all map indicators +0xe4[i]/+0x104[i] (count +0xc0); same fields as OVScreenSession_CreateMapIndicators
+0020a088	OVScreenSession_DestroyIndicators	med	callers OVScreenSession_Shutdown/OnWidgetAction; hides and deletes (slot 1, flag 3) +0xe0 and the 8 indicator pairs
+0020a1a8	FE_FormatMinSec	med	formats seconds as '%02.0f:%02.0f' or '%02.0f'%02.0f"' (by locale bits) into static 0x4c6848; 10 overlay callers
+0020a4e0	OVScreenFinalStandings_RecvChatMessage	med	only caller OVScreenFinalStandings_Update; cGameComm_RecvGamePacket, appends to 'textScrollChat', hides helptext
+0020a6f0	cOVStateOverlay_PlayObjectAnim	med	finds object by name in screen +0x40, creates anim by name from UI anim set, applies (FUN_0039fcc8); 5 overlay OnActivate callers
+0020a8b0	GameUI_GetResultsScreenId	med	returns overlay id 0x16 (PeakChallengeResults), 10 (FreestyleStandings) or 0xb (FinalStandings) from event type
+0020a8f8	GameUI_OpenScreenForState	med	world.md: arg 2 pre-race / 7 results picks screen id then GameUI_OpenScreen
+0020ab50	GameUI_OpenScreen	high	world.md; switch on id 1..0x28 allocating 'cOVStateOverlay' UIState subclasses, UIStateMgr_SwitchStateImmediate
+0020bab8	GameUI_PushPopupScreen	high	same id switch/alloc tag 'cOVStateOverlay' as GameUI_OpenScreen but ends in UIStateMgr_PushPopup
+0020ca10	GameUI_OpenPauseMenu	med	GameModule_Update calls it after PadQueue_StopAllActuators when pause is pressed; opens screen 1..6 by mode (6 online)
+0020cb58	GameUI_IsReplayMenuOpen	high	UIStateMgr_FindState(StrHash('64replay')) != 0
+0020cba0	GameUI_IsPauseMenuOpen	high	UIStateMgr_FindState(StrHash('cOVTemplate_PauseMenu')) != 0
+0020cbe8	GameUI_CanOpenPauseMenu	med	GameModule_Update gate before GameUI_OpenPauseMenu; 0 if pause menu open, else active state's slot 25 query
+0020cc60	GameUI_OpenFinishScreen	med	only caller 0x233cd8 ('finishov'); opens overlay 0xc or 0xd ('finishov' screens) by event type
+0020ccf8	GameUI_HandleMenuResult	med	switch on active overlay id (+0x98) and chosen option: restart, replay (Replay_BeginPlayback), next screen, quit
+0020cfd0	GameUI_Update	med	called every frame by GameModule_Update; dispatches pending UI request gp-0x9f4 (1 HandleMenuResult, 2 resume, 3 close all, 4 state 14)
+0020d110	OVScreenPDATemplate_Open	high	alloc tag 'PDATemplate', UIState_ctor, vptr 0x4743f0 (OVScreenPDATemplate), UIStateMgr_AddBackgroundState; singleton gp-0x9e4
+0020d190	OVScreenPDATemplate_Close	med	unlinks and deletes the PDATemplate background state singleton gp-0x9e4
+0020d338	OVScreenYNDialog_Init	med	slot 4 shared by the 8 '87yndialog' overlay vtables; sets title_quit text by kind +0x9c (RestartEvent, QuitGame, ...)
+0020d4f0	OVScreenYNDialog_OnWidgetCreated	med	slot 18 shared by the yndialog vtables; 'Menu0000' default selection (0 for kind 6 else 1)
+0020d590	OVScreenYNDialog_OnWidgetAction	med	slot 19 shared by the yndialog vtables; yes/no handling per kind: restart, quit, save profile (OVScreenProfileSavePDA)
+0020dbd0	OVScreenYNDialogQuitGame_Update	med	slot 12 of vt 4748f8 (yndialog kind 1 kT_OVRCMNQuitGame); cOVStateOverlay_Update then closes when net session drops
+0020ed20	cOVStateHUD1P_UpdateRaceProgress	med	only caller cOVStateHUD1P_Update; calls RaceProgress_UpdateRider for every rider, clears per-rider flag 0x4c8bc8
+0020eda0	cOVStateHUD1P_DrawProgressMeter	med	cOVStateHUD1P_Render (1P path); draws race-progress meter quads and '%d%%' from progress table 0x4c8bc8
+0020fb40	cOVStateHUD1P_DrawProgressMeterMP	med	cOVStateHUD1P_Render (2P path, sibling of DrawProgressMeter); draws race-progress meter from table 0x4c8bc8
+002105b0	RaceProgress_ResetRider	med	only caller Rider_Place; sets per-rider reset flag in progress table 0x4c8bc8 (stride 0x18)
+002105d0	RaceProgress_SetPathData	med	stores path blob and its two offset-relocated sub-tables (gp globals 0x4a2750..58), then RaceProgress_ResetAll
+00210608	RaceProgress_ClearPathData	med	zeroes the three path globals 0x4a2750/54/58 set by RaceProgress_SetPathData
+00210618	RaceProgress_UpdateRider	med	maps rider distance-to-finish onto path segment table, clamps per-frame change, stores segment/progress in 0x4c8bc8[i]
+002108f8	RaceProgress_ResetAll	med	resets all entries of progress table 0x4c8bc8..0x4c8c57 (flag=1, rest 0)
+00210bd8	OVScreenReadPrivateMessage_SetMessageText	med	callers ReadPrivateMessage TransitionIn/Update/OnWidgetAction; 'textScrollChat' = sender name + separator + text
+00210f40	OVScreenReadPrivateMessage_OpenKeyboard	med	callers ReadPrivateMessage TransitionIn/OnWidgetAction; creates keyboard popup then cKeyboardPopup text setters
+00210fa0	OVScreenReadPrivateMessage_CreateKeyboardPopup	med	alloc tag 'cKeyboardPopup', cKeyboardPopup_ctor, UIStateMgr_PushPopup, stored at +0xe0
+00211088	OVScreenProfileSavePDA_ctor	high	memcard base ctor 0x1d53b0 then vptr 0x472928 (OVScreenProfileSavePDA), id 0x24; created by GameUI_OpenScreen(0x24)
+00211220	OVScreenProfileSavePDA_v26	high	vt 472928 slot 26 (class OVScreenProfileSavePDA via slots 5/5)
+00211380	OVScreenProfileSavePDA_RefreshCardInfo	med	'Memory card text' from MCManager_GetCardErrorText, 'player%d' profile slot names, arrowleft/arrowright
+00211850	OVScreenProfileSavePDA_v37	high	vt 472928 slot 37 (class OVScreenProfileSavePDA via slots 5/5)
+00211970	OVScreenProfileSavePDA_v38	high	vt 472928 slot 38 (class OVScreenProfileSavePDA via slots 5/5)
+00211a08	OVScreenProfileSavePDA_v39	high	vt 472928 slot 39 (class OVScreenProfileSavePDA via slots 5/5)
+00211aa8	OVScreenProfileSavePDA_v33	high	vt 472928 slot 33 (class OVScreenProfileSavePDA via slots 5/5)
+00212080	OVScreenProfileSavePDA_InitSlotLabels	med	only caller OVScreenProfileSavePDA_Init; 'player%d' rows: text and index (+0x18)
+00212138	OVScreenAutosave_ctor	high	memcard base ctor 0x1d53b0 then vptr 0x471f80 (OVScreenAutosave), id 0x25; created by GameUI_OpenScreen(0x25)
+002122e8	OVScreenAutosave_v26	high	vt 471f80 slot 26 (class OVScreenAutosave via slots 4/4)
+00212360	OVScreenAutosave_UpdateIcon	med	only caller OVScreenAutosave_v26; '@pulsingicon' anim on 'exclam', 'autosave_text' = kT_MEMAutosaving
+002124c8	OVScreenAutosave_v33	high	vt 471f80 slot 33 (class OVScreenAutosave via slots 4/4)
+002127e8	cOVStateOverlay_StaticInitDestroy	med	(1,0xffff) static-initializer pattern from 0x222428; fills overlay message tables (kT_MSGREM*) and HUD texture name tables
+0021c640	cOVStateOverlay_ctor	high	UIState_ctor(this,0) + vptr 0x474e08 (cOVStateOverlay vt, naming.md)
+0021c678	cOVStateOverlay_ctor_2	high	UIState_ctor(this,mgr) + vptr 0x474e08 (cOVStateOverlay), +0x98 = overlay id
+0021c730	OVScreenOverlayMenu_ctor	high	cOVStateOverlay base init then vptr 0x474d30 (OVScreenOverlayMenu)
+0021c798	OVScreenYNDialog_dtor	med	vt 474c58 slot 1; base yndialog vt (Init OVScreenYNDialog_Init '87yndialog'), restores cOVStateOverlay vptr + UIState_dtor
+0021c7c0	OVScreenYNDialog_ctor	med	cOVStateOverlay base init then vptr 0x474c58 (yndialog vt, Init '87yndialog')
+0021c828	OVScreenYNDialog_Update	med	slot 12 (Update) of six yndialog vts; only calls cOVStateOverlay_Update
+0021c898	OVScreenReplayMenu_ctor	high	cOVStateOverlay base init then vptr 0x474aa8 (OVScreenReplayMenu)
+0021c900	OVScreenYNDialogRestartEvent_dtor	med	vt 4749d0 slot 1; GameUI_OpenScreen id 0x17 sets kind 0 = kT_OVRCMNRestartEvent
+0021c928	OVScreenYNDialogQuitGame_dtor	med	vt 4748f8 slot 1; id 0x18 kind 1 = kT_OVRCMNQuitGame
+0021c950	OVScreenYNDialogQuitGame_ctor	med	cOVStateOverlay base init, vptr 0x4748f8, kind +0x9c = 1 (kT_OVRCMNQuitGame)
+0021c9c0	OVScreenYNDialogRestartChal_dtor	med	vt 474820 slot 1; id 0x19 kind 2 = kT_OVRCMNRestartChal
+0021c9e8	OVScreenYNDialogQuitChal_dtor	med	vt 474748 slot 1; id 0x1a kind 3 = kT_OVRCMNQuitChal
+0021ca10	OVScreenYNDialogQuitEvent_dtor	med	vt 474670 slot 1; id 0x1b kind 4 = kT_CMNQuitEventQues
+0021ca38	OVScreenYNDialogGiveUp_dtor	med	vt 474598 slot 1; id 0x1c kind 5 = kT_CMNGiveUp
+0021ca60	OVScreenYNDialogSaveBeforeQuit_dtor	med	vt 4744c0 slot 1; id 0x26 kind 6 = kT_CMNSaveBeforeQuit
+0021caa8	OVScreenPDATemplate_ctor	high	UIState_ctor + vptr 0x4743f0 (OVScreenPDATemplate)
+0021cb08	cOVState_ViewPopup_ctor_2	high	UIState_ctor(this,0) + vptr 0x474248 (cOVState_ViewPopup); cOVState_ViewPopup_ctor exists
+0021cba0	cOVStateHUD1P_ctor_2	high	same body as cOVStateHUD1P_ctor (vptr 0x474160, two meter sub-objects, +0x474=-1)
+0021cd08	OVScreenFreestyleStandings_ctor	high	cOVStateOverlay base init then vptr 0x474088 (OVScreenFreestyleStandings)
+0021cd98	OVScreenFinalStandings_ctor	high	cOVStateOverlay base init then vptr 0x473fb0 (OVScreenFinalStandings)
+0021ce28	OVScreenPeakChallengeResults_ctor	high	cOVStateOverlay base init then vptr 0x473ed8 (OVScreenPeakChallengeResults)
+0021d008	OVScreenMultiplayerStandings_ctor	high	cOVStateOverlay base init then vptr 0x473c50 (OVScreenMultiplayerStandings)
+0021d070	OVScreenHiscoreList_ctor	high	UIState_ctor(this,0), cOVStateOverlay init, vptr 0x473b78 (OVScreenHiscoreList)
+0021d0d0	OVScreenHiscoreList_ctor_2	high	UIState_ctor(this,mgr), +0x98=id, vptr 0x473b78 (OVScreenHiscoreList)
+0021d160	Font_DrawTextVarargs_2	med	varargs wrapper of Font_DrawTextF, identical to Font_DrawTextVarargs (0x1dc990) in another TU
+0021f660	cOVStateHUD1P_DrawRaceTime	med	only caller cOVStateHUD1P_Render; frames -> '%02d:%02d:%02d' (/3600, /60, %60), Font_DrawTextCentered
+0021f9b0	cOVStateHUD1P_DrawCollectedCount	med	only caller cOVStateHUD1P_Render; '%d/%d' of BEMissionInt collected-on-track (0x153520) / total (0x153350)
+00220d38	cFEStateLodge_ctor_2	high	UIState_ctor + vptr 0x473aa8 (cFEStateLodge vt); cFEStateLodge_ctor exists
+00220d98	cFEStateLodgeRiderDetail_ctor_2	high	UIState_ctor + vptr 0x4739d8 (cFEStateLodgeRiderDetail)
+00220df8	cFEStateBuyAttrib_ctor_2	high	UIState_ctor + vptr 0x473908 (cFEStateBuyAttrib)
+00220e58	cFEStateCareerStats_ctor_2	high	UIState_ctor + vptr 0x473838 (cFEStateCareerStats)
+00220ee0	OVScreenEnterLodge_ctor	high	cOVStateOverlay base init then vptr 0x473760 (OVScreenEnterLodge)
+00220f48	OVScreenBCStart_ctor	high	cOVStateOverlay base init then vptr 0x473688 (OVScreenBCStart)
+00220fa8	OVScreenBCStart_ctor_2	high	vptr 0x473688 (OVScreenBCStart) + FUN_001f7548 as in GameUI_OpenScreen(0x1d)
+00221040	OVScreenBCFail_ctor	med	cOVStateOverlay base init then vptr 0x4735b0 (overlay id 0x1e, Init 0x1f76b8 loads '90bc_fail')
+002210a0	OVScreenBCFail_ctor_2	med	vptr 0x4735b0 ('90bc_fail' overlay) + FUN_001f7738 as in GameUI_OpenScreen(0x1e)
+00221110	OVScreenBCFail_dtor	med	vt 4735b0 slot 1 ('90bc_fail' overlay); restores cOVStateOverlay vptr + UIState_dtor
+00221160	OVScreenTopTimes_ctor	high	cOVStateOverlay base init then vptr 0x4734d0 (OVScreenTopTimes)
+002211c8	OVScreenMap_ctor	high	cOVStateOverlay base init then vptr 0x4733f8 (OVScreenMap)
+00221228	OVScreenMap_ctor_2	high	vptr 0x4733f8 (OVScreenMap) + EventSelect_ctor(this+0x9c), as GameUI_OpenScreen(0x21)
+002212c8	OVScreenSession_ctor	high	cOVStateOverlay base init then vptr 0x473320 (OVScreenSession)
+00221350	OVScreenSession_ctor_2	high	cOVStateOverlay base init (id arg) then vptr 0x473320 (OVScreenSession)
+00221408	OVScreenReadPrivateMessage_ctor	high	cOVStateOverlay base init then vptr 0x473248 (OVScreenReadPrivateMessage)
+00221468	OVScreenReadPrivateMessage_ctor_2	high	cOVStateOverlay base init (id arg) then vptr 0x473248 (OVScreenReadPrivateMessage)
+002214f8	OVScreenPauseFreeride_ctor	high	cOVStateOverlay base init then vptr 0x473170 (OVScreenPauseFreeride)
+00221558	OVScreenPauseFreeride_ctor_2	high	cOVStateOverlay base init (id arg) then vptr 0x473170 (OVScreenPauseFreeride)
+002215f0	OVScreenPauseMode1_ctor	med	GameUI_OpenScreen id 1 allocs 0x114 with vt 473098; Init slot4 sets pause mode +0x110=1 (Return/RestartEvent/../GiveUp) then OVScreenPauseFreeride_Init
+00221658	OVScreenPauseMode1_ctor_2	med	3-arg twin of 0x2215f0 (+0x98 = id); stores vt 473098 over cOVStateOverlay 474e08
+002216c8	OVScreenPauseMode1_dtor	high	vt 473098 slot 1; resets vptr to cOVStateOverlay 474e08 and calls UIState_dtor
+002216f0	OVScreenPauseMode2_ctor	med	GameUI_OpenScreen id 2, vt 472fc0; Init sets pause mode 2 (Return/RestartChal/../QuitChal) then OVScreenPauseFreeride_Init
+00221758	OVScreenPauseMode2_ctor_2	med	3-arg twin storing vt 472fc0
+002217c8	OVScreenPauseMode2_dtor	high	vt 472fc0 slot 1; cOVStateOverlay vptr + UIState_dtor
+002217f0	OVScreenPauseMode3_ctor	med	GameUI_OpenScreen id 3, vt 472ee8; Init sets pause mode 3 (Return/Transport/Session/..QuitToMain) then OVScreenPauseFreeride_Init
+00221858	OVScreenPauseMode3_ctor_2	med	3-arg twin storing vt 472ee8
+002218c8	OVScreenPauseMode3_dtor	high	vt 472ee8 slot 1; cOVStateOverlay vptr + UIState_dtor
+002218f0	OVScreenPauseMode4_ctor	med	GameUI_OpenScreen id 4, vt 472e10; Init sets pause mode 4 (Return/Messages/Audio/Options/QuitToMain)
+00221958	OVScreenPauseMode4_ctor_2	med	3-arg twin storing vt 472e10
+002219c8	OVScreenPauseMode4_dtor	high	vt 472e10 slot 1; cOVStateOverlay vptr + UIState_dtor
+002219f0	OVScreenPauseMode5_ctor	med	GameUI_OpenScreen id 5, vt 472d38; Init sets pause mode 5 (Return/RestartEvent/Audio/Options/QuitToMain)
+00221a58	OVScreenPauseMode5_ctor_2	med	3-arg twin storing vt 472d38
+00221ac8	OVScreenPauseMode5_dtor	high	vt 472d38 slot 1; cOVStateOverlay vptr + UIState_dtor
+00221af0	OVScreenPauseMode6_ctor	med	GameUI_OpenScreen id 6, vt 472c60; Init sets pause mode 6 (Return/Options/QuitToMain) then OVScreenPauseFreeride_Init
+00221b58	OVScreenPauseMode6_ctor_2	med	3-arg twin storing vt 472c60
+00221bc8	OVScreenPauseMode6_dtor	high	vt 472c60 slot 1; cOVStateOverlay vptr + UIState_dtor
+00221c18	OVScreenBEOptions_ctor	high	UIState_ctor + stores vt 472b88 (OVScreenBEOptions) over cOVStateOverlay; same body as GameUI_OpenScreen id 7 inline ctor
+00221c80	OVScreenInGameError_ctor	high	UIState_ctor(p,0) + stores vt 472ab0 (OVScreenInGameError)
+00221ce0	OVScreenInGameError_ctor_2	high	3-arg twin storing vt 472ab0, +0xa0=1, +0x9c=0
+00221db0	OVScreenProfileSavePDA_ctor_2	high	memcard-overlay base ctor 0x1d53b0 then vt 472928 (OVScreenProfileSavePDA); _ctor exists at 0x211088
+00221e18	OVScreenRacePre_ctor	high	UIState_ctor + stores vt 472850 (OVScreenRacePre)
+00221ea8	OVScreenFreestylePre_ctor	high	UIState_ctor + stores vt 472778 (OVScreenFreestylePre)
+00221f38	OVScreenMultiFreestylePre_ctor	high	UIState_ctor + stores vt 4726a0 (OVScreenMultiFreestylePre)
+00221fc8	OVScreenRivalPre_ctor	high	UIState_ctor + stores vt 4725c8 (OVScreenRivalPre)
+00222030	OVScreenSaveReplay_dtor	high	vt 472440 slot 1 (same vt OVScreenSaveReplay_ctor 0x1fdbf0 stores; Init shows 'title_Save Replay'); memcard base dtor 0x1d5428
+00222058	OVScreenSaveReplay_ctor_2	high	memcard base ctor 0x1d53b0(p,0,0) then vt 472440; _ctor exists at 0x1fdbf0
+00222098	OVScreenSaveRecords_dtor	high	vt 4722b8 slot 1 (vt of OVScreenSaveRecords_ctor 0x1fe968; Init shows 'title_Save Records'); memcard base dtor
+002220c0	OVScreenSaveRecords_ctor_2	high	memcard base ctor then vt 4722b8; _ctor exists at 0x1fe968
+00222100	OVScreenRewardsListPopup_ctor	high	UIState_ctor(p,0) + vt 4721e0 (OVScreenRewardsListPopup)
+00222160	OVScreenRewardsListPopup_ctor_2	high	3-arg twin storing vt 4721e0
+00222218	OVScreenRewardList_ctor	high	UIState_ctor + vt 472108 (OVScreenRewardList)
+002222b8	OVScreenAutosave_ctor_2	high	memcard base ctor then vt 471f80 (OVScreenAutosave); _ctor exists at 0x212138
+002222f8	OVScreenTrophy_ctor	high	UIState_ctor(p,0) + vt 471ea8 (OVScreenTrophy)
+00222358	OVScreenTrophy_ctor_2	high	3-arg twin storing vt 471ea8
+002223e8	Font_DrawTextCenteredVarargs_2	med	varargs spill + Font_DrawTextCenteredF(font,str,&va); duplicate of Font_DrawTextCenteredVarargs 0x1dca40 in another TU
+002224b8	LunoVM_Call	med	allocs 'LunoVMRegister' array (n*0xc) for the function frame, sets r0=arg, r1=nil, then runs interpreter 0x2227d0; called by WScript code
+00222648	LunoVM_CallWithArg	med	twin of LunoVM_Call that copies a caller-supplied register value into r1 before running 0x2227d0
+002227d0	LunoVM_Execute	med	bytecode interpreter: switch on opcode&0xff over the 'LunoVMRegister' file, allocs 'LunoVMCallParam', creates cLunoTable; recursive calls
+00224c00	LunoVMRegister_WritePtr	med	only caller LunoVMRegister_Write (type 5): writes (ptr - base, word1) to stream slot 1
+00224c78	LunoVMRegister_ReadPtr	med	only caller LunoVMRegister_Read (type 5): reads 2 words via stream slot 2, rebases ptr
+00224d00	LunoTable_dtor	med	'LunoTable' data block: destroys 'TableData' entries via their vtables, EA_MemFree array, delete if flag&1
+00224df0	cLunoTable_dtor	med	handle dtor: --refcount (+8 of data) and free data at 0, delete if flag&1; 17 callers incl WScriptProcess_dtor
+00224e50	cLunoTable_Alloc	med	only caller cLunoTable_ctor: allocs 'LunoTable' (0x14) + 'TableData' n*0x20 cLunoTableEntry array, refcount 1
+00224f30	cLunoTable_FreeData	med	if handle data non-null: LunoTable_dtor(data,3); handle=0
+00224f68	cLunoTable_Clear	med	destroys all entries and reallocates an empty 'TableData' array of the same size
+00225068	cLunoTable_Assign	med	handle operator=: release old data (refcount), take new, ++refcount
+002250e0	cLunoTable_FindInt	med	hash lookup by integer key (type-3 register), returns value ptr or nil register 0x4c9098
+00225248	cLunoTable_Find	med	hash lookup by register key with int/float/id type coercion; returns value ptr or nil 0x4c9098
+00225338	cLunoTable_Set	med	insert/replace key->value in hash bucket, chains new 'cLunoTableEntry' on collision; refcounts table values
+002257e0	cLunoTable_Write	med	writes table header + count of used entries then key/value of each via LunoVMRegister_Write
+002259a8	cLunoTable_Read	med	rebuilds 'TableData' array then reads count and key/value pairs via LunoVMRegister_Read + cLunoTable_Set
+00225b90	LunoVMRegister_dtor	med	if type==4 (table) release cLunoTable; type=0; delete if flag&1; 13 callers
+00225be8	LunoVMRegister_Write	med	writes type then payload: type5 ptr, type4 nested cLunoTable_Write, else 4-byte value
+00225ca0	LunoVMRegister_Read	med	reads type then payload: type5 ptr, type4 builds cLunoTable(0x20) and cLunoTable_Read, else 4-byte value
+00225de8	LunoVM_StaticInitDestroy	med	(init,0xffff) static-init pattern; fills const tables 0x4c8d18.., destroy path runs LunoVMRegister_dtor on nil register 0x4c9098
+00226628	LunoVMRegister_Add	med	only caller LunoVM_Execute: adds two registers with int(1)/float(2)/id(3) types and int->float promotion, else nil
+00226768	cLunoTableEntry_dtor	high	vt 479890 slot 1 ('cLunoTableEntry' tag): deletes chained next entry, destroys value and key registers
+002267f0	LunoVM_GlobalCtors	med	pointer in ctor list 0x43ce60; calls LunoVM_StaticInitDestroy(1,0xffff)
+00226810	LunoVM_GlobalDtors	med	pointer in dtor list 0x43cef0; calls LunoVM_StaticInitDestroy(0,0xffff)
+00226b60	InputMap_LoadFromFile	high	input.md: InputPreproc_Run, alloc 'InputMap', InputMap_Init(205), 205 InputMap_CompileEntry action names, FinalizeOpcodes; from SSXApp_BootLoad
+00227bf0	SSXApp_ParseCommandLine	high	only caller SSXApp_Init; strcasecmp argv '-track' (basename to +0xcc), 'password', 'realfe', 'nohud', 'autolobby'
+00227f80	MCManager_Get	med	out-of-line wrapper of MCManager_GetInstance used by 67 memcard FE/overlay functions
+00228bb8	SSXApp_v02	high	vt 47d9c8 slot 2 (class SSXApp via pass1)
+00228c08	SSXApp_ApplyDisplayOptions	med	copies options block 0x535610; bits 20-21 -> PS2GraphicsMan slot 40, two bytes -> slot 12 SetScreenOffset; from BootLoad/OptionsGame/LoadSystemSave
+00229498	CrowdMan2d_Clear	med	only caller GameModule race reset 0x230180: CrowdMan2d_RemoveAll + CrowdMan2d_Reset
+002294c8	CrowdMan2d_Update	high	world.md: GameModule+0x38 update 0x2294c8; ticks crowd anim, decrements 40 sprite timers at +0x2230, spawns sprites
+00229530	CrowdMan2d_SpawnSprites	med	only caller CrowdMan2d_Update: per active slot random countdown; random point in slot box -> CrowdMan2d_AddSprite, timer 300..600
+00229738	CrowdMan2d_AddSprite	med	writes vec4 + timer into ring of 40 entries at +0x2220 (index +0x2214 mod 0x28)
+00229788	CrowdMan2d_Add	med	finds first free slot (-1) of 64 at +8 and initialises it via CrowdMan2d_InitSlot
+002297d8	CrowdMan2d_Remove	med	finds slot with given instance id and clears it (0x229b90)
+00229910	CrowdMan2d_InitSlot	med	stores instance id in slot, computes the instance's bounding box via graphics slot 97 and stores slot box (+0x210..)
+00229b90	CrowdMan2d_ClearSlot	med	slot id = -1; callers CrowdMan2d_RemoveAll/RemoveByType/Remove
+00229ba8	CrowdMan2d_RenderSprites	med	draws each of 40 sprite entries with timer>0 via PS2GraphicsMan slot 78 DrawSprite3D (size 100)
+00229e20	CrowdMan2d_SaveState	high	only caller WorldState_Write; writes the 0x200-byte slot-id table
+00229e58	CrowdMan2d_LoadState	high	only caller WorldState_Read; RemoveAll+Reset, reads 128 slot ids and re-inits each via InitSlot
+0022a5a0	Nash_CollectInstances	med	node +0x20 lists: visible-section filter, VU0 cull 0xef0 when clipped, appends to list +0x20a0 (drawn by GameModule_RenderModels)
+0022a698	Nash_CollectPatches	med	node +0x24 lists: section filter + VU0 cull, appends to +0x50ac (drawn by GameModule_RenderBezierPatches)
+0022a770	Nash_CollectEffects	med	node +0x28 lists: type 7 (cull) -> +0x78b8 fog-particle list, type 8 -> +0x7bc4 lens-flare list
+0022a830	Nash_CullNode	med	recursive octree node visit: VU0 frustum test (0x570) + occluder tests, then collect/classify lists of the node
+0022add8	Nash_GatherVisible	med	world pass: clears visible lists, loads view matrices, OcclusionMan_BuildVisible, Nash_CullNode on the 8 octant roots (Nash 0x14 stride)
+0022c078	GameModule_RenderModels	med	draws visible instance lists +0x20a0/+0x40a4 via PS2GraphicsMan slot 96 DrawModelSimple; flags depend on view count
+0022c1b0	GameModule_BeginBezierPass	med	stack context: PS2BezierMan (gp+0x1158), camera pos, LOD params from slots 8/9, calls bezier slot 17
+0022c3b8	GameModule_EndBezierPass	med	context dtor: PS2BezierMan slot 18 (0x38b370), delete if flag&1; only caller GameModule_RenderBezierPatches
+0022c410	GameModule_DrawBezierPatch	med	per-corner LOD from camera distance to 4 patch corners (+0x170..), PS2BezierMan slot 21 draw
+0022c620	GameModule_RenderBezierPatches	med	Begin/End bezier pass around DrawBezierPatch over visible lists +0x50ac/+0x70b0
+0022c708	GameModule_RenderFogParticles	med	feeds visible type-7 lists +0x78b8/+0x7ac0 to cPS2FogParticleMan (GameModule+0x18) slot 2, then 0x2dbf98
+0022c790	GameModule_RenderLensFlares	high	LensFX (GameModule+0x1c) ClearSources, AddSources from visible lists +0x7bc4/+0x7fc8, LensFX_Render
+0022d390	SectionMan_IsEventReady	med	SectionMan_IsEventLoaded && +0x1c0 (eventLoaded); caller HUD render
+0022d3d8	SectionMan_RequestLoad	med	world.md: per-logical-section request load (state 0/7->3, 5->1) + QueueSection
+0022d478	SectionMan_RequestActivate	med	world.md: request load+activate (0/3/7->4, 1/5->2 + activate, 6->8) + QueueSection
+0022d598	SectionMan_RequestUnload	med	world.md: request unload (1/2/6->5, 3->0) + QueueSection
+0022d640	SectionMan_StartEventSwitch	med	if idle (+0x1b4==0): +0x1b8=arg, phase 1; only caller SectionMan_RequestEvent
+0022d6c8	SectionMan_OnEventTrigger	med	world.md: sets BE event/mode from trigger arg, GameModeMan_StartMode, RequestState(1,1)
+0022df50	SectionMan_BeginEventSwitch	med	world.md: RequestState(11, immediate) + RequestOverlayState(10)
+0022dfd0	SectionMan_IsEventSwitchOverlayDone	med	wrapper GameModule_IsOverlayStateDone(owner +0x1b0); called from SectionMan_Update event-switch phase
+0022dff0	SectionMan_FinishEventSwitch	med	world.md: AI Restart if +0x1cc, RequestState(10)
+0022e078	SectionMan_IsSectionLoaded	med	section state 1 (loaded) or 2 (active) in table 0x442170
+0022e0c8	SectionMan_GetWorldSectionIndex	med	returns table 0x44216c[logical id] (world section index, -1 absent)
+0022e0e0	SectionMan_FindLogicalSection	med	world section index -> logical id (0..49), 0x32 if not found
+0022e118	SectionMan_ReloadEventAndRestart	med	if not netplay: SectionMan_LoadEvent(id,1) and set restartPending +0x1cc
+0022e278	SectionMan_PopFreeNode	med	free-list head +0x198 = head->next; only caller SectionMan_QueueSection
+0022e288	SectionMan_PushFreeNode	med	node->next = +0x198; +0x198 = node; only caller SectionMan_DequeueSection
+0022e550	GameViewMan_UpdateSplitScreen	med	on state change: 2 half-height viewports for GameModule states 3..5 when +0 != 1, else 1 full view; from ProcessStateChange
+0022e7c8	GameViewMan_ResetCameras	med	for each view: camera active controller (+0xa0) slot 4 Reset; from race reset 0x230180
+0022e840	GameViewMan_UpdateCameras	med	for each view: GameCamera (vptr +0x90) slot 3 Update; called from GameModule_Update and replay
+0022e920	GameViewMan_AllViewsReady	med	world.md: 1 iff every view's +0xb4 != 0
+002300f0	GameModule_ResetScriptsAndWorld	med	PlaybackMan_Reset, WScriptMan_Restart, process-list flush, FocusMan_Reset, World section reset, respawn missions; Countdown Enter in netplay
+00230180	GameModule_ResetRace	med	full race reset: playback/scripts/processes, AI Restart(3), cameras, Replay_Reset, crowds/particles, hud state; used by restart/warp/event select
+002302a8	GameModule_QuickRestart	med	world.md: ResetRace, GameModeMan_ResetMode, clears every rider's boostMeter, RequestState(1,2,immediate)
+00230360	GameModule_OnSectionUnload	med	removes objects of a world section from particles, CrowdMan2d, CrowdMan3d, process lists, FocusMan_RemoveSectionObjects, scripts
+00230488	GameModule_QuitToLoadScreen	high	world.md: RequestState(6), allocs 'PreFELoad'/'PreGameLoadScreen' + App_SetNextState
+00230558	GameModule_BeginReplayPlayback	med	pushes pause mask 8, Replay_BeginPlayback(+0x28), MenuSys_SetActive(0)
+002305c8	GameModule_EndReplayPlayback	med	Replay_EndPlayback, MenuSys_SetActive(1)+PopPage, pops pause mask
+00230640	GameModule_RenderProcessLists	med	ProcessList_RenderPriority for the 6 priorities in table 0x4428d8
+00230698	GameModule_GetTransitionMan	high	returns GameModule+0x5c[i] (cTransitionMan*[2], world.md)
+002306a8	GameModule_GetSplashManager	high	returns GameModule+0x68[i] (cSplashManager*[2], world.md); caller SnowFall_Update
+00231280	GameModule_CancelOverlayState	med	clears pendingOverlayId +0x208; if overlayId +0x20c set calls overlay state slot 4 and clears +0x204/+0x20c
+00231320	GameModule_AdvanceState	med	if curState (+0x200) set, GameState_GotoNext(curState); called from FE/UI code
+00231348	GameModule_SaveState	high	was GameModule_v08 (pass-1 slot name): vt 47d110 slot 8 writes fields via stream slot 1 (Write) then every state SaveState
+002314d0	GameModule_LoadState	high	was GameModule_v09: vt 47d110 slot 9, read twin via stream slot 2 (Read)
+00231840	GameModule_CheckPauseRequest	med	per player pad: disconnected-pad mask -> +0x224, InputBinding 0x3c press -> +0x228 pad; returns 1 to pause
+00233048	cGameLoadScreen_LoadPictures	med	only caller cGameLoadScreen_Load: loads 'data/ui/charpic.big' rider pics (2P) or 'courspic.big' course pic as textures at +0x10
+00233640	cFELoadScreen_LoadPictures	med	only caller cFELoadScreen_Load: loads 'charpic.big' rider picture(s) into +0x10
+00233aa0	GameState_GotoNext	high	world.md: if this[0] RequestState(g_GameModule, this[0], this[1], 0); called by most state Updates
+00233af0	GameState_SaveState	med	writes state word 0 (next id) via stream slot 1 Write; base of all GameModule state SaveState
+00233b28	GameState_LoadState	med	reads state word 0 via stream slot 2 Read; base of all state LoadState
+00233b60	GameStateQuit_Enter	high	vt 47d690 (GameStateQuit) slot 5; RequestState(10)
+00233b90	GameStateQuit_SaveState	med	called from GameModule_v08 (save) on +0x118 (state 6): base save only
+00233bb0	GameStateQuit_LoadState	med	called from GameModule_v09 (load) on +0x118: base load only
+00233bd0	GameStateIdle_SaveState	med	called from GameModule_v08 (save) on +0x138 (state 8): base save only
+00233bf0	GameStateIdle_LoadState	med	called from GameModule_v09 (load) on +0x138
+00233c10	GameStateFinish_ctor	high	stores vt 47d6e8 then 47d5e0 (GameStateFinish), next=7, +0x10=2; from GameModule_ctor at +0x100
+00233c50	GameStateFinish_Enter	high	vt 47d5e0 slot 5; replay 0x26fa50, UIStateMgr_CloseAll, 180-frame timer +0x14
+00233cd8	GameStateFinish_Update	high	vt 47d5e0 slot 6; 'finishov' UI state once riders slowed, picks next 12/7
+00234008	GameStateFinish_Exit	high	vt 47d5e0 slot 7; ChaseCamController_RestoreDefaultAlgorithm per view, next = 7
+002340b8	GameStateFinish_SaveState	med	called from GameModule_v08 (save) on +0x100: base + words +0x10/+0x14
+00234120	GameStateFinish_LoadState	med	called from GameModule_v09 (load) on +0x100: base + words +0x10/+0x14
+00234188	GameStatePreRaceLoad_ctor	high	stores vt 47d6e8 then 47d530 (GameStatePreRaceLoad), next=2; from GameModule_ctor at +0xb0
+002341d0	GameStatePreRaceLoad_Enter	high	vt 47d530 slot 5; AI_SetRaceState 3, BE phase 0, Replay_Reset, pushes characters to BE
+002343b0	GameStatePreRaceLoad_Update	high	vt 47d530 slot 6; step machine: setup computer/actor riders, AI_LoadNextRider until loaded
+00234750	GameStatePreRaceLoad_Exit	high	vt 47d530 slot 7; AI Restart(3), WScriptMan_SpawnMissions, AI 3, BE phase 1
+00234990	GameStatePreRaceLoad_SaveState	med	called from GameModule_v08 (save) on +0xb0: base + +0x10/+0x14/+0x1c/+0x08
+00234a30	GameStatePreRaceLoad_LoadState	med	called from GameModule_v09 (load) on +0xb0
+00234ad0	GameStateCountdown_Enter	high	vt 47d4d8 slot 5; BE phase 0, Replay_Reset, AI 4, 'StartlightBegin' script event
+00234be8	GameState_PlayScriptEvent	med	runs a hashed script event (StartlightBegin/StartgateOpen) on the current event's section via 0x309dd0/0x309e50
+00234c68	GameStateCountdown_Update	high	vt 47d4d8 slot 6; countdown display per second, 'StartgateOpen' then GotoNext
+00234de0	GameStateCountdown_SaveState	med	called from GameModule_v08 (save) on +0xe0: base save only
+00234e00	GameStateCountdown_LoadState	med	called from GameModule_v09 (load) on +0xe0
+00234e20	GameStateRace_Enter	high	vt 47d480 slot 5; AI_SetRaceState 5, cpuActive, BE phase 1, closes UI
+00234eb8	GameStateRace_SaveState	med	called from GameModule_v08 (save) on +0xf0: base save only
+00234ed8	GameStateRace_LoadState	med	called from GameModule_v09 (load) on +0xf0
+00234ef8	GameStateReset_ctor	high	stores vt 47d6e8 then 47d428 (GameStateReset), next=4; from GameModule_ctor at +0x158
+00234f40	GameStateReset_OverlayEnter	med	vt 47d428 slot 2; Replay_Reset, ScriptEngine Unload/LoadWorldScripts
+00235080	GameStateReset_OverlayUpdate	med	vt 47d428 slot 3; step machine: script channels, rider rebuild, peak transition music
+00235570	GameStateReset_OverlayExit	med	vt 47d428 slot 4 (GameModule_CancelOverlayState calls slot 4); unloads world scripts, step=5
+002355c0	GameStateReset_Enter	high	vt 47d428 slot 5; WScriptMan restart, BE phase 0, picks next 1 or 4
+002357f8	GameStateReset_Update	high	vt 47d428 slot 6; waits for script channel 1 then GotoNext
+00235868	GameStateReset_Exit	high	vt 47d428 slot 7; SpawnMissions, Replay_Reset, BE track info
+00235990	GameStateReset_SaveState	med	called from GameModule_v08 (save) on +0x158: base + +0x10/+0x14/+0x18
+00235a18	GameStateReset_LoadState	med	called from GameModule_v09 (load) on +0x158
+00235aa0	GameStateRestartRace_Enter	high	vt 47d3d0 (GameStateRestartRace) slot 5; GameModeMan_ResetMode, GameModule_ResetRace, re-sends characters to BE
+00235cc8	GameStateRestartRace_Update	high	vt 47d3d0 slot 6; steps: remove/setup computer riders, load riders, camera cut + fade, GotoNext
+00235f20	GameStateRestartRace_Exit	high	vt 47d3d0 slot 7
+00235f48	GameStateRestartRace_SaveState	med	called from GameModule_v08 (save) on +0x19c: base + 3 words
+00235fd0	GameStateRestartRace_LoadState	med	called from GameModule_v09 (load) on +0x19c
+00236058	GameStateWarpToEvent_Enter	high	vt 47d378 slot 5; GameModeMan_StartMode(0xc), Rider_PlaceAtMarker, 1 s fade TransitionEffect
+00236198	GameStateWarpToEvent_Update	high	vt 47d378 slot 6; RequestState(1)
+002361c8	GameStateWarpToEvent_SaveState	med	called from GameModule_v08 (save) on +0x1dc: base only
+002361e8	GameStateWarpToEvent_LoadState	med	called from GameModule_v09 (load) on +0x1dc
+00236208	GameStateEventSelect_ctor	high	stores vt 47d6e8 then 47d320 (GameStateEventSelect), next=4, +0x18=0x17; from GameModule_ctor at +0x1b8
+00236250	GameStateEventSelect_Enter	high	vt 47d320 slot 5; AI 3, boostMeter=0, Rider_Reset, entry mode arg at +0x14
+00236418	GameStateEventSelect_Update	high	vt 47d320 slot 6; opens UI 0x1f/0x21, RequestState(15) or SectionMan_RequestEvent
+00236728	GameStateEventSelect_SaveState	med	called from GameModule_v08 (save) on +0x1b8: base + +0x10/+0x14/+0x08/+0x18
+002367c8	GameStateEventSelect_LoadState	med	called from GameModule_v09 (load) on +0x1b8
+00236868	GameStateEventSwitchLoad_ctor	high	stores vt 47d6e8 then 47d2c8 (GameStateEventSwitchLoad), next=10; from GameModule_ctor at +0x178
+002368a0	GameStateEventSwitchLoad_Enter	high	vt 47d2c8 slot 5; BE phase 0, Replay_Reset, clears BE per-player results
+00236960	GameStateEventSwitchLoad_Update	high	vt 47d2c8 slot 6; waits SectionMan_IsEventLoaded, camera place, fade, SectionMan_LoadEvent(..,7)
+00236af8	GameStateEventSwitchLoad_SaveState	med	called from GameModule_v08 (save) on +0x178: base only
+00236b18	GameStateEventSwitchLoad_LoadState	med	called from GameModule_v09 (load) on +0x178
+00236bb0	GameStatePreRaceMenu_Enter	high	vt 47d270 slot 5; GameUI_OpenScreenForState(2), pushes pause mask, BE phase 0
+00236c48	GameStatePreRaceMenu_Update	high	vt 47d270 slot 6; GotoNext once +0x08 == 1
+00236c88	GameStatePreRaceMenu_Exit	high	vt 47d270 slot 7; pops pause mask then 0x236cd8
+00236d60	GameStatePreRaceMenu_SaveState	med	called from GameModule_v08 (save) on +0xd0: base only
+00236d80	GameStatePreRaceMenu_LoadState	med	called from GameModule_v09 (load) on +0xd0
+00236da0	GameStateResults_Enter	high	vt 47d218 slot 5; clears BE per-player results, GameUI_OpenScreenForState(7)
+00236e60	GameStateResults_Update	high	vt 47d218 slot 6; +0x08 == 1 -> RequestState(14, 2)
+00236ea0	GameStateResults_Exit	high	vt 47d218 slot 7; UIStateMgr_CloseAll
+00236ec8	GameStateResults_SaveState	med	called from GameModule_v08 (save) on +0x128: base only
+00236ee8	GameStateResults_LoadState	med	called from GameModule_v09 (load) on +0x128
+00236f08	GameStateFinishCinematic_Enter	high	vt 47d1c0 slot 5; SSXAudioSystem_PlayCharacterTune, AI+0x8c = 1
+00236f40	GameStateFinishCinematic_Update	high	vt 47d1c0 slot 6; GotoNext when script channel 0 is 0 or 5
+00236fa8	GameStateFinishCinematic_SaveState	med	called from GameModule_v08 (save) on +0x18c: base only
+00236fc8	GameStateFinishCinematic_LoadState	med	called from GameModule_v09 (load) on +0x18c
+00236fe8	GameStateReplayPlayback_Enter	high	vt 47d168 slot 5; script restart/shutdown, opens UI screen 0x11 (replay HUD)
+00237038	GameStateReplayPlayback_Exit	high	vt 47d168 slot 7; WScriptMan respawn missions
+002370a0	InputSync_dtor	high	only caller GameModule_Unload on GameModule+0x7c (InputSync); frees per-pad sample buffers, delete if flag&1
+00237140	InputSync_AddLocalPad	med	tags 'InputSamples'/'SyncedPad'/'SyncedInput'; adds channel with nonzero source (sampled+sent in InputSync_Update); caller AI_CreatePlayers
+00237280	InputSync_AddRemotePad	med	same tags; adds channel with source=0 (filled from cGameComm_PopPacket in InputSync_Update); caller AI_CreatePlayers
+002373b8	InputSync_Update	med	only caller GameModule_Update; per channel: remote pops cGameComm packets, local samples pad + sends, into 100-byte ring of InputSync
+00237950	InputSync_IsReady	med	returns 1 only if every InputSync channel has a buffered sample (read!=write); used before InputSync_ApplyInput
+002379c8	InputSync_ApplyInput	med	when ready, feeds next ring sample of each channel into InputPad_Update and advances read index
+00237a98	InputSync_SendSample	med	packs sample (InputSync_PackSample), loops it back, cGameComm_SendPacket if net connected
+00237b28	InputSync_PackSample	med	compresses float analog array to bitmask + bytes (x255), returns packet size
+00237be8	InputSync_UnpackSample	med	inverse of PackSample: bitmask+bytes -> floats scaled by constant
+00237cb0	GameRand_Seed	med	Rand_Seed on global RNG 0x4c9548; callers GameModule_Load and net code (synchronised game RNG)
+00237cd8	GameRand_Next	med	Rand_Next on global RNG 0x4c9548 (same as GameRand_Seed)
+00238358	GameModeMan_OnRiderFinished	med	caller Rider_OnFinishRace; calls GM handler slot 8 then BE score/reward updates for rider index
+00238510	GameModeMan_HandlerV06	med	forwards to current GM handler (array 0x536668[this+4]) slot 6; callers RiderMetrix event handler and GameStateReset_Exit
+00238550	GameModeMan_HandlerV07	med	forwards to current GM handler slot 7
+00238590	GameModeMan_HandlerV09	med	forwards to current GM handler slot 9; callers OVScreenFreestyleStandings_Init, cOVStateHUD1P_Update
+002385d0	GameModeMan_SaveState	high	writes GameModeMan fields + standings arrays via stream slot 1 (write, as RiderMetrix_SaveState), then handler slot 10
+002388a0	GameModeMan_LoadState	high	mirror of GameModeMan_SaveState using stream slot 2 (read), then handler slot 11
+00238b70	GameModeMan_SortByScore	med	init index arrays 0x536708/0x536730 then qsort; used by score-based GM handlers (RiderMetrix +0xfc score copy)
+00238bf8	GameModeMan_SortByTime	med	same as SortByScore with other comparator; used by handlers storing finish time rider+0x478 / 360000 DNF
+00238c80	GMHandler_Start	med	tag 'GM Handler'; shared slot 3 of all handler vtables, called by GameModeMan_StartMode; resets GameModeMan fields then slot 5
+00238d30	GMHandler_ClearStandings	med	shared slot 4 of GM handler vtables; memsets standings arrays 0x536640/0x536708/0x536730/0x5366a8
+00238e20	GMHandler0_Reset	med	GM handler idx0 (vt 47cfa0) slot 2, called by GameModeMan_ResetMode; round/heat setup
+00239230	GMHandler0_OnRiderFinished	med	vt 47cfa0 slot 8 (GameModeMan_OnRiderFinished calls slot 8); records rider result, AI_AllPlayersFinished -> rank
+00239938	GMHandler0_PickOpponents	med	only caller GMHandler0_Reset; random shuffle of riders excluding human and rival into GameModeMan slots
+00239d18	GMHandler0_SaveState	high	vt 47cfa0 slot 10 (GameModeMan_SaveState calls slot 10); stream slot 1 write 0xa0 bytes
+00239d50	GMHandler0_LoadState	high	vt 47cfa0 slot 11; stream slot 2 read 0xa0 bytes
+00239d88	GMHandler9_Reset	med	vt 47ce68 (GameModeMan handler idx 9) slot 2
+00239ec8	GMHandler9_OnRiderFinished	med	vt 47ce68 slot 8; stores score, AI_AllPlayersFinished -> SortByScore
+0023a108	GMHandler1_Reset	med	vt 47cf38 (handler idx 1) slot 2
+0023a4f0	GMHandler1_PickOpponents	med	only caller GMHandler1_Reset; GameRand-based opponent choice excluding human/rival
+0023a760	GMHandler1_OnRiderFinished	med	vt 47cf38 slot 8; finish time / 360000 DNF, SortByTime
+0023ac18	GMHandler1_SaveState	high	vt 47cf38 slot 10; stream write 0xd0 bytes
+0023ac50	GMHandler1_LoadState	high	vt 47cf38 slot 11; stream read 0xd0 bytes
+0023ac88	GMHandler8_Reset	med	vt 47ced0 (handler idx 8, online) slot 2
+0023ae00	GMHandler8_OnRiderFinished	med	vt 47ced0 slot 8; finish time / DNF, SortByTime
+0023b038	GMHandler8_SaveState	high	vt 47ced0 slot 10; stream write 0x2c bytes
+0023b070	GMHandler8_LoadState	high	vt 47ced0 slot 11; stream read 0x2c bytes
+0023b170	GMHandler2_Reset	med	vt 47ce00 (handler idx 2) slot 2
+0023b268	GMHandler4_Reset	med	vt 47cd98 (handler idx 4) slot 2; sets medal time targets
+0023b468	GMHandler4_OnRiderFinished	med	vt 47cd98 slot 8; compares finish time against medal times (FUN_001455d0)
+0023b5f8	GMHandler4_v06	med	vt 47cd98 slot 6 (unique)
+0023b6c0	GMHandler5_Reset	med	vt 47cd30 (handler idx 5) slot 2
+0023b8c8	GMHandler5_OnRiderFinished	med	vt 47cd30 slot 8; finish times, SortByTime
+0023bb98	GMHandler6_Reset	med	vt 47ccc8 (handler idx 6) slot 2
+0023bdb8	GMHandler6_OnRiderFinished	med	vt 47ccc8 slot 8; scores, SortByScore
+0023c0d0	GMHandler7_Reset	med	vt 47cc60 (handler idx 7) slot 2; score targets x100
+0023c2d8	GMHandler7_OnRiderFinished	med	vt 47cc60 slot 8; compares score against medal targets
+0023c560	GMHandler7_v06	med	vt 47cc60 slot 6 (unique)
+0023c770	GameRand_Shuffle	med	24 random swaps of int array using GameRand_Next
+0023c850	MCManager_Exists	med	returns MCManager singleton (gp-0x47c, set by MCManager_GetInstance) != 0
+0023c860	MCManager_Destroy	high	deletes MCManager singleton via its dtor slot (vptr +0x748) and clears it
+0023c898	MCManager_IsIdle	med	state +0x130 == 1 (state 1 = idle; MCManager_EndOperation sets it)
+0023c8f0	MCManager_BeginLoad	med	sets save type +0xb4, op flag +0xbc=0, builds '%s-%s*' name; callers cFEStateProfileLoad_OnWidgetAction etc.
+0023caa0	MCManager_SetDataSize	med	card slot 19 with size, stores +0xf0 (total, denominator of progress +0x10c)
+0023cae8	MCManager_BeginSave	med	as BeginLoad but +0xbc=1 and slot index; callers OVScreenProfileSavePDA_OnWidgetAction, OVScreenAutosave_Update
+0023cf38	MCManager_v01	high	vt 47cbd8 slot 1 (class MCManager via pass1)
+0023d570	MCManager_SetMode	med	sets +0xb8 mode; mode 1 resets 60-frame timer and fade; 13 callers
+0023d5a8	MCManager_CreateCard	med	stores cPS2MemCard_Create() at +0x434
+0023d5e8	MCManager_DestroyCard	high	cPS2MemCard_Destroy(+0x434) and clears it
+0023d618	MCManager_Update	med	dispatch on mode +0xb8: 0 -> MCManager_UpdateStates, 1 -> MCManager_UpdateMode1
+0023d7d8	MCManager_UpdateStates	med	polls card status then switch on state +0x130 calling per-state handlers 2..0x38
+0023e268	MCManager_State31	med	case 0x31; when card idle SetState(0x32)
+0023e2c8	MCManager_State35	med	case 0x35; when card idle SetState(0x33)
+0023e320	MCManager_State36	med	MCManager_UpdateStates case 0x36
+0023e3c0	MCManager_State37	med	case 0x37; when card idle SetState(3)
+0023e428	MCManager_State38	med	MCManager_UpdateStates case 0x38
+0023e498	MCManager_State33	med	case 0x33; when card idle SetState(0x34)
+0023e4f8	MCManager_State02	med	MCManager_UpdateStates case 2; countdown +0x108 then SetState(3)
+0023e540	MCManager_State03_Check	med	case 3 ('kT_MEMFECheckingCardPS2' group); card status flag checks
+0023e820	MCManager_State04_NoCard	med	case 4 (status text 'kT_MEMOVNotDetectedPS2')
+0023ea30	MCManager_EndOperation	med	clears op flags +0xbc/+0xc0/+0xc4, SetState(1) (idle); called by 15 state handlers
+0023eb50	MCManager_SetStateNoCard	med	SetState(4); state 4 status text 'kT_MEMOVNotDetectedPS2'
+0023eb80	MCManager_State05	med	MCManager_UpdateStates case 5
+0023ec00	MCManager_State06_Check	med	case 6 ('kT_MEMFECheckingCardPS2' group)
+0023ef68	MCManager_State0A_Format	med	case 0xa (status 'kT_MEMFormattingPS2')
+0023f050	MCManager_State0B_Format	med	case 0xb (status 'kT_MEMFormattingPS2')
+0023f0f8	MCManager_State0C	med	MCManager_UpdateStates case 0xc
+0023f150	MCManager_State14	med	MCManager_UpdateStates case 0x14
+0023f1d8	MCManager_State15	med	MCManager_UpdateStates case 0x15
+0023f258	MCManager_State17	med	MCManager_UpdateStates case 0x17
+0023f2d8	MCManager_State13	med	case 0x13; SetState(1)
+0023f308	MCManager_State0D	med	MCManager_UpdateStates case 0xd
+0023f3a0	MCManager_State0E	med	MCManager_UpdateStates case 0xe
+0023f438	MCManager_State0F_Save	med	case 0xf (status 'kT_MEMOVSaveSavingPS2NGC')
+0023f4f8	MCManager_State10_Save	med	case 0x10 (saving); updates progress +0x10c
+0023f578	MCManager_State11_Save	med	case 0x11 (saving); writes chunks, progress
+0023f698	MCManager_State07_Check	med	case 7 ('kT_MEMFECheckingCardPS2' group)
+0023fb18	MCManager_SetSlot	med	sets +0x428 (card slot; formatted by MCManager_FormatSlotName / status text)
+0023fb58	MCManager_Reset	med	clears op flags, SetState(0), SetMode(1); callers cFEStateMemCard_v33, state 0x2f
+0023fbb8	MCManager_State12_Save	med	case 0x12 (saving)
+0023fc70	MCManager_State24	med	MCManager_UpdateStates case 0x24
+0023fd08	MCManager_State26	med	MCManager_UpdateStates case 0x26
+0023fd40	MCManager_State16	med	MCManager_UpdateStates case 0x16
+0023fe70	MCManager_State25	med	MCManager_UpdateStates case 0x25
+0023ff00	MCManager_State22_Load	med	case 0x22 (loading)
+0023ffc0	MCManager_State23	med	case 0x23; SetState(1)
+0023fff0	MCManager_State1E	med	MCManager_UpdateStates case 0x1e
+002400b0	MCManager_State1F_Load	med	case 0x1f (status 'kT_MEMOVLoadingPS2NGC')
+00240130	MCManager_State20_Load	med	case 0x20 (loading); progress +0x10c
+002402d0	MCManager_State1D_Check	med	case 0x1d ('kT_MEMFECheckingCardPS2' group)
+002405d0	MCManager_State21_Load	med	case 0x21 (loading)
+00240688	MCManager_State18	med	MCManager_UpdateStates case 0x18
+00240768	MCManager_State19_Delete	med	case 0x19 (status 'kT_MEMDeletingPS2')
+00240800	MCManager_State1C	med	MCManager_UpdateStates case 0x1c
+00240860	MCManager_State1A_Delete	med	case 0x1a (status 'kT_MEMDeletingPS2')
+00240960	MCManager_State1B	med	MCManager_UpdateStates case 0x1b
+002409c8	MCManager_State09	med	MCManager_UpdateStates case 9
+00240ab0	MCManager_State27_Format	med	case 0x27 (status 'kT_MEMFormattingPS2')
+00240b88	MCManager_State28_Format	med	case 0x28 (status 'kT_MEMFormattingPS2')
+00240c30	MCManager_State29	med	MCManager_UpdateStates case 0x29
+00240c90	MCManager_State2A	med	case 0x2a; SetState(6)
+00240cc0	MCManager_State2B	med	MCManager_UpdateStates case 0x2b
+00240d90	MCManager_State2C_Delete	med	case 0x2c (status 'kT_MEMDeletingPS2')
+00240eb0	MCManager_State2D	med	case 0x2d; SetState(1)
+00240ee0	MCManager_State2E	med	case 0x2e; SetState(6)
+00240f10	MCManager_State2F	med	case 0x2f; calls MCManager_Reset
+00240f30	MCManager_State30	med	MCManager_UpdateStates case 0x30
+00241400	MCManager_NextSlot	med	cycles +0x428 forward through available card slots (card slot 52 check), wraps if +0x100
+00241540	MCManager_PrevSlot	med	mirror of MCManager_NextSlot, cycles backward
+00241ac0	MCManager_GetNumSlots	med	caches card slot-count (card vt slot 69) at +0x424, clamped to 1
+00241d40	MCManager_GetSaveTypeTag	med	0 -> 'REP', 1 -> 'GAM', 2 -> 'SET' (replay/game/settings file tags)
+00241dc8	MCManager_FormatSlotName	med	sprintf of slot+1 with fmt at 0x4a2c28 ('%d'); used by MCManager_GetStatusText
+002429b0	OcclusionMan_BuildOccluderPlanes	med	only caller OcclusionMan_BuildVisible; VU cross+rsqrt: planes (normal,-d) from eye point and occluder corners
+00242eb8	SSXApp_StaticInitDestruct	med	gcc static init/destruct for this TU (params 1/0xffff); SSXApp_ctor/App_dtor on globals 0x4c9428
+002438f0	SSXApp_dtor	high	vt 47d9c8 slot 1; family slot 1 = dtor (1 named siblings)
+00243bb0	cGameLoadScreen_ctor	high	AppModule_ctor + stores vptr 0x47d788 (cGameLoadScreen)
+00243c30	cFELoadScreen_ctor	high	AppModule_ctor + stores vptr 0x47d740 (cFELoadScreen)
+00243c80	GameState_dtor	med	base vt 0x47d6e8 of GameModule embedded states (structs/world.md); resets own vptr at +0xc
+00243cf0	GameStateQuit_v01	med	vt 47d690 slot 1 (state 6), implicit dtor
+00243d58	GameStateIdle_v01	med	vt 47d638 slot 1 (state 8), implicit dtor
+00243d88	GameStateFinish_v01	med	vt 47d5e0 slot 1 (state 5), implicit dtor
+00243e20	GameStatePreRaceLoad_v01	med	vt 47d530 slot 1 (state 1), implicit dtor
+00243e50	GameStateCountdown_v01	med	vt 47d4d8 slot 1 (state 3), implicit dtor
+00243eb8	GameStateRace_v01	med	vt 47d480 slot 1 (state 4), implicit dtor
+00243f20	GameStateReset_v01	med	vt 47d428 slot 1 (state 10), implicit dtor
+00243f50	GameStateRestartRace_v01	med	vt 47d3d0 slot 1 (state 13), implicit dtor
+00243fc0	GameStateWarpToEvent_v01	med	vt 47d378 slot 1 (state 15), implicit dtor
+00244028	GameStateEventSelect_v01	med	vt 47d320 slot 1 (state 14), implicit dtor
+00244060	GameStateEventSwitchLoad_v01	med	vt 47d2c8 slot 1 (state 11), implicit dtor
+00244090	GameStatePreRaceMenu_v01	med	vt 47d270 slot 1 (state 2), implicit dtor
+002440f8	GameStateResults_v01	med	vt 47d218 slot 1 (state 7), implicit dtor
+00244160	GameStateFinishCinematic_v01	med	vt 47d1c0 slot 1 (state 12), implicit dtor
+002441c8	GameStateReplayPlayback_v01	med	vt 47d168 slot 1 (state 16, world.md), implicit dtor setting base 47d6e8
+00244240	PauseStack_SetBase	med	caller GameModule_ctor; sets pause mask gp global from table 0x4428f0[arg] and stores arg at stack 0x5366e8[top]
+002443c0	GenericStreamPause_v01	med	vt 47d0e8 (created by GenericStreamPause_Create) slot 1, implicit dtor setting base 47db28
+00244410	VfxProcess_dtor	med	GameProcess subclass vt 47d070 (world.md GameModule+0x54 vfxProc, tag 'VisualEffectsMan'); deletes PS2VisualEffectsMan child, GameProcess_dtor
+00244478	VfxProcess_Update	med	vt 47d070 slot 2 (GameProcess Update); forwards to PS2VisualEffectsMan slot 2
+002444a8	VfxProcess_Render	med	vt 47d070 slot 4 (GameProcess Render); forwards to child slot 3
+002444f0	GMHandler_dtor	high	tag 'GM Handler'; base vt 47d008 slot 1, resets own vptr, delete if flag&1
+00244560	GMHandler0_v01	med	vt 47cfa0 slot 1, implicit dtor (sets base vt 47d008)
+00244590	GMHandler1_v01	med	vt 47cf38 slot 1, implicit dtor
+002445c0	GMHandler8_v01	med	vt 47ced0 slot 1, implicit dtor
+002445f0	GMHandler9_v01	med	vt 47ce68 slot 1, implicit dtor
+00244630	GMHandler2_v01	med	vt 47ce00 slot 1, implicit dtor
+00244660	GMHandler4_v01	med	vt 47cd98 slot 1, implicit dtor
+00244690	GMHandler5_v01	med	vt 47cd30 slot 1, implicit dtor
+002446c0	GMHandler6_v01	med	vt 47ccc8 slot 1, implicit dtor
+002446f0	GMHandler7_v01	med	vt 47cc60 slot 1, implicit dtor
+002448e0	AIVfxProcess_dtor	med	GameProcess subclass vt 47cb60 (world.md GameModule+0x50 aiVfxProc, tag 'AIVisualEffectsMan'); deletes PS2AIVisualEffectsMan child, GameProcess_dtor
+00244948	AIVfxProcess_Update	med	vt 47cb60 slot 2 (GameProcess slot 2 Update); forwards to child PS2AIVisualEffectsMan slot 2
+00244978	AIVfxProcess_Render	med	vt 47cb60 slot 4 (GameProcess slot 4 Render); forwards to child slot 3
+002449a8	StatsProcess_dtor	med	GameProcess subclass vt 47cae8 (world.md GameModule+0x58 statsProc, tag 'SSXStatsMan'); deletes SSXStatsMan child, GameProcess_dtor
+002449f8	StatsProcess_Update	med	vt 47cae8 slot 2 (GameProcess Update); calls FUN_002d21b0(SSXStatsMan child)
+00244a18	StatsProcess_Render	med	vt 47cae8 slot 4 (GameProcess Render); calls FUN_002d21b8(SSXStatsMan child)
+00244b48	GameModule_UpdatePauseAndUI	med	out-of-line copy of GameModule_Update part (same 'SIMON'/'90bc_fail'); pause menu open, UIEngine/MenuSys update, returns run flag
+00245118	cGameComm_UpdateIfActive	med	if (gp 0x4a2eec cGameComm instance) cGameComm_Update(); same guard as in GameModule_Update
+00245140	NetConn_IdleIfActive	med	if (gp 0x4a2eb8 != 0) NetConnIdle(); unreferenced inline copy
+00245228	cFEStateProgressive_dtor	high	vt 47ca18 slot 1 (UIState dtor); vt 47ca18 stored by StartScreen_Load after alloc tag 'cFEStateProgressive'
+00245248	cFEStateProgressive_Init	high	vt 47ca18 slot 4 (UIState Init); creates 'supopup' screen, sets 'Do you want to display the game in Progressive Mode?'
+002452d8	cFEStateProgressive_OnWidgetAction	high	vt 47ca18 slot 19 (UIState OnWidgetAction, 5=select); allocs 'cFEStateProgressiveVerifyPS2' (vt 47da58) and switches
+002453f0	cGameLoadState_dtor	high	vt 47c948 slot 1; vt stored by cGameLoadScreen_Load after alloc tag 'cGameLoadState'
+00245418	cGameLoadState_Init	high	vt 47c948 slot 4 (UIState Init); creates '102MPMatch' / '99QPEvent' load screen
+002454f8	cGameLoadState_TransitionIn	high	vt 47c948 slot 7 (UIState TransitionIn); writes '%3d%%' load progress text
+00245598	cGameLoadState_OnWidgetCreated	high	vt 47c948 slot 18 (UIState OnWidgetCreated); dispatches to MP / QP widget setup by mode byte 0x535c11
+00245600	cGameLoadStateOutLodge_dtor	high	vt 47c878 slot 1; vt stored by cGameLoadScreen_Load after alloc tag 'cGameLoadStateOutLodge'
+00245628	cGameLoadStateOutLodge_Init	high	vt 47c878 slot 4 (UIState Init); creates '118loadoutlodge' screen
+00245698	cGameLoadStateOutLodge_TransitionIn	high	vt 47c878 slot 7 (UIState TransitionIn); writes '%3d%%' load progress text
+00245708	cGameLoadStateConquer_dtor	high	vt 47c7a8 slot 1; vt stored by cGameLoadScreen_Load after alloc tag 'cGameLoadStateConquer'
+00245730	cGameLoadStateConquer_Init	high	vt 47c7a8 slot 4 (UIState Init); creates '110ctrl_load' screen, shows CtrlPS2_default/pro layout
+002458b8	cGameLoadStateConquer_TransitionIn	high	vt 47c7a8 slot 7 (UIState TransitionIn); writes '%3d%%' load progress text
+00245928	cFELoadHintState_dtor	high	vt 47c6d8 slot 1; vt stored by cFELoadScreen_Load after alloc tag 'cFELoadHintState'
+00245950	cFELoadHintState_Init	high	vt 47c6d8 slot 4 (UIState Init); creates '101QPMPHints', cycles kT_FEHINTTitle%d/kT_FEHINTDES%d
+00245ae0	cFELoadHintState_TransitionIn	high	vt 47c6d8 slot 7 (UIState TransitionIn); writes '%3d%%' load progress text
+00245b58	cFELoadState_dtor	high	vt 47c608 slot 1; vt stored by cFELoadScreen_Load after alloc tag 'cFELoadState'
+00245b80	cFELoadState_Init	high	vt 47c608 slot 4 (UIState Init); creates '103MPStat' / '100QPStat' results screen
+00245c60	cFELoadState_TransitionIn	high	vt 47c608 slot 7 (UIState TransitionIn); writes '%3d%%' load progress text
+00245cd0	cFELoadState_OnWidgetCreated	high	vt 47c608 slot 18 (UIState OnWidgetCreated); non-MP path calls 0x247ab0 stat widget fill
+00245d28	cFELoadStateInLodge_dtor	high	vt 47c538 slot 1; vt stored by cFELoadScreen_Load after alloc tag 'cFELoadStateInLodge'
+00245d50	cFELoadStateInLodge_Init	high	vt 47c538 slot 4 (UIState Init); creates '117loadinlodge' screen
+00245dc0	cFELoadStateInLodge_TransitionIn	high	vt 47c538 slot 7 (UIState TransitionIn); writes '%3d%%' load progress text
+00245f30	cFEStateProgressiveVerifyPS2_dtor	high	vt 47da58 slot 1; vt stored after alloc tag 'cFEStateProgressiveVerifyPS2' in cFEStateProgressive_OnWidgetAction
+00245f50	cFEStateProgressiveVerifyPS2_Init	high	vt 47da58 slot 4 (UIState Init); 'supopup' 'The display mode has been switched to Progressive Mode.', 300-frame timer
+00246098	cFEStateProgressiveVerifyPS2_Update	high	vt 47da58 slot 12 (UIState Update); counts down +0x4c timer, reverts to interlaced text, then UIState_Update
+002461e0	cFEStateProgressiveVerifyPS2_OnWidgetAction	high	vt 47da58 slot 19 (UIState OnWidgetAction); on select allocs 'cFEStateMemCard' and switches state
+00246278	cGameLoadState_SetupMPWidget	med	only caller cGameLoadState_OnWidgetCreated (MP mode 2); fills 'Location Text' with peak name/track, shows 'Title Multi *' by mode
+002464e8	cGameLoadState_SetupQPWidget	med	only caller cGameLoadState_OnWidgetCreated (non-MP path); fills 'Location' peak/track text, 'Title Quick *', event type/class strings
+00246cf8	cGameLoadState_UpdatePlayerRanking	med	called by cGameLoadState_Init/TransitionIn for players 0,1; fills 'ranking00/01' and 'kT_CMNLvNum' widgets from rider stats
+002472c0	cFELoadState_ShowMPPlayerStats	med	only caller cFELoadState_Init (MP mode) for players 0,1; fills '1 rank','1 time','1knockdowns','1wipeouts','1ubertricks' (2.. for P2)
+00247ab0	cFELoadState_SetupResultWidget	med	only caller cFELoadState_OnWidgetCreated; fills 'results_rider','results_ranking','results_wipeouts','results_grabtime' etc.
+00247e20	SSXApp_GlobalCtors	med	ctor-list entry 43ce64 calling static init/destroy 0x242eb8(1,0xffff) (App global at 4c9428, cBXString globals)
+00247e40	SSXApp_GlobalDtors	med	dtor-list entry 43cef4 calling 0x242eb8(0,0xffff): App_dtor(0x4c9428), cBXString_dtor globals
+0024d690	VisualEffectsMainMenu_OnActivate	high	vt 47f6b0 slot 6 (MenuSysPage OnActivate) stored by VisualEffectsMainMenu_ctor; forwards to MenuSysPage_OnActivate
+0024d6b0	VisualEffectsMainMenu_OnDeactivate	high	vt 47f6b0 slot 7 (MenuSysPage OnDeactivate) stored by VisualEffectsMainMenu_ctor; forwards to MenuSysPage_OnDeactivate
+0024f7e0	RenderTogglesMenu_OnActivate	high	vt 47fce0 slot 6 (MenuSysPage OnActivate) stored by RenderTogglesMenu_ctor; forwards to MenuSysPage_OnActivate
+0024f800	RenderTogglesMenu_OnDeactivate	high	vt 47fce0 slot 7 (MenuSysPage OnDeactivate) stored by RenderTogglesMenu_ctor; forwards to MenuSysPage_OnDeactivate
+0024f820	VisualEffectsTestMenu_OnActivate	high	vt 47fc88 slot 6 (MenuSysPage OnActivate) stored by VisualEffectsTestMenu_ctor; forwards to MenuSysPage_OnActivate
+0024f840	VisualEffectsTestMenu_OnDeactivate	high	vt 47fc88 slot 7 (MenuSysPage OnDeactivate) stored by VisualEffectsTestMenu_ctor; forwards to MenuSysPage_OnDeactivate
+0024f940	PlantsMenu_OnActivate	high	vt 47fc30 slot 6 (MenuSysPage OnActivate) stored by PlantsMenu_ctor; forwards to MenuSysPage_OnActivate
+0024f960	PlantsMenu_OnDeactivate	high	vt 47fc30 slot 7 (MenuSysPage OnDeactivate) stored by PlantsMenu_ctor; forwards to MenuSysPage_OnDeactivate
+0024f980	LightGlowMenu_OnActivate	high	vt 47fbd8 slot 6 (MenuSysPage OnActivate) stored by LightGlowMenu_ctor; forwards to MenuSysPage_OnActivate
+0024f9a0	LightGlowMenu_OnDeactivate	high	vt 47fbd8 slot 7 (MenuSysPage OnDeactivate) stored by LightGlowMenu_ctor; forwards to MenuSysPage_OnDeactivate
+0024f9c0	DepthFogMenu_OnActivate	high	vt 47fb80 slot 6 (MenuSysPage OnActivate) stored by DepthFogMenu_ctor; forwards to MenuSysPage_OnActivate
+0024f9e0	DepthFogMenu_OnDeactivate	high	vt 47fb80 slot 7 (MenuSysPage OnDeactivate) stored by DepthFogMenu_ctor; forwards to MenuSysPage_OnDeactivate
+0024fa78	HeightFogMenu_OnActivate	high	vt 47fb28 slot 6 (MenuSysPage OnActivate) stored by HeightFogMenu_ctor; forwards to MenuSysPage_OnActivate
+0024fa98	HeightFogMenu_OnDeactivate	high	vt 47fb28 slot 7 (MenuSysPage OnDeactivate) stored by HeightFogMenu_ctor; forwards to MenuSysPage_OnDeactivate
+0024fb80	DetailSystemMenu_OnActivate	high	vt 47fad0 slot 6 (MenuSysPage OnActivate) stored by DetailSystemMenu_ctor; forwards to MenuSysPage_OnActivate
+0024fba0	DetailSystemMenu_OnDeactivate	high	vt 47fad0 slot 7 (MenuSysPage OnDeactivate) stored by DetailSystemMenu_ctor; forwards to MenuSysPage_OnDeactivate
+0024fc80	ShellRendererMenu_OnActivate	high	vt 47fa78 slot 6 (MenuSysPage OnActivate) stored by ShellRendererMenu_ctor; forwards to MenuSysPage_OnActivate
+0024fca0	ShellRendererMenu_OnDeactivate	high	vt 47fa78 slot 7 (MenuSysPage OnDeactivate) stored by ShellRendererMenu_ctor; forwards to MenuSysPage_OnDeactivate
+0024fcc0	ScreenTintMenu_OnActivate	high	vt 47fa20 slot 6 (MenuSysPage OnActivate) stored by ScreenTintMenu_ctor; forwards to MenuSysPage_OnActivate
+0024fce0	ScreenTintMenu_OnDeactivate	high	vt 47fa20 slot 7 (MenuSysPage OnDeactivate) stored by ScreenTintMenu_ctor; forwards to MenuSysPage_OnDeactivate
+0024fdc0	ShadowMenu_OnActivate	high	vt 47f9c8 slot 6 (MenuSysPage OnActivate) stored by ShadowMenu_ctor; forwards to MenuSysPage_OnActivate
+0024fde0	ShadowMenu_OnDeactivate	high	vt 47f9c8 slot 7 (MenuSysPage OnDeactivate) stored by ShadowMenu_ctor; forwards to MenuSysPage_OnDeactivate
+0024fea8	SnowSurfaceMenu_OnActivate	high	vt 47f970 slot 6 (MenuSysPage OnActivate) stored by SnowSurfaceMenu_ctor; forwards to MenuSysPage_OnActivate
+0024fec8	SnowSurfaceMenu_OnDeactivate	high	vt 47f970 slot 7 (MenuSysPage OnDeactivate) stored by SnowSurfaceMenu_ctor; forwards to MenuSysPage_OnDeactivate
+0024fee8	BoardTrailMenu_OnActivate	high	vt 47f918 slot 6 (MenuSysPage OnActivate) stored by BoardTrailMenu_ctor; forwards to MenuSysPage_OnActivate
+0024ff08	BoardTrailMenu_OnDeactivate	high	vt 47f918 slot 7 (MenuSysPage OnDeactivate) stored by BoardTrailMenu_ctor; forwards to MenuSysPage_OnDeactivate
+0024ff90	FlagsMenu_OnActivate	high	vt 47f8c0 slot 6 (MenuSysPage OnActivate) stored by FlagsMenu_ctor; forwards to MenuSysPage_OnActivate
+0024ffb0	FlagsMenu_OnDeactivate	high	vt 47f8c0 slot 7 (MenuSysPage OnDeactivate) stored by FlagsMenu_ctor; forwards to MenuSysPage_OnDeactivate
+0024ffd0	PowerUpFXTogglesMenu_OnActivate	high	vt 47f868 slot 6 (MenuSysPage OnActivate) stored by PowerUpFXTogglesMenu_ctor; forwards to MenuSysPage_OnActivate
+0024fff0	PowerUpFXTogglesMenu_OnDeactivate	high	vt 47f868 slot 7 (MenuSysPage OnDeactivate) stored by PowerUpFXTogglesMenu_ctor; forwards to MenuSysPage_OnDeactivate
+00250010	SnowfallTogglesMenu_OnActivate	high	vt 47f810 slot 6 (MenuSysPage OnActivate) stored by SnowfallTogglesMenu_ctor; forwards to MenuSysPage_OnActivate
+00250030	SnowfallTogglesMenu_OnDeactivate	high	vt 47f810 slot 7 (MenuSysPage OnDeactivate) stored by SnowfallTogglesMenu_ctor; forwards to MenuSysPage_OnDeactivate
+00250050	CameraSplashMenu_OnActivate	high	vt 47f7b8 slot 6 (MenuSysPage OnActivate) stored by CameraSplashMenu_ctor; forwards to MenuSysPage_OnActivate
+00250070	CameraSplashMenu_OnDeactivate	high	vt 47f7b8 slot 7 (MenuSysPage OnDeactivate) stored by CameraSplashMenu_ctor; forwards to MenuSysPage_OnDeactivate
+00250128	TubeMenu_OnActivate	high	vt 47f760 slot 6 (MenuSysPage OnActivate) stored by TubeMenu_ctor; forwards to MenuSysPage_OnActivate
+00250148	TubeMenu_OnDeactivate	high	vt 47f760 slot 7 (MenuSysPage OnDeactivate) stored by TubeMenu_ctor; forwards to MenuSysPage_OnDeactivate
+00250168	PathArrowMenu_OnActivate	high	vt 47f708 slot 6 (MenuSysPage OnActivate) stored by PathArrowMenu_ctor; forwards to MenuSysPage_OnActivate
+00250188	PathArrowMenu_OnDeactivate	high	vt 47f708 slot 7 (MenuSysPage OnDeactivate) stored by PathArrowMenu_ctor; forwards to MenuSysPage_OnDeactivate
+002501a8	VisualEffectsMenus_GlobalCtors	high	ctor-list entry 43ce68; only content VisualEffectsMenus_StaticInitDestroy(1,0xffff)
+002501c8	VisualEffectsMenus_GlobalDtors	high	dtor-list entry 43cef8; only content VisualEffectsMenus_StaticInitDestroy(0,0xffff)
+00250a60	AIVisualEffectsMainMenu_OnActivate	high	vt 47ffe8 slot 6 (MenuSysPage OnActivate) stored by AIVisualEffectsMainMenu_ctor; forwards to MenuSysPage_OnActivate
+00250a80	AIVisualEffectsMainMenu_OnDeactivate	high	vt 47ffe8 slot 7 (MenuSysPage OnDeactivate) stored by AIVisualEffectsMainMenu_ctor; forwards to MenuSysPage_OnDeactivate
+00250cb0	AIVisualEffectsMenus_StaticInitDestroy	med	gcc static init/destroy(init,0xffff) of the AI VFX menu TU: fills const tables 4d19xx, destroys global AvalancheMenu 4d1c88
+002515f0	AvalancheMenu_OnActivate	high	vt 480040 slot 6 (MenuSysPage OnActivate); forwards to MenuSysPage_OnActivate
+00251610	AvalancheMenu_OnDeactivate	high	vt 480040 slot 7 (MenuSysPage OnDeactivate); forwards to MenuSysPage_OnDeactivate
+00251690	AIVisualEffectsMenus_GlobalCtors	med	ctor-list entry 43ce6c; only content static init 0x250cb0(1,0xffff)
+002516b0	AIVisualEffectsMenus_GlobalDtors	med	dtor-list entry 43cefc; only content static init 0x250cb0(0,0xffff)
+002516d0	MEM_InitBlockHeader	med	writes heap block header: magic 0x424d 'BM', flags, size, prev/next; returns size+0x10; used by heap create/alloc/resize
+002516f0	MEM_ClearHeapTable	med	EA_MemSet of the 64-entry heap table 0x4d2438 (the table MEM_DumpHeapInfo walks)
+00251718	MEM_HeapCreate	med	builds heap in a region: '%s LOW'/'%s HIGH' sentinel blocks, registers in heap table 0x4d2438[id&0x3f], optional EAMutex
+00251998	MEM_HeapDestroy	med	heap table 0x4d2438[id]: destroys mutex, clears 0x50-byte heap descriptor, nulls slot
+00251a08	MEM_HeapFreeAll	med	walks heap 0x4d2438[id] block list and frees every allocated block (flags&0xc000==0) via 0x2523a8
+00251c38	MEM_FindBlockByName	med	scans all 64 heaps' blocks, strcasecmp(block name, arg); returns block data ptr
+00251d50	MEM_HeapAddRegion	med	links an extra memory region into heap: '%s LINK'/'%s HIGH' sentinels, inserts free block
+00251f68	MEM_DebugPrintf	med	vsprintf + Debug_Printf(2,..); line printer passed by MEM_PrintBlockLine to MEM_DumpHeapInfo
+00251fc8	MEM_PrintHeap	high	was MEM_PrintBlockLine: body is MEM_DumpHeapInfo(heap, fmt, 0x251f68 line printer), i.e. dumps a whole heap (was MEM_PrintBlockLine)
+00251ff0	MEM_DumpDefaultHeap	med	MEM_PrintBlockLine(gp default heap id 0x4a2e78); same global used by heap alloc as default heap
+00252248	MEM_IsValidBlockLink	med	EA_IsValidPointer(p,0x18) and magic 0x4246/0x4253 else sets heap error code; only caller block validator 0x2522b0
+002522b0	MEM_ValidateBlock	med	only caller MEM_DumpHeapInfo; checks block magic BS/BF/BM and 'BEND' (0x42454e44) guard, sets error code
+002523a8	MEM_Free	med	if (p) EA_MemFree(p); return 1. free hook stored at 44c458 next to alloc hook 0x252fa0; 28 callers (SndBank, ScriptEngine...)
+002523d0	MEM_HeapFreeBlock	med	frees block in heap 0x4d2438[hdr&0x3f]: coalesces with prev/next free (0x4246), inserts into free list, mutex
+002525f8	MEM_GetBlockSizeLocked	high	only content EAMutex_Lock(0x538b00); MEM_GetBlockSize; Unlock
+002526b8	MEM_ResizeBlockLocked	high	only content EAMutex_Lock(0x538b00); MEM_ResizeBlock; Unlock; set as realloc hook in 0x2ae048
+00252718	MEM_HeapShrinkBlock	med	resizes block in place in heap 0x4d2438: moves tail data, splits off free remainder (>0x40), mutex
+00252960	MEM_GetHeapBlockOverhead	med	returns heap 0x4d2438[id]+0x30 (extra bytes per block); added to size by heap alloc/free/resize
+00252980	MEM_AllocNamedAligned	med	(name,size,align,offset,flags) -> operator_new_named(size,name,flags|log2(align)-2<<24|0x10000000,offset)
+00252a10	MEM_HeapAllocAligned	med	(name,size,align,offset,flags): best-fit search of heap 0x4d2438[flags&0x3f] free list (low/high), splits block, mutex
+00252f60	MEM_AllocNamedAlignedHook	med	thunk to MEM_AllocNamedAligned; stored in allocator hook table 44c454
+00252fa0	MEM_AllocNamed128	med	MEM_AllocNamedAligned(name,size,0x80,0,flags); alloc hook 44c450 set in ssx_SystemInit; SndBank/SPCH callers
+00252fc8	MEM_HeapAllocNamed128	med	MEM_HeapAllocAligned(name,size,0x80,0,flags); heap twin of MEM_AllocNamed128
+00252ff0	MEM_AllocNamedUnaligned	med	MEM_AllocNamedAligned(name,size,0,0,flags)
+00253018	MEM_HeapAllocNamedUnaligned	med	MEM_HeapAllocAligned(name,size,0,0,flags)
+002530a0	MEM_AllocAnon	med	MEM_AllocNamedAligned(NULL,size,0,0,0,0)
+002530d0	MEM_HeapAllocAnon	med	MEM_HeapAllocAligned(NULL,size,0,0,0,0)
+00253390	VidEnginePlayer_InitOpenParams	med	zero-inits open-params struct (volume 1.0f, flags 0x1f) before VidEnginePlayer_Open; callers VidEnginePlayer_ctor, ScriptMovie_Open
+00253460	VidEnginePlayer_Reopen	med	VidEnginePlayer_Close; init params; params[0]=arg; VidEnginePlayer_Open
+002536c8	VidEnginePlayer_StartPlayback	med	AV_Player_Start/Pause, creates frame sink, AV_Player_Resume; callers VidEnginePlayer_Play
+00253748	VidEnginePlayer_PlayBlocking	med	loops AV_Player_IsFrameDue/DecodeFrame with EATimer_ServiceCallbacks/EAThread_Yield until done
+00253890	VidEnginePlayer_Render	med	callers FEModule_Render, cFEStateVideoPlayer_Render, ScriptMovie_TogglePause; draws current frame via sink vslots
+002539e0	VidEnginePlayer_Pause	med	only caller ScriptMovie_TogglePause; if playing and not paused: AV_Player_Pause, sets paused flag +8
+00253a40	VidEnginePlayer_Resume	med	only caller ScriptMovie_TogglePause; if paused: AV_Player_Resume, clears paused flag +8
+00253aa0	VidEngine_InstallMemHooks	med	only caller VidEnginePlayer_ctor; sets alloc/free callbacks 0x509430/0x509434 (free = 0x253af8 -> MEM_Free) and 0x400 align
+00253af8	VidEngine_MemFree	med	free callback installed at 0x509434 by VidEngine_InstallMemHooks; only content MEM_Free
+00254350	VD_FloorLog2	med	returns exponent of (float)n: ((int)(float)n >> 23) - 127 = floor(log2 n)
+00254368	VD_CreateTextureSink	med	allocs 0x54 bytes through VidEngine alloc hook 0x509430 and runs VD_TextureSink_ctor; only caller VidEnginePlayer_StartPlayback
+00254410	VD_TextureSink_ctor	med	stores vptr 480270; splits frame width into power-of-2 strips, allocs 'VD::VD_TEXTURE_POINTER' table, creates GS textures per strip
+002547b8	VD_TextureSink_dtor	med	vt 480270 slot 1; frees per-strip GS textures and table, resets vptr to base 4802b0, deleting variant via hook 0x509434
+002548d0	VD_TextureSink_DrawFrame	med	callers sink slots 4/5; waits for GS, sets 2D view of screen size, draws the texture strips as sprites
+00254c48	VD_TextureSink_UploadFrame	med	vt 480270 slot 4; uploads each strip of the new decoded frame to its GS texture, then VD_TextureSink_DrawFrame
+00254da0	VD_TextureSink_Redraw	med	vt 480270 slot 5; only content VD_TextureSink_DrawFrame (redraw last frame)
+002557e0	cDSockChannel_BaseCtor	med	only caller cDSockChannel_ctor; zeroes state/error, stores base vptr 481320 at +8 (overwritten by cDSockChannel vt 4812d0)
+00255800	cDSockChannel_BaseDtor	med	base vt 481320 slot 1; only caller cDSockChannel_dtor; resets vptr 481320, deleting variant
+00255830	cDSockChannel_SetOpen	med	callers cDSockChannel_Listen/Connect; state[0]=1, [1]=0
+00255840	cDSockChannel_ResetState	med	callers cDSockChannel_Disconnect and base slot 2; if state[0] clears state and error
+00255898	cCommSystem_Destroy	med	if (gp cCommSystem instance) cCommSystem_dtor(inst,3), instance=0; counterpart of cCommSystem_Create
+00255a10	cCommSystem_GetVersionTag	med	returns "NA_R_F004"; compared against challenge version in lobby message handler ('badversion')
+00255d50	cCommSystem_IsChannelConnected	med	channel[n] vslot 4; DebugMenu_StartMultiplayer polls it after cCommSystem_CreateChannel until true
+00255d88	cCommSystem_GetChannelLatency	med	channel[n] vslot 5; cGameComm stores result per peer +0x114/+0x118, max taken as latency
+00256228	DNASAuth_Init	med	zero-inits DNAS auth state (file handle +0x18 = -1); only caller the DNASAuth ctor 0x2561b8
+00258330	cGameComm_UpdateMaxLatency	med	+0x11c = max(peer latency +0x114, +0x118) clamped to App frame time (+0x14); caller cGameComm_SetState
+00258360	cGameComm_GetInputDelay	med	cCommSystem_GetChannelLatency(channel +0x6c) + delayFrames(+0x120) * App frame time
+00258448	cGameComm_ExchangeSetupData	med	only caller GameModule_Load; allocs 'bebuffer', packs BE player data, pumps cGameComm_Update until state 0xe, restores Rand state
+002586b0	cGameComm_WaitForPeerReady	med	only caller GameModule_Load; sends control packet 3 and pumps cGameComm_Update until peer-ready flag +0x3f4
+00258988	cGameComm_OnRaceStart	med	only caller RaceStateRace_Enter; notifies BuddyMan of in-race status, sets +0x80 racing, +0x34 timeout
+00258a48	cGameComm_OnRaceEnd	med	callers RaceStateEndRace_Enter and quit path; clears racing flag, SetState(0xf), arms +0x38/+0x3c timeouts
+00259198	LobbyMan_GetLanguage	med	returns "en" (4a2f18); used as LANG tag value in lobby requests (CreateLobbyApi, acct, rept)
+00259210	Lobby_MemFree	med	if (p) EA_MemFree; free hook used by DirtySock lobby code 0x3e77f0.. (pairs with Lobby_MemAlloc)
+00259288	TagFieldSetStringEscaped	med	TagFieldSetString, prefixing '`' when value starts with a quote; callers chat send code
+00259310	TagFieldGetStringUnescaped	med	TagFieldGetString then strips leading '`' added by TagFieldSetStringEscaped
+002598c8	LobbyMan_OnDisconnect	med	lobby callback 3 (PMF 4a3004): on 'disc' posts NetEvent 0x115 and flags +0x10
+00259b10	LobbyMan_OnMessage	med	lobby callback 1 (PMF 4a2ffc): handles 'chat'/'cast'/'priv' messages, challenge/badversion/decline/lockChal/abortChal
+0025a1d0	LobbyMan_OnGameStart	med	lobby callback 4 (PMF 4a300c): reads NAME/SELF/HOST/OPPO/P1/P2/ADDR/SEED, sets AI count, posts NetEvent 0xef
+0025a778	LobbyMan_CreateLists	med	only caller LobbyMan_CreateLobbyApi; creates lobby lists 0/1/2 with sort comparators and callbacks, clears slot arrays
+0025a850	LobbyMan_ReleaseSnapshotLists	med	releases up to 29 type-4 lobby lists at +0x1ec
+0025a8b0	LobbyMan_DestroyLists	med	only caller LobbyMan_DestroyLobbyApi; releases lists 0/1/2 (+0x5c/+0x60/+0x64), snapshot lists, +0x58 object
+0025aae0	LobbyMan_SendChat	med	sends lobby 'mesg' with TEXT tag (escaped); callers chat room keyboard done
+0025ab40	LobbyMan_PostChatEvent	high	allocs 'ChatEvent' (vt 481230, id 0xde) with from/text strings, queues into event list +0xf0
+0025b608	LobbyMan_SendRequest	med	sets state, 20.0s timeout +0xe0, sends lobby command with tagfields and reply callback, stores request id +0x40; 19 callers
+0025b848	LobbyMan_OnConnectReply	med	callback registered by LobbyMan_Connect: on success sends 'sele' 'ROOMS=1 USERS=1...' and posts NetEvent 0xc9, else 0x102
+0025b9c8	LobbyMan_CreateAccount	med	sends 'acct' (NAME,PASS,SPAM,MAIL,PMAIL,GEND,BORN,MINAGE,LANG); callers LobbyMenu_CreateAccount, cFEStateCreateStep2_SubmitAccount
+0025bc48	LobbyMan_ParseNameSuggestions	med	splits OPTS tag comma list into up to 4 strings at +0x274 (count +0x284); callers acct/cper replies
+0025bd30	LobbyMan_OnCreateAccountReply	med	reply to 'acct' (via 0x268bd0): posts NetEvent 0xcb or 'dupl'/'tooy' errors with name suggestions
+0025bf18	LobbyMan_EditAccount	med	sends 'edit' request (state 5); caller cFEStateCreateStep1_SubmitEdits
+0025c0c0	LobbyMan_OnEditAccountReply	med	reply to 'edit' (via 0x268bf8): posts NetEvent 0xce or error 0x102
+0025c1e0	LobbyMan_SendLostByEmail	med	sends 'lost' with MAIL tag (state 6); caller cFEUseExistingAccount
+0025c2d8	LobbyMan_OnLostByEmailReply	med	reply to 'lost'/MAIL (via 0x268c20): posts NetEvent 0xcf or error 0x102
+0025c3f8	LobbyMan_SendLostByName	med	sends 'lost' with NAME tag (state 7); caller cFEUseExistingAccount
+0025c4f0	LobbyMan_OnLostByNameReply	med	reply to 'lost'/NAME (via 0x268c48): posts NetEvent 0xd2 or error 0x102
+0025c610	LobbyMan_Login	med	sends 'auth' (state 8) with name/pass, NetConnMAC, HWFLAG/HWMASK; callers LobbyMenu_Login, cFEStateLogin/Relogin
+0025c8a8	LobbyMan_OnLoginReply	med	reply to 'auth' (via 0x268c70): reads PERSONAS, INTRO, handles 'lock'; posts events
+0025cd28	LobbyMan_SelectPersonaIndex	med	LobbyMan_SelectPersona(this, persona name list +0x70[i])
+0025cd50	LobbyMan_SelectPersona	med	sends 'pers' (state 9) with PERS, MID (MAC), PID 'SSX-PS2-2004', CDEV; stores persona +0x80
+0025ceb0	LobbyMan_OnSelectPersonaReply	med	reply to 'pers' (via 0x268c98): posts 0xda / error, then sends own 'onln' query
+0025cfe0	LobbyMan_QueryOwnStats	med	sends 'onln' (state 0x1b) with PERS = own persona +0x80; reply LobbyMan_OnOwnStatsReply
+0025d048	LobbyMan_OnOwnStatsReply	med	reply to own 'onln' (via 0x268cc0): parses STAT/R into +0xb8..+0xc8, then requests news
+0025d1b8	LobbyMan_CreatePersona	med	sends 'cper' (state 10); callers LobbyMenu_CreatePersona, cFEStateSelectPersona_SubmitPersona
+0025d2d8	LobbyMan_OnCreatePersonaReply	med	reply to 'cper' (via 0x268ce8): posts 0xd6, on 'dupl' parses name suggestions, else 0x102
+0025d428	LobbyMan_DeletePersona	med	sends 'dper' (state 0xb); callers persona select screen
+0025d538	LobbyMan_OnDeletePersonaReply	med	reply to 'dper' (via 0x268d10): updates persona list, posts 0xd8 or error 0x102
+0025d770	LobbyMan_PeekRoom	med	sends 'peek' with NAME = room name of index (or empty); callers cFEStateLobbyMenu room list
+0025d800	LobbyMan_MoveToRoomIndex	med	LobbyMan_MoveToRoom(room name of index or "", password)
+0025d860	LobbyMan_MoveToRoom	med	sends 'move' (state 0xc) with NAME and optional PASS
+0025d8f8	LobbyMan_OnMoveToRoomReply	med	reply to 'move' (via 0x268d38): stores room name, posts 0xdc or error 0x102
+0025dac0	LobbyMan_CreateRoom	med	sends 'room' (state 0x11) NAME '%s.%s', optional PASS; caller cFEStateLobbyMenu_CreateRoom
+0025db80	LobbyMan_OnCreateRoomReply	med	reply to 'room' (via 0x268d60): posts 0xe4 or error 0x102
+0025dd08	LobbyMan_PingUser	med	lobby ping (0x3e8dc0, 5000 ms) of named user with address lookup; caller NetFE_ShowPlayerStats; reply 0x268d88
+0025dde0	LobbyMan_OnPingReply	med	ping reply (via 0x268d88): reads NAME and PING tags, posts NetEvent
+0025df00	LobbyMan_ReportUser	med	sends 'rept' (state 0x10) with PERS and LANG; caller chat room buddy action
+0025df98	LobbyMan_OnReportUserReply	med	reply to 'rept' (via 0x268db0): posts 0xe8 or error 0x102
+0025e0c8	LobbyMan_RequestNews	med	sends 'news' (state 0xe) with NAME=index; callers cFEStateNetNews_Init and own-stats reply
+0025e138	LobbyMan_OnNewsReply	med	reply to 'news' (via 0x268dd8): reads new0/new1, BUDDYSERVERNAME/BUDDYPORT/BUDDYRESOURCE config, posts 0xe2
+0025e348	LobbyMan_RequestStatsPage	med	caller cFEStateStats_ResetResultsPage; reads 'slot' count, sends snapshot request or posts list-done event
+0025e420	LobbyMan_SendSnapshot	med	sends 'snap' with INDEX/CHAN/START/RANGE/SEQN, creating type-4 list per channel
+0025e590	LobbyMan_OnSnapshotReply	med	reply to 'snap' (via 0x268e00): reads START/RANGE, posts NetEvent or error 0x102
+0025e6d0	LobbyMan_LookupUser	med	sends 'user' with PERS; callers cFEStateNetMessenger_FindUser, challenge popups; posts 0x10e
+0025e7f0	LobbyMan_OnLookupUserReply	med	reply to 'user' (via 0x268e28): parses user record tag fields, posts NetEvent
+0025eaa0	LobbyMan_QueryUserStats	med	sends 'onln' with PERS=arg directly (callback 0x268e50 -> 0x25eb00); no callers
+0025eb00	LobbyMan_OnUserStatsReply	med	reply to user 'onln' query (via 0x268e50): parses stats tag fields, posts NetEvent or error 0x102
+0025ee20	LobbyMan_StartQuickPlay	med	caller cFEStateNetQuickPlayPopup_OnWidgetAction; sends lobby 'quik' cmd KIND=DeathRace/QMFP, state 0x12, 20s timeout
+0025eed8	LobbyMan_CancelQuickPlay	med	callers QuickPlayPopup/LobbyMan_Update; sends 'quik' KIND=* (or closes game in state 0x19), state idle, posts NetEvent 0xe7
+0025f030	LobbyMan_OnQuickPlayReply	med	lobby 'quik' reply callback (via thunk 0x268e78, ptr table 4a3214); error -> state 1 + NetErrorEvent 0x102, else state 0x12->0x14
+0025f430	LobbyMan_IsInRoom	med	DirtySock info lookup 'room' (0x726f6f6d) on lobby api LobbyMan+0x54, true if name non-empty
+0025f478	LobbyMan_ChallengeRoomUser	med	gets room user name by index (0x25f1e0) then LobbyMan_SendChallenge
+0025f4c0	LobbyMan_SendChallenge	med	formats 'challenge %s %d...' with track/settings, sends via SendPrivateMessage, state 0x16; caller cFEStateChallengePopup_OnWidgetAction
+0025f628	LobbyMan_CancelChallenge	med	states 0x15/0x16/0x18: optional 'abortChal' msg + 'chal' reset; state 0x19 -> ClearChallengeLock; posts NetEvent 0xee
+0025f740	LobbyMan_ClearChallengeLock	med	if state 0x19 sends lobby 'chal' cmd PERS=* and returns to state 1; optionally posts NetEvent(param)
+0025f858	LobbyMan_ResetChalState	med	sends lobby 'chal' cmd with empty tags, state=1
+0025f8a0	LobbyMan_OnChalReply	med	lobby 'chal' reply callback (thunk 0x268ea0); MODE tag 'chal'/'idle'/'play' drives challenge states 0x15/0x18
+0025fa48	LobbyMan_ChalRequestHost	med	sends lobby 'chal' PERS=<name> HOST=1, state 0x15, reply cb 0x268ea0
+0025fad0	LobbyMan_ChalRequestJoin	med	sends lobby 'chal' PERS=<name> HOST=0, state 0x18, reply cb 0x268ea0
+0025fb58	LobbyMan_AcceptChallenge	med	caller cFEStateChallengeReceivedPopup_OnWidgetAction; stores +0xa4 and sends 'lockChal' (state 0x17)
+0025fb80	LobbyMan_SendPrivateMessage	high	lobby 'mesg' cmd with PRIV=<to> TEXT=<msg> ATTR flags; used for 'decline'/'abortChal'/'lockChal'/'challenge'
+0025fc20	LobbyMan_OnMesgReply	med	empty reply callback passed by SendPrivateMessage (thunk 0x268ec8)
+0025fc28	LobbyMan_SendDecline	high	SendPrivateMessage(to, "decline")
+0025fc48	LobbyMan_SendAbortChal	high	SendPrivateMessage(+0x98 opponent, "abortChal")
+0025fc70	LobbyMan_SendLockChal	high	SendPrivateMessage(to,"lockChal"), sets state, posts NetEvent 0x110, 20s timeout
+0025fd50	LobbyMan_SendRaceReport	med	caller cFEStateRelogin_v31; REPT/COMMERR/PINGRSLT/FINISH0/RACETIM0/DESYNC tags from race stats, lobby 'rank' cmd (reply 0x268ef0), NetEvent 0x100
+00260c68	LobbyMan_OnRankReply	med	'rank' reply callback of SendRaceReport (thunk 0x268ef0); error code ('rank' tolerated) -> NetErrorEvent 0x102, always posts NetEvent 0x101
+00260e50	LobbyMan_GetErrorString	med	caller LobbyMenu_Render; 'dupl'->"Duplicate", 'time'->"Timeout", else "Unknown Error Code %08x '%c%c%c%c'"
+00261008	BuddyMan_Destroy	med	BuddyMan singleton gp+0x238: clears login, frees messages, disconnects, deletes and zeroes the pointer
+00261058	BuddyMan_ClearLogin	med	clears BuddyMan user name/+0x44/+0x64 strings and port (+0x40=-1) as set by BuddyMan_Connect
+00261070	BuddyMan_ClearMessages	med	deletes all cPrivateMessage objects in BuddyMan vector +0xac..+0xb0
+00261248	BuddyMan_Connect	med	creates BuddyApi (version '2003-10-20'), stores server/port/user/pass, BuddyApi connect with '/cso/'+product, callback 0x268f18
+002613c8	BuddyMan_Reconnect	med	if port>=0 and state!=1 re-calls BuddyMan_Connect with stored credentials; 58 FE callers
+00261408	BuddyMan_Disconnect	med	sets presence offline (BuddyMan_SetPresence 0), destroys BuddyApi, clears state flags
+00261460	BuddyMan_IsConnected	med	true if BuddyApi handle +200 set, state!=1 and connected flag +0xe0
+00261490	BuddyMan_Update	med	only caller LobbyMan_Update; BuddyApi_Process, disconnects when +0xdc disconnect-request set
+002614e8	BuddyMan_CreateApi	med	BuddyApi create with version '2003-10-20' -> +200, registers event callback 0x268f40
+00261530	BuddyMan_DestroyApi	med	declines+deletes all cChallenger (+0xbc vector) then BuddyApi disconnect/destroy, zero +200/+0xcc
+002615c8	BuddyMan_OnConnectEvent	med	BuddyApi callback (thunk 0x268f18): 'auth' ok -> roster get, presence online, connected; error -> NetEvent 0x104; 'conn' states -> disconnect
+00261770	BuddyMan_OnRosterEvent	med	BuddyApi callback (thunk 0x268f68): 'endr' (end roster) first time -> AddMessageSendersToRoster + NetEvent 0x107, else NetEvent 0x106
+002618c0	BuddyMan_OnRosterAddReply	med	reply callback of BuddyMan_AddRosterEntry (thunk 0x268fb8); posts NetEvent 0x10a
+00261970	BuddyMan_OnRosterRemoveReply	med	reply callback for roster removal/change (thunk 0x268f90); posts NetEvent 0x10b
+00261a20	BuddyMan_OnSendMessageReply	med	empty reply callback of BuddyMan_SendMessage (thunk 0x268fe0)
+00261a28	BuddyMan_OnMessageReceived	med	BuddyApi msg callback (thunk 0x268f40): TYPE/USER/SUBJ/BODY/TIME tags, ignores blocked users, AddMessage, caps 30 per sender, NetEvent 0x109
+00261cd0	BuddyMan_AddMessage	high	allocs 'cPrivateMessage'(from,body,time) into vector +0xa8; unknown sender added as temp roster entry (NetEvent 0x108)
+00261ef8	BuddyMan_ChangeRosterEntry	med	moves user to roster list type 0/1/2 (flags 4/0x200/0x100000), adding via AddRosterEntry or removing old entry; FE messenger callers
+002620d8	BuddyMan_AddRosterEntry	med	adds name to BuddyApi roster with type flags 4 (buddy,max 40) / 0x200 (block) / 0x900000 (temp,max 10); result 3 if self
+00262280	BuddyMan_CountPermanentEntries	med	counts roster entries without temp flag 0x100000 (limit check in AddRosterEntry)
+002622f0	BuddyMan_CountTempEntries	med	counts roster entries with temp flag 0x100000 (limit 10 check in AddRosterEntry)
+00262360	BuddyMan_IsBuddy	med	FindRosterEntry(name) then IsBuddyAt
+00262390	BuddyMan_IsBuddyAt	med	roster entry idx has flag 4 (buddy)
+002623b0	BuddyMan_IsBlocked	med	FindRosterEntry(name) then IsBlockedAt; OnMessageReceived drops messages from blocked users
+002623e0	BuddyMan_IsBlockedAt	med	roster entry idx has flag 0x200 (block/ignore)
+00262400	BuddyMan_IsTempAt	med	roster entry idx flag bit 20 (0x100000 temp entry, set with 0x900000 by AddRosterEntry type 2)
+00262438	BuddyMan_IsTemp	med	FindRosterEntry(name) then IsTempAt
+00262468	BuddyMan_FindRosterEntry	med	linear search roster entries by strcmp name, returns index or -1
+002624f8	BuddyMan_FindRosterEntryNoCase	med	strcasecmp search of roster by cBXString name, returns index or -1
+00262598	BuddyMan_GetRosterCount	med	count of BuddyApi roster list (+0xcc), 0 if none
+002625c8	BuddyMan_GetRosterEntry	med	bounds-checked roster list item(idx) of +0xcc list
+00262620	BuddyMan_GetBuddyAt	med	roster entry idx if it has flag 4 (buddy) else NULL
+00262658	BuddyMan_GetBlockedAt	med	roster entry idx if it has flag 0x200 (block) else NULL
+00262690	BuddyMan_SendMessage	med	builds TYPE=C SUBJ USER BODY SECS tags, BuddyApi send; callers cFEStateReadMessagePopup_OnWidgetAction etc.
+00262768	BuddyMan_SetPresence	med	BuddyApi presence: 'is playing SSX 3', SSXID/LOCID/SZ1-3 tags, state via MapPresenceState
+002628c0	BuddyMan_MapPresenceState	med	maps presence state 0..3 to BuddyApi code, -1 if no api/invalid; only caller BuddyMan_SetPresence
+00262938	BuddyMan_GetMessageCount	med	size of cPrivateMessage vector +0xac..+0xb0
+00262950	BuddyMan_CountMessagesFromAt	med	counts private messages whose sender equals roster entry idx name
+00262a08	BuddyMan_CountMessagesFrom	med	FindRosterEntry(name) then CountMessagesFromAt; caller OnMessageReceived (cap 30)
+00262a38	BuddyMan_HasMessageFrom	med	true if any cPrivateMessage sender == name
+00262af0	BuddyMan_OnChallengeReceived	med	only caller FUN_00259b10; drops if blocked, adds sender as temp entry, allocs 'cChallenger' with challenge params into +0xb8 vector
+00262e20	BuddyMan_FindChallengerIndex	med	strcasecmp search of cChallenger vector +0xbc, returns index or -1
+00263018	BuddyMan_RemoveChallenger	med	declines (LobbyMan_SendDecline) and deletes cChallenger by name; removes temp roster entry if no messages left
+00263128	BuddyMan_HasChallenger	med	true if cChallenger vector +0xbc has entry with name
+00263270	BuddyMan_GetChallengerByName	med	returns cChallenger* from +0xbc vector by strcmp name; caller cFEStateChallengeReceivedPopup_Init
+00263308	BuddyMan_GetChallenger	med	bounds-checked cChallenger vector +0xbc item(idx)
+00263500	BuddyMan_DeleteMessage	med	removes given cPrivateMessage* from vector +0xac (search from back) and deletes it
+002635a8	BuddyMan_DeleteMessageAt	med	removes cPrivateMessage at idx from vector +0xac and deletes it
+00263630	BuddyMan_GetMessage	med	bounds-checked cPrivateMessage vector +0xac item(idx)
+002636a8	Net_StartConnect	med	cCommSystem_Connect, stores timeout (gp choice on comm+0x2c) and state 1 in caller's connect-state struct; polled by Net_UpdateConnect
+002636f0	Net_DisconnectAll	med	disconnects BuddyMan, LobbyMan and cCommSystem; posts 'NetErrorEvent' 0x116 with error code; 10 FE callers
+00263828	Net_UpdateConnect	med	caller ssx_BootMoviesUpdate; polls cCommSystem state: 5 -> NetEvent 0x105, 6 -> Net_DisconnectAll(err), timeout -> Net_DisconnectAll('-???')
+002639e0	Net_StartGameSetup	med	sets BE race to 2 humans/pads, opens cCommSystem channel to '%d.%d.%d.%d' peer, starts cVoipMan if enabled, state 1
+00263ba8	Net_AbortGameSetup	med	closes game channel and voip, destroys cSetupMan, LobbyMan_ClearChallengeLock, posts NetEvent 0x10c/0x112
+00263cf0	Net_UpdateGameSetup	med	caller ssx_BootMoviesUpdate; waits channel, cSetupMan_Create/Update; on setup done (0xd) creates cGameComm + 'cPreGameLoadScreen' state
+00264098	cSetupMan_Destroy	high	deletes cSetupMan singleton (gp+0x2dc, set by cSetupMan_Create) via deleting dtor and zeroes it
+00264138	cSetupMan_dtor	med	frees queued packets of recv ring (+0x10) and send ring (+0x98), deleting dtor flag; only caller cSetupMan_Destroy
+002642b8	cSetupMan_Update	high	allocation tag 'cSetupMan_Update' used by its event helpers; pumps packets, dispatches setup msgs 0..0x10/0xf8/0xfa host vs client
+00264990	cSetupMan_FreePacket	med	__builtin_delete(packet); used by ring pop/flush/dtor
+002649b0	cSetupMan_PopPacket	med	ReceivePackets then pops recv ring (+8/+0xc, 32 slots), copies payload (len-4) to caller buffer
+00264a58	cSetupMan_ReceivePackets	med	cSetupMan_AllocPacket + cCommSystem_ChannelRecv on channel +0x120 into 32-entry recv ring
+00264b20	cSetupMan_FlushSendQueue	med	resends queued packets of send ring (+0x90/+0x94) via cCommSystem_ChannelSend until it fails
+00264be8	cSetupMan_SendPacket	med	prepends 4-byte header (len), cCommSystem_ChannelSend, queues copy in send ring on failure
+00264cf0	cSetupMan_SetLocalCharacter	med	BENewPlayerInt_SetCharacterBySlot(slot 0, char) and stores it in DAT_00534e58
+00264d80	cSetupMan_SetRemoteCharacter	med	BENewPlayerInt_SetCharacterBySlot(slot 1, char), DAT_00534e5c, optional remote outfit bytes
+00264e50	cSetupMan_SendCharacterMsg	med	packs msg (type, char, state) + 7 character stat bytes from BE interface 3 (or 40s), cSetupMan_SendPacket 0x14 bytes
+00264f88	cSetupMan_SelectCharacter	med	caller cFEStateOnlineCharacterSelect_OnWidgetAction; host sets local char + msg 0, client msg 1
+00265018	cSetupMan_ConfirmCharacter	med	caller cFEStateOnlineCharacterSelect_OnWidgetAction; sets local char, setup msg 2/3, NetEvent 0xf4
+00265140	cSetupMan_CancelCharacter	med	caller cFEStateOnlineCharacterSelect_OnWidgetAction; setup msg 4/5 with char -1
+00265190	cSetupMan_HostRecvSelect	med	cSetupMan_Update host branch msg 1: SetRemoteCharacter, echo msg 1, NetEvent 0xf3
+00265290	cSetupMan_HostRecvConfirm	med	cSetupMan_Update host branch msg 3: SetRemoteCharacter, msg 3, NetEvent 0xf5
+00265398	cSetupMan_HostRecvCancel	med	cSetupMan_Update host branch msg 5: state 3->2, NetEvent 0xf7
+00265458	cSetupMan_SendBragMsg6	med	caller cFEStateBraggingRights_OnWidgetNotify; setup msg 6/7 (value), posts NetEventFB
+00265568	cSetupMan_SendBragMsg8	med	caller cFEStateBraggingRights_OnWidgetAction; setup msg 8/9 (two values), posts NetEventFC
+00265688	cSetupMan_SendBragMsg10	med	caller cFEStateBraggingRights_OnWidgetAction; setup msg 10/11 with state
+00265700	cSetupMan_SendBragMsg12	med	caller cFEStateBraggingRights_Update; setup msg 12/13 with state
+00265768	cSetupMan_SendQuit	med	sends quit msg (0xf8, 0xf9 -> NetEvent 0x10c), LobbyMan_ClearChallengeLock, state 0xb
+002658b8	cSharedLoginMan_Destroy	high	deletes cSharedLoginMan singleton gp+0x2e0 (set by cSharedLoginMan_Create); caller cFEStateNetAccountMem_dtor
+00265908	cSharedLoginMan_dtor	med	Shutdown + deleting-dtor flag; only caller cSharedLoginMan_Destroy
+00265950	cSharedLoginMan_Init	med	only caller cSharedLoginMan_ctor; registers memcard callback table 0x442a18 with login lib, cPS2MemCard_Create
+002659c0	cSharedLoginMan_Shutdown	med	unregisters login lib, cPS2MemCard_Destroy; called from cSharedLoginMan_dtor
+00265fb8	cSharedLoginMan_McListDir	med	login-lib memcard callback table 0x442a18[0]; cPS2MemCard_RequestListDirAll, op state 2
+00266060	cSharedLoginMan_McGetInfo	med	memcard callback table 0x442a24; cPS2MemCard_RequestGetInfoNow(port), op state 1
+002660c8	cSharedLoginMan_McOpen	med	memcard callback table 0x442a2c; sprintf '%s/%s', cPS2MemCard_RequestOpen, op state 4
+00266148	cSharedLoginMan_McClose	med	memcard callback table 0x442a30; cPS2MemCard_RequestClose, op state 8
+00266170	cSharedLoginMan_McMkdir	med	memcard callback table 0x442a34; cPS2MemCard_RequestMkdir, op state 0xb
+002661d8	cSharedLoginMan_McDeleteFile	med	memcard callback table 0x442a38; '%s/%s' cPS2MemCard_RequestDelete, op state 0xc
+00266240	cSharedLoginMan_McDeletePath	med	memcard callback table 0x442a3c; cPS2MemCard_RequestDelete(path), op state 0xd
+00266298	cSharedLoginMan_McRead	med	memcard callback table 0x442a40; cPS2MemCard_RequestRead, op state 6
+002662c0	cSharedLoginMan_McWrite	med	memcard callback table 0x442a44; cPS2MemCard_RequestWrite, op state 0xe
+002662e8	cSharedLoginMan_McSeek	med	memcard callback table 0x442a48; cPS2MemCard_RequestSeek, op state 5
+00266320	cSharedLoginMan_McFlush	med	memcard callback table 0x442a4c; cPS2MemCard_RequestFlush, op state 7
+00266358	cSharedLoginMan_McPoll	med	memcard callback table 0x442a54; reports busy/done and result per pending op state, maps port errors
+00266578	cSharedLoginMan_McMapError	med	only caller McPoll; maps cPS2MemCard port error codes per pending op state to login-lib error codes
+00266760	TibExtMemFree	med	EA_MemFree if non-null; adjacent to TibExtMemAlloc 0x266728, callers are network-config lib 0x3f6d98..0x3fcf00
+002667c0	cUsbKeyboard_Destroy	high	deletes cUsbKeyboard singleton gp+0x300 (set by cUsbKeyboard_Create)
+00266850	cUsbKeyboard_dtor	med	closes keyboard lib if opened (+0x460), deleting-dtor flag
+002668a8	cUsbKeyboard_OnConnect	med	address taken in cUsbKeyboard_ctor; per-keyboard init sceUsbKbSetArrangement/sceUsbKbSetReadMode
+002668e8	cUsbKeyboard_Update	med	caller SSXApp_NextTick; polls up to 8 USB keyboards, pushes key codes into 64-entry rings, LED/modifier flags
+00266ba8	cUsbKeyboard_GetKey	med	pops next key (code, modifier) from keyboard idx ring; callers MenuSys_Update, FUN_001804b8
+00266cd8	cVoipMan_Destroy	high	deletes cVoipMan singleton gp+0x304 (set by cVoipMan_Create)
+00266d10	cVoipMan_dtor	med	cVoipMan_Stop + deleting-dtor flag
+00266d58	cVoipMan_Start	med	starts voip to peer address (6000 ms), sets volume gp+0x308, activates if enabled; callers DebugMenu_StartMultiplayer, Net_StartGameSetup
+00266df8	cVoipMan_Stop	med	stops voip session if started, clears +0
+00267128	BuddyMan_MessageVectorInsert	med	STL vector<cPrivateMessage*> grow/insert ('StlBlock'); only caller BuddyMan_AddMessage (+0xa8)
+002672c8	BuddyMan_ChallengerVectorInsert	med	STL vector<cChallenger*> grow/insert ('StlBlock'); only caller BuddyMan_OnChallengeReceived (+0xb8)
+00267468	LobbyMan_StaticInit	med	static init (1,0xffff) of the lobby TU: constant matrices 0x4d2c38.., gp+0x1fe8..0x2064 (timeouts used by LobbyMan)
+00267e18	NetEvent_dtor	high	base NetEvent vtable 0x4812b0 slot 1 (dtor in NetEventE2 family); alloc tag 'NetEvent'
+00267e48	NetEvent_Clone	high	base NetEvent vtable 0x4812b0 slot 2 (Clone in NetEventE2 family); copies id into new 'NetEvent'
+00267e98	NetEvent102_dtor	med	vtable 0x481290 slot 1 (dtor); class posted as id 0x102 net error with code at +8
+00267ec8	NetEvent102_Clone	med	vtable 0x481290 slot 2; clones id 0x102 event with error code
+00267fb8	NetErrorEvent_dtor	high	vtable 0x481250 slot 1; class allocated with tag 'NetErrorEvent' (id 0x116) in Net_DisconnectAll
+00267fe8	NetErrorEvent_Clone	high	vtable 0x481250 slot 2; clones id 0x116 'NetErrorEvent' with code
+00268210	NetEvent102Tooy_dtor	med	vtable 0x4811f0 slot 1; error event 0x102 with code 'tooy'
+00268240	NetEvent102Tooy_Clone	med	vtable 0x4811f0 slot 2; clones 0x102 event code 'tooy' plus value
+002682a8	NetEvent102Lock_dtor	med	vtable 0x4811d0 slot 1; error event 0x102 code 'lock' with two cBXStrings
+00268308	NetEvent102Lock_Clone	med	vtable 0x4811d0 slot 2; clones 0x102 code 'lock' with two strings
+00268398	NetEvent102Down_dtor	med	vtable 0x4811b0 slot 1; error event 0x102 code 'down' with a cBXString
+002683f0	NetEvent102Down_Clone	med	vtable 0x4811b0 slot 2; clones 0x102 code 'down' with string
+002688e0	cPrivateMessage_dtor	high	resets vptr 0x46d8c0 at +0xc (set at 'cPrivateMessage' alloc in BuddyMan_AddMessage), frees 3 cBXStrings
+00268950	cChallenger_dtor	high	vtable 0x4810e0 slot 1, vptr at +0x3c set at 'cChallenger' alloc in BuddyMan_OnChallengeReceived; frees 2 cBXStrings
+002689b8	BuddyMan_dtor	med	frees product string +0xec and challenger/message vectors; only caller BuddyMan_Destroy (flag 3)
+00268e78	LobbyMan_OnQuickPlayReplyThunk	med	member-callback adapter: this+adj -> LobbyMan_OnQuickPlayReply; passed by StartQuickPlay/CancelQuickPlay
+00268ea0	LobbyMan_OnChalReplyThunk	med	member-callback adapter -> LobbyMan_OnChalReply; passed by ChalRequestHost/Join
+00268ec8	LobbyMan_OnMesgReplyThunk	med	member-callback adapter -> LobbyMan_OnMesgReply; passed by SendPrivateMessage
+00268ef0	LobbyMan_OnRankReplyThunk	med	member-callback adapter -> LobbyMan_OnRankReply; passed by SendRaceReport
+00268f18	BuddyMan_OnConnectEventThunk	med	member-callback adapter -> BuddyMan_OnConnectEvent; passed by BuddyMan_Connect
+00268f40	BuddyMan_OnMessageReceivedThunk	med	member-callback adapter -> BuddyMan_OnMessageReceived; registered by BuddyMan_CreateApi
+00268f68	BuddyMan_OnRosterEventThunk	med	member-callback adapter -> BuddyMan_OnRosterEvent; passed in BuddyMan_OnConnectEvent
+00268f90	BuddyMan_OnRosterRemoveReplyThunk	med	member-callback adapter -> 0x261970; passed with roster removal calls (ChangeRosterEntry/RemoveChallenger)
+00268fb8	BuddyMan_OnRosterAddReplyThunk	med	member-callback adapter -> 0x2618c0; passed by BuddyMan_AddRosterEntry
+00268fe0	BuddyMan_OnSendMessageReplyThunk	med	member-callback adapter -> 0x261a20; passed by BuddyMan_SendMessage
+00269008	cSetupMan_ClientRecvMsg1	med	cSetupMan_Update client branch msg 1: state, SetLocalCharacter, NetEvent 0xf3
+002690c8	cSetupMan_ClientRecvMsg3	med	cSetupMan_Update client branch msg 3: state, SetLocalCharacter, NetEvent 0xf4
+00269188	cSetupMan_ClientRecvMsg5	med	cSetupMan_Update client branch msg 5: state, NetEvent 0xf7
+00269240	cSetupMan_ClientRecvMsg0	med	cSetupMan_Update client branch msg 0: state, SetRemoteCharacter with outfit, NetEvent 0xf3
+00269300	cSetupMan_ClientRecvMsg2	med	cSetupMan_Update client branch msg 2: state, SetRemoteCharacter, NetEvent 0xf5
+002693c0	cSetupMan_ClientRecvMsg4	med	cSetupMan_Update client branch msg 4: state, NetEvent 0xf7
+00269478	cSetupMan_HostRecvMsg7	med	cSetupMan_Update host branch msg 7: NetEventFB(1,value) ('cSetupMan_Update' tag)
+00269538	cSetupMan_HostRecvMsg9	med	cSetupMan_Update host branch msg 9: NetEventFC(1,a,b)
+00269608	cSetupMan_HostRecvMsg11	med	cSetupMan_Update host branch msg 11: state 8/10, reply msg 11, NetEventFD
+002696f8	cSetupMan_HostRecvMsg13	med	cSetupMan_Update host branch msg 13: reply, NetEventFE
+002697d0	cSetupMan_ClientRecvMsg6	med	cSetupMan_Update client branch msg 6: NetEventFB(1,value)
+00269890	cSetupMan_ClientRecvMsg7	med	cSetupMan_Update client branch msg 7: NetEventFB
+00269948	cSetupMan_ClientRecvMsg8	med	cSetupMan_Update client branch msg 8: NetEventFC
+00269a18	cSetupMan_ClientRecvMsg9	med	cSetupMan_Update client branch msg 9: NetEventFC
+00269ae0	cSetupMan_ClientRecvMsg10	med	cSetupMan_Update client branch msg 10: state, NetEventFD
+00269b90	cSetupMan_ClientRecvMsg11	med	cSetupMan_Update client branch msg 11: NetEventFD
+00269c40	cSetupMan_ClientRecvMsg12	med	cSetupMan_Update client branch msg 12: NetEventFE
+00269cf0	cSetupMan_ClientRecvMsg13	med	cSetupMan_Update client branch msg 13: NetEventFE
+00269ea0	LobbyMan_GlobalCtors	med	ctor-table entry 0x43ce78 calling LobbyMan_StaticInit(1,0xffff); same pattern as BE_GlobalCtors
+0026a338	Path_ReadSegment	med	only caller Path_Read; PathData_ReadVec3 dir + PathData_ReadFloat length
+0026a378	Path_ReadEvent	med	only caller Path_Read; event type mapped via 21-entry table 0x4453d0, int, start/end floats
+0026a428	Path_GetClosestPoint	med	projects pos onto each segment (VU0 dot, optional 2D), keeps nearest; returns distance along path; callers Rider_UpdateAIPathProgress
+0026a638	Path_GetClosestPointFrom	med	like Path_GetClosestPoint but starts at hinted segment/point; callers Rider_InitTrackPaths, Rider_UpdateAIPathProgress
+0026a8b8	Path_GetDirAtDistance	med	returns direction vector of segment containing distance; caller RiderResetSub_HandleInput
+0026a9b0	Path_BoundsDistance	med	largest per-axis distance from point to path AABB (+0x1c..+0x30); used by PathData_FindNear*Paths
+0026aa80	Path_QueryEvents	med	AIPaths vtable 0x481478 slot 1 (rider.md: aiPath+0x34 vslot 1 marker query); copies events overlapping [a,b] up to max
+0026ab20	Path_GetPointAtDistance	med	walks segments from start point +0xc accumulating dir*len, returns point at distance, out flag 0 if past end
+0026ac48	Path_GetLength	med	sums segment lengths (+0xc of 16-byte segments at +0x18, count +8); callers Rider_UpdateRaceProgress/UpdateAIPathProgress
+0026af70	PathData_GetTrackPath	med	PathData+0x14 TrackPaths array (0x3c each, PathData_ReadTrackPaths) + idx*0x3c; caller RiderBase_LoadState
+0026af88	PathData_GetAIPath	med	PathData+0xc AIPaths array (0x40 each, PathData_ReadAIPaths) + idx*0x40; caller RiderBase_LoadState
+0026afb8	PathData_FindNearAIPaths	med	collects AIPaths whose AABB contains pos (optional flag +0x3c filter), fills rest by nearest Path_BoundsDistance
+0026b178	PathData_FindNearTrackPaths	med	same as FindNearAIPaths over TrackPaths (+0x10/+0x14, 0x3c); caller 0x1127f0
+0026b508	PathData_GetTrackPathIndex	med	index of TrackPath pointer in +0x14 array or -1; caller RiderBase_SaveState
+0026b550	PathData_GetAIPathIndex	med	index of AIPath pointer in +0xc array or -1; caller RiderBase_SaveState
+0026b598	PathData_HasMarker	med	marker list {count,ptr} entries 0x28: true if (type,id) present; caller OVScreenSession_CreateMapIndicators
+0026b5e0	PathData_FindMarker	med	marker list entry with (type,id), else first entry; callers Rider_PlaceAtStart/Rider_PlaceAtMarker/Rider_InitTrackPaths
+0026b880	PathData_ReadMarkers	med	only caller PathData_Parse; 0x28-byte markers: id, type (table 0x445428), pos, dir, AIPath/TrackPath links
+0026bae8	PathData_StaticInit	med	static init (1,0xffff) of the PathData TU (constant matrices 0x4d2fb8..)
+0026c438	PathData_GlobalCtors	med	ctor-table entry 0x43ce7c calling PathData_StaticInit(1,0xffff); same pattern as BE_GlobalCtors
+0026d558	ReplayCache_Deserialize	med	only caller Replay_LoadSaved; reads 8-byte header (count) then HUFF_decode into cache buffer [3], advances read ptr
+0026d678	Replay_DeserializeSnapshot	med	only caller Replay_LoadSaved; copies 0x28-byte snapshot header into fields, then HUFF-decompresses stream (FUN_0026eab8)
+0026d730	Replay_SnapshotSetHighlightValue	med	snapshot+0x20+rider*4 = value; callers HighlightSlotBegin/HighlightSlotScore
+0026d740	Replay_AddSnapshot	med	SnapshotList_PushBack(this+0x3b0); called after Replay_RecordSnapshot in Replay_Update
+0026d988	WorldState_WriteObjects	med	only caller WorldState_Write; counts ProcessList entries of type, writes count, calls save vslot on each (mirror of WorldState_ReadObjects)
+0026da88	WorldState_WriteDeadObjects	med	only caller WorldState_Write; writes count of type-8 objects + their id (mirror of WorldState_ReadDeadObjects)
+0026e448	Replay_FindSnapshot	med	SnapshotList_FindByFrame(this+0x3b0, frame); used by seek/step code
+0026e468	Replay_FindNextSnapshot	med	Replay_FindSnapshot then returns ->next (+0x14) if any
+0026e490	Replay_FindPrevSnapshot	med	Replay_FindSnapshot then returns ->prev (+0x18) if any
+0026e4b8	Replay_SnapToSnapshot	med	sets current snapshot (+0x488) for play frame (+0x484), frame=snapshot frame, seeks both ReplayCaches (+0x48c)
+0026e528	Replay_SeekNextSnapshot	med	current=FindNextSnapshot(frame), frame=its frame, then Replay_SnapToSnapshot; replay fast-forward cmd
+0026e568	Replay_SeekPrevSnapshot	med	current=FindPrevSnapshot(frame), frame=its frame, then Replay_SnapToSnapshot; replay rewind cmd
+0026e6a0	SnapshotList_FindByFrame	med	walks list (next +0x14) returning last snapshot whose frame (+0x30) <= requested frame
+0026e6e0	Replay_HighlightSlotBegin	med	sets rider bit in snapshot +0x1e, zeroes snapshot value, copies 0xa8-byte rider stats, stores snapshot ptr (+0xb0)
+0026e7f8	Replay_HighlightSlotDetach	med	clears slot snapshot ptr (+0xb0)
+0026e800	Replay_HighlightSlotClear	med	clears rider bit in slot's snapshot +0x1e and the snapshot ptr
+0026e838	Replay_HighlightSlotScore	med	score = trick points delta (stats+0x9c) or airtime*1000 or +0xa4 delta; stores in snapshot via 0026d730
+0026eab8	ReplayStream_Decompress	med	only caller Replay_DeserializeSnapshot; HUFF_decode packed bytes into stream buffer, sets end ptr, ReplayStream_RewindRead
+0026ed98	Replay_NextCamera	med	cycles camera index +0x630 mod 9 then Replay_ApplyCamera; caller Replay_HandleInput
+0026edd8	Replay_ApplyCamera	med	for each player ChaseCamController_BeginScriptCamera(table 0x445438[this+0x630])
+0026ee68	Replay_EnableReplayCameras	med	only caller Replay_BeginPlayback (normal); CameraTriggerMan_UpdateTriggersMask1 + Replay_ApplyCamera
+0026eea0	Replay_RestoreGameCameras	med	only caller Replay_EndPlayback; mask2 triggers, GameCamera_SetController(2)+EndScriptCamera per player, cam idx=0
+0026f7f8	Replay_SaveResumeSnapshot	med	only caller Replay_BeginPlayback; records live-state snapshot into +0x3d0 if none
+0026f850	Replay_RestoreResumeSnapshot	med	only caller Replay_EndPlayback; Replay_RestoreSnapshot(+0x3d0) then frees it
+0026f898	Replay_SetControllerIndex	med	sets +0x28, used as controller index into gp input bindings (+0xb0) by replay input code
+0026fa50	Replay_StopRecording	med	sets +0x60c flag; Replay_Update then records final snapshot and enters state 0xd; called on race finish paths
+0026fa78	Replay_UpdateCameraInput	med	only caller OVScreenReplayMenu_Update; in state 3 reads bindings 0x6c/sticks to reset camera (FUN_0022e840)
+0026fb88	Replay_HandleInput	med	callers OVScreenReplayMenu_HandleInput, Replay_Update; maps input bindings 0x66-0x6c to pending replay cmd (+0x618)
+0026fe50	Replay_ProcessCommand	med	only caller Replay_Update; switch on pending cmd +0x618: rewind/end/prev/next/play/pause, sets states
+002702f8	Replay_SeekToSnapshot	med	current=(arg or list head), frame=snapshot frame, seeks both ReplayCaches; callers BeginPlayback/ProcessCommand
+00270378	Replay_SeekToEnd	med	Replay_FindSnapshot(100000000) -> last snapshot; sets current/frame, seeks ReplayCaches
+002703f0	Replay_StepFrame	med	restore=1: seeks caches + Replay_RestoreSnapshot(current); else advance frame, loop or stop at end (+0x3cc)
+00270538	Replay_PruneSnapshots	med	only caller Replay_Update; frees snapshots with no keyframe flag (+0x1c) and no highlight bits (+0x1e/+0x1f)
+002705b0	Replay_CheckInstantReplay	med	single-rider only; if highlight score delta >=1000 requests instant replay (FUN_00270658) else clears +0x3d4
+00270628	Replay_CancelInstantReplay	med	clears +0x3d4 pending flag when single rider
+00270658	Replay_RequestInstantReplay	med	sets +0x624 request if not already playing instant replay (+0x620); Replay_Update then BeginPlayback(...,1)
+00270670	Replay_EndInstantReplay	med	if +0x620 (instant replay) active: Replay_EndPlayback + RiderMetrix_ClearHUDMessages
+002706f0	Replay_Finish	med	EndPlayback if looping/active (+0x61c), then state 0xd; called from post-race overlay/exit paths
+00270730	Replay_FindRiderIndex	med	loops world riders (count world+0x7c), compares vslot 7 of rider+0x6c0 with arg; returns index or -1
+002707e0	Replay_OnRiderLaunch	med	only caller Rider_LaunchIntoAir; when recording, begins highlight for rider (FUN_00270b88)
+00270870	Replay_OnRiderLand	med	caller FUN_0010e910 (RiderAirState_PostUpdate path); ends highlight with trick flag 1 + instant replay check
+002708f0	Replay_OnRiderWipeout	med	only caller RiderWipeoutSub_Enter; ends highlight with flag 0 + instant replay check
+00270970	Replay_OnRiderReset	med	callers Rider_ResetAtMatrix/Rider_PlaceAtMatrix/Rider_CheckResetPath; cancels rider highlight + instant replay
+00270b88	Replay_BeginHighlight	med	if recording and rider slot (+0x494+i*0xb4) idle: Replay_HighlightSlotBegin with current snapshot +0x3b4
+00270bd8	Replay_CountHighlights	med	counts snapshots flagged for rider (+0x1e bit) whose stored value (+0x20+i*4) is pos/neg
+00270c58	Replay_FindWeakestHighlight	med	walks snapshot list for rider-flagged snapshots, returns one with smallest stored value (to evict)
+00270ce8	Replay_EndHighlight	med	callers OnRiderLand/OnRiderWipeout; scores slot, clears it or evicts weakest when over cap, detaches slot
+00270de0	Replay_CancelHighlight	med	only caller Replay_OnRiderReset; while recording clears rider's highlight slot (Replay_HighlightSlotClear)
+00270e18	Replay_ClearAllHighlights	med	only caller Replay_Update (on finish); clears both rider highlight slots
+00270e68	Replay_BeginSave	med	caller MemCardUI_WriteSaveData; allocates save buffers, resets save state machine (+0x638) and checksum 0xdeadbeef
+00270ef8	Replay_ResetOnLoad	med	trivial wrapper of Replay_Reset; only caller GameModule_Load
+00270f20	Replay_AllocSaveBuffers	high	allocs 'WriteBlock' (0x4000) to +0x63c and 'WriteTmp' (0xc800) to +0x640
+00270f78	Replay_FreeSaveBuffers	med	frees +0x63c WriteBlock and +0x640 WriteTmp buffers (counterpart of Replay_AllocSaveBuffers)
+00270fc0	Replay_FlushSaveOutput	med	copies pending output (+0x644,+0x648) into 0x4000-byte WriteBlock, advancing counters
+00271058	Replay_SaveEmit	med	queues bytes for save output, adds to size (+0x680) and byte checksum (+0x684); used by all save steps
+002710a8	Replay_WriteSaveBlock	med	save state machine (+0x638 states 0-10) filling one 0x4000 WriteBlock; returns buffer+size to memcard code
+00271228	Replay_SaveBuildHeader	med	save state 0; fills header magic 0xabcd0002, snapshot count, frame counters, rider count
+002712c0	Replay_SaveWriteHeader	med	save state 1; emits 0x28-byte header via Replay_SaveEmit
+002712f8	Replay_CountSaveSnapshots	med	counts snapshots in list excluding resume snapshot (+0x3d0); used for save header
+00271348	Replay_SaveBeginSnapshots	med	save state 2; iterator +0x65c = list head (skipping resume snapshot)
+00271380	Replay_SaveWriteSnapshot	med	save state 3; emits snapshot header (magic 0x11111113) then HUFF_encode'd stream data
+002714e0	Replay_SaveBeginCaches	med	save state 4; resets ReplayCache iteration (2 caches)
+00271510	Replay_SaveWriteCache	med	save state 5; emits ReplayCache header (magic 0x11111112) then HUFF_encode'd frames
+00271620	Replay_SaveComputePadding	med	save state 6; clears tmp buffer, padding = 0x7fff8 - (BELibrary save size + replay size)
+00271688	Replay_SaveWritePadding	med	save state 7; emits zero padding in 0x4000 chunks
+00271708	Replay_SaveWriteFooter	med	save state 9; emits 8 bytes (total size + checksum)
+00271758	Replay_LoadSaved	med	caller GameModule_Load; checks rider count, restores counters, deserializes snapshots + ReplayCaches, state 8
+00272288	Replay_HighlightSlotInit	med	only caller Replay_ctor; rider idx=-1, snapshot ptr 0, zeroes 0xac bytes (slot layout used by HighlightSlotBegin)
+002722e0	InSeq_HeapInit	med	only caller InSeq_ctor; sets up single free block (base,size-8) at InSeq+8 for first-fit allocator
+00272308	InSeq_HeapAlloc	med	first-fit free-list alloc (4-aligned, splits block if >0x10 left); used for InSeq slot/channel/track memory
+002723a8	InSeq_HeapFree	med	returns block to address-ordered free list, coalescing neighbours (counterpart of InSeq_HeapAlloc)
+00272488	InSeq_HeapNew	med	InSeq_HeapAlloc(size+hdr), stores heap ptr in header, returns body; used to create track objects
+002724e8	InSeq_HeapDelete	med	frees object via heap ptr stored in header (InSeq_HeapFree); used by track deleting dtors
+00272570	Math_EvalCubic	med	((a*t+b)*t+c)*t+d Horner evaluation of 4-float coeff block; used by InSeq curve track
+002725f0	InSeq_CurveTrackStart	med	vt 0x481a10 slot 1 (track start(data,channel,flags)); reads keys, evaluates first cubic segment
+002726a8	InSeq_CurveTrackUpdate	med	vt 0x481a10 slot 3 (update(time)); advances key when time>=key time, evaluates cubic via Math_EvalCubic
+002728f8	InSeq_UpdateAll	med	iterates active slot list (+0x1c, next +0x50) calling InSeq_InstanceUpdate; caller FUN_002820b0 from ScriptEngine_Update
+00272938	InSeq_StartSequence	med	pops free slot, InSeq_InstanceSetup(seq data), pushes on active list (+0x1c), returns slot id
+002729a8	InSeq_FreeSequence	med	stops+releases instance in slot id, unlinks from active list and pushes onto free list (+0x18)
+00272a50	InSeq_FreeAll	med	iterates active list calling InSeq_FreeSequence
+00272ad0	InSeq_Play	med	InSeq_InstanceStart(InSeq_GetInstance(id), loop)
+00272b00	InSeq_PlayAll	med	iterates active list calling InSeq_Play
+00272b58	InSeq_Stop	med	InSeq_InstanceStop(InSeq_GetInstance(id))
+00272b80	InSeq_StopAll	med	iterates active list calling InSeq_Stop
+00272bd0	InSeq_Pause	med	InSeq_InstancePause(InSeq_GetInstance(id))
+00272bf8	InSeq_PauseAll	med	iterates active list calling InSeq_Pause
+00272c48	InSeq_Resume	med	InSeq_InstanceResume(InSeq_GetInstance(id))
+00272c70	InSeq_ResumeAll	med	iterates active list calling InSeq_Resume
+00272cc0	InSeq_GetInstance	med	returns slots[id]+8 (0x58-byte slots at +0x14) or 0 if instance has no data
+00272df0	InSeq_SpanTrackStart	med	vt 0x4819b0 slot 1; allocs 0x1c-byte active-event records, fires key events at t=0 (flag 4)
+00272ec0	InSeq_SpanTrackStop	med	vt 0x4819b0 slot 2; frees active-event records and clears state
+00272f28	InSeq_SpanTrackUpdate	med	vt 0x4819b0 slot 3; expires events past end (flag 8), starts due keys (flag 4)
+002730c0	InSeq_SpanTrackActivateKey	med	builds 0x1c-byte active record from key, links on active list (+0x24), count++
+00273140	InSeq_SpanTrackNextKey	med	advances key pointer by key size, null at last key
+00273208	InSeq_EventTrackStart	med	vt 0x481950 slot 1; allocs 8-byte fired-event records, fires keys at t=0 (flag 0x10)
+002732c8	InSeq_EventTrackStop	med	vt 0x481950 slot 2; frees fired-event records and clears state
+00273330	InSeq_EventTrackUpdate	med	vt 0x481950 slot 3; fires all keys with time<=t (flag 0x10)
+00273418	InSeq_EventTrackFireKey	med	appends {key value, extra ptr} to fired-event array, count++
+00273468	InSeq_EventTrackNextKey	med	advances key pointer by key size, null at last key
+00273530	InSeq_RampTrackStart	med	vt 0x4818f0 slot 1; allocs 0x24-byte active records, starts keys at t=0 (flag 1)
+00273630	InSeq_RampTrackStop	med	vt 0x4818f0 slot 2; frees active records and clears state
+00273698	InSeq_RampTrackUpdate	med	vt 0x4818f0 slot 3; expires ended keys (flag 2), value+=rate*dt for active, starts due keys
+00273860	InSeq_RampTrackActivateKey	med	builds 0x24-byte active record (value,rate,end) from key, links on active list
+002738f8	InSeq_RampTrackNextKey	med	advances key pointer by key size, null at last key
+00273938	InSeq_Channel_ctor	med	zeroes channel (0x3c) data/instance ptrs; called per channel by InSeq_InstanceSetup
+002739b8	InSeq_ChannelSetup	med	binds channel to data block + instance, selects first block header; returns block size
+00273a00	InSeq_ChannelRelease	med	InSeq_ChannelStop then clears all channel fields
+00273aa8	InSeq_ChannelStart	med	creates tracks by type (0 curve,1 ramp,2 span,3 event) via InSeq_HeapNew, starts each, binds listener
+00273dc0	InSeq_ChannelStop	med	unbinds listener, stops and deletes all tracks, frees track array
+00273f68	InSeq_ChannelRestart	med	on loop: stops+restarts every track, notifies listener with flags
+00274100	InSeq_ChannelAdvance	med	advances channel tracks from t0 to t1, sub-stepping at next track event times (vslot 6)
+00274240	InSeq_ChannelSetListener	med	unbinds old listener (+0x2c) and binds new one (vslots 2/1); returns old
+002742c8	InSeq_ChannelGetTrack	med	returns tracks[i] (+0x24); callers ScriptCameraAlgo track readers 0x27c0f0..
+00274348	InSeq_ChannelGetLength	med	returns channel header +4 (length); used by InSeq_InstanceGetLength max loop
+002743c8	InSeq_ChannelGetId	med	returns channel header byte 3 (channel id passed to listeners); ScriptCamController_StartScriptCamera
+002743e8	InSeq_ChannelUpdateTracks	med	calls update vslot on each track with (time,dt), ORs flags, notifies listener
+00274518	InSeq_Instance_ctor	med	only caller InSeq_ctor (per slot+8); id/len=-1, speed=1.0, rest zero
+002745c0	InSeq_InstanceSetup	med	binds seq data, allocates channel array (0x3c each) via heap, InSeq_ChannelSetup per channel
+002746f8	InSeq_InstanceRelease	med	stops instance, releases channels, frees channel array, resets fields to defaults
+00274808	InSeq_InstanceSetSpeed	med	instance+0x24 = float (speed/time-step, default 1.0 set by ctor/RunToEnd)
+00274810	InSeq_InstanceRestart	med	InSeq_InstanceStart(this, this->loop)
+00274830	InSeq_InstanceStart	med	if idle: loop flag (+0x1c)=arg, state(+0x20)=1; if mid-update clears stop request
+00274868	InSeq_InstanceRunToEnd	med	sets listener override, speed 1, starts non-looping and ticks until state 0
+00274918	InSeq_InstanceStop	med	stops all channels, resets state/time/len, notifies listener; deferred (+0x40) while updating
+002749e8	InSeq_InstancePause	med	pause counter (+0x2c)++ when active
+00274a08	InSeq_InstanceResume	med	pause counter (+0x2c)-- clamped at 0 when active
+00274a30	InSeq_InstanceUpdate	med	handles pending seek (+0x34, restart if backwards) and step count (+0x38), calls InSeq_InstanceTick
+00274c20	InSeq_InstanceGetChannel	med	returns channels+i*0x3c (+0x18)
+00274c70	InSeq_InstanceGetLength	med	max InSeq_ChannelGetLength over channels, cached in +0x30 while active
+00274d08	InSeq_InstanceGetRemainingSteps	med	ceil((length-time)/speed)
+00274d70	InSeq_InstanceGetListener	med	returns listener override (+0x44) or owner InSeq's listener (*owner)
+00274de0	InSeq_InstanceTick	med	per-step state machine: start(1)->channels start, play(3) advance by speed, loop/end(4), stop
+002751a0	InSeq_InstanceAdvance	med	sets time, InSeq_ChannelAdvance on each channel, notifies listener vslot 2 with time/dt
+00275d90	ScriptList_dtor	med	deleting dtor of 0xcc-byte ScriptList (ScriptList_Stop + __builtin_delete); used in ScriptEngine_Shutdown array teardown
+00275dd8	ScriptList_Add	med	pushes {script id, -1, flags} entry on ScriptCmdQueue (+0xc); if playing, prepares next entry
+00276048	ScriptList_AddMovie	med	pushes entry of type 0x1c (movie, see ScriptList_IsMovieEntry) with 5 args on ScriptCmdQueue
+00276198	ScriptList_TakeFrom	med	pops all entries of other list into this one, stops the other list; refuses if other is playing (state 3)
+00276270	ScriptList_Prepare	med	idle list: prepares first entry, state 1 (loading) or 2 (ready); prepares following entry
+00276388	ScriptList_Start	med	state 2->3: hides HUD state, starts first script (or ScriptMovie_Start), sets up fade transition
+002766d0	ScriptList_Skip	med	advances current position by n entries, stopping current script/movie, or pops entries when idle
+00276868	ScriptList_Stop	med	unpauses, restores HUD/camera if playing, pops entries, resets state (+0xa4=0, cur=-1)
+00276b98	ScriptList_GetState	med	polls loading (ScriptList_PollLoading) then returns state +0xa4 (0 idle,1 loading,2 ready,3 playing)
+00276ca8	ScriptList_Count	med	wrapper ScriptCmdQueue_Count(this+0xc)
+00276cc8	ScriptList_Update	med	only caller ScriptEngine_Update (per list); drives loading/transition counters and advances entries
+00276f48	ScriptList_SkipCurrent	med	only caller ScriptEngine_Update on skip input (binding 0x6f); skips to next non-flag-2 entry if skippable (flag 1)
+00277060	ScriptList_CanSkip	med	playing and current entry flag 1 and not paused; checked by ScriptEngine_Update before skip input
+002771c8	ScriptList_IsPlayingScript	med	true if playing and current non-movie entry's script object == arg
+00277248	ScriptList_IsPlayingMovie	med	true if playing and current entry is a movie entry
+00277298	ScriptList_IsPaused	med	playing and pause flag +0xa8 set; caller ScriptEngine_Update
+00277450	ScriptList_PrepareEntry	med	from index finds next entry that can be instantiated (spawns script via ScriptEngine_SpawnScript or opens movie)
+00277598	ScriptList_PopEntries	med	pops n entries, stopping their script instance or movie (ScriptMovie_Stop)
+00277778	ScriptList_PollLoading	med	state 1: becomes ready (2) when current script instance loaded or entry is a movie
+00277800	ScriptList_TryAdvance	med	ScriptList_CheckNextReady then ScriptList_NextEntry unless paused
+00277838	ScriptList_NextEntry	med	pops current, starts next script/movie, or stops list and restores camera fade when queue done
+00277c08	ScriptList_SetPaused	med	pauses/resumes current script instance or ScriptMovie (+0xa8 flag or +0xc4 counter), HUD/camera too
+00277dd8	ScriptList_IsMovieEntry	med	entry type > 0x1c means movie entry; 19 callers in ScriptList
+00278590	ScriptEngine_Shutdown	med	only caller GameModule_Unload; stops lists, unregisters ScriptObjs, unloads banks/world scripts, frees ScriptList arrays
+002789c0	ScriptEngine_ToggleMoviePause	med	trivial wrapper ScriptMovie_TogglePause(this+0x500); caller GameModule_RenderUI
+002789e0	ScriptEngine_StopLists	med	ScriptEngine_StopMainLists + ScriptEngine_StopAuxLists
+00278a98	ScriptEngine_StopAll	med	callers GameModule_Unload/ScriptEngine_Shutdown; stops all ScriptLists and script instances (FUN_00282390)
+00278de8	ScriptEngine_SetSkipDelay	med	sets +0x554 counter decremented by ScriptEngine_Update, blocks skip input while >0
+00278e20	ScriptEngine_ListAdd	med	ScriptList_Add on main list [i] (+0x54c, 0xcc stride)
+00278e50	ScriptEngine_ListAddChoice	med	ScriptList_AddChoice on main list [i]; used by race intro/finish sequencers
+00278e90	ScriptEngine_ListAddMovie	med	ScriptList_AddMovie on main list [i]
+00278f38	ScriptEngine_ListPrepare	med	ScriptList_Prepare on main list [i]
+00278f68	ScriptEngine_ListStart	med	sets active list (+0x550)=i, ScriptList_Start; resets to 2 (none) if not playing
+00278ff8	ScriptEngine_ListTransfer	med	ScriptList_TakeFrom between main lists i and j
+00279040	ScriptEngine_ListSetPaused	med	ScriptList_SetPausedNested on main list [i]
+00279070	ScriptEngine_ListSkip	med	ScriptList_Skip on main list [i]
+002790a0	ScriptEngine_ListStop	med	ScriptList_Stop on main list [i]; clears active list if it was i
+002790f8	ScriptEngine_StopMainLists	med	ScriptEngine_ListStop for both main lists
+00279148	ScriptEngine_ListGetEntryType	med	ScriptList_GetEntryType on main list [i]
+002791d8	ScriptEngine_ListGetState	med	ScriptEngine_PollAsyncLoads then ScriptList_GetState on main list [i]
+00279248	ScriptEngine_ListCount	med	ScriptList_Count on main list [i]
+00279370	ScriptEngine_IsPlayingScript	med	ScriptList_IsPlayingScript on active list (+0x550)
+002793b8	ScriptEngine_AuxListAdd	med	ScriptList_AddChoice on aux list [i] (+0x624)
+002793f8	ScriptEngine_AuxListPrepare	med	ScriptList_Prepare on aux list [i]
+00279428	ScriptEngine_AuxListStart	med	ScriptList_Start on aux list [i]
+00279458	ScriptEngine_AuxListStop	med	ScriptList_Stop on aux list [i]
+00279488	ScriptEngine_StopAuxLists	med	ScriptList_Stop on both aux lists (+0x624)
+002794e0	ScriptEngine_AuxListGetState	med	ScriptEngine_PollAsyncLoads then ScriptList_GetState on aux list [i]
+002795d0	ScriptEngine_SpawnScript	med	validates 3 rider indices against rider count, allocs arg block, creates script instance; frees on failure
+002797a0	ScriptEngine_FindScriptIndex	med	ScriptEngine_ChooseScript, returns chosen script index or -1
+00279ce0	ScriptEngine_v12	high	vt 4821b8 slot 12 (class ScriptEngine via pass1)
+00279ed8	ScriptEngine_FindAnimBank	high	trivial wrapper ScriptAnimBankMan_FindBank(this+0xa28)
+00279ef8	ScriptEngine_FindSoundBank	high	trivial wrapper ScriptSoundBankMan_FindBank(this+0xa38)
+0027a6b0	ScriptEngine_OnSeqStart	med	ScriptEngine seq-listener vtable 0x482100 slot 1 (InSeq start notify); forwards to active ScriptList
+0027a720	ScriptEngine_OnSeqAdvance	med	listener vtable 0x482100 slot 2 (InSeq_InstanceAdvance notify); forwards to active ScriptList
+0027a798	ScriptEngine_OnSeqEnd	med	listener vtable 0x482100 slot 3 (InSeq end-reached notify); forwards to active ScriptList
+0027a7f0	ScriptEngine_OnSeqStopped	med	listener vtable 0x482100 slot 4 (InSeq_InstanceStop notify); forwards to active ScriptList
+0027b0c0	ScriptEngine_ChooseScript	med	alloc tag 'ScriptChoice'; filters candidate scripts by condition masks, picks lowest-priority set at random
+0027bd78	ScriptEngine_PopFreeNode	med	callers LoadScriptBank helpers; pops 5-word node off free list at ScriptEngine+0x548 (link at +0x10)
+0027bd90	ScriptEngine_PushFreeNode	med	inverse of 0x27bd78: resets 5-word node to -1 and pushes it onto free list ScriptEngine+0x548
+0027bf50	ScriptEngine_IsBankSlotLoaded	med	calls ScriptEngine_PollAsyncLoads then tests bank slot table entry ScriptEngine+0x630+i*0x10
+0027c098	ScriptCam_GetManualParams	med	returns node+0x20 param block; used by ManualScriptCameraAlgo_Update and type-0 branch of 0x27d970 (cam type via 0x2743c8)
+0027c0f0	ScriptCam_ReadManualFields	med	only caller ManualScriptCameraAlgo_Update; reads 10 script attribute values into algo+0x4c
+0027c2a8	ScriptCam_GetTargetParams	med	returns node+0x20; used by TargetScriptCameraAlgo_Update and type-1 branch of 0x27d970/0x2830c8
+0027c300	ScriptCam_ReadTargetFields	med	only caller TargetScriptCameraAlgo_Update; reads 10 script attribute values
+0027c4b8	ScriptCam_GetSubjectParams	med	returns node+0x20; used by SubjectScriptCameraAlgo_Update and type-2 branch of 0x27d970/0x2830c8
+0027c510	ScriptCam_ReadSubjectFields	med	only caller SubjectScriptCameraAlgo_Update; reads 9 script attribute values
+0027c6a0	ScriptCam_GetAlgorithmicParams	med	returns node+0x20; used by AlgorithmicScriptCameraAlgo_Update/ResetForRider and type-3 branch of 0x27d970
+0027c6f8	ScriptCam_ReadAlgorithmicFields	med	callers AlgorithmicScriptCameraAlgo_ResetForRider/Update; reads 9 script attribute values
+0027cdd0	ScriptEngine_ObjTableCtor	med	first base ctor run by ScriptEngine_ctor (via 0x281e80); vptr 0x482528 at +0x2a8, sets ScriptEngine_GetInstance global, clears 20 script + 30 binding slots
+0027ce58	ScriptEngine_ObjTableDtor	med	vt 0x482528 slot 1 (dtor); removes all script objs (0x27d050), clears instance global, optional delete
+0027cea8	ScriptEngine_AddScriptObj	med	base vt slot 2 called by ScriptEngine_v02 and ScriptObj_Register path; stores obj in 20-slot table, registers its bindings (0x27d330)
+0027cf88	ScriptEngine_RemoveScriptObj	med	base vt slot 3 (ScriptObj_Unregister calls slot 3); removes each binding (0x27d390) and clears table slot
+0027d050	ScriptEngine_RemoveAllScriptObjs	med	callers ObjTableDtor and script DB teardown; calls vt slot 3 (remove) for each of 20 slots
+0027d0c0	ScriptEngine_SetObjBindingFilter	med	for each binding of script obj i sets entry+0x10 filter (0x27d540); caller vt 0x482398 Activate
+0027d170	ScriptEngine_ClearObjBindingFilter	med	for each binding of script obj i resets entry+0x10 to -1 (0x27d558); caller vt 0x482398 Deactivate
+0027d2f0	ScriptEngine_GetBindingProcess	med	returns binding entry value (+8) if active flag (+0xc)==1 else -1
+0027d320	ScriptEngine_GetScriptObj	med	returns script obj table slot i (this+i*4); callers ScriptEngine_v03/v04
+0027d330	ScriptEngine_AddBinding	med	finds free slot in 30-entry binding table at +0x50 (0x14 each), stores binding + owner idx, writes slot to binding+4
+0027d390	ScriptEngine_RemoveBinding	med	clears binding table entry (deactivating via 0x282f90 if active), binding+4 = -1
+0027d400	ScriptEngine_ActivateBinding	med	sets binding entry value and active flag=1; calls owner vt slot 4 unless engine vt slot 4 vetoes; caller binding Bind (0x282fb8)
+0027d4a0	ScriptEngine_DeactivateBinding	med	clears entry value/active flag and calls owner vt slot 5; caller binding Unbind (0x283000)
+0027d540	ScriptEngine_SetBindingFilter	med	sets binding entry+0x10
+0027d558	ScriptEngine_ClearBindingFilter	med	sets binding entry+0x10 = -1
+0027d578	ScriptEngine_CollectFreeBindings	med	collects inactive bindings whose filter is -1 or matches into array (max n); caller 0x282a80
+0027d688	ScriptObjCam_SetBinding	med	ScriptObjCam layout (+0x14 binding, +0x20 process, matrix +0x30..+0x78 reset to identity); notifies via own vt slots 4/5
+0027d970	ScriptObjCam_BuildMatrixFromScript	med	only caller ScriptObjCam_Activate; switches on script cam type (manual/target/subject/algorithmic getters) and builds cam matrix with Math_SinCos
+00281e80	ScriptEngine_ScriptDbCtor	med	second base ctor in ScriptEngine_ctor: vptrs 0x4824b8/0x482450 at +0x2a8/+0x2ac, own gp global, resets process table
+00281ed8	ScriptEngine_ScriptDbDtor	med	vt 0x4824b8 slot 1; destroys script DB (0x282020) then runs ObjTableDtor
+00281f30	ScriptEngine_CreateScriptDatabase	high	allocs 'InSeqHeap', InSeq ('InSeq' tag, InSeq_ctor) and 'BXScriptDatabase' table (n*8) at +0x2b0; only caller ScriptEngine_LoadMaster
+00282020	ScriptEngine_DestroyScriptDatabase	med	frees BXScriptDatabase/InSeq/heap created by 0x281f30; callers ScriptEngine_UnloadMaster and base dtor
+002820b0	ScriptEngine_UpdateProcesses	med	vt 0x4824b8 slot 5 (Update) called from ScriptEngine_Update; steps InSeq, launches pending processes (state 1)
+002821a0	ScriptEngine_StartScript	med	allocs process slot, state 1 pending if script not loaded (vt slot 7 load) else creates InSeq instance (state 2); returns handle
+002823f0	ScriptEngine_KillAllProcesses	med	calls KillProcess (0x282540) for each of 16 used process slots
+00282510	ScriptEngine_SetProcessUserData	med	swaps process +0xc value, returns old
+00282540	ScriptEngine_KillProcess	med	terminates process: notifies engine vt slots, frees InSeq, drops script refcount, state 7, clears slot
+002826d8	ScriptEngine_PauseProcess	med	increments InSeq pause (0x2749e8); state 5 when paused count >0
+00282720	ScriptEngine_ResumeProcess	med	decrements InSeq pause (0x274a08); state back to 3/4 when count reaches 0
+00282798	ScriptEngine_GetProcessState	med	returns process state, launching pending process first
+002827f8	ScriptEngine_GetProcessScriptId	med	returns script id of process (+0x14 if pending else +8)
+002828b8	ScriptEngine_ResetProcessTable	med	clears InSeq ptrs and 16 process slots (0x24 each at +0x2c0), sets each handle index
+00282908	ScriptEngine_LaunchPendingProcess	med	if script loaded: creates InSeq instance for pending process, state 2, bumps script refcount
+00282bc0	ScriptEngine_GetProcessUserData	med	returns process +0xc
+00282bf0	ScriptEngine_GetProcessInSeq	med	returns process InSeq instance (field 0) or 0
+00282c38	ScriptEngine_AllocProcess	med	finds free slot among 16 process entries, marks in-use
+00282c88	ScriptEngine_ClearProcess	med	zeroes a process entry
+00282cb0	ScriptEngine_GetProcess	med	returns process entry for handle if in use else 0 (11 callers)
+00282cd0	cTransitionMan_ScriptObjCtor	med	only caller cTransitionMan_ctor; ScriptObj_ctor(type 2) + vptr 0x482060, transition state = 9 (none)
+00283298	ScriptObj_Register	high	mirror of ScriptObj_Unregister: engine vt slot 2 (add) and stores returned index at obj+4; callers Rider_ctor, ScriptCamController_ctor, cTransitionMan_ctor
+00283320	ScriptObj_Pause	med	vt 0x482558 (ScriptObj) slot 2; for each binding (slots 6/7) pauses its bound InSeq (0x283038)
+002833a8	ScriptObj_Resume	med	vt 0x482558 slot 3; for each binding resumes its bound InSeq (0x283060)
+00283e60	ScriptEngine_StaticInitDestroy	med	gcc static init for script module: inits identity matrices/tables, hashes 'NoScript' (StrHash); called by global ctor 0x284b80
+00284b80	ScriptEngine_GlobalCtors	med	in .ctors list (0x43ce84); calls 0x283e60(1,0xffff)
+002854a8	SSXAudioSystem_SetOutputMode	med	vt 0x483700 slot 2 (PS2SoundManager-style SetOutputMode slot); stores mode at +0x62b0 when sound lib accepts
+00285d98	SSXAudioSystem_FindRider	med	searches raceMan riders (+0x28[], counts +0x78/+0x7c): -1 = front-most active (+0xec), -2 = first active, else rider with +0x870 == id
+00286200	SSXAudioSystem_UnloadFrontEndAudio	med	callers FEModule_Unload etc; stops/fades music, resets state, unloads bank 0 (SndBankMan_UnloadBank)
+002867e8	SSXAudioSystem_EnterGame	med	only caller GameModule_Enter; sets playlist, starts music, creates WorldPainterQuery objects for mix/music-trigger paint
+00286a80	SSXAudioSystem_ExitGame	med	only caller GameModule_Unload; stops music, releases 6 WorldPainterQuery objects, resets mix preset
+00286c00	SSXAudioSystem_UnloadWorldBanks	med	only caller GameModule_Unload; finishes load queue, unloads banks 0..16 except 13, frees bank memory 3/12
+002873d8	SSXAudioSystem_LevelToVolume	med	int option level * const, clamped to 0..1; used by the volume option setters
+00287410	SSXAudioSystem_SetMusicVolume	med	sets channels 1 (music, MusicPlayer_Update), 8 and 2 from option level; callers cFEStateOptionsSound/OVScreenBEOptions
+00287670	SSXAudioSystem_GetMusicVolumeLevel	med	channel 1 volume * 11 as option level
+00287700	SSXAudioSystem_SetChannelVolume	med	clamps volume, stores channel entry +0x62bc+i*0x10, scales by gains; ch0 SND_SetMasterVolume, ch1 MusicPlayer_Update
+00287920	SSXAudioSystem_GetChannelVolume	med	returns channel volume +0x62bc+i*0x10
+00287930	SSXAudioSystem_GetChannelGain	med	effective channel gain (+0x62c8+i*0x10; channel 4 sub-gain index <10 at +0x636c)
+00287968	SSXAudioSystem_GetChannelGainPtr	med	pointer form of 0x287930 (58 callers)
+00287a10	SSXAudioSystem_SetFadeGain	med	applies fade level to channel groups selected by mask, or starts ramp over time (+0x63c0..+0x63d0)
+00287c48	SSXAudioSystem_UpdateFade	med	only caller SSXAudioSystem_Update; steps fade ramp started by 0x287a10 and reapplies masked channel gains
+002883b0	SSXAudioSystem_SetMixPreset	med	selects mix preset index (+0x646c, 0x28-byte presets at +0x647c), sets/ramps 9 channel gains; caller mix world-paint handler
+002887f8	SSXAudioSystem_UpdateMixRamp	med	only caller SSXAudioSystem_Update; ramps channel gains toward targets set by SetMixPreset
+00288ae0	SSXAudioSystem_IsReplayPlaying	med	in game and GameModule+0x28 (Replay*) mode in 1..9
+00288d18	SSXAudioSystem_SetupChannelGains	med	callers LoadFrontEndAudio (0) / LoadWorldAudio (1); sets per-channel base gains then reapplies all 11 channel volumes
+00289470	SSXAudioSystem_ReadPlaylistNames	med	only caller SSXAudioSystem_ctor; IniParser over playlist ini, copies up to 20 section names to +0x60a4
+00289520	SSXAudioSystem_LoadPlaylist	med	MusicPlayer_ClearPlaylist then MusicPlayer_EnableSongByName for each entry of the named INI section; records index
+002898a8	SSXAudioSystem_UpdateRiderWorldPaint	med	queries rider position against WorldPainterQuery objects and dispatches mix/music-trigger paint handlers
+00289b70	SSXAudioSystem_PauseGameAudio	med	callers OVScreenPauseFreeride_Init/GameModule_Update; sets paused flag +0x5fb4, pauses music
+00289bb8	SSXAudioSystem_ResumeGameAudio	med	clears paused flag +0x5fb4 and resumes music; inverse of 0x289b70
+00289c98	SSXAudioSystem_ApplyMixPaint	med	caller 0x2898a8; for lead rider reads tWPIGD_Mix-style paint value and calls SetMixPreset
+0028b180	SSXAudioSystem_GetInstance	high	returns gp global set by SSXAudioSystem_Create (EA_MemAllocNamed 'SSXAudioSystem'); 164 callers
+0028b1b0	SSXAudioSystem_IsInGame	med	App+0x84 (GameModule) != 0
+0028b1c0	SSXAudioSystem_GetApp	med	returns g_App (gp-0x848) for audio code
+0028b1c8	SSXAudioSystem_GetGameModule	med	returns App+0x84 (GameModule*)
+0028b1d8	SSXAudioSystem_GetRaceMan	med	returns GameModule+0x0c (AI raceMan, rider array at +0x28)
+0028b1e8	SSXAudioSystem_GetBELibrary	med	returns App+0x78 (BELibrary*)
+0028bf78	SSXAudioSystem_SetMusicMode	med	caller cFEStateAudioOptions_OnWidgetAction; stores +0x608c, switches playlist mask, restarts music
+0028c2d0	SSXAudioSystem_SetRequestPlaylist	med	caller cFEStateRequestLine_OnWidgetAction; stores playlist mask +0x6098 and reselects song
+0028d488	SSXAudioSystem_SelectRandomSong	med	random offset from sound lib RNG, repeated MusicPlayer_SelectNextSong, avoids repeating last song
+0028e100	SSXAudioSystem_UpdatePeakMusic	med	from SSXAudioSystem_Update; plays song "Peak1"/"Peak2"/"Peak3" (.sdata strings) by track info, sets volume 0x7f
+0028e8c0	SSXAudioSystem_HandleMusicEvent	med	from script command handlers; events 0x13-0x19: plays "pktrans" song, cancels scheduled music cues, starts next song
+0028f000	SSXAudioSystem_UpdateMusicFadeIn	med	from SSXAudioSystem_Update; ramps MusicPlayer volume 0->127 over 800/1000/1200 frames (counter +0x628c)
+0028f108	SSXAudioSystem_ResetMusicFadeIn	med	clears fade counter +0x628c used by SSXAudioSystem_UpdateMusicFadeIn
+0028f140	SSXAudioSystem_SetFEMusicScreen	med	called from 13 cFEState*_Init; maps screen id (+0x6290) to music mode and calls music-interface slot 4
+0028f200	SSXAudioSystem_OnReplayBegin	med	only caller Replay_BeginPlayback; sets +0x6294/+0x6298 and schedules music cue
+0028f2c0	SSXAudioSystem_OnReplayEnd	med	only caller Replay_EndPlayback; MusicPlayer_StopSong or restores music mode 0x24, clears +0x6294/+0x6298
+0028f5b8	SSXAudioSystem_OnEventSelectEnter	med	from cFEStateEventSelect/OVScreenMap OnActivate (via 0x200ac0): FE sound 9, fade music, start loading-screen loop
+0028f678	SSXAudioSystem_OnEventSelectExit	med	from EventSelect/OVScreenMap Shutdown (via 0x200af0): undoes 0x28f5b8, stops loading-screen loop, restarts music
+0028f700	SSXAudioSystem_LoadLoadingScreenBank	high	only caller SSXAudioSystem_ctor; SndBankMan_LoadBank slot 0xd, name gp+0x534 "data/audio/audio.big|data\audio\LoadingScreen.bnk"
+0028f768	SSXAudioSystem_PlayLoadingScreenLoop	med	from cGameLoadScreen_Enter/cFELoadScreen_Enter: plays bank 0xd sound 0, handle kept at +0x62a8
+0028fa98	SSXAudioSystem_StopLoadingScreenLoop	med	from cGameLoadScreen_Unload/cFELoadScreen_Unload: stops handle +0x62a8 and sets it to -1
+0028fc38	SSXAudioSystem_StopMusic	high	trivial wrapper: MusicPlayer_StopSong(this+0x118); caller cFEStateNetConfig_Init
+00290018	Audio_OnDelayedSound	med	member-fn-ptr callback 0x4a3678 (scheduled by 0x2adca0, e.g. echo repeats in 0x2906b8): pushes bank/id/vol from event, plays
+00290358	Audio_OnDelayedSoundPitched	med	callback 0x4a36c0: same as Audio_OnDelayedSound plus pitch from event +0x28 (boost meter ticks)
+002906b8	Audio_PlayPushedSound	med	52 callers; plays top of pushed play-param stack (+500) with SND_Play under SND_Lock, registers voice, schedules echo repeats, pops
+00290b58	Audio_EvalCurve5	med	piecewise-linear lookup: 5 x breakpoints, 5 y values (float[10]); used for all volume/pitch curves
+00290c40	SSXAudioSystem_GetRiderSpeedVolume	med	|rider velocity| (vslot 2 of +0x6c0) through curve 3, clamped 0..127
+00290cc0	SSXAudioSystem_PlaySound	med	vt 0x4836b8 slot 1 (also 0x483688 slot 7): push params bank=a1 id=a2, sfx volume ptr, Audio_PlayPushedSound
+00290fd0	SSXAudioSystem_v02	high	correction of pass-3 vtslots name SSXAudioSystem_ReleaseBank: slot 2 of secondary vt 4836b8; body grades rider air/landing state 0..3, not a bank release
+00291710	SSXAudioSystem_GetSurfaceSoundType	med	maps rider surfaceType (+0x438, rider.md) to board sound category 0..8
+002917b8	SSXAudioSystem_GetSurfaceBank	med	sound bank for surface category: 0x10 if <=3 else 1
+002917d0	SSXAudioSystem_StartBoardBaseLoop	med	plays board loop id 0 for rider with update callback 0x292cb8, voice owner rider; from 0x292a50
+00291c88	SSXAudioSystem_StartBoardSurfaceLoop	med	plays surface loop id cat*8+4 (local human, cb 0x292da0) or cat*8+6 (cb 0x292ef8)
+00292508	SSXAudioSystem_StartBoardEdgeLoop	med	plays loop id cat*8+3 with callback 0x293018 (edge values +0x750/+0x754)
+002929d8	SSXAudioSystem_RestartAllBoardLoops	med	stops board loops then SSXAudioSystem_StartRiderBoardLoops for every rider
+00292a50	SSXAudioSystem_StartRiderBoardLoops	med	records main state / surface category at rider +0x760..+0x76c and starts base, surface and edge loops
+00292b48	SSXAudioSystem_StopBoardLoops	med	removes board-loop callbacks 0x4a3680..0x4a36b8 and stops boost loop handle +0x59e0
+00292cb8	SSXAudioSystem_UpdateBoardBaseLoop	med	voice callback 0x4a3688: volume/pitch from speed curve, muted when finished or race over, sets voice vol +100 and pitch
+00292da0	SSXAudioSystem_UpdateBoardSurfaceLoop	med	voice callback 0x4a3690: restarts loop on surface change, else per-group volume/pitch
+00292ef8	SSXAudioSystem_UpdateBoardSurfaceLoopRemote	med	voice callback 0x4a3698 (non-local riders) variant of UpdateBoardSurfaceLoop
+00293018	SSXAudioSystem_UpdateBoardEdgeLoop	med	voice callback 0x4a36a0: restarts edge loop on surface change, else per-group volume/pitch
+00293168	SSXAudioSystem_CalcBoardBaseLoopParams	med	only caller UpdateBoardBaseLoop; volume and pitch*4096 from rider +0x75c through two curves
+00293290	SSXAudioSystem_CalcSurfaceLoopParams	med	dispatch on surface group (0x2934d0) to group 0/1/2 calculators
+00293350	SSXAudioSystem_CalcSurfaceLoopParamsRemote	med	remote variant dispatcher (via wrappers 0x293b50/70/90)
+00293410	SSXAudioSystem_CalcEdgeLoopParams	med	dispatch on surface group to edge calculators 0x293bb0/0x293dc0/0x293fc8
+00293538	SSXAudioSystem_CalcSurfaceLoopGroup0	med	+0x758*(1-edge) smoothed in +0x59b8[player], curves 0x482b78 -> volume, pitch
+00293740	SSXAudioSystem_CalcSurfaceLoopGroup1	med	same with curves 0x482bc8
+00293948	SSXAudioSystem_CalcSurfaceLoopGroup2	med	same with curves 0x482c18
+00293b50	SSXAudioSystem_CalcSurfaceLoopRemoteGroup0	med	wrapper of CalcSurfaceLoopGroup0
+00293b70	SSXAudioSystem_CalcSurfaceLoopRemoteGroup1	med	wrapper of CalcSurfaceLoopGroup1
+00293b90	SSXAudioSystem_CalcSurfaceLoopRemoteGroup2	med	wrapper of CalcSurfaceLoopGroup2
+00293bb0	SSXAudioSystem_CalcEdgeLoopGroup0	med	edge (+0x750 + +0x754) smoothed in +0x5990[player], curves 0x482c68
+00293dc0	SSXAudioSystem_CalcEdgeLoopGroup1	med	same with curves 0x482cb8
+00293fc8	SSXAudioSystem_CalcEdgeLoopGroup2	med	fixed volume 0x7f, pitch curve 0x482d08
+00294170	SSXAudioSystem_PlayTakeoffSound	med	from jump/ground/rail exit handlers (BoardPressSub_CheckJump etc.): bank 10 id cat*8+2, handle +0x5fbc
+002948d0	SSXAudioSystem_PlayLandingSound	med	from Rider_BankTrickBoost / WipeoutSub_UpdateRecover: cue 0x2a73a8 tier by impact, bank 10 id cat*8+1/+5, handle +0x5fb8
+00294f78	SSXAudioSystem_PlayFESound	med	called by FEUISound_v02, OVUISound_v02 and many OV screens; maps UI sound enum to id and calls slot 1 (PlaySound)
+00295028	SSXAudioSystem_IsTrackedSoundPlaying	med	scans 5-int ring buffer at +0x5980 for (key,sub) and checks voice still alive
+00295208	SSXAudioSystem_UpdateTrackedSounds	med	from SSXAudioSystem_Update; drops finished/expired records from ring buffer +0x5980, stops expired voices
+00295628	SSXAudioSystem_TrackSound	med	pushes (key,handle,expiry,flag,sub) into ring buffer +0x5980, evicting and stopping the oldest when full
+00295cc8	SSXAudioSystem_StopTrackedSounds	med	stops voices of ring-buffer records whose key matches and flag set
+00296088	SSXAudioSystem_PlayWallHitSound	med	only caller Rider_HandleWallCollision; plays hit object's trigger sound (0x2b5f60) at speed volume, tracks 1000 ms
+00296310	SSXAudioSystem_PlayWipeoutImpact	med	from Rider_StartWipeout / WipeoutSub_UpdatePhase1: bank 9/10 id by surface (random 0x30-0x32)
+00296868	SSXAudioSystem_StartWipeoutLoop	med	from WipeoutSub phases 0/1: loop id 0x33 with callback 0x4a36b0, handle at rider+0x774
+00296e20	SSXAudioSystem_StopWipeoutLoop	med	fades (0.75) and clears voice handle rider+0x774
+00296e80	SSXAudioSystem_StartWipeoutLoop2	med	from WipeoutSub phases 0/1: loop id 0x34 with callback 0x4a36b8, handle at rider+0x778
+00297438	SSXAudioSystem_StopWipeoutLoop2	med	fades (0.75) and clears voice handle rider+0x778
+002974a0	SSXAudioSystem_PlayObjectSound	med	world-object script handler: one-shot id (ranges map to banks 2/8/9/4) at object position, tracked 50 ms
+00297950	SSXAudioSystem_StartObjectLoop	med	world-object script handler: 30-slot table +0x5a00 (stride 0x30) of positional loops attached to object
+00297eb8	SSXAudioSystem_StopObjectLoop	med	stops object-loop slot matching (object,id) in table +0x5a00
+00297f70	SSXAudioSystem_ClearObjectLoops	med	from SSXAudioSystem_ctor: zeroes 30 slots of table +0x5a00
+00297fa0	SSXAudioSystem_UpdateObjectLoops	med	from SSXAudioSystem_Update: refreshes positions of active object loops, stops loops whose object is gone
+002980b0	SSXAudioSystem_StopAllObjectLoops	med	stops every active slot in table +0x5a00 (caller GameModule_Unload path)
+00298138	SSXAudioSystem_PlayRiderBumpSound	med	from Rider_ReportRiderHit2/3: id 0x5a when a local human is involved, tracked key 5
+00298488	SSXAudioSystem_PlayRiderCollisionSound	med	from Rider_ReportRiderHit0/1: id 0x36, volume from combined velocity, tracked key 7
+002989a8	SSXAudioSystem_PlayGroundWallHitSound	med	only caller RiderGroundState_CollideWalls: id 0x36 for local human, tracked key 6
+00298d90	SSXAudioSystem_StartBoostSound	med	only caller Rider_HandleBoostInput: boost loop id 0x4a (handle +0x59e0, refcount +0x59e4), id 0x7a
+002992d8	SSXAudioSystem_StopBoostSound	med	from Rider_HandleBoostInput / OnRiderReset: decrements +0x59e4, stops handle +0x59e0 at zero
+00299b70	SSXAudioSystem_PlayRailChangeSound	med	only caller RiderRailslideSub_SetRail (rail-change sound per pass-2 evidence): id 0x6c
+00299e28	SSXAudioSystem_OnRacePositionChange	med	only caller AI_UpdateRacePositions: id 0x6d, overtake speech 0x2a0560
+0029a220	SSXAudioSystem_OnRiderReset	med	only caller Rider_CheckResetPath: id 0x7b, stops wipeout loops and boost sound
+0029a7d8	SSXAudioSystem_PlayTrickPointsTick	med	RiderMetrix_UpdateTrickHUD with rounded trick points: id 0x4d when points%100 wraps, handle +0x5fac
+0029ab40	SSXAudioSystem_UpdateBoostMeterSounds	med	from SSXAudioSystem_Update: rising-pitch tick 0x65 per tenth of meter, id 0x68 on boost level steps
+0029b430	SSXAudioSystem_OnTrickLanded	med	only caller RiderMetrix_FinishTrick: id 0x67 and combo speech when count crosses 4..8
+0029b7e0	SSXAudioSystem_OnBonusTrick	med	from RiderMetrix_AnnounceTrick/FinishTrick after Trick_LookupBonusTrick: speech event 8 for local human
+0029b818	SSXAudioSystem_LoadTriggerBank	med	only caller WorldTriggerInstance_Update: async-loads named bank "data/...%s" into slot 3, unloading the previous
+0029cca8	SSXAudioSystem_UpdateCountdownBeeps	med	called from SSXAudioSystem_Update; time-left seconds from race clock, plays beep sfx at 10,8,6 and <=4 s, remembers last second in this+0x607c
+0029ce28	SSXAudioSystem_PauseSfx	med	sets this+0x5fb0, pauses all 64 voices of the sound player (FUN_002ad2a8 -> SNDMIDI_Pause); called by ScriptMovie_Start and pause entry
+0029ce70	SSXAudioSystem_ResumeSfx	med	clears this+0x5fb0, resumes all 64 voices (SNDMIDI_Resume); called by ScriptMovie_Stop and pause exit
+0029d610	SSXAudioSystem_UpdateLoopSfx	med	from SSXAudioSystem_Update: if active and SND_IsHandleDone(this+0x5fc8) restarts it (StopLoopSfx + StartLoopSfx)
+0029d678	SSXAudioSystem_StopLoopSfx	med	if this+0x5fc4 set: stops voice handle this+0x5fc8 (0x2ad5f0), resets handle to -1 and clears flag
+0029dc48	SSXAudioSystem_PlayHandplantSfx	med	only caller RiderHandplantSub_Enter; plays one bank-9 sfx for the local rider
+0029def0	SSXAudioSystem_SetAvalancheSound	med	callers are VfxAvalanche_Update helpers; refcount this+0x6040: 0->1 starts positional loop and registers callback, 1->0 stops it
+0029eee0	SSXAudioSystem_GetSpeechCategory	med	SSXAudioSystem speech-iface slot (vt 4836b8+0x34): bank name prefix 'DJ_'->2/0xb, 'PA_'->3, 'Arcade'->10, else 4; stores this+0x5738
+0029f000	SSXAudioSystem_GetSpeechCategoryVolume	med	next speech-iface slot: returns volume ptr for category (0xb -> this+0x5730, else volume table via 0x287968)
+0029f088	SSXAudioSystem_GetCurrentSpeechCategory	med	returns this+0x5738 written by SSXAudioSystem_GetSpeechCategory
+0029f0a0	SSXAudioSystem_IsSpeechVolumeOn	med	volume slot 4 != 0 (slot 4 = speech slider in options; SetLanguage passes it to SPCH_CreateInstance)
+0029f0d8	SSXAudioSystem_IsDJSpeechOn	med	volume category 2 != 0; category 2 = 'DJ_' speech banks per GetSpeechCategory; guard of DJ speech triggers
+0029f128	SSXAudioSystem_IsPASpeechOn	med	volume category 3 != 0; category 3 = 'PA_' speech banks; guard of PA announcer triggers
+0029f160	SSXAudioSystem_IsArcadeSpeechOn	med	volume category 10 != 0; category 10 = 'Arcade' speech banks
+0029f198	SSXAudioSystem_GetLanguageMask	med	reads BE iface 4 language bits -> 1/2/4/8; SetLanguage maps 2/4/8 to french/german/spanish .big
+0029f378	SSXAudioSystem_GetGruntVoice	med	returns character voice index for SSXAudioSystem_LoadGruntBank's per-character bank switch
+0029f5e0	SSXAudioSystem_UnloadGruntBanks	high	SndBankMan_UnloadBank on banks 0xe and 0xf, the two banks SSXAudioSystem_LoadGruntBank loads
+0029f620	SSXAudioSystem_GetGruntBankId	med	returns grunt bank 0xe or 0xf depending on rider virtual slot 7; used by grunt player
+0029f660	SSXAudioSystem_PlayRiderGrunt	med	picks grunt variant from banks 0xe/0xf (GetGruntVoice, random), plays with speech volume for the rider character
+0029fcc8	SSXAudioSystem_RiderSay2083	med	rider speech guarded by IsSpeechVolumeOn; events 0x2083/0x2084/0x2091 by track group
+0029ff80	SSXAudioSystem_RiderSay2082	med	rider speech, events 0x2082/0x209a/0x209c/0x2090/0x209b/0x209d; caller from cruise/railslide/boardpress/finish-line HandleInput
+002a02d8	SSXAudioSystem_SpeechWipeoutRecover	med	only caller RiderWipeoutSub_Exit; rider speech events 0x2088/0x20a0/0x20a1 via SPCH_MakeId
+002a0a30	SSXAudioSystem_SpeechRiderCollision	med	callers 0x10e228.. from Rider_ResolveRiderCollision: two riders, plays grunt on the hit rider, speech 0x2078/0x207e/0x208a/0x208e/0x208f
+002a0e70	SSXAudioSystem_RiderSay2077	med	grunt via PlayRiderGrunt then rider speech event 0x2077 (SPCH_MakeId); caller chain Rider_ResolveRiderCollision
+002a1028	SSXAudioSystem_StopCharacterSpeech	med	looks up voice of speech instance 0; if its character (+0x80) equals arg, stops it (0x2b11b0) ; else returns 1
+002a10c0	SSXAudioSystem_IsCharacterSpeaking	med	same lookup as StopCharacterSpeech: true if current speech instance voice belongs to given character
+002a1138	SSXAudioSystem_RiderSay20D3	med	rider speech event 0x20d3 about another rider (default riders from rider list)
+002a1280	SSXAudioSystem_RiderSay20D4	med	rider speech event 0x20d4 about another rider
+002a1400	SSXAudioSystem_RiderSay20B9	med	rider speech event 0x20b9, variant chosen from mode/track group
+002a1560	SSXAudioSystem_RiderSay20B8	med	rider speech event 0x20b8; caller chain RiderBoardPressSub_UpdatePress
+002a16b0	SSXAudioSystem_RiderSay20BC	med	rider speech event 0x20bc for a character index (mask via CharacterToSpeechMask)
+002a1778	SSXAudioSystem_RiderSay20BD	med	rider speech event 0x20bd for a character index
+002a1820	SSXAudioSystem_GetRiderRivalry	med	BEAggressionInt queries (0x155b50/0x155ab0) between two riders' characters -> 0/1/2; used by two-rider speech lines
+002a2018	SSXAudioSystem_DJSay20C8	med	guarded by IsDJSpeechOn; dedup via 0x2b1458; speech event 0x20c8 with language mask and track
+002a20d0	SSXAudioSystem_DJSay20C9	med	DJ speech event 0x20c9 (same pattern)
+002a2188	SSXAudioSystem_DJSay20CA	med	DJ speech event 0x20ca (same pattern)
+002a2260	SSXAudioSystem_DJSay20E7	med	DJ speech event 0x20e7 (same pattern)
+002a2318	SSXAudioSystem_DJSay20E8	med	DJ speech event 0x20e8 (same pattern)
+002a23d0	SSXAudioSystem_DJSay20E9	med	DJ speech event 0x20e9 (same pattern)
+002a24b0	SSXAudioSystem_DJSay20CC	med	DJ speech event 0x20cc (same pattern)
+002a2568	SSXAudioSystem_DJSay20CC_2	med	DJ speech event 0x20cc, track variant (same pattern)
+002a2638	SSXAudioSystem_DJSay20BA	med	DJ speech event 0x20ba (same pattern)
+002a26f0	SSXAudioSystem_DJSay20E5	med	DJ speech event 0x20e5 (same pattern)
+002a27d8	SSXAudioSystem_DJSay20E6	med	DJ speech event 0x20e6 (same pattern)
+002a2860	SSXAudioSystem_DJSay20CF	med	DJ speech event 0x20cf (same pattern)
+002a2938	SSXAudioSystem_DJSay2102	med	DJ speech event 0x2102 (same pattern)
+002a2a10	SSXAudioSystem_DJSay210B	med	DJ speech event 0x210b (same pattern)
+002a2ad0	SSXAudioSystem_DJSay212B	med	DJ speech event 0x212b (same pattern)
+002a2b88	SSXAudioSystem_DJSay212C	med	DJ speech event 0x212c (same pattern)
+002a2c30	SSXAudioSystem_DJSay212D	med	DJ speech event 0x212d (same pattern)
+002a2cf0	SSXAudioSystem_DJSay212E	med	DJ speech event 0x212e (same pattern)
+002a2da0	SSXAudioSystem_DJSay212F	med	DJ speech event 0x212f (same pattern)
+002a31c0	SSXAudioSystem_PASayRaceIntro	med	guarded by IsPASpeechOn; PA speech event 0x20c0; callers OVScreenRacePre_Init / OVScreenFreestylePre_OnActivate
+002a32b0	SSXAudioSystem_PASay20C1	med	PA speech event 0x20c1 (IsPASpeechOn guard)
+002a3358	SSXAudioSystem_PASay20C2	med	PA speech event 0x20c2
+002a3400	SSXAudioSystem_PASay20C3	med	PA speech event 0x20c3
+002a34d0	SSXAudioSystem_PASay20C4	med	PA speech event 0x20c4
+002a3708	SSXAudioSystem_PASay20C5	med	PA speech event 0x20c5
+002a3860	SSXAudioSystem_PASay20C7	med	PA speech event 0x20c7
+002a39e0	SSXAudioSystem_PASay20BB	med	PA speech event 0x20bb
+002a3b18	SSXAudioSystem_ArcadeSay20A7	med	guarded by IsArcadeSpeechOn; speech event 0x20a7 for the local rider; callers Rider_v13/v14
+002a3c00	SSXAudioSystem_ArcadeSay20A8	med	Arcade speech event 0x20a8; callers Rider_CheckRaceFinish, RiderMetrix trick HUD
+002a3ce8	SSXAudioSystem_ArcadeSay20A9	med	Arcade speech event 0x20a9
+002a3de0	SSXAudioSystem_ArcadeSay2133	med	Arcade speech event 0x2133; caller chain RiderMetrix_FinishTrick
+002a3eb8	SSXAudioSystem_ArcadeSay2145	med	Arcade speech event 0x2145; caller SSXAudioSystem_PlayMultiplierSfx
+002a43b8	SSXAudioSystem_FlushPendingSpeech	med	speech-iface slot: checks a dozen pending flags at this+0x5740..0x5788 and fires the matching speech trigger, clearing each flag
+002a4550	SSXAudioSystem_ClearPendingSpeech	med	zeroes the pending speech flags this+0x5740..0x5788 that SSXAudioSystem_FlushPendingSpeech consumes
+002a4ba8	CrowdAudio_InitSampleList	med	zeroes count + 5 slots; called by CrowdAudio_ctor for the TRICK/FALL/ANTICIPATE sample lists
+002a4c28	CrowdAudio_AddSampleFile	med	only caller CrowdAudio_ParseConfig (TRICK%d/FALL%d/ANTICIPATE%d keys): EAFile_LoadFile into list of max 5
+002a4ca0	CrowdAudio_PickRandomSample	med	Rand_NextMain % count over a sample list; used by crowd trick/fall players
+002a4cf8	CrowdAudio_FreeSampleList	med	EA_MemFree each loaded sample file, count=0; used by CrowdAudio_Load/Unload
+002a4d68	CrowdAudio_InitInstance	med	CrowdAudio_Load inits each 400-byte entry of the 'CrowdInstances' array with it
+002a4e38	CrowdAudio_DestroyInstance	med	stop instance sound, remove all its sources, delete if flag&1; used by CrowdAudio_Unload
+002a4e88	CrowdAudio_UpdateInstance	med	only caller CrowdAudio_Update; mixes active sources of a crowd instance, plays/updates MIDI crowd sound
+002a5d08	CrowdAudio_InstanceAddSource	med	adds a positional source (max 15, count +0xd4) to a crowd instance; returns slot
+002a62f0	CrowdAudio_InstanceRemoveSource	med	removes source slot n, stops its voice when refcount hits 0, stops instance sound when last source leaves
+002a6430	CrowdAudio_InstanceRemoveAllSources	med	loops 15 source slots calling CrowdAudio_InstanceRemoveSource
+002a64a0	CrowdAudio_InstancePlayTrick	med	plays random sample from TRICK list (cfg +0x1c) for the instance; wrapped by 0x2a73a8
+002a6648	CrowdAudio_InstancePlayFall	med	plays random sample from FALL list (cfg +0x34); wrapped by 0x2a73d8
+002a6848	CrowdAudio_InstanceStopSound	med	clamps pitch timer to 0.25, stops voice handle +0x174 and resets it to -1
+002a68b0	CrowdAudio_UpdatePitchBend	med	decays instance timer +0x188 and sets SND_SetPitchBend from ATTACK/DECAY/MAXBEND config
+002a69a0	CrowdAudio_ctor	med	stores vptr 4837f8; inits the 3x3 sample lists and +0x14/+0x18 instance fields that CrowdAudio_Load uses; base ctor of SSXAudioSystem chain
+002a6b50	CrowdAudio_dtor	med	stores vptr 4837f8, CrowdAudio_Unload, deletes sample lists, MIDI-bank base dtor
+002a6d18	CrowdAudio_Update	med	from SSXAudioSystem_UpdateBanksAndStreams: CrowdAudio_UpdateInstance for each of count +0x14 instances
+002a6f38	CrowdAudio_Unload	med	stops all, destroys the 'CrowdInstances' array, frees all sample lists; called from GameModule_Unload helper and dtor
+002a72c0	CrowdAudio_DecodeSourceHandle	med	handle -> instance = h&0xff, source = h>>8
+002a72d8	CrowdAudio_RemoveSource	med	only caller WorldTriggerInstance_Stop; decodes handle and calls CrowdAudio_InstanceRemoveSource
+002a73a8	CrowdAudio_PlayTrick	med	CrowdAudio_InstancePlayTrick on instance n
+002a73d8	CrowdAudio_PlayFall	med	CrowdAudio_InstancePlayFall on instance n; caller chain Rider_StartWipeout
+002a7678	CrowdAudio_AddSource	med	only caller WorldTriggerInstance_Update; InstanceAddSource on instance, returns encoded handle, pops play params
+002a7718	CrowdAudio_StopAll	med	removes all sources of every instance and unregisters the crowd tick callback (vt slot 3, 4a3700)
+002a9288	PS2SoundManager_v07	high	vt 4835f8 slot 7 (class PS2SoundManager via pass1)
+002a92b8	PS2SoundManager_PopFreeSpuBlock	med	only caller PS2SoundManager_AllocSpuBlock; pops head of free list this+0x310
+002a92f8	PS2SoundManager_FreeSpuBlock	med	pushes block back on free list this+0x310 and resets SND_SpuMemSetBase (inverse of PopFreeSpuBlock)
+002a99d8	StreamBuffer_ctor	med	object allocated 0x84 'StreamBuffer' by 0x2aa7f0; allocs 'Stream' memory, SNDSTRM_Create
+002a9c00	StreamBuffer_ctor_2	med	same init with caller-provided buffer (flag +4=1), SNDSTRM_Create
+002a9df0	StreamBuffer_dtor	med	SNDSTRM_Close, frees own buffer, delete if flag&1
+002a9ed8	StreamBuffer_SetPan	med	SND_Lock; SNDSTRM_SetPan(handle +8); SND_Unlock
+002a9f38	StreamBuffer_SetPitch	med	SND_Lock; SNDSTRM_SetPitch(handle +8); SND_Unlock
+002a9f80	StreamBuffer_UpdateVolume	med	SNDSTRM_SetVolume(base +0xc * *volume +0x10, clamped 0..127); handles timeout +0x80
+002aa020	StreamBuffer_GetStatus	med	SND_Lock; SNDSTRM_GetStatus(handle +8); SND_Unlock
+002aa068	StreamBuffer_GetRequestStatus	med	GetStatus then SNDSTRM_GetRequestStatus of current request under SND_Lock
+002aa1b8	StreamBuffer_IsPlaying	med	SNDSTRM request status state==2 (2aafd0 shows 2=playing, 3=done); wrapped by StreamArray slot accessor 2ab028
+002aa210	StreamBuffer_GetCurrentRequest	med	SNDSTRM_GetStatus: returns status[1] (current request id) if status[0]!=0 else -1
+002aa2b0	StreamBuffer_Pause	med	SND_Lock; SNDSTRM_SetPitch(handle,0); used by StreamArray pause-all loop
+002aa2e8	StreamBuffer_Resume	med	SND_Lock; SNDSTRM_SetPitch(handle,0x1000) (unity pitch); used by StreamArray resume-all loop
+002aa320	StreamBuffer_Queue	med	SNDSTRM_Queue on stream +8; if a .big file is attached (+0x74) resolves entry via BigFindEntry and adds its offset
+002aa408	StreamBuffer_Stop	high	only body: SNDSTRM_Stop(this+8)
+002aa428	StreamBuffer_GetState	med	returns status[0] of SNDSTRM_GetStatus via 2aa020
+002aa490	StreamArray_ctor	high	operator_new_named tag 'StreamArray' for the slot array; virtual-base ctor (SndBankMan) pattern; called by SSXAudioSystem_ctor/MusicPlayer_ctor
+002aa648	StreamArray_dtor	high	mirror of StreamArray_ctor: destroys each slot stream (2a9df0), frees array, SndBankMan_dtor
+002aa7f0	StreamArray_CreateStream	high	EA_MemAllocNamed(0x84,'StreamBuffer') + StreamBuffer ctor 2a99d8, stored in slot [param_2]
+002aa870	StreamArray_CreateStreamEx	high	EA_MemAllocNamed(0x84,'StreamBuffer') + alternate StreamBuffer ctor 2a9c00 (extra params), stored in slot; caller 2b1780
+002aa910	StreamArray_CreateStreamDefaultParams	med	pushes a default sound-param frame (vol 0x7f, 100/0x5a/0x32) on SndBankMan stack, StreamArray_CreateStream, pops; caller SpeechInstance_ctor
+002aab98	StreamArray_SetStreamFile	med	slot non-null -> 2a9e78 (strcpy name to stream+0x14, opens .big to +0x74); caller SpeechInstance_LoadSpeechInf
+002aabd0	StreamArray_DestroyStream	med	slot non-null -> stream dtor 2a9df0(…,3), then clears slot; caller SpeechInstance_dtor
+002aac28	StreamArray_UpdateAll	med	for each slot call stream update 2a9f80 (volume/timeout); caller SSXAudioSystem_UpdateBanksAndStreams
+002aac98	StreamArray_PauseAll	med	for each slot StreamBuffer_Pause (pitch 0)
+002aad08	StreamArray_ResumeAll	med	for each slot StreamBuffer_Resume (pitch 0x1000)
+002aad78	StreamArray_Queue	med	slot[param_2] -> StreamBuffer_Queue, -1 if empty
+002aae08	StreamArray_GetState	med	slot[param_2] -> StreamBuffer_GetState, 0 if empty
+002aae40	StreamArray_Stop	med	slot[param_2] -> StreamBuffer_Stop
+002aaf78	StreamArray_IsRequestDone	med	SNDSTRM_GetRequestStatus(id): returns 1 if state==3 or error
+002aafd0	StreamArray_IsRequestPlaying	med	SNDSTRM_GetRequestStatus(id): state==2 and no error
+002ab028	StreamArray_IsPlaying	med	slot[param_2] -> StreamBuffer_IsPlaying, 0 if empty
+002ab0d0	StreamArray_SetVolumeScalePtr	med	sets slot stream +0x10 (float* multiplied with base volume in stream update 2a9f80)
+002ab0f0	StreamArray_SetStreamVolume	med	slot -> 2a9f30 stores byte +0xc (base volume used by stream update 2a9f80)
+002ab128	StreamArray_GetStreamHandle	med	returns slot stream +8 (SNDSTRM handle) or -1
+002ab150	StreamArray_GetCurrentRequest	med	slot -> StreamBuffer_GetCurrentRequest, -1 if empty
+002ab188	StreamArray_GetStream	med	returns slot[param_2] pointer
+002ab200	SSXAudioSystem_BaseCtor	med	only caller SSXAudioSystem_ctor (not-in-charge base ctor): builds SndBankMan/StreamArray virtual bases, MusicPlayer_ctor, speech system ctor 2b07f8
+002ab478	SSXAudioSystem_BaseDtor	med	only caller SSXAudioSystem_dtor; mirror of 2ab200 (speech dtor 2b0ae8, MusicPlayer_dtor, StreamArray_dtor, SndBankMan_dtor)
+002ab6b0	SSXAudioSystem_UpdateBankMonitorInstance	med	only caller 2ab7a0 (loop over 64 BankMonitor instances); unless instance free, invokes its PMF callback (+0xa8..) then BankMonitorInstance_Update3D
+002ab7a0	SSXAudioSystem_UpdateBankMonitor	med	SSXAudioSystem vtable entry; for each of 64 instances at SndBankMan+0xac4 (BankMonitor+0x8ec) run 2ab6b0; dt=0 when paused (+0xac0)
+002ab828	BankMonitor_TimerUpdate	med	timer record: countdown -=10, when <5 call PMF callback; returns 0 -> reload period, else BankMonitor_TimerKill
+002ab8e8	SSXAudioSystem_UpdateTimers	med	SSXAudioSystem vtable entry; unless paused (+0x94 of BankMonitor), BankMonitor_Tick then BankMonitor_TimerUpdate on 48 timers (0x2c each)
+002ab9e0	BankMonitorInstance_ctor	med	BankMonitor_ctor constructs 64 of these (tag 'mBankMonitorInstance', 0xc0 each); sets pitch 0x8000, vol -1, pan, type 0
+002aba18	BankMonitorInstance_dtor	med	BankMonitor_dtor destroys each 0xc0 instance with it; delete-if-flag only
+002aba40	BankMonitorInstance_IsDone	med	by type: 1 SND_IsHandleDone, 2 SNDMIDI_GetStatus==2, 3 SNDSTRM request state==3
+002abb38	BankMonitorInstance_Reset	med	fade out (2ac180) then clears type/flags, pitch 0x8000, pan 0xffff, vol -1; called by stop/release paths
+002abb80	BankMonitorInstance_PollFree	med	returns 1 if type==0, or if auto-release (+0x9c) and BankMonitorInstance_IsDone (then Reset)
+002abc18	BankMonitor_CalcFalloffVolume	med	quadratic distance falloff: ((max-(d-0.5))/max)^2 * vol, 0 beyond max
+002abc80	BankMonitorInstance_GetFalloffVolume	med	thin wrapper of BankMonitor_CalcFalloffVolume; caller BankMonitorInstance_Update3D
+002abca0	BankMonitor_CalcDopplerPitch	med	(prevDist-curDist)/dt clamped, (v+8000)*k -> pitch ratio; caller BankMonitorInstance_Update3D
+002abd48	BankMonitorInstance_UpdateDistance	med	stores sqrt(BankMonitor vslot 6 distance^2) to instance +0x5c; caller BankMonitor_AddInstance
+002abd90	BankMonitorInstance_SetPan	med	by type: SNDMIDI_SetPan / SND_SetPan / stream pan (2a9ed8); caches +0xb8 with deadband
+002abe78	BankMonitorInstance_SetPitch	med	clamps 0..0x3fff, deadband vs +0xb0, SNDMIDI_SetPitch / SND_SetPitch / stream pitch by type
+002abf60	BankMonitorInstance_SetVolume	med	scales by +0x90, clamps 0..0x7f, deadband; -1 stops; SNDMIDI/SND/stream by type
+002ac180	BankMonitorInstance_FadeOut	med	if not already stopping: flags +0x54, SND_FadeVolume/SNDMIDI_FadeVolume(handle,25,-1)
+002ac220	BankMonitorInstance_Play	med	pushes param frame, SNDMIDI_Play (type 2) or SND_Play(bank +0xc, idx +0x10) (type 1); stores handle
+002ac7f0	BankMonitorInstance_UpdateRange	med	starts (Play) when distance < range (+0x8c), fades out when beyond; caller Update3D
+002ac868	BankMonitorInstance_Update3D	med	distance via BankMonitor vslot 6, doppler pitch, pan, falloff volume, volume scale ptr; resets when done
+002acac8	BankMonitorInstance_Pause	med	unless free/stopping: pitch 0, volume 0, SNDMIDI_Pause; caller BankMonitor_PauseAll
+002acb30	BankMonitorInstance_Resume	med	unless free: pitch 0x1000, SNDMIDI_Resume; caller BankMonitor_ResumeAll
+002acb80	BankMonitorInstance_FadeVolume	med	SND/SNDMIDI Set/FadeVolume (time*100) or stream volume; -1 marks stopping, flag sets auto-release
+002acd08	BankMonitor_ctor	high	called from SndBankMan_ctor; operator_new_named(0x3010,'mBankMonitorInstance') array of 64 BankMonitorInstance; vptr 483b48
+002ace40	BankMonitor_dtor	high	called from SndBankMan_dtor; mirror of BankMonitor_ctor (destroys 64 instances, frees array, base dtor 2adac8)
+002acf60	BankMonitor_FindFreeInstance	med	returns index of n-th free instance (BankMonitorInstance_PollFree) of 64, -1 if none
+002acfe0	BankMonitor_AddInstance	high	string 'WARNING: Out of BankMonitor instances'; claims free instance, copies current param frame (vol/3D params), stores handle/type
+002ad2a8	BankMonitor_PauseAll	med	sets paused +0x8e8, BankMonitorInstance_Pause on all 64; caller SSXAudioSystem_PauseSfx
+002ad300	BankMonitor_ResumeAll	med	BankMonitorInstance_Resume on all 64, clears +0x8e8; caller SSXAudioSystem_ResumeSfx
+002ad398	BankMonitor_ResetInstance	med	BankMonitorInstance_Reset(instances + idx*0xc0)
+002ad3c0	BankMonitor_StopAll	med	vslot 2 of BankMonitor vtable 483b48; resets all 64 instances
+002ad410	BankMonitor_StopByCallback	med	vslot 3; resets instances whose PMF callback (+0xaa/+0xac) matches argument
+002ad550	BankMonitor_FindInstance	med	returns active instance with type==param_3 and handle==param_2, else NULL; 10 callers incl WorldTriggerInstance_Update
+002ad5f0	BankMonitor_StopHandle	med	FindInstance; fade==0 -> Reset else FadeVolume(fade,-1,autorelease); 31 callers
+002ad650	BankMonitor_StopByBank	med	for active SND (type 1) instances whose bank (+0xc, SND_Play arg) matches: Reset or fade out
+002ad730	BankMonitor_CountPlaying	med	counts active instances with playing flag (+8) set
+002ad7a8	BankMonitor_CountActive	med	counts instances not free (PollFree==0)
+002ad810	BankMonitor_ResetDistances	med	sets every instance distance (+0x5c) to -1.0; caller SSXAudioSystem_ResumeSfx
+002ad848	BankMonitor_TimerInit	med	timer record ctor (enabled=0, period=-1); 48 constructed by BankMonitor_BaseCtor
+002ad860	BankMonitor_TimerDtor	med	timer record dtor (delete-if-flag); BankMonitor_BaseDtor loop
+002ad888	BankMonitor_TimerSet	med	kill, set period/countdown, PMF callback and 5 user args, enable; caller BankMonitor_AddTimer
+002ad930	BankMonitor_TimerIsFree	med	period (+4) == -1
+002ad940	BankMonitor_TimerKill	med	disable + period/countdown = -1
+002ad970	BankMonitor_TimerSetPeriod	med	sets +4 period and +8 countdown
+002ad980	BankMonitor_TimerEnable	med	*this = 1; caller BankMonitor_TimerSet
+002ad990	BankMonitor_TimerDisable	med	*this = 0; caller BankMonitor_TimerKill
+002ad998	BankMonitor_SndTickCallback	med	address passed to SND_AddTickCallback/SND_RemoveTickCallback; calls vslot 1 (BankMonitor_Tick) on global instance
+002ad9c8	BankMonitor_BaseCtor	med	only caller BankMonitor_ctor; base-class ctor (vptr 483ba8), builds 48 timer records, sets global instance used by tick callback
+002adac8	BankMonitor_BaseDtor	med	only caller BankMonitor_dtor; SND_RemoveTickCallback(BankMonitor_SndTickCallback), destroys timers
+002adbf0	BankMonitor_InstallTickCallback	med	SND_AddTickCallback(BankMonitor_SndTickCallback); caller SSXAudioSystem_Create
+002adc10	BankMonitor_Tick	med	vslot 1 of 483b48/483ba8; ++tick counter +0x88 unless paused +0x94
+002adc30	BankMonitor_FindFreeTimer	med	n-th free timer of 48 (0x2c records at +0x98), -1 if none
+002adca0	BankMonitor_AddTimer	med	finds free timer slot and BankMonitor_TimerSet with callback/args; 24 SSXAudioSystem callers
+002adda0	BankMonitor_KillAllTimers	med	BankMonitor_TimerKill on all 48 timers
+002adde0	BankMonitor_KillTimersByCallback	med	kills timers whose PMF callback matches; callers incl MusicPlayer_StopSong
+002adfb0	PATH_GetTrackData	med	returns PATH platform track table entry 0x4d3e98[idx] (24 tracks); caller SongInstance_GetStreamHandle
+002ae000	PATH_PlatFree	med	free hook installed by PATH_PlatInit (gp 0x6a4); wraps FUN_002523a8 (EA_MemFree)
+002ae020	PATH_PlatTimerCallback	med	EATimer callback registered by PATH_PlatInit (period 5); calls user tick fn stored at gp 0x6a8
+002ae048	PATH_PlatInit	med	only caller PATH_AddTrack; clears 24 track/bank slots, SND_AddTickCallback, EATimer_AddCallback, installs debug/printf/alloc/free hooks
+002ae100	PATH_PlatShutdown	med	only caller PATH_StopTracks; SND_RemoveTickCallback + EATimer_RemoveCallback(PATH_PlatTimerCallback)
+002ae138	PATH_PlatTrackInit	med	memset 0x70 track record, handles=-1; caller PATH_PlatAddTrack
+002ae188	PATH_PlatRemoveTrackSlot	med	clears entries of the 24-track table 0x4d3e98 equal to given record
+002ae1b8	PATH_PlatFindFreeTrackSlot	med	first null entry of 24-track table 0x4d3e98, -1 if full
+002ae1f0	PATH_PlatBankSlotInit	med	memset 0x28 bank slot, ids -1; caller PATH_PlatStopTrack
+002ae230	PATH_PlatFindBankSlot	med	searches 24 bank slots (0x4d3ef8, 0x28 each) by track id and bank id; -1/-1 finds a free slot; -8 if none
+002ae298	PATH_PlatAddBank	med	stores track/bank id/SND bank handle in a matching or free bank slot; -13 if none
+002ae328	PATH_PlatRemoveBank	med	SND_BankRemove on the slot's bank, resets slot
+002ae478	PATH_PlatCalcTrackMemSize	med	only caller PATH_CalcTrackMemSize; 0x70 + n*0xc + SNDSTRM_CalcMemSizeEx, 16-aligned
+002ae4c0	PATH_PlatAddTrack	med	only caller PATH_AddTrack; claims track slot, sets play params, SNDSTRM_Create (or SND-bank track)
+002ae690	PATH_PlatStopTrack	med	only caller PATH_StopTracks; SNDSTRM_Close or frees track's bank slots, removes from table
+002ae7a8	PATH_PlatQueue	med	queues a segment: SND_Play from bank for bank tracks, else SNDSTRM_Queue/QueueFileOffset; shifts request history
+002aec28	PATH_PlatMarkTrackDirty	med	sets track +0x65 (forces PATH_PlatRefreshStatus before next query); caller PATH_ExecuteAction
+002aefa8	PATH_PlatRefreshStatus	med	for all 24 tracks: SNDSTRM_GetStatus/GetRequestStatus, SND_GetSoundInfo, volumes; called lazily when +0x65 dirty and by PATH_Update
+002af2f0	PATH_PlatGetStatus	med	only caller PATH_status; refreshes then returns track +0x48/+0x4c and state
+002af370	PATH_PlatGetTimeMs	med	EATimer_GetTicks / rate * 1000 -> ms; callers PATH_PostEvent, PATH_Update
+002af428	PATH_PlatGetTrackVolume	med	returns track +0xc (current volume set by PATH_PlatSetVolume) after refresh
+002af4b0	PATH_PlatGetTrackAuxSend	med	returns track +0x10, stored by PATH_PlatSetAuxSend
+002af4e0	PATH_PlatSetAuxSend	med	SNDSTRM_SetAuxSend / SND_SetAuxSend by track kind, stores +0x10
+002af608	PATH_PlatFadeVolume	med	only caller PATH_TrackFadeVolume; SNDSTRM_FadeVolume / SND_FadeVolume
+002af6c0	PATH_PlatSetVolume	med	caller PATH_TrackSetVolume; SNDSTRM_SetVolume / SND_SetVolume, caches +0xc
+002af7a0	PATH_PlatSetPaused	med	pitch 0 when pausing, restores saved pitch otherwise (SNDSTRM_SetPitch / SND_SetPitch)
+002af838	PATH_PlatStopTrackSound	med	SNDSTRM_Stop / SND_Stop on the track, marks dirty
+002af8a8	SpeechSystem_SpchEventCallback	med	address passed to SPCH_InitState in SPCH_Init; unless disabled forwards to SpeechSystem_OnSpchEvent
+002afc88	SpeechInstance_Update	med	per-instance step from SpeechSystem_Update: checks stream readiness, drives SPCH scheduler (FUN_003d8040/3d7ec8)
+002b0320	SpeechInstance_StopStream	med	StreamArray_Stop(global speech system stream array, this+4 slot)
+002b0348	SpeechInstance_AddBank	med	SpeechBank_Load and append to bank array +0xf4 (count +0xf0); callers LoadEvents/LoadSpeechInf
+002b04d8	SpeechInstance_PlayEvent	med	finds bank for event, formats '%s%s%s.dat' ('data/' + language), queues stream via SpeechSystem vslots, adds timers
+002b07c0	SpeechInstance_IsPlaying	med	StreamArray_IsPlaying on this+4 stream slot
+002b07f8	SpeechSystem_ctor	high	strings 'mSpeechInstance' alloc tag, 'audio/speech.big', language .big names; sets global speech system 0x4a37b4
+002b0ae8	SpeechSystem_dtor	high	mirror of SpeechSystem_ctor (frees mSpeechInstance array, clears global, virtual-base dtors)
+002b0c78	SpeechSystem_Update	med	SpeechInstance_Update on both instances then context tick 2b1720; caller SSXAudioSystem_UpdateBanksAndStreams
+002b0e28	SpeechSystem_IsInstanceReady	med	instance[idx] non-null -> SpeechInstance_IsStreamReady
+002b0f10	SpeechSystem_LoadSpeechInf	med	instance[idx] non-null -> SpeechInstance_LoadSpeechInf
+002b0f48	SpeechSystem_OnSpchEvent	med	tries SpeechInstance_PlayEvent on each of 2 instances; fires completion callback +0xc for matching instance
+002b11b0	SpeechSystem_StopInstance	med	instance[idx] non-null -> SpeechInstance_StopStream; 7 SSXAudioSystem callers
+002b11e8	SpeechSystem_IsInstancePlaying	med	instance[idx] non-null -> SpeechInstance_IsPlaying
+002b1220	SpeechSystem_GetInstanceStreamSlot	med	returns instance[idx]+4 (stream slot passed to SpeechInstance_ctor), -1 if none
+002b1428	SpeechSystem_ClearEventContexts	med	clears the 10 context slots (0x20 each from +0x18); only caller SpeechSystem_ctor
+002b1458	SpeechSystem_SetEventContext	med	10-slot table keyed (instance, event id): refresh timeout 180 or fill free slot with source/params; 44 SSXAudioSystem callers
+002b1520	SpeechSystem_ApplyEventContext	med	looks up context for (instance,event) and copies source params (via +0x6c0 vslots) to instance +0x8cc..+0x8fc; caller PlayEvent
+002b1720	SpeechSystem_TickEventContexts	med	decrements the 10 context timeouts, frees expired; caller SpeechSystem_Update
+002b2018	SongInstance_Pause	med	SNDSTRM_SetPitch(song stream,0) + PATH_SetVolume(0x11000002,1); caller MusicPlayer_Pause
+002b2070	SongInstance_Resume	med	SNDSTRM_SetPitch(song stream,0x1000) + PATH_SetVolume(0x11000002,0); caller MusicPlayer_Resume
+002b20c8	SongInstance_PostEvent	med	PATH_PostEvent(-1,event) when started (+0x2c), else latches first pending event in +0x30; callers SongInstance_Update, MusicPlayer_PostEvent
+002b23e8	SongInstance_SetVolumePercent	med	if enabled (+0x54) PATH_SetVolumePercent(0x11000002, pct)
+002b24c0	SongInstance_PickRandomLoop	med	Audio_Rand % config LOOPDATA count (+0x40); caller MusicPlayer_LoadLoopBank
+002b2500	SongInstance_PickRandomPhraseOffset	med	(rand % (PhrasesPerBank(+0x6c)-1)) * PhraseAlign(+0x74) (keys from MusicPlayer_ctor parser)
+002b2578	SongInstance_GetStreamStatus	med	SNDSTRM_GetStatus on SongInstance_GetStreamHandle, -1 if no stream
+002b25c8	SongInstance_GetRequestStatus	med	SNDSTRM_GetRequestStatus of the stream's current request (from SongInstance_GetStreamStatus); caller SongInstance_GetPositionMs
+002b2850	SongInstance_ApplyDelayParams	med	copies song config DelayCount(+0x78)/DelayFeedback(+0x7c)/DelayTime(+0x80) into current pushed param frame (+0x248 slot)
+002b35a0	MusicPlayer_PlaySong	med	MusicPlayer vtable 4838f8 slot 2; pushes param frame with volume ptr, calls MusicPlayer_StartSong, pops
+002b3838	MusicPlayer_StartSong	med	MusicPlayer_StopSong, finds song by name (strcmp over names +0x124) or current, SongInstance_Create, MusicPlayer_LoadLoopBank
+002b3a70	MusicPlayer_Pause	med	current song (+0x408) -> SongInstance_Pause; callers ssx_BootMoviesUpdate, StartLight sequencer
+002b3a98	MusicPlayer_Resume	med	current song -> SongInstance_Resume; callers ssx_BootMoviesUpdate, MusicPlayer_StopSong
+002b3b88	MusicPlayer_PostEvent	med	vtable 4838f8 slot 3; enabled+song -> SongInstance_PostEvent(event,0)
+002b3c98	MusicPlayer_SetSongVolume	med	writes current song volume byte +0x40 (used by fade 2b3d80 and SongInstance_SetVolume)
+002b3d10	MusicPlayer_SetVolumePercent	med	enabled+song -> SongInstance_SetVolumePercent
+002b3d48	MusicPlayer_FadeOut	med	enabled+song -> SongInstance_FadeOut
+002b3d80	MusicPlayer_FadeSongVolume	med	sets target (+0x414), start (+0x410) and step per 40-tick timer (+0x40c) from song volume +0x40; BankMonitor_AddTimer
+002b40f0	MusicPlayer_GetSongTitle	high	returns this+0x934+idx*100, the TITLE string filled by MusicPlayer_ctor; callers UpdateNowPlaying/HUD
+002b4120	MusicPlayer_GetSongArtist	high	returns this+0x2234+idx*100, the ARTIST string filled by MusicPlayer_ctor
+002b4150	MusicPlayer_GetSongAlbum	high	returns this+0x3b34+idx*100, the ALBUM string filled by MusicPlayer_ctor
+002b4180	MusicPlayer_SkipSongs	med	resets selection (+0x3f0=-1) then MusicPlayer_SelectNextSong n+1 times
+002b43d8	MusicPlayer_LoadLoopBank	med	sprintf bank path from song + random LOOPDATA entry, SndBankMan_LoadBankAsync, marks song +0x38 loading
+002b44d8	MusicPlayer_StopLoops	med	BankMonitor_KillTimersByCallback for loop callbacks 0x4a3838/0x4a3840, then clears song +0x4c
+002b4620	MusicPlayer_AttachLoopBank	med	once loop bank loaded (SndBankMan bank state 1) hands its handle to PATH track 0x11000002 (FUN_003d2df8), state -> 2
+002b4868	SongInstance_GetDuckToLoops	med	returns config +0x94 (DUCKTOLOOPS key in MusicPlayer_ctor parser)
+002b4878	MusicPlayer_GetDuckToLoops	med	enabled+song -> SongInstance_GetDuckToLoops, default 1
+002b48b8	SongInstance_GetSedValue	med	returns config +0x98 (SEDVALUE key in MusicPlayer_ctor parser)
+002b48c8	MusicPlayer_GetSedValue	med	enabled+song -> SongInstance_GetSedValue, default -1
+002b4908	MusicPlayer_GetSelectedSongSedValue	med	SEDVALUE (+0x98) of song config at selected index +0x3f0
+002b4920	MusicPlayer_GetMsToNextBeat	med	enabled -> SongInstance_GetMsToNextBeat under SND_Lock
+002b4a20	MusicPlayer_LoadSongData	med	cancels pending AsyncFile, AsyncFile_LoadInto / EAFile_LoadFileIntoEx 0x6400 bytes into +0x5434; caller SongInstance_ctor
+002b4aa0	MusicPlayer_IsSongDataLoaded	med	AsyncFile_IsDone on +0x5438 (or true for sync load); caller SongInstance_Update
+002b4ae8	MusicPlayer_GetSongDataBuffer	med	returns +0x5434 (buffer filled by MusicPlayer_LoadSongData)
+002b5898	WorldTriggerInstance_Reset	med	clears state, owner -1, distance -1.0, default name byte; caller WorldTriggerInstance_Update
+002b5f60	WorldTriggerManager_PlayTriggerSound	med	caller SSXAudioSystem_PlayWallHitSound; GetTriggerInfo, pushes param frame (bank/id/vol/gain/position), Audio_PlayPushedSound
+002b65b0	WorldTriggerManager_GetTriggerName	med	trigger entry type 3 -> strcpy name (+0x10); type 4 -> stub 0
+002b66e8	WorldTriggerManager_IsDuplicateActive	med	true if another active instance has the same (+4,+8) key pair
+002b6b50	cWorldSound_RelocateEmitters	med	fixes up emitter offsets in loaded data, resolves instance refs via world instance table, then cWorldSound_InsertEmitters
+002b6c20	cWorldSound_UnlinkEmitters	med	cWorldSound_UnlinkEmitter for each 0x18-byte emitter with an instance
+002b6c90	cWorldSound_InsertEmitters	med	cWorldSound_InsertEmitter for each 0x18-byte emitter with an instance
+002b7318	cWorldSound_InsertEmitter	med	cWorldSound_ComputeRegionBounds then inserts into world spatial tree tagged type 5
+002b7410	cWorldSound_UnlinkEmitter	med	removes emitter from spatial tree (frees empty leaf) then cWorldSound_RemoveEmitter
+002b75d0	cWorldSound_RefreshNearbyEmitters	med	only caller cWorldSound_Update; when listener moved >10 units queries the 8 spatial tree roots for type-5 emitters
+002b83f8	cWorldSound_QueryTreeNode	med	recursive spatial-tree query with cell bounds test collecting type-5 (world sound) entries
+002b9100	Audio_DebugPrintf	med	empty varargs stub called with format strings ('Out of BankMonitor instances', SPCH_Init seed message)
+002b9338	BankMonitor_InitCurrentPlayParams	med	SND_InitPlayParams on current pushed param frame (frames +0x20, index +0x1c)
+002b93b8	BankMonitor_ResetCurrentParams	med	resets current pushed param frame to defaults (vol 0x7f, 100/0x5a/0x32) without pushing
+002b95b0	BankMonitor_PushDefaultParams	med	++index, copies base play params and default values into new frame
+002b9ce0	BankMonitor_SetParamCallback	med	stores 8-byte PMF in current frame +0x40 slot (copied to instance +0xa8 by BankMonitor_AddInstance)
+002b9f08	SndBankMan_IsBankInUse	med	bank table +0xacc (0x60 entries): state 1 and SND_BankIsInUse(handle)==1
+002b9f88	SndBankMan_GetBankHandle	med	bank table +0xacc entry: handle if state 1 else -1
+002b9ff8	Audio_PushDefaultParams	med	pushes a default play-param frame on SndBankMan stack (+500 index), the frame Audio_PlayPushedSound consumes
+002ba208	Audio_PushParamsBank	med	Audio_PushDefaultParams + sets bank (param_1[1] array) for the frame
+002ba448	Audio_PushParamsBankSound	med	Audio_PushDefaultParams + bank and sound id for the frame
+002ba6b0	Audio_PlaySound	med	vslot 1 of 4837f8/483a48: push default frame, bank + sound id, Audio_PlayPushedSound
+002ba920	Audio_PlaySoundVolume	med	as Audio_PlaySound plus volume (clamped 0..0x7f) in frame, Audio_PlayPushedSound
+002bac38	MusicPlayer_GetSongStreamHandle	med	current song (+0x408) -> SongInstance_GetStreamHandle, -1 if none
+002bac98	MusicPlayer_ApplyDelayParams	med	SongInstance_ApplyDelayParams on current song (+0x408)
+002badd0	cWorldSound_CollectSubtree	med	recursive: collects type-5 entries of node list and all 8 children without bounds test
+002bb6e0	cWorldPainterMan_DebugDrawCurrent	med	only caller cWorldPainterMan_DebugDraw; picks current layer/node and calls WorldPainter_DebugDrawNode
+002bbc38	cWorldPainterMan_StaticInitDestroy	med	gcc static init/destroy (init,0xffff) at end of cWorldPainterMan TU; only caller is ctor-list thunk 2bc4e0; fills const matrices 4d42b8..
+002bc4e0	cWorldPainterMan_GlobalCtors	med	pointer in ctors list 43ce90; calls StaticInitDestroy(1,0xffff)
+002c03a8	WorldPainterQuery_ResetList	med	only caller WorldPainterQuery_ResetAll; walks global query list 4a3880 (next +0x14) writing default 49ee64 into each query's cell ptr
+002c0b70	WorldPainterQuery_StaticInitDestroy	med	gcc static init/destroy (init,0xffff) after WorldPainterQuery funcs; only caller ctor-list thunk 2c1688
+002c1460	WorldPainterQuery_BaseDtor	med	slot 1 of vt 485d30 (pure-virtual base); WorldPainterQuery_dtor restores this vptr at +4 before delete
+002c1688	WorldPainterQuery_GlobalCtors	med	pointer in ctors list 43ce94; calls StaticInitDestroy(1,0xffff)
+002c27c0	UStr_SprintfAsciiFmt_2	high	byte-identical copy of UStr_SprintfAsciiFmt: widens ascii fmt to UStr then UStr_vsprintf; 25 FE/OV callers
+002c28a0	GameLink_GetTicks	high	address taken in GameLink_SetupPlatformFuncs; wraps EATimer_GetTicks
+002c2b08	GameLink_Yield	high	address taken in GameLink_SetupPlatformFuncs; wraps EAThread_Yield
+002c4290	cPS2MemCard_v76	high	vt 486f78 slot 76 (class cPS2MemCard via pass1)
+002c43e0	cPS2MemCard_v10	high	vt 486f78 slot 10 (class cPS2MemCard via pass1)
+002c4410	cPS2MemCard_DoDeleteSave	med	run from Update state 0x13 when card ready; copies slot name, builds '/%s/%s' path, state 0x36 = sceMcDelete chain (file, icons, dir)
+002c4520	cPS2MemCard_v34	high	vt 486f78 slot 34 (class cPS2MemCard via pass1)
+002c4578	cPS2MemCard_v35	high	vt 486f78 slot 35 (class cPS2MemCard via pass1)
+002c45d0	cPS2MemCard_v37	high	vt 486f78 slot 37 (class cPS2MemCard via pass1)
+002c4648	cPS2MemCard_v36	high	vt 486f78 slot 36 (class cPS2MemCard via pass1)
+002c46c0	cPS2MemCard_v38	high	vt 486f78 slot 38 (class cPS2MemCard via pass1)
+002c4720	cPS2MemCard_v41	high	vt 486f78 slot 41 (class cPS2MemCard via pass1)
+002c4768	cPS2MemCard_v43	high	vt 486f78 slot 43 (class cPS2MemCard via pass1)
+002c4788	cPS2MemCard_RequestReadSave	med	called by v29 with save name; builds '/%s/%s' path, buf +0x2c size +0x20, state 0x1b -> 0x1c sceMcOpen(RDONLY) -> 0x1d sceMcRead
+002c4800	cPS2MemCard_v29	high	vt 486f78 slot 29 (class cPS2MemCard via pass1)
+002c4858	cPS2MemCard_v30	high	vt 486f78 slot 30 (class cPS2MemCard via pass1)
+002c48a0	cPS2MemCard_v32	high	vt 486f78 slot 32 (class cPS2MemCard via pass1)
+002c5230	cPS2MemCard_v73	high	vt 486f78 slot 73 (class cPS2MemCard via pass1)
+002c5250	cPS2MemCard_ClearPortInfo	med	only caller Update on port error -10/-1; zeroes port record (+0x17c type, +0x180 free space read by GetFreeSpaceForPort)
+002c52d8	cPS2MemCard_ClearDirEntry	med	memset 0x40 at +0x480 = sceMcGetDir table entry (DoGetSaveDirEntry); called by ClearDirCache, Update
+002c5500	cPS2MemCard_v45	high	vt 486f78 slot 45 (class cPS2MemCard via pass1)
+002c5570	cPS2MemCard_MarkSaveInvalid	med	sets save slot +0x1a8 = 1; Update calls it when dir entry size != expected table 487450 (v17 skips such slots)
+002c6280	cPS2MemCard_MarkSlotsWithoutSpace	med	only caller Update; per slot sets +0x1ac = 1 when slot has no save and free space < needed size, else subtracts
+002c64a8	cPS2MemCard_v15	high	vt 486f78 slot 15 (class cPS2MemCard via pass1)
+002c64d0	cPS2MemCard_v16	high	vt 486f78 slot 16 (class cPS2MemCard via pass1)
+002c64f8	cPS2MemCard_v17	high	vt 486f78 slot 17 (class cPS2MemCard via pass1)
+002c66b8	cPS2MemCard_v39	high	vt 486f78 slot 39 (class cPS2MemCard via pass1)
+002c6718	cPS2MemCard_v62	high	vt 486f78 slot 62 (class cPS2MemCard via pass1)
+002c6778	cPS2MemCard_v23	high	vt 486f78 slot 23 (class cPS2MemCard via pass1)
+002c67b0	cPS2MemCard_v51	high	vt 486f78 slot 51 (class cPS2MemCard via pass1)
+002c7440	cPS2ConsoleConfig_Create	high	EA_MemAllocNamed(0x38,'cPS2ConsoleConfig') + cPS2ConsoleConfig_ctor; caller SSXApp_Init
+002c8600	HUFF_writebits	high	EA huffencode HUFF_writebits: recursive split >16 bits, packbits/workpattern masks, emits bytes; callers HUFF_* encoder
+002c86f8	HUFF_treechase	high	EA huffencode HUFF_treechase: recursive tree walk storing code length per leaf (<0x100); caller HUFF_maketree
+002c8770	HUFF_maketree	med	EA huffencode HUFF_maketree: sorts 256 counts, merges nodes, calls HUFF_treechase; caller HUFF_analysis
+002c8970	HUFF_minrep	med	EA huffencode HUFF_minrep: recursive minimal repeat-code cost using clue code length; caller HUFF_analysis
+002c8a78	HUFF_writenum	med	EA huffencode HUFF_writenum: table code for <0xfc else exponent-coded ranges 0xfc..0x100000 via HUFF_writebits
+002c8c30	HUFF_writeexp	med	EA huffencode HUFF_writeexp: clue code bits, writenum(0), 9-bit code
+002c8ca8	HUFF_writecode	med	EA huffencode HUFF_writecode: clue -> HUFF_writeexp else bitsarray/bitnum code
+002c8cf8	HUFF_InitNumTables	med	only caller HUFF_EncodeBlock; fills writenum length/base tables (+0xd44/+0x1134) in ranges 4,12,28,60,124,252
+002c8e48	HUFF_analysis	med	EA huffencode HUFF_analysis: counts byte/run frequencies (0x300 counters), builds tree and picks clue; caller HUFF_EncodeBlock
+002c9a48	HUFF_pack	med	EA huffencode HUFF_pack: writes clue (8 bits), code table via writenum, then encodes data and end code (2,2 + 0,7)
+002ca368	MenuSysItem_OnFocus	high	empty default in vt slot 6 of many MenuSys*Item classes; called by MenuSysGroupItem_OnFocus / Point2D OnFocus
+002ca370	MenuSysItem_OnBlur	high	empty default in vt slot 7 of many MenuSys*Item classes; called by MenuSysGroupItem_OnBlur
+002ca408	MenuSysItem_GetLeftAxis	med	item->page->menuSys(+0x124) left axis (binding 0x3e); numeric items compute right-left
+002ca428	MenuSysItem_GetRightAxis	med	item->page->menuSys(+0x124) right axis (binding 0x3f); numeric items compute right-left
+002ca448	MenuSysItem_GetUpAxis	med	binding 0x40 via MenuSys; only Point2D HandleInput, y += (0x40 - 0x41)
+002ca468	MenuSysItem_GetDownAxis	med	binding 0x41 via MenuSys; only Point2D HandleInput, y += (0x40 - 0x41)
+002ca488	MenuSysItem_IsSlowModHeld	med	binding 0x42 via MenuSys; Int/Float HandleInput divide step by 20 (50 with 0x43)
+002ca4a8	MenuSysItem_IsFineModHeld	med	binding 0x43 via MenuSys; Int/Float HandleInput divide step by 5 (50 with 0x42)
+002cc248	MenuSys_GetInputCode	high	returns MenuSys+0x48 = input code set in MenuSys_Update (binding 0x3d / key map); caller MenuSysItem_GetInputCode
+002cc250	MenuSys_GetKeyCode	med	returns MenuSys+0x4c = keyboard key code from MenuSys_Update (usb kbd); caller TextEditItem_HandleInput
+002cc258	MenuSys_GetKeyChar	med	returns MenuSys+0x50 = keyboard char (set -1 if <0x20) in MenuSys_Update; caller TextEditItem_HandleInput
+002cc260	MenuSys_GetLeftAxis	med	InputBinding_EvalFloat(MenuSys+0x5c pad binding, 0x3e)
+002cc280	MenuSys_GetRightAxis	med	InputBinding_EvalFloat(MenuSys+0x5c, 0x3f)
+002cc2a0	MenuSys_GetUpAxis	med	InputBinding_EvalFloat(MenuSys+0x5c, 0x40)
+002cc2c0	MenuSys_GetDownAxis	med	InputBinding_EvalFloat(MenuSys+0x5c, 0x41)
+002cc2e0	MenuSys_IsSlowModHeld	med	InputBinding_EvalFloat(MenuSys+0x5c, 0x42) != 0
+002cc318	MenuSys_IsFineModHeld	med	InputBinding_EvalFloat(MenuSys+0x5c, 0x43) != 0
+002cf8d8	MenuSysGroupItem_v08	high	vt 486858,486908,4869b8 slot 8 (class MenuSysGroupItem via slots 2/2)
+002cfaf8	MenuSysGroupItem_v09	high	vt 486858,486908,4869b8 slot 9 (class MenuSysGroupItem via slots 2/2)
+002cfb28	MenuSysGroupItem_v10	high	vt 486858,486908,4869b8 slot 10 (class MenuSysGroupItem via slots 2/2)
+002d1af0	World_GetRiderCount	high	returns g_App->module(GameModule)->AI(+0xc)->riderCount(+0x78) (world.md); same TU as World_GetInstance; callers Boost_Update etc
+002d1b08	World_GetRider	high	returns AI->riders[i] (+0x28) as its Rider vptr subobject (+0x6c0) or 0; callers Boost/Magnet modifiers
+002d1b58	World_GetRiderPosition	med	AI->riders[i] Rider vslot 5 (GetPosition, returns &+0x110 per rider.md); caller MagnetModifier_Update
+002d1ba0	World_GetPeakNumber	med	BENewRaceInt_GetTrackPeak() + 1 via BELibrary interface 0; caller cFlagManager_Update
+002d1be0	World_GetNash	high	returns GameModule+0x20 Nash (spatial hash, world.md); 20 world-object callers
+002d1bf0	World_AddFocusObject	high	FocusMan_AddObject(AI->focus(+0xa4), obj); caller WorldObj_ctor
+002d1c20	World_GetCameraEye	high	returns GameViewMan(GameModule+0x84)->cameras[i](+4)+0x20 = GameCamera eye (camera.md); caller SkyBox_Render
+002d1c58	World_GetCurrentViewIndex	med	returns GameViewMan+0x14, used by SkyBox_Render as camera index for World_GetCameraEye
+002d1c70	World_GetSecondsPerTick	high	returns g_App+0x14 = seconds per tick 1/60 (app.md); Boost/rail/modifier callers
+002d1c98	World_GetAIFrameCount	high	returns AI+0x08 frameCount (world.md)
+002d1cb0	World_GetFlagManager	high	returns GameModule+0x70 cFlagManager (world.md); callers Flag_ctor/dtor
+002d1cc0	World_CreateDeadNode	med	trivial wrapper of WorldObjFactory_DeadNode; callers DeadFade_Update/Kill
+002d1ce0	World_GetInstancesMan	high	returns GameModule+0x88 InstancesMan (world.md); MultiSplineModifier callers
+002d1cf0	World_GetAvalancheMatrix	med	wrapper of 2d9c00 (find avalanche by id in 64x0x2f0 array, return scaled matrix); callers AvaSplineModifier
+002d2058	World_IsOccluded	med	iterates OcclusionMan(GameModule+0x8c) active occluders (bitmask +0x110), VU0 microcall test, returns 1 if hidden; caller ModObj_Render
+002d2210	Serialize_WriteU32_2	high	byte-identical to Serialize_WriteU32 (little-endian 4 bytes, advance ptr) with swapped arg order; caller Serialize_WriteDataBlock
+002d22a8	Serialize_WriteVec4	med	4x Serialize_WriteU32, returns 0x10; sibling of Serialize_WriteVec3 (3x, 0xc)
+002d2308	Serialize_WriteMatrix	med	16x Serialize_WriteU32, returns 0x40
+002d2368	Serialize_WriteQuat	med	writes [3],[0],[1],[2] (w first) via Serialize_WriteU32, returns 0x10
+002d2558	Serialize_ReadU32_2	high	byte-identical to Serialize_ReadU32 (LE 4 bytes, advance ptr); CameraTrigger readers, Serialize_ReadDataBlock
+002d2628	Serialize_ReadVec4	med	4x Serialize_ReadU32 summing sizes; mirror of Serialize_WriteVec4
+002d2690	Serialize_ReadMatrix	med	16x Serialize_ReadU32; mirror of Serialize_WriteMatrix
+002d26f8	Serialize_ReadQuat	med	reads w,x,y,z and stores x,y,z,w; mirror of Serialize_WriteQuat
+002d3788	cPS2MemCard_BaseDtor	med	slot 1 of vt 4871e8 (all-pure-virtual base); cPS2MemCard_dtor restores this vptr before delete
+002d37e0	cPS2MemCard_v49	high	vt 486f78 slot 49 (class cPS2MemCard via pass1)
+002d3810	cPS2MemCard_v53	high	vt 486f78 slot 53 (class cPS2MemCard via pass1)
+002d3840	cPS2MemCard_v54	high	vt 486f78 slot 54 (class cPS2MemCard via pass1)
+002d38f0	cPS2MemCard_v55	high	vt 486f78 slot 55 (class cPS2MemCard via pass1)
+002d3930	cPS2MemCard_v63	high	vt 486f78 slot 63 (class cPS2MemCard via pass1)
+002d3950	cPS2MemCard_v64	high	vt 486f78 slot 64 (class cPS2MemCard via pass1)
+002d3980	cPS2MemCard_v71	high	vt 486f78 slot 71 (class cPS2MemCard via pass1)
+002d39b8	cPS2MemCard_GetCurrentPortError	med	cPS2MemCard_GetPortError(this, this->port +0xc); same shape as v73/v63 wrappers
+002d3fd8	cPS2ConsoleConfig_v01	high	vt 486798 slot 1 (class cPS2ConsoleConfig via pass1)
+002d4030	cPS2ConsoleConfig_BaseDtor	med	slot 1 of base vt 487480; cPS2ConsoleConfig_v01 (the dtor) restores the same vptr at +0x34
+002d5598	Avalanche_PackBytes3	med	stores 3 floats as chars into history record bytes 0..2; only caller Avalanche_BakeNodeHistory
+002d55c0	Avalanche_PackClamped255x3	med	scales by gp const, clamps 0..1, *255 into record bytes 3..5; only caller Avalanche_BakeNodeHistory
+002d5658	Avalanche_PackSnorm3Alpha	med	x,y,z *127 into record bytes 6..8 and w *255 into byte 9 (10-byte AvaNodeHistory frame)
+002d5778	Avalanche_SampleHistory	med	interpolates baked 30fps node history frames (node+0xfc, count +0x100) at time t into pos/matrix; callers UpdateInstance, LoadState
+002d64d8	Avalanche_ClampVector	med	clamps vec4 length to gp max via VU0 rsqrt; replaces NaN/Inf components with (10,10,10,0); caller BakeNodeHistory
+002d66a0	Avalanche_BakeNodeHistory	med	allocs 'AvaNodeHistory' (frames*10 bytes) and simulates the node path against world collision; caller Avalanche_BakeGroup
+002d7c00	Avalanche_ComputeInstanceFade	med	sets instance +0xb0/+0xb4 from t*30 vs node fade-in +0x104, duration +0x100, fade-out +0x108
+002d7ca8	Avalanche_UpdateInstance	med	samples history at t*speed(+0x10c) into instance pos/matrix, spawns spray via DynamicEmitter_SpawnAt; releases when finished
+002d7dd8	Avalanche_ReleaseInstance	med	detaches instance from node (+0x2e0, node+0x114), notifies node world object, resets emitter +0xd0
+002d7e60	Avalanche_BuildActiveNodeArray	high	operator_new_named(count*4,'ActiveNodeArray') filled from the active avalanche's instance list (+0x2e4 links)
+002d7ef8	Avalanche_UpdateActive	med	advances active avalanche time, updates instances, spawns 'AnimObject' and audio events at scheduled times, stops when none alive; caller VfxAvalanche_Update
+002d81b0	Avalanche_Stop	med	frees node array, releases all instances, SSXAudioSystem_SetAvalancheSound(0), decrements DangerMan(+0xa8)+0x708 counter
+002d8258	Avalanche_ExportHistoryFiles	med	writes history file 3 times with extensions 'xav','sav','gav' (byte-swap flag 1,1,0)
+002d82a0	Avalanche_WriteData	med	EAFile_Write of count*size bytes; when flag==0 copies into 'buffer' with per-element byte reversal (endian swap)
+002d83b8	Avalanche_WriteHistoryFile	med	sprintf '%s.%s' (track code, ext), EAFile_Open/Write of avalanche group + node histories via Avalanche_WriteData
+002d87d0	Avalanche_LoadHistoryFile	med	opens '<track>.sav' ('%s.%s'), reads blob, frees old histories and applies via Avalanche_ApplyHistoryData
+002d8ea8	Avalanche_RenderActive	med	renders active avalanche instances (+emitters via 371688) and, if gp+0x968, debug event markers; caller VfxAvalanche_Render
+002d92d0	Avalanche_AddNode	high	finds/allocs 'Avalanche' group (0x210) by id in gp list, allocs 'AvalancheNode' (0x120) from world object bbox; caller WorldObjFactory_Avalanche
+002d9538	Avalanche_SetNodeEmitter	med	finds node by world object id (+0xf8), copies 0xd0-byte emitter params to node start, sets enable byte +0xf2
+002d9660	Avalanche_BakeGroup	med	runs Avalanche_BakeNodeHistory for every node of a group (+4 list, +0xf4 links); caller Avalanche_BakeAll
+002d96e0	Avalanche_BakeAll	med	frees histories, bakes every group, exports .xav/.sav/.gav and reloads .sav; caller VfxAvalanche_Update
+002d9738	Avalanche_AddNodeEvent	med	appends (frame, node index) to group event table +0x110 (max 0x40), played back as audio events in UpdateActive
+002d97a8	Avalanche_Start	med	starts avalanche group id in one of 16 active slots (0x538938), binds nodes to 64 instances (0x4ee770), sound on; returns slot
+002d9a80	Avalanche_FreeHistories	med	stops all 16 active avalanches and frees owned per-node history buffers (+0xfc, flag +0xf3)
+002d9b40	Avalanche_DestroyAll	med	frees histories, deletes all nodes and groups, clears gp list and 0x538450 table, frees history blob; WScriptMan_Shutdown etc
+002d9c00	Avalanche_GetObjectMatrix	med	finds instance whose node world object (+0x2e0->+0xf8) == arg, returns matrix scaled by +0xb0 with translation +0x60
+002d9cb0	Avalanche_SaveState	med	only caller WorldState_Write; writes 16 active slot group ids and times via stream slot 1
+002d9d68	Avalanche_LoadState	med	only caller WorldState_Read; restarts saved avalanches and re-samples instances at saved time
+002d9fb8	Avalanche_SetHistoryData	med	DestroyAll, then adopts blob if magic 0x2beef00 and applies it (Avalanche_ApplyHistoryData)
+002da028	Avalanche_ApplyHistoryData	med	parses baked blob (gp+0x9c4) into node start pos (+0xe0) and history ptrs (+0xfc), group event tables; sets applied flag
+002da1c0	Avalanche_GetProximityInfo	med	averages positions/fade of active avalanche instances within gp radius of a point; outputs avg pos, avg fade, min dist, count, flag; audio/AI callers
+002db700	cCrowdRender2D_dtor	med	deleting dtor: calls cCrowdRender2D_ReleaseTextures then delete; caller CrowdMan2d_dtor
+002db748	cCrowdRender2D_LoadTextures	high	only caller cCrowdRender2D_ctor; EAFile_LoadFileEx('data/textures/crwd.ssh'), SHPS_Find + renderer texture create per crowd frame
+002db890	cCrowdRender2D_ReleaseTextures	med	releases renderer textures (slot 0x194) for each crowd frame and frees the crwd.ssh file; mirror of LoadTextures
+002db980	cCrowdAnim2D_Create	high	EA_MemAllocNamed(0x20,'cCrowdAnim2D') + cCrowdAnim2D_ctor; caller CrowdMan2d_ctor
+002dba08	cCrowdAnim2D_StepFrame	med	advances frame index by play mode (0 clamp fwd, 1 back wrap, 2/3 ping-pong, 4 loop); caller cCrowdAnim2D_Update
+002dbac0	cCrowdAnim2D_Update	med	ticks cCrowdAnim2D (0x20: +4 seq, +8 mode, +0xc frame, +0x14 interval, +0x18 last tick) through sequence table 445e10; caller CrowdMan2d update 2294c8
+002dbee0	FXLoader_dtor	med	deleting dtor releasing the 0x51 renderer texture handles at graphics+0xf50 that FXLoader_ctor fills; callers FEModule_BaseDtor, GameModule_Unload
+002dbf80	cPS2FogParticleMan_BaseCtor	med	stores abstract base vt 488308 at +4, count 0; caller GameModule_LoadWorld (world.md: cPS2FogParticleMan ctor 0x2dbf80)
+002dbf98	cPS2FogParticleMan_Render	med	qsorts the 8-byte particle list 0x537ac0, sets GS alpha/test state, calls vslot 3 to draw, resets count; caller 22c708 (world render)
+002dc190	cPS2FogParticleMan_v02	high	slot 2 of cPS2FogParticleMan vt 4882e0 (world.md); projects object centres with view matrix and appends fog particles to 0x537ac0
+002dc7b0	cPS2FogParticleMan_DrawParticles	med	slot 3 of vt 4882e0, called by cPS2FogParticleMan_Render; builds sprite packets via SprStream_BeginBlock/EndBlockAligned
+002ddd30	cBoardWakeFX_BuildTrail	med	only caller cBoardWakeFX_Update; fills current ring entry (+0xc, stride 0x70) with wake spine points from rider velocity and Noise_Fractal1D
+002de058	cBoardWakeFX_AdvanceRing	med	only caller cBoardWakeFX_Update; steps ring index (+8) mod size, takes surface colour from table 4fa398 by rider vslot 7, writes UV/colour per strip
+002de398	cDynamicSprayFX_AddRandomVelocity	med	adds random jitter along emitter axes (+0x50 scaled by +0x12c, +0x40 by +-10) to a velocity; callers cDynamicSprayFX emitter updates
+002df448	cDynamicSprayFX_SetupEmitters	med	calls vslot 3 (setup) on the 10 spray emitters (+0x28 stride 0x210) with their data (+0x2c stride 0xe8); callers ctor, Update
+002dfe88	cDynamicSprayFX_UpdateEmitter3	med	run by cDynamicSprayFX_Update when emitter 3 (+0x7a4) is enabled; spawns its particles via DynamicEmitter_SpawnAt
+002e02b8	cDynamicSprayFX_UpdateEmitter1	med	run by cDynamicSprayFX_Update when emitter 1 (+0x384) is enabled; spawns particles via DynamicEmitter_SpawnAt
+002e0ee8	cDynamicSprayFX_UpdateEmitter0	med	run by cDynamicSprayFX_Update when emitter 0 (+0x174) is enabled; spawns particles
+002e1120	cDynamicSprayFX_UpdateEmitter4	med	run by cDynamicSprayFX_Update when emitter 4 (+0x9b4) is enabled; uses AnimController layer entry, spawns particles
+002e1598	cDynamicSprayFX_UpdateEmitter5	med	run by cDynamicSprayFX_Update when emitter 5 (+0xbc4) is enabled; spawns particles
+002e1a80	cDynamicSprayFX_UpdateEmitter7	med	run by cDynamicSprayFX_Update when emitter 7 (+0xfe4) is enabled; spawns particles
+002e1f70	cDynamicSprayFX_UpdateEmitter8	med	run by cDynamicSprayFX_Update when emitter 8 (+0x11f4) is enabled; spawns particles
+002e2260	cDynamicSprayFX_UpdateEmitter9	med	run by cDynamicSprayFX_Update when emitter 9 (+0x1404) is enabled; spawns particles
+002e23e0	cDynamicSprayFX_QueueBurst	med	if strength > stored (+0xe0) and near last pos (or rider flags), stores burst pos +0xf0, dir +0x100, arg +0x110, flag +0x114
+002e2550	cDynamicSprayFX_UpdateEmitterEnables	med	enables/disables the 10 spray emitters according to rider +0x898 mode and +0x124 flag; callers Reset, Update on mode change
+002e26b8	cDynamicSprayFX_ConfigureForRider	med	sets emitter size params by sign of rider +0x870 and re-runs setup of emitters 4,5; callers ctor, Reset
+002e2b00	LensFX_ProjectSource	med	projects a light source (renderer slots 0x2dc/0x2e4), sizes and clamps its occlusion test box to the screen; caller LensFX_PrepareView
+002e3338	LensFX_PrepareView	med	only caller LensFX_Render; copies viewport and view matrix from renderer, then projects every source with LensFX_ProjectSource
+002e4370	cTransitionMan_Start	med	stores fade-in/hold/fade-out (+0x54/58/5c), type +0x78, objects +0x4c/+0x50, optional render target, sets active +0x44; cTransitionMan_ScriptActivate caller
+002e44f0	cTransitionMan_StartOut	med	if active updates fade-out +0x5c and object +0x50, else cTransitionMan_Start(0,0,fadeOut,...)
+002e4540	cTransitionMan_StartCaptured	med	cTransitionMan_Start with fade-out only and render-target capture flag 1; callers ScriptList_Start etc
+002e4578	cTransitionMan_Stop	med	clears active +0x44, releases the two transition objects (slot 1 delete), releases render target; callers cTransitionMan_dtor, Update, rider reset
+002e4638	cTransitionMan_SetPaused	med	inc/dec pause counter +0x40 while active; only caller ScriptList_SetPaused
+002e4678	cTransitionMan_GetTimeRemaining	med	returns fadeIn+hold+fadeOut - elapsed (+0x48) when active, else 0; caller ScriptList_NextEntry
+002e4b98	cTransitionMan_ScriptActivate	med	in ScriptObj vtable of cTransitionMan (ptr at 488124): ScriptObj_Activate(+0x10) then starts the scripted transition
+002e4c60	cTransitionMan_ScriptDeactivate	med	pointer at 48812c next to ScriptActivate: ScriptObj_Deactivate(+0x10) + cTransitionMan_Stop
+002e4cb0	cTransitionMan_ResetEffectPool	med	only caller cTransitionMan_ctor; clears the 4 in-use flags 538850 of the 100-byte transition data pool 5382c0
+002e4ce8	TransitionEffect_AllocData	med	returns first free 100-byte entry of pool 5382c0 (marks flag 538850) or the gp default; callers RiderResetSub_Enter, GameStateWarpToEvent_Enter
+002e4d30	TransitionEffect_FreeData	med	clears the pool in-use flag for an entry of 5382c0; callers TransitionEffect_dtor and other effect dtors
+002e4d88	SnowBox_ctor	high	SnowFall_ctor passes EA_MemAllocNamed(0xc0,'SnowBox') as this; stores size/params, random seeds, identity matrix
+002e4f28	SnowBox_dtor	med	empty deleting dtor; only caller SnowFall_dtor
+002e4f50	SnowBox_Update	med	only caller SnowFall_Update; picks params by type (+4), randomises wind gusts and advances the box offset +0x20
+002e5430	SnowBox_WrapOffset	med	only caller SnowFall_Render; subtracts camera delta from +0x20 and wraps each axis into +-size/2 (+0xc)
+002e55d8	SnowBox_Render	med	only caller SnowFall_Render; transforms box matrix (+0x50) by view and draws the snow volume via renderer slots 85/86
+002e6c08	cSpeedBoostStreamerFX_UpdatePoints	med	only caller cSpeedBoostStreamerFX_Update; while rider moving pushes board-bone segment into 30-entry ring (+0x30 head, +0x14 count)
+002e86f0	cBoardTrailFX_ShouldEmit	med	only caller cBoardTrailFX_Update; returns 1 and stores rider pos (+0x460) when moved >110 (30 when boosting) since last point
+002e87e8	cBoardTrailFX_IsActive	med	only caller cBoardTrailFX_Update; checks rider main state/anim and picks trail texture by surface type (+0x438) into +0x9c
+002ea538	cBoardTrailFX_RenderBatch	med	AI_Render passes RiderBase+0x520 (cBoardTrailFX) of every rider; gathers ring segments (+0x8c/+0x90, 54 entries) into one gfx draw call
+002ea6b8	cCutSceneTransitionMan_StartIn	med	from ScriptList_Start: state 0 -> save viewport + state 3 with duration (+0x18), reverses a running out-transition
+002ea780	cCutSceneTransitionMan_StartOut	med	from ScriptList_NextEntry: state 1 -> state 2 with duration (+0x18), reverses a running in-transition
+002ea820	cCutSceneTransitionMan_ForceOff	med	state=0 and restores the saved viewport (+0x20) via gfx slot 41; callers ScriptMovie_Start, GameModule_Unload, overlay init
+002ea860	cCutSceneTransitionMan_ForceOn	med	saves viewport if idle, state=1, applies letterbox rect (+0x34) via gfx slot 41; callers ScriptMovie_Stop, overlay shutdown
+002ea8b8	cCutSceneTransitionMan_SetPaused	med	from ScriptList_SetPaused: inc/dec hold counter +0x1c (cleared while transitioning)
+002eaa28	cCutSceneTransitionMan_SaveViewport	med	reads current viewport (gfx slot 42) into +0x20 and computes letterbox params at +0x34..+0x44; from ctor and StartIn/ForceOn
+002eaae0	RiderBase_CtorPowerUpTrail	med	RiderBase_ctor builds mixin at RiderBase+0x9c0 (vt 0x488458, rider.md 'trick power-up ribbon'); virtual-base Rider ctor + reset 0x2eadc0
+002eac60	RiderBase_DtorPowerUpTrail	med	dtor of the RiderBase+0x9c0 power-up ribbon mixin (vt 0x488458); called from Player/CAR/RiderBase dtors
+002eadc0	RiderBase_ResetPowerUpTrail	med	clears +0xc/+0x10 of the +0x9c0 mixin; called from RiderBase_ResetFX (0x111890), RiderBase_LoadState, its ctor
+002eadd0	RiderBase_UpdatePowerUpTrail	med	AI_Update/RiderBase_UpdateFX: while Rider+0x2ec (powerUpTrickTimer)>0 in air keeps 3 board-bone segments, enables emitter +0xd30
+002eb198	RiderBase_RenderPowerUpTrail	med	AI_Render/RiderBase_RenderFX: draws the power-up board ribbon from the 3-entry history (gfx slot 71)
+002eb8f0	TransitionEffect_UpdateScreenRect	med	only caller cTransitionMan_Render; reads viewport (gfx slot 42) into globals gp+0xa4c/a50/a54 used by transition draws
+002eb938	TransitionEffect_DrawRect	med	draws a screen quad (rect x,y,w,h; uv; RGBA from float colour) via gfx slot 71; callers TransitionWipe_Draw and fade Draw 0x2ebb10
+002ebb10	TransitionEffect_DrawFade	med	vt 0x4880c0 slot 2 (TransitionEffect family Draw): full-screen quad of colour +4 with alpha scaled by progress
+002ec3e0	LensFX_Create	high	EA_MemAllocNamed(0x6820,"LensFX") + LensFX_ctor; caller GameModule_LoadWorld (world.md)
+002ec478	LensFX_v04	high	vt 487f00 slot 4 (class LensFX via pass1)
+002ecaf0	cBoltOnFXInterface_ClearEmitters	med	called by both cBoltOnFXInterface ctors; sets the 15 emitter slot handles (+0x10, stride 0xc) to -1
+002ecbc0	cBoltOnFXInterface_FindOrCreateEmitter	med	searches 15 slots for (effect,bone) match, else creates via 0x2ecc28; returns slot index
+002ecc28	cBoltOnFXInterface_CreateEmitter	med	first free slot: cAttachedDynamicEmitter_Create(AttachedEmitterFX +0xc, effect, bone), stores effect/bone
+002eccb8	cBoltOnFXInterface_RefreshEmitters	med	reads character bolt-ons (Bolts_GetCharBolts, BE profile) and (re)creates/destroys attached emitters to match
+002ecf78	cBoltOnFXInterface_Update	med	if enabled -> RefreshEmitters; callers Rider_UpdateAttachedFX and FE rider preview update
+002ecfa0	WorldPainter_FreeViewQueries	med	only caller GameModule_Unload; deletes the 9 WorldPainterQuery objects of each of 8 views (table 0x4fa370)
+002ed048	WorldPainter_CreateViewQueries	med	only caller GameModule_LoadWorld; WorldPainterQuery_Create x9 per view (8 views, 0xf0 stride at 0x4fa370), init blend/colours
+002ed1d0	WorldPainter_BlendViewColours	med	blends view colours +0x28/+0x38 toward two targets at a fixed rate (or snaps when flag); only caller 0x2ed490
+002ed338	WorldPainter_LerpViewColours	med	lerps view colours +0x28/+0x38 toward two targets by t; only caller 0x2ed490
+002ed490	WorldPainter_UpdateView	med	callers GameCamera_ComputeView/Rider_UpdateSurfaceFX: updates the 9 painter queries of a view, colours and irradiance mix (0x4fa3c0)
+002edfb8	WorldPainter_GetViewIrradiance	med	returns &0x4fa3c0[view*0xf0] (per-view mixed irradiance built by 0x2ed490); caller Rider_BuildLightSet
+002edfd0	IrradianceRef_Resolve	med	looks up the 8-char name in Irradiance table 0x5047f8 (FUN_0038ac50 strcmp) and caches index, marks ref +4 = 0x123400
+002ee010	IrradianceRef_GetEntry	med	resolves the ref if needed (default gp+0x12d4 when empty) and returns Irradiance entry (0x38abf8, 0xa0 stride)
+002ee070	WorldPainter_GetSunElevation	med	tWPIGD_Sun slot 27 (+0x08) per view; LensFX sun-dir code feeds it to Math_SinCos as pitch (z = sin)
+002ee0b8	WorldPainter_GetSunAzimuth	med	tWPIGD_Sun slot 28 (+0x10) per view; LensFX sun-dir code feeds it to Math_SinCos as yaw
+002ee100	WorldPainter_GetSunRed	med	tWPIGD_Sun slot 29 (+0x18) per view; first of 3 colour comps used by LensFX sun sprite draw (0x2f4a08)
+002ee148	WorldPainter_GetSunGreen	med	tWPIGD_Sun slot 30 (+0x20) per view; 2nd colour comp of LensFX sun sprite
+002ee190	WorldPainter_GetSunBlue	med	tWPIGD_Sun slot 31 (+0x28) per view; 3rd colour comp of LensFX sun sprite
+002ee1d8	WorldPainter_GetSunIntensity	med	tWPIGD_Sun slot 32 (+0x30) per view; scales LensFX sun alpha (x LensFX+0x204)
+002ee220	WorldPainter_GetSunTexture	med	tWPIGD_Sun slot 33 (+0x38) per view; -1 disables the sun (0x2f4db8), else texture index into gfx table +0xf50
+002ee268	WorldPainter_GetSunFlareIntensity	med	tWPIGD_Sun slot 34 (+0x40) per view; multiplies flare element alpha in 0x2f4690
+002ee2b0	WorldPainter_GetSunSize	med	tWPIGD_Sun slot 35 (+0x48) per view; sun sprite size (1.0 -> 320) in 0x2f4a08
+002ee2f8	Irradiance_GetOverride	med	IrradianceRef_GetEntry(gp+0x24c0) = the script override set (0x2ef378); used by WorldLightMan_GetInstanceLighting (world.md)
+002ee318	WorldPainter_GetIrradiance0	med	IrradianceRef_GetEntry(GetIrradianceName0(view)); caller WorldPainter_UpdateView
+002ee340	WorldPainter_GetIrradiance1	med	IrradianceRef_GetEntry(GetIrradianceName1(view)); caller WorldPainter_UpdateView
+002ee368	WorldPainter_GetIrradiance2	med	IrradianceRef_GetEntry(GetIrradianceName2(view)); used when view blend is high in WorldPainter_UpdateView
+002ee390	WorldPainter_GetIrradiance3	med	IrradianceRef_GetEntry(GetIrradianceName3(view)); no callers
+002ee3b8	WorldPainter_GetCamera08	med	per-view getter: vslot 6 of tWPIGD_Camera (returns field +0x8) from view query table 0x4fa370
+002ee400	WorldPainter_GetSkyBox08	med	per-view getter: vslot 26 of tWPIGD_SkyBox (returns field +0x8) from view query table 0x4fa370
+002ee448	WorldPainter_GetWeather08	med	per-view getter: vslot 43 of tWPIGD_Weather (returns field +0x8) from view query table 0x4fa370 x (1 - view blend +0x24); 0 when gp+0xa70
+002ee4c0	WorldPainter_GetWeather10	med	per-view getter: vslot 44 of tWPIGD_Weather (returns field +0x10) from view query table 0x4fa370
+002ee508	WorldPainter_GetWeather18	med	per-view getter: vslot 45 of tWPIGD_Weather (returns field +0x18) from view query table 0x4fa370 x (1 - view blend +0x24)
+002ee570	WorldPainter_GetWeather20	med	per-view getter: vslot 46 of tWPIGD_Weather (returns field +0x20) from view query table 0x4fa370
+002ee5b8	WorldPainter_GetWeather38	med	per-view getter: vslot 49 of tWPIGD_Weather (returns field +0x38) from view query table 0x4fa370
+002ee600	WorldPainter_GetWeather48	med	per-view getter: vslot 51 of tWPIGD_Weather (returns field +0x48) from view query table 0x4fa370; 0 when gp+0xa70
+002ee660	WorldPainter_GetWeather50	med	per-view getter: vslot 52 of tWPIGD_Weather (returns field +0x50) from view query table 0x4fa370
+002ee6a8	WorldPainter_GetWeather40	med	per-view getter: vslot 50 of tWPIGD_Weather (returns field +0x40) from view query table 0x4fa370
+002ee6f0	WorldPainter_GetWeather30	med	per-view getter: vslot 48 of tWPIGD_Weather (returns field +0x30) from view query table 0x4fa370
+002ee738	WorldPainter_GetWeather58	med	per-view getter: vslot 53 of tWPIGD_Weather (returns field +0x58) from view query table 0x4fa370
+002ee780	WorldPainter_GetWeather60	med	per-view getter: vslot 54 of tWPIGD_Weather (returns field +0x60) from view query table 0x4fa370
+002ee7c8	WorldPainter_GetWeather68	med	per-view getter: vslot 55 of tWPIGD_Weather (returns field +0x68) from view query table 0x4fa370
+002ee810	WorldPainter_GetWeather70	med	per-view getter: vslot 56 of tWPIGD_Weather (returns field +0x70) from view query table 0x4fa370
+002ee858	WorldPainter_GetWeather78	med	per-view getter: vslot 57 of tWPIGD_Weather (returns field +0x78) from view query table 0x4fa370
+002ee8a0	WorldPainter_GetWeather80	med	per-view getter: vslot 58 of tWPIGD_Weather (returns field +0x80) from view query table 0x4fa370
+002ee8e8	WorldPainter_GetWeather88	med	per-view getter: vslot 59 of tWPIGD_Weather (returns field +0x88) from view query table 0x4fa370
+002ee930	WorldPainter_GetWeather90	med	per-view getter: vslot 60 of tWPIGD_Weather (returns field +0x90) from view query table 0x4fa370
+002ee978	WorldPainter_GetWeather98	med	per-view getter: vslot 61 of tWPIGD_Weather (returns field +0x98) from view query table 0x4fa370
+002ee9c0	WorldPainter_GetFog08	med	per-view getter: vslot 7 of tWPIGD_Fog (returns field +0x8) from view query table 0x4fa370
+002eea08	WorldPainter_GetFog10	med	per-view getter: vslot 8 of tWPIGD_Fog (returns field +0x10) from view query table 0x4fa370
+002eea50	WorldPainter_GetFog18	med	per-view getter: vslot 9 of tWPIGD_Fog (returns field +0x18) from view query table 0x4fa370
+002eea98	WorldPainter_GetFog20	med	per-view getter: vslot 10 of tWPIGD_Fog (returns field +0x20) from view query table 0x4fa370
+002eeae0	WorldPainter_GetFog28	med	per-view getter: vslot 11 of tWPIGD_Fog (returns field +0x28) from view query table 0x4fa370
+002eeb28	WorldPainter_GetFog30	med	per-view getter: vslot 12 of tWPIGD_Fog (returns field +0x30) from view query table 0x4fa370
+002eeb70	WorldPainter_GetScreenTintRed	med	tWPIGD_ScreenTint slot 20 (+0x08); default 1.0; order matches menu Tint Red/Green/Blue, Fill Red/Green/Blue
+002eebd0	WorldPainter_GetScreenTintGreen	med	tWPIGD_ScreenTint slot 21 (+0x10); default 1.0 when gp+0xa70 override
+002eec30	WorldPainter_GetScreenTintBlue	med	tWPIGD_ScreenTint slot 22 (+0x18); default 1.0
+002eec90	WorldPainter_GetScreenFillRed	med	tWPIGD_ScreenTint slot 23 (+0x20); default 0 (menu Fill Red)
+002eecf0	WorldPainter_GetScreenFillGreen	med	tWPIGD_ScreenTint slot 24 (+0x28); default 0
+002eed50	WorldPainter_GetScreenFillBlue	med	tWPIGD_ScreenTint slot 25 (+0x30); default 0
+002eedb0	WorldPainter_GetLightGlow08	med	per-view getter: vslot 13 of tWPIGD_LightGlow (returns field +0x8) from view query table 0x4fa370
+002eedf8	WorldPainter_GetLightGlow10	med	per-view getter: vslot 14 of tWPIGD_LightGlow (returns field +0x10) from view query table 0x4fa370
+002eee40	WorldPainter_GetLightGlow18	med	per-view getter: vslot 15 of tWPIGD_LightGlow (returns field +0x18) from view query table 0x4fa370
+002eee88	WorldPainter_GetLightGlow20	med	per-view getter: vslot 16 of tWPIGD_LightGlow (returns field +0x20) from view query table 0x4fa370
+002eeed0	WorldPainter_GetLightGlow28	med	per-view getter: vslot 17 of tWPIGD_LightGlow (returns field +0x28) from view query table 0x4fa370
+002eef18	WorldPainter_GetLightGlow30	med	per-view getter: vslot 18 of tWPIGD_LightGlow (returns field +0x30) from view query table 0x4fa370
+002eef60	WorldPainter_GetLightGlow38	med	per-view getter: vslot 19 of tWPIGD_LightGlow (returns field +0x38) from view query table 0x4fa370
+002eefa8	WorldPainter_GetLighting30	med	per-view getter: vslot 42 of tWPIGD_Lighting (returns field +0x30) from view query table 0x4fa370
+002eeff0	WorldPainter_GetLighting28	med	per-view getter: vslot 41 of tWPIGD_Lighting (returns field +0x28) from view query table 0x4fa370
+002ef038	WorldPainter_GetSurface08	med	per-view getter: vslot 36 of tWPIGD_Surface (returns field +0x8) from view query table 0x4fa370 x (1 - view blend +0x24)
+002ef0a0	WorldPainter_GetWeather28	med	per-view getter: vslot 47 of tWPIGD_Weather (returns field +0x28) from view query table 0x4fa370
+002ef0e8	WorldPainter_GetIrradianceName0	med	tWPIGD_Lighting slot 37 (+0x08) name ref, or override gp+0x24c0 when gp+0xa74; resolved via Irradiance table 0x5047f8
+002ef140	WorldPainter_GetIrradianceName1	med	tWPIGD_Lighting slot 38 (+0x10) name ref, or override gp+0x24c0
+002ef198	WorldPainter_GetIrradianceName2	med	tWPIGD_Lighting slot 39 (+0x18) name ref, or override gp+0x24c0
+002ef1f0	WorldPainter_GetIrradianceName3	med	tWPIGD_Lighting slot 40 (+0x20) name ref, or override gp+0x24c0
+002ef248	WorldPainter_SaveViewState	med	only caller AI_SaveState; vslot 64 (tWPIGD SaveState) on the Weather query data of the 6 views
+002ef2d8	WorldPainter_LoadViewState	med	only caller AI_LoadState; vslot 65 (tWPIGD LoadState) on the Weather query data of the 6 views
+002ef378	WorldPainter_SetIrradianceOverride	med	strcpy name into gp+0x24c0 and sets gp+0xa74 (GetIrradianceName* then return it); from ScriptEngine_OnSeqStart/Stopped
+002f00a0	PS2VisualEffectsMan_ApplyWorldPainter	med	only caller PS2VisualEffectsMan_Update; copies per-view Fog/ScreenTint/LightGlow painter values into VFX globals unless overridden
+002f0e88	RiderBase_CtorAttackFX	med	RiderBase_ctor builds mixin at RiderBase+0xc70 (vt 0x4887d8, rider.md attack FX); virtual-base Rider ctor + reset 0x2f1148
+002f0fe8	RiderBase_DtorAttackFX	med	dtor of the RiderBase+0xc70 attack FX mixin (vt 0x4887d8); called from Player/CAR/RiderBase dtors
+002f1148	RiderBase_ResetAttackFX	med	clears active flag +0xa0 of the attack FX mixin; callers RiderBase_ResetFX, RiderBase_LoadState, its ctor
+002f1150	RiderBase_UpdateAttackFX	med	active while Rider+0x350>0 and attack anim 0x143/0x144/0x146/0x147; spawns 4 jittered points at striking hand bone
+002f1510	RiderBase_RenderAttackFX	med	if active (+0xa0) draws the 4 attack sparks (+0x50.., sizes +0x90) via gfx slot 78; AI_Render/RiderBase_RenderFX
+002f17d0	AttachedEmitterFX_LoadTypeData	med	operator_new_named(0x1540,"AttachedEmitterTypeData") into gp+0xac0, then fills both halves (0x2f83b0, 0x2f9838)
+002f1810	AttachedEmitterFX_FreeTypeData	med	only caller AttachedEmitterFX_dtor; frees the gp+0xac0 AttachedEmitterTypeData block
+002f1890	AttachedEmitterFX_ctor_2	high	stores AttachedEmitterFX vptr 0x4881d0 (+0xa4), owner +0x9c = arg; FE rider preview allocs it (0xa8)
+002f18d8	AttachedEmitterFX_Init	med	shared by both ctors: refcounts/loads type data (gp+0xac4), clears the 10 emitter pointers +0x6c..+0x90
+002f19f0	AttachedEmitterFX_SetModel	med	+0x94 = RiderModel, clears bones-found flag +0; callers Rider_LoadStep (after RiderModel_ctor) and FE preview
+002f1a00	AttachedEmitterFX_Reset	med	clears +0xa0; callers Rider_ResetAtMatrix, Rider_PlaceAtMatrix, ctor_2
+002f1a08	AttachedEmitterFX_Update	med	finds bones on first call, then per emitter slot spawns particles from rider speed/noise (DynamicEmitter_Spawn); Rider_UpdateAttachedFX
+002f2088	AttachedEmitterFX_Render	med	DynamicEmitter_Render on each of the 10 emitters when visible; callers Rider_RenderAttachedFX and FE preview render
+002f2218	AttachedEmitterFX_DestroyEmitter	med	deletes emitter slot i (+0x6c+4i) via its vslot dtor(3) and clears it; callers cBoltOnFXInterface_dtor/RefreshEmitters
+002f2598	cSplashManager_InitDrop	med	spawns a lens drop: random size/life, colour lerp of 0x5046e0/0x5046f0 ('Drop Tint Min/Max' in CameraSplashMenu)
+002f2810	cSplashManager_UpdateDrop	med	only caller cSplashManager_Update; moves/grows a drop, pushes it away from screen centre, kills it off-screen or at end of life
+002f2c30	cSplashManager_RenderDrop	med	only caller cSplashManager_Render; draws one drop sprite with fading alpha (gfx slot 79)
+002f2d70	cSplashManager_InitCrystal	med	spawns an ice crystal: size shrinks per generation, colour lerp of 0x504700/0x504710 ('Crystal Tint Min/Max')
+002f3030	cSplashManager_UpdateCrystal	med	only caller cSplashManager_Update; animates one crystal, kills it off-screen or at end of life
+002f3418	cSplashManager_RenderCrystal	med	only caller cSplashManager_Render; draws one crystal sprite with fading alpha (gfx slot 79)
+002f3640	cSplashManager_SpawnCrystals	med	adds N crystals (pool +0x724, 0x4c each, count +0x18) jittered around a screen point
+002f37a8	cSplashManager_AddDrop	med	adds one drop (pool +0x1c, 0x3c each, count +0x14) at a screen point if below the max
+002f3810	cSplashManager_EmitPending	med	only caller cSplashManager_Update; turns accumulated amount +0x1024 into drops or crystal bursts at random 640x480 points
+002f4118	cSplashManager_AddSplashAllViews	med	for each view splash manager (GameModule+0x68[i]) applies 0x2f4260 with a world point; caller cDynamicSprayFX helper 0x2e1598
+002f41a8	cSplashManager_ResetForCamera	med	callers CamController_Reset/ResetForRider: calls cSplashManager_Reset (vslot 14) for views owned by this camera
+002f4260	cSplashManager_AddSplashFromPoint	med	adds to pending amount +0x1024 by distance falloff from the view position (+0x1010) when intensity +0x1028 is high
+002f4330	cSplashManager_SetSnowAmount	med	from SnowFall_Update: sets intensity +0x1028 and accumulates pending drops +0x1024 from it
+002f4380	LensFX_InitFlareSet	med	LensFXBase_ctor builds 2 flare sets (0x210 each at +0x6070): clears and calls default setup 0x2f43e0
+002f43e0	LensFX_SetDefaultFlares	med	fills the flare element list (+0x30.., 0x1c each, count +0x200) with default positions/sizes/colours
+002f4690	LensFX_DrawFlareSet	med	draws each flare element along the sun-centre line, alpha x WorldPainter sun flare intensity; caller 0x2f4a08
+002f4a08	LensFX_DrawSun	med	only caller LensFX_DrawFlares; draws the sun sprite from WorldPainter sun colour/size/texture, then the flare set
+002f4db8	LensFX_UpdateSunPosition	med	sun direction from painter elevation/azimuth (Math_SinCos) projected to screen; disables when sun texture == -1
+002f5148	WorldLightMan_LightInstanceCB	med	only caller PS2GraphicsMan_v95; WorldLightMan_GetInstanceLighting(GameModule+0x90, inst, flag bit 12)
+002f5af0	WorldLightMan_AddPointLights	med	called by WorldLightMan_GetInstanceLighting: strongest type-6 lights (0x2f5b68) added via 0x38a6a8 (world.md)
+002f5b68	WorldLightMan_FindStrongestLights	med	scans overlap list (+0x210/+0x214) for type-6 lights, keeps the N with highest contribution sorted
+002f6238	RiderBase_CtorCheatCode	med	RiderBase_ctor builds mixin at RiderBase+0xd20 (vt 0x4886e0, rider.md boost-code detector); clears state 0x2f64f0
+002f6388	RiderBase_DtorCheatCode	med	dtor of the RiderBase+0xd20 code-detector mixin (vt 0x4886e0); called from Player/CAR/RiderBase dtors
+002f64f0	RiderBase_ClearCheatCode	med	memset(+4,0,4): clears code state bytes (+4 match, +5 index, +6 count, +7 events)
+002f6518	RiderBase_UpdateCheatCode	med	human riders only: runs sequence match 0x2f6910; when matched forces uberLevel 11, timers 60 s, boost mode (rider.md)
+002f6910	RiderBase_MatchCheatCode	med	matches boost presses between jumps against table 0x445e30 (5,1,0,4,1,0,3,1,0); full match sets +4=1
+002f6a58	RiderBase_SaveCheatCode	med	only caller RiderBase_SaveState; writes the 4 state bytes +4 to the stream
+002f6a90	RiderBase_LoadCheatCode	med	only caller RiderBase_LoadState; reads the 4 state bytes +4 from the stream
+002f6ac8	RiderBase_RecordCheatCodeInput	med	sets event bit 0x10/0x20/0x40 in +7; callers Rider_UpdateBoost, Rider_TryEnterPrewind, Rider_TryStartHandplant
+002f6b28	RiderBase_ClearCheatCodeEvents	med	+7 &= 0x8f (clears event bits); only caller RiderBase_MatchCheatCode
+002f6b38	RiderBase_GetCheatCodeEvents	med	returns +7 & 0x70; only caller RiderBase_MatchCheatCode
+002f6b88	VisualEffectsMan_StaticInitDestroy	med	gcc static init/destroy (init,0xffff) for the VFX TU: mEmitter globals 0x4ee770..0x4fa080, VFX tuning 0x4d57b0..
+002f7ab8	cBoardWakeFX_ResetThunk	med	only content: call cBoardWakeFX_Reset (unreferenced wrapper)
+002f7ae0	cBoardSparkFX_ResetThunk	med	only content: call cBoardSparkFX_Reset (unreferenced wrapper)
+002f7b08	cBoardTrailFX_ResetThunk	med	only content: call cBoardTrailFX_Reset (unreferenced wrapper)
+002f7b30	cAngerFX_ResetThunk	med	only content: call cAngerFX_Reset (unreferenced wrapper)
+002f7b80	cAirStreamerFX_ResetThunk	med	only content: call cAirStreamerFX_Reset (unreferenced wrapper)
+002f7ba8	RiderBase_ResetAttackFXThunk	med	only content: call RiderBase_ResetAttackFX 0x2f1148 (unreferenced wrapper)
+002f7e70	Avalanche_DestroyAllThunk	med	only content: call 0x2d9b40 (Avalanche_DestroyAll per c21) (unreferenced wrapper)
+002f7ea8	cSpeedBoostStreamerFX_ResetThunk	med	only content: call cSpeedBoostStreamerFX_Reset (unreferenced wrapper)
+002f7ed0	RiderBase_ResetPowerUpTrailThunk	med	only content: call RiderBase_ResetPowerUpTrail 0x2eadc0 (unreferenced wrapper)
+002f7f60	cPS2FogParticleMan_dtor	med	vt 0x4882e0 slot 1; GameModule_LoadWorld stores vt 0x4882e0 in the 'cPS2FogParticleMan' object (world.md); resets to base vt
+002f8030	TransitionEffect_FadeDtor	med	vt 0x4880c0 slot 1 (subclass whose Draw is TransitionEffect_DrawFade): reset to base vt 0x4880e0, free via 0x2e4d30
+002f8060	TransitionEffect_FadeCtor	med	TransitionEffect_ctor + vt 0x4880c0 (Draw = TransitionEffect_DrawFade), copies colour (16 bytes) to +4
+002f80d8	TransitionWipe_dtor	high	vt 0x4880a0 slot 1; TransitionWipe_ctor stores vt 0x4880a0
+002f8370	VisualEffectsMan_GlobalCtors	med	pointer in ctors list 0x43cea0; calls VisualEffectsMan_StaticInitDestroy(1,0xffff)
+002f8390	VisualEffectsMan_GlobalDtors	med	pointer in dtors list 0x43cf00; calls VisualEffectsMan_StaticInitDestroy(0,0xffff)
+002f83b0	AttachedEmitterTypeData_InitPart1	med	only caller AttachedEmitterFX_LoadTypeData; fills the first emitter type records of the gp+0xac0 block
+002f9040	AttachedEmitterTypeData_StaticInit1	med	gcc static init (init,0xffff) of the TU of InitPart1 (globals 0x4fac90..); caller ctor-list thunk 0x2f9818
+002f9818	AttachedEmitterTypeData_GlobalCtors1	med	pointer in ctors list 0x43cea4; calls 0x2f9040(1,0xffff)
+002f9838	AttachedEmitterTypeData_InitPart2	med	only caller AttachedEmitterFX_LoadTypeData; fills records from gp+0xac0 +0xaa0 onward
+002fa640	AttachedEmitterTypeData_StaticInit2	med	gcc static init (init,0xffff) of the TU of InitPart2 (globals 0x4fb010..); caller ctor-list thunk 0x2fae18
+002fae18	AttachedEmitterTypeData_GlobalCtors2	med	pointer in ctors list 0x43cea8; calls 0x2fa640(1,0xffff)
+002fc420	WScriptFn_MakeDeadNode	med	call table 0x441f38 entry 0: parses params; attaches modifier type 6 else WorldObjFactory_DeadNode on the target object
+002fc9c8	WScriptFn_CreateFlag	med	call table 0x441f38 entry 10: parses params; attaches modifier 10 else allocs "Flag" (0x1c) + Flag_ctor
+002fd250	WScriptFn_AddRollerModifier	med	call table 0x441f38 entry 13: parses params, ModObj_AddRollerModifier on the target object
+002fd758	WScriptFn_AddPositionModifier	med	call table 0x441f38 entry 21: parses params, ModObj_AddPositionModifier on the target object
+002fd9f8	WScriptFn_AddParentModifier	med	call table 0x441f38 entry 15: ModObj_AddParentModifier(objA, parent objB)
+002fdc60	WScriptFn_AddParentModifierRev	med	call table 0x441f38 entry 16: ModObj_AddParentModifier(objB, parent objA) (reverse of entry 15)
+002fded0	WScriptFn_AddSplineModifier	med	call table 0x441f38 entry 17: parses params, ModObj_AddSplineModifier
+002fe0c0	WScriptFn_AddMultiSplineModifier	med	call table 0x441f38 entry 18: parses params, ModObj_AddMultiSplineModifier
+002fe2c0	WScriptFn_AddUVScrollModifier	med	call table 0x441f38 entry 19: parses params, ModObj_AddUVScrollModifier
+002fe4a8	WScriptFn_AddTexFlipModifier	med	call table 0x441f38 entry 20: parses params, ModObj_AddTexFlipModifier
+002fe668	WScriptFn_AddBoostModifier	med	call table 0x441f38 entry 22: parses params, ModObj_AddBoostModifier
+002ff1c8	WScriptFn_AddRailModifier	med	call table 0x441f38 entry 46: parses params, ModObj_AddRailModifier
+002ffb50	WorldObjFactory_Hide	high	script native (table 0x441f38 #29); allocs 0x1c tag "Hide" + Hide_ctor on instance, like sibling WorldObjFactory_* natives
+002ffd58	WScriptFn_Unhide	med	script native #58; if instance WorldObj IsType(0x10) (slot 10, Hide check as in WorldObjFactory_Hide) deletes it (slot 1 dtor)
+00300418	WScriptFn_KillRestorable	med	script native #32; calls WorldObj slot 34 (KillRestorable) with 0/1 on resolved instance
+003005e8	WScriptFn_Kill	med	script native #33; calls WorldObj slot 35 (Kill) on resolved instance
+00300770	WScriptFn_ResetRiderAtObject	med	script native #34; Rider vt slot 10 ResetAtMatrix with object matrix (WorldObj slot 24 or instance+0x10)
+00300948	WScriptFn_PlaceRiderAtObject	med	script native #64; Rider vt slot 12 PlaceAtMatrix with object matrix
+00300e28	WScriptFn_DefineCollectSet	med	script native #37; only call WScriptMan_DefineCollectSet(scriptMan,id,arg)
+00300f50	WScriptFn_AddCollectItems	med	script native #38; passes up to 20 instance handles to WScriptMan_AddCollectItems
+00301120	WScriptFn_CollectItem	med	script native #39; if rider not CPU: WScriptMan_CollectItem(rider,set,item) -> BEMissionInt_SetCollected; returns 1
+003012f0	WScriptFn_MissionCommand	med	script native #40; returns result of WScriptMan_MissionCommand(id,op,-1)
+00301560	WScriptFn_GetCollectedCount	med	script native #53; returns WScriptMan_GetCollectedCount -> BEMissionInt_GetCollectedCount
+00301b88	WScriptFn_JumpToTask	med	script native #56; WScriptMan_JumpToTask(scriptMan,taskId)
+00301c80	WScriptFn_GotoTask	med	script native #57; WScriptMan_GotoTask(scriptMan,taskId)
+00301d78	WScriptFn_HasRiderVisited	med	script native #65; Rider vt slot 3 HasVisited(obj) (rider.md) on script rider, returns 0/1
+00302680	WScriptFn_IsGameMode	med	script native #42; returns WScriptFn_GameModeMatches(arg) (BENewRaceInt gameMode 0x535c11)
+00302778	WScriptFn_IsEventType	med	script native #43; returns WScriptFn_EventTypeMatches(arg) (eventType 0x535c10)
+00302870	WScriptFn_IsEvent	med	script native #108; returns WScriptFn_EventMatches(arg) (event 0x535c12, set by BENewRaceInt_SetEvent)
+00302968	WScriptFn_SetSelfObject	med	script native #44; resolves handle and stores it in WScriptMan+0x290 (current instance used by other natives)
+00302ac0	WScriptFn_ProcessCommand	med	script native #45; WScriptMan_ProcessCommand(scriptMan,id,op)
+00302ce8	WScriptFn_StopProcess	med	script native #46; WScriptMan_ProcessCommand(id,0) = stop (process slot 6)
+00302df0	WScriptFn_NextTask	med	script native #47; WScriptMan_ProcessCommand(id,2) = WScriptProcess_NextTask
+00303130	WScriptFn_ObjectExists	med	script native #52; returns 1 if resolved instance has a WorldObj (+0xc != 0)
+00303380	WScriptFn_GetRiderSpeed	med	script native #60; returns length of Rider GetVelocity (vt slot 2) as float
+00303430	WScriptFn_GetSelfHandle	med	script native #61; returns WScriptMan+0x290 instance +0x78 (instance handle) or -1
+00303490	WScriptFn_GetCurrentTaskId	med	script native #62; returns WScriptProcess_GetCurrentTaskId of current process (WScriptMan+0x2a4)
+00303598	WScriptFn_RandRange	high	script native #77; only body Rand_FloatRange(a,b) returned as float
+003036b0	WScriptFn_GetEventArg	med	script native #78; returns WScriptMan_GetEventArg(idx)
+00303d90	WScriptFn_GameModeMatches	med	helper of WScriptFn_IsGameMode: table 0x4465e8[arg] == BENewRaceInt gameMode byte 0x535c11
+00303df8	WScriptFn_EventTypeMatches	med	helper of WScriptFn_IsEventType: table 0x4465f8[arg] == eventType byte 0x535c10
+00303e60	WScriptFn_EventMatches	med	helper of WScriptFn_IsEvent: table 0x446618[arg] == event byte 0x535c12
+00303ec8	WScriptFn_IsHumanRider	med	script native #72; returns !Rider IsComputer (vt slot 9) for script rider
+00304c50	WScriptFn_GetRiderHeightAboveObject	med	script native #86; rider GetPosition (slot 5).z minus instance+0x48, returned as float
+003050f0	WScriptFn_CameraShake	med	script native #91; computes intensity from rider/object distance and calls GameCamera_AddShake
+00305478	WScriptFn_AddMagnetModifier	high	script native #90; only effect ModObj_AddMagnetModifier on resolved ModObj
+003057c0	WScriptFn_AddHaloModifier	high	script native #97; only effect ModObj_AddHaloModifier on resolved ModObj
+00305d90	WScriptFn_AddAvaSplineModifier	high	script native #95; only effect ModObj_AddAvaSplineModifier on resolved ModObj
+00306438	WScriptFn_AddDanger	high	script native #101; only effect DangerMan_AddDanger(instance handle)
+003065e8	WScriptFn_RemoveDanger	high	script native #102; only effect DangerMan_RemoveDanger(instance handle)
+00306770	WScriptFn_AcquireDangerZone	high	script native #103; only effect DangerMan_AcquireZone
+00306908	WScriptFn_ReleaseDangerZone	high	script native #104; only effect DangerMan_ReleaseZone
+003071f0	WScriptMission_v04	high	vt 489a30 slot 4 (class WScriptMission via pass1)
+003072b0	WScriptMission_v17	high	vt 489a30 slot 17 (class WScriptMission via pass1)
+00307308	WScriptMission_v18	high	vt 489a30 slot 18 (class WScriptMission via pass1)
+003074c0	WScriptMission_v19	high	vt 489a30 slot 19 (class WScriptMission via pass1)
+00307568	WScriptMission_v20	high	vt 489a30 slot 20 (class WScriptMission via pass1)
+003077f8	WScriptProcess_Update	med	only caller WScriptMan_Update per process; state 1->2, updates current task (vt 489ae0 slot 2), then own slot 5
+003078c0	WScriptProcess_DispatchEvent	med	WScriptMan_Update; switch on event type 0..9 -> process vt slots 7..16 (WScriptProcess_v07..v16); type 3 sets +0x29c args
+003079d8	WScriptProcess_GetCurrentTaskId	med	returns tasks[cur]+4 (id) or -1 when cur >= nTasks
+00307a10	WScriptProcess_ForwardEventToTask	med	WScriptMan_Update; passes event to current WScriptTask slot 3 (HandleEvent)
+00307a60	WScriptProcess_v07	high	vt 489a30,489b70 slot 7 (class WScriptProcess via pass1)
+00307a90	WScriptProcess_v08	high	vt 489a30,489b70 slot 8 (class WScriptProcess via pass1)
+00307ac0	WScriptProcess_v09	high	vt 489a30,489b70 slot 9 (class WScriptProcess via pass1)
+00307af0	WScriptProcess_v10	high	vt 489a30,489b70 slot 10 (class WScriptProcess via pass1)
+00307b20	WScriptProcess_v11	high	vt 489a30,489b70 slot 11 (class WScriptProcess via pass1)
+00307b50	WScriptProcess_v12	high	vt 489a30,489b70 slot 12 (class WScriptProcess via pass1)
+00307b80	WScriptProcess_v13	high	vt 489a30,489b70 slot 13 (class WScriptProcess via pass1)
+00307bb0	WScriptProcess_v14	high	vt 489a30,489b70 slot 14 (class WScriptProcess via pass1)
+00307be0	WScriptProcess_v15	high	vt 489a30,489b70 slot 15 (class WScriptProcess via pass1)
+00307c10	WScriptProcess_v16	high	vt 489a30,489b70 slot 16 (class WScriptProcess via pass1)
+00307c40	WScriptProcess_v04	high	vt 489b70 slot 4 (class WScriptProcess via pass1)
+00307d00	WScriptProcess_v05	high	vt 489a30,489b70 slot 5 (class WScriptProcess via pass1)
+00307d30	WScriptProcess_v06	high	vt 489a30,489b70 slot 6 (class WScriptProcess via pass1)
+00307d78	WScriptProcess_Terminate	med	state=3, WScriptMan_DeactivateProcess, frees local cLunoTable +0x1c; callers WScriptProcess_v06, mission v19
+00307e10	WScriptProcess_NextTask	med	stops current task (slot 6), starts next (slot 4) or calls own slot 2 when tasks exhausted
+00307ec0	WScriptProcess_JumpToTask	med	finds task by id, marks current state 3 without stop handler, starts found task (slot 4)
+00307f58	WScriptProcess_GotoTask	med	finds task by id, stops current task (slot 6), starts found task (slot 4)
+00308018	WScriptProcess_LookupFunc	med	WScriptMan_LookupFunc(this->+0x10 scriptMan, id); used by WScriptTask_Init
+00308038	WScriptProcess_SaveState	med	writes 0x10 header, local table flag + cLunoTable save, each task (WScriptTask_SaveState) to stream slot 1 (Write); from WScriptMan_SaveProcessList
+00308118	WScriptProcess_LoadState	high	string 'ProcessLocalTable'; reads header, recreates local cLunoTable, tasks via WScriptTask_LoadState (stream slot 2 Read)
+00308228	WScriptTask_ctor	med	vptr 0x489ae0 store; elements of array alloc'd with tag "WScriptTasks" (0x44 each) in WScriptProcess_ctor
+00308278	WScriptTask_Init	med	WScriptProcess_ctor; sets owner +0x3c, id +4, resolves 13 handler function refs via WScriptProcess_LookupFunc
+00308328	WScriptTask_Update	med	vt 489ae0 slot 2; state 1->2 then calls slot 5 (run update handler), mirrors WScriptProcess_Update
+003083a0	WScriptTask_HandleEvent	med	vt 489ae0 slot 3; switch on event type 0..9 -> slots 7..16, type 3 sets WScriptMan+0x29c args
+003084d0	WScriptTask_v07	med	vt 489ae0 slot 7; runs handler +0x14 via WScriptMan_CallTaskFunc if set (event type 0)
+00308500	WScriptTask_v08	med	vt 489ae0 slot 8; runs handler +0x18 (event type 1)
+00308530	WScriptTask_v09	med	vt 489ae0 slot 9; runs handler +0x1c (event type 2)
+00308560	WScriptTask_v10	med	vt 489ae0 slot 10; runs handler +0x20 (event type 3)
+00308590	WScriptTask_v11	med	vt 489ae0 slot 11; runs handler +0x24 (event type 4)
+003085c0	WScriptTask_v12	med	vt 489ae0 slot 12; runs handler +0x28 (event type 5)
+003085f0	WScriptTask_v13	med	vt 489ae0 slot 13; runs handler +0x2c (event type 6)
+00308620	WScriptTask_v14	med	vt 489ae0 slot 14; runs handler +0x30 (event type 7)
+00308650	WScriptTask_v15	med	vt 489ae0 slot 15; runs handler +0x34 (event type 8)
+00308680	WScriptTask_v16	med	vt 489ae0 slot 16; runs handler +0x38 (event type 9)
+003086b0	WScriptTask_Start	med	vt 489ae0 slot 4; state=1 and runs start handler +8; called by process Next/Goto/JumpToTask
+003086f0	WScriptTask_RunUpdateHandler	med	vt 489ae0 slot 5; runs handler +0xc via WScriptMan_CallTaskFunc; called from WScriptTask_Update
+00308720	WScriptTask_Stop	med	vt 489ae0 slot 6; state=3 and runs stop handler +0x10
+00308760	WScriptTask_SaveState	med	writes 4 bytes (task state) to stream slot 1 (Write); from WScriptProcess_SaveState
+00308798	WScriptTask_LoadState	med	reads 4 bytes from stream slot 2 (Read); from WScriptProcess_LoadState
+00308b58	WScriptMan_CreateLocalTableThunk	med	only body: call WScriptMan_CreateLocalTable
+00308db8	WScriptMan_RunMissionSetupScripts	med	string 'SetupLocalTable'; for every section mission record except current (+0x2a0) calls its setup function in a fresh cLunoTable
+00308f38	WScriptMan_DeleteAllProcesses	med	WScriptProcessList_DeleteAll on the three process lists +0x2b8/+0x2bc/+0x2b4
+00308f70	WScriptMan_UnloadSection	med	WScriptMan_Restart; deletes processes of section idx from all lists and frees local table +0x3cc[idx]
+00309118	WScriptMan_ProcessPendingRequest	med	WScriptMan_Update; switch on +0x2ac request (1..6) -> mission commands/setup/playback, then clears +0x2ac/+0x2b0
+00309618	WScriptMan_DeleteProcessById	med	finds id in the three lists, unlinks it and calls slot 1 dtor
+003096f0	WScriptMan_UnlinkProcess	med	removes a process from whichever of the three lists contains it
+00309750	WScriptMan_StartProcess	med	sets current process +0x2a4, calls process slot 4 (Start), restores
+00309798	WScriptMan_StopProcess	med	sets current process +0x2a4, calls process slot 6 (Stop), restores
+003097e0	WScriptMan_PostTriggerEvent	med	queues event type 0 (0x70000) with instance arg at +0x40 queue; from WScriptMan_OnObjectTrigger
+00309848	WScriptMan_PostJumpEvent	med	queues event type 1; only caller Rider_LaunchIntoAir
+00309918	WScriptMan_PostTrickEvent	med	queues event type 3 with 8-byte payload; only caller RiderMetrix_ShowTrickName
+00309990	WScriptMan_PostWipeoutEvent	med	queues event type 4; only caller RiderWipeoutSub_Enter
+003099f8	WScriptMan_PostResetEvent	med	queues event type 5; only caller Rider_ResetMotion
+00309a60	WScriptMan_ActivateProcess	med	WScriptProcess_v04; moves process from inactive list +0x2b4 to active list +0x2b8
+00309aa0	WScriptMan_DeactivateProcess	med	moves process from active list +0x2b8 back to +0x2b4; from WScriptProcess_Terminate
+00309b00	WScriptMan_DeactivateMission	med	WScriptMission_v18; same as DeactivateProcess and clears current mission id +0x2a0
+00309b70	WScriptMan_LookupFunc	med	id -> script function via 0x3a6d18 on +0x28c (World), -1 -> 0; used by process/mission ctors
+00309c88	WScriptMan_CallFunc	med	looks up func id, runs it in the Luno VM (0x2224b8) with local table +0x3cc[idx]
+00309d20	WScriptMan_CallFuncOnInstance	med	as WScriptMan_CallFunc but temporarily sets current instance +0x290
+00309e50	WScriptMan_CallTableFunction	med	looks up key in local table +0x3cc[idx] and calls it through the Luno VM
+0030a060	WScriptMan_OnObjectTrigger	med	instance script kind 2 (via ModObj_v40 / Rider_UpdateProgress): posts trigger event, runs script, then WorldObj slot 41(0.5)
+0030a270	WScriptMan_HasObjScript1	med	returns 0x3a6b78(world,instance,kind 1) != -1
+0030a298	WScriptMan_RunObjScript1	med	sets +0x290 instance, runs instance script kind 1 via WScriptMan_CallFunc
+0030a2e8	WScriptMan_HasObjScript3	med	returns 0x3a6b78(world,instance,kind 3) != -1
+0030a548	WScriptMan_RunObjScript3	med	sets +0x290 instance, runs instance script kind 3
+0030a598	WScriptMan_HasKillScript	med	kind 4 check; via 0x2d19e8 from WorldObj_KillRestorable/Debounce/MeshAnim_KillRestorable
+0030a5c0	WScriptMan_RunKillScript	med	runs instance script kind 4; caller chain from WorldObj_KillRestorable
+0030a610	WScriptMan_RunObjScript0	med	sets +0x290 instance, runs instance script kind 0
+0030a660	WScriptMan_HasObjScript5	med	returns 0x3a6b78(world,instance,kind 5) != -1
+0030a688	WScriptMan_RunObjScript5	med	sets +0x290 instance, runs instance script kind 5
+0030a6d8	WScriptMan_JumpToTask	med	if current process +0x2a4 set: WScriptProcess_JumpToTask
+0030a700	WScriptMan_GotoTask	med	if current process +0x2a4 set: WScriptProcess_GotoTask
+0030a728	WScriptMan_ProcessCommand	med	op 1 start (inactive list), 0 stop, 2 next task, 0x12 terminate; id -1 = current process
+0030a868	WScriptMan_MissionCommand	med	GameModule_Update etc; op switch: process ops, mission v17/v19/v20 calls, BEMissionInt flag/complete queries
+0030ac98	WScriptMan_CallProcessFunc	med	callers WScriptProcess_v07..v16/mission; runs func with process local table (+0x1c) as current process
+0030ada8	WScriptMan_CallTaskFunc	med	callers WScriptTask slots; runs func with owner process local table, current task +0x2a8
+0030aeb8	WScriptMan_GetCurrentMission	med	returns current process +0x2a4 if its slot 3 (IsMission) is true
+0030af08	WScriptMan_GetEventArg	med	if event args +0x29c set, jump table 0x4899d0[idx<16]; used by WScriptFn_GetEventArg
+0030b058	WScriptProcessList_ctor	med	head = 0; called from WScriptMan_ctor (WScriptProcessList_dtor exists)
+0030b0e8	WScriptProcessList_DeleteBySection	med	deletes (slot 1) every process with +0x24 == section; from WScriptMan_UnloadSection
+0030b1b8	WScriptProcessList_DeleteAll	med	pops and deletes every process
+0030b208	WScriptProcessList_PopFront	med	unlink head via next +0x18
+0030b228	WScriptProcessList_Count	med	counts nodes via +0x18
+0030b260	WScriptProcessList_PushFront	med	node+0x18 = head; head = node
+0030b270	WScriptProcessList_PushBack	med	appends at tail; from WScriptMan_LoadProcessList
+0030b2c0	WScriptProcessList_PushFront_2	med	identical push-front, only caller WScriptMan_CreateMission
+0030b2d0	WScriptProcessList_Remove	med	unlinks node, returns 1 if found
+0030b320	WScriptProcessList_FindById	med	walk list comparing +0x20 id
+0030b350	WScriptProcessList_FindByName	med	StrHash(name) then FindById
+0030b388	WScriptProcessList_FindMissionById	med	FindById and requires slot 3 (IsMission) true
+0030b3f0	WScriptProcessList_FindMissionByName	med	StrHash(name) then FindMissionById
+0030b428	WScriptProcessList_Contains	med	pointer membership test
+0030b458	WScriptMan_FindMissionById	med	FindMissionById over the three process lists
+0030b540	WScriptMan_RequestMissionStart	med	OVScreenBCStart_OnWidgetAction; stops playback, Replay_Reset, request 1 for current mission
+0030b590	WScriptMan_RequestMissionPlayback	med	PlaybackMan_LoadPlayback for current mission; request 5 (start playback)
+0030b6f8	WScriptMan_RequestMissionRestart	med	BCStart/BCFail widgets; request 2 -> mission slot 17 (restart)
+0030b7f8	WScriptMan_DeactivateAll	med	terminates current mission, moves all active processes to inactive list, clears queue +0x1c4
+0030b898	WScriptMan_IsProcessActive	med	WScriptMission_v02/WScriptProcess_v02; id found in active list +0x2b8
+0030b928	WScriptMan_DefineCollectSet	med	initialises the collect set at +0x2c0 (id,arg) if unused; from WScriptFn_DefineCollectSet
+0030b9a0	WScriptMan_CollectItem	med	marks item collected (BEMissionInt_SetCollected), plays cue, awards rider (0x10f338)
+0030ba80	WScriptMan_GetCollectedCount	med	set lookup then BEMissionInt_GetCollectedCount
+0030bac8	WScriptMan_AddCollectItems	med	set lookup then WScriptMan_CollectSetAddItems
+0030bb10	WScriptMan_SaveState	med	only caller WorldState_Write; writes 0x28c header, collect set, process lists, local tables
+0030bc80	WScriptMan_SaveProcessList	med	writes count, then id + WScriptProcess_SaveState per node
+0030bd20	WScriptMan_LoadState	med	only caller WorldState_Read; mirror of WScriptMan_SaveState
+0030bee8	WScriptMan_LoadProcessList	med	reads ids, moves each process from +0x2b4 to the list, WScriptProcess_LoadState
+0030c390	WScriptMan_ResetCollectSet	med	id=-1, count 0, 64 item slots = -1; from WScriptMan_ctor/Shutdown/DefineCollectSet
+0030c3e0	WScriptMan_CollectSetMarkItem	med	finds item index and calls BEMissionInt_SetCollected
+0030c468	WScriptMan_CollectSetGetCount	med	only body BEMissionInt_GetCollectedCount(set id)
+0030c4a8	WScriptMan_CollectSetAddItems	high	adds item handles; items already BEMissionInt_IsCollected are replaced with "DeadNode" (DeadNode_ctor)
+0030c6c8	WScriptMan_CollectSetSave	med	writes 0x10c-byte collect set via stream slot 1 (Write)
+0030c700	WScriptMan_CollectSetLoad	med	reads 0x10c-byte collect set via stream slot 2 (Read)
+0030c790	WScriptMan_EventQueueReset	med	clears 16-entry x 12-byte ring queue at WScriptMan+0x1c4 (world.md: event queue); only caller WScriptMan reset path 0x30b7f8
+0030c7c0	WScriptMan_EventQueuePush	med	writes 3 words at ring[+4 write idx], idx=(idx+1)%16; called by 0x30a868 with WScriptMan+0x1c4 (event queue)
+0030c820	WScriptMan_EventQueuePop	med	returns entry at read idx and advances (mod 16), NULL when empty; GameModule_Update reads WScriptMan+0x1c4 queue
+0030c870	WScriptMan_EventQueuePeek	med	returns entry at read idx without advancing, NULL when read==write; same queue as EventQueuePop
+0030d348	WScriptMan_PopEvent	med	wrapper: WScriptMan_EventQueuePop(this+0x1c4)
+0030d368	WScriptMan_PeekEvent	med	wrapper: WScriptMan_EventQueuePeek(this+0x1c4)
+0030dba0	RiderModel_SetColorScale	med	sets RiderModel +0x140 vec4 (rider.md colour/tint scale) = (a,b,b,1.0); Rider_LoadStep passes model=Rider+0x780
+0030e9e0	RiderModel_ShowPart	med	part id -> idx via +0x1c map into 0x58-byte parts +0xc; ORs part mask into visible mask +0x150, sets lod flag(s); called with Rider+0x780
+0030ea80	RiderModel_HidePart	med	inverse of ShowPart: clears part lod flag(s) and part bits in +0x150 unless another lod flag remains; Rider_LoadStep hides parts 5,6,8,9,0xb
+0030eb60	RiderModel_HideAllParts	med	clears all 4 lod flags of every part and the visible mask +0x150; FE rider preview before applying bolts
+0030ebc0	RiderModel_IsPartVisible	med	returns part[id] lod flag (+0x18+lod*8); Rider_LoadStep tests parts 0xf..0x2a on Rider+0x780
+0030ec18	RiderModel_ShowPartVariant	med	sets part +0x50 = variant arg and shows all lods; FE preview passes bolt part index + bolt byte
+0030f2b0	RiderModel_BlendAnimPose	med	from AnimController_EvaluatePose with controller+0x54 (RiderModel: masks +0x150/+0x158, parts +0xc) + track records; samples channels, blends bones
+00310120	RiderModel_BuildBoneMatrix	med	bone i: quat+translation at +0x2c[i] -> 4x4 matrix at +0x30[i], then scaled by +0x140 into +0x34[i] (rider.md RiderModel bone transforms)
+00310200	RiderModel_ApplyPose	med	per part/bone combines pose array arg with override rot/trans +0x24/+0x28 and +0x140 scale into bone transforms +0x2c; Rider_LoadStep, rider pose code
+003103f0	RiderModel_BuildBoneMatrices	med	loops bones 0..+0x10 calling RiderModel_BuildBoneMatrix; callers RiderBase_LoadState, Rider_Place
+00310530	RiderModel_Translate	med	adds vec to every bone translation (+0x2c) and matrix translation rows (+0x30,+0x34); only caller Rider_PostUpdateMainState
+00310640	RiderModel_Render	med	builds bone matrices into 0x4fc420 then calls PS2GraphicsMan slots 111/99 per visible part; callers Rider_RenderModel, FEModule_RiderPreviewRender
+00310948	RiderModel_RenderShadow	med	twin of RiderModel_Render using slot 100 and buffer 0x4fd420; only caller Rider_DrawShadow
+00310c48	RiderModel_FindBone	med	strcmp bone name (0x50-byte entries at part+0x38) in part arg2 -> global bone index or -1; callers *_FindBones, Rider_LoadStep
+00310ce8	RiderModel_GetBoneMask	med	parses comma-separated bone names (special 'morph') of a part into a 64-bit bone mask; Rider_LoadStep
+00310ea8	RiderModel_SaveState	med	writes bone transforms (+0x2c, count*0x20) via stream slot 1; only caller RiderBase_SaveState
+00310ee0	RiderModel_LoadState	med	reads bone transforms (+0x2c, count*0x20) via stream slot 2; only caller RiderBase_LoadState
+00311088	AnimDataBase_dtor	med	clears global anim DB ptr gp+0xd08 (set by AnimDataBase_ctor), AnimDataBase_FreeChanCaches, delete if flag&1
+00311318	AnimDataBase_SampleChannel	med	anim handle (bank|idx<<8) + time*30 -> frame; fetches/decodes LRU chan cache (AnimDataBase_AllocChanCache, 0x4fe7a0) and evaluates curves
+00311710	AIAnimEventMap_PickAnim	med	map entry (start,count) for event -> weighted random pick (Rand_NextGame) from table 0x449960 filtered by flags; caller RiderAnim_v04
+003118a8	AIAnimEventMap_Destroy	med	deletes global gp+0xd0c set by AIAnimEventMap_Create and clears it
+00311b48	AnimController_RotateRoots	med	builds quat from angle about fixed axis (Math_SinCos(-a/2)) and calls AnimController_TransformRoots
+00311bf0	AnimController_TransformRoots	med	for all 6 layer AnimSeqLists, transforms each sequence root pos (+0x60) and rot quat (+0x70) by given pos+quat
+00311f00	AnimController_PlayAnimImpl	med	core of AnimController_PlayAnim/PlayAnimDirect: clears list if no blend, pushes sequence (looping if AnimTable type 2), copies root, adds triggers
+003123c0	AnimController_Update	med	for all 6 layers calls per-sequence vslot 2 (+0x58 vptr) then AnimController_EvaluatePose
+00312490	AnimController_DispatchEndEvents	med	collects sequences with end event bit 0x3f set (+0xb0) across 6 layers, then calls controller vslot 3 for each (RiderAnim_v03 handler)
+00312660	AnimController_SampleAnimPose	med	plays anim into a temp AnimSeqList at given time, gathers tracks and copies resulting pose block to out; callers rider code
+00312790	AnimController_GetCurrentAnimLength	med	current anim id (vslot 4) -> GameAnimMap handle -> (frames-1)*1/30; 0 for id 0x207
+00312820	AnimController_GetCurrentAnimTriggerTime	med	current anim (vslot 4) trigger[i] time from anim data, -1 if index >= trigger count
+00312ae8	AnimController_IsLayerAnimFinished	med	returns AnimSequence +0xc0 of layer's first sequence (set to 1 by AnimSequence_FireEndTriggers); rider sub-state callers
+00312b18	AnimController_ReplaceSequence	med	removes finished seq from list, AnimController_PlayAnim(new), copies +0x94 speed and weight fade to new seq; RiderAnim_v03 thunks
+00312c20	AnimDataBase_EvalChanCurves	med	evaluates decoded channel curves (types 0-9: const/poly/linear-split/u8/u16/float keys) at frame into float array; only caller AnimDataBase_SampleChannel
+003130a8	AnimDataBase_DecodeChanCache	med	decodes packed curve-type nibbles of a channel into a chan cache entry (per-type counters +0x14..+0x17); only caller AnimDataBase_SampleChannel
+00313d28	AnimSequence_SetTrackWeight	med	track[i]+0x14 = w (read by AnimSequence_GetTrackBlendWeight); callers set 1-w / w for 2-track blends
+00313d40	AnimSequence_SetTrackLoop	med	track[i]+0x1c = flag; AnimSequence_AdvanceTrack wraps time when nonzero
+00314418	AnimSeqList_CollectTracks	med	walks sequence list, emits 0x50-byte blend record (anim, time, weight, root pos/rot) per active track; returns count; AnimController_EvaluatePose
+00314518	AnimSeqList_PushAnim	med	AnimSeqList_PushNew + SetTrackAnim/SetTrackTime + SetTrackLoop(0); used by AnimController_PlayAnimImpl
+00314588	AnimSeqList_PushLoopingAnim	med	same as AnimSeqList_PushAnim but SetTrackLoop(1); used when AnimTable entry type == 2
+00314718	AnimSeqList_RemoveEventTrigger	med	calls AnimSequence_RemoveEventTrigger on every sequence of list; only caller AnimController_FadeOutLayer
+003147f0	AnimSeqList_Save	med	writes count via stream slot 1 then AnimSequence_Save for each; caller RiderAnim_SaveState
+00314a40	MdfFile_SetBorrowedData	med	like MdfFile_SetData but clears owned ptr (+0) before MdfFile_ParseHeader; FE preview with bolt file data
+00314db0	GameAnimMap_dtor	med	clears global gp+0xd8c (set by GameAnimMap_ctor), delete if flag&1
+00314dd8	GameAnimMap_BuildNameIndex	med	StrHash of 0x206 anim names ('G_GATEROCK'..), qsort index, memset handle table +0x1030 to -1; SSXApp_BootLoad
+00314e88	GameAnimMap_FindHash	med	binary search of name hash in sorted index (+0x818) of 0x206 entries -> anim id or -1
+00314ef0	GameAnimMap_SetHandle	med	id=GameAnimMap_FindHash(hash); table +0x1030[id] = handle
+00314f30	GameAnimMap_RegisterBank	med	for each anim in bank: GameAnimMap_SetHandle(name hash, bankId | idx<<8)
+00314fe8	GameAnimMap_UnregisterBank	med	for each anim in bank: GameAnimMap_SetHandle(hash, invalid gp+0x2860 (-1))
+003168b0	BigFile_ctor_2	med	BigFile_ctor body (+0=-1,+4=0) followed by BigFile_Mount; GameModule/PlaybackMan users
+003168e8	BigFile_dtor	med	BigFile_Unmount then delete if flag&1; callers GameModule_Unload, PlaybackMan_dtor
+00316930	BigFile_Unmount	med	if mounted (+4) EAFile_UnmountBig(+0 handle,100); clears +4
+00316978	BigFile_Mount	med	EAFile_Exists(path) then EAFile_MountBig(path,..,100,this); sets +4 mounted flag; callers GameModule_LoadWorld, PlaybackMan_ctor
+00316a00	BlockMan_ctor	med	zeroes 4 words, +0x10 alignment 0x10; static object 0x4ff000 in TU static init; class from alloc tag 'BlockManMem' of BlockMan_Init
+00316a20	BlockMan_AlignSize	med	rounds size up to multiple of +0x10 alignment; only caller BlockMan_Init
+00316a48	BlockMan_Init	med	alloc tag 'BlockManMem': one buffer split into N fixed-size block pools (count,size pairs), builds per-pool free lists
+00316f00	App_RunModuleLoop	med	App main state loop after App_Run_MainLoop starts first module: ticks, module Load/Enter/TryExit/Unload on App+0x58 state, load progress App+0x38
+00317328	App_InvokeExecCallback	med	PS2ExecMan_InvokeCallback(App+8, 1); called after every module step in App_RunModuleLoop / App_Run_MainLoop
+00317400	App_v02	high	vt 48dbe8 slot 2 (class App via pass1)
+00317458	PS2ExecMan_ctor	med	app.md: called on the 0x142c0 'PS2ExecutionMan' block in ssx_main; zeroes +0/+4, stores vptr 0x48dc30 at +8
+00317478	PS2ExecMan_SetCallback	med	stores fn/arg at +0/+4 then vslot 13 of PS2ExecMan (vptr +8)
+003174a8	PS2ExecMan_InvokeCallback	med	if fn (+0) set: fn(arg +4) and, when flag, vslot 14
+00317520	App_GetExecMan	med	returns App(gp+0x2a74)+0x08 = PS2ExecMan* (app.md); caller PS2ExecMan_VBlankSignal
+00317530	App_LoadProgressInit	med	init of load-progress smoother at App+0x38 (rate arg, zero fields); FEModule_Load/GameModule_Load
+00317550	App_LoadProgressSetTarget	med	sets target percent and exp. rate from VSync counter; GameModule_Load calls with 43.5/55/93/99 on App+0x38
+003175a0	App_LoadProgressUpdate	med	value = target + delta*expf(rate*(vsync-start)); App_RunModuleLoop while module loads
+00317600	App_LoadProgressComplete	med	sets progress and target to 100.0; App_RunModuleLoop when module load done
+00317f38	EAFile_PathExists	med	EAFile_ParseBigPath(path,1,&size)==1 (file on disc or inside a mounted .big); 9 loaders
+00317f60	EAFile_GetPathSizeChecked	med	size from EAFile_ParseBigPath if found else 0; Bolts_ReadFile/RewardsFile_Load alloc by it
+00317f98	EAFile_GetPathSize	med	returns size output of EAFile_ParseBigPath(path,1,&size); IniParser_ctor, ScriptEngine_LoadBankSync
+00318350	cBXString_ctor_cstr_n	med	sets empty-string rep, copies min(strlen(s), n) chars via cBXString_AllocBuffer+memcpy
+00319660	ssx_GetModulesDir	med	sprintf(out,'%sDATA\\MODULES\\','cdrom0:\\'); only caller ssx_BuildModulePath
+00319790	ssx_UnloadIopModule	med	sceSifStopModule(id) + sceSifUnloadModule(id)
+003197d0	ssx_LoadMsifrpc	med	ssx_LoadIopModule(...,'MSIFRPC.IRX',1,..); caller ssx_LoadNetModules
+0031a088	MEM_IsPoolPointer	med	true if ptr lies in any of the 7 small-block pools (bases gp+0x2a60..0x2a84, sizes 0x800..0x32000); caller MEM_FreeInternal
+0031a130	MEM_GetPoolBlockSize	med	returns pool block size 8/16/32/64/128/256/512 for ptr inside a pool else 0; caller MEM_GetBlockSize
+0031a308	VU0_SaveContext	med	stores vf1..vf31 and vi/control regs (cfc2 vc0/vc1/vc2/vc6) to buffer; PS2ExecMan_Init/v12 thread switch
+0031a3c0	VU0_RestoreContext	med	reloads vf regs and control regs from buffer saved by VU0_SaveContext; PS2ExecMan_v11
+0031a920	PS2ExecMan_v03	high	vt 48db68 slot 3 (class PS2ExecMan via slots 2/2)
+0031a9d8	PS2ExecMan_v11	high	vt 48db68 slot 11 (class PS2ExecMan via slots 2/2)
+0031aa18	PS2ExecMan_v12	high	vt 48db68 slot 12 (class PS2ExecMan via slots 2/2)
+0031aac8	PS2ExecMan_v05	high	vt 48db68 slot 5 (class PS2ExecMan via slots 2/2)
+0031ab10	PS2ExecMan_v14	high	vt 48db68 slot 14 (class PS2ExecMan via slots 2/2)
+0031acd8	PS2ExecMan_v09	high	vt 48db68 slot 9 (class PS2ExecMan via slots 2/2)
+0031ad18	ssx_ClearTrayOpened	med	clears gp+0xde0 set by ssx_CdTrayCallback when the tray was opened; caller cGameComm_SetState
+0031ad20	ssx_CdTrayCallback	med	address taken in ssx_SystemInit; sceCdTrayReq(2) checks tray, sets gp+0xde0 when opened
+0031b008	ssx_LoadExecPS2	med	App vslot 2 shutdown, sceCdMmode/sceCdInit, sceSifExitCmd, LoadExecPS2(elf,argc,argv); caller ssx_LoadNetGuiElf
+0031b088	Math_Det2x2	med	returns a*d - b*c
+0031b098	Math_Det3x3	med	cofactor expansion of 3x3 determinant via Math_Det2x2
+0031b178	Mat4_Determinant	med	4x4 determinant by cofactors (Math_Det3x3)
+0031b310	Mat4_Adjoint	med	replaces 4x4 matrix with its adjugate (signed 3x3 cofactors, transposed)
+0031b6c8	Mat4_Inverse	med	det = Mat4_Determinant, Mat4_Adjoint, scale rows by 1/det
+0031b748	Mat4_ToPosQuat	med	out pos = matrix row 3 (+0x30), out quat = Quat_FromMatrix; camera GetView callers
+0031b7a8	Quat_FromMatrix	med	standard trace/largest-diagonal rotation matrix -> quaternion
+0031bb30	Quat_FromTwoVectors	med	rotation arc quat: axis = normalized cross, angle via asin (pi-asin if dot<0); caller rider code
+0031bcb0	Quat_Slerp	med	dot, flip sign if negative, sin-weighted interpolation (linear when nearly equal) of two quats by t
+0031f810	DLHeap_IndependentCalloc	med	dlmalloc independent_calloc: ialloc(m,n,&elemSize,opts=3,chunks)
+0031f838	DLHeap_IndependentComalloc	med	dlmalloc independent_comalloc: ialloc pass-through (opts 0)
+0031faa8	DLHeap_Valloc	med	dlmalloc valloc: consolidate if uninit, memalign(pagesize (+0x35c), n)
+0031fb00	DLHeap_Pvalloc	med	dlmalloc pvalloc: memalign(pagesize, round_up(n,pagesize))
+003200e8	MEM_InitPool8	med	builds free list of 256 8-byte blocks, head at +0x800; MEM_InitSmallBlockPools
+00320120	MEM_InitPool16	med	free list of 512 16-byte blocks, head at +0x2000
+00320158	MEM_InitPool32	med	free list of 768 32-byte blocks, head at +0x6000
+00320190	MEM_InitPool64	med	free list of 3200 64-byte blocks, head at +0x32000
+003201d8	MEM_InitPool128	med	free list of 1200 128-byte blocks, head at +0x25800
+00320220	MEM_InitPool256	med	free list of 512 256-byte blocks, head at +0x20000
+00320270	MEM_InitPool512	med	free list of 256 512-byte blocks, head at +0x20000
+003202c0	MEM_Pool8Alloc	med	pops free-list head (+0x800); when empty falls back to MEM_PoolAlloc(0xc) (next pool); caller MEM_PoolAlloc
+003202f8	MEM_Pool16Alloc	med	pops head +0x2000, fallback MEM_PoolAlloc(0x14)
+00320330	MEM_Pool32Alloc	med	pops head +0x6000, fallback MEM_PoolAlloc(0x24)
+00320368	MEM_Pool64Alloc	med	pops head +0x32000, fallback MEM_PoolAlloc(0x44)
+003203b8	MEM_Pool128Alloc	med	pops head +0x25800, fallback MEM_PoolAlloc(0x84)
+00320408	MEM_Pool256Alloc	med	pops head +0x20000, fallback MEM_PoolAlloc(0x104)
+00320448	MEM_Pool512Alloc	med	pops head +0x20000, fallback MEM_PoolAlloc(0x204)
+00320488	MEM_Pool8Free	med	pushes block on free list head +0x800; caller MEM_PoolFree
+00320498	MEM_Pool16Free	med	pushes block on free list head +0x2000
+003204a8	MEM_Pool32Free	med	pushes block on free list head +0x6000
+003204b8	MEM_Pool64Free	med	pushes block on free list head +0x32000
+003204d0	MEM_Pool128Free	med	pushes block on free list head +0x25800
+003204e8	MEM_Pool256Free	med	pushes block on free list head +0x20000 (256-byte pool)
+00320500	MEM_Pool512Free	med	pushes block on free list head +0x20000 (512-byte pool)
+00320ad8	PS2ExecMan_v01	high	vt 48db68 slot 1 (class PS2ExecMan via slots 2/2)
+00320b08	PS2ExecMan_v06	high	vt 48db68 slot 6 (class PS2ExecMan via slots 2/2)
+00320b68	Math_CeilLog2	med	branchless clz: returns ceil(log2(x)) (1->0,3->2,5->3,9->4); caller derives alignment shift for operator_new_named flags
+00321ad0	InputParser_BuiltinOperand	med	returns builtin id + 0x40 (InputVM_ReadOperand maps 0x40..0x5f to InputVM_ReadBuiltin); node type 3 in InputParser_EmitNode
+00321ad8	InputParser_PadChannelOperand	med	returns pad*6 + channel + 0x60 (InputVM_ReadOperand: (op-0x60)/6, %6 -> InputVM_ReadPadChannel); node type 2
+00324ec8	InputParser_EmitBinaryOp	med	emits both operand subtrees, frees temp regs, allocs result reg ('failed to allocate temporary register'), packs opcode|dst|a|b; binary node types
+003250d8	InputParser_EmitUnaryOp	med	single-operand variant of InputParser_EmitBinaryOp (same error strings, opcode|dst|a)
+00326308	InputPreproc_WriteString	med	InputPreproc_Write for each char of C string; caller InputPreproc_EmitLineMarker
+00326478	InputPreproc_NextChar	med	reads next byte of source buffer {base,len,pos} into this+0xc, -1 at end; used by all InputPreproc scanners
+00326678	InputPreproc_SkipLine	med	reads chars until '\n' (or EOF), consumes it and increments source line counter +0xc; InputPreproc_Directive
+00327828	AIFwdDiffCache_dtor	med	frees +0 entry block and +8 hash table (both allocated by AIFwdDiffCache_Init), delete if flag&1; caller GameModule_Unload path
+003279d0	AIFwdDiffCache_Get	med	hash lookup of patch id (+0x150) in +8 buckets; hit -> AIFwdDiffCache_Touch, miss -> evict LRU entry, rehash and AIFwdDiffCache_BuildEntry
+00327ac0	AIFwdDiffCache_Touch	med	moves entry to MRU position in circular entry list (+4 head); only caller AIFwdDiffCache_Get
+00327b30	AIFwdDiffCache_HashRemove	med	unlinks entry (key != -1) from sorted bucket chain (+0xc next); only caller AIFwdDiffCache_Get
+00327bb0	AIFwdDiffCache_HashInsert	med	inserts entry into its bucket chain sorted by key; only caller AIFwdDiffCache_Get
+00327c00	AIFwdDiffCache_BuildEntry	med	resets entry then evaluates patch (+0x40) forward differences into it via gp+0x2930 helper; only caller AIFwdDiffCache_Get
+00328360	SpatialKey_ClassifyAABB	med	cell (level,ix,iy,iz) bounds vs AABB with loose margin: 1 outside, 2 straddles, 0 contains; world.md loose-octree key; CameraTriggerMan_UpdateForRider
+003284b8	SpatialHash_Remove	med	recursive: walks 'Cell' nodes to key level, unlinks object from list[type], deletes emptied child nodes; world.md Nash spatial hash
+00328660	SpatialHash_InsertAtKey	med	descends/creates 0x2c 'Cell' nodes (tag 0x4a3fc0) down to key level, links object at head of list[type] (+0x20)
+00328808	SpatialHash_Move	med	recursive relink of object from old key to new key under common ancestor; callers SpatialHash_Update
+00328c20	SpatialHash_Insert	med	world.md proposal: inserts object with key into octant root (grows root level as needed); RailModifier_ctor, CameraTriggerMan_UpdateTriggers
+00328f28	SpatialKey_FromAABB	med	world.md proposal: level from largest extent (min 11), cell = floor(centre/2^level), raised until box fits
+003291e0	SpatialHash_Update	med	recomputes keys of old/new AABB (SpatialKey_FromAABB); same key -> nothing, same octant -> SpatialHash_Move, else Remove+Insert; modifier/FlexBridge callers
+00329910	RiderSphereTree_ctor	med	alloc tag 'RiderSphereTree' (0x2b0) in Rider_LoadStep -> Rider+0xaa0; sets +0x24/+0x28 = -1
+00329938	RiderSphereTree_ctor_copy	med	copy ctor: RiderSphereTree_Assign(this, other)
+00329970	RiderSphereTree_dtor	med	delete if flag&1; callers Rider_dtor, RiderWipeoutState_dtor
+003299c8	RiderSphereTree_Init	med	Rider_LoadStep: radius, bone transform array (RiderModel+0x2c), 10 spheres with bone idx/radius arrays, root bone
+00329a28	RiderSphereTree_Assign	med	copies header (bones, centre, radius, root, mask, count) and count*0x20 sphere records
+00329a90	RiderSphereTree_SetSpheres	med	sets sphere count, centres (+0x30 stride 0x20) and radii (+0x40), overall radius +0x20 and centre +0x10; wipeout pose code
+00329ae0	RiderSphereTree_UpdateFromBones	med	sphere centres from bone transforms (+0 array, bone idx +0x44), centre from root bone (+0x24); Rider_UpdateSkeleton thunk
+00329b40	RiderSphereTree_Translate	med	adds offset to centre +0x10 and every sphere centre; callers Rider_Translate (Rider+0xaa0)
+00329b90	RiderSphereTree_Scale	med	scales overall radius/centre and each sphere radius/centre by factor; vt 48e590 slot 1 copy path
+00329dc8	RiderSphereTree_GetBounds	med	AABB min/max over spheres selected by mask +0x28 (or overall sphere when mask 0)
+00329f98	RiderSphereTree_Intersect	med	sphere tree vs sphere tree: bounding test then per-sphere pairs, returns penetration vector/point; caller Rider_CheckRiderCollisions
+0032b468	RLE_Encode	med	PackBits-style run-length encoder (negative count = literal run, positive = repeat), 0-terminated, returns length
+0032b620	RLE_Decode	med	decoder for RLE_Encode format; returns decoded length; caller 0x32df28
+0032c508	SphereTree_ctor	high	EA_MemAllocNamed(0x140,'SphereTree') then this call in 0x3303f0; also RollerModifier ctors (embedded); +0x98=0, resets transform
+0032c540	SphereTree_ResetTransform	med	only caller SphereTree_ctor (+0x3aaa08): copies 8 default child-direction vec4s (4ff640), pos +0x80 from 4ff130, scale +0x90=1.0
+0032c590	SphereTree_GetRadius	med	returns def(+0x98)->levels[0].radius * scale(+0x90); used for bounds in 0x3303f0 and volume slots
+0032c5a8	SphereTree_GetHalfLeafRadius	med	levels[def->nLevels].radius*scale*0.5 (deepest level); caller RollerModifier probe 0x35edc8
+0032c5e0	SphereTree_SetPosition	med	pos(+0x80) = def(+0x98)->centerOffset(+0x14) + v
+0032c630	SphereTree_Translate	med	pos(+0x80) += v; only caller 0x35ed90 (RollerModifier translate)
+0032c648	SphereTree_SetTransform	med	(scale, tree, matrix): 8 child dirs = default dirs*scale*M (dir[7-i]=-dir[i]), sets scale +0x90, pos = M*centerOffset*scale; RollerModifier ctor/Update
+0032c770	SphereTree_ApplyTransform	med	(scale, tree, matrix): multiplies existing child dirs and pos by M and scale, scale*=s; caller vt 48e5f0 slot 1
+0032c898	SphereTree_CollideSphere	med	refreshes child masks via SphereTreeCache_GetMasks, recurses SphereTree_CollideSphereNode from root; caller sphere volume slot 6
+0032c928	SphereTree_CollideAABB	med	mask refresh + SphereTree_CollideAABBNode from root; leaf test 0x329590 (sphere vs min/max box); caller vt 48e5f0 slot 7
+0032c9b8	SphereTree_CollidePlane	med	mask refresh, sorts children along -normal, depth +0x94=0, SphereTree_CollidePlaneNode; returns penetration (+0x94<0)
+0032ca78	SphereTree_CollideTriangle	med	mask refresh, child sort by normal, +0x94=0, SphereTree_CollideTriangleNode(v0,v1,v2,n); callers 0x328030 / vt 48e5f0 slot 4
+0032cb58	SphereTree_CollideSphereTree	med	refreshes masks of both trees, then SphereTree_CollideTreeNode; caller vt 48e5f0 slot 6
+0032cbf8	SphereTree_CollideTreeNode	med	recursive: for each child bit of node mask, child centre = parent + dir*levelOffset, tests vs other tree (SphereTree_CollideSphereNode)
+0032cdb0	SphereTree_CollideSphereNode	med	recursive sphere(radius,centre) vs tree node: dist^2 < (r+levelRadius*scale)^2, descend 8 child bits; leaf gives normal/depth
+0032d028	SphereTree_CollideAABBNode	med	recursive node vs (min,max) box via 0x329590 (sphere vs AABB), descends child bits; leaf writes contact point/normal
+0032d208	SphereTree_CollidePlaneNode	med	recursive plane vs node in sorted child order (+0x9c), tracks deepest penetration in +0x94
+0032d470	SphereTree_CollideTriangleNode	med	recursive node vs triangle: plane distance vs levelRadius+depth, VU point-in-triangle test, descend children (<=3 levels)
+0032da40	ShellSortDesc_KeyVal	med	Shell sort (Knuth gaps 1,4,13,40.. at 44af98) of int keys descending with parallel value array; caller SphereTree_SortChildOrder
+0032db40	SphereTree_SortChildOrder	med	dots each child direction with -1000*dir, Shell-sorts child indices into +0x9c (8 ints) front-to-back
+0032df28	SphereTreeCache_GetMasks	med	child-mask bytes of a tree def: id lookup in the 2 gp ring caches from World_InitSphereTreeCache, else RLE-unpack (0x32b620) into next slot
+003300f8	Vec3_NegDot	med	returns -dot(a,b) (VU0 dot); only caller 0x330360 (plane d from normal and vertex)
+00330128	ClosestPointOnSegment	med	(out, a, b, p): projects p onto segment ab, clamps to endpoints; only caller 0x330250
+003309d8	Cell_GatherObjects	med	Nash 'Cell' node: walks object list (+0x20), AABB test (flag 0x20 own box / 0x40 WorldObj vt slots 44,45) vs query box, appends to accumulator array
+00330ba8	OverlapList_GatherObjects	med	OverlapList (0xa14 'OverlapList'): resets object list (+8/+0xc, max 0x40) and fills it from the Nash (*list) octants overlapping the box
+00331450	OverlapList_GatherType2	med	fills list 3 (+0x210/+0x214, max 0x200) with every type-2 cell entry (rails, triggers) of cells overlapping the box; caller WorldLightMan_GetInstanceLighting
+00331e90	OverlapList_GatherObjectsAndInstances	med	fills object list (+8) and instance list (+0x10c/+0x110, AABB +0x158) from the Nash for the box
+00332db8	OverlapList_GatherAll	med	fills object, instance and type-2 lists of an OverlapList for a box; callers Rider_LoadStep, Rider_Place, Rider_RefreshOverlaps, Rider_BeginFrame
+00333ef8	OverlapList_CollideVolume	med	tests a collision volume vs the list's instances (flags 0x41, 0x3279d0+0x32b6e0) and objects (0x334888); fills 0x80-byte contacts, returns count
+003342d0	OverlapList_FindClosestContact	med	OverlapList_CollideVolume into 64 contacts, picks the one whose depth is closest to volume slot 3, copies it out, returns depth or -1
+00334458	OverlapList_CollideObjects	med	only objects list (+8/+0xc): box test then 0x334888 per object, mode 1/2; only caller Rider_FindWallContact
+00334680	OverlapList_FindNearestRail	med	scans type-2 list (+0x210): type 1 world rail (0x335128), 2 RailModifier (0x35c698), 3 FlexRail (0x348290) within radius; caller Rider_FindRail
+00334800	Nash_CreateFwdDiffCache	high	world.md: Nash+0xa4 = EA_MemAllocNamed(0x10,'AIFwdDiffCache') + AIFwdDiffCache_Init(p,0x28) here; caller GameModule_LoadWorld
+00334850	Nash_DestroyFwdDiffCache	med	mirror: deletes Nash+0xa4 via 0x327828(p,3) and clears it; caller GameModule_Unload
+00335960	Cell_CollideInstance	med	Nash collide callback for one instance (+0x158 box): 0x3279d0 + 0x32b6e0, appends contact to accumulator
+00335b90	Cell_CollideObject	med	Nash collide callback for one object (box test as Cell_GatherObjects) then Collide_VolumeObject mode 2
+00335d78	Nash_CollideVolume	med	walks the 8 Nash octants (+0x10 roots, cell test 0x328360) with the volume box, collecting contacts from instances and objects; returns count
+00336850	Nash_FindClosestContact	med	Nash_CollideVolume into 64 contacts, best = depth closest to volume slot 3; callers Rider_Place, AirPredictor_Simulate, GameCamera_AvoidCollision
+003369d8	Nash_ProbeVertical	med	builds a vertical CollSegment at (x,y) around z, walks octants with the column test, returns hit closest in z (point, normal); caller script camera 0x27a0d8
+00336f30	Nash_CollideObjects	med	as Nash_CollideVolume but objects only (no instances), up to 0x80 contacts
+003378c0	Nash_FindClosestObjectContact	med	Nash_CollideObjects into 128 contacts, picks best like Nash_FindClosestContact; callers AirPredictor_Simulate, 0x2d66a0
+00337a48	Nash_FindNearestRail	med	Nash-walk version of OverlapList_FindNearestRail: type-2 cell entries type 1/2(RailModifier)/3(FlexRail) near point
+00338920	Cell_GatherObjectsRecursive	med	recursive cell-vs-box descent for OverlapList_GatherObjects (children fully inside -> Cell_GatherObjectsSubtree)
+00339598	Cell_GatherType2Recursive	med	recursive descent for OverlapList_GatherType2
+0033a3d8	Cell_GatherObjInstRecursive	med	recursive descent for OverlapList_GatherObjectsAndInstances
+0033b748	Cell_GatherAllRecursive	med	recursive descent for OverlapList_GatherAll
+0033ccf8	Cell_CollideVolumeRecursive	med	recursive descent for Nash_CollideVolume (instances + objects per cell)
+0033dbe8	Cell_CollideColumnRecursive	med	recursive descent for Nash_ProbeVertical: cell test on x/y only
+0033dfd8	Cell_CollideObjectsRecursive	med	recursive descent for Nash_CollideObjects
+0033ed60	Cell_FindRailRecursive	med	recursive descent for Nash_FindNearestRail
+00340a40	Cell_GatherObjectsSubtree	med	Cell_GatherObjects on a cell and all 8 children recursively (no cell test)
+00340b18	Cell_GatherType2Subtree	med	appends every type-2 entry (+0x28 list) of a cell and its whole subtree
+00340c20	Cell_GatherObjInstSubtree	med	subtree version for objects + instances
+00340dc0	Cell_GatherAllSubtree	med	subtree version for objects, instances and type-2 entries
+00340fa0	Cell_CollideVolumeSubtree	med	subtree version of the Nash_CollideVolume cell callbacks
+003410c0	Cell_CollideObjectsSubtree	med	subtree version for Nash_CollideObjects
+003411b8	Cell_FindRailSubtree	med	subtree version for Nash_FindNearestRail
+00341770	Boost_v48	high	vt 4914e0 slot 48 (class Boost via pass1)
+00341818	Boost_v47	high	vt 4914e0 slot 47 (class Boost via pass1)
+00341cf0	AnimObject_dtor	high	slot 1 of AnimObject vt 0x490b10; restores vptr 0x490b10 @+0x3c (as AnimObject_ctor), destroys +0x1c sub-object 0x34dba8, delete if flags&1
+00341d48	AnimObject_v15	high	AnimObject vt 0x490b10 slot 15; delay countdown then steps the value by mode (StepLoop/StepPingPong/StepClamp)
+00341e48	AnimObject_StepLoop	med	only caller AnimObject_v15 (mode 1): value += rate, wraps between min +0x14 and max +0x18
+00341ec0	AnimObject_StepPingPong	med	only caller AnimObject_v15 (mode 2): value += rate, reflects at min/max and negates rate
+00341f38	AnimObject_StepClamp	med	only caller AnimObject_v15 (other modes): value += rate, clamps at min/max and sets done flag +8
+00341fc8	AnimObject_KillRestorable	high	AnimObject vt slot 34 (KillRestorable in WorldObj family), shared by its 2 subclasses; if param calls 0x34fcc0(this+0x30)
+00341fe8	AnimObject_v36	high	AnimObject vt slot 36 (Debounce_v36 slot); sets params by id 100..0x69 (delay, rates, min/max), else ModObj_v36
+00342150	AnimObject_Save	high	AnimObject vt slot 12 (Save, as Debounce_Save/Conveyor_Save): 0x34e3d8(+0x1c), stream write 0x1c bytes
+00342358	AnimTeeter_v15	high	AnimTeeter vt 0x4908f8 slot 15: damped spring step of the teeter angle with limits +0x10/+0x14
+00342538	AnimTeeter_v43	high	AnimTeeter vt 0x4908f8 slot 43: pushes the teeter by a contact (bone matrix, sign by side bit) when impulse > 100
+00342718	AnimTeeter_Save	high	AnimTeeter vt slot 12 (Save): 0x34e3d8(+0x30), stream write 0x30 bytes
+003429e0	BoostModifier_v08	high	vt 490898 slot 8 (class BoostModifier via pass1)
+00342a88	BoostModifier_v07	high	vt 490898 slot 7 (class BoostModifier via pass1)
+00342ba0	BoostModifier_v06	high	vt 490898 slot 6 (class BoostModifier via pass1)
+00342d88	Debounce_v15	high	correction of pass-3 vtslots name Debounce_Render: slot 15 meaning came from unrelated UIState vtables; body is a countdown step
+00342e78	Debounce_v36	high	vt 4906f0 slot 36 (class Debounce via pass1)
+00343130	Conveyor_v42	high	vt 490570 slot 42 (class Conveyor via pass1)
+00343b28	CrowdMan3d_dtor	high	GameModule_Unload calls (GameModule+0x3c CrowdMan3d, 3); frees the 5 groups (500 bytes each), delete if flags&1
+00343bc0	CrowdMan3d_Reset	med	frees and re-inits the 5 crowd groups; callers game reset 0x230180 and CrowdMan3d_LoadState
+00343c08	CrowdMan3d_RemoveSection	med	per group 0x344898 drops instance handles of the given section; caller 0x230360 (SectionMan_Update unload path, with CrowdMan2d_RemoveByType)
+00343c60	CrowdMan3d_AddInstance	med	finds/creates the group for the instance's model, stores the handle in a free slot, inits group on first use, sets instance flags 4 (&~2)
+00343f38	CrowdMan3d_RemoveInstance	med	clears the handle from its group, restores instance flag 2, frees the group when its count reaches 0
+003440c8	CrowdMan3d_Update	high	world.md: GameModule+0x3c CrowdMan3d update 0x3440c8; updates each active group (0x3449f0)
+00344138	CrowdMan3d_Render	med	for each active group 0x344e18 (draws its instances through PS2GraphicsMan slots 95/96)
+003441a8	CrowdMan3d_SaveState	med	only caller WorldState_Write: writes each group's model id and group block (0x344fc0)
+00344240	CrowdMan3d_LoadState	med	only caller WorldState_Read: CrowdMan3d_Reset, reads each group's id and block (0x344ff8)
+003442e0	CrowdMan3d_GroupReset	med	clears a 500-byte group: count 0, ids -1, 32 handle slots -1, mesh pointers 0; from CrowdMan3d_ctor and the remove paths
+00344348	CrowdMan3d_GroupFree	med	only content CrowdMan3d_GroupFreeMeshes; callers CrowdMan3d_dtor/Reset
+00344368	CrowdMan3d_GroupInit	med	sets the instance handle, time 0, dt = 1/ticks-per-second, then CrowdMan3d_GroupCreateMeshes
+003443a8	CrowdMan3d_GroupCreateMeshes	high	strings 'AnimMats' (matrix array) and 'CrowdAnimMesh' (n*0xd0 anim meshes, vptrs 490af0/490ad0) for the group's model
+00344800	CrowdMan3d_GroupFreeMeshes	med	destroys the 'CrowdAnimMesh' array (vt slot 1 each) and frees 'AnimMats'
+00344898	CrowdMan3d_GroupRemoveSection	med	only caller CrowdMan3d_RemoveSection: drops handles whose section byte matches, restores instance flag 2, frees group at count 0
+003449f0	CrowdMan3d_GroupUpdate	med	advances group time (+0x1dc, wraps at +0x1e0), updates each anim mesh (vt slot 2), then CrowdMan3d_GroupBuildMatrices
+00344aa0	CrowdMan3d_GroupBuildMatrices	med	fills the 'AnimMats' matrices from the model's bone list (static or animated by mesh); callers GroupCreateMeshes/GroupUpdate
+00344e18	CrowdMan3d_GroupRender	med	only caller CrowdMan3d_Render: for each handle whose section is resident, draws the instance with the group's AnimMats
+00344fc0	CrowdMan3d_GroupSave	med	only caller CrowdMan3d_SaveState: stream write 0x10c bytes of the group
+00344ff8	CrowdMan3d_GroupLoad	med	only caller CrowdMan3d_LoadState: stream read 0x10c bytes, free and recreate meshes
+003451c0	SplineModifier_InitPath	med	callers Spline/MultiSplineModifier_ctor; stores spline handle, node idx 0, first node (spline+0x24), path length via 003454e8
+00345248	SplineModifier_EvalPathAtDistance	med	wraps dist modulo path length, walks node list (+0x60 prev/+0x64 next by +0x84 start dist) then evaluates segment 00345048
+003454e8	SplineModifier_GetPathLength	med	walks spline node list to last node, returns node+0x84 start distance + node+0xc segment length
+00345538	SplineModifier_SavePath	med	callers Spline/MultiSplineModifier_Save; ReplayStream slot 1 Write of 8 bytes (handle, node index)
+00345570	SplineModifier_LoadPath	med	callers Spline/MultiSplineModifier_ctor_2; stream slot 2 Read 8 bytes, re-resolves node pointer from index, recomputes length
+00345720	ModifierList_PushBack	med	appends node {next,prev} at list tail; sibling of ModifierList_PushFront 0x345700; caller ModifierBlock_Load
+00345760	ModifierList_Unlink	med	unlinks {next,prev} node from intrusive list and clears links; callers ModifierBlock_dtor and modifier dtors
+00345798	ParticleModifier_BaseCtor	med	shared base ctor of Particle/DynamicParticle/HaloModifier_ctor: vptr 0x4912f8 at +8, +0xc = arg, ++count gp+0xf04
+003457c8	ParticleModifier_BaseCtor_2	med	stream variant used by the three *_ctor_2: vptr 0x4912f8, +0xc read from stream slot 3
+00345828	ParticleModifier_BaseDtor	med	vt 0x4912f8 slot 1 (dtor), --count gp+0xf04, unlinks list node, called by Particle/DynamicParticle/HaloModifier_dtor
+00345890	ParticleModifier_BaseSave	med	vt 0x4912f8 slot 4 Save; writes +0xc via stream slot 5; called by the three *Modifier_Save
+00345e88	DynamicParticleModifier_dtor	high	vt 491268 slot 1; family slot 1 = dtor (2 named siblings)
+00345ef8	DynamicParticleModifier_TransformPoints	med	gets owner instance matrix (0x34fed8) and transforms local points +0x20/+0x50 into world +0x30/+0x40; callers DynamicParticleModifier ctor/Update
+00346d38	FlexBridge_InitSegmentMidpoints	med	only caller FlexBridge_ctor; writes midpoint of each consecutive node pair into node array +0x74, then end-to-start deltas into +0x20/+0x30
+00346e38	FlexBridge_v43	high	vt 490270 slot 43 (class FlexBridge via slots 4/4)
+003470d0	FlexBridge_v42	high	vt 490270 slot 42 (class FlexBridge via slots 4/4)
+00347268	FlexBridge_v39	high	vt 490270 slot 39 (class FlexBridge via slots 4/4)
+003475d8	FlexBridge_UpdateVerts	med	callers FlexBridge ctors/Update (after spring step); plank verts from node pos + SinCos twist, AABB +0x90/+0xa0, re-keys spatial hash, uploads
+00348058	FlexRail_UpdateSpaceNode	med	only caller FlexRail_Update; recomputes bounds (vslot 50) and re-keys FlexRailSpaceNode +0x54 in Nash spatial hash (0x3291e0) with AABB +0x30
+00348290	FlexRail_FindClosestPoint	med	rail query dispatch (0x334680, caller Rider_FindRail) calls it for space-node type 3 (FlexRail); type 2 -> 0x35c698 RailModifier; mask vs rail +0x24
+00348b90	FlexRail_RegisterSpaceNode	high	alloc tag 'FlexRailSpaceNode' (type 3, owner this) stored at +0x54, SpatialKey_FromAABB(+0x30) + SpatialHash_Insert; Float/SpringRail ctors
+00348c48	FlexRail_UnregisterSpaceNode	med	removes +0x54 space node from Nash hash (0x3284b8), frees empty cell, deletes node; callers FloatRail_v01/SpringRail_v01 (dtors)
+00349110	FloatRail_v50	high	vt 48ff30 slot 50 (class FloatRail via pass1)
+00349220	FloatRail_ResetPosFromInstance	med	callers FloatRail_ctor/FloatRail_v47; resolves attached instance handle (+0x40, node +0x44), Instance_GetNodeMatrix, stores translation in +0x20 and +0x30
+003492a8	FloatRail_v48	high	vt 48ff30 slot 48 (class FloatRail via pass1)
+003498e8	FloatRail_v47	high	vt 48ff30 slot 47 (class FloatRail via pass1)
+00349f18	SpringRail_v50	high	vt 48fd90 slot 50 (class SpringRail via pass1)
+0034a028	SpringRail_InitPosFromInstance	med	only caller SpringRail_ctor; same as FloatRail_ResetPosFromInstance with handle/node at +0x50/+0x54, stores translation at +0
+0034a0b0	SpringRail_v48	high	vt 48fd90 slot 48 (class SpringRail via pass1)
+0034a8c8	SpringRail_v47	high	vt 48fd90 slot 47 (class SpringRail via pass1)
+0034ac88	Flag_ReadParams	med	only caller Flag_ctor; unpacks flag data block into 0x58-byte param struct, scaling rates by 1/ticks-per-second (gp+0x2a74 +0x10)
+0034af20	cFlagManager_GroupInitKey	med	sets group +0x58 key = -1, +0x5c flag count = 0; only caller cFlagManager_GroupCtor
+0034af38	cFlagManager_GroupCtor	med	cFlagManager_ctor builds 15 groups of 0x188 with it; vptr 0x48fbf8 at +0x184, clears flag list, alternating phase from gp+0xf20
+0034afb8	cFlagManager_GroupDtor	med	vt 0x48fbf8 slot 1 (dtor) of the 0x188-byte flag group embedded in cFlagManager
+0034afe8	cFlagManager_GroupMatches	med	group in use, instance key (+0x80) equals group key +0x58 and memcmp(params,0x58)==0; caller cFlagManager_AddFlag
+0034b038	cFlagManager_GroupAddFlag	med	first flag copies 0x58-byte params + key and builds mesh (0x34b228); appends instance to list +0x94, ++count +0x5c
+0034b168	cFlagManager_GroupRemoveFlag	med	removes instance (match +0x78 handle) from group list +0x94, frees mesh when count reaches 0; caller cFlagManager_RemoveFlag
+0034b228	cFlagManager_GroupBuildMesh	high	operator_new_named 'Flag Verts'; builds the group's cloth vertex buffer and renderer mesh (slots 97/76/6)
+0034b7b8	cFlagManager_GroupFreeMesh	med	releases renderer mesh +0x60 (renderer slot 77) and EA_MemFree vertex buffer +0x74
+0034b818	cFlagManager_GroupUpdate	med	only caller cFlagManager_Update; advances wind/wave phases, every other frame recomputes verts (0x34bca0) and uploads to mesh
+0034b9b0	cFlagManager_GroupRender	med	only caller cFlagManager_Render; per flag instance frustum test (renderer slot 93) and draws group mesh at instance matrix
+0034bca0	cFlagManager_GroupComputeVerts	med	callers GroupBuildMesh/GroupUpdate; evaluates the flag wave (sine table index &0x1ff) per vertex into a buffer
+0034c2e0	cFlagManager_GroupSave	med	only caller cFlagManager_Save; writes 0x60 bytes of group header then each flag object ref (stream slot 5)
+0034c378	cFlagManager_GroupLoad	med	only caller cFlagManager_ResetBoxes; reads 0x60-byte header (stream slot 2) and flag refs (slot 3), rebuilds mesh
+0034c548	cFlagManager_AddFlag	med	only caller Flag_ctor; finds a group with matching params among 15 (GroupMatches) or the first free one, then GroupAddFlag
+0034c600	cFlagManager_RemoveFlag	med	only caller Flag_dtor; GroupRemoveFlag on each in-use group until one succeeds
+0034c898	cFlagManager_Load	med	correction of pass-3 vtslots name cFlagManager_ResetBoxes: reads every flag group back via stream slots 2/3; twin of cFlagManager_Save (slot 12)
+0034cc80	Fence_PropagateToNeighbour	med	callers Fence_ctor_3/Update; spawns a Fence ('Fence' alloc 0x10c) on neighbour instance or kicks the live neighbour (+0x104/+0x108)
+0034cde8	Fence_KickFromNeighbour	med	adds wobble impulse (0x34d6f0) and arms the propagate timer (=4) for the far side; only caller Fence_PropagateToNeighbour
+0034cf98	Fence_UpdateVerts	med	callers Fence_Update/Fence_BuildMesh; offsets the 8 post vertices by wobble angle +0x2c * amplitude and uploads
+0034d1e8	Fence_BuildMesh	med	called by all three Fence ctors; renderer mesh create (slots 97/76/6) like FlexBridge_BuildMesh, then Fence_UpdateVerts
+0034d650	Fence_v40	high	vt 48fa00 slot 40 (class Fence via pass1)
+0034d6f0	Fence_AddImpulse	med	amplitude +0x30 += |impulse| clamped to 1, sets wobble velocity +0x34 sign/scale; callers Fence ctors, Fence_v40 (hit)
+0034d9b0	AnimObject_BaseCtor	med	shared base ctor of AnimObject_ctor/AnimTeeter_ctor: ModObj_ctor at +0x14, vptr 0x490cc8, alloc 'AnimMats' (nodes*64), node info (0x34e448)
+0034dac8	AnimObject_BaseCtor_2	med	stream variant used by AnimObject_ctor_2/AnimTeeter_ctor_2: ModObj_ctor_2, vptr 0x490cc8, 'AnimMats' alloc, reads 0x14+4 bytes
+0034dba8	AnimObject_BaseDtor	med	vt 0x490cc8 slot 1 (dtor): frees AnimMats +0x44, IntersectInfo array +0x48 (0xd0 each), MeshVelocity +0x4c, ModObj_dtor
+0034dc90	AnimObject_v51	high	slot 51 of anim base vt 0x490cc8, inherited by AnimObject/AnimTeeter/AnimDelta/AnimCombo; calls slot 52 then BuildMatrices(slot 33) into AnimMats
+0034dd18	AnimObject_BuildMatrices	high	slot 33 (WorldObj BuildMatrices) of anim base vt 0x490cc8 and AnimObject/AnimTeeter/AnimDelta/AnimCombo; per-node matrices times parent
+0034e320	AnimObject_GetNodeIntersectMatrix	med	returns IntersectInfo[idx]+0x90 (0xd0 records at +0x48) or identity 0x4ff1a0 when none; only caller AnimObject_BuildMatrices
+0034e348	AnimObject_v52	high	slot 52 of anim base vt 0x490cc8 (and subclasses); calls slot 2 of each IntersectInfo record with owner, sets +0x10 = 1
+0034e3d8	AnimObject_BaseSave	med	slot 12 (Save) of anim base vt 0x490cc8: ModObj_Save then writes 0x14+4 bytes; called by the AnimObject/AnimTeeter Save slots
+0034e448	AnimObject_AllocNodeInfo	high	allocation tags 'IntersectInfo' (0xd0 per animated node, vptrs 0x490af0/0x490ad0) and 'MeshVelocity' (0x20 per node); called by both base ctors
+0034e600	AnimObject_GetNodePosition	med	own instance: slot 29 node matrix translation; other: BuildMatrices (slot 33) into stack and picks row of node idx; only caller AnimObject_v42
+0034e698	AnimObject_v42	high	slot 42 of anim base vt 0x490cc8 and AnimObject/AnimTeeter/AnimDelta; calls ModObj_v42 then adds node linear+angular velocity to contact record
+0034e798	AnimObject_ComputeNodeVelocities	med	only caller AnimObject_v42; fills MeshVelocity (+0x4c, 0x20/node: linear, angular) from animated node motion (SinCos)
+0034eeb8	Floating_AllocBoundBox	high	alloc tag 'FloatingBoundBox' (0x30) at +0x78, filled by WorldObj_GetBoundBox (0x350570); callers Floating_ctor/_ctor_2
+0034ef08	Floating_FreeBoundBox	med	deletes +0x78 bound box (counterpart of Floating_AllocBoundBox); only caller Floating_v49
+0034ef40	Floating_v50	high	vt 48f858 slot 50 (class Floating via pass1)
+0034f048	Floating_v49	high	vt 48f858 slot 49 (class Floating via pass1)
+0034f120	Floating_BuildMatrices	high	vt 48f858 slot 33; family slot 33 = BuildMatrices (19 named siblings)
+0034f600	Floating_v43	high	vt 48f858 slot 43 (class Floating via pass1)
+0034f790	Floating_v42	high	vt 48f858 slot 42 (class Floating via pass1)
+0034fe28	WorldObj_ReplaceWithDeadNode	high	deletes this (vslot 1, flags 3) and allocates 'DeadNode' (0x1c) DeadNode_ctor on the same instance; callers MeshAnim_Kill/KillRestorable
+0034fed8	Instance_GetNodeMatrix	med	(Instance*, nodeIdx, out): WorldObj slot 29/24 matrix if attached (+0xc), else instance matrix +0x10 times scaled node matrix; world.md WorldLightMan note
+00350570	WorldObj_GetBoundBox	med	copies instance AABB (+0x60/+0x6c) into box, returns max corner distance from instance pos +0x40 as radius; callers Floating, ModObj_v48
+00350c90	DeadFade_Kill	high	vt 491980 slot 35; family slot 35 = Kill (16 named siblings)
+00351120	InstancesMan_dtor	med	only caller GameModule_Unload; frees the 0xb0-record pool at +0xc (InstancesMan layout in world.md), deletes when flag&1
+00351170	InstancesMan_Alloc	med	pops a 0xb0 Instance from free list +8, sets section byte, flag 0x2000 and handle (index<<8 | id) at +0x78; InstancesMan layout world.md
+003511d0	InstancesMan_AllocByHandle	med	searches free list for the record whose index == handle>>8, unlinks it and initialises it like InstancesMan_Alloc; caller MultiSplineModifier_ctor_2
+00351260	InstancesMan_Free	med	pushes record back on the InstancesMan free list (+8)
+00351270	InstancesMan_CopyInstance	med	EA_MemCopy 0xa0 bytes from src to dst Instance keeping dst handle +0x78, sets flag 0x2000
+003512c0	InstancesMan_ResolveHandle	med	only caller ReplayStream_ReadObjectRef; checks handle&0xff == id, returns pool+idx*0xb0 and re-marks it allocated
+00351330	IntersectInfo_ctor	med	vptr 0x490af0 at +0x84 (0xd0 records allocated as 'IntersectInfo' in AnimObject_AllocNodeInfo); clears, sets anim source, evaluates
+00351398	IntersectInfo_SetSource	med	stores anim source ptr at +0x40 and copies its 6 default channel values to +0x44..+0x58; callers AnimObject_AllocNodeInfo, IntersectInfo_ctor
+003513d0	IntersectInfo_Clear	med	memsets the two 0x40 channel blocks (+0, +0x44) and source +0x40; used before every IntersectInfo vptr store
+00351480	IntersectInfo_ctor_2	med	IntersectInfo_ctor then vptr 0x490ad0, identity matrix +0x90, source +0x40, evaluates matrix (0x351800)
+00351508	IntersectInfo_GetDuration	med	returns end time (+0x10) of first channel's key table from source +0x40 -> +0x20; used for anim length in AnimObject ctors
+00351538	IntersectInfo_Evaluate	high	vt 0x490af0 slot 2; evaluates up to 16 masked cubic channels at time t into +0x44.. using cached key cursors (0x351a80)
+00351660	IntersectInfo_EvalDerivative	med	derivative 3at^2+2bt+c of the masked channels -> linear and (negated) angular velocity; caller AnimObject_ComputeNodeVelocities
+00351800	IntersectInfo_EvaluateMatrix	high	vt 0x490ad0 slot 2; IntersectInfo_Evaluate then builds rotation from euler +0x50..+0x58 and translation +0x44 into matrix +0x90
+00351948	IntersectInfo_MulMatrix	med	matrix +0x90 = arg matrix * +0x90 (VU0 4x4 multiply); only caller 0x359140
+00351a10	IntersectInfo_ctor_3	med	IntersectInfo_ctor then vptr 0x490ab0 and evaluate (0x351a60)
+00351a60	IntersectInfo_EvaluateChannels	med	vt 0x490ab0 slot 2; plain tail-call to IntersectInfo_Evaluate (no matrix build)
+00351a80	IntersectInfo_FindKeySegment	med	advances/rescans a channel's key cursor to the 0x18-byte segment with start<=t<end; callers Evaluate/EvalDerivative
+00352230	MeshAnim_RandomizeNodes	med	only caller MeshAnim_ctor_2; per model node random scale (+0x330), random unit spin axis (+0x1b0) and random per-tick velocity (+0x530)
+00352708	MeshAnim_KillRestorable	high	vt 48f6d8 slot 34; family slot 34 = KillRestorable (16 named siblings)
+00352780	MeshAnim_Kill	high	vt 48f6d8 slot 35; family slot 35 = Kill (16 named siblings)
+00352b88	ModifierBlock_GetTransformBounds	med	returns transform modifier (+0) slot 12 = &mod+0x10 (min/max vec4 pair); ModObj_v49/v50 copy it as AABB for the spatial hash
+00352bc0	ModifierBlock_SetTransformBounds	med	transform modifier slot 13 stores 2 vec4 at +0x10; ModObj_v48 passes instance AABB from WorldObj_GetBoundBox
+00352bf8	ModifierBlock_GetTransformRadius	med	transform modifier slot 14 (float at +0x40/+0x4c); ModObj_v50 builds pos +/- radius box from it
+00352c38	ModifierBlock_SetTransformRadius	med	transform modifier slot 15 sets the float read by slot 14; ModObj_v48 passes radius from WorldObj_GetBoundBox
+00352c70	ModifierBlock_Update	med	updates transform (slot 2 Update), UVScroll, TexFlip and Boost (slot 2, frees it via ModifierBlock_FreeBoost when slot 4 returns 0)
+00352d20	ModifierBlock_PostUpdate	med	calls particle modifiers slot 5 (Update), rail modifier list +0x1c slot 3, transform slot 4; via ModObj_Update
+00352dd0	ModifierBlock_Render	med	only caller ModObj_Render; particle modifiers slot 6 (Render) and transform modifier slot 11
+00352e50	ModifierBlock_HasTransformChanged	med	bool of transform modifier slot 17 (changed flag +0x44/+0x58); ModObj_UpdateModifiers sets ModObj dirty bit +0x12|1 from it
+00352e98	ModifierBlock_UpdateTransform	med	calls transform modifier slot 3 (UpdateTransform) when present
+00352ed0	ModifierBlock_IsTransformFinished	med	transform modifier slot 6 (Spline: +0x50 flag); ModObj_Update then clears it (slot 7) and calls own slot 34 KillRestorable
+00352f08	ModifierBlock_ClearTransformFinished	med	transform modifier slot 7 (clears the flag read by slot 6); only caller ModObj_Update
+00352f40	ModifierBlock_HandleEvent	med	only caller ModObj_v36; forwards (value,id) to transform slot 5, UVScroll, TexFlipModifier_HandleEvent, Boost slot 3 and particle slot 7
+003531d0	ModifierBlock_FreeParticles	med	deletes (slot 1, flags 3) every modifier in particle list +0x10; caller ModifierBlock_dtor, sibling of ModifierBlock_FreeBoost
+00353278	ModifierBlock_RemoveDeadParticles	med	walks particle list +0x10, deletes entries whose slot 2 state == 3
+00353300	ModifierBlock_FreeRailModifiers	med	deletes all rail modifiers in list +0x1c (id -1) or the one whose +0x30 id matches; caller ModifierBlock_dtor
+00353398	ModifierBlock_TakeParticleList	med	moves every modifier of a source list into particle list +0x10 (ModifierList_PushBack) calling slot 3, then clears the source
+00353418	ModifierBlock_HasRailModifier	med	only caller ModObj_AddRailModifier; true if rail list +0x1c contains a modifier with id (+0x30) == arg
+00353da8	FlexBridge_SpringsCtor	med	clears node array ptr +0x24 of the spring sub-object (FlexBridge+0x50); only caller FlexBridge_ctor
+00353db8	FlexBridge_SpringsDtor	med	frees spring node array +0x24; only caller FlexBridge_dtor
+00353e08	FlexBridge_SpringsInit	med	copies count/stiffness params into spring sub-object, rest length = span/(n-1), FlexBridge_AllocSpringNodes; caller FlexBridge_ctor
+00353e80	FlexBridge_SpringsLoad	med	stream slot 2 reads 0x24-byte header, FlexBridge_AllocSpringNodes, reads n*0x50 node data; caller FlexBridge_ctor_2
+00353fc0	FlexBridge_SpringsStep	med	only caller FlexBridge_Update; per-tick spring/gravity integration of the 0x50-byte nodes (+0x24), ends fixed
+003545d8	FlexBridge_SpringsSave	med	only caller FlexBridge_Save; writes 0x24-byte header and n*0x50 node array (stream slot 1)
+00354e78	ProcessList_RemoveAndUnlink	med	ProcessList_Remove then clears the process next/prev (+4/+8)
+00354ea8	ProcessList_First	med	first active process of priority bucket (bucket+8 next of head sentinel), NULL at tail sentinel +0x14; used by Update/Render loops
+00354ed0	ProcessList_Last	med	last active process (tail sentinel prev +0x1c), NULL at head sentinel; ProcessList_MergePending
+00354ef8	ProcessList_Next	med	process->next (+4), NULL when it is the bucket's tail sentinel; used with ProcessList_First
+00354f20	ProcessList_Prev	med	process->prev (+8), NULL at head sentinel; ProcessList_MergePending
+00354f48	ProcessList_PendingFirst	med	first process of the pending list (bucket +0x28), NULL at pending tail sentinel +0x34
+00354f70	ProcessList_PendingNext	med	process->next, NULL at pending tail sentinel +0x34; ProcessList_MergePending
+00355118	ProcessList_DeletePriority	med	deletes (slot 1, flags 3) every process in a priority bucket; callers ProcessList_Shutdown, WorldState_Read
+003551a8	ProcessList_DeleteSectionObjects	med	only caller GameModule_OnSectionUnload (pri 1 and 8); deletes processes whose slot 11 (section, default -1) == section
+00355420	ModObj_v14	high	correction of pass-3 vtslots name ModObj_Reset (slot meaning taken from cSplashManager, a different GameProcess branch)
+003556f8	ModObj_UpdateModifiers	med	only caller ModObj_Update; ModifierBlock_Update on block +0x1c and sets dirty bit +0x12|1 when transform changed
+00355748	ModObj_PostUpdateModifiers	med	only caller ModObj_Update; ModifierBlock_PostUpdate on block +0x1c if present
+00355770	ModObj_v40	high	vt 48ee60,48f858,490e80,491028 slot 40 (class ModObj via pass1)
+00355918	ModObj_AddPositionModifierFromMatrix	high	alloc tag 'PositionModifier' (0x90) + PositionModifier_ctor_2(matrix) + ModObj_SetTransformModifier
+00355f10	ModObj_TakeOverObject	med	callers Debounce_ctor_2/Particle_ctor_2; adopts old object's particle modifiers, copies its matrix into a PositionModifier, deletes it
+00356020	ModObj_TakeParticleModifiers	med	creates own ModifierBlock if needed and moves the other ModObj's particle list into it (ModifierBlock_TakeParticleList)
+00356078	ModObj_v24	high	vt 48ee60,48f858,4906f0,490e80,491028 slot 24 (class ModObj via pass1)
+003560c0	ModObj_v28	high	vt 48ee60,48f858,4906f0,490e80,491028 slot 28 (class ModObj via pass1)
+00356128	ModObj_v25	high	vt 48ee60,48f858,4906f0,490e80,491028 slot 25 (class ModObj via pass1)
+00356608	ModObj_v05	high	correction of pass-3 vtslots name ModObj_Shutdown (slot meaning taken from unrelated UIState family)
+00356780	ModObj_v48	high	vt 48ee60,48f858,4906f0,490e80,491028 slot 48 (class ModObj via pass1)
+003567e0	ModObj_v49	high	vt 48ee60,4906f0,490e80,491028 slot 49 (class ModObj via pass1)
+003568b0	ModObj_v50	high	vt 48ee60,4906f0,490e80,491028 slot 50 (class ModObj via pass1)
+003569d0	ModObj_v44	high	vt 48ee60,4906f0,490e80,491028 slot 44 (class ModObj via pass1)
+00356a00	ModObj_v45	high	vt 48ee60,4906f0,490e80,491028 slot 45 (class ModObj via pass1)
+00356a28	ModObj_v38	high	vt 48ee60,48f858,4906f0,490e80,491028 slot 38 (class ModObj via pass1)
+00356a70	ModObj_v39	high	vt 48ee60,48f858,4906f0,490e80,491028 slot 39 (class ModObj via pass1)
+00356ab8	ModObj_v43	high	vt 48ee60,4906f0,490e80,491028 slot 43 (class ModObj via pass1)
+00356ae0	ModObj_v42	high	vt 48ee60,4906f0,490e80,491028 slot 42 (class ModObj via pass1)
+00356b08	ModObj_v36	high	vt 48ee60,48f858,490e80,491028 slot 36 (class ModObj via pass1)
+00356bf0	ModObj_v20	high	vt 48ee60,48f858,4906f0,490e80,491028 slot 20 (class ModObj via pass1)
+00356c48	ModObj_v21	high	vt 48ee60,48f858,4906f0,490e80,491028 slot 21 (class ModObj via pass1)
+00356cc8	ModObj_v22	high	vt 48ee60,48f858,4906f0,490e80,491028 slot 22 (class ModObj via pass1)
+00356d48	ModObj_v23	high	vt 48ee60,48f858,4906f0,490e80,491028 slot 23 (class ModObj via pass1)
+00357210	ParentModifier_v22	high	vt 48f508 slot 22 (class ParentModifier via pass1)
+00357538	MagnetModifier_v21	high	vt 48f420 slot 21 (class MagnetModifier via pass1)
+00357660	MagnetModifier_v09	high	vt 48f420 slot 9 (class MagnetModifier via pass1)
+00357a00	MultiParticleMan_dtor	med	only caller GameModule_Unload; deletes the 4 MultiParticle slots (0x357fa0), clears gp+0xf38
+00357a78	MultiParticleMan_CreateSlot	high	alloc tag 'MultiParticle' (0x50) + MultiParticle_ctor for slot idx if empty
+00357ae8	MultiParticleMan_AddInstance	med	forwards instance handle to MultiParticle_AddInstance of slot idx
+00357b10	MultiParticleMan_RemoveInstance	med	forwards instance handle to MultiParticle_RemoveInstance of slot idx
+00357b38	MultiParticleMan_Clear	med	deletes and nulls the 4 MultiParticle slots; callers 0x230180, MultiParticleMan_Load
+00357b90	MultiParticleMan_OnSectionUnload	med	only caller GameModule_OnSectionUnload; MultiParticle_RemoveSectionInstances on each slot
+00357bf8	MultiParticleMan_Update	med	callers GameModule_Update, 0x244e60; MultiParticle_Update (Emitter_Update) on each slot
+00357c50	MultiParticleMan_EmitAll	med	MultiParticle_EmitAtInstances on each of the 4 slots
+00357ca8	MultiParticleMan_Save	med	only caller WorldState_Write; per slot writes present flag then MultiParticle_Save
+00357d28	MultiParticleMan_Load	high	only caller WorldState_Read; clears, then per slot reads flag and allocs 'MultiParticle' + MultiParticle_ctor_2
+00357dd8	MultiParticle_ctor	high	stores capacity, allocs 'Particle' (0xd8) copy of params, creates emitter (0x358020), caches box/offset from emitter
+00357e80	MultiParticle_ctor_2	high	stream ctor: reads counts, 'Particle' 0xd8 params, emitter (Emitter_Load), offsets and instance id list; caller MultiParticleMan_Load
+00357fa0	MultiParticle_dtor	med	deletes params +8, frees id list +0xc, deletes emitter +0x10 (slot 1); callers MultiParticleMan_dtor/Clear
+00358020	MultiParticle_CreateEmitter	high	allocs 'InstIds' (capacity*4, filled -1) and 'Emitter' (400) + Emitter_ctor/Emitter_Setup with params
+00358120	MultiParticle_Update	med	Emitter_Update(gp emitter ctx, +0x10); only caller MultiParticleMan_Update
+00358140	MultiParticle_RemoveSectionInstances	med	removes (swap with last) every instance id whose low byte == section; caller MultiParticleMan_OnSectionUnload
+003581b8	MultiParticle_AddInstance	med	appends instance handle to id list +0xc if count +4 < capacity +0
+003581f0	MultiParticle_RemoveInstance	med	finds handle in id list, swaps last into its place, --count
+00358260	MultiParticle_EmitAtInstances	med	for each instance handle resolves it via World and emits at instance pos +0x40 with box +0x20/+0x30 (0x370888)
+00358380	MultiParticle_Save	med	only caller MultiParticleMan_Save; writes counts, 0xd8 params, Emitter_Save, offsets, id list (mirror of MultiParticle_ctor_2)
+003584b8	BoostModifier_BaseSave	med	vt 0x4913b8 slot 6 (Boost family Save); writes +0 (4 bytes); called first by BoostModifier_v06 (Save)
+00358700	RailMan_OnSectionUnload	med	only caller GameModule_OnSectionUnload; re-enables (0x358998) every RailMan slot whose rail handle section byte == section
+00358780	RailMan_DisableRail	med	removes every node of the rail spline in slot from the Nash spatial hash (0x3284b8); callers RailMan_ctor_2, RailMan_SetRailEnabled
+00358998	RailMan_EnableRail	med	re-inserts rail spline nodes of the slot into the spatial hash (SpatialHash_Insert type 2) and frees the slot (-1); RailMan_dtor
+00358b28	RailMan_SetRailEnabled	high	allocs 'RailMan' (0x218) on first use; records/clears rail handle in 128 slots and Disable/EnableRail accordingly
+00358e50	AnimCombo_dtor	high	vt 0x48ec28 slot 1 (dtor): restores vptr, frees combo mats +0x84, AnimObject dtor (0x341cf0)
+00358eb8	AnimCombo_v15	high	vt 0x48ec28 slot 15 (AnimCombo); advances combo anim time, calls AnimObject slot-15 code 0x341d48
+00358f90	AnimCombo_v42	high	vt 0x48ec28 slot 42; ModObj_v42 then zeroes the contact velocity vectors (+0x20/+0x30)
+00358fd0	AnimCombo_v36	high	vt 0x48ec28 slot 36 (ModObj event slot); on event 0x82 snapshots matrices and starts, else forwards to 0x341fe8
+00359030	AnimCombo_SnapshotMatrices	med	copies the IntersectInfo matrices (+0x90) of animated nodes into combo mats +0x84; callers AnimCombo_ctor_2/AnimCombo_v36
+003590c8	AnimCombo_Kill	high	vt 0x48ec28 slot 35 (WorldObj Kill); WorldObj_Kill unless +0x15 latched
+003590f0	AnimCombo_Save	high	vt 0x48ec28 slot 12 (Save); AnimObject save (0x342150) then writes 0x18 bytes
+00359140	AnimCombo_v52	high	vt 0x48ec28 slot 52; AnimObject_v52 then multiplies combo mats into IntersectInfo matrices (IntersectInfo_MulMatrix)
+003592d0	AnimDelta_v15	high	vt 0x48ea70 slot 15 (AnimDelta); consumes delta +0x6c then runs AnimObject slot-15 code 0x341d48
+003593d0	AnimDelta_v36	high	vt 0x48ea70 slot 36 (event slot); event 0x8c adds scaled value to delta +0x6c, else forwards to 0x341fe8
+00359410	AnimDelta_Save	high	vt 0x48ea70 slot 12 (Save); AnimObject save (0x342150) then writes +0x6c
+00359688	SplineModifier_SetSpeed	med	+0x48 = arg * constant; callers SplineModifier_ctor and SplineModifier_v05
+00359eb8	SplineModifier_v05	high	vt 48f250 slot 5 (class SplineModifier via pass1)
+0035a328	MultiSplineModifier_AllocArrays	high	allocation tags 'MultiAnimMats', 'MultiNodes' (n*0x60) and 'NodeInsts' (n*4); callers MultiSplineModifier ctors
+0035a3f0	MultiSplineModifier_AllocNodeInstances	med	only caller MultiSplineModifier_ctor; InstancesMan_Alloc for each of the n node instances into +0x44
+0035a458	MultiSplineModifier_CloneInstances	med	copies the source instance (+0x40) into every node instance (InstancesMan_CopyInstance), adjusting flags
+0035a550	MultiSplineModifier_SetSpeed	med	+0x14 = arg * constant; only caller MultiSplineModifier_ctor (sibling of SplineModifier_SetSpeed)
+0035a5f8	MultiSplineModifier_InsertNodeInstances	med	computes radius (WorldObj_GetBoundBox) and inserts each node instance box into the Nash spatial hash (type 0)
+0035a780	MultiSplineModifier_RemoveNodeInstances	med	only caller MultiSplineModifier_v01 (dtor); removes node instance boxes from the spatial hash, frees empty cells
+0035a918	MultiSplineModifier_v24	high	vt 48f168 slot 24 (class MultiSplineModifier via pass1)
+0035aaf0	MultiSplineModifier_v19	high	vt 48f168 slot 19 (class MultiSplineModifier via pass1)
+0035ab60	MultiSplineModifier_v23	high	vt 48f168 slot 23 (class MultiSplineModifier via pass1)
+0035ac20	MultiSplineModifier_UpdateNodes	med	callers MultiSplineModifier_ctor/_v03; spaces n nodes along the path (EvalPathAtDistance) and orients them (Atan/SinCos)
+0035b418	MultiSplineModifier_v11	high	vt 48f168 slot 11 (class MultiSplineModifier via pass1)
+0035b670	RailModifier_ListPushFront	med	only caller ModObj_SetRailModifier; intrusive push-front, same code as ModifierList_PushFront, for the rail list
+0035b690	RailModifier_ListPushBack	med	only caller ModifierBlock_Load; intrusive push-back for the rail modifier list (copy of ModifierList_PushBack)
+0035b6d0	RailModifier_ListUnlink	med	callers ModifierBlock_dtor, RailModifier_v01; intrusive unlink (copy of ModifierList_Unlink)
+0035c040	RailModifier_UpdateBounds	med	callers RailModifier_ctor/_v03; takes owner WorldObj bounds (slots 44/45) and grows them by 100 into +0x10/+0x20
+0035c0e8	RailModifier_BuildRailNodes	high	allocation tag 'RailNode'; builds local matrix +0x50 from instance/node matrix and the rail node array; RailModifier ctors
+0035c5a0	RailModifier_GetWorldMatrix	med	Instance_GetNodeMatrix(+0x40 instance, +0x34 node) times local matrix +0x50; only caller RailModifier_FindClosestPoint
+0035c698	RailModifier_FindClosestPoint	med	rail query dispatch (0x334680, Rider_FindRail) calls it for space-node type 2; spline handle +0x30, mask vs spline +0x1c
+0035cff0	RollerModifier_SetAngularMomentum	med	stores L at +0x90 and solves omega(+0x30) = inverse(inertia +0x50..+0x70) * L; called on body (+0x30) by RollerModifier_InitBody
+0035d288	RollerModifier_UpdateMomentum	med	momentum +0x80 = velocity +0x20 * mass +0x40, angular momentum +0x90 = inertia * omega; Roller ctors/Update
+0035d340	RollerModifier_Integrate	med	only caller RollerModifier_Update; pos += v*dt, quat += 0.5*omega*q*dt (renormalised), momenta += force/torque*dt
+0035d4a0	RollerModifier_ResolveContact	med	contact velocity (v + omega x r) along normal, computes impulse and applies it (0x35d908); caller 0x35edc8 collision step
+0035d908	RollerModifier_ApplyImpulse	med	velocity +0x20 += J, omega +0x30 += r x J, then recomputes momentum/angular momentum like UpdateMomentum
+0035da00	RollerModifier_SaveBody	med	only caller RollerModifier_Save; writes the 0x50-byte body state (stream slot 1)
+0035da38	RollerModifier_LoadBody	med	only caller RollerModifier_ctor_2; reads the 0x50-byte body state (stream slot 2)
+0035dde8	RollerModifier_InitBody	med	callers RollerModifier_ctor/_v10; mass/inertia from size (clamped 600), initial velocity and spin (SetAngularMomentum)
+0035e248	RollerModifier_UpdateInertia	med	builds rotation matrix from quat +0x40 and world inertia R*I*R^T from body inertia +0x280; Roller ctors/Update
+0035e770	RollerModifier_GetPose	med	returns {pos +0x30 + rotate(quat +0x40, offset +0x2b0), quat}; Roller ctors/Update
+0035ed90	RollerModifier_Translate	med	pos +0x30 += delta and refreshes collision sphere +0xe0 (0x32c630); callers Update and collision step
+0035edc8	RollerModifier_CollideWorld	med	only caller RollerModifier_Update; world collision query (0x336850 on Nash) for sphere +0xe0, pushes out, damps, resolves contact
+0035f218	TexFlipModifier_Init	med	callers TexFlipModifier_ctor/_ctor_2; counts frames from model texture table (+0x18 ->+0x94), sets frame, fills per-texture slots
+0035f378	TexFlipModifier_SetFrame	med	clamps frame to count-1 into +0x14 and applies it (0x35f3a8); used by Init/Update/HandleEvent
+0035f3a8	TexFlipModifier_ApplyFrame	med	writes the frame's texture index into each animated texture slot (+0x48, stride 0x14)
+0035f410	TexFlipModifier_Update	med	called from ModifierBlock_Update for block+8 (TexFlip); advances frame timer, loop/reverse/random modes, SetFrame
+0035f598	TexFlipModifier_HandleEvent	med	from ModifierBlock_HandleEvent: event 300 sets rate, 0x12d sets frame, 0x12e next frame
+0035f688	TexFlipModifier_Save	med	only caller ModifierBlock_Save; writes 0x18 bytes and object ref +0x18 (model) - matches TexFlip layout (+0x14 frame, +0x18 model)
+0035f7d0	UVScrollModifier_Update	med	called from ModifierBlock_Update for block+4 (UVScroll); per-tick scroll/pause timers, modes 2/6 ping-pong offsets
+0035fb30	UVScrollModifier_SetParam	med	only caller ModifierBlock event dispatch (0x352f40) on block+4 (UVScroll); event ids 200-205 set clamped fields +0x38/+0x3c/+8/+0xc/+0x30/+0x34
+0035fc20	UVScrollModifier_GetMatrix	med	ModObj_Render calls it on ModifierBlock+4 (UVScroll, freed by ModifierBlock_FreeUVScroll); builds axis-angle matrix +0x10/+0x20 plus offset +0x30
+0035fd98	UVScrollModifier_Save	med	ModifierBlock_Save calls it for block[1] (UVScroll): stream slot-1 Write of 0x50 bytes of the modifier
+00360da0	ModObj_v03	high	vt 48ee60,48f858,4906f0,490e80,491028 slot 3 (class ModObj via pass1)
+00360ed0	ModObj_GetUVScrollMatrix	med	if ModifierBlock(+0x1c)->uvScroll(+4) -> UVScrollModifier_GetMatrix; same test as in ModObj_Render
+00360f20	ModObj_FreeTransformModifier	med	if ModifierBlock (+0x1c) exists -> ModifierBlock_FreeTransform; same shape as ModObj_v36/v42/v43
+00360f48	ModObj_FreeUVScrollModifier	med	if ModifierBlock (+0x1c) exists -> ModifierBlock_FreeUVScroll
+00360f70	ModObj_FreeTexFlipModifier	med	if ModifierBlock (+0x1c) exists -> ModifierBlock_FreeTexFlip
+00360f98	ModObj_FreeBoostModifier	med	if ModifierBlock (+0x1c) exists -> ModifierBlock_FreeBoost
+003611a0	IntersectInfo_ctor_4	med	stores IntersectInfo base vptr 0x490af0 at +0x84 then IntersectInfo_Clear (default-ctor variant of IntersectInfo_ctor)
+003611d8	IntersectInfo_dtor	high	slot 1 of IntersectInfo base vtable 0x490af0 (slot 2 IntersectInfo_Evaluate); restores vptr at +0x84, delete if flag&1
+00361248	IntersectInfo_ctor_5	med	base part (vt 0x490af0 + Clear), then vt 0x490ad0 (slot 2 IntersectInfo_EvaluateMatrix) + IntersectInfo_ResetMatrix; default ctor of that variant
+00361290	IntersectInfo_dtor_2	med	slot 1 of vtable 0x490ad0 (IntersectInfo_EvaluateMatrix variant); resets base vptr 0x490af0, delete if flag&1
+003612c0	IntersectInfo_ResetMatrix	med	copies identity matrix 0x4ff1a0 into +0x90..+0xc0; callers CrowdMan3d_GroupCreateMeshes, AnimObject_AllocNodeInfo, IntersectInfo_ctor_5
+00361300	IntersectInfo_ctor_6	med	base part (vt 0x490af0 + Clear) then vt 0x490ab0 (slot 2 IntersectInfo_EvaluateChannels); default ctor of the IntersectInfo_ctor_3 variant
+00361340	IntersectInfo_dtor_3	med	slot 1 of vtable 0x490ab0 (IntersectInfo_EvaluateChannels variant); resets base vptr 0x490af0, delete if flag&1
+00361400	AnimTeeter_dtor	high	slot 1 of AnimTeeter vtable 0x4908f8 (ptr at 0x490904); restores vptr, unlinks member +0x30, delete if flag&1
+00361778	Floating_v45	high	vt 48f858 slot 45 (class Floating via pass1)
+003617b8	Floating_v27	high	vt 48f858 slot 27 (class Floating via pass1)
+00361800	Floating_v29	high	vt 48f858 slot 29 (class Floating via pass1)
+00361858	Floating_v51	high	vt 48f858 slot 51 (class Floating via pass1)
+00361a60	MagnetModifier_v18	high	vt 48f420 slot 18 (class MagnetModifier via pass1)
+00361b90	SplineModifier_v18	high	vt 48f250 slot 18 (class SplineModifier via pass1)
+00361c20	MultiSplineModifier_v18	high	vt 48f168 slot 18 (class MultiSplineModifier via pass1)
+00361c78	RollerModifier_v01	med	slot 1 (deleting dtor) of RollerModifier vtable 0x48f080; resets vptr, delete if flag&1 (RollerModifier_dtor is the 0x4913f8 base copy)
+00361cd8	RollerModifier_v10	high	vt 48f080 slot 10 (class RollerModifier via pass1)
+00361de0	AnimDelta_dtor	high	slot 1 of AnimDelta vtable 0x48ea70 (ptr 0x48ea7c, stored by AnimDelta_ctor/_2); stores vptr then chains to AnimObject dtor 0x341cf0
+00361f40	IntcTable_Shutdown	med	only caller PS2GraphicsMan_Shutdown; only content IntcTable_RemoveVifVuHandlers
+00362120	IntcHandler_SaveRegs	med	dumps all 32 regs as 64-bit into a 256-byte buffer; used at entry of both INTC handlers 0x362340/0x3623a8
+00362230	IntcHandler_RestoreRegs	med	pair of IntcHandler_SaveRegs; called at exit of both INTC handlers before SYNC/EI
+00362340	IntcTable_Vif1Handler	high	installed as INTC 5 (VIF1) handler by IntcTable_InstallVifVuHandlers; if VIF1_STAT VIS -> VIF1_FBRST STC, counts 0x505a58
+003623a8	IntcTable_Vu1Handler	high	installed as INTC 7 (VU1) handler by IntcTable_InstallVifVuHandlers; empty body (save/restore regs, EI)
+003627a8	GsPkt_Finish	med	render.md: finisher of the GsPkt_Add* block: wraps as CNT+VIF DIRECT (mode 1), CALL to static 0x505a80 (mode 0) or UNPACK 0x6c0003f2 (mode 2)
+00364240	DeferMan_ComputeSortKey	med	builds ~packed key from RenderState layer/material type (w0 bits 6-9), scissor, textures; callers DeferMan_BuildBuckets, draw slot 95, PS2BezierMan
+00364360	DeferMan_EmitDefaultState	med	only caller PS2GraphicsMan_RenderFrame (DeferMan method); emits material setup + CLAMP/ALPHA/ZBUF/TEST for ctx1+2 from default state 0x501420, GsPkt_Finish
+003645b8	DeferMan_InternMatrixRecord	high	render.md: copies gm+0x5780 view matrices into 0x180 records at +0x69cd0 unless qw14-23 match; sets +0x69cc0 (curMatrixIndex)
+00364cd0	DeferMan_EmitMaterialSetup	high	render.md: only from DeferMan_EmitStateChange/0x364360 with (type w0[6:9], mode, w3); CALLs the VU1 microprogram and UNPACKs its header
+00365f68	VramHeap_NodesToScratchpad	med	RenderFrame: SyncDCache+SprStream_Upload of the 0x1ff0-byte VramHeap node array, stores SPR address in +0x1ff0 (node table ptr)
+00365fa8	VramHeap_NodesFromScratchpad	med	pair of 0x365f68: InvalidDCache+SprStream_Download of 0x1ff0 bytes back, resets +0x1ff0 = this
+00365fe8	VramHeap_PopSpareNode	med	only caller VramHeap split 0x3662d0; pops head of the spare node list +0x23dc (next at node+0x10)
+00366008	VramHeap_RemoveNode	med	only caller VramHeap_FreeBlock; unlinks node from the address-ordered list (+0xc/+0x10) and pushes it on the spare list +0x23dc
+00366238	VramHeap_UnlinkSizeList	med	unlinks node from its size-bucket list (+0x14 prev / +0x18 next, buckets at +0x1ff8/+0x21d4); counterpart of VramHeap_LinkFreeBlock
+003662d0	VramHeap_SplitBlock	med	only caller VramHeap_Alloc(found block, size): unlink, carve remainder into a spare node, mark allocated (bit0), relink both
+00366548	VramHeap_FreeUnlocked	med	only caller TexMan_Shutdown; walks address list from +0x23c0 and VramHeap_FreeBlock every allocated block without lock bit 1
+00366618	VramHeap_FreeAll	med	only caller TexMan_ResetVram; walks address list from +0x23c0, clears lock bit, VramHeap_FreeBlock every allocated block
+003667f8	VramHeap_FindFreeBlock	med	only caller VramHeap_Alloc (first try); log2 size bucket via plzcw, scans free lists at +0x21ec for size>=n, -1 if none
+003668f8	VramHeap_EvictCheapestBlock	med	VramHeap_Alloc fallback 1: in the size bucket picks the unlocked block (owner != cur draws) with least cost from usage table 0x53ab80, frees it
+003669f0	VramHeap_EvictRange	med	VramHeap_Alloc fallback 2: scans address list for the cheapest contiguous run >= size (cost from 0x53ab80 usage table) and frees it
+00366e30	VramHeap_FreeTextureBlocks	med	(heap, texId): frees TexInfo +0x30 image and +0x34 CLUT VramHeap blocks via VramHeap_FreeBlock (TexInfo table at heap+0x23e8)
+00367b60	TexMan_UnlockVram	med	clears lock bit 1 on the texture's image VRAM block (temp heap for fmt 9); callers ReleaseTextureRef slot 60 and rider dtor helper
+00367d20	TexMan_UpdateTextureData	med	only caller PS2GraphicsMan_v49; EA_MemCopy new pixels (+0x1c, size +0x10) and CLUT (+0x20), then evicts the VRAM copy (0x369098)
+00368138	TexMan_EmitPath3Window	med	writes DMA REF tag to static 0x44b200 (FLUSHE, DIRECT TEXFLUSH, FLUSHA, MSKPATH3 off ... MSKPATH3 on); after GIF texture uploads and per-view passes
+00368170	TexMan_EmitImageUpload	high	render.md: TexMan_BindTextures emits the image (all mip levels, BITBLT/TRXPOS/TRXREG/TRXDIR + IMAGE) upload into GifBuff
+003684f0	TexMan_EmitClutUpload	high	render.md: TexMan_BindTextures CLUT upload (BITBLTBUF 0x50..TRXDIR 0x53, 8x2 or 16x16 CLUT from +0x20 to CBP +0x2c)
+00368970	TexMan_EmitTex0	high	render.md: emits TEX0_1/2 (0x06/0x07), TEX1, MIPTBP1/2 (0x34-0x37) for ctx 1/2 into the VIF chain; tracks bound tex +0x1f4c
+00369098	TexMan_EvictTexture	med	frees the texture's VRAM blocks (temp heap +0x4350 for fmt 9, else +0x1f60) and resets bound ids +0x1f4c..+0x1f54 to -1
+00369130	TexMan_SetTex1Filter	med	writes TEX1 fields of TexInfo +0x40: MMAG bit5, MMIN bits6-8, L bits19-20, K bits32-43; caller PS2GraphicsMan helper 0x37d090
+003691b0	TexMan_SetTexFunction	med	writes TEX0 TFX bits 35-36 of TexInfo +0x38 for texId != -1; caller 0x37cbc8 (slot 99 path, passes 3)
+00369610	GraphicsMan_SetColorMask	med	slot 63 of GraphicsMan (0x493950) and PS2GraphicsMan vtables; stores ~mask[4] at +0xed8, then slot 62 (render.md SetColorMask)
+00369690	PS2GraphicsMan_SetTextureNameCache	med	only caller FEModule_RiderPreviewSetupModel; copies n 0xc-byte {texId,name} entries into +0x280, count +0xe80 (read by 0x3696c8)
+003696c8	PS2GraphicsMan_GetTextureByName	med	looks up 4-char name in cache +0x280; else SHPS_FindEntryByName over shape banks +0x27c and loads via slot 46; callers RiderModel_Setup, slot 109
+00369890	PS2GraphicsMan_SetShapeBanks	med	stores shape bank list +0x27c and count +0x278, resets name cache count +0xe80; used before PS2GraphicsMan_GetTextureByName
+003698a0	PS2GraphicsMan_FreeBlendedMatrixHistory	med	EA_MemFree of +0xf48 (table allocated in PS2GraphicsMan_AllocBlendedMatrixHistory), zeroes +0xf48/+0xf4c
+00369a78	PS2GraphicsMan_MatchBlendedMatrix	med	compares two blend descriptors {count, short bones/weights} with tolerances (10,20,20); used by AllocBlendedMatrixHistory and slot 109
+00369cb0	GraphicsMan_DrawModelSimple	med	slot 96 of GraphicsMan/PS2GraphicsMan; forwards to slot 95 (DrawModel) with scale 1.0, model+0x94, model+0x10 (render.md)
+00369cf8	GraphicsMan_DrawIndexedTriangles	med	GraphicsMan base vtable 0x493950 slot 72 (PS2 override = DrawIndexedTriangles); expands indexed tris into slot-71 tri-strip calls
+00369ff8	GraphicsMan_SnapshotTextureTable	med	non-virtual wrapper calling vt slot 121 (PS2GraphicsMan_SnapshotTextureTable); called from every module Enter and SSXApp_Init
+0036a020	GraphicsMan_FreeAllTextures	med	non-virtual wrapper calling vt slot 120 (PS2GraphicsMan_FreeAllTextures); called from module Unload functions
+0036a190	GraphicsMan_DestroyGridMesh	med	slot 77 of GraphicsMan/PS2GraphicsMan (render.md DestroyGridMesh); queues the mesh with DeferredDelete_Push
+0036a1c0	DeferredDelete_Push	med	pushes object onto list 0x53ab40[gp+0x2a98] (4-frame ring); objects deleted later by 0x36a1e8 via slot-1 dtor
+0036a1e8	DeferredDelete_AdvanceFrame	med	advances ring index gp+0x2a98 mod 4 and deletes (slot 1, flag 3) every object queued in that slot of 0x53ab40
+0036a290	DeferredDelete_FlushAll	med	only caller GameModule_Unload; calls DeferredDelete_AdvanceFrame 4 times (whole ring)
+0036a3b0	Morton_Spread8	med	bit-interleave: spreads 8 bits to even positions (0x0f0f/0x3333/0x5555 masks)
+0036a3e0	Morton_Encode8x8	med	Morton_Spread8(x) | Morton_Spread8(y)<<1
+0036a428	PS2GraphicsMan_BuildDepthFogClut	med	only caller 0x36ac00; projects per-view near/far (+0x6c64) through view matrix, fills 256-entry CSM1-swizzled CLUT alpha ramp (linear or exp2)
+0036aa60	PS2GraphicsMan_EmitDepthFogClutUpload	med	only caller 0x36ac00; BITBLTBUF/TRXPOS/TRXREG(16x16)/TRXDIR + REF image 0x40 qw of the CLUT to the given VRAM page, TEXFLUSH
+0036aba0	PS2GraphicsMan_ResetDepthFogParams	med	copies defaults gp+0x123c..0x1248 and colour 0x504720 into per-view record +0x6c64+i*0x20; callers 0x36ac00, slot 115
+0036ac00	PS2GraphicsMan_RenderDepthFog	med	per-view pass after layer 6 (gp+0x1234 enable): builds depth alpha CLUT, uploads to temp 0x400 VRAM block, Z-buffer copy + CLUT blend passes
+0036ae20	PS2GraphicsMan_EmitDepthFogZCopy	med	only caller 0x36ac00; sprite strips texturing the Z buffer (zbp) into the draw frame (drawFbp) with FRAME/ZBUF/TEST set, 32-px columns
+0036b158	PS2GraphicsMan_EmitDepthFogBlend	med	only caller 0x36ac00; textures the frame as 8-bit indexed via the fog CLUT (CBP param) over the viewport with ALPHA blend, 32-px columns
+0036b9d8	PS2GraphicsMan_EmitBlurDownsample	med	only caller 0x36c790; up to 4 passes of offset (+-param12) sprite copies from source to a scaled destination (bilinear multi-tap blur)
+0036cbf8	Emitter_InitDescriptor	med	first step of Emitter_Setup/DynamicEmitter_Setup/cBoardSparkFX_ctor: fills VU1 particle descriptor (count, rate, 1/rate, vel/q, consts 0x4ff120)
+0036ccb8	Emitter_RandomizeDescSeeds	med	9 x Rand_NextMain mantissa -> floats in [1,2) at desc +0x38..+0x48,+0x50..+0x5c; callers cBoardSparkFX_ctor, Emitter_BuildDescriptor
+0036d3d8	Emitter_SetDescTime	med	desc+8 = t * desc+0x4c (rate); callers cBoardSparkFX_ctor, Emitter_BuildDescriptor
+0036d3e8	Emitter_AdvanceDescTime	med	desc+8 += dt * desc+0x4c; callers Emitter_Update and 0x36d428
+0036d400	Vu0_RandNext	med	VRINIT with *p then VRNEXT, stores result back to *p (VU0 random generator step)
+0036d428	Emitter_UpdateDescriptor	med	callers Emitter_Update, cBoardSparkFX_Update: advances time; while time > count*period wraps it, moves origin (+0xb0 += +0xe0) and re-seeds 9 randoms
+0036d500	Emitter_ComputeDescBounds	med	callers Emitter_BuildDescriptor, Emitter_Load; evaluates the particle path polynomials and writes min/max vec4 bounds to out[0..1]
+00370058	Emitter_BuildDescriptor	med	second step of Emitter_Setup/DynamicEmitter_Setup: curve coeffs, random seeds, transforms pos/vel/accel by the emitter matrix into desc +0x70..+0xdc, bounds
+00370888	Emitter_RenderAt	med	sets emitter bounds +0x160..+0x17c and origin +0xc0 from args, then Emitter_Render; caller world particle object 0x358260
+00371688	mEmitter_Render	med	among mEmitter methods; texture via gm+0xf50 table, pushes RenderState, calls slot 84 (DrawMEmitter); callers cBoardSparkFX/cDynamicSprayFX_Render
+00371940	Dma_SendGifNormal	med	GIF DMA ch2 normal mode: VIF1 FIFO qword 0x44b430, GIF_MODE=4, MADR, QWC, CHCR 0x101, optional waits; callers LensFX_v04, Renderer_SetDisplayRegs
+00371f98	Dma_SendGifChain	med	GIF DMA ch2 source-chain mode: optional wait, GIF_MODE=4, TADR (SPR bit), CHCR 0x104 or 0x144 (TTE), optional wait
+003725b0	VfxTube_UpdateColorTable	med	only content of VfxTube_Update; when gp colour 0x10f0..0x10f8 changed, rewrites colour fields of the 0x106-entry vertex table 0x501440
+00372b30	BezierPatchCache_ctor	med	only caller PS2BezierMan_ctor; zeroes the 4x4/6x6/8x8 cache record pointers +0xc/+0x10/+0x14 later set by BezierPatchCache_Init
+003737d0	BezierPatchCache_Free	med	EA_MemFree of every BezierPatchCache_Init allocation (+0xc..+0x14 records, +0x24.. free lists, ...) and zeroes them
+003739d0	BezierPatchCache_Reset	med	only caller PS2BezierMan_v04; memsets the 3 record arrays and refills the 4x4/6x6/8x8 free index lists (same tail as BezierPatchCache_Init)
+00374180	BezierPatchCache_TessPositions	med	only caller BezierPatchCache_TessellatePatch; evaluates the bicubic patch (control matrix patch+0x40..+0x130) on the LOD basis table +0x190, writes vec3 grid
+00374298	BezierPatchCache_TessUVs	med	only caller BezierPatchCache_TessellatePatch; bilinear interpolation of 4 corner UVs (patch +0x20..+0x38) over the n x n grid
+00374440	BezierPatchCache_TessUV2	med	only caller BezierPatchCache_TessellatePatch; linear interpolation of second UV set (patch +0x10 start, +0x18 delta) over the n x n grid
+003747a0	BezierPatchCache_TessellatePatch	med	only caller PS2BezierMan_v18; pops a free record for LOD 0/1/2 (4x4/6x6/8x8 lists), tessellates positions/UVs into it, marks patch+0x1a6 slot and frame bit
+00374a88	BezierPatchCache_MarkUsed	med	only caller PS2BezierMan_v18; for n patch refs (stride 0x10) sets frame bit + 0xc on their cache record (+0x18 table)
+00374ae0	BezierPatchCache_MarkUsed2	med	same as BezierPatchCache_MarkUsed with stride 0x14 refs; only caller PS2BezierMan_v18
+00374b38	BezierPatchCache_ReleaseUnused	med	only caller PS2BezierMan_v18; per LOD ages record flags (clear 4, then 8) and returns records with no flags to the free lists, clears patch slot
+00374ce0	BoaderShadow_SetParams	med	only caller Rider_LoadStep on rider+0xaa8 (BoaderShadow); stores 6 params at +0x17c..+0x190
+00374d00	BoaderShadow_ComputeProjection	med	only caller Rider_DrawShadow on rider+0xaa8; light-space basis from 2 dirs, bounds of 6 bones +-70, ortho projection matrices
+00375918	BoaderShadow_dtor	high	only caller Rider_dtor; releases texture +0x170 (set -1 by BoaderShadow_ctor) via TexMan_UnlockVram + slot 50 FreeTexture, delete if flag&1
+00375990	BoaderShadow_AllocTexture	med	only caller Rider_LoadStep; if +0x170 < 0, slot 52 (LockTexture) with w/h +0x174/+0x178 (0x80 from ctor), stores id
+00377278	PS2GraphicsMan_v27	high	vt 493260 slot 27 (class PS2GraphicsMan via pass1)
+00377cf0	PS2GraphicsMan_v78	high	vt 493260 slot 78 (class PS2GraphicsMan via pass1)
+003781a0	PS2GraphicsMan_v79	high	vt 493260 slot 79 (class PS2GraphicsMan via pass1)
+00378808	PS2GraphicsMan_v80	high	vt 493260 slot 80 (class PS2GraphicsMan via pass1)
+00379028	PS2GraphicsMan_v81	high	vt 493260 slot 81 (class PS2GraphicsMan via pass1)
+00379860	PS2GraphicsMan_v71	high	vt 493260 slot 71 (class PS2GraphicsMan via pass1)
+00379bd0	PS2GraphicsMan_v72	high	vt 493260 slot 72 (class PS2GraphicsMan via pass1)
+0037a260	PS2GraphicsMan_BeginTriStrip	med	render.md: slot-71 VU1 header (UNPACK, GIF tag, MSCAL 0x12b8/0x12b0) without vertex copy, returns write ptr in gm+0x5a2c; caller cSpeedBoostStreamerFX_Render
+0037a430	PS2GraphicsMan_EndTriStrip	med	pair of PS2GraphicsMan_BeginTriStrip (same caller): EndBlockAligned, appends DeferMan draw record (count<0xa28), clears +0x5a28/+0x5a2c
+0037a610	PS2GraphicsMan_v99	high	vt 493260 slot 99 (class PS2GraphicsMan via pass1)
+0037b548	PS2GraphicsMan_v100	high	vt 493260 slot 100 (class PS2GraphicsMan via pass1)
+0037bd38	Gs_IsValidFramePsm	med	only caller Renderer_SetDisplayMode, which returns 0 when it fails; jump table over draw PSM (<0x3b), 32-bit vs 16-bit cases checking the Z PSM
+0037c198	PS2GraphicsMan_SetDitherMatrix	high	only caller Renderer_Init; packs 16 3-bit entries into gm+0x59e0 = DIMX register (render.md dimx)
+0037c570	PS2GraphicsMan_SetBrightnessRGB	med	only caller Renderer_Init; clamps 3 floats to 0..1, *128 into gm+0x59ec/+0x59f0/+0x59f4 (render.md brightnessRGBA blit colour)
+0037c720	PS2GraphicsMan_SetBrightnessAlpha	med	(1-clamp(x))*128 into gm+0x59f8 (4th entry of brightnessRGBA); callers Renderer_Init, cSpeedBoostStreamerFX_dtor
+0037c8c0	PS2GraphicsMan_v46	high	vt 493260 slot 46 (class PS2GraphicsMan via pass1)
+0037cbc8	PS2GraphicsMan_SetTexFunction	med	only caller PS2GraphicsMan_v99 (skinned model); forwards to TexMan_SetTexFunction(gm+0x18f4 TexMan, texId, tfx)
+0037cbe8	PS2GraphicsMan_v59	high	vt 493260 slot 59 (class PS2GraphicsMan via pass1)
+0037cc30	PS2GraphicsMan_v60	high	vt 493260 slot 60 (class PS2GraphicsMan via pass1)
+0037cc98	PS2GraphicsMan_v61	high	vt 493260 slot 61 (class PS2GraphicsMan via pass1)
+0037d090	PS2GraphicsMan_SetTextureFilter	med	forwards to TexMan_SetTex1Filter(gm+0x18f4 TexMan, ...); callers PS2GraphicsMan_v46 and 0x254410
+0037d0b0	PS2GraphicsMan_v48	high	vt 493260 slot 48 (class PS2GraphicsMan via pass1)
+0037d318	PS2GraphicsMan_v49	high	vt 493260 slot 49 (class PS2GraphicsMan via pass1)
+0037d348	PS2GraphicsMan_v53	high	vt 493260 slot 53 (class PS2GraphicsMan via pass1)
+0037d800	PS2GraphicsMan_v55	high	vt 493260 slot 55 (class PS2GraphicsMan via pass1)
+0037dbe8	PS2GraphicsMan_v91	high	vt 493260 slot 91 (class PS2GraphicsMan via pass1)
+0037dd20	PS2GraphicsMan_v92	high	vt 493260 slot 92 (class PS2GraphicsMan via pass1)
+0037dee0	PS2GraphicsMan_ProjectPoint	med	only caller slot 92 (ProjectToScreen); point * worldClip (gm+0x58a0), divide by w, scale/offset gm+0x58e0/+0x58f0
+0037df40	PS2GraphicsMan_TransformToClip	med	no callers; point * worldClip matrix (gm+0x58a0..+0x58d0) without divide, sibling of PS2GraphicsMan_ProjectPoint
+0037e098	PS2GraphicsMan_EmitModelLighting	med	only caller PS2GraphicsMan_EmitModelHeader (flag bit 0); UNPACK 3 qw at 9 (light dirs) + 10 qw at 0xf (lighting block)
+0037e120	PS2GraphicsMan_EmitModelHeader	high	render.md: STMASK/STCYCL/UNPACK 5 at 0 (model matrix + flags) for slot 95 and cPS2GridMesh_Draw, optional matrix 2 and lighting
+0037e238	PS2GraphicsMan_v95	high	vt 493260 slot 95 (class PS2GraphicsMan via pass1)
+00380518	PS2GraphicsMan_v82	high	vt 493260 slot 82 (class PS2GraphicsMan via pass1)
+003807a0	PS2GraphicsMan_v83	high	vt 493260 slot 83 (class PS2GraphicsMan via pass1)
+00380ce0	PS2GraphicsMan_v84	high	vt 493260 slot 84 (class PS2GraphicsMan via pass1)
+00381310	PS2GraphicsMan_v85	high	vt 493260 slot 85 (class PS2GraphicsMan via pass1)
+003816f0	PS2GraphicsMan_v86	high	vt 493260 slot 86 (class PS2GraphicsMan via pass1)
+00381ad0	PS2GraphicsMan_v73	high	vt 493260 slot 73 (class PS2GraphicsMan via pass1)
+00381f10	PS2GraphicsMan_v75	high	vt 493260 slot 75 (class PS2GraphicsMan via pass1)
+00382170	PS2GraphicsMan_v87	high	vt 493260 slot 87 (class PS2GraphicsMan via pass1)
+00383808	Gs_UploadImage	med	builds BITBLTBUF/TRXPOS/TRXREG/TRXDIR + IMAGE chunks (<0x7fff0 bytes) in scratchpad 0x70000000 per PSM bpp, sends with Dma_SendGifChain
+00383a10	PS2GraphicsMan_ClipLineSegment	med	only caller slot 73 (DrawLineStrip); clips a segment against near/far gm+0x6b78/+0x6b7c, interpolates ST/RGBA, recomputes outcodes vs guard band +0x6b70/+0x6b80
+00384d98	LineStrip_Init	med	only caller slot 73; builder {cursor ptr=&gm+0x5a00, uncached cursor |0x30000000, 0, 0} (render.md LineStripBuilder_Init)
+00384dc0	LineStrip_Close	high	writes REGLIST GIF tag with PRIM 0x4a (line strip) and NLOOP=count tag REGS 0x521 for the open strip
+00384e50	LineStrip_Finish	med	only caller slot 73; closes strip, fixes CNT/DIRECT sizes, appends DeferMan draw record (count<0xa28), advances gm cursor; delete if flag&1
+00384fd0	LineStrip_AddVertex	high	writes RGBAQ, ST, XYZ2 (3 dwords, 0x18 bytes) at the builder cursor and increments the vertex count +0x10
+003850a8	LineStrip_Begin	med	only caller slot 73; reserves CNT/DIRECT qword on first use, closes previous strip, reserves 3-qword GIF header, adds first vertex
+003852e8	cPS2GridMesh_v03	high	vt 493208 slot 3 (class cPS2GridMesh via pass1)
+00385410	cPS2GridMesh_v04	high	vt 493208 slot 4 (class cPS2GridMesh via pass1)
+00385530	cPS2GridMesh_v05	high	vt 493208 slot 5 (class cPS2GridMesh via pass1)
+003856b8	cPS2GridMesh_v06	high	vt 493208 slot 6 (class cPS2GridMesh via pass1)
+00385a38	cPS2GridMesh_PackPosition	med	callers cPS2GridMesh_v03/v05/v06; vertex i = short3(pos * scale +0x198)
+00385aa0	cPS2GridMesh_PackColor	med	callers cPS2GridMesh_v05/v06; clamps RGBA floats and packs RGBA5551 short at index i
+00385ba0	cPS2GridMesh_PackUV	med	callers cPS2GridMesh_v04/v06; vertex i = short2(uv * 4096)
+00385be0	cPS2GridMesh_v07	high	vt 493208 slot 7 (class cPS2GridMesh via pass1)
+00386640	PS2GraphicsMan_v115	high	vt 493260 slot 115 (class PS2GraphicsMan via pass1)
+003866f0	PS2GraphicsMan_v109	high	vt 493260 slot 109 (class PS2GraphicsMan via pass1)
+00386bd0	PS2GraphicsMan_v111	high	vt 493260 slot 111 (class PS2GraphicsMan via pass1)
+00386cf0	PS2GraphicsMan_v118	high	vt 493260 slot 118 (class PS2GraphicsMan via pass1)
+00386e78	PS2GraphicsMan_v89	high	vt 493260 slot 89 (class PS2GraphicsMan via pass1)
+003883b8	PS2GraphicsMan_v90	high	vt 493260 slot 90 (class PS2GraphicsMan via pass1)
+003885e0	PS2GraphicsMan_EmitBoardWakeStrips	med	render.md BoardWake_EmitStrips: slot 90 packet builder, batches of <=36 verts, VU1 type 3 header, MSCAL 0x3a00/0x3a08
+003889f0	PS2GraphicsMan_v58	high	vt 493260 slot 58 (class PS2GraphicsMan via pass1)
+00389260	Irradiance_Clear	med	zeroes 10 qwords (9 SH coeffs x RGBA + 1); first step of Rider_BuildLightSet, FEModule_RiderPreviewRender, 0x389c38 (Irradiance_Load/Free module)
+00389308	Irradiance_AddDirectionalScaled	med	adds a directional light (x,y,z) with colour param6[3]*scale into the 9 order-2 spherical-harmonic coefficients (3z^2-1, x^2-y^2, xy, xz, yz terms)
+00389520	Irradiance_AddDirectional	med	Irradiance_AddDirectionalScaled with scale 1.0; callers Rider_BuildLightSet, point-light helper 0x38a6a8
+00389558	Vec3_AddTo	med	a[0..2] += b[0..2]; only caller Rider_BuildLightSet
+00389590	Irradiance_AddScaled	med	out[i] += in[i] * s * colour (components y,z,w,x) for the 10 coefficient qwords; callers FEModule_RiderPreviewRender, 0x389c38
+00389730	Irradiance_Add	med	out = a + b over 10 coefficient qwords (VU0 vadd); only caller WorldPainter_UpdateView (blends GetIrradiance0/1/2)
+003897a0	Irradiance_Scale	med	out = in * s over 10 coefficient qwords; only caller WorldPainter_UpdateView
+00389810	Irradiance_ScaleInPlace	med	v *= s over 10 coefficient qwords; only caller WorldPainter_UpdateView
+00389840	Irradiance_Rotate	med	only caller 0x389cb8; rotates the order-2 SH coefficients of channels [a..b] by a 3x3 matrix (quadratic forms of the matrix entries)
+00389c38	Irradiance_BuildSH	med	clears 10-vec4 SH set (0x389260), adds Irradiance table 0x5047f8 entry gp+0x12d4 tinted by 0x504810, optional extra light 0x389cb8
+0038a530	Irradiance_SpotLightVector	med	light rec +0x38 pos,+0x1c range,+0x2c dir: normalized dir to light, dist, cone dot; type 1 branch of 0x38a6a8
+0038a618	Irradiance_PointLightVector	med	light rec +0x38 pos,+0x1c range: normalized dir + dist, 0 if out of range; type 2 branch of 0x38a6a8
+0038a6a8	Irradiance_AddDynamicLight	med	per light type (1 spot/2 point) attenuates colour +0x20..+0x28 and adds to SH via 0x389520; used by WorldLightMan point lights and Rider_BuildLightSet
+0038abf8	Irradiance_GetEntry	high	returns array(+8) + clamp(i, count +4) * 0xa0; layout from Irradiance_Load (count, names +0xc, 0xa0 SH array +8)
+0038ac20	Irradiance_GetEntryByName	high	Irradiance_GetEntry(tbl, Irradiance_FindIndex(tbl,name)); FEModule_RiderPreviewRender
+0038ac50	Irradiance_FindIndex	high	strcmp name against Irradiance names array (+0xc, 8-byte names), returns index or 0
+0038b158	PS2BezierMan_v04	high	vt 493760 slot 4 (class PS2BezierMan via pass1)
+0038b338	PS2BezierMan_v21	high	vt 493760 slot 21 (class PS2BezierMan via pass1)
+0038b370	PS2BezierMan_v18	high	vt 493760 slot 18 (class PS2BezierMan via pass1)
+0038c788	PS2BezierMan_BuildPatchPacket	med	builds per-LOD (0..2, grid (2l+4)^2) VIF packet at this+0x44c[lod]+idx*0x100 that the emitters CALL; PS2BezierMan_v18
+0038ca70	PS2BezierMan_EmitPatchType1	med	render.md: CALL patch packet + MSCAL from 0x44b9d0 LOD tables; called per patch from PS2BezierMan_v18 (render)
+0038ce20	PS2BezierMan_EmitPatchType2	med	render.md: V4-8 colour + REF control points + CALL + MSCAL from 0x504960; PS2BezierMan_v18
+0038d690	PS2BezierMan_DrawPatchFX	med	render.md: UNPACK 22 qw, MSCAL 0x1460, only for patch flag 0x800000
+0038d968	PS2BezierMan_RenderPatchFX	med	render.md: type-4 pass over patch lists +0x4a60/+0x4d84 after vt18, calls 0x38d690
+0038dc70	LightMan_v05	high	vt 493650 slot 5 (class LightMan via slots 2/2)
+0038dee8	LightMan_v09	high	vt 493650 slot 9 (class LightMan via slots 2/2)
+0038df38	LightMan_v10	high	vt 493650 slot 10 (class LightMan via slots 2/2)
+0038df98	LightMan_v11	high	vt 493650 slot 11 (class LightMan via slots 2/2)
+0038e008	LightMan_v12	high	vt 493650 slot 12 (class LightMan via slots 2/2)
+0038e0a8	Render2D_TransformPoint	med	out = (x,y) * 3x3 affine matrix (cols 0/1, translation [6],[7]), z=0 w=1; used by the Render2D quad helpers
+0038e118	Render2D_DrawQuad	med	this = 1-byte "2DRender" obj (gp-0x844, app.md); sets XY of 4 strip verts (0x30 stride) from rect {x,y,w,h}, gfx slot 71 DrawTriStrip
+0038e200	Render2D_DrawQuadRot90	med	like Render2D_DrawQuad with vertex positions rotated a quarter turn (caller flag 4); "2DRender" this, slot 71
+0038e2e8	Render2D_DrawQuadXform	med	Render2D_DrawQuad + each vertex through Render2D_TransformPoint(matrix param_4)
+0038e468	Render2D_DrawQuadRot90Xform	med	rotated-quad variant + Render2D_TransformPoint per vertex
+0038e5e8	Render2D_DrawQuadUV	med	sets XY from rect and ST from uv rect param_4, 4-vert strip via slot 71; this = "2DRender"
+0038e738	Render2D_DrawQuadUVRot90	med	UV rect variant with UVs rotated a quarter turn; slot 71
+0038e880	Render2D_DrawQuadUVXform	med	UV-rect quad + Render2D_TransformPoint per vertex; slot 71
+0038ea60	Render2D_DrawQuadUVRot90Xform	med	rotated-UV quad + Render2D_TransformPoint per vertex; slot 71
+0038ec40	Render2D_DrawFilledRect	med	callers AppModule_RenderFade / DebugMenu pass "2DRender" obj; 4 verts from two corners, colour float4 -> RGBA (a*128), slot 71
+0038ed90	Render2D_DrawLine	med	2 verts p0/p1 with float4 colour -> RGBA, PS2GraphicsMan slot 73 DrawLineStrip(2)
+0038f820	TexMan_SwizzleT4Block	med	repacks 4bpp nibbles of a 0x40-byte column group through index table 0x44b9e0 (GS PSMT4 block layout); used by 0x38f9c0
+0038f930	TexMan_SwizzleT8Block	med	byte permutation of 4 columns through table 0x44bde0 (GS PSMT8 block layout); used by 0x38fc48
+00390198	TexMan_SwizzleT8	med	only caller TexMan_CopyToTempTex; pow2 w/h <=1024, 128x64 pages through TexMan_SwizzleT8Page with 8 KB scratch
+00390458	PS2GraphicsMan_ResetColorFilter	med	writes default 6 floats (rgb scale 1, offset 0 from 0x4a45e4) to gm+0x6ca4+view*0x18; PS2GraphicsMan_v115 and 0x3904a0
+003904a0	PS2GraphicsMan_RenderColorFilter	med	from RenderFrame: skips when gm+0x6ca4[view] is identity (1,1,1,0,0,0), else SprStream block with 0x3905e8 and kick
+003905e8	PS2GraphicsMan_EmitColorFilterPacket	med	GS packet: framebuffer strips re-drawn as texture modulated by rgb scale*127.5, then additive pass with offset rgb (ALPHA 0x42/0x46)
+00390ec8	VfxScreenTint_TriggerFlash	med	called from VfxScreenTint_Update on random chance (lightning) and 0x305660; resets flash stage gp+0x15a8 and sets delay gp+0x15c4
+00390ef8	VfxScreenTint_PollFlashSound	med	SSXAudioSystem_Update polls: returns 1 once when the gp+0x15c4 delay (counted down in VfxScreenTint_Update) reaches 0
+00391418	Vu0_LoadRegsAndCall	med	lqc2 16 qwords into VU0 VF regs then vcallmsr 0; caller 0x327c00 sequence with Vu0_ReadVI1/0x391480
+00391480	Vu0_CopyOutputMem	med	copies 40 qw from VU0 data memory 0x11004200 (VU0 mem +0x200) to the output buffer; caller 0x327c00
+003914f8	Vu0_ReadVI1	med	cfc2 vi1 return; caller 0x327c00 after Vu0_LoadRegsAndCall
+00392df0	Renderer_BuildSineTable	med	fills 640 floats with Math_Sin(i*k); only caller the TU static init 0x393048 (table 0x504fb8)
+00393048	Renderer_StaticInitDestroy	med	gcc (init,0xffff) static-init pattern: render globals 0x501xxx, Bezier MSCAL tables 0x504840.., Irradiance 0x5047f8, SprStream 0x504f80
+00394ed0	DeferMan_InternState	high	render.md: stateHash +0x674a0 on RenderState words 0-3, appends 0x18-byte entry at +0x51484 (count +0x51480), move-to-front
+00395000	DeferMan_FindBucket	high	render.md: bucketHash +0x678a0 lookup on (state, textures, matrix), move-to-front, NULL if absent
+003950c0	PS2GraphicsMan_CopyViewState	med	only caller PS2GraphicsMan_PushView; copies the 0x230-byte ViewState (render.md layout) incl. matrices via lqc2/sqc2
+003956b0	PS2GraphicsMan_EnsureViewMatrices	med	calls PS2GraphicsMan_UpdateViewMatrices when gm+0x6b90 (matricesValid) == 0; GetWorldToClipMatrix
+00395750	PS2GraphicsMan_v33	high	vt 493260 slot 33 (class PS2GraphicsMan via pass1)
+003970f8	Renderer_GlobalCtors	med	ctor-list entry 0x43cec4; only content Renderer_StaticInitDestroy(1,0xffff)
+00397118	Renderer_GlobalDtors	med	dtor-list entry 0x43cf08; only content Renderer_StaticInitDestroy(0,0xffff)
+00397278	UIAnim_GetFrameCountSafe	med	only caller UIAnim_Apply; data(+0) ? *(u16*)(data+2) : 0
+00397298	UIAnim_SetData	med	only caller UIAnim_ctor; stores anim data pointer at +0
+00397440	UIAnim_IsDone	med	returns data(+0)->frameCount(+2) <= cur frame (+0xa); via UIObject_IsAnimDone
+00397458	UIAnim_GetFrameCount	med	returns *(u16*)(data+2); used by UIObject_SetAnimProgress
+00397468	UIAnim_SetPlayMode	med	only caller UIObject_SetAnim; mode&7: 0 stores +0xc, 2 = reverse (frame = count-1, +0xe=1), else frame 0
+003977b8	UIListNode_v03	med	slot 3 of UIListNode-family vtables (UIObject 0x494bd8, UIState 0x4946c8, UIScreen): calls arg's slot 2 with this (visitor dispatch)
+00397a68	UIList_v03	high	vt 494c98 slot 3 (class UIList via slots 2/2)
+00398438	UIFontSet_FreeFonts	med	SSXApp_Shutdown; for each of count(+0x34) 0xc entries Font_dtor(+8), clears entries (layout from UIFontSet_FindFont/LoadFonts)
+003984b0	UIFontSet_AddFont	med	SSXApp_BootLoad; entry[idx] = {id, data}, count(+0x34)++ max 4; same layout as UIFontSet_FindFont
+003984e8	UIFontSet_ParseFontPack	med	stores pack ptr at +0, walks {id,size,data} records calling UIFontSet_AddFont
+003987f8	cUIGroup_v18	high	vt 494928,4949e8 slot 18 (class cUIGroup via slots 5/5)
+0039ab00	UIMenu_SetNavButtons	med	UIMenu_Load and state OnWidgetCreated: sets nav button ids +0x91..+0x94 to 0..3 or 4..7 (vertical/horizontal)
+0039ab50	UIMenu_FindNextSelectable	med	UIMenu_HandleInput; from cur +0x95 forward over count +0x96, skips disabled items (flag 0x20), wraps if flag 0x80
+0039ac48	UIMenu_FindPrevSelectable	med	UIMenu_HandleInput; backward twin of UIMenu_FindNextSelectable
+0039ad38	UIMenu_SetCurrentItem	med	unfocus old item +0xa0 (slot 7), notify state OnWidgetAction 2/1, focus new, start its focus thread
+0039ae98	UIMenu_SelectIndex	med	UIMenu_HandleInput: scroll window (+0x98 top, +0x97 visible), UIMenu_SetCurrentItem, state notify codes 2..5
+0039b7b0	UIMenu_FindFirstSelectable	med	UIMenu_SetFocus; first enabled item at or after index (0xff = 0), else 0xff
+0039bad0	UIPair_v04	high	vt 494868 slot 4 (class UIPair via slots 8/8)
+0039bd38	UIPair_Accept	high	vt 494868 slot 2; family slot 2 = Accept (9 named siblings)
+0039bd68	UIPair_v03	high	vt 494868 slot 3 (class UIPair via slots 8/8)
+0039be70	UIPair_FreeChildren	med	only caller UIPair_dtor; deletes child widgets +0x78/+0x7c (slot 1 with 3)
+0039c428	cUIProgress_SetValue	med	cFEStateCharSelect_UpdateAttributeBars; value +0x7c / max +0x80 scales the bar widget +0x78 width or height (flag bit 0)
+0039c728	UIScreen_FindKeyframe	med	only caller UIScreen_RunThreadFrame; searches screen script blob +0x34 for record with frame == arg
+0039c978	UIScreen_RunThreadFrame	med	UIScreen_Update: advances thread frame +0xc by step +0x12 to end +0x10, executes keyframe commands 0x10..0x43
+0039cbc8	UIScreen_CmdStopThread	med	cmd 0x10 of UIScreen_RunThreadFrame: clears thread running bit 0x1000000
+0039cbe0	UIScreen_CmdGotoLabel	med	cmd 0x11: looks up label id in +0x34 table, sets thread frame
+0039cc38	UIScreen_CmdStartThread	med	cmd 0x12: label lookup then UIScreen_StartThread
+0039cca8	UIScreen_CmdPlayAnim	med	cmd 0x20: UIScreen_FindObject + UIAnimSet_CreateAnim + UIObject_SetAnim(0x39fcc8)
+0039cda0	UIScreen_CmdSendEvent	med	cmd 0x30: state slot 16 OnAnimEvent(screen, id); if unhandled forwards to owner slot 3
+0039ce20	UIScreen_CmdEndTransitionIn	med	cmd 0x42: sets owning UIState phase (+0x1c bits 8-13) to 3 (TransitionIn done, see UIStateMgr_ProcessStates)
+0039ce48	UIScreen_CmdBeginTransitionOut	med	cmd 0x43: cUIGroup_SetFocus(0) and UIState phase 6 (TransitionOut)
+0039ce98	UIScreen_CmdEndTransitionOut	med	cmd 0x41: stops thread and sets UIState phase 7 (TransitionOut done -> Shutdown)
+0039da20	cUIScroll_SetRange	med	between cUIScroll methods; UIMenu_Render/cUITextScroll_Render: pos +0xc0,total +0xc4,visible +0xc8, start up/down threads, size thumb
+0039de68	cUIScroll_SetPartsVisible	med	SetVisible (slot 9) on scroll parts +0x74..+0x84; called by cUIScroll_SetRange
+0039e688	UIState_v13	med	UIState vt 0x4946c8 slot 13 default; calls widget slot 7 SetFocus(1)
+0039fcc8	UIObject_SetAnim	med	clears previous anim +0xc if different, stores anim/mode +0x10, UIAnim_SetPlayMode; used by UIScreen_CmdPlayAnim and FE states
+0039fd38	UIObject_ClearAnim	med	deletes current anim +0xc (slot 1, 3) and zeroes it
+0039feb8	UIObject_ApplyAlignment	med	UIIcon/UIListBox/UIText/cUITextScroll Render: shifts pos by size or size/2 per flags +0x14 bits 13-18
+0039ff78	UIObject_GetEventThread	med	returns thread id table +0x3c[event] or 0xffff; used by widget HandleInput/SetFocus
+0039ffa0	UIObject_StartEventThread	med	thread id from +0x3c[event]; UIScreen_StartThread on screen +0x5c; returns 1 if started
+003a0290	UIObject_GetWorldPosition	med	sums local position +0x44..+0x4c up the parent chain (+0x40)
+003a0318	UIObject_GetUserData	med	returns +0x6c[idx]; widget HandleInput callers
+003a0330	UIObject_SetUserData	med	sets +0x6c[idx]; cFEStateTitle_OnWidgetCreated
+003a0b90	UIText_CountLines	med	only caller UIText_SetWideStringInternal; counts '\r' and the gp+0x16b8 escape pair in +0xb4 string
+003a0c70	UIText_SetAsciiString	med	only caller UIText_SetString; slots 5/24, strlen<0x200, UI_AsciiToWide, UIText_SetWideStringInternal
+003a0d00	UIText_SetWrappedWideString	med	tag 'UITEXTTEMP' copy, inserts '\r' at last space when width (Font_GetCharWidthW*scale +0x50) exceeds +0x60
+003a1030	UIText_GetTextSize	med	refreshes (slot 16) then Font_MeasureTextW(+0x50 scale, +0x54, font, +0xb4) into out w,h
+003a1310	cUITextScroll_SetNavButtons	med	called by cUITextScroll_ctor and chat/message states; nav ids +0x88..+0x8b = 0..3 or 4..7 (as UIMenu_SetNavButtons)
+003a1958	cUITextScroll_GrowLines	high	tag 'UITEXTSCBUF': grows line ptr array +0xbc by one (count +0xc8), returns new index
+003a1bf8	cUITextScroll_AddLine	high	tag 'UITXTSCRSTR': copies wide string and stores it in a new slot from cUITextScroll_GrowLines
+003a1cf0	cUITextScroll_ReplaceWideString	med	only caller cUITextScroll_RefreshText; ClearLines + SetWideString
+003a1f90	cUITextScroll_RemoveLine	med	tag 'UITEXTSCBUF': rebuilds line array +0xbc without entry idx, count +0xc8--
+003a2068	cUITextScroll_GetLine	med	cFEOptionsCredits_Render; bounds-checked +0xbc[idx] against count +0xc8
+003a3f48	UIEngine_StaticInitDestroy	med	gcc (init,0xffff) pattern: UI TU globals 0x5083d0..; sets global gp+0x2968 = UI sound base vt 0x46dd60 (0x39e288)
+003a4900	UIObject_ctor_2	med	unreferenced inline ctor: list node self-links +0/+4, vptr 0x494bd8 (UIObject) at +8, flag bitfield +0x14 init
+003a4cd0	UIInputVisitor_dtor	med	slot 1 of vt 0x494bb8 whose slot 2 is UIInputVisitor_Visit; resets base vptr 0x494ce8, delete if flag&1
+003a4d40	UIFocusVisitor_dtor	med	slot 1 of vt 0x494b98 whose slot 2 is UIFocusVisitor_Visit; base vptr 0x494ce8, delete if flag&1
+003a4df0	UIIcon_ctor_2	med	UIObject_ctor(p,0,0) + vptr 0x494aa8 (UIIcon)
+003a4e38	UIIcon_ctor	med	UIObject_ctor + vptr 0x494aa8 (UIIcon) at +8, +0x78=-1, +0x7c=0
+003a4fe0	cUIGroup_ctor_2	med	UIObject_ctor(p,0,0) + vptr 0x4949e8 (cUIGroup) + UIList_ctor(+0x74)
+003a5028	cUIGroup_ctor	med	UIObject_ctor + vptr 0x4949e8 (cUIGroup) + UIList_ctor(+0x74) child list
+003a5100	cUIGroup_FirstChild	med	UIList_First(this+0x74) (cUIGroup child list from ctor)
+003a5120	cUIGroup_LastChild	med	UIList_Last(this+0x74)
+003a5140	cUIGroup_GetChildAt	med	UIList_GetAt(this+0x74, i)
+003a5160	cUIGroup_PushFrontChild	med	UIList_PushFront(this+0x74, node)
+003a5180	cUIGroup_PushBackChild	med	UIList_PushBack(this+0x74, node)
+003a51a0	cUIGroup_Accept	high	vt 494928,4949e8 slot 2; family slot 2 = Accept (9 named siblings)
+003a51d0	cUIGroup_v03	high	vt 494928,4949e8 slot 3 (class cUIGroup via slots 5/5)
+003a5230	UIMenu_ctor	med	cUIGroup base then vptr 0x494928 (UIMenu), clears menu fields +0x95..+0xa0, +0xa4=0xff
+003a5420	UIPair_ctor_2	med	UIObject_ctor(p,0,0) + vptr 0x494868 (UIPair)
+003a5468	UIPair_ctor	med	UIObject_ctor + vptr 0x494868 (UIPair), children +0x78/+0x7c = 0, flag 2
+003a5530	UIPair_SetFirst	med	deletes old child +0x78 (slot 1, 3) and stores new; pairs with UIPair_FreeChildren
+003a5588	UIPair_SetSecond	med	deletes old child +0x7c (slot 1, 3) and stores new
+003a55d8	UIListBox_ctor_2	med	UIObject_ctor(p,0,0) + vptr 0x494798 (UIListBox), 32 item records of 0x14 at +0x98 (as UIListBox_ctor)
+003a57b8	UIState_ctor_3	med	inline ctor: node self-links, vptr 0x4946c8 (UIState) at +8, +0x1c bitfield 0x218, UIList_ctor(+0x24)
+003a5b98	UIScreen_ctor	med	vptr 0x494670 (UIScreen), UIList(+0x18), embedded cUIGroup root at +0x40 (vptr 0x4949e8, list +0xb4)
+003a5c08	UIScreen_ctor_2	med	as UIScreen_ctor plus zeroed +0xc/+0x10/+0x34..+0x3c and owning state +0xd0 = arg
+003a5cf0	UIScreen_AddRootChild	med	UIList_PushBack on +0xb4 = child list of the embedded root cUIGroup (+0x40 + 0x74)
+003a5d60	UIText_ctor_2	med	UIObject_ctor(p,0,0) + vptr 0x494588 (UIText) + text flags bitfield +0x74
+003a5f60	cUIScroll_ctor_2	med	UIObject_ctor(p,0,0) + vptr 0x4944c8 (cUIScroll)
+003a5fa0	cUIScroll_ctor	med	UIObject_ctor + vptr 0x4944c8 (cUIScroll), parts +0x74..+0x88, range +0xc0..+0xc8, names +0x8c/+0xa5 cleared
+003a6038	cUIScroll_SetUpThreadName	med	strcpy (<=24 chars) into +0x8c, the thread name cUIScroll_SetRange hashes for the first threshold
+003a6088	cUIScroll_SetDownThreadName	med	strcpy (<=24 chars) into +0xa5, second thread name used by cUIScroll_SetRange
+003a60e0	cUIProgress_ctor_2	med	UIObject_ctor(p,0,0) + vptr 0x494408 (cUIProgress)
+003a6120	cUIProgress_ctor	med	UIObject_ctor + vptr 0x494408 (cUIProgress), zeroes +0x74..+0x84 (bar, value, max)
+003a6190	cUISlider_ctor_2	med	UIObject_ctor(p,0,0) + vptr 0x494348 (cUISlider)
+003a61d0	cUISlider_ctor	med	UIObject_ctor + vptr 0x494348 (cUISlider), zeroes +0x74..+0x8c
+003a6250	cUITextScroll_ctor_2	med	UIObject_ctor(p,0,0) + vptr 0x494278 (cUITextScroll) + UIList_ctor(+0x8c)
+003a63e0	cUITextScroll_ListFirst	med	UIList_First(this+0x8c) (list built in cUITextScroll ctor)
+003a6400	cUITextScroll_ListLast	med	UIList_Last(this+0x8c)
+003a6420	cUITextScroll_ListGetAt	med	UIList_GetAt(this+0x8c, i)
+003a6440	cUITextScroll_ListPushFront	med	UIList_PushFront(this+0x8c, node)
+003a6460	cUITextScroll_ListPushBack	med	UIList_PushBack(this+0x8c, node)
+003a64f8	UIVector_ctor_2	med	UIObject_ctor(p,0,0) + vptr 0x4941b8 (UIVector) + bitfield +0x74
+003a6648	UIEngine_GlobalCtors	med	ctor-list entry 0x43cec8; only content UIEngine_StaticInitDestroy(1,0xffff)
+003a6668	UIEngine_GlobalDtors	med	dtor-list entry 0x43cf0c; only content UIEngine_StaticInitDestroy(0,0xffff)
+003a6740	World_dtor	high	world.md: World dtor 0x3a6740 (GameModule_Unload); deletes cWorldCache/cWScriptCache/cWorldPainterMan, World_FreeSphereTreeCache, clears gp+0x16c8 instance
+003a67e0	World_OnGameEnter	med	only caller GameModule_Enter; forwards to World_ResetSections
+003a6800	World_ResetSections	med	world.md: sets flag bit 1 on every type-3 resource of resident sections (section count 0x3a9800, tables +8)
+003a6928	World_Update	high	world.md: World_Update -> cWorldCache tick 0x3a8290; GameModule_Update/LoadWorld
+003a6948	World_SdbHasSections	med	world.md: loads |data/worlds/<name>.sdb, checks version 0x3800, marks which of n section names exist
+003a6ae0	World_Load	high	world.md: cWorldCache reset+load, cWScriptCache alloc per section, cWorldPainterMan_AllocFiles; GameModule_LoadWorld
+003a6ba8	World_GetSectionShutdownFuncCount	med	WScriptMan_Shutdown: scriptCache entry[section] (type 3) data +0x10 = count of funcs called on shutdown
+003a6bd8	World_GetSectionShutdownFuncs	med	WScriptMan_Shutdown: section script data +0x14 = func array passed to WScriptMan_CallFunc
+003a6c08	World_GetSectionProcessCount	med	WScriptMan_SpawnProcesses: section script data +0x28 count
+003a6c38	World_GetSectionProcesses	med	WScriptMan_SpawnProcesses: +0x2c array of 0x40-byte process records for WScriptMan_CreateProcess
+003a6c68	World_GetSectionMissionCount	med	WScriptMan_SpawnMissions: section script data +0x20 count
+003a6c98	World_GetSectionMissions	med	WScriptMan_SpawnMissions: +0x24 array of 0x54-byte records for WScriptMan_CreateMission
+003a6d18	World_GetSectionScriptFunc	med	callers WScriptMan_LookupFunc etc.: handle low byte = section, >>8 = index into section script data +0x3c
+003a6d50	cStreamMan_ctor	high	tags 'cStreamMan CDBUFFER'/'cStreamMan DECOMPRESS'; StreamFile_Create; world.md hull stream ctor at cWorldCache+0x300
+003a6e20	cStreamMan_dtor	high	world.md hull stream dtor 0x3a6e20; frees buffers, StreamFile_Destroy, delete if flag&1
+003a6e98	cStreamMan_Init	med	stores owner at +0 and sprintf '|%s%s' (world name + ext) into +4 filename; called by cWorldCache_Load
+003a6ed8	cStreamMan_Reset	med	clears request state (+0x90 busy, +0x94 slot -1, +0xd4 enable=1) and sets default rate 0x19000
+003a6f38	cStreamMan_FreeBuffers	med	StreamFile_Destroy(+0x88) and frees CD buffer +0x84 / decompress buffer +0x8c
+003a6f88	cStreamMan_QueueRead	med	if idle: StreamFile_QueueRange(+0x88, filename, range, 'CEND'), sets busy +0x90, slot +0x94; from cWorldCache_UpdateHullLRU
+003a7010	cStreamMan_Cancel	med	if busy: StreamFile_CancelRequest(+0x88, req +0x9c), busy=0, slot=-1
+003a7058	cStreamMan_SetRate	med	SectionMan_Update: bytes/s (min 0x8000) at +0xd8, derived tick delay +0xdc from timer rate
+003a7098	cStreamMan_Update	high	world.md hull stream pump: StreamFile_GetChunk, EAC_Unpack, chunk parser, marks hull resident when idle
+003a7218	cStreamMan_Decompress	med	EAC_Unpack wrapper used by cStreamMan_Update on each chunk
+003a7238	cStreamMan_ParseChunks	high	world.md 0x3a7238 chunk parser -> 0x3a8a90 alloc / 0x3a8cd0 resolve; 8-byte chunk headers
+003a7598	WorldBlockPool_Init	high	strings 'WORLD BLOCK ARRAY'/'WORLD MEMBLOCK'; world.md BlockPool init {blockSize,count,free,blocks,freeHead}; WorldMemman_ctor
+003a76c0	WorldBlockPool_dtor	med	frees every block memory and the block array, delete if flag&1; WorldMemman_dtor
+003a7768	WorldBlockPool_AllocBlock	med	pops freeHead (+0x10), free count--, marks block inUse; SectionAllocator_Alloc
+003a7790	WorldBlockPool_FreeBlock	med	pushes block onto freeHead, clears inUse, free count++; SectionAllocator_FreeAll
+003a77d0	SectionAllocator_dtor	med	SectionAllocator_FreeAll then delete if flag&1; via WorldMemman_FreeSectionAllocator
+003a7818	SectionAllocator_FreeAll	high	world.md: free-all 0x3a7818 returns every block to the pool
+003a7878	SectionAllocator_Alloc	high	world.md: Alloc 0x3a7878, alignment 4 << ((flags>>24)&0xf)
+003a7aa8	WorldMemman_dtor	high	world.md: WorldMemman dtor 0x3a7aa8; destroys the 3 block pools
+003a7b18	WorldMemman_CreateSectionAllocator	high	tag 'Section Allocator'; stores at +0x3c[section] (world.md)
+003a7b98	WorldMemman_FreeSectionAllocator	high	world.md: 0x3a7b98 frees +0x3c[section]
+003a7c30	cHullPage_dtor	high	world.md: cHullPage dtor 0x3a7c30, frees handle array +0xc
+003a7d80	SectionTable_dtor	high	world.md: SectionTable dtor 0x3a7d80, frees storage +0
+003a7e38	cWorldCache_dtor	high	world.md: cWorldCache dtor 0x3a7e38; cWorldCache_Free, cStreamMan_dtor(+0x300), streamer dtor (+0x10)
+003a7e98	cWorldCache_Free	med	releases hulls, resolver +0x3e8, shared table, section tables, sdb, WorldMemman
+003a7f90	cWorldCache_Reset	med	World_Load: cWorldCache_Free then zeroes sdb/resolver/hull count
+003a7fc0	cWorldCache_Load	high	world.md: loads .sdb, tags 'WORLD MEMMAN'/'SharedTable'/'SectionTables', resolver, cStreamMan_Init, streamer bind
+003a81a8	cWorldCache_CreateSectionTable	high	tag 'SectionTable'; world.md entry +8[section] set by 0x3a81a8 on section load
+003a8230	cWorldCache_FreeSectionTable	high	world.md: freed by 0x3a8230; also frees the section allocator
+003a8290	cWorldCache_Update	high	world.md per-frame tick: streamer update 0x3a9258, cWorldCache_UpdateHullLRU, cStreamMan_Update
+003a82c8	cWorldCache_InitHullSlots	med	nHullPages +0x3ec from streamer, zeroes the 0x18-byte HullSlot array +0x3f0
+003a8330	cWorldCache_ReleaseAllHulls	med	cancels loading hulls (cStreamMan_Cancel), frees pages of resident ones, clears every HullSlot
+003a8448	cWorldCache_RequestHull	med	sets HullSlot priority/lastUseTime, unpinned; state 0 -> 1 wanted, 4 releasing -> 3 resident
+003a84c8	cWorldCache_ExpireHull	med	unpins slot and backdates lastUseTime by hullTimeout +0x1bf0 so the LRU releases it
+003a84f8	cWorldCache_SetHullPinned	med	writes HullSlot.pinned (+0x3f4)
+003a8528	cWorldCache_FreeHullPage	high	world.md: walks cHullPage handles backwards releasing each (0x3a8e20), cHullPage_dtor, slot state 0
+003a8618	cWorldCache_IsHullResident	med	HullSlot state == 3 (resident)
+003a8638	cWorldCache_IsHullFree	med	HullSlot state == 0 (free)
+003a8650	cWorldCache_SetHullResident	med	HullSlot state = 3; cStreamMan_Update when the stream goes idle
+003a8668	cWorldCache_UpdateHullLRU	high	world.md: picks highest-priority wanted slot, tag 'cHullPage' alloc, cStreamMan_QueueRead; expires old pages
+003a88a8	cWorldCache_FlushHullPages	med	world.md proposal; per hull slot: drops expired wanted slots, moves resident->releasing and releases (0x3a8528) timed-out pages
+003a89c8	cWorldCache_EvictLowestPriorityHull	med	scans hull slots (state 3/4, unpinned) for lowest priority <1.0, sets state 4 and releases it via 0x3a8528
+003a8a90	cWorldCache_AllocResource	high	world.md: chunk-parser alloc; 'BxStream SHAREDMEM'/'BxStream AIPATH' tags, WorldMemman pool flags 0x22000000/0x45000000, refcounted handle
+003a8cd0	cWorldCache_ResolveResource	high	world.md: records handle in cHullPage list, calls cPS2ChunkResolve slot 3 Resolve, stores ptr>>2 in table entry
+003a8e20	cWorldCache_ReleaseResource	high	world.md: decrements table refcount, at 0 calls resolver slot 4 Release and EA_MemFree for shared (0xff) entries
+003a8f10	cWorldCache_FlagSectionObjects	med	only caller section activate (0x3a99d8); sets bit 0x40 at +10 of every type-1 resource of the section table
+003a8f80	cWorldCache_StreamerCtor	med	only caller cWorldCache_ctor on cache+0x10 (section streamer, world.md); calls reset 0x3a9188, returns this
+003a8fb8	cWorldCache_StreamerDtor	med	deleting-dtor shape for the embedded section streamer (empty body + __builtin_delete on flag&1); caller cWorldCache dtor
+003a9000	cWorldCache_StreamerAttachSdb	med	caller cWorldCache load 0x3a7fc0; fixes up sdb section/node/hull pointers (0x58/0x60/0x44 strides), copies world bounds
+003a9188	cWorldCache_StreamerReset	med	clears sdb ptrs, 64 section {state,priority} slots and both views (0x3a9658), resident/active counts
+003a9258	cWorldCache_StreamerUpdate	med	world.md 'streamer update (0x3a9258)'; per-section state machine 1..6 (sky sections pool 0), then updates both views
+003a9558	cWorldCache_StreamerReleaseNodeHulls	med	recursive BSP walk (+0x50/+0x54 children) unrequesting each node hull (0x3a84c8)
+003a95c0	cWorldCache_StreamerAreNodeHullsFree	med	recursive BSP walk clearing *flag when any node hull slot is not free (0x3a8638)
+003a9658	cWorldCache_StreamerSetView	med	world.md View[2]: stores position, min/max = pos -/+ radius, radius, active=1
+003a96e0	cWorldCache_StreamerGetViewClearance	med	updates view then returns pos and (+0x284 - 0.5); world.md View +0x44 nearest-section distance
+003a9770	cWorldCache_StreamerGetViewClearanceAll	med	same as 0x3a96e0 but returns +0x288 (min over all resident sections)
+003a9800	cWorldCache_StreamerGetSectionCount	high	returns sdb+8 nSections (world.md SdbHeader); callers SectionMan/WScriptMan loop over sections
+003a9820	cWorldCache_StreamerGetSection	med	bounds-checked Section* (sections + idx*0x58)
+003a9858	cWorldCache_StreamerIsSectionResident	high	world.md state 5/6 = resident (state-5 < 2)
+003a9890	cWorldCache_StreamerIsSectionUnloaded	high	world.md state 0 = unloaded
+003a98c8	cWorldCache_StreamerRequestSection	med	stores priority; state 0->1 (load requested), 3->5; returns 0 while unloading
+003a9958	cWorldCache_StreamerReleaseSection	med	state 1->0, 5/6->3; returns 0 while loading (state 2)
+003a99d8	cWorldCache_StreamerActivateSection	med	state 5->6 (resident+active per world.md) and flags section objects (0x3a8f10)
+003a9a98	cWorldCache_StreamerGetHull	high	world.md: Hull* array at +0x10, 0x44 each
+003a9ab0	cWorldCache_StreamerGetHullCount	high	returns sdb+0x10 nHulls (world.md)
+003a9ac0	cWorldCache_StreamerAreBoxHullsResident	med	walks active sections' BSP (0x3a9bb8) checking that hulls overlapping a box are resident
+003a9bb8	cWorldCache_StreamerCheckNodeBox	med	recursive helper of 0x3a9ac0: AABB overlap + split-plane side tests, clears flag if node hull not resident
+003a9d60	cWorldCache_StreamerUpdateView	med	for each resident section walks BSP (0x3aa028) computing view distances; stores time, clears dirty
+003a9e50	cWorldCache_PointBoxDistance	med	returns -1 if point inside AABB, else distance to box (per-axis outside terms)
+003aa028	cWorldCache_StreamerUpdateViewNode	med	recursive BSP walk: requests hulls within view radius with distance-based priority (0x3a8448), tracks nearest
+003aa2f0	cPS2ChunkResolve_ctor	med	only caller cPS2ChunkResolve_Create; stores base vptr 0x495150 at +8, resets 0x130-byte global table 0x508f50
+003aa438	cPS2ChunkResolve_v06	med	vt 0x495090/0x495150 slot 6; relocates 0x10-byte entries, calls slots 7 and 11 per entry
+003aa520	cPS2ChunkResolve_v07	med	vt 0x495090/0x495150 slot 7; relocates pointer array (+0x20,count +0x1c), calls slot 8 per item
+003aa5c8	cPS2ChunkResolve_v14	med	vt 0x495090/0x495150 slot 14; relocates +8 and calls slot 15
+003aa608	cPS2ChunkResolve_v15	med	vt 0x495090/0x495150 slot 15; relocates 0x10-byte entries, calls slots 16 and 11
+003aa830	cPS2ChunkResolve_v11	med	vt 0x495090/0x495150 slot 11; relocates pointer array (+0x20,count +0x1c), calls slot 12 per item
+003aaa08	cPS2ChunkResolve_v19	med	vt 0x495090/0x495150 slot 19; relocates header, type 3 inits 0x140-byte objects, type 1 relocates blocks
+003aabd8	cPS2ChunkResolve_v20	med	vt 0x495090/0x495150 slot 20; sets AABB = centre +/- radius from size class (flags&0x70)
+003aad98	cPS2ChunkResolve_Create	high	EA_MemAllocNamed(0x14,'cPS2ChunkResolve'), base ctor 0x3aa2f0, vptr 0x495090
+003aade8	cPS2ChunkResolve_dtor	high	vt 0x495090 slot 1; restores vptrs 0x495090 then base 0x495150, delete on flag&1
+003aae68	cPS2ChunkResolve_Resolve	high	vt 0x495090 slot 3 (world.md: Resolve(type,handle,data)); jump table over 23 resource types
+003ab498	cPS2ChunkResolve_Release	high	vt 0x495090 slot 4 (world.md: Release(type,handle,ptr)); jump table over 23 resource types
+003abe40	cPS2ChunkResolve_v05	med	vt 0x495090 slot 5; resolves handle list to pointers, calls slot 6, then relocates mesh DMA (0x3abf20)
+003abf20	cPS2ChunkResolve_RelocateMeshDma	med	only caller slot 5; relocates +0x24 base then walks parts (0x3abf50)
+003abf50	cPS2ChunkResolve_RelocateMeshDmaParts	med	walks 0x10-byte part entries, calls 0x3abfc0 for each non-null
+003abfc0	cPS2ChunkResolve_RelocateMeshDmaPart	med	walks part's DMA chain list (+0x20,count +0x1c) calling 0x3ac048
+003ac048	cPS2ChunkResolve_PatchDmaChain	med	walks DMA tags (id 3 ref / 6 ret), relocates addresses, sets VIF MSCAL 0x1400044e/0x14000459
+003ac2a8	cPS2ChunkResolve_v13	med	vt 0x495090 slot 13; resolves +0x80 handle via type-2 table, sets owner/flags, patches DMA chains (0x3ac358)
+003ac358	cPS2ChunkResolve_RelocateInstanceDma	med	only caller slot 13; relocates +0x98 and walks part chains through 0x3ac508
+003ac508	cPS2ChunkResolve_PatchInstanceDmaChain	med	DMA ref/ret tag walker like 0x3ac048 but with instance base (+0x98) relocation
+003ac800	cWScriptCache_Alloc	high	frees old array, new[count] of 0xc-byte entries tagged 'tWScriptCache'; callers cWScriptCache_ctor, World_Load
+003ac8f0	cWScriptCache_dtor	med	destroys tWScriptCache array, clears global, delete on flag&1; caller World dtor 0x3a6740
+003ac980	cWScriptCache_Update	med	polls every entry's async load (0x3acad0)
+003ac9e0	cWScriptCache_Load	med	forwards (idx,name) to entry load 0x3acbb8
+003aca10	cWScriptCache_SetData	med	forwards to entry 0x3acc50 (set data + relocate)
+003aca38	cWScriptCache_GetData	med	returns entries[idx].data (+8)
+003aca50	tWScriptCache_ctor	high	element ctor run by new[] of 'tWScriptCache' array: state 0, handle -1, data 0
+003aca70	tWScriptCache_dtor	high	element dtor run on array delete: EA_MemFree data unless static flag (+2)
+003acad0	tWScriptCache_PollLoad	high	AsyncFile_IsDone/GetResult, EAC_Unpack or copy into 'WScriptFile' buffer, state 1->2
+003acbb8	tWScriptCache_Load	med	builds '|'+name+'.ssf', AsyncFile_Load(.,0x100), state 1 (loading) or 2
+003acc50	tWScriptCache_SetData	med	stores data ptr, state 2, static flag 1, then relocates (0x3accd8)
+003acc90	tWScriptCache_Free	med	EA_MemFree data unless static, clears data and state
+003accd8	tWScriptCache_Relocate	med	checks version 0x1000, fixes up header offsets, resolves world handles, sets state 3 (ready)
+003ad188	SSXApp_GetGameModule	med	returns g_App(0x4a28a8)+0x84 = GameModule* (app.md)
+003ad198	GameModule_GetOcclusionMan	med	returns g_App->GameModule+0x8c = OcclusionMan* (world.md)
+003ad1a8	World_ResetLights	med	caller streamer section unload; WorldLightMan_ResetRegions(GameModule+0x90) then Rider_ClearNearbyLights for each AI rider
+003adc50	tWScriptCache_GetTableEntry	med	if state 3 returns data->table(+0x3c)[idx]; caller World forwarder 0x3a6d18
+003adce0	tWScriptCache_GetProcessCount	med	state 3: data+0x28; WScriptMan_SpawnProcesses loops CreateProcess over it
+003add10	tWScriptCache_GetProcesses	med	state 3: data+0x2c (0x40-byte process records) for WScriptMan_SpawnProcesses
+003add40	tWScriptCache_GetMissionCount	med	state 3: data+0x20; WScriptMan_SpawnMissions loops CreateMission over it
+003add70	tWScriptCache_GetMissions	med	state 3: data+0x24 (0x54-byte mission records) for WScriptMan_SpawnMissions
+003ade58	AV_Player_ctor_3	high	same shape as AV_Player_ctor/_2: clears +0x60 then AV_Player_Init
+003ade90	AV_Player_ctor_4	high	same shape as AV_Player_ctor/_2: clears +0x60 then AV_Player_Init
+003ae718	AV_Player_GetCurrentSubtitle	med	if subtitle table (+0x70) present, binary-searches by current frame (+0x44 or +0x48)
+003ae860	AV_Player_IsAudioDone	med	returns 1 when no AV_Audio, else AV_Audio done check; caller VidEnginePlayer_Update
+003ae978	AV_Player_SetVolume	med	forwards to AV_Audio volume (0x3aef48) when audio present
+003aecb8	AV_Player_GetChunkCallback	med	address taken in AV_Player_Start as RCMP get-chunk callback; calls AV_Player_OnChunk
+003aece0	AV_Player_ReleaseChunk	med	StreamFile_ReleaseChunk(player+0x30) then frees chunk descriptor via RCMP free fn
+003aed20	AV_Player_ReleaseChunkCallback	med	address taken in AV_Player_Start as RCMP release callback; calls 0x3aece0
+003aeef8	AV_Audio_Start	med	caller AV_Player_Start; SND_Lock, SNDSTRM prebuffer(request,0) to start playback
+003aef48	AV_Audio_SetVolume	high	SND_Lock; SNDSTRM_SetVolume(stream +0xc); SND_Unlock
+003aefa8	AV_Audio_IsDone	med	SNDSTRM_GetStatus + GetRequestStatus; returns true when request remaining==0
+003af020	AV_FreeSubtitles	med	deleting dtor of {entries(0x34 each), count}; frees via RCMP free fn 0x509434
+003af0c8	AV_CreateSubtitles	med	allocs count x 0x34 entries, default-inits, sets x/y/w/h and index per entry
+003af258	AV_FindSubtitleByFrame	med	binary search on entry +0x14 (frame) over 0x34-byte entries
+003af300	AV_SkipWhitespace	med	advances ptr/len past ctype-space chars; helper of subtitle parser
+003af378	AV_StrICmp	med	case-insensitive compare via ctype upper bit (+0x20)
+003af428	AV_ParseJustify	med	matches tab-delimited token against RIGHT/TOP/CENTER/LEFT/BOTTOM, returns enum
+003af560	AV_ParseIntField	med	tab-delimited strtol(.,10) field parse; caller subtitle parser
+003af670	AV_FindToken	med	finds first of N keyword tokens in buffer, returns index; caller subtitle parser
+003af7f0	AV_ParseSubtitles	med	tab-separated subtitle table parser: header FRAME/STRINGID/X/Y/WIDTH/HEIGHT/JUSTIFY_X/Y/SHAPE/A/R/G/B
+003b0340	AV_SubtitleInit	med	subtitle entry ctor: x32 y350 w600 h50, frame/stringid -1, justify 2, colour bytes 0xff
+003b03a8	AV_SubtitleSetX	med	entry+0 (default 32); set from parser column
+003b03b0	AV_SubtitleSetY	med	entry+4 (default 350)
+003b03b8	AV_SubtitleSetWidth	med	entry+8 (default 600)
+003b03c0	AV_SubtitleSetHeight	med	entry+0xc (default 50)
+003b03c8	AV_SubtitleSetStringId	med	entry+0x10; AV_CreateSubtitles stores the entry index here
+003b03d0	AV_SubtitleSetFrame	med	entry+0x14, key of AV_FindSubtitleByFrame binary search
+003b03d8	AV_SubtitleSetJustifyX	med	entry+0x18 set from AV_ParseJustify keyword
+003b03e0	AV_SubtitleSetJustifyY	med	entry+0x1c set from AV_ParseJustify keyword
+003b0410	RCMP_SYSTEM_ctor	high	stores vptr 0x456890 whose typeinfo fn 0x42e4c8 names 'Q24RCMP11RCMP_SYSTEM'; builds global 0x509430 (alloc/free fns)
+003b0430	RCMP_DECODER_ctor	high	stores vptr 0x4568a8 (typeinfo 'Q24RCMP7DECODER', dtor RCMP_DECODER_dtor), copies callback block, codec=0
+003b0580	RCMP_DECODER_GetFrameNumber	med	codec slot 4 (PS2 codec returns +0x10 frame counter); AV_Player_DecodeFrame stores it as current frame
+003b05c0	RCMP_DECODER_GetFrameRate	med	codec slot 5; AV_Player_IsFrameDue multiplies elapsed seconds by it
+003b0600	RCMP_DECODER_DecodeFrame	med	pulls first chunk via callback if no codec yet, then codec slot 3 DecodeFrame(frame)
+003b06b0	RCMP_DECODER_GetChunk	med	returns pending chunk or pulls one through get callback (+8); caller codec FeedBitstream
+003b06f8	RCMP_DECODER_ReleaseChunk	med	calls release callback (+0xc) with context; caller codec FeedBitstream
+003b0720	AV_ChunkInit	med	zero-inits 3-word chunk descriptor {chunk, payload, size} allocated in AV_Player_OnChunk
+003b0738	RCMP_DECODER_InitCallbacks	med	clears callback block {pending,ctx,get,release=2}; only caller RCMP_DECODER_ctor
+003b0758	RCMP_MakeCallbacks	med	fills {ctx,get,release,user} callback block; AV_Player_Start passes 0x3aecb8/0x3aed20
+003b0770	RCMP_StaticInitDestroy	med	gcc static init/destroy(init,0xffff) for RCMP_SYSTEM global 0x509430
+003b07b8	RCMP_GlobalCtors	med	_GLOBAL_ I thunk (ctor table 0x43ced0) -> 0x3b0770(1,0xffff)
+003b07d8	RCMP_GlobalDtors	med	_GLOBAL_ D thunk (dtor table 0x43cf10) -> 0x3b0770(0,0xffff)
+003b11e8	MPEG2_Error	high	mpeg2decode Error() (stubbed): called by sequence_scalable_extension / picture_temporal_scalable_extension for temporal scalability
+003b3a50	SHP_CalcPixelDataSize	med	caller SHP_GetBlockSize: size from format/bpp, w, h, mip count, swizzle flag (DXT 4x4 rounding)
+003b3d40	SHP_FindInfoData	med	walks attachment chain (offset>>8) for 'i' (0x69) block, returns +0x10 data if flag 0x10
+003b3e40	SHP_CalcPixelOffset	med	bit offset of (x,y) at mip level incl. mip chain, swizzle (SHP_SwizzleAddr) and DXT blocks
+003b4010	SHP_GetPixelPtr	med	pixel data base + offset of (x,y) at mip level; caller SHP_Unpack
+003b5450	SND_TimerServiceCallback	med	address taken in SND_StartTimerService; runs SND_RunServiceCallbacks, returns 0
+003b6788	SND_BankRelocatePatches	med	caller SND_BankAdd; SND_ParsePatch over bank, for matching flags fixes sample address (0x3c3ea8) and fires events
+003b68b8	SNDSTRM_StartPlayback	med	SNDSTRM_StartChannel -> handle +4, optional per-channel setup (+0x104), sets started flag +0x10
+003b69d8	SNDSTRM_CloseAll	med	address taken in SNDSTRM_Open; SNDSTRM_Close for every stream
+003b6a70	SNDSTRM_RetireRequest	med	moves request from active list (+0x11c) to free list (+0x128), clears current (+0x134)
+003b6ad8	SNDSTRM_ReleaseChunkCallback	med	address taken in SNDSTRM_Open; StreamFile_ReleaseChunk for the owning stream
+003b6b10	SNDSTRM_ConsumeCallback	med	address taken in SNDSTRM_Open; advances request position by bytes, retires finished requests
+003b70f8	SNDSTRM_IsPrebuffering	med	caller SNDSTRM_Service; returns 1 while buffered ms < request prebuffer (+0x20) or held (<0)
+003b7d80	SNDSTRM_SetPrebuffer	med	SNDSTRM_FindRequest -> +0x20 = value (ms, -1 hold); AV_Audio_Start passes 0
+003b80a0	SNDSTRM_SetLowpass	med	stream +0x100 then SND_SetLowpass (-> SND_ChannelApplyLowpass)
+003b8120	SNDSTRM_SetLowWater	high	SNDSTRM_GetStream then StreamFile_SetLowWater
+003b83a0	SND_SetFxSend	med	stores send level per group, SND_SetFxVolume, SND_SetAuxSend on all channels
+003b84e0	SND_SetFxVolume	med	stores float pair at 0x50ab14 and calls SND_SetSpuFxVolume
+003b8978	SND_SetLowpass	med	per channel of handle: SND_ChannelApplyLowpass
+003b8ad8	SND_GetTimeRemaining	med	max over handle channels of (end-pos)*100/rate scaled by pitch; -7 if none
+003bb140	SND_PlayPatchVoices	med	caller SND_PlayPatch; per sample layer allocs voices, random pitch/volume, calc + start voices
+003bbda0	SND_ParsePtHeader	med	caller SND_ParseStreamHeader; reads tag/value pairs (0..0x2a, 0x80..0xad, end 0xfe), defaults 1ch/48000Hz
+003bc000	SND_CalcPanGains	med	sin/cos pan law between two speaker angles (2*pi/65535 units)
+003bc0b0	SND_InitPanTables	med	caller SND_Init; SND_MemAlloc 256-byte gain table per speaker, filled from speaker angles
+003bc4c0	SND_GetPanGains	med	caller SND_ChannelApplyPan; reads per-speaker byte gains for pan>>8, /255
+003bc530	SND_FreePanTables	med	caller SND_Shutdown; SND_MemFree(0x50ac30) pan table block
+003bc930	SNDENC_InstallDts	med	caller PS2SoundManager_SetOutputMode; installs encoder fn ptrs (0x3beca0, 0x3bed30, SNDENC_EncodeFrame)
+003bcae8	SNDENC_PutBits	med	appends n bits MSB-first to byte-swapped (16-bit LE) output buffer
+003bcba0	SNDENC_WriteHeader	high	writes IEC61937 preamble F8724E1F + DTS sync 7FFE8001 and DTS frame header fields
+003bd220	SNDENC_AnalysisFilterbank	med	PCM->float, windowed polyphase (3 frame sizes) + butterfly stages, 4 x 8 subband samples
+003bd5b8	SNDENC_EncodeChannelMode1	med	mode-1 path of SNDENC_EncodeFrame: scale factors via 0x44c760 table, 10-bit quantize/pack
+003bde08	SNDENC_EncodeChannelMode2	med	mode-2 path of SNDENC_EncodeFrame: scale factors, quantize/pack subbands
+003bf0f0	SNDENC_EncodeFrame	med	DTS encoder entry: sets scratchpad workspace, writes header on change, filterbank + encode per channel
+003bf3e0	SNDENC_CopyBlock	med	qword copy loop (lqc2/sqc2, 8 qwords per iteration)
+003bf440	SNDENC_PcmToFloat	med	s16 -> float via pextlh/psraw/vitof0
+003c03e0	SNDENC_FindSubbandPeaks	med	max |x| per subband (pand abs mask + pmaxw), 24 subbands
+003c0564	SNDENC_Quantize10	med	scale, ftoi, pack halfwords masked 0x3ff
+003c05e0	SNDENC_Quantize8	med	scale, ftoi, pack to bytes
+003c0640	SNDENC_Quantize5	med	scale, ftoi, pack to bytes masked 0x1f
+003c07a8	SND_RestoreVu0Flags	med	only caller SND_RestoreVu0Context; rebuilds VU0 status flags via vmul of 0/1/1e30 vectors from saved flag word
+003c0858	SND_SaveVu0Context	med	caller SND_EeThread; sqc2 vf1..vf31 + cfc2 control regs into 0x210-byte buffer (EE mixer thread VU0 save)
+003c08f8	SND_RestoreVu0Context	med	caller SND_EeThread; lqc2 vf1..vf31 + ctc2 from buffer written by SND_SaveVu0Context
+003c0c18	SND_GetGroupVoiceRange	med	maps voice-group flag (8 SPU/0x100 IOP/4 EE) to [first,last) voice index from counts at 0x50a918/0x50a917
+003c0e28	SND_ApplyConfig	med	only caller SND_SetConfig; copies pending config, quantises sample rates to 24000/36000/48000, applies pan
+003c1298	SND_ReleaseFinishedVoices	med	caller SND_EeThread; for master channels whose play position hit 0 calls SND_ChannelRelease on each voice
+003c2268	SND_IopShutdown	med	callers SND_Init/SND_Shutdown; removes INTC handler, SND_IopCallRpc(1), deletes EE thread+sema, frees buffers
+003c3178	SND_ChannelApplyLowpass	med	EE voices: cutoff/(rate/2) -> SND_EeVoiceSetLowpass; reached from SongInstance_SetVolume path
+003c3250	SND_ChannelApplyHighpass	med	EE voices of channel -> SND_EeVoiceSetHighpass (FIR highpass node)
+003c3450	SND_IopSetEffect	med	group 0x100 effect: SND_IopCallRpc(2,preset,BE size) or 4-byte default to disable
+003c3500	SND_SetSpuReverbMode	med	maps reverb id 5/10/20/30/40/50/100/110/120 to SPU mode 1..9, sets work-area start from size table 0x44dd48
+003c35f8	SND_ApplyGroupEffect	med	locks; group 8 -> SND_SetSpuReverbMode, 0x100 -> SND_IopSetEffect, 4 -> SND_EeFxLoad/SND_EeFxDisable
+003c36c8	SND_SetSpuFxVolume	med	group 8: writes fx return volume floats*32767 into IOP shared block +0x14/+0x16
+003c3728	SND_PanLookup	med	only caller SND_ChannelApplyPan; pan angle>>8 indexes short table 0x44dd78 -> two gains /32767
+003c4450	SND_SifDmaStartNext	med	picks highest-priority pending of 28 DMA requests, SND_SifSetDma + sceSifSendCmd(0x30)
+003c45e8	SND_SifDmaKick	med	callers SND_SifDmaQueue/Upload/Complete; DI, starts next DMA if idle, EI
+003c4898	SND_SifDmaPoll	med	only caller SND_IopUploadWait; returns 1 when request gone, restarts DMA after 500-tick timeout
+003c5068	SND_ChannelAddDsp	med	for EE voices calls SND_EeVoiceAddDsp(desc); returns -7 if channel has no EE voices
+003c5128	SND_ChannelRemoveDsp	med	for EE voices calls SND_EeVoiceRemoveDsp(id)
+003c5660	SND_RoundSampleRate	med	rounds requested rate to 24000/36000/48000 for output 0/1 (same thresholds as SND_ApplyConfig)
+003c5710	SND_SetSampleRate	med	SND_GetConfig, writes config rate field 0/1 (clamped 0xffff), SND_SetConfig
+003c5788	SND_GetSampleRate	med	SND_GetConfig, returns config rate field 0/1 (-5 on bad index)
+003c65e0	SNDSTRM_CalcRingSize	med	returns n*0x20+0x9c (stream slot header + block ring)
+003c65f0	SNDSTRM_CalcSlotMemSize	med	callers SNDSTRM_Open/CalcMemSize; ring size + codec state size
+003c6620	SNDSTRM_AllocSlot	med	only caller SNDSTRM_Open; finds free slot in 0x515abc, sets callbacks +0x54/+0x58/+0x5c; -9 none free
+003c6760	SNDSTRM_StartChannel	med	allocates voices for stream slot via SND_AllocVoices, inits channel params, starts EE voices
+003c6ab8	SNDSTRM_PushBlock	med	only caller SNDSTRM_ParseData; appends data block to slot ring, per-voice counts, -13 if full
+003c6c28	SNDSTRM_GetFreeBlocks	med	only caller SNDSTRM_Service; ring size - max queued count - 1
+003c6c98	SNDSTRM_GetBufferedBytes	med	returns slot+0x48 (queued) + slot+0x4c (in use) byte counts
+003c6ce8	SNDSTRM_StopSlot	med	callers SNDSTRM_Service/Stop; SND_Stop handle, flush callbacks, free per-voice buffers
+003c6da0	SNDSTRM_FreeSlot	med	callers SNDSTRM_Open/Close; clears slot pointer in 0x515abc
+003c6de0	SNDSTRM_PopBlock	med	called by stream decoders; dequeues next block for voice, updates byte counts, queues block-done callback
+003c7010	SNDSTRM_ReleaseBytes	med	called by stream decoders; master voice subtracts consumed bytes, queues consumed callback (+0x58)
+003c7080	SNDSTRM_RunCallbacks	med	callers SND_EeThread/SNDSTRM_StopSlot; dispatches queued stream callbacks +0x54/+0x58 then clears queue
+003c7138	SND_ChannelKeyOff	med	only caller SNDMIDI_NoteOff; per channel: stop voices or jump envelope to release segment
+003c7388	SND_ParseNextTag	med	callers SND_ParsePatch/SND_ParseStreamHeader; skips 0xfc pad, reads tag byte, length, BE value
+003c7600	SND_MixDeclick16	med	adds residual*(16-i)/17 ramp into 16 samples then zeroes residual
+003c7828	SND_MixAddRamp16	med	mixes 16 samples with linear gain ramp from a to b
+003c7ab0	SND_EeVoiceMixRamp	med	only caller SND_EeMixBlock; renders 16 samples with send-gain ramps when voice params dirty
+003c7cc0	SND_DecAllocThunk	med	trivial SND_MemAlloc wrapper registered via SND_DecSetAllocFunc in SND_EeMixerInit
+003c7ce0	SND_DecFreeThunk	med	trivial SND_MemFree wrapper registered via SND_DecSetFreeFunc in SND_EeMixerInit
+003c7d00	SND_EeMixerInit	med	only caller SND_IopInit; allocs mix buffers 0x2058/0x840, EE voice table n*0x60, registers decoders
+003c8018	SND_EeMixerShutdown	med	only caller SND_IopShutdown; frees EE voice table and mix buffers
+003c8158	SND_EeVoiceStart	med	builds EE voice DSP chain: decoder node by codec (8/10/4/0x16) and mode, optional stretch node
+003c83a0	SND_EeVoiceActivate	med	callers SND_ChannelStartVoices; copies target send gains, state=2 (playing)
+003c8430	SND_EeVoiceFinish	med	only caller SND_EeMixBlock; SND_EeVoiceStop then end callback 0x515b48
+003c8468	SND_EeVoiceStop	med	callers SND_ChannelStopVoices; flushes last sample to declick, destroys DSP chain, state=0
+003c8560	SND_EeVoiceSetVolume	med	only caller SND_ChannelApplyVolume; EE voice +0x1c[out]=gain, dirty
+003c8598	SND_EeVoiceSetAuxSend	med	only caller SND_ChannelApplySend; EE voice +0x38[n]=gain, dirty
+003c85d0	SND_EeMixBlock	med	only caller SND_EeMix; declick, runs each playing EE voice chain, mixes into outputs, runs FX
+003c8968	SND_EeMix	med	caller SND_EeThread; splits request into 0x200-sample blocks for SND_EeMixBlock
+003c8a40	SND_EeVoiceGetPosition	med	only caller SND_ChannelGetPosition; calls decoder position fn +0x44
+003c8a88	SND_EeVoiceSetPitch	med	only caller SND_ChannelApplyPitch; creates resampler node (prio 0xa0) and sets rate
+003c8c30	SND_EeVoiceSetHighpass	med	adds/removes FIR highpass node (prio 0x50) and sets cutoff
+003c8d00	SND_EeVoiceSetLowpass	med	adds one-pole lowpass node (prio 0x28) when cutoff<1.0, removes otherwise
+003c8e28	SND_EeVoiceAddDsp	med	allocates user DSP node from descriptor (size, init fn, prio) and inserts into voice chain
+003c8ec0	SND_EeVoiceRemoveDsp	med	finds node by prio id in voice chain, calls destroy, SND_DspRemove, frees
+003c90c0	SND_DspNode_Connect	med	only caller SND_EeFxBuild; links node as input 1/2 of another node
+003c9268	SND_RegisterPcm16Decoders	med	fills decoder table slot for codec 8 (PCM16): mem/loop/stream init fns + state sizes
+003c92b0	SND_RegisterEaxaDecoders	med	fills decoder table slot for codec 10 (EA-XA) with mem/loop/stream init fns
+003c92f8	SND_RegisterUtkDecoders	med	fills decoder table slots for codecs 4 and 0x16 (MicroTalk) with mem/loop/stream init fns
+003c9360	SND_DecUtk_DecodeMem	med	one-shot MicroTalk decode via SND_UtkDecode, zero-fills tail
+003c93f8	SND_DecUtk_Free	med	frees MicroTalk state +0x28 via SND_UtkFree
+003c9420	SND_DecUtk_InitMem	med	one-shot MicroTalk decoder node init (alloc 0xd68 utk state)
+003c9520	SND_DecUtk_DecodeLoop	med	looping MicroTalk decode, rewinds to loop start
+003c95f0	SND_DecUtk_FreeLoop	med	frees MicroTalk state +0x1c
+003c9618	SND_DecUtk_InitLoop	med	looping MicroTalk decoder node init
+003c96f0	SND_DecUtk_DecodeStream	med	stream MicroTalk decode pulling blocks with SNDSTRM_PopBlock
+003c9938	SND_DecUtk_FreeStream	med	frees MicroTalk state +0x34
+003c9960	SND_DecUtk_InitStream	med	stream MicroTalk decoder node init
+003c9a00	SND_DecPcm16_DecodeMem	med	one-shot PCM16 copy via SND_Pcm16ToFloat, zero tail
+003c9b10	SND_DecPcm16_DecodeLoop	med	looping PCM16 decode wrapping at loop end
+003c9c08	SND_DecPcm16_DecodeStream	med	stream PCM16 decode pulling blocks with SNDSTRM_PopBlock
+003c9d28	SND_DecPcm16_InitStream	med	registered for codec 8 stream mode; sets process fn SND_DecPcm16_DecodeStream
+003c9da0	SND_Pcm16ToFloatScalar	med	converts int16 samples to float one by one (fallback of SND_Pcm16ToFloat)
+003c9e50	SND_Pcm16ToFloat	med	pextlh/psraw/vitof0 VU0 int16->float conversion, scalar fallback for unaligned
+003c9f58	SND_DecEaxa_DecodeMem	med	one-shot EA-XA decode via SND_EaxaDecode, zero tail
+003ca000	SND_DecEaxa_Free	med	frees EA-XA state via SND_EaxaFree
+003ca028	SND_DecEaxa_InitMem	med	one-shot EA-XA node init (alloc 0xa8 state)
+003ca0b8	SND_DecEaxa_DecodeLoop	med	looping EA-XA decode; loop start in 28-sample/15-byte frames, restores history
+003ca360	SND_DecEaxa_FreeLoop	med	frees EA-XA state
+003ca388	SND_DecEaxa_InitLoop	med	looping EA-XA node init
+003ca460	SND_DecEaxa_DecodeStream	med	stream EA-XA decode pulling blocks with SNDSTRM_PopBlock, block header history
+003ca5e8	SND_DecEaxa_FreeStream	med	frees EA-XA state
+003ca610	SND_DecEaxa_InitStream	med	stream EA-XA node init
+003ca6a8	SND_DspClip16_Process	med	VU0 clamp floats to [-32768,32767], ftoi, ppach pack to int16 output
+003ca7a0	SND_DspClip16_Init	med	only caller SND_EeMixerInit; sets process fn SND_DspClip16_Process
+003ca7b8	SND_DspLowpass_Process	med	one-pole filter y=a*y+b*x per sample after pulling input node
+003ca870	SND_DspLowpass_Init	med	inits one-pole lowpass node (process fn, clears links)
+003ca8a0	SND_DspLowpass_SetParams	med	coef=2*cutoff/rate, a=1-coef, scaled by gain/256
+003ca900	SND_DspFirHighpass_Process	med	pulls input then SND_FirProcess
+003ca990	SND_DspFirHighpass_Init	med	sets process fn, SND_FirReset
+003ca9d8	SND_DspFirHighpass_SetCutoff	med	cutoff/rate then SND_FirDesign(type 3 = highpass)
+003caa28	SND_DspStretch_Crossfade	med	linear crossfade of two segments over n samples
+003cb538	SND_DspResample_SetRate	med	only caller SND_EeVoiceSetPitch; stores 16.16 step
+003cb540	SND_DspResample_Process	med	16.16 fixed-point step resampler (passthrough when step==0x10000), 4-sample history
+003cbb28	SND_DspResample_Init	med	only caller SND_EeVoiceSetPitch; sets process fn SND_DspResample_Process, clears history
+003cbc58	SND_EeFxProcess	med	installed as 0x515b50 by SND_EeFxLoad; runs EE effect graph per output into mix buffers
+003cbec8	SND_EeFxFree	med	only caller SND_EeFxDisable; destroys and frees EE effect nodes, clears state
+003cc070	SND_EeFxBuild	med	only caller SND_EeFxLoad; allocs EE FX nodes by type byte (lowpass/FIR/gain/sum/resonator/allpass) and links
+003cc630	SND_EeFxLoad	med	copies 0x38-byte FX header, locates node lists, SND_EeFxBuild, installs SND_EeFxProcess
+003cc848	SND_EeFxDisable	med	clears FX callback 0x515b50, SND_EeFxFree
+003cc918	SND_DecSetAllocFunc	med	stores decoder alloc fn 0x517604 (used by SND_EaxaAlloc/SND_UtkAlloc)
+003cc928	SND_DecSetFreeFunc	med	stores decoder free fn 0x517608
+003cc938	SND_EaxaDecodeRawBlock	med	EA-XA 0xEE uncompressed frame: 2 BE history shorts + 28 BE PCM samples
+003cca08	SND_EaxaDecodeBlocks	med	EA-XA ADPCM: coef table 0x44e8a0 by high nibble, shift low nibble, 28 samples/15 bytes
+003ccef0	SND_EaxaAlloc	med	calls decoder alloc fn 0x517604
+003ccf18	SND_EaxaFree	med	calls decoder free fn 0x517608
+003ccf40	SND_EaxaReset	med	clears EA-XA state counters/history
+003ccf60	SND_EaxaSetInput	med	sets EA-XA input pointer, byte and sample counts (fails if busy)
+003ccf90	SND_EaxaDecode	med	decodes n samples in whole 28-sample frames with partial-frame buffering
+003cd138	SND_EaxaGetHistory	med	returns EA-XA predictor history (+0x98)
+003cd190	SND_EaxaSetHistory	med	sets EA-XA predictor history (+0x98/+0x9c)
+003cd1a8	SND_UtkAlloc	med	calls decoder alloc fn 0x517604 (size 0xd68)
+003cd1d0	SND_UtkFree	med	calls decoder free fn 0x517608
+003cd1f8	SND_UtkReadBits	med	LSB-first bit reader with mask table 0x44e8c0
+003cd260	SND_UtkSkipBits	med	LSB-first bit reader consume without return
+003cd2b0	SND_UtkDecodeExcitation	med	Huffman model table 0x44e9e8, 108-sample excitation, zero runs (MicroTalk)
+003cd518	SND_UtkInterpolate	med	half-sample interpolation with UTK constants 0.5973859,-0.1145916,0.0180327
+003cd590	SND_UtkRcToLpc	med	converts 12 reflection coefficients to LPC coefficients
+003cd690	SND_UtkSynthesize	med	RcToLpc then 12-tap LPC synthesis filter into output
+003cd6f0	SND_UtkParseHeader	med	reads reduced-bw, threshold, fixed-gain multiplier 1.04+x*0.001 (MicroTalk header)
+003cd878	SND_UtkDecodeFrame	med	decodes one 432-sample MicroTalk frame (rc, pitch, gain, excitation)
+003cddb8	SND_UtkReset	med	clears MicroTalk state fields at +0xd44..+0xd64
+003cdde8	SND_UtkSetInput	med	sets input buffer; 0xEE marker selects raw mode, parses header
+003cde68	SND_UtkDecode	med	outputs n samples, decoding 0x1b0-sample frames via SND_UtkDecodeFrame
+003ce078	SND_UtkGetState	med	returns bitreader word, frame pos and mode (+4/+0xd44/+0xd5c)
+003ce0b8	SND_UtkSetState	med	restores bitreader word, frame pos and mode
+003ce0d8	SND_UtkSetMode	med	sets +0xd64 (header-per-block mode)
+003ce0e0	SND_EeVoiceGetMasterChannel	med	EE voice index -> owning channel (+0x28) or itself if -1
+003ce118	SND_EeVoiceGetSubIndex	med	index of EE voice inside its master channel voice list (1..5)
+003ce1b0	SND_ChannelStartStreamVoices	med	only caller SNDSTRM_StartChannel; SND_EeVoiceStart per EE voice (stream mode) then applies params
+003ce378	SNDSTRM_FindByChannel	med	finds stream slot whose handle maps to channel via SND_HandleToChannel
+003ce410	SND_UtkLpcFilter	med	12-tap LPC synthesis filter unrolled
+003ce7c0	SND_FirDesign	med	windowed-sinc (Hamming 0.54/0.46) FIR design: type 2 lowpass, 3 highpass, 4 bandpass
+003ceb90	SND_FirReset	med	clears FIR state/history fields
+003cebe8	SND_FirProcess	med	VU0 FIR filter over sample blocks (rebuilds coef matrix when dirty)
+003cee08	SND_DspFirLowpass_Process	med	pulls input then SND_FirProcess
+003cee88	SND_DspFirLowpass_Init	med	only caller SND_EeFxBuild (type 2); sets process fn, SND_FirReset
+003ceed0	SND_DspFirLowpass_SetCutoff	med	2*cutoff/rate then SND_FirDesign(type 2)
+003cef20	SND_DspFirBandpass_Process	med	pulls input then SND_FirProcess
+003cefb0	SND_DspFirBandpass_Init	med	only caller SND_EeFxBuild (type 4); sets process fn, SND_FirReset
+003ceff8	SND_DspFirBandpass_SetRange	med	low/high cutoff over rate then SND_FirDesign(type 4)
+003cf060	SND_DspGain_Process	med	VU0 multiply block by scalar gain
+003cf128	SND_DspGain_Init	med	sets process fn SND_DspGain_Process
+003cf158	SND_DspGain_SetGain	med	gain=param/256
+003cf178	SND_DspSum_Process	med	runs two input nodes (+8,+0xc) and adds their outputs (VU0 vadd)
+003cf298	SND_DspSum_Free	med	frees temp buffer +0x1c
+003cf2c0	SND_DspSum_Init	med	sets process/free fns of summing node
+003cf300	SND_DspResonator_Run	med	two-pole resonant filter y=g*x+2r*c*y1-r^2*y2, bypass when out of range
+003cf408	SND_DspResonator_Process	med	pulls input then SND_DspResonator_Run
+003cf498	SND_DspResonator_Init	med	sets process fn, clears history
+003cf4d0	SND_DspResonator_SetParams	med	r=1-bw*pi/rate, c=cos(2pi f/rate), normalised gain via SND_Sqrt1pSeries
+003cf740	SND_DspBufferSource_Process	med	copies n samples from source pointer +0x1c and advances it
+003cf798	SND_DspBufferSource_Init	med	only caller SND_EeFxProcess; sets source pointer and process fn
+003cf7d0	SND_DspAllpass_Process	med	Schroeder allpass: v=x+g*buf, y=-g*v+buf over circular delay (VU0)
+003cf958	SND_DspAllpass_Free	med	frees delay line +0x20
+003cf998	SND_DspAllpass_Init	med	sets process/free fns of allpass node
+003cf9d8	SND_DspAllpass_SetParams	med	g=fb/127, delay length via SND_CalcPrimeDelay, allocs aligned delay line
+003cfa98	SND_Sqrt1pSeries	med	Taylor series of sqrt(1+x) (0.5,-0.125,1/16,-5/128...)
+003cfb38	SND_CalcPrimeDelay	med	delay ms*rate/1000 rounded to prime via SND_NextPrimeDelay, *16
+003cfb68	SND_ISqrt	med	integer square root by linear search
+003cfb98	SND_NextPrimeDelay	med	rate*ms/1000 (min 3) increased to next prime
+003d0ca0	PATH_GetTrackStatus	med	PATH_FindTrack(id) then PATH_TrackGetStatus on result
+003d0cc8	PATH_TrackGetStatus	med	computes/stores track status code at track+0x100 (2..7); used by PATH_ExecuteAction status condition
+003d0ed0	PATH_BroadcastEvent	med	standard PATH guard; builds type-4 event, PATH_QueueAppend + PATHI_copyevent + PATH_AddEventToMaps for each matching map
+003d1038	PATH_SetPaused	high	was PATH_SetVolume: sets per-track pause byte via PATH_PlatSetPaused and global pause flag 0x44f42d checked by PATH_Update (was PATH_SetVolume)
+003d1470	PATH_StopAllTracks	med	for matching maps stops every track's sound (FUN_002af838 SND stop) and sets track node -1
+003d1940	PATH_FlushEvents	med	for matching maps removes all 16 queued events at map+0xdc via PATH_RemoveEvent
+003d1a88	PATH_CountEvents	med	returns number of non-null queued events (map+0xdc[16]) of first matching map
+003d1ba8	PATH_RemoveEvent	med	removes event slot i from map event list (compacts event buffer, shifts array, --count at +0x91c); called by PATH_ServiceQueues
+003d1f80	PATH_AddEventToMaps	med	appends event ptr to event list (max 16) of every map matching id mask, timestamps it; same loop as inline in PATH_PostEvent
+003d4950	PATH_TrackGetQueuedCount	med	sums FUN_002aeaa8 over track's queued stream slots (track+0x20 bits 14..18); identical loop inline in FUN_003d41a8
+003d5330	PATH_CountTracks	med	counts non-null track slots (24 per map) over maps selected by mask
+003d5698	PATH_FadeVolume	med	standard PATH guard; PATH_TrackFadeVolume on each masked track of matching maps
+003d5a98	PATH_TrackUpdateVolumeFade	med	from PATH_UpdateTracks; interpolates +0xc->+0xe over map+0x14 ms with curve, calls volume setter FUN_002af6c0
+003d5cc0	PATH_TrackUpdateAuxSendFade	med	same as volume fade on +0x14/+0x16 using SND/SNDSTRM_SetAuxSend wrapper FUN_002af4e0
+003d6378	PATH_TrackStartVolumeFade	med	sets fade start time/start(+0xc)/target(+0xe) from current volume; consumed by PATH_TrackUpdateVolumeFade
+003d63f8	PATH_TrackStartAuxSendFade	med	sets +0x10 time,+0x14 current aux,+0x16 target; consumed by PATH_TrackUpdateAuxSendFade
+003d6498	SPCH_RegisterEventTable	med	checks magic 0xc03, adds (table,id) to 8-slot table 0x44ffb8, resets table state bytes
+003d66c0	SPCH_AddEventTable	med	called by SpeechInstance_LoadEvents; slot<8 check then SPCH_RegisterEventTable
+003d6768	SPCH_GetConfig	med	returns &0x44ffa8 callback block; SPCH_Init stores EATimer_GetTicks at +8
+003d6cf8	SPCH_BankHasSample	med	bank table gp+0x1734[idx]; true if sample index < bank sample count (+10)
+003d6d30	SPCH_ClearBankTable	med	only caller SPCH_Shutdown; zeroes bank table ptr/count (gp 0x1734/0x1738)
+003d6d40	SPCH_ResetBankTable	med	only caller SPCH_InitState; zeroes bank table ptr/count (gp 0x1734/0x1738)
+003d6ee8	SPCH_HistoryPush	med	pushes sample index into bank's recent-sample ring buffer (wraps at size byte +6)
+003d7110	SPCH_FindEvent	med	finds registered event table by key bytes then entry with matching event id
+003d71d8	SPCH_ResetQueue	med	only caller SPCH_InitState; clears 16x0x60 request slots and 8 channel counters
+003d72a0	SPCH_AllocQueueSlot	med	returns free request slot (of 16) or evicts expired/lower one on channel
+003d7b98	SPCH_FlushQueue	med	marks all 16 request slots free, resets channel counters and per-channel events
+003d7c38	SPCH_FreeQueueSlot	med	frees request slot and chained followers, updates channel counters at 0x44fff8
+003d8278	SPCH_ClearEventTables	med	callers SPCH_Shutdown/SPCH_InitState; zeroes 8-slot event table registry 0x44ffb8
+003da3f0	SPCH_HasPendingSentence	med	returns builder channel(0x450700)==chan && count(0x450704)>0
+003da5c8	SPCH_ResolveBankRef	med	resolves bank by type byte: 0 SPCH_FindBankById, 1 SPCH_FindBank by name, 2 id+SPCH_BankHasSample
+003dab58	SPCH_ShuffleChoices	med	Fisher-Yates shuffle of per-slot choice bytes using SPCH_RandomNoRepeat
+003db008	SPCH_RollChance	med	SPCH_RandomNoRepeat(100,-1) < byte+1 (percent chance)
+003db4d0	SPCH_RandNext	med	multiply-with-carry style 6-word PRNG state at 0x450b70
+003db5c0	SPCH_RandomNoRepeat	med	random in [0,n) avoiding recent values for key (32-entry history 0x450b88)
+003db790	SPCH_SeedRandom	med	only caller SPCH_InitState; seeds PRNG words 0x450b70.. and clears history
+003db9a0	SPCH_GetTime	med	calls config callback 0x44ffb0 (=SPCH_GetConfig()+8, set to EATimer_GetTicks)
+003db9d8	LocStringTable_GetInfo	med	only caller LocStringTable_Load; returns header field by selector 0..3 (LE reads)
+003dbae8	LocStringTable_RemapId	med	bsearch id in remap table, returns mapped index or -1
+003dbb68	LocStringTable_GetStringPtr	med	only caller LocStringTable_ResolveString; optional remap, bounds check, returns string pointer
+003dcfc0	EAFile_SetRequestPriority	med	validates request handle, sets +0x10 priority and re-sorts pending list 0x519ae0 under mutex
+003ddc00	EAFile_OnBigUnmounted	med	callback address-taken in EAFile_QueueUnmountBig: ReleaseRequest + ServiceQueue
+003dea48	EAFile_OnChunkTransferred	med	continuation callback of EAFile_TransferChunked: advances offsets, issues next <=0x8000 chunk
+003dfc48	StreamFile_ConsumeBytes	med	decrements buffered bytes (+0x4c); on crossing low-water sets starved and bumps request priority
+003dfcd8	StreamFile_AllocRequest	med	pops request from free list +0x68 and stamps serial (0x519c18)
+003dfd58	StreamFile_EnqueueRequest	med	callers StreamFile_QueueRange/QueueFile; appends request to pending list
+003dfdd0	StreamFile_LookupRequest	med	maps request handle to 0x124-byte request record, validates serial
+003dfe18	StreamFile_FreeRequest	med	unlinks request from queue and pushes onto free list +0x68
+003dfe88	StreamFile_ClassifyChunk	med	matches chunk header against channel (mask,value) filters, returns channel id or -2
+003dfed0	StreamFile_ParseChunks	med	splits newly read ring data into chunks and accounts them to channels
+003e00d8	StreamFile_OnOpen	med	EAFile callback after QueueOpen: stores file handle, issues read
+003e0118	StreamFile_OnClose	med	EAFile callback after QueueClose: reopen next file (QueueOpen, callback StreamFile_OnOpen)
+003e0170	StreamFile_OnRead	med	EAFile read callback: advances ring, StreamFile_ParseChunks, continues or next request
+003e0270	StreamFile_StartNextRequest	med	advances to next queued request, opens new file if name differs, else issues read
+003e03d0	StreamFile_IssueRead	med	computes free ring space (wraps) and queues EAFile_QueueRead with StreamFile_OnRead
+003e0948	StreamFile_SetChannelFilter	med	called by AV_Player_Init; sets channel (mask,value,param) triple at +0x1c table
+003e0b98	StreamFile_SetStarved	med	only caller StreamFile_SetLowWater; sets +0x48 flag and re-prioritises active read
+003e0bf8	StreamFile_GetChannel	med	called by AV_Player_Init; returns channel record (+0x24 + idx*0x10)
+003e0e90	StreamFile_CancelRequest	med	marks request cancelled (state 4) and discards its chunks from channels
+003e14c8	StreamFile_GetChannelBytes	med	returns channel +8 buffered byte count; caller SNDSTRM_GetStatus
+003e14f8	StreamFile_GetReadState	med	returns stream +0x38 read state (0 idle, 2 buffer full)
+003e15b8	StreamFile_GetBufferedBytes	med	returns stream +0x4c total buffered bytes
+003e16b0	StreamFile_GetRequestStatus	med	StreamFile_LookupRequest then returns request state (+4)
+003e1728	EAFile_GetFileSizeWorker	med	CallWithPriority worker: EAFile_Open, EAFile_GetSize, EAFile_Close
+003e1798	EAFile_GetFileSizeEx	med	EAFile_CallWithPriority(GetFileSizeWorker) flag 1, same pattern as EAFile_LoadFileEx
+003e17d8	EAFile_GetFileSize	med	EAFile_CallWithPriority(GetFileSizeWorker) flag 0, same pattern as EAFile_LoadFile
+003e1810	EAFile_LoadFileWorker	med	worker address-taken in EAFile_LoadFile/Ex: open, size, alloc via 0x450c14, read, close
+003e1948	EAFile_LoadFileGetSizeWorker	med	worker for EAFile_LoadFileGetSize/Ex: as LoadFileWorker plus returns size
+003e1ad0	EAFile_LoadFileIntoWorker	med	worker for EAFile_LoadFileInto/Ex: open, read into caller buffer, close
+003e1c00	EAFile_LoadFilesWorker	med	worker loading a list of files via EAFile_LoadFile
+003e1c98	EAFile_LoadFilesEx	med	CallWithPriority(LoadFilesWorker) flag 1
+003e1d00	EAFile_LoadFiles	med	CallWithPriority(LoadFilesWorker) flag 0
+003e1d68	EAFile_LoadBigHeaderWorker	med	reads 0xa90 bytes, BigFile_GetType/GetHeaderSize, reallocs and reads full header
+003e1ec8	EAFile_LoadBigHeaderEx	med	CallWithPriority(LoadBigHeaderWorker) flag 1
+003e1f08	EAFile_LoadBigHeader	med	CallWithPriority(LoadBigHeaderWorker) flag 0
+003e1f48	EAFile_HostWriteFile	med	prefixes host0:, sceOpen(0x602)/sceWrite in 4K chunks/sceClose
+003e2030	EAFile_HostWriteFileChecked	med	as EAFile_HostWriteFile but checks write/close errors
+003e2310	EAFile_LoadDecompressedInto	med	LoadFileGetSize, RefPack_Unpack if packed, copy into caller buffer, cache flush
+003e2470	EAFile_LoadDecompressedIntoThunk	med	thunk to EAFile_LoadDecompressedInto (caller CameraTriggerMan_LoadFile)
+003e2610	BigFile_GetFooter	med	parses 8-byte trailer 'Lnnn'+u32 before header end; returns 8, version, value
+003e2740	BigFile_GetFooterVersion	med	BigFile_GetFooter(big,&ver,0) returns ver
+003e2ce0	BigFile_FindEntry	med	thunk to EAFile_BigFindEntry
+003e2d00	BigFile_GetEntryOffset	med	BigFile_FindEntry(big,name,0,&off,0) returns offset
+003e2d30	BigFile_GetEntryOffset_2	med	duplicate: EAFile_BigFindEntry(big,name,0,&off,0) returns offset
+003e2d60	BigFile_GetEntryDataByIndex	med	BigFile_FindEntry by index, returns big+offset
+003e2da8	BigFile_GetEntryDataByIndex_2	med	duplicate via EAFile_BigFindEntry, returns big+offset
+003e2df0	BigFile_GetEntryData	med	big+BigFile_GetEntryOffset(name) or 0; caller SpeechInstance_LoadEvents
+003e2e20	BigFile_GetEntryData_2	med	duplicate using BigFile_GetEntryOffset_2
+003e2e50	BigFile_GetEntryDataList	med	splits comma-separated names, BigFile_GetEntryData for each into array
+003e2f70	BigFile_GetEntryName	med	BigFile_FindEntry by index, strcpy name to buffer
+003e2fc8	BigFile_GetEntryName_2	med	duplicate via EAFile_BigFindEntry
+003e39a8	EAFile_CdBuildHashTable	med	only caller EAFile_CdInit; EAFile_HashName entries, qsort, reseed hash until no collision
+003e3d78	EAFile_CdMountDisc	med	sceCdInit/Mmode, reads PVD sector 0x10 and directory sectors with retries, installs sceCdCallback
+003e4968	EAFile_CdFindEntry	med	EAFile_CdLookup then returns pointer to entry in table 0x519c78
+003e51a0	EAThread_Destroy	med	ReferThreadStatus; TerminateThread if running, DeleteThread (i-variants in interrupt)
+003e5290	EAThread_WakeupAlarm	med	alarm handler address-taken in THREAD_yieldticks: iWakeupThread(arg)
+003e5498	EAThread_GetPriority	high	ReferThreadStatus, returns ThreadParam.currentPriority (+0x18)
+003e5508	EAThread_SetPriority	high	ChangeThreadPriority / iChangeThreadPriority on thread id
+003e5580	EAThread_IsFinished	med	ReferThreadStatus; true if dormant (0x10) or status 0
+003e5aa8	Debug_SetChannelState	med	sets enable bit of channel table 0x450e08 (0=all, 1=all default-flagged, else one); only caller Debug_EnableChannel
+003e5d78	Debug_PrintfChannel2	med	varargs wrapper: Debug_VPrintf(2,fmt,...)
+003e5dc8	Debug_EnableOutput	med	enables output sink in table 0x451250 if handler set; init calls (2,1)
+003e5e38	Debug_IsOutputEnabled	med	returns enable bit of output table 0x451258[ch*3]
+003e5e88	Debug_SetOutput	med	stores name+handler into output table 0x451250 entry
+003e5ef8	Debug_EnableChannel	med	Debug_InitChannels-guarded wrapper of Debug_SetChannelState; init calls it (2,1)
+003e5f48	Debug_IsChannelEnabled	med	returns enable bit of channel table 0x450e0c[ch*2] (same bit Debug_VPrintf tests)
+003e5f98	Debug_SetChannelName	med	stores name pointer into channel table 0x450e08 entry
+003e5ff0	Debug_OutputDirect	med	calls output sink handler 0x451254[ch] directly with args
+003e6328	EA_ShellSortPairs	med	shell sort of int key array with parallel value array using gap table 0x451218
+003e6428	Debug_ConsoleOutput	med	output sink handler stored at 0x45126c; printf(text)
+003e66f0	NetGameLinkCreate	high	DirtyRpc 'gmlk'/'crea'; allocs link buffers via Net_RpcAlloc
+003e67f8	NetGameLinkDestroy	high	DirtyRpc 'gmlk'/'dest' then Net_RpcFree
+003e6878	NetGameLink_CopyStats	med	copies 0x150-byte status block from uncached IOP buffer into ref+8
+003e6958	NetGameLinkStatus	med	DirtyRpc 'gmlk'/'stat'; returns ref+8 stats block; caller cDSockChannel_UpdateConnected
+003e6a70	NetGameLink_PeekPacket	med	only caller NetGameLinkRecv; copies one packet from uncached recv buffer
+003e6b10	NetGameLinkRecv	high	DirtyRpc 'gmlk'/'recv'; caller cDSockChannel_Recv
+003e6c80	NetGameLinkSend	high	DirtyRpc 'gmlk'/'send'; caller cDSockChannel_Send
+003e6d78	NetGameLinkControl	high	DirtyRpc 'gmlk'/'ctrl'
+003e6e08	NetGameUtilCreate	high	DirtyRpc 'gmut'/'crea'
+003e6e70	NetGameUtilDestroy	high	DirtyRpc 'gmut'/'dest'
+003e6ed8	NetGameUtilReset	high	DirtyRpc 'gmut'/'rset'
+003e6f40	NetGameUtilConnect	high	DirtyRpc 'gmut'/'conn'; callers cDSockChannel_Listen/Connect
+003e6fc8	NetGameUtilComplete	high	DirtyRpc 'gmut'/'comp'; caller cDSockChannel_UpdateConnecting
+003e7038	NetGameUtilStatus	high	DirtyRpc 'gmut'/'stat' with selector, returns value
+003e7120	NetGameUtilAdvert	high	DirtyRpc 'gmut'/'advt' with '%s\t%s' kind/name
+003e71b0	NetGameUtilWithdraw	high	DirtyRpc 'gmut'/'with'
+003e7218	NetGameUtilLocate	high	DirtyRpc 'gmut'/'loca'
+003e72a0	NetGameUtilQuery	high	DirtyRpc 'gmut'/'quer'
+003e7340	ProtoPingCreate	high	DirtyRpc 'ping'/'crea'; callers cGameComm_ctor, LobbyApi_Create
+003e73e0	ProtoPingDestroy	high	DirtyRpc 'ping'/'dest' + Net_RpcFree; caller cGameComm_dtor
+003e7450	ProtoPingRequest	high	DirtyRpc 'ping'/'requ'; caller cGameComm_PingServer
+003e7500	ProtoPingResponse	high	DirtyRpc 'ping'/'resp'; returns ping reply
+003e76a8	LobbyApi_DebugPrintf	med	vsprintf then debug callback at ref+0x548; used for 'connecting to %08x:%d'
+003e7718	LobbyApi_AddRequest	med	allocs 0x44 request node with seq id ref+0x54c, inserts before 'ping' entries in list ref+0x53c
+003e77f0	LobbyApi_PopRequest	med	removes head request matching kind (or 'DQUE' wildcard) from ref+0x53c list
+003e7918	LobbyApi_PopPingRequest	med	finds/removes 'ping' request by addr+name or expired timeout
+003e7ac0	LobbyApi_FlushRequests	med	pops all requests with 'DQUE' wildcard
+003e7ba0	LobbyApi_SortLists	med	sorts all 8 list slots and fires callback kind 2 when changed
+003e7c40	LobbyApi_ProcessPings	med	drains ProtoPingResponse, fills NAME/ADDR/PING tags, writes '%dms' into user/room lists
+003e7f58	LobbyApi_ResetServerPing	med	clears server ping fields +0x18/+0x1c/+0x20 (used by server ping callback)
+003e7f70	LobbyApi_Terminate	med	sets state 'term', flags, fires 'disc' callback; called on timeout 'time'
+003e7ff0	LobbyApi_Create	high	alloc 0x550, VERS tag, ProtoAriesCreate+ProtoPingCreate; only caller LobbyMan_CreateLobbyApi
+003e80c0	LobbyApi_Reset	med	state 'offl', ProtoAriesUnconnect, frees list entries and requests; caller LobbyMan_DestroyLobbyApi
+003e81c8	LobbyApi_Destroy	high	Reset, destroys lists, ProtoPingDestroy, ProtoAriesDestroy, free; caller LobbyMan_DestroyLobbyApi
+003e8248	LobbyApi_SetCallback	med	stores fn/ctx pair at ref+0x514+idx*8; caller LobbyMan_CreateLobbyApi
+003e8260	LobbyApi_Connect	high	string 'connecting to %08x:%d'; ProtoAriesConnect, sends '@dir', state 'rdir'
+003e8368	LobbyApi_SelectList	med	ROOMS=/USERS=/RANKS= subscribe on/off via 'sele' command, creates/destroys slot list
+003e85b0	LobbyApi_CreateList	med	creates hash+sorted list for slot (<8) with sort fn/ctx
+003e8688	LobbyApi_DestroyList	med	frees entries, hash and sorted list of a slot
+003e8778	LobbyApi_AddListEntry	med	adds entry copy to slot list 3..7 (hash+sorted list)
+003e8968	LobbyApi_RemoveListEntry	med	removes named entry from slot list 3..7
+003e8a28	LobbyApi_HasListEntry	med	hash lookup of name in slot list
+003e8a70	LobbyApi_GetRecord	med	returns record by tag 'user'/'acct'/'pers'/'room'/'play'/'down'
+003e8b10	LobbyApi_Send	med	adds request and ProtoAriesSend of command; encodes PASS tag; handles 'snap'
+003e8d70	LobbyApi_CancelRequest	med	clears callback of request with id (or all for -1)
+003e8dc0	LobbyApi_Ping	med	adds 'ping' request with NAME/ADDR tags and ProtoPingRequest, max 64 pending
+003e8f08	LobbyApi_Status	med	status selectors 'stat','rflg','extn','locl','inat','more','slot'
+003e8fb8	LobbyApi_GetEvent	med	pops lowest set bit of event flag word ref+8; caller LobbyMan_Update
+003e8fd0	LobbyApi_DebugPacket	med	string 'recv: %c%c%c%c/%c%c%c%c' packet dump
+003e9378	LobbyApi_PickRoom	med	scans slot0 room list matching flags/name prefix, picks room by percent-full threshold
+003e94f0	LobbyApi_ServerPingCallback	med	string 'server ICMP timeout'; handles 'ping' reply PING tag
+003e9590	LobbyApi_PingServer	med	LobbyApi_Ping('@server', addr, 3000, LobbyApi_ServerPingCallback)
+003e95c8	LobbyApi_Update	med	main lobby pump: ProtoAriesPeek loop, '~png', DIRECT/Public Key/SLOTS handling; caller LobbyMan_Update
+003eae68	TagField_ParseDecimal	med	parses decimal digits, returns end ptr; used by TagFieldGetDate
+003eb9e8	TagFieldRename	med	finds tag and replaces tag name in place, shifting record text
+003ec3c0	TagFieldSetStructure	med	packs struct by format string (a/b/w/l...) into hex tag value via TagFieldSetRaw
+003ec6d0	TagFieldSetEncoded	med	'$'+hex of key-xor-rotated string (key default 'GS'); used for PASS in LobbyApi_Send
+003ec8b8	TagFieldSetDateYMDHMS	med	builds tm from year/month/day/h/m/s, ds_timetosecs, TagFieldSetDate
+003ec9a0	TagFieldSetDatePacked	med	same from packed 0xYYYYMMDD/0xHHMMSS ints
+003eca88	TagFieldCopyField	med	finds tag in source record and TagFieldSetRaw's it into dest
+003ecb00	TagFieldMerge	med	merges each field of a source record into dest via TagFieldSetRaw
+003ed0f8	TagFieldGetDelim	med	extracts Nth delimited (quoted, %-escaped) item; (src,buf,len,default,index,delim)
+003ed578	TagFieldDecodeHex	med	decodes '$'-prefixed hex string into bytes
+003ed970	TagFieldGetEncoded	med	inverse of TagFieldSetEncoded ('$' hex + key), falls back to TagFieldGetString
+003edb08	TagFieldGetDate	med	parses '$hex' or 'YYYY.MM.DD HH:MM:SS' to secs via ds_timetosecs
+003edd70	TagFieldGetDateYMDHMS	med	TagFieldGetDate + ds_secstotime into year/month/day/h/m/s out params
+003ede80	TagFieldGetDatePacked	med	TagFieldGetDate + ds_secstotime into packed YYYYMMDD/HHMMSS
+003ee028	Lobby_ListGrow	med	grows sorted-list node pool and index array (Lobby_MemAlloc)
+003ee1b0	Lobby_ListCompareThunk	med	adapter calling list sort fn (+0x30) for Lobby_MergeSort
+003ee1e8	Lobby_ListCreate	med	alloc 0x44 sorted list, initial pool via Lobby_ListGrow
+003ee260	Lobby_ListDestroy	med	frees node pool chain, index array and list
+003ee320	Lobby_ListAdd	med	takes node from free pool, appends to index, filter callback +0x24
+003ee3e0	Lobby_ListUpdate	med	replaces item data and marks list dirty via filter callback
+003ee468	Lobby_ListGetData	med	returns node data pointer (null-safe)
+003ee480	Lobby_ListRemove	med	removes node from index array, returns data, node back to free pool
+003ee550	Lobby_ListGetCount	med	returns total count +0x18
+003ee558	Lobby_ListGetVisibleCount	med	returns filtered count +0x14
+003ee560	Lobby_ListGetAt	med	bounds-checked index lookup returning node data
+003ee5a0	Lobby_ListSetSort	med	sets sort fn/ctx and marks dirty
+003ee600	Lobby_ListMarkDirty	med	increments change counter +0xc, returns dirty
+003ee620	Lobby_ListSort	med	partitions by filter callback then Lobby_MergeSort with compare thunk
+003ee768	Lobby_ListSetHash	med	stores associated hash at list+0x34 (LobbyApi_CreateList)
+003ee770	Lobby_ListGetHash	med	returns list+0x34 (LobbyApi_DestroyList)
+003ee778	Lobby_HashCreate	med	alloc 0x24 hash table with bucket array, default strcmp, node pool
+003ee820	Lobby_HashDestroy	med	frees pool chain, bucket array and table
+003ee900	Lobby_HashGrowPool	med	allocates block of 12-byte hash nodes onto free list
+003ee9a0	Lobby_HashPopAny	med	removes next entry (round-robin bucket), returns value
+003eea48	Lobby_HashString	med	case-insensitive *131 string hash mod bucket count
+003eeb30	Lobby_HashAddStr	med	inserts string-keyed entry
+003eebf8	Lobby_HashReplaceStr	med	finds string key, swaps value, returns old
+003eec88	Lobby_HashFindStr	med	finds string key via compare fn, returns value
+003eed08	Lobby_HashDelStr	med	unlinks string-keyed entry, returns value
+003eeda0	Lobby_HashAddInt	med	inserts int-keyed entry
+003eeee8	Lobby_HashFindInt	med	finds int key, returns value
+003eef40	Lobby_HashDelInt	med	unlinks int-keyed entry, returns value
+003ef090	ds_timezone	med	cached local-minus-GMT seconds via sceScfGetLocalTimefromRTC/GMTfromRTC
+003ef210	Lobby_MergeSort	med	run-detecting merge sort with comparator, elem size; only caller Lobby_ListSort
+003ef600	Utf8_GetSeqLen	med	counts leading 1 bits of UTF-8 lead byte
+003ef640	Utf8_DecodeCodePt	med	decodes one UTF-8 sequence to UCS-2, returns bytes consumed
+003ef6f8	Utf8EncodeFromUCS2CodePt	med	encodes one UCS-2 char to 1-3 UTF-8 bytes
+003ef770	Utf8_TranslateCodePt	med	maps UCS-2 code point to 8-bit via range table, replacement char
+003ef808	Utf8Strip	med	wrapper of Utf8Replace with no replacement char
+003ef828	Utf8Replace	med	copies ASCII, drops/replaces multibyte sequences with given char
+003ef940	Utf8StrLen	med	counts UTF-8 characters
+003ef9b8	Utf8EncodeFromUCS2	med	UCS-2 string to UTF-8
+003efa48	Utf8DecodeToUCS2	med	UTF-8 string to UCS-2
+003efaf8	Utf8EncodeFrom8Bit	med	8-bit string to UTF-8 via 256-entry UCS-2 table
+003efba0	Utf8TranslateTo8Bit	med	UTF-8 to 8-bit via range translate table
+003efc68	Lobby_ParseHex	med	parses hex number, returns end ptr
+003efcd8	Lobby_ParseHexRange	med	parses 'start:end,' hex range
+003efd30	Lobby_HashMemoryRanges	med	CryptMD5 over seed + memory ranges listed as 'start:end,' (bounds-checked)
+003efed0	BuddyApi_DebugPrintf	med	vsprintf then debug callback ref+0x508
+003eff40	BuddyApi_DebugPacket	med	string '%s%c%c%c%c/%c%c%c%c' packet dump
+003f00d8	BuddyApi_SendPacket	med	ProtoAriesSend + debug dump with 'send: '
+003f0150	BuddyApi_StripUserName	med	truncates name at '@' and '/'
+003f0198	BuddyApi_DispatchMessage	med	splits USER into user/domain/resource tags, kind 'chat', calls callback +0x4b0
+003f02d0	BuddyApi_ParsePresence	med	parses presence status/product fields into buddy record
+003f0568	BuddyApi_SendPresence	med	sends 'PSET' with presence tags
+003f0610	BuddyApi_SetState	med	sets state ref+8 and fires 'conn' callback
+003f0658	BuddyApi_SetPendingOp	med	records pending op code/seq/timeout/callback for op slot
+003f0710	BuddyApi_Create	med	alloc 0x50c, copies two names, ProtoAriesCreate(0x8000)
+003f07a0	BuddyApi_Destroy	med	releases lookup, Disconnect, FlushRoster, ProtoAriesDestroy, free
+003f08e8	BuddyApi_Connect	med	builds login tags, SocketLookup of server, state 1, timeout
+003f0b50	BuddyApi_Disconnect	med	sends 'DISC', ProtoAriesUnconnect, state 0
+003f0be0	BuddyApi_FlushRoster	med	frees roster hash/list and fires 'rost' callback
+003f0c90	BuddyApi_GetRoster	med	creates roster hash/list and sends two 'RGET' requests
+003f0e38	BuddyApi_Add	med	adds buddy to roster, sends 'RADD'/'PADD'
+003f11f8	BuddyApi_Del	med	removes buddy flags, sends 'RDEL'/'PDEL', frees entry
+003f14d8	BuddyApi_Find	med	roster hash lookup by name
+003f1538	BuddyApi_ClearPresence	med	clears presence buffers +0x40/+0x140
+003f1578	BuddyApi_SetPresenceField	med	sets 2-char tag into presence extra record +0x140
+003f15c8	BuddyApi_SetPresence	med	sets status/state tags with delay then BuddyApi_SendPresence
+003f16d8	BuddyApi_Send	med	validates message tags, pending op 2, sends 'SEND'
+003f17c8	BuddyApi_SetCallback	med	stores callback fn +0x4b0 and ctx +0x4ac
+003f2220	CryptMD5_Transform	high	MD5 round constants 0xd76aa478.. ; callers CryptMD5_Update/Final
+003f30f0	CryptMD5_Init	high	MD5 IV 0x67452301/0xefcdab89/0x98badcfe/0x10325476
+003f3128	CryptMD5_Update	high	buffers bytes into 64-byte block, calls transform
+003f31f8	CryptMD5_Final	high	0x80 padding + bit length, outputs 16 bytes or hex
+003f33b0	Lobby_CipherInit	med	RC4-style key schedule mixed with CRC table 0x496c08
+003f3530	Lobby_CipherApply	med	RC4-style keystream xor
+003f35d0	Lobby_EncryptString	med	cipher-encodes printable string ('ru paranoid?' seed); used for PASS
+003f3748	Lobby_DecryptString	med	inverse of Lobby_EncryptString
+003f3860	SocketLookup_Done	med	hostent done callback: DirtyRpc 'name'/'done', 'addr'
+003f3940	SocketLookup_Free	med	hostent free callback: DirtyRpc 'name'/'free' + Net_RpcFree
+003f39c8	SocketLookup_Create	med	allocs hostent with Done/Free fns, DirtyRpc 'name'/'look'
+003f3a98	SocketLookup	med	wrapper of SocketLookup_Create; callers LobbyMan_Connect, BuddyApi_Connect
+003f3ab8	SocketLookupSync	med	SocketLookup, spins on Done, returns addr, Free
+003f3bc8	NetConnQuery	med	DirtyRpc 'netw'/'list' returns config list
+003f3c50	NetConnConnect	med	DirtyRpc 'netw'/'star'; caller cCommSystem_Update
+003f40b8	NetConnDisconnect	med	DirtyRpc 'netw'/'shut'; caller cCommSystem_Disconnect
+003f4118	NetConnShutdown	med	NetConnDisconnect + DirtyRpc 'netw'/'dest', clears started flag
+003f41b8	NetConnSleep	med	busy-wait N ms (default 5) on NetTick
+003f4448	DirtyRpc_AlarmHandler	med	iSetAlarm handler re-arming itself, iWakeupThread of RPC thread
+003f44f8	DirtyRpc_ThreadMain	med	thread loop: DirtyRpc_ProcessReplies then SleepThread; created by DirtyRpc_Startup
+003f4528	DirtyRpc_Send	med	only caller DirtyRpc_Call; queues request, sceSifSetDma/sceSifSendCmd, waits
+003f4a78	DirtyRpc_ProcessReplies	med	drains reply ring, invokes callbacks/wakes waiting threads
+003f4de8	NetTick	med	ms tick: Count/0x48000 (294.912MHz)
+003f4e80	DirtyRpc_SyncDCache	med	SyncDCache(ptr, ptr+len) wrapper
+003f4ea0	NetGameLink_CheckRecvBuf	med	validates uncached recv buffer header, returns seq/len; caller NetGameLinkRecv
+003f4f40	DirtyRpc_WaitIop	med	sceSifSendCmd and wait (timeout) for IOP ack flag
+003f5000	DirtyRpc_Startup	med	alloc IOP heap, SIF DMA setup, sema, thread, intc handler; caller NetConnStartup
+003f53f8	DirtyRpc_Shutdown	med	releases alarms, intc handler, thread, sema; clears started flag
+003f5470	DirtyRpc_IsStarted	med	returns flag set at end of DirtyRpc_Startup; checked by NetConnStartup
+003f5478	ProtoAriesCreate	high	DirtyRpc 'sess'/'crea' with buffer 0x1000-0x2000
+003f55b8	ProtoAriesDestroy	high	DirtyRpc 'sess'/'dest' + Net_RpcFree
+003f5638	ProtoAriesConnect	high	DirtyRpc 'sess'/'conn' with addr/port sockaddr
+003f5738	ProtoAriesUnconnect	high	DirtyRpc 'sess'/'disc'
+003f57c8	ProtoAriesStatus	high	DirtyRpc 'sess'/'stat'; selectors 'port','addr','ladr','lprt','ibuf'
+003f5910	ProtoAriesSend	high	DirtyRpc 'sess'/'send' with kind/code/len header
+003f5a70	ProtoAriesPeek	high	DirtyRpc 'sess'/'recv'; returns kind/code/data of next packet without consuming
+003f5c38	ProtoAriesRecv	high	ProtoAriesPeek + copy + advance, re-issues 'sess'/'recv'
+003f5d88	ProtoAriesTick	med	returns NetTick; called with aries ref by LobbyApi/BuddyApi timers
+003f5da8	UsbKb_LoadModules	med	sceSifLoadModule of USB driver + 'USBKB.IRX' with args; caller UsbKb_Init
+003f5e90	UsbKb_UnloadModule	med	sceSifStopModule + sceSifUnloadModule
+003f5f08	UsbKb_RequestInfo	med	sceUsbKbGetInfo, saves previous connection states
+003f5f88	UsbKb_SyncInfo	med	sceUsbKbSync, fires connect callback on change
+003f6040	UsbKb_FindNextReady	med	next connected keyboard with no pending data
+003f60b8	UsbKb_RequestRead	med	sceUsbKbRead on next keyboard
+003f6138	UsbKb_SyncRead	med	sceUsbKbSync after read, marks data ready
+003f61d0	UsbKb_Init	med	load modules, sceUsbKbInit, set callbacks; caller cUsbKeyboard_ctor
+003f62f8	UsbKb_Shutdown	med	sceUsbKbEnd + unload modules; caller cUsbKeyboard_dtor
+003f6348	UsbKb_GetMaxKeyboards	med	returns sceUsbKbInit max-connect count (clamped 8)
+003f6358	UsbKb_DefaultConnectCb	med	on connect: set LED status/mode, clear rbuf, repeat, code type
+003f63f0	UsbKb_Update	med	async state machine info/read/sync; caller cUsbKeyboard_Update
+003f64e0	UsbKb_GetData	med	returns keyboard data block if ready flag set, clears it
+003f6520	UsbKb_IsConnected	med	connection state byte for keyboard index
+003f6538	UsbKb_AnyConnected	med	UsbKb_Update then any keyboard connected
+003f6670	UsbKb_ConvertRawCode	med	sceUsbKbCnvRawCode with keypad table
+003f6700	UsbKb_CheckModifierKey	med	maps modifier virtual keys to modifier bit mask
+003f67e0	UsbKb_CheckLedKey	med	maps lock keys to LED bit mask
+003f68f0	UsbKb_TranslateKey	med	keymap + raw code conversion into static 2-byte buffer
+003f6960	VoipRpc_Call	med	sceSifCallRpc on bound client 0x526100; used by all VoIP commands
+003f6a40	VoipRpc_Init	med	sceSifBindRpc(0x237), cmd 0 with shared status buffer; caller ssx_LoadNetModules
+003f6ab8	VoipRpc_Start	med	cmd 2; only caller cVoipMan_Start
+003f6af0	VoipRpc_Stop	med	cmd 3; only caller cVoipMan_Stop
+003f6ba0	VoipRpc_GetStatus	med	cmd 7, returns two status ints
+003f6c40	VoipRpc_GetSharedStatus	med	reads shared IOP status word set up by VoipRpc_Init
+003f6d98	SLogin_FreeState	med	only caller SLogin_Shutdown; frees 0x14c-byte login state block (gp-0x1ad4) via TibExt free and clears pointer
+003f6dc8	SLogin_InitStore	med	inits SLoginStore (SLoginStore_Init) with cipher iface and key 'Copyright Electronic Arts' (0x1a bytes)
+003f6e70	SLogin_ShutdownStore	med	only caller SLogin_Shutdown; SLoginStore_Shutdown + error map
+003f6e98	SLogin_StartOp	med	if state idle (+0xd0==4) starts op N via SLogin_ResetForOp else returns busy 0x16; called by Create/Update/Load/Delete with op 0..3
+003f6ee0	SLogin_OpUpdate	med	per-op update fn installed at +0xd4: runs current step fn (+0xdc) or pending sequence starter (+0xe8)
+003f6f68	SLogin_StepUpdate	med	step fn (+0xdc): drives start(+0xf0)/poll(+0xf4) of current step, calls success (+0xe0) / error (+0xe4) continuations
+003f71b8	SLogin_OnStepError	med	error continuation for steps 0-5: saves error code to +0x148 and jumps to close step 7
+003f71f8	SLogin_OnFinalError	med	error continuation for steps 6/8: ends sequence (SLogin_EndSequence)
+003f7218	SLogin_OnStepDone	med	success continuation: chains step 0->1, 1->2/4, 2->3, 3/5->6, 4->5 per op
+003f72c8	SLogin_OnFinalDone	med	success continuation for steps 6/8: ends sequence, result 2 (done)
+003f72f8	SLogin_OnErrorCloseDone	med	continuation of close-after-error step 7: restores saved error (+0x148) and ends sequence
+003f7328	SLogin_BeginSequence	med	pending starter (+0xe8): picks first step from op (0 create, 1/2 open, 3 delete) via SLogin_SetStep
+003f73a8	SLogin_StepCreate	med	step 0: SLoginStore_Create('slogin'), on success fetch store info
+003f73f0	SLogin_StepOpen	med	step 1: SLoginStore_Open('slogin')
+003f7438	SLogin_StepDelete	med	step 8: SLoginStore_Delete('slogin')
+003f7478	SLogin_StepWriteAcct	med	step 2: allocs 0x11-byte record, copies account name, SLoginStore_Write tag 'ACCT' (0x41434354)
+003f7528	SLogin_StepWritePass	med	step 3: allocs 0x11-byte record, copies password, SLoginStore_Write tag 'PASS' (0x50415353)
+003f75d8	SLogin_StepReadAcct	med	step 4: allocs record and SLoginStore_Read tag 'ACCT'
+003f7658	SLogin_StepReadPass	med	step 5: allocs record and SLoginStore_Read tag 'PASS'
+003f76d8	SLogin_StepClose	med	steps 6/7: SLoginStore_Close
+003f7708	SLogin_StepPoll	med	step poll fn (+0xf4): SLoginStore_Poll, runs on-done (+0xfc) or on-fail (+0x100) callbacks
+003f77f8	SLogin_FetchStoreInfo	med	on-done of create: SLoginStore_GetInfo into state+0x44
+003f7820	SLogin_OnOpenDone	med	on-done of open step; wraps SLogin_FetchStoreInfo
+003f7840	SLogin_OnReadAcctDone	med	copies 0x11-byte ACCT record to user output (+0xcc) then frees record
+003f7890	SLogin_OnReadPassDone	med	copies 0x11-byte PASS record to user output +0x11 then frees record
+003f78e0	SLogin_OnWriteAcctDone	med	on-done of ACCT write: frees record buffer
+003f7900	SLogin_OnWritePassDone	med	on-done of PASS write: frees record buffer
+003f7920	SLogin_FreeAcctRecord	med	frees record buffer (+0x144) via SLoginStore_FreeBlock; ACCT steps' fail/done path
+003f7958	SLogin_FreePassRecord	med	frees record buffer (+0x144) via SLoginStore_FreeBlock; PASS steps' fail/done path
+003f7990	SLogin_ResetForOp	med	sets op (+0xd0/+0x104), installs SLogin_OpUpdate + SLogin_BeginSequence, clears step fns
+003f7a30	SLogin_FinishOp	med	only caller SLogin_Poll; state idle (4), clears update fns, ends sequence
+003f7a60	SLogin_SetStep	med	sets current step (+0xd8), installs StepUpdate + success/error continuations, then SLogin_InitStepFuncs
+003f7bd0	SLogin_EndSequence	med	step=10 (none), clears step/continuation fns
+003f7c00	SLogin_InitStepFuncs	med	switch on step: installs StepCreate/Open/WriteAcct/.../Delete as start fn, StepPoll as poll fn
+003f7d98	SLogin_ClearStepFuncs	med	step state 5, zeroes start/poll/end and callback fn slots
+003f7e90	SLogin_StrCopyN	med	bounded strcpy (dst,src,n) with NUL termination; used for 0x11-byte account/password
+003f7ee0	SLogin_Init	med	only caller cSharedLoginMan init (FUN_00265950); allocs state then SLogin_InitStore
+003f7f18	SLogin_Shutdown	med	only caller cSharedLoginMan teardown; ShutdownStore + FreeState
+003f7f48	SLogin_Create	med	copies account/password, verifies icon, sets up icon.sys, starts op 0 (create+write)
+003f8000	SLogin_Load	med	stores output pointer (+0xcc), starts op 2 (open, read ACCT/PASS, close)
+003f8048	SLogin_Update	med	copies new account/password strings, starts op 1 (open, write ACCT/PASS, close)
+003f80c0	SLogin_Delete	med	starts op 3 (delete 'slogin' save)
+003f80e0	SLogin_Poll	med	called by cFEStateNetAccountMem update path; runs op update, finishes op when done/failed
+003f8178	SLogin_MapStoreError	med	switch mapping SLoginStore error codes (0x67..0x72 etc) to SLogin result codes
+003f8258	SLogin_SetupIconSys	med	strings 'EA Login','view.ico','icon.sys': builds icon.sys (SJIS title) and hands it to SLoginStore_SetIconSys
+003f8550	SLoginMc_FirstDeviceInMask	med	lowest set bit index of 8-bit memcard device mask
+003f8588	SLoginMc_LastDeviceInMask	med	highest set bit index of 8-bit memcard device mask
+003f85c0	SLoginMc_NextDeviceInMask	med	next (dir 0) or previous (dir 1) set bit after current device (+0x10) in mask; -1 if none
+003f86b8	SLoginMc_CountDevicesInMask	med	popcount of 8-bit device mask
+003f86f0	SLoginMc_SetError	med	stores error in op state +8 unless op is abort (0xb..0xd); 11 callers
+003f8710	SLoginMc_GetError	med	returns op state +8 (error)
+003f8c38	SLoginMc_OpenStep	med	state handler for ops 3/6 (table 0x451468): check dir, open data file mode 3, iterate devices
+003f8ef8	SLoginMc_IoStep	med	state handler for ops 8/9/10 (seek/write/read): checks completed byte count vs request
+003f8ff0	SLoginMc_CloseStep	med	state handler for op 7: flush -> close fd -> finish device
+003f9130	SLoginMc_AbortStep	med	state handler for abort ops 0xb-0xd: continues flush/close/finish then returns saved error
+003f9208	SLoginMc_IsInitialized	med	returns memcard layer context (gp-0x1aec) != 0; 12 callers guard on it
+003f9218	SLoginMc_Init	med	allocs 0x42c ctx + 0x74 op state, copies 17 driver callbacks and device mask, installs step tables 0x451468/0x4514a0
+003f9530	SLoginMc_Shutdown	med	clears driver callbacks, frees op state (0x74) and ctx (0x42c)
+003f9698	SLoginMc_StartDelete	med	op 2/5: picks device, copies dir name, starts device check; handler SLoginMc_DeleteStep
+003f9818	SLoginMc_StartCreate	med	op 1/4: dir name <0x18 chars, picks device, starts device check; handler SLoginMc_CreateStep
+003f99b8	SLoginMc_StartOpen	med	op 3/6: picks device, copies dir name, starts device check; handler SLoginMc_OpenStep
+003f9b38	SLoginMc_StartClose	med	op 7 substate 0x18: copies file state, calls driver +0x38 on fd
+003f9c48	SLoginMc_StartSeek	med	op 8 substate 0x1b: driver seek (+0x34) fd, offset (+data offset), whence
+003f9dc0	SLoginMc_StartRead	med	op 10 substate 0x1d: driver +0x2c(fd,buf,size), expected size stored +0x70
+003f9f00	SLoginMc_StartWrite	med	op 9 substate 0x1c: driver +0x30(fd,buf,size), expected size stored +0x70
+003fa040	SLoginMc_Poll	med	polls driver (+0x40), dispatches substate/op handler tables, resets op on completion
+003fa1d0	SLoginMc_GetPortSlot	med	validates device index <8 and splits it to (port,slot); called by cSharedLoginMan helpers
+003fa240	SLoginMc_SetIconSys	med	copies icon.sys block (0x3c4+) into ctx+0x50 and computes required save size
+003fa380	SLoginMc_AsciiToSjis	med	converts ASCII string to big-endian Shift-JIS fullwidth (0x8220/0x821f offsets) for icon.sys title
+003fa6a8	SLoginMc_CalcSaveSize	med	wrapper of SLoginMc_CalcSaveSizeImpl
+003fa6c8	SLoginMc_GetChecksumIface	med	wrapper storing checksum (CRC32) interface pointer; used by SLoginStore_Init
+003fa708	SLoginMc_SplitDeviceIndex	med	switch device 0..7 -> {port=idx/4, slot=idx%4} bytes
+003fa7a0	SLoginMc_BuildDirPath	med	builds 0x20-byte path: device prefix char + dir name
+003fa818	SLoginMc_BuildFilePaths	med	builds two 0x20-byte paths from 9-byte prefix (0x497400) + name
+003fa8f8	SLoginMc_CreateStep	med	strings 'icon.sys','view.ico': create handler: free-space check, mkdir, create data file, write icon.sys (0x3c4) and view.ico
+003fae50	SLoginMc_DeleteStep	med	strings 'icon.sys','view.ico': delete handler removes icon.sys, view.ico, data file then directory
+003fb280	SLoginMc_CalcSaveSizeImpl	med	rounds icon.sys/data sizes to 1KB clusters + 0x1400 overhead, returns size and 3
+003fb2c8	SLoginMc_GetChecksumIfaceImpl	med	stores Crc32_GetInterface() into out param
+003fb318	Crc32_TableEntry	med	reflected CRC32 poly 0xedb88320, 8 rounds for one byte
+003fb358	Crc32_BuildTable	med	fills 256-entry table with Crc32_TableEntry
+003fb3a0	Crc32_Init	med	iface slot 0 (0x497508): allocs 0x400-byte table, builds it, state init 0xffffffff
+003fb430	Crc32_Shutdown	med	iface slot 1 (0x49750c): frees 0x400-byte CRC table
+003fb5e8	Crc32_GetInterface	med	returns checksum interface table 0x497508 (Crc32_Init/Shutdown...)
+003fb800	SLoginStore_GetCipherIface	med	returns cipher interface table 0x497528 (reset/encrypt/decrypt/finish used by SLoginStore)
+003fb810	SLoginStore_MapMcError	med	error+100 for memcard-layer errors (0 stays 0)
+003fb828	SLoginStore_MapCipherError	med	error+200 for cipher iface errors (0 stays 0)
+003fb840	SLoginStore_MapHashError	med	error+300 for checksum iface errors (0 stays 0)
+003fb898	SLoginStore_CalcAllocSize	med	size + 0xc sentinel header rounded to alignment
+003fb910	SLoginStore_GetBlockHeader	med	ptr-0xc, optionally verifies 'TAG SENTINEL' (12 bytes)
+003fb958	SLoginStore_SetRecordHeader	med	writes record header {tag,size,crc}
+003fb9a0	SLoginStore_WriteSentinel	med	writes 12-byte 'TAG SENTINEL' at ptr
+003fb9d0	SLoginStore_GetRecordHeader	med	reads record header {tag,size,crc} into optional outs
+003fba20	SLoginStore_FindRecord	med	finds Nth directory entry with tag in record table (+0x9c, count +0x94)
+003fba78	SLoginStore_SetRecordCrc	med	sets crc field of Nth directory entry with tag
+003fbad0	SLoginStore_AddRecord	med	appends directory entry {tag,offset,size,crc}, advances end offset
+003fbb50	SLoginStore_Hash	med	checksum iface reset/update(data,len)/final; error via MapHashError
+003fbbe0	SLoginStore_HashDirectory	med	hashes record table (count*16 bytes) into out
+003fbc40	SLoginStore_Encrypt	med	cipher iface reset(key)/+0x10 process/finish; used on write path
+003fbcd8	SLoginStore_Decrypt	med	cipher iface reset(key)/+0x14 process/finish; used on read paths
+003fbd70	SLoginStore_BeginOpen	med	SLoginMc_StartOpen, resets directory counters
+003fbdb8	SLoginStore_SeekToStart	med	substate 9, SLoginMc_StartSeek offset 0
+003fbed0	SLoginStore_WriteRecord	med	substate 6: sets header, encrypts header+payload, SLoginMc_StartWrite
+003fbf80	SLoginStore_ReadRecord	med	substate 10: SLoginMc_StartRead of header+payload
+003fbfe0	SLoginStore_VerifyRecord	med	decrypts read record, checks tag/size, hashes payload and compares crc (error 10)
+003fc0d8	SLoginStore_IsInitialized	med	returns store ctx (0x4a5b20) != 0
+003fc0e8	SLoginStore_Init	med	SLoginMc_Init, allocs 0xac ctx, inits checksum + cipher ifaces, copies key, allocs record table
+003fc260	SLoginStore_Shutdown	med	frees record table, key, shuts cipher/checksum ifaces, SLoginMc_Shutdown, frees ctx
+003fc390	SLoginStore_Create	med	op 1: SLoginMc_StartCreate(name)
+003fc3c0	SLoginStore_Delete	med	op 2: SLoginMc_StartDelete(name)
+003fc4c8	SLoginStore_Open	med	wrapper of SLoginStore_BeginOpen (op 4)
+003fc4e8	SLoginStore_Close	med	op 3: hashes directory, SLoginMc_StartClose
+003fc548	SLoginStore_Write	med	op 6: finds/adds record (tag,index), hashes payload, seeks to record offset
+003fc708	SLoginStore_Read	med	op 8: finds record (tag,index), checks size (0x6e), seeks to record offset
+003fc850	SLoginStore_CountRecords	med	counts directory entries with given tag
+003fc8f8	SLoginStore_GetRecordSize	med	returns size of record (tag,index), 7 if missing
+003fc990	SLoginStore_GetInfo	med	copies 0x64-byte store state to caller
+003fca40	SLoginStore_Poll	med	polls SLoginMc and advances write/read/open/close sub-state machine
+003fcdc8	SLoginStore_SetIconSys	med	guarded wrapper of SLoginMc_SetIconSys
+003fce10	SLoginStore_AllocBlock	med	allocs size+0xc via TibExtMemAlloc, zeroes, writes 'TAG SENTINEL', returns ptr past it
+003fcf00	SLoginStore_FreeBlock	med	frees block at ptr-0xc
+003fcf98	SLoginStore_GetBlockSize	med	returns SLoginStore_CalcAllocSize(size)
+003fd150	DnasRel_Run	med	calls DirtyDnasRelInit ptr, loops DirtyDnasRelUpdt with user callback until !=1, then DirtyDnasRelExit
+00402bb0	libmpeg_ClearFrameFlags	med	only caller sceMpegCreate; zeroes +0x28 status of the 6 frame buffers
+00403098	libmpeg_DecodePicture	med	dispatches on picture_structure (+0x174==3) to frame/field picture decoders
+004032b8	libmpeg_OutputLastPicture	med	string 'the second field is missing'; outputs last frame/field pair
+004039f0	libmpeg_SetupFrameBuffers	med	only caller libmpeg_SequenceHeader; computes uncached Y/Cb/Cr buffer addresses from mb count
+00404050	libmpeg_FormPredictions	med	strings '(a)/(b)/(c) invalid motion_type(%d)'; per motion type sets up prediction blocks
+00404b78	libmpeg_AddPredAndStore	med	string 'intra && skip MB'; runs pred fns, paddh/pmin/pmax saturate + ppacb into output
+00405b70	libmpeg_WaitBdec	med	string 'Error code detected(BDEC)'; waits IPU BDEC, resets IPU/DMA on error
+00405e10	libmpeg_DecodeDmVector	med	only caller libmpeg_MotionVector; libmpeg_IpuVdec type 3 (dmvector)
+00405e30	libmpeg_DualPrimeArithmetic	med	MPEG-2 dual-prime vector derivation (+-1 field offset, *3 scaling) from FormPredictions
+004074b8	libmpeg_SliceHeaderTail	med	reads quantiser_scale_code(5), intra_slice flags, extra_bit_information
+004076f8	libmpeg_ExtensionAndUserData	med	loops start codes 0x1b5 (extension, dispatch table by id) and 0x1b2 (user data)
+00407c38	libmpeg_PictureDisplayExtension	med	extension id 7 entry (0x497ffc); reads 16-bit frame centre offsets + marker bits
+00407dc0	libmpeg_DecodePictureSlices	med	strings 'odd number of field pictures','unknown picture sutructure'; DecodeSlices, marks frame decoded
+004086c0	libmpeg_OutputFrame	med	fills output callback data and converts frame (CSC or raw copy)
+004087d0	libmpeg_OutputFieldPair	med	same as OutputFrame for two fields (doubles stride)
+00408b80	libmpeg_IpuCsc	med	IPU fromIPU DMA + IPU CSC command (0x70000000) with callback 4
+00409088	libmpeg_ConvertPictureCsc	med	DMAs picture to IPU (chunked with dmac handler >64K qw) and runs CSC
+0040a7d0	libmc_ChdirCallback	med	address taken by sceMcChdir; copies returned current dir (<=0x3ff) to user buffer
+0040b1f8	sceSifMExitRpc	med	clears libmrpc init flag 0x4533e0 set by sceSifMInitRpc
+0040c980	libusbkb_ReadCallback	med	callback 0x453428: parses keyboard report, key repeat via KeyBufPush/Pop, converts codes
+0040d118	libusbkb_ConvertKeyCodes	med	copies raw codes or sceUsbKbCnvRawCode per keyboard code type
+00412e10	exception_what	high	gcc2.95 exception::what: typeid(*this).name(); in vtables of exception/bad_exception/bad_cast/bad_typeid
+00412e38	bad_exception_dtor	high	dtor slot of bad_exception vtable 0x4998a0 (__tf13bad_exception), resets vptr to exception, deletes
+00412ed0	exception_dtor	high	dtor slot of exception vtable 0x4998b8 (__tf9exception)
+00414b68	type_info_dtor	high	dtor slot of type_info vtable 0x499a48 (__tf9type_info); base of all __*_type_info dtors
+00414c40	__user_type_info_dcast	high	dcast slot of __user_type_info vtable 0x499a00
+00414c70	__si_type_info_dcast	high	dcast slot of __si_type_info vtable 0x4999e8; recurses into base
+00414d08	__class_type_info_dcast	high	dcast slot of __class_type_info vtable 0x4999d0; walks base list
+00414f50	__class_type_info_dtor	high	dtor slot of __class_type_info vtable 0x4999d0
+00414fe0	__si_type_info_dtor	high	dtor slot of __si_type_info vtable 0x4999e8
+00415068	__user_type_info_dtor	high	dtor slot of __user_type_info vtable 0x499a00
+00415088	bad_typeid_dtor	high	dtor slot of bad_typeid vtable 0x499a18
+00415120	bad_cast_dtor	high	dtor slot of bad_cast vtable 0x499a30
+004158f0	__tfv	med	gcc2.95 typeid(void): lazily inits static __builtin_type_info ('v', vtable 0x499ba8); used by __throw_type_match_rtti_2
+00415cf8	__array_type_info_dtor	high	dtor slot of __array_type_info vtable 0x499b68
+00415d68	__ptmd_type_info_dtor	high	dtor slot of __ptmd_type_info vtable 0x499b78
+00415dd8	__ptmf_type_info_dtor	high	dtor slot of __ptmf_type_info vtable 0x499b88
+00415e48	__func_type_info_dtor	high	dtor slot of __func_type_info vtable 0x499b98
+00415eb8	__builtin_type_info_dtor	high	dtor slot of __builtin_type_info vtable 0x499ba8
+00415f28	__attr_type_info_dtor	high	dtor slot of __attr_type_info vtable 0x499bb8
+00415f98	__pointer_type_info_dtor	high	dtor slot of __pointer_type_info vtable 0x499bc8
+00417628	lflush	med	newlib refill.c static lflush passed to _fwalk by __srefill; calls fflush
+0041ae00	vfprintf_RoundDigits	med	rounds decimal digit string (last >'4' -> carry through '9's)
+0041ae70	vfprintf_StrReverse	med	in-place string reverse; only caller vfprintf_IntToStr
+0041aee8	vfprintf_IntToStr	med	itoa with base and '-' using '0123456789abcdef...' then reverse
+0041af88	vfprintf_FloatToStr	med	only caller _vfprintf_r; double to decimal digits (floor/fmod by 10), inf/nan handling
+0041b528	vfprintf_FlushFile	med	flushes vfprintf write buffer for FILE fd (+0xe)
+0041b550	vfprintf_BufferedWrite	med	128-byte static buffer for _vfprintf_r, writes via _write; mode 1 flushes
+0041c788	vfprintf_InsertThousandsSep	med	inserts ',' every 3 integer digits (skips exponent forms)
+0041c938	vfiprintf_BufferedWrite	med	same 128-byte buffered _write helper for _vfiprintf_r
+0041ed60	floor	med	fdlibm s_floor structure (huge=1e300 add, exponent masks); used by vfprintf_FloatToStr
+0041ef50	__ieee754_fmod	med	fdlibm e_fmod structure ((x*y)/(x*y) for bad args, exponent ilogb loops)
+0041f3a8	__ieee754_log_2	med	second copy of fdlibm e_log (ln2_hi 0x3fe62e42fee00000, Lg1..Lg7); only caller __ieee754_log10
+0041f9d8	__ieee754_log10	med	fdlibm e_log10 constants ivln10 0x3fdbcb7b1526e50e, log10_2hi 0x3fd34413509f6000
+00424220	libkernl_ResetTtyInit	med	clears tty-initialized flag 0x455168 used by _read/_write; called from sceSifSyncIop
+00424230	libkernl_WaitVBlankStart	med	clears INTC_STAT bit 2 (VBLANK start) then spins until it is set again
+00425440	libkernl_DoubleToInt	med	only caller libkernl_PrintDouble; IEEE double to int with rounding, clamps to 9999
+00427590	sceFs_RcvIntrHandler	med	SIF cmd 0x80000011 handler installed by sceFsInit: copies read/getstat result data to user buffers, iSignalSema
+00427a60	sceFs_CallFuncCmdHandler	med	SIF cmd 0x80000013 handler installed by sceFsInit: calls func(arg) from packet
+00427c98	sceFs_NeedsRebind	med	same pattern as libkernl_LoadfileNeedsRebind on fileio server id 0x52ee28; only caller sceOpen
+0042ac10	sceSifAllocSysMemory	med	iopheap RPC 4 with (type,size,addr) between AllocIopHeap and FreeIopHeap
+0042ad08	sceSifFreeSysMemory	med	wrapper of sceSifFreeIopHeap; used by SND_SpuMemFree
+0042ae18	sceSifQueryMemSize	med	iopheap RPC 5, no args
+0042ae88	sceSifQueryMaxFreeMemSize	med	iopheap RPC 6, no args
+0042aef8	sceSifQueryTotalFreeMemSize	med	iopheap RPC 7, no args
+0042af68	sceSifQueryBlockTopAddress	med	iopheap RPC 8, one arg
+0042afe8	sceSifQueryBlockSize	med	iopheap RPC 9, one arg
+0042b820	sceSifLoadStartModuleBuffer	med	wrapper of _sceSifLoadModuleBuffer (0x42b230) passing result ptr through
+0042ba88	sceSifLoadStartModule	med	wrapper of _sceSifLoadModule passing result ptr through (sceSifLoadModule passes dummy)
+0042c0d8	libkernl_InitMallocSema	med	only caller _InitSys; creates 2 binary semas, first (0x455248) used by __malloc_lock/unlock
+0042c120	kCopy	med	syscall 0x5a kernel memcpy(dst,src,size); used to read syscall table entry
+0042c1b8	GetSyscallHandler	med	kCopy of syscall table entry n (table base 0x455230)
+0042c1f0	libkernl_InitSyscallTable	med	only caller _InitSys; SetSyscall 0x5a/0x83 handlers then FindAddress them to derive syscall table base
+0042c350	kCopy_2	med	syscall 0x5a stub (copy) used by InitOsd
+0042c4c0	kCopy_3	med	syscall 0x5a stub used by libkernl_CopyArgsToKernel
+0042c510	libkernl_CopyArgsToKernel	med	callers LoadExecPS2/ExecOSD; kCopy's filename + up to 15 argv strings into kernel arg area
+0042c770	kCopy_4	med	syscall 0x5a stub used by InitAlarm
+0042ca80	libkernl_InstallTLBRefillHandlers	med	SetVTLBRefillHandler(1..3, 0x42cfc0), stores arg
+0042cb68	kCopy_5	med	syscall 0x5a stub used by InitExecPS2
+```
+
+## Appendix: uncertain pass-3 candidates (low, not applied)
+
+Format: `address  proposed name  evidence`.
+
+```
+00100250	ComputerActorRider_ComputeSteerFlat	no callers; like ComputeSteer but projects target dir off Rider z_axis (+0x1c0) and scales by CAR+0xdf4
+00100b90	ComputerActorRider_CruiseChaseRival	cruise mode 3 (PMF 0x43cf38): aims 300 units ahead of rival target rider +0xe70
+00100f88	ComputerActorRider_CruiseChaseRider	cruise mode 2 (PMF 0x43cf30): steers relative to target rider +0xe70 (non-human), atan(150/dist)
+00104a60	RiderAnim_SeqEndTrickLand	RiderAnim_v03 case 2: maps anims 0x10d..0x11e to follow-up anims 0x121..0x128 via 0x312b18
+00104ca0	RiderAnim_SeqEndRemove	RiderAnim_v03 case 0: removes the sequence and returns 0x1b6 (no follow-up anim)
+00104cc8	RiderAnim_PlayEventSound	if rider (+0x60) set, calls audio 0x289b18(audioSys gp+0x410, rider, id)
+001057b8	Rider_BounceOffWall	only caller Rider_HandleWallCollision (contact flag 1): translates rider out, may switch to Spin/Void sub-state and prime AirPredictor
+00105d98	Rider_HandleImpact	from wall hit and rail state code: forced wipeout via 0x116120 or StartWipeout, re-primes AirPredictor
+00106828	Rider_ResetCollisionHull	calls 0x329ae0 on hull +0xaa0; from RiderBase_LoadState and skeleton update
+00108388	Rider_PlayBumpAnim	ground/rail sub-states 0/1/2/7: picks hit-reaction anim by impact direction vs forward and plays it
+001086b8	Rider_ProbeRail	OverlapList rail query (type 1, r=300) checking contact geometry; from Rider_FindRail and RiderRailslideState_Update
+0010bc98	ComputerActorRider_HasPathEvent0F	AI path event query at current dist for type 0xf; no callers
+0010c1d0	ComputerActorRider_RollSkipTricks	rand%100 >= skill(+0xdfc)*100; stored into +0xe14 which suppresses trick selection
+0010c320	ComputerActorRider_RollFittedTrick	rand%100 < skill*70+30; gates 0x10cd20 in ChooseTrick
+0010c3b8	ComputerActorRider_RollRandomTrick	rand%100 < skill*40+60; gates 0x10cbe0 in ChooseTrick
+0010c450	ComputerActorRider_GetAggressionMode	switch on rider index-based difficulty and a global mode; result stored in CAR+0xe00 (used by 0x10d870)
+0010d870	ComputerActorRider_GetPathClassWeight	only caller ScorePathBranch; weight from three path class flags vs CAR+0xe00 mode
+0010da10	ComputerActorRider_ShouldAttackBack	every 6th frame: if a human within 200 plays anim 0xd on layer 1, 25% chance; latched 2s in +0xf30/+0xf34
+0010e028	Rider_SetTimedEvent	sets Rider+0x358 = kind and +0x354 = frame + secs*60 (or -1/0 to clear); from Rider_AddBoost, wipeout exit, finish line
+0010e228	Rider_ReportRiderHit0	from ResolveRiderCollision: audio hit events + BEAggressionInt record (kind 0) between two riders
+0010e2e8	Rider_ReportRiderHit1	same as Rider_ReportRiderHit0 with kind 1
+0010e3a8	Rider_ReportRiderHit2	reverse-direction audio events + BEAggressionInt record kind 2
+0010e468	Rider_ReportRiderHit3	kind 3 variant that also awards boost to the hitter (Rider_AddBoost source 2)
+0010e558	Rider_OnSplitMarker	from Rider_UpdateDistToFinish when passing split distances table 0x4d33b8; copies +0xec to +0xe8, RiderMetrix split call
+0010e910	Rider_BankTrickBoost	from rail start/wall hit/AirState_PostUpdate: RiderMetrix score -> Rider_AddBoost, boostLevel +0x2f4 up to 10 (uberTimer 60 at 10)
+00111aa0	RiderBase_TriggerDynamicSpray	calls 0x2e23e0 (also used by cDynamicSprayFX_Update) on the cDynamicSprayFX mixin at RiderBase+0xb40
+00113130	Rider_GetStartDistToFinish	returns Rider+0x4d8, which AI_ResetRiderRelations sets to distToFinish at reset
+00113998	AirPredictor_ClearAirTime	zeroes AirPredictor+0x98 (predicted air time); called with Rider+0x788 from RiderAirState_PostUpdate
+00117908	RiderMetrix_GetTrickBonus	(+0x1c * k) rounded to 10; added to +0x19c in FinishTrick
+00117990	RiderMetrix_GetTrickScore	(+0x14 * +0x18 * +0x1c4 * k) rounded to 10; added to score +0x198 in FinishTrick
+0011c0e0	Rider_HasRenderSlot	+0x888 != -1 and < renderer vslot114 count
+00120d90	Rider_UpdateLegIKBlend	moves +0x318 IK weight up/down by anim layer 2 entry
+00122d78	Rider_EstimateFinishTime	frames + remaining distance / average speed from race length (+0x4d8) and distToFinish +0x4d0
+00122e50	Rider_EstimateFinalScore	score +0x198 extrapolated over remaining distance +0x4d0
+001235f8	Rider_ForceReset	owner+0x350=1, Reset sub-state, Static main state, clears gate +0x290; script callers
+00123e30	Rider_OnScriptEvent	scriptable-base vt slot 3: event flag 0x10 plays script sound ids (<100 / >=100), sets +0xac8
+00125ad8	Rider_GetSyncChecksum	sum of pos +0x110 and rot +0x120 floats; via AI 0x12b420
+001289f0	AI_ResetRidersDefault	wrapper AI_ResetRiders(this,0)
+0012a560	AI_PlaceRidersAtPathStart	places rider(s) on first valid path 1000 units before its start facing along it
+0012a768	AI_PlaceRidersStaggered	places riders 1000 units apart along path, sets +0x47c finish slot 0xe10*(n+1)
+0012ab20	AI_ResetComputerRenderSlots	CPU riders AI+0x48: if visible reset +0x888 render slot to renderer count+4; clears AI+0x14
+0012abd0	AI_ComputerRidersHaveRenderSlots	all CPU riders (AI+0x48,count +0x80) pass Rider_HasRenderSlot
+0012ac48	AI_ResetActorRenderSlots	actor riders AI+0x5c: same as 0x12ab20; clears AI+0x8c
+0012acf8	AI_ActorRidersHaveRenderSlots	all actor riders (AI+0x5c,count +0x84) pass Rider_HasRenderSlot
+0012adc0	AI_MissionRidersHaveRenderSlots	all mission riders (AI+0x70,count +0x88) pass Rider_HasRenderSlot
+0012b420	AI_GetSyncChecksum	Rand_NextGame + sum of Rider_GetSyncChecksum over riders
+0012bac0	AI_SetSyncWords	GameModule_Load: copies 2 words into AI+0x20
+0012baf0	AI_GetSyncWords	0x271228 (net packet 0xabcd0002): copies AI+0x20 2 words out
+0012c028	RiderGateSub_IsStartTimeReached	race state 5 and Rider+0xb30 <= AI+0xc*k; gate release condition used by phase 0
+0012c078	RiderGateSub_CanStart	true if race state 5 or rider timer +0x470 >= 0
+0012da88	RiderWipeoutSub_SelectTumbleAnim	maps wipeout anim 0x148..0x15f to follow-up anims 0x16a../0x175..
+0012dcb0	RiderWipeoutSub_SwitchToAnimSetB	maps anim 0x16a..0x173 -> 0x175..0x17e (0x17f if root override)
+0012dd98	RiderWipeoutSub_SwitchToAnimSetA	maps anim 0x175..0x17e -> 0x16a..0x173 (0x174 if root override)
+0012de80	RiderWipeoutSub_PlayEndAnimB	maps anim 0x175..0x17e -> 399..0x198
+0012df48	RiderWipeoutSub_PlayEndAnimA	maps anim 0x16a..0x173 -> 0x185..0x18e
+0012e010	RiderWipeoutSub_StartGetUp	plays anim 0x199/0x19a and aligns rider pose to hips bone
+0012e468	RiderWipeoutSub_PlayFinalAnim	maps anim 0x17b..0x17f -> 0x180..0x184
+001306b0	RiderBoardPressSub_CheckSwitch	BoardPress phase-1 check: plays anim 0x17/0x1f and toggles +0x330 nose/tail
+001308d8	RiderBoardPressSub_CheckSpin	BoardPress phase-1 check: stick angle vs press slew, flips stance
+00130dd0	RiderBoardPressSub_UpdateBalance	BoardPress phase-1 check: accumulates press timers [1]/[2] vs slew #11 (+0x274)
+00131200	RiderBoardPressSub_CheckRelease	BoardPress phase-1 check: stick neutral timer [3] > 0.5 ends press
+00131348	RiderBoardPressSub_Cancel	called from CAR 0x108388 and 0x1162c8: settle slew, finish press anim, boost
+001313a8	RiderBoardPressSub_SettleSlew	sets slew (+0x280) target to -1/0/1 by sign
+00131428	RiderBoardPressSub_FinishPress	finishes press anim 0x25/0x1d families with boost or stance flip
+00132060	RiderRailslideSub_RotateStance	cycles +0x328 grind orientation 1..4 with anims 0x31-0x36, awards boost via 0x119918
+00134dd0	RiderSpinSub_ApplyPoseRotation	callers skeleton update 0x11eb98 and RiderSpinSub_Exit; rotates root pose around hips by spin/flip angles
+00135180	RiderSpinSub_GetSpinFactor	scalar from air timers +0x2dc/+0x2e0 (magnitude and angle)
+00135b30	RiderSpinSub_SetSpinDirection	sets spin/flip rates +0x10/+0x14 by stick sign, accumulates angles
+00135be0	RiderSpinSub_TryReverse	if 0x114db8 then negates spin/flip and plays anim 0x120
+00135cb0	RiderSpinSub_GetFlipProgress	CAR AI 0x10b0e8: remaining angle +0x1c-+0x14 over rate +0x38, scaled by stats
+00135db0	RiderSpinSub_GetSpinProgress	CAR AI 0x10b0e8: remaining angle +0x18-+0x10 over rate +0x3c, scaled by stats
+00135eb0	RiderSpinSub_IsTrickAnim12	phase [1]==2 and anim entry 0x12; called from undefined code 0x122fd0
+00135ef0	RiderSpinSub_IsTrickAnim13	phase [1]==4 and anim entry 0x13; called from 0x122ffc
+00135f30	RiderSpinSub_IsTrickAnim14	phase [1]==4 and anim entry 0x14; called from 0x123028
+00136100	RiderSpinSub_GetSpinHUDBlend	HUD value from spin angle +0x18 modulo a turn
+00136168	RiderSpinSub_GetFlipHUDBlend	HUD value from angle +0x1c modulo a turn
+00137550	RiderWipeoutState_BuildBoardSpheres	only caller PostUpdateRootPose; sphere centres along board_childg bone
+00139548	RiderHandplantState_UpdateVelocity	callers RiderHandplantState_Update/Exit; computes +0x10 from +0x20/+0x40 by handplant phase (+0x32c)
+0013a8f8	RiderAirState_PlayLandAnim	plays landing anim 0x40/0x41 by threshold, clears +0x2dc
+0013a968	RiderAirState_PlayLandAnim2	plays landing anim 0x3d..0x43 by threshold and +0x2dc
+0013adc0	RiderRailslideState_ComputeEntryAngle	caller 0x106848; angle between rail dir and rider forward, clamped into +0x1c
+0013bd80	RiderRailslideState_ComputeRailFrame	builds rail-aligned up vector from rail dir and roll +0x10
+0013c878	RiderGroundState_ComputeFrictionAccel	RiderGroundState_Update helper; uses ground friction pair +4/+8, writes Rider+0x758
+0013c948	RiderGroundState_ComputeBoostAccel	RiderGroundState_Update helper; heading vs AI path (+0x4cc), boost +0x2fc
+0013ccf0	RiderGroundState_ComputeDrag	RiderGroundState_Update helper; BE interface 3 stats, curve table
+0013d028	RiderGroundState_ComputeCarveAccel	RiderGroundState_Update helper; curve table gp-0x1fb0, boost scale
+0013fb20	RiderTuning_StaticInit	(init,0xffff) static-initializer pattern from 0x1448b8; fills tuning globals 0x4a5e60-0x4a6310
+00140680	RiderIface_dtor	deleting dtor of vtable 0x459cc8, which Rider_ctor/Rider_dtor store at +0x6c0 as the base-class vtable
+00142790	RiderVoidSub_dtor	slot1 of vt 458928, restored at RiderBase+0x3a0 (sub-state 0xd 'Void' in rider.md, unnamed class)
+001441b8	DangerMan_GetRiderDangerLevel	only caller DangerMan_Update; returns 1..3 from rider position vs danger spheres/thresholds
+00144670	Flags64_MoveToSecond	clears bit n in word0 and ORs it into word1 if it was set; rider input/trick callers
+001446a0	Flags64_Test	returns bit n of 64-bit word0; 14 callers incl. Rider sub-state HandleInput
+001446b8	Flags64_TestSecond	returns bit n of 64-bit word at +8; pair of 0x1446a0
+00144af8	BENewRaceInt_SetNumExtraRiders	sets DAT_535c00 and recomputes total = humans+AI+this (same pattern as SetNumHumanPlayers/SetNumAIRiders)
+00144cc0	BENewRaceInt_IsStationTrackByIndex	track table +0x58 is 1 only for 'Green Base Station'..'Black Top Station' entries
+00144ce0	BENewRaceInt_FindTrackById	scans track table 0x43d950 for entry with +0x5c == id, returns entry track id, default 0x16 (Debug Track)
+001453d0	BENewRaceInt_GetTargetScore	finds (track,difficulty) row in 0x440b38, scales by mode factor, adds random +-%, rounds to 20
+00145750	BENewRaceInt_GetPeakRivalCharacter	by current track peak (0..2) returns a character id 3..8, avoiding the human rider's own character
+00145a98	BENewPlayerInt_SaveSlotDefaults	only caller BENewPlayerInt_v01; copies 12-char names + flag bit1 of 6 player slots 0x534fe0 to defaults 0x535b20
+00145bd8	BENewPlayerInt_RestoreDefaults	BENewPlayerInt_ctor/options: sets flag bit1 in all default slots 0x535b20 then calls own vslot 2 (Reset)
+00145ef0	BENewPlayerInt_HasEventRecord	BENewPlayerInt wrapper: *BE_GetCharProfileEventRecord(rider's profile char record, ...) != 0
+001473d0	BENewPlayerInt_SetAltCharacter	writes player slot byte +0x12 (AI_CreateActorRiders sets 0)
+00147410	BENewPlayerInt_GetAltCharacter	player slot byte +0x12; Bolts_BuildGameBolts uses it instead of the character when in 10..29 (cheat chars)
+001474a8	BENewPlayerInt_SetAltCharacterBySlot	writes slot byte +0x12 by slot index; callers char select / cheat char select
+001474c8	BENewPlayerInt_GetAltCharacterBySlot	reads slot byte +0x12 by slot index; Bolts_BuildGameBolts uses it if 10..29
+00147cb8	BENewPlayerInt_GetDifficulty	returns the level short (+0x284 or +0x280) adjusted by 0x147d20/0x147e18
+00147d20	BENewPlayerInt_RaiseDifficulty	per-char short pair +0x284/+0x286 (or +0x280/+0x282): counter++, after 2 steps level++ (max 2)
+00147e18	BENewPlayerInt_LowerDifficulty	inverse of 0x147d20: counter--, below -1 level-- (min 0)
+00148328	BECharInt_GetCharData	copies the 15-byte per-character record at 0x5308d8 (base/max attribute bytes) to out
+0014a0b0	BE_GetRiderAltCharacter	byte +0x12 of player slot (0x535b20 table, +0x11 is BE_GetRiderCharacter) by rider index via slot map 0x5305b0
+0014ab68	BE_GetEventRecordIndex	maps (track, eventType) to event-record index via table 0x45a2f8; types 6..11 map to 0..5; 0x1a = none
+0014ada8	BEBoltInt_GetBoltState	returns &profile char record+0x290 + 2*i (bolt state entry) for (profile,char,i)
+0014add8	BEBoltInt_GetRiderBoltState	rider-index wrapper of BEBoltInt_GetBoltState (0x14ada8)
+0014aea8	BEBoltInt_SaveEquipFlags	for each bolt state of (profile,char): copy flag 0x10 (equipped) into flag 0x4; cFEStateCharEquip_ctor
+0014af10	BEBoltInt_RestoreAllEquipFlags	for all 3 profiles x 10 chars: flag 0x10 = flag 0x4 (inverse of 0x14aea8); FEModule_Load; same loop as Bolts_LoadDB
+0014b2f8	BEBoltInt_CountAvailableBolts	counts the char's bolts (Bolts_GetCharBolts, 0x38-byte records) whose byte +1 == 0
+0014b378	BEBoltInt_GetAvailableBolts	copies the char's bolt records with byte +1 == 0 to out; returns count (pair of 0x14b2f8)
+0014b478	BEBoltInt_SumEquippedBoltValue	sums short +0xc of all bolts of char whose state has flag 0x10 (equipped); cFEStateCharEquip
+0014c320	Bolts_IndexTable2ByChar	same per-char count/first-index build for the 12-byte table at db+8 (+0x20c/+0x284)
+0014c3c8	Bolts_IndexTable3ByChar	same per-char count/first-index build for the 8-byte table at db+0xc (+0x2fc/+0x374)
+0014c488	Bolts_IndexTable4ByChar	same per-char count/first-index build for the 8-byte table at db+0x10 (+0x3ec/+0x464)
+0014d7e8	Bolts_CollectByGroup	recursively collects bolt records whose short +8 == key (same shape as Bolts_CollectChildren)
+0014dc00	Bolts_GetCharTable3Count	returns db+0x2fc[char] (count built by Bolts_IndexTable3ByChar)
+0014dc10	Bolts_GetCharTable3	returns db+0xc + first(+0x374)*8 for char if count>0 (pair of 0x14dc00)
+0014dc40	Bolts_GetCharTable4Count	returns db+0x3ec[char] (count built by Bolts_IndexTable4ByChar)
+0014dc50	Bolts_GetCharTable4	returns db+0x10 + first(+0x464)*8 for char if count>0 (pair of 0x14dc40)
+0014de28	BE_ResetPlayerProfile	BELibrary_ResetPlayerProfile(lib, p) if library exists, then BEBAGTInt_ResetProfile(p); options save/load + FEModule
+0014efa8	BE_GetRiderSizeScale	per-rider float: char DB +0x48 * const, or per cheat-char constant (0.75,1.0,1.5,2.0...); Rider_LoadStep
+00151368	BE_FreeCharProfileBoltMap	frees +0x288 bolt map and deletes object if flag&1 (dtor shape); static init 0x15b028
+001513b8	BE_ApplyDefaultCharProfileBolts	only caller BE_InitCharProfileBoltMap; equips table-4 defaults and marks free (+0xe==0) bolts flag 2
+001515b8	BE_RestoreCharProfileEquipFlags	per bolt state: flag 0x10 = flag 0x4 (same loop as Bolts_LoadDB); used after loading a profile save
+00151600	BE_InitCharProfile	initialises a 0xf88 profile char record (flags, attributes +0xbdf, bolts via BE_InitCharProfileBoltMap)
+00151c48	BE_SetCharProfileBoltFlag2	sets/clears flag 0x2 of a bolt state (profile char record +0x290 via map +0x288)
+00152398	BE_GetCharProfileEventRecord	returns profile char record +0xad0 + 8*idx, idx from (track, eventType) map 0x14ab68; 0x1a = none
+001523e8	BE_TestCharProfileFlag	tests profile char record +0xacc against mask table 0x45a7c0[i]
+00152430	BE_SetCharProfileFlag	set/clear bit n of profile char record +0xacc (via BENewPlayerInt wrapper 0x145dd0)
+00152460	BE_RecordCharProfileEventScore	stores score in event record +4 if better (lower for time events, higher otherwise)
+00152528	BE_RecordCharProfileEventPlace	marks event record done, counts top-2 finishes, keeps best (lowest) place; per-peak counters +0xba0/+0xba4
+00153520	BEMissionInt_GetTrackCollectedCount	iface 10 method; sums count byte (+4) of track entry in career table 0x4a6ca8 (no current-offset 0x5305f0)
+00153f68	BEMissionInt_GetMissionValue	returns mission row field +0x14 (500/1000/2000 in data)
+00153fd8	BEMissionInt_GetMissionPrereq	returns mission row field +0x1c (another mission id or -1; script tests == -1)
+00154278	BEMissionInt_CountMissionsOnCurrentTrack	CountMissionsOnTrack(DAT_005305f0); PlaybackMan_Init
+00154588	BEMissionInt_GetNthMissionOnCurrentTrack	GetNthMissionOnTrack(n, DAT_005305f0); PlaybackMan_Init
+00154630	BEMissionInt_SessionTypeAtLeast	returns 1 if session id has field +0x18 >= arg in table 0x440770
+001547a0	BEMissionInt_GetMissionField22	returns short at +0x22 of the mission row with the given id
+00154ab8	BEScoreInt_SubmitRaceResult	copies 0xa8-byte rider result into this+0x20+slot*0xb0, updates bests and inserts into high-score table 0x14ab20(track,mode)
+00154ee8	BEScoreInt_SubmitPlacement	stores place at slot+0xcc, maps it to a medal, checks time/score limit and calls reward update 0x1591e8 (iface 13)
+00155190	BEScoreInt_GetHighScoreOwner	returns profile record (0x530990 + idx*0x88) of rank N in current high-score table; OVScreenTopTimes_Init
+001557e0	BEScoreInt_CanSubmitScore	slot<2 and not 0x14f810(0) (online/cheat check); gates high-score insert in SubmitRaceResult
+00155848	BEScoreInt_GetEventPodiumCount	short +2 of per-(track,mode) event record at career+0xad0 (incremented on place<2 by 0x152528)
+001562b8	BELibrary_SwitchPhase	calls current phase (0x5308a8[idx]) slot 3, sets phase index from *arg, calls new phase slot 4; no static callers
+00156c70	BERewardInt_PickRandomBolt	random bolt of the character (Bolts_GetCharBolts) matching flag class 0/1/2 that is not yet owned
+00156ee0	BERewardInt_PickRandomBoltFlag800	random not-owned bolt of the character with flag 0x800
+00157b08	BERewardInt_IsRivalRewardPending	rider wrapper for 0x157b70; OVScreenRivalPre_TransitionIn
+00157b70	BERewardInt_IsRivalRewardPendingFor	bit 12 (n=1) or 13 (n=2) of career+0x278 u64
+00158558	BERewardInt_UnlockSong	sets bit N of 64-bit mask career+0xf70 (read by RequestLine screen) and awards 5000 points
+00158700	BERewardInt_GetAudioSetting	career+0xf80 int; cFEStateAudioOptions_ctor (setter 0x1587f8 from AudioOptions_OnWidgetAction)
+00158728	BERewardInt_GetUnlockedSongs	career+0xf70 u64 (bits set by UnlockSong); cFEStateRequestLine_ctor
+00158750	BERewardInt_GetEnabledSongs	career+0xf78 u64; cFEStateRequestLine_ctor
+001587b8	BERewardInt_CountEnabledSongs	CountSetBits(64, career+0xf78); cFEStateAudioOptions_ctor
+001587f8	BERewardInt_SetAudioSetting	writes career+0xf80; cFEStateAudioOptions_OnWidgetAction
+00158820	BERewardInt_SetUnlockedSongs	writes career+0xf70 u64; cFEStateRequestLine_OnWidgetAction
+00158848	BERewardInt_SetEnabledSongs	writes career+0xf78 u64; cFEStateRequestLine_OnWidgetAction
+001588b0	BERewardInt_GetPointsThreshold	table 0x45b048[n]; compared with BEEconInt value 0x1509c0 in HasPointsTier
+00158960	BERewardInt_GetEventRecordValue	int +4 of event record career+0xad0 for (track,mode)
+00158af0	BERewardInt_HasPointsTier	1 if BEEconInt value (0x1509c0) >= 0x45b048[n], else -1
+00158be0	BERewardInt_GetNextPointsThreshold	first 0x45b048 threshold not yet reached (0 if all)
+00158c80	BERewardInt_GetNextCollectibleThreshold	smallest collectible threshold of the peak still above the reached tier
+00158d58	BERewardInt_GetNextMissionThreshold	smallest mission threshold of the peak still above the reached tier
+00158e30	BERewardInt_BeginRewardTracking	clears new-reward list 0x4c3ef0 and caches next point/collectible/mission thresholds; OVScreenRewardList_OnWidgetAction
+00158f60	BERewardInt_GrantRivalRewards	clears pending rival bits 12/13 of career+0x278 and records them in the new-reward list
+00159080	BERewardInt_GetMedalRewardId	maps (category 0..3, medal 0..2) to reward id 5..16
+001591e8	BERewardInt_OnEventResult	per-event result handler from BEScoreInt_SubmitPlacement: grants points, medal rewards, records event result
+001597b0	BERewardInt_AddPointsForRider	rider wrapper of AddPoints (0x159818); caller 0x119ef8
+00159818	BERewardInt_AddPoints	adds points via BEEconInt 0x150a90 and grants point-threshold rewards when crossed
+001599a0	BERewardInt_OnCollectibleCollected	if collected count on peak reaches cached threshold, grants tier reward; caller 0x10f338
+00159b08	BERewardInt_OnMissionCompleted	if completed-mission count on peak reaches cached threshold, grants tier reward; caller 0x10f2d8
+00159c68	BERewardInt_GrantRewardForRider	rider wrapper of GrantReward
+0015a320	BERewardInt_TestGrantedBit	bit test helper (duplicate of TestBit) used by IsRewardGranted
+0015a358	BERewardInt_SetGrantedBit	bit set helper (duplicate of SetBit) used by GrantReward
+0015a3b8	BERewardInt_FindRequirementTier	searches requirement table 0x45aad8 (3x4x5 (mode,track) pairs) for the tier containing the event
+0015a488	BERewardInt_NewRewardsCtor	init of new-reward list: per-type bit array pointers at +0x174.., then ClearNewRewards; from static init
+0015a5b0	BERewardInt_NewRewardsSetBit	bit set helper used by AddNewReward
+0015a5f0	BERewardInt_NewRewardsTestBit	bit test helper (same shape) called from 0x1ff7b8
+0015c228	BE_ClearState5308b8	EA_MemSet(0x5308b8,0,0x20) during static init
+0015dac0	GameCamera_SetCollisionFlag4a4	sets GameViewMan(GameModule+0x84) camera[0]+0x4a4 = 1 (collision state flag); only caller ChaseCamController_ClearOverride
+0015ec98	GameCamera_UpdateFarClip	clamps cam far (+8) by gp limits, pushes view distance for view +0xb0 to 0x3a9658 and sets +0xb4 from a range test; caller GameViewMan update 0x22e8b8
+001662a0	ChaseCameraAlgorithm_SmoothPitch	PostUpdate step: blends pitch +0x54 toward +0x1d8 with rate limits, rotates eye offset by pitch, rewrites look-at +0x20
+00166530	ChaseCameraAlgorithm_PostUpdateCheckReset	trivial wrapper of ChaseCameraAlgorithm_CheckDistanceReset called from PostUpdate
+001668b8	ChaseCameraAlgorithm_RotateByPitch	builds axis-angle rotation by -pitch (+0x54) about axis 0x4ff150 and transforms the given vector
+00167e30	CameraAlgorithm_DefaultFov	returns gp constant; called by ManualCamAlgoBase/RiderCameraAlgorithm/ScriptCameraAlgo ctors (header +0 is FOV)
+0016c6e0	ActiveCameraTriggerList_FindById	walks list nodes returning the entry whose first word == id; CameraTriggerMan_UpdateForRider
+0016ca18	CameraTriggerMan_RemoveTriggerRegions	unregisters each trigger's region from world grid (0x3284b8), frees empty cells, then FreeTriggers
+0016cef0	CameraTriggerMan_ReloadIf	CameraTriggerMan_Reload when 3rd arg != 0; called via 0x16cec8 with singleton 0x4c5830
+0016d200	CameraTriggerStack_Clear	count=0, top=0 on per-player trigger stack (CameraTriggerMan+0x1c/+0x3c)
+00170d20	CameraBoundObj_GetWorldPoint	world-space point i (0..3) of a bound object; SetAlgorithm id 0x5c builds SplineCameraAlgorithm from 4 of these
+00171fa8	CameraTrigger_FindBoundaryPoint	slot 8 of sphere+box trigger vts; bisects between point and center using ContainsPoint, iter count from logf(dist/tol)
+00176440	CameraBoundObj_GetPosition	shared slot 1 of all camera BoundObj/Trigger vts; returns this+0 (pos Vec3, read via Serialize_ReadVec3)
+00176448	CameraBoundObj_GetRotX	shared slot 2 of camera BoundObj/Trigger vts; returns this+0xc (angle used by ContainsPoint Math_SinCos)
+00176450	CameraBoundObj_GetRotY	shared slot 3; returns this+0x10 (second angle used by box ContainsPoint)
+00176458	CameraBoundObj_GetField14	shared slot 4; returns this+0x14
+00176460	CameraBoundObj_GetScale	shared slot 5; returns this+0x18 (scale Vec3 init 1,1,1; max component = radius)
+00177650	DirectionNeChaseCameraAlgorithm_StaticInitDestroy	TU static-init (param 1,0xffff) right after DirectionNe funcs; fills header const matrices at 4c5890
+00177e30	DirectionNeChaseCameraAlgorithm_GlobalCtors	ctor-list entry 43ce4c calling FUN_00177650(1,0xffff)
+00178f58	Post_Race_1ChaseCameraAlgorithm_StaticInitDestroy	TU static-init right after Post_Race_1 funcs; fills const tables at 4c5c10
+00179738	Post_Race_1ChaseCameraAlgorithm_GlobalCtors	ctor-list entry calling FUN_00178f58(1,0xffff)
+0017a378	DebugMenu_ParseWorldListFile	EAFile_LoadFileGetSize + tokenizer (idents, quotes, '.', '/'), calls FUN_0017a830 per token; frees buffer
+0017a830	DebugMenu_AddWorldIfMissing	searches menu items (stride 0x8c, name/ext strcasecmp), else builds 'data/worlds/'+ext path and queries file system
+0017a978	DebugMenu_CheckWorldFiles	caller DebugMenu_InitWorldList with 22 track codes; builds 'data/worlds/' path, checks which world files exist
+0017e228	LobbyMenu_SelectPersona	menu callback: pops pages, state 9, calls FUN_0025d428 (also used by cFEStateSelectPersona)
+0017e558	LobbyMenu_SendChallenge	menu callback: pushes page +0x1044, state 0xc, FUN_0025f628(api,1,0) (also used by cFEStateChallengePopup)
+00180508	KeyboardScreen_ctor	UIScreen subclass ctor (vptr 494670 then 46d1a0); text buffer +0xec, max len 0x2d, cursor key +0x170=10; screen objects 'keyboard_*'/'cursor_*'
+001805d8	KeyboardScreen_SetText	strcpy into +0xec and stores strlen at +0x16c
+00180618	KeyboardScreen_CursorLeft	from KeyboardScreen_HandleInput on FEUIInput_IsLeft; moves key cursor (+0x170) left with row wrap on 10-wide grid
+00180678	KeyboardScreen_CursorRight	on FEUIInput_IsRight; moves key cursor (+0x170) right with row wrap
+001806d8	KeyboardScreen_CursorUp	on FEUIInput_IsUp; moves key cursor (+0x170) up one row (+-10/20/30)
+00180768	KeyboardScreen_CursorDown	on FEUIInput_IsDown; moves key cursor (+0x170) down one row
+001807c8	KeyboardScreen_ToggleCaps	on FEUIInput_IsRShift2; toggles +0xe4 (upper/lower case for typed letters)
+001807d8	KeyboardScreen_BuildMaskedText	fills +300 with '*' for each char of text +0xec (password display)
+00180840	KeyboardScreen_TypeKey	on FEUIInput_IsNext; key 0-9 digit, 10-35 letter (case +0xe4), 0x24 backspace, 0x25 right, 0x26 space; text +0xec len +0x16c
+001809b0	KeyboardScreen_GetKeyObjectName	builds 'keyboard_'+key char (0-9,A-Z) or arrLeft/arrRight/end names for screen object lookup
+00180a90	KeyboardScreen_GetCursorObjectName	builds 'cursor_'+key char or arrLeft/arrRight/end names
+00180b60	KeyboardScreen_InitKeys	sets labels of 'keyboard_*' keys and hides 'cursor_*' objects, sets 'profilename' text from default 'mypro1'
+00180ef0	KeyboardScreen_HandleInput	vt 46d1a0 slot 4; polls FEUIInput Left/Right/Up/Down/Next/RShift2 and dispatches to cursor-move / type / caps helpers
+00182870	cFEStateCheatCharSelect_ApplyOutfit	caller OnWidgetNotify; for 6 model slots +0x54.. sets +0x78=-1,+0x7c=table[+0xf4 + selected byte]
+00183d08	cFEStateUberTrick_SetButtonIcon	only caller RefreshTrickList; hides widget or sizes it from texture rect*256*scale and shows it
+00186f90	cFEStateMemCard_CheckFreeSpace	ctor callback; compares card free space (FUN_002419d8) to needed size, sets error 0x17 or continues via FUN_00187270
+00187180	cFEStateMemCard_UpdateCardScan	ctor callback; FUN_001d83a8 then FUN_00187a38 (port scan state machine)
+001871a8	cFEStateMemCard_RestartScan	ctor callback; resets card manager, scan state 0, +0x22c=-1, +0x234=0, port 2
+00187230	cFEStateMemCard_ResetScan	ctor callback; scan state 0, +0x22c=-1, +0x234=0, FUN_0023c8f0(mc,2)
+00187270	cFEStateMemCard_OnScanDone	chooses next step from result bits +0x238: no card -> FUN_00187920, card -> FUN_00187318 or FUN_001877b0
+001877b0	cFEStateMemCard_StartProfileSearch	builds '%s-%s*' from MCManager_GetProductCode, sets state 5, plays 'exclam' '@loadanim'
+00187920	cFEStateMemCard_StartNoCardFlow	scan state 4, state 5, plays 'exclam' '@loadanim'
+00187a38	cFEStateMemCard_ScanStep	steps scan state gp-0x1c34 0..3 over card ports, clears presence bits +0x22c, stores result to +0x238
+0018fc98	cFEStateProfileLoad_BeginCardOp	caller OnWidgetAction; starts MC op FUN_0023cae8(mc,1,+0x1cc), state 3, shows MCManager_GetStatusText popup ('Temp String')
+00192380	cFEStateRuleSelect_ApplyRuleDependencies	caller OnWidgetAction; per rule mask table 4410c8 increments/decrements disable counters +0x52.. and resets dependents, then refreshes arrows
+00192488	cFEStateRuleSelect_UpdateRowVisibility	for up to 11 rows shows/hides listbox+label depending on disable counter (+0x51+id)
+001926f0	cFEStateBraggingRights_InitPlayerRows	called from cFEStateBraggingRights_ctor; clears 8 row pointers, mask, stores helper vptr 46b078 at +0x30
+00192740	cFEStateBraggingRights_SetRowsVisible	sets +0x28 and visibility of the 8 row widgets (+8..)
+001927b0	cFEStateBraggingRights_UpdateRowColors	for enabled rows sets widget color: white for local player row, else per selected value
+00192918	cFEStateBraggingRights_FindRowIndex	returns index 0..7 of widget pointer in row table +8, else -1
+00192948	cFEStateBraggingRights_IsRowEnabled	tests bit n of row mask (+0x2c)
+00192968	cFEStateBraggingRights_SetRowMask	stores row mask at +0x2c
+00192970	cFEStateBraggingRights_HideUnusedRows	for rows not in mask (+0x2c) hides row widgets and per-row arrow/label objects ('0arrw_right' etc)
+001985f0	cFEStateRequestLine_UpdateSlotIcons	shows up to 6 slot icons (+0x1bc..) depending on number of selected songs
+0019a098	cFEStateCharEquip_GetPreviewTexture	CharEquip this (+0xa60 loaded flag, +0xa68 tex handle); finds named entry in shape bank and creates/updates texture
+0019a758	cFEStateCharEquip_ReleasePreviewBoltTextures	CharEquip this (+0x44 player idx); calls FEModule_RiderPreviewReleaseBoltTextures(preview,0) on FEModule rider preview
+0019afd0	cFEStateCharEquip_CategoryHasFlaggedItem	only caller CharEquip_BuildItemList; 1 if any equippable bolt of category has profile state flag 2 and not flag 0x20
+0019b098	cFEStateCharEquip_CategoryAllFlagged	only caller CharEquip_BuildItemList; 0 if an item of the filtered sub-type (+0xcc) lacks profile flag 2
+0019e7f0	FEModule_RiderPreviewRequestExtraTextures	requests type-0xb bolt texture files for char bolts of category 6 via BoltFile_Acquire
+0019f548	FEModule_RiderPreviewSetTransform2	copies second pos/quat pair (+0xc50/+0xc60) then ApplyTransform
+0019f578	FEModule_RiderPreviewMoveLocal2	rotates vector by quat +0xc60 and adds to +0xc50, then ApplyTransform
+0019f780	FEModule_RiderPreviewApplyBoltMaterials	resets model then for each profile bolt with flag 0x10 applies bolt +0x10/+1 to model (FUN_0030ec18)
+001a1cb8	FEModule_SetPlayerPadMask	byte this[+8+player] = mask; neighbour of FEModule_ctor; caller passes 1<<port
+001a1cd0	FEModule_GetPlayerPadMask	returns byte this[+8+player]; FE state ctors combine into UIState input mask +0x15
+001a36e8	FEAsyncManager_RequestTexture	sprintf '%s%s' (prefix global, '.ssh') into slot name, sets async flag, state 1 (pending)
+001a37f8	FEAsyncManager_RequestBoltTexture	sprintf '%s%s%s' ('|', BE interface 10 name, '.ssh') into slot, state 1; caller OVScreenSession helper
+001a4670	cFEStateNetMessenger_GetBuddyStatus	only caller NetMessenger row colour helper; returns 0/1/2 from two BuddyMan queries for a buddy index
+001a52b0	cFEStateNetMessenger_FindNextPending	sets +0x6f8 = list index of first buddy with pending message/challenge, else -1
+001a54d8	cFEStateNetMessenger_AddNewBuddies	appends 'cBXString' names of buddies not yet in the name vector
+001a83d8	cUITextScroll_TrimAndScroll	removes excess lines from a text scroll widget and restores top/visible line (+0xc4/+0xc6); 4 chat/message callers
+001a86e8	FE_SetOnlineMode	stores flag global 0x4a1a70; when 0 and BuddyMan connected disconnects it; callers MainMenu/NetConfig/CreateState
+001a92d8	NetFEState_OnChallengePopupEvent	OnChildEvent case id 0x834 (challenge popup id from OpenChallengePopup); tracks +0x6bc, on close calls parent slot 17
+001abc50	NetFEState_ToggleBlockUser	buddy action 0x12 (Block/Unblock entry): BuddyMan op(name,1)
+001abe58	NetFEState_ToggleMessengerBuddy	buddy action 0x11 (Add/Remove messenger entry): BuddyMan op(name,0); MaxBuddies popup on fail
+001aca88	cFEUseExistingAccount_OnAbortPopupEvent	on 0xf/0x14 disconnects buddy and lobby then base OnChildEvent
+001acb48	cFEUseExistingAccount_OnLoginPopupEvent	0xf/0x10 -> cFEStateSelectPersona; on close asks kT_POPUP204SaveAccount (id 0x81e)
+001ad930	cFEStateSelectPersona_OnSaveAccountPopupEvent	on 0xf pushes cFEStateNetAccountMem popup (id 0x832)
+001aec60	cFEStateChallengePopup_SetSettingsLocked	toggles widget slot 8 on PairRankedGame/PairNumCPURiders/PairPowerUps/... setting rows and their listboxes
+001b0e10	cFEStateChallengeReceivedPopup_Accept	only caller OnWidgetAction; ShowWaiting then lobby accept call, notifies parent (slot 17, 0x14)
+001b1a08	cFEStateOnlineCharacterSelect_ShiftFrameLayer	string frameChallenger/TextOpponentSelect; adjusts widget flags bits 8-12 by +-2
+001b1f18	cFEStateOnlineCharacterSelect_OnConfirmPopupEvent	on 0xf sends lobby message 0xf9 then base OnChildEvent
+001b3760	cFEStateChatRoom_OnGoToCharSelectEvent	on 0xf closes unpinned popups and switches to cFEStateOnlineCharacterSelect
+001b37d8	cFEStateChatRoom_OnGoToCharSelectEvent_2	identical copy of OnGoToCharSelectEvent for another child id
+001b43a8	cFEStateNetConfig_CheckCard	state step: memcard mgr slots 53/55 (present/formatted) -> error popup 0x840 or LoadConfigList
+001b4470	cFEStateNetConfig_ScanNextCard	state step: card absent -> toggles port DAT_004a1b80 and retries / error popups 0x840/0x841
+001b55b0	cFEStateNetConfig_OnConnectingPopupEvent	cancel -> disconnect; on close pushes NetConfigAuthPopup (id 0x81a)
+001b5740	cFEStateNetConfig_OnDisconnectPopupEvent	on 0xf/0x14 disconnects buddy/lobby/net and disables +0x6ec
+001b5830	cFEStateNetConfig_OnAuthPopupEvent	on close pushes cFEStateAuthDNASError (0x81b) or cFEStateNetAccountMem (0x82c)
+001b5a58	cFEStateNetConfig_OnLoginPopupEvent	0xf flag; on close switches to cFEStateLogin; cancel disconnects
+001b92c8	cFEStateCreateStep1_OnEditDonePopupEvent	on close asks kT_POPUP204SaveAccount (0x81e) or goes to cFEStateSelectPersona
+001bade8	cFEStateCreateStep2_OnErrorPopupEvent	on 0xf/0x14 disconnects and pushes cFEStateNetAccountMem (0x832)
+001baed8	cFEStateCreateStep2_OnCreatedPopupEvent	on close: kT_POPUP201Verify login or kT_POPUP204SaveAccount question (0x81f)
+001bb098	cFEStateCreateStep2_OnAgePopupEvent	on close re-runs CheckAge(0x11)
+001bb798	cFEStateCreateStep2_FillYearList	clears listbox, sets single item text '%d' year, selection year-108
+001bc728	cFEStateCreateDuplicate_OnErrorPopupEvent	on 0xf/0x14 disconnects and pushes cFEStateNetAccountMem (0x832)
+001bc990	cFEStateCreateDuplicate_OnCreatedPopupEvent	on close: kT_POPUP201Verify login or kT_POPUP204SaveAccount question (0x81f)
+001c17f8	cFEStateNetQuickPlayPopup_SetOptionsEnabled	calls widget slot 8 with flag on 15 widgets +0x6f8..+0x730
+001c1b88	cFEStateNetQuickPlayPopup_OnOptionsPopupEvent	event 0xf/0x14: closes options panel, resets OK text and widget state
+001c5e58	cFEPopupConfirm_SetContentVisible	SetVisible(param) on buttons/popupText/popupPost/popupTitle/TextBoxPair widgets (+0x70..+0x88)
+001c5f20	cFEPopupConfirm_SetFade	widget slot 11 with colour whose first component = param on all popup widgets and options; used by v06/v07 transitions
+001c75c8	cFEPopupConfirm_SelectOption	clamps index+1 to [has-title, max] and UIMenu_SetSelection; caller cFEPopupConfirm_v06
+001c8258	cFEPopupConfirm_GetWidgetText	copies widget's ascii or wide (converted) text into cBXString; tag 'ScreenPopuponWidgetEvent'
+001c8ef0	cFEPopupConfirm_MeasureDescBox	measures descriptor text in popupText/popupPost by lines (getTextBoxSize helpers) and adds padding
+001ced90	cFEStateTrophyRoom_QueryEventReward	dispatches event-table entry to BE interface 13 (reward) query functions by type
+001d0180	cFEStateRewardGallery_InitPages	checks reward data (BE interface 13); if ready builds item list (slot 28) and page count = ceil(items/perPage)
+001d5330	MemCardStateBase_ctor_2	same as 1d53b0 with extra arg stored at +0x98; class name invented
+001d53b0	MemCardStateBase_ctor	ctor of unnamed cOVStateOverlay subclass vt 46c980 (base of cFEStateMemCard/ProfileLoad/OptionsDeviceSelect/OVScreenAutosave); class name invented
+001d5428	MemCardStateBase_dtor	slot 1 of vt 46c980, resets vptr and clears current-memcard-state global, then UIState_dtor; class name invented
+001d5488	MemCardStateBase_InstallCallbacks	sets global current state and fills the MCManager callback table (MemCardUI_*), resets state fields; class name invented
+001d58b8	MemCardStateBase_Shutdown	slot 5 (Shutdown) of vt 46c980; frees save buffer, MCManager cleanup, cOVStateOverlay_Shutdown; class name invented
+001d69e0	MemCardStateBase_ShowCreateEditMsg	slot 44 of vt 46c980; message 'kT_POPUP200CreateEdit'; class name invented
+001d8530	MemCardStateBase_ShowMessage	slot 36 of vt 46c980; creates or updates the cFEPopupConfirm message popup (+0x218); class name invented
+001d86b0	MemCardStateBase_v45	slot 45 of vt 46c980; sets save-title flag, +0x1a8=1, state 5, calls slot 47; class name invented
+001d8700	MemCardStateBase_OnChildEvent	slot 17 (OnChildEvent) of vt 46c980; handles popup result events 0xf-0x11/0x16; class name invented
+001d8be0	MemCardStateBase_ResetState	slot 41 of vt 46c980; clears busy/flags, state +0x1c0 = 2; class name invented
+001d8c50	MemCardStateBase_HandleInput	slot 8 (HandleInput) of vt 46c980; L/R starts 'left arr'/'right arr' threads; class name invented
+001d8d68	MemCardStateBase_ShowStatus	slot 47 of vt 46c980; MCManager_GetStatusText into message popup; class name invented
+001d8de0	MemCardStateBase_Update	slot 12 (Update) of vt 46c980; MCManager poll + dispatch on state +0x1c0; class name invented
+001d9258	MemCardStateBase_SyncMenuSelection	slot 43 of vt 46c980; reads 'onmenu' selection into +0x1c4; class name invented
+001d9308	MemCardStateBase_SetUseSaveTitle	sets +0x1f4 flag and copies current save title into +0x9c (or clears it); class name invented
+001d9368	MemCardStateBase_SetModeMenu	slot 31 of vt 46c980; switches to mode 1 via slot 35 if not already; class name invented
+001d93e8	MemCardStateBase_PlayWidgetAnim	slot 34 of vt 46c980; finds widget by name and starts named anim; class name invented
+001d9470	MemCardStateBase_SetMode	slot 35 of vt 46c980; switches onmenu/offmenu/file display, 'kT_MEMFECheckingCardPS2'; class name invented
+001d9818	MemCardStateBase_OnActivate	slot 6 (OnActivate) of vt 46c980; UIState_OnActivate then hides 'text box message'; class name invented
+001d9880	MemCardStateBase_v42	slot 42 of vt 46c980; card/MCManager status predicate; class name invented
+001d9948	MemCardStateBase_AllocReadBuffer	alloc tag 'read buffer'; frees old buffer, stores at +0x1d4/+0x1d0; class name invented
+001dde18	MemCardStateBase_ctor_3	unreferenced ctor variant, vptr 474e08 then 46c980; class name invented
+001e1090	FELocale_SetFlag27	only caller FELocale_v02; sets/clears bit 27 of *this
+001e12b0	FEStrings_GlobalCtors	TU static init: FUN_001dbc98(1,0xffff) via ctor list 43ce58
+001e12d0	FEStrings_GlobalDtors	TU static destroy: FUN_001dbc98(0,0xffff) via dtor list 43ceec
+001e1550	MessageCenter_CheckEventMessages	per-event (1..9) checks of human rider char/progress; posts random message variant if flag unset
+001e1a30	MessageCenter_MatchCharacter	switch(a) returns a==b for 0..9; used to filter messages by character in foreshadow picker
+001e1dd0	MessageCenter_SetPeakEventFlag	maps event 6..0xb to flag 0x28..0x33 pair and sets it if base flag clear
+001e1eb8	MessageCenter_ProcessPendingPeakFlags	for flag pairs 0x28..0x33 posts the corresponding per-peak messages and clears flags
+001e20d0	MessageCenter_PostPeakMessageB	per-peak (0..2) flags 0x23/0x25/0x27: posts group message 441918/4418f0/441940 (+1 variant) once
+001e2220	MessageCenter_PostPeakMessageA	per-peak (0..2) flags 0x22/0x24/0x26: posts group message 441904/4418dc/44192c (+1 variant) once
+001e2370	MessageCenter_SetPeakForeshadowDone	sets flag pair 0x1c/1d, 1e/1f, 20/21 for peak arg 0..2
+001e2428	MessageCenter_PostPeakUnlockMessage	per-peak arg 0..2: flags 0x39/0x3b, posts message 0xfc/0xfd/0xfe once
+001e2518	MessageCenter_PostOnce3C	posts message 0xff once (flag 0x3c)
+001e2578	MessageCenter_PostOnce38	posts message 0xfb once (flag 0x38)
+001e25d8	MessageCenter_OnBCFinish	dispatch for event 4/5 to the two BC-finish message posters (msgs 0x73..0x8a = kT_MSGSubjectBCFinishLoss/Win)
+001e2648	MessageCenter_PostBCFinishMessageA	posts BC finish win/loss message 0x73..0x7e per peak/char, removes older ones of same group, sets flags 0x16..0x18
+001e2828	MessageCenter_PostBCFinishMessageB	posts BC finish win/loss message 0x7f..0x8a per peak/char, removes older ones of same group, sets flags 0x19..0x1b
+001e2a08	MessageCenter_CheckAggressionMessage	for rival character != human, if aggression > 15+rand posts random message of that char's group and sets char flag
+001e2dc0	MessageCenter_GetIndexInType	counts message's position among messages of the same group type
+001e34d8	MessageCenter_GetNextInGroup	returns id+1 if message id+1 is in same group as id, else -1
+001e3680	MessageCenter_GetListIndex	only caller OVScreenMessageCenter_OnActivate; returns list row of message id among inbox+extra group 4 entries, 0xff if absent
+001e3760	MessageCenter_CheckCashMessages	interfaces 0xb/0xd: if peak 1/2 unlocked and cash+arg >= threshold posts 0xf7/0xf8 once (flags 0x34/0x35)
+001e38b8	MessageCenter_CheckPeakMessages	interface 0xd query per peak 1/2 for human char; posts 0xf9/0xfa once (flags 0x36/0x37)
+001e4b80	OVScreenMessageCenter_GetGroupVariant	only caller RefreshList; variant index by message group type (3/4/5/8 -> mod 10/10/11/4) when extra-list mode
+001e5aa0	cOVState_ViewPopup_GetGroupVariant	only caller SetVariantSubject; same variant computation as OVScreenMessageCenter_GetGroupVariant
+001e91d0	HUD_GetElemColorRotated	copies color +0x10..+0x1c of HUD layout element into out[3],out[0..2]
+001f14b0	HUD_DrawWobbleText	draws string char by char with per-character offset derived from char code and distance from center
+001f1e28	HUD_DrawTextLerp	draws ASCII text interpolated between two HUD layout elements (pos/scale/color) by factor
+001f25e0	HUD_DrawTextLerpW	wide-string version of HUD_DrawTextLerp
+001f7548	OVScreen_SetSelectedProfileSlot	sets +0x9c from FUN_0030c820(profile+0x1c4) or default +0x2a0; callers overlay factory 20ab50/20bab8
+00201720	EventSelect_ResetFlags	EventSelect_Init helper: +0x1c=0, +0x10=+0x14=1, +0x18 by game mode
+00201750	EventSelect_InitPeakLocks	EventSelect_Init helper: per peak 1..2 sets +8/+0xc lock flags from BENewPlayerInt checks
+002083d8	EventSelect_SetHighlightColor	widget slot 11 (color) with 0x4c8b28 or 0x4c8b38 by flag; used on focus change in EventSelect_OnWidgetAction
+00208438	EventSelect_SetUnlockedColor	widget slot 11 (color) with 0x4c8b48 or 0x4c8b58 by flag; SetupPeakTexts passes per-peak unlock flags +4/+8/+0xc
+002095e8	OVScreenSession_SetHighlightColor	same as EventSelect_SetHighlightColor (colors 0x4c8b28/0x4c8b38) inside OVScreenSession_OnWidgetAction
+00209648	OVScreenSession_SetUnlockedColor	same as EventSelect_SetUnlockedColor (colors 0x4c8b48/0x4c8b58) inside OVScreenSession_OnWidgetAction
+0020eaa0	cOVStateHUD1P_InitMeter	called twice by cOVStateHUD1P_ctor(_2) on the embedded meter objects (vptr 0x474230 @+0x38), default rect 640x480
+0020eb08	cOVStateHUD1P_DestroyMeter	vt 474230 slot 1 (dtor shape) of the HUD meter sub-object; refcount gp-0x984
+0020eb50	cOVStateHUD1P_LoadMeterAssets	only caller cOVStateHUD1P_Init; once: finds 11 meter textures (Empty/White Coil/Stem) and 'fefont', then lays out meter
+00210820	RaceProgress_ProjectRider	dot of rider position (slot 5 of +0x6c0) relative to current segment point with its direction; result stored in progress entry
+00211270	OVScreenProfileSavePDA_ResetSlotList	callers OVScreenProfileSavePDA_v26 / RefreshCardInfo; if card ready refreshes, else resets 'player%d' rows
+0021ce90	OVScreenFinishRace_dtor	vt 473e00 slot 1 (overlay id 0xc, Init 0x1e7bb0 loads 'finishov' with race times); class suffix guessed
+0021ceb8	OVScreenFinishRace_ctor	vptr 0x473e00 (id 0xc 'finishov' overlay), +0xc = StrHash('finishov'); class suffix guessed
+0021cf38	OVScreenFinishPoints_dtor	vt 473d28 slot 1 (overlay id 0xd, Init 0x1e8200 loads 'finishov' with kT_OVRCMNPointstotal); class suffix guessed
+0021cf60	OVScreenFinishPoints_ctor	vptr 0x473d28 (id 0xd 'finishov' overlay), +0xc = StrHash('finishov'); class suffix guessed
+0021fd38	cOVStateHUD1P_DrawMissionStatus	only caller cOVStateHUD1P_Render; BEMissionInt_IsMissionComplete/FindMission for +0x18c, centered text
+00222428	InboxMessages_GlobalCtors	pointer in ctor list 0x43ce5c; calls 0x2127e8(1,0xffff) (static init of kT_MSG* message table)
+00226600	LunoVMRegister_SetRaw	p[0]=value, p[1]=type; used by LunoVM_Execute and WScript natives
+00226610	LunoVMRegister_AsInt	identity accessor; LunoVMRegister_Add uses it to write the int payload (type 1)
+00226618	LunoVMRegister_AsFloat	identity accessor; LunoVMRegister_Add uses it to write the float payload (type 2)
+00226620	LunoVMRegister_AsId	identity accessor; used for type-3 (id/hash) payload in LunoVMRegister_Add and cLunoTable_FindInt
+00227fa0	MCManager_ExistsWrap	out-of-line wrapper of 0x23c850 (returns gp-0x47c MCManager singleton != 0)
+00229820	CrowdMan2d_BindInstanceFrame	world instance lookup by id; points the instance's anim frame pointer at shared crowd frame 0x536690
+00229f30	Vu0_UploadMatrixPair	stores two 4x4 matrices to VU0 data memory from qword 0x40 (vsqi); only caller Nash_GatherVisible
+00229f88	Vu0_UploadOccluder	stores vec + 4x4 matrix to VU0 mem at 0x50+5*i; only caller OcclusionMan_BuildVisible
+00229fc8	Nash_ClassifyInstance	VU0 microprogram 0xdb8 on instance box, dispatches by result through table 0x47b340; caller Nash_ClassifyInstances
+0022a128	Nash_ClassifyPatch	same as 0x229fc8 for +0x24 list objects (bezier patches, section +0x155); table 0x47b360
+0022a270	Nash_ClassifyEffect	same for +0x28 list type-7 objects; table 0x47b380
+0022a368	Nash_ClassifyInstances	walks node instance lists (+0x20) calling Nash_ClassifyInstance, flushes pending
+0022a408	Nash_ClassifyPatches	walks node +0x24 lists calling Nash_ClassifyPatch
+0022a4a8	Nash_ClassifyEffects	walks node +0x28 lists: type 7 -> Nash_ClassifyEffect, type 8 -> lens-flare source list +0x7bc4
+0022d668	SectionMan_AdvanceEventSwitchSync	LoadEvent path: event-switch phase 0/1 -> 3, 2 -> 4
+0022e098	SectionMan_GetEventWorldSection	world-section index of the event's logical section (event table 0x442498, stride 0x28)
+0022e180	SectionMan_SelectPeakLighting	track id -> 'APBR1'..'EPBR1', looked up in table 0x5047f8 via 0x38ac50, stored gp+0x12d4
+0022e8b8	GameViewMan_PrefetchViews	for each view calls 0x15ec98 (world cache/streamer helpers 0x3a9658/0x3a96e0); run when GameModule flushRequested
+00230338	GameModule_InvalidateFocus	FocusMan (AI+0xa4) +0xd0 = -1; called from SectionMan_Update
+00231ab8	GameModule_CanRestartFromPause	0 when pending/cur state in {1,5,10,14} or script check 0x278da0 fails; gates pause-menu items
+00233ad0	GameModule_RequestOverlayStateGlobal	wrapper: GameModule_RequestOverlayState(g_GameModule, ...)
+00234910	GameStatePreRaceLoad_CheckIntroScript	only caller PreRaceLoad_Update: script-channel state (+0x550 == 2) handling, sets +0x14
+00236b38	GameStateResetAI_Exit	vt 47d588 (state 9, unnamed class) slot 7: AI slot 5 Restart(3)
+00236b70	GameStateResetAI_SaveState	called from GameModule_v08 (save) on +0x148 (state 9): base only
+00236b90	GameStateResetAI_LoadState	called from GameModule_v09 (load) on +0x148
+00236cd8	GameStatePreRaceMenu_ResumeRace	only caller PreRaceMenu_Exit: AI Restart(3) + cpuActive=1 unless mode 4, audio 0x2871b0
+00238da8	GMHandler_ClearStandings2	shared slot 5; like ClearStandings but fills 0x536640 with 9
+00239aa0	GMHandler0_InitStandings	only caller GMHandler0_Reset; fills standings arrays per round then SortByScore
+0023a668	GMHandler1_SetupRiderSlots	only caller GMHandler1_Reset; fills GameModeMan character slots +0x18/+0x40
+0023b0a8	GMHandler8_PickOpponents	only caller GMHandler8_Reset; shuffles 10 riders, skips the two set ones
+0023c618	GMHandlerUnused_Reset	vt 47cbf8 slot 2
+0023cc78	MCManager_FormatSaveDesc	only caller MCManager_BuildSaveTitle; per save type formats label, 'kT_OVGameOptions' for settings
+0023d660	MCManager_UpdateMode1	mode-1 tick: waits card idle, counts slots, SetMode(0), finishes post states 0x31/0x33/0x36
+0023ea90	MCManager_OnOperationDone	after card op: save -> SetState(2), load -> SetState(0x31) or error path
+0023fae0	MCManager_RefreshSlot	if +0x428 changed: reset status flags +0x43c/+0x440, then +0x42c update
+00241180	MCManager_EndProgress	clears busy flag, card slot 44, optionally SetMode(0)+SetState(0x14)
+002412a0	MCManager_BeginReplayWrite	builds '%s-%s%04d' (product code, 'SET'/type 2 tag, index) then card slot 37 op
+00241380	MCManager_BeginSlotSelect	resets slot/file indices, SetSlot(0), RefreshSlot, state=2
+00241678	MCManager_PrevFile	decrements save file index +0xf8 with wrap
+002416c0	MCManager_NextFile	increments save file index +0xf8 with wrap
+00241b20	MCManager_ReadCardStatus	builds 5-bit card status mask (formatted, space, etc.) from cPS2MemCard queries
+00241cd8	MCManager_PollCardStatus	refreshes status flags +0x43c via MCManager_ReadCardStatus
+002420c8	MCManager_ReadDirInfo	fills per-slot 0xe0-byte dir record (+0x344..) from card queries
+00243db8	GameStateResetAI_v01	vt 47d588 slot 1 (state 9, name low in world.md), implicit dtor
+00244720	GMHandlerUnused_v01	vt 47cbf8 slot 1 (vtable never stored by GameModeMan_GetInstance)
+00244a40	GameModule_UpdateSections	uses GameModule +0x84/+0x78 SectionMan, calls GameModule_ProcessStateChange + SectionMan_Update; out-of-line copy
+00244e60	GameModule_SimStep	unreferenced out-of-line copy of GameModule_Update core: ProcessStateChange, Replay_Update, ProcessList priorities 1-6, WScriptMan_Update, cWorldSound_Update
+00245168	AppModule_PollExitRequest	unreferenced inline copy: AppModule_UpdateFade; if App+4 quit flag set this+8=1; returns !quit (same as start of GameModule_Update)
+00252658	MEM_GetBlockName	stub returning 0; called per block by MEM_DumpHeapInfo/MEM_FindBlockByName/MEM_HeapFreeBlock where a block name is expected
+00252660	MEM_GetBlockTag	returns trailing tag word after block data if header flag 0x800; called by MEM_DumpHeapInfo
+00252f80	MEM_HeapAllocAlignedThunk	thunk forwarding to MEM_HeapAllocAligned (heap twin of 0x252f60); no callers
+00253040	MEM_AllocAnon_2	MEM_AllocNamedAligned(NULL,size,0,0,0) with ignored 6th arg t1=1; twin of MEM_AllocAnon (t1=0)
+00253070	MEM_HeapAllocAnon_2	MEM_HeapAllocAligned(NULL,size,0,0,0) with 6th arg t1=1; twin of MEM_HeapAllocAnon
+00253b58	VidEnginePlayer_StaticInit	TU static init (init,0xffff) after VidEnginePlayer funcs; fills const matrices 4d25xx
+00254330	VidEnginePlayer_GlobalCtors	ctor-list entry 43ce70 calling 0x253b58(1,0xffff)
+002543f0	VD_TextureSink_SetFrameSize	vt 480270 slot 2; stores three args at +0x40/+0x44/+0x48
+00254400	VD_TextureSink_SetFrameRate	vt 480270 slot 3; stores two args at +0x4c/+0x50
+00254dc0	VD_TextureSink_Flush	vt 480270 slot 6; waits until GS idle, releases frame buffer +0xc
+00254e60	VD_StaticInit	TU static init (init,0xffff) of the VD sink TU; fills const matrices 4d28b8..
+00255638	VD_SinkBase_dtor	vt 4802b0 slot 1 (base of VD_TextureSink, which resets vptr to 4802b0 in its dtor); deleting dtor
+00255670	VD_Alloc	calls VidEngine alloc hook 0x509430(tag 0x4a2ea0,size,0,0,align 0x509438)
+002556b0	VD_Alloc_2	identical body to VD_Alloc (alloc hook 0x509430)
+00255750	VD_Free	calls VidEngine free hook 0x509434
+00255778	VD_Free_2	identical body to VD_Free (free hook 0x509434)
+002557c0	VD_GlobalCtors	ctor-list entry 43ce74 calling VD_StaticInit(1,0xffff)
+00255e40	cCommSystem_GetChannelStatus	returns channel[n]+4 unless +0x28 flag set (then 1); used by cGameComm connection check
+00257610	cGameComm_ResetRaceSync	callers 0x20ccf8/0x20d590; clears flags, sets +0x38 timeout = App+0x18 / App+0x10 (seconds->frames) when idle
+00257678	cGameComm_LatchResultFlags	once (+0x30): packs 11 status bools (+0xa0,+0xa4,+0x10,...) into bitmask +0x20, copies state +0x70 to +0x1c
+00257750	cGameComm_TickCountdowns	only caller cGameComm_Update; decrements counters +0x64/+0x68 while connected
+002577c8	cGameComm_CheckConnection	only caller cGameComm_Update; checks channel status, lag/drop counters (+0x4c..+0x58) and timers, sets error codes +0x24/+0x28
+002578f8	cGameComm_EndSession	marks comm finished (+4,+8), updates wait popup, schedules quit countdown; callers connection checks and setup exchange
+002579c8	cGameComm_TickQuitCountdown	decrements +8; at 0 with no blocking UI state pushes game state 0xd (quit to FE) via 0x20ab50(0x27)
+00257a80	cGameComm_CheckPeerTimeout	only caller cGameComm_Update; counts frames without peer data (+0x5c up to 0x708, +0xa8), flags timeout +0x2c
+00258790	cGameComm_SendPauseState	callers pause-menu code 0x20ca10/0x1f8728; sends control packet subcode 1/0 and sets pause timers
+00258870	cGameComm_SetTimeoutTimer	sets +0x94 timer value unless suppressed by +0x74/+0x78/+0x7c flags (force with arg3)
+00258ae0	cGameComm_QuitRace	resets BuddyMan status, sends quit control packet (0x258bc8), cGameComm_OnRaceEnd, BE network cleanup
+00258bc8	cGameComm_SendQuit	if connected sends control packet 3 subcode 5 via cGameComm_SendPacket
+00258c00	cGameComm_SendResync	only caller 0x20ca10; if connected increments +0x54 and sends control packet 3 subcode 2
+00258f20	cGameComm_SendSyncCheck	in race: stores (time,value) in ring +0x410, sends control subcode 4, flags desync +0xc when peer value differs
+00259098	LobbyMan_SetupNetRace	only caller LobbyMan_OnGameStart; sets character/opponent in BENetworkInt then 0x2639e0 race setup
+00259230	LobbyMan_ForwardEventToUI	only caller LobbyMenu_LobbyEventHook; passes event to active UI state vslot 24
+00259398	LobbyMan_CompareUserNames	strcasecmp(+0x1c) comparator passed for lobby list 0 in LobbyMan_CreateLists
+002593b8	LobbyMan_CompareRoomNames	strcasecmp(+8) comparator passed for lobby list 1 in LobbyMan_CreateLists
+002598a8	LobbyMan_OnRecvDebug	lobby callback 0 (PMF 4a2ff4): calls 0x3e8fd0 which prints 'recv: %c%c%c%c/%c%c%c%c'
+002599b0	LobbyMan_OnRoomListChanged	list-1 callback (PMF 4a2fbc, list sorted by room name): posts NetEvent 0xe0
+00259a60	LobbyMan_OnRankListChanged	list-2/snapshot callback (PMF 4a2fc4): posts NetEvent 0xe1; also called when stats page done
+0025a650	LobbyMan_CreatePeerTable	only caller LobbyMan_Update; when lobby 'pers' status is set creates table +0xf4 keyed 'SSX-PS2-2004'
+0025a6f8	LobbyMan_DestroyPeerTable	only caller LobbyMan_Disconnect; frees table +0xf4 created by LobbyMan_CreatePeerTable
+0025a730	LobbyMan_LookupPeerAddr	looks up name in +0xf4 peer table keyed 'SSX-PS2-2004', else returns default address arg
+0025c878	LobbyMan_CancelLogin	if state==8 (auth pending) cancels request +0x40 via 0x3e8d70
+0025d6c0	LobbyMan_OnUserListChanged	list-0 callback (PMF 4a2fb4, list sorted by user name): posts NetEvent 0xdf
+0025dd68	LobbyMan_PingSelectedRoomUser	pings current entry of lobby list +0x60 with same callback as LobbyMan_PingUser
+0025f120	LobbyMan_GetRoomCount	field +0x14 of LobbyMan+0x5c room list; callers LobbyMenu
+0025f150	LobbyMan_GetRoomName	LobbyMan+0x5c list entry(idx)+0x1c; callers cFEStateLobbyMenu_EnterRoom etc.
+0025f1b0	LobbyMan_GetRoomUserCount	field +0x14 of LobbyMan+0x60 user list; callers cFEStateChatRoom_*
+0025f1e0	LobbyMan_GetRoomUserName	LobbyMan+0x60 list entry(idx)+8, optional out flag bit21 of +4; callers cFEStateChatRoom_*
+0025f288	LobbyMan_GetRoomUserStats	room user entry(idx): +0x34, atoi(+0x28), 'l*' binary tag record -> out struct
+0025f338	LobbyMan_GetRankListCount	count of LobbyMan list [0x7b+mode]; callers cFEStateStats_OnWidgetAction
+0025f388	LobbyMan_GetRankListEntry	entry(idx) of LobbyMan list [0x7b+mode], binary tag 8 bytes -> two outs; caller FUN_001c3310 (stats)
+00260f10	LobbyMan_ResetAccountInfo	clears 5 cBXStrings at +0x260..0x270, sets account defaults (+0x290=1985); callers LobbyMan_ctor, cFEStateCreateStep2/Duplicate
+002610d0	BuddyMan_AddMessageSendersToRoster	for each private message whose sender is not in roster, BuddyMan_ChangeRosterEntry(name,2); called from roster-done callback
+00262ec0	BuddyMan_RemoveTempEntryAt	for temp roster entry idx: BuddyApi remove, delete their messages, decline+remove pending challenger
+002631e0	BuddyMan_HasChallengerStr	same as HasChallenger but takes cBXString*; no callers
+002633f8	BuddyMan_IsSameProductAt	roster entry idx presence tag 'S' equals BuddyMan product string +0xec
+00263490	BuddyMan_IsSameProduct	FindRosterEntry(name) then IsSameProductAt
+002634c0	BuddyMan_RosterCompare	strcasecmp-based compare callback registered for BuddyApi roster in OnConnectEvent
+00264cb8	cSetupMan_SendHello	sends setup msg 0x10 with LobbyMan+0xb8; caller Net_UpdateGameSetup right after cSetupMan_Create
+00265a68	cSharedLoginMan_Update	caller cFEStateNetAccountMem_Update; memcard/login-lib account state machine (states 2..0x15)
+00266550	cSharedLoginMan_McGetFoundName	memcard callback table 0x442a58; copies dir entry name found by McPoll list (0x537190), op state 0x10
+00266e30	cVoipMan_Activate	if started, inactive and volume gp+0x308 >= 10: enable talk, +4=1
+00266e88	cVoipMan_Deactivate	if started and active: disable talk, +4=0
+00266ed0	cVoipMan_ToggleActive	Activate if +4==0 else Deactivate; no callers
+00266f58	cVoipMan_SetVolume	caller OVScreenBEOptions_OnWidgetAction; applies value via voip lib and stores gp+0x308 (threshold 10 for Activate)
+00267f28	NetEvent102Base_dtor	vtable 0x481270 slot 1 (parent family of 0x4811b0); dtor
+00267f58	NetEvent102Base_Clone	vtable 0x481270 slot 2; clones as 0x102 vt 0x481290 event
+00269ed8	Path_ReadAIField	AIPaths vtable 0x481478 slot 4; tag 100 -> int +0x38 (branch flags), 101 -> int +0x3c
+00269f18	Path_FindMarkerBoundary	caller 0x112d58; scans events type 0x10/0xc/0xe around dist (+50) and returns point at chosen distance
+0026a070	Path_ReadTrackField	TrackPaths vtable 0x481448 slot 4; tag 0 -> float +0x38
+0026a090	Path_QueryEventsReversed	TrackPaths vtable 0x481448 slot 1; Path_QueryEvents with range mirrored about +0x38
+0026a138	Path_GetFirstEventType1Start	start (+8) of first event with type 1, else -1.0f; callers 0x12a560/0x12a768
+0026af98	PathData_FindNearAIPathsThunk	tail call to PathData_FindNearAIPaths; caller 0x112d58
+0026b680	PathData_FindNearestMarker	nearest type-2 marker passing BE interface 10 check (0x154630) to pos; caller OVScreenSession_TransitionIn
+0026b7d8	PathData_ReadFloatIntPairs	only caller PathData_Parse; count then (float,int) pairs into +0x1c/+0x18
+0026d4d8	RunList_Seek	finds run containing frame in {count,idx,remain,runs} (12-bit lengths, 8-byte runs); callers replay players 0x2702f8..
+0026de58	WorldState_NotifyObjectsRestored	only caller WorldState_Read (last step); iterates ProcessList type, calls vslot 3 on each
+0026ef30	Replay_EnableInstantReplayCameras	only caller Replay_BeginPlayback (instant-replay branch); mask1 triggers, cycles +0x634 mod 9
+0026ef80	Replay_RestoreInstantReplayCameras	only caller Replay_EndPlayback (instant-replay branch); mask2 triggers, GameCamera_SetController(player0,2)
+00270280	Replay_IsPaused	switch on state: true for 3,5,6,8,9 or playback reached end; polled by GameModule_Update and overlays
+002706b8	Replay_OpenMenu	sets state 9 unless looping (+0x61c); callers OVScreenReplayMenu_HandleInput, FUN_0020a8f8
+002709d8	Replay_OnRiderEvent	caller FUN_00304b38; while recording, arg 1 begins highlight for rider (arg 0 = no-op stub)
+00270ab0	Replay_OnRiderCheckpoint	caller FUN_0010e5d8 (Rider_UpdateRaceProgress); sets per-rider bit in +0x5fc mask and snapshot +0x1f flag
+00270c40	Replay_GetMaxHighlights	returns +0xc when trick flag else 1; used as cap in Replay_EndHighlight
+00270ed8	Replay_EndSave	wrapper of Replay_FreeSaveBuffers; called from memcard save UI paths
+002718e8	Replay_StaticInitDestroy	only caller 002722c0 (ctors-table entry 0x43ce80), (1,0xffff) pattern; fills static matrices at 0x4d33f0..
+002722c0	Replay_GlobalCtors	pointer in ctors table 0x43ce80; calls 002718e8(1,0xffff)
+002724c8	InSeq_HeapNewArray	wrapper of InSeq_HeapNew used for counted arrays (InSeq_ctor slots, channel arrays)
+00272510	InSeq_HeapDeleteArray	wrapper of InSeq_HeapDelete used by InSeq_InstanceRelease for channel array
+002725b8	InSeq_CurveTrack_ctor	vptr 0x481a10 store; created by InSeq_ChannelStart for track type 0 (cubic keys)
+002728d0	InSeq_dtor	deleting-dtor shape (free if flag&1); caller FUN_00282020 on ScriptEngine_UnloadMaster path
+00272aa0	InSeq_RunToEnd	InSeq_InstanceRunToEnd on instance for id
+00272d68	InSeq_SpanTrack_ctor	vptr 0x4819b0 store; created by InSeq_ChannelStart for track type 2
+00272da0	InSeq_SpanTrack_dtor	vt 0x4819b0 slot 10 deleting dtor (stop + InSeq_HeapDelete)
+00273180	InSeq_EventTrack_ctor	vptr 0x481950 store; created by InSeq_ChannelStart for track type 3
+002731b8	InSeq_EventTrack_dtor	vt 0x481950 slot 10 deleting dtor (stop + InSeq_HeapDelete)
+002734a8	InSeq_RampTrack_ctor	vptr 0x4818f0 store; created by InSeq_ChannelStart for track type 1
+002734e0	InSeq_RampTrack_dtor	vt 0x4818f0 slot 10 deleting dtor (stop + InSeq_HeapDelete)
+00273970	InSeq_Channel_dtor	deleting dtor: InSeq_ChannelRelease + InSeq_HeapDelete
+00273a60	InSeq_ChannelSelectBlock	caller ScriptEngine_v10; sets channel block index (+0x18) and header ptr (+0x1c/+0x20)
+00273d20	InSeq_ChannelFlushEvents	notifies channel listener (+0x2c) of accumulated track flags (+0x34) after start, clears flags
+00274578	InSeq_Instance_dtor	deleting dtor: InSeq_InstanceRelease + __builtin_delete
+00274c10	InSeq_InstanceSetUserData	swaps +0xc with arg and returns old value
+00274c58	InSeq_InstanceGetData	returns +4 (sequence data pointer)
+00274c60	InSeq_InstanceGetOwner	returns +8 (owning InSeq)
+00274c68	InSeq_GetChannelCount	returns byte +1 of sequence header (channel count used by InSeq_InstanceSetup)
+00274d90	InSeq_FindChannelData	skips header then walks n size-prefixed blocks; callers ScriptCameraAlgo readers
+00275ed0	ScriptList_AddChoice	like ScriptList_Add but optionally resolves script via ScriptEngine_FindScriptIndex ('ScriptChoice') and rider args
+002766b0	ScriptList_SetPausedNested	wrapper ScriptList_SetPaused(this,arg,0) (counted pause)
+00276998	ScriptList_GetEntryType	returns entry[i].type if <0x1c else 0x1c
+00276a78	ScriptList_GetEntryScriptIndex	entry[i] script index (or instance lookup) for non-movie entries, else -1
+00276b08	ScriptList_GetEntryScript	returns script object for entry[i] instance (FUN_00282bf0) or 0
+00276bd8	ScriptList_GetPlayStatus	status code 0-5 for playing list (paused/transition/script running/next pending)
+00277100	ScriptList_IsNextReady	true when no next entry prepared, or next movie/script instance reports ready (status 2)
+002771a8	ScriptList_IsFull	wrapper ScriptCmdQueue_IsFull(this+0xc)
+002772c0	ScriptList_OnSeqStart	ScriptEngine seq-listener start: if current script has flag, FUN_002ef378('TRANSP')
+00277310	ScriptList_OnSeqAdvance	ScriptEngine seq-listener advance: near end of current script starts outro transition (ScriptList_StartTransition)
+002773a0	ScriptList_OnSeqEnd	ScriptEngine seq-listener end: pauses seq if transition pending, ScriptList_CheckNextReady
+00277400	ScriptList_OnSeqStopped	ScriptEngine seq-listener stopped: clears transparency (FUN_002ef378(0)) if current script flagged
+002776e0	ScriptList_CheckNextReady	pauses list (ScriptList_SetPaused 1) while next prepared entry is not ready
+00277980	ScriptList_StartTransition	starts camera/screen transition (FUN_002e4370/2e4540) using current script's transition params
+00277de8	ScriptList_GetMovieInfo	returns 0x1c-byte movie table record (NTSC/PAL table chosen by video mode) for entry
+00278710	ScriptEngine_ClearSkipDelayOnEnter	clears +0x554 skip-delay counter; only caller GameModule_Enter
+00278718	ScriptEngine_ClearSkipDelayOnExit	clears +0x554 skip-delay counter; only caller GameModule_TryExit
+00278a10	ScriptEngine_SetLocatorTable	+0x558[world index] = arg (table used by ScriptEngine_GetLocatorPose)
+00278a58	ScriptEngine_ClearLocatorTable	+0x558[world index] = 0
+00278d58	ScriptEngine_IsLoadDone	polls async loads; true when no pending loads (+0x538) and FUN_0027bf50 reports none
+00278ed0	ScriptEngine_ListAddMovieById	finds script table entry (+0x530, 0xc stride) with id then ScriptEngine_ListAddMovie
+00279178	ScriptEngine_ListGetEntry0x1d	ScriptList entry type query (FUN_00276a08) on main list [i]; no callers
+002791a8	ScriptEngine_ListGetEntryScriptIndex	ScriptList_GetEntryScriptIndex on main list [i]
+00279220	ScriptEngine_ListGetPlayStatus	ScriptList_GetPlayStatus on main list [i]
+00279270	ScriptEngine_ListIsNextReady	FUN_00277100 on main list [i]
+002792e0	ScriptEngine_IsHUDAllowed	caller cOVStateHUD1P_Update; true if no active list, else skippable and not status 3
+00279528	ScriptEngine_SpawnChosenScript	ScriptEngine_ChooseScript then binds 3 rider args and creates script instance (FUN_002821a0)
+002796b8	ScriptEngine_SpawnScriptById	finds script table entry with id (+0x530) then ScriptEngine_SpawnScript
+00279720	ScriptEngine_PlayScriptInstance	sets owner field on instance's script object, then plays instance (FUN_002822a0)
+00279f18	ScriptEngine_GetTargetObject	jump table (21 entries at 0x481ca0) returning game object for target id; used by script camera algos
+0027a0d8	ScriptEngine_GetTargetPose	switch on target id: fills position + yaw/pitch from rider, path or world locator (0027b750/b948/bb08)
+0027a4a0	ScriptEngine_GetTransitionTarget	jump table (9 entries at 0x481df0) by type; used when starting script transitions
+0027a860	ScriptEngine_QueueFinishScripts	queues race-end script entries 0xc..0x15 on main list 1 by result/rider count, prepares and starts it
+0027a9f0	ScriptEngine_SkipFinishScript	skips main list 1 by 1-3 entries depending on current finish script type (0xc-0x14)
+0027aa80	ScriptEngine_IsFinishScriptActive	active list 1 and current entry type in finish set (0xc,0xd,0xe,0x12,0x13,0x14)
+0027aaf8	ScriptEngine_QueueIntroScripts	queues per-event intro script entries on main list 0 by mode (table 0x445488)
+0027ac60	ScriptEngine_QueueRaceCutscene	only caller 'finishov' sequencer 0x233cd8; picks cutscene script by rider placings/characters and queues it
+0027b750	ScriptEngine_GetRiderPathPose	rider pos from path lookup (0x4d33a0) + heading/pitch via Math_Atan; for GetTargetPose
+0027b948	ScriptEngine_GetRiderPose	rider position (vslot) + heading/pitch from velocity (+0x1b0); for GetTargetPose
+0027bb08	ScriptEngine_GetLocatorPose	world object from per-track locator table (+0x558) -> position + heading/pitch
+0027d210	ScriptEngine_IsObjBoundToProcess	base vt slot 4; true if any binding of obj i has entry value == arg
+0027d2c8	ScriptEngine_BindingHasProcess	tests binding entry (+0x58 = 0x50+8) == arg
+0027d680	ScriptObjCam_SetOwner	stores owner at +0x10; called when a ScriptObjCam is added to/removed from the per-view script obj (0x281190/0x2811e8)
+0027d788	ScriptObjCam_SetWeight	stores float at cam+0x18 (ScriptObjCam_Activate sets it to 1.0); used for blend weights by 0x2816a0
+0027f968	RiderScriptObj_ctor	only caller Rider_ctor; binding base + ScriptObj_ctor(type 3), vptrs 0x481fd8/0x482018, identity matrix
+0027f9f8	RiderScriptObj_Activate	vt 0x482018 slot 4 (ScriptObj Activate)
+002803f0	RiderScriptObj_Deactivate	vt 0x482018 slot 5 (ScriptObj Deactivate)
+002822a0	ScriptEngine_RunProcess	process state 2 -> 3, starts its InSeq (0x272ad0)
+00282338	ScriptEngine_StopProcessSeq	stops running InSeq of process via 0x272b58
+00282390	ScriptEngine_StopAllProcessSeqs	calls 0x282338 for all 16 processes
+00282838	ScriptEngine_IsProcessFinished	process state 4/5 and InSeq state == 4
+00282a80	ScriptEngine_FindCommandHandler	vt 0x482450/0x482134 slot; collects free bindings and returns first whose vt slot 5 accepts the command
+00282db0	cTransitionMan_StopTransition	wrapper of 0x282dd0, every caller passes type 9
+00282dd0	cTransitionMan_StartTransition	type-2 script obj (cTransitionMan member): sets transition type/durations, calls owner vt slots; type 9 = stop
+00282f60	ScriptBinding_ctor	base ctor (vt 0x482418) embedded in all script obj types; +4=-1, +8=0
+00282fb8	ScriptBinding_Bind	vt 0x482418 slot 1; stores process at +8, ScriptEngine_ActivateBinding
+00283000	ScriptBinding_Unbind	vt 0x482418 slot 2; ScriptEngine_DeactivateBinding, +8 = 0
+00284ae8	RiderScriptObj_dtor	stores vptrs 0x481fd8/0x482018, ScriptObj_dtor, optional delete
+00284ba0	SSXAudioSystem_GetFadeMask	returns channel mask 0x173 for mode 0 else 0
+00285930	SSXAudioSystem_Compute3DPan	transforms emitter pos into listener view, writes azimuth/elevation shorts when output mode != 0
+00287488	SSXAudioSystem_SetSfxVolume	sets channels 5,3,6,7 (+9,10) from option level; cFEStateOptionsSound second slider
+00287520	SSXAudioSystem_SetSpeechVolume	sets channel 4 (10 sub-gains at +0x636c) from option level; third sound slider
+002876a0	SSXAudioSystem_GetSfxVolumeLevel	channel 5 volume * 11 as option level
+002876d0	SSXAudioSystem_GetSpeechVolumeLevel	channel 4 volume * 11 as option level
+002879b0	SSXAudioSystem_IncChannelVolume	channel volume + step (debug)
+002879e0	SSXAudioSystem_DecChannelVolume	channel volume - step (debug)
+00287f00	SSXAudioSystem_SetFadeMode	start/end fade (mode 3 restores) using channel mask from 0x284ba0
+00288370	SSXAudioSystem_GetPresetGain	preset value*k, or current/target channel gain when preset entry <0
+002887a8	SSXAudioSystem_SetGainTarget	sets channel gain target (+0x6440) and per-frame step (+0x6414)
+00288ac0	SSXAudioSystem_GetViewPos	returns view+0x20 position used for distance tests
+00288b40	SSXAudioSystem_FindViewInRange	returns first view index within dist*100 of pos, else -1
+00288ce8	SSXAudioSystem_GetListenerCount	1 outside game, else view count (0x28b1f8)
+002899f8	SSXAudioSystem_ApplyMusicTriggerPaint	caller 0x2898a8; for lead rider handles music trigger ids 0x1f/0x20/0x21 (starts songs)
+00289d08	SSXAudioSystem_OptionToOutputMode	maps saved option byte to output mode; caller SSXApp_BootLoad
+00289d60	SSXAudioSystem_OutputModeToOption	inverse mapping of 0x289d08
+00289dc0	SSXAudioSystem_GetOutputModeOption	maps +0x62b0 output mode to option value
+0028b1f8	SSXAudioSystem_GetViewCount	GameModule+0x84 (GameViewMan) +0x10
+0028b210	SSXAudioSystem_GetView	GameViewMan view[i] (+4+i*4)
+0028c8c8	SSXAudioSystem_UpdateMusicIntensity	only caller SSXAudioSystem_Update; adjusts music by lead rider air time/state
+0028cf98	SSXAudioSystem_PlayMusic	13 callers; picks music by mode/track, sets music state 0x65-0x67 and starts playback
+0028d988	SSXAudioSystem_HandleMusicTrigger	only caller via Rider_UpdateHeadingAndAudio path; reads trigger kind (-1/0/1/2/0xb) from object, starts/queues songs
+0028def0	SSXAudioSystem_SetMusicState	writes +0x629c, returns whether it changed; used before scheduling music cues
+0028df08	SSXAudioSystem_ResetMusicState	sets +0x629c = -1 (pair of 0x28def0)
+0028e548	SSXAudioSystem_OnMusicCue	member-fn-ptr callback (stored 0x4a3654) scheduled via 0x2adca0; switches on cue code 0..7, speech + song selection
+0028ef90	SSXAudioSystem_RestartPeakMusic	clears music flags, picks next song (0x28d488) and schedules cue 2 after 10 ms; called when selected peak == current track
+0028f478	SSXAudioSystem_OnSongChanged	secondary vt 0x483688 slot 2: MusicPlayer 0x2b35a0 then sends msg 5 to UI state "hud"
+0028f520	SSXAudioSystem_StopFEMusic	from event-select widget action: MusicPlayer_StopSong when FE music mode check 0x28d960 passes
+0028f558	SSXAudioSystem_SetSelectedPeak	stores peak/track id at +0x6284; if it equals current race track restarts peak music
+0028f730	SSXAudioSystem_UnloadLoadingScreenBank	only caller SSXAudioSystem_dtor; stops loading loop then SndBankMan_UnloadBank(mgr,0) (slot 0, not 0xd as loaded)
+0028fae0	SSXAudioSystem_RestartRaceMusic	only caller OVScreenSession_OnWidgetAction; cancels music cues, MusicPlayer_StopSong, picks next song, schedules cue
+00290c10	Audio_EvalCurveTable	Audio_EvalCurve5 on table 0x445898 + idx*0x28
+00290f58	SSXAudioSystem_SetPlayerTrickScore	only caller RiderMetrix_Update; stores score for P1 (+0x6074) or P2 (+0x6078)
+002934d0	SSXAudioSystem_GetSurfaceGroup	jump table 0x482b50 on surface category (<9) -> group 0..2
+00294678	SSXAudioSystem_UpdateRiderAirState	sets per-player air flag (+0x59e8) from rider+0x788 state, big-air speech and crowd cue when airtime > 2
+002947b0	SSXAudioSystem_UpdateAirborneRiders	from SSXAudioSystem_Update: for 6 player slots with air flag set calls UpdateRiderAirState
+00294880	SSXAudioSystem_SetRiderAirFlag	writes flag +0x59e8[player] (player < 6)
+002948a0	SSXAudioSystem_ClearRiderAirFlags	zeroes 6 ints at +0x59e8
+00295950	SSXAudioSystem_SetTrackedSoundExpiry	rewrites ring-buffer records matching (key,sub) with new 3rd field
+002961f0	SSXAudioSystem_PlayWipeoutCrowdReaction	only caller Rider_StartWipeout; crowd cue tier by |impact| (0.25/..), resets music fade
+00298d00	SSXAudioSystem_PlayHitBoostSound	from Rider_ReportRiderHit3 (boost award): delayed sound id 0x72 after 250 ms
+00299368	SSXAudioSystem_PlayBoostEmptySound	Rider_HandleBoostInput branch without boost: id 0x6c
+00299638	SSXAudioSystem_OnBoostMeterMessage	RiderMetrix_UpdateTrickHUD on HUD msg 0x34: delayed id 0x6b, speech by boost level (+0x2f4)
+002997b8	SSXAudioSystem_PlayMeterFullSound	RiderMetrix_UpdateTrickHUD when meter ratio == 1: id 0x69
+0029a530	SSXAudioSystem_PlayGrabTrickSound	only caller RiderSpinSub_UpdateTrick: id 0x77
+0029ab08	SSXAudioSystem_ResetBoostTickPitch	only caller Rider_AddBoost: per-player tick pitch +0x5fe8 = 0x1000
+0029b0e0	SSXAudioSystem_StartTrickMeterSound	RiderMetrix_UpdateTrickHUD (HUD msg 0x34): id 0x66, handle +0x5fdc
+0029b3c0	SSXAudioSystem_StopTrickMeterSound	stops handle +0x5fdc (pair of 0x29b0e0)
+0029b738	SSXAudioSystem_UpdateUberSpeech	from SSXAudioSystem_Update: speech 2 when lead rider boost level (+0x2f4) reaches 10
+0029c420	SSXAudioSystem_OnStartLight	called from StartlightBegin/StartgateOpen sequencers with light index; plays sfx 0x4e, starts music on state 1
+0029c7b0	SSXAudioSystem_OnStartGateOpen	only caller is the StartgateOpen race-start sequencer (0x234c68); plays sfx, starts race music
+0029ced8	SSXAudioSystem_PlayMultiplierSfx	callers Rider_v13/v15 etc; sfx 0x70..0x76 by type, for type 2 and value 2/3/5/10 fires Arcade speech 0x2145 with 1/2/4/8
+0029d370	SSXAudioSystem_StartLoopSfx	plays bank 9 sfx with sfx volume, stores handle this+0x5fc8, sets active flag this+0x5fc4
+0029e438	SSXAudioSystem_CalcAvalancheVolume	volume 0..127 from distance/intensity floats of the avalanche emitter record
+0029e4a0	SSXAudioSystem_AvalancheSoundCallback	callback stored at 4a36d4 (registered by SetAvalancheSound): refreshes position from rider and volume via CalcAvalancheVolume
+0029e578	SSXAudioSystem_ResetWipeoutSfx	only caller RiderWipeoutSub_Enter; clears per-rider slot this+0x6080[rider+0x870]
+0029e590	SSXAudioSystem_PlayWipeoutImpactSfx	only caller RiderWipeoutSub_HandleInput; sfx pitch from impact strength, remembers it per rider in this+0x6080
+0029e970	SSXAudioSystem_PlayWipeoutSlideSfx	only caller RiderWipeoutSub_HandleInput; plays sfx once per rider (slot this+0x6080 set to 1.0)
+0029f2b0	SSXAudioSystem_CharacterToSpeechMask	maps character index 0..9 to a bit flag (switch)
+0029f330	SSXAudioSystem_GetRiderSpeechMask	Rider_GetCharacter + 0x123168 -> CharacterToSpeechMask
+002a0560	SSXAudioSystem_RiderSay207D	two-rider speech (0x207d/0x207f/0x2080/0x2081) after facing check, from AI_UpdateRacePositions chain; probably overtake taunt
+002a19d8	SSXAudioSystem_TriggerSpeechEvent	switch on event index -> PA/DJ speech functions (0->PASayRaceIntro, 8->DJSay20C8, ...)
+002a2e50	SSXAudioSystem_PlayDJChatter	random pick among not-yet-used DJ topics (bitmask this+0x573c) incl. character-specific lines
+002a3f90	SSXAudioSystem_IsTrackGroup5	current track id in 0x11..0x15
+002a3fd8	SSXAudioSystem_IsTrackIdGroup5	track id - 0x11 < 5
+002a3fe8	SSXAudioSystem_IsTrackGroup4	current track id in 0xe..0x10
+002a4030	SSXAudioSystem_IsTrackIdGroup4	track id - 0xe < 3
+002a40e0	SSXAudioSystem_IsTrackIdGroup0	track id < 5
+002a4158	SSXAudioSystem_IsTrackIdGroup1	track id - 5 < 3
+002a41c8	SSXAudioSystem_IsTrackIdGroup2	track id - 8 < 3
+002a4238	SSXAudioSystem_IsTrackIdGroup3	track id - 0xb < 3
+002a4be0	CrowdAudio_DeleteSampleList	frees list (CrowdAudio_FreeSampleList) and deletes if flag&1; called from CrowdAudio_dtor
+002a5cd8	CrowdAudio_InstanceSetSourceParam	sets field +0x24 of source slot n of a crowd instance
+002a67f0	CrowdAudio_InstanceStartAnticipate	sets anticipation state +0x180 to 1 if idle
+002a6808	CrowdAudio_InstanceStopAnticipate	if anticipation state +0x180 == 2: stop sound, reset state
+002a7340	CrowdAudio_SetSourceParam	only caller WorldTriggerInstance_Update; decodes handle and calls InstanceSetSourceParam
+002a7408	CrowdAudio_StartAnticipate	InstanceStartAnticipate on instance n
+002a7438	CrowdAudio_StopAnticipate	InstanceStopAnticipate on instance n
+002a7468	CrowdAudio_PushPlayParams	only caller WorldTriggerInstance_Update; pushes a default play-param frame on the sound player stack
+002a77a8	CrowdAudio_PitchBendCallback	callback stored at 4a3704 -> CrowdAudio_UpdatePitchBend
+002a77c8	CrowdAudio_GetInstanceReaction	returns +0x18c (last played trick/fall marker) of instance n; caller CrowdMan2d-area 0x229530
+002a8140	MIDIBanks_ctor	alloc tag 'MIDIBANKS', SNDMIDI_Init, vptr 483a48; base of CrowdAudio
+002a82d8	MIDIBanks_dtor	SNDMIDI_Shutdown, frees tables; called from CrowdAudio_dtor
+002a8450	MIDIBanks_PushPlayParams	pushes play-param frame for bank/sample before MIDIBanks_Play
+002a86b8	MIDIBanks_Play	SNDMIDI_Play of the current play-param frame, allocates voice (0x2acfe0)
+002a9350	SndPlayParams_ctor	allocs mCurrent/mPosStatic/mBaseVol/... param arrays, pushes default frame (SND_InitPlayParams)
+002a97c0	SndPlayParams_dtor	frees the same m* parameter arrays
+002a9988	SndPlayParams_SetRadiusVanish	writes mRadius and mVanish arrays (tags) of current play-param frame
+002a9e78	StreamBuffer_SetFile	checks file exists, strcpy name to +0x14, opens via 0x3e1ec8; caller SpeechInstance_LoadSpeechInf chain
+002a9f30	StreamBuffer_SetBaseVolume	stores byte +0xc (base volume used by StreamBuffer_UpdateVolume)
+002aa188	StreamBuffer_IsRequestPending	request status == 1
+002aa260	StreamBuffer_GetRequestLength	request status[1]+[2] as float when state==2 (playing), else 0
+002aa398	StreamBuffer_QueueFromBig	like StreamBuffer_Queue but only when a .big file (+0x74) is attached; looks entry up by 2nd key
+002aadc0	StreamArray_QueueFromBig	slot[param_2] -> StreamBuffer_QueueFromBig, -1 if empty
+002aae78	StreamArray_GetTimeRemaining	slot -> FUN_002aa108 (request status[2] when playing); speech uses it as delay before re-check timers and '<500' readiness test
+002aaec0	StreamArray_GetRequestLength	slot -> StreamBuffer 2aa260 (request status[1]+[2] when playing)
+002ad358	BankMonitor_FadeOutHandle	BankMonitor_FindInstance then FadeVolume(time,-1) without auto-release
+002ad4d8	BankMonitor_StopByOwner	vslot 4; resets instances whose +0x80 field (copied from param frame) equals argument
+002ade88	SoundManagerRef_ctor	root virtual base: stores PS2SoundManager_Create() and calls its Init (slot 1); class name invented
+002adee8	SoundManagerRef_dtor	root virtual base dtor: PS2SoundManager Shutdown (slot 3) + delete; class name invented
+002adf60	Audio_Rand	thin wrapper of Rand_NextMain used by audio code (SPCH_Init, grunts, triggers)
+002adfc8	PATH_PlatAlloc	calls the alloc hook stored by PATH_PlatInit (gp 0x69c = FUN_00252fa0) with name tag 0x483288
+002ae3a8	PATH_PlatRemoveOldestBank	scans track's bank slots for smallest timestamp (+0x24) and PATH_PlatRemoveBank on it
+002ae768	PATH_PlatSetTrackFile	sets track +0x28/+0x2c (file handle / limit used by SNDSTRM_QueueFileOffset in PATH_PlatQueue)
+002aec58	PATH_PlatGetTrackStatus	per-track status refresh (SNDSTRM_GetStatus / request status / volume) returning position pair
+002afa58	SpeechBank_HasId	*bank == id; used by SpeechInstance_PlayEvent to find the bank owning an event
+002b0290	SpeechInstance_IsStreamReady	stream state 0 -> true; state 1 and playing -> position < 500; via StreamArray on instance stream slot
+002b1058	SpeechSystem_RequestEvent	sets instance params (+0x8cc/+0x8d0/+0x8f4) and temporary callback, calls SPCH request FUN_003d8040, clears
+002b1128	SpeechSystem_FlushInstance	with disable flag set, calls SpeechSystem_RequestEvent 4 times with zero params
+002b1780	MusicPlayer_CreateStream	uses MusicPlayer global (gp 0x6fc): pushes param frame, StreamArray_CreateStreamEx in slot 2, returns its handle
+002b1a70	MusicPlayer_StopStream	StreamArray_Stop(MusicPlayer global, slot 2)
+002b27c0	SongInstance_IsLoopBankBusy	unless +0x4c, checks SND_BankIsInUse on song's loop bank (+0x34) in SndBankMan table
+002b3bc0	MusicPlayer_SetEventState	vtable 4838f8 slot 4; if state != +0x41c calls own slot 3 (PostEvent) and stores it
+002b3cd8	MusicPlayer_ApplySongVolume	enabled+song -> SongInstance_SetVolume
+002b4470	MusicPlayer_StartLoops	sets song +0x4c and schedules loop timer (callback 0x4a3838) via BankMonitor_AddTimer
+002b4568	MusicPlayer_ScheduleLoop	timer at ms-to-next-beat (SongInstance_GetMsToNextBeat/GetBeatIndex) with random phrase offset, callback 0x4a3840
+002b46e8	MusicPlayer_AreLoopsActive	returns current song +0x4c
+002b4708	MusicPlayer_ClearLoopsActive	clears current song +0x4c
+002b4978	MusicPlayer_PlayPreview	if song config PREVIEW (+0xa0) >= 0 calls own vslot 3; caller cFEStateRequestLine_OnWidgetNotify
+002b49c0	MusicPlayer_SetSongTag	sets current song +0x58; callers PlayCharacterTune/PlayCharSelectMusic/LoadFrontEndAudio
+002b49e0	MusicPlayer_GetSongTag	returns current song +0x58, -1 if none
+002b5818	WorldTrigger_GetInfo	WorldTriggerManager_GetTriggerInfo on global manager (gp 0x21e4); caller WorldTriggerInstance_Update
+002b5878	WorldTrigger_GetName	global manager -> WorldTriggerManager_GetTriggerName
+002b6630	WorldTriggerManager_CountActiveOthers	counts active (state 1) instances with non-default name and different owner among 40 (0x70 each)
+002b6a68	WorldTriggerManager_FlagAllActive	sets +0x34 on every active instance; caller SSXAudioSystem_ResumeSfx
+002b8818	cWorldSound_StaticInit	(1,0xffff) static-init pattern: fills const tables at 0x4d3b18.. ; called from global ctor 2baee8
+002baee8	cWorldSound_GlobalCtors	ctors-list entry 0x43ce88 calling FUN_002b8818(1,0xffff)
+002bafb0	WorldPainter_StaticInit	(1,0xffff) static-init pattern setting gp 0x21f0-0x2260 tables; between WPData and cWorldPainterMan code
+002bb0e0	WorldPainter_GlobalCtors	ctors-list entry 0x43ce8c calling FUN_002bafb0(1,0xffff)
+002bb100	tWPIGD_Lighting_PairDiffers	returns 1 if two int pairs differ; only caller tWPIGD_Lighting_IsEqual
+002c53c8	cPS2MemCard_GetPortChangedFlag	returns port record +0x10 (set by Update when sceMcSync result == -1); wrapped by v63 with current port
+002cf788	MenuSysGroupItem_PageForwardV03	slot 3 of embedded page vt 486a18 (MenuSysGroupItem+0x18, owner at +0x148): forwards to owner MenuSysGroupItem_v09
+002cf7b8	MenuSysGroupItem_PageForwardV04	slot 4 of embedded page vt 486a18: forwards to owner MenuSysGroupItem_v10
+002d1740	MenuSysMessagePage_ctor	MenuSysPage subclass vt 4867b0 with label(+0x130) + spacer(10) + back item(+0x164); class name invented
+002d17f0	MenuSysMessagePage_ctor_2	same page with label text and back-item args, spacer 0x1e; vt 4867b0
+002d1d10	HaloModifier_DrawQuad	only caller HaloModifier_Render; builds GS prim/alpha bits and draws a (rotated) textured quad via renderer slots 0x274/0x27c
+002d2988	SSXStatsMan_StaticInitDestroy	gcc static init (init,0xffff) after Serialize/SSXStatsMan code; TU attribution by position only; caller ctor-list thunk 2d4060
+002d3d90	MenuSysGroupItem_PageDtor	slot 1 of embedded group page vt 486a18 (stored by MenuSysGroupItem_ctor at +0x144); calls MenuSysPage_dtor
+002d3f78	MenuSysMessagePage_dtor	slot 1 of vt 4867b0: destroys back/spacer/label items then MenuSysPage_dtor
+002d4060	SSXStatsMan_GlobalCtors	pointer in ctors list 43ce98; calls 2d2988(1,0xffff)
+002d8a00	Avalanche_DebugDrawInstance	per-instance draw using renderer slot 0x24c with packet setup; called by RenderActive only for first gp+0x968 instances
+002de368	cBoardWakeFX_ResetHead	only caller cBoardWakeFX_Reset; zeroes three vec4s and two ints of a wake sub-record
+002e2868	LensFX_DrawFlareQuad	only caller LensFX_DrawFlares; sets GS alpha bits and draws one flare quad via renderer slot 79
+002e3110	LensFX_UpdateCallback	address taken in LensFXBase_ctor; thunk to LensFX_UpdateSourceVisibility
+002e3130	LensFX_UpdateSourceVisibility	for each source (+0x6490 count) queries object +0x649c slot 4 and stores the result per source/flare
+002e3680	cPlayerPulseFX_ctor	RiderBase+0xb00 mixin ctor (rider.md proposed name; vt 0x4889c8 / 0x488a10 over virtual base Rider); caller RiderBase_ctor
+002e37d0	cPlayerPulseFX_dtor	dtor of the same mixin (restores vt 4889c8/488a10, Rider_dtor with flag 2); callers Player/ComputerActorRider/RiderBase dtors
+002e3930	cPlayerPulseFX_Reset	resets the two RGBA colours (+8, +0x18) and phase +4 of the pulse mixin; callers RiderBase_ResetFX, RiderBase_LoadState
+002e39d8	cPlayerPulseFX_Update	rider.md: advances phase and cos-blends colours into +0x28 for human riders (vslot 8); callers RiderBase_UpdateFX, AI_Update
+002e3af8	cPlayerPulseFX_Render	render step of the pulse mixin; callers RiderBase_RenderFX, AI_Render
+002e44c8	cTransitionMan_Start_2	unreferenced wrapper: cTransitionMan_Start(p1,p2,0)
+002ebd88	TransitionEffect_ctorRandom	ctor of TransitionEffect subclass vt 0x488080 (colour + two params +0x14/+0x18); twin 0x2ebe20 randomises them
+002ebe20	TransitionEffect_ctorRandom2	same subclass (vt 0x488080) ctor with +0x14/+0x18 = Rand_NextMain()%1000 * k
+002edb20	WorldPainter_SampleSurfaceColours	samples two colours from the painted surface texture at rider UV (+0xaac/+0xab0) via gfx slot 58
+002edf00	WorldPainter_ComputeColourFactor	luminance of view colour (+0x38) mapped through log/exp curve to 0..1; used to mix irradiance sets in 0x2ed490
+002ef368	WorldPainter_SetScriptSurfaceMode	sets gp+0xa6c (read by WorldPainter_UpdateView view 0 surface-region path) and gp+0x1354; from ScriptEngine list start/shutdown
+002f5d30	WorldLightMan_LightContribution	contribution of one light at a position (point/spot by +0x10, range/cone checks); only caller 0x2f5b68
+002f6168	WorldLightMan_LightDistance	distance/inv-distance (and cone dot) from light pos +0x38 to point, 0 when outside radius +0x1c
+002f64e8	RiderBase_ResetCheatCode	empty Reset of the +0xd20 mixin, called from RiderBase_ResetFX with the other FX resets
+002f6908	RiderBase_RenderCheatCode	empty Render slot of the +0xd20 mixin (AI_Render/RiderBase_RenderFX)
+002f7f30	cPS2FogParticleMan_BaseDtor	vt 0x488308 slot 1 (base of cPS2FogParticleMan, base ctor 0x2dbf80, slots 2/3 pure virtual)
+002f8108	TransitionEffect_RandomDtor	vt 0x488080 slot 1 (subclass built by 0x2ebd88/0x2ebe20): reset to base vt, free via 0x2e4d30
+002f8ff8	AttachedEmitterTypeData_FreePart1	empty; called from AttachedEmitterFX_FreeTypeData paired with InitPart1
+002fa5f8	AttachedEmitterTypeData_FreePart2	empty; called from AttachedEmitterFX_FreeTypeData paired with InitPart2
+002fcc20	WScriptFn_Modifier9	call table 0x441f38 entry 8: parses params; WorldObjFactory_AttachModifier(obj, 9) only
+00302048	WScriptFn_StartEvent	script native #67; human rider only: maps arg via table 0x445e40, WScriptMan_DeactivateAll, then 0x22d6c8 (BENewRaceInt_SetEvent/GameModeMan_StartMode)
+00302210	WScriptFn_SectionEventCommand	script native #68; switch: SectionMan_RequestEvent / SectionMan_LoadEvent / GameModule_RequestState(0xe,..)
+00302bd8	WScriptFn_MissionStopProcess	script native #51; WScriptMan_MissionCommand(id,0,-1) (gated stop)
+003032c0	WScriptFn_GetRiderSpeedScaled	script native #59; |Rider GetVelocity (slot 2)| times App+0x14, returned as float
+00304320	WScriptFn_SetHudHeightTarget	script native #81; WScriptMan_SetHudHeightTarget: +0x28 flag/+0x2c handle read by WScriptMan_GetHudTargetHeight
+00306a90	WScriptFn_SpawnMultiParticle	script native #105; calls 0x357a78 (allocs "MultiParticle") on gp+0xf38 manager
+00306cb0	WScriptFn_MultiParticleControl	script native #106; 0x357ae8 / 0x357b10 on gp+0xf38 MultiParticle manager entry for instance
+00306e68	WScriptFn_CheckRiderGate	script native #107; WScriptMan_CheckRiderGate, plays object sound 0x5c on success, returns result
+00308fe0	WScriptMan_UnloadSectionAndFree	WScriptMan_UnloadSection then frees section script data (0x3acc90) at world+4 table [idx]
+003098b0	WScriptMan_PostAirEvent	queues event type 2; only caller RiderAirState_PostUpdate (likely landing)
+00309ba8	WScriptMan_GetHudTargetHeight	cOVStateHUD1P_Render; if +0x28 set, rider(+0x30) z minus instance(+0x2c handle)+0x48, clamped >= 0
+00309dd0	WScriptMan_TableHasFunction	looks up key in local table +0x3cc[idx], returns value type == 5
+0030a310	WScriptMan_IsScriptedInstance	FocusMan_CollectNodeObjects filter: has WorldObj, or type-3 instance with kind 1/3 script
+0030a3a0	WScriptMan_FocusEnter	FocusMan_Update; runs kind 1 script for plain instances or WorldObj slots 20/21
+0030a460	WScriptMan_FocusLeave	FocusMan_Update; runs kind 3 script or WorldObj slots 20/22, else kills (slot 35)
+0030b608	WScriptMan_RequestMissionAbort	stops playback, clears saved world state, request 6 (terminate + setup)
+0030b658	WScriptMan_RequestMissionCancel	BCStart/BCFail widgets; reset playback/replay/rider, request 3, clears current mission
+0030b758	WScriptMan_RequestMissionEnd	like RequestMissionCancel but request 4 (mission slot 19)
+0030b8c0	WScriptMan_IsMissionType2Active	HUD/BCStart; any active mission (slot 3) with +0x60 == 2
+0030bfc0	WScriptMan_CheckRiderGate	rider HasVisited/distance tests against up to 3 instances; used by native 0x306e68 (plays sound on success)
+0030c760	WScriptMan_ResetCommandQueue	zeroes the +0x1c4 sub-object (count + 0xc0 bytes); WScriptMan_Reset
+0030c8d8	WScriptMan_StaticInit	TU static init (via _GLOBAL_ ctor 0x30d498 in ctor list 43ceac) filling global matrices 0x4fc080..; TU ends before RiderModel_ctor
+0030d498	WScriptMan_GlobalCtors	ctor-list entry (43ceac) calling 0x30c8d8(1,0xffff) = gcc static init/destroy pattern
+0030db70	RiderModel_AddModelRef	appends arg to RiderModel array +0x64 (count +0x60); Rider_LoadStep feeds per-part entries of character data
+0030eca0	RiderModel_LockPart	ORs part mask into second mask +0x158 (meaning unknown); Rider_LoadStep for parts 0,1
+0030ecd8	RiderModel_SamplePartTransform	samples pos+quat of one part/bone from a blend record via AnimDataBase_SampleChannel into out[8]; identity if not animated
+00310458	RiderModel_GetPartPointWorld	finds part with id==arg, transforms its point[idx] (+0x3c table) by bone matrix +0x34; returns vec4 (default constant if not found); no direct callers
+00311860	AnimTable_GetAnimNameStub	returns '--error--' (release build anim name lookup); only caller 0x311a30
+00311a30	AnimTable_GetAnimName	wrapper returning AnimTable_GetAnimNameStub(id) ('--error--'); no direct callers, next to AnimTable_GetLayerName
+00311d88	AnimController_SetSequencesUserData	sets +0x80 of every sequence in all 6 layers (same field PlayAnimImpl copies from controller+0x18); no callers
+00312bd0	AnimController_ClearEndEventAndPlay	clears event bit 0x3f on seq (+0xb0) then AnimController_PlayAnim; RiderAnim_v03 thunks
+003150f8	GameAnimMap_StaticInit	TU static init (sets gp+0x2860=-1 invalid handle used by GameAnimMap) and global matrices 0x4fe420..
+003158e8	AnimController_SetRootRotation	sets +0x30 root pos default, +0x40 quat = rotation by angle about fixed axis (fields AnimController_PlayAnimImpl copies to sequences); no callers
+00317308	App_SetExecCallback	forwards to PS2ExecMan_SetCallback(App+8, fn, arg); no direct callers
+00317d48	__builtin_vec_new	identical to EA_MemAllocDefault (EA_MemAllocNamed(size,'default',gp+0xd94)); no direct callers, next to operator_new_named/__builtin_delete
+00317ee0	EA_MemSync	locks and unlocks the memory mutex 0x538b00 (barrier); no callers
+00317f18	EA_MemCheckPoolsThunk	thunk to 0x319cc8 (locked small-pool debug dump, stubbed); no callers
+00319cc8	MEM_DumpPoolsLocked	EAMutex_Lock(mem mutex) + 0x31a200 (per-pool debug stubs) + unlock; SnowFall_ctor/dtor
+0031a200	MEM_DumpPools	if gp+0xdd8 set, calls 7 empty per-pool stubs with each small-block pool base
+0031a268	VU0_RestoreFlags	rebuilds VU0 status/MAC flag state from saved flag word via a vmul; only caller VU0_RestoreContext
+0031a6b8	ssx_SetThreadPriority101	ChangeThreadPriority(gp+0xddc thread, 0x65); caller SSXApp_BootLoad
+0031aaf0	PS2ExecMan_WaitSema	WaitSema(this+0xc); no callers, between PS2ExecMan methods
+0031b9b0	Quat_FromTwoVectors_2	duplicate of Quat_FromTwoVectors (cross product, asin of length, half-angle sincos); no callers
+0031e0e0	cCSICubicSpline_EvalRange	evaluates spline at fixed steps across its domain (debug draw remnant); no callers
+0031f7f0	DLHeap_FreeThunk	thunk to DLHeap_Free; no callers
+00320038	DLHeap_MallocThunk	thunk to DLHeap_Malloc; no callers
+00320550	MEM_StaticInitDestroy	TU static init/destroy (gcc pattern, ctor 0x320b28 / dtor 0x320b48): BlockMan_ctor(0x4ff000), Rand states, identity matrices 0x4ff0..
+00320920	PS2ExecMan_dtor	stores base vptr 0x48dc30 (set by PS2ExecMan_ctor) at +8, delete if flag&1; vt 48dc30 slot 1
+00320b28	MEM_GlobalCtors	ctor-list entry 43ceb8 -> 0x320550(1,0xffff)
+00320b48	MEM_GlobalDtors	dtor-list entry 43cf04 -> 0x320550(0,0xffff)
+00327c68	AIFwdDiffCache_ResetEntry	fills the two grids of an entry (+0x650 x81, +0x1a90 x9) with sentinel constants; only caller AIFwdDiffCache_BuildEntry
+00329590	Collide_SphereVsBoxEdges	tests sphere (radius, centre) against AABB min/max faces/edges, returns closest point, normal, depth; RiderSphereTree box collide
+0032a1c0	RiderSphereTree_CollideTriangle	vt 48e590 slot 4 helper: sphere tree vs triangle (VU0 test 0x32b6a8), returns contact/normal
+0032aa28	RiderSphereTree_CollideTriangle2	vt 48e590 slot 5 helper: variant of RiderSphereTree_CollideTriangle (one-sided/flipped normal)
+0032b2b8	RiderSphereTree_CollideBox	vt 48e590 slot 7 helper: Collide_SphereVsBoxEdges for overall sphere or each masked sphere, keeps deepest
+0032b6a8	VU0_TriangleIntersect	runs VU0 micro subroutine 0xdc (vcallmsr) on 3 vertices + query, returns vi2 != 0; 6 collision callers
+0032b6e0	AIFwdDiffCache_CollideEntry	collides against a cached patch grid (+0x650 fine or +0x1a90 coarse rows) with collider vslots 4/8; callers RiderGroundState_ProbeGround path 0x333ef8, 0x335960
+0032c0f8	Collide_MeshLeafTriangles	for leaf node (<0xb tris) calls collider vslot 4/5 per triangle, fills contact records; callers FlexBridge_v39, 0x334888
+0032d440	SphereTree_PointInTriangle	wrapper: 0x32b6a8(gp const, ...) VU0 micro call 0xdc test; only caller SphereTree_CollideTriangleNode
+0032e100	CollSegment_ctor	vptr 48e6a8 @+0x50; stores start (+0x60/+0x80), delta end-start (+0x70/+0x90), AABB +0x20/+0x30; used for rays (Rider_ProbeGround, GameCamera_AvoidCollision)
+0032e288	CollSegment_OverlapsAABB	vt 48e6a8 slot 9: segment AABB (+0x60, +0x60+delta) vs (min,max) overlap test
+0032e4d0	CollSegment_CollideTriangle	vt 48e6a8 slot 4: segment vs triangle plane, t in [0,1], hit point, VU point-in-triangle 0x32b6a8
+0032e5e8	CollSegment_CollideTriangle2Sided	vt 48e6a8 slot 5: flips normal if facing away then calls slot 4
+0032f650	CollHull_ctor	vptr 48e590 @+0x50; wraps the 0x2b0 'RiderSphereTree'/'BoardSphereTree' object (+0x60/+0x64, copy +0x70 via 0x329910), bounds via 0x329dc8; rider CollideWalls
+0032f708	CollHull_dtor	vt 48e590 slot 10; restores vptr, destroys embedded copy (0x329970), delete if flags&1
+0032f760	CollHull_OverlapsAABB	vt 48e590 slot 9: hull bounding sphere (+0x10, r +0x20) box vs (min,max)
+0032f840	CollHull_Transform	vt 48e590 slot 1: copy source hull into +0x70 (0x329a28), transform (0x329b90), mark dirty +4
+0032f8f0	CollHull_CollideTriangle	vt 48e590 slot 4: 0x32a1c0 then normalises contact normal, length in +0x40
+0032f990	CollHull_CollideTriangle2Sided	vt 48e590 slot 5: 0x32aa28 then normalises contact normal
+0032fa30	CollHull_CollideSphereTree	vt 48e590 slot 6: 0x327f18 (hull spheres vs SphereTree) then normalises normal
+0032fac0	CollHull_CollideAABB	vt 48e590 slot 7: 0x32b2b8 (hull spheres vs min/max box) then normalises normal
+0032fb48	CollSphere_ctor	vptr 48e650 @+0x50; (radius, this, centre, flag): centre +0x60/+0x80, radius +0x70/+0x90, AABB +0x20/+0x30; caller 0x2d66a0
+0032fc08	CollSphere_OverlapsAABB	vt 48e650 slot 9: sphere box (+0x60 +- r) vs (min,max)
+0032fd40	CollSphere_Transform	vt 48e650 slot 1: centre = M*centre0, radius = s*radius0, dirty flag +4
+0032fdb0	CollSphere_CollideSphereTree	vt 48e650 slot 6: SphereTree_CollideSphere(radius, tree, centre) then normalises normal
+0032fe40	CollSphere_CollideAABB	vt 48e650 slot 7: 0x329590 sphere vs (min,max) box
+0032fe78	CollSphere_CollideTriangle	vt 48e650 slot 4: plane distance (0x330360), VU point-in-triangle, else edge distance (0x330250); depth = r - d
+0032ffa0	CollSphere_CollideTriangle2Sided	vt 48e650 slot 5: same as slot 4 but flips normal when centre is behind the plane
+00330250	CollSphere_HitsTriangleEdges	for the 3 triangle edges: ClosestPointOnSegment to centre +0x60, true if distance < radius +0x70
+00330360	CollSphere_PlaneDistance	signed distance centre(+0x60) to triangle plane (n, -dot(n,v0)); returns |d| < radius(+0x70)
+003303f0	CollSphereTree_ctor	vptr 48e5f0 @+0x50; source SphereTree at +0x60/+0x64, allocs own SphereTree copy (0x140 'SphereTree') at +0x68; bounds from SphereTree_GetRadius
+003304e8	CollSphereTree_dtor	vt 48e5f0 slot 10: frees the +0x68 SphereTree copy, delete if flags&1
+00330540	CollSphereTree_OverlapsAABB	vt 48e5f0 slot 9: tree pos +- radius box vs (min,max)
+003306d8	CollSphereTree_GetDiameter	vt 48e5f0 slot 3: -1 if !*this else 2*SphereTree_GetRadius
+00330710	CollSphereTree_Transform	vt 48e5f0 slot 1: copies source tree into +0x68 (0x327cc8) then SphereTree_ApplyTransform
+00330788	CollSphereTree_CollideTriangle	vt 48e5f0 slot 4: SphereTree_CollideTriangle, normalises normal
+00330828	CollSphereTree_CollideTriangle2Sided	vt 48e5f0 slot 5: 0x328030 (two-sided SphereTree triangle), normalises normal
+003308c8	CollSphereTree_CollideSphereTree	vt 48e5f0 slot 6: SphereTree_CollideSphereTree, normalises normal, length +0x40
+00330950	CollSphereTree_CollideAABB	vt 48e5f0 slot 7: SphereTree_CollideAABB, normalises normal
+00334888	Collide_VolumeObject	collides a volume with one cell object (static mesh or WorldObj), producing 0x80-byte contacts; used by every OverlapList/Nash collide path
+00335128	Rail_FindNearestPoint	type-1 rail entry: AABB (+0x6c..+0x80) vs query box, walks spline segments for nearest point to probe; callers FindNearestRail paths
+00336d40	Cell_CollideObjectEx	like Cell_CollideObject but collide mode 1/3 (from accumulator +0x10); callers Nash_CollideObjects paths
+003400d8	Collision_StaticInit	(init,0xffff) static-init pattern; fills constant matrices 4ff2c0..4ff370 from 4a0444..; only caller 0x341368
+00341368	Collision_GlobalCtors	pointer in ctors list (43cebc); calls 0x3400d8(1,0xffff)
+00344730	CrowdMan3d_GroupSetMeshFrame	for each mesh copies a u16 from the instance's per-mesh table entry param into +0x13c stride 0x14
+00345048	SplineModifier_EvalSegment	cubic segment eval (basis +0x10..+0x40, time poly +0x50, start +0x84): pos, tangent, 2nd deriv; caller 0x345248 from SplineModifier_UpdateTransform
+00345320	SplineModifier_IsPathVisible	no refs; resolves spline handle and tests its AABB (+4/+0x10) with renderer frustum slot 93; returns visible
+00345430	MultiSplineModifier_DebugDrawPath	only caller MultiSplineModifier_v11; for each visible spline node (0x345638) renderer slot 75 draw at node+0x10
+00345638	SplineModifier_IsNodeVisible	frustum test (renderer slot 93) of spline node AABB +0x6c/+0x78; only caller 0x345430
+0034eba0	AnimObject_FireEndScript	runs instance script event 5 (0x2d1ac8 -> WScript 0x30a688) and returns whether instance+0xc still is this object
+0034fcc0	WorldObj_RunKillScript	runs instance script event 4 if present (0x2d19e8); callers WorldObj/Debounce/MeshAnim KillRestorable
+0034fce0	WorldObj_RunUpdateScript	runs instance script event 3 if present (0x2d1a30); only caller ModObj_Update
+00350698	Instance_HasAnimNodes	true if any model node (+0x80 -> +8, 0x10 each) has +8 != 0 (same test that allocates IntersectInfo); caller 0x2d66a0
+00351410	IntersectInfo_SaveChannels	no refs; writes 0x40 bytes via stream slot 1 (Write); layout matches IntersectInfo channel block
+00351448	IntersectInfo_LoadChannels	no refs; reads 0x40 bytes via stream slot 2 (Read); counterpart of 0x351410
+00358468	BoostModifier_BaseCtor_2	no refs; stores vptr 0x4913b8 at +4 and reads +0 (4 bytes) from stream, matching BoostModifier layout (vptr +4, int +0)
+0035aad0	MultiSplineModifier_AddRef	ModObj_v21 calls it when transform modifier type (slot 26) == 2; ++counter +0x34
+0035aae0	MultiSplineModifier_Release	ModObj_v22 counterpart of 0x35aad0; --counter +0x34
+0035fe10	WorldObjects_StaticInit	gcc (init,0xffff) static-initializer pattern, only caller 0x361e10; fills matrix tables 0x4ff740-0x4ffb18 at end of world-object TUs
+00361098	ModObj_GetMatrices	in 5 vtables (0x48eb4c..0x490da4); if dirty flag +0x26&1 calls slot 51 update, returns matrix array +0x44
+003610e0	ModObj_GetMatrixAt	same 5 vtables as 0x361098; updates if dirty, returns +0x44 + i*0x40
+00361e10	WorldObjects_GlobalCtors	calls 0x35fe10(1,0xffff) (gcc _GLOBAL_$I pattern)
+00361f60	IntcTable_ClearSlots	only caller IntcTable_Init; zeroes 3 int pairs at +0x80..+0x94 after the INTC/DMAC id tables
+003666f8	TexMan_ResetUsageTable	RenderFrame: fills 2000 x {-1,0} entries via scratchpad DMA into 0x53ab80, the per-texture last-use table read by VramHeap eviction
+0036b5e8	PS2GraphicsMan_EmitDepthFogFlatFill	no callers; fills viewport with colour from per-view record +0x14..+0x1c (fog colour) using FRAME/ZBUF/TEST/ALPHA, sibling of 0x36b158
+0036c188	PS2GraphicsMan_EmitBlendedFill	only caller 0x36c790; full-width sprite fill of buffer (FBP param2) with grey colour and ALPHA (param6<<32|0xa1), FBMSK alpha
+0036c398	PS2GraphicsMan_EmitBloomComposite	only caller 0x36c790; textures the blurred scratch level back over the viewport into the draw frame with alpha blend
+0036c740	PS2GraphicsMan_ResetBloomParams	copies defaults 0x4a43d4..0x4a43f4 into per-view record +0x6cd4+i*0x1c; callers 0x36c790 (flag 0x4a43cc) and slot 115
+0036c790	PS2GraphicsMan_RenderBloom	per-view pass after layer 9 (enable 0x4a43c8): 3-level downsample/blur chain in Z-buffer VRAM (zbp*0x20) then composites back onto the frame
+0036ce00	Emitter_SetDescCurveA	(a,b,c): desc+0x10=c, +0x20=b-a, +0x18=a-1.5c; callers cBoardSparkFX_ctor, Emitter_BuildDescriptor
+0036ce28	Emitter_SetDescCurveB	(a,b): desc+0x14=(b-a)*desc+0x4c, +0x1c=a*desc+0x4c - that; callers cBoardSparkFX_ctor, Emitter_BuildDescriptor
+0036cef8	Emitter_SetDescPathCoeffs	only caller cBoardSparkFX_Update; desc+0xb0 = p - 3*(a+b), +0xc0 = 2a, +0xd0 = 2b (path polynomial coefficients)
+0036d008	Emitter_ResetDescAccel	copies constant vector 0x4ff120 into desc +0xe0; callers cBoardSparkFX_ctor, Emitter_BuildDescriptor
+0036d1f0	Emitter_SetDescPathCoeffsScaled	only caller cBoardSparkFX_Update; divides 3 vectors by desc+0x4c into +0x80/+0x90/+0xa0, +0x70 = p/r - 1.5*sum
+00372520	RailTube_ctor	called by FlexRail_ctor/_2 for a member; stores vt 0x493068 (VfxTube sibling: slot 2 VfxTube_Update), count, points=0; one-time init of vertex table 0x501440
+00372660	RailTube_dtor	slot 1 of vt 0x493068 (FlexRail member, see 0x372520): EA_MemFree +8, base vptr 0x488680, delete if flag&1
+003726c8	RailTube_Render	slot 3 of vt 0x493068: builds tube strips along the point list +8 (count +4) and draws them via GraphicsMan slots 71/73
+00374518	BezierPatchCache_TessPositionsAlt	only caller BezierPatchCache_TessellatePatch (second-record branch); bicubic evaluation with basis tables +0x310/+0x190
+00374c90	BezierManBase_ctor	first call of PS2BezierMan_ctor; stores base vptr 0x493820 (pure-virtual slots) at +4 and registers the instance in gp+0x1158
+00374ca8	BezierManBase_dtor	called at end of PS2BezierMan_dtor; slot 1 of base vt 0x493820, clears gp+0x1158, delete if flag&1
+00375890	BoaderShadow_Submit	only caller Rider_DrawShadow; passes position +0xc, matrices +0x90/+0xd0 and texture +0x170 to GraphicsMan slot 67
+0037df88	PS2GraphicsMan_CullAgainstLights	for each of +0x13ec entries at +0x1400 (stride 0xa0) calls slot 93 (ClipTest) and returns bitmask of failures; caller Bezier emitter helper 0x38ca08
+0037e040	PS2GraphicsMan_EmitModelMatrix2	only caller PS2GraphicsMan_EmitModelHeader; CNT 5 + UNPACK V4-32 of a second 4-qword matrix at VU addr 5
+00383770	PS2GraphicsMan_UploadToDrawBuffer	no callers; FlushCache then Gs_UploadImage into the current draw buffer (gm+0x5a84<<5, width +0x5a30, psm +0x5a3c)
+00385260	GridMeshBase_dtor	called at end of cPS2GridMesh_dtor; stores base vptr 0x493938 at +4 (render.md base vt), delete if flag&1
+00386d10	PS2GraphicsMan_DrawShadowMeshPass	only caller slot 89; for each of n strip records (stride 0x14, count>1) calls 0x387ec0 with shared params (render.md ShadowVolume_DrawMesh L)
+00386dd0	PS2GraphicsMan_DrawShadowEdgePass	only caller slot 89; for each strip record calls 0x387ec0 with per-record floats +0xc/+0x10 (render.md ShadowVolume_DrawEdgePass L)
+00387ec0	PS2GraphicsMan_EmitShadowStrips	slot-89 strip emitter used by 0x386d10/0x386dd0; batches of <=36 from a 0x36-entry ring, MSCAL 0x3a00/0x3a08 (render.md: shadow volume, M)
+00389620	Irradiance_AddScaledW	out[i].w += in[i].w * s over 10 qwords; only caller 0x389cb8
+00389cb8	Irradiance_AddCameraRelativeLight	builds rotation from view matrix (gfx slot 35) toward position via Atan/Asin, rotates SH (0x389840), accumulates (0x389620)
+0038c590	PS2BezierMan_DebugDrawGrid	unreferenced; draws n x n point grid as row then column line strips via PS2GraphicsMan slot 73 (DrawLineStrip)
+0038ca08	PS2BezierMan_TestPatchBounds	passes patch AABB (+0x158 min,+0x164 max) to graphics FUN_0037df88; result gates extra pass in both emitters
+0038d168	PS2BezierMan_EmitPatchMatrixPass	shared by both patch emitters: per-LOD packet +0x1c4.., UNPACK this+0x360 matrix, flag 0x400000 selects alpha mode
+0038d448	PS2BezierMan_EmitPatchProjectorPasses	both patch emitters: for each of gm+0x13ec projectors (0xa0 recs, matrix gm+0x1440) whose bit is set in mask, UNPACK matrix+tex
+0038f9c0	TexMan_SwizzleT4Page	walks 32x16 blocks with GS block-order tables 0x44bfe0/0x44c060 calling TexMan_SwizzleT4Block; caller 0x38fed0
+0038fc48	TexMan_SwizzleT8Page	walks 16x16 blocks with GS block-order tables 0x44c0e0/0x44c160 calling TexMan_SwizzleT8Block; caller 0x390198
+0038fed0	TexMan_SwizzleT4	pow2 w/h <=1024 check, 128-wide pages, 8 KB scratch buffers, TexMan_SwizzleT4Page per page; unreferenced twin of 0x390198
+00395ed8	PS2GraphicsMan_ProjectPointToScreenInt	unreferenced; ensures matrices, transforms point by gm+0x58a0, scales/clamps by gm+0x5920, ftoi
+0039a8d8	UIListBox_SetMode	listbox-area method (+0x318/+0x319 bytes, flag 0x10 on +0x74), notifies state OnWidgetAction code 9; caller 0x1bb798
+0039b878	UIMenu_FindLastSelectable	unreferenced; backward search for enabled item from index, 0xff if none
+0039cd30	UIScreen_CmdSetObjectParam	cmd 0x21: FindObject, UIObject_ClearAnim, widget slot 13(param, data)
+0039d008	UIScreen_CreateObjectById	unreferenced; finds object def with id in +0x38 blob, UIScreen_CreateObject, stores id at +0x38
+0039e778	UIState_HideFlaggedScreens	unreferenced; for screens in list +0x24 with flag 0x40, root group slot 9 SetVisible(0)
+0039e7f0	UIState_ShowFlaggedScreens	unreferenced twin with SetVisible(1)
+0039fd80	UIObject_SetAnimProgress	unreferenced; sets anim frame = frameCount * t
+0039fdd8	UIObject_IsAnimDone	unreferenced; anim +0xc ? UIAnim_IsDone : 0
+0039ff50	UIObject_GetStateData	returns screen(+0x5c)->state(+0xd0)->+0x10; widget HandleInput callers
+003a0c00	UIText_GetOwnedString	returns +0xb4 when flag +0x74 bit 3 clear; caller 0x1c8258
+003a0c28	UIText_GetIdString	returns +0xb4 when flag +0x74 bit 3 set
+003a1c80	cUITextScroll_ResetString	unreferenced; ClearLines, scroll +0xc0=0, slots 5/24, SetString
+003a20a0	Render2D_DrawSprite	unreferenced; sprite rec {tex,..,u0,v0,u1,v1} with flip flags 1/2, flag 4 rot90; calls Render2D_DrawQuad / DrawQuadRot90
+003a2a00	Render2D_DrawSpriteXform	unreferenced; sprite rec + matrix -> Render2D_DrawQuadXform / DrawQuadRot90Xform
+003a47a8	UIVisitor_dtor	slot 1 of visitor base vt 0x494ce8 (slot 2 pure stub); class name invented
+003a6b78	World_GetObjectScriptFunc	WScriptMan_OnObjectTrigger callers: section from obj+0x78, per-object func slot via obj+0x88 handle (0x3ad120)
+003ad120	tWScriptCache_GetObjectSlot	via obj+0x88 handle index, returns data+0x1c table[(h>>8)*0x18 + i*4]; caller World forwarder 0x3a6b78
+003ad290	World_StaticInitDestroy	gcc __static_initialization_and_destruction(1,0xffff) shape filling matrix globals 0x509080..; module guessed from address
+003adc80	tWScriptCache_GetGlobalCount	state 3: returns data+0x10 (count paired with +0x14 list walked by WScriptMan_Shutdown)
+003adcb0	tWScriptCache_GetGlobals	state 3: returns data+0x14 list iterated by WScriptMan_Shutdown
+003adda0	World_GlobalCtors	_GLOBAL_ I thunk (ctor table 0x43cecc) calling 0x3ad290(1,0xffff); module guessed
+003b03e8	AV_SubtitleSetShape	entry+0x20 int column (SHAPE presumed)
+003b03f0	AV_SubtitleSetColor0	entry byte +0x24 (one of A/R/G/B columns, default 0xff)
+003b03f8	AV_SubtitleSetColor1	entry byte +0x25 (one of A/R/G/B)
+003b0400	AV_SubtitleSetColor2	entry byte +0x26 (one of A/R/G/B)
+003b0408	AV_SubtitleSetColor3	entry byte +0x27 (one of A/R/G/B)
+003b0680	RCMP_DECODER_Reset	calls codec slot 6; callers VidEnginePlayer_Close and two VidEngine paths
+003b49b0	RefPack_GetUnpackedSize	no-caller thunk to EAC_GetUnpackedSize
+003b54e0	SND_RunChangeCallbacks	caller SND_EeThread; when counter 0x50aaa8 changes, calls each listed fn(arg)
+003b5f60	SND_GetOutputLatency	returns 0x3c51e0() (stub 0) when SND initialised; subtracted from stream position in AV_Player_GetTimeMs
+003b6948	SNDSTRM_CalcDataRate	bytes/sec style value from rate*channels*codec factor (codec byte +3; 0x200 for PCM16)
+003b8010	SNDSTRM_SetFxEnable	stream +0xf0 byte then 0x3b8700 (per-channel +0x5f flag -> SPU per-voice mix bit); caller PATH action
+003b80e0	SNDSTRM_SetChannelParam6a	stream +0xfa then 0x3b8838 (channel +0x6a); meaning unknown
+003b8218	SND_GetFxParams	returns per-core FX param record (0x50aae0/0x50aaf4/0x50ab08) for type bit 4/0x100/8
+003b8290	SND_FxFlagsToMask	maps group flags 0x40/0x10/0x20 to FX bits 8/4/0x100
+003b82b8	SND_SetFx	caller SND_Shutdown; for each FX bit stores params and SND_ApplyGroupEffect, then sets send level
+003b8700	SND_SetFxEnable	per channel of handle: +0x5f flag then 0x3c2ec8 (sets/clears SPU per-voice mix bit)
+003b8838	SND_SetChannelParam6a	per channel of handle: +0x6a then 0x3c3010 (voice update); meaning unknown
+003b8cc8	SND_ApplyChannelParams	per channel of handle calls 0x3c5068(param); caller SNDSTRM_StartPlayback
+003ba078	SND_IsVoiceReserved	linear search of short list 0x50ac20; caller SND_AllocVoices
+003bc570	SND_MidiToVolume	short table lookup 0x44c590[0..127]; callers SNDMIDI_ControlChange, SND_PlayPatchVoices
+003bd078	SNDENC_EncodeLfe	IIR-decimates 64 samples (0x3c06b0), picks scale index, quantizes 8 values
+003bd9c0	SNDENC_PackHeaderMode1	mode-1 path: packs per-channel scale-factor bytes into frame
+003be6e0	SNDENC_PackHeaderMode2	mode-2 path: packs per-channel side info (and LFE via 0x3bd078)
+003bf4c0	SNDENC_WindowFilter4	polyphase window MAC, 4 taps (frame size 0xe0)
+003bf5a0	SNDENC_WindowFilter6	polyphase window MAC, 6 taps (frame size 0x160)
+003bf6b0	SNDENC_WindowFilter8	polyphase window MAC, 8 taps (default frame size)
+003bf800	SNDENC_FilterStage1	filterbank butterfly (add/sub mirrored qwords) in SNDENC_AnalysisFilterbank chain
+003bf8d0	SNDENC_FilterStage2	filterbank stage (pairwise adds, interleaved store) in SNDENC_AnalysisFilterbank chain
+003bf960	SNDENC_FilterStage3	filterbank stage (pairwise adds) in SNDENC_AnalysisFilterbank chain
+003bfac0	SNDENC_FilterStage4	filterbank stage (pairwise adds) in SNDENC_AnalysisFilterbank chain
+003bfb90	SNDENC_FilterStage5	filterbank stage in SNDENC_AnalysisFilterbank chain
+003bfc50	SNDENC_FilterStage6	filterbank stage with coefficient table (+0xa28) in SNDENC_AnalysisFilterbank chain
+003bfd60	SNDENC_FilterStage7	filterbank stage with coefficient table (+0xa2c)
+003bfe80	SNDENC_FilterStage8	filterbank stage with coefficient table (+0xa30)
+003bffa0	SNDENC_FilterStage9	filterbank stage with coefficient table (+0xa34)
+003c01a0	SNDENC_FilterStage10	final filterbank stage writing subband output (coeffs +0xa38)
+003c06b0	SNDENC_LfeDecimate	cascaded IIR over 64 shorts producing 8 floats; only caller SNDENC_EncodeLfe
+003c3010	SND_ChannelApplyTimeStretch	for EE voices (flag 4) of channel calls SND_EeVoiceSetTimeStretch
+003c30c8	SND_ChannelApplyDistortion	for EE voices of channel calls SND_EeVoiceSetDistortion (clip node prio 0x78)
+003c3780	SND_PanFixQuadrant	only caller SND_ChannelApplyPan; sign-corrects L/R gains by quadrant of (x,z)
+003c5410	SND_SetServiceRate	SND_GetConfig, stores 1000/hz at config +0x34, SND_SetConfig
+003c5468	SND_GetServiceRate	reads config +0x34 and returns 1000/x
+003c54c0	SND_IsOutputModeSupported	output modes 0/4/5/8 always, mode 1 if config byte>1
+003c5600	SND_SetOutputMode	checks SND_IsOutputModeSupported then stores mode in 0x44e1c4
+003c5c30	SND_InitWithOutputMode	builds voice-group list from output mode 0x44e1c4, SND_SetConfig, SND_Init
+003c6158	SND_NextVoiceGroup	iterates voice-group descriptors at 0x50a936 returning next group mask matching patch flags
+003c8128	SND_EeMixerInitMixFunc	sets mix-add function ptr 0x515d20 and block size 0x400
+003c8b40	SND_EeVoiceSetTimeStretch	sets ratio on stretch node +0x4c if present
+003c8b80	SND_EeVoiceSetDistortion	adds/removes clip node (0x50 bytes, prio 0x78) and sets amount
+003c9040	SND_DspNode_DestroyTree	recursively calls destroy fn of input nodes +8/+0xc then self, sets done flag +0x1b
+003cab28	SND_DspStretch_ChooseSplice	chooses skip/repeat of one pitch period from ratio and error accumulator
+003cac88	SND_DspStretch_Splice	copies/crossfades period segments into output buffer +0x838
+003cadf0	SND_DspStretch_Drain	copies pending stretched samples to output
+003caea0	SND_DspStretch_CalcInput	computes input samples needed for requested output count
+003cafd0	SND_DspStretch_Run	main period splice loop of stretch node
+003cb110	SND_DspStretch_SetRatio	ratio=param/4096 clamped to [0.5,2.0]
+003cb1a8	SND_DspStretch_Process	stretch node process: checks stream buffered bytes, pulls input, runs splice
+003cb280	SND_DspStretch_Init	only caller SND_EeVoiceStart; inits node from period-marker header (BE length)
+003cb328	SND_DspDistortion_Process	clamps int16 samples to +-limit then rescales by 0x3fde00/limit
+003cb4a8	SND_DspDistortion_SetAmount	limit=0x7fff-amount*32000>>15, gain=0x3fde00/limit
+003cb528	SND_DspDistortion_Init	sets process fn SND_DspDistortion_Process
+003cbc00	SND_EeSetOutputBuffer	sets 0x515b54; when nonzero SND_EeFxProcess copies mix to it instead of running FX
+003cf5d0	SND_DspBlockDelay_Process	delays signal by one processing block via saved buffer
+003cf6d0	SND_DspBlockDelay_Free	frees saved block buffer
+003cf6f8	SND_DspBlockDelay_Init	sets process/free fns of block delay node
+003cf7b0	SND_DspPassThru_Init	FX type 0 node init: clears links and fields only
+003d0b78	PATH_SkipCondBlock	PATH_ExecuteAction helper; marks actions 0x4000000 inside nested 0x100000/0x200000 condition blocks
+003d0c20	PATH_SkipRemainingActions	PATH_ExecuteAction helper; sets 0x4000000 on following actions until next event boundary
+003d0d70	PATH_SetTrackControlValue	for matching maps sets every track byte+1 (<0x80, old kept in +2); +1 feeds branch-range selection
+003d15c8	PATH_SetTrackLookahead	PATH_FindTrack then sets track+0x24 (added to now in PATH_UpdateTracks scheduling)
+003d2c20	PATH_GetMaxBranchRatio	scans node table segment for map/track bit, max (delta*128/len) scaled by param, rounded
+003d2df8	PATH_TrackPrepare	called from game music wrapper; FindTrack + stream slot selection then FUN_002ae298 (bank load)
+003d30a8	PATH_TrackCallStream	FindTrack then FUN_002ae768(track+0x54 stream,..)
+003d3140	PATH_TrackUnloadBank	FindTrack then FUN_002ae328 (calls SND_BankRemove) on track stream
+003d31e8	PATH_SetMapCallbacks	for maps matching mask stores two params into map+0xc/+0x10 (0x517620 block)
+003d32b8	PATH_TrackGetBeatPos	computes bar/beat position of track's current node from stream play position; fills 7-word info
+003d37a0	PATH_SelectBranch	picks next node from node's branch table by control value range (track+1); falls back to nearest range
+003d3c90	PATH_RemapNode	remaps node id through per-node substitution table
+003d3d20	PATH_TrackAdvance	only caller PATH_UpdateTracks; selects next node (SelectBranch) and queues it (FUN_003d3900/41a8)
+003d4050	PATH_PostNodeEvents	builds type 2/4 events for node's track, QueueAppend + AddEventToMaps
+003d4a50	PATH_FindTrackInfo	returns per-track info pointer (map block +0x924 table) for first matching map/track bit
+003d4b00	PATH_SelectMasterTrack	only caller PATH_Update; picks playing track with largest +0x24, stores index/value/node in map[0..2]
+003d4c40	PATH_SortMaps	only caller PATH_StopTracks; bubble-swaps 0x928-byte map blocks ordered by map id
+003d53b8	PATH_FindPlayingTrackId	builds track id from (map,track) trying two flags; returns first with valid stream & PATH_status>=0
+003d54c8	PATH_UpdateTick20	address taken in PATH_AddTrack; PATH_Update(0x20) timer callback
+003d54e8	PATH_UpdateTick42	address taken in PATH_AddTrack; PATH_Update(0x42='B') callback
+003d5800	PATH_FadeAuxSend	same loop as PATH_FadeVolume calling FUN_003d6360 (sets aux-send fade target +0x16)
+003d5968	PATH_UpdateFadeStops	for masked tracks applies volume % and stops tracks whose fade reached 0
+003d5ee8	PATH_TrackUpdateFade3	third fade channel (+0x1c/+0x1e) via FUN_002af580 (sets SND channel byte 0x5f)
+003d6108	PATH_SetFadeTime	sets map+0x14 (fade duration used by volume fade) for matching maps
+003d61e8	PATH_SetFadeCurve	sets map+0x18 (fade curve selector used by volume fade) for matching maps
+003d6360	PATH_TrackSetAuxSendFade	sets track +0x16 target, +0x15 if >=0
+003d6448	PATH_TrackStartFade3	sets +0x18 time,+0x1c current,+0x1e target; consumed by PATH_TrackUpdateFade3
+003d6748	SPCH_AddEventTableDefault	SPCH_RegisterEventTable(table,0)
+003d6778	SPCH_CalcBufferSize	rate*bits/8 with mode divisor (SPCH_Init passes 22050,16,1)
+003d69a8	SPCH_ResetChannelEvents	resets 8 per-channel entries at 0x450660 (short -1, int 0)
+003d6bc0	SPCH_SetVariation	stores gp+0x1744, re-marks usage bits of flagged banks (FUN_003d7038/6f80)
+003d6e30	SPCH_HistoryFind	searches bank recent-sample ring for value, returns recency
+003d7418	SPCH_QueueEventArgs	finds event (SPCH_FindEvent), allocates slot, fills request; called by varargs wrapper
+003d76f0	SPCH_QueueEvent	varargs wrapper packing args then SPCH_QueueEventArgs; address stored in SPCH_InitState
+003d7ec8	SPCH_DequeueChannel	takes next valid request for channel, purges others, builds sentence
+003d8040	SPCH_ServiceChannel	lock flag 0x4a484c; dequeue/build for channel then FUN_003d9bd8 play
+003d8170	SPCH_DequeueChannel0	SPCH_DequeueChannel(0)
+003d8190	SPCH_ServiceChannel0	same as SPCH_ServiceChannel for channel 0
+003d9a40	SPCH_ResetSentence	resets sentence builder state 0x450700 (channel -1, counts 0)
+003e0c58	StreamFile_GetChannelId	returns validated channel +4
+003e15e8	StreamFile_GetChunkRequest	returns request id owning channel's next chunk
+003e4000	EAFile_CdRemount	if flags 0x519c40&6==6 clears them and EAFile_CdMountDisc; address-taken in ssx_SystemInit/CdInit/CdShutdown
+003e5268	EAThread_DestroyThunk	thunk to EAThread_Destroy
+003e5a78	Debug_SetChannelFlag	sets bit0 of debug channel entry 0x451258[ch*3]; caller from Debug_InitChannels path
+003e7b00	LobbyApi_UpdateRoomCount	looks up int key in slot0 hash, updates count field + '%d' string, resorts
+003e9160	LobbyApi_TrimRankList	histograms rank values of slot2 (RANKS) list, prunes entries beyond limit; 'bogus' fix-up
+003ef088	ds_timeinsecs	returns 0; called as 'now' by TagFieldSetDate/TagFieldGetDate when date==0
+003efe20	BuddyApi_LookupProduct	maps product code to name via table 0x4512d8
+003f0818	BuddyApi_Config	stores resource name, flags and 2-char product code list
+003f1548	BuddyApi_SetPresenceText	copies text to +0x40 when resource set
+003f4d68	DirtyRpc_InitIop	sends initial buffer config call and drains replies; caller NetConnStartup
+003f65a0	UsbKb_GetKeypadEntry	keymap table entry for keypad/special keys
+003f65f8	UsbKb_LookupKeyChar	keymap lookup with numlock/keypad handling
+003f6838	UsbKb_IsKeyDown	modifier/LED/key code test for a key; caller cUsbKeyboard_Update
+003f6ab0	VoipRpc_Disable	clears RPC-enabled flag; caller ssx_LoadNetModules
+003f6b20	VoipRpc_EnableVoice	cmd 4; caller sets voip-on flag
+003f6b50	VoipRpc_DisableVoice	cmd 5; caller clears voip-on flag
+003f6c10	VoipRpc_SetParams	cmd 6 with two args (called with level,0x55)
+003f7de0	SLogin_VerifyIconChecksum	hashes caller buffer of 0x296e bytes via checksum iface, compares to 0x836c71d (error 0x15)
+003f8230	SLogin_GetRecordAllocSize	SLoginStore_GetBlockSize(0x22) — alloc size for a 0x22-byte record
+003f8720	SLoginMc_AbortAtFlush	switch op to abort 0xb, substate 0x18, calls driver fn +0x38 on open fd
+003f8768	SLoginMc_AbortAtClose	switch op to abort 0xc, substate 0x19, calls driver close (+0x1c) on fd
+003f87b0	SLoginMc_AbortAtFinish	switch op to abort 0xd, substate 0x1a, calls driver fn +0x14 on device
+003f95e8	SLoginMc_GetFileState	copies 0x60-byte op file state (+0xc) to caller; only caller SLoginStore_Poll
+003fa6e8	SLoginMc_GetDataOffset	wrapper returning base file offset (0) used by SLoginMc_StartSeek
+003fb278	SLoginMc_IsAvailable	returns 1; only path from FUN_00266358 via FUN_003fa360
+003fb2f8	SLoginMc_SetBusy	empty stub called with 1 at op start and 0 at op end
+003fb300	SLoginMc_GetDataOffsetImpl	returns 0
+003fb308	SLoginMc_ValidateIconSys	returns 0 if pointer non-null else 0xc
+003fb858	SLoginStore_GetAlignment	returns alignment 4 / granularity 1 for any block type
+003fbdf0	SLoginStore_ReadDirHeader	substate 7, SLoginMc_StartRead of header block size
+003fbe40	SLoginStore_LoadDirEntry	substate 0xb: decrypts header, adds dir entry, seeks to next record
+00402f80	libmpeg_DecodeFramePic	picture path when structure==3 (frame): decode slices, output, toggle field flag
+004030e0	libmpeg_DecodeFieldPic	field-picture path: decodes first field, reads next header, second field, output
+00403240	libmpeg_FlushPendingPicture	outputs pending picture at end (calls libmpeg_OutputLastPicture)
+004032a8	libmpeg_ResetMpeg1Flag	only caller sceMpegReset; clears +0x848 and libmpeg_SetIpuMpeg1Bit(1)
+00403ad0	libmpeg_LoadIqMatrix	DMA 64 bytes to IPU (ipu_to qwc 4) and issues IPU command with callbacks 2/3; from SequenceHeader
+00403e00	libmpeg_SetupMacroblock	string 'Invalid modion type -- ignored(%d)'; computes mb x/y, forms predictions, sets dest address
+00404758	libmpeg_SetupPredBlock	computes luma/chroma reference block DMA descriptors for one prediction
+00407a58	libmpeg_UpdateTemporalRef	from PictureHeader; accumulates temporal reference with wrap (+0x400)
+00407e90	libmpeg_OutputPicture	outputs frame (OutputFrame) or field pair (OutputFieldPair) for previous picture
+00407f20	libmpeg_SetupRefFrames	rotates forward/backward reference frame pointers for picture type
+00408278	libmpeg_CopyOutputRaw	copies decoded picture to output via scratchpad toSPR/fromSPR DMA
+00408530	libmpeg_ComputePts	computes timestamp and flag bits for output picture
+00408988	libmpeg_FetchRefBlocks	builds SPR DMA chain at 0x526fc0 for prediction blocks and kicks toSPR
+00409b60	libmc_GetRpcBuffers	returns libmc RPC receive buffer/client pointers
+00409c48	sceMcGetSlotMax	libmc RPC 0x15, synchronous, one int arg, returns result directly
+0040b3d8	sceSifMBindRpcDefault	calls sceSifMBindRpc(...,0x800,0x2000,0x20) with default buffer/stack/prio
+00420228	fread_bcopy	byte copy loop used by fread
+004242c0	libkernl_WaitVBlankOrFlag	SetVSyncFlag then spins until INTC VBLANK start or flag set
+0042b800	sceSifLoadModuleBuffer_	wrapper of 0x42b230 passing dummy result ptr = real sceSifLoadModuleBuffer (see wrong.txt; collides until 0x42b230 renamed)
+0042bbb0	sceSifLoadElfPart	wrapper of _sceSifLoadElfPart with flag a3=1
+0042c1a8	FindAddress	syscall 0x83 (start,end,value) search; used to locate syscall table
+```
