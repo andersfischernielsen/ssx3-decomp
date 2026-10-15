@@ -1,0 +1,7 @@
+# Functions replaced by hand-written Rust in this crate. `recomp-ee` reads this
+# list: each function's generated body becomes `f_X__generated` and `f_X` calls
+# through a slot that `ssx3_game::install` fills in at boot. Keep it in sync
+# with `OVERRIDES` in src/lib.rs (a test checks).
+#
+# address     name
+0x0011e098    Rider_BuildWorldMatrix

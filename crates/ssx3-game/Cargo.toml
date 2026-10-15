@@ -1,0 +1,12 @@
+[package]
+name = "ssx3-game"
+description = "Hand-written, typed Rust replacements for recompiled SSX 3 functions (phase 2 of docs/plans/roadmap.md)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Depends on the generated crates (to install replacements into their slots);
+# they never depend on this crate, so editing it only rebuilds it and relinks.
+[dependencies]
+ssx3-ee-rt = { path = "../ssx3-ee-rt" }
+ssx3-ee = { path = "../../generated/ee/game" }

@@ -10,6 +10,7 @@ members = [
     "crates/ssx3-vu",
     "crates/ssx3-iop",
     "crates/ssx3",
+    "crates/ssx3-game",
     "generated/ee/*",
     "generated/iop/*",
 ]

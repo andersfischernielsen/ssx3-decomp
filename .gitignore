@@ -20,8 +20,11 @@
 # Full sharded translation (reproduce with: recomp-all)
 /generated/code/
 
-# Agent worktrees
-/.claude/
+# Agent worktrees and local Claude state (project skills are committed)
+/.claude/*
+!/.claude/skills/
+# OpenCode delegate logs (scripts/delegate.sh)
+/.delegate/
 # Recompiled EE code (reproduce with: cargo run --release -p ssx3-recomp --bin recomp-ee)
 /generated/ee/
 # Recompiled IOP modules (reproduce with: cargo run --release -p ssx3-recomp --bin recomp-iop)

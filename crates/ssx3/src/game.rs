@@ -12,6 +12,12 @@ pub fn repo_root() -> PathBuf {
 /// Create the machine, load the disc and the executable, start the main thread.
 pub fn boot(skip_movies_default: bool) -> Box<Cpu> {
     machine::register_functions(&ssx3_ee::FUNCTIONS);
+    // Hand-written replacements (crates/ssx3-game); SSX3_NO_OVERRIDES=1 runs
+    // the generated code everywhere.
+    let n = ssx3_game::install();
+    if n > 0 {
+        eprintln!("[ssx3-game] {n} hand-written function(s) installed");
+    }
     // Recompiled IOP sound modules; used when SSX3_IOP=1 (see iop_bridge.rs).
     ssx3_iop::register_generated(&ssx3_iop_gen::GENERATED);
     let mut c = ssx3_ps2::new_cpu();
