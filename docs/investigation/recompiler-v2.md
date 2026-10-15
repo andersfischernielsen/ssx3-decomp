@@ -41,7 +41,8 @@ The output is gitignored and derived only from `orig/SLUS_207.72`,
 - **Inline ALU.** ALU code is emitted inline (`c.g[rd][0] = sx(...)`), with the MIPS64
   convention that 32-bit ops sign-extend.
 - **Semantics library.** Everything else calls the semantics library in
-  `ssx3-ps2`: `cpu.rs` (memory, mult/div, COP0), `mmi.rs` (all MMI), `fpu.rs`
+  `ssx3-ee-rt` (moved out of `ssx3-ps2`, see `crate-split.md`): `cpu.rs`
+  (memory, mult/div, COP0), `mmi.rs` (all MMI), `fpu.rs`
   (PS2 float rules) and `cop2.rs`.
 - **Delay slots.** The branch condition is evaluated before the delay slot. For
   likely branches the delay slot runs only when the branch is taken.
