@@ -25,6 +25,7 @@ pub mod fpu;
 pub mod funcs;
 pub mod mmi;
 pub mod platform;
+pub mod prof;
 pub mod vu0;
 
 pub use cpu::{Cpu, Hooks};

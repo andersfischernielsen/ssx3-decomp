@@ -11,5 +11,7 @@ license.workspace = true
 [features]
 # Track written RAM pages (differential tests only; see Bus::dirty).
 dirty-pages = []
+# Count caller -> callee edges per frame window (SSX3_CALLPROF; see prof.rs).
+callprof = []
 
 [dependencies]

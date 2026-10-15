@@ -314,7 +314,7 @@ fn main() {
                 let _ = writeln!(code, "pub use self::{} as {n};", fn_name(f.start));
             }
         }
-        let code = ssx3_recomp::eegen::prettify(&code);
+        let code = add_prof_hooks(&ssx3_recomp::eegen::prettify(&code));
         bytes += code.len();
         write_if_changed(dir.join("src/lib.rs"), code).unwrap();
     }
@@ -390,3 +390,21 @@ const RUST_RESERVED: &[&str] = &[
     "abstract", "become", "box", "do", "final", "macro", "override", "priv", "typeof", "unsized", "virtual",
     "yield", "try", "gen", "union", "entry", "main", "c", "sx", "Cpu",
 ];
+
+/// Put `prof::enter` (the `callprof` call graph, empty without that feature)
+/// at the top of every public `f_XXXXXXXX`: the function callers reach, which
+/// for an overridden function is the slot stub, not `__generated`.
+fn add_prof_hooks(code: &str) -> String {
+    let mut out = String::with_capacity(code.len() + code.len() / 16);
+    for line in code.split_inclusive('\n') {
+        out.push_str(line);
+        if let Some(rest) = line.strip_prefix("pub fn f_") {
+            if rest.len() >= 8 && rest[8..].starts_with("(c: &mut Cpu) {") && rest[..8].bytes().all(|b| b.is_ascii_hexdigit()) {
+                out.push_str("ssx3_ee_rt::prof::enter(c, 0x");
+                out.push_str(&rest[..8]);
+                out.push_str(");\n");
+            }
+        }
+    }
+    out
+}

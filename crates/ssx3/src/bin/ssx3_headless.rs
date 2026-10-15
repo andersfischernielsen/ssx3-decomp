@@ -74,6 +74,7 @@ fn main() {
         ssx3_ps2::m!(c).sif.pad_buttons = held;
         ssx3_ps2::vu::capture::set_frame(f);
         let alive = ssx3_ps2::machine::run_frame(&mut c);
+        ssx3_ee_rt::prof::frame(f);
         if ssx3_ps2::gifstats::enabled() && f % 50 == 0 {
             let (pk, v, adc, far) = ssx3_ps2::gifstats::take();
             eprintln!("[gif] frames {}..{f}: path1 packets {pk} verts {v} adc {adc} far {far}", f - 50);
