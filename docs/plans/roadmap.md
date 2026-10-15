@@ -58,7 +58,7 @@ glows and flares (sun, point lights) show through geometry
 ## Phase 2: "Rust-ify": readable, typed source 🟡
 
 Progress (2026-10-15): override mechanism + differential tests
-(`../investigation/phase2-overrides.md`); 655 functions replaced by typed Rust,
+(`../investigation/phase2-overrides.md`); 1,015 functions replaced by typed Rust,
 byte-identical; 9,715 of 11,844 functions named (pass 3); race-path structs
 mapped (`../investigation/structs/`).
 

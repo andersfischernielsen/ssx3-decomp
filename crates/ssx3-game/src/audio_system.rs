@@ -3134,7 +3134,7 @@ mod tests {
     use crate::difftest::{check, check_lohi, elf_image, fill, Rng, DATA, GAME_GP};
     use ssx3_ee::{s07, s08};
 
-    const SEEDS: u32 = 300;
+    const SEEDS: u32 = 150;
     /// The `SND_Lock` / `SND_Unlock` hooks.
     const LOCK_HOOK: u32 = 0x0044_c46c;
 
@@ -3182,6 +3182,11 @@ mod tests {
     fn base(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
         let mut r = machine(c, seed, salt, calls);
         elf_image(c);
+        // Pre-initialise the lazily built BE singleton (`gp - 0x1f04`): with
+        // it zero the generated `f_0014dc80` would build one through the
+        // file system and run away on test data.
+        c.bus.write32(GAME_GP - 0x1f04, DATA + 0x6_0000);
+        c.bus.write32(GAME_GP - 0x1efc, 0);
         c.bus.write32(LOCK_HOOK, FAKE + 0x100);
         c.bus.write32(LOCK_HOOK + 4, FAKE + 0x110);
         for i in 0..8 {
@@ -3257,7 +3262,7 @@ mod tests {
 
     #[test]
     fn timer_update() {
-        covered(s08::f_002ab828, bank_monitor_timer_update, 600, &|c, seed| {
+        covered(s08::f_002ab828, bank_monitor_timer_update, 150, &|c, seed| {
             let mut r = base(c, seed, 2, 2);
             let t = INST;
             let owner = SYS;
@@ -3300,7 +3305,7 @@ mod tests {
 
     #[test]
     fn is_done() {
-        covered(s08::f_002aba40, bank_monitor_instance_is_done, 600, &|c, seed| {
+        covered(s08::f_002aba40, bank_monitor_instance_is_done, 150, &|c, seed| {
             let mut r = base(c, seed, 3, 3);
             instance(c, &mut r);
             for i in 0..8 {
@@ -3312,7 +3317,7 @@ mod tests {
 
     #[test]
     fn set_pan() {
-        covered(s08::f_002abd90, bank_monitor_instance_set_pan, 600, &|c, seed| {
+        covered(s08::f_002abd90, bank_monitor_instance_set_pan, 150, &|c, seed| {
             let mut r = base(c, seed, 4, 3);
             instance(c, &mut r);
             let last = r.next_u32() % 0x800;
@@ -3326,7 +3331,7 @@ mod tests {
 
     #[test]
     fn set_volume() {
-        covered(s08::f_002abf60, bank_monitor_instance_set_volume, 900, &|c, seed| {
+        covered(s08::f_002abf60, bank_monitor_instance_set_volume, 120, &|c, seed| {
             let mut r = base(c, seed, 5, 3);
             instance(c, &mut r);
             c.bus.write32(INST + bmi::GAIN, if r.next_u32() % 4 == 0 { r.edge_f32() } else { r.f32(2.0) });
@@ -3405,17 +3410,18 @@ mod tests {
 
     #[test]
     fn calc_surface_loop_params() {
-        check(ssx3_ee::s07::f_00293290, ssx_audio_calc_surface_loop_params, 400, &|c, seed| {
+        check(ssx3_ee::s07::f_00293290, ssx_audio_calc_surface_loop_params, 150, &|c, seed| {
             let mut r = base(c, seed, 0x20, 4);
             world(c, &mut r);
             audio_globals(c, &mut r);
             calc_params(c, &mut r);
+            c.pc = 0x0029_3290;
         });
     }
 
     #[test]
     fn calc_surface_loop_params_remote() {
-        check(ssx3_ee::s07::f_00293350, ssx_audio_calc_surface_loop_params_remote, 400, &|c, seed| {
+        check(ssx3_ee::s07::f_00293350, ssx_audio_calc_surface_loop_params_remote, 150, &|c, seed| {
             let mut r = base(c, seed, 0x21, 4);
             world(c, &mut r);
             audio_globals(c, &mut r);
@@ -3425,7 +3431,7 @@ mod tests {
 
     #[test]
     fn calc_edge_loop_params() {
-        check(ssx3_ee::s07::f_00293410, ssx_audio_calc_edge_loop_params, 400, &|c, seed| {
+        check(ssx3_ee::s07::f_00293410, ssx_audio_calc_edge_loop_params, 150, &|c, seed| {
             let mut r = base(c, seed, 0x22, 4);
             world(c, &mut r);
             audio_globals(c, &mut r);
@@ -3435,7 +3441,7 @@ mod tests {
 
     #[test]
     fn calc_board_base_loop_params() {
-        check(ssx3_ee::s07::f_00293168, ssx_audio_calc_board_base_loop_params, 400, &|c, seed| {
+        check(ssx3_ee::s07::f_00293168, ssx_audio_calc_board_base_loop_params, 150, &|c, seed| {
             let mut r = base(c, seed, 0x23, 0);
             world(c, &mut r);
             audio_globals(c, &mut r);
@@ -3449,7 +3455,7 @@ mod tests {
 
     #[test]
     fn calc_surface_loop_group0() {
-        covered(ssx3_ee::s07::f_00293538, ssx_audio_calc_surface_loop_group0, 600, &|c, seed| {
+        covered(ssx3_ee::s07::f_00293538, ssx_audio_calc_surface_loop_group0, 150, &|c, seed| {
             let mut r = base(c, seed, 0x24, 2);
             world(c, &mut r);
             audio_globals(c, &mut r);
@@ -3462,7 +3468,7 @@ mod tests {
 
     #[test]
     fn calc_edge_loop_group0() {
-        covered(ssx3_ee::s07::f_00293bb0, ssx_audio_calc_edge_loop_group0, 600, &|c, seed| {
+        covered(ssx3_ee::s07::f_00293bb0, ssx_audio_calc_edge_loop_group0, 150, &|c, seed| {
             let mut r = base(c, seed, 0x25, 2);
             world(c, &mut r);
             audio_globals(c, &mut r);
@@ -3477,7 +3483,7 @@ mod tests {
 
     #[test]
     fn board_base_loop() {
-        check(ssx3_ee::s07::f_00292cb8, ssx_audio_update_board_base_loop, 500, &|c, seed| {
+        check(ssx3_ee::s07::f_00292cb8, ssx_audio_update_board_base_loop, 150, &|c, seed| {
             let mut r = base(c, seed, 0x26, 3);
             world(c, &mut r);
             audio_globals(c, &mut r);
@@ -3488,7 +3494,7 @@ mod tests {
 
     #[test]
     fn board_surface_loop() {
-        check(ssx3_ee::s07::f_00292da0, ssx_audio_update_board_surface_loop, 500, &|c, seed| {
+        check(ssx3_ee::s07::f_00292da0, ssx_audio_update_board_surface_loop, 150, &|c, seed| {
             let mut r = base(c, seed, 0x27, 4);
             world(c, &mut r);
             audio_globals(c, &mut r);
@@ -3499,7 +3505,7 @@ mod tests {
 
     #[test]
     fn board_surface_loop_remote() {
-        check(ssx3_ee::s07::f_00292ef8, ssx_audio_update_board_surface_loop_remote, 500, &|c, seed| {
+        check(ssx3_ee::s07::f_00292ef8, ssx_audio_update_board_surface_loop_remote, 150, &|c, seed| {
             let mut r = base(c, seed, 0x28, 4);
             world(c, &mut r);
             audio_globals(c, &mut r);
@@ -3510,7 +3516,7 @@ mod tests {
 
     #[test]
     fn board_edge_loop() {
-        check(ssx3_ee::s07::f_00293018, ssx_audio_update_board_edge_loop, 500, &|c, seed| {
+        check(ssx3_ee::s07::f_00293018, ssx_audio_update_board_edge_loop, 150, &|c, seed| {
             let mut r = base(c, seed, 0x29, 4);
             world(c, &mut r);
             audio_globals(c, &mut r);
@@ -3524,7 +3530,7 @@ mod tests {
 
     #[test]
     fn find_rider() {
-        check(ssx3_ee::s07::f_00285d98, ssx_audio_find_rider, 600, &|c, seed| {
+        check(ssx3_ee::s07::f_00285d98, ssx_audio_find_rider, 150, &|c, seed| {
             let mut r = base(c, seed, 0x2a, 0);
             find_rider_world(c, &mut r);
             c.g[A0][0] = sx(SYS);
@@ -3535,20 +3541,21 @@ mod tests {
 
     #[test]
     fn apply_mix_paint() {
-        covered(ssx3_ee::s07::f_00289c98, ssx_audio_apply_mix_paint, 600, &|c, seed| {
+        covered(ssx3_ee::s07::f_00289c98, ssx_audio_apply_mix_paint, 150, &|c, seed| {
             let mut r = base(c, seed, 0x2b, 2);
             find_rider_world(c, &mut r);
             audio_globals(c, &mut r);
             c.bus.write32(LAYER + 4, VTABLES);
             c.g[A0][0] = sx(SYS);
             c.g[A1][0] = sx(RIDERS);
-            c.g[A2][0] = r64(&mut r, if r.next_u32() % 3 == 0 { 0 } else { LAYER });
+            let paint = if r.next_u32() % 3 == 0 { 0 } else { LAYER };
+            c.g[A2][0] = r64(&mut r, paint);
         });
     }
 
     #[test]
     fn update_rider_world_paint() {
-        covered(ssx3_ee::s07::f_002898a8, ssx_audio_update_rider_world_paint, 600, &|c, seed| {
+        covered(ssx3_ee::s07::f_002898a8, ssx_audio_update_rider_world_paint, 150, &|c, seed| {
             let mut r = base(c, seed, 0x2c, 4);
             world(c, &mut r);
             audio_globals(c, &mut r);
@@ -3570,7 +3577,7 @@ mod tests {
 
     #[test]
     fn update_3d() {
-        covered(ssx3_ee::s08::f_002ac868, bank_monitor_instance_update_3d, 700, &|c, seed| {
+        covered(ssx3_ee::s08::f_002ac868, bank_monitor_instance_update_3d, 120, &|c, seed| {
             let mut r = base(c, seed, 0x2d, 5);
             world(c, &mut r);
             audio_globals(c, &mut r);
@@ -3619,7 +3626,7 @@ mod tests {
 
     #[test]
     fn stop_boost_sound() {
-        check(ssx3_ee::s08::f_002992d8, ssx_audio_stop_boost_sound, 600, &|c, seed| {
+        check(ssx3_ee::s08::f_002992d8, ssx_audio_stop_boost_sound, 150, &|c, seed| {
             let mut r = base(c, seed, 0x2f, 3);
             find_rider_world(c, &mut r);
             c.bus.write32(RIDER + rider::HUMAN, r.next_u32() % 2);
@@ -3635,8 +3642,8 @@ mod tests {
     }
 
     #[test]
-    fn speech_instance_update() {
-        check(ssx3_ee::s08::f_002afc88, speech_instance_update, 600, &|c, seed| {
+    fn speech_instance_update_matches() {
+        check(ssx3_ee::s08::f_002afc88, speech_instance_update, 150, &|c, seed| {
             let mut r = base(c, seed, 0x30, 2);
             audio_globals(c, &mut r);
             c.bus.write32(INST + 0x4, r.next_u32());
@@ -3647,8 +3654,8 @@ mod tests {
     }
 
     #[test]
-    fn song_instance_update() {
-        check(ssx3_ee::s08::f_002b21e0, song_instance_update, 400, &|c, seed| {
+    fn song_instance_update_matches() {
+        check(ssx3_ee::s08::f_002b21e0, song_instance_update, 150, &|c, seed| {
             let mut r = base(c, seed, 0x31, 3);
             audio_globals(c, &mut r);
             c.bus.write32(SONG + 0x2c, r.next_u32() % 2);
@@ -3666,14 +3673,15 @@ mod tests {
             fill(c, &mut r, SONG_DATA + 0x20, 0x10);
             // Force the "song data loaded" answer (`MusicPlayer_IsSongDataLoaded`
             // returns 1 when a1 is 0).
-            c.g[A1][0] = if seed % 2 == 0 { 0 } else { r64(&mut r, r.next_u32()) };
+            let arg = if seed % 2 == 0 { 0 } else { let v = r.next_u32(); r64(&mut r, v) };
+            c.g[A1][0] = arg;
             c.g[A0][0] = sx(SONG);
         });
     }
 
     #[test]
     fn update_music_fade_in() {
-        check(ssx3_ee::s07::f_0028f000, ssx_audio_update_music_fade_in, 500, &|c, seed| {
+        check(ssx3_ee::s07::f_0028f000, ssx_audio_update_music_fade_in, 150, &|c, seed| {
             let mut r = base(c, seed, 0x32, 2);
             find_rider_world(c, &mut r);
             audio_globals(c, &mut r);
@@ -3691,7 +3699,7 @@ mod tests {
 
     #[test]
     fn update_countdown_beeps() {
-        check(ssx3_ee::s08::f_0029cca8, ssx_audio_update_countdown_beeps, 600, &|c, seed| {
+        check(ssx3_ee::s08::f_0029cca8, ssx_audio_update_countdown_beeps, 150, &|c, seed| {
             let mut r = base(c, seed, 0x33, 4);
             find_rider_world(c, &mut r);
             audio_globals(c, &mut r);

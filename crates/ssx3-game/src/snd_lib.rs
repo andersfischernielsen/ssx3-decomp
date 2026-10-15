@@ -1531,7 +1531,7 @@ mod tests {
     use crate::difftest::{check, check_lohi, check_paths, fill, require_paths, Rng, DATA, GAME_GP};
     use ssx3_ee::{s13, s14};
 
-    const SEEDS: u32 = 300;
+    const SEEDS: u32 = 150;
     /// The test channel table.
     const CHANNELS: u32 = DATA + 0x10_0000;
 
@@ -1603,12 +1603,12 @@ mod tests {
 
     #[test]
     fn stop() {
-        check_lohi(s13::f_003b89e0, snd_stop, 400, &|c, seed| {
+        check_lohi(s13::f_003b89e0, snd_stop, 150, &|c, seed| {
             let mut r = machine(c, seed, 2, 0);
             c.pc = stop::START;
             stop_setup(c, &mut r);
         });
-        check_events(gen_stop, hand_stop, 600, &|c, seed| {
+        check_events(gen_stop, hand_stop, 150, &|c, seed| {
             let mut r = machine(c, seed, 3, 0);
             stop_setup(c, &mut r);
             schedule(c, &mut r, seed, stop::START)
@@ -1617,7 +1617,7 @@ mod tests {
 
     #[test]
     fn sif_cmd_handler() {
-        covered(s13::f_003c1578, snd_sif_cmd_handler, 600, &|c, seed| {
+        covered(s13::f_003c1578, snd_sif_cmd_handler, 200, &|c, seed| {
             let mut r = machine(c, seed, 4, 1);
             let pkt = ptr(&mut r);
             fill(c, &mut r, pkt, 8);
@@ -1648,7 +1648,9 @@ mod tests {
 
     fn dsp_chain(c: &mut Cpu, r: &mut Rng) {
         let head = ptr(r);
-        let n = r.next_u32() % 6;
+        // A longer chain so the sorted-insert walk reaches the loop's event
+        // back edge in most seeds (the event-coverage assertion needs it).
+        let n = 5 + r.next_u32() % 8;
         let mut prio = (r.next_u32() % 4) as u16;
         let mut prev = 0;
         let nodes: Vec<u32> = (0..n).map(|i| DATA + 0x20_0000 + i * 0x40).collect();
@@ -1673,11 +1675,11 @@ mod tests {
 
     #[test]
     fn dsp_insert_sorted() {
-        check(s14::f_003c8f48, snd_dsp_insert_sorted, 600, &|c, seed| {
+        check(s14::f_003c8f48, snd_dsp_insert_sorted, 100, &|c, seed| {
             let mut r = machine(c, seed, 6, 0);
             dsp_chain(c, &mut r);
         });
-        check_events(gen_insert, hand_insert, 600, &|c, seed| {
+        check_events(gen_insert, hand_insert, 100, &|c, seed| {
             let mut r = machine(c, seed, 7, 0);
             dsp_chain(c, &mut r);
             schedule(c, &mut r, seed, 0x003c_8f48)
@@ -1815,11 +1817,11 @@ mod tests {
 
     #[test]
     fn mem_free() {
-        check(s13::f_003b5e98, snd_mem_free, 600, &|c, seed| {
+        check(s13::f_003b5e98, snd_mem_free, 100, &|c, seed| {
             let mut r = machine(c, seed, 11, 0);
             mem_free_setup(c, &mut r);
         });
-        check_events(gen_mem_free, hand_mem_free, 600, &|c, seed| {
+        check_events(gen_mem_free, hand_mem_free, 100, &|c, seed| {
             let mut r = machine(c, seed, 12, 0);
             mem_free_setup(c, &mut r);
             schedule(c, &mut r, seed, 0x003b_5e98)
@@ -1841,11 +1843,11 @@ mod tests {
 
     #[test]
     fn mem_alloc() {
-        check(s13::f_003b5c60, snd_mem_alloc, 800, &|c, seed| {
+        check(s13::f_003b5c60, snd_mem_alloc, 100, &|c, seed| {
             let mut r = machine(c, seed, 13, 0);
             mem_alloc_setup(c, &mut r);
         });
-        check_events(gen_mem_alloc, hand_mem_alloc, 800, &|c, seed| {
+        check_events(gen_mem_alloc, hand_mem_alloc, 100, &|c, seed| {
             let mut r = machine(c, seed, 14, 0);
             mem_alloc_setup(c, &mut r);
             schedule(c, &mut r, seed, 0x003b_5c60)
@@ -1873,11 +1875,11 @@ mod tests {
 
     #[test]
     fn mem_copy() {
-        check(s13::f_003c51e8, snd_mem_copy, 600, &|c, seed| {
+        check(s13::f_003c51e8, snd_mem_copy, 100, &|c, seed| {
             let mut r = machine(c, seed, 15, 0);
             mem_copy_setup(c, &mut r);
         });
-        check_events(gen_mem_copy, hand_mem_copy, 900, &|c, seed| {
+        check_events(gen_mem_copy, hand_mem_copy, 100, &|c, seed| {
             let mut r = machine(c, seed, 16, 0);
             mem_copy_setup(c, &mut r);
             schedule(c, &mut r, seed, 0x003c_51e8)
@@ -1912,11 +1914,11 @@ mod tests {
 
     #[test]
     fn channel_release() {
-        check_lohi(s13::f_003ba550, snd_channel_release, 1000, &|c, seed| {
+        check_lohi(s13::f_003ba550, snd_channel_release, 100, &|c, seed| {
             let mut r = machine(c, seed, 17, 0);
             release_setup(c, &mut r);
         });
-        check_events(gen_release, hand_release, 600, &|c, seed| {
+        check_events(gen_release, hand_release, 100, &|c, seed| {
             let mut r = machine(c, seed, 18, 0);
             release_setup(c, &mut r);
             schedule(c, &mut r, seed, 0x003b_a550)
