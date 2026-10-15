@@ -24,3 +24,15 @@ pub fn set_ret(c: &mut Cpu, v: u32) {
 pub fn ret(c: &mut Cpu) {
     c.pc = c.g[RA][0] as u32;
 }
+
+/// Float argument `i` (0-based; f12, f13, ... as the game's EABI passes them).
+#[inline]
+pub fn farg(c: &Cpu, i: usize) -> crate::ps2f::FpuF32 {
+    crate::ps2f::FpuF32(c.f[12 + i])
+}
+
+/// Set the float result (f0).
+#[inline]
+pub fn set_fret(c: &mut Cpu, v: crate::ps2f::FpuF32) {
+    c.f[0] = v.0;
+}

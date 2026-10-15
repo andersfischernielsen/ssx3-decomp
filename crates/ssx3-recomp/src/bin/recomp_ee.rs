@@ -337,6 +337,12 @@ fn main() {
         );
     }
     lib.push_str("];\n");
+    // The shard crates, for code that needs a specific generated function
+    // (e.g. ssx3-game's differential tests call `f_X__generated`).
+    lib.push('\n');
+    for s in 0..shards {
+        let _ = writeln!(lib, "pub use ssx3_ee_s{s:02} as s{s:02};");
+    }
     // Hand-written replacements (crates/ssx3-game) install themselves here.
     lib.push_str("\n/// Point the override slot of the function at `addr` to `f`; false when\n/// `addr` has no slot (not listed in crates/ssx3-game/overrides.txt).\n/// Call only during single-threaded startup, before guest code runs.\npub fn set_override(addr: u32, f: fn(&mut ssx3_ee_rt::Cpu)) -> bool {\n    match addr {\n");
     for a in &overrides {

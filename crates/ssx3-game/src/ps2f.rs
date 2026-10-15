@@ -30,6 +30,16 @@ impl VuF32 {
     pub fn msub(acc: VuF32, a: VuF32, b: VuF32) -> VuF32 {
         VuF32(float::msub(acc.0, a.0, b.0).0)
     }
+    /// `a / b` as DIV (the value that lands in Q).
+    #[inline]
+    pub fn div(a: VuF32, b: VuF32) -> VuF32 {
+        VuF32(float::div(a.0, b.0).value)
+    }
+    /// `sqrt(b)` as SQRT (the value that lands in Q).
+    #[inline]
+    pub fn sqrt(b: VuF32) -> VuF32 {
+        VuF32(float::sqrt(b.0).value)
+    }
     /// `a / sqrt(b)` as RSQRT (the value that lands in Q).
     #[inline]
     pub fn rsqrt(a: VuF32, b: VuF32) -> VuF32 {
@@ -56,6 +66,130 @@ impl std::ops::Mul for VuF32 {
     #[inline]
     fn mul(self, b: VuF32) -> VuF32 {
         VuF32(float::mul(self.0, b.0).0)
+    }
+}
+
+/// An FPU (COP1) single: same number format and truncating arithmetic as
+/// the VU, but `madd`/`msub` round twice (product, then sum) and compares use
+/// the PS2 total order ([`FpuF32::key`]). Matches `ssx3_ee_rt::fpu`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct FpuF32(pub u32);
+
+impl FpuF32 {
+    pub const ZERO: FpuF32 = FpuF32(0);
+    pub const ONE: FpuF32 = FpuF32(0x3f80_0000);
+
+    pub fn from_f32(x: f32) -> FpuF32 {
+        FpuF32(x.to_bits())
+    }
+    pub fn to_f32(self) -> f32 {
+        f32::from_bits(self.0)
+    }
+    /// `div.s`.
+    #[inline]
+    pub fn div(self, b: FpuF32) -> FpuF32 {
+        FpuF32(float::div(self.0, b.0).value)
+    }
+    /// `sqrt.s`.
+    #[inline]
+    pub fn sqrt(self) -> FpuF32 {
+        FpuF32(float::sqrt(self.0).value)
+    }
+    /// `rsqrt.s`: `self / sqrt(b)`.
+    #[inline]
+    pub fn rsqrt(self, b: FpuF32) -> FpuF32 {
+        FpuF32(float::rsqrt(self.0, b.0).value)
+    }
+    /// `abs.s` (bit operation).
+    #[inline]
+    pub fn abs(self) -> FpuF32 {
+        FpuF32(self.0 & 0x7fff_ffff)
+    }
+    /// `max.s` / `min.s`.
+    #[inline]
+    pub fn max(self, b: FpuF32) -> FpuF32 {
+        FpuF32(float::max(self.0, b.0))
+    }
+    #[inline]
+    pub fn min(self, b: FpuF32) -> FpuF32 {
+        FpuF32(float::min(self.0, b.0))
+    }
+    /// `madd.s`: `acc + a * b`, the product rounded first.
+    #[inline]
+    pub fn madd(acc: FpuF32, a: FpuF32, b: FpuF32) -> FpuF32 {
+        acc + a * b
+    }
+    /// `msub.s`: `acc - a * b`, the product rounded first.
+    #[inline]
+    pub fn msub(acc: FpuF32, a: FpuF32, b: FpuF32) -> FpuF32 {
+        acc - a * b
+    }
+    /// `cvt.w.s`: truncate toward zero, saturating.
+    #[inline]
+    pub fn to_i32(self) -> i32 {
+        float::to_fixed(self.0, 0) as i32
+    }
+    /// `cvt.s.w`.
+    #[inline]
+    pub fn from_i32(v: i32) -> FpuF32 {
+        FpuF32(float::from_fixed(v, 0))
+    }
+    /// The total order `c.eq/lt/le.s` compare by: sign-magnitude as an
+    /// integer, denormals as zero.
+    #[inline]
+    pub fn key(self) -> i32 {
+        let x = if self.0 & 0x7f80_0000 == 0 { self.0 & 0x8000_0000 } else { self.0 };
+        let m = (x & 0x7fff_ffff) as i32;
+        if x & 0x8000_0000 != 0 {
+            -m
+        } else {
+            m
+        }
+    }
+    /// `c.lt.s`.
+    #[inline]
+    pub fn lt(self, b: FpuF32) -> bool {
+        self.key() < b.key()
+    }
+    /// `c.le.s`.
+    #[inline]
+    pub fn le(self, b: FpuF32) -> bool {
+        self.key() <= b.key()
+    }
+    /// `c.eq.s`.
+    #[inline]
+    pub fn eq_s(self, b: FpuF32) -> bool {
+        self.key() == b.key()
+    }
+}
+
+impl std::ops::Add for FpuF32 {
+    type Output = FpuF32;
+    #[inline]
+    fn add(self, b: FpuF32) -> FpuF32 {
+        FpuF32(float::add(self.0, b.0).0)
+    }
+}
+impl std::ops::Sub for FpuF32 {
+    type Output = FpuF32;
+    #[inline]
+    fn sub(self, b: FpuF32) -> FpuF32 {
+        FpuF32(float::sub(self.0, b.0).0)
+    }
+}
+impl std::ops::Mul for FpuF32 {
+    type Output = FpuF32;
+    #[inline]
+    fn mul(self, b: FpuF32) -> FpuF32 {
+        FpuF32(float::mul(self.0, b.0).0)
+    }
+}
+impl std::ops::Neg for FpuF32 {
+    type Output = FpuF32;
+    /// `neg.s` (bit operation).
+    #[inline]
+    fn neg(self) -> FpuF32 {
+        FpuF32(self.0 ^ 0x8000_0000)
     }
 }
 

@@ -10,3 +10,19 @@ license.workspace = true
 [dependencies]
 ssx3-ee-rt = { path = "../ssx3-ee-rt" }
 ssx3-ee = { path = "../../generated/ee/game" }
+
+# Work packages from docs/investigation/phase2-candidates.md. Each is its own
+# module behind a feature so packages can be developed in parallel without
+# breaking each other's builds; reviewed packages are added to `default`.
+[features]
+default = []
+math = []
+anim = []
+camera = []
+render = []
+sound = []
+state = []
+
+[dev-dependencies]
+# A real machine (VU0 included) for the differential tests in src/difftest.rs.
+ssx3-ps2 = { path = "../ssx3-ps2" }

@@ -52,9 +52,31 @@ Helpers: `abi` (arguments, return), `guest::Addr` (typed loads/stores through
 the bus), `ps2f` (`VuF32`, `Vec4`), struct views such as `rider::Rider`
 (offsets from `structs/`).
 
+## Workflow for a work package
+
+Packages (`phase2-candidates.md`: A1 math … A6 state) are modules in
+`crates/ssx3-game/src/` behind cargo features (`math`, `anim`, `camera`,
+`render`, `sound`, `state`), so several people can work in one checkout
+without breaking each other's builds:
+
+1. Write the replacement in the package's module and add it to that
+   module's `OVERRIDES`.
+2. Add a differential test (`src/difftest.rs`: `check(generated, hand,
+   seeds, setup)`), comparing against `ssx3_ee::sNN::f_X` (the shard is in
+   `generated/ee/game/src/lib.rs`'s table). The test builds two fresh
+   machines, applies the same setup, runs both and compares registers that
+   matter (v0/v1, callee-saved, sp/gp/fp/ra, f0/f1/f20-f31, VU0 VF/VI/Q),
+   pc, cycles, RAM and scratchpad. Caller-saved temporaries and VU0 flags
+   are reported but don't fail.
+3. `cargo test --profile game -p ssx3-game --features <pkg> <pkg>::`
+   (seconds; reuses the game build of the generated crates).
+4. Integration (one person): add the addresses to `overrides.txt`, rerun
+   `recomp-ee`, enable the feature in `default`, build, and run the replay.
+
 ## Verification
 
-1. `cargo test -p ssx3-game` (sync test, float unit tests).
+1. `cargo test --profile game -p ssx3-game --all-features` (sync test, float
+   unit tests, differential tests).
 2. Scripted race replay with and without overrides: screenshots and a full
    RAM dump at the end must be identical (`SSX3_NO_OVERRIDES=1`,
    `SSX3_RAM_DUMP=path`). This needs deterministic runs: GS readbacks are

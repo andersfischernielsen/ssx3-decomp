@@ -13,14 +13,48 @@
 use ssx3_ee_rt::funcs::GuestFn;
 
 pub mod abi;
+#[cfg(test)]
+pub mod difftest;
 pub mod guest;
 pub mod ps2f;
 pub mod rider;
+#[cfg(feature = "math")]
+pub mod math;
+#[cfg(feature = "anim")]
+pub mod anim;
+#[cfg(feature = "camera")]
+pub mod camera;
+#[cfg(feature = "render")]
+pub mod render;
+#[cfg(feature = "sound")]
+pub mod sound;
+#[cfg(feature = "state")]
+pub mod state;
 
-/// Every replacement: (address, function, name). Must match `overrides.txt`.
-pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
+/// Replacements outside the work-package modules: (address, function, name).
+const CORE: &[(u32, GuestFn, &str)] = &[
     (0x0011_e098, rider::build_world_matrix, "Rider_BuildWorldMatrix"),
 ];
+
+/// Every installed replacement (core + enabled work packages). Each package
+/// module exports its own `OVERRIDES`; all of them must be listed in
+/// `overrides.txt`.
+pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
+    let mut v: Vec<(u32, GuestFn, &'static str)> = CORE.to_vec();
+    #[cfg(feature = "math")]
+    v.extend_from_slice(math::OVERRIDES);
+    #[cfg(feature = "anim")]
+    v.extend_from_slice(anim::OVERRIDES);
+    #[cfg(feature = "camera")]
+    v.extend_from_slice(camera::OVERRIDES);
+    #[cfg(feature = "render")]
+    v.extend_from_slice(render::OVERRIDES);
+    #[cfg(feature = "sound")]
+    v.extend_from_slice(sound::OVERRIDES);
+    #[cfg(feature = "state")]
+    v.extend_from_slice(state::OVERRIDES);
+    v
+}
 
 /// Install the replacements (call once at boot, before guest code runs).
 /// `SSX3_NO_OVERRIDES=1` keeps the generated bodies everywhere (A/B checks);
@@ -36,7 +70,7 @@ pub fn install() -> usize {
             .collect()
     });
     let mut n = 0;
-    for &(addr, f, name) in OVERRIDES {
+    for (addr, f, name) in overrides() {
         if only.as_ref().is_some_and(|o| !o.contains(&addr)) {
             continue;
         }
@@ -52,6 +86,8 @@ pub fn install() -> usize {
 #[cfg(test)]
 mod tests {
     #[test]
+    /// Every enabled replacement is listed in overrides.txt (the file may list
+    /// more: packages not enabled in this build).
     fn overrides_txt_matches_table() {
         let txt: Vec<u32> = include_str!("../overrides.txt")
             .lines()
@@ -60,7 +96,8 @@ mod tests {
                 u32::from_str_radix(w.trim_start_matches("0x"), 16).ok()
             })
             .collect();
-        let table: Vec<u32> = super::OVERRIDES.iter().map(|o| o.0).collect();
-        assert_eq!(txt, table, "overrides.txt and OVERRIDES differ");
+        for (a, _, name) in super::overrides() {
+            assert!(txt.contains(&a), "{name} ({a:#x}) is not listed in overrides.txt");
+        }
     }
 }
