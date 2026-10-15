@@ -5,7 +5,8 @@
 //!
 //! Keys (pad 1): arrows = d-pad, X = Cross, Z = Square, S = Circle, A = Triangle,
 //! Enter = Start, Right Shift = Select, Q/W = L1/R1, 1/2 = L2/R2.
-//! Game controllers (via gilrs) map to pad 1 too, analog sticks included.
+//! Game controllers (via gilrs) map to pad 1 too, analog sticks included; a
+//! second controller drives pad 2 when `SSX3_PAD2=1` plugs it in (Multi Play).
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -68,25 +69,26 @@ fn gamepad_bit(b: gilrs::Button) -> Option<u16> {
 }
 
 impl App {
-    /// Merge keyboard and controller state into pad 1.
+    /// Merge keyboard and controller state into the pads: the keyboard and
+    /// the first game controller drive pad 1, a second controller pad 2
+    /// (plugged in with `SSX3_PAD2=1`).
     fn update_pad(&mut self) {
-        let mut buttons = self.keys;
-        let mut sticks = [0x80u8; 4];
+        let mut state = [(self.keys, [0x80u8; 4]), (0u16, [0x80u8; 4])];
         if let Some(g) = self.gilrs.as_mut() {
             while g.next_event().is_some() {}
-            if let Some((_, pad)) = g.gamepads().next() {
-                for (b, bit) in [
+            for (port, (_, pad)) in g.gamepads().take(2).enumerate() {
+                let (buttons, sticks) = &mut state[port];
+                for b in [
                     gilrs::Button::Select, gilrs::Button::LeftThumb, gilrs::Button::RightThumb,
                     gilrs::Button::Start, gilrs::Button::DPadUp, gilrs::Button::DPadRight,
                     gilrs::Button::DPadDown, gilrs::Button::DPadLeft, gilrs::Button::LeftTrigger2,
                     gilrs::Button::RightTrigger2, gilrs::Button::LeftTrigger, gilrs::Button::RightTrigger,
                     gilrs::Button::North, gilrs::Button::East, gilrs::Button::South, gilrs::Button::West,
-                ]
-                .into_iter()
-                .filter_map(|b| gamepad_bit(b).map(|bit| (b, bit)))
-                {
-                    if pad.is_pressed(b) {
-                        buttons |= bit;
+                ] {
+                    if let Some(bit) = gamepad_bit(b) {
+                        if pad.is_pressed(b) {
+                            *buttons |= bit;
+                        }
                     }
                 }
                 // PS2 sticks: 0 = left/up, 0xFF = right/down; gilrs Y is up-positive.
@@ -95,7 +97,7 @@ impl App {
                     let v = if flip { -v } else { v };
                     ((v.clamp(-1.0, 1.0) * 127.5) + 127.5).round() as u8
                 };
-                sticks = [
+                *sticks = [
                     axis(gilrs::Axis::RightStickX, false),
                     axis(gilrs::Axis::RightStickY, true),
                     axis(gilrs::Axis::LeftStickX, false),
@@ -103,8 +105,11 @@ impl App {
                 ];
             }
         }
-        ssx3_ps2::m!(self.cpu).sif.pad_buttons[0] = buttons;
-        ssx3_ps2::m!(self.cpu).sif.pad_sticks[0] = sticks;
+        let sif = &mut ssx3_ps2::m!(self.cpu).sif;
+        for (port, (buttons, sticks)) in state.into_iter().enumerate() {
+            sif.pad_buttons[port] = buttons;
+            sif.pad_sticks[port] = sticks;
+        }
     }
 }
 

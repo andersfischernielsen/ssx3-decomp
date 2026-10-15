@@ -52,8 +52,8 @@ misses, and visuals match PCSX2.
 
 Known issues parked by the owner (2026-10-15) so phase 2 can start: light
 glows and flares (sun, point lights) show through geometry
-(`../investigation/flare-occlusion.md`); Multi Play needs pad 2
-plugged into the SIO2 model; race ~41 fps headless after the geometry fixes.
+(`../investigation/flare-occlusion.md`); (Multi Play done 2026-10-15:
+`SSX3_PAD2=1`, split-screen race works); race ~41 fps headless after the geometry fixes.
 
 ## Phase 2: "Rust-ify": readable, typed source ⬜
 

@@ -83,7 +83,9 @@ impl Default for Sio2 {
 impl Sio2 {
     pub fn new() -> Self {
         let mut pads = [DualShock2::new(), DualShock2::new()];
-        pads[1].connected = false;
+        // Pad 2 is unplugged unless SSX3_PAD2=1 (Multi Play needs it; the
+        // windowed front end maps a second game controller to it).
+        pads[1].connected = std::env::var_os("SSX3_PAD2").is_some_and(|v| v != "0");
         Self {
             send3: [0; 16],
             send1: [0; 4],
