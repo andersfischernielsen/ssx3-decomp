@@ -15,7 +15,7 @@ ssx3-ee = { path = "../../generated/ee/game" }
 # module behind a feature so packages can be developed in parallel without
 # breaking each other's builds; reviewed packages are added to `default`.
 [features]
-default = ["math", "anim", "camera", "state", "render", "sound", "util", "dispatch"]
+default = ["math", "anim", "camera", "state", "render", "sound", "util", "dispatch", "rider_states", "skeleton", "world"]
 math = []
 anim = []
 camera = []

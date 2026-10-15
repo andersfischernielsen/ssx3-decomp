@@ -109,6 +109,8 @@ Lessons from the first packages:
   2 (see "Shared helpers" below).
 | 2026-10-15 | A4 render packets (16), A5 sound/files (20), Tier B utilities with loops (12: memset/memcpy/str*/EA_Mem*/DMA), Tier B functions with calls (26: wrappers, virtual dispatch, rider/camera updates, allocators) | 147 replacements installed; race to frame 9000 byte-identical (36 shots + full RAM); 140 tests pass |
 
+| 2026-10-15 | round 3: D1 rider frame doors & state handlers (25), D2 skeleton/animation/VU0 math (23, incl. hot RiderModel_BuildBoneMatrix), D5 world/sections/process lists (25) | 220 replacements installed; race to frame 9000 byte-identical (36 shots + full RAM); 213 tests pass |
+
 Patterns established in round 2 (now shared, see below):
 - **Loops with event checks**: structured loops make the same back-edge
   `c.event()` checks with the same `c.pc`; functions the generator emitted

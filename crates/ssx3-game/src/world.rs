@@ -28,7 +28,33 @@ use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this package: (address, function, name).
-pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[];
+pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
+    (0x0035_50a0, process_list_render_priority, "ProcessList_RenderPriority"),
+    (0x0035_4f98, process_list_update_priority, "ProcessList_UpdatePriority"),
+    (0x0035_5028, process_list_post_update_priority, "ProcessList_PostUpdatePriority"),
+    (0x0035_4ef8, process_list_next, "ProcessList_Next"),
+    (0x0035_4f48, process_list_pending_first, "ProcessList_PendingFirst"),
+    (0x0035_4c98, process_list_merge_pending, "ProcessList_MergePending"),
+    (0x0023_0640, game_module_render_process_lists, "GameModule_RenderProcessLists"),
+    (0x0022_c078, game_module_render_models, "GameModule_RenderModels"),
+    (0x0022_c620, game_module_render_bezier_patches, "GameModule_RenderBezierPatches"),
+    (0x0022_c3b8, game_module_end_bezier_pass, "GameModule_EndBezierPass"),
+    (0x0035_2dd0, modifier_block_render, "ModifierBlock_Render"),
+    (0x0035_2d20, modifier_block_post_update, "ModifierBlock_PostUpdate"),
+    (0x0035_2c70, modifier_block_update, "ModifierBlock_Update"),
+    (0x0035_2b88, modifier_block_get_transform_bounds, "ModifierBlock_GetTransformBounds"),
+    (0x0035_6198, mod_obj_update, "ModObj_Update"),
+    (0x0035_5748, mod_obj_post_update_modifiers, "ModObj_PostUpdateModifiers"),
+    (0x0035_56f8, mod_obj_update_modifiers, "ModObj_UpdateModifiers"),
+    (0x003a_6928, world_update, "World_Update"),
+    (0x003a_8290, c_world_cache_update, "cWorldCache_Update"),
+    (0x002d_1be0, world_get_nash, "World_GetNash"),
+    (0x002d_1c70, world_get_seconds_per_tick, "World_GetSecondsPerTick"),
+    (0x0022_e0e0, section_man_find_logical_section, "SectionMan_FindLogicalSection"),
+    (0x002c_1cd8, quad_tree_find_leaf, "QuadTree_FindLeaf"),
+    (0x002d_1928, noise_fractal_1d, "Noise_Fractal1D"),
+    (0x0022_a5a0, nash_collect_instances, "Nash_CollectInstances"),
+];
 
 // ---------------------------------------------------------------------------
 // Small register helpers.
@@ -468,24 +494,28 @@ pub fn process_list_merge_pending(c: &mut Cpu) {
                 };
                 if at_head {
                     // Insert p at the head of the active list.
+                    // (The bucket address is recomputed from the list each time.)
                     use process_list::ACTIVE_HEAD;
-                    c.g[V0][0] = lw(c, at(c, S2, process_list::BUCKETS));
-                    c.cycles += 15;
                     let p = c.g[S1][0];
-                    let head = addu(c.g[S4][0], c.g[V0][0]) as u32 + ACTIVE_HEAD;
-                    c.g[V0][0] = sx(head - ACTIVE_HEAD);
-                    c.g[V1][0] = lw(c, head + NEXT);
-                    c.sw(p as u32 + NEXT, c.g[V1][0]);
-                    let head = bucket_of(c, S4) + ACTIVE_HEAD;
-                    c.g[V0][0] = sx(head - ACTIVE_HEAD);
-                    c.g[V1][0] = lw(c, head + NEXT);
-                    c.sw((c.g[V1][0] as u32).wrapping_add(PREV), p);
-                    let head = bucket_of(c, S4) + ACTIVE_HEAD;
+                    let pa = p as u32;
+                    let buckets = lw(c, at(c, S2, process_list::BUCKETS));
+                    c.cycles += 15;
+                    let bucket = addu(c.g[S4][0], buckets) as u32;
+                    c.g[V0][0] = sx(bucket);
+                    let first = lw(c, bucket.wrapping_add(ACTIVE_HEAD + NEXT));
+                    c.g[V1][0] = first;
+                    c.sw(pa.wrapping_add(NEXT), first);
+                    let bucket = bucket_of(c, S4);
+                    c.g[V0][0] = sx(bucket);
+                    let first = lw(c, bucket.wrapping_add(ACTIVE_HEAD + NEXT));
+                    c.g[V1][0] = first;
+                    c.sw((first as u32).wrapping_add(PREV), p);
+                    let head = bucket_of(c, S4).wrapping_add(ACTIVE_HEAD);
                     c.g[V0][0] = sx(head);
-                    c.sw(p as u32 + PREV, c.g[V0][0]);
-                    let head = bucket_of(c, S4) + ACTIVE_HEAD;
-                    c.g[V1][0] = sx(head - ACTIVE_HEAD);
-                    c.sw(head + NEXT, p);
+                    c.sw(pa.wrapping_add(PREV), sx(head));
+                    let bucket = bucket_of(c, S4);
+                    c.g[V1][0] = sx(bucket);
+                    c.sw(bucket.wrapping_add(ACTIVE_HEAD + NEXT), p);
                 }
                 c.g[S1][0] = c.g[S5][0];
                 c.cycles += 2;
@@ -705,7 +735,7 @@ pub fn quad_tree_find_leaf(c: &mut Cpu) {
     c.cycles += 10;
     let mut bits_x = (cell_x << 1) & 0xffff;
     c.g[V1][0] = sx(cell_x << 1);
-    let nodes = lw(c, tree.wrapping_add(0x20));
+    let mut nodes = lw(c, tree.wrapping_add(0x20));
     c.g[T0][0] = nodes;
     c.g[A3][0] = bits_x as u64;
     c.g[V0][0] = sx((root as u32) << 3);
@@ -744,6 +774,7 @@ pub fn quad_tree_find_leaf(c: &mut Cpu) {
                 bits_x = r32(c, A3);
                 bits_z = r32(c, A1);
                 node = r32(c, A2);
+                nodes = c.g[T0][0];
             }
         }
     }
@@ -813,6 +844,132 @@ pub fn noise_fractal_1d(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     })
+}
+
+/// `Nash_CollectInstances(this, nodes, count)` (0x22a5a0): for each of the
+/// `count` visited octree nodes (`{Node* node; int clipped}` pairs), walks
+/// the node's instance list (+0x20; instance: next +0, kind +8, section
+/// byte +0x7d, logical section +0x7e, bounding sphere +0x50) and appends
+/// the visible instances to the render list at `this + 0x20a0` (count
+/// +0x209c). Instances of kind 3 must belong to an active section
+/// (section 0xff = always; else the section's state +0x24 must be 6 and
+/// the logical section's state +0x3f0 must be 3; tables from
+/// `*(this + 0x90)`). Instances of clipped nodes are culled by the VU0
+/// sphere test microprogram at 0xef0 (`vi1 == 2` = outside).
+pub fn nash_collect_instances(c: &mut Cpu) {
+    const NODE_HEAD: u32 = 0x0022_a5a8;
+    const INSTANCE_HEAD: u32 = 0x0022_a5d8;
+    c.cycles += 2;
+    if (c.g[A2][0] as i64) > 0 {
+        loop {
+            c.cycles += 5;
+            let node = lw(c, r32(c, A1));
+            c.g[V0][0] = node;
+            c.g[A2][0] = sx(r32(c, A2).wrapping_sub(1));
+            c.g[T0][0] = lw(c, (node as u32).wrapping_add(0x20)); // instance
+            c.g[T3][0] = sx(at(c, A1, 8));
+            if c.g[T0][0] != 0 {
+                c.cycles += 7;
+                c.g[T7][0] = 3;
+                c.g[T6][0] = 0xff;
+                c.g[T5][0] = 0x18;
+                c.g[T4][0] = 2;
+                c.g[T2][0] = sx(at(c, A0, 0x20a0));
+                c.g[V0][0] = lw(c, at(c, T0, 8));
+                loop {
+                    collect_instance(c);
+                    c.cycles += 2;
+                    if c.g[T0][0] == 0 {
+                        break;
+                    }
+                    c.g[V0][0] = lw(c, at(c, T0, 8));
+                    if event_due(c) {
+                        deliver_event(c, INSTANCE_HEAD);
+                    }
+                }
+            }
+            c.cycles += 2;
+            let more = (c.g[A2][0] as i64) > 0;
+            c.g[A1][0] = c.g[T3][0];
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event(c, NODE_HEAD);
+            }
+        }
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+/// One instance of `Nash_CollectInstances` (instance in t0, its kind word
+/// in v0): the section filter, the cull test and the append; leaves t0 at
+/// the next instance.
+fn collect_instance(c: &mut Cpu) {
+    c.cycles += 3;
+    c.g[V0][0] &= 3;
+    let sectioned = c.g[V0][0] == c.g[T7][0];
+    c.g[T1][0] = lw(c, at(c, A1, 4)); // the node's "clipped" flag
+    if sectioned {
+        c.cycles += 5;
+        let tables = lw(c, at(c, A0, 0x90));
+        c.g[V0][0] = tables;
+        let section = c.lbu(at(c, T0, 0x7d));
+        c.g[V1][0] = section;
+        c.g[A3][0] = lw(c, tables as u32);
+        c.g[V0][0] = 1;
+        if section != c.g[T6][0] {
+            c.cycles += 7;
+            let section = c.lbu(at(c, T0, 0x7d));
+            c.g[V0][0] = sx((section as u32) << 3);
+            let entry = addu(c.g[A3][0], c.g[V0][0]);
+            c.g[V0][0] = entry;
+            let state = lw(c, (entry as u32).wrapping_add(0x24)) ^ 6;
+            c.g[V1][0] = state;
+            if state != 0 {
+                c.g[V0][0] = 0;
+            } else {
+                c.cycles += 7;
+                let logical = c.lh(at(c, T0, 0x7e));
+                c.g[V0][0] = logical;
+                let off = mult(c, logical as u32, 0x18);
+                set_word(c, V1, off);
+                let entry = addu(c.g[V1][0], c.g[A3][0]);
+                c.g[V0][0] = entry;
+                let state = lw(c, (entry as u32).wrapping_add(0x3f0)) ^ 3;
+                c.g[V1][0] = state;
+                c.g[V0][0] = (state < 1) as u64;
+            }
+        }
+    } else {
+        c.cycles += 1;
+        c.g[V0][0] = 0;
+    }
+    c.cycles += 2;
+    if c.g[V0][0] != 0 {
+        c.cycles += 2;
+        let clipped = c.g[T1][0] != 0;
+        c.g[V0][0] = sx(at(c, T0, 0x50));
+        let culled = clipped && {
+            c.cycles += 7;
+            c.lqc2(22, r32(c, V0));
+            c.ctc2(T1, 14);
+            c.vcallms(0xef0);
+            c.cfc2(V1, 1);
+            c.g[V1][0] == c.g[T4][0]
+        };
+        if !culled {
+            c.cycles += 7;
+            let n = lw(c, at(c, A0, 0x209c));
+            c.g[V0][0] = sx((n as u32) << 2);
+            c.g[V0][0] = addu(c.g[T2][0], c.g[V0][0]);
+            c.g[V1][0] = sx((n as u32).wrapping_add(1));
+            c.sw(r32(c, V0), c.g[T0][0]);
+            c.sw(at(c, A0, 0x209c), c.g[V1][0]);
+        }
+    }
+    c.g[T0][0] = lw(c, r32(c, T0));
 }
 
 // ---------------------------------------------------------------------------
@@ -1358,4 +1515,752 @@ pub fn game_module_end_bezier_pass(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::difftest::events::{check_events, schedule, Events};
+    use crate::difftest::fakes::{covered, fake_call, machine, FAKE, LOG_COUNT, LOG_START};
+    use crate::difftest::{check, check_lohi, fill, fresh, require_paths, scramble, Rng, DATA, GAME_GP};
+    use ssx3_ee_rt::cpu::{reg::*, sx};
+    use ssx3_ee_rt::funcs::GuestFn;
+    use ssx3_ee_rt::Cpu;
+
+    const SEEDS: u32 = 300;
+
+    // ------------------------------------------------------------- fakes
+
+    /// `fakes::fake_call`, then a varied result: null, negative or the
+    /// fake's pointer (fakes alone never return 0, and these functions
+    /// branch on zero / sign).
+    fn fake_varied(c: &mut Cpu, target: u32) {
+        fake_call(c, target);
+        let h = c.g[V1][0];
+        match (h >> 20) & 3 {
+            0 => c.g[V0][0] = 0,
+            1 => c.g[V0][0] = sx(h as u32 | 0x8000_0000),
+            _ => {}
+        }
+    }
+
+    /// One vtable whose every slot 0x00..0x140 is a distinct fake with a
+    /// small random `this` delta.
+    const VT: u32 = DATA + 0xf000;
+    fn put_vtable(c: &mut Cpu, r: &mut Rng) -> u32 {
+        for off in (0..0x340).step_by(8) {
+            let delta = ((r.next_u32() as i16 as i32 % 64) & !3) as u16;
+            c.bus.write16(VT + off, delta);
+            c.bus.write32(VT + off + 4, FAKE + 2 * off);
+        }
+        VT
+    }
+
+    /// The return addresses the fakes were called with, over all seeds
+    /// (read from the fakes' RAM log): proves each call site was reached.
+    fn require_call_sites(gen: GuestFn, seeds: u32, sites: &[u32], setup: &dyn Fn(&mut Cpu, u32)) {
+        let mut seen = std::collections::BTreeSet::new();
+        for seed in 0..seeds {
+            let mut c = fresh();
+            setup(&mut c, seed);
+            gen(&mut c);
+            let n = c.bus.read32(LOG_COUNT);
+            for i in 0..n {
+                let p = LOG_START + 0x220 * i;
+                seen.insert(c.bus.read32(p + 0x10 + 16 * 31));
+            }
+        }
+        for s in sites {
+            assert!(seen.contains(s), "call site returning to {s:#x} never reached (seen {seen:x?})");
+        }
+    }
+
+    /// Calls compared with unwinding fakes (`covered`), the call sites
+    /// reached, and (for loops) events delivered mid-loop.
+    fn calls_and_events(
+        gen: GuestFn,
+        hand: GuestFn,
+        entry: Option<u32>,
+        salt: u64,
+        calls: u32,
+        sites: &[u32],
+        setup: &dyn Fn(&mut Cpu, &mut Rng, u32),
+    ) {
+        let with_calls = |c: &mut Cpu, seed: u32| {
+            let mut r = machine(c, seed, salt, calls);
+            c.hooks.miss = fake_varied;
+            setup(c, &mut r, seed);
+        };
+        covered(gen, hand, SEEDS, &with_calls);
+        let no_unwind = |c: &mut Cpu, seed: u32| {
+            let mut r = machine(c, seed, salt, 0);
+            c.hooks.miss = fake_varied;
+            setup(c, &mut r, seed);
+        };
+        require_call_sites(gen, SEEDS, sites, &no_unwind);
+        if let Some(entry) = entry {
+            check_events(gen, hand, SEEDS, &|c, seed| -> Events {
+                let mut r = machine(c, seed, salt ^ 0xe7e7, 0);
+                c.hooks.miss = fake_varied;
+                setup(c, &mut r, seed);
+                schedule(c, &mut r, seed, entry)
+            });
+        }
+    }
+
+    // ------------------------------------------------------- process lists
+
+    const LIST: u32 = DATA;
+    const BUCKETS: u32 = DATA + 0x40;
+    const PROCS: u32 = DATA + 0x1000;
+
+    /// Link `items` between the sentinels `head` and `tail`.
+    fn link(c: &mut Cpu, head: u32, tail: u32, items: &[u32]) {
+        let mut prev = head;
+        for &p in items {
+            c.bus.write32(prev + 4, p);
+            c.bus.write32(p + 8, prev);
+            prev = p;
+        }
+        c.bus.write32(prev + 4, tail);
+        c.bus.write32(tail + 8, prev);
+        c.bus.write32(head + 8, 0);
+        c.bus.write32(tail + 4, 0);
+    }
+
+    /// A 9-priority list at `list` (buckets at BUCKETS) with `active` and
+    /// `pending` processes in priority `pri`; the others empty. Returns the
+    /// active processes then the pending ones.
+    fn process_lists(c: &mut Cpu, r: &mut Rng, list: u32, pri: u32, active: u32, pending: u32) -> Vec<u32> {
+        put_vtable(c, r);
+        c.bus.write32(list, 9);
+        c.bus.write32(list + 4, BUCKETS);
+        for p in 0..9 {
+            let b = BUCKETS + p * 0x44;
+            c.bus.write32(b, r.next_u32() & 1);
+            for s in [4, 0x14, 0x24, 0x34] {
+                c.bus.write32(b + s, r.next_u32());
+                c.bus.write32(b + s + 0xc, 0x0049_1f00);
+            }
+            link(c, b + 4, b + 0x14, &[]);
+            link(c, b + 0x24, b + 0x34, &[]);
+        }
+        let procs: Vec<u32> = (0..active + pending).map(|i| PROCS + 0x20 * i).collect();
+        for &p in &procs {
+            fill(c, r, p, 8);
+            c.bus.write32(p + 0xc, VT);
+        }
+        let b = BUCKETS + pri * 0x44;
+        let (a, q) = procs.split_at(active as usize);
+        link(c, b + 4, b + 0x14, a);
+        link(c, b + 0x24, b + 0x34, q);
+        procs
+    }
+
+    /// A priority (low bits) in a register with random upper bits.
+    fn pri_arg(r: &mut Rng, pri: u32) -> u64 {
+        (r.next_u32() as u64) << 32 | pri as u64
+    }
+
+    #[test]
+    fn process_list_next() {
+        check_lohi(ssx3_ee::s11::f_00354ef8__generated, super::process_list_next, SEEDS, &|c, seed| {
+            let mut r = Rng(0x6e65_7874 ^ (seed as u64) << 20);
+            scramble(c, &mut r);
+            let pri = r.next_u32() % 9;
+            let n = 1 + r.next_u32() % 4;
+            let procs = process_lists(c, &mut r, LIST, pri, n, 0);
+            c.g[A0][0] = LIST as u64;
+            c.g[A1][0] = procs[(r.next_u32() % n) as usize] as u64;
+            c.g[A2][0] = pri_arg(&mut r, pri);
+        });
+    }
+
+    #[test]
+    fn process_list_pending_first() {
+        check_lohi(ssx3_ee::s11::f_00354f48__generated, super::process_list_pending_first, SEEDS, &|c, seed| {
+            let mut r = Rng(0x7066_6972 ^ (seed as u64) << 20);
+            scramble(c, &mut r);
+            let pri = r.next_u32() % 9;
+            let (a, p) = (r.next_u32() % 2, r.next_u32() % 3);
+            process_lists(c, &mut r, LIST, pri, a, p);
+            c.g[A0][0] = LIST as u64;
+            c.g[A1][0] = pri_arg(&mut r, pri);
+        });
+    }
+
+    /// Setup for the per-priority passes: 0..12 active processes.
+    fn pass_setup(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        let pri = r.next_u32() % 9;
+        let n = [0, 1, 2, 5, 12][(seed % 5) as usize];
+        let pending = r.next_u32() % 2;
+        process_lists(c, r, LIST, pri, n, pending);
+        c.g[A0][0] = LIST as u64;
+        c.g[A1][0] = pri_arg(r, pri);
+    }
+
+    #[test]
+    fn process_list_post_update_priority() {
+        calls_and_events(
+            ssx3_ee::s11::f_00355028__generated,
+            super::process_list_post_update_priority,
+            Some(0x0035_5028),
+            0x5051,
+            6,
+            &[0x0035_5068],
+            &pass_setup,
+        );
+    }
+
+    #[test]
+    fn process_list_render_priority() {
+        calls_and_events(
+            ssx3_ee::s11::f_003550a0__generated,
+            super::process_list_render_priority,
+            Some(0x0035_50a0),
+            0x5052,
+            6,
+            &[0x0035_50e0],
+            &pass_setup,
+        );
+    }
+
+    #[test]
+    fn process_list_update_priority() {
+        calls_and_events(
+            ssx3_ee::s11::f_00354f98__generated,
+            super::process_list_update_priority,
+            Some(0x0035_4f98),
+            0x5053,
+            6,
+            &[0x0035_4ff4],
+            &pass_setup,
+        );
+    }
+
+    #[test]
+    fn process_list_merge_pending() {
+        calls_and_events(
+            ssx3_ee::s11::f_00354c98__generated,
+            super::process_list_merge_pending,
+            Some(0x0035_4c98),
+            0x5054,
+            12,
+            &[0x0035_4d34, 0x0035_4d50, 0x0035_4d98],
+            &|c, r, seed| {
+                let pri = r.next_u32() % 9;
+                let active = [0, 1, 3, 6][(seed % 4) as usize];
+                let pending = [0, 1, 2, 5][(seed / 4 % 4) as usize];
+                process_lists(c, r, LIST, pri, active, pending);
+                c.g[A0][0] = LIST as u64;
+                c.g[A1][0] = pri_arg(r, pri);
+            },
+        );
+    }
+
+    #[test]
+    fn game_module_render_process_lists() {
+        calls_and_events(
+            ssx3_ee::s06::f_00230640__generated,
+            super::game_module_render_process_lists,
+            Some(0x0023_0640),
+            0x5055,
+            8,
+            &[0x0035_50e0],
+            &|c, r, seed| {
+                let list = GAME_GP + super::PROCESS_LIST_GP;
+                let pri = r.next_u32() % 9;
+                process_lists(c, r, list, pri, [0, 1, 3][(seed % 3) as usize], 0);
+                for i in 0..6 {
+                    let p = if r.next_u32() % 2 == 0 { pri } else { r.next_u32() % 9 };
+                    c.bus.write32(super::RENDER_PRIORITIES + 4 * i, p);
+                }
+            },
+        );
+    }
+
+    // ---------------------------------------------------- world queries
+
+    #[test]
+    fn world_get_nash_and_seconds_per_tick() {
+        for (gen, hand) in [
+            (ssx3_ee::s09::f_002d1be0__generated as GuestFn, super::world_get_nash as GuestFn),
+            (ssx3_ee::s09::f_002d1c70__generated, super::world_get_seconds_per_tick),
+        ] {
+            check(gen, hand, SEEDS, &|c, seed| {
+                let mut r = Rng(0x6e61_7368 ^ (seed as u64) << 20);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                let app = DATA + 0x100 + 0x10 * (r.next_u32() % 64);
+                let module = DATA + 0x2000 + 0x10 * (r.next_u32() % 64);
+                fill(c, &mut r, DATA, 0x1000);
+                c.bus.write32(GAME_GP - super::APP_GP, app);
+                c.bus.write32(app + 0x84, module);
+            });
+        }
+    }
+
+    #[test]
+    fn section_man_find_logical_section() {
+        let setup = |c: &mut Cpu, r: &mut Rng| {
+            scramble(c, r);
+            for i in 0..50 {
+                // Small values so that some repeat.
+                c.bus.write32(super::LOGICAL_SECTIONS + 4 + 0x10 * i, r.next_u32() % 80);
+            }
+            let v = r.next_u32() % 100;
+            // Upper bits: sign extension (can match) or garbage (cannot).
+            c.g[A1][0] = if r.next_u32() % 4 == 0 { (r.next_u32() as u64) << 32 | v as u64 } else { v as u64 };
+        };
+        let gen = ssx3_ee::s05::f_0022e0e0__generated;
+        let hand = super::section_man_find_logical_section;
+        check_events(gen, hand, SEEDS, &|c, seed| {
+            let mut r = Rng(0x7365_6374 ^ (seed as u64) << 20);
+            setup(c, &mut r);
+            schedule(c, &mut r, seed, 0x0022_e0e0)
+        });
+        require_paths(gen, SEEDS, &[9, 15, 306], &|c, seed| {
+            let mut r = Rng(0x7365_6374 ^ (seed as u64) << 20);
+            setup(c, &mut r);
+        });
+    }
+
+    /// A quadtree at DATA: inverse cell size, origin, root index and a
+    /// node array where children always have larger indices (so walks
+    /// end) and the last nodes are leaves.
+    fn quad_tree(c: &mut Cpu, r: &mut Rng) {
+        let tree = DATA;
+        let nodes = DATA + 0x100;
+        let inv_cell = [1.0f32, 0.25, 2.0, 1.0 / 64.0][(r.next_u32() % 4) as usize];
+        let ox = (r.next_u32() % 2000) as f32 - 1000.0;
+        let oz = (r.next_u32() % 2000) as f32 - 1000.0;
+        c.bus.write32(tree, inv_cell.to_bits());
+        c.bus.write32(tree + 4, ox.to_bits());
+        c.bus.write32(tree + 8, oz.to_bits());
+        let count = 64u32;
+        c.bus.write16(tree + 0x14, (r.next_u32() % 4) as u16);
+        c.bus.write32(tree + 0x20, nodes);
+        for k in 0..count {
+            for e in 0..4 {
+                let child = if k + 1 < count { k + 1 + r.next_u32() % (count - k - 1).min(3) } else { k };
+                let branch = k + 4 < count && r.next_u32() % 10 < 9;
+                c.bus.write16(nodes + 8 * k + 2 * e, (child << 1 | branch as u32) as u16);
+            }
+        }
+        // Points: cells mostly in range, sometimes outside on either axis.
+        let cell = |r: &mut Rng| -> f32 {
+            match r.next_u32() % 8 {
+                0 => -((r.next_u32() % 100) as f32) - 1.5,
+                1 => 0x8000 as f32 + (r.next_u32() % 100) as f32,
+                _ => (r.next_u32() % 0x8000) as f32 + 0.25,
+            }
+        };
+        let (cx, cz) = (cell(r), cell(r));
+        c.f[12] = (ox + cx / inv_cell).to_bits();
+        c.f[13] = (oz + cz / inv_cell).to_bits();
+        c.g[A0][0] = tree as u64;
+    }
+
+    #[test]
+    fn quad_tree_find_leaf() {
+        let gen = ssx3_ee::s08::f_002c1cd8__generated;
+        let hand = super::quad_tree_find_leaf;
+        check_events(gen, hand, 600, &|c, seed| {
+            let mut r = Rng(0x7175_6164 ^ (seed as u64) << 20);
+            scramble(c, &mut r);
+            quad_tree(c, &mut r);
+            schedule(c, &mut r, seed, 0x002c_1cd8)
+        });
+        // x outside, z outside, root leaf, one and two levels.
+        require_paths(gen, 600, &[17, 19, 32, 50, 67], &|c, seed| {
+            let mut r = Rng(0x7175_6164 ^ (seed as u64) << 20);
+            scramble(c, &mut r);
+            quad_tree(c, &mut r);
+        });
+    }
+
+    #[test]
+    fn noise_fractal_1d() {
+        let gen = ssx3_ee::s09::f_002d1928__generated;
+        let hand = super::noise_fractal_1d;
+        let setup = |c: &mut Cpu, r: &mut Rng| {
+            scramble(c, r);
+            c.g[GP][0] = GAME_GP as u64;
+            let octaves = [0u64, 1, 2, 4, 7, sx(0xffff_fffe), 3 | 0xffff_0000_0000_0000][(r.next_u32() % 7) as usize];
+            c.g[A0][0] = octaves;
+            c.f[12] = r.f32(100.0);
+            // Noise_Sample1D's sample table (0x445ab0; negative x reads
+            // before it).
+            for i in 0..0x180u32 {
+                c.bus.write32(0x0044_5ab0 - 0x300 + 4 * i, r.f32(1.0));
+            }
+        };
+        check_events(gen, hand, SEEDS, &|c, seed| {
+            let mut r = Rng(0x6e6f_6973 ^ (seed as u64) << 20);
+            setup(c, &mut r);
+            schedule(c, &mut r, seed, 0x002d_1928)
+        });
+        require_paths(gen, SEEDS, &[25], &|c, seed| {
+            let mut r = Rng(0x6e6f_6973 ^ (seed as u64) << 20);
+            setup(c, &mut r);
+        });
+    }
+
+    /// The VU0 microprogram at 0xef0 for the tests: `vi1 = vi14` (the
+    /// node's clip word), so a clip word of 2 culls.
+    fn put_cull_microprogram(c: &mut Cpu) {
+        // Hand-written microcode has no translation: run it on the
+        // reference interpreter.
+        ssx3_ps2::platform::machine_of(&mut c.bus.plat).hw.vu0.fallback =
+            Some(ssx3_ps2::vu::reference::run_program);
+        let at = 0x1100_0000 + 0xef0;
+        c.bus.write32(at, 0x8000_7070); // IADD vi1, vi14, vi0
+        c.bus.write32(at + 4, 0x4000_02ff); // NOP, E bit
+        c.bus.write32(at + 8, 0x8000_033c); // NOP
+        c.bus.write32(at + 12, 0x0000_02ff); // NOP
+    }
+
+    /// Nash collection input: `nodes` visited nodes with up to `per_node`
+    /// instances each. Returns `this`.
+    fn nash_setup(c: &mut Cpu, r: &mut Rng, nodes: u32, per_node: u32) -> u32 {
+        put_cull_microprogram(c);
+        let this = DATA + 0x400;
+        let tables = DATA + 0x40000;
+        c.bus.write32(this + 0x90, DATA + 0x100);
+        c.bus.write32(DATA + 0x100, tables);
+        for s in 0..16 {
+            c.bus.write32(tables + 8 * s + 0x24, if r.next_u32() % 2 == 0 { 6 } else { r.next_u32() % 8 });
+        }
+        for l in 0..32u32 {
+            let e = tables.wrapping_add((l as i32 - 8) as u32 * 0x18);
+            c.bus.write32(e + 0x3f0, if r.next_u32() % 2 == 0 { 3 } else { r.next_u32() % 8 });
+        }
+        c.bus.write32(this + 0x209c, r.next_u32() % 10);
+        let pairs = DATA + 0x200;
+        let mut inst = DATA + 0x10000;
+        for i in 0..nodes {
+            let node = DATA + 0x8000 + 0x40 * i;
+            c.bus.write32(pairs + 8 * i, node);
+            c.bus.write32(pairs + 8 * i + 4, [0, 1, 2, 2, r.next_u32()][(r.next_u32() % 5) as usize]);
+            let n = r.next_u32() % (per_node + 1);
+            let mut head = 0;
+            for _ in 0..n {
+                fill(c, r, inst, 0x40);
+                c.bus.write32(inst, head);
+                if r.next_u32() % 2 == 0 {
+                    c.bus.write32(inst + 8, r.next_u32() | 3);
+                }
+                c.bus.write8(inst + 0x7d, if r.next_u32() % 3 == 0 { 0xff } else { (r.next_u32() % 16) as u8 });
+                c.bus.write16(inst + 0x7e, ((r.next_u32() % 32) as i32 - 8) as u16);
+                head = inst;
+                inst += 0x100;
+            }
+            c.bus.write32(node + 0x20, head);
+        }
+        c.g[A0][0] = this as u64;
+        c.g[A1][0] = pairs as u64;
+        c.g[A2][0] = if nodes == 0 && r.next_u32() % 2 == 0 { sx(0xffff_fff0) } else { nodes as u64 };
+        this
+    }
+
+    #[test]
+    fn nash_collect_instances() {
+        let gen = ssx3_ee::s05::f_0022a5a0__generated;
+        let hand = super::nash_collect_instances;
+        check_events(gen, hand, 600, &|c, seed| {
+            let mut r = Rng(0x6e61_7368 ^ (seed as u64) << 20);
+            scramble(c, &mut r);
+            let nodes = [0, 1, 3, 6][(seed / 3 % 4) as usize];
+            nash_setup(c, &mut r, nodes, 6);
+            schedule(c, &mut r, seed, 0x0022_a5a0)
+        });
+        // Every instance path (filter / clip / cull / append) for one
+        // instance: distinct (cycles, appended) outcomes.
+        let mut seen = std::collections::BTreeSet::new();
+        for seed in 0..600 {
+            let mut c = fresh();
+            let mut r = Rng(0x6e31 ^ (seed as u64) << 20);
+            scramble(&mut c, &mut r);
+            let this = nash_setup(&mut c, &mut r, 1, 1);
+            let before = c.bus.read32(this + 0x209c);
+            gen(&mut c);
+            seen.insert((c.cycles, c.bus.read32(this + 0x209c) - before));
+        }
+        assert!(seen.len() >= 10, "instance paths seen: {seen:?}");
+    }
+
+    // ---------------------------------------------------- modifier blocks
+
+    const BLOCK: u32 = DATA + 0x200;
+    const MODS: u32 = DATA + 0x4000;
+
+    /// A modifier block: each modifier present with probability 3/4 (UV
+    /// scroll / texture flip objects are zeroed memory), particle and rail
+    /// lists of 0..6 nodes.
+    fn modifier_block(c: &mut Cpu, r: &mut Rng, seed: u32) -> u32 {
+        put_vtable(c, r);
+        fill(c, r, BLOCK, 8);
+        let mut next = MODS;
+        let mut obj = |c: &mut Cpu, r: &mut Rng, vptr_at: Option<u32>| -> u32 {
+            let p = next;
+            next += 0x80;
+            for i in 0..0x20 {
+                c.bus.write32(p + 4 * i, 0);
+            }
+            if let Some(off) = vptr_at {
+                fill(c, r, p, 4);
+                c.bus.write32(p + off, VT);
+            }
+            p
+        };
+        for (field, vptr_at) in [(0u32, Some(0u32)), (4, None), (8, None), (0xc, Some(4))] {
+            let present = r.next_u32() % 4 != 0;
+            let p = obj(c, r, vptr_at);
+            c.bus.write32(BLOCK + field, if present { p } else { 0 });
+        }
+        for (field, n) in [(0x10u32, [0, 1, 3, 6][(seed % 4) as usize]), (0x1c, [0, 2, 1, 4][(seed / 4 % 4) as usize])] {
+            let mut head = 0;
+            for _ in 0..n {
+                let p = obj(c, r, Some(8));
+                c.bus.write32(p, head);
+                head = p;
+            }
+            c.bus.write32(BLOCK + field, head);
+        }
+        BLOCK
+    }
+
+    #[test]
+    fn modifier_block_render() {
+        calls_and_events(
+            ssx3_ee::s11::f_00352dd0__generated,
+            super::modifier_block_render,
+            Some(0x0035_2dd0),
+            0x4d42,
+            8,
+            &[0x0035_2e0c, 0x0035_2e38],
+            &|c, r, seed| {
+                c.g[A0][0] = modifier_block(c, r, seed) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn modifier_block_post_update() {
+        calls_and_events(
+            ssx3_ee::s11::f_00352d20__generated,
+            super::modifier_block_post_update,
+            Some(0x0035_2d20),
+            0x4d43,
+            12,
+            &[0x0035_2d5c, 0x0035_2d8c, 0x0035_2db8],
+            &|c, r, seed| {
+                c.g[A0][0] = modifier_block(c, r, seed) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn modifier_block_update() {
+        calls_and_events(
+            ssx3_ee::s11::f_00352c70__generated,
+            super::modifier_block_update,
+            None,
+            0x4d44,
+            4,
+            // Transform, boost update / active, FreeBoost's dtor call.
+            &[0x0035_2ca0, 0x0035_2ce8, 0x0035_2d00, 0x0035_31b8],
+            &|c, r, seed| {
+                c.g[GP][0] = GAME_GP as u64;
+                c.g[A0][0] = modifier_block(c, r, seed) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn modifier_block_get_transform_bounds() {
+        calls_and_events(
+            ssx3_ee::s11::f_00352b88__generated,
+            super::modifier_block_get_transform_bounds,
+            None,
+            0x4d45,
+            1,
+            &[0x0035_2bb4],
+            &|c, r, seed| {
+                c.g[A0][0] = modifier_block(c, r, seed) as u64;
+            },
+        );
+    }
+
+    /// A ModObj with a vptr, a countdown, an instance pointer (+0x18,
+    /// zeroed memory) and a modifier block (or none).
+    fn mod_obj(c: &mut Cpu, r: &mut Rng, seed: u32) -> u32 {
+        let block = modifier_block(c, r, seed);
+        let obj = DATA + 0x300;
+        fill(c, r, obj, 0x10);
+        c.bus.write32(obj + 0xc, VT);
+        c.bus.write32(obj + 0x18, DATA + 0x6000);
+        c.bus.write32(obj + 0x1c, if r.next_u32() % 5 == 0 { 0 } else { block });
+        c.bus.write32(obj + 0x20, (r.next_u32() % 5) as i32 as u32 - 2);
+        obj
+    }
+
+    #[test]
+    fn mod_obj_update_modifiers() {
+        calls_and_events(
+            ssx3_ee::s11::f_003556f8__generated,
+            super::mod_obj_update_modifiers,
+            None,
+            0x4d4f,
+            6,
+            // ModifierBlock_Update's transform call, HasTransformChanged's.
+            &[0x0035_2ca0, 0x0035_2e78],
+            &|c, r, seed| {
+                c.g[GP][0] = GAME_GP as u64;
+                c.g[A0][0] = mod_obj(c, r, seed) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn mod_obj_post_update_modifiers() {
+        calls_and_events(
+            ssx3_ee::s11::f_00355748__generated,
+            super::mod_obj_post_update_modifiers,
+            None,
+            0x4d50,
+            8,
+            &[0x0035_2d5c],
+            &|c, r, seed| {
+                c.g[A0][0] = mod_obj(c, r, seed) as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn mod_obj_update() {
+        calls_and_events(
+            ssx3_ee::s11::f_00356198__generated,
+            super::mod_obj_update,
+            None,
+            0x4d51,
+            10,
+            &[0x0035_61cc, 0x0035_61e8, 0x0035_6214, 0x0035_6238, 0x0035_6284],
+            &|c, r, seed| {
+                c.g[GP][0] = GAME_GP as u64;
+                c.g[A0][0] = mod_obj(c, r, seed) as u64;
+            },
+        );
+    }
+
+    // ------------------------------------------------------ world, render
+
+    #[test]
+    fn world_update() {
+        for (gen, hand, is_world) in [
+            (ssx3_ee::s13::f_003a6928__generated as GuestFn, super::world_update as GuestFn, true),
+            (ssx3_ee::s13::f_003a8290__generated, super::c_world_cache_update, false),
+        ] {
+            check(gen, hand, SEEDS, &|c, seed| {
+                machine(c, seed, 0x776f, 0);
+                c.hooks.miss = fake_varied;
+                let cache = DATA + 0x8000;
+                let world = DATA + 0x100;
+                c.bus.write32(world, cache);
+                c.g[A0][0] = if is_world { world } else { cache } as u64;
+            });
+        }
+    }
+
+    #[test]
+    fn game_module_render_models() {
+        calls_and_events(
+            ssx3_ee::s05::f_0022c078__generated,
+            super::game_module_render_models,
+            Some(0x0022_c078),
+            0x524d,
+            8,
+            &[0x0022_c13c, 0x0022_c18c],
+            &|c, r, seed| {
+                put_vtable(c, r);
+                c.g[GP][0] = GAME_GP as u64;
+                let gfx = DATA + 0x10000;
+                fill(c, r, gfx, 0x400);
+                c.bus.write32(GAME_GP - super::GRAPHICS_GP, gfx);
+                c.bus.write32(gfx + 0x10d8, VT);
+                c.bus.write32(gfx + 0x24, r.next_u32() % 4);
+                let ctx = DATA + 0x200;
+                fill(c, r, ctx, 8);
+                c.bus.write32(gfx + 0xe84, ctx);
+                let this = DATA + 0x300;
+                let views = DATA + 0x380;
+                c.bus.write32(this + 0x84, views);
+                c.bus.write32(views + 0x10, r.next_u32() % 4);
+                let lists = DATA + 0x20000;
+                let n1 = [0u32, 1, 3, 9][(seed % 4) as usize];
+                let n2 = [0u32, 2, 1, 7][(seed / 4 % 4) as usize];
+                c.bus.write32(lists + 0x209c, if n1 == 0 && r.next_u32() % 2 == 0 { -1i32 as u32 } else { n1 });
+                c.bus.write32(lists + 0x40a0, n2);
+                fill(c, r, lists + 0x20a0, 16);
+                fill(c, r, lists + 0x40a4, 16);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = lists as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn game_module_end_bezier_pass() {
+        calls_and_events(
+            ssx3_ee::s05::f_0022c3b8__generated,
+            super::game_module_end_bezier_pass,
+            None,
+            0x4542,
+            2,
+            &[0x0022_c3e8],
+            &|c, r, _seed| {
+                put_vtable(c, r);
+                let man = DATA + 0x400;
+                c.bus.write32(man + 4, VT);
+                let ctx = DATA + 0x500;
+                fill(c, r, ctx, 8);
+                c.bus.write32(ctx, man);
+                c.g[A0][0] = ctx as u64;
+                c.g[A1][0] = (r.next_u32() as u64) << 32 | r.next_u32() as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn game_module_render_bezier_patches() {
+        calls_and_events(
+            ssx3_ee::s05::f_0022c620__generated,
+            super::game_module_render_bezier_patches,
+            Some(0x0022_c620),
+            0x4250,
+            8,
+            &[0x0022_c6dc],
+            &|c, r, seed| {
+                put_vtable(c, r);
+                c.g[GP][0] = GAME_GP as u64;
+                let man = DATA + 0x400;
+                c.bus.write32(man + 4, VT);
+                c.bus.write32(GAME_GP + super::BEZIER_MAN_GP, man);
+                let this = DATA + 0x300;
+                let views = DATA + 0x380;
+                c.bus.write32(this + 0x84, views);
+                c.bus.write32(views + 0x14, r.next_u32() % 2);
+                let lists = DATA + 0x20000;
+                let n1 = [0u32, 1, 3][(seed % 3) as usize];
+                let n2 = [0u32, 2, 1][(seed / 3 % 3) as usize];
+                c.bus.write32(lists + 0x50a8, n1);
+                c.bus.write32(lists + 0x70ac, n2);
+                for i in 0..4 {
+                    c.bus.write32(lists + 0x50ac + 4 * i, DATA + 0x30000 + 0x200 * i);
+                    c.bus.write32(lists + 0x70b0 + 4 * i, DATA + 0x31000 + 0x200 * i);
+                }
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = lists as u64;
+            },
+        );
+    }
 }

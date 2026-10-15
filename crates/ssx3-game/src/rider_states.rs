@@ -17,7 +17,7 @@
 //! register values the original leaves behind (`v0`/`v1` scratch, FPU
 //! leftovers, the FPU condition bit) are reproduced in marked lines.
 
-use crate::call::{call_ptr, guest, tail_wrapper, Callee, Flow, Frame, Target, VSlot};
+use crate::call::{call_ptr, guest, tail_wrapper, Callee, Frame, Target, VSlot};
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
@@ -26,7 +26,33 @@ use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this package: (address, function, name).
-pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[];
+pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
+    (0x0011_eb60, rider_tick_animation, "Rider_TickAnimation"),
+    (0x0012_1700, rider_update_animation, "Rider_UpdateAnimation"),
+    (0x0012_1728, rider_update_pose, "Rider_UpdatePose"),
+    (0x0012_17f8, rider_update_model, "Rider_UpdateModel"),
+    (0x0012_25f0, rider_render_shadow, "Rider_RenderShadow"),
+    (0x0012_25c0, rider_prepare_lighting, "Rider_PrepareLighting"),
+    (0x0012_2638, rider_render_attached_fx, "Rider_RenderAttachedFX"),
+    (0x0012_0e88, rider_update_attached_fx, "Rider_UpdateAttachedFX"),
+    (0x0012_18d0, rider_update_surface_fx, "Rider_UpdateSurfaceFX"),
+    (0x0012_1818, rider_update_progress, "Rider_UpdateProgress"),
+    (0x0011_12b8, rider_base_set_main_state, "RiderBase_SetMainState"),
+    (0x0011_1538, rider_base_set_sub_state, "RiderBase_SetSubState"),
+    (0x0013_6e98, rider_wipeout_state_update, "RiderWipeoutState_Update"),
+    (0x0013_6ee0, rider_wipeout_state_post_update, "RiderWipeoutState_PostUpdate"),
+    (0x0013_9528, rider_handplant_state_post_update, "RiderHandplantState_PostUpdate"),
+    (0x0013_1cc0, rider_cruise_sub_check_airborne, "RiderCruiseSub_CheckAirborne"),
+    (0x0012_31a8, rider_is_on_ground, "Rider_IsOnGround"),
+    (0x0011_6378, rider_try_enter_finish_line, "Rider_TryEnterFinishLine"),
+    (0x0011_6120, rider_check_reset_path, "Rider_CheckResetPath"),
+    (0x0011_62c8, rider_try_enter_prewind, "Rider_TryEnterPrewind"),
+    (0x0012_0ed8, rider_refresh_pose, "Rider_RefreshPose"),
+    (0x0012_2088, rider_find_nearby_lights, "Rider_FindNearbyLights"),
+    (0x0012_2658, rider_clear_nearby_lights, "Rider_ClearNearbyLights"),
+    (0x0012_0090, rider_set_anim_time_scale, "Rider_SetAnimTimeScale"),
+    (0x0013_60c8, rider_spin_sub_get_hud_angle, "RiderSpinSub_GetHUDAngle"),
+];
 
 // ---------------------------------------------------------------------------
 // State ids (`RiderBase+0xde0` / `+0xde4`).
@@ -161,17 +187,6 @@ fn gp_minus(c: &Cpu, off: u32) -> u32 {
 #[inline(always)]
 fn gp_plus(c: &Cpu, off: u32) -> u32 {
     (c.g[GP][0] as u32).wrapping_add(off)
-}
-
-/// The current `GameModule` (`g_App->gameModule`), leaving `v1 = g_App` and
-/// `v0 = GameModule` as the compiled code does.
-#[inline(always)]
-fn game_module(c: &mut Cpu) -> u64 {
-    let app = Addr(gp_minus(c, gp::APP_NEG)).lw(c);
-    c.g[V1][0] = app;
-    let module = lw(c, app, game_module::OF_APP);
-    c.g[V0][0] = module;
-    module
 }
 
 /// `c.le.s a, b` with the FCC bit latched.
@@ -1032,61 +1047,528 @@ pub fn rider_spin_sub_get_hud_angle(c: &mut Cpu) {
 
 #[cfg(test)]
 mod tests {
-    //! Differential tests against the generated functions. Callees run for
-    //! real (both machines run the same generated callee on the same state)
-    //! on mostly zeroed objects, so their virtual calls through null vtables
-    //! land in the fakes (`difftest::fakes`), which log the registers at the
-    //! call and unwind at chosen call indices. Branches are chosen by the
-    //! seed (`seed % n`), so every path is taken; with callees inside, a
-    //! path's total cycle cost is not fixed, so `check_paths` is used only
-    //! for the leaves.
+    //! Differential tests against the generated functions.
+    //!
+    //! Callees run for real: both machines run the same generated callee
+    //! from the same state. The objects they get are built so that the
+    //! callees reach virtual calls through test vtables (or null ones),
+    //! which land in the fakes of `difftest::fakes`: those log every
+    //! register at the call and unwind at a chosen call index, so the
+    //! unwind protocol is exercised through the real callees too. Branches
+    //! are chosen by the seed (`seed % n`), so every path is taken by
+    //! construction; with real callees a path's total cycle cost is not
+    //! fixed, so `check_paths` is used for the two leaves only.
     use crate::difftest::fakes::*;
-    use crate::difftest::{check, check_paths, put_words, Rng, GAME_GP};
+    use crate::difftest::{check, check_paths, fresh, put_words, Rng, GAME_GP, RA};
     use ssx3_ee_rt::cpu::reg::*;
     use ssx3_ee_rt::Cpu;
 
     const SEEDS: u32 = 300;
 
-    thread_local! {
-        static UNWOUND: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
-    }
-
-    /// `check`, and report how many seeds reached a fake / unwound (soft:
-    /// some callees never reach a fake on zeroed objects).
-    fn run(gen: fn(&mut Cpu), hand: fn(&mut Cpu), seeds: u32, setup: &dyn Fn(&mut Cpu, u32)) -> (u32, u32) {
+    /// `check`, plus how many seeds reached a fake and how many unwound
+    /// (asserted against the minimums given).
+    fn run(
+        name: &str,
+        gen: fn(&mut Cpu),
+        hand: fn(&mut Cpu),
+        seeds: u32,
+        min: (u32, u32),
+        setup: &dyn Fn(&mut Cpu, u32),
+    ) {
         check(gen, hand, seeds, setup);
         let (mut reached, mut unwound) = (0, 0);
         for seed in 0..seeds {
-            let mut c = crate::difftest::fresh();
+            let mut c = fresh();
             setup(&mut c, seed);
             gen(&mut c);
             reached += (c.bus.read32(LOG_COUNT) > 0) as u32;
-            unwound += (c.pc != crate::difftest::RA) as u32;
+            unwound += (c.pc != RA) as u32;
         }
-        UNWOUND.with(|u| u.set(unwound));
-        (reached, unwound)
+        eprintln!("{name}: {seeds} seeds, {reached} reached a fake, {unwound} unwound");
+        assert!(reached >= min.0 && unwound >= min.1, "{name}: reached {reached}, unwound {unwound}");
     }
 
-    /// A rider object (zeroed) in a0; returns its address.
-    fn rider(c: &mut Cpu, r: &mut Rng) -> u32 {
-        let p = ptr(r);
-        c.g[A0][0] = p as u64;
-        p
+    /// The game's initialised data (the ELF's load segment: code, `.data`,
+    /// `.sdata` constants), so that real callees deep in the call tree see
+    /// the game's constants (step sizes, limits) instead of zeros.
+    fn elf_image(c: &mut Cpu) {
+        static IMAGE: std::sync::OnceLock<(u32, Vec<u8>)> = std::sync::OnceLock::new();
+        let (vaddr, bytes) = IMAGE.get_or_init(|| {
+            let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../orig/SLUS_207.72");
+            let d = std::fs::read(path).expect("orig/SLUS_207.72");
+            let u32_at = |o: usize| u32::from_le_bytes(d[o..o + 4].try_into().unwrap());
+            let ph = u32_at(0x1c) as usize;
+            // The single PT_LOAD segment: offset, vaddr, filesz.
+            let (off, vaddr, size) = (u32_at(ph + 4) as usize, u32_at(ph + 8), u32_at(ph + 16) as usize);
+            (vaddr, d[off..off + size].to_vec())
+        });
+        let at = *vaddr as usize;
+        c.bus.ram[at..at + bytes.len()].copy_from_slice(bytes);
     }
 
-    /// An object pointer: null for `seed`-chosen cases, else a zeroed object.
+    /// [`elf_image`] plus a constructed back-end library singleton whose
+    /// interfaces (`BELibrary_GetInterface`, vtable slot +8) are fakes, so
+    /// deep callees asking the back end for sound/effects services stop at
+    /// a fake instead of constructing the real back end.
+    fn game_world(c: &mut Cpu, r: &mut Rng) {
+        elf_image(c);
+        // The back end's lazily created singletons (gp-0x1f04, gp-0x1f28).
+        for off in [0x1f04, 0x1f28] {
+            let singleton = obj(r);
+            c.bus.write32(GAME_GP - off, singleton);
+        }
+        c.bus.write32(GAME_GP - 0x1efc, 0);
+        for i in 0..8 {
+            let lib = obj(r);
+            c.bus.write32(0x0053_08a8 + 4 * i, lib);
+            let vt = vtable(c, r, &[8]);
+            c.bus.write32(lib + 4, vt);
+        }
+    }
+
+    /// A zeroed object.
     fn obj(r: &mut Rng) -> u32 {
         ptr(r)
     }
 
+    /// A rider in a0; returns its address.
+    fn rider(c: &mut Cpu, r: &mut Rng) -> u32 {
+        let p = obj(r);
+        c.g[A0][0] = p as u64;
+        p
+    }
+
+    /// An animation controller with one sequence on layer 0 and a vtable
+    /// whose slots (+0x10 update, +0x18 end event) are fakes.
+    fn anim_controller(c: &mut Cpu, r: &mut Rng) -> u32 {
+        let a = obj(r);
+        let layers = obj(r);
+        let node = obj(r);
+        c.bus.write32(a + 0x50, layers);
+        c.bus.write32(layers + 4, node);
+        c.bus.write32(node + 0xc8, 0);
+        let vt = vtable(c, r, &[0x10, 0x18]);
+        c.bus.write32(a + 0x58, vt);
+        a
+    }
+
+    /// `g_App` with a `GameModule` whose fields `offs` are zeroed objects.
+    fn game_module(c: &mut Cpu, r: &mut Rng, offs: &[u32]) -> u32 {
+        let app = obj(r);
+        let module = obj(r);
+        c.bus.write32(GAME_GP - 0x848, app);
+        c.bus.write32(app + 0x84, module);
+        for &o in offs {
+            let x = obj(r);
+            c.bus.write32(module + o, x);
+        }
+        module
+    }
+
+    /// A `RiderBase` owner for `rider` with the given main/sub states and
+    /// a vtable at +0 (fakes) for the state hooks.
+    fn owner(c: &mut Cpu, r: &mut Rng, rider: u32, main: u32, sub: u32) -> u32 {
+        let o = obj(r);
+        c.bus.write32(rider + 0x77c, o);
+        c.bus.write32(o + 0xde0, main);
+        c.bus.write32(o + 0xde4, sub);
+        o
+    }
+
+    /// A state id past the end of the state tables (the game's Exit/Enter
+    /// switches skip those), so state changes don't run the real state
+    /// handlers on the test's empty objects.
+    fn state(r: &mut Rng) -> u32 {
+        if r.next_u32() % 2 == 0 {
+            0xe + r.next_u32() % 8
+        } else {
+            r.next_u32() | 0x8000_0000
+        }
+    }
+
     #[test]
     fn tick_animation() {
-        let (reached, unwound) = run(ssx3_ee::s00::f_0011eb60, super::rider_tick_animation, SEEDS, &|c, seed| {
+        run("tick_animation", ssx3_ee::s00::f_0011eb60__generated, super::rider_tick_animation, SEEDS, (SEEDS, 20), &|c, seed| {
             let mut r = machine(c, seed, 1, 2);
+            game_world(c, &mut r);
             let p = rider(c, &mut r);
-            c.bus.write32(p + 0x784, obj(&mut r));
+            let a = anim_controller(c, &mut r);
+            c.bus.write32(p + 0x784, a);
             c.bus.write32(p + 0xb1c, r.next_u32());
         });
-        eprintln!("tick_animation: reached {reached} unwound {unwound}");
+    }
+
+    #[test]
+    fn update_animation() {
+        run("update_animation", ssx3_ee::s00::f_00121700__generated, super::rider_update_animation, SEEDS, (SEEDS / 2, 10), &|c, seed| {
+            let mut r = machine(c, seed, 2, 2);
+            game_world(c, &mut r);
+            let p = rider(c, &mut r);
+            let a = anim_controller(c, &mut r);
+            c.bus.write32(p + 0x784, a);
+            c.bus.write32(p + 0x300, r.edge_f32());
+            c.bus.write32(p + 0xac4, if seed % 2 == 0 { 0 } else { r.next_u32() | 1 });
+        });
+    }
+
+    #[test]
+    fn update_pose() {
+        run("update_pose", ssx3_ee::s00::f_00121728__generated, super::rider_update_pose, SEEDS, (0, 0), &|c, seed| {
+            let mut r = machine(c, seed, 3, 2);
+            game_world(c, &mut r);
+            let p = rider(c, &mut r);
+            c.bus.write32(p + 0xac4, if seed % 2 == 0 { 0 } else { r.next_u32() | 1 });
+            let model = obj(&mut r);
+            c.bus.write32(p + 0x780, model);
+            let a = anim_controller(c, &mut r);
+            c.bus.write32(p + 0x784, a);
+        });
+    }
+
+    #[test]
+    fn render_shadow_and_prepare_lighting() {
+        for (name, gen, hand) in [
+            ("render_shadow", ssx3_ee::s00::f_001225f0__generated as fn(&mut Cpu), super::rider_render_shadow as fn(&mut Cpu)),
+            ("prepare_lighting", ssx3_ee::s00::f_001225c0__generated, super::rider_prepare_lighting),
+        ] {
+            run(name, gen, hand, SEEDS, (0, 0), &|c, seed| {
+                let mut r = machine(c, seed, 4, 2);
+                game_world(c, &mut r);
+                let p = rider(c, &mut r);
+                c.bus.write32(p + 0xb18, if seed % 2 == 0 { 0 } else { r.next_u32() | 1 });
+                let model = obj(&mut r);
+                c.bus.write32(p + 0x780, model);
+                game_module(c, &mut r, &[0x78, 0x90]);
+            });
+        }
+    }
+
+    #[test]
+    fn update_model_and_attached_fx() {
+        for (name, gen, hand) in [
+            ("update_model", ssx3_ee::s00::f_001217f8__generated as fn(&mut Cpu), super::rider_update_model as fn(&mut Cpu)),
+            ("render_attached_fx", ssx3_ee::s00::f_00122638__generated, super::rider_render_attached_fx),
+            ("update_attached_fx", ssx3_ee::s00::f_00120e88__generated, super::rider_update_attached_fx),
+        ] {
+            run(name, gen, hand, SEEDS, (0, 0), &|c, seed| {
+                let mut r = machine(c, seed, 5, 2);
+                game_world(c, &mut r);
+                let p = rider(c, &mut r);
+                for off in [0x780, 0x88c, 0x890] {
+                    let o = if seed % 4 == 0 { 0 } else { obj(&mut r) };
+                    c.bus.write32(p + off, o);
+                    if o != 0 {
+                        let vt = vtable(c, &mut r, &[8, 0x10, 0x18, 0x20]);
+                        c.bus.write32(o, vt);
+                    }
+                }
+            });
+        }
+    }
+
+    #[test]
+    fn update_surface_fx() {
+        run("update_surface_fx", ssx3_ee::s00::f_001218d0__generated, super::rider_update_surface_fx, SEEDS, (SEEDS, 20), &|c, seed| {
+            let mut r = machine(c, seed, 6, 3);
+            game_world(c, &mut r);
+            let p = rider(c, &mut r);
+            game_module(c, &mut r, &[0x78]);
+            let id = match seed % 3 {
+                0 => u32::MAX,
+                1 => r.next_u32() & 0xff,
+                _ => r.next_u32(),
+            };
+            c.bus.write32(p + 0x430, id);
+            let vt = vtable(c, &mut r, &[0x38]);
+            c.bus.write32(p + 0x6c0, vt);
+            c.bus.write32(p + 0x460, r.edge_f32());
+            c.bus.write32(p + 0x464, r.edge_f32());
+            put_words(c, GAME_GP - 0x7910, &[0xc7c3_4f80]);
+            if seed % 2 == 0 {
+                obj_owner(c, &mut r, p);
+            }
+        });
+    }
+
+    fn obj_owner(c: &mut Cpu, r: &mut Rng, rider: u32) -> u32 {
+        let o = obj(r);
+        c.bus.write32(rider + 0x77c, o);
+        o
+    }
+
+    #[test]
+    fn update_progress() {
+        run("update_progress", ssx3_ee::s00::f_00121818__generated, super::rider_update_progress, SEEDS, (SEEDS, 50), &|c, seed| {
+            let mut r = machine(c, seed, 7, 3);
+            game_world(c, &mut r);
+            let p = rider(c, &mut r);
+            game_module(c, &mut r, &[0x28, 0x78]);
+            match seed % 3 {
+                0 => {}
+                1 => {
+                    let o = obj(&mut r);
+                    c.bus.write32(p + 0xa30, o);
+                    let ws = obj(&mut r);
+                    c.bus.write32(GAME_GP + 0xce8, ws);
+                }
+                _ => {
+                    let o = obj(&mut r);
+                    c.bus.write32(p + 0xa30, o);
+                    let t = obj(&mut r);
+                    c.bus.write32(o + 0xc, t);
+                    let vt = vtable(c, &mut r, &[0x140]);
+                    c.bus.write32(t + 0xc, vt);
+                }
+            }
+            c.bus.write32(p + 0xac4, if seed / 3 % 2 == 0 { 0 } else { r.next_u32() | 1 });
+            obj_owner(c, &mut r, p);
+            let m = obj(&mut r);
+            c.bus.write32(p + 0x790, m);
+        });
+    }
+
+    #[test]
+    fn refresh_pose() {
+        run("refresh_pose", ssx3_ee::s00::f_00120ed8__generated, super::rider_refresh_pose, SEEDS, (SEEDS / 2, 10), &|c, seed| {
+            let mut r = machine(c, seed, 8, 2);
+            game_world(c, &mut r);
+            let p = rider(c, &mut r);
+            for i in 0..4 {
+                c.bus.write32(p + 0x110 + 4 * i, r.f32(1e4));
+                c.bus.write32(p + 0x120 + 4 * i, r.f32(1.0));
+            }
+            c.bus.write32(p + 0xac4, if seed % 2 == 0 { 0 } else { r.next_u32() | 1 });
+            let a = anim_controller(c, &mut r);
+            c.bus.write32(p + 0x784, a);
+            let model = obj(&mut r);
+            c.bus.write32(p + 0x780, model);
+        });
+    }
+
+    #[test]
+    fn find_nearby_lights() {
+        run("find_nearby_lights", ssx3_ee::s00::f_00122088__generated, super::rider_find_nearby_lights, SEEDS, (0, 0), &|c, seed| {
+            let mut r = machine(c, seed, 9, 2);
+            game_world(c, &mut r);
+            let p = rider(c, &mut r);
+            game_module(c, &mut r, &[0x90]);
+            let model = obj(&mut r);
+            c.bus.write32(p + 0x780, model);
+            let list = obj(&mut r);
+            c.bus.write32(p + 0x860, list);
+        });
+    }
+
+    #[test]
+    fn clear_nearby_lights() {
+        run("clear_nearby_lights", ssx3_ee::s00::f_00122658__generated, super::rider_clear_nearby_lights, SEEDS, (0, 0), &|c, seed| {
+            let mut r = machine(c, seed, 10, 1);
+            let p = rider(c, &mut r);
+            crate::difftest::fill(c, &mut r, p + 0x790, 12);
+        });
+    }
+
+    #[test]
+    fn set_anim_time_scale() {
+        check_paths(ssx3_ee::s00::f_00120090__generated, super::rider_set_anim_time_scale, 2000, &[11, 13], &|c, seed| {
+            let mut r = machine(c, seed, 11, 0);
+            let p = rider(c, &mut r);
+            let k = if seed % 5 == 0 { r.edge_f32() } else { 0x3a5a_740f };
+            put_words(c, GAME_GP - 0x795c, &[k]);
+            let target = r.edge_f32();
+            c.f[12] = target;
+            // Current scale near the target (within a few steps), or anywhere.
+            let cur = match seed % 3 {
+                0 => r.edge_f32(),
+                _ => {
+                    let d = (r.next_u32() % 7) as f32 - 3.0;
+                    (f32::from_bits(target) + d * 0.0004).to_bits()
+                }
+            };
+            c.bus.write32(p + 0x300, cur);
+        });
+    }
+
+    #[test]
+    fn rider_base_set_states() {
+        for (name, gen, hand) in [
+            ("set_main_state", ssx3_ee::s00::f_001112b8__generated as fn(&mut Cpu), super::rider_base_set_main_state as fn(&mut Cpu)),
+            ("set_sub_state", ssx3_ee::s00::f_00111538__generated, super::rider_base_set_sub_state),
+        ] {
+            run(name, gen, hand, SEEDS, (0, 0), &|c, seed| {
+                let mut r = machine(c, seed, 12, 2);
+                // Without the game image the state switches jump through empty
+                // tables into the fakes; with it they skip the out-of-range states.
+                if seed % 5 < 3 {
+                    game_world(c, &mut r);
+                }
+                let p = obj(&mut r);
+                // In-range states only without the image (their switches
+                // then jump into the fakes).
+                let pick = |r: &mut Rng| if seed % 5 < 3 { state(r) } else { r.next_u32() % 6 };
+                let (m_, s_) = (pick(&mut r), pick(&mut r));
+                let o = owner(c, &mut r, p, m_, s_);
+                c.g[A0][0] = o as u64;
+                c.g[A1][0] = (r.next_u32() as u64) << 32 | pick(&mut r) as u64;
+            });
+        }
+    }
+
+    #[test]
+    fn wipeout_update_and_post_update() {
+        for (name, gen, hand) in [
+            ("wipeout_update", ssx3_ee::s01::f_00136e98__generated as fn(&mut Cpu), super::rider_wipeout_state_update as fn(&mut Cpu)),
+            ("wipeout_post_update", ssx3_ee::s01::f_00136ee0__generated, super::rider_wipeout_state_post_update),
+        ] {
+            run(name, gen, hand, SEEDS, (0, 0), &|c, seed| {
+                let mut r = machine(c, seed, 13, 3);
+                game_world(c, &mut r);
+                let s = obj(&mut r);
+                c.g[A0][0] = s as u64;
+                c.bus.write32(s, if seed % 2 == 0 { 0 } else { r.next_u32() | 1 });
+                // The wipeout's rider (+0x40) with an air predictor (+0x788)
+                // that is already settled (state 5: no simulation steps).
+                let p = obj(&mut r);
+                c.bus.write32(s + 0x40, p);
+                let predictor = obj(&mut r);
+                c.bus.write32(p + 0x788, predictor);
+                c.bus.write32(predictor + 0xac, 5);
+                c.bus.write32(p + 0x300, 0x3f80_0000);
+            });
+        }
+    }
+
+    #[test]
+    fn handplant_post_update() {
+        run("handplant_post_update", ssx3_ee::s01::f_00139528__generated, super::rider_handplant_state_post_update, SEEDS, (0, 0), &|c, seed| {
+            let mut r = machine(c, seed, 14, 1);
+            let s = obj(&mut r);
+            c.g[A0][0] = s as u64;
+            let p = if seed % 4 == 0 { 0 } else { obj(&mut r) };
+            c.bus.write32(s + 0xa0, p);
+        });
+    }
+
+    #[test]
+    fn cruise_sub_check_airborne() {
+        run("check_airborne", ssx3_ee::s00::f_00131cc0__generated, super::rider_cruise_sub_check_airborne, SEEDS, (30, 30), &|c, seed| {
+            let mut r = machine(c, seed, 15, 2);
+            // Without the game image the state switches jump through empty
+            // tables into the fakes; with it they skip the out-of-range states.
+            if seed % 5 < 3 {
+                game_world(c, &mut r);
+            }
+            let sub = obj(&mut r);
+            c.g[A0][0] = sub as u64;
+            let p = obj(&mut r);
+            c.bus.write32(sub, p);
+            let main = if seed % 2 == 0 { 1 } else { state(&mut r) };
+            let (m_, s_) = (main, state(&mut r));
+            owner(c, &mut r, p, m_, s_);
+        });
+    }
+
+    #[test]
+    fn is_on_ground() {
+        run("is_on_ground", ssx3_ee::s00::f_001231a8__generated, super::rider_is_on_ground, SEEDS, (0, 0), &|c, seed| {
+            let mut r = machine(c, seed, 16, 0);
+            let p = rider(c, &mut r);
+            let main = match seed % 4 {
+                0 => 0,
+                1 | 2 => 2,
+                _ => state(&mut r),
+            };
+            let (m_, s_) = (main, state(&mut r));
+            let o = owner(c, &mut r, p, m_, s_);
+            c.bus.write32(o + 0x30, if seed % 4 == 1 { 0 } else { r.next_u32() });
+        });
+    }
+
+    #[test]
+    fn try_enter_finish_line() {
+        run("finish_line", ssx3_ee::s00::f_00116378__generated, super::rider_try_enter_finish_line, 600, (60, 60), &|c, seed| {
+            let mut r = machine(c, seed, 17, 2);
+            // Without the game image the state switches jump through empty
+            // tables into the fakes; with it they skip the out-of-range states.
+            if seed % 5 < 3 {
+                game_world(c, &mut r);
+            }
+            let p = rider(c, &mut r);
+            let t = match seed % 4 {
+                0 => 0xbf80_0000,
+                1 => (seed & 8) << 28,
+                _ => r.edge_f32(),
+            };
+            c.bus.write32(p + 0x470, t);
+            let (m_, s_) = (state(&mut r), state(&mut r));
+            owner(c, &mut r, p, m_, s_);
+        });
+    }
+
+    #[test]
+    fn check_reset_path() {
+        run("check_reset_path", ssx3_ee::s00::f_00116120__generated, super::rider_check_reset_path, 600, (100, 100), &|c, seed| {
+            let mut r = machine(c, seed, 18, 6);
+            // Without the game image the state switches jump through empty
+            // tables into the fakes; with it they skip the out-of-range states.
+            if seed % 5 < 3 {
+                game_world(c, &mut r);
+            }
+            let p = rider(c, &mut r);
+            let force = if seed % 2 == 0 { 0 } else { (r.next_u32() as u64) << 32 | 1 };
+            let reason: u64 = match seed / 2 % 5 {
+                0 => 0,
+                1 => 1,
+                2 => 4,
+                3 => (r.next_u32() as u64) << 32,
+                _ => r.next_u32() as u64,
+            };
+            c.g[A1][0] = force;
+            c.g[A2][0] = reason;
+            let (m_, s_) = (state(&mut r), state(&mut r));
+            owner(c, &mut r, p, m_, s_);
+            let m = obj(&mut r);
+            c.bus.write32(p + 0x790, m);
+            game_module(c, &mut r, &[0x28]);
+            c.bus.write32(p + 0x86c, r.next_u32() % 6);
+        });
+    }
+
+    #[test]
+    fn try_enter_prewind() {
+        run("try_enter_prewind", ssx3_ee::s00::f_001162c8__generated, super::rider_try_enter_prewind, 600, (100, 100), &|c, seed| {
+            let mut r = machine(c, seed, 19, 4);
+            let p = rider(c, &mut r);
+            let cheat = if seed % 2 == 0 { 0 } else { (r.next_u32() as u64) << 32 | (r.next_u32() | 1) as u64 };
+            let jump = if seed / 2 % 2 == 0 { 0 } else { (r.next_u32() | 1) as u64 };
+            c.g[A1][0] = jump;
+            c.g[A2][0] = cheat;
+            let rearm = match seed / 4 % 4 {
+                0 => 0,
+                1 => 0x8000_0000,
+                2 => 0x3f80_0000,
+                _ => r.edge_f32(),
+            };
+            c.bus.write32(p + 0x360, rearm);
+            let sub = if seed / 16 % 2 == 0 { 1 } else { state(&mut r) };
+            let (m_, s_) = (state(&mut r), sub);
+            owner(c, &mut r, p, m_, s_);
+        });
+    }
+
+    #[test]
+    fn spin_sub_get_hud_angle() {
+        check_paths(ssx3_ee::s01::f_001360c8__generated, super::rider_spin_sub_get_hud_angle, 1000, &[11, 13], &|c, seed| {
+            let mut r = machine(c, seed, 20, 0);
+            let s = obj(&mut r);
+            c.g[A0][0] = s as u64;
+            c.g[A1][0] = obj(&mut r) as u64 + 4;
+            put_words(c, GAME_GP - 0x7308, &[0x7149_f2ca]);
+            let a = match seed % 3 {
+                0 => 0x7149_f2ca,
+                _ => r.edge_f32(),
+            };
+            c.bus.write32(s + 0x50, a);
+        });
     }
 }
