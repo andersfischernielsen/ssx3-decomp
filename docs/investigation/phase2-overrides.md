@@ -111,6 +111,8 @@ Lessons from the first packages:
 
 | 2026-10-15 | round 3: D1 rider frame doors & state handlers (25), D2 skeleton/animation/VU0 math (23, incl. hot RiderModel_BuildBoneMatrix), D5 world/sections/process lists (25) | 220 replacements installed; race to frame 9000 byte-identical (36 shots + full RAM); 213 tests pass |
 
+| 2026-10-15 | round 3: D4 AI/BE/race logic (39), D6 frontend UI/fonts/HUD (25), D7 audio system (25), D8 memory/containers/replay/script (22) | 331 replacements installed (first override of a function with mid-function entries: GetAttrib5Factor); race to frame 9000 byte-identical (36 shots + full RAM); 302 tests pass |
+
 Patterns established in round 2 (now shared, see below):
 - **Loops with event checks**: structured loops make the same back-edge
   `c.event()` checks with the same `c.pc`; functions the generator emitted
