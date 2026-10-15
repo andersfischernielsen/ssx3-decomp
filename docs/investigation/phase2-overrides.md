@@ -104,5 +104,23 @@ Lessons from the first packages:
   constant loader, `Addr` loads/stores routed through `Cpu::lw/sw` (I/O
   timing side effects), unaligned `ldl/ldr` helpers, `quat_rows` (shared by
   rider and camera).
+| 2026-10-15 | A4 render packets (16), A5 sound/files (20), Tier B utilities with loops (12: memset/memcpy/str*/EA_Mem*/DMA), Tier B functions with calls (26: wrappers, virtual dispatch, rider/camera updates, allocators) | 147 replacements installed; race to frame 9000 byte-identical (36 shots + full RAM); 140 tests pass |
 
-Next: A4 render packets, A5 sound/files, then Tier B (loops and calls).
+Patterns established in round 2 (currently private to their modules; to be
+shared):
+- **Loops with event checks** (`util.rs`): structured loops make the same
+  back-edge `c.event()` checks with the same `c.pc`; functions the generator
+  emitted as `match pc` dispatchers must be re-enterable at their resume
+  heads (the trampoline calls them again with `pc` at the loop head after an
+  unwind). Tests deliver real events mid-loop (VBlank on a guest thread) and
+  drive re-entry.
+- **Calls** (`dispatch.rs`): `Flow = Result<(), Unwound>` with `?` for the
+  host-thread unwind check, `Callee{addr,f}.call(c, ret)` (through the
+  readable alias, so override slots apply), `call_ptr` via `call_indirect`,
+  `VSlot` for gcc 2.9x vtable entries, `Frame` for the stack frame. Tests use
+  fake callees (function-table misses) that log every register to RAM and
+  unwind at chosen call indices.
+
+Next: share those helpers; Tier B leftovers (VU0 ACC / `cfc2 vi22` camera
+functions, the ChaseCameraAlgorithm_Apply* family, loops with calls); a new
+candidate catalogue from the pass-3 names.
