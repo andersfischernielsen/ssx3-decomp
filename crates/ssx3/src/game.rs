@@ -18,6 +18,10 @@ pub fn boot(skip_movies_default: bool) -> Box<Cpu> {
     if n > 0 {
         eprintln!("[ssx3-game] {n} hand-written function(s) installed");
     }
+    // Phase 3: files from the host instead of the emulated CD.
+    if ssx3_game::native_files::install() {
+        eprintln!("[ssx3-game] native files on");
+    }
     // Recompiled IOP sound modules; used when SSX3_IOP=1 (see iop_bridge.rs).
     ssx3_iop::register_generated(&ssx3_iop_gen::GENERATED);
     let mut c = ssx3_ps2::new_cpu();

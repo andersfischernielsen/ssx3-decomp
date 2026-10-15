@@ -116,6 +116,9 @@ pub mod world_cache;
 pub mod replay_script;
 #[cfg(feature = "streaming")]
 pub mod streaming;
+// Phase 3: game files from the host (SSX3_NATIVE_FILES); uses `streaming`.
+#[cfg(feature = "streaming")]
+pub mod native_files;
 #[cfg(feature = "graphics")]
 pub mod graphics;
 #[cfg(feature = "rider_logic")]

@@ -1418,3 +1418,10 @@
 0x00154a58    BEScoreInt_UpdateBestStats
 0x00145108    BENewRaceInt_SetGameMode
 0x0015a628    BERewardInt_AddNewReward
+# phase 3: native files (native_files.rs). Slots only: installed at run time
+# when SSX3_NATIVE_FILES / SSX3_FILE_LOG are set, not part of OVERRIDES.
+0x003e3208    EAFile_PlatformOpen
+0x003e32f8    EAFile_PlatformClose
+0x003e34e8    EAFile_PlatformGetSize
+0x003e33b0    EAFile_HostReadService
+0x003de420    EAFile_CompleteRequest

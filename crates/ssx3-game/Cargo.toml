@@ -10,6 +10,7 @@ license.workspace = true
 [dependencies]
 ssx3-ee-rt = { path = "../ssx3-ee-rt" }
 ssx3-ee = { path = "../../generated/ee/game" }
+ssx3-core = { path = "../ssx3-core" }
 
 # Work packages from docs/investigation/phase2-candidates.md. Each is its own
 # module behind a feature so packages can be developed in parallel without

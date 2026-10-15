@@ -97,9 +97,14 @@ generated. Order:
    hardware: PS2GraphicsMan draw slots / packet builders / DMA kick, EAFile /
    BigFile / CD, the SND API, GameModule / App frame loop). Inner code stays
    generated.
+   Status (2026-10-15): boundary map `../investigation/phase3-boundaries.md`;
+   per-frame call graph `../investigation/frame-callgraph.md`; every function
+   named (passes 4-5).
 4. **Phase 3 subsystems**, one at a time, each checked against the emulated
    path running side by side: files → `std::fs`, sound → native mixer, frame
-   loop → host timer, rendering → native draws (the 7 VU1 microprograms as
+   loop → host timer, rendering → native draws. Files: done behind
+   `SSX3_NATIVE_FILES=1` (`../investigation/phase3-files.md`; all reads
+   identical to the emulated CD through a full race) (the 7 VU1 microprograms as
    shaders or kept translated with only the GS replaced).
 
 Bulk phase 2 rewriting (typed function bodies) continues later as capacity
