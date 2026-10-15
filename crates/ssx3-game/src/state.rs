@@ -47,31 +47,10 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 // ---------------------------------------------------------------------------
 // Access helpers (candidates for `guest`/`abi`, see the package report).
 
-/// `lw`: a sign-extended word, as the 64-bit register holds it.
-#[inline]
-fn lw(c: &mut Cpu, a: Addr) -> u64 {
-    c.lw(a.0)
-}
-
-/// `sw`: stores the low 32 bits.
-#[inline]
-fn sw(c: &mut Cpu, a: Addr, v: u64) {
-    c.sw(a.0, v)
-}
-
 /// The full 64-bit register (for compares the original does on 64 bits).
 #[inline]
 fn reg(c: &Cpu, r: usize) -> u64 {
     c.g[r][0]
-}
-
-/// `mult`: 32x32 signed multiply; sets LO/HI (pipeline 0) and returns LO.
-#[inline]
-fn mult(c: &mut Cpu, a: u32, b: u32) -> u32 {
-    let r = (a as i32 as i64) * (b as i32 as i64);
-    c.lo[0] = sx(r as u32);
-    c.hi[0] = sx((r >> 32) as u32);
-    r as u32
 }
 
 /// `divu` by a non-zero constant: sets LO (quotient) and HI (remainder),
@@ -143,8 +122,8 @@ pub mod race_setup {
 /// size (`mult`, so LO/HI change) and returns the record address.
 fn rider_record(c: &mut Cpu, player: u32) -> Addr {
     use race_setup::*;
-    let slot = lw(c, slot_entry(player)) as u32;
-    let off = mult(c, slot, RIDER_RECORD_SIZE);
+    let slot = slot_entry(player).lw(c) as u32;
+    let off = abi::mult(c, slot, RIDER_RECORD_SIZE);
     Addr(off.wrapping_add(RIDER_RECORDS.0))
 }
 
@@ -165,14 +144,14 @@ pub fn be_get_rider_profile(c: &mut Cpu) {
     use race_setup::*;
     c.cycles += 14;
     let rec = rider_record(c, abi::arg(c, 0));
-    let profile = lw(c, rec.off(REC_PROFILE_ID));
+    let profile = rec.off(REC_PROFILE_ID).lw(c);
     c.g[V1][0] = profile;
     if profile == u64::MAX {
         c.cycles += 2;
         c.g[V0][0] = 2;
     } else {
         c.cycles += 3;
-        c.g[V0][0] = lw(c, rec.off(REC_FLAGS)) & 1;
+        c.g[V0][0] = rec.off(REC_FLAGS).lw(c) & 1;
     }
     abi::ret(c);
 }
@@ -181,7 +160,7 @@ pub fn be_get_rider_profile(c: &mut Cpu) {
 /// slot. 6 cycles.
 pub fn be_new_player_int_get_slot(c: &mut Cpu) {
     c.cycles += 6;
-    c.g[V0][0] = lw(c, race_setup::slot_entry(abi::arg(c, 0)));
+    c.g[V0][0] = race_setup::slot_entry(abi::arg(c, 0)).lw(c);
     abi::ret(c);
 }
 
@@ -190,8 +169,8 @@ pub fn be_new_player_int_get_slot(c: &mut Cpu) {
 pub fn be_new_race_int_get_track_info(c: &mut Cpu) {
     use race_setup::*;
     c.cycles += 8;
-    let index = lw(c, TRACK_INDEX) as u32;
-    let off = mult(c, index, TRACK_INFO_SIZE);
+    let index = TRACK_INDEX.lw(c) as u32;
+    let off = abi::mult(c, index, TRACK_INFO_SIZE);
     c.g[V1][0] = sx(off);
     abi::set_ret(c, off.wrapping_add(TRACK_INFOS.0));
     abi::ret(c);
@@ -205,7 +184,7 @@ pub fn be_new_race_int_get_track_info(c: &mut Cpu) {
 pub fn world_get_instance(c: &mut Cpu) {
     c.cycles += 2;
     let gp = Addr(reg(c, GP) as u32);
-    c.g[V0][0] = lw(c, gp.off(0x16c8));
+    c.g[V0][0] = gp.off(0x16c8).lw(c);
     abi::ret(c);
 }
 
@@ -214,7 +193,7 @@ pub fn world_get_instance(c: &mut Cpu) {
 pub fn game_module_request_overlay_state(c: &mut Cpu) {
     c.cycles += 2;
     let module = Addr(abi::arg(c, 0));
-    sw(c, module.off(0x208), reg(c, A1));
+    module.off(0x208).sw(c, reg(c, A1));
     abi::ret(c);
 }
 
@@ -225,9 +204,9 @@ pub fn menu_sys_is_active(c: &mut Cpu) {
     c.cycles += 3;
     let menu = Addr(abi::arg(c, 0));
     let mut active = 0;
-    if lw(c, menu) != 0 {
+    if menu.lw(c) != 0 {
         c.cycles += 2;
-        active = (lw(c, menu.off(0x54)) != 0) as u64;
+        active = (menu.off(0x54).lw(c) != 0) as u64;
     }
     c.cycles += 2;
     c.g[V1][0] = active;
@@ -264,9 +243,9 @@ impl PadQueue {
 pub fn pad_queue_get_pad_data(c: &mut Cpu) {
     c.cycles += 9;
     let q = PadQueue(Addr(abi::arg(c, 0)));
-    let read = lw(c, q.read_index()) as u32;
-    let pad_off = mult(c, abi::arg(c, 1), PadQueue::PAD_SIZE);
-    let frame_off = mult(c, read, PadQueue::FRAME_SIZE);
+    let read = q.read_index().lw(c) as u32;
+    let pad_off = abi::mult(c, abi::arg(c, 1), PadQueue::PAD_SIZE);
+    let frame_off = abi::mult(c, read, PadQueue::FRAME_SIZE);
     c.g[V1][0] = sx(frame_off);
     let p = frame_off.wrapping_add(q.0 .0).wrapping_add(pad_off).wrapping_add(4);
     abi::set_ret(c, p);
@@ -278,12 +257,12 @@ pub fn pad_queue_get_pad_data(c: &mut Cpu) {
 pub fn pad_queue_get_pad_status(c: &mut Cpu) {
     c.cycles += 9;
     let q = PadQueue(Addr(abi::arg(c, 0)));
-    let read = lw(c, q.read_index()) as u32;
-    let pad_off = mult(c, abi::arg(c, 1), PadQueue::PAD_SIZE);
-    let frame_off = mult(c, read, PadQueue::FRAME_SIZE);
+    let read = q.read_index().lw(c) as u32;
+    let pad_off = abi::mult(c, abi::arg(c, 1), PadQueue::PAD_SIZE);
+    let frame_off = abi::mult(c, read, PadQueue::FRAME_SIZE);
     c.g[V1][0] = PadQueue::FRAME_SIZE as u64;
     let status = Addr(q.0 .0.wrapping_add(pad_off.wrapping_add(frame_off)));
-    c.g[V0][0] = lw(c, status);
+    c.g[V0][0] = status.lw(c);
     abi::ret(c);
 }
 
@@ -294,16 +273,16 @@ pub fn pad_queue_advance_write(c: &mut Cpu) {
     c.cycles += 5;
     let q = PadQueue(Addr(abi::arg(c, 0)));
     c.g[V1][0] = PadQueue::FRAMES as u64;
-    let read = lw(c, q.read_index()) as u32;
+    let read = q.read_index().lw(c) as u32;
     c.cycles += 6;
-    let write = lw(c, q.write_index());
+    let write = q.write_index().lw(c);
     let next = divu_rem(c, read.wrapping_add(1), PadQueue::FRAMES);
     if next as u64 == write {
         c.cycles += 2;
         c.g[V0][0] = 0;
     } else {
         c.cycles += 3;
-        sw(c, q.read_index(), next as u64);
+        q.read_index().sw(c, next as u64);
         c.g[V0][0] = 1;
     }
     abi::ret(c);
@@ -316,7 +295,7 @@ pub fn pad_queue_advance_write(c: &mut Cpu) {
 /// at +0. 2 cycles.
 pub fn replay_set_state(c: &mut Cpu) {
     c.cycles += 2;
-    sw(c, Addr(abi::arg(c, 0)), reg(c, A1));
+    Addr(abi::arg(c, 0)).sw(c, reg(c, A1));
     abi::ret(c);
 }
 
@@ -325,10 +304,10 @@ pub fn replay_set_state(c: &mut Cpu) {
 pub fn replay_stream_rewind_write(c: &mut Cpu) {
     c.cycles += 4;
     let s = Addr(abi::arg(c, 0));
-    let start = lw(c, s.off(0x4));
+    let start = s.off(0x4).lw(c);
     c.g[V0][0] = start;
-    sw(c, s.off(0x10), 0);
-    sw(c, s.off(0x8), start);
+    s.off(0x10).sw(c, 0);
+    s.off(0x8).sw(c, start);
     abi::ret(c);
 }
 
@@ -357,25 +336,25 @@ pub fn snapshot_list_push_back(c: &mut Cpu) {
     let list = SnapshotList(Addr(abi::arg(c, 0)));
     let node = Addr(abi::arg(c, 1));
     c.cycles += 6;
-    let tail = lw(c, list.tail());
-    sw(c, node.off(SnapshotList::NODE_NEXT), 0);
-    sw(c, node.off(SnapshotList::NODE_PREV), tail);
+    let tail = list.tail().lw(c);
+    node.off(SnapshotList::NODE_NEXT).sw(c, 0);
+    node.off(SnapshotList::NODE_PREV).sw(c, tail);
     // The tail is read again after the node stores (they may alias it).
-    let tail = lw(c, list.tail());
+    let tail = list.tail().lw(c);
     if tail != 0 {
-        sw(c, Addr(tail as u32).off(SnapshotList::NODE_NEXT), node.0 as u64);
+        Addr(tail as u32).off(SnapshotList::NODE_NEXT).sw(c, node.0 as u64);
     }
     c.cycles += 3;
-    let head = lw(c, list.head());
-    sw(c, list.tail(), node.0 as u64);
+    let head = list.head().lw(c);
+    list.tail().sw(c, node.0 as u64);
     if head == 0 {
         c.cycles += 1;
-        sw(c, list.head(), node.0 as u64);
+        list.head().sw(c, node.0 as u64);
     }
     c.cycles += 4;
-    let count = sx((lw(c, list.count()) as u32).wrapping_add(1));
+    let count = sx((list.count().lw(c) as u32).wrapping_add(1));
     c.g[V0][0] = count;
-    sw(c, list.count(), count);
+    list.count().sw(c, count);
     abi::ret(c);
 }
 
@@ -390,9 +369,9 @@ pub fn section_man_next_queued(c: &mut Cpu) {
     let cur = reg(c, A1);
     c.cycles += 2;
     c.g[V0][0] = if cur != 0 {
-        lw(c, Addr(cur as u32).off(0x4))
+        Addr(cur as u32).off(0x4).lw(c)
     } else {
-        lw(c, Addr(abi::arg(c, 0)).off(0x19c))
+        Addr(abi::arg(c, 0)).off(0x19c).lw(c)
     };
     abi::ret(c);
 }
@@ -405,8 +384,8 @@ pub fn section_man_next_queued(c: &mut Cpu) {
 /// null if its +4 link points back at itself (empty). 5 cycles.
 pub fn ui_list_first(c: &mut Cpu) {
     c.cycles += 5;
-    let node = lw(c, Addr(abi::arg(c, 0)).off(0x4));
-    let diff = lw(c, Addr(node as u32).off(0x4)) ^ node;
+    let node = Addr(abi::arg(c, 0)).off(0x4).lw(c);
+    let diff = Addr(node as u32).off(0x4).lw(c) ^ node;
     c.g[V1][0] = diff;
     c.g[V0][0] = if diff == 0 { 0 } else { node };
     abi::ret(c);
@@ -418,13 +397,13 @@ pub fn ui_list_node_is_sentinel(c: &mut Cpu) {
     c.cycles += 3;
     let me = reg(c, A0);
     let n = Addr(me as u32);
-    let link1 = lw(c, n.off(0x4));
+    let link1 = n.off(0x4).lw(c);
     let sentinel = if link1 == me {
         c.cycles += 1;
         true
     } else {
         c.cycles += 3;
-        let link0 = lw(c, n);
+        let link0 = n.lw(c);
         if link0 == me {
             c.cycles += 1;
         }
@@ -443,8 +422,8 @@ pub fn ui_list_node_unlink(c: &mut Cpu) {
     c.cycles += 3;
     let me = reg(c, A0);
     let n = Addr(me as u32);
-    let a = lw(c, n);
-    let b = lw(c, n.off(0x4));
+    let a = n.lw(c);
+    let b = n.off(0x4).lw(c);
     c.g[V0][0] = a;
     c.g[V1][0] = b;
     // a->link1 = b (or a itself when b is n).
@@ -458,7 +437,7 @@ pub fn ui_list_node_unlink(c: &mut Cpu) {
                 c.cycles += 1;
                 a
             };
-            sw(c, Addr(a as u32).off(0x4), to);
+            Addr(a as u32).off(0x4).sw(c, to);
         }
     }
     // b->link0 = a (or b itself when a is n); n->link0 = n.
@@ -473,13 +452,13 @@ pub fn ui_list_node_unlink(c: &mut Cpu) {
                 c.cycles += 1;
                 b
             };
-            sw(c, Addr(b as u32), to);
+            Addr(b as u32).sw(c, to);
             c.cycles += 1;
         }
     }
-    sw(c, n, me);
+    n.sw(c, me);
     c.cycles += 2;
-    sw(c, n.off(0x4), me);
+    n.off(0x4).sw(c, me);
     abi::ret(c);
 }
 
@@ -495,10 +474,10 @@ pub fn path_queue_append(c: &mut Cpu) {
     c.cycles += 23;
     let q = Addr(abi::arg(c, 0));
     let src = abi::arg(c, 1);
-    let header = lw(c, q.off(0xc)) as u32;
+    let header = q.off(0xc).lw(c) as u32;
     let index = (header >> 16) & 0x3f;
     let next = (index + 1) & 0x3f;
-    sw(c, q.off(0xc), ((header & 0xffc0_ffff) | (next << 16)) as u64);
+    q.off(0xc).sw(c, ((header & 0xffc0_ffff) | (next << 16)) as u64);
     let slot = (index << 4).wrapping_add(q.off(0x10).0);
     let lo = load_u64_unaligned(c, src);
     let hi = load_u64_unaligned(c, src.wrapping_add(8));
@@ -531,24 +510,24 @@ pub fn path_select_map(c: &mut Cpu) {
     use path_maps::*;
     c.cycles += 4;
     c.g[V1][0] = 0x45_0000;
-    if lw(c, CURRENT_ID) == 0 {
+    if CURRENT_ID.lw(c) == 0 {
         c.cycles += 3;
-        sw(c, CURRENT_ID, u64::MAX);
+        CURRENT_ID.sw(c, u64::MAX);
     }
     c.cycles += 3;
     let idx = reg(c, A0);
     if idx < 4 {
         c.cycles += 7;
-        let off = mult(c, idx as u32, MAP_SIZE);
+        let off = abi::mult(c, idx as u32, MAP_SIZE);
         let map = Addr(MAPS.0.wrapping_add(off));
-        let loaded = lw(c, map.off(MAP_LOADED));
+        let loaded = map.off(MAP_LOADED).lw(c);
         c.g[V1][0] = loaded;
         if loaded != 0 {
             c.cycles += 7;
-            let id = lw(c, map.off(MAP_ID));
+            let id = map.off(MAP_ID).lw(c);
             c.g[V1][0] = 0x45_0000;
-            sw(c, CURRENT_MAP, map.0 as u64);
-            sw(c, CURRENT_ID, id);
+            CURRENT_MAP.sw(c, map.0 as u64);
+            CURRENT_ID.sw(c, id);
             c.g[V0][0] = id;
             abi::ret(c);
             return;
@@ -558,10 +537,10 @@ pub fn path_select_map(c: &mut Cpu) {
     }
     c.cycles += 2;
     if idx != u64::MAX {
-        sw(c, CURRENT_ID, 0);
+        CURRENT_ID.sw(c, 0);
     }
     c.cycles += 2;
-    c.g[V0][0] = lw(c, CURRENT_ID);
+    c.g[V0][0] = CURRENT_ID.lw(c);
     abi::ret(c);
 }
 
@@ -573,7 +552,7 @@ pub fn path_select_map(c: &mut Cpu) {
 pub fn world_obj_link_instance(c: &mut Cpu) {
     c.cycles += 2;
     let obj = Addr(abi::arg(c, 1));
-    sw(c, obj.off(0xc), reg(c, A0));
+    obj.off(0xc).sw(c, reg(c, A0));
     abi::ret(c);
 }
 
@@ -586,10 +565,10 @@ pub fn world_obj_unlink_instance(c: &mut Cpu) {
     if obj != 0 {
         c.cycles += 3;
         let field = Addr(obj as u32).off(0xc);
-        let inst = lw(c, field);
+        let inst = field.lw(c);
         c.g[V0][0] = inst;
         if inst == reg(c, A0) {
-            sw(c, field, 0);
+            field.sw(c, 0);
         }
     }
     c.cycles += 2;

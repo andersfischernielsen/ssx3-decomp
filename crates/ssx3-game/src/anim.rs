@@ -44,41 +44,6 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 
 // ---------------------------------------------------------------- registers
 
-/// A 32-bit `lw` result as compiled code leaves it in a GPR (sign-extended,
-/// upper 64 bits untouched).
-#[inline]
-fn set_word(c: &mut Cpu, r: usize, v: u32) {
-    c.g[r][0] = sx(v);
-}
-
-/// A 128-bit GPR as `lq` leaves it.
-#[inline]
-fn set_quad(c: &mut Cpu, r: usize, v: Vec4) {
-    let q = v.to_bits();
-    c.g[r] = [q as u64, (q >> 64) as u64];
-}
-
-/// The FPU condition bit as a `c.*.s` compare leaves it.
-#[inline]
-fn set_fcc(c: &mut Cpu, cond: bool) {
-    use ssx3_ee_rt::fpu::FCC;
-    if cond {
-        c.fcr31 |= FCC;
-    } else {
-        c.fcr31 &= !FCC;
-    }
-}
-
-/// `LO`/`HI` (pipe 0) after a signed `mult` of two 32-bit values; returns
-/// the low word (the three-operand form also writes it to `rd`).
-#[inline]
-fn mult(c: &mut Cpu, a: i32, b: i32) -> u32 {
-    let r = a as i64 * b as i64;
-    c.lo[0] = sx(r as u32);
-    c.hi[0] = sx((r >> 32) as u32);
-    r as u32
-}
-
 // ---------------------------------------------------------------- views
 
 /// Typed accessors for the `Rider` fields this package uses (offsets from
@@ -295,7 +260,7 @@ impl AnimTrack {
 pub fn rider_get_main_state(c: &mut Cpu) {
     c.cycles += 3;
     let owner = Rider(Addr(abi::arg(c, 0))).owner(c);
-    set_word(c, V1, owner.0 .0);
+    abi::set_word(c, V1, owner.0 .0);
     let state = owner.main_state().read_u32(c);
     abi::set_ret(c, state);
     abi::ret(c);
@@ -305,7 +270,7 @@ pub fn rider_get_main_state(c: &mut Cpu) {
 pub fn rider_get_sub_state(c: &mut Cpu) {
     c.cycles += 3;
     let owner = Rider(Addr(abi::arg(c, 0))).owner(c);
-    set_word(c, V1, owner.0 .0);
+    abi::set_word(c, V1, owner.0 .0);
     let state = owner.sub_state().read_u32(c);
     abi::set_ret(c, state);
     abi::ret(c);
@@ -322,7 +287,7 @@ pub fn rider_get_hips_position(c: &mut Cpu) {
     let hips = rider.hips_bone().read_u32(c);
     let bone = model.bones(c).off(hips << 5);
     let translation = bone.read_vec4(c);
-    set_quad(c, V1, translation);
+    abi::set_gpr128(c, V1, translation.to_bits());
     out.write_vec4(c, translation);
     abi::ret(c);
 }
@@ -332,7 +297,7 @@ pub fn rider_get_hips_position(c: &mut Cpu) {
 pub fn rider_is_loaded(c: &mut Cpu) {
     c.cycles += 4 + 2;
     let step = Rider(Addr(abi::arg(c, 0))).load_step().read_u32(c);
-    set_word(c, V1, step);
+    abi::set_word(c, V1, step);
     c.g[V0][0] = (step == 7) as u64;
     abi::ret(c);
 }
@@ -343,11 +308,11 @@ pub fn rider_update_focus_box(c: &mut Cpu) {
     c.cycles += 3;
     let rider = Rider(Addr(abi::arg(c, 0)));
     let focus_box = rider.focus_box().read_u32(c);
-    set_word(c, V1, focus_box);
+    abi::set_word(c, V1, focus_box);
     if focus_box != 0 {
         c.cycles += 2;
         let pos = rider.position().read_vec4(c);
-        set_quad(c, V0, pos);
+        abi::set_gpr128(c, V0, pos.to_bits());
         Addr(focus_box).write_vec4(c, pos);
     }
     c.cycles += 2;
@@ -365,7 +330,7 @@ pub fn rider_reset_boost_meter(c: &mut Cpu) {
     c.f[0] = start.0;
     c.g[V0][0] = 3;
     let mode = rider.boost_mode().read_u32(c);
-    set_word(c, V1, mode);
+    abi::set_word(c, V1, mode);
     rider.boost_meter().write_fpu(c, start);
     match mode {
         3 => {
@@ -437,7 +402,7 @@ pub fn anim_table_get_entry(c: &mut Cpu) {
     c.cycles += 6;
     const ENTRY_SIZE: i32 = 0x1c;
     c.g[V1][0] = ENTRY_SIZE as u64;
-    let offset = mult(c, abi::arg(c, 0) as i32, ENTRY_SIZE);
+    let offset = abi::mult(c, abi::arg(c, 0) as u32, ENTRY_SIZE as u32);
     abi::set_ret(c, ANIM_TABLE.wrapping_add(offset));
     abi::ret(c);
 }
@@ -445,7 +410,7 @@ pub fn anim_table_get_entry(c: &mut Cpu) {
 /// The track `i` of `seq` (the index multiply is a `mult`, so it also sets
 /// LO/HI).
 fn track(c: &mut Cpu, seq: AnimSequence, i: u32) -> AnimTrack {
-    let offset = mult(c, i as i32, AnimSequence::TRACK_SIZE);
+    let offset = abi::mult(c, i as u32, AnimSequence::TRACK_SIZE as u32);
     AnimTrack(seq.0.off(offset))
 }
 
@@ -486,12 +451,12 @@ pub fn anim_sequence_update_weight_fade(c: &mut Cpu) {
     let fade = seq.fade_time().read_fpu(c);
     c.f[3] = fade.0;
     let no_fade = fade.eq_s(FpuF32::ZERO);
-    set_fcc(c, no_fade);
+    abi::set_fcc(c, no_fade);
     let mut remove = false;
     if !no_fade {
         c.cycles += 4;
         let ends = fade.le(dt);
-        set_fcc(c, ends);
+        abi::set_fcc(c, ends);
         if !ends {
             // weight += (dt / fade) * (target - weight); fade -= dt.
             c.cycles += 8;
@@ -534,7 +499,7 @@ pub fn anim_sequence_fade_out(c: &mut Cpu) {
     let target = seq.target_weight().read_fpu(c);
     c.f[0] = target.0;
     let fading_out = target.eq_s(FpuF32::ZERO);
-    set_fcc(c, fading_out);
+    abi::set_fcc(c, fading_out);
     if !fading_out {
         seq.fade_time().write_fpu(c, t);
         c.cycles += 1;
@@ -543,14 +508,14 @@ pub fn anim_sequence_fade_out(c: &mut Cpu) {
         let fade = seq.fade_time().read_fpu(c);
         c.f[0] = fade.0;
         let idle = fade.eq_s(FpuF32::ZERO);
-        set_fcc(c, idle);
+        abi::set_fcc(c, idle);
         if idle {
             seq.fade_time().write_fpu(c, t);
             c.cycles += 1;
         } else {
             c.cycles += 4;
             let shorter = t.lt(fade);
-            set_fcc(c, shorter);
+            abi::set_fcc(c, shorter);
             if shorter {
                 c.cycles += 1 + 1;
                 seq.fade_time().write_fpu(c, t);
@@ -574,7 +539,7 @@ pub fn anim_sequence_get_track_blend_weight(c: &mut Cpu) {
     let fade_in = seq.track_fade_in().read_fpu(c);
     let t = track(c, seq, abi::arg(c, 1));
     let seq_weight = seq.weight().read_fpu(c);
-    set_word(c, V0, t.0 .0);
+    abi::set_word(c, V0, t.0 .0);
     c.g[V1][0] = c.g[V0][0];
     let time = t.time().read_fpu(c);
     let track_weight = t.weight().read_fpu(c);
@@ -593,7 +558,7 @@ pub fn anim_sequence_get_track_blend_weight(c: &mut Cpu) {
     let fade_out = seq.track_fade_out().read_fpu(c);
     c.f[0] = fade_out.0;
     let in_fade_out = remaining.lt(fade_out);
-    set_fcc(c, in_fade_out);
+    abi::set_fcc(c, in_fade_out);
     if in_fade_out {
         c.cycles += 2;
         let ramp = remaining.div(fade_out);
@@ -622,7 +587,7 @@ pub fn anim_sequence_set_track_anim(c: &mut Cpu) {
     let banks = Addr(gp.off(0xd08).read_u32(c));
     let t = track(c, seq, abi::arg(c, 1));
     let bank_slot = banks.off((id & 0xff) << 2);
-    let clip_offset = mult(c, (id >> 8) as i32, 0x14);
+    let clip_offset = abi::mult(c, (id >> 8) as u32, 0x14 as u32);
     let frame_time = gp.off(0u32.wrapping_sub(0x3224)).read_fpu(c);
     c.f[1] = frame_time.0;
     t.anim_id().write_u32(c, id);
@@ -634,9 +599,9 @@ pub fn anim_sequence_set_track_anim(c: &mut Cpu) {
     c.f[0] = length.0;
     t.length().write_fpu(c, length);
     let active = t.active().read_u32(c);
-    set_word(c, V0, t.0 .0);
+    abi::set_word(c, V0, t.0 .0);
     if active != 0 {
-        set_word(c, V1, clips);
+        abi::set_word(c, V1, clips);
     } else {
         c.cycles += 10;
         t.time().write_u32(c, 0);
@@ -666,7 +631,7 @@ pub fn rider_handplant_state_enter(c: &mut Cpu) {
     let state = RiderStateObj(Addr(abi::arg(c, 0)));
     let frame = Addr((c.g[SP][0] as u32).wrapping_sub(0x30));
     let rider = state.rider_at(c, 0xa0);
-    set_word(c, V1, rider.0 .0);
+    abi::set_word(c, V1, rider.0 .0);
     let target = state.0.off(0x30).read_vec4(c);
     let pos = rider.position().read_vec4(c);
     let delta = Vec4 { x: target.x - pos.x, y: target.y - pos.y, z: target.z - pos.z, w: target.w - pos.w };
@@ -683,7 +648,7 @@ pub fn rider_handplant_state_enter(c: &mut Cpu) {
     let inv = VuF32::div(VuF32::ONE, VuF32(duration));
     let vel = Vec4 { x: delta.x * inv, y: delta.y * inv, z: delta.z * inv, w: delta.w * inv };
     frame.off(0x20).write_vec4(c, vel);
-    set_quad(c, V0, vel);
+    abi::set_gpr128(c, V0, vel.to_bits());
     frame.write_vec4(c, vel);
     rider.velocity().write_vec4(c, vel);
     vu0_scratch::set_vf(c, 4, 0b1111, vel);
@@ -713,8 +678,8 @@ pub fn rider_railslide_state_exit(c: &mut Cpu) {
     c.f[0] = step.0;
     c.f[1] = MINUS_QUARTER;
     c.f[2] = FpuF32::ONE.0;
-    set_word(c, V0, rider.0 .0);
-    set_word(c, V1, rider.0 .0);
+    abi::set_word(c, V0, rider.0 .0);
+    abi::set_word(c, V1, rider.0 .0);
     abi::ret(c);
 }
 
@@ -734,7 +699,7 @@ pub fn rider_railslide_sub_enter(c: &mut Cpu) {
     slew.max_step().write_fpu(c, step);
     slew.target().write_u32(c, 0);
     c.f[0] = step.0;
-    set_word(c, V0, rider.0 .0);
+    abi::set_word(c, V0, rider.0 .0);
     abi::ret(c);
 }
 
@@ -757,8 +722,8 @@ pub fn rider_board_press_sub_exit(c: &mut Cpu) {
     press.target().write_u32(c, 0);
     c.f[0] = pivot_step.0;
     c.f[1] = press_step.0;
-    set_word(c, V0, rider.0 .0);
-    set_word(c, V1, rider.0 .0);
+    abi::set_word(c, V0, rider.0 .0);
+    abi::set_word(c, V1, rider.0 .0);
     abi::ret(c);
 }
 

@@ -257,21 +257,6 @@ fn arg64(c: &Cpu, r: usize) -> i64 {
     c.g[r][0] as i64
 }
 
-/// Set a GPR to a 128-bit quadword (what `lq` leaves in it).
-fn set_gpr128(c: &mut Cpu, r: usize, q: u128) {
-    c.g[r] = [q as u64, (q >> 64) as u64];
-}
-
-/// The FPU condition bit as the last `c.cond.s` left it.
-fn set_fcc(c: &mut Cpu, v: bool) {
-    use ssx3_ee_rt::fpu::FCC;
-    if v {
-        c.fcr31 |= FCC;
-    } else {
-        c.fcr31 &= !FCC;
-    }
-}
-
 fn lanes(v: Vec4) -> [VuF32; 4] {
     [v.x, v.y, v.z, v.w]
 }
@@ -453,10 +438,10 @@ pub fn camera_base_ctor(c: &mut Cpu) {
 
     c.g[AT][0] = sx(one.0);
     c.f[0] = one.0;
-    set_gpr128(c, A1, up.to_bits());
+    abi::set_gpr128(c, A1, up.to_bits());
     c.g[A2][0] = sx(DEFAULT_FORWARD.0);
-    set_gpr128(c, A3, zero.to_bits());
-    set_gpr128(c, V1, fwd.to_bits());
+    abi::set_gpr128(c, A3, zero.to_bits());
+    abi::set_gpr128(c, V1, fwd.to_bits());
     c.g[V0][0] = c.g[A0][0];
     abi::ret(c);
 }
@@ -472,8 +457,8 @@ pub fn chase_get_view(c: &mut Cpu) {
     out.eye().write_vec4(c, eye);
     let rot = algo.out_rot().read_vec4(c);
     out.rot().write_vec4(c, rot);
-    set_gpr128(c, A2, eye.to_bits());
-    set_gpr128(c, V1, rot.to_bits());
+    abi::set_gpr128(c, A2, eye.to_bits());
+    abi::set_gpr128(c, V1, rot.to_bits());
     abi::ret(c);
 }
 
@@ -485,7 +470,7 @@ pub fn chase_set_look_at_from_rider(c: &mut Cpu) {
     let st = RiderCamState(Addr(abi::arg(c, 1)));
     let p = st.rider_position().read_vec4(c);
     algo.look_at().write_vec4(c, p);
-    set_gpr128(c, V0, p.to_bits());
+    abi::set_gpr128(c, V0, p.to_bits());
     abi::ret(c);
 }
 
@@ -583,7 +568,7 @@ pub fn add_shake(c: &mut Cpu) {
         let strength = (intensity * fade) * amp;
         let current = cam.shake_strength().read_fpu(c);
         let wins = current.lt(strength);
-        set_fcc(c, wins);
+        abi::set_fcc(c, wins);
         if wins {
             c.cycles += 2;
             cam.shake_preset().write_u32(c, preset);
@@ -678,7 +663,7 @@ pub fn wobble_angle(c: &mut Cpu) {
     let amp = w.amplitude().read_fpu(c);
     c.f[4] = amp.0;
     let off = amp.eq_s(FpuF32::ZERO);
-    set_fcc(c, off);
+    abi::set_fcc(c, off);
     let angle = if off {
         c.cycles += 2;
         FpuF32::ZERO
