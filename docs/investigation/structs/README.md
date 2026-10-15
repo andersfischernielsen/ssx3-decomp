@@ -7,12 +7,24 @@ dumps of our headless runner one frame apart.
 
 | file | contents | depth |
 |---|---|---|
-| [rider.md](rider.md) | `Rider` (virtual base, 0xb40), `RiderBase` state-machine/FX mixins (0xdf0), `Player` (0x1950), `ComputerActorRider` (0x1a90), AirPredictor, RiderModel, RiderMetrix, rider vtables, the per-frame rider update order | full layout; ~60% of Rider fields named, all hot fields high confidence |
-| [camera.md](camera.md) | `GameViewMan`, `CameraBase`/`GameCamera` (0x4b0), `CamController` + Chase/Manual/Script controllers, `AlgorithmList`, `CameraAlgorithm` → `ChaseCameraAlgorithm` (0x390) and the algorithm-id table, `RiderCameraTarget` | full layout for camera/controllers; chase-algorithm filter fields partly unknown |
+| [rider.md](rider.md) | `Rider` (virtual base, 0xb40), `RiderBase` state-machine/FX mixins (0xdf0), `Player` (0x1950), `ComputerActorRider` (0x1a90), AirPredictor, RiderModel, RiderMetrix, rider vtables, the per-frame rider update order | full layout; ~80% of Rider fields named (round 2: tricks, slews, boost, FX, CPU AI), all hot fields high confidence |
+| [camera.md](camera.md) | `GameViewMan`, `CameraBase`/`GameCamera` (0x4b0), `CamController` + Chase/Manual/Script controllers, `AlgorithmList`, `CameraAlgorithm` → `ChaseCameraAlgorithm` (0x390) and the algorithm-id table, `RiderCameraTarget` | full layout for camera/controllers; chase tuning constants and filter fields mapped in round 2 |
 | [world.md](world.md) | `GameModule` (all subsystem pointers, state machine, update order), the "AI" race manager, `World`, `cWorldCache` (+ `.sdb` header, section streamer, SectionTable, WorldMemman, SectionAllocator, cHullPage), `SectionMan`, `GameProcess`/`WorldObj` headers and the process list, `WorldLightMan`, `SkyBox`, `InstancesMan`, `OcclusionMan`, `SurfPropCache` | main objects mapped; many scalar fields med/low |
 | [render.md](render.md) | `PS2GraphicsMan`, the DMA kick path (`Renderer_DmaKickThread`), packet/VIF builders, `TexMan` | see file |
 | [app.md](app.md) | `App`/`SSXApp` static object, module switching (FE / Game / debug menu), the gp globals that root everything | short pass, main fields high |
 | [input.md](input.md) | `PS2Pad`, input bindings / `InputParser`, the rider control-input record | see file |
+
+**Round 2 (2026-10-15):** closed most open questions: the rider trick system
+(Spin sub-state object, grab state machine, trick and score tables, scoring → boost),
+the 19 slewed parameters, boost meter / timers / uber level and the target-speed
+table (the distance unit is confirmed as the centimetre), the four unnamed rider FX
+mixins, RiderMetrix, the ComputerActorRider AI block and CPU tuning table, the AI
+race-manager fields, the 16 GameModule state names, the chase-camera tuning (all
+compiled-in constants, five rebuilt splines), App+0x08 (`PS2ExecMan`) and the .big
+mount handles, and the render draw-slot packet formats (render.md). Each file now
+also ends with a "Proposed names (round 2)" table; nothing was renamed in Ghidra in
+round 2. Extra headless dumps: frames 5000-5003, 5010/5011, 5030, 5040-5042, 5060,
+5120, 5240.
 
 Every table gives offset, type, name, meaning, evidence (function and/or live
 value) and confidence (high / med / low). Each file ends with open questions and

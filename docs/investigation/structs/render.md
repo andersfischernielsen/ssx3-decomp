@@ -90,10 +90,10 @@ slot 117 by `LensFXBase_ctor`).
 | +0x5780 | Matrix4 | world | copy of *curMatrix (UpdateViewMatrices) | | H |
 | +0x57c0 | Matrix4 | view | world->view | | H |
 | +0x5800 | Matrix4 | worldView | view*world | | H |
-| +0x5840 | vec4 x2 | clipScale/clipOffset? | saved in the view stack | (1024,1024,-8.4e6),(2048,2048,8.4e6) | L |
+| +0x5840 | vec4 x2 | guardScale / guardOffset | clip -> GS-coordinate scale and offset for the guard band (1024 = 4x the 256-pixel half width; offset 2047.5 = GS centre). Uploaded as VU1 header qwords 4/5 for material types 1-3 and 6, and by slot 89 | (1024,1024,-8388467.5),(2047.5,2047.5,8388467.5) | H |
 | +0x5860 | Matrix4 | viewProj | world->clip without the model matrix | | H |
 | +0x58a0 | Matrix4 | worldClip | viewProj*world (slot 43 returns it) | | H |
-| +0x58e0 | vec4 x2 | ? | saved in the view stack | | L |
+| +0x58e0 | vec4 x2 | screenScale / screenOffset | same as +0x5840 but with the real half viewport (256, 224) instead of the guard band. Uploaded (z scaled by 1/16) in the type 4/5 VU1 headers | (256,224,-8388467.5),(2047.5,2047.5,8388467.5) | H |
 | +0x5900 | short[4] | scissor | x,y,w,h (`PS2GraphicsMan_SetScissorClamped`); pushed to `DeferMan_SetScissor` | 0,0,512,448 | H |
 | +0x5908 | float | fovOrAspect | view-stack copy | 0.7539 | M |
 | +0x590c | float | near/fogNear? | | 29999 | L |
@@ -209,7 +209,7 @@ Decoded from `DeferMan_EmitStateChange` 0x363c20 and its GS register helpers.
 | Word | Bits | Meaning | Conf |
 |---|---|---|---|
 | w0 | 2-3 / 4-5 | CLAMP_1 / CLAMP_2 mode (0 repeat, 1 clamp T, 2 clamp S, 3 both) | H |
-| w0 | 6-9 | material / packet type (0 = no texture). Selects the TEX0/microcode setup in FUN_00364cd0; draw slots set 3 | M |
+| w0 | 6-9 | **VU1 material type** 0..8: selects the VU1 microprogram and its constant header (`FUN_00364cd0`, see "VU1 material types" below). 0 = no VU setup (PATH2/DIRECT-only draws), 1/2 Bezier terrain, 3 general (most slots), 4 particles, 5 trails, 6 lit skinned model, 7 skinned model with custom header (shadow). TEX0 is not set here (that is `TexMan_BindTextures`) | H |
 | w0 | 12-19 / 20-27 | ALPHA_1 / ALPHA_2 FIX | H |
 | w1 | 0-1 | sort mode (0: key 0x3ff, 1: 0x3fe, 2: explicit, from w2 bits 10-28) (FUN_00364240) | M |
 | w1 | 2-6 / 7-11 | ALPHA_1 / ALPHA_2 blend preset (22 presets, jump table 0x491fb0) | H |
@@ -220,7 +220,7 @@ Decoded from `DeferMan_EmitStateChange` 0x363c20 and its GS register helpers.
 | w2 | 0-4 | scissor index (DeferMan scissor table), filled in when the draw is recorded | H |
 | w2 | 5-9 | layer / pass. The chain splits at layer 6 and 9 (thresholds at 0x4a4058 = {6, 9}) | H |
 | w2 | 10-28 | explicit sort value (sort mode 2) | M |
-| w3 | 0-29 | material parameter (texture/shader handle passed to FUN_00364cd0) | M |
+| w3 | 0-29 | material parameter. Only types 6/7 use it: the EE address of a VIF packet (ending in DMA RET) that the state change CALLs: the lighting packet from slot 124 (type 6) or the 6-qword header packet from slot 101 (type 7). Draw slots clear it (`&= 0xc0000000`) | H |
 | +0x10 | short tex[2] | texture ids for context 1/2 (-1 = none) -> `TexMan_BindTextures` | H |
 
 ---
@@ -248,7 +248,8 @@ Decoded from `DeferMan_EmitStateChange` 0x363c20 and its GS register helpers.
 | +0x69cbc | u32 | emitMaterial | | | M |
 | +0x69cc0 | int | curMatrixIndex | recorded in DrawRecord+0x1c | -1 | H |
 | +0x69cc4 | int | curScissorIndex | recorded in RenderState w2[0:4] | -1 | H |
-| +0x69cc8 | int | numMatrices | dedup table at +0x69db0... (`FUN_003645b8`) | 0 | M |
+| +0x69cc8 | int | numMatrices | number of MatrixRecords at +0x69cd0 (`FUN_003645b8`, called at the end of `PS2GraphicsMan_UpdateViewMatrices` with gm+0x5780) | 0 | H |
+| +0x69cd0 | MatrixRecord[n] x 0x180 | matrices | copy of gm+0x5780..+0x58ff (24 qwords, see below); deduplicated on qwords 14..23 only | | H |
 | +0x6aed0 | int | numScissors | | 1 | H |
 | +0x6aed4 | short[4][32] | scissors | x,y,w,h | {0,0,512,448} | H |
 
@@ -265,7 +266,53 @@ Decoded from `DeferMan_EmitStateChange` 0x363c20 and its GS register helpers.
 
 Live example (record 0, stale from the last frame): `{0xcc, 0xc14184, 0, 0, 0xffff0119}`, start 0x6efd00, end 0x6efd80 (texture 0x119 in ctx 1).
 
+**MatrixRecord (0x180)** = a snapshot of gm+0x5780 taken by `FUN_003645b8` (proposed `DeferMan_InternMatrixRecord`) whenever the view matrices are rebuilt. A new record is added only when qwords 14..23 (viewProj, worldClip, screenScale/Offset) differ from every existing record; `curMatrixIndex` (+0x69cc0) is set to the match. (H)
+
+| Off | gm source | Content | Uploaded by material type |
+|---|---|---|---|
+| +0x000 | +0x5780 | world | — |
+| +0x040 | +0x57c0 | view (+0x40 = view[0].x, +0x54 = view[1].y) | 4 (first-use path) |
+| +0x080 | +0x5800 | worldView | 1, 2, 3, 6 (header qw 0-3); 4 (first-use path) |
+| +0x0c0 / +0x0d0 | +0x5840 / +0x5850 | guardScale / guardOffset | 1, 2, 3, 6 (header qw 4-5); 4 first-use path (z x 1/16) |
+| +0x0e0 | +0x5860 | viewProj (+0xe0 = [0].x, +0xf4 = [1].y: the projection scale terms) | 4, 5 |
+| +0x120 | +0x58a0 | worldClip | 4 |
+| +0x160 / +0x170 | +0x58e0 / +0x58f0 | screenScale / screenOffset | 4, 5 (z x 1/16) |
+
 **Bucket (0x20)**: +0 state ptr, +4 textures (short[2]), +8 matrix index, +0xc first packet start (CALL target), +0x10 last packet end (patched with RET or NEXT), +0x14 chained flag, +0x18 next-in-chain, +0x1c hash next. `DeferMan_AppendPacket` 0x362978 writes `NEXT(start)` (0x20000000) at the previous end. (H)
+
+### VU1 material types (`FUN_00364cd0`, proposed `DeferMan_EmitMaterialSetup`)
+
+`DeferMan_EmitStateChange` calls `FUN_00364cd0(defer, type = w0[6:9], mode, w3, &cursor)` for every
+bucket whose type is not 0, before the GS register block:
+
+- **mode 0**: the type differs from the last emitted one -> upload the microprogram (DMA `CALL` into
+  the static `.vutext` chain, which sets STCYCL 4,4, STMOD 0, **BASE/OFFSET** (double buffer) and
+  runs the MPG to VU1 address 0) and the full constant header;
+- **mode 1**: same type, different matrix record -> re-upload only the matrix header;
+- **mode 2**: same type and matrix, w3 changed -> only types 6/7 react (`CALL w3`).
+
+The jump table is at 0x492040 (9 entries; 0 and 8 return). "Header" is VU1 data memory from
+address 0, written with `UNPACK V4-32` (no FLG), `M` = the current MatrixRecord.
+
+| type | microprogram (`.vutext` chain -> code, hash in `vu-vif.md`) | BASE / OFFSET | mode-0 header | mode-1 header | used by | conf |
+|---|---|---|---|---|---|---|
+| 1 | CALL 0x42e590 -> 0x42e5b4 `f4babac5` (1172 pairs) | 0x250 / 0xd8 | qw0-5 = M.worldView, M.guardScale, M.guardOffset; then `REF 0x44b080` (12 qw): UNPACK 11 at 6 = colour (0x80 x4), 4 GIF tags {strip ctx1 `0x302e4000`, strip ctx2 `0x312e4000`, fan ctx1 `0x302ec000`, fan ctx2 `0x312ec000`, all NREG 3 REGS 0x412 = ST,RGBAQ,XYZ2}, 6 qw of integer tessellation tables (per LOD n = 2,3,4: n, n-1, ...) | qw0-5 | Bezier terrain patches, `PS2BezierMan` vt 18 (0x38b370) via `FUN_0038ca70` | H |
+| 2 | CALL 0x430a80 -> 0x430aa4 `9790369f` (2005 pairs) | 0x250 / 0xd8 | qw0-5 as type 1, qw6 colour, qw7-10 the same 4 GIF tags; then UNPACK 42 qw at 0x200: 18 qw from `*(gp+0x1158)+0x1a0`, 18 qw from `+0x320` (REF tags), 3 qw {0x200,0x212,k,k} {0x204,0x216,..} {0x20a,0x21c,..} with k = 1/3, 1/5, 1/7 (gp-0x28a8..) | qw0-5 | second Bezier pass (two textures: ctx1 + ctx2), `FUN_0038ce20` | H (layout) / L (meaning of the 0x200 block) |
+| 3 | CALL 0x435bd0 -> 0x435bf4 `d159716b` (1985 pairs) | 0x26 / 0x1b6 | qw0-5 as type 1, qw6 = {0x10c, 0x2c2, 0, 0}; then `REF 0x44b140` (7 qw): GIF ctx2 strip+fan at 0x1f/0x20, ctx1 fan at 0x3c8 and 0x3e4 | qw0-5 | general purpose: slots 71, 72, 75, 89, 90, 95, cPS2GridMesh, SkyBox | H |
+| 4 | CALL 0x439a40 -> 0x439a64 `f55ee634` (804 pairs) | 0x7 / 0x9a | 7 qw: M.worldView, guardScale and guardOffset with z x 1/16, {view[0].x, view[1].y, 0, 0} | 7 qw: **M.worldClip**, screenScale/Offset (z/16), {viewProj[0].x, viewProj[1].y, 0, 0} | particles: slots 82, 83, 84, `FUN_0038d690` (Bezier patch FX), `FUN_0030c8d8` | H (layout) / M (the two paths really differ: probably a game bug, the first draw after a program switch gets the view-space header) |
+| 5 | CALL 0x43b3f0 -> 0x43b414 `e72540c9` (275 pairs) | 0x3 / 0xb | 3 qw: screenScale/Offset (z/16), {viewProj[0].x, viewProj[1].y} | same | trails: slots 85, 86 (they upload their own matrix) | H |
+| 6 | CALL 0x434990 -> 0x4349b4 `9fa47842` (576 pairs) | 0xc0 / 0x169 | qw0-5 as type 1; then UNPACK 4 at 0x392 (FLG): GIF tag strip ctx2 (`0x312e4000`, REGS 0x412) + 3 qw = rows of (bias matrix 0x4ffb80 {0.5,-0.5 ,.., 0.5,0.5,1,1} x M) (texture-projection / env map for context 2); then `CALL w3` | same as mode 0 | lit skinned models (slot 99 with slot 124's lighting packet) | H |
+| 7 | CALL 0x434990 (same program as 6) | 0xc0 / 0x169 | no header; `CALL w3` (the 6-qword header from slot 101) | `CALL w3` | skinned model shadow (slot 100 after slot 101) | H |
+
+`0x43bd34` (`27649fa5`) is not referenced here; it is the VU0 bounding-box test (see `race-geometry.md`).
+
+Live (stale records of frame 5000 in the headless dump): type 0: 238 records, 1: 2, 2: 24, 3: 94, 4: 16, 6: 43
+(w3 = 0x6241c0), 7: 4 (w3 = 0x631e30); type 5 not drawn in that frame.
+
+**VU1 data memory per program** (from the headers, the BASE/OFFSET values and the draw packets): type 3 header
+0..6, constants 0x1f/0x20 and 0x3c8/0x3e4, double buffers at 0x26 and 0x1dc; type 6/7 header 0..5, lighting
+7..0x10 (10 qw), bone matrices from 0x11 (4 qw each), env GIF tag + matrix 0x392..0x395, morph weight 0xb4,
+bone count 0x3ff; type 4 header 0..6, buffers 7 / 0xa1; type 5 header 0..2, buffers 3 / 0xe. (M)
 
 ---
 
@@ -298,6 +345,50 @@ qwN  VIF MSCAL 0x12b8/0x12b0 (0x14000000 | addr>>3)
 ```
 
 Batches are split at 0x48 vertices and the SPR block is flushed when full. Other draw slots use other VIF UNPACK forms (`0x6c15...`, `0x6c98...`, `0x6c6e...`, `0x6c0b...`). Mesh slots (95, 99, 100) emit `CALL` tags (0x50000000) into prebuilt model packets and `UNPACK|STCYCL 0x1000101` headers.
+
+Live slot-71 packet (record 203, HUD quad, 0x6542f0): `CNT 0x10 | UNPACK 0x6c0e8000` (14 qw), GIF tag `00008004 302e4000 412` (4 verts),
+`{12}`, then per vertex `{S, T, 1.0, 0}`, `{R, G, B, A}` as 32-bit ints, `{X, Y, Z, 1.0}`; last word `MSCAL 0x257` (= 0x12b8). The entry is 0x12b8,
+or 0x12b0 once after the one-shot flag gp+0x1290 (0x4a4380) is set.
+
+### Draw slots 71-101: packet formats
+
+Decoded from the slot functions and checked against live packets in the frame-5000 RAM dump. "Path" is how the
+vertices reach the GS: **VU1** (UNPACK + MSCAL, XGKICK by the program) or **DIRECT** (VIF DIRECT = PATH2, vertices
+transformed and projected on the EE; the type set in w0 then only uploads a program that is not used by this packet).
+UNPACK codes: `0x6c` V4-32, `0x6e` V4-8, `0x6f` V4-5, `0x64` V2-32, `0x60` S-32; FLG = address relative to TOPS.
+MSCAL addresses are byte addresses in the program of that material type. Unless stated, every packet is
+`CNT` + VIF codes + data, followed by a DrawRecord.
+
+| slot | impl | name (proposed) | type | path | VIF / VU layout | GIF tag (PRIM / REGS) | MSCAL | conf |
+|---|---|---|---|---|---|---|---|---|
+| 71 | 0x379860 | DrawTriStrip(n, verts) | 3 | VU1 | UNPACK V4-32 FLG 3n+2 at 0: GIF tag, {3n}, 3 qw per vertex {STQ}, {RGBA i32}, {XYZW}; split at 0x48 verts (overlap 2) | 0x5c strip IIP TME ABE / 0x4c without texture; REGS 0x412 / 0x41f | 0x12b8 (0x12b0 after gp+0x1290) | H |
+| (none) | 0x37a260 | BeginTriStrip(n) (FUN_0037a260, used by `cSpeedBoostStreamerFX_Render`) | 3 | VU1 | same header as 71, returns the vertex pointer through gm+0x5a2c. Live record 120 (layer 8): UNPACK 0x5c qw, tag `0000801e 302e4000 412` (30 verts), count 0x5a | as 71 | 0x12b8/0x12b0 | M |
+| 72 | 0x379bd0 | DrawIndexedTriangles(n, idx, pos, uv, col) (UIVector) | 3 | DIRECT | CPU transform by gp+0x2a94 matrix, divide by w | A+D PRIM then REGLIST NREG 6 `0x515151` (RGBAQ,XYZ2 x3; PRIM 0x4b tri) or NREG 9 `0x512512512` (ST,RGBAQ,XYZ2 x3; PRIM 0x5b) | — | H |
+| 73 | 0x381ad0 | DrawLineStrip(n, verts) | (state) | DIRECT | CPU transform by gm+0x6b30, near/far clipping (`FUN_00383a10`), strip builder `FUN_00384d98/3850a8/384fd0/384dc0/384e50` | REGLIST PRIM 0x4a (line strip IIP ABE), then NREG 3 `0x521` (RGBAQ, ST, XYZ2) 3 dwords/vertex | — | H |
+| 75 | 0x381f10 | DrawLineShape(matrix, colour, n) (0 callers) | 3 | VU1 | CNT 10: UNPACK V4-32 FLG 8 at 0: A+D GIF {RGBAQ}, GIF tag NLOOP n PRIM 2 REGS 4 (XYZF2), 4 qw matrix, {n} | line strip, generated on VU1 | 0x3bf0 | M |
+| 78 | 0x377cf0 | DrawSprite3D(pos, size, uv0, uv1, colour) | (state) | DIRECT | CPU projection, CNT 5 + DIRECT 4 | REGLIST NREG 6 `0x525120`: PRIM 0x5e (sprite IIP TME ABE), ST, RGBAQ, XYZ2, ST, XYZ2 | — | H |
+| 79 | 0x3781a0 | DrawRotatedSprites(count, ...) | (state) | DIRECT | per quad CNT 7 + DIRECT 6 | REGLIST NREG 10 `0x5252525210`: PRIM 0x54 (strip TME ABE), RGBAQ, 4 x (ST, XYZ2) | — | H |
+| 80 / 81 | 0x378808 / 0x379028 | DrawGlyphs / DrawGlyphsW (Font_DrawText(W)) | (state) | DIRECT | 2 dwords per glyph corner | REGLIST NREG 2 `0x10` (PRIM 0x56 sprite TME ABE, RGBAQ x204/255), then NLOOP glyphs NREG 4 `0x5252` | — | H |
+| 82 | 0x380518 | DrawEmitter(desc) | 4 | VU1 | pushes a RenderState (gm+0xe84 += 0x14), sort mode 2, layer 7; UNPACK V4-32 FLG 21 qw at 0 (the emitter descriptor), particles generated on VU1 | by the program | 0x0, then FLUSH | H |
+| 83 | 0x3807a0 | DrawDynamicEmitter(e) | 4 | VU1 | per batch of <= 64: UNPACK V4-32 FLG 0x98 at 0: 21 qw header (e+0x20), 1 qw {count, t, ...}, particle data | by the program | 0x510 | H |
+| 84 | 0x380ce0 | DrawMEmitter(e) | 4 | VU1 | per batch of <= 43: UNPACK V4-32 FLG 0x6e at 0 (header e+0x20, count, positions), then UNPACK V4-8 USN FLG 0x2c at 0x6e (colours) | by the program | 0xa00, or 0xf10 if e+0x200 != 0 | H |
+| 85 / 86 | 0x381310 / 0x3816f0 | DrawTrail / DrawTrailB | 5 | VU1 | sort mode 2; UNPACK V4-32 FLG 11 at 0: 4 qw (viewProj x d+0x50 matrix), 2 qw constants, 5 qw from the descriptor | by the program | 0x0 (85) / 0x408 (86) | H |
+| 87 | 0x382170 | DrawCircle(radius, centre, colour, step) | — | via 73 | 16-segment unit circle (0x4ffbc0) scaled on VU0; push/identity/pop matrix, then slot 73 | as 73 | — | H |
+| 89 | 0x386e78 | DrawShadowVolume (proposed; was "DrawShadow/decal") | 3 | VU1 + DIRECT | several passes: DIRECT A+D FRAME_1 (FBMSK 0x00ffffff: alpha only), ZBUF (ZMSK), TEST (ZTST changes 1/2/3), FBA_1; STCYCL 1,1 UNPACK 2 at 4 = guardScale/Offset; mesh passes `FUN_00386d10` -> `FUN_00387ec0` and five `FUN_00386dd0(a, b)` edge passes | strip `0x302e4000`/REGS 0x412 inside the helpers | via helpers (see `FUN_00387ec0`) | M |
+| 90 | 0x3883b8 | DrawBoardWake (cBoardWakeFX) | 3 | VU1 | `FUN_003885e0`: UNPACK V4-32 FLG 2 at 0 (GIF tag + count) then per strip STCYCL 1,1 + UNPACK of 3 qw/vertex | 0x5c strip, REGS 0x412 | 0x3a00 / 0x3a08 (the near-plane clipping entry, see `race-geometry.md`) | H |
+| 95 | 0x37e238 | DrawModel (MeshAnim, SkyBox, ModObj) | 3 | VU1 | `FUN_0037e120`: CNT 6: STMASK 0, STCYCL 1,1, UNPACK V4-32 FLG 5 at 0 = model matrix + {0,0,0,flags}; optional extras (`FUN_0037e040`, UNPACK 4 at 5); then DMA `CALL` the mesh packet (REF vertex data, `UNPACK V4-5` colours, `MSCAL 0x2270`, ITOP) | in the prebuilt packet | 0x2270 (live CALL target 0x1095ba0: `MSCAL 0x44e`) | H |
+| 96 | 0x369cb0 | DrawModelSimple -> 95 | 3 | | | | | H |
+| 99 | 0x37a610 | DrawSkinnedModel (rider) | 6 (via 124) | VU1 | per bone batch: CNT 4n+2: STCYCL 1,1, UNPACK V4-32 4n at 0x11 (bone matrices), `UNPACK S-32 1 at 0x3ff = n`, `MSCAL 0x80`, `MSCAL 0x70`; per mesh DMA `CALL` to the mesh packets; morph targets: `UNPACK V2-32 FLG 1 at 0xb4` {12800.0, weight} + `MSCAL 0x398` | in the mesh packets | 0x80, 0x70, 0x398 | H |
+| 100 | 0x37b548 | DrawSkinnedModelShadow | 7 (via 101) | VU1 | CNT 3: FLUSH, DIRECT 2: A+D RGBAQ (shadow colour, live 0x80262626); then the bone batches of 99 | | 0x80, 0x70 | H |
+| 101 | 0x37ba50 | SetShadowHeader(qword[6]) (proposed; was "DrawMatrixPacket") | sets 7 | — | writes `RET 7`: UNPACK V4-32 6 at 0 + the 6 qwords, sets w0 type 7 and w3 = that packet. Live (0x631e30): qw3 (121.2, 1388.5, 1, 1), qw4 (64, 64, 0, 0), qw5 (2048, 2048, 0, 0) | — | — | H |
+| 124 | 0x396b40 | EmitLightingPacket | sets 6 | — | writes `RET 0xc`: STCYCL 1,1, UNPACK V4-32 10 at 7 = gm+0x6bb0 lighting, `MSCAL 0x1150`; sets w0 type 6 and w3 = that packet. The code after it (0x396c30, not a Ghidra function) emits one bone batch of slot 99 | — | 0x1150 | H |
+
+Two Bezier passes that are not slots, from `PS2BezierMan` vt 18 (0x38b370): type 1 patches (`FUN_0038ca70`) are
+`CALL patch packet` + `MSCAL table[lod]`, tables 0x504840 / 0x5048a0 / 0x504900 (patch variant) with entries
+0x610 .. 0x980 (live 0x700); type 2 patches (`FUN_0038ce20`) add `UNPACK V4-8 1 at 0xd0` (colour) and
+`REF 16 qw -> UNPACK V4-32 16 at 0xc0` (control points), then `CALL` + `MSCAL table 0x504960[lod]` (0x930 .. 0xcf0,
+live 0x9a0). `FUN_0038d968` then draws type-4 patch FX (`FUN_0038d690`: UNPACK 22 qw, `MSCAL 0x1460`) for
+patches with flag 0x800000.
 
 ### GS register helpers (A+D into a VIF DIRECT block, renamed)
 
@@ -440,25 +531,25 @@ Slots: 1 dtor, 2 IsValid (+0x1c8), 3 SetPositions (vec3[]), 4 SetUVs (vec2[]), 5
 | 66 / 67 | stubs | *ClearLights / AddLight* | 0 / 1 | +0x13ec |
 | 69 / 70 | stubs | *SetLighting / GetLighting* | 3 / 0 | +0x6bb0 |
 | 71 | 0x379860 | *DrawTriStrip(n, verts)* | 38 | most-used draw |
-| 72 | 0x379bd0 | *DrawVectorShape* | 1 | UIVector_Render |
-| 73 | 0x381ad0 | *DrawLines/Points* | 8 | |
-| 75 | 0x381f10 | *(draw)* | 0 | |
+| 72 | 0x379bd0 | *DrawIndexedTriangles* | 1 | UIVector_Render; DIRECT (see packet table) |
+| 73 | 0x381ad0 | *DrawLineStrip* | 8 | DIRECT, EE-clipped |
+| 75 | 0x381f10 | *DrawLineShape(matrix, colour, n)* | 0 | VU1 type 3, MSCAL 0x3bf0 |
 | 76 | 0x37a540 | PS2GraphicsMan_CreateGridMesh | 2 | |
 | 77 | 0x36a190 | *DestroyGridMesh* | 3 | |
-| 78 / 79 | 0x377cf0 / 0x3781a0 | *DrawQuad / DrawBillboard* | 7 / 4 | |
+| 78 / 79 | 0x377cf0 / 0x3781a0 | *DrawSprite3D / DrawRotatedSprites* | 7 / 4 | DIRECT |
 | 80 / 81 | 0x378808 / 0x379028 | *DrawGlyphs / DrawGlyphsW* | 1 / 1 | Font_DrawText(W) |
-| 82 / 83 / 84 | 0x380518 / 0x3807a0 / 0x380ce0 | *DrawParticles* (Emitter / DynamicEmitter / mEmitter) | 2/1/1 | |
-| 85 / 86 | 0x381310 / 0x3816f0 | *DrawTrail* variants | 1 / 1 | |
-| 87 | 0x382170 | *DrawStreaks* | 1 | |
-| 89 | 0x386e78 | *DrawShadow/decal* | 1 | |
-| 90 | 0x3883b8 | *DrawBoardWake* | 1 | cBoardWakeFX |
+| 82 / 83 / 84 | 0x380518 / 0x3807a0 / 0x380ce0 | *DrawEmitter / DrawDynamicEmitter / DrawMEmitter* | 2/1/1 | VU1 type 4, MSCAL 0 / 0x510 / 0xa00,0xf10 |
+| 85 / 86 | 0x381310 / 0x3816f0 | *DrawTrail / DrawTrailB* | 1 / 1 | VU1 type 5, MSCAL 0 / 0x408 |
+| 87 | 0x382170 | *DrawCircle* | 1 | 16 segments through slot 73 (was "DrawStreaks") |
+| 89 | 0x386e78 | *DrawShadowVolume* | 1 | multi-pass destination-alpha shadow (M) |
+| 90 | 0x3883b8 | *DrawBoardWake* | 1 | cBoardWakeFX; VU1 type 3, MSCAL 0x3a00/0x3a08 |
 | 91 / 92 / 93 | 0x37dbe8 / 0x37dd20 / stub | *IsSphereVisible / ProjectToScreen / ClipTest* | 3/3/3 | |
 | 94 | 0x36a2c0 | *(model helper)* | 1 | |
-| 95 | 0x37e238 | *DrawModel* | 5 | MeshAnim/SkyBox/ModObj |
+| 95 | 0x37e238 | *DrawModel* | 5 | MeshAnim/SkyBox/ModObj; VU1 type 3, mesh packets MSCAL 0x2270 |
 | 96 | 0x369cb0 | *DrawModelSimple* -> 95 | 5 | |
 | 97 | stub 0x380380 | *(model setup)* | 3 | |
-| 99 / 100 | 0x37a610 / 0x37b548 | *DrawSkinnedModel / DrawSkinnedModelShadow* | 1 / 1 | rider |
-| 101 | stub 0x37ba50 | *DrawMatrixPacket* | 1 | |
+| 99 / 100 | 0x37a610 / 0x37b548 | *DrawSkinnedModel / DrawSkinnedModelShadow* | 1 / 1 | rider; VU1 type 6 / 7, MSCAL 0x80 + 0x70 per bone batch |
+| 101 | stub 0x37ba50 | *SetShadowHeader(qword[6])* | 1 | sets type 7 + w3 (was "DrawMatrixPacket") |
 | 109 / 110 / 111 / 112 | 0x3866f0 / stub / 0x386bd0 / stub | *Rider model setup / free* | | RiderModel_* |
 | 113 | stub | *(GameModule_Unload hook)* | 1 | |
 | 114 | stub | *GetFlipCount* (+0x5a74) | 12 | |
@@ -470,17 +561,45 @@ Slots: 1 dtor, 2 IsValid (+0x1c8), 3 SetPositions (vec3[]), 4 SetUVs (vec2[]), 5
 | 121 | 0x37c808 | **PS2GraphicsMan_SnapshotTextureTable** | 1 | |
 | 122 | 0x376468 | **PS2GraphicsMan_SelectMatchingDisplayMode** | 1 | |
 | 123 | 0x3762f8 | **PS2GraphicsMan_FindDisplayMode** | 1 | |
-| 124 | stub 0x396b40 | *EmitLightingPacket* | 1 | |
+| 124 | stub 0x396b40 | *EmitLightingPacket* | 1 | sets type 6 + w3; UNPACK 10 at 7, MSCAL 0x1150 (H) |
 
 ## Open questions
 
 - `PS2GraphicsMan_RenderFrame` (0x363490) is a **DeferMan** method (DeferMan_Flush/BuildChain); it could not be renamed under the rules, so there is a decompiler comment.
-- RenderState w0 bits 6-9 / w3 (material handle) need FUN_00364cd0 decoded: which VU1 microprogram and TEX0 setup each type selects.
+- ~~RenderState w0 bits 6-9 / w3~~: decoded in round 2 ("VU1 material types"). Still open: what the type-2 block at VU 0x200 (from `*(gp+0x1158)`, 0x87ae50 live, which holds pointers at +0x1a0 in the dump) really is, and whether the type-4 mode-0 / mode-1 header difference is a bug.
+- Microprogram entry points are known per slot (MSCAL table above), but what each entry computes is only described for 0x3a08 (near clip) and 0x2270 (meshes). Slot 75 (MSCAL 0x3bf0) has no caller.
 - What the per-view passes do: FUN_0036ac00 after layer 6 (allocates a 0x400 VRAM block, probably depth readback / flare occlusion, see `flare-occlusion.md`), and FUN_0036c790/FUN_003904a0 after layer 9.
 - GraphicsMan base fields +0x10..+0xe83 are unmapped.
-- Draw slots 72-100 names are descriptive (from callers); the primitive/VIF formats of each are not decoded.
+- Draw slots 71-101: formats decoded (round 2). Slot 89's helper passes (`FUN_00387ec0`, `FUN_00386dd0`) are only summarised; the shadow-volume reading is medium confidence.
+- The one-shot flag gp+0x1290 that makes slot 71 use entry 0x12b0 instead of 0x12b8: who sets it.
 - VramHeap free-list layout (+0x200c..) and the eviction policy in `VramHeap_Alloc`.
 - Units of the temp heap (+0x4350): word units versus byte units in the main heap. This is inferred from `Renderer_SetDisplayMode` (`page<<11`) and from `TexMan_BindTextures` shifting format-9 TBP by 2.
+
+## Proposed names (round 2, not applied: renames are owned by another agent)
+
+| Address | Current | Proposed | Evidence | Conf |
+|---|---|---|---|---|
+| 0x364cd0 | FUN_00364cd0 | DeferMan_EmitMaterialSetup | called only from DeferMan_EmitStateChange with (type, mode 0/1/2, w3); per type CALLs the `.vutext` MPG chain and UNPACKs the header | H |
+| 0x3645b8 | FUN_003645b8 | DeferMan_InternMatrixRecord | copies gm+0x5780 (24 qw) into the 0x180 table at +0x69cd0 unless qw 14-23 match; sets +0x69cc0 | H |
+| 0x37a260 | FUN_0037a260 | PS2GraphicsMan_BeginTriStrip | slot-71 header without the vertex copy, returns the write pointer in gm+0x5a2c; caller cSpeedBoostStreamerFX_Render | M |
+| 0x384d98 | FUN_00384d98 | LineStripBuilder_Init | stores &gm+0x5a00 and the uncached cursor | M |
+| 0x3850a8 | FUN_003850a8 | LineStripBuilder_BeginStrip | reserves the CNT/DIRECT qword and the 3-qword GIF header, then adds the first vertex | M |
+| 0x384fd0 | FUN_00384fd0 | LineStripBuilder_AddVertex | writes RGBAQ, ST, XYZ2 (3 dwords), count++ | H |
+| 0x384dc0 | FUN_00384dc0 | LineStripBuilder_CloseStrip | writes REGLIST PRIM 0x4a and the NLOOP=count tag REGS 0x521 | H |
+| 0x384e50 | FUN_00384e50 | LineStripBuilder_dtor | finishes CNT/DIRECT sizes, adds the DrawRecord, deleting dtor (`param_2 & 1`) | M |
+| 0x383a10 | FUN_00383a10 | ClipLineSegmentNearFar | clips a segment against gm+0x6b78/0x6b7c and +0x6b88/0x6b8c, recomputes outcodes | M |
+| 0x3885e0 | FUN_003885e0 | BoardWake_EmitStrips | slot 90's packet builder, MSCAL 0x3a00/0x3a08 | M |
+| 0x37e120 | FUN_0037e120 | PS2GraphicsMan_EmitModelHeader | STMASK/STCYCL/UNPACK 5 at 0 (model matrix + flags) for slot 95 | H |
+| 0x38ca70 | FUN_0038ca70 | PS2BezierMan_EmitPatchType1 | CALL patch packet + MSCAL from 0x44b9d0 tables | M |
+| 0x38ce20 | FUN_0038ce20 | PS2BezierMan_EmitPatchType2 | V4-8 colour + REF control points + CALL + MSCAL from 0x504960 | M |
+| 0x38c788 | FUN_0038c788 | PS2BezierMan_BuildPatchPacket | builds the per-patch packet the two emitters CALL (UNPACK 0x78/0x74 forms, RET) | L |
+| 0x38d968 | FUN_0038d968 | PS2BezierMan_RenderPatchFX | type-4 pass over the patch lists after vt 18 | M |
+| 0x38d690 | FUN_0038d690 | PS2BezierMan_DrawPatchFX | UNPACK 22 qw, MSCAL 0x1460, only for patch flag 0x800000 | M |
+| 0x386d10 / 0x387ec0 / 0x386dd0 | FUN_* | ShadowVolume_DrawMesh / _DrawMeshPass / _DrawEdgePass | slot 89 helpers (mesh pass and five edge passes between alpha/ZTST state changes) | L |
+| 0x37cbc8 | FUN_0037cbc8 | PS2GraphicsMan_TouchTexture | forwards (texId, 3) to TexMan `FUN_003691b0` before each skinned mesh | L |
+| slots (Ghidra names `PS2GraphicsMan_vNN`) | v72 v73 v75 v78 v79 v82 v83 v84 v85 v86 v87 v89 v101 | PS2GraphicsMan_DrawIndexedTriangles, _DrawLineStrip, _DrawLineShape, _DrawSprite3D, _DrawRotatedSprites, _DrawEmitter, _DrawDynamicEmitter, _DrawMEmitter, _DrawTrail, _DrawTrailB, _DrawCircle, _DrawShadowVolume, _SetShadowHeader | packet table above | M-H |
+
+Decompiler comment added at 0x364cd0 (material type table).
 
 ## Renames
 
