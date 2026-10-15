@@ -102,10 +102,19 @@ generated. Order:
    named (passes 4-5).
 4. **Phase 3 subsystems**, one at a time, each checked against the emulated
    path running side by side: files → `std::fs`, sound → native mixer, frame
-   loop → host timer, rendering → native draws. Files: done behind
-   `SSX3_NATIVE_FILES=1` (`../investigation/phase3-files.md`; all reads
-   identical to the emulated CD through a full race) (the 7 VU1 microprograms as
-   shaders or kept translated with only the GS replaced).
+   loop → host timer, rendering → native draws (the 7 VU1 microprograms as
+   shaders or kept translated with only the GS replaced). Status (2026-10-16):
+   - **Files: done**, behind `SSX3_NATIVE_FILES=1`
+     (`../investigation/phase3-files.md`). Every read is identical to the
+     emulated CD through a full race.
+   - **Sound: done**, behind `SSX3_SND=native`
+     (`../investigation/phase3-sound.md`, crate `ssx3-snd`). The audio is
+     bit-identical to the recompiled IOP while the game state matches. Both
+     switches together run a full race.
+   - **Frame loop: analysed** (`../investigation/phase3-frame-loop.md`). The
+     game already decouples logic and rendering; there is an opt-in
+     `SSX3_HOST_CLOCK=1`. The real change waits for native rendering.
+   - **Rendering: next**; the design is in progress.
 
 Bulk phase 2 rewriting (typed function bodies) continues later as capacity
 allows (OpenCode waves, `phase2-worker-guide.md`).
