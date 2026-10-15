@@ -16,6 +16,8 @@ set -euo pipefail
 
 root="$(git rev-parse --show-toplevel)"
 model="${DELEGATE_MODEL:-ollama/deepseek-v4.1-flash:cloud}"
+fallback_model="ollama-cloud/deepseek-v4.1-flash"
+timeout="${DELEGATE_TIMEOUT:-1200}"   # seconds per worker
 write=0 json=0
 
 if [[ "${1:-}" == "--cleanup" ]]; then
@@ -38,6 +40,14 @@ done
 name="${1:?task name}"; prompt="${2:?prompt or @file}"
 [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "task name must be [A-Za-z0-9._-]+" >&2; exit 2; }
 if [[ "$prompt" == @* ]]; then prompt="$(cat "${prompt#@}")"; fi
+
+# The provider list changes (e.g. the local `ollama/` provider disappearing
+# while `ollama-cloud/` stays): use the requested model only if OpenCode lists
+# it, else the fallback.
+if ! opencode models 2>/dev/null | grep -qxF "$model"; then
+  echo "delegate: model $model not listed by OpenCode, using $fallback_model" >&2
+  model="$fallback_model"
+fi
 
 logdir="$root/.delegate/logs"; mkdir -p "$logdir"
 log="$logdir/$name.log"
@@ -63,7 +73,10 @@ fi
 } > "$log"
 
 rc=0
-(cd "$dir" && opencode run --model "$model" --title "delegate:$name" ${flags[@]+"${flags[@]}"} "$prompt") >> "$log" 2>&1 || rc=$?
+# Hard timeout: a worker waiting on an unavailable model would otherwise hang.
+(cd "$dir" && perl -e 'alarm shift; exec @ARGV' "$timeout" \
+  opencode run --model "$model" --title "delegate:$name" ${flags[@]+"${flags[@]}"} "$prompt") >> "$log" 2>&1 || rc=$?
+[[ $rc == 142 ]] && echo "# TIMEOUT after ${timeout}s" >> "$log"
 echo "# exit: $rc  finished: $(date '+%Y-%m-%d %H:%M:%S')" >> "$log"
 echo "$log"
 exit $rc

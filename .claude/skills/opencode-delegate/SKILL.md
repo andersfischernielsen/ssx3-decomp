@@ -21,7 +21,13 @@ opencode run --model "ollama/deepseek-v4.1-flash:cloud" "<prompt>"
 # there is no working-directory flag: run it from the target directory
 ```
 
-Use `scripts/delegate.sh`, which does the worktree/log bookkeeping.
+Use `scripts/delegate.sh`, which does the worktree/log bookkeeping. It checks
+that the model is listed by `opencode models` and otherwise falls back to
+`ollama-cloud/deepseek-v4.1-flash` (on 2026-10-15 the `ollama/` provider
+vanished from OpenCode while Ollama itself still served the model, and
+workers hung with "Model unavailable"), and it kills a worker after
+`DELEGATE_TIMEOUT` seconds (default 1200). If a log ends without output, run
+`opencode run --model <id> "Reply with: pong"` to check the provider.
 
 ## 1. What to delegate
 
