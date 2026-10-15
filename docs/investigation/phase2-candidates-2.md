@@ -114,13 +114,12 @@ the VU0 accumulator helper, which D2 can use too. Suggested start order when
 fewer than eight people are available: D5 and D1 (hottest doors; D5 has 22
 profiled functions), then D2 (the hottest VU0 leaf left), D3, D7, D6, D4, D8.
 
-
 > Assembly note (2026-10-15): the catalogue agent's researchers completed
 > semantic notes for D1, D4 and D7; for the other packages the function lists
 > below come from the classifier (kind, block costs, callees, callers, flags)
 > and package authors research semantics themselves, as in rounds 1-2. Since
-> commit 10794a5 functions with  twins **can** be overridden (the
-> stub routes non-start entries to the generated twin), so the 
+> commit 10794a5 functions with `__entries` twins **can** be overridden (the
+> stub routes non-start entries to the generated twin), so the `__entries`
 > restriction mentioned above no longer applies.
 
 
@@ -368,10 +367,136 @@ summary D7 Audio system: n=25 leaf=5 loop=7 calls=19 virt=3 vu=0 fpu=4 P=22 prof
 
 summary D8 Memory, containers, replay & script: n=24 leaf=9 loop=5 calls=15 virt=0 vu=0 fpu=0 P=10 prof=48
 
-
 ## D1: function list (classifier)
 
+```text
+# D1 Rider frame doors & state handlers
 
+0x0011eb60 Rider_TickAnimation shard=s00 size=52 race=P prof=136 callers=5
+  kind=C2 blocks=[13] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=2 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['AnimController_Update', 'AnimController_DispatchEndEvents']
+  direct callers: ['Rider_Place', 'Rider_RefreshPose', 'Rider_UpdateAnimation', 'FUN_00124788', 'AI_UpdateRiderPoses']
+
+0x00121700 Rider_UpdateAnimation shard=s00 size=40 race=P prof=136 callers=1
+  kind=C1/F1 blocks=[5, 3, 2] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=1 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['Rider_TickAnimation']
+  direct callers: ['AI_Update']
+
+0x00121728 Rider_UpdatePose shard=s00 size=40 race=P prof=106 callers=1
+  kind=C1 blocks=[5, 3, 2] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['Rider_UpdateSkeleton']
+  direct callers: ['AI_Update']
+
+0x001217f8 Rider_UpdateModel shard=s00 size=28 race=P prof=41 callers=1
+  kind=C1 blocks=[7] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['RiderModel_BuildBoneMatrices']
+  direct callers: ['AI_Update']
+
+0x001225f0 Rider_RenderShadow shard=s00 size=40 race=P prof=21 callers=1
+  kind=C1 blocks=[5, 3, 2] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['Rider_DrawShadow']
+  direct callers: ['AI_Render']
+
+0x001225c0 Rider_PrepareLighting shard=s00 size=44 race=P prof=8 callers=1
+  kind=C1 blocks=[5, 3, 3] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['Rider_BuildLightSet']
+  direct callers: ['AI_Render']
+
+0x00122638 Rider_RenderAttachedFX shard=s00 size=28 race=c prof=0 callers=1
+  kind=C1 blocks=[7] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['AttachedEmitterFX_Render']
+  direct callers: ['AI_Render']
+
+0x00120e88 Rider_UpdateAttachedFX shard=s00 size=48 race=P prof=1 callers=1
+  kind=C2 blocks=[12] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=2 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['AttachedEmitterFX_Update', 'cBoltOnFXInterface_Update']
+  direct callers: ['AI_Update']
+
+0x001218d0 Rider_UpdateSurfaceFX shard=s00 size=128 race=P prof=28 callers=1
+  kind=C3/I1/F3 blocks=[8, 5, 19] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=3 fcmp=0 mmi=0 sp_stores=2 sp_adjust=True indirect_calls=1
+  callees (in order of first call; * = already overridden): ['SectionMan_FindLogicalSection', 'WorldPainter_UpdateView', 'FUN_00392d18']
+  direct callers: ['AI_Update']
+
+0x00121818 Rider_UpdateProgress shard=s00 size=180 race=P prof=24 callers=1
+  kind=C7/I1 blocks=[7, 3, 9, 4, 5, 2, 7, 2, 6] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=2 sp_adjust=True indirect_calls=1
+  callees (in order of first call; * = already overridden): ['FUN_00125ad0', 'Rider_UpdateRaceProgress', 'Rider_UpdateAIPathProgress', 'Rider_CheckRaceFinish', 'RiderMetrix_Update', 'Rider_UpdateFocusBox*', 'WScriptMan_OnObjectTrigger']
+  direct callers: ['AI_Update']
+
+0x001112b8 RiderBase_SetMainState shard=s00 size=64 race=c2 prof=0 callers=1
+  kind=C2 blocks=[16] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=3 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['RiderBase_ExitMainState', 'RiderBase_EnterMainState']
+  direct callers: ['Rider_SetMainState*']
+
+0x00111538 RiderBase_SetSubState shard=s00 size=64 race=c2 prof=0 callers=1
+  kind=C2 blocks=[16] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=3 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['RiderBase_ExitSubState', 'RiderBase_EnterSubState']
+  direct callers: ['Rider_SetSubState*']
+
+0x00136e98 RiderWipeoutState_Update shard=s01 size=72 race=c prof=0 callers=1
+  kind=C3 blocks=[8, 4, 3, 3] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=2 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['RiderWipeoutState_UpdateRootPose', 'RiderWipeoutState_UpdateGround', 'RiderWipeoutState_UpdateAir']
+  direct callers: ['RiderBase_UpdateMainState']
+
+0x00136ee0 RiderWipeoutState_PostUpdate shard=s01 size=72 race=c prof=0 callers=1
+  kind=C3 blocks=[8, 4, 3, 3] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=2 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['RiderWipeoutState_PostUpdateRootPose', 'RiderWipeoutState_PostUpdateGround', 'RiderWipeoutState_PostUpdateAir']
+  direct callers: ['RiderBase_PostUpdateMainState']
+
+0x00139528 RiderHandplantState_PostUpdate shard=s01 size=32 race=c prof=0 callers=1
+  kind=C1 blocks=[8] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['Rider_UpdateBounds']
+  direct callers: ['RiderBase_PostUpdateMainState']
+
+0x00131cc0 RiderCruiseSub_CheckAirborne shard=s00 size=68 race=c prof=0 callers=1
+  kind=C2 blocks=[9, 4, 4] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=2 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['Rider_GetMainState*', 'Rider_SetSubState*']
+  direct callers: ['RiderCruiseSub_HandleInput']
+
+0x001231a8 Rider_IsOnGround shard=s00 size=100 race=c prof=0 callers=7
+  kind=C2 blocks=[9, 5, 4, 1, 1, 5] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=3 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['Rider_GetMainState*']
+  direct callers: ['Rider_HandleWallCollision', 'FUN_00106f78', 'Rider_CheckRiderCollisions', 'Rider_ResolveRiderCollision', 'Rider_UpdateHeadingAndAudio', 'FUN_00122cd0']
+
+0x00116378 Rider_TryEnterFinishLine shard=s00 size=56 race=c prof=0 callers=4
+  kind=C1/F3 blocks=[8, 3, 3] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=3 fcmp=1 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['Rider_SetSubState*']
+  direct callers: ['RiderBumpSub_HandleInput', 'RiderPrewindSub_HandleInput', 'RiderBoardPressSub_HandleInput', 'RiderCruiseSub_HandleInput']
+
+0x00116120 Rider_CheckResetPath shard=s00 size=172 race=c prof=0 callers=20
+  kind=C6 blocks=[7, 2, 4, 3, 3, 19, 5] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=3 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['RiderMetrix_ShowWrongWay', 'Rider_SetSubState*', 'Rider_SetMainState*', 'SSXAudioSystem_GetInstance', 'SSXAudioSystem_OnRiderReset', 'Replay_OnRiderReset']
+  direct callers: ['FUN_00105d98', 'FUN_0010f1c0', 'Rider_UpdateImpacts', 'RiderWipeoutSub_HandleInput', 'RiderWipeoutSub_UpdatePhase2', 'RiderWipeoutSub_UpdatePhase1', 'RiderWipeoutSub_UpdatePhase4', 'RiderBumpSub_HandleInput'] ...
+
+0x001162c8 Rider_TryEnterPrewind shard=s00 size=176 race=c prof=0 callers=3
+  kind=C4/F5 blocks=[9, 4, 5, 2, 2, 5, 4, 4, 3, 6] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=5 fcmp=1 mmi=0 sp_stores=4 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['Rider_GetSubState*', 'FUN_00131348', 'Rider_SetSubState*', 'RiderBase_RecordCheatCodeInput']
+  direct callers: ['RiderBoardPressSub_HandleInput', 'RiderCruiseSub_HandleInput', 'RiderRailslideSub_HandleInput']
+
+0x00120ed8 Rider_RefreshPose shard=s00 size=72 race=c prof=0 callers=1
+  kind=C3/F1 blocks=[8, 7, 3] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=1 fcmp=0 mmi=0 sp_stores=2 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['Rider_BuildWorldMatrix*', 'Rider_TickAnimation', 'Rider_UpdateSkeleton']
+  direct callers: ['AI_Update']
+
+0x00122088 Rider_FindNearbyLights shard=s00 size=76 race=P prof=1 callers=4
+  kind=C2 blocks=[19] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=2 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['Rider_GetHipsPosition*', 'WorldLightMan_FindStrongestLights']
+  direct callers: ['Rider_LoadStep', 'Rider_Place', 'Rider_RefreshOverlaps', 'Rider_BeginFrame']
+
+0x00122658 Rider_ClearNearbyLights shard=s00 size=36 race=c2 prof=0 callers=1
+  kind=C1 blocks=[9] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['EA_MemSet*']
+  direct callers: ['World_ResetLights']
+
+0x00120090 Rider_SetAnimTimeScale shard=s00 size=60 race=c prof=0 callers=1
+  kind=leaf/F9 blocks=[7, 2, 4, 2] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=9 fcmp=2 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['ComputerActorRider_GetControlInput']
+
+0x001360c8 RiderSpinSub_GetHUDAngle shard=s01 size=52 race=c prof=0 callers=1
+  kind=leaf/F5 blocks=[6, 1, 3, 1, 2] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=5 fcmp=1 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['RiderMetrix_UpdateTrickHUD']
+```
 
 ### D1: research notes
 
@@ -636,20 +761,383 @@ Same shape: `PostUpdateRootPose(s)` (0x137138), then `*(s) == 0` → `PostUpdate
 - 0x0011fef8 `Rider_GetSubStateName` — same for sub state (table 0x459dc8).
 - 0x00125ad0 (stub called by UpdateProgress, `jr ra`, 2 cycles) — trivial; or 0x00111830 `RiderBase_GetMainStateName` leaf (table lookup by +0xde0).
 
-
 ## D2: function list (classifier)
 
+```text
+# D2 Skeleton, animation & VU0 math
 
+0x00310120 RiderModel_BuildBoneMatrix shard=s10 size=220 race=P prof=37 callers=1
+  kind=leaf/VU31acc blocks=[55] loops=0 matchpc=False event_checks=0 vu0=31 vu0_acc=10 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['RiderModel_BuildBoneMatrices']
 
+0x003103f0 RiderModel_BuildBoneMatrices shard=s10 size=100 race=P prof=41 callers=6
+  kind=L/C1 blocks=[8, 2, 10, 5] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=3 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['RiderModel_BuildBoneMatrix']
+  direct callers: ['RiderBase_LoadState', 'Rider_Place', 'Rider_UpdateModel', 'AI_UpdateRiderPoses', 'FEModule_RiderPreviewApplyTransform']
+
+0x00310200 RiderModel_ApplyPose shard=s10 size=492 race=P prof=62 callers=6
+  kind=leaf/L/VU21acc/F16/sp18 blocks=[6, 4, 7, 5, 3, 3, 3, 85, 5, 2] loops=2 matchpc=False event_checks=2 vu0=21 vu0_acc=11 cfc2_vi22=0 fpu=16 fcmp=0 mmi=0 sp_stores=18 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['Rider_LoadStep', 'Rider_UpdateSkeleton', 'FEModule_RiderPreviewSetupModel', 'FEModule_RiderPreviewApplyTransform']
+
+0x00310530 RiderModel_Translate shard=s10 size=272 race=c prof=0 callers=1
+  kind=leaf/L/VU3/sp6 blocks=[6, 4, 6, 2, 43, 5, 2] loops=2 matchpc=False event_checks=2 vu0=3 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=6 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['Rider_PostUpdateMainState*']
+
+0x003123c0 AnimController_Update shard=s10 size=204 race=P prof=134 callers=2
+  kind=L/C2/I1/F4 blocks=[14, 9, 1, 11, 1, 3, 12] loops=2 matchpc=False event_checks=2 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=4 fcmp=0 mmi=0 sp_stores=7 sp_adjust=True indirect_calls=1
+  callees (in order of first call; * = already overridden): ['AnimSeqList_GetAt', 'AnimController_EvaluatePose']
+  direct callers: ['Rider_TickAnimation', 'FEModule_RiderPreviewUpdate']
+
+0x00312598 AnimController_EvaluatePose shard=s10 size=196 race=P prof=132 callers=7
+  kind=L/C2 blocks=[14, 7, 3, 11, 14] loops=2 matchpc=False event_checks=2 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=7 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['AnimSeqList_CollectTracks', 'RiderModel_BlendAnimPose']
+  direct callers: ['RiderBase_LoadState', 'Rider_LoadStep', 'Rider_Place', 'FUN_00124788', 'FEModule_RiderPreviewSetupModel', 'AnimController_Update']
+
+0x0037de88 FUN_0037de88 shard=s12 size=88 race=P prof=52 callers=0
+  kind=leaf/VU2 blocks=[18, 2, 2] loops=0 matchpc=False event_checks=0 vu0=2 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: []
+
+0x0037dee0 PS2GraphicsMan_ProjectPoint shard=s12 size=96 race=P prof=1 callers=1
+  kind=leaf/VU8acc/sp1 blocks=[24] loops=0 matchpc=False event_checks=0 vu0=8 vu0_acc=4 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['PS2GraphicsMan_v92']
+
+0x0031b6c8 Mat4_Inverse shard=s10 size=124 race=P prof=2 callers=1
+  kind=C2/VU4/F6 blocks=[31] loops=0 matchpc=False event_checks=0 vu0=4 vu0_acc=0 cfc2_vi22=0 fpu=6 fcmp=0 mmi=0 sp_stores=3 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['Mat4_Determinant', 'Mat4_Adjoint']
+  direct callers: ['FUN_0022b008']
+
+0x0031b748 Mat4_ToPosQuat shard=s10 size=96 race=c prof=0 callers=9
+  kind=C1/F8 blocks=[24] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=8 fcmp=0 mmi=0 sp_stores=6 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['Quat_FromMatrix']
+  direct callers: ['ManualCamAlgoBase_GetView', 'ChaseCameraAlgorithm_BuildOutputView', 'ManualScriptCameraAlgo_GetView', 'TargetScriptCameraAlgo_GetView', 'SubjectScriptCameraAlgo_GetView', 'AlgorithmicScriptCameraAlgo_GetView', 'BoundedCameraAlgorithmBase_GetView', 'MeshAnim_ctor_2'] ...
+
+0x0031b088 Math_Det2x2 shard=s10 size=16 race=c2 prof=0 callers=3
+  kind=leaf/F3 blocks=[4] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=3 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['Math_Det3x3']
+
+0x0031b098 Math_Det3x3 shard=s10 size=224 race=c prof=0 callers=20
+  kind=C3/F48 blocks=[56] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=48 fcmp=0 mmi=0 sp_stores=11 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['Math_Det2x2']
+  direct callers: ['Mat4_Determinant', 'Mat4_Adjoint']
+
+0x0031bb30 Quat_FromTwoVectors shard=s10 size=380 race=P prof=2 callers=1
+  kind=C3/VU25accq22/F25 blocks=[27, 12, 12, 5, 2, 34, 3] loops=0 matchpc=False event_checks=0 vu0=25 vu0_acc=10 cfc2_vi22=1 fpu=25 fcmp=3 mmi=0 sp_stores=11 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['Math_Asin*', 'Math_SinCos*']
+  direct callers: ['FUN_00121aa0']
+
+0x0031b7a8 Quat_FromMatrix shard=s10 size=520 race=c2 prof=0 callers=1
+  kind=leaf/F68/sp1 blocks=[12, 25, 4, 1, 8, 5, 29, 1, 42, 3] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=68 fcmp=4 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['Mat4_ToPosQuat']
+
+0x0011dfe0 Rider_RotateAroundAxis shard=s00 size=184 race=P prof=1 callers=10
+  kind=C2/VU9acc/F14 blocks=[46] loops=0 matchpc=False event_checks=0 vu0=9 vu0_acc=5 cfc2_vi22=0 fpu=14 fcmp=0 mmi=0 sp_stores=9 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['Rider_BuildWorldMatrix*', 'Math_SinCos*']
+  direct callers: ['Rider_TryStartRailslide', 'Rider_StartWipeout', 'FUN_00115358', 'FUN_00115640', 'RiderGroundState_Update']
+
+0x0036d400 Vu0_RandNext shard=s12 size=36 race=c2 prof=0 callers=9
+  kind=leaf/VU2/F4 blocks=[9] loops=0 matchpc=False event_checks=0 vu0=2 vu0_acc=0 cfc2_vi22=0 fpu=4 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['Emitter_UpdateDescriptor']
+
+0x0032c590 SphereTree_GetRadius shard=s10 size=24 race= prof=0 callers=6
+  kind=leaf/F3 blocks=[6] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=3 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['FUN_00328030', 'FUN_003303f0', 'FUN_00330540', 'FUN_003306d8']
+
+0x0032c630 SphereTree_Translate shard=s10 size=24 race= prof=0 callers=1
+  kind=leaf/VU1 blocks=[6] loops=0 matchpc=False event_checks=0 vu0=1 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['RollerModifier_Translate']
+
+0x0032c5e0 SphereTree_SetPosition shard=s10 size=80 race= prof=0 callers=0
+  kind=leaf/VU1/F8/sp6 blocks=[20] loops=0 matchpc=False event_checks=0 vu0=1 vu0_acc=0 cfc2_vi22=0 fpu=8 fcmp=0 mmi=0 sp_stores=6 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: []
+
+0x00329910 RiderSphereTree_ctor shard=s10 size=36 race=P prof=1 callers=3
+  kind=leaf blocks=[9] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['Rider_LoadStep', 'RiderWipeoutState_Enter', 'FUN_0032f650']
+
+0x00329ae0 RiderSphereTree_UpdateFromBones shard=s10 size=96 race=P prof=1 callers=1
+  kind=leaf/L blocks=[4, 2, 11, 7] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['FUN_00106828']
+
+0x00314760 AnimSeqList_GetAt shard=s10 size=36 race=c prof=0 callers=11
+  kind=leaf/L blocks=[2, 1, 2, 2, 2] loops=1 matchpc=True event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['AnimController_GetLayerSequence', 'AnimController_TransformRoots', 'FUN_00311d88', 'AnimController_PlayAnimImpl', 'AnimController_Update', 'AnimController_DispatchEndEvents', 'AnimController_SampleAnimPose', 'AnimController_GetLayerProgress'] ...
+
+0x003145f8 AnimSeqList_Remove shard=s10 size=112 race=P prof=1 callers=15
+  kind=L/C2 blocks=[8, 3, 2, 4, 4, 2, 5] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=3 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['AnimSequence_FreeTriggers', '__builtin_delete*']
+  direct callers: ['RiderAnim_ScrubSeq', 'RiderAnim_BlendSeq2', 'RiderAnim_BlendSeq4', 'RiderAnim_PlaySeqThenLoop', 'RiderAnim_UpdateSeqType07', 'RiderAnim_UpdateSeqType0B', 'RiderAnim_UpdateSeqType08', 'RiderAnim_UpdateSeqType0E'] ...
+
+0x0026ac48 Path_GetLength shard=s07 size=60 race=P prof=3 callers=5
+  kind=leaf/L/F4 blocks=[4, 2, 7, 2] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=4 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['Rider_UpdateRaceProgress', 'Rider_UpdateAIPathProgress', 'Rider_SelectAIPath', 'Rider_SnapToNearestAIPath', 'FUN_0026a0b8']
+```
 
 ## D3: function list (classifier)
 
+```text
+# D3 Chase camera (Tier B leftovers)
 
+0x00168150 ChaseCameraAlgorithm_CheckDistanceReset shard=s02 size=328 race=P prof=3 callers=14
+  kind=I1/VU11accq22/F9 blocks=[26, 5, 1, 47, 3] loops=0 matchpc=False event_checks=0 vu0=11 vu0_acc=2 cfc2_vi22=1 fpu=9 fcmp=2 mmi=0 sp_stores=13 sp_adjust=True indirect_calls=1
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['ChaseCameraAlgorithm_ApplyTargetHeight', 'ChaseCameraAlgorithm_ApplyFollowDistance', 'ChaseCameraAlgorithm_ApplySideOffset', 'ChaseCameraAlgorithm_ApplyCameraHeight', 'ChaseCameraAlgorithm_ApplyFov', 'ChaseCameraAlgorithm_ApplyHandplantHold', 'ChaseCameraAlgorithm_ApplyJumpCurves', 'ChaseCameraAlgorithm_ApplyRailPullback'] ...
 
+0x00166550 ChaseCameraAlgorithm_InitFromRider shard=s02 size=236 race= prof=0 callers=15
+  kind=I1/VU11accq22/F10 blocks=[59] loops=0 matchpc=False event_checks=0 vu0=11 vu0_acc=2 cfc2_vi22=1 fpu=10 fcmp=0 mmi=0 sp_stores=8 sp_adjust=True indirect_calls=1
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['ManualChaseCameraAlgorithm_ResetForRider', 'MatrixChaseCameraAlgorithm_ResetForRider', 'RelativeChaseCameraAlgorithm_ResetForRider', 'IdleChaseCameraAlgorithm_ResetForRider', 'LazyChaseCameraAlgorithm_ResetForRider', 'LookBackChaseCameraAlgorithm_ResetForRider', 'MidRightChaseCameraAlgorithm_ResetForRider', 'MidLeftChaseCameraAlgorithm_ResetForRider'] ...
+
+0x0015d880 CameraBase_GetPitch shard=s01 size=164 race= prof=0 callers=0
+  kind=C1/VU6accq22/F23 blocks=[41] loops=0 matchpc=False event_checks=0 vu0=6 vu0_acc=2 cfc2_vi22=1 fpu=23 fcmp=0 mmi=0 sp_stores=5 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['Math_Asin*']
+  direct callers: []
+
+0x00163010 ChaseCameraAlgorithm_ApplyFollowDistance shard=s01 size=328 race=P prof=2 callers=7
+  kind=C1/VU8accq22/F43 blocks=[14, 1, 15, 3, 12, 1, 36] loops=0 matchpc=False event_checks=0 vu0=8 vu0_acc=2 cfc2_vi22=1 fpu=43 fcmp=3 mmi=0 sp_stores=7 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['ChaseCameraAlgorithm_CheckDistanceReset']
+  direct callers: ['LookBackChaseCameraAlgorithm_Update', 'MidRightChaseCameraAlgorithm_Update', 'MidLeftChaseCameraAlgorithm_Update', 'Default_2ChaseCameraAlgorithm_Update', 'Default_3ChaseCameraAlgorithm_Update', 'Default_4ChaseCameraAlgorithm_Update', 'DirectionNeChaseCameraAlgorithm_Update']
+
+0x00162b90 ChaseCameraAlgorithm_ApplyTargetHeight shard=s01 size=228 race=P prof=1 callers=7
+  kind=C1/VU2/F29 blocks=[11, 1, 7, 2, 1, 35] loops=0 matchpc=False event_checks=0 vu0=2 vu0_acc=0 cfc2_vi22=0 fpu=29 fcmp=1 mmi=0 sp_stores=3 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['ChaseCameraAlgorithm_CheckDistanceReset']
+  direct callers: ['LookBackChaseCameraAlgorithm_Update', 'MidRightChaseCameraAlgorithm_Update', 'MidLeftChaseCameraAlgorithm_Update', 'Default_2ChaseCameraAlgorithm_Update', 'Default_3ChaseCameraAlgorithm_Update', 'Default_4ChaseCameraAlgorithm_Update', 'DirectionNeChaseCameraAlgorithm_Update']
+
+0x00163158 ChaseCameraAlgorithm_ApplySideOffset shard=s01 size=280 race= prof=0 callers=3
+  kind=C1/VU20accq22/F9 blocks=[33, 32, 5] loops=0 matchpc=False event_checks=0 vu0=20 vu0_acc=5 cfc2_vi22=2 fpu=9 fcmp=1 mmi=0 sp_stores=8 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['ChaseCameraAlgorithm_CheckDistanceReset']
+  direct callers: ['LookBackChaseCameraAlgorithm_Update', 'MidRightChaseCameraAlgorithm_Update', 'MidLeftChaseCameraAlgorithm_Update']
+
+0x00163270 ChaseCameraAlgorithm_ApplyCameraHeight shard=s01 size=316 race=c prof=0 callers=7
+  kind=C1/VU2/F42 blocks=[11, 1, 5, 4, 4, 4, 1, 2, 2, 6, 39] loops=0 matchpc=False event_checks=0 vu0=2 vu0_acc=0 cfc2_vi22=0 fpu=42 fcmp=3 mmi=0 sp_stores=3 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['ChaseCameraAlgorithm_CheckDistanceReset']
+  direct callers: ['LookBackChaseCameraAlgorithm_Update', 'MidRightChaseCameraAlgorithm_Update', 'MidLeftChaseCameraAlgorithm_Update', 'Default_2ChaseCameraAlgorithm_Update', 'Default_3ChaseCameraAlgorithm_Update', 'Default_4ChaseCameraAlgorithm_Update', 'DirectionNeChaseCameraAlgorithm_Update']
+
+0x001633b0 ChaseCameraAlgorithm_ApplyFov shard=s01 size=160 race=c prof=0 callers=7
+  kind=C1/F24 blocks=[18, 2, 2, 1, 17] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=24 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['ChaseCameraAlgorithm_CheckDistanceReset']
+  direct callers: ['LookBackChaseCameraAlgorithm_Update', 'MidRightChaseCameraAlgorithm_Update', 'MidLeftChaseCameraAlgorithm_Update', 'Default_2ChaseCameraAlgorithm_Update', 'Default_3ChaseCameraAlgorithm_Update', 'Default_4ChaseCameraAlgorithm_Update', 'DirectionNeChaseCameraAlgorithm_Update']
+
+0x00163450 ChaseCameraAlgorithm_ApplyHandplantHold shard=s01 size=364 race=c prof=0 callers=5
+  kind=C1/VU5/F32 blocks=[5, 8, 7, 6, 14, 27, 1, 1, 4, 8, 1, 9] loops=0 matchpc=False event_checks=0 vu0=5 vu0_acc=0 cfc2_vi22=0 fpu=32 fcmp=3 mmi=0 sp_stores=10 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['ChaseCameraAlgorithm_CheckDistanceReset']
+  direct callers: ['MidRightChaseCameraAlgorithm_Update', 'MidLeftChaseCameraAlgorithm_Update', 'Default_2ChaseCameraAlgorithm_Update', 'Default_3ChaseCameraAlgorithm_Update', 'Default_4ChaseCameraAlgorithm_Update']
+
+0x001641c0 ChaseCameraAlgorithm_ApplyRailPullback shard=s01 size=484 race=c prof=0 callers=5
+  kind=C1/I1/VU26accq22/F34 blocks=[26, 2, 55, 17, 21] loops=0 matchpc=False event_checks=0 vu0=26 vu0_acc=7 cfc2_vi22=1 fpu=34 fcmp=1 mmi=0 sp_stores=18 sp_adjust=True indirect_calls=1
+  callees (in order of first call; * = already overridden): ['ChaseCameraAlgorithm_CheckDistanceReset']
+  direct callers: ['MidRightChaseCameraAlgorithm_Update', 'MidLeftChaseCameraAlgorithm_Update', 'Default_2ChaseCameraAlgorithm_Update', 'Default_3ChaseCameraAlgorithm_Update', 'Default_4ChaseCameraAlgorithm_Update']
+
+0x001643a8 ChaseCameraAlgorithm_ApplyLowSpeedHold shard=s01 size=760 race=P prof=1 callers=6
+  kind=C1/VU22accq22/F45 blocks=[9, 3, 2, 1, 3, 2, 10, 2, 2, 5, 2, 2, 3, 3, 2, 1, 2, 11, 2, 2, 10, 1, 1, 1, 3, 14, 86, 5] loops=0 matchpc=False event_checks=0 vu0=22 vu0_acc=4 cfc2_vi22=2 fpu=45 fcmp=4 mmi=0 sp_stores=20 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['ChaseCameraAlgorithm_CheckDistanceReset']
+  direct callers: ['LookBackChaseCameraAlgorithm_Update', 'MidRightChaseCameraAlgorithm_Update', 'MidLeftChaseCameraAlgorithm_Update', 'Default_2ChaseCameraAlgorithm_Update', 'Default_3ChaseCameraAlgorithm_Update', 'Default_4ChaseCameraAlgorithm_Update']
+
+0x001646a0 ChaseCameraAlgorithm_ApplyRailAlign shard=s01 size=452 race=P prof=2 callers=6
+  kind=C1/VU22accq22/F12 blocks=[8, 55, 2, 9, 2, 37] loops=0 matchpc=False event_checks=0 vu0=22 vu0_acc=4 cfc2_vi22=2 fpu=12 fcmp=1 mmi=0 sp_stores=22 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['ChaseCameraAlgorithm_CheckDistanceReset']
+  direct callers: ['MidRightChaseCameraAlgorithm_Update', 'MidLeftChaseCameraAlgorithm_Update', 'Default_2ChaseCameraAlgorithm_Update', 'Default_3ChaseCameraAlgorithm_Update', 'Default_4ChaseCameraAlgorithm_Update', 'DirectionNeChaseCameraAlgorithm_Update']
+
+0x00162998 ChaseCameraAlgorithm_UpdateHandplantFade shard=s01 size=136 race=c prof=0 callers=6
+  kind=leaf/F14 blocks=[3, 2, 4, 1, 6, 8, 5, 2, 3] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=14 fcmp=1 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['MidRightChaseCameraAlgorithm_Update', 'MidLeftChaseCameraAlgorithm_Update', 'Default_2ChaseCameraAlgorithm_Update', 'Default_3ChaseCameraAlgorithm_Update', 'Default_4ChaseCameraAlgorithm_Update', 'DirectionNeChaseCameraAlgorithm_Update']
+
+0x00162a20 ChaseCameraAlgorithm_UpdateAirTransitions shard=s01 size=348 race=c prof=0 callers=7
+  kind=C2/I1/VU8accq22/F14 blocks=[9, 3, 7, 23, 12, 2, 1, 8, 2, 2, 3, 3, 1, 2, 4, 5] loops=0 matchpc=False event_checks=0 vu0=8 vu0_acc=2 cfc2_vi22=1 fpu=14 fcmp=3 mmi=0 sp_stores=6 sp_adjust=True indirect_calls=1
+  callees (in order of first call; * = already overridden): ['AI_GetFrameCounter']
+  direct callers: ['LookBackChaseCameraAlgorithm_Update', 'MidRightChaseCameraAlgorithm_Update', 'MidLeftChaseCameraAlgorithm_Update', 'Default_2ChaseCameraAlgorithm_Update', 'Default_3ChaseCameraAlgorithm_Update', 'Default_4ChaseCameraAlgorithm_Update', 'DirectionNeChaseCameraAlgorithm_Update']
+
+0x00166228 ChaseCameraAlgorithm_PostUpdate shard=s02 size=116 race=P prof=2 callers=0
+  kind=C4/I1/F4 blocks=[16, 5, 8] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=4 fcmp=0 mmi=0 sp_stores=2 sp_adjust=True indirect_calls=1
+  callees (in order of first call; * = already overridden): ['ChaseCameraAlgorithm_ComputeAngles', 'FUN_001662a0', 'FUN_00166530', 'ChaseCameraAlgorithm_BuildOutputView']
+  direct callers: []
+
+0x00166640 ChaseCameraAlgorithm_ComputeAngles shard=s02 size=632 race=c prof=0 callers=4
+  kind=C3/VU42accq22/F47 blocks=[34, 15, 25, 16, 3, 5, 24, 2, 16, 3, 4, 2, 2, 1, 6] loops=0 matchpc=False event_checks=0 vu0=42 vu0_acc=16 cfc2_vi22=1 fpu=47 fcmp=6 mmi=0 sp_stores=7 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['Math_Atan*', 'Math_Asin*']
+  direct callers: ['GameCamera_SnapToDefaultChaseView', 'GameCamera_ComputeView', 'ChaseCameraAlgorithm_PostUpdate']
+
+0x00161bb8 ChaseCamController_Update shard=s01 size=672 race=P prof=13 callers=0
+  kind=L/C3/I2/F58 blocks=[12, 20, 2, 4, 1, 13, 1, 4, 5, 4, 2, 5, 9, 2, 5, 6, 5, 1, 4, 7, 2, 1, 6, 1, 2, 2, 2, 3, 1, 2, 3, 4, 9, 8, 1, 1, 8] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=58 fcmp=9 mmi=0 sp_stores=7 sp_adjust=True indirect_calls=2
+  callees (in order of first call; * = already overridden): ['ChaseCamController_UpdateAutoMode', 'AlgorithmList_Remove', 'ChaseCamController_SetOverrideAlgorithm']
+  direct callers: []
+
+0x00161ab0 ChaseCamController_UpdateAutoMode shard=s01 size=260 race=c prof=0 callers=1
+  kind=C4/I1/VU6accq22/F7 blocks=[10, 4, 3, 26, 2, 5, 6, 3, 1, 5] loops=0 matchpc=False event_checks=0 vu0=6 vu0_acc=2 cfc2_vi22=1 fpu=7 fcmp=1 mmi=0 sp_stores=4 sp_adjust=True indirect_calls=1
+  callees (in order of first call; * = already overridden): ['ChaseCamController_SetDefaultAlgorithm', 'ChaseCamController_EnterSpokeMode', 'ChaseCamController_ExitSpokeMode', 'Rider_GetMainState*']
+  direct callers: ['ChaseCamController_Update']
+
+0x0015d020 ChaseCamController_IsScriptCameraActive shard=s01 size=44 race=c prof=0 callers=1
+  kind=leaf blocks=[4, 4, 1, 2] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['GameCamera_AvoidCollision']
+
+0x00162060 ChaseCamController_SetOverrideAlgorithm shard=s01 size=112 race=c prof=0 callers=5
+  kind=C1 blocks=[4, 5, 4, 5, 3, 2, 3, 2] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['ChaseCamController_SetAlgorithm']
+  direct callers: ['GameCamera_Init', 'ChaseCamController_Update', 'CameraTrigger_ApplyAction']
+
+0x0022e840 GameViewMan_UpdateCameras shard=s05 size=116 race=P prof=33 callers=9
+  kind=L/I1 blocks=[9, 3, 11, 6] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=4 sp_adjust=True indirect_calls=1
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['GameModule_Update', 'FUN_00244a40', 'FUN_00244e60', 'WorldState_Read', 'Replay_UpdateCameraInput', 'Replay_ProcessCommand', 'Replay_StepFrame']
+
+0x0022e920 GameViewMan_AllViewsReady shard=s05 size=68 race=c prof=0 callers=6
+  kind=leaf/L blocks=[3, 3, 4, 3, 2, 2] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['FUN_0022b008', 'GameModule_Update', 'FUN_00244888', 'FUN_00244a40']
+
+0x0015e460 GameCamera_UpdateShake shard=s01 size=520 race=c prof=0 callers=1
+  kind=C5/I2/VU6accq22/F36 blocks=[21, 5, 22, 5, 4, 4, 1, 5, 5, 5, 5, 3, 1, 16, 3, 5, 1, 19] loops=0 matchpc=False event_checks=0 vu0=6 vu0_acc=2 cfc2_vi22=1 fpu=36 fcmp=5 mmi=0 sp_stores=7 sp_adjust=True indirect_calls=2
+  callees (in order of first call; * = already overridden): ['GameCamera_AddShake*', 'ChaseCameraAlgorithm_StartShake', 'ChaseCameraAlgorithm_ApplyShake']
+  direct callers: ['GameCamera_ComputeView']
+
+0x0015e030 GameCamera_ResetDefaultChase shard=s01 size=28 race= prof=0 callers=3
+  kind=C1 blocks=[7] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['ChaseCameraAlgorithm_Reset*']
+  direct callers: ['CamController_ResetForRider', 'CamController_Reset', 'GameCamera_Init']
+```
 
 ## D4: function list (classifier)
 
+```text
+# D4 AI, BE interfaces & race logic
 
+0x0014dc80 BELibrary_GetInstance shard=s01 size=200 race=P prof=1 callers=722
+  kind=C6/I1 blocks=[6, 38, 6] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=3 sp_adjust=True indirect_calls=1
+  callees (in order of first call; * = already overridden): ['BELibrary_ctor', 'BEPreRace_GetInstance', 'BERace_GetInstance', 'BEPostRace_GetInstance', 'EA_MemAllocNamed*']
+  direct callers: ['Rider_CheckRiderCollisions', 'ComputerActorRider_RollUberTrick', 'ComputerActorRider_InitDifficulty', 'FUN_0010c9a8', 'ComputerActorRider_PickRandomTrick', 'ComputerActorRider_PickFittedTrick', 'ComputerActorRider_PickUberTrick', 'ComputerActorRider_ComputeRubberBand'] ...
+
+0x001448d8 BENewRaceInt_GetInstance shard=s01 size=76 race=c prof=0 callers=7
+  kind=C1 blocks=[4, 11, 4] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['EA_MemAllocNamed*']
+  direct callers: ['BELibrary_ctor', 'BELibrary_DeserializeSave', 'BERace_GetInterface', 'BEAggressionInt_GetRivalState', 'BEAggressionInt_GetRivalLevel', 'BEPostRace_GetInterface', 'BEPreRace_GetInterface']
+
+0x00145970 BENewPlayerInt_GetInstance shard=s01 size=68 race=c prof=0 callers=13
+  kind=C2 blocks=[4, 9, 4] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['BENewPlayerInt_ctor', 'EA_MemAllocNamed*']
+  direct callers: ['BENewRaceInt_SetEventType', 'FUN_00145750', 'BELibrary_ctor', 'BELibrary_ResetPlayerProfile', 'BELibrary_DeserializeSave', 'BESaveInt_BuildProfileSave', 'BESaveInt_LoadSystemSave', 'BESaveInt_LoadProfileSave'] ...
+
+0x00147f78 BECharInt_GetInstance shard=s01 size=92 race=P prof=1 callers=9
+  kind=C1/I1 blocks=[4, 15, 4] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=1
+  callees (in order of first call; * = already overridden): ['EA_MemAllocNamed*']
+  direct callers: ['BELibrary_ctor', 'BELibrary_ResetPlayerProfile', 'BELibrary_DeserializeSave', 'BEEconInt_BuyAttribute', 'BESaveInt_BuildProfileSave', 'BESaveInt_LoadProfileSave', 'BERace_GetInterface', 'BEPostRace_GetInterface'] ...
+
+0x00155a50 BEAggressionInt_GetInstance shard=s01 size=76 race=c prof=0 callers=17
+  kind=C1 blocks=[4, 11, 4] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['EA_MemAllocNamed*']
+  direct callers: ['ComputerActorRider_FindAttackTarget', 'FUN_0010e228', 'FUN_0010e2e8', 'FUN_0010e3a8', 'FUN_0010e468', 'AI_UpdateRiderRelations', 'AI_UpdateRivals', 'BELibrary_ctor'] ...
+
+0x00154948 BEScoreInt_GetInstance shard=s01 size=92 race=c prof=0 callers=7
+  kind=C2 blocks=[4, 15, 4] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['BEScoreInt_ctor', 'EA_MemAllocNamed*']
+  direct callers: ['BELibrary_ctor', 'BELibrary_DeserializeSave', 'BESaveInt_BuildProfileSave', 'BESaveInt_LoadSystemSave', 'BERace_GetInterface', 'BEPostRace_GetInterface', 'BEPreRace_GetInterface']
+
+0x0014f250 BEOptionInt_GetInstance shard=s01 size=84 race=P prof=1 callers=5
+  kind=C2 blocks=[4, 13, 4] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['BEOptionInt_ctor', 'EA_MemAllocNamed*']
+  direct callers: ['BELibrary_ctor', 'BESaveInt_LoadSystemSave', 'BERace_GetInterface', 'BEPostRace_GetInterface', 'BEPreRace_GetInterface']
+
+0x00146e98 BENewPlayerInt_GetHumanRider shard=s01 size=168 race=P prof=1 callers=87
+  kind=L/C1 blocks=[16, 7, 2, 2, 2, 1, 3, 1, 8] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=7 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['BENewPlayerInt_GetSlot*']
+  direct callers: ['FUN_00145750', 'cFEStateBraggingRights_OnWidgetCreated', 'FUN_001a34b8', 'FUN_001e1550', 'MessageCenter_PostForeshadow', 'FUN_001e2648', 'FUN_001e2828', 'FUN_001e2a08'] ...
+
+0x00147398 BENewPlayerInt_GetCharacter shard=s01 size=52 race=c prof=0 callers=32
+  kind=C1 blocks=[13] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['BENewPlayerInt_GetSlot*']
+  direct callers: ['Rider_GetCharacter', 'AI_CreateComputerRiders', 'FUN_00145750', 'FUN_001e1550', 'MessageCenter_PostForeshadow', 'FUN_001e2648', 'FUN_001e2828', 'FUN_001e2a08'] ...
+
+0x00147290 BENewPlayerInt_GetPadIndex shard=s01 size=52 race=c prof=0 callers=3
+  kind=C1 blocks=[13] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['BENewPlayerInt_GetSlot*']
+  direct callers: ['AI_CreatePlayers', 'GameModule_CheckPauseRequest']
+
+0x00144c98 BENewRaceInt_GetTrackPeak shard=s01 size=36 race=c prof=0 callers=8
+  kind=leaf blocks=[9] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['FUN_0010c9a8', 'cFEStateChallengePopup_FillChallengeText', 'cGameLoadState_SetupMPWidget', 'cGameLoadState_SetupQPWidget', 'World_GetPeakNumber', 'WScriptMission_v18', 'WScriptMan_CollectItem']
+
+0x00148680 BECharInt_GetAttrib3 shard=s01 size=96 race=P prof=1 callers=2
+  kind=C2 blocks=[24] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=3 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['BE_GetRiderProfile*', 'BE_GetRiderCharacter*']
+  direct callers: ['BECharInt_GetOverallRating', 'cGameLoadState_UpdatePlayerRanking']
+
+0x00148d80 BECharInt_GetAttrib3Factor shard=s01 size=228 race=P prof=1 callers=1
+  kind=C3/F6 blocks=[18, 4, 2, 9, 6, 13, 5] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=6 fcmp=0 mmi=0 sp_stores=5 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['BE_GetRiderProfile*', 'BE_GetRiderCharacter*', 'FUN_001477e8']
+  direct callers: ['FUN_0013ccf0']
+
+0x00155b50 BEAggressionInt_GetRivalLevel shard=s01 size=160 race=P prof=2 callers=6
+  kind=C5 blocks=[21, 12, 1, 6] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=4 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['BE_GetRiderProfile*', 'BE_GetRiderCharacter*', 'BENewRaceInt_GetInstance', 'FUN_00145750']
+  direct callers: ['ComputerActorRider_FindAttackTarget', 'AI_UpdateRiderRelations', 'AI_UpdateRivals', 'SSXAudioSystem_GetRiderRivalry', 'cAngerFX_Update']
+
+0x0012a250 AI_AllPlayersFinished shard=s00 size=92 race=c prof=0 callers=15
+  kind=leaf/L/F3 blocks=[3, 3, 7, 1, 2, 3, 2, 2] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=3 fcmp=1 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['RaceStateRace_Update', 'RiderMetrix_FinishTrick', 'AI_UpdateRaceTimeLimit', 'cOVStateHUD1P_Update', 'GMHandler0_OnRiderFinished', 'GMHandler9_OnRiderFinished', 'GMHandler1_OnRiderFinished', 'GMHandler8_OnRiderFinished'] ...
+
+0x0012a180 AI_AreAllRidersLoaded shard=s00 size=112 race=c prof=0 callers=5
+  kind=L/C1 blocks=[11, 1, 8, 8] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=5 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['Rider_IsLoaded*']
+  direct callers: ['AI_UpdateRacePositions', 'GameModule_Load', 'GameStatePreRaceLoad_Update', 'GameStateReset_OverlayUpdate', 'GameStateRestartRace_Update']
+
+0x001298c8 AI_GetFrameCounter shard=s00 size=20 race=c prof=0 callers=32
+  kind=leaf blocks=[5] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['FocusMan_Update', 'Rider_CheckRiderCollisions', 'ComputerActorRider_ThinkGate', 'ComputerActorRider_SelectTargetRider', 'FUN_0010da10', 'ComputerActorRider_FindAttackTarget', 'FUN_0010e028', 'Rider_LaunchIntoAir'] ...
+
+0x00113c20 AI_UpdateRaceState shard=s00 size=148 race=c prof=0 callers=1
+  kind=I3 blocks=[8, 3, 5, 11, 10] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=2 sp_adjust=True indirect_calls=3
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['AI_Update']
+
+0x0010f878 AI_UpdateRivals shard=s00 size=288 race=c prof=0 callers=1
+  kind=L/C2 blocks=[15, 3, 4, 9, 3, 2, 9, 4, 2, 4, 1, 4, 1, 11] loops=2 matchpc=False event_checks=2 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=10 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['BEAggressionInt_GetInstance', 'BEAggressionInt_GetRivalLevel']
+  direct callers: ['AI_UpdateRiderRelations']
+
+0x0010a960 ComputerActorRider_ThinkCruise shard=s00 size=272 race=P prof=7 callers=1
+  kind=C3/I1 blocks=[21, 2, 3, 4, 4, 4, 1, 3, 8, 2, 2, 4, 1, 9] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=4 sp_adjust=True indirect_calls=1
+  callees (in order of first call; * = already overridden): ['ComputerActorRider_ShouldResetPath', 'ComputerActorRider_FindAttackTarget', 'FUN_0010da10']
+  direct callers: ['ComputerActorRider_GetControlInput']
+
+0x0010b750 ComputerActorRider_ThinkWipeout shard=s00 size=64 race=c prof=0 callers=1
+  kind=C1 blocks=[16] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=2 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['ComputerActorRider_ShouldResetPath']
+  direct callers: ['ComputerActorRider_GetControlInput']
+
+0x00100610 ComputerActorRider_GetSteerTarget shard=s00 size=108 race=c prof=0 callers=8
+  kind=leaf/VU3/F2/sp6 blocks=[27] loops=0 matchpc=False event_checks=0 vu0=3 vu0_acc=0 cfc2_vi22=0 fpu=2 fcmp=0 mmi=0 sp_stores=6 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['ComputerActorRider_CruiseFollowPath', 'ComputerActorRider_CruiseApproachJump', 'FUN_00100b90', 'FUN_00100f88', 'ComputerActorRider_ThinkBoardPress', 'ComputerActorRider_ThinkNaturalAir']
+
+0x0010deb0 ComputerActorRider_GetHumanRider shard=s00 size=64 race=c2 prof=0 callers=3
+  kind=C1 blocks=[6, 6, 1, 3] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['ComputerActorRider_FindHumanRiderIndex']
+  direct callers: ['ComputerActorRider_IsFarBehindHuman', 'ComputerActorRider_IsFarAheadOfHuman', 'ComputerActorRider_ComputeRubberBand']
+
+0x00113618 AirPredictor_SetLaunchState shard=s00 size=48 race=c prof=0 callers=3
+  kind=leaf/F2 blocks=[12] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=2 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['AirPredictor_Prime', 'AirPredictor_Update']
+```
 
 ### D4: research notes
 
@@ -1027,20 +1515,398 @@ Bit-exact moves, no arithmetic.
   `GetAttribNFactor` siblings (`GetAttrib5Factor` has `__entries`), 0x148410…0x149208.
 - No drops.
 
-
 ## D5: function list (classifier)
 
+```text
+# D5 World, sections & process lists
 
+0x003550a0 ProcessList_RenderPriority shard=s11 size=116 race=P prof=90 callers=2
+  kind=L/C2/I1 blocks=[11, 1, 11, 1, 5] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=4 sp_adjust=True indirect_calls=1
+  callees (in order of first call; * = already overridden): ['ProcessList_First', 'ProcessList_Next']
+  direct callers: ['GameModule_RenderUI', 'GameModule_RenderProcessLists']
 
+0x00354f98 ProcessList_UpdatePriority shard=s11 size=144 race=P prof=50 callers=16
+  kind=L/C3/I1 blocks=[12, 2, 12, 1, 9] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=5 sp_adjust=True indirect_calls=1
+  callees (in order of first call; * = already overridden): ['ProcessList_First', 'ProcessList_Next']
+  direct callers: ['GameModule_Update', 'FUN_00244e60']
+
+0x00355028 ProcessList_PostUpdatePriority shard=s11 size=116 race=P prof=9 callers=2
+  kind=L/C2/I1 blocks=[11, 1, 11, 1, 5] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=4 sp_adjust=True indirect_calls=1
+  callees (in order of first call; * = already overridden): ['ProcessList_First', 'ProcessList_Next']
+  direct callers: ['GameModule_Update', 'FUN_00244e60']
+
+0x00354ef8 ProcessList_Next shard=s11 size=36 race=P prof=2 callers=10
+  kind=leaf blocks=[9] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['WorldState_WriteObjects', 'WorldState_WriteDeadObjects', 'FUN_0026de58', 'ProcessList_UpdatePriority', 'ProcessList_PostUpdatePriority', 'ProcessList_RenderPriority', 'ProcessList_DeletePriority', 'ProcessList_DeleteSectionObjects']
+
+0x00354f48 ProcessList_PendingFirst shard=s11 size=36 race=P prof=1 callers=1
+  kind=leaf blocks=[9] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['ProcessList_MergePending']
+
+0x00354c98 ProcessList_MergePending shard=s11 size=428 race=P prof=2 callers=10
+  kind=L/C4/I3 blocks=[14, 2, 16, 2, 7, 7, 10, 8, 6, 6, 2, 1, 15, 2, 9] loops=2 matchpc=False event_checks=2 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=7 sp_adjust=True indirect_calls=3
+  callees (in order of first call; * = already overridden): ['ProcessList_PendingFirst', 'ProcessList_PendingNext', 'ProcessList_Last', 'ProcessList_Prev']
+  direct callers: ['GameModule_Unload', 'GameModule_ResetScriptsAndWorld', 'GameModule_ResetRace', 'GameModule_OnSectionUnload', 'GameModule_Update', 'FUN_00244e60', 'WorldState_Read', 'WorldState_ReadObjects']
+
+0x00230640 GameModule_RenderProcessLists shard=s06 size=88 race=P prof=90 callers=1
+  kind=L/C1 blocks=[10, 6, 6] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=4 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['ProcessList_RenderPriority']
+  direct callers: ['FUN_0022b008']
+
+0x0022c078 GameModule_RenderModels shard=s05 size=312 race=P prof=91 callers=1
+  kind=L/I2 blocks=[34, 4, 13, 3, 4, 13, 7] loops=2 matchpc=False event_checks=2 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=5 sp_adjust=True indirect_calls=2
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['FUN_0022b008']
+
+0x0022c620 GameModule_RenderBezierPatches shard=s05 size=228 race=P prof=53 callers=1
+  kind=L/C4/I1 blocks=[13, 3, 7, 3, 4, 7, 4, 7, 9] loops=2 matchpc=False event_checks=2 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=5 sp_adjust=True indirect_calls=1
+  callees (in order of first call; * = already overridden): ['GameModule_BeginBezierPass', 'GameModule_DrawBezierPatch', 'GameModule_EndBezierPass']
+  direct callers: ['FUN_0022b008']
+
+0x0022c3b8 GameModule_EndBezierPass shard=s05 size=88 race=P prof=41 callers=1
+  kind=C1/I1 blocks=[15, 3, 4] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=3 sp_adjust=True indirect_calls=1
+  callees (in order of first call; * = already overridden): ['__builtin_delete*']
+  direct callers: ['GameModule_RenderBezierPatches']
+
+0x00352dd0 ModifierBlock_Render shard=s11 size=124 race=P prof=38 callers=1
+  kind=L/I2 blocks=[8, 2, 8, 3, 6, 4] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=3 sp_adjust=True indirect_calls=2
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['ModObj_Render']
+
+0x00352d20 ModifierBlock_PostUpdate shard=s11 size=172 race=P prof=17 callers=1
+  kind=L/I3 blocks=[8, 2, 8, 3, 1, 8, 3, 6, 4] loops=2 matchpc=False event_checks=2 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=3 sp_adjust=True indirect_calls=3
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['ModObj_PostUpdateModifiers']
+
+0x00352c70 ModifierBlock_Update shard=s11 size=176 race=P prof=2 callers=1
+  kind=C3/I3 blocks=[7, 6, 2, 3, 2, 3, 2, 13, 3, 3] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=2 sp_adjust=True indirect_calls=3
+  callees (in order of first call; * = already overridden): ['ModifierBlock_FreeBoost', 'UVScrollModifier_Update', 'TexFlipModifier_Update']
+  direct callers: ['ModObj_UpdateModifiers']
+
+0x00352b88 ModifierBlock_GetTransformBounds shard=s11 size=56 race=P prof=1 callers=5
+  kind=I1 blocks=[5, 2, 4, 3] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=1
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['ModObj_v49', 'ModObj_v50', 'ModObj_v44', 'ModObj_v45', 'Floating_v45']
+
+0x00356198 ModObj_Update shard=s11 size=252 race=P prof=28 callers=1
+  kind=C5/I5 blocks=[7, 1, 7, 7, 4, 7, 9, 5, 4, 9, 3] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=2 sp_adjust=True indirect_calls=5
+  callees (in order of first call; * = already overridden): ['FUN_0034fce0', 'ModObj_UpdateModifiers', 'ModObj_PostUpdateModifiers', 'ModifierBlock_IsTransformFinished', 'ModifierBlock_ClearTransformFinished']
+  direct callers: ['Particle_Update']
+
+0x00355748 ModObj_PostUpdateModifiers shard=s11 size=40 race=P prof=17 callers=1
+  kind=C1 blocks=[5, 3, 2] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['ModifierBlock_PostUpdate']
+  direct callers: ['ModObj_Update']
+
+0x003556f8 ModObj_UpdateModifiers shard=s11 size=80 race=P prof=2 callers=1
+  kind=C2 blocks=[7, 6, 4, 3] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=2 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['ModifierBlock_Update', 'ModifierBlock_HasTransformChanged']
+  direct callers: ['ModObj_Update']
+
+0x003a6928 World_Update shard=s13 size=28 race=P prof=3 callers=5
+  kind=C1 blocks=[7] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['cWorldCache_Update']
+  direct callers: ['GameModule_LoadWorld', 'GameModule_Update', 'FUN_00244a40']
+
+0x003a8290 cWorldCache_Update shard=s13 size=56 race=P prof=3 callers=1
+  kind=C3 blocks=[14] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=2 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['cWorldCache_StreamerUpdate', 'cWorldCache_UpdateHullLRU', 'cStreamMan_Update']
+  direct callers: ['World_Update']
+
+0x002d1be0 World_GetNash shard=s09 size=16 race=c prof=0 callers=23
+  kind=leaf blocks=[4] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['FlexBridge_dtor', 'FlexBridge_BuildMesh', 'FlexBridge_UpdateVerts', 'FlexRail_UpdateSpaceNode', 'FlexRail_RegisterSpaceNode', 'FlexRail_UnregisterSpaceNode', 'Floating_v50', 'Floating_v49'] ...
+
+0x002d1c70 World_GetSecondsPerTick shard=s09 size=12 race=c prof=0 callers=16
+  kind=leaf/F1 blocks=[3] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=1 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['Boost_v48', 'Boost_v47', 'AnimTeeter_v15', 'BoostModifier_v08', 'BoostModifier_v07', 'FloatRail_v47', 'SpringRail_v47', 'DeadFade_ctor_2'] ...
+
+0x0022e0e0 SectionMan_FindLogicalSection shard=s05 size=56 race=c prof=0 callers=5
+  kind=leaf/L blocks=[4, 3, 3, 2, 2] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['Rider_UpdateSurfaceFX', 'AI_SetTrackPathsBuffer', 'FUN_0012a490', 'FUN_00278a10', 'FUN_00278a58']
+
+0x002c1cd8 QuadTree_FindLeaf shard=s08 size=208 race=P prof=1 callers=1
+  kind=leaf/L/F11 blocks=[15, 2, 10, 1, 17, 5, 2] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=11 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['WPData_FindCellIndex']
+
+0x002d1928 Noise_Fractal1D shard=s09 size=144 race=P prof=1 callers=2
+  kind=L/C1/F22 blocks=[15, 3, 8, 10] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=22 fcmp=0 mmi=0 sp_stores=7 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['Noise_Sample1D*']
+  direct callers: ['cBoardWakeFX_BuildTrail', 'AttachedEmitterFX_Update']
+
+0x0022a5a0 Nash_CollectInstances shard=s05 size=244 race=P prof=11 callers=1
+  kind=leaf/L blocks=[2, 5, 7, 3, 5, 7, 7, 1, 2, 2, 7, 7, 2, 2, 2] loops=2 matchpc=False event_checks=2 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['Nash_GatherVisible']
+```
 
 ## D6: function list (classifier)
 
+```text
+# D6 Frontend UI, fonts & HUD
 
+0x0039f9d8 UIStateMgr_FindState shard=s13 size=172 race=P prof=1 callers=20
+  kind=L/C4 blocks=[11, 2, 1, 2, 1, 4, 5, 2, 3, 2, 4, 6] loops=1 matchpc=True event_checks=2 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=4 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['UIList_First*', 'UIListNode_IsSentinel*']
+  direct callers: ['cFEStateAudioOptions_Init', 'cFEStateAudioOptions_Shutdown', 'cFEStateRequestLine_Init', 'cFEStateRequestLine_Shutdown', 'MessageCenter_PostMessage', 'cOVStateOverlay_Init', 'cOVStateOverlay_Shutdown', 'GameUI_IsReplayMenuOpen'] ...
 
+0x0039fa88 UIStateMgr_GetActiveState shard=s13 size=96 race=P prof=3 callers=11
+  kind=L/C2 blocks=[8, 2, 5, 1, 4, 4] loops=1 matchpc=True event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=2 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['UIList_First*', 'UIListNode_IsSentinel*']
+  direct callers: ['NetFEState_OnDisconnectedPopupEvent', 'NetFEState_OnNetInterruptedPopupEvent', 'cFEStateRelogin_v33', 'GameUI_PushPopupScreen', 'GameUI_CanOpenPauseMenu', 'GameUI_HandleMenuResult', 'GameUI_Update', 'FUN_002579c8'] ...
+
+0x0039ebe0 UIStateMgr_Render shard=s13 size=196 race=P prof=57 callers=1
+  kind=L/C4/I2 blocks=[9, 1, 4, 6, 4, 5, 1, 4, 6, 4, 1, 4] loops=2 matchpc=False event_checks=2 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=3 sp_adjust=True indirect_calls=2
+  callees (in order of first call; * = already overridden): ['UIList_First*', 'UIListNode_IsSentinel*']
+  direct callers: ['UIEngine_Render']
+
+0x0039f100 UIStateMgr_Update shard=s13 size=144 race=P prof=3 callers=1
+  kind=L/C5/I1 blocks=[7, 2, 5, 2, 4, 5, 7, 1, 3] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=2 sp_adjust=True indirect_calls=1
+  callees (in order of first call; * = already overridden): ['UIStateMgr_ProcessStates', 'UIList_First*', 'UIState_UpdateScreens', 'UIListNode_IsSentinel*']
+  direct callers: ['UIEngine_Update']
+
+0x0039e868 UIState_UpdateScreens shard=s13 size=76 race=c prof=0 callers=4
+  kind=L/C3 blocks=[8, 7, 1, 3] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=2 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['UIList_First*', 'UIScreen_Update', 'UIListNode_IsSentinel*']
+  direct callers: ['UIStateMgr_ProcessStates', 'UIStateMgr_Update']
+
+0x0039eb60 UIStateMgr_HasStateInPhase shard=s13 size=128 race=c prof=0 callers=1
+  kind=L/C2 blocks=[10, 2, 4, 4, 2, 4, 1, 5] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=3 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['UIList_First*', 'UIListNode_IsSentinel*']
+  direct callers: ['UIStateMgr_ProcessStates']
+
+0x0039ea90 UIStateMgr_RestartStateInPhase shard=s13 size=204 race=c prof=0 callers=2
+  kind=L/C2 blocks=[14, 4, 4, 4, 11, 4, 1, 9] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=7 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['UIList_First*', 'UIListNode_IsSentinel*']
+  direct callers: ['UIStateMgr_ProcessStates']
+
+0x0039f840 UIStateMgr_CloseAll shard=s13 size=136 race=c prof=0 callers=10
+  kind=L/C2 blocks=[11, 3, 9, 4, 7] loops=1 matchpc=True event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=5 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['UIList_First*', 'UIListNode_IsSentinel*']
+  direct callers: ['OVScreenFinishOv_Update', 'OVScreenFinishOv_OnWidgetAction', 'OVScreenFinishOv2_Update', 'OVScreenFinishOv2_OnWidgetAction', 'GameUI_Update', 'GameStateFinish_Enter', 'GameStateCountdown_Enter', 'GameStateRace_Enter'] ...
+
+0x0039f7b8 UIStateMgr_SetParentChainVisible shard=s13 size=136 race=c prof=0 callers=2
+  kind=leaf/L blocks=[2, 3, 3, 5, 2, 4, 2, 6, 5, 2] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['UIStateMgr_ProcessStates']
+
+0x00398038 UIEngine_Update shard=s13 size=64 race=P prof=4 callers=10
+  kind=C1/I1 blocks=[16] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=2 sp_adjust=True indirect_calls=1
+  callees (in order of first call; * = already overridden): ['UIStateMgr_Update']
+  direct callers: ['ssx_BootMoviesUpdate', 'GameModule_Update', 'StartScreen_Update', 'cGameLoadScreen_Update', 'cFELoadScreen_Update', 'GameModule_UpdatePauseAndUI']
+
+0x00397df8 UIEngine_Render shard=s13 size=540 race=P prof=57 callers=6
+  kind=C1/I6/F6 blocks=[135] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=6 fcmp=0 mmi=0 sp_stores=2 sp_adjust=True indirect_calls=6
+  callees (in order of first call; * = already overridden): ['UIStateMgr_Render']
+  direct callers: ['FEModule_Render', 'FUN_0022b008', 'GameModule_RenderUI', 'StartScreen_Render', 'cGameLoadScreen_Render', 'cFELoadScreen_Render']
+
+0x00391cb0 Font_DrawText shard=s12 size=384 race=P prof=10 callers=50
+  kind=I2/F33 blocks=[29, 5, 40, 22] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=33 fcmp=2 mmi=0 sp_stores=10 sp_adjust=True indirect_calls=2
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['DebugMenu_Render', 'LobbyMenu_Render', 'cOVStateHUD1P_Render', 'FUN_001f14b0', 'HUD_DrawTime', 'HUD_DrawTextElem', 'FUN_001f1e28', 'HUD_DrawWrappedText'] ...
+
+0x00391fb0 Font_MeasureText shard=s12 size=572 race=P prof=1 callers=60
+  kind=leaf/L/F69 blocks=[13, 3, 4, 2, 4, 7, 5, 6, 3, 1, 3, 1, 2, 31, 10, 3, 4, 3, 14, 4, 7, 8, 2, 3] loops=2 matchpc=False event_checks=2 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=69 fcmp=2 mmi=0 sp_stores=0 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['cFEStateNetConfig_LoadConfigList', 'cFEStateCreateStep1_SetTruncatedText', 'cFEStateNetQuickMessages_SetTextEllipsized', 'cFEPopupConfirm_MeasureDesc', 'cFEPopupConfirm_MeasureLine', 'cFEPopupConfirm_CheckAndFixTextEntry', 'cKeyboardPopup_UpdateScrollWindow', 'cKeyboardPopup_UpdateCursor'] ...
+
+0x00392908 Font_DrawTextCentered shard=s12 size=120 race=P prof=2 callers=15
+  kind=C2/F12 blocks=[30] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=12 fcmp=0 mmi=0 sp_stores=5 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['Font_MeasureText', 'Font_DrawText']
+  direct callers: ['DebugMenu_Render', 'LobbyMenu_Render', 'cOVStateHUD1P_Render', 'cOVStateHUD1P_DrawProgressMeter', 'cOVStateHUD1P_DrawRaceTime', 'FUN_002200c0', 'Font_DrawTextCenteredF']
+
+0x001e9290 HUD_GetElemScale shard=s04 size=20 race=P prof=1 callers=38
+  kind=leaf/F4 blocks=[5] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=4 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['cOVStateHUD1P_Init', 'cOVStateHUD1P_Update', 'cOVStateHUD1P_Render', 'HUD_DrawTimeElem', 'HUD_DrawTextElem', 'FUN_001f1e28', 'HUD_DrawTextElemW', 'FUN_001f25e0'] ...
+
+0x001e91a8 HUD_GetElemColor shard=s04 size=36 race=c prof=0 callers=40
+  kind=leaf/F8 blocks=[9] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=8 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['cOVStateHUD1P_Render', 'HUD_DrawTimeElem', 'HUD_DrawTextElem', 'HUD_DrawTextElemW', 'HUD_DrawWrappedText', 'HUD_DrawWrappedTextW', 'FUN_0021d9a0', 'FUN_0021e1b0'] ...
+
+0x001e91f8 HUD_GetElemPos shard=s04 size=36 race=c prof=0 callers=42
+  kind=leaf/F6 blocks=[9] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=6 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['cOVStateHUD1P_Init', 'cOVStateHUD1P_Render', 'HUD_DrawTimeElem', 'HUD_DrawTextElem', 'FUN_001f1e28', 'HUD_DrawTextElemW', 'FUN_001f25e0', 'HUD_DrawWrappedText'] ...
+
+0x001e9220 HUD_GetElemSize shard=s04 size=108 race=c prof=0 callers=32
+  kind=leaf/F16 blocks=[8, 2, 2, 7, 2, 2, 2, 2] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=16 fcmp=2 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['cOVStateHUD1P_Init', 'cOVStateHUD1P_Render', 'HUD_DrawWrappedText', 'HUD_DrawWrappedTextW', 'FUN_0021d1a0', 'FUN_0021d9a0', 'FUN_0021e1b0', 'FUN_0021ed48'] ...
+
+0x001f10f8 HUD_AlignElemPos shard=s04 size=148 race=P prof=1 callers=37
+  kind=C2/F8 blocks=[37] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=8 fcmp=0 mmi=0 sp_stores=7 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['FUN_0021e750', 'FUN_0021e7a8']
+  direct callers: ['cOVStateHUD1P_Init', 'cOVStateHUD1P_Render', 'HUD_DrawTime', 'HUD_DrawTextElem', 'FUN_001f1e28', 'HUD_DrawTextElemW', 'FUN_001f25e0', 'FUN_0021d1a0'] ...
+
+0x001f1190 HUD_DrawSprite shard=s04 size=420 race=P prof=1 callers=25
+  kind=L/I1/F49 blocks=[6, 6, 7, 23, 8, 52, 3] loops=2 matchpc=False event_checks=2 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=49 fcmp=0 mmi=0 sp_stores=24 sp_adjust=True indirect_calls=1
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['cOVStateHUD1P_Render', 'FUN_0021e1b0', 'FUN_0021ed48', 'FUN_0021f338', 'cOVStateHUD1P_DrawRaceTime', 'cOVStateHUD1P_DrawCollectedCount', 'FUN_0021fd38']
+
+0x00117008 cHUDFX_SetText shard=s00 size=60 race=c prof=0 callers=4
+  kind=leaf/L blocks=[2, 3, 1, 7, 2] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['cHUDFX_Show', 'cHUDFX_ShowNumber', 'cHUDFX_ShowDelayed', 'cHUDFX_ShowNumberDelayed']
+
+0x00117048 cHUDFX_Show shard=s00 size=96 race=c2 prof=0 callers=1
+  kind=C1/F4 blocks=[24] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=4 fcmp=0 mmi=0 sp_stores=5 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['cHUDFX_SetText']
+  direct callers: ['RiderMetrix_ShowHUDText']
+
+0x001171a8 cHUDFX_ShowNumberDelayed shard=s00 size=156 race=P prof=3 callers=24
+  kind=C2/F7 blocks=[39] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=7 fcmp=0 mmi=0 sp_stores=7 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['cHUDFX_SetText', 'sprintf']
+  direct callers: ['RiderMetrix_AddComboPoints', 'RiderMetrix_UpdateTrickHUD', 'FUN_00119448']
+
+0x001179e0 RiderMetrix_RemoveHUDMessage shard=s00 size=120 race=c prof=0 callers=43
+  kind=leaf/L blocks=[4, 2, 4, 2, 5, 5, 6, 2] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['RiderMetrix_ResetCombo', 'RiderMetrix_UpdateTrickHUD', 'FUN_00119210', 'RiderMetrix_FinishTrick', 'FUN_0011a7a8']
+
+0x00117b88 RiderMetrix_ShowHUDNumber shard=s00 size=156 race=c prof=0 callers=29
+  kind=C2/F4 blocks=[15, 14, 1, 9] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=4 fcmp=0 mmi=0 sp_stores=7 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['RiderMetrix_FindHUDSlot', 'cHUDFX_ShowNumber']
+  direct callers: ['RiderMetrix_BankCombo', 'RiderMetrix_UpdateTrickHUD', 'FUN_00119210', 'FUN_00119400', 'FUN_001194c0', 'FUN_001195a8', 'FUN_001195d8', 'FUN_00119608'] ...
+```
 
 ## D7: function list (classifier)
 
+```text
+# D7 Audio system
 
+0x003b8790 SND_SetPitch shard=s13 size=164 race=P prof=4 callers=4
+  kind=L/C4 blocks=[11, 5, 6, 2, 4, 5, 1, 7] loops=1 matchpc=True event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=6 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['SND_HandleToChannel*', 'SND_ChannelCalcPitch', 'SND_ChannelApplyPitch', 'SND_NextHandleChannel']
+  direct callers: ['BankMonitorInstance_SetPitch', 'PATH_PlatSetPaused', 'SNDSTRM_SetPitch', 'SNDMIDI_SetPitch']
+
+0x003b8c00 SND_SetPan shard=s13 size=200 race=P prof=1 callers=4
+  kind=L/C3 blocks=[11, 2, 4, 5, 5, 1, 8, 5, 9] loops=1 matchpc=True event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=7 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['SND_HandleToChannel*', 'SND_ChannelApplyPan', 'SND_NextHandleChannel']
+  direct callers: ['BankMonitorInstance_SetPan', 'SNDSTRM_SetPan', 'SNDMIDI_ControlChange', 'SNDMIDI_SetPan']
+
+0x003baa00 SND_NextHandleChannel shard=s13 size=192 race=P prof=1 callers=14
+  kind=leaf/L blocks=[10, 2, 1, 6, 1, 4, 7, 3, 3, 1, 4, 2, 2, 2] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['SND_FadeVolume', 'SND_SetVolume', 'FUN_003b8700', 'SND_SetPitch', 'FUN_003b8838', 'SND_SetAuxSend', 'SND_SetLowpass', 'SND_Stop'] ...
+
+0x003ba938 SND_ChannelCalcPitch shard=s13 size=196 race=P prof=1 callers=5
+  kind=C1 blocks=[11, 4, 3, 2, 6, 3, 8, 4, 8] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=2 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['SND_CentsToPitch']
+  direct callers: ['SND_Tick', 'SND_SetPitch', 'SND_PlayPatchVoices', 'SND_SetPitchBend', 'SNDSTRM_StartChannel']
+
+0x003b5860 SND_DefaultLock shard=s13 size=28 race=P prof=3 callers=0
+  kind=C1 blocks=[7] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['SND_MutexLock']
+  direct callers: []
+
+0x003b5880 SND_DefaultUnlock shard=s13 size=28 race=P prof=3 callers=0
+  kind=C1 blocks=[7] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['SND_MutexUnlock']
+  direct callers: []
+
+0x003c3380 SND_MutexLock shard=s13 size=96 race=P prof=3 callers=1
+  kind=C2 blocks=[12, 4, 8] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=3 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['GetThreadId', 'WaitSema']
+  direct callers: ['SND_DefaultLock']
+
+0x003c33e0 SND_MutexUnlock shard=s13 size=112 race=P prof=2 callers=1
+  kind=C2 blocks=[10, 6, 3, 3, 4, 2] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['GetThreadId', 'SignalSema']
+  direct callers: ['SND_DefaultUnlock']
+
+0x003b5540 SND_Service shard=s13 size=172 race=P prof=17 callers=1
+  kind=L/C1 blocks=[9, 5, 3, 6, 8, 1, 6, 1, 4] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=3 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['SND_Tick']
+  direct callers: ['SND_EeThread']
+
+0x002ab958 SSXAudioSystem_UpdateBanksAndStreams shard=s08 size=136 race=P prof=35 callers=1
+  kind=C5/I1/F4 blocks=[34] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=4 fcmp=0 mmi=0 sp_stores=4 sp_adjust=True indirect_calls=1
+  callees (in order of first call; * = already overridden): ['CrowdAudio_Update', 'MusicPlayer_Update', 'SpeechSystem_Update', 'StreamArray_UpdateAll', 'SndLoadQueue_Update']
+  direct callers: ['SSXAudioSystem_Update']
+
+0x002ab7a0 SSXAudioSystem_UpdateBankMonitor shard=s08 size=132 race=P prof=30 callers=0
+  kind=L/C1/F5 blocks=[12, 1, 3, 10, 7] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=5 fcmp=0 mmi=0 sp_stores=5 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['SSXAudioSystem_UpdateBankMonitorInstance']
+  direct callers: []
+
+0x002ab6b0 SSXAudioSystem_UpdateBankMonitorInstance shard=s08 size=236 race=P prof=29 callers=1
+  kind=C2/I1/F7 blocks=[12, 5, 3, 2, 8, 2, 2, 4, 1, 4, 2, 4, 4, 6] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=7 fcmp=1 mmi=0 sp_stores=5 sp_adjust=True indirect_calls=1
+  callees (in order of first call; * = already overridden): ['BankMonitorInstance_PollFree', 'BankMonitorInstance_Update3D']
+  direct callers: ['SSXAudioSystem_UpdateBankMonitor']
+
+0x002ab8e8 SSXAudioSystem_UpdateTimers shard=s08 size=112 race=P prof=1 callers=0
+  kind=L/C2 blocks=[11, 3, 8, 6] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=4 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['BankMonitor_Tick', 'BankMonitor_TimerUpdate']
+  direct callers: []
+
+0x002abb80 BankMonitorInstance_PollFree shard=s08 size=88 race=P prof=6 callers=8
+  kind=C2 blocks=[7, 2, 2, 4, 3, 4] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=2 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['BankMonitorInstance_IsDone', 'BankMonitorInstance_Reset']
+  direct callers: ['SSXAudioSystem_UpdateBankMonitorInstance', 'BankMonitorInstance_Pause', 'BankMonitorInstance_Resume', 'BankMonitor_FindFreeInstance', 'BankMonitor_FindInstance', 'BankMonitor_StopByBank', 'BankMonitor_CountPlaying', 'BankMonitor_CountActive']
+
+0x002abc18 BankMonitor_CalcFalloffVolume shard=s08 size=100 race=P prof=1 callers=1
+  kind=leaf/F15 blocks=[8, 4, 3, 8, 2] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=15 fcmp=3 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['BankMonitorInstance_GetFalloffVolume']
+
+0x002abc80 BankMonitorInstance_GetFalloffVolume shard=s08 size=28 race=P prof=1 callers=1
+  kind=C1 blocks=[7] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['BankMonitor_CalcFalloffVolume']
+  direct callers: ['BankMonitorInstance_Update3D']
+
+0x002ad550 BankMonitor_FindInstance shard=s08 size=156 race=P prof=1 callers=12
+  kind=L/C1 blocks=[12, 5, 5, 3, 2, 1, 2, 1, 8] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=6 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['BankMonitorInstance_PollFree']
+  direct callers: ['FUN_00125448', 'FUN_00280640', 'SSXAudioSystem_IsTrackedSoundPlaying', 'SSXAudioSystem_UpdateTrackedSounds', 'SSXAudioSystem_StopCharacterSpeech', 'SSXAudioSystem_IsCharacterSpeaking', 'CrowdAudio_UpdateInstance', 'FUN_002ad358'] ...
+
+0x002abe78 BankMonitorInstance_SetPitch shard=s08 size=232 race=P prof=8 callers=8
+  kind=C7 blocks=[17, 4, 3, 2, 2, 3, 2, 9, 9, 3, 4] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=3 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['StreamBuffer_SetPitch', 'SND_Lock*', 'SND_SetPitch', 'SND_Unlock*', 'SNDMIDI_SetPitch']
+  direct callers: ['SSXAudioSystem_UpdateBoardBaseLoop', 'SSXAudioSystem_UpdateBoardSurfaceLoop', 'SSXAudioSystem_UpdateBoardSurfaceLoopRemote', 'SSXAudioSystem_UpdateBoardEdgeLoop', 'CrowdAudio_UpdateInstance', 'BankMonitorInstance_Update3D', 'BankMonitorInstance_Pause', 'BankMonitorInstance_Resume']
+
+0x002ad998 BankMonitor_SndTickCallback shard=s08 size=44 race=P prof=2 callers=0
+  kind=I1 blocks=[11] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=1
+  callees (in order of first call; * = already overridden): []
+  direct callers: []
+
+0x002b4388 MusicPlayer_Update shard=s08 size=76 race=P prof=2 callers=3
+  kind=C2 blocks=[7, 6, 3, 3] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=2 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['SongInstance_Update', 'MusicPlayer_AttachLoopBank']
+  direct callers: ['SSXAudioSystem_SetChannelVolume', 'SSXAudioSystem_UpdateBanksAndStreams']
+
+0x002b2488 SongInstance_GetStreamHandle shard=s08 size=52 race=P prof=1 callers=8
+  kind=C2 blocks=[7, 3, 3] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['PATH_GetTrackData', 'PATH_GetTrackStream']
+  direct callers: ['SongInstance_Pause', 'SongInstance_Resume', 'SongInstance_SetVolume', 'SongInstance_Update', 'SongInstance_FadeOut', 'SongInstance_GetStreamStatus', 'MusicPlayer_GetSongStreamHandle']
+
+0x00287968 SSXAudioSystem_GetChannelGainPtr shard=s07 size=52 race=c prof=0 callers=76
+  kind=leaf blocks=[3, 3, 3, 1, 3] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['FUN_00125448', 'FUN_002808e8', 'SSXAudioSystem_ctor', 'SSXAudioSystem_LoadFrontEndAudio', 'FUN_0028c8c8', 'SSXAudioSystem_PlayPeakTransitionMusic', 'SSXAudioSystem_PlayCharacterTune', 'FUN_0028cf98'] ...
+
+0x0028b1d8 SSXAudioSystem_GetRaceMan shard=s07 size=16 race=c prof=0 callers=51
+  kind=leaf blocks=[4] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['SSXAudioSystem_FindRider', 'SSXAudioSystem_EnterGame', 'FUN_00286ea0', 'FUN_002871b0', 'SSXAudioSystem_HandleMusicEvent', 'SSXAudioSystem_RestartAllBoardLoops', 'FUN_002947b0', 'SSXAudioSystem_OnRacePositionChange'] ...
+
+0x0028b1c8 SSXAudioSystem_GetGameModule shard=s07 size=12 race=c prof=0 callers=24
+  kind=leaf blocks=[3] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['FUN_00285930', 'SSXAudioSystem_Update', 'FUN_00286e20', 'FUN_002872a8', 'SSXAudioSystem_IsReplayPlaying', 'SSXAudioSystem_UpdateBoardBaseLoop', 'SSXAudioSystem_UpdateBoardSurfaceLoop', 'SSXAudioSystem_UpdateBoardSurfaceLoopRemote'] ...
+
+0x00288ae0 SSXAudioSystem_IsReplayPlaying shard=s07 size=96 race=P prof=2 callers=60
+  kind=C3 blocks=[6, 5, 6, 1, 2, 1, 3] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['SSXAudioSystem_IsInGame', 'SSXAudioSystem_GetGameModule']
+  direct callers: ['FUN_002854f8', 'SSXAudioSystem_FindRider', 'FUN_00286ea0', 'FUN_0028c8c8', 'SSXAudioSystem_PlayCharacterTune', 'FUN_0028cf98', 'SSXAudioSystem_StartBoardBaseLoop', 'SSXAudioSystem_StartBoardSurfaceLoop'] ...
+```
 
 ### D7: research notes
 
@@ -1380,7 +2246,128 @@ three callees are hand-written, which makes this a fully typed chain.
 - Risk: the mutex pair and SND_Service are where thread switches happen.
   Test them with real VBlank/thread events in difftest, as `util.rs` does.
 
-
 ## D8: function list (classifier)
 
+```text
+# D8 Memory, containers, replay & script
 
+0x00366ce0 VramHeap_Alloc shard=s12 size=248 race=P prof=14 callers=6
+  kind=L/C4 blocks=[15, 3, 6, 5, 8, 7, 18] loops=1 matchpc=False event_checks=2 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=8 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['VramHeap_FindFreeBlock', 'VramHeap_EvictCheapestBlock', 'VramHeap_EvictRange', 'VramHeap_SplitBlock']
+  direct callers: ['TexMan_AllocFrameBuffer', 'TexMan_LoadTexture', 'TexMan_BindTextures', 'PS2GraphicsMan_RenderDepthFog']
+
+0x003660a8 VramHeap_LinkFreeBlock shard=s12 size=396 race=P prof=6 callers=5
+  kind=leaf/L/MMI/sp1 blocks=[11, 2, 2, 14, 5, 3, 2, 9, 6, 2, 5, 2, 4, 1, 3, 3, 4, 4, 3, 7, 1, 3, 3] loops=1 matchpc=True event_checks=2 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=1 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['VramHeap_Init', 'VramHeap_SplitBlock', 'VramHeap_FreeBlock']
+
+0x00366238 VramHeap_UnlinkSizeList shard=s12 size=148 race=P prof=1 callers=4
+  kind=leaf blocks=[7, 5, 6, 6, 1, 5, 5, 2] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['VramHeap_SplitBlock', 'VramHeap_FreeBlock']
+
+0x003667f8 VramHeap_FindFreeBlock shard=s12 size=140 race=c prof=0 callers=1
+  kind=leaf/L/MMI blocks=[10, 4, 3, 3, 5, 2, 1, 2, 3, 2] loops=2 matchpc=False event_checks=2 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=1 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['VramHeap_Alloc']
+
+0x003662d0 VramHeap_SplitBlock shard=s12 size=260 race=P prof=5 callers=1
+  kind=C4 blocks=[19, 3, 2, 17, 4, 6, 14] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=7 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['VramHeap_UnlinkSizeList', 'VramHeap_PopSpareNode', 'VramHeap_LinkFreeBlock']
+  direct callers: ['VramHeap_Alloc']
+
+0x003663d8 VramHeap_FreeBlock shard=s12 size=368 race=P prof=3 callers=9
+  kind=L/C6 blocks=[17, 7, 4, 3, 13, 2, 6, 3, 1, 2, 6, 21, 1, 6] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=5 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['VramHeap_UnlinkSizeList', 'VramHeap_LinkFreeBlock', 'VramHeap_RemoveNode']
+  direct callers: ['VramHeap_FreeUnlocked', 'VramHeap_FreeAll', 'VramHeap_EvictCheapestBlock', 'VramHeap_EvictRange', 'VramHeap_FreeTextureBlocks', 'TexMan_FreeTexture', 'PS2GraphicsMan_RenderDepthFog']
+
+0x003668f8 VramHeap_EvictCheapestBlock shard=s12 size=248 race=P prof=8 callers=1
+  kind=L/C1/MMI blocks=[17, 5, 5, 5, 3, 2, 5, 2, 3, 2, 1, 4, 2, 3, 3] loops=1 matchpc=False event_checks=1 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=1 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['VramHeap_FreeBlock']
+  direct callers: ['VramHeap_Alloc']
+
+0x00365fe8 VramHeap_PopSpareNode shard=s12 size=32 race=c prof=0 callers=1
+  kind=leaf blocks=[8] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['VramHeap_SplitBlock']
+
+0x00366008 VramHeap_RemoveNode shard=s12 size=160 race=c prof=0 callers=1
+  kind=leaf blocks=[8, 5, 6, 6, 1, 5, 5, 4] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['VramHeap_FreeBlock']
+
+0x00319a90 MEM_AllocInternal shard=s10 size=184 race=P prof=1 callers=2
+  kind=C4 blocks=[8, 2, 2, 4, 1, 4, 6, 5, 2, 2, 4, 1, 5] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=4 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['MEM_PoolAlloc', 'MEM_HeapMemalignOffset', 'MEM_HeapMemalign', 'EA_MemZero']
+  direct callers: ['EA_MemAllocNamed*', 'MEM_PoolAlloc']
+
+0x00319b48 MEM_FreeInternal shard=s10 size=80 race=c prof=0 callers=3
+  kind=C3 blocks=[5, 4, 4, 3, 1, 3] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=2 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['MEM_IsPoolPointer', 'MEM_PoolFree', 'MEM_HeapFree']
+  direct callers: ['__builtin_delete*', 'EA_MemFree', 'MEM_ResizeBlock']
+
+0x00317e98 EA_MemFree shard=s10 size=72 race=c prof=0 callers=345
+  kind=C3 blocks=[18] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=3 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['MEM_FreeInternal', 'EAMutex_Lock', 'EAMutex_Unlock']
+  direct callers: ['RiderMetrix_dtor', 'BELibrary_LoadCharDB', 'Bolts_FreeDB', 'FUN_00151368', 'BESaveInt_FreeSaveBuffer', 'FUN_00152728', 'BESaveInt_Destroy', 'RewardsFile_Unload'] ...
+
+0x002523a8 MEM_Free shard=s06 size=36 race=c prof=0 callers=34
+  kind=C1 blocks=[3, 2, 4] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['EA_MemFree']
+  direct callers: ['Rider_LoadStep', 'FUN_0017a378', 'MEM_HeapFreeAll', 'VidEngine_MemFree', 'PlaybackMan_PollFileLoad', 'ScriptEngine_UnloadMaster', 'ScriptEngine_UnloadWorldScripts', 'SndBank_Load'] ...
+
+0x003e5700 EAMutex_Lock shard=s14 size=96 race=c prof=0 callers=49
+  kind=C3 blocks=[8, 4, 8, 4] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=2 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['GetThreadId', 'WaitSema']
+  direct callers: ['BoltFile_UnpackSlot', 'BoltFile_LoadSlot', 'MEM_HeapFreeBlock', 'MEM_GetBlockSizeLocked', 'MEM_ResizeBlockLocked', 'MEM_HeapShrinkBlock', 'MEM_HeapAllocAligned', 'cCommSystem_PoolAlloc'] ...
+
+0x003e5760 EAMutex_Unlock shard=s14 size=108 race=c prof=0 callers=50
+  kind=C3 blocks=[8, 4, 2, 3, 4, 2, 1, 3] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=2 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['GetThreadId', 'iSignalSema', 'SignalSema']
+  direct callers: ['BoltFile_UnpackSlot', 'BoltFile_LoadSlot', 'MEM_HeapFreeBlock', 'MEM_GetBlockSizeLocked', 'MEM_ResizeBlockLocked', 'MEM_HeapShrinkBlock', 'MEM_HeapAllocAligned', 'cCommSystem_PoolAlloc'] ...
+
+0x003e6220 EA_MemZero shard=s14 size=32 race=c prof=0 callers=7
+  kind=C1 blocks=[8] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['EA_MemSet*']
+  direct callers: ['MEM_AllocInternal', 'EAFile_Shutdown', 'EAFile_GetSettings', 'EAFile_SetSettings', 'StreamFile_Create', 'EAFile_CdInit', 'EAThread_Shutdown']
+
+0x0026d760 Replay_RecordSnapshot shard=s07 size=112 race=P prof=4 callers=4
+  kind=C3 blocks=[28] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=4 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['Replay_AllocSnapshot', 'WorldState_Write', 'FUN_0026ed88']
+  direct callers: ['Replay_Update', 'Replay_SaveResumeSnapshot']
+
+0x0026e9d0 ReplayStream_Write shard=s07 size=76 race=P prof=4 callers=0
+  kind=C1 blocks=[19] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=3 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['EA_MemCopy*']
+  direct callers: []
+
+0x0026d740 Replay_AddSnapshot shard=s07 size=28 race=c prof=0 callers=4
+  kind=C1 blocks=[7] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=1 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['SnapshotList_PushBack*']
+  direct callers: ['Replay_Update', 'Replay_SaveResumeSnapshot']
+
+0x00270628 Replay_CancelInstantReplay shard=s07 size=48 race=c prof=0 callers=3
+  kind=leaf blocks=[4, 6, 2] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['Replay_Update', 'Replay_EndPlayback', 'Replay_OnRiderReset']
+
+0x0026fa50 Replay_StopRecording shard=s07 size=36 race=c2 prof=0 callers=3
+  kind=leaf blocks=[6, 1, 2] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['FUN_0012b340', 'AI_UpdateRaceTimeLimit', 'GameStateFinish_Enter']
+
+0x00309c88 WScriptMan_CallFunc shard=s10 size=148 race=P prof=2 callers=7
+  kind=C5 blocks=[37] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=6 sp_adjust=True indirect_calls=0
+  callees (in order of first call; * = already overridden): ['World_GetSectionScriptFunc', 'FUN_00226600', 'FUN_002224a8', 'LunoVM_Call', 'LunoVMRegister_dtor']
+  direct callers: ['WScriptMan_Shutdown', 'WScriptMan_OnObjectTrigger', 'WScriptMan_RunObjScript1', 'WScriptMan_RunObjScript3', 'WScriptMan_RunKillScript', 'WScriptMan_RunObjScript0', 'WScriptMan_RunObjScript5']
+
+0x0030c820 WScriptMan_EventQueuePop shard=s10 size=80 race=c prof=0 callers=5
+  kind=leaf blocks=[5, 2, 13] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['FUN_001f7548', 'FUN_001f7738', 'GameModule_Update', 'GameModule_UpdatePauseAndUI', 'WScriptMan_PopEvent']
+
+0x0030c870 WScriptMan_EventQueuePeek shard=s10 size=40 race=c prof=0 callers=3
+  kind=leaf blocks=[4, 2, 4] loops=0 matchpc=False event_checks=0 vu0=0 vu0_acc=0 cfc2_vi22=0 fpu=0 fcmp=0 mmi=0 sp_stores=0 sp_adjust=False indirect_calls=0
+  callees (in order of first call; * = already overridden): []
+  direct callers: ['GameModule_Update', 'GameModule_UpdatePauseAndUI', 'WScriptMan_PeekEvent']
+```
