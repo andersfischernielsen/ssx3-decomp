@@ -15,6 +15,8 @@ mod png;
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let frames: u64 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(300);
+    let slow_ms: Option<f64> = std::env::var("SSX3_SLOW_FRAME_MS").ok().and_then(|v| v.parse().ok());
+    let started = std::time::Instant::now();
     let shot_every: u64 = args
         .iter()
         .position(|a| a == "--shot-every")
@@ -75,6 +77,10 @@ fn main() {
         ssx3_ps2::vu::capture::set_frame(f);
         let alive = ssx3_ps2::machine::run_frame(&mut c);
         ssx3_ee_rt::prof::frame(f);
+        // Test knob for host clock mode: a host this many ms slower per frame.
+        if let Some(ms) = slow_ms {
+            std::thread::sleep(std::time::Duration::from_micros((ms * 1000.0) as u64));
+        }
         if ssx3_ps2::gifstats::enabled() && f % 50 == 0 {
             let (pk, v, adc, far) = ssx3_ps2::gifstats::take();
             eprintln!("[gif] frames {}..{f}: path1 packets {pk} verts {v} adc {adc} far {far}", f - 50);
@@ -144,6 +150,22 @@ fn main() {
         }
     }
     ssx3_ps2::iop_bridge::shutdown(&mut c);
+    if let Some(h) = ssx3_ps2::m!(c).sched.host_clock {
+        let wall = started.elapsed().as_secs_f64();
+        let app = 0x004c_9428u32;
+        let (ticks, updates) = (c.bus.ram_u32(app + 0x18), c.bus.ram_u32(app + 0x1c));
+        let vblanks = ssx3_ps2::m!(c).sched.frames;
+        eprintln!(
+            "[host clock] wall {wall:.1}s, emulated {:.1}s, vblanks {} ({:.1}/s), skipped {:.1}s in {} jumps; App vsync ticks {} updates {}",
+            c.cycles as f64 / ssx3_ps2::machine::EE_CLOCK as f64,
+            vblanks,
+            vblanks as f64 / wall,
+            h.skipped as f64 / ssx3_ps2::machine::EE_CLOCK as f64,
+            h.jumps,
+            ticks,
+            updates
+        );
+    }
     // Debug: SSX3_PEEK="addr:words,addr:words" dumps EE memory at exit
     // (an address of the form gp+N is taken relative to $gp).
     if let Ok(spec) = std::env::var("SSX3_PEEK") {

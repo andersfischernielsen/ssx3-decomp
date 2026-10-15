@@ -34,6 +34,59 @@ pub struct Sched {
     pub misses: std::collections::BTreeMap<u32, u64>,
     pub gs_crt: (u32, u32, u32),
     pub trace_calls: bool,
+    /// Host clock mode (`SSX3_HOST_CLOCK=1`), see [`follow_host_clock`].
+    pub host_clock: Option<HostClock>,
+}
+
+/// Emulated time following the host clock (phase 3 frame loop,
+/// `docs/investigation/phase3-frame-loop.md`).
+#[derive(Clone, Copy, Debug)]
+pub struct HostClock {
+    pub start: std::time::Instant,
+    /// EE cycle at `start`.
+    pub base: u64,
+    /// EE cycles skipped to catch up with the host.
+    pub skipped: u64,
+    pub jumps: u64,
+}
+
+/// Behind the host clock by more than this: skip ahead (~0.5 ms).
+const HOST_CLOCK_SLACK: u64 = EE_CLOCK / 2000;
+/// At most this much at once (~100 ms; longer host stalls are forgotten).
+const HOST_CLOCK_MAX_JUMP: u64 = EE_CLOCK / 10;
+
+/// Host clock mode: when the EE runs slower than real time, advance its
+/// cycle counter to the host clock. VBlanks, audio ticks and timers then stay
+/// on time, and the game's own frame loop catches up (`App_RunModuleLoop`
+/// runs up to 12 logic updates per rendered frame, one per VBlank tick), so
+/// the game runs at full speed and renders less. When the EE is faster, the
+/// front end's frame pacing waits.
+/// Host clock mode and the next VBlank is already due by the host clock.
+fn host_clock_behind(c: &mut Cpu) -> bool {
+    let Some(hc) = m!(c).sched.host_clock else { return false };
+    let target = hc.base + (hc.start.elapsed().as_secs_f64() * EE_CLOCK as f64) as u64;
+    target >= m!(c).sched.next_vblank
+}
+
+fn follow_host_clock(c: &mut Cpu) {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if !env_flag(&ON, "SSX3_HOST_CLOCK") {
+        return;
+    }
+    let now = std::time::Instant::now();
+    let hc = m!(c).sched.host_clock.get_or_insert(HostClock { start: now, base: c.cycles, skipped: 0, jumps: 0 });
+    let target = hc.base + (now.duration_since(hc.start).as_secs_f64() * EE_CLOCK as f64) as u64;
+    if target > c.cycles + HOST_CLOCK_SLACK {
+        let behind = target - c.cycles;
+        let jump = behind.min(HOST_CLOCK_MAX_JUMP);
+        if behind > HOST_CLOCK_MAX_JUMP {
+            // A long stall: forget the rest instead of fast-forwarding.
+            hc.base -= behind - jump;
+        }
+        hc.skipped += jump;
+        hc.jumps += 1;
+        c.cycles += jump;
+    }
 }
 
 /// A debug switch read once (`getenv` takes a process-wide lock and scans
@@ -135,6 +188,7 @@ fn idle(c: &mut Cpu) {
 /// Advance hardware time and deliver interrupts. Returns true when the current
 /// thread must unwind (thread switch, or the host wants a frame).
 pub fn service_events(c: &mut Cpu) -> bool {
+    follow_host_clock(c);
     m!(c).hw.now = c.cycles;
     // VBlank start/end.
     if c.cycles >= m!(c).sched.next_vblank {
@@ -208,11 +262,18 @@ pub fn set_gs_crt(c: &mut Cpu, interlace: u32, mode: u32, ffmd: u32) {
 /// Run until the next VBlank (one video field) or until the machine halts.
 /// Returns false once halted.
 pub fn run_frame(c: &mut Cpu) -> bool {
-    m!(c).sched.frame_ready = false;
-    if m!(c).kernel.host_threads {
-        run_frame_threads(c);
-    } else {
-        trampoline(c, None);
+    // In host clock mode, VBlanks that are already late are run without
+    // presenting them (the host skips frames; the game catches up itself).
+    for _ in 0..8 {
+        m!(c).sched.frame_ready = false;
+        if m!(c).kernel.host_threads {
+            run_frame_threads(c);
+        } else {
+            trampoline(c, None);
+        }
+        if m!(c).kernel.halted.is_some() || !host_clock_behind(c) {
+            break;
+        }
     }
     // Finish background rasterization so `vram` / `display()` are current.
     m!(c).hw.gs.sync();
