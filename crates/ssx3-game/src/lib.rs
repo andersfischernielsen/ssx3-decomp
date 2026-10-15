@@ -14,6 +14,10 @@
 use ssx3_ee_rt::funcs::GuestFn;
 
 pub mod abi;
+#[cfg(feature = "oc22")]
+pub mod oc22;
+#[cfg(feature = "oc21")]
+pub mod oc21;
 #[cfg(feature = "oc20")]
 pub mod oc20;
 #[cfg(feature = "oc19")]
@@ -209,6 +213,10 @@ pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     v.extend_from_slice(oc19::OVERRIDES);
     #[cfg(feature = "oc20")]
     v.extend_from_slice(oc20::OVERRIDES);
+    #[cfg(feature = "oc21")]
+    v.extend_from_slice(oc21::OVERRIDES);
+    #[cfg(feature = "oc22")]
+    v.extend_from_slice(oc22::OVERRIDES);
     v
 }
 
