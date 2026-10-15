@@ -118,6 +118,7 @@ Lessons from the first packages:
 | 2026-10-15 | OpenCode waves (oc1-oc16) + round-4 packages E3-E8 (partly OpenCode, partly Claude): 323 accepted by the fast gate (`cargo nextest`, 5 s per test; 23 rejected), 3 duplicates removed | 655 replacements installed; race to frame 9000 byte-identical (36 shots + full RAM). Gate made fast: test machines without GS threads, dirty-page RAM comparison (`ssx3-ee-rt` feature `dirty-pages`, test builds only), cycle budget against runaways |
 
 | 2026-10-15 | OpenCode wave 4 (oc17-oc22, 6 x 50) + repaired oc14/snd_lib/audio_system | 359/359 passed the gate; 1,015 replacements installed; race replay byte-identical |
+| 2026-10-15 | OpenCode wave 5 (oc23-oc28, last bulk wave) | 353/353 passed the gate (10 tests timed out at 8 threads but passed in ~1.5 s each when rerun at 2 threads); 1,368 replacements installed; race replay byte-identical |
 
 Patterns established in round 2 (now shared, see below):
 - **Loops with event checks**: structured loops make the same back-edge
