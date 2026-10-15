@@ -10421,3 +10421,59 @@ Format: `address  new name  confidence  evidence`. Every address was `FUN_<addre
 0042bbb0	sceSifLoadElfPart	med	pass-3 candidate: wrapper of _sceSifLoadElfPart with flag a3=1
 0042c1a8	FindAddress	med	pass-3 candidate: syscall 0x83 (start,end,value) search; used to locate syscall table
 ```
+
+# Pass 5: entry points Ghidra has no function for
+
+Status: pass 5 (2026-10-15) named the **1,462 entry points that `recomp-ee` translates but
+Ghidra has no function for**. The recompiler finds them from pointers in data (mostly vtable
+slots) and from address constants in code. They include `GameModule_Render` (0x22b008), the
+per-frame render of the race. The names live in `generated/discovered-names.tsv`, which
+`recomp-ee` reads for the `pub use` aliases and `tools/callgraph.py` reads for its reports.
+
+The HTTP backend cannot create functions, so a Ghidra script does it:
+`tools/ghidra_create_discovered.py`, run from the Script Manager, then
+`tools/export-ghidra-functions.py` and save. After that re-export, the TSV is redundant
+for the entries Ghidra accepted.
+
+- **Confidence:** 701 high, 545 med, 216 low.
+- **Not functions:** 110 entries are marked `NOTFUNC_<addr>`. They are jump-table case blocks,
+  exception landing pads, bit-flag constants that look like pointers, a string fragment and an
+  embedded blob's bounds. The recompiler still translates them; that is harmless, since nothing
+  calls them as functions.
+- **Method:** same as pass 4. Each function got a card with its data references (±6 words, so
+  sibling vtable slots name the class), its race callers from the `callprof` call graph, its
+  callees and the recompiled body. Four reviewers worked in parallel, and the merge was
+  validated for coverage, uniqueness, clashes with live names and identifier syntax.
+
+Highlights:
+- **World-painter data (`tWPIGD_*`).** The 14 classes have vtables 0x238 bytes apart, from
+  Danger at 0x483e20 onward. The 63 base getters are named by meaning where a
+  `WorldPainter_Get*` caller shows it, otherwise by field offset.
+- **Slot meanings.** Newly established slot meanings for:
+  - transform modifiers, where slot 26 GetType returns Spline 1 … AvaSpline 7;
+  - UI widgets, where slot 22 is a type id: cUIGroup 0x10 … cUIScroll 0x21;
+  - UIState (slot 24 is OnEvent, from `MessageCenter_PostMessage`);
+  - UIInputBase (44 slots);
+  - the GameState, GMHandler, ScriptBinding and InSeq track bases;
+  - the BE interfaces (slots 2, 3 and 4 are Reset, SaveState and LoadState; the phases use 3/4
+    as Exit/Enter);
+  - the PS2BezierMan LOD distances (slots 6-9).
+- **C++ runtime:** the gcc 2.95 `__tf*` typeinfo functions and the RCMP RTTI slots.
+
+Found along the way (not yet acted on):
+- **Functions neither Ghidra nor the recompiler has as an entry:**
+  - the switch heads at 0x145818, 0x1458c8, 0x150e68 and 0x1511e8;
+  - the function holding the computed jump at 0x37213c;
+  - 0x392e98 (a pixel-format switch);
+  - 0x3c5538 (the SND output-mode names);
+  - the stub at 0x1e0018. The recompiler took the delay slot 0x1e0014 as an entry instead.
+
+  Their code is translated as part of the previous function's runs, so it runs; it is just not
+  named.
+- **The frame-description (EH) tables** at 0x44ee3c and 0x4534c0 give function starts and
+  lengths. They would be a reliable boundary source for the recompiler.
+- **`__check_eh_spec`** really ends at 0x412cd8, not 0x412cb4.
+- **`render.md`:** the colour-mask getter is slot 64 (slot 65 is empty).
+- **Base vtable 0x4913f8:** slot 1 still carries the wrong name `RollerModifier_dtor`.
+
+The full list, with evidence, is `generated/discovered-names.tsv`.

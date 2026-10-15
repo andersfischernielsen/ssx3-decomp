@@ -130,9 +130,24 @@ fn main() {
         }
     }
     let discovered = new_entries.len();
+    // Names for these entries (Ghidra has no function there): naming pass 5,
+    // `generated/discovered-names.tsv` (address, name, confidence, evidence).
+    let mut discovered_names: BTreeMap<u32, String> = BTreeMap::new();
+    if let Ok(s) = fs::read_to_string(root.join("generated/discovered-names.tsv")) {
+        for line in s.lines().filter(|l| !l.starts_with('#')) {
+            let mut it = line.split('\t');
+            if let (Some(a), Some(n)) = (it.next(), it.next()) {
+                if let Ok(a) = u32::from_str_radix(a.trim_start_matches("0x"), 16) {
+                    if !n.starts_with("NOTFUNC_") {
+                        discovered_names.insert(a, n.to_string());
+                    }
+                }
+            }
+        }
+    }
     for e in new_entries {
         if !covered(&funcs, e) {
-            funcs.push(Func { start: e, end: e, runs: Vec::new(), name: None });
+            funcs.push(Func { start: e, end: e, runs: Vec::new(), name: discovered_names.get(&e).cloned() });
         }
     }
     funcs.sort_by_key(|f| f.start);

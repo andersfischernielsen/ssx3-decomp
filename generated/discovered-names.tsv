@@ -1,0 +1,1465 @@
+# Entry points the recompiler found that Ghidra has no function for (naming pass 5,
+# docs/investigation/naming.md). address, name, confidence, evidence. NOTFUNC_ = not a
+# function entry (jump-table case, data). tools/ghidra_create_discovered.py creates them in Ghidra.
+00100000	NOTFUNC_00100000	high	only refs are bit-flag constants (0x00100000 in 1<<n tables at 0x496730/0x4967b0, packed input/FE words); .text start 2 instr before entry
+001001d0	ExitThread	high	crt0 stub: li v1,0x23; syscall (EE kernel syscall 0x23 = ExitThread); no refs, between _exit and frame_dummy
+00108c28	Rider_HasVisited	med	Rider vtable slot 3 (rider.md): searches +0x5b8[64] id list for arg+0x78
+00113cb8	RaceStateGameInit_Enter	high	race state vt 0x4585c8 slot 1 (Enter/Exit/Update, slot 3 RaceStateGameInit_Update); empty
+00113ce0	RaceStateGameInit_Exit	high	race state vt 0x4585c8 slot 2; empty
+00113ce8	RaceStateFreeride_Enter	high	race state vt 0x4585a0 slot 1 (slot 3 RaceStateFreeride_Update); clears arg1+0x14
+00113d10	RaceStateFreeride_Exit	high	race state vt 0x4585a0 slot 2; empty
+00113d18	RaceStatePreRace_Enter	med	race state vt 0x458550 slot 1 (the remaining state of 1..7 = PreRace); clears arg1+0xc, this+4
+00113d28	RaceStatePreRace_Update	med	race state vt 0x458550 slot 3; empty
+00113d30	RaceStatePreRace_Exit	med	race state vt 0x458550 slot 2; empty
+00113d38	RaceStateCountdown_Enter	high	race state vt 0x458578 slot 1 (slot 3 RaceStateCountdown_Update); sets AI+0x1c = 180 frames
+00113d80	RaceStateCountdown_Exit	high	race state vt 0x458578 slot 2; clears AI+0x1c
+00113e40	RaceStateEndRace_Update	high	race state vt 0x458500 slot 3 (slot 1 RaceStateEndRace_Enter); empty
+00113e48	RaceStateEndRace_Exit	high	race state vt 0x458500 slot 2; empty
+00113e70	RaceStateShutdown_Update	high	race state vt 0x4584d8 slot 3 (slot 1 RaceStateShutdown_Enter); empty
+00113e78	RaceStateShutdown_Exit	high	race state vt 0x4584d8 slot 2; empty
+001278c0	Player_ResetRumble	med	Player Rider vtable slot 16 (rider.md 16-19 rumble); clears +0xdfc/+0xe00
+001278d0	Player_PulseRumble	med	Player Rider vtable slot 17; +0xdfc = max(+0xdfc, f12); called on wipeout/bank trick
+001278e0	Player_SetRumbleLevel	med	Player Rider vtable slot 18; +0xe00 = f12; called by RiderWipeoutSub phases
+001406b0	RiderIface_GetVelocity	med	RiderIface vt 0x459cc8 slot 2 (Rider slot 2 GetVelocity); returns static zero vec 0x4ff120
+001406c0	RiderIface_HasVisited	med	RiderIface vt 0x459cc8 slot 3 (Rider slot 3 HasVisited); returns 0
+001406c8	RiderIface_AddVelocity	med	RiderIface vt 0x459cc8 slot 4 (Rider_AddVelocity); empty
+001406d0	RiderIface_GetPosition	med	RiderIface vt 0x459cc8 slot 5 (Rider slot 5 GetPosition); returns static vec 0x4ff120
+001406e0	Rider_GetDefaultVector	low	Rider/RiderIface vtable slot 6 shared by all riders; returns constant vec 0x4ff1a0 (rider.md: meaning unknown)
+001406f0	RiderIface_GetIndex	med	RiderIface vt 0x459cc8 slot 7 (Rider GetIndex); returns 0
+001406f8	RiderIface_IsHuman	med	RiderIface vt 0x459cc8 slot 8 (Rider IsHuman); returns 0
+00140700	RiderIface_IsComputer	med	RiderIface vt 0x459cc8 slot 9 (Rider IsComputer); returns 0
+00140708	RiderIface_ResetAtMatrix	med	RiderIface vt 0x459cc8 slot 10 (Rider_ResetAtMatrix); empty
+00140710	Rider_v11_Empty	med	Rider vtable slot 11, shared by all Rider vtables and RiderIface; no-op (rider.md)
+00140718	RiderIface_PlaceAtMatrix	med	RiderIface vt 0x459cc8 slot 12 (Rider_PlaceAtMatrix); empty
+00140720	RiderIface_AddPowerUpBoost	med	RiderIface vt 0x459cc8 slot 13 (Rider AddPowerUpBoost); empty
+00140728	RiderIface_AddPowerUpTrick	med	RiderIface vt 0x459cc8 slot 14 (Rider AddPowerUpTrick); empty
+00140730	RiderIface_AddTrickMultiplier	med	RiderIface vt 0x459cc8 slot 15 (Rider AddTrickMultiplier); empty
+001408f0	Rider_GetPosition	high	Rider vtable slot 5 (rider.md); returns &this+0x110
+00140910	Rider_GetVelocity	high	Rider vtable slot 2 (rider.md); returns &this+0x1e0
+00140b80	Rider_GetIndex	high	Rider vtable slot 7 (rider.md); returns +0x86c rider slot
+00140bc0	Rider_IsHuman	high	Rider vtable slot 8 (rider.md); returns +0x874
+00140bc8	Rider_IsComputer	high	Rider vtable slot 9 (rider.md); returns +0x874 ^ 1
+00140c68	Rider_ResetRumble	med	Rider vtable slot 16 base (CAR/RiderBase vts; Player override Player_ResetRumble); empty
+00140c70	Rider_PulseRumble	med	Rider vtable slot 17 base (Player override Player_PulseRumble); empty
+00140c78	Rider_SetRumbleLevel	med	Rider vtable slot 18 base (Player override Player_SetRumbleLevel); empty
+00140c80	Rider_UpdateRumble	med	Rider vtable slot 19 base (Player override Player_UpdateRumble; called from GameModule_Update); empty
+00140ce0	RiderScriptObj_GetSelf	low	Rider scriptable-base vt 0x459b90 slot 6 (slot 5 RiderScriptObj_AcceptCommand); returns this
+00144068	RaceStateRace_Exit	high	race state vt 0x458528 slot 2 (slot 1 RaceStateRace_Enter, 3 Update); empty
+001446e8	Player_ScorePathBranch	med	Player/MissionRider Rider vtable slot 20 (CAR override ComputerActorRider_ScorePathBranch); returns 0.0f
+00144928	BENewRaceInt_Commit	med	BE interface vt 0x45ae58 slot 1 (BENewRaceInt state 0x535bc8, track 0x535c08); copies 0x40 bytes live 0x535bc8 -> 0x5305b0
+001449e8	BENewRaceInt_Reset	high	BENewRaceInt vt 0x45ae58 slot 2 (interface Reset, called by BELibrary_ResetPlayerProfile); copies 0x5305b0 back to live 0x535bc8
+0014583c	NOTFUNC_0014583c	high	jump-table case block (jr ra; li v0,4) of the switch fn at 0x145818 (not in Ghidra; table 0x45a100, BENewRaceInt event map)
+00145844	NOTFUNC_00145844	high	jump-table case block (return 0) of switch fn 0x145818, table 0x45a100
+0014584c	NOTFUNC_0014584c	high	jump-table case block (return 1) of switch fn 0x145818, table 0x45a100
+00145854	NOTFUNC_00145854	high	jump-table case block (return 2) of switch fn 0x145818, table 0x45a100
+0014585c	NOTFUNC_0014585c	high	jump-table case block (return 3) of switch fn 0x145818, table 0x45a100
+001458ec	NOTFUNC_001458ec	high	jump-table case block (return 0) of switch fn 0x1458c8 (not in Ghidra; sltiu 0xe, table 0x45a1a0)
+001458f4	NOTFUNC_001458f4	high	jump-table case block (return 1) of switch fn 0x1458c8, table 0x45a1a0
+001458fc	NOTFUNC_001458fc	high	jump-table case block (return 3) of switch fn 0x1458c8, table 0x45a1a0
+00145904	NOTFUNC_00145904	high	jump-table case block (return 2) of switch fn 0x1458c8, table 0x45a1a0
+0014590c	NOTFUNC_0014590c	high	jump-table case block (return 5) of switch fn 0x1458c8, table 0x45a1a0
+00145914	NOTFUNC_00145914	high	jump-table case block (return 6) of switch fn 0x1458c8, table 0x45a1a0
+0014591c	NOTFUNC_0014591c	high	jump-table case block (return 4) of switch fn 0x1458c8, table 0x45a1a0
+00145924	NOTFUNC_00145924	high	jump-table case block (return 0, default) of switch fn 0x1458c8, table 0x45a1a0
+00147fd8	BECharInt_Commit	med	BE interface vt 0x45ad68 slot 1 (slot 2 BECharInt_Reset); copies 9 char attribute records from working table 0x535538 into profile char records (0x4a6ca8+...+0xbdf); like BEBAGTInt_v01
+0014e130	BENetworkInt_Commit	med	BE interface vt 0x45ad98 (loaded by BENetworkInt_GetInstance) slot 1; copies 0x4a0 bytes live 0x534b30 -> 0x535088
+0014e1f8	BENetworkInt_Reset	high	BENetworkInt vt 0x45ad98 slot 2 (interface slot 2 = Reset, called by BELibrary_ResetPlayerProfile); copies 0x535088 back to live 0x534b30
+0014f2a8	BEOptionInt_Commit	med	BE interface vt 0x45adc8 (loaded by BEOptionInt_GetInstance) slot 1; copies 0x280 bytes live 0x535610 -> 0x535898
+0014f360	BEOptionInt_Reset	high	BEOptionInt vt 0x45adc8 slot 2 (interface Reset); copies 0x535898 back to live 0x535610
+00150ea8	NOTFUNC_00150ea8	high	jump-table case block (attr 0 -> profile char +0xbdf, tail 0x150fbc) of switch fn 0x150e68 (not in Ghidra; table 0x45a750, after BEEconInt_GetAttributeCost)
+00150ed0	NOTFUNC_00150ed0	high	jump-table case block (attr 1, +0xbe0) of switch fn 0x150e68, table 0x45a750
+00150ef8	NOTFUNC_00150ef8	high	jump-table case block (attr 2, +0xbe1) of switch fn 0x150e68, table 0x45a750
+00150f20	NOTFUNC_00150f20	high	jump-table case block (attr 3, +0xbe2) of switch fn 0x150e68, table 0x45a750
+00150f48	NOTFUNC_00150f48	high	jump-table case block (attr 4, +0xbe3) of switch fn 0x150e68, table 0x45a750
+00150f70	NOTFUNC_00150f70	high	jump-table case block (attr 5, +0xbe4) of switch fn 0x150e68, table 0x45a750
+00150f98	NOTFUNC_00150f98	high	jump-table case block (attr 6, +0xbe5) + shared tail of switch fn 0x150e68, table 0x45a750
+00151220	NOTFUNC_00151220	high	jump-table case block (attr 0, +0xbdf, tail 0x151334) of switch fn 0x1511e8 (not in Ghidra; table 0x45a770)
+00151248	NOTFUNC_00151248	high	jump-table case block (attr 1) of switch fn 0x1511e8, table 0x45a770
+00151270	NOTFUNC_00151270	high	jump-table case block (attr 2) of switch fn 0x1511e8, table 0x45a770
+00151298	NOTFUNC_00151298	high	jump-table case block (attr 3) of switch fn 0x1511e8, table 0x45a770
+001512c0	NOTFUNC_001512c0	high	jump-table case block (attr 4) of switch fn 0x1511e8, table 0x45a770
+001512e8	NOTFUNC_001512e8	high	jump-table case block (attr 5) of switch fn 0x1511e8, table 0x45a770
+00151310	NOTFUNC_00151310	high	jump-table case block (attr 6) + shared tail of switch fn 0x1511e8, table 0x45a770
+00153200	BERace_Exit	high	BE phase vt 0x45abe8 slot 3 (BELibrary_SetPhase calls slot 3 on the old phase); clears enabled flag +8 of its interfaces
+00153258	BERace_Enter	high	BE phase vt 0x45abe8 slot 4 (BELibrary_SetPhase calls slot 4 on the new phase); sets enabled flag +8 of its interfaces
+001549e0	BEScoreInt_Commit	med	BEScoreInt vt 0x45aca8 slot 1 (slot 2 BEScoreInt_v02); empty
+00155380	BEScoreInt_SaveState	high	BEScoreInt vt 0x45aca8 slot 3 (interface SaveState, called by BELibrary_SaveState); empty
+00155388	BEScoreInt_LoadState	high	BEScoreInt vt 0x45aca8 slot 4 (interface LoadState); empty
+00155aa0	BEAggressionInt_Commit	med	BEAggressionInt vt 0x45ac48 slot 1 (3/4 BEAggressionInt_SaveState/LoadState); empty
+00155aa8	BEAggressionInt_Reset	high	BEAggressionInt vt 0x45ac48 slot 2 (interface Reset); empty
+001564b0	BEPostRace_Exit	high	BE phase vt 0x45abb8 slot 3 (SetPhase old-phase call); clears enabled flag +8 of its interfaces
+00156510	BEPostRace_Enter	high	BE phase vt 0x45abb8 slot 4 (SetPhase new-phase call); sets enabled flag +8 of its interfaces
+001566e8	BEPreRace_Exit	high	BE phase vt 0x45ac18 slot 3 (SetPhase old-phase call); clears enabled flag +8 of its interfaces
+00156750	BEPreRace_Enter	high	BE phase vt 0x45ac18 slot 4 (SetPhase new-phase call); sets enabled flag +8 of its interfaces
+0015bb00	BEInterface_Commit	med	base BE interface vt 0x45ae88 slot 1 (vtable used by BEBoltInt/BERewardInt GetInstance); empty
+0015bb08	BEInterface_Reset	med	base BE interface vt 0x45ae88 slot 2 (interface Reset); empty
+0015bb10	BEInterface_SaveState	high	interface slot 3 default shared by 10 BE interface vtables; called by BELibrary_SaveState; empty
+0015bb18	BEInterface_LoadState	high	interface slot 4 default shared by 10 BE interface vtables (LoadState); empty
+0015bcc0	BEMissionInt_Commit	med	BEMissionInt vt 0x45adf8 slot 1 (3/4 BEMissionInt_SaveState/LoadState); empty
+0015bcc8	BEMissionInt_Reset	high	BEMissionInt vt 0x45adf8 slot 2 (interface Reset); empty
+0015c6c8	BECharDBInt_Commit	med	vt 0x45ad38 (BE interface id 2, char DB, loaded by BE_GetCharDBInterface) slot 1; empty
+0015c6d0	BECharDBInt_Reset	med	vt 0x45ad38 (BE interface id 2 char DB) slot 2 Reset; empty
+0015c6d8	BESaveInt_Commit	med	vt 0x45ad08 (loaded by BESaveInt_GetInstance) slot 1; empty
+0015c6e0	BESaveInt_Reset	med	BESaveInt vt 0x45ad08 slot 2 (interface Reset); empty
+0015c7d0	BEEconInt_Commit	med	vt 0x45ac78 (loaded by BEEconInt_GetInstance) slot 1; empty
+0015c7d8	BEEconInt_Reset	med	BEEconInt vt 0x45ac78 slot 2 (interface Reset); empty
+0015f598	RiderCameraTarget_GetOrientation	high	RiderCameraTarget vt 0x45b7a8 slot 2 (camera.md); returns rider +0x120 quat
+0015f5f8	RiderCameraTarget_GetForward	high	RiderCameraTarget slot 4 (camera.md); returns rider world row +0x1b0
+0015f610	RiderCameraTarget_GetSide	high	RiderCameraTarget slot 5 (camera.md); returns rider world row +0x1a0
+0015f628	RiderCameraTarget_GetUp	high	RiderCameraTarget slot 6 (camera.md); returns rider world row +0x1c0
+0015f640	RiderCameraTarget_GetSteer	med	RiderCameraTarget slot 7 (camera.md); returns rider +0x1f0 (slewed #0 = steer)
+0015f650	RiderCameraTarget_GetGroundNormal	high	RiderCameraTarget slot 8 (camera.md); returns rider +0x370
+0015f668	RiderCameraTarget_GetPrevGroundNormal	high	RiderCameraTarget slot 9 (camera.md); returns rider +0x380
+0015f680	RiderCameraTarget_GetHandplantData0	med	RiderCameraTarget slot 10 (camera.md handplant data); returns &owner(+0x77c)+0x130
+0015f690	RiderCameraTarget_GetHandplantData1	med	RiderCameraTarget slot 11 (camera.md handplant data); returns &owner(+0x77c)+0x140
+0015f6a0	RiderCameraTarget_GetAirTime	high	RiderCameraTarget slot 12 (camera.md); AirPredictor(+0x788)+0x98 predicted total air time
+0015f6b0	RiderCameraTarget_GetAirTimeRemaining	high	RiderCameraTarget slot 13 (camera.md); AirPredictor +0x98 - +0xa0 (elapsed)
+0015f6c8	RiderCameraTarget_GetAirTime9cRemaining	low	RiderCameraTarget slot 15 (camera.md air times); AirPredictor +0x9c - +0xa0 (+0x9c meaning unknown)
+0015f6e0	RiderCameraTarget_GetJumpOrigin	high	RiderCameraTarget slot 14 (camera.md); returns &AirPredictor+0x40 (position when prediction made)
+0015f6f0	RiderCameraTarget_GetJumpDir	med	RiderCameraTarget slot 16; returns &rider+0x3c0 (jumpDir, rider.md)
+0015f700	RiderCameraTarget_GetBoost	high	RiderCameraTarget slot 17 (camera.md); returns rider +0x2fc boost; used by GameCamera_UpdateShake
+0015f710	RiderCameraTarget_GetSlopeTerm	med	RiderCameraTarget slot 18 (camera.md); returns rider +0x220 (slewed #2 target), used as slope term by chase cam
+0015f720	RiderCameraTarget_IsLandingPredicted	high	RiderCameraTarget slot 19 (camera.md); AirPredictor+0xac phase == 1 or 3
+0015f750	RiderCameraTarget_GetSurfaceType	high	RiderCameraTarget slot 20 (camera.md); returns rider +0x438 surface type
+0015f760	RiderCameraTarget_GetTakeoffPop	med	RiderCameraTarget slot 21 (camera.md); returns rider +0x5a4 take-off pop (kickSize source)
+0015f770	RiderCameraTarget_IsOllie	med	RiderCameraTarget slot 22 (camera.md); returns rider +0x5a8 (1 = button jump)
+0015f908	RiderCameraTarget_GetRailFlag	med	RiderCameraTarget slot 24 (camera.md); returns rider +0x5ac rail flag; used by ChaseCameraAlgorithm_ApplyRailPullback
+0015f918	RiderCameraTarget_GetLandingNormal	high	RiderCameraTarget slot 25 (camera.md); returns &AirPredictor+0x20 landing-surface normal
+0015f928	RiderCameraTarget_GetLandingVelocity	med	RiderCameraTarget slot 26; returns &AirPredictor+0x10 (predicted velocity at landing, rider.md)
+0015fd48	ManualCamAlgo_ResetForRider	high	ManualCamAlgo vt 0x45bd10 slot 3 (CameraAlgorithm ResetForRider); empty
+001604a0	ManualChaseCameraAlgorithm_GetEyeDrop	med	vt 0x45bad0 slot 13 (CameraAlgorithm slot 13 float param = eyeDrop reset value, camera.md); returns 0.0
+001604b0	ManualChaseCameraAlgorithm_GetTuning	high	vt 0x45bad0 slot 7 (CameraAlgorithm GetTuning); sets out+0x10 flag = 0 (no tuning)
+001607c8	MatrixChaseCameraAlgorithm_GetEyeDrop	med	vt 0x45ba58 slot 13 (eyeDrop float param); returns 0.0
+001607d8	MatrixChaseCameraAlgorithm_GetTuning	high	vt 0x45ba58 slot 7 (GetTuning); out+0x10 flag = 0
+00160be0	RelativeChaseCameraAlgorithm_GetEyeDrop	med	vt 0x45b9e0 slot 13 (eyeDrop float param); returns 0.0
+00160bf0	RelativeChaseCameraAlgorithm_GetTuning	high	vt 0x45b9e0 slot 7 (GetTuning); out+0x10 flag = 0
+001613d8	SplineCameraAlgorithm_GetEyeDrop	med	vt 0x45b968 slot 13 (eyeDrop float param); returns 0.0
+001613e8	SplineCameraAlgorithm_GetTuning	high	vt 0x45b968 slot 7 (GetTuning); out+0x10 flag = 0
+00161710	IdleChaseCameraAlgorithm_GetEyeDrop	med	vt 0x45bb48 slot 13 (eyeDrop float param); returns 0.0
+00161720	IdleChaseCameraAlgorithm_GetTuning	high	vt 0x45bb48 slot 7 (GetTuning); out+0x10 flag = 0
+00167e18	CameraAlgorithm_ResetForRider	high	CameraAlgorithm vt 0x45bde0 slot 3 base (camera.md); empty; shared by Rider/Manual/Editor/Script algos
+00167e20	CameraAlgorithm_Reset	high	CameraAlgorithm slot 4 base (camera.md); empty
+00167e28	CameraAlgorithm_Update	high	CameraAlgorithm slot 5 base (camera.md); empty
+00167e40	CameraAlgorithm_GetLookAt	high	CameraAlgorithm slot 6 base (camera.md GetLookAt(out vec4)); writes zero vec 0x4ff120
+00167e58	CameraAlgorithm_GetTuning	high	CameraAlgorithm slot 7 base (camera.md GetTuning); empty
+00167e60	CameraAlgorithm_PostUpdate	high	CameraAlgorithm slot 8 base (camera.md); empty
+00167e90	CameraAlgorithm_v10_Empty	high	CameraAlgorithm slot 10 (camera.md: no-op), shared by all camera algorithms
+00167e98	CameraAlgorithm_GetResetFlag	high	CameraAlgorithm slot 11 base (camera.md GetResetFlag); returns 0
+00167fa0	RiderCameraAlgorithm_GetLookAt	high	RiderCameraAlgorithm/chase slot 6 (camera.md: returns look-at +0x20); called by GameCamera_ComputeView
+00167fb0	ChaseCameraAlgorithm_GetResetFlag	high	chase-algorithm slot 11 (camera.md: chase +0x2f0 needs-reset flag)
+00167fb8	CamController_Update	high	CamController vt 0x45b938 slot 2 base (camera.md Update); empty
+00168320	LazyChaseCameraAlgorithm_GetEyeDrop	med	vt 0x45c628 slot 13 (eyeDrop float param); returns 0.0
+00168330	LazyChaseCameraAlgorithm_GetTuning	high	vt 0x45c628 slot 7 (GetTuning); out+0x10 flag = 0
+001686b8	LookBackChaseCameraAlgorithm_GetEyeDrop	med	vt 0x45c6a0 slot 13 (eyeDrop float param); returns 0.0
+001686c8	LookBackChaseCameraAlgorithm_GetTuning	high	vt 0x45c6a0 slot 7 (GetTuning); out+0x10 flag = 0
+00168a30	MidRightChaseCameraAlgorithm_GetEyeDrop	med	vt 0x45c538 slot 13 (eyeDrop float param); returns gp-0x66d0 constant
+00168a40	MidRightChaseCameraAlgorithm_GetTuning	high	vt 0x45c538 slot 7 (GetTuning, camera.md Default_3 pattern); four gp floats -> out+0..+0xc, flag out+0x10 = 1
+00168d40	MidLeftChaseCameraAlgorithm_GetEyeDrop	med	vt 0x45c5b0 slot 13 (eyeDrop float param); returns gp-0x660c constant
+00168d50	MidLeftChaseCameraAlgorithm_GetTuning	high	vt 0x45c5b0 slot 7 (GetTuning); four gp floats -> out, flag out+0x10 = 1
+00176358	ScriptCameraAlgo_GetLookAt	high	slot 6 (CameraAlgorithm GetLookAt) of ScriptCameraAlgo vt 0x45c8b8 and its 4 subclasses; returns +0x20
+001765f8	CameraAction_v01_Empty	med	1-slot vt 0x45c2e8 stored by CameraTrigger_ReadAction for 'Camera Switch Action' (type 0) and 'Camera Action None' (type 3); empty
+00176808	CameraPointBoundObj_ClampPoint	med	vt 0x45c1e8 (CameraTrigger_ReadBoundObj type 3, point bound obj) slot 6 (= CameraEllipseBoundObj_ClampPoint slot); returns (this+0..8, 1.0)
+00176ad0	Default_2ChaseCameraAlgorithm_GetEyeDrop	med	vt 0x45cab0 slot 13 (eyeDrop float param); returns gp-0x61ec constant
+00176ae0	Default_2ChaseCameraAlgorithm_GetTuning	high	vt 0x45cab0 slot 7 (GetTuning); four gp floats, flag 1
+00176dd0	Default_3ChaseCameraAlgorithm_GetEyeDrop	med	vt 0x45ca38 slot 13 (camera.md: Default_3 gp constant float param); returns gp-0x6134
+00176de0	Default_3ChaseCameraAlgorithm_GetTuning	high	vt 0x45ca38 slot 7 (camera.md GetTuning, Default_3: four gp floats + flag); called by ChaseCameraAlgorithm_PostUpdate
+001770d0	Default_4ChaseCameraAlgorithm_GetEyeDrop	med	vt 0x45c9c0 slot 13 (eyeDrop float param); returns gp-0x6078 constant
+001770e0	Default_4ChaseCameraAlgorithm_GetTuning	high	vt 0x45c9c0 slot 7 (GetTuning); four gp floats, flag 1
+00177548	DirectionNeChaseCameraAlgorithm_GetEyeDrop	med	vt 0x45cb28 slot 13 (eyeDrop float param); returns 0.0
+00177558	DirectionNeChaseCameraAlgorithm_GetTuning	high	vt 0x45cb28 slot 7 (GetTuning); four gp floats, flag 1
+00177eb8	SpokeChaseCameraAlgorithm_GetEyeDrop	med	vt 0x45ccc8 slot 13 (eyeDrop float param); returns gp-0x5e20 constant
+00177ec8	SpokeChaseCameraAlgorithm_GetTuning	high	vt 0x45ccc8 slot 7 (GetTuning); four gp floats, flag 1
+001785b0	SuperpipeChaseCameraAlgorithm_GetEyeDrop	med	vt 0x45cc50 slot 13 (eyeDrop float param); returns gp-0x5dc0 constant
+001785c0	SuperpipeChaseCameraAlgorithm_GetTuning	high	vt 0x45cc50 slot 7 (GetTuning); four gp floats, flag 1
+00178b98	Post_Race_1ChaseCameraAlgorithm_GetEyeDrop	med	vt 0x45cbd8 slot 13 (eyeDrop float param); returns 0.0
+00178ba8	Post_Race_1ChaseCameraAlgorithm_GetTuning	high	vt 0x45cbd8 slot 7 (GetTuning); out+0x10 flag = 0
+0017fdf0	FEUIInput_IsDirection	high	FEUIInput vt 0x46d1d0 slot 2; switch dir 0..7 (table 0x45d530) -> InputBinding_EvalBool(+0x18, 114..121 = UIUp/Down/Left/Right, UIUp2..UIRight2 per input.md)
+0017fe2c	NOTFUNC_0017fe2c	high	jump-table case block (action 0x72 UIUp) of FEUIInput_IsDirection 0x17fdf0, table 0x45d530
+0017fe34	NOTFUNC_0017fe34	high	jump-table case block (action 0x73) of FEUIInput_IsDirection, table 0x45d530
+0017fe3c	NOTFUNC_0017fe3c	high	jump-table case block (action 0x74) of FEUIInput_IsDirection, table 0x45d530
+0017fe44	NOTFUNC_0017fe44	high	jump-table case block (action 0x75) of FEUIInput_IsDirection, table 0x45d530
+0017fe4c	NOTFUNC_0017fe4c	high	jump-table case block (action 0x76) of FEUIInput_IsDirection, table 0x45d530
+0017fe54	NOTFUNC_0017fe54	high	jump-table case block (action 0x77) of FEUIInput_IsDirection, table 0x45d530
+0017fe5c	NOTFUNC_0017fe5c	high	jump-table case block (action 0x78) of FEUIInput_IsDirection, table 0x45d530
+0017fe64	NOTFUNC_0017fe64	high	jump-table case block (action 0x79 UIRight2) + shared InputBinding_EvalBool tail of FEUIInput_IsDirection, table 0x45d530
+00180478	FEUIInput_SetPort	med	FEUIInput vt 0x46d1d0 slot 44; stores port byte +4 and input binding (gp-0x848 obj +0xb0 + port*4) into +0x18
+00180498	FEUIInput_HasBinding	low	FEUIInput vt 0x46d1d0 slot 45; returns +0x18 binding != 0 and **binding > 0
+00182c68	cFEStateRiderDetail_OnWidgetNotify	med	UIState slot 20 (OnWidgetNotify) of cFEStateRiderDetail vt 0x46cd90 and cFEStateCharSetup vt 0x46ce60; returns 0x100 for event 9 else 0x101
+001859d8	cFEStateUberTrick_OnWidgetNotify	med	UIState slot 20 of cFEStateUberTrick vt 0x46ccc0; returns 0x100/0x101 by widget (+0x50) and event 8/9
+00186478	cFEOptionsCredits_OnWidgetNotify	med	UIState slot 20 of cFEOptionsCredits vt 0x46bdf8; event-code switch (6, 8, 9) -> 0x100/0x101
+00186b48	cFEStateMemCard_OnWidgetNotify	med	UIState slot 20 of cFEStateMemCard vt 0x46b570; returns 0x100
+00187c10	cFEStateMemCard_HandleInput	med	UIState slot 8 (HandleInput) of cFEStateMemCard vt 0x46b570; returns 0
+00188c58	cFEStateOptions_HandleInput	med	UIState slot 8 (HandleInput) of cFEStateOptions vt 0x46c7c0; stores input byte +4 into gp+0x394, returns 0
+00189958	cFEStateOptionsGame_OnWidgetNotify	med	UIState slot 20 of cFEStateOptionsGame vt 0x46c6f0; returns 0x100 for event 9 else 0x101
+00189970	cFEStateOptionsGame_v21	low	UIState slot 21 of cFEStateOptionsGame vt 0x46c6f0; returns a2 ? 0x100 : 0
+0018a890	cFEStateOptionsSound_OnWidgetNotify	med	UIState slot 20 of cFEStateOptionsSound vt 0x46c620; event 6 -> 0, 9 -> 0x100, else 0x101
+0018a8c0	cFEStateOptionsSound_v21	low	UIState slot 21 of cFEStateOptionsSound vt 0x46c620; returns a2 ? 0x100 : 0
+0018c270	cFEStateOptionsHUD_OnWidgetNotify	med	UIState slot 20 of cFEStateOptionsHUD vt 0x46c550; event 6 -> 0, 9 -> 0x100, else 0x101
+0018cdb0	cFEStateOptionsController_v21	low	UIState slot 21 of cFEStateOptionsController vt 0x46c480; returns a2 ? 0x100 : 0
+0018d438	cFEStateOptionsSaveLoad_OnWidgetNotify	med	UIState slot 20 of cFEStateOptionsSaveLoad vt 0x46c3b0; event 8/9 -> 0x100, else 0x101
+00193310	cFEStateBraggingRights_TransitionIn	med	UIState slot 7 (TransitionIn) of cFEStateBraggingRights vt 0x46af68; returns 0
+00194980	cFEStateTitle_OnChildEvent	med	UIState slot 17 (OnChildEvent) of cFEStateTitle vt 0x46bab8; empty
+00194a48	cFEStateTitle_OnWidgetNotify	med	UIState slot 20 of cFEStateTitle vt 0x46bab8; event 6 -> 0x101 else 0x100
+001952e8	cFEStateMainMenu_OnWidgetNotify	med	UIState slot 20 of cFEStateMainMenu vt 0x46b9e8; event 6 uses +0x48, 9 -> 0x100, else 0x101
+001955b8	cFEStateBonusMaterial_OnWidgetNotify	med	UIState slot 20 of cFEStateBonusMaterial vt 0x46b918; events 8/9 -> 0x100, else 0x101
+00196b08	cFEStateAudioOptions_OnWidgetNotify	med	UIState slot 20 of cFEStateAudioOptions vt 0x469448; event 6 with sub-ids 2..4 (+0x7c), 8/9
+00198da0	cFEStateCharEquip_CompareItems	med	qsort comparator passed by cFEStateCharEquip_BuildItemList (qsort(...,4,0x198da0)); returns (*a)->+0xa - (*b)->+0xa (short)
+001a3300	cFEStateMPCircuit_OnWidgetCreated	med	UIState slot 18 (OnWidgetCreated) of cFEStateMPCircuit vt 0x469178; empty
+001a7bb0	cFEStateReadMessagePopup_OnWidgetCreated	med	UIState slot 18 (OnWidgetCreated) of cFEStateReadMessagePopup vt 0x467e18; empty
+001a8828	NetFEState_TransitionIn	med	UIState slot 7 (TransitionIn) shared by 13 net-FE state vtables (Login, Relogin, NetConfig, SelectPersona ...); returns 0
+001ac5a8	cFEUseExistingAccount_OnWidgetNotify	med	UIState slot 20 of cFEUseExistingAccount vt 0x469068; event 9 -> 0x100 else 0x101
+001ae100	cFEStateChallengePopup_OnWidgetNotify	med	UIState slot 20 of cFEStateChallengePopup vt 0x468e38; events 8/9 -> 0x100, else 0x101
+001b06e0	cFEStateChallengeReceivedPopup_OnWidgetNotify	med	UIState slot 20 of cFEStateChallengeReceivedPopup vt 0x468d20; events 8/9 -> 0x100, else 0x101
+001b6078	cFEStateNetConfig_v21	low	UIState slot 21 of cFEStateNetConfig vt 0x468b00; returns 0x101
+001b6080	cFEStateNetConfig_v22	low	UIState slot 22 of cFEStateNetConfig vt 0x468b00; a2 < 2 -> (+0x6d4 > 1 ? 0x101 : 0), else 0x101
+001b6a90	NetConfigAuthPopup_OnWidgetNotify	med	UIState slot 20 of NetConfigAuthPopup vt 0x4689f0; events 8/9 -> 0x100, else 0x101
+001b6ea8	cFEStateAuthDNASError_OnWidgetNotify	med	UIState slot 20 of cFEStateAuthDNASError vt 0x4688e0; events 8/9 -> 0x100, else 0x101
+001bdca0	cFEStateLobbyMenu_v21	low	UIState slot 21 of cFEStateLobbyMenu vt 0x46a7f8; looks up a1 in 4-entry list +0x718 / +0x708
+001bea30	cFEStateNetCreateRoomPopup_v21	low	UIState slot 21 of cFEStateNetCreateRoomPopup vt 0x46a6e8; returns 0x101
+001c0b08	cFEStateOnlineAgreement_OnWidgetNotify	med	UIState slot 20 of cFEStateOnlineAgreement vt 0x46ac38; event 9 -> 0x100 else 0x101
+001c17d8	cFEStateNetQuickPlayPopup_v21	low	UIState slot 21 of cFEStateNetQuickPlayPopup vt 0x46ab28; returns 0x101
+001c17e0	cFEStateNetQuickPlayPopup_OnWidgetNotify	med	UIState slot 20 of cFEStateNetQuickPlayPopup vt 0x46ab28; event 9 -> 0x100 else 0x101
+001c5420	cFEStateNetNews_OnWidgetNotify	med	UIState slot 20 of cFEStateNetNews vt 0x468168; event 4 -> 0 else 0x101
+001c5dd0	cFEPopupConfirm_TransitionOut	med	UIState slot 10 (TransitionOut) of cFEPopupConfirm vts 0x46c890/0x46cbd8; returns 1 (done)
+001caed8	cUIStateBuyPopup_OnWidgetNotify	med	UIState slot 20 of cUIStateBuyPopup vt 0x46cb08; events 7..9 -> 0x100, else 0x101
+001d1198	cFEStateRewardGalleryPosters_GetIconPath	high	RewardGallery slot 25 of vt 0x46a248; returns 'data/char/rwrdps2.big|poster_icon.ssh'
+001d1290	cFEStateRewardGalleryPosters_ClearItemFlags	med	RewardGallery slot 29 of vt 0x46a248; clears +0x68, +0xa24 and 43 words ending at +0xad0
+001d1330	cFEStateRewardGalleryTradingCards_GetIconPath	high	RewardGallery slot 25 of vt 0x46a0c8; returns '...|tradingcard_icon.ssh'
+001d1428	cFEStateRewardGalleryTradingCards_ClearItemFlags	med	RewardGallery slot 29 of vt 0x46a0c8; clears +0x68, +0xa24 and 116 words ending at +0xbf4
+001d14c8	cFEStateRewardGalleryConceptArts_GetIconPath	high	RewardGallery slot 25 of vt 0x469f48; returns '...|gallery_icon.ssh'
+001d15c0	cFEStateRewardGalleryConceptArts_ClearItemFlags	med	RewardGallery slot 29 of vt 0x469f48; clears +0x68, +0xa24 and 100 words ending at +0xbb4
+001d1660	cFEStateRewardGalleryVideos_GetIconPath	high	RewardGallery slot 25 of vt 0x469dc8; returns '...|video_icon.ssh'
+001d1758	cFEStateRewardGalleryVideos_ClearItemFlags	med	RewardGallery slot 29 of vt 0x469dc8; clears +0x68, +0xa24 and 2 words ending at +0xa2c
+001d17f8	cFEStateRewardGalleryToys_GetIconPath	high	RewardGallery slot 25 of vt 0x469c48; returns '...|toy_icon.ssh'
+001d18f0	cFEStateRewardGalleryToys_ClearItemFlags	med	RewardGallery slot 29 of vt 0x469c48; clears +0x68, +0xa24 and 28 words ending at +0xa94
+001d1a28	cFEStateRewardGalleryCheatChars_ClearItemFlags	med	RewardGallery slot 29 of vt 0x469ac8; clears +0x68, +0xa24 and 28 words ending at +0xa94
+001d1f78	cFEStatePreviewReward_OnWidgetNotify	med	UIState slot 20 of cFEStatePreviewReward vt 0x4699f8; event-code switch 6/8/9
+001d2f40	cFEStateMountainRoom_OnWidgetNotify	med	UIState slot 20 of cFEStateMountainRoom vt 0x469858; events 8/9 -> 0x100, else 0x101
+001d4660	cFEStateTrophyRoom_OnWidgetNotify	med	UIState slot 20 of cFEStateTrophyRoom vt 0x4696b8; event-code switch 6/8/9
+001d4f68	cFEStateRewardsRoom_OnWidgetNotify	med	UIState slot 20 of cFEStateRewardsRoom vt 0x4695e8; events 8/9 -> 0x100, else 0x101
+001d5460	MemCardStateBase_OnWidgetNotify	med	UIState slot 20 of MemCardStateBase vt 0x46c980 (and OVScreenAutosave/SaveRecords/SaveReplay); events 8/9 -> 0x100, else 0x101
+001d5f38	MemCardUI_OnSaveStart	low	MCManager callback slot [2] set by MemCardStateBase_InstallCallbacks (between WriteReplaySaveBlock [1] and OnSaveDone [3]); empty
+001d8670	MemCardStateBase_v46	low	MemCardStateBase slot 46 (8 memcard vtables); if memcard mgr (gp-0x10c8)+0x1c0 == 4 set it to 1
+001d86a0	MemCardStateBase_Finish	med	MemCardStateBase slot 40 (8 memcard vtables); sets state +0x1c0 = 6, the value MemCardStateBase_TransitionOut waits for
+001d93a8	MemCardStateBase_v27	low	MemCardStateBase slot 27 (8 memcard vtables); empty
+001d93b0	MemCardStateBase_Restart	low	MemCardStateBase slot 32 (8 memcard vtables); sets state +0x1c0 = 1
+001d93c0	MemCardStateBase_v28	low	MemCardStateBase slot 28 (8 memcard vtables); empty
+001d93c8	MemCardStateBase_v30	low	MemCardStateBase slot 30 (8 memcard vtables); empty
+001d93d0	MemCardStateBase_v29	low	MemCardStateBase slot 29 (8 memcard vtables); empty
+001d93d8	MemCardStateBase_TransitionOut	med	UIState slot 10 (TransitionOut) of all memcard vtables; returns state +0x1c0 == 6
+001d9878	MemCardStateBase_OnDeactivate	med	UIState slot 11 (OnDeactivate) of all memcard vtables; empty
+001d9f30	cFEStateNetHelpPopup_HandleInput	med	UIState slot 8 (HandleInput) of cFEStateNetHelpPopup vt 0x46a618; returns 1
+001dc930	AppModule_Unload	high	AppModule slot 3 (Unload) shared by FEModule/ModuleBase/load-screen vtables; empty
+001dc938	AppModule_Enter	high	AppModule slot 5 (Enter) shared by FEModule/ModuleBase/load-screen vtables; empty
+001dcc38	FELocale_SetField1	low	FELocale vt 0x46d848 slot 3; stores byte a1 at +1
+001dcc58	FELocale_v04_cc58	low	slot 4 of vt 0x46d848 (slots 1/2 FELocale_dtor/FELocale_v02; a different FELocale_v04 0x195eb8 exists); returns 0
+001dcca8	FEUICustom_v02	low	FEUICustom vt 0x46d810 slot 2; empty
+001dccf8	UIInputBase_v39	low	slot 39 of UIInputBase vt 0x46dba8 and FEUIInput vt 0x46d1d0; stores a1 at +0
+001dd560	FEUIInput_v41	low	FEUIInput vt 0x46d1d0 slot 41; returns +0xc
+001dd568	FEUIInput_v42	low	FEUIInput vt 0x46d1d0 slot 42; returns +0x10
+001dd570	FEUIInput_v43	low	FEUIInput vt 0x46d1d0 slot 43; returns +0x14
+001dd918	cFEStateUberTrick_v13	low	UIState slot 13 of cFEStateUberTrick vt 0x46ccc0; empty
+001ddd28	MemCardUI_GetField1dc	low	MCManager callback [0x19] set by MemCardStateBase_InstallCallbacks; returns memcard state (gp-0x10c8)+0x1dc
+001ddd38	MemCardUI_GetField1f4	low	MCManager callback [0x1e] (MemCardStateBase_InstallCallbacks); returns memcard state +0x1f4
+001ddd48	MemCardUI_GetField1e0	low	MCManager callback [0x1a] (MemCardStateBase_InstallCallbacks); returns memcard state +0x1e0
+001ddd58	MemCardUI_TakeFlag1e4	low	MCManager callback [0x1b] (MemCardStateBase_InstallCallbacks); returns and clears memcard state +0x1e4
+001ddd68	MemCardUI_GetField1f0	low	MCManager callback [0x1c] (MemCardStateBase_InstallCallbacks); returns memcard state +0x1f0
+001ddd78	MemCardUI_GetField1a8	low	MCManager callback [0x1d] (MemCardStateBase_InstallCallbacks); returns memcard state +0x1a8
+001ddd88	MemCardUI_TakeFlag1f8	low	MCManager callback [0x1f] (MemCardStateBase_InstallCallbacks); returns and clears memcard state +0x1f8
+001ddd98	MemCardUI_TakeFlag1fc	low	MCManager callback [0x20] (MemCardStateBase_InstallCallbacks); returns and clears memcard state +0x1fc
+001ddda8	MemCardUI_GetField1e8	low	MCManager callback [0x22] (MemCardStateBase_InstallCallbacks); returns memcard state +0x1e8
+001dddb8	MemCardUI_TakeFlag1ec	low	MCManager callback [0x21] (MemCardStateBase_InstallCallbacks); returns and clears memcard state +0x1ec
+001dddd8	MemCardStateBase_Init	med	UIState slot 4 (Init) of MemCardStateBase vt 0x46c980; empty
+001ddde0	MemCardStateBase_v13	low	UIState slot 13 of all memcard vtables; empty
+001ddde8	MemCardStateBase_OnWidgetAction	med	UIState slot 19 (OnWidgetAction) of MemCardStateBase vt 0x46c980; empty
+001dddf0	MemCardStateBase_v26	low	MemCardStateBase vt 0x46c980 slot 26 (subclasses override: cFEStateMemCard_v26 ...); empty
+001dddf8	MemCardStateBase_v33	low	MemCardStateBase vt 0x46c980 slot 33 (overridden by cFEStateMemCard_v33 ...); empty
+001dde00	MemCardStateBase_v37	low	MemCardStateBase vt 0x46c980 slot 37 (overridden by cFEStateProfileLoad_v37 ...); empty
+001dde08	MemCardStateBase_v38	low	MemCardStateBase slot 38 (MemCard/Autosave vts; overridden by cFEStateProfileLoad_v38 ...); empty
+001dde10	MemCardStateBase_v39	low	MemCardStateBase slot 39 (MemCard/Autosave vts; overridden by cFEStateProfileLoad_v39 ...); empty
+001ddfa8	cFEStateOptionsGame_OnDeactivate	med	UIState slot 11 (OnDeactivate) of cFEStateOptionsGame vt 0x46c6f0; empty
+001de010	cFEStateOptionsSound_OnDeactivate	med	UIState slot 11 (OnDeactivate) of cFEStateOptionsSound vt 0x46c620; empty
+001de078	cFEStateOptionsHUD_OnDeactivate	med	UIState slot 11 (OnDeactivate) of cFEStateOptionsHUD vt 0x46c550; empty
+001de0e8	cFEStateOptionsController_OnDeactivate	med	UIState slot 11 (OnDeactivate) of cFEStateOptionsController vt 0x46c480; empty
+001de2d8	cKeyboardPopup_TransitionOut	med	UIState slot 10 (TransitionOut) of cKeyboardPopup vt 0x46bec8; returns 1
+001de550	cFEStateEventSelect_v13	low	UIState slot 13 of cFEStateEventSelect vt 0x46bd28; empty
+001de860	NetFEState_HandleInput	med	UIState slot 8 (HandleInput) shared by ~25 net-FE vtables; returns +0x58
+001de868	NetFEState_v25	low	net-FE base slot 25 (ReadMessagePopup, NetAccountMem, ChallengePopup ... vts); empty
+001de870	NetFEState_v29	low	net-FE base slot 29 (17 net-FE vtables); returns 1
+001de8a8	NetFEState_v30	low	net-FE base slot 30 (29 net-FE vtables); returns +0x40 != 0 && +0x48 > 0
+001de908	cFEStateNetAccountMem_v29	low	net-FE slot 29 of cFEStateNetAccountMem vt 0x4687d0 (also FEScreenBlank vt 0x46b6f8); returns 0
+001de910	cFEStateNetAccountMem_v32	low	net-FE slot 32 of cFEStateNetAccountMem vt 0x4687d0 (also FEScreenBlank); empty
+001de940	cFEStateMemCard_OnWidgetAction	med	UIState slot 19 (OnWidgetAction) of cFEStateMemCard vt 0x46b570; empty
+001de948	cFEStateMemCard_v37	low	MemCardStateBase slot 37 override in cFEStateMemCard vt 0x46b570; empty
+001de9f0	FEScreenAutosavePopup_TransitionIn	med	UIState slot 7 (TransitionIn) of FEScreenAutosavePopup vt 0x46b4a0; returns 1
+001dea80	cFEPopupOptionReset_OnWidgetNotify	med	UIState slot 20 of cFEPopupOptionReset vt 0x46b3d0; events 7..9 -> 0x100, else 0x101
+001deb50	cFEPopupOptionReset_v23	low	UIState slot 23 of cFEPopupOptionReset vt 0x46b3d0; returns byte +0x48
+001deb80	cFEPopupVideoCalibration_TransitionIn	med	UIState slot 7 (TransitionIn) of cFEPopupVideoCalibration vt 0x46b300; returns 1
+001deb88	cFEPopupVideoCalibration_TransitionOut	med	UIState slot 10 (TransitionOut) of cFEPopupVideoCalibration vt 0x46b300; returns 1
+001df028	cFEPopupScreenPos_v23	low	UIState slot 23 of cFEPopupScreenPos vt 0x46b230; returns +0x48 / +0x4c / byte +0x50 for a1 = 0 / 1 / other
+001df378	cFEPopupScreenPos_TransitionOut	med	UIState slot 10 (TransitionOut) of cFEPopupScreenPos vt 0x46b230; returns 1
+001df578	cFEStateBraggingRights_v13	low	UIState slot 13 of cFEStateBraggingRights vt 0x46af68; empty
+001df5c0	cFEStateChatRoom_v13	low	UIState slot 13 of cFEStateChatRoom vt 0x46ae58; empty
+001df630	cFEStateOnlineAgreement_TransitionOut	med	UIState slot 10 (TransitionOut) of cFEStateOnlineAgreement vt 0x46ac38; returns 1
+001df6a0	cFEStateNetQuickPlayPopup_TransitionOut	med	UIState slot 10 (TransitionOut) of cFEStateNetQuickPlayPopup vt 0x46ab28; returns 1
+001df8e0	cFEStateNetCreateRoomPopup_TransitionOut	med	UIState slot 10 (TransitionOut) of cFEStateNetCreateRoomPopup vt 0x46a6e8; returns 1
+001df988	cFEStateNetHelpPopup_TransitionOut	med	UIState slot 10 (TransitionOut) of cFEStateNetHelpPopup vt 0x46a618; returns 1
+001dfa88	cFEStateRewardGallery_GetIconPath	med	RewardGallery base vt 0x46a3c8 slot 25 (subclasses return '...icon.ssh'; also CheatChars); returns 0
+001dfaa0	cFEStateRewardGallery_v26	low	RewardGallery base vt 0x46a3c8 slot 26 (overridden by <Gallery>_v26); returns -1
+001dfaa8	cFEStateRewardGallery_v27	low	RewardGallery slot 27 shared by base and 5 galleries (CheatChars overrides); returns 0
+001dfac0	cFEStateRewardGallery_InitButtons	med	RewardGallery base vt 0x46a3c8 slot 28 (subclasses <Gallery>_InitButtons); empty
+001dfad0	cFEStateRewardGallery_GetItemRecord	med	RewardGallery base slot 34 (UpdateItemInfo calls vt+0x114 with page*rows+row); returns 0
+001dfad8	cFEStateRewardGallery_GetItemPrice	med	RewardGallery base slot 35 (UpdateItemInfo vt+0x11c -> FE_FormatMoney); returns 0
+001dfae0	cFEStateRewardGallery_GetItemField0E	low	RewardGallery base slot 36; returns 0 (subclasses return record byte +0xe)
+001dfae8	cFEStateRewardGallery_GetItemName	med	RewardGallery base slot 37 (UpdateItemInfo vt+0x12c -> UIText_SetString); returns 0
+001dfb88	cFEStateRewardGalleryPosters_GetItemRecord	med	RewardGallery slot 34 of Posters vt 0x46a248; returns this+0xa28[index]
+001dfb98	cFEStateRewardGalleryPosters_GetItemPrice	med	RewardGallery slot 35 of Posters vt 0x46a248; record short +0xc * 10 when > 0
+001dfbb0	cFEStateRewardGalleryPosters_GetItemField0E	low	RewardGallery slot 36 of Posters vt 0x46a248; returns record byte +0xe
+001dfbb8	cFEStateRewardGalleryPosters_GetItemName	med	RewardGallery slot 37 of Posters vt 0x46a248; returns record +0 (name)
+001dfc58	cFEStateRewardGalleryTradingCards_GetItemRecord	med	RewardGallery slot 34 of TradingCards vt 0x46a0c8; returns this+0xa28[index]
+001dfc68	cFEStateRewardGalleryTradingCards_GetItemPrice	med	RewardGallery slot 35 of TradingCards vt 0x46a0c8; record short +0xc * 10 when > 0
+001dfc80	cFEStateRewardGalleryTradingCards_GetItemField0E	low	RewardGallery slot 36 of TradingCards vt 0x46a0c8; returns record byte +0xe
+001dfc88	cFEStateRewardGalleryTradingCards_GetItemName	med	RewardGallery slot 37 of TradingCards vt 0x46a0c8; returns record +0
+001dfd28	cFEStateRewardGalleryConceptArts_GetItemRecord	med	RewardGallery slot 34 of ConceptArts vt 0x469f48; returns this+0xa28[index]
+001dfd38	cFEStateRewardGalleryConceptArts_GetItemPrice	med	RewardGallery slot 35 of ConceptArts vt 0x469f48; record short +0xc * 10 when > 0
+001dfd50	cFEStateRewardGalleryConceptArts_GetItemField0E	low	RewardGallery slot 36 of ConceptArts vt 0x469f48; returns record byte +0xe
+001dfd58	cFEStateRewardGalleryConceptArts_GetItemName	med	RewardGallery slot 37 of ConceptArts vt 0x469f48; returns record +0
+001dfdf8	cFEStateRewardGalleryVideos_GetItemRecord	med	RewardGallery slot 34 of Videos vt 0x469dc8; returns this+0xa28[index]
+001dfe08	cFEStateRewardGalleryVideos_GetItemPrice	med	RewardGallery slot 35 of Videos vt 0x469dc8; record short +0xc * 10 when > 0
+001dfe20	cFEStateRewardGalleryVideos_GetItemField0E	low	RewardGallery slot 36 of Videos vt 0x469dc8; returns record byte +0xe
+001dfe28	cFEStateRewardGalleryVideos_GetItemName	med	RewardGallery slot 37 of Videos vt 0x469dc8; returns record +0
+001dfec8	cFEStateRewardGalleryToys_GetItemRecord	med	RewardGallery slot 34 of Toys vt 0x469c48; returns this+0xa28[index]
+001dfed8	cFEStateRewardGalleryToys_GetItemPrice	med	RewardGallery slot 35 of Toys vt 0x469c48; record short +0xc * 10 when > 0
+001dfef0	cFEStateRewardGalleryToys_GetItemField0E	low	RewardGallery slot 36 of Toys vt 0x469c48; returns record byte +0xe
+001dfef8	cFEStateRewardGalleryToys_GetItemName	med	RewardGallery slot 37 of Toys vt 0x469c48; returns record +0
+001dff98	cFEStateRewardGalleryCheatChars_GetItemRecord	med	RewardGallery slot 34 of CheatChars vt 0x469ac8; returns this+0xa28[index]
+001dffa8	cFEStateRewardGalleryCheatChars_GetItemPrice	med	RewardGallery slot 35 of CheatChars vt 0x469ac8; record short +0xc * 10 when > 0
+001dffc0	cFEStateRewardGalleryCheatChars_GetItemField0E	low	RewardGallery slot 36 of CheatChars vt 0x469ac8; returns record byte +0xe
+001dffc8	cFEStateRewardGalleryCheatChars_GetItemName	med	RewardGallery slot 37 of CheatChars vt 0x469ac8; returns record +0
+001e0014	NOTFUNC_001e0014	high	only ref is packed short pair (20,30) in a float/short table at 0x477634; address is the delay slot of the 'return 0' stub at 0x1e0010
+001e0020	cFEStateVideoPlayer_TransitionIn	med	UIState slot 7 (TransitionIn) of cFEStateVideoPlayer vt 0x469928; returns 1
+001e0028	cFEStateVideoPlayer_TransitionOut	med	UIState slot 10 (TransitionOut) of cFEStateVideoPlayer vt 0x469928; returns 1
+001e04f8	cFEPopupSelectMultiplayerMode_v23	low	UIState slot 23 of cFEPopupSelectMultiplayerMode vt 0x469518; returns byte +0x48
+001e0500	cFEPopupSelectMultiplayerMode_TransitionIn	med	UIState slot 7 (TransitionIn) of vt 0x469518; returns 1
+001e0508	cFEPopupSelectMultiplayerMode_TransitionOut	med	UIState slot 10 (TransitionOut) of vt 0x469518; returns 1
+001e0770	FEUISound_v03	low	FEUISound vt 0x469348 slot 3; empty
+001e0778	FEUISound_v04	low	FEUISound vt 0x469348 slot 4; empty
+001e07b0	OVUISound_v03	low	OVUISound vt 0x469318 slot 3; empty
+001e07b8	OVUISound_v04	low	OVUISound vt 0x469318 slot 4; empty
+001e08d0	cFEUseExistingAccount_v29	low	net-FE slot 29 of cFEUseExistingAccount vt 0x469068; returns 0
+001e0940	cFEStateSelectPersona_v29	low	net-FE slot 29 of cFEStateSelectPersona vt 0x468f50; returns 0
+001e0948	cFEStateSelectPersona_v32	low	net-FE slot 32 of cFEStateSelectPersona vt 0x468f50; empty
+001e0a00	cFEStateChallengePopup_TransitionOut	med	UIState slot 10 (TransitionOut) of cFEStateChallengePopup vt 0x468e38; returns 1
+001e0ab8	cFEStateChallengeReceivedPopup_TransitionOut	med	UIState slot 10 (TransitionOut) of vt 0x468d20; returns 1
+001e0ba0	cFEStateNetConfig_v32	low	net-FE slot 32 of cFEStateNetConfig vt 0x468b00; empty
+001e0ba8	cFEStateNetConfig_v29	low	net-FE slot 29 of cFEStateNetConfig vt 0x468b00; returns 0
+001e0c10	NetConfigAuthPopup_TransitionIn	med	UIState slot 7 (TransitionIn) of NetConfigAuthPopup vt 0x4689f0; returns 1
+001e0c18	NetConfigAuthPopup_TransitionOut	med	UIState slot 10 (TransitionOut) of NetConfigAuthPopup vt 0x4689f0; returns 1
+001e0c20	NetConfigAuthPopup_v32	low	net-FE slot 32 of NetConfigAuthPopup vt 0x4689f0; empty
+001e0c28	NetConfigAuthPopup_v29	low	net-FE slot 29 of NetConfigAuthPopup vt 0x4689f0; returns 0
+001e0c78	cFEStateAuthDNASError_TransitionOut	med	UIState slot 10 (TransitionOut) of cFEStateAuthDNASError vt 0x4688e0; returns 1
+001e0c80	cFEStateAuthDNASError_v32	low	net-FE slot 32 of cFEStateAuthDNASError vt 0x4688e0; empty
+001e0c88	cFEStateAuthDNASError_v29	low	net-FE slot 29 of cFEStateAuthDNASError vt 0x4688e0; returns 0
+001e0c90	cFEStateNetAccountMem_TransitionIn	med	UIState slot 7 (TransitionIn) of cFEStateNetAccountMem vt 0x4687d0; returns 1
+001e0c98	cFEStateNetAccountMem_TransitionOut	med	UIState slot 10 (TransitionOut) of cFEStateNetAccountMem vt 0x4687d0; returns 1
+001e0d60	cFEStateCreateStep1_v29	low	net-FE slot 29 of cFEStateCreateStep1 vt 0x4686c0; returns 0
+001e0dd0	cFEStateCreateStep2_v29	low	net-FE slot 29 of cFEStateCreateStep2 vt 0x4685b0; returns 0
+001e0e40	cFEStateCreateDuplicate_v29	low	net-FE slot 29 of cFEStateCreateDuplicate vt 0x4684a0; returns 0
+001e0e88	cFEStateLogin_v32	low	net-FE slot 32 of cFEStateLogin vt 0x468388 (also cFEStateRelogin); empty
+001e0e90	cFEStateLogin_v29	low	net-FE slot 29 of cFEStateLogin vt 0x468388 (also cFEStateRelogin); returns 0
+001e0ec0	cFEStateStats_v13	high	vt 468278 (cFEStateStats) slot 13 (UIState_v13 slot); empty jr ra
+001e0ef0	cFEStateNetNews_TransitionOut	high	vt 468168 (cFEStateNetNews) UIState slot 10 TransitionOut; returns 1 (done)
+001e0f58	cFEStateRelogin_TransitionOut	high	vt 468050 (cFEStateRelogin) UIState slot 10 TransitionOut; returns 1
+001e0fb8	cFEStateNetMessenger_TransitionOut	high	vt 467f28 (cFEStateNetMessenger) UIState slot 10 TransitionOut; returns 1
+001e1040	cFEStateReadMessagePopup_TransitionOut	high	vt 467e18 (cFEStateReadMessagePopup) UIState slot 10 TransitionOut; returns 1
+001e1078	UISoundBase_PlaySound	med	UISoundBase vt 46dd60 slot 2 (empty); FEUISound/OVUISound override slot 2 -> SSXAudioSystem_PlayFESound
+001e1080	UISoundBase_v03	high	UISoundBase vt 46dd60 slot 3; empty jr ra
+001e1088	UISoundBase_v04	high	UISoundBase vt 46dd60 slot 4; empty jr ra
+001e10e8	UICustomBase_v02	high	UICustomBase vt 46dd28 slot 2; empty jr ra
+001e10f0	UICustomBase_v03	high	UICustomBase vt 46dd28 slot 3; returns 0 (FEUICustom_v03 overrides)
+001e10f8	UICustomBase_CreateState	med	UICustomBase vt 46dd28 slot 4; returns 0 (no state); FEUICustom slot 4 = FEUICustom_CreateState
+001e1100	UICustomBase_v05	high	UICustomBase vt 46dd28 slot 5; returns 0 (FEUICustom_v05 overrides)
+001e1138	UIInputBase_v02	high	UIInputBase vt 46dba8 slot 2; returns 0 (FEUIInput slot 2 dispatches action index <8 via jump table)
+001e1140	UIInputBase_IsStart	high	UIInputBase vt 46dba8 slot 3 (FEUIInput slot 3 = FEUIInput_IsStart); base returns 0
+001e1148	UIInputBase_IsSelect	high	UIInputBase vt 46dba8 slot 4 (FEUIInput slot 4 = FEUIInput_IsSelect); base returns 0
+001e1150	UIInputBase_IsNext	high	UIInputBase vt 46dba8 slot 5 (FEUIInput slot 5 = FEUIInput_IsNext); base returns 0
+001e1158	UIInputBase_IsPrevious	high	UIInputBase vt 46dba8 slot 6 (FEUIInput slot 6 = FEUIInput_IsPrevious); base returns 0
+001e1160	UIInputBase_IsOption	high	UIInputBase vt 46dba8 slot 7 (FEUIInput slot 7 = FEUIInput_IsOption); base returns 0
+001e1168	UIInputBase_IsMisc	high	UIInputBase vt 46dba8 slot 8 (FEUIInput slot 8 = FEUIInput_IsMisc); base returns 0
+001e1170	UIInputBase_IsNextHeld	high	UIInputBase vt 46dba8 slot 9 (FEUIInput slot 9 = FEUIInput_IsNextHeld); base returns 0
+001e1178	UIInputBase_IsPreviousHeld	high	UIInputBase vt 46dba8 slot 10 (FEUIInput slot 10 = FEUIInput_IsPreviousHeld); base returns 0
+001e1180	UIInputBase_IsOptionHeld	high	UIInputBase vt 46dba8 slot 11 (FEUIInput slot 11 = FEUIInput_IsOptionHeld); base returns 0
+001e1188	UIInputBase_IsMiscHeld	high	UIInputBase vt 46dba8 slot 12 (FEUIInput slot 12 = FEUIInput_IsMiscHeld); base returns 0
+001e1190	UIInputBase_IsNextReleased	high	UIInputBase vt 46dba8 slot 13 (FEUIInput slot 13 = FEUIInput_IsNextReleased); base returns 0
+001e1198	UIInputBase_IsPreviousReleased	high	UIInputBase vt 46dba8 slot 14 (FEUIInput slot 14 = FEUIInput_IsPreviousReleased); base returns 0
+001e11a0	UIInputBase_IsOptionReleased	high	UIInputBase vt 46dba8 slot 15 (FEUIInput slot 15 = FEUIInput_IsOptionReleased); base returns 0
+001e11a8	UIInputBase_IsMiscReleased	high	UIInputBase vt 46dba8 slot 16 (FEUIInput slot 16 = FEUIInput_IsMiscReleased); base returns 0
+001e11b0	UIInputBase_IsUp	high	UIInputBase vt 46dba8 slot 17 (FEUIInput slot 17 = FEUIInput_IsUp); base returns 0
+001e11b8	UIInputBase_IsDown	high	UIInputBase vt 46dba8 slot 18 (FEUIInput slot 18 = FEUIInput_IsDown); base returns 0
+001e11c0	UIInputBase_IsLeft	high	UIInputBase vt 46dba8 slot 19 (FEUIInput slot 19 = FEUIInput_IsLeft); base returns 0
+001e11c8	UIInputBase_IsRight	high	UIInputBase vt 46dba8 slot 20 (FEUIInput slot 20 = FEUIInput_IsRight); base returns 0
+001e11d0	UIInputBase_IsUpHeld	high	UIInputBase vt 46dba8 slot 21 (FEUIInput slot 21 = FEUIInput_IsUpHeld); base returns 0
+001e11d8	UIInputBase_IsDownHeld	high	UIInputBase vt 46dba8 slot 22 (FEUIInput slot 22 = FEUIInput_IsDownHeld); base returns 0
+001e11e0	UIInputBase_IsLeftHeld	high	UIInputBase vt 46dba8 slot 23 (FEUIInput slot 23 = FEUIInput_IsLeftHeld); base returns 0
+001e11e8	UIInputBase_IsRightHeld	high	UIInputBase vt 46dba8 slot 24 (FEUIInput slot 24 = FEUIInput_IsRightHeld); base returns 0
+001e11f0	UIInputBase_IsRShift1	high	UIInputBase vt 46dba8 slot 25 (FEUIInput slot 25 = FEUIInput_IsRShift1); base returns 0
+001e11f8	UIInputBase_IsRShift2	high	UIInputBase vt 46dba8 slot 26 (FEUIInput slot 26 = FEUIInput_IsRShift2); base returns 0
+001e1200	UIInputBase_IsLShift1	high	UIInputBase vt 46dba8 slot 27 (FEUIInput slot 27 = FEUIInput_IsLShift1); base returns 0
+001e1208	UIInputBase_IsLShift2	high	UIInputBase vt 46dba8 slot 28 (FEUIInput slot 28 = FEUIInput_IsLShift2); base returns 0
+001e1210	UIInputBase_IsRShift1Held	high	UIInputBase vt 46dba8 slot 29 (FEUIInput slot 29 = FEUIInput_IsRShift1Held); base returns 0
+001e1218	UIInputBase_IsRShift2Held	high	UIInputBase vt 46dba8 slot 30 (FEUIInput slot 30 = FEUIInput_IsRShift2Held); base returns 0
+001e1220	UIInputBase_IsLShift1Held	high	UIInputBase vt 46dba8 slot 31 (FEUIInput slot 31 = FEUIInput_IsLShift1Held); base returns 0
+001e1228	UIInputBase_IsLShift2Held	high	UIInputBase vt 46dba8 slot 32 (FEUIInput slot 32 = FEUIInput_IsLShift2Held); base returns 0
+001e1230	UIInputBase_IsCamZoom	high	UIInputBase vt 46dba8 slot 33 (FEUIInput slot 33 = FEUIInput_IsCamZoom); base returns 0
+001e1238	UIInputBase_IsCamPan	high	UIInputBase vt 46dba8 slot 34 (FEUIInput slot 34 = FEUIInput_IsCamPan); base returns 0
+001e1240	UIInputBase_IsCamRotate	high	UIInputBase vt 46dba8 slot 35 (FEUIInput slot 35 = FEUIInput_IsCamRotate); base returns 0
+001e1248	UIInputBase_GetCamZoom	high	UIInputBase vt 46dba8 slot 36 (FEUIInput slot 36 = FEUIInput_GetCamZoom); base returns 0.0f
+001e1258	UIInputBase_GetCamPan	high	UIInputBase vt 46dba8 slot 37 (FEUIInput slot 37 = FEUIInput_GetCamPan); base returns 0.0f
+001e1268	UIInputBase_GetCamRotate	high	UIInputBase vt 46dba8 slot 38 (FEUIInput slot 38 = FEUIInput_GetCamRotate); base returns 0.0f
+001e1278	UIInputBase_IsAnyButton	high	UIInputBase vt 46dba8 slot 40 (FEUIInput slot 40 = FEUIInput_IsAnyButton); base returns 0
+001e1280	UIInputBase_v41	high	UIInputBase vt 46dba8 slot 41; returns 0 (FEUIInput override returns field +0xc)
+001e1288	UIInputBase_v42	high	UIInputBase vt 46dba8 slot 42; returns 0 (FEUIInput override returns field +0x10)
+001e1290	UIInputBase_v43	high	UIInputBase vt 46dba8 slot 43; returns 0 (FEUIInput override returns field +0x14)
+001e1298	UIInputBase_SetPort	med	UIInputBase vt 46dba8 slot 44; stores byte a1 at +4; FEUIInput override also binds pad +0xb0 table entry [a1] into +0x18
+001e12a0	UIInputBase_v45	high	UIInputBase vt 46dba8 slot 45; returns 0 (FEUIInput override: binding +0x18 present and count>0)
+001e12a8	UIInputBase_PollUsbKeyboard	high	UIInputBase vt 46dba8 slot 46 (FEUIInput slot 46 = FEUIInput_PollUsbKeyboard); base returns 0
+001e5a18	cOVState_ViewPopup_OnWidgetNotify	high	vt 474248 (cOVState_ViewPopup) UIState slot 20 OnWidgetNotify; event 8 -> forwards to +0x68, 9 -> table lookup at 0x4c6c08, else 0x101
+001e6630	OVScreenFreestyleStandings_OnWidgetNotify	high	vt 474088 slot 20 OnWidgetNotify; returns 0 for event 6 (back), else 0x101
+001e6640	OVScreenFreestyleStandings_OnWidgetAction	high	vt 474088 slot 19 OnWidgetAction; on event 5 (select) stores 1 and widget +0x18 id into gp globals -0x9f4/-0x9f0
+001e7920	OVScreenFinalStandings_OnDeactivate	high	vt 473fb0 slot 11 OnDeactivate; empty
+001e7b78	OVScreenFinalStandings_OnWidgetNotify	high	vt 473fb0 slot 20 OnWidgetNotify; returns 0 for event 6, else 0x101
+001e7b88	OVScreenFinalStandings_OnWidgetAction	high	vt 473fb0 slot 19 OnWidgetAction; on select (5) stores 1 and widget id into gp -0x9f4/-0x9f0
+001e81b0	OVScreenFinishOv_OnWidgetNotify	high	vt 473e00 slot 20 OnWidgetNotify; event 6 -> 0x101 if +0xa0 set else 0
+001e81d0	OVScreenFinishOv_OnEvent	med	vt 473e00 UIState slot 24 (OnEvent, MessageCenter_PostMessage calls it with (8,0)); events 0/1 set +0xa0, returns 0
+001e88d0	OVScreenFinishOv2_OnWidgetNotify	high	vt 473d28 slot 20 OnWidgetNotify; event 6 -> 0x101 if +0xa0 set else 0
+001e88f0	OVScreenFinishOv2_OnEvent	med	vt 473d28 UIState slot 24 (OnEvent); events 0/1 set +0xa0, returns 0
+001e8e90	OVScreenPeakChallengeResults_HandleInput	high	vt 473ed8 slot 8 HandleInput; returns 0
+001e8e98	OVScreenPeakChallengeResults_OnWidgetNotify	high	vt 473ed8 slot 20 OnWidgetNotify; returns 0 for event 6, else 0x101
+001e8ea8	OVScreenPeakChallengeResults_OnWidgetAction	high	vt 473ed8 slot 19 OnWidgetAction; on select stores 1 and widget id into gp -0x9f4/-0x9f0
+001e8fc8	OVScreenMultiplayerStandings_OnWidgetAction	high	vt 473c50 slot 19 OnWidgetAction; on select stores 1 and widget id into gp -0x9f4/-0x9f0
+001f3cc8	cFEStateLodge_OnWidgetNotify	high	vt 473aa8 slot 20 OnWidgetNotify; events 7..9 -> 0x100, else 0x101
+001f43d8	cFEStateLodgeRiderDetail_OnWidgetNotify	high	vt 4739d8 slot 20 OnWidgetNotify; events 8..9 -> 0x100, else 0x101
+001f4a38	cFEStateBuyAttrib_OnWidgetNotify	high	vt 473908 slot 20 OnWidgetNotify; events 8..9 -> 0x100, else 0x101
+001f5618	cFEStateCareerStats_OnWidgetNotify	high	vt 473838 slot 20 OnWidgetNotify; events 6,8,9 -> 0x100, else 0x101
+001f72b8	OVScreenEnterLodge_OnWidgetNotify	high	vt 473760 slot 20 OnWidgetNotify; events 8..9 -> 0x100, else 0x101
+001f7590	OVScreenBCStart_OnWidgetNotify	high	vt 473688 slot 20 OnWidgetNotify; returns 0 for event 6, else 0x101
+001f77f0	OVScreenBCFail_OnWidgetNotify	high	vt 4735b0 slot 20 OnWidgetNotify; returns 0 for event 6, else 0x101
+001f80c8	OVScreenTopTimes_OnWidgetNotify	high	vt 4734d0 slot 20 OnWidgetNotify; returns 0 for event 6, else 0x101
+001f8720	OVScreenPauseFreeride_OnDeactivate	high	slot 11 OnDeactivate of the six OVScreenPauseMode1-6 vtables (OVScreenPauseFreeride_* methods); empty
+001f8908	OVScreenPauseFreeride_OnWidgetNotify	high	slot 20 OnWidgetNotify of OVScreenPauseMode1-6 vtables; event 6 -> 0, 8..9 -> 0x100, else 0x101
+001f8df0	OVScreenPauseFreeride_HandleInput	high	slot 8 HandleInput of OVScreenPauseMode1-6 vtables; returns 0
+001faaf0	OVScreenBEOptions_v22	high	vt 472b88 (OVScreenBEOptions) UIState slot 22 (default returns 0x101); returns 0x100 for a2==4 else 0x101
+001fab08	OVScreenBEOptions_v21	high	vt 472b88 (OVScreenBEOptions) UIState slot 21 (default returns 0x101); returns 0x100 for a2==0 else 0x101
+001faf08	OVScreenInGameError_TransitionIn	high	vt 472ab0 slot 7 TransitionIn; returns 1 (done)
+001fbcc8	OVScreenRacePre_OnDeactivate	high	vt 472850 (OVScreenRacePre) slot 11 OnDeactivate; sets field +0x64 of gp-0x204 object to -1
+001fdb78	OVScreenRivalPre_OnWidgetNotify	high	vt 4725c8 slot 20 OnWidgetNotify; returns 0 for event 6, else 0x101
+001ff748	OVScreenRewardList_OnWidgetNotify	high	OVScreenRewardList vtable slot 20 (follows OVScreenRewardList_OnWidgetAction); switch on event-2 (<8) via jump table 0x4703e0, calls OVScreenRewardList_ShowPage
+001ff780	NOTFUNC_001ff780	high	case block of OVScreenRewardList_OnWidgetNotify (0x1ff748) jump table 0x4703e0; calls ShowPage and branches back to shared epilogue 0x1ff7ac
+001ff790	NOTFUNC_001ff790	high	case block of OVScreenRewardList_OnWidgetNotify jump table 0x4703e0 (b 0x1ff7ac, v0=0); not an entry
+001ff798	NOTFUNC_001ff798	high	case block of OVScreenRewardList_OnWidgetNotify jump table 0x4703e0 (tests +0x9c using caller's s-reg a2); not an entry
+001ff7a8	NOTFUNC_001ff7a8	high	default/epilogue block of OVScreenRewardList_OnWidgetNotify (restores ra from caller frame, returns 0x101); jump table 0x4703e0
+002087e8	OVScreenSession_OnWidgetCreated	high	vt 473320 (OVScreenSession) slot 18 OnWidgetCreated; empty
+00208ef8	OVScreenSession_OnWidgetNotify	high	vt 473320 slot 20 OnWidgetNotify; events 8..9 -> 0, else 0x101
+0020d308	OVScreenOverlayMenu_OnWidgetNotify	med	slot 20 of OVScreenOverlayMenu/RacePre/FreestylePre/MultiFreestylePre vtables, placed after OVScreenOverlayMenu_Init; event 6 -> 0, else 0x101
+0020d318	OVScreenOverlayMenu_OnWidgetAction	med	slot 19 of OVScreenOverlayMenu/RacePre/FreestylePre/MultiFreestylePre vtables; on select (5) sets gp-0x9f4 = 1
+0020d568	OVScreenYNDialog_OnWidgetNotify	high	slot 20 of all six OVScreenYNDialog* vtables, between YNDialog_OnWidgetCreated and _OnWidgetAction; events 8..9 -> 0x100, else 0x101
+0020df10	OVScreenReplayMenu_OnWidgetNotify	high	vt 474aa8 (OVScreenReplayMenu) slot 20 OnWidgetNotify; 0 if +0x9c clear, events 2..5 -> 0 else 0x101
+00210dd0	OVScreenReadPrivateMessage_OnChildEvent	high	vt 473248 slot 17 OnChildEvent; on 0x16 (popup closed) clears +0xe0 when it matches the child
+002122e0	OVScreenAutosave_HandleInput	high	vt 471f80 (OVScreenAutosave) slot 8 HandleInput; returns 0
+0021c700	cOVStateOverlay_v25	high	slot 25 of cOVStateOverlay family (overlay screens, MemCardStateBase, ProfileLoad ...), placed after cOVStateOverlay_dtor; returns field +0x4c
+0021cb68	cOVState_ViewPopup_TransitionOut	high	vt 474248 slot 10 TransitionOut, placed after cOVState_ViewPopup_dtor; returns 1
+002212c0	OVScreenMap_v13	high	vt 4733f8 (OVScreenMap) UIState slot 13; empty
+00221400	OVScreenSession_v13	high	vt 473320 (OVScreenSession) UIState slot 13; empty
+00221d80	OVScreenInGameError_v13	high	vt 472ab0 (OVScreenInGameError) UIState slot 13; empty
+002222a8	OVScreenAutosave_OnWidgetAction	high	vt 471f80 (OVScreenAutosave) slot 19 OnWidgetAction; empty
+002222b0	OVScreenAutosave_v37	high	vt 471f80 (OVScreenAutosave) MemCardStateBase slot 37; empty
+0022b008	GameModule_Render	high	GameModule vt 47d0f8 AppModule slot 7 Render (phase3-boundaries.md); called by App_RunModuleLoop each frame; PrefetchViews, Nash_GatherVisible, RenderProcessLists/Models/Bezier/Fog/LensFlares, crowd, particles, MenuSys_Draw, UIEngine_Render, LoadIndicator_Draw, gm slots 17/20 begin/end frame, SSXAudioSystem_Update
+00232510	PreStartScreen_TryExit	high	vt 47d938 (PreStartScreen) AppModule slot 4 TryExit; returns 1 once float +4 >= 0.75
+002326d8	InitLoadScreen_TryExit	high	vt 47d8f0 (InitLoadScreen) AppModule slot 4 TryExit; sets +8=1, returns 1 when fade level (gm+0xa4 +4) == 0
+00232710	cPreGameLoadScreen_Load	high	vt 47d8a8 (cPreGameLoadScreen) AppModule slot 2 Load; empty
+00232718	cPreFELoadScreen_Load	high	vt 47d860 (cPreFELoadScreen) AppModule slot 2 Load; empty
+002327b0	cPreGameLoadScreen_TryExit	high	vt 47d8a8 AppModule slot 4 TryExit; sets +4=1, returns 1 when fade level == 0
+002327e8	cPreFELoadScreen_TryExit	high	vt 47d860 AppModule slot 4 TryExit; sets +4=1, returns 1 when fade level == 0
+00233b88	GameStateQuit_Exit	high	vt 47d690 (GameStateQuit) GameState slot 7 Exit (slots 5/6/7 Enter/Update/Exit); empty
+002355b0	GameStateReset_v08	high	vt 47d428 (GameStateReset) GameState slot 8 (base returns 1); returns field +0x10 == 5
+00236af0	GameStateEventSwitchLoad_Exit	high	vt 47d2c8 GameState slot 7 Exit; empty
+00236f90	GameStateFinishCinematic_Exit	high	vt 47d1c0 GameState slot 7 Exit; clears gm->+0x84->+0xc->+0x8c
+00237030	GameStateReplayPlayback_Update	high	vt 47d168 GameState slot 6 Update; empty
+002398e8	GMHandler0_v06	med	vt 47cfa0 (GMHandler0) slot 6 (GameModeMan_HandlerV06, called from RiderMetrix event handler); in mode 1 adds 60 to +0x78 timer of gp-0x480 and returns 1 until it reaches the race limit
+00239ce0	GMHandler0_v09	med	vt 47cfa0 slot 9 (GameModeMan_HandlerV09); returns per-rider entry at +0x28[a1]+4 when a2 <= count, else 0
+0023a070	GMHandler9_v06	med	vt 47ce68 (GMHandler9) slot 6; increments per-rider halfword counter, compares with other rider; mode-1 timer +0x78 += 60
+0023ac10	GMHandler1_v07	high	vt 47cf38 (GMHandler1) slot 7; empty
+00242978	OcclusionMan_CompareByDistance	med	qsort comparator passed by OcclusionMan_BuildVisible (8-byte elements); orders by float +4 ascending
+00243ab0	PreStartScreen_Load	high	vt 47d938 (PreStartScreen) AppModule slot 2 Load; empty
+00243cb0	GameState_OverlayEnter	high	GameState base vt 47d6e8 slot 2 (GameStateReset_OverlayEnter overrides); empty default shared by most game states
+00243cb8	GameState_OverlayUpdate	high	GameState base vt 47d6e8 slot 3; empty default
+00243cc0	GameState_OverlayExit	high	GameState base vt 47d6e8 slot 4; empty default
+00243cc8	GameState_Enter	high	GameState base vt 47d6e8 slot 5 Enter; empty default (GameStateIdle, ResetAI)
+00243cd0	GameState_Update	high	GameState base vt 47d6e8 slot 6 Update; empty default; runtime caller GameModule_ProcessStateChange
+00243cd8	GameState_Exit	high	GameState base vt 47d6e8 slot 7 Exit; empty default
+00243ce0	GameState_v08	high	GameState base vt 47d6e8 slot 8; returns 1 (GameStateReset_v08 overrides)
+00243ce8	GameState_v09	high	GameState base vt 47d6e8 slot 9; empty
+002443f0	GenericStreamPause_v02	high	vt 47d0e8 (GenericStreamPause) slot 2; returns a1; runtime caller GameModule_Render
+002443f8	GenericStreamPause_v03	high	vt 47d0e8 slot 3; returns 1
+00244528	GMHandler_Reset	high	GMHandler base vt 47d008 slot 2 (Reset in GMHandler0..9); empty
+00244530	GMHandler_v06	high	GMHandler base slot 6 (GameModeMan_HandlerV06), shared by handlers 1,2,5,6,8; returns 1
+00244538	GMHandler_v07	high	GMHandler base slot 7 (GameModeMan_HandlerV07), shared default; empty
+00244540	GMHandler_OnRiderFinished	high	GMHandler base vt 47d008 slot 8 OnRiderFinished (GameModeMan_OnRiderFinished); empty default (GMHandler2)
+00244548	GMHandler_v09	high	GMHandler base slot 9 (GameModeMan_HandlerV09), shared default; returns 0
+00244550	GMHandler_SaveState	high	GMHandler base slot 10 SaveState (GameModeMan_SaveState); empty default
+00244558	GMHandler_LoadState	high	GMHandler base slot 11 LoadState; empty default
+00244620	GMHandler9_SaveState	high	vt 47ce68 (GMHandler9) slot 10 SaveState; empty
+00244628	GMHandler9_LoadState	high	vt 47ce68 (GMHandler9) slot 11 LoadState; empty
+00244860	MCManager_NullCallback	med	installed by MCManager_ctor into most callback slots (+0x0, +0x8..+0x18, +0x24.. ); empty
+00244868	MCManager_NullCallbackRet0	med	installed by MCManager_ctor into callback slots +0x20, +0x64..+0x6c; returns 0
+00244870	MCManager_NullCallbackRet1	med	installed by MCManager_ctor into callback slot +0x30/+0x34; returns 1
+00244878	MCManager_NullChunkCallback	med	installed by MCManager_ctor into callback slots +0x4 and +0x1c ([7] = ReadSaveChunk per MemCardUI); returns 0
+002453e0	cFEStateProgressive_OnWidgetNotify	high	vt 47ca18 slot 20 OnWidgetNotify; returns 0 for event 6, else 0x101
+00245690	cGameLoadStateOutLodge_OnWidgetCreated	high	vt 47c878 slot 18 OnWidgetCreated; empty
+002458b0	cGameLoadStateConquer_OnWidgetCreated	high	vt 47c7a8 slot 18 OnWidgetCreated; empty
+00245b50	cFELoadHintState_OnWidgetCreated	high	vt 47c6d8 slot 18 OnWidgetCreated; empty
+00245db8	cFELoadStateInLodge_OnWidgetCreated	high	vt 47c538 slot 18 OnWidgetCreated; empty
+00245e30	GameModeMan_CompareByScore	med	qsort comparator in GameModeMan_SortByScore; compares table 0x536640[idx], larger first
+00245e78	GameModeMan_CompareByTime	med	qsort comparator in GameModeMan_SortByTime; compares table 0x536640[idx], smaller first
+00245ec0	GameModeMan_CompareStandings	med	second qsort comparator in GameModeMan_SortByScore/SortByTime (array 0x536730); orders by table 0x536708[idx], larger first
+00246268	cFEStateProgressiveVerifyPS2_OnWidgetNotify	high	vt 47da58 slot 20 OnWidgetNotify; returns 0 for event 6, else 0x101
+00253ad0	VidEngine_MemAlloc	med	installed by VidEngine_InstallMemHooks at 0x509430 (pair of VidEngine_MemFree at +4); MEM_AllocNamedAlignedHook with alignment raised to 0x40
+00255668	VD_SinkBase_Flush	high	VD sink base vt 4802b0 slot 6 (slots 2-5 __pure_virtual; VD_TextureSink slot 6 = VD_TextureSink_Flush); empty
+00256ba8	cDSockChannel_v05	high	vt 4812d0 (cDSockChannel) slot 5; returns float field +0x10 (base default returns a gp float constant)
+00259390	LobbyMan_NullLobbyCallback	med	passed as callback argument to LobbyApi_Create by LobbyMan_CreateLobbyApi; empty
+00266348	cSharedLoginMan_McCb_State0F	med	login-lib memcard callback table 0x442a18 entry 14 (between McFlush and McPoll); only sets op state gp+0x2e4 = 0xf
+00267dc8	cDSockChannel_BaseUpdate	med	channel base vt 481320 slot 3 (cDSockChannel_Update in derived vt 4812d0); empty
+00267dd0	cDSockChannel_BaseIsConnected	med	channel base vt 481320 slot 4; returns 0 (derived cDSockChannel slot 4 returns state +0xc == 2)
+00267dd8	cDSockChannel_Base_v05	high	channel base vt 481320 slot 5; returns float constant gp-0x4a5c (derived returns float +0x10)
+00267de8	cDSockChannel_Base_v06	high	channel base vt 481320 slot 6; returns 0 (derived returns 1)
+00267df0	cDSockChannel_BaseRecv	med	channel base vt 481320 slot 7 (cDSockChannel_Recv in derived); returns 0
+00267df8	cDSockChannel_BaseSend	med	channel base vt 481320 slot 8 (cDSockChannel_Send in derived); returns 0
+00267e00	cDSockChannel_IsConnected	med	vt 4812d0 (cDSockChannel) slot 4; returns state field +0xc == 2
+00267e10	cDSockChannel_v06	high	vt 4812d0 (cDSockChannel) slot 6; returns 1
+00269ec0	Path_InitAIFields	med	AIPaths vt 481478 slot 3; sets the fields read by Path_ReadAIField to defaults (+0x38 = 0x2e, +0x3c = 1)
+0026a068	Path_InitTrackFields	med	TrackPaths vt 481448 slot 3; clears float +0x38 read by Path_ReadTrackField
+0026a0b8	Path_HasEventInRangeReversed	med	TrackPaths vt 481448 slot 2; mirrors range about +0x38/Path_GetLength (like Path_QueryEventsReversed) then Path_HasEventInRange; runtime caller Rider_UpdateRaceProgress
+0026ac88	Path_HasEventInRange	med	AIPaths vt 481478 and base vt 4814a8 slot 2; scans 16-byte events (count +0, array +4) for type 0x12/0x14 overlapping [f12,f13]; caller Rider_UpdateAIPathProgress
+0026c410	Path_InitFields	med	base path vt 4814a8 slot 3 (AIPaths/TrackPaths override = Path_InitAIFields/InitTrackFields); empty
+0026c418	Path_ReadField	med	base path vt 4814a8 slot 4 (overrides Path_ReadAIField/Path_ReadTrackField); empty
+00272680	InSeq_CurveTrackStop	high	InSeq curve track vt 481a10 slot 2 (Stop, cf. InSeq_SpanTrackStop); clears fields +0x8..+0x24
+00273040	InSeq_SpanTrackGetNextEventTime	med	span track vt 4819b0 slot 6 (InSeq_ChannelAdvance sub-steps at vslot 6 next event time); min over active spans and next key, -1 if none
+002733e0	InSeq_EventTrackGetNextEventTime	med	event track vt 481950 slot 6; next key time (halfword +2 of current key) or -1
+002737e0	InSeq_RampTrackGetNextEventTime	med	ramp track vt 4818f0 slot 6; min over active ramps and next key, -1 if none
+002752f0	InSeq_CurveTrackGetValuePtr	med	curve track vt 481a10 slot 4; returns &this->value (+0x1c, written from Math_EvalCubic in Start/Update)
+002752f8	InSeq_CurveTrack_v05	high	curve track vt 481a10 slot 5; returns field +0x20
+00275300	InSeq_CurveTrackGetNextEventTime	med	curve track vt 481a10 slot 6; returns -1 (no discrete events)
+00275308	InSeq_CurveTrackGetType	med	curve track vt 481a10 slot 7; returns 0 (InSeq_ChannelStart track types: 0 curve,1 ramp,2 span,3 event)
+00275310	InSeq_CurveTrackGetChannel	med	curve track vt 481a10 slot 8; returns +0xc (3rd Start argument)
+00275318	InSeq_CurveTrackIsStarted	med	curve track vt 481a10 slot 9; returns data pointer +8 != 0
+00275328	InSeq_SpanTrackGetValuePtr	med	span track vt 4819b0 slot 4; returns this+0x28
+00275330	InSeq_SpanTrack_v05	high	span track vt 4819b0 slot 5; returns field +0x24
+00275338	InSeq_SpanTrackGetType	med	span track vt 4819b0 slot 7; returns 2 (span)
+00275340	InSeq_SpanTrackGetChannel	med	span track vt 4819b0 slot 8; returns +0xc
+00275348	InSeq_SpanTrackIsStarted	med	span track vt 4819b0 slot 9; returns +8 != 0
+00275358	InSeq_EventTrackGetValuePtr	med	event track vt 481950 slot 4; returns this+0x20
+00275360	InSeq_EventTrack_v05	high	event track vt 481950 slot 5; returns field +0x1c
+00275368	InSeq_EventTrackGetType	med	event track vt 481950 slot 7; returns 3 (event)
+00275370	InSeq_EventTrackGetChannel	med	event track vt 481950 slot 8; returns +0xc
+00275378	InSeq_EventTrackIsStarted	med	event track vt 481950 slot 9; returns +8 != 0
+00275388	InSeq_RampTrackGetValuePtr	med	ramp track vt 4818f0 slot 4; returns this+0x24
+00275390	InSeq_RampTrack_v05	high	ramp track vt 4818f0 slot 5; returns field +0x20
+00275398	InSeq_RampTrackGetType	med	ramp track vt 4818f0 slot 7; returns 1 (ramp)
+002753a0	InSeq_RampTrackGetChannel	med	ramp track vt 4818f0 slot 8; returns +0xc
+002753a8	InSeq_RampTrackIsStarted	med	ramp track vt 4818f0 slot 9; returns +8 != 0
+0027c040	ScriptDummyObj_AcceptCommand	med	binding vt 4822e0 (ScriptDummyObj) slot 5 (= RiderScriptObj_AcceptCommand / ScriptViewObj_AcceptCommand slot); returns command == 6
+002808d8	ScriptAudioObj_AcceptCommand	med	binding vt 482260 (ScriptAudioObj) slot 5 AcceptCommand; returns command == 7
+00281168	ScriptViewObj_GetBindingCount	med	ScriptObj vt 482398 (ScriptViewObj) slot 6 (ScriptObj_Pause/Resume iterate bindings via slots 6/7; pure in base 482558); returns 10
+00281170	ScriptViewObj_GetBinding	med	ScriptObj vt 482398 slot 7; returns binding i (i==0 -> this+0x10, else this+8+0x14*i)
+002847a8	DataInstanceMan_OnDataAdded	med	DataInstanceMan base vt 4825a0 slot 2 (ScriptEngine_OnDataAdded in derived vt 482168); empty
+002847b0	DataInstanceMan_OnDataRemoved	med	DataInstanceMan base vt 4825a0 slot 3 (ScriptEngine_OnDataRemoved in derived); empty
+002847b8	DataInstanceMan_v04	high	DataInstanceMan vt 4825a0 slot 4, shared by ScriptEngine data-listener vt 482168; empty
+002847c0	DataInstanceMan_v05	high	DataInstanceMan vt 4825a0 slot 5, shared by ScriptEngine data-listener vt 482168; empty
+002847e8	ScriptEngine_SeqListenerOnAdvance	med	seq-listener base vt 482450 slot 2 (ScriptEngine_OnSeqAdvance in vt 482100); empty default
+002847f0	ScriptEngine_SeqListenerOnEnd	med	seq-listener base vt 482450 slot 3 (ScriptEngine_OnSeqEnd in vt 482100); empty default
+002847f8	ScriptEngine_SeqListener_v05	high	seq-listener vts 482450/482100 slot 5 (between OnStop and FindCommandHandler); returns 1
+00284800	ScriptEngine_SeqListener_v07	high	seq-listener vts 482450/482100 slot 7; empty
+00284808	ScriptEngine_SeqListener_v08	high	seq-listener vts 482450/482100 slot 8; empty
+00284810	ScriptEngine_SeqListener_v11	high	seq-listener vts 482450/482100 slot 11 (after OnCreate/OnDestroy); returns 1
+00284820	ScriptEngine_ScriptDbLoadBank	med	ScriptDb base vt 4824b8 slot 7 (ScriptEngine_LoadScriptBank in ScriptEngine vt 4821b8); returns 0
+00284828	ScriptEngine_ScriptDbCancelBank	med	ScriptDb base vt 4824b8 slot 8 (ScriptEngine_CancelScriptBank in derived); empty
+00284830	ScriptEngine_ScriptDbUnloadBank	med	ScriptDb base vt 4824b8 slot 9 (ScriptEngine_UnloadScriptBank in derived); empty
+00284838	ScriptEngine_ScriptDb_v10	high	ScriptDb base vt 4824b8 slot 10 (ScriptEngine_v10 in derived); empty
+00284840	ScriptEngine_ScriptDb_v11	high	slot 11 of ScriptDb base vt 4824b8 and ScriptEngine vt 4821b8 (not overridden); empty
+00284848	ScriptEngine_ScriptDb_v12	high	ScriptDb base vt 4824b8 slot 12 (ScriptEngine_v12 in derived); empty
+00284878	ScriptBinding_Apply	med	ScriptBinding base vt 482418 slot 3 (ScriptViewObj_Apply/ScriptAudioObj_Apply override); empty, shared by RiderScriptObj and ScriptCamBinding
+00284880	ScriptBinding_Tick	med	ScriptBinding base vt 482418 slot 4 (ScriptViewObj_Tick overrides); empty default shared by 4 binding vtables
+00284888	ScriptBinding_AcceptCommand	med	ScriptBinding base vt 482418 slot 5 (ScriptViewObj/RiderScriptObj/ScriptCamBinding_AcceptCommand); returns 1
+00284940	ScriptDummyObj_GetBindingCount	med	ScriptObj vt 482318 (ScriptDummyObj) slot 6; returns 1
+00284948	ScriptDummyObj_GetBinding	med	ScriptObj vt 482318 slot 7; returns this (single embedded binding)
+002849b8	ScriptAudioObj_GetBindingCount	med	ScriptObj vt 482298 (ScriptAudioObj) slot 6; returns 1
+002849c0	ScriptAudioObj_GetBinding	med	ScriptObj vt 482298 slot 7; returns this
+00284a88	ScriptObjCam_GetBindingCount	med	vt 4820b8 (ScriptObjCam) ScriptObj slot 6; returns 0
+00284a90	ScriptObjCam_GetBinding	med	vt 4820b8 ScriptObj slot 7; returns 0 (no bindings)
+00284ad8	cTransitionMan_ScriptGetBindingCount	med	cTransitionMan ScriptObj vts 482060/488100 slot 6; returns 0
+00284ae0	cTransitionMan_ScriptGetBinding	med	cTransitionMan ScriptObj vts 482060/488100 slot 7; returns 0
+00284b50	RiderScriptObj_GetBindingCount	med	RiderScriptObj ScriptObj slot 6 (vt 482018 family; refs in six Rider vtables 0x458240..0x458928); returns 1
+00284b58	RiderScriptObj_GetBinding	med	RiderScriptObj ScriptObj slot 7 in the six Rider vtables; returns this
+0028bf38	SndBankMan_InitBankRequest	med	SndBankMan interface slot 5 (after ReleaseBank/GetBankBuffer/GetBankBufferSize) in SSXAudioSystem, CrowdAudio, SpeechSystem, MusicPlayer, StreamArray vtables; SndBankMan_InitLoadRequest on bank entry +0xacc + idx*0x60
+00291430	SSXAudioSystem_UpdateAmbienceLoop	med	voice PMF callback 0x4a3680 set by SSXAudioSystem_StartAmbienceLoop (next to StopAmbienceLoop); empty; runtime caller UpdateBankMonitorInstance
+00296e18	SSXAudioSystem_UpdateWipeoutLoop	med	voice PMF callback 0x4a36b0 set by SSXAudioSystem_StartWipeoutLoop; empty
+00297430	SSXAudioSystem_UpdateWipeoutLoop2	med	voice PMF callback 0x4a36b8 set by SSXAudioSystem_StartWipeoutLoop2; empty
+00298d88	SSXAudioSystem_UpdateBoostLoop	low	voice PMF callback 0x4a36a8 in the board-loop callback table (removed by StopBoardLoops), placed before StartBoostSound; returns 1
+002a4a68	SSXAudioSystem_SectionSpeechTimerCallback	med	timer PMF 0x4a36f0, placed after Start/IsSectionSpeechPending; clears pending flag +0x5818, returns 1
+002a9128	PS2SoundManager_ReleaseSpuBlock	med	vt 4835f8 slot 5; marks SPU block a1 free (+0x10=1); if it is the top block pops it and further freed blocks via PS2SoundManager_FreeSpuBlock, else inserts into sorted pending list +0x318
+002a9250	PS2SoundManager_SetSpuMemBase	med	vt 4835f8 slot 6; sets +0x31c=1 and SND_SpuMemSetBase from SPU block a1 (base +4, size +8)
+002b3e20	MusicPlayer_FadeTimerCallback	med	PMF 0x4a3850 next to MusicPlayer timer callbacks, placed after MusicPlayer_FadeSongVolume; steps volume +0x410 by +0x40c toward +0x414, writes song volume byte +0x40, returns 1 when done
+002bacf0	SpeechHostBase_GetSpeechCategory	med	slot 2 of abstract interface vt 483870 (vptr set by SSXAudioSystem_BaseCtor at +0x571c and SpeechSystem_ctor at +0x1bc); SSXAudioSystem override vt 4836d8 slot 2 = SSXAudioSystem_GetSpeechCategory; returns -1
+002bacf8	SpeechHostBase_GetSpeechCategoryVolume	med	slot 3 of interface vt 483870; SSXAudioSystem override = SSXAudioSystem_GetSpeechCategoryVolume; returns 0
+002bc500	tWPIGD_Base_GetMusicTrigger08	high	tWPIGD getter slot 1 default (returns 0 = no MusicTrigger param); in all tWPIGD vtables except MusicTrigger; MusicTrigger overrides it with &this+0x8
+002bc508	tWPIGD_Base_GetMusicTrigger10	high	tWPIGD getter slot 2 default (returns 0 = no MusicTrigger param); in all tWPIGD vtables except MusicTrigger; MusicTrigger overrides it with &this+0x10
+002bc510	tWPIGD_Base_GetMix08	high	tWPIGD getter slot 3 default (returns 0 = no Mix param); in all tWPIGD vtables except Mix; Mix overrides it with &this+0x8
+002bc518	tWPIGD_Base_GetAmbience08	high	tWPIGD getter slot 4 default (returns 0 = no Ambience param); in all tWPIGD vtables except Ambience; Ambience overrides it with &this+0x8
+002bc520	tWPIGD_Base_GetSpeech08	high	tWPIGD getter slot 5 default (returns 0 = no Speech param); in all tWPIGD vtables except Speech; Speech overrides it with &this+0x8
+002bc528	tWPIGD_Base_GetCamera08	high	tWPIGD getter slot 6 default (returns 0 = no Camera param); in all tWPIGD vtables except Camera; Camera overrides it with &this+0x8
+002bc530	tWPIGD_Base_GetFog08	high	tWPIGD getter slot 7 default (returns 0 = no Fog param); in all tWPIGD vtables except Fog; Fog overrides it with &this+0x8
+002bc538	tWPIGD_Base_GetFog10	high	tWPIGD getter slot 8 default (returns 0 = no Fog param); in all tWPIGD vtables except Fog; Fog overrides it with &this+0x10
+002bc540	tWPIGD_Base_GetFog18	high	tWPIGD getter slot 9 default (returns 0 = no Fog param); in all tWPIGD vtables except Fog; Fog overrides it with &this+0x18
+002bc548	tWPIGD_Base_GetFog20	high	tWPIGD getter slot 10 default (returns 0 = no Fog param); in all tWPIGD vtables except Fog; Fog overrides it with &this+0x20
+002bc550	tWPIGD_Base_GetFog28	high	tWPIGD getter slot 11 default (returns 0 = no Fog param); in all tWPIGD vtables except Fog; Fog overrides it with &this+0x28
+002bc558	tWPIGD_Base_GetFog30	high	tWPIGD getter slot 12 default (returns 0 = no Fog param); in all tWPIGD vtables except Fog; Fog overrides it with &this+0x30
+002bc560	tWPIGD_Base_GetLightGlow08	high	tWPIGD getter slot 13 default (returns 0 = no LightGlow param); in all tWPIGD vtables except LightGlow; LightGlow overrides it with &this+0x8
+002bc568	tWPIGD_Base_GetLightGlow10	high	tWPIGD getter slot 14 default (returns 0 = no LightGlow param); in all tWPIGD vtables except LightGlow; LightGlow overrides it with &this+0x10
+002bc570	tWPIGD_Base_GetLightGlow18	high	tWPIGD getter slot 15 default (returns 0 = no LightGlow param); in all tWPIGD vtables except LightGlow; LightGlow overrides it with &this+0x18
+002bc578	tWPIGD_Base_GetLightGlow20	high	tWPIGD getter slot 16 default (returns 0 = no LightGlow param); in all tWPIGD vtables except LightGlow; LightGlow overrides it with &this+0x20
+002bc580	tWPIGD_Base_GetLightGlow28	high	tWPIGD getter slot 17 default (returns 0 = no LightGlow param); in all tWPIGD vtables except LightGlow; LightGlow overrides it with &this+0x28
+002bc588	tWPIGD_Base_GetLightGlow30	high	tWPIGD getter slot 18 default (returns 0 = no LightGlow param); in all tWPIGD vtables except LightGlow; LightGlow overrides it with &this+0x30
+002bc590	tWPIGD_Base_GetLightGlow38	high	tWPIGD getter slot 19 default (returns 0 = no LightGlow param); in all tWPIGD vtables except LightGlow; LightGlow overrides it with &this+0x38
+002bc598	tWPIGD_Base_GetScreenTintRed	high	tWPIGD getter slot 20 default (returns 0 = no ScreenTint param); in all tWPIGD vtables except ScreenTint; ScreenTint overrides it with &this+0x8
+002bc5a0	tWPIGD_Base_GetScreenTintGreen	high	tWPIGD getter slot 21 default (returns 0 = no ScreenTint param); in all tWPIGD vtables except ScreenTint; ScreenTint overrides it with &this+0x10
+002bc5a8	tWPIGD_Base_GetScreenTintBlue	high	tWPIGD getter slot 22 default (returns 0 = no ScreenTint param); in all tWPIGD vtables except ScreenTint; ScreenTint overrides it with &this+0x18
+002bc5b0	tWPIGD_Base_GetScreenFillRed	high	tWPIGD getter slot 23 default (returns 0 = no ScreenTint param); in all tWPIGD vtables except ScreenTint; ScreenTint overrides it with &this+0x20
+002bc5b8	tWPIGD_Base_GetScreenFillGreen	high	tWPIGD getter slot 24 default (returns 0 = no ScreenTint param); in all tWPIGD vtables except ScreenTint; ScreenTint overrides it with &this+0x28
+002bc5c0	tWPIGD_Base_GetScreenFillBlue	high	tWPIGD getter slot 25 default (returns 0 = no ScreenTint param); in all tWPIGD vtables except ScreenTint; ScreenTint overrides it with &this+0x30
+002bc5c8	tWPIGD_Base_GetSkyBox08	high	tWPIGD getter slot 26 default (returns 0 = no SkyBox param); in all tWPIGD vtables except SkyBox; SkyBox overrides it with &this+0x8
+002bc5d0	tWPIGD_Base_GetSunElevation	high	tWPIGD getter slot 27 default (returns 0 = no Sun param); in all tWPIGD vtables except Sun; Sun overrides it with &this+0x8
+002bc5d8	tWPIGD_Base_GetSunAzimuth	high	tWPIGD getter slot 28 default (returns 0 = no Sun param); in all tWPIGD vtables except Sun; Sun overrides it with &this+0x10
+002bc5e0	tWPIGD_Base_GetSunRed	high	tWPIGD getter slot 29 default (returns 0 = no Sun param); in all tWPIGD vtables except Sun; Sun overrides it with &this+0x18
+002bc5e8	tWPIGD_Base_GetSunGreen	high	tWPIGD getter slot 30 default (returns 0 = no Sun param); in all tWPIGD vtables except Sun; Sun overrides it with &this+0x20
+002bc5f0	tWPIGD_Base_GetSunBlue	high	tWPIGD getter slot 31 default (returns 0 = no Sun param); in all tWPIGD vtables except Sun; Sun overrides it with &this+0x28
+002bc5f8	tWPIGD_Base_GetSunIntensity	high	tWPIGD getter slot 32 default (returns 0 = no Sun param); in all tWPIGD vtables except Sun; Sun overrides it with &this+0x30
+002bc600	tWPIGD_Base_GetSunTexture	high	tWPIGD getter slot 33 default (returns 0 = no Sun param); in all tWPIGD vtables except Sun; Sun overrides it with &this+0x38
+002bc608	tWPIGD_Base_GetSunFlareIntensity	high	tWPIGD getter slot 34 default (returns 0 = no Sun param); in all tWPIGD vtables except Sun; Sun overrides it with &this+0x40
+002bc610	tWPIGD_Base_GetSunSize	high	tWPIGD getter slot 35 default (returns 0 = no Sun param); in all tWPIGD vtables except Sun; Sun overrides it with &this+0x48
+002bc618	tWPIGD_Base_GetSurface08	high	tWPIGD getter slot 36 default (returns 0 = no Surface param); in all tWPIGD vtables except Surface; Surface overrides it with &this+0x8
+002bc620	tWPIGD_Base_GetIrradianceName0	high	tWPIGD getter slot 37 default (returns 0 = no Lighting param); in all tWPIGD vtables except Lighting; Lighting overrides it with &this+0x8
+002bc628	tWPIGD_Base_GetIrradianceName1	high	tWPIGD getter slot 38 default (returns 0 = no Lighting param); in all tWPIGD vtables except Lighting; Lighting overrides it with &this+0x18
+002bc630	tWPIGD_Base_GetIrradianceName2	high	tWPIGD getter slot 39 default (returns 0 = no Lighting param); in all tWPIGD vtables except Lighting; Lighting overrides it with &this+0x28
+002bc638	tWPIGD_Base_GetIrradianceName3	high	tWPIGD getter slot 40 default (returns 0 = no Lighting param); in all tWPIGD vtables except Lighting; Lighting overrides it with &this+0x38
+002bc640	tWPIGD_Base_GetLighting48	high	tWPIGD getter slot 41 default (returns 0 = no Lighting param); in all tWPIGD vtables except Lighting; Lighting overrides it with &this+0x48 (WorldPainter_GetLighting28 calls this slot)
+002bc648	tWPIGD_Base_GetLighting50	high	tWPIGD getter slot 42 default (returns 0 = no Lighting param); in all tWPIGD vtables except Lighting; Lighting overrides it with &this+0x50 (WorldPainter_GetLighting30 calls this slot)
+002bc650	tWPIGD_Base_GetWeather08	high	tWPIGD getter slot 43 default (returns 0 = no Weather param); in all tWPIGD vtables except Weather; Weather overrides it with &this+0x8
+002bc658	tWPIGD_Base_GetWeather10	high	tWPIGD getter slot 44 default (returns 0 = no Weather param); in all tWPIGD vtables except Weather; Weather overrides it with &this+0x10
+002bc660	tWPIGD_Base_GetWeather18	high	tWPIGD getter slot 45 default (returns 0 = no Weather param); in all tWPIGD vtables except Weather; Weather overrides it with &this+0x18
+002bc668	tWPIGD_Base_GetWeather20	high	tWPIGD getter slot 46 default (returns 0 = no Weather param); in all tWPIGD vtables except Weather; Weather overrides it with &this+0x20
+002bc670	tWPIGD_Base_GetWeather28	high	tWPIGD getter slot 47 default (returns 0 = no Weather param); in all tWPIGD vtables except Weather; Weather overrides it with &this+0x28
+002bc678	tWPIGD_Base_GetWeather30	high	tWPIGD getter slot 48 default (returns 0 = no Weather param); in all tWPIGD vtables except Weather; Weather overrides it with &this+0x30
+002bc680	tWPIGD_Base_GetWeather38	high	tWPIGD getter slot 49 default (returns 0 = no Weather param); in all tWPIGD vtables except Weather; Weather overrides it with &this+0x38
+002bc688	tWPIGD_Base_GetWeather40	high	tWPIGD getter slot 50 default (returns 0 = no Weather param); in all tWPIGD vtables except Weather; Weather overrides it with &this+0x40
+002bc690	tWPIGD_Base_GetWeather48	high	tWPIGD getter slot 51 default (returns 0 = no Weather param); in all tWPIGD vtables except Weather; Weather overrides it with &this+0x48
+002bc698	tWPIGD_Base_GetWeather50	high	tWPIGD getter slot 52 default (returns 0 = no Weather param); in all tWPIGD vtables except Weather; Weather overrides it with &this+0x50
+002bc6a0	tWPIGD_Base_GetWeather58	high	tWPIGD getter slot 53 default (returns 0 = no Weather param); in all tWPIGD vtables except Weather; Weather overrides it with &this+0x58
+002bc6a8	tWPIGD_Base_GetWeather60	high	tWPIGD getter slot 54 default (returns 0 = no Weather param); in all tWPIGD vtables except Weather; Weather overrides it with &this+0x60
+002bc6b0	tWPIGD_Base_GetWeather68	high	tWPIGD getter slot 55 default (returns 0 = no Weather param); in all tWPIGD vtables except Weather; Weather overrides it with &this+0x68
+002bc6b8	tWPIGD_Base_GetWeather70	high	tWPIGD getter slot 56 default (returns 0 = no Weather param); in all tWPIGD vtables except Weather; Weather overrides it with &this+0x70
+002bc6c0	tWPIGD_Base_GetWeather78	high	tWPIGD getter slot 57 default (returns 0 = no Weather param); in all tWPIGD vtables except Weather; Weather overrides it with &this+0x78
+002bc6c8	tWPIGD_Base_GetWeather80	high	tWPIGD getter slot 58 default (returns 0 = no Weather param); in all tWPIGD vtables except Weather; Weather overrides it with &this+0x80
+002bc6d0	tWPIGD_Base_GetWeather88	high	tWPIGD getter slot 59 default (returns 0 = no Weather param); in all tWPIGD vtables except Weather; Weather overrides it with &this+0x88
+002bc6d8	tWPIGD_Base_GetWeather90	high	tWPIGD getter slot 60 default (returns 0 = no Weather param); in all tWPIGD vtables except Weather; Weather overrides it with &this+0x90
+002bc6e0	tWPIGD_Base_GetWeather98	high	tWPIGD getter slot 61 default (returns 0 = no Weather param); in all tWPIGD vtables except Weather; Weather overrides it with &this+0x98
+002bc6e8	tWPIGD_Base_GetDanger08	high	tWPIGD getter slot 62 default (returns 0 = no Danger param); in all tWPIGD vtables except Danger; Danger overrides it with &this+0x8
+002bc6f0	tWPIGD_Base_GetDanger10	high	tWPIGD getter slot 63 default (returns 0 = no Danger param); in all tWPIGD vtables except Danger; Danger overrides it with &this+0x10
+002bda28	tWPIGD_MusicTrigger_v67	high	tWPIGD_MusicTrigger vt 485af8 slot 67 (after SaveState/LoadState/Blend); empty
+002bda30	tWPIGD_Ambience_v67	high	tWPIGD_Ambience vt 485688 slot 67 (after SaveState/LoadState/Blend); empty
+002bda38	tWPIGD_Camera_v67	high	tWPIGD_Camera vt 485218 slot 67 (after SaveState/LoadState/Blend); empty
+002bda40	tWPIGD_Danger_v67	high	tWPIGD_Danger vt 483e20 slot 67 (after SaveState/LoadState/Blend); empty
+002bda48	tWPIGD_Fog_v67	high	tWPIGD_Fog vt 484fe0 slot 67 (after SaveState/LoadState/Blend); empty
+002bda50	tWPIGD_LightGlow_v67	high	tWPIGD_LightGlow vt 484da8 slot 67 (after SaveState/LoadState/Blend); empty
+002bda58	tWPIGD_Lighting_v67	high	tWPIGD_Lighting vt 484290 slot 67 (after SaveState/LoadState/Blend); empty
+002bda60	tWPIGD_Mix_v67	high	tWPIGD_Mix vt 4858c0 slot 67 (after SaveState/LoadState/Blend); empty
+002bda68	tWPIGD_ScreenTint_v67	high	tWPIGD_ScreenTint vt 484b70 slot 67 (after SaveState/LoadState/Blend); empty
+002bda70	tWPIGD_SkyBox_v67	high	tWPIGD_SkyBox vt 484938 slot 67 (after SaveState/LoadState/Blend); empty
+002bda78	tWPIGD_Speech_v67	high	tWPIGD_Speech vt 485450 slot 67 (after SaveState/LoadState/Blend); empty
+002bda80	tWPIGD_Sun_v67	high	tWPIGD_Sun vt 484700 slot 67 (after SaveState/LoadState/Blend); empty
+002bda88	tWPIGD_Surface_v67	high	tWPIGD_Surface vt 4844c8 slot 67 (after SaveState/LoadState/Blend); empty
+002bda90	tWPIGD_Weather_v67	high	tWPIGD_Weather vt 484058 slot 67 (after SaveState/LoadState/Blend); empty
+002bda98	tWPIGD_MusicTrigger_IsEqual	med	tWPIGD_MusicTrigger vt 485af8 slot 68 (= tWPIGD_Lighting_IsEqual slot); compares param fields with the data record a1
+002bdac8	tWPIGD_Mix_IsEqual	med	tWPIGD_Mix vt 4858c0 slot 68 (= tWPIGD_Lighting_IsEqual slot); compares param fields with the data record a1
+002bdae0	tWPIGD_Ambience_IsEqual	med	tWPIGD_Ambience vt 485688 slot 68 (= tWPIGD_Lighting_IsEqual slot); compares param fields with the data record a1
+002bdaf8	tWPIGD_Speech_IsEqual	med	tWPIGD_Speech vt 485450 slot 68 (= tWPIGD_Lighting_IsEqual slot); compares param fields with the data record a1
+002bdb10	tWPIGD_Camera_IsEqual	med	tWPIGD_Camera vt 485218 slot 68 (= tWPIGD_Lighting_IsEqual slot); compares param fields with the data record a1
+002bdb38	tWPIGD_Fog_IsEqual	med	tWPIGD_Fog vt 484fe0 slot 68 (= tWPIGD_Lighting_IsEqual slot); compares param fields with the data record a1
+002bdbd0	tWPIGD_LightGlow_IsEqual	med	tWPIGD_LightGlow vt 484da8 slot 68 (= tWPIGD_Lighting_IsEqual slot); compares param fields with the data record a1
+002bdc78	tWPIGD_ScreenTint_IsEqual	med	tWPIGD_ScreenTint vt 484b70 slot 68 (= tWPIGD_Lighting_IsEqual slot); compares param fields with the data record a1
+002bdd10	tWPIGD_SkyBox_IsEqual	med	tWPIGD_SkyBox vt 484938 slot 68 (= tWPIGD_Lighting_IsEqual slot); compares param fields with the data record a1
+002bdd38	tWPIGD_Sun_IsEqual	med	tWPIGD_Sun vt 484700 slot 68 (= tWPIGD_Lighting_IsEqual slot); compares param fields with the data record a1
+002bde08	tWPIGD_Surface_IsEqual	med	tWPIGD_Surface vt 4844c8 slot 68 (= tWPIGD_Lighting_IsEqual slot); compares param fields with the data record a1
+002bdee0	tWPIGD_Weather_IsEqual	med	tWPIGD_Weather vt 484058 slot 68 (= tWPIGD_Lighting_IsEqual slot); compares param fields with the data record a1
+002be078	tWPIGD_Danger_IsEqual	med	tWPIGD_Danger vt 483e20 slot 68 (= tWPIGD_Lighting_IsEqual slot); compares param fields with the data record a1
+002be0b0	tWPIGD_MusicTrigger_SetDefaults	med	tWPIGD_MusicTrigger vt 485af8 slot 69; resets +0 and param fields to defaults
+002be0c8	tWPIGD_Mix_SetDefaults	med	tWPIGD_Mix vt 4858c0 slot 69; resets +0 and param fields to defaults
+002be0d8	tWPIGD_Ambience_SetDefaults	med	tWPIGD_Ambience vt 485688 slot 69; resets +0 and param fields to defaults
+002be0e8	tWPIGD_Speech_SetDefaults	med	tWPIGD_Speech vt 485450 slot 69; resets +0 and param fields to defaults
+002be0f8	tWPIGD_Camera_SetDefaults	med	tWPIGD_Camera vt 485218 slot 69; resets +0 and param fields to defaults
+002be108	tWPIGD_Fog_SetDefaults	med	tWPIGD_Fog vt 484fe0 slot 69; resets +0 and param fields to defaults
+002be140	tWPIGD_LightGlow_SetDefaults	med	tWPIGD_LightGlow vt 484da8 slot 69; resets +0 and param fields to defaults
+002be170	tWPIGD_ScreenTint_SetDefaults	med	tWPIGD_ScreenTint vt 484b70 slot 69; resets +0 and param fields to defaults
+002be198	tWPIGD_SkyBox_SetDefaults	med	tWPIGD_SkyBox vt 484938 slot 69; resets +0 and param fields to defaults
+002be1a8	tWPIGD_Sun_SetDefaults	med	tWPIGD_Sun vt 484700 slot 69; resets +0 and param fields to defaults
+002be1e0	tWPIGD_Surface_SetDefaults	med	tWPIGD_Surface vt 4844c8 slot 69; resets +0 and param fields to defaults
+002be1f8	tWPIGD_Lighting_SetDefaults	med	tWPIGD_Lighting vt 484290 slot 69; resets +0 and param fields to defaults
+002be258	tWPIGD_Weather_SetDefaults	med	tWPIGD_Weather vt 484058 slot 69; resets +0 and param fields to defaults
+002be2c8	tWPIGD_Danger_SetDefaults	med	tWPIGD_Danger vt 483e20 slot 69; resets +0 and param fields to defaults
+002c1458	tWPIGD_Base_v67	high	abstract tWPIGD base vt 485d50 slot 67 (slots 64-66 SaveState/LoadState/Blend and 68/69 are __pure_virtual); empty
+002c1490	tWPIGD_MusicTrigger_Get08	high	tWPIGD_MusicTrigger vt 485af8 slot 1; returns &this+0x8 (WorldPainter_Get<Type><Offset> slot)
+002c1498	tWPIGD_MusicTrigger_Get10	high	tWPIGD_MusicTrigger vt 485af8 slot 2; returns &this+0x10 (WorldPainter_Get<Type><Offset> slot)
+002c14a0	tWPIGD_Mix_Get08	high	tWPIGD_Mix vt 4858c0 slot 3; returns &this+0x8 (WorldPainter_Get<Type><Offset> slot)
+002c14a8	tWPIGD_Ambience_Get08	high	tWPIGD_Ambience vt 485688 slot 4; returns &this+0x8 (WorldPainter_Get<Type><Offset> slot)
+002c14b0	tWPIGD_Speech_Get08	high	tWPIGD_Speech vt 485450 slot 5; returns &this+0x8 (WorldPainter_Get<Type><Offset> slot)
+002c14b8	tWPIGD_Camera_Get08	high	tWPIGD_Camera vt 485218 slot 6; returns &this+0x8 (WorldPainter_Get<Type><Offset> slot)
+002c14c0	tWPIGD_Fog_Get08	high	tWPIGD_Fog vt 484fe0 slot 7; returns &this+0x8 (WorldPainter_Get<Type><Offset> slot)
+002c14c8	tWPIGD_Fog_Get10	high	tWPIGD_Fog vt 484fe0 slot 8; returns &this+0x10 (WorldPainter_Get<Type><Offset> slot)
+002c14d0	tWPIGD_Fog_Get18	high	tWPIGD_Fog vt 484fe0 slot 9; returns &this+0x18 (WorldPainter_Get<Type><Offset> slot)
+002c14d8	tWPIGD_Fog_Get20	high	tWPIGD_Fog vt 484fe0 slot 10; returns &this+0x20 (WorldPainter_Get<Type><Offset> slot)
+002c14e0	tWPIGD_Fog_Get28	high	tWPIGD_Fog vt 484fe0 slot 11; returns &this+0x28 (WorldPainter_Get<Type><Offset> slot)
+002c14e8	tWPIGD_Fog_Get30	high	tWPIGD_Fog vt 484fe0 slot 12; returns &this+0x30 (WorldPainter_Get<Type><Offset> slot)
+002c14f0	tWPIGD_LightGlow_Get08	high	tWPIGD_LightGlow vt 484da8 slot 13; returns &this+0x8 (WorldPainter_Get<Type><Offset> slot)
+002c14f8	tWPIGD_LightGlow_Get10	high	tWPIGD_LightGlow vt 484da8 slot 14; returns &this+0x10 (WorldPainter_Get<Type><Offset> slot)
+002c1500	tWPIGD_LightGlow_Get18	high	tWPIGD_LightGlow vt 484da8 slot 15; returns &this+0x18 (WorldPainter_Get<Type><Offset> slot)
+002c1508	tWPIGD_LightGlow_Get20	high	tWPIGD_LightGlow vt 484da8 slot 16; returns &this+0x20 (WorldPainter_Get<Type><Offset> slot)
+002c1510	tWPIGD_LightGlow_Get28	high	tWPIGD_LightGlow vt 484da8 slot 17; returns &this+0x28 (WorldPainter_Get<Type><Offset> slot)
+002c1518	tWPIGD_LightGlow_Get30	high	tWPIGD_LightGlow vt slot 18 (inherited getter override); returns &this+0x30; race caller WorldPainter_GetLightGlow30
+002c1520	tWPIGD_LightGlow_Get38	high	tWPIGD_LightGlow vt slot 19 (inherited getter override); returns &this+0x38; race caller WorldPainter_GetLightGlow38
+002c1528	tWPIGD_ScreenTint_GetTintRed	high	tWPIGD_ScreenTint vt slot 20 (inherited getter override); returns &this+0x8; race caller WorldPainter_GetScreenTintRed
+002c1530	tWPIGD_ScreenTint_GetTintGreen	high	tWPIGD_ScreenTint vt slot 21 (inherited getter override); returns &this+0x10; race caller WorldPainter_GetScreenTintGreen
+002c1538	tWPIGD_ScreenTint_GetTintBlue	high	tWPIGD_ScreenTint vt slot 22 (inherited getter override); returns &this+0x18; race caller WorldPainter_GetScreenTintBlue
+002c1540	tWPIGD_ScreenTint_GetFillRed	high	tWPIGD_ScreenTint vt slot 23 (inherited getter override); returns &this+0x20; race caller WorldPainter_GetScreenFillRed
+002c1548	tWPIGD_ScreenTint_GetFillGreen	high	tWPIGD_ScreenTint vt slot 24 (inherited getter override); returns &this+0x28; race caller WorldPainter_GetScreenFillGreen
+002c1550	tWPIGD_ScreenTint_GetFillBlue	high	tWPIGD_ScreenTint vt slot 25 (inherited getter override); returns &this+0x30; race caller WorldPainter_GetScreenFillBlue
+002c1558	tWPIGD_SkyBox_Get08	high	tWPIGD_SkyBox vt slot 26 (inherited getter override); returns &this+0x8; race caller WorldPainter_GetSkyBox08
+002c1560	tWPIGD_Sun_GetElevation	high	tWPIGD_Sun vt slot 27 (inherited getter override); returns &this+0x8; race caller WorldPainter_GetSunElevation
+002c1568	tWPIGD_Sun_GetAzimuth	high	tWPIGD_Sun vt slot 28 (inherited getter override); returns &this+0x10; race caller WorldPainter_GetSunAzimuth
+002c1570	tWPIGD_Sun_GetRed	high	tWPIGD_Sun vt slot 29 (inherited getter override); returns &this+0x18; race caller WorldPainter_GetSunRed
+002c1578	tWPIGD_Sun_GetGreen	high	tWPIGD_Sun vt slot 30 (inherited getter override); returns &this+0x20; race caller WorldPainter_GetSunGreen
+002c1580	tWPIGD_Sun_GetBlue	high	tWPIGD_Sun vt slot 31 (inherited getter override); returns &this+0x28; race caller WorldPainter_GetSunBlue
+002c1588	tWPIGD_Sun_GetIntensity	high	tWPIGD_Sun vt slot 32 (inherited getter override); returns &this+0x30; race caller WorldPainter_GetSunIntensity
+002c1590	tWPIGD_Sun_GetTexture	high	tWPIGD_Sun vt slot 33 (inherited getter override); returns &this+0x38; race caller WorldPainter_GetSunTexture
+002c1598	tWPIGD_Sun_GetFlareIntensity	high	tWPIGD_Sun vt slot 34 (inherited getter override); returns &this+0x40; race caller WorldPainter_GetSunFlareIntensity
+002c15a0	tWPIGD_Sun_GetSize	high	tWPIGD_Sun vt slot 35 (inherited getter override); returns &this+0x48; race caller WorldPainter_GetSunSize
+002c15a8	tWPIGD_Surface_Get08	high	tWPIGD_Surface vt slot 36 (inherited getter override); returns &this+0x8; race caller WorldPainter_GetSurface08
+002c15b0	tWPIGD_Lighting_GetIrradianceName0	high	tWPIGD_Lighting vt slot 37 (inherited getter override); returns &this+0x8; race caller WorldPainter_GetIrradianceName0
+002c15b8	tWPIGD_Lighting_GetIrradianceName1	high	tWPIGD_Lighting vt slot 38 (inherited getter override); returns &this+0x18; race caller WorldPainter_GetIrradianceName1
+002c15c0	tWPIGD_Lighting_Get28	high	tWPIGD_Lighting vt slot 39 (inherited getter override); returns &this+0x28; no race caller
+002c15c8	tWPIGD_Lighting_Get38	high	tWPIGD_Lighting vt slot 40 (inherited getter override); returns &this+0x38; race caller WorldLightMan_GetInstanceLighting
+002c15d0	tWPIGD_Lighting_Get48	high	tWPIGD_Lighting vt slot 41 (inherited getter override); returns &this+0x48; race caller WorldPainter_GetLighting28
+002c15d8	tWPIGD_Lighting_Get50	high	tWPIGD_Lighting vt slot 42 (inherited getter override); returns &this+0x50; race caller WorldPainter_GetLighting30
+002c15e0	tWPIGD_Weather_Get08	high	tWPIGD_Weather vt slot 43 (inherited getter override); returns &this+0x8; race caller WorldPainter_GetWeather08
+002c15e8	tWPIGD_Weather_Get10	high	tWPIGD_Weather vt slot 44 (inherited getter override); returns &this+0x10; race caller WorldPainter_GetWeather10
+002c15f0	tWPIGD_Weather_Get18	high	tWPIGD_Weather vt slot 45 (inherited getter override); returns &this+0x18; race caller WorldPainter_GetWeather18
+002c15f8	tWPIGD_Weather_Get20	high	tWPIGD_Weather vt slot 46 (inherited getter override); returns &this+0x20; race caller WorldPainter_GetWeather20
+002c1600	tWPIGD_Weather_Get28	high	tWPIGD_Weather vt slot 47 (inherited getter override); returns &this+0x28; race caller WorldPainter_GetWeather28
+002c1608	tWPIGD_Weather_Get30	high	tWPIGD_Weather vt slot 48 (inherited getter override); returns &this+0x30; no race caller
+002c1610	tWPIGD_Weather_Get38	high	tWPIGD_Weather vt slot 49 (inherited getter override); returns &this+0x38; race caller WorldPainter_GetWeather38
+002c1618	tWPIGD_Weather_Get40	high	tWPIGD_Weather vt slot 50 (inherited getter override); returns &this+0x40; race caller WorldPainter_GetWeather40
+002c1620	tWPIGD_Weather_Get48	high	tWPIGD_Weather vt slot 51 (inherited getter override); returns &this+0x48; race caller WorldPainter_GetWeather48
+002c1628	tWPIGD_Weather_Get50	high	tWPIGD_Weather vt slot 52 (inherited getter override); returns &this+0x50; race caller WorldPainter_GetWeather50
+002c1630	tWPIGD_Weather_Get58	high	tWPIGD_Weather vt slot 53 (inherited getter override); returns &this+0x58; race caller WorldPainter_GetWeather58
+002c1638	tWPIGD_Weather_Get60	high	tWPIGD_Weather vt slot 54 (inherited getter override); returns &this+0x60; race caller WorldPainter_GetWeather60
+002c1640	tWPIGD_Weather_Get68	high	tWPIGD_Weather vt slot 55 (inherited getter override); returns &this+0x68; race caller WorldPainter_GetWeather68
+002c1648	tWPIGD_Weather_Get70	high	tWPIGD_Weather vt slot 56 (inherited getter override); returns &this+0x70; race caller WorldPainter_GetWeather70
+002c1650	tWPIGD_Weather_Get78	high	tWPIGD_Weather vt slot 57 (inherited getter override); returns &this+0x78; race caller WorldPainter_GetWeather78
+002c1658	tWPIGD_Weather_Get80	high	tWPIGD_Weather vt slot 58 (inherited getter override); returns &this+0x80; race caller WorldPainter_GetWeather80
+002c1660	tWPIGD_Weather_Get88	high	tWPIGD_Weather vt slot 59 (inherited getter override); returns &this+0x88; race caller WorldPainter_GetWeather88
+002c1668	tWPIGD_Weather_Get90	high	tWPIGD_Weather vt slot 60 (inherited getter override); returns &this+0x90; race caller WorldPainter_GetWeather90
+002c1670	tWPIGD_Weather_Get98	high	tWPIGD_Weather vt slot 61 (inherited getter override); returns &this+0x98; race caller WorldPainter_GetWeather98
+002c1678	tWPIGD_Danger_Get08	high	tWPIGD_Danger vt slot 62 (inherited getter override); returns &this+0x8; no race caller
+002c1680	tWPIGD_Danger_Get10	high	tWPIGD_Danger vt slot 63 (inherited getter override); returns &this+0x10; no race caller
+002c4400	cPS2MemCard_Get490	low	cPS2MemCard vt 486f78 slot 18; returns *(this+0x490)
+002c4408	cPS2MemCard_Set24	low	cPS2MemCard vt slot 19; *(this+0x24)=a1
+002c44e0	cPS2MemCard_ClearPortChanged	med	cPS2MemCard vt slot 47; for current port (+0xc, 0x14-byte port records at +0x17c) clears changed flag +0x18c and resets result +0x184 if -1
+002c4748	cPS2MemCard_IsState34	low	cPS2MemCard vt slot 42; returns state(+4)==0x34
+002c4758	cPS2MemCard_DeferState18	med	cPS2MemCard vt slot 44; sets pending flag +0x48=1 (Update later enters state 0x18 like slot 43 cPS2MemCard_v43)
+002c4880	cPS2MemCard_IsState35	low	cPS2MemCard vt slot 31; returns state(+4)==0x35
+002c4890	cPS2MemCard_DeferState1E	med	cPS2MemCard vt slot 33; sets pending flag +0x44=1; cPS2MemCard_Update then SetState(0x1e) (same as slot 32 cPS2MemCard_v32)
+002c5140	cPS2MemCard_IsBusy	med	cPS2MemCard vt slot 11; returns 0 only when state(+4)==0 and no sceMcSync pending (+0x40)
+002c5168	cPS2MemCard_IsPortCardError	med	cPS2MemCard vt slot 9; port result +0x184 in {-1,-3,-8,-9,-10,-10001,-10002} -> 1 (sibling of cPS2MemCard_GetPortError)
+002c5300	cPS2MemCard_IsPortNotPS2Card	low	cPS2MemCard vt slot 48; port result +0x184 == -10002 (set by Update when card type != 2)
+002c5358	cPS2MemCard_v52	low	cPS2MemCard vt slot 52; port result +0x184 classification (true for -7 / -10001 range)
+002c53b0	cPS2MemCard_IsPortFormatted	med	cPS2MemCard vt slot 56; port record +0x188 (sceMcGetInfo format word) > 0
+002c5520	cPS2MemCard_v46	med	cPS2MemCard vt slot 46; empty (jr ra)
+002c5528	cPS2MemCard_HasSlotName	med	cPS2MemCard vt slot 67; strlen(slot entry (0x78 bytes) +0x1b0) > 0
+002c5558	cPS2MemCard_MarkSlotUsed	low	cPS2MemCard vt slot 40; slot entry (0x78-byte records) +0x1a4 = 1
+002c5588	cPS2MemCard_IsSlotEmpty	low	cPS2MemCard vt slot 65; slot entry +0x1a8==0 and +0x1a4==0
+002c55c0	cPS2MemCard_SlotHas1AC	low	cPS2MemCard vt slot 66; slot entry +0x1ac > 0
+002c66d8	cPS2MemCard_IsPortResultM11	low	cPS2MemCard vt slot 74; current port result +0x184 == -11
+002c6700	cPS2MemCard_v57	med	cPS2MemCard vt slot 57; returns 1
+002c6708	cPS2MemCard_v58	med	cPS2MemCard vt slot 58; returns 1
+002c6710	cPS2MemCard_v61	med	cPS2MemCard vt slot 61; returns 1
+002c6748	cPS2MemCard_GetBlockSize	low	cPS2MemCard vt slot 24; returns 0x4000
+002c6750	cPS2MemCard_v21	med	cPS2MemCard vt slot 21; returns -1
+002c6758	cPS2MemCard_CalcSaveSizeKB	med	cPS2MemCard vt slot 22; ceil(bytes/1024)+0x4d (77 KB overhead: icon/dir) for a1 bytes
+002c67a8	cPS2MemCard_v50	med	cPS2MemCard vt slot 50; returns 0
+002c67e0	cPS2MemCard_v25	med	cPS2MemCard vt slot 25; returns -1
+002cad48	MenuSysPage_OnAction	med	MenuSysPage base vt slot 3 (shared by LobbyMenu/VisualEffects/PathArrow/Tube/CameraSplash pages); LobbyMenu pages override slot 3 with On*PageAction; returns 0
+002cad50	MenuSysPage_v04	med	MenuSysPage vt slot 4 (6 LobbyMenu page vtables); empty (jr ra)
+002cd2e8	MenuSysLabelItem_IsSelectable	high	MenuSysLabelItem vt 486ca0 slot 3 (MenuSysItem_IsSelectable in other items); returns 0
+002cd398	MenuSysSpacerItem_IsSelectable	high	MenuSysSpacerItem vt 486c50 slot 3 (IsSelectable); returns 0
+002cd3a0	MenuSysSpacerItem_Measure	high	MenuSysSpacerItem vt slot 4 (Measure); returns rect {0,0,0,(float)height(+0x14)}
+002cd3f0	MenuSysSpacerItem_Draw	high	MenuSysSpacerItem vt slot 5 (Draw); empty
+002cd578	MenuSysInt8Item_ResetValue	med	MenuSysInt8Item vt 486c00 slot 8 (MenuSysGroupItem_v08 forwards slot 8 to the selected item); *target(+0x18) = max(min(+0x1c),0)
+002cd9b8	MenuSysIntItem_ResetValue	med	MenuSysIntItem vt 486bb0 slot 8; *target(+0x18) = max(+0x1c,0)
+002cdf78	MenuSysFloatItem_ResetValue	med	MenuSysFloatItem vt 486b60 slot 8; *target(+0x18) = max(+0x1c,0.0f)
+002cff80	MenuSysColorSwatchItem_IsSelectable	high	MenuSysColorSwatchItem vt 486968 slot 3 (IsSelectable); returns 0
+002d0448	MenuSysVectorLabelItem_IsSelectable	high	MenuSysVectorLabelItem vt 4868b8 slot 3 (IsSelectable); returns 0
+002d37b8	MemCardBase_v26	med	slot 26 of cPS2MemCard vt 486f78 and of its base vt 4871e8 (cPS2MemCard_BaseDtor); returns 1
+002d37c0	MemCardBase_v27	med	slot 27 of cPS2MemCard vt and base vt 4871e8; empty
+002d37c8	MemCardBase_v28	med	slot 28 of cPS2MemCard vt and base vt 4871e8; empty
+002d37d0	MemCardBase_v74	med	slot 74 of base vt 4871e8 (cPS2MemCard_BaseDtor); returns 0 (cPS2MemCard overrides with 0x2c66d8)
+002d37d8	cPS2MemCard_GetCurrentPort	med	cPS2MemCard vt slot 4; returns +0xc, the port index used for 0x14-byte port records
+002d3920	cPS2MemCard_v59	med	cPS2MemCard vt slot 59; returns 0
+002d3928	cPS2MemCard_v60	med	cPS2MemCard vt slot 60; returns 0
+002d3970	cPS2MemCard_Get14	low	cPS2MemCard vt slot 68; returns *(this+0x14)
+002d3978	cPS2MemCard_v69	med	cPS2MemCard vt slot 69; returns 2
+002d39a8	cPS2MemCard_v72	med	cPS2MemCard vt slot 72; returns 0
+002d39b0	cPS2MemCard_IsSyncDone	low	cPS2MemCard vt slot 75; returns +0x3c (Update sets 1 when sceMcSync completed, 0 while waiting)
+002d39f8	MenuSysItem_ResetValue	med	MenuSysItem base vt 486f28 slot 8, inherited by most item classes; empty (Int/Int8/Float items override it)
+002d5718	Avalanche_CompareFloat	med	qsort comparator passed by Avalanche_BakeNodeHistory (Ghidra PARAM xref 0x2d7b88); float *a<*b -> -1, > -> 1, else 0
+002d5750	Avalanche_CompareU16	med	qsort comparator passed by Avalanche_BakeNodeHistory (xref 0x2d7ba0); compares u16 *a vs *b (-1/0/1)
+002dc168	cPS2FogParticleMan_CompareDesc	med	qsort comparator passed by cPS2FogParticleMan_Render (xref 0x2dbfc8); compares int field +4, descending (a<b -> 1)
+002e3578	LensFXBase_PushRenderState	med	slot 2 of LensFX vt 487f00 and LensFXBase vt 4886b0; called by LensFX_DrawFlares; pushes a 0x14-byte GS state record on PS2GraphicsMan(gp+0x2a90) stack +0xe84 and sets blend/test bits
+002e3668	LensFXBase_PopRenderState	med	slot 3 of LensFX/LensFXBase vtables; called by LensFX_DrawFlares; PS2GraphicsMan +0xe84 stack pointer -= 0x14 (pop of slot 2 push)
+002e4c90	cTransitionMan_ScriptIsRunning	low	cTransitionMan script sub-object vt 488100 slot 8 (after ScriptPause/Resume/Activate/Deactivate); returns +0x60 != 0 && +0x64 > 0
+002ec060	TransitionEffect_RandomDraw	med	slot 2 of the random transition vt 488080 (slot 1 TransitionEffect_RandomDtor); same slot as TransitionWipe_Draw in the wipe vtable; loops TransitionEffect_DrawRect
+002f7c20	VfxComponent_Update	high	VFX component base vt 488680 slot 2 (Update), inherited by VfxFlags/SnowSurface/Shadow/HeightFog/DepthFog/LightGlow; race caller PS2VisualEffectsMan_Update; empty
+002f7c28	VfxComponent_Render	high	VFX component base vt 488680 slot 3 (Render), inherited by 6 Vfx components; race caller PS2VisualEffectsMan_Render; empty
+002f7c30	VfxComponent_v04	med	VFX component base vt 488680 slot 4, inherited by 6 Vfx components; empty
+002f7ff0	cTransitionMan_Script_v09	low	cTransitionMan script sub-object vt 488100 slot 9; returns +0x74
+002f8168	SnowFall_Save	high	SnowFall vt 487fd8 slot 12 (GameProcess slot 12 Save); race caller GameModule_SaveState; empty
+00303f80	WScriptFn_SetEventRiderFlag3FC	low	WScriptFn table entry 0x442060 (between WScriptFn_StopObjectLoop/SetPendingRequestB); event rider (gp+0xce8 index, as WScriptFn_IsHumanRider) +0x3fc = 1, returns void register
+0030b4b8	WScriptMan_Render	med	direct call from GameModule_Render (0x22bfd0) on GameModule+0x30 (WScriptMan, world.md) right after UIEngine_Render; empty
+0030d3d8	WScriptProcess_IsMission	high	WScriptProcess vt 489b70 slot 3; WScriptProcessList_FindMissionById tests vslot 3 (+0x1c); returns 0
+0030d480	WScriptMission_IsMission	high	WScriptMission vt 489a30 slot 3 (override of WScriptProcess_IsMission); returns 1
+0030db90	RiderModel_CompareInt	med	qsort comparator passed by RiderModel_Setup (xref 0x30dce4); returns *a - *b
+00314d60	GameAnimMap_CompareNameIndex	med	sort comparator passed by GameAnimMap_BuildNameIndex (xref 0x314e3c); compares table(gp+0xd88)[*a] vs [*b] (-1 if less else 1)
+00319910	ssx_PowerOffSignalSema	med	callback installed by ssx_InstallPowerOffHandler (xref 0x3199bc); just calls iSignalSema
+0031ab30	PS2ExecMan_RunCallbackSync	low	PS2ExecMan vt 48db68 slot 13, called by PS2ExecMan_SetCallback; sets +0x4038, compares GetThreadId with +0x14040, invokes PS2ExecMan_InvokeCallback directly or via vslot and PS2ExecMan_WaitSema
+0031abc0	PS2ExecMan_v07	med	PS2ExecMan vt 48db68 slot 7; empty
+0031abc8	PS2ExecMan_GetFrameRate	low	PS2ExecMan vt 48db68 slot 8; returns 60 (0x3c)
+0031ad00	PS2ExecMan_v10	low	PS2ExecMan vt 48db68 slot 10; returns *(this+0x14048) == 0
+00320950	ExecManBase_v11	med	ExecManBase vt 48dc30 slot 11 (other slots pure virtual); empty
+00320958	ExecManBase_v12	med	ExecManBase vt 48dc30 slot 12; empty
+00325f44	NOTFUNC_00325f44	high	word 0x00325f44 = ASCII "D_2\0" inside a string table ("TAUNT_BWD_2" at 0x48be60); not a code pointer
+00327738	PS2Pad_GetNumActuators	med	PS2Pad vt 48e488 slot 3; Player_ApplyRumble calls vslot 3 and drives two actuators when it returns 2; returns 2
+00327740	PS2Pad_SetActuator	med	PS2Pad vt slot 4; Player_ApplyRumble calls it with (level, idx 0/1); idx 0 -> small motor on/off at +0x30, idx 1 -> big motor 50..255 at +0x38
+00327800	PadDevice_GetNumActuators	med	PadDevice base vt 48e4b8 slot 3 (PS2Pad overrides with 2); returns 0
+00327808	PadDevice_SetActuator	med	PadDevice base vt 48e4b8 slot 4; empty
+0032e398	CollSegment_Transform	high	CollSegment vt 48e6a8 slot 1 (Transform in CollHull/CollSphere/CollSphereTree interface)
+0032e4b8	CollSegment_ResetTransform	med	CollSegment vt slot 2; copies local start/delta (+0x80/+0x90) to world (+0x60/+0x70), clears +4 (same slot in Hull/Sphere/SphereTree)
+0032e688	CollSegment_CollideSphereTree	med	CollSegment vt slot 6 (CollideSphereTree in shared collision interface); returns 0
+0032e690	CollSegment_CollideAABB	med	CollSegment vt slot 7 (CollideAABB in shared collision interface); 195 instr
+0032e9a0	CollSegment_RefineTriangleHit	low	CollSegment vt slot 8 (811 instr); AIFwdDiffCache_CollideEntry calls slot 8 only for type-2 (segment) volumes after a slot-4 CollideTriangle hit, with triangle and in/out u,v floats
+0032f8b0	CollHull_ResetTransform	med	CollHull vt 48e590 slot 2; world vertex ptr +0x60 = local +0x64, clears +4; race caller Collide_VolumeObject
+0032f8c0	CollHull_GetDiameter	med	CollHull vt slot 3 (size; CollSphereTree_GetDiameter in same slot); -1.0 if no data else 2 * (+0x60)->+0x20
+0032fd98	CollSphere_ResetTransform	med	CollSphere vt 48e650 slot 2; world center/radius (+0x60/+0x70) = local (+0x80/+0x90), clears +4
+00330778	CollSphereTree_ResetTransform	med	CollSphereTree vt 48e5f0 slot 2; world ptr +0x60 = local +0x64, clears +4
+00340a08	CollVolume_RefineTriangleHit	low	slot 8 shared by CollHull/CollSphereTree/CollSphere vtables (CollSegment overrides with 0x32e9a0); empty
+00340a10	CollSegment_GetDiameter	med	CollSegment vt slot 3 (size slot); returns float +0xa0 (segment length); race callers OverlapList_FindClosestContact, Nash_FindClosestContact
+00340a18	CollSphere_GetDiameter	med	CollSphere vt slot 3 (size slot); -1.0 if no data else 2 * radius(+0x70)
+00341a30	Boost_HandleEvent	med	Boost vt 4914e0 slot 36 (ModObj_v36 -> ModifierBlock_HandleEvent: event/param slot); id a1==1 -> +0x3c = +0x38
+003424d0	AnimTeeter_v53	low	AnimTeeter vt 4908f8 slot 53 (beyond the ModObj slots); returns float +0x10/+0x14 clamped against +0x30/+0x4 (no calls)
+00342b80	BoostModifier_HandleEvent	med	BoostModifier vt 490898 slot 3; ModifierBlock_HandleEvent forwards (value,id) to Boost slot 3; id 0x258 -> +0x2c = +0x28
+003434e8	Conveyor_Update	high	Conveyor vt 490570 slot 2 (WorldObj slot 2 Update); scrolls +0x40/+0x44 by speeds +0x38/+0x3c, wrapped to [-1,1]
+00343868	Counter_HandleEvent	med	Counter vt 4903f0 slot 36 (event/param slot like AnimObject_v36/ModObj_v36); switches on float value 1.0, 2.0, 3.0 ...
+00346060	DynamicParticleModifier_OnTransfer	med	DynamicParticleModifier vt 491268 slot 3 (ModifierListNode_OnTransfer slot, called by ModifierBlock_TakeParticleList per moved node); sets +0x14 = 1
+00346258	HaloModifier_Update	med	HaloModifier vt 491220 slot 5 (DynamicParticleModifier slot 5 = Update); race caller ModifierBlock_PostUpdate
+00349798	FloatRail_ApplyImpulse	med	FloatRail vt 48ff30 slot 43 (slot 43 = apply contact impulse, cf. Floating_v43 adding force/torque from point+impulse)
+00349840	FloatRail_GetContactVelocity	med	FloatRail vt 48ff30 slot 42 (slot 42 = contact velocity, cf. AnimObject_v42 / ModObj_v42)
+0034a568	SpringRail_ApplyImpulse	med	SpringRail vt 48fd90 slot 43 (apply contact impulse; 180 instr)
+0034a838	SpringRail_GetContactVelocity	med	SpringRail vt 48fd90 slot 42 (contact velocity)
+0034af18	Flag_Render	high	Flag vt 48fc10 slot 4 (WorldObj slot 4 Render); race caller ProcessList_RenderPriority; empty
+0034ebe0	AnimObject_IsTimeInWindow	low	slot 32 shared by AnimObject/AnimDelta/AnimCombo/AnimTeeter and anim base vt 490cc8; returns 1 if f12 lies between floats +0x8 and +0xc (either order), 0 if +0x8 is the sentinel
+0034f930	Floating_v15	low	Floating vt 48f858 slot 15 (per-frame step slot: AnimObject_v15/Debounce_v15); 85 instr of float math, reads App (gp+0x2a74)
+00355858	ModObj_v41	low	slot 41 shared by Particle/Debounce/AnimDelta/AnimCombo/AnimTeeter/Floating vtables; +0x20 = (int)(App(gp+0x2a74)+0x10 * f12); race caller WScriptMan_OnObjectTrigger
+00356ff0	PositionModifier_UpdateTransform	med	PositionModifier vt 48f5f0 slot 3 (transform modifier slot 3 UpdateTransform); copies +0x30 -> +0x80, clears +0x44; race caller PositionModifier_GetMatrix
+00357528	MagnetModifier_UpdateTransform	med	MagnetModifier vt 48f420 slot 3 (UpdateTransform); copies +0x10 -> +0x90, clears +0x50
+00359cf8	SplineModifier_v22	low	SplineModifier vt 48f250 slot 22; 111 instr spline math on +0x10..+0xd4
+0035b200	MultiSplineModifier_v22	low	MultiSplineModifier vt 48f168 slot 22; 134 instr spline math
+0035cfe0	RailModifier_v04	low	RailModifier vt 4911d0 slot 4; empty
+0035ed88	RollerModifier_UpdateTransform	med	RollerModifier vt 48f080 slot 3 (transform modifier slot 3 UpdateTransform); empty
+00360720	GameProcess_Update	high	GameProcess base vt 491f00 slot 2 (Update), also SkyBox; empty
+00360728	GameProcess_PostUpdate	high	GameProcess slot 3 (PostUpdate) default for Stats/AIVfx/Vfx processes, SnowFall, transition managers; race caller ProcessList_PostUpdatePriority; empty
+00360730	GameProcess_Render	high	GameProcess vt 491f00 slot 4 (Render), also cCutSceneTransitionMan; race caller ProcessList_RenderPriority; empty
+00360738	GameProcess_v05	med	GameProcess slot 5 default (Stats/AIVfx/Vfx/SnowFall/transition managers); empty
+00360740	GameProcess_IdLessEqual	med	GameProcess slot 6 default (SyncProcess_IdLessEqual in synced processes); returns 0
+00360748	GameProcess_IdEquals	med	GameProcess slot 7 default (SyncProcess_IdEquals in synced processes); returns 0
+00360750	GameProcess_GetId	med	GameProcess slot 8 default (SyncProcess_GetId 0x360880 in synced processes); returns 0
+00360758	GameProcess_v09	med	GameProcess slot 9 default (also SyncProcess/WorldObj); returns 0
+00360760	GameProcess_IsType	med	GameProcess slot 10 default (TypedProcess_IsType 0x3607a0 overrides); returns 0
+00360768	GameProcess_v11	low	GameProcess slot 11 default; returns -1 (0xffffffff)
+00360778	GameProcess_Save	high	GameProcess slot 12 (Save) default for Stats/AIVfx/Vfx/transition/splash managers; empty
+00360780	GameProcess_v13	med	GameProcess slot 13 default (all process vtables); empty
+00360788	TypedProcess_Update	high	TypedProcess vt 491e80 slot 2 (Update), also SyncProcess/RailMan; empty
+00360790	TypedProcess_Render	high	TypedProcess vt slot 4 (Render), inherited by Boost/Counter/DeadNode/Hide/RestoreNode/RailMan; race caller ProcessList_RenderPriority; empty
+00360798	TypedProcess_v14	low	TypedProcess vt slot 14, inherited by WorldObj classes (MeshAnim/Fence/Flag/rails); returns 1
+003607a0	TypedProcess_IsType	med	TypedProcess vt slot 10; returns (s16)+0x10 == a1; race caller WorldObjFactory_AttachModifier
+00360880	SyncProcess_GetId	high	SyncProcess vt 491e00 slot 8; returns +0x14; race callers SyncProcess_IdLessEqual / SyncProcess_IdEquals
+00360910	WorldObj_v15	low	WorldObj default slot 15 (per-frame step slot, cf. Debounce_v15/AnimObject_v15 returning 0 to stop); returns 1; race callers ModObj_Update, WorldObj_Update
+00360918	WorldObj_v16	low	WorldObj default slot 16 (ModObj overrides with 0x360dd0 returning 1); returns 0
+00360920	WorldObj_v11	low	WorldObj default slot 11 (GameProcess_v11 returns -1); returns byte (+0x18)->+0x78
+00360930	WorldObj_v17	low	WorldObj default slot 17; returns 1
+00360938	WorldObj_v18	low	WorldObj default slot 18; empty
+00360940	WorldObj_v19	low	WorldObj default slot 19 (anim classes return this); returns 0
+00360948	WorldObj_v20	low	WorldObj default slot 20; returns 0; race callers WScriptMan_FocusEnter / WScriptMan_FocusLeave
+00360950	WorldObj_v21	low	WorldObj default slot 21; returns 0
+00360958	WorldObj_v22	low	WorldObj default slot 22; returns 0
+00360960	WorldObj_v23	low	WorldObj default slot 23; returns 0
+00360970	WorldObj_v24	low	WorldObj default slot 24; returns (+0x18)+0x10
+00360980	WorldObj_v25	low	WorldObj default slot 25; returns (+0x18)+0x10 (same body as slot 24)
+00360990	WorldObj_v26	low	WorldObj default slot 26 (anim/Floating return 1); returns 0; race callers Collide_VolumeObject, Instance_GetNodeMatrix, ModObj_Render
+00360998	WorldObj_GetMatrices	med	WorldObj default slot 27 (ModObj_GetMatrices in ModObj classes); returns 0
+003609a0	WorldObj_v28	low	WorldObj default slot 28 (ModObj_v28); returns 0
+003609a8	WorldObj_GetMatrixAt	med	WorldObj default slot 29 (ModObj_GetMatrixAt in anim classes); returns 0
+003609b0	WorldObj_v30	low	WorldObj default slot 30; returns 0.0f
+003609c0	WorldObj_v31	low	WorldObj default slot 31; returns 0
+003609c8	WorldObj_v32	low	WorldObj default slot 32 (anim classes: AnimObject_IsTimeInWindow); returns 0
+003609d0	WorldObj_HandleEvent	med	WorldObj default slot 36 (event/param slot: ModObj_v36, AnimObject_v36); empty
+003609d8	WorldObj_v37	low	WorldObj default slot 37; empty
+003609e0	WorldObj_v38	low	WorldObj default slot 38 (ModObj_v38); returns 0
+003609e8	WorldObj_v39	low	WorldObj default slot 39 (ModObj_v39); returns 0
+003609f0	WorldObj_v40	low	WorldObj default slot 40 (ModObj_v40/Fence_v40); empty
+003609f8	WorldObj_v41	low	WorldObj default slot 41 (ModObj classes use ModObj_v41 0x355858); empty
+00360a00	WorldObj_GetContactVelocity	med	WorldObj default slot 42 (contact velocity: AnimObject_v42/ModObj_v42); empty
+00360a08	WorldObj_ApplyImpulse	med	WorldObj default slot 43 (apply contact impulse: Floating_v43/ModObj_v43); empty
+00360a10	WorldObj_v44	low	WorldObj default slot 44 (ModObj_v44); returns 0
+00360a18	WorldObj_v45	low	WorldObj default slot 45 (ModObj_v45); returns 0
+00360a20	WorldObj_v46	low	WorldObj default slot 46 (last WorldObj slot); returns 0
+00360a50	DeadNode_KillRestorable	med	DeadNode vt 491b00 slot 34 (WorldObj slot 34 KillRestorable); empty
+00360a58	DeadNode_Kill	med	DeadNode vt slot 35 (WorldObj slot 35 Kill); empty
+00360a60	DeadNode_HandleEvent	low	DeadNode vt slot 36 (event slot); empty
+00360a68	DeadFade_HandleEvent	low	DeadFade vt slot 36 (event slot); empty
+00360a98	Hide_KillRestorable	med	Hide vt 491800 slot 34 (KillRestorable); empty
+00360aa0	Hide_Kill	med	Hide vt slot 35 (Kill); empty; race caller WScriptMan_FocusLeave
+00360aa8	Hide_HandleEvent	low	Hide vt slot 36 (event slot); empty
+00360ab0	Hide_v40	low	Hide vt slot 40; empty
+00360ae0	RestoreNode_KillRestorable	med	RestoreNode vt 491680 slot 34 (KillRestorable); empty
+00360ae8	RestoreNode_HandleEvent	low	RestoreNode vt slot 36 (event slot); empty
+00360af0	Boost_v49	low	Boost vt 4914e0 slot 49; empty
+00360af8	Boost_v50	low	Boost vt 4914e0 slot 50; empty
+00360b30	TransformModifier_Update	med	transform-modifier base vt 4913f8 (inv. name; slot 1 is the misnamed RollerModifier_dtor) slot 2 (Update); empty
+00360b38	TransformModifier_UpdateTransform	med	base vt 4913f8 slot 3 (UpdateTransform), inherited by AvaSpline; empty
+00360b40	TransformModifier_PostUpdate	med	base vt 4913f8 slot 4; race caller ModifierBlock_PostUpdate; empty
+00360b48	TransformModifier_HandleEvent	med	base vt 4913f8 slot 5 (ModifierBlock_HandleEvent forwards to transform slot 5); empty
+00360b50	TransformModifier_IsTransformFinished	med	base vt 4913f8 slot 6; race caller ModifierBlock_IsTransformFinished; returns 0
+00360b58	TransformModifier_ClearTransformFinished	med	base vt 4913f8 slot 7 (ModifierBlock_ClearTransformFinished; SplineModifier override clears +0x50); empty
+00360b60	TransformModifier_v08	low	base vt 4913f8 slot 8; returns 1
+00360b68	TransformModifier_v09	low	base vt 4913f8 slot 9; returns 1
+00360b70	TransformModifier_v10	low	base vt 4913f8 slot 10; empty
+00360b78	TransformModifier_Render	med	base vt 4913f8 slot 11; race caller ModifierBlock_Render; empty
+00360b80	TransformModifier_GetTransformBounds	med	base vt 4913f8 slot 12 (ModifierBlock_GetTransformBounds); returns 0
+00360b88	TransformModifier_SetTransformBounds	med	base vt 4913f8 slot 13 (ModifierBlock_SetTransformBounds); empty
+00360b90	TransformModifier_GetTransformRadius	med	base vt 4913f8 slot 14 (ModifierBlock_GetTransformRadius); returns 0.0f
+00360ba0	TransformModifier_SetTransformRadius	med	base vt 4913f8 slot 15 (ModifierBlock_SetTransformRadius); empty
+00360ba8	TransformModifier_v16	low	base vt 4913f8 slot 16; returns 0
+00360bb0	TransformModifier_HasTransformChanged	med	base vt 4913f8 slot 17; race caller ModifierBlock_HasTransformChanged; returns 0
+00360bb8	TransformModifier_GetMatrix	med	base vt 4913f8 slot 18 (GetMatrix); returns 0
+00360bc0	TransformModifier_v19	low	base vt 4913f8 slot 19; returns 0
+00360bc8	TransformModifier_v20	low	base vt 4913f8 slot 20; returns 0; race caller ModObj_v38
+00360bd0	TransformModifier_v21	low	base vt 4913f8 slot 21; returns 0
+00360bd8	TransformModifier_v22	low	base vt 4913f8 slot 22; empty
+00360be0	TransformModifier_v23	low	base vt 4913f8 slot 23; returns 0
+00360be8	TransformModifier_v24	low	base vt 4913f8 slot 24; empty; race caller ModObj_v50
+00360bf0	TransformModifier_v25	low	base vt 4913f8 slot 25; returns 0
+00360bf8	TransformModifier_GetType	med	base vt 4913f8 slot 26 (ModifierBlock_Save stores vslot 26 as the transform type; subclasses return 1..7); returns 0
+00360c00	TransformModifier_Save	med	base vt 4913f8 slot 27 (Save); empty
+00360c58	BoostModifier_BaseV02	low	boost-modifier base vt 4913b8 (BoostModifier_BaseDtor) slot 2; empty
+00360c60	BoostModifier_BaseHandleEvent	med	boost-modifier base vt 4913b8 slot 3 (BoostModifier_HandleEvent overrides); empty
+00360c68	BoostModifier_BaseV04	low	slot 4 of base vt 4913b8 and BoostModifier vt 490898; returns *(this+0)
+00360c70	BoostModifier_BaseGetType	med	base vt 4913b8 slot 5; ModifierBlock_Save stores boost vslot 5 as its type; returns 0
+00360ce8	ModifierListNode_GetType	med	slot 2 of ModifierListNode vt 491340 and particle-modifier base vt 4912f8 (ModifierBlock_Save stores slot 2 as particle type); returns 1
+00360cf0	ModifierListNode_OnTransfer	med	slot 3 of ModifierListNode/ParticleModifier/Halo vtables; ModifierBlock_TakeParticleList calls it on each node moved; empty
+00360cf8	ModifierListNode_Save	low	ModifierListNode vt 491340 slot 4 (particle modifiers' Save slot); empty
+00360d00	ParticleModifier_BaseUpdate	med	particle-modifier base vt 4912f8 (ParticleModifier_BaseDtor) slot 5 (Update); empty
+00360d08	ParticleModifier_BaseRender	med	particle-modifier base vt 4912f8 slot 6 (Render); empty
+00360d10	ParticleModifier_BaseHandleEvent	med	slot 7 of particle base and Particle/Dynamic/Halo modifier vtables (ModifierBlock_HandleEvent forwards to particle slot 7); empty
+00360d20	ParticleModifier_GetType	high	ParticleModifier vt 4912b0 slot 2; race caller ModifierBlock_Save; returns 1
+00360d28	DynamicParticleModifier_GetType	high	DynamicParticleModifier vt 491268 slot 2; race caller ModifierBlock_Save; returns 2
+00360d38	HaloModifier_GetType	high	HaloModifier vt 491220 slot 2; race caller ModifierBlock_Save; returns 3
+00360d90	RailModifierListNode_v02	low	RailModifierListNode vt 491200 slot 2; empty
+00360dc8	ModObj_v47	low	slot 47 of ModObj classes (Particle/Floating/Debounce/anim); empty
+00360dd0	ModObj_AcceptsModifiers	low	slot 16 of ModObj classes (WorldObj_v16 returns 0); returns 1; race callers WScriptFn_Add*Modifier, WorldObjFactory_AddDynamicParticleData, ModObj_TakeOverObject
+00360dd8	ModObj_v51	low	slot 51 of ModObj/Object/Particle/Debounce; clears bit 0 of u16 flags +0x12
+00361060	AnimObject_BaseV15	low	anim base vt 490cc8 slot 15 (AnimObject_v15 is the per-frame step); returns 1
+00361068	AnimObject_v30	low	slot 30 of AnimObject/AnimDelta/AnimCombo/AnimTeeter and base; returns *(float*)this * 30.0
+00361080	AnimObject_BaseV53	low	anim base vt 490cc8 slot 53; returns 0.0f
+00361090	AnimObject_v26	low	slot 26 of anim vtables (WorldObj_v26 returns 0); returns 1; race caller ModObj_Render
+00361150	AnimObject_v19	low	AnimObject vt 490b10 slot 19; returns this
+00361158	AnimObject_v53	low	slot 53 of AnimObject/AnimDelta/AnimCombo; returns float +0x10 when +0x8 == 0
+00361170	AnimObject_v31	low	slot 31 of AnimObject/AnimDelta vtables; 9 instr
+00361198	AnimObject_v17	low	slot 17 of AnimObject/AnimDelta/AnimCombo; returns +0x8
+00361458	AnimTeeter_v19	low	AnimTeeter vt 4908f8 slot 19; returns this
+00361460	AnimTeeter_v31	low	AnimTeeter vt slot 31; 9 instr
+003614b8	BoostModifier_GetType	med	BoostModifier vt 490898 slot 5 (boost type slot read by ModifierBlock_Save); returns 1
+003614c0	BoostModifier_v09	low	BoostModifier vt 490898 slot 9; empty
+003614c8	BoostModifier_v10	low	BoostModifier vt 490898 slot 10; empty
+003614f8	Debounce_v40	low	Debounce vt 4906f0 slot 40; empty; race caller Rider_UpdateProgress
+00361528	Conveyor_v19	low	Conveyor vt 490570 slot 19; returns this+0x1c
+00361558	FlexBridge_v19	low	FlexBridge vt 490270 slot 19; returns this
+00361560	FlexBridge_v38	low	FlexBridge vt slot 38; returns 1
+00361568	FlexBridge_v44	low	FlexBridge vt slot 44; returns 1
+00361570	FlexBridge_v45	low	FlexBridge vt slot 45; returns this+0x90
+00361578	FlexRail_v47	low	FlexRail base vt 4900d0 slot 47; empty
+00361580	FlexRail_v48	low	FlexRail base vt 4900d0 slot 48; empty
+00361588	FlexRail_ApplyImpulse	med	FlexRail base vt 4900d0 slot 43 (apply impulse; FloatRail/SpringRail override); empty
+00361590	FlexRail_GetContactVelocity	med	FlexRail base vt 4900d0 slot 42 (contact velocity; FloatRail/SpringRail override); empty
+00361598	FlexRail_v49	low	FlexRail base vt slot 49; returns 0 (FloatRail/SpringRail return a per-segment field)
+003615a0	FlexRail_v46	low	slot 46 of FlexRail/FloatRail/SpringRail; returns 1
+003615a8	FloatRail_v49	low	FloatRail vt 48ff30 slot 49; returns segment[a1] (0x50 stride, array +0x70) field +0x44
+003615c0	SpringRail_v49	low	SpringRail vt 48fd90 slot 49; returns segment[a1] (0x60 stride, array +0x70) field +0x54
+00361768	Floating_v19	low	Floating vt 48f858 slot 19; returns this+0x2c
+00361770	Floating_v44	low	Floating vt slot 44; returns 1
+003617b0	Floating_v26	low	Floating vt slot 26 (WorldObj_v26 returns 0); returns 1
+003618f8	PositionModifier_Update	high	PositionModifier vt 48f5f0 slot 2 (Update); race caller ModifierBlock_Update; empty
+00361900	PositionModifier_HasTransformChanged	high	slot 17 of Position/ParentModifier; race caller ModifierBlock_HasTransformChanged; returns +0x44
+00361908	PositionModifier_GetType	high	PositionModifier slot 26 (type for ModifierBlock_Save); returns 3
+00361910	PositionModifier_GetTransformBounds	high	slot 12 of Position/ParentModifier; race caller ModifierBlock_GetTransformBounds; returns this+0x10
+00361918	PositionModifier_SetTransformBounds	high	slot 13 of Position/ParentModifier; race caller ModifierBlock_SetTransformBounds; copies 2 qwords to +0x10/+0x20
+00361930	PositionModifier_GetTransformRadius	high	slot 14 of Position/ParentModifier; race caller ModifierBlock_GetTransformRadius; returns float +0x40
+00361938	PositionModifier_SetTransformRadius	high	slot 15 of Position/ParentModifier; race caller ModifierBlock_SetTransformRadius; +0x40 = f12
+003619b8	ParentModifier_Update	med	ParentModifier vt 48f508 slot 2 (Update); sets changed flag +0x44 = 1
+003619c8	ParentModifier_v16	low	ParentModifier vt slot 16; returns +0x90
+003619d0	ParentModifier_GetType	high	ParentModifier slot 26 (type for ModifierBlock_Save); returns 4
+00361a10	MagnetModifier_HasTransformChanged	med	MagnetModifier vt 48f420 slot 17; returns +0x50 > 0
+00361a20	MagnetModifier_v20	low	MagnetModifier vt slot 20; returns 1
+00361a28	MagnetModifier_GetTransformBounds	high	MagnetModifier slot 12; returns this+0x20
+00361a30	MagnetModifier_SetTransformBounds	high	MagnetModifier slot 13; copies 2 qwords to +0x20/+0x30
+00361a48	MagnetModifier_GetTransformRadius	high	MagnetModifier slot 14; returns float +0x40
+00361a50	MagnetModifier_SetTransformRadius	med	MagnetModifier slot 15; empty (radius not settable)
+00361a58	MagnetModifier_GetType	high	MagnetModifier slot 26; returns 6
+00361ad8	AvaSplineModifier_GetTransformBounds	high	AvaSplineModifier vt 48f338 slot 12; returns this+0x10
+00361ae0	AvaSplineModifier_SetTransformBounds	high	AvaSplineModifier slot 13; copies 2 qwords to +0x10/+0x20
+00361af8	AvaSplineModifier_GetTransformRadius	high	AvaSplineModifier slot 14; returns float +0x30
+00361b00	AvaSplineModifier_SetTransformRadius	high	AvaSplineModifier slot 15; +0x30 = f12
+00361b08	AvaSplineModifier_GetType	high	AvaSplineModifier slot 26; returns 7
+00361b10	AvaSplineModifier_GetMatrix	med	AvaSplineModifier slot 18 (GetMatrix); returns this+0x40
+00361b48	SplineModifier_IsTransformFinished	high	SplineModifier vt 48f250 slot 6; race caller ModifierBlock_IsTransformFinished; returns +0x50
+00361b50	SplineModifier_ClearTransformFinished	high	SplineModifier slot 7; race caller ModifierBlock_ClearTransformFinished; +0x50 = 0
+00361b58	SplineModifier_GetTransformBounds	high	SplineModifier slot 12; race caller ModifierBlock_GetTransformBounds; returns this+0x10
+00361b60	SplineModifier_SetTransformBounds	high	SplineModifier slot 13; race caller ModifierBlock_SetTransformBounds
+00361b78	SplineModifier_GetTransformRadius	high	SplineModifier slot 14; race caller ModifierBlock_GetTransformRadius; returns float +0x4c
+00361b80	SplineModifier_SetTransformRadius	high	SplineModifier slot 15; race caller ModifierBlock_SetTransformRadius; +0x4c = f12
+00361b88	SplineModifier_HasTransformChanged	high	SplineModifier slot 17; race caller ModifierBlock_HasTransformChanged; returns +0x58
+00361bd8	SplineModifier_GetType	high	SplineModifier slot 26; race caller ModifierBlock_Save; returns 1
+00361be0	MultiSplineModifier_GetTransformBounds	high	MultiSplineModifier vt 48f168 slot 12; race caller ModifierBlock_GetTransformBounds; returns (+0x3c)+0x30
+00361bf0	MultiSplineModifier_SetTransformBounds	high	MultiSplineModifier slot 13; race caller ModifierBlock_SetTransformBounds; writes (+0x3c)+0x30/+0x40
+00361c10	MultiSplineModifier_GetTransformRadius	high	MultiSplineModifier slot 14; race caller ModifierBlock_GetTransformRadius; returns float +0x18
+00361c18	MultiSplineModifier_SetTransformRadius	high	MultiSplineModifier slot 15; +0x18 = f12
+00361c70	MultiSplineModifier_GetType	high	MultiSplineModifier slot 26; race caller ModifierBlock_Save; returns 2
+00361ca8	RollerModifier_v08	low	RollerModifier vt 48f080 slot 8 (base returns 1); returns 0
+00361cb0	RollerModifier_IsTransformFinished	med	RollerModifier vt slot 6 (IsTransformFinished); 10 instr
+00361cf8	RollerModifier_v09	low	RollerModifier vt slot 9 (base returns 1); returns 0
+00361d00	RollerModifier_SetTransformBounds	high	RollerModifier slot 13; copies 2 qwords to +0x220/+0x230
+00361d18	RollerModifier_GetTransformBounds	high	RollerModifier slot 12; returns this+0x220
+00361d20	RollerModifier_GetTransformRadius	high	RollerModifier slot 14; returns float +0x24
+00361d28	RollerModifier_SetTransformRadius	high	RollerModifier slot 15; +0x24 = f12
+00361d30	RollerModifier_GetMatrix	med	RollerModifier slot 18 (GetMatrix); returns this+0x240
+00361d38	RollerModifier_v19	low	RollerModifier slot 19; returns this+0x240 (same as GetMatrix)
+00361d40	RollerModifier_GetType	high	RollerModifier slot 26 (type for ModifierBlock_Save); returns 5
+00361d78	RailMan_v11	low	RailMan vt 48ede0 slot 11 (GameProcess_v11); returns -1
+00361d88	AnimCombo_v19	low	AnimCombo vt 48ec28 slot 19; returns this
+00361d90	AnimCombo_v31	low	AnimCombo vt slot 31; 19 instr
+00361e08	AnimDelta_v19	low	AnimDelta vt 48ea70 slot 19; returns this
+0036a048	GraphicsMan_DrawLineShape	low	GraphicsMan base vt 493950 slot 75 (render.md: PS2 slot 75 = DrawLineShape); builds a vertex list on the stack from a matrix and calls vslot 73 (+0x24c) of the renderer
+0036a1b0	GraphicsMan_AcquireTextureRef	low	GraphicsMan base vt 493950 slot 59 (render.md: AcquireTextureRef); default writes {0, -1} to *a1
+00372144	NOTFUNC_00372144	med	case block of the jump table at 0x4926b0 (computed jump at 0x37213c inside an undefined function between Dma_SendGifChain and DmaChain_PatchRefTags); table words look like a vtable but are jump targets
+00372154	NOTFUNC_00372154	med	case block of the jump table at 0x4926b0 (computed jump at 0x37213c); falls through into 0x372178/0x372188
+00372178	NOTFUNC_00372178	med	case block of the jump table at 0x4926b0 (computed jump at 0x37213c); falls into 0x372188
+00372188	NOTFUNC_00372188	med	shared tail/default case of the jump table at 0x4926b0 (5 table entries plus branches from 0x372120/0x37214c/0x372170); loops back to 0x372100
+00375a00	DetailSystem_Update	high	DetailSystem vt 493000 slot 2 (VFX component Update); race caller PS2VisualEffectsMan_Update; empty
+00376560	PS2GraphicsMan_GetDisplayModeInfo	med	PS2GraphicsMan vt 493260 slot 6 (render.md GetDisplayModeInfo); returns table(+0x59cc) + idx*0xa4
+00376b90	PS2GraphicsMan_GetViewport	med	PS2GraphicsMan slot 28 (render.md GetViewport); copies current view entry (+0x6d20 + view*0x230) rect, int-rounded, to *a0; race callers LensFX_PrepareView, cSplashManager_Render
+00376c10	PS2GraphicsMan_GetFov	med	PS2GraphicsMan slot 29 (render.md GetFov); returns view entry float +0x18; race caller Rider_ComputeLOD
+00376c28	PS2GraphicsMan_GetNearFarAspect	med	PS2GraphicsMan slot 30 (render.md); writes view entry +0x18/+0x10/+0x14 to *a1/*a2/*a3; race caller LensFX_PrepareView
+00377950	PS2GraphicsMan_SetFogMode	low	PS2GraphicsMan slot 40 (render.md SetFogMode, doubted in naming.md); stores mode at +0x6b94 and preset params +0x6b98..+0x6ba4 for modes 0/1/2
+003779e0	PS2GraphicsMan_SetFogParams	med	PS2GraphicsMan slot 41 (render.md SetFogParams); copies 5 words to +0x6b94..+0x6ba4
+0037ba50	PS2GraphicsMan_SetShadowHeader	med	PS2GraphicsMan slot 101 (render.md: SetShadowHeader, VU1 type 7 header packet); race caller Rider_DrawShadow
+0037cb90	PS2GraphicsMan_IsTextureValid	low	PS2GraphicsMan slot 51 (render.md IsTextureValid(id<2000)); checks id range and texture table +0x18f4
+0037d450	PS2GraphicsMan_DrawFill	low	PS2GraphicsMan slot 54 (render.md: clear/scissored fill, 133 instr); race callers Rider_DrawShadow, PS2GraphicsMan_EndFrame
+0037d758	PS2GraphicsMan_AddLight	med	PS2GraphicsMan slot 67 (render.md AddLight): appends 0xa0-byte record at +0x13f0 + n*0xa0 (colour, 2 matrices, float, int), n=+0x13ec++; race caller BoaderShadow_Submit
+0037d908	PS2GraphicsMan_GetTextureWidth	med	PS2GraphicsMan slot 56; returns 1 << TEX0.TW (bits 26-29) of texture[a1]
+0037d938	PS2GraphicsMan_GetTextureHeight	med	PS2GraphicsMan slot 57; returns 1 << TEX0.TH (bits 30-33) of texture[a1]
+0037de88	PS2GraphicsMan_ClipTestBox	med	PS2GraphicsMan slot 93 (render.md ClipTest); VU0 microroutine (vcallmsr 0x570/8) on min/max/matrix, returns 0/1/2; race callers Rider_UpdateVisibility, OcclusionMan_BuildVisible, ModObj_Render, SplineModifier_IsNodeVisible
+00380380	PS2GraphicsMan_v97	low	PS2GraphicsMan slot 97 (render.md: model setup); 102 instr, no calls
+00386688	PS2GraphicsMan_AddView	med	PS2GraphicsMan slot 116 (render.md AddView); copies matrix +0x6af0 to viewMatrices[i] (+0x5930) and sets count +0x59c0 = i+1; race caller GameModule_Render (0x22b008)
+003866e0	PS2GraphicsMan_SetPhase2Callback	high	PS2GraphicsMan slot 117 (render.md: set by LensFXBase_ctor); stores fn/arg at +0x6d0c/+0x6d10
+0038b178	PS2BezierMan_BeginPass	med	PS2BezierMan vt 493760 slot 17; race caller GameModule_BeginBezierPass; zeroes counters +0x4d84/+0x458/+0x3c9c/+0x4a60
+0038b190	PS2BezierMan_v22	low	PS2BezierMan vt 493760 slot 22 (105 instr); race caller PS2BezierMan_v21 (x12606 per 300 frames)
+0038f7f8	VfxVisualEffectsTest_Update	high	VfxVisualEffectsTest vt 492fd0 slot 2 (VFX component Update); race caller PS2VisualEffectsMan_Update; empty
+00392edc	NOTFUNC_00392edc	high	switch case block (jr via jump table 0x492f60, idx = +0x20 pixel format) inside unnamed fn 0x392e98; only ref is the jump table
+00392ee4	NOTFUNC_00392ee4	high	switch case block of jump table 0x492f60 inside unnamed fn 0x392e98 (sets divisor 6)
+00392eec	NOTFUNC_00392eec	high	switch case block of jump table 0x492f60 inside unnamed fn 0x392e98 (divisor 3, div)
+00392f08	NOTFUNC_00392f08	high	switch case block of jump table 0x492f60 inside unnamed fn 0x392e98 (x/16)
+00392f20	NOTFUNC_00392f20	high	switch case block of jump table 0x492f60 inside unnamed fn 0x392e98 (x/8)
+00392f38	NOTFUNC_00392f38	high	switch case block of jump table 0x492f60 inside unnamed fn 0x392e98 (x/4)
+00392f50	NOTFUNC_00392f50	high	switch case block of jump table 0x492f60 inside unnamed fn 0x392e98 (x/2)
+00392f5c	NOTFUNC_00392f5c	high	switch join/default block of jump table 0x492f60 inside unnamed fn 0x392e98 (uses t0/a3 set by the fn body)
+00393fa8	GraphicsMan_SetDefaultDisplayMode	med	GraphicsMan base vt 0x493950 slot 8 (PS2 override = PS2GraphicsMan_SetDefaultDisplayMode); empty jr ra
+00393fb0	GraphicsMan_IsProgressive	med	GraphicsMan base vt 0x493950 slot 9 (render.md IsProgressive); returns 0
+00393fb8	GraphicsMan_SetScreenOffset	high	slot 12 of GraphicsMan 0x493950 and PS2GraphicsMan 0x493260 (render.md screenOffset +0/+4): stores (float)a1,(float)a2 at +0/+4
+00393fd8	GraphicsMan_GetScreenOffsetX	high	slot 13 of GraphicsMan/PS2GraphicsMan; returns (int)+0 (render.md screenOffset)
+00393ff0	GraphicsMan_GetScreenOffsetY	high	slot 14 of GraphicsMan/PS2GraphicsMan; returns (int)+4 (render.md screenOffset)
+00394008	GraphicsMan_v16	high	slot 16 of GraphicsMan 0x493950 and PS2GraphicsMan 0x493260, empty jr ra; called by VfxRenderToggles_Update
+00394010	GraphicsMan_TryAcquireFrame	med	GraphicsMan base slot 17 (PS2 override PS2GraphicsMan_TryAcquireFrame); returns 1
+00394018	GraphicsMan_IsIdle	med	GraphicsMan base slot 18 (PS2 override PS2GraphicsMan_IsIdle); returns 1
+003942a0	GraphicsMan_v58	low	GraphicsMan base slot 58; struct return via a0 = {1.0,1.0,0,1.0}
+003942c0	GraphicsMan_ReleaseTextureRef	med	GraphicsMan base vt 0x493950 slot 60 (render.md ReleaseTextureRef); empty
+003942c8	GraphicsMan_DrawTransition	med	GraphicsMan base slot 61 (render.md DrawTransition, cTransitionMan_Render); empty
+003942d0	GraphicsMan_v62	high	slot 62 of GraphicsMan and PS2GraphicsMan, empty jr ra
+003942d8	GraphicsMan_GetColorMask	med	slot 64 of GraphicsMan and PS2GraphicsMan; returns this+0xed8 (render.md colorMask, set by slot 63)
+003942e0	GraphicsMan_v65	high	slot 65 of GraphicsMan and PS2GraphicsMan, empty jr ra
+003945b8	GraphicsMan_ClearLights	med	GraphicsMan base slot 66 (PS2 override clears +0x13ec numLights); empty
+003945c0	GraphicsMan_AddLight	med	GraphicsMan base slot 67 (render.md AddLight); empty
+003945c8	GraphicsMan_v74	high	slot 74 of GraphicsMan and PS2GraphicsMan, empty jr ra
+003945d0	GraphicsMan_v88	high	slot 88 of GraphicsMan and PS2GraphicsMan, empty jr ra
+003945d8	GraphicsMan_DrawShadowVolume	med	GraphicsMan base slot 89 (render.md DrawShadowVolume); empty
+003945e0	GraphicsMan_DrawBoardWake	med	GraphicsMan base slot 90 (render.md DrawBoardWake); empty
+003945e8	GraphicsMan_v98	high	GraphicsMan base slot 98, empty (PS2 override stores +0x6d14)
+00394610	GraphicsMan_DrawSkinnedModelShadow	med	GraphicsMan base slot 100 (render.md DrawSkinnedModelShadow); empty
+00394618	GraphicsMan_v102	high	slot 102 of GraphicsMan and PS2GraphicsMan, empty jr ra
+00394620	GraphicsMan_v103	high	slot 103 of GraphicsMan and PS2GraphicsMan, empty jr ra
+00394628	GraphicsMan_v104	high	slot 104 of GraphicsMan and PS2GraphicsMan, empty jr ra
+00394630	GraphicsMan_v105	high	slot 105 of GraphicsMan and PS2GraphicsMan, empty jr ra
+00394638	GraphicsMan_v106	high	slot 106 of GraphicsMan and PS2GraphicsMan, empty jr ra
+00394640	GraphicsMan_v107	high	slot 107 of GraphicsMan and PS2GraphicsMan, empty jr ra
+00394648	GraphicsMan_v108	high	slot 108 of GraphicsMan and PS2GraphicsMan, empty jr ra
+00394650	GraphicsMan_v109	high	GraphicsMan base slot 109 (rider model setup in PS2), empty
+00394658	GraphicsMan_v110	high	GraphicsMan base slot 110, empty
+00394660	GraphicsMan_v111	high	GraphicsMan base slot 111, empty
+00394668	GraphicsMan_v112	high	slot 112 of GraphicsMan and PS2GraphicsMan, empty jr ra
+00394670	GraphicsMan_v113	high	slot 113 of GraphicsMan and PS2GraphicsMan (render.md: GameModule_Unload hook), empty
+00394678	GraphicsMan_GetFlipCount	med	GraphicsMan base slot 114 (PS2 override returns +0x5a74 flip count); returns 0
+00394680	GraphicsMan_UpdateLensEffects	med	GraphicsMan base slot 115 (render.md UpdateLensEffects); empty
+00394688	GraphicsMan_AddView	med	GraphicsMan base slot 116 (render.md AddView); empty
+003946e8	GraphicsMan_RemoveInterruptHandlers	med	GraphicsMan base slot 119 (PS2 override PS2GraphicsMan_RemoveInterruptHandlers); empty
+00394a44	PowerCurve_One	med	fn-pointer table 0x493d30 entry 0 (5 curve fns x^0..x^4); returns 1.0f
+00394a54	PowerCurve_Linear	med	fn-pointer table 0x493d30 entry 1; returns f12 (x)
+00394a5c	PowerCurve_Pow2	med	fn-pointer table 0x493d30 entry 2; returns x*x
+00394a64	PowerCurve_Pow3	med	fn-pointer table 0x493d30 entry 3; returns x*x*x
+00394a70	PowerCurve_Pow4	med	fn-pointer table 0x493d30 entry 4; returns x^4
+00394b68	GridMeshBase_SetScale	med	GridMeshBase vt 0x4938e0 slot 9 (cPS2GridMesh slot 9 = SetScale, render.md); empty
+00394b78	BezierManBase_v04	high	BezierManBase vt 0x493820 slot 4 (non-pure), empty jr ra
+00394b80	BezierManBase_v05	high	slot 5 of BezierManBase 0x493820 and PS2BezierMan 0x493760, empty; called by GameModule_RenderBezierPatches
+00394b88	BezierManBase_v19	high	slot 19 of BezierManBase and PS2BezierMan; stores f12 at +0
+00394b90	BezierManBase_v20	high	slot 20 of BezierManBase and PS2BezierMan; returns float +0
+00394bc0	PS2BezierMan_SetLodNearDist	med	PS2BezierMan vt 0x493760 slot 6; stores f12 at +0x33c, read back by slot 8 (GameModule_BeginBezierPass LOD distances)
+00394bc8	PS2BezierMan_SetLodFarDist	med	PS2BezierMan slot 7; stores f12 at +0x340, read back by slot 9
+00394bd0	PS2BezierMan_GetLodNearDist	med	PS2BezierMan slot 8; returns +0x33c; GameModule_BeginBezierPass maps it to LOD 1.0
+00394bd8	PS2BezierMan_GetLodFarDist	med	PS2BezierMan slot 9; returns +0x340; GameModule_BeginBezierPass maps it to LOD 3.0
+00394be0	PS2BezierMan_v10	high	PS2BezierMan vt 0x493760 slot 10; stores a1 at +0x354
+00394be8	PS2BezierMan_v11	high	PS2BezierMan slot 11; stores a1 at +0x344 (read by slot 14)
+00394bf0	PS2BezierMan_v12	high	PS2BezierMan slot 12; stores a1 at +0x34c (read by slot 15)
+00394bf8	PS2BezierMan_v13	high	PS2BezierMan slot 13; stores a1 at +0x350 (read by slot 16)
+00394c00	PS2BezierMan_v14	high	PS2BezierMan slot 14; returns +0x344
+00394c08	PS2BezierMan_v15	high	PS2BezierMan slot 15; returns +0x34c
+00394c10	PS2BezierMan_v16	high	PS2BezierMan slot 16; returns +0x350
+00394c48	LightManBase_v09	med	LightMan base vt 0x4936d8 (set by LightMan_ctor) slot 9, empty
+00394c50	LightManBase_v13	med	LightMan base vt 0x4936d8 slot 13, empty
+00394c58	LightManBase_v14	med	LightMan base vt 0x4936d8 slot 14, empty
+00394c60	LightManBase_v15	med	LightMan base vt 0x4936d8 slot 15, empty
+00394c88	LightMan_GetInstance	med	LightMan vt 0x493650 slot 2 (next to InitInstances/FreeInstances); returns *(this+4) + i*4
+00394d10	LightMan_ResetCounter	med	LightMan slot 6; clears +0xc (counter used by slot 7)
+00394d18	LightMan_NextId	med	LightMan slot 7; returns +8 + counter(+0xc), then counter++
+00394d30	LightMan_v08	high	LightMan vt 0x493650 slot 8, empty
+00394d38	LightMan_v13	high	LightMan vt 0x493650 slot 13, empty
+00394d40	LightMan_v14	high	LightMan vt 0x493650 slot 14, empty
+00394d48	LightMan_v15	high	LightMan vt 0x493650 slot 15, empty
+00395318	PS2GraphicsMan_GetDisplayModeCount	med	PS2GraphicsMan slot 7 (render.md GetDisplayModeCount); returns +0x59c4
+00395320	PS2GraphicsMan_IsProgressive	high	PS2GraphicsMan slot 9; returns +0x5a4c progressive flag (render.md H)
+00395328	PS2GraphicsMan_GetDisplayModeIndex	med	PS2GraphicsMan slot 5; returns +0x59c8 (render.md)
+00395330	PS2GraphicsMan_GetScreenWidth	high	PS2GraphicsMan slot 10; returns modeTable[+0x59c8]*0xa4 +0x88 width (render.md); 15 callers
+00395350	PS2GraphicsMan_GetScreenHeight	high	PS2GraphicsMan slot 11; returns mode +0x8c height (render.md)
+003953b0	PS2GraphicsMan_GetFogState	med	PS2GraphicsMan slot 42; returns this+0x6b94 (render.md fogMode)
+00395420	PS2GraphicsMan_ClearLights	med	PS2GraphicsMan slot 66; numLights +0x13ec = 0 (render.md)
+003954d0	PS2GraphicsMan_SetLighting	med	PS2GraphicsMan slot 69; copies 0xa0 bytes into +0x6bb0 lighting (render.md); caller Rider_RenderModel
+00395500	PS2GraphicsMan_GetLighting	med	PS2GraphicsMan slot 70; returns this+0x6bb0
+00395508	PS2GraphicsMan_v110	high	PS2GraphicsMan vt 0x493260 slot 110, empty
+00395510	PS2GraphicsMan_GetFlipCount	high	PS2GraphicsMan slot 114; returns +0x5a74 vsyncFlipCount (render.md H)
+003956e0	PS2GraphicsMan_v98	high	PS2GraphicsMan slot 98; stores a1 at +0x6d14 (render.md slot 98 sets it)
+003956e8	PS2GraphicsMan_PushMatrix	high	PS2GraphicsMan slot 31; copies top matrix (+0x13e4) up 0x40, depth +0x13e0 ++ (render.md)
+00395730	PS2GraphicsMan_PopMatrix	high	PS2GraphicsMan slot 32; +0x13e4 -= 0x40, depth--, clears +0x6b90
+00395c38	PS2GraphicsMan_LoadMatrix	high	PS2GraphicsMan slot 34; copies matrix a1 into *curMatrix, clears +0x6b90
+00395c68	PS2GraphicsMan_GetMatrix	high	PS2GraphicsMan slot 35; returns curMatrix +0x13e4
+00395c70	PS2GraphicsMan_MultMatrix	med	PS2GraphicsMan slot 36; curMatrix = a1 x curMatrix (VU0)
+00395cf0	PS2GraphicsMan_LoadIdentity	high	PS2GraphicsMan slot 37; copies identity 0x4ff1a0 into curMatrix
+00395d28	PS2GraphicsMan_Translate	med	PS2GraphicsMan slot 38; row 3 = curMatrix x vec a1
+00395fa0	PS2GraphicsMan_v68	high	PS2GraphicsMan vt 0x493260 slot 68, empty
+00396108	cPS2GridMesh_IsValid	high	cPS2GridMesh vt 0x493208 slot 2; returns +0x1c8 (render.md IsValid)
+00396110	cPS2GridMesh_SetScale	high	cPS2GridMesh slot 9; +0x194 = f12, +0x198 = 1/f12 (render.md SetScale)
+003968c8	VfxTube_Render	high	VfxTube vt 0x4930a0 slot 3 (VFX base slot 3 Render), empty; called from PS2VisualEffectsMan_Render
+003968d0	RailTube_SetPoint	med	RailTube vt 0x493068 slot 5; stores qword a2 at points(+8)[a1]
+00396918	PathArrow_Update	high	PathArrow vt 0x493038 slot 2 (VFX base Update), empty; called from PS2VisualEffectsMan_Update
+00396920	PathArrow_Render	high	PathArrow slot 3 (VFX base Render), empty; called from PS2VisualEffectsMan_Render
+00396958	DetailSystem_v05	high	DetailSystem vt 0x493000 slot 5, empty
+00396b40	PS2GraphicsMan_EmitLightingPacket	high	PS2GraphicsMan slot 124 (render.md H): STCYCL+UNPACK of +0x6bb0 lighting, MSCAL 0x1150, sets material type 6
+003a0158	UIObject_SetAnimParams	med	UI widget slot 13 (UIObject 0x494bd8, cUIGroup, UIText, ...); loops over a2[a1] {short id, short val} applying the SetAnimParam switch
+003a019c	NOTFUNC_003a019c	high	switch case of UIObject_SetAnimParams (0x3a0158) jump table 0x494030; only ref is the table, uses a3/t0 set by the fn
+003a01a4	NOTFUNC_003a01a4	high	switch case of UIObject_SetAnimParams (0x3a0158) jump table 0x494030; only ref is the table, uses a3/t0 set by the fn
+003a01ac	NOTFUNC_003a01ac	high	switch case of UIObject_SetAnimParams (0x3a0158) jump table 0x494030; only ref is the table, uses a3/t0 set by the fn
+003a01bc	NOTFUNC_003a01bc	high	switch case of UIObject_SetAnimParams (0x3a0158) jump table 0x494030; only ref is the table, uses a3/t0 set by the fn
+003a01cc	NOTFUNC_003a01cc	high	switch case of UIObject_SetAnimParams (0x3a0158) jump table 0x494030; only ref is the table, uses a3/t0 set by the fn
+003a01dc	NOTFUNC_003a01dc	high	switch case of UIObject_SetAnimParams (0x3a0158) jump table 0x494030; only ref is the table, uses a3/t0 set by the fn
+003a01ec	NOTFUNC_003a01ec	high	switch case of UIObject_SetAnimParams (0x3a0158) jump table 0x494030; only ref is the table, uses a3/t0 set by the fn
+003a01fc	NOTFUNC_003a01fc	high	switch case of UIObject_SetAnimParams (0x3a0158) jump table 0x494030; only ref is the table, uses a3/t0 set by the fn
+003a0228	NOTFUNC_003a0228	high	switch case of UIObject_SetAnimParams (0x3a0158) jump table 0x494030; only ref is the table, uses a3/t0 set by the fn
+003a0238	NOTFUNC_003a0238	high	switch case of UIObject_SetAnimParams (0x3a0158) jump table 0x494030; only ref is the table, uses a3/t0 set by the fn
+003a0248	NOTFUNC_003a0248	high	switch case of UIObject_SetAnimParams (0x3a0158) jump table 0x494030; only ref is the table, uses a3/t0 set by the fn
+003a0258	NOTFUNC_003a0258	high	switch case of UIObject_SetAnimParams (0x3a0158) jump table 0x494030; only ref is the table, uses a3/t0 set by the fn
+003a0268	NOTFUNC_003a0268	high	switch case of UIObject_SetAnimParams (0x3a0158) jump table 0x494030; only ref is the table, uses a3/t0 set by the fn
+003a0270	NOTFUNC_003a0270	high	switch case of UIObject_SetAnimParams (0x3a0158) jump table 0x494030; only ref is the table, uses a3/t0 set by the fn
+003a0274	NOTFUNC_003a0274	high	loop tail / default case of UIObject_SetAnimParams (0x3a0158) jump table 0x494030
+003a3398	UIVector_SetColor	med	UIVector vt 0x4941b8 slot 11 (UIObject slot 11 = 0x3a4af8 copies 4 floats to +0x1c colour = anim params 0xd-0x10); copies a1 to +0x1c and propagates to vertex data
+003a3808	UIVector_SetAnimParams	med	UIVector vt 0x4941b8 slot 13 (cf. UIObject_SetAnimParams); loops over a2[a1] {short id, short val}, ids <21 incl. per-vertex params
+003a3898	NOTFUNC_003a3898	high	switch case of UIVector_SetAnimParams (0x3a3808) jump table 0x494140 (per-vertex params); only ref is the table, uses t0/a3 of the fn
+003a38a8	NOTFUNC_003a38a8	high	switch case of UIVector_SetAnimParams (0x3a3808) jump table 0x494140 (per-vertex params); only ref is the table, uses t0/a3 of the fn
+003a38b8	NOTFUNC_003a38b8	high	switch case of UIVector_SetAnimParams (0x3a3808) jump table 0x494140 (per-vertex params); only ref is the table, uses t0/a3 of the fn
+003a38c8	NOTFUNC_003a38c8	high	switch case of UIVector_SetAnimParams (0x3a3808) jump table 0x494140 (per-vertex params); only ref is the table, uses t0/a3 of the fn
+003a38dc	NOTFUNC_003a38dc	high	switch case of UIVector_SetAnimParams (0x3a3808) jump table 0x494140 (per-vertex params); only ref is the table, uses t0/a3 of the fn
+003a38f0	NOTFUNC_003a38f0	high	switch case of UIVector_SetAnimParams (0x3a3808) jump table 0x494140 (per-vertex params); only ref is the table, uses t0/a3 of the fn
+003a3904	NOTFUNC_003a3904	high	switch case of UIVector_SetAnimParams (0x3a3808) jump table 0x494140 (per-vertex params); only ref is the table, uses t0/a3 of the fn
+003a3938	NOTFUNC_003a3938	high	switch case of UIVector_SetAnimParams (0x3a3808) jump table 0x494170; only ref is the table, uses t0 of the fn
+003a3940	NOTFUNC_003a3940	high	switch case of UIVector_SetAnimParams (0x3a3808) jump table 0x494170; only ref is the table, uses t0 of the fn
+003a3948	NOTFUNC_003a3948	high	switch case of UIVector_SetAnimParams (0x3a3808) jump table 0x494170; only ref is the table, uses t0 of the fn
+003a3958	NOTFUNC_003a3958	high	switch case of UIVector_SetAnimParams (0x3a3808) jump table 0x494170; only ref is the table, uses t0 of the fn
+003a3968	NOTFUNC_003a3968	high	switch case of UIVector_SetAnimParams (0x3a3808) jump table 0x494170; only ref is the table, uses t0 of the fn
+003a3994	NOTFUNC_003a3994	high	switch case of UIVector_SetAnimParams (0x3a3808) jump table 0x494170; only ref is the table, uses t0 of the fn
+003a39a4	NOTFUNC_003a39a4	high	switch case of UIVector_SetAnimParams (0x3a3808) jump table 0x494170; only ref is the table, uses t0 of the fn
+003a39b4	NOTFUNC_003a39b4	high	switch case of UIVector_SetAnimParams (0x3a3808) jump table 0x494170; only ref is the table, uses t0 of the fn
+003a39c4	NOTFUNC_003a39c4	high	switch case of UIVector_SetAnimParams (0x3a3808) jump table 0x494170; only ref is the table, uses t0 of the fn
+003a39d4	NOTFUNC_003a39d4	high	switch case of UIVector_SetAnimParams (0x3a3808) jump table 0x494170; only ref is the table, uses t0 of the fn
+003a39dc	NOTFUNC_003a39dc	high	switch case of UIVector_SetAnimParams (0x3a3808) jump table 0x494170; only ref is the table, uses t0 of the fn
+003a39e0	NOTFUNC_003a39e0	high	loop tail / default case of UIVector_SetAnimParams (0x3a3808) jump tables 0x494140/0x494170
+003a3d70	UIVector_v20	high	UIVector vt 0x4941b8 slot 20 (UIObject slot 20 = GetVec3At60 override); uses vertex array +0x80
+003a3e38	UIVector_v21	high	UIVector vt 0x4941b8 slot 21 (UIObject slot 21 = SetVec3At60 override); walks vertex array +0x80 when +0x74 type bits == 0x80000
+003a49e8	UIObject_v04	high	UI widget slot 4 (UIObject 0x494bd8 and all widgets); sets/clears flag bit 1 of +0x14 from a1
+003a4a08	UIObject_v05	high	UI widget slot 5; sets/clears flag bit 2 of +0x14
+003a4a28	UIObject_v06	high	UI widget slot 6; sets/clears flag bit 3 of +0x14
+003a4a48	UIObject_SetFocus	high	UI widget slot 7 (naming.md: 7 SetFocus; cUIGroup override cUIGroup_SetFocus); sets/clears flag bit 4 of +0x14
+003a4a68	UIObject_v08	high	UI widget slot 8; sets/clears flag bit 5 of +0x14
+003a4a88	UIObject_SetVisible	high	UI widget slot 9 (naming.md: 9 SetVisible); sets/clears flag bit 6 of +0x14
+003a4af8	UIObject_SetColor	med	UI widget slot 11 (UIObject 0x494bd8, UIText, UIListBox, ...); copies 16 bytes a1 to +0x1c..+0x2b (anim params 0xd-0x10 = colour channels)
+003a4bd8	UIObject_HandleInput	high	UI widget slot 15 (naming.md HandleInput) base impl; returns 0
+003a4be0	UIObject_RefreshText	high	UI widget slot 16 (naming.md RefreshText) base impl; empty
+003a4be8	UIObject_Render	high	UIObject 0x494bd8 slot 17 (naming.md Render) base impl; empty
+003a4bf0	UIObject_v18	high	UI widget slot 18 base impl (UIObject, UIVector, UIText, ...); empty
+003a4c90	UIObject_GetVec3At60	med	UI widget slot 20; copies vec3 +0x60..+0x68 to a1 (+0x60/+0x64 = anim params 6/7)
+003a4cb0	UIObject_SetVec3At60	med	UI widget slot 21; copies vec3 a1 to +0x60..+0x68
+003a4ea8	UIIcon_GetType	med	UIIcon vt 0x494aa8 slot 22; returns 0x11 (widget slot 22 returns a per-class type id)
+003a50f8	cUIGroup_GetType	med	cUIGroup vt 0x4949e8 slot 22; returns 0x10
+003a5330	UIMenu_GetType	med	UIMenu vt 0x494928 slot 22; returns 0x13
+003a5500	UIPair_GetType	med	UIPair vt 0x494868 slot 22; returns 0x15
+003a56a0	UIListBox_GetType	med	UIListBox vt 0x494798 slot 22; returns 0x12
+003a56d8	UIListBox_v23	high	UIListBox vt 0x494798 slot 23; sets/clears bit 2 of +0x74
+003a5708	UIListBox_v24	high	UIListBox slot 24; sets/clears bit 5 of +0x74
+003a5aa8	UIState_Init	high	UIState base vt 0x4946c8 slot 4 (naming.md 4 Init), shared by cFEState etc.; empty
+003a5ab0	UIState_TransitionIn	high	UIState slot 7 (naming.md TransitionIn) base impl; returns 0
+003a5ab8	UIState_HandleInput	high	UIState slot 8 (naming.md HandleInput) base impl; returns 0
+003a5ac0	UIState_TransitionOut	high	UIState slot 10 (naming.md TransitionOut) base impl; returns 0
+003a5ac8	UIState_OnDeactivate	high	UIState slot 11 (naming.md OnDeactivate) base impl; empty
+003a5ad0	UIState_OnRender	high	UIState slot 14 (naming.md OnRender) base impl; empty
+003a5ad8	UIState_OnAnimEvent	high	UIState slot 16 (naming.md OnAnimEvent) base impl; returns 0
+003a5b08	UIState_OnChildEvent	high	UIState slot 17 (naming.md OnChildEvent) base impl; empty
+003a5b10	UIState_OnWidgetCreated	high	UIState slot 18 (naming.md OnWidgetCreated) base impl; empty
+003a5b18	UIState_OnWidgetAction	high	UIState slot 19 (naming.md OnWidgetAction) base impl; empty
+003a5b20	UIState_OnWidgetNotify	high	UIState slot 20 (naming.md OnWidgetNotify) base impl; returns 0x101
+003a5b28	UIState_v21	high	UIState base vt 0x4946c8 slot 21; returns 0x101
+003a5b30	UIState_v22	high	UIState base slot 22; returns 0x101
+003a5b38	UIState_v23	high	UIState base slot 23; returns 0
+003a5b40	UIState_OnNetEvent	med	UIState base slot 24 (overridden by NetFEState_OnNetEvent in net-FE base 0x46b808); returns 0
+003a5df0	UIText_GetType	med	UIText vt 0x494588 slot 22; returns 0x17
+003a5e68	UIText_v23	high	UIText vt 0x494588 slot 23; sets/clears bit 2 of +0x74
+003a5e88	UIText_v24	high	UIText slot 24; sets/clears bit 3 of +0x74
+003a5ea8	UIText_v25	high	UIText slot 25; sets/clears bit 4 of +0x74
+003a5ec8	UIText_v26	high	UIText slot 26; sets/clears bit 5 of +0x74
+003a5ee8	UIText_v27	high	UIText slot 27; sets/clears bit 6 of +0x74
+003a6000	cUIScroll_GetType	med	cUIScroll vt 0x4944c8 slot 22; returns 0x21
+003a6168	cUIProgress_GetType	med	cUIProgress vt 0x494408 slot 22; returns 0x19
+003a6220	cUISlider_GetType	med	cUISlider vt 0x494348 slot 22; returns 0x16
+003a6330	cUITextScroll_GetType	med	cUITextScroll vt 0x494278 slot 22; returns 0x20
+003a6378	cUITextScroll_v23	high	cUITextScroll vt 0x494278 slot 23; sets/clears bit 3 of +0x74
+003a6398	cUITextScroll_v24	high	cUITextScroll slot 24; sets/clears bit 4 of +0x74
+003a6540	UIVector_GetType	med	UIVector vt 0x4941b8 slot 22; returns 0x18
+003aa6e8	cPS2ChunkResolve_v16	high	slot 16 of cPS2ChunkResolve 0x495090 and base 0x495150 (relocation visitor, called by slot 15); +0x20 += base a1, returns 1
+003aa700	cPS2ChunkResolve_v17	high	slot 17 of cPS2ChunkResolve/base; resolves handle +0x64 through the type table (gp chunk table), returns 1
+003aa758	cPS2ChunkResolve_v09	high	slot 9 of cPS2ChunkResolve/base; +0x10 == -1 -> 0 else relocates, then +0x14 entries
+003aa780	cPS2ChunkResolve_v10	high	slot 10 of cPS2ChunkResolve/base; for a1 lists a2[] resolves each handle (low byte = type) through the chunk table
+003aa8d8	cPS2ChunkResolve_v12	high	slot 12 of cPS2ChunkResolve/base (called per item by slot 11); +4 += a2, returns 1
+003aa8f0	cPS2ChunkResolveBase_v13	high	slot 13 of base vt 0x495150 (derived override cPS2ChunkResolve_v13); resolves handle +0x80 via type table
+003aa960	cPS2ChunkResolve_v18	high	slot 18 of cPS2ChunkResolve/base; walks +0x20 count of 0x90-byte records at +0x30, sets +0x24, resolves +0x60 handles
+003aac50	cPS2ChunkResolve_v21	high	slot 21 of cPS2ChunkResolve/base; if !(flags+0xc & 0x100) and 0<(+0x10)<3 clamps float +0x1c
+003aaca8	cPS2ChunkResolve_v22	high	slot 22 of cPS2ChunkResolve/base; returns 1 if !(flags & 0x100) and 0<(+0x10)<3
+003aae40	cPS2ChunkResolve_Init	med	cPS2ChunkResolve vt 0x495090 slot 2; +0xc = a1, +0 = gp+0x16c8 table, +0x10 = short +0x2a of its header
+003adc48	cPS2ChunkResolve_v08	high	slot 8 of cPS2ChunkResolve/base (called per item by slot 7); returns 1
+003b0b10	PS2_SONY_CODEC_INTERNAL_NodataCallback	high	passed to sceMpegAddCallback(mp, 1 = sceMpegCbNodata, fn, this) by PS2_SONY_CODEC_INTERNAL_Open; calls FeedBitstream, returns 1
+003b0fa0	PS2_SONY_CODEC_INTERNAL_v05	high	PS2_SONY_CODEC_INTERNAL vt 0x456848 slot 5; returns +0x10
+003b0fa8	PS2_SONY_CODEC_INTERNAL_v06	high	PS2_SONY_CODEC_INTERNAL vt 0x456848 slot 6; returns float constant at 0x509508
+003b1140	PS2_SONY_CODEC_INTERNAL_ReleaseFrame	med	PS2_SONY_CODEC_INTERNAL vt 0x456848 slot 7; decrements frame refcount +0x10, at 0 unlinks it and puts it back (state 0xb) on the free list at this+0x20
+003b5470	SND_TimerNullCallback	med	empty fn stored as default callback (0x50a9b0) by SND_StartTimerService
+003beca0	SNDENC_GetMemSize	med	fn ptr installed by SNDENC_InstallDts (with SNDENC_EncodeFrame); mode a0 1/2, rate a1 (<34/<67/<101 -> frame 0xe0/0x160/0x1e0), writes two buffer sizes to *a2/*a3
+003bed30	SNDENC_Init	med	fn ptr installed by SNDENC_InstallDts; same mode/rate checks, lays out the encoder state in buffer a2 (0x50ac68), clears it and builds the band scale tables
+003c1980	SND_VBlankHandler	med	registered by SND_IopInit with AddIntcHandler(2 = VBLANK_START); counter 0x50a8e8+0x1c0 ++, ei, returns 0
+003c555c	NOTFUNC_003c555c	high	switch case of the output-mode-name fn at 0x3c5538 (jump table 0x495940; stores 'Mono'/'Stereo'/'DTS 5.1'/... string ptr into *a1)
+003c556c	NOTFUNC_003c556c	high	switch case of the output-mode-name fn at 0x3c5538 (jump table 0x495940; stores 'Mono'/'Stereo'/'DTS 5.1'/... string ptr into *a1)
+003c557c	NOTFUNC_003c557c	high	switch case of the output-mode-name fn at 0x3c5538 (jump table 0x495940; stores 'Mono'/'Stereo'/'DTS 5.1'/... string ptr into *a1)
+003c558c	NOTFUNC_003c558c	high	switch case of the output-mode-name fn at 0x3c5538 (jump table 0x495940; stores 'Mono'/'Stereo'/'DTS 5.1'/... string ptr into *a1)
+003c559c	NOTFUNC_003c559c	high	switch case of the output-mode-name fn at 0x3c5538 (jump table 0x495940; stores 'Mono'/'Stereo'/'DTS 5.1'/... string ptr into *a1)
+003c55ac	NOTFUNC_003c55ac	high	switch case of the output-mode-name fn at 0x3c5538 (jump table 0x495940; stores 'Mono'/'Stereo'/'DTS 5.1'/... string ptr into *a1)
+003c55bc	NOTFUNC_003c55bc	high	switch case of the output-mode-name fn at 0x3c5538 (jump table 0x495940; stores 'Mono'/'Stereo'/'DTS 5.1'/... string ptr into *a1)
+003c55cc	NOTFUNC_003c55cc	high	switch case of the output-mode-name fn at 0x3c5538 (jump table 0x495940; stores 'Mono'/'Stereo'/'DTS 5.1'/... string ptr into *a1)
+003c55dc	NOTFUNC_003c55dc	high	switch case of the output-mode-name fn at 0x3c5538 (jump table 0x495940; stores 'Mono'/'Stereo'/'DTS 5.1'/... string ptr into *a1)
+003c9358	SND_DecUtk_GetPosMem	med	callback stored at stream+0x28 by SND_DecUtk_InitMem (decoder table entry); returns decoder +0x20
+003c9518	SND_DecUtk_GetPosLoop	med	callback stored at stream+0x28 by SND_DecUtk_InitLoop; returns decoder +0x20
+003c9ac8	SND_DecPcm16_InitMem	med	fn ptr registered by SND_RegisterPcm16Decoders; sets decoder +0 = SND_DecPcm16_DecodeMem (0x3c9a00), copies stream fields, stream+0x28 = 0x3c99f8 (same shape as SND_DecUtk_InitMem)
+003c9bc8	SND_DecPcm16_InitLoop	med	fn ptr registered by SND_RegisterPcm16Decoders; sets decoder +0 = SND_DecPcm16_DecodeLoop (0x3c9b10), stream+0x28 = 0x3c9b08
+003c9ff8	SND_DecEaxa_GetPosMem	med	callback stored at stream+0x28 by SND_DecEaxa_InitMem; returns decoder +0x28
+003ca358	SND_DecEaxa_GetPosLoop	med	callback stored at stream+0x28 by SND_DecEaxa_InitLoop; returns decoder +0x20
+003cbb78	SND_EeMixScaledVu0	med	mix fn ptr installed at mixer 0x515b40+0x1e0 (init after SND_EeMixerInitMixFunc); VU0 loop over a0 samples: src a1 x gain f12 combined with dst a2, 0x40 bytes per iteration; called by SND_EeMixBlock
+003cc878	SND_EeFxSendMix	low	installed at 0x515b50 (flag +0xf = 1) by SND_IopSetEffect when the effect is on; scales block into fx buffer 0x515d80 using 0x515b54 (VU0, 0x7f gain)
+003d0c78	PATH_SetActionDoneFlag	low	FDE-only fn (no refs) after PATH_SkipRemainingActions; if a1 >= a0+0x10 sets bit 0x4000000 of word +0x18
+003d16e0	PATH_ReturnArg	low	FDE-only fn next to PATH_GetTimeValue; returns a0
+003d16e8	PATH_NopStub2	low	FDE-only fn next to PATH_NopStub; empty
+003d2138	PATH_GetEventMarkBit	med	FDE-only fn before PATH_SetEventMarkBit; scans 16 track slots (+0xdc) for id byte +0xc and event a1, returns bit 26 of the event word
+003d3010	PATH_NopStub3	low	FDE-only fn after PATH_Shutdown; empty
+003d3018	PATH_SetUserCallback	low	FDE-only fn; stores a0/a1 into globals 0x44f424/0x44f428
+003d32a8	PATH_GetVersionString	high	returns 0x44ed48 = 'AUTHOR:  Bjaques, Thursday 06:18PM Sep 04, 2003, V4.04.10'
+003d4898	PATH_TrackGetEventEntry	low	FDE-only fn before PATH_TrackGetBeat; idx a0 < hdr(+0x34)+0x12 count, maps through +0x38 index table, returns word from +0x50 8-byte table
+003d49d0	PATH_FindClosestKeyEntry	low	FDE-only fn; over a0 4-byte entries a2[] picks min max(|lo-a1|,|hi-a1|) and returns its u16 +2
+003dbac8	LocStringTable_CompareId	med	comparator passed by LocStringTable_RemapId; returns u16 *a0 - (a1[1]<<8 | a1[0])
+003e3968	EAFile_CdCompareHash	med	qsort/bsearch comparator used by EAFile_CdBuildHashTable and EAFile_CdLookup; compares u32 *a0 vs *a1, counts ties in 0x51ed80
+003e74e8	ProtoPing_RpcReplyCallback	med	callback passed (stack arg) to DirtyRpc_Call by ProtoPingResponse; stores reply value (8th arg) to *ctx, clears ctx+4
+003eeab8	Lobby_HashStrCmpNoCase	med	compare fn installed by Lobby_HashCreate; string compare through case-fold table 0x496a58
+003f4410	DirtyRpc_IntcHandler	med	registered by DirtyRpc_Startup via AddIntcHandler; accumulates COP0 Count deltas at +0x4e00, ei, returns 0
+003f5a50	ProtoAries_RpcReplyCallback	med	callback passed to DirtyRpc_Call by ProtoAriesPeek/ProtoAriesRecv; stores reply (8th arg) at ctx+0x10, clears +8/+0xc
+003f61c8	UsbKb_NullCallback	med	installed by UsbKb_Init as default callback; returns 0
+003f77f0	SLogin_StepNop	med	step function installed by SLogin_InitStepFuncs; returns 0
+003f87f8	SLoginMc_SyncResult_Cmd00	med	entry 0 of SLoginMc mc-command result table 0x4514a0 (indexed by command, entry k checks current op state +4 == k); returns the sceMc result a0 unchanged
+003f8800	SLoginMc_SyncResult_Cmd01	med	result table 0x4514a0 entry 1; op state (gp+0x1ae8)+4 must be 1, maps sceMc result a0 to SLogin code (0/3/0x11/0x10, 0x12 = wrong state)
+003f8838	SLoginMc_SyncResult_Cmd02	med	result table 0x4514a0 entry 2; state 2, maps results 0/4/3/9/0x11
+003f8880	SLoginMc_SyncResult_Cmd07	med	result table 0x4514a0 entries 7/0xb/0xf; accepts states 7,0xb,0x18,0x1b,0x1c,0x1d
+003f8908	SLoginMc_SyncResult_Cmd08	med	result table 0x4514a0 entries 8/0xc/0x10/0x18; accepts states 8,0xc,0x10,0x18
+003f8968	SLoginMc_SyncResult_Cmd09	med	result table 0x4514a0 entries 9/0xd/0x11/0x19; accepts states 9,0xd,0x11,0x19
+003f89c8	SLoginMc_SyncResult_Cmd1A	med	result table 0x4514a0 entry 0x1a; state 0x1a
+003f8a08	SLoginMc_SyncResult_Cmd05	med	result table 0x4514a0 entry 5; state 5
+003f8a58	SLoginMc_SyncResult_Cmd06	med	result table 0x4514a0 entries 6/0xa/0xe/0x16; accepts states 6,0xa,0xe,0x16
+003f8ac0	SLoginMc_SyncResult_Cmd13	med	result table 0x4514a0 entries 0x13-0x15; accepts states 0x13..0x15
+003f8b28	SLoginMc_SyncResult_Cmd12	med	result table 0x4514a0 entry 0x12; state 0x12
+003f8b78	SLoginMc_SyncResult_Cmd03	med	result table 0x4514a0 entry 3; state 3
+003f8bb0	SLoginMc_SyncResult_Cmd04	med	result table 0x4514a0 entry 4; state 4
+003f8be8	SLoginMc_SyncResult_Cmd17	med	result table 0x4514a0 entry 0x17; state 0x17
+003f8c30	SLoginMc_IdleStep	med	entry 0 of SLoginMc step table 0x451468 (next: CreateStep, DeleteStep, OpenStep, ...); returns a0
+003fb480	Crc32_IsInitialized	high	Crc32 interface table 0x497508 (Crc32_GetInterface) entry 2 after Init/Shutdown; returns state 0x451518 != 0
+003fb490	Crc32_Begin	high	Crc32 interface entry 3; crc = 0xffffffff (state+0xc), returns 6 if not initialized
+003fb4c0	Crc32_Update	high	Crc32 interface entry 4; table-driven CRC over (a0 data, a1 len) into state+0xc
+003fb558	Crc32_Final	high	Crc32 interface entry 5; result ~crc stored, *a0 = ptr to 4-byte digest
+003fb5b0	Crc32_GetDigestSize	high	Crc32 interface entry 6; *a0 = 4
+003fb5f8	SLoginXorCipher_Shutdown	med	cipher interface 0x497528 (SLoginStore_GetCipherIface) entry 0; state gp+0x1b00 4 -> 6, else 3
+003fb620	SLoginXorCipher_Init	med	cipher interface entry 1; state = 4, clears key ptrs gp+0x1af4..0x1afc
+003fb640	SLoginXorCipher_IsKeyed	med	cipher interface entry 2; returns state != 4
+003fb650	SLoginXorCipher_SetKey	med	cipher interface entry 3; key (a0, len a1): start/end/cursor at gp+0x1af4/0x1af8/0x1afc, state 5
+003fb6a0	SLoginXorCipher_Encrypt	med	cipher interface entry 4; XORs a1 bytes of a0 with the repeating key, state 7
+003fb730	SLoginXorCipher_Decrypt	med	cipher interface entry 5; same XOR loop, state 8
+003fb7c0	SLoginXorCipher_Reset	med	cipher interface entry 6; from state 5/7/8 rewinds key cursor to start, state 5
+003fd810	NOTFUNC_003fd810	med	start of an embedded blob: DnasRel_Load only uses 0x3fd908-0x3fd810 as a size/range (bytes decode as garbage instructions)
+003fd908	NOTFUNC_003fd908	med	end marker of the 0x3fd810 blob in DnasRel_Load's size computation (jr ra; nop filler before the next fn 0x3fd910)
+00400b48	libcdvd_ReadRpcEndCallback	med	end callback passed to sceSifCallRpc by sceCdRead; copies the unaligned head/tail bytes from the uncached RPC buffer (0x20000000|a0)
+00403d70	libmpeg_SequenceScalableExtension	high	MPEG extension dispatch table 0x497fe0 entry 5; libmpeg_Error('_sequenceScalableExtension() is not implemented')
+00403d80	libmpeg_UnknownExtension	high	extension table 0x497fe0 entries 0/6; libmpeg_Error('Unknown Extension')
+00403d90	libmpeg_PictureSpatialScalableExtension	high	extension table entry 9; libmpeg_Error('_pictureSpatialScalableExtension is not supported')
+00403da0	libmpeg_PictureTemporalScalableExtension	high	extension table entry 10; libmpeg_Error('_pictureTemporalScalableExtension is not supported')
+00403db0	libmpeg_StopDmaCallback	high	default sceMpegCbStopDMA callback installed by sceMpegCreate (next fn is libmpeg_RestartDmaCallback); sceIpuStopDMA(mp+0x40 +0x4c), returns 1
+00408508	libmpeg_SetOutputDone	low	no static ref (runtime miss, ra 0x407ed0 in libmpeg_OutputPicture); if +8 != 2: +8 = 2, +0xac = +0x118; +0x820 = 1, returns 1
+00408ca8	libmpeg_IpuFromDmaHandler	med	AddDmacHandler(3 = IPU_FROM) handler from libmpeg_IpuCscDma; clears D_STAT bit 3, counts, restarts the CSC transfer
+00408fb0	libmpeg_IpuToDmaHandler	med	AddDmacHandler(4 = IPU_TO) handler from libmpeg_ConvertPictureCsc; clears D_STAT bit 4, feeds the next block via IPU regs 0x1000b400..
+0040a000	libmc_ReadRpcEndCallback	med	end callback passed to sceSifCallRpc by sceMcRead; copies unaligned head/tail bytes from the uncached RPC buffer
+0040a320	libmc_DelayAlarmHandler	med	SetAlarm handler used by libmc_DelayThread; iSignalSema(a2)
+0040a440	libmc_GetInfoRpcEndCallback	med	end callback passed to sceSifCallRpc by sceMcGetInfo; copies the result words to the user pointers (0x5271e8...)
+0040c8b0	libusbkb_RpcEndCallback	med	end callback of every sceUsbKb RPC (GetInfo/Read/GetLocation/SetLED*/ClearRbuf); iSignalSema(0x453438)
+0040c928	libusbkb_GetInfoCallback	med	libusbkb result handler table 0x453424 entry 0 (next: libusbkb_ReadCallback); copies keyboard info from the receive buffer
+0040cef8	libusbkb_GetLocationCallback	med	libusbkb result table 0x453424 entry 2 (order GetInfo/Read/GetLocation/SetLEDStatus/SetLEDMode); copies 7 location bytes
+0040cf48	libusbkb_SetLEDStatusCallback	med	libusbkb result table 0x453424 entry 3; returns 0 if result byte matches, else -1
+0040cf68	libusbkb_SetLEDModeCallback	med	libusbkb result table 0x453424 entry 4; same compare, returns 0 / -1
+0040cf88	libusbkb_VBlankHandler	med	registered by sceUsbKbInit with AddIntcHandler(3 = VBLANK_END); walks the keyboard slots
+00410408	__empty	med	FDE-only empty fn after __throw_type_match in the libgcc2 EH block (gcc 2.95 libgcc2.c __empty)
+004106e8	__sjpopnthrow	med	FDE-only fn right after __sjthrow (libgcc2.c order __sjthrow, __sjpopnthrow); 0x750 frame saving all callee-saved regs, uses dynamic handler chain 0x453444
+00410800	__eh_rtime_match	med	FDE-only fn: info = *__get_eh_info(); matcher = info->match_function (+0); returns 0 if null else matcher(info, rtime, 0) != 0 (libgcc2.c)
+00410848	__get_eh_table_version	high	FDE-only libgcc2 accessor: returns short exception_descriptor+6 (lang.version)
+00410850	__get_eh_table_language	high	FDE-only libgcc2 accessor: returns short exception_descriptor+4 (lang.language)
+00411530	__pure_virtual	high	fills every pure slot of abstract vtables (GraphicsMan, LightMan, RCMP::CODEC, ...); tail-calls __terminate (naming.md: __pure_virtual)
+00412838	set_unexpected	high	FDE-only fn right after set_terminate; swaps the handler at 0x453a38 with a0, returns the old one
+00412cb4	NOTFUNC_00412cb4	high	EH landing pad inside __check_eh_spec (real body runs to 0x412cd8); only refs are the exception region table 0x49b088
+00412cc4	NOTFUNC_00412cc4	high	EH landing pad inside __check_eh_spec (b 0x412b98); only ref is exception region table 0x49b088
+00412ccc	NOTFUNC_00412ccc	high	EH region of __check_eh_spec (jal terminate); only refs are exception region table 0x49b088
+00412cd8	__throw_bad_cast	high	FDE fn: __eh_alloc(4), vptr 0x499a30 (bad_cast, see bad_cast_ctor), __throw (gcc 2.95 exception.cc)
+00412d08	NOTFUNC_00412d08	high	EH region boundary inside __throw_bad_cast; only ref is exception region table 0x49b0c0
+00412d4c	NOTFUNC_00412d4c	high	EH cleanup landing pad inside __throw_bad_cast; only ref is exception region table
+00412d58	__throw_bad_typeid	high	FDE fn: __eh_alloc(4), vptr 0x499a18 (bad_typeid, see bad_typeid_ctor), __throw
+00412d88	NOTFUNC_00412d88	high	EH region boundary inside __throw_bad_typeid; only ref is exception region table 0x49b0cc
+00412dcc	NOTFUNC_00412dcc	high	EH cleanup landing pad inside __throw_bad_typeid; only ref is exception region table
+00412dd8	uncaught_exception	high	FDE fn: p = *__get_eh_info(); returns p && !p->caught (+0x14) (gcc 2.95 std::uncaught_exception)
+00412e68	bad_exception_ctor	high	FDE fn before bad_exception_dtor/__tf13bad_exception; *this = vptr 0x4998a0, returns this
+00412f00	exception_ctor	high	FDE fn after exception_dtor, before __tf9exception; *this = vptr 0x4998b8
+00414bd8	__rtti_class	high	FDE fn before __rtti_si/__rtti_user (tinfo2.cc order); placement-builds __class_type_info (name, vptr 0x4999d0, base list, count)
+00414ee0	__class_type_info_ctor	med	FDE fn before __tf17__class_type_info; sets name, vptr 0x4999d0, base list, count; returns this
+00414f70	__si_type_info_ctor	med	FDE fn before __tf14__si_type_info; sets name, vptr 0x4999e8, base type; returns this
+00415000	__user_type_info_ctor	med	FDE fn before __tf16__user_type_info; sets name and vptr 0x499a00
+004150b8	bad_typeid_ctor	high	FDE fn between bad_typeid_dtor and __tf10bad_typeid; *this = vptr 0x499a18
+00415150	bad_cast_ctor	high	FDE fn between bad_cast_dtor and __tf8bad_cast; *this = vptr 0x499a30
+004151d8	type_info_name	high	FDE fn after type_info_ne; returns *(this+0) (type_info::name())
+004151e0	type_info_ctor	med	FDE fn before __tf9type_info; sets name and vptr 0x499a48
+00415778	__rtti_ptr	high	FDE fn (tinfo2.cc order __rtti_ptr, _attr, _func, _ptmf, _ptmd, _array); builds __pointer_type_info (vptr 0x499bc8, type)
+00415798	__rtti_attr	high	FDE fn; builds __attr_type_info (vptr 0x499bb8, attr, type)
+004157c0	__rtti_func	high	FDE fn; builds __func_type_info (vptr 0x499b98)
+004157e0	__rtti_ptmf	high	FDE fn; builds __ptmf_type_info (vptr 0x499b88)
+00415800	__rtti_ptmd	high	FDE fn; builds __ptmd_type_info (vptr 0x499b78)
+00415820	__rtti_array	high	FDE fn; builds __array_type_info (vptr 0x499b68)
+00415928	__tfx	high	builtin typeinfo fn after __tfv; name string 0x499ae8 'x'
+00415960	__tfl	high	builtin typeinfo fn; name 'l'
+00415998	__tfi	high	builtin typeinfo fn; name 'i'
+004159d0	__tfs	high	builtin typeinfo fn; name 's'
+00415a08	__tfb	high	builtin typeinfo fn; name 'b'
+00415a40	__tfc	high	builtin typeinfo fn; name 'c'
+00415a78	__tfw	high	builtin typeinfo fn; name 'w'
+00415ab0	__tfr	high	builtin typeinfo fn; name 'r'
+00415ae8	__tfd	high	builtin typeinfo fn; name 'd'
+00415b20	__tff	high	builtin typeinfo fn; name 'f'
+00415b58	__tfUi	high	builtin typeinfo fn; name 'Ui'
+00415b90	__tfUl	high	builtin typeinfo fn; name 'Ul'
+00415bc8	__tfUx	high	builtin typeinfo fn; name 'Ux'
+00415c00	__tfUs	high	builtin typeinfo fn; name 'Us'
+00415c38	__tfUc	high	builtin typeinfo fn; name 'Uc'
+00415c70	__tfSc	high	builtin typeinfo fn; name 'Sc' (after 'Uc')
+004178a8	eofread	high	read hook installed by sscanf (newlib: f._read = eofread); returns 0
+00421eb0	NOTFUNC_00421eb0	high	switch case of the float-format fn at 0x421e60 (jump table 0x49aa10 on conversion char 'E'..'g'); calls print_f
+00421ed4	NOTFUNC_00421ed4	high	switch case of fn 0x421e60 (jump table 0x49aa10); calls _gcvt
+00421ef4	NOTFUNC_00421ef4	high	switch case of fn 0x421e60 (jump table 0x49aa10); calls print_e
+00421f08	NOTFUNC_00421f08	high	default case / epilogue of fn 0x421e60 (jump table 0x49aa10)
+00425cc0	sceSifCmd_SetSregHandler	high	system cmd handler installed by sceSifInitCmd at slot 1 (0x80000001 SET_SREG); sregs[pkt+0x10] = pkt+0x14
+00425ce0	sceSifCmd_ChangeAddrHandler	high	system cmd handler installed by sceSifInitCmd at slot 0 (0x80000000 CHANGE_SADDR); harg+8 = pkt+0x10
+00426c88	sceSifRpc_RequestCall	high	registered by sceSifInitRpc for cmd 0x8000000a (8 end, 9 RequestBind, 0xa call, 0xc RequestRData)
+0042c130	kCopy_Impl	med	kernel-side handler for syscall 0x5a in libkernl syscall table 0x455238 {0x83 FindAddress, 0x5a kCopy}; word copy a2 bytes a1 -> a0
+0042c168	FindAddress_Impl	med	kernel-side handler for syscall 0x83 (table 0x455238); scans words a0..a1 for value a2, returns address or 0
+0042c360	kCopy_2_Impl	med	syscall 0x5a handler in table 0x4559f0 (after kCopy_2 stub); word copy
+0042c4d0	kCopy_3_Impl	med	syscall 0x5a handler in table 0x455a08 (after kCopy_3 stub); byte copy
+0042c780	kCopy_4_Impl	med	syscall 0x5a handler in table 0x456178 (after kCopy_4 stub); word copy
+0042cb78	kCopy_5_Impl	med	syscall 0x5a handler in table 0x456538 (after kCopy_5 stub); word copy
+0042cfc0	libkernl_TLBExceptionHandler	med	installed by libkernl_InstallTLBRefillHandlers (0x423a50); saves all GPRs to 0x530380, calls user handler 0x4564f0, returns via syscall -0x54
+0042d100	libkernl_ExceptionReturnHandler	med	syscall 0x54 handler (table 0x456548); restores Status/EPC/hi/lo and GPRs from 0x530580.., eret
+0042e200	__tf23PS2_SONY_CODEC_INTERNAL	high	vt 0x456848 slot 1 (typeinfo slot); __rtti_user(Q24RCMP5CODEC) then __rtti_si name 0x495420 "23PS2_SONY_CODEC_INTERNAL"
+0042e278	RCMP_CODEC_dtor	high	RCMP::CODEC vt 0x456808 slot 2 (slots 3-7 pure); resets vptr 0x456810, delete if flag&1
+0042e2b0	__tfQ24RCMP5CODEC	high	RCMP::CODEC vt 0x456808 slot 1; __rtti_user(0x4a5ba0, 'Q24RCMP5CODEC')
+0042e458	__tfQ24RCMP7DECODER	high	RCMP::DECODER vt 0x4568a0 slot 1 (next slot RCMP_DECODER_dtor); __rtti_user('Q24RCMP7DECODER')
+0042e498	RCMP_SYSTEM_dtor	high	RCMP::RCMP_SYSTEM vt 0x456888 slot 2; resets vptr (+0xc) 0x456890, __builtin_delete if flag&1
+0042e4c8	__tfQ24RCMP11RCMP_SYSTEM	high	RCMP::RCMP_SYSTEM vt 0x456888 slot 1; __rtti_user('Q24RCMP11RCMP_SYSTEM')
