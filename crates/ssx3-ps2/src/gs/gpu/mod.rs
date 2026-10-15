@@ -1517,7 +1517,12 @@ impl GpuGs {
         let Some(have) = self.latent.pending else { return };
         let _ = self.ctx.device.poll(wgpu::PollType::Poll);
         if !self.latent.ready.load(std::sync::atomic::Ordering::Acquire) {
-            return;
+            // Wait for the previous frame's copy rather than skipping it:
+            // what the game reads must not depend on GPU timing (determinism).
+            let _ = self.ctx.device.poll(wgpu::PollType::wait_indefinitely());
+            if !self.latent.ready.load(std::sync::atomic::Ordering::Acquire) {
+                return;
+            }
         }
         {
             let view = self.latent.buf.slice(..).get_mapped_range().expect("latent map");
