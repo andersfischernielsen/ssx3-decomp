@@ -9,6 +9,7 @@ members = [
     "crates/ssx3-ps2",
     "crates/ssx3-vu",
     "crates/ssx3-iop",
+    "crates/ssx3-snd",
     "crates/ssx3",
     "crates/ssx3-game",
     "generated/ee/*",
@@ -19,7 +20,7 @@ members = [
 version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/example/ssx3-decomp"
+repository = "https://github.com/andersfischernielsen/ssx3-decomp"
 
 [workspace.dependencies]
 ssx3-core = { path = "crates/ssx3-core" }

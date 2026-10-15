@@ -1,0 +1,9 @@
+[package]
+name = "ssx3-snd"
+description = "Phase 3 native sound driver for SSX 3: EA's SNDDRV (IOP side of the SND library) in plain Rust, on the SPU2 model, without the IOP."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ssx3-iop = { path = "../ssx3-iop" }

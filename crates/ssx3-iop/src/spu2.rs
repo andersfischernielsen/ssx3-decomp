@@ -57,7 +57,11 @@ impl Envelope {
             return;
         }
         self.counter = 0;
-        let mut delta = (if decrease { -8 + (rate & 3) } else { 7 - (rate & 3) }) << (11 - shift).max(0);
+        let mut delta = (if decrease {
+            -8 + (rate & 3)
+        } else {
+            7 - (rate & 3)
+        }) << (11 - shift).max(0);
         if exponential && decrease {
             delta = delta * self.level / 0x8000;
         }
@@ -254,7 +258,13 @@ impl Spu2 {
         self.check_irq(b, 8);
     }
 
-    fn render_voice(&mut self, c: usize, v: usize, sum: &mut [[i32; 2]; BATCH], raw: Option<&mut [i16; BATCH]>) {
+    fn render_voice(
+        &mut self,
+        c: usize,
+        v: usize,
+        sum: &mut [[i32; 2]; BATCH],
+        raw: Option<&mut [i16; BATCH]>,
+    ) {
         if self.cores[c].voices[v].key_on {
             self.key_on(c, v);
         }
@@ -268,7 +278,9 @@ impl Spu2 {
                 let step = (voice.pitch as u32).min(0x3FFF);
                 let index = (voice.position >> 12) as usize;
                 let frac = (voice.position & 0xFFF) as i32;
-                let s = (voice.buffer.0[index] as i32 * (0x1000 - frac) + voice.buffer.0[index + 1] as i32 * frac) >> 12;
+                let s = (voice.buffer.0[index] as i32 * (0x1000 - frac)
+                    + voice.buffer.0[index + 1] as i32 * frac)
+                    >> 12;
                 voice.position += step;
                 (s, voice.position >> 12 >= 28)
             };
@@ -314,7 +326,9 @@ impl Spu2 {
             if k.input_count + 256 > INPUT_FRAMES {
                 return;
             }
-            let Some(t) = k.transfers.front_mut() else { return };
+            let Some(t) = k.transfers.front_mut() else {
+                return;
+            };
             let chunk = t.bytes.min(1024);
             let frames = (chunk / 4).max(1) as usize;
             let src = (t.madr & 0x1F_FFFF) as usize;
@@ -362,7 +376,8 @@ impl Spu2 {
         let pos = ((self.ticks % (RING_WORDS as u64 / BATCH as u64)) * BATCH as u64) as u32;
         for (r, ring) in rings.iter().enumerate() {
             let r = r as u32;
-            let at = (if r < 4 { 0 } else { 0x1000 }) + core as u32 * 0x800 + (r & 3) * RING_WORDS + pos;
+            let at =
+                (if r < 4 { 0 } else { 0x1000 }) + core as u32 * 0x800 + (r & 3) * RING_WORDS + pos;
             for (n, s) in ring.iter().enumerate() {
                 self.ram[(at as usize + n) & RAM_MASK as usize] = *s as u16;
             }
@@ -376,11 +391,16 @@ impl Spu2 {
             return self.read_core(((off & 0x400) != 0) as usize, off & 0x3FE);
         }
         if off < 0x7B0 {
-            return self.master_reg((off - 0x760) / 0x28, (off - 0x760) % 0x28).map(|r| *r as u32).unwrap_or(0);
+            return self
+                .master_reg((off - 0x760) / 0x28, (off - 0x760) % 0x28)
+                .map(|r| *r as u32)
+                .unwrap_or(0);
         }
         match off {
             0x7C0 => self.spdif_out as u32,
-            0x7C2 => (if self.cores[0].irq { 4 } else { 0 }) | (if self.cores[1].irq { 8 } else { 0 }),
+            0x7C2 => {
+                (if self.cores[0].irq { 4 } else { 0 }) | (if self.cores[1].irq { 8 } else { 0 })
+            }
             0x7C6 => self.spdif_mode as u32,
             0x7C8 => self.spdif_media as u32,
             _ => 0,
@@ -484,7 +504,11 @@ fn update_envelope(v: &mut Voice) {
                 v.phase = Phase::Sustain;
             }
         }
-        Phase::Sustain => e.step(((v.adsr2 >> 6) & 0x7F) as i32, v.adsr2 & 0x4000 != 0, v.adsr2 & 0x8000 != 0),
+        Phase::Sustain => e.step(
+            ((v.adsr2 >> 6) & 0x7F) as i32,
+            v.adsr2 & 0x4000 != 0,
+            v.adsr2 & 0x8000 != 0,
+        ),
         Phase::Release => {
             e.step(((v.adsr2 & 0x1F) << 2) as i32, true, v.adsr2 & 0x20 != 0);
             if e.level <= 0 {
@@ -534,124 +558,132 @@ fn flush_irq(c: &mut Iop) {
 
 /// Register write (`p` is the physical address, 16-bit value).
 pub fn write_reg(c: &mut Iop, p: u32, value: u32) {
-    let off = p & 0x7FE;
-    let value = value & 0xFFFF;
-    let s = &mut c.spu;
-    if off >= 0x760 {
-        if off < 0x7B0 {
-            if let Some(r) = s.master_reg((off - 0x760) / 0x28, (off - 0x760) % 0x28) {
-                *r = value as u16;
+    c.spu.write_reg16(p, value);
+    flush_irq(c);
+}
+
+impl Spu2 {
+    /// Register write without the IOP around it (`p` physical address or
+    /// offset, 16-bit value). An IRQ-address hit is left in `raise_irq`.
+    pub fn write_reg16(&mut self, p: u32, value: u32) {
+        let off = p & 0x7FE;
+        let value = value & 0xFFFF;
+        let s = self;
+        if off >= 0x760 {
+            if off < 0x7B0 {
+                if let Some(r) = s.master_reg((off - 0x760) / 0x28, (off - 0x760) % 0x28) {
+                    *r = value as u16;
+                }
+            } else {
+                match off {
+                    0x7C0 => s.spdif_out = value as u16,
+                    0x7C6 => s.spdif_mode = value as u16,
+                    0x7C8 => s.spdif_media = value as u16,
+                    _ => {}
+                }
             }
-        } else {
-            match off {
-                0x7C0 => s.spdif_out = value as u16,
-                0x7C6 => s.spdif_mode = value as u16,
-                0x7C8 => s.spdif_media = value as u16,
+            return;
+        }
+        let core = ((off & 0x400) != 0) as usize;
+        let off = off & 0x3FE;
+        if s.trace && (0x180..0x1C0).contains(&off) || s.trace && off >= 0x2E0 {
+            eprintln!("[spu2] core {core} reg {off:#05x} = {value:#06x}");
+        }
+        let k = &mut s.cores[core];
+        if off < 0x180 {
+            let v = &mut k.voices[(off >> 4) as usize];
+            match off & 0xF {
+                0x0 => {
+                    v.voll = value as u16;
+                    if value & 0x8000 == 0 {
+                        v.vol[0].level = (value << 1) as i16 as i32;
+                    }
+                }
+                0x2 => {
+                    v.volr = value as u16;
+                    if value & 0x8000 == 0 {
+                        v.vol[1].level = (value << 1) as i16 as i32;
+                    }
+                }
+                0x4 => v.pitch = value as u16,
+                0x6 => v.adsr1 = value as u16,
+                0x8 => v.adsr2 = value as u16,
+                0xA => v.env.level = value as i16 as i32,
                 _ => {}
             }
+            return;
         }
-        return;
-    }
-    let core = ((off & 0x400) != 0) as usize;
-    let off = off & 0x3FE;
-    if s.trace && (0x180..0x1C0).contains(&off) || s.trace && off >= 0x2E0 {
-        eprintln!("[spu2] core {core} reg {off:#05x} = {value:#06x}");
-    }
-    let k = &mut s.cores[core];
-    if off < 0x180 {
-        let v = &mut k.voices[(off >> 4) as usize];
-        match off & 0xF {
-            0x0 => {
-                v.voll = value as u16;
-                if value & 0x8000 == 0 {
-                    v.vol[0].level = (value << 1) as i16 as i32;
+        if (0x1C0..0x2E0).contains(&off) {
+            let v = &mut k.voices[((off - 0x1C0) / 12) as usize];
+            match (off - 0x1C0) % 12 {
+                0 => v.ssa = set_hi(v.ssa, value),
+                2 => v.ssa = set_lo(v.ssa, value),
+                4 => {
+                    v.lsax = set_hi(v.lsax, value);
+                    v.lsax_written = true;
+                }
+                6 => {
+                    v.lsax = set_lo(v.lsax, value);
+                    v.lsax_written = true;
+                }
+                8 => v.next = set_hi(v.next, value),
+                _ => v.next = set_lo(v.next, value),
+            }
+            return;
+        }
+        k.regs[(off >> 1) as usize] = value as u16;
+        let key = |k: &mut Core, mask: u32, on: bool| {
+            for i in 0..24 {
+                if mask & (1 << i) == 0 {
+                    continue;
+                }
+                let v = &mut k.voices[i];
+                if on {
+                    v.key_on = true;
+                } else if v.key_on {
+                    v.key_on = false;
+                } else if v.phase != Phase::Off {
+                    v.phase = Phase::Release;
                 }
             }
-            0x2 => {
-                v.volr = value as u16;
-                if value & 0x8000 == 0 {
-                    v.vol[1].level = (value << 1) as i16 as i32;
+        };
+        match off {
+            0x19A => {
+                k.attr = value as u16;
+                if value & 0x40 == 0 {
+                    k.irq = false;
+                }
+                if value & 0x8000 != 0 {
+                    // Core reset bit.
+                    k.irq = false;
                 }
             }
-            0x4 => v.pitch = value as u16,
-            0x6 => v.adsr1 = value as u16,
-            0x8 => v.adsr2 = value as u16,
-            0xA => v.env.level = value as i16 as i32,
+            0x19C => k.irqa = set_hi(k.irqa, value),
+            0x19E => k.irqa = set_lo(k.irqa, value),
+            0x1A0 => key(k, value, true),
+            0x1A2 => key(k, value << 16, true),
+            0x1A4 => key(k, value, false),
+            0x1A6 => key(k, value << 16, false),
+            0x1A8 => k.tsa = set_hi(k.tsa, value),
+            0x1AA => k.tsa = set_lo(k.tsa, value),
+            0x1AC => {
+                let tsa = k.tsa;
+                k.tsa = (k.tsa + 1) & RAM_MASK;
+                s.ram[tsa as usize] = value as u16;
+                s.check_irq(tsa, 1);
+            }
+            0x1B0 => {
+                k.admas = value as u16;
+                if value == 0 {
+                    k.input_count = 0;
+                    k.input_read = 0;
+                }
+            }
+            0x340 => (0..16).for_each(|i| k.voices[i].end = false),
+            0x342 => (16..24).for_each(|i| k.voices[i].end = false),
             _ => {}
         }
-        return;
     }
-    if (0x1C0..0x2E0).contains(&off) {
-        let v = &mut k.voices[((off - 0x1C0) / 12) as usize];
-        match (off - 0x1C0) % 12 {
-            0 => v.ssa = set_hi(v.ssa, value),
-            2 => v.ssa = set_lo(v.ssa, value),
-            4 => {
-                v.lsax = set_hi(v.lsax, value);
-                v.lsax_written = true;
-            }
-            6 => {
-                v.lsax = set_lo(v.lsax, value);
-                v.lsax_written = true;
-            }
-            8 => v.next = set_hi(v.next, value),
-            _ => v.next = set_lo(v.next, value),
-        }
-        return;
-    }
-    k.regs[(off >> 1) as usize] = value as u16;
-    let key = |k: &mut Core, mask: u32, on: bool| {
-        for i in 0..24 {
-            if mask & (1 << i) == 0 {
-                continue;
-            }
-            let v = &mut k.voices[i];
-            if on {
-                v.key_on = true;
-            } else if v.key_on {
-                v.key_on = false;
-            } else if v.phase != Phase::Off {
-                v.phase = Phase::Release;
-            }
-        }
-    };
-    match off {
-        0x19A => {
-            k.attr = value as u16;
-            if value & 0x40 == 0 {
-                k.irq = false;
-            }
-            if value & 0x8000 != 0 {
-                // Core reset bit.
-                k.irq = false;
-            }
-        }
-        0x19C => k.irqa = set_hi(k.irqa, value),
-        0x19E => k.irqa = set_lo(k.irqa, value),
-        0x1A0 => key(k, value, true),
-        0x1A2 => key(k, value << 16, true),
-        0x1A4 => key(k, value, false),
-        0x1A6 => key(k, value << 16, false),
-        0x1A8 => k.tsa = set_hi(k.tsa, value),
-        0x1AA => k.tsa = set_lo(k.tsa, value),
-        0x1AC => {
-            let tsa = k.tsa;
-            k.tsa = (k.tsa + 1) & RAM_MASK;
-            s.ram[tsa as usize] = value as u16;
-            s.check_irq(tsa, 1);
-        }
-        0x1B0 => {
-            k.admas = value as u16;
-            if value == 0 {
-                k.input_count = 0;
-                k.input_read = 0;
-            }
-        }
-        0x340 => (0..16).for_each(|i| k.voices[i].end = false),
-        0x342 => (16..24).for_each(|i| k.voices[i].end = false),
-        _ => {}
-    }
-    flush_irq(c);
 }
 
 /// IOP DMA channel 4 (core 0) / 7 (core 1).
@@ -666,7 +698,11 @@ pub fn dma(c: &mut Iop, core: usize, madr: u32, words: u32, to_spu: bool, channe
         );
     }
     if to_spu && s.cores[core].admas & (1 << core) != 0 {
-        s.cores[core].transfers.push_back(Transfer { madr, bytes: words * 4, channel });
+        s.cores[core].transfers.push_back(Transfer {
+            madr,
+            bytes: words * 4,
+            channel,
+        });
         let mut done = Vec::new();
         s.feed_input(core, &c.ram, &mut done);
         for ch in done {
@@ -697,67 +733,8 @@ pub fn dma(c: &mut Iop, core: usize, madr: u32, words: u32, to_spu: bool, channe
 
 /// Produce one batch of output samples.
 pub fn tick(c: &mut Iop) {
+    c.spu.render_batch();
     let s = &mut c.spu;
-    let mut sum = [[[0i32; 2]; BATCH]; 2];
-    let mut rings = [[[0i16; BATCH]; 8]; 2];
-    for core in 0..2 {
-        let mut sc = sum[core];
-        for v in 0..24 {
-            let voice = &s.cores[core].voices[v];
-            if !voice.key_on && !voice.running {
-                continue;
-            }
-            s.stats[0] += 1;
-            match v {
-                1 => {
-                    let mut r = rings[core][2];
-                    s.render_voice(core, v, &mut sc, Some(&mut r));
-                    rings[core][2] = r;
-                }
-                3 => {
-                    let mut r = rings[core][3];
-                    s.render_voice(core, v, &mut sc, Some(&mut r));
-                    rings[core][3] = r;
-                }
-                _ => s.render_voice(core, v, &mut sc, None),
-            }
-        }
-        for n in 0..BATCH {
-            s.stats[2] += sc[n][0].unsigned_abs() as u64;
-            rings[core][4][n] = clamp16(sc[n][0]);
-            rings[core][5][n] = clamp16(sc[n][1]);
-        }
-        for n in 0..BATCH {
-            let (mut l, mut r) = (sc[n][0], sc[n][1]);
-            let (il, ir) = s.render_input(core, &mut l, &mut r);
-            s.stats[1] += il.unsigned_abs() as u64;
-            sc[n] = [l, r];
-            if core == 0 {
-                rings[0][0][n] = il;
-                rings[0][1][n] = ir;
-            }
-        }
-        sum[core] = sc;
-    }
-    let mut out = [0i16; BATCH * 2];
-    for n in 0..BATCH {
-        // Core 0's output (after its MVOL) is core 1's external input; core
-        // 1's output (after its MVOL) is the DAC.
-        let l0 = clamp16(sum[0][n][0] * master(s.cores[0].mvol[0]) >> 15) as i32;
-        let r0 = clamp16(sum[0][n][1] * master(s.cores[0].mvol[1]) >> 15) as i32;
-        rings[1][0][n] = l0 as i16;
-        rings[1][1][n] = r0 as i16;
-        let l = (sum[1][n][0] + l0) * master(s.cores[1].mvol[0]) >> 15;
-        let r = (sum[1][n][1] + r0) * master(s.cores[1].mvol[1]) >> 15;
-        out[n * 2] = clamp16(l);
-        out[n * 2 + 1] = clamp16(r);
-    }
-    s.write_rings(0, &rings[0]);
-    s.write_rings(1, &rings[1]);
-    if let Some(sink) = s.sink.as_mut() {
-        sink.push(&out);
-    }
-    s.samples_out += BATCH as u64;
     let mut done = Vec::new();
     s.feed_input(0, &c.ram, &mut done);
     s.feed_input(1, &c.ram, &mut done);
@@ -768,6 +745,120 @@ pub fn tick(c: &mut Iop) {
         c.k.schedule(at, Timed::DmaDone(ch));
     }
     flush_irq(c);
+}
+
+impl Spu2 {
+    /// Render one batch (BATCH frames) of output: voices, core inputs,
+    /// masters; pushes to the sink and returns the stereo frames.
+    pub fn render_batch(&mut self) -> [i16; BATCH * 2] {
+        let s = self;
+        let mut sum = [[[0i32; 2]; BATCH]; 2];
+        let mut rings = [[[0i16; BATCH]; 8]; 2];
+        for core in 0..2 {
+            let mut sc = sum[core];
+            for v in 0..24 {
+                let voice = &s.cores[core].voices[v];
+                if !voice.key_on && !voice.running {
+                    continue;
+                }
+                s.stats[0] += 1;
+                match v {
+                    1 => {
+                        let mut r = rings[core][2];
+                        s.render_voice(core, v, &mut sc, Some(&mut r));
+                        rings[core][2] = r;
+                    }
+                    3 => {
+                        let mut r = rings[core][3];
+                        s.render_voice(core, v, &mut sc, Some(&mut r));
+                        rings[core][3] = r;
+                    }
+                    _ => s.render_voice(core, v, &mut sc, None),
+                }
+            }
+            for n in 0..BATCH {
+                s.stats[2] += sc[n][0].unsigned_abs() as u64;
+                rings[core][4][n] = clamp16(sc[n][0]);
+                rings[core][5][n] = clamp16(sc[n][1]);
+            }
+            for n in 0..BATCH {
+                let (mut l, mut r) = (sc[n][0], sc[n][1]);
+                let (il, ir) = s.render_input(core, &mut l, &mut r);
+                s.stats[1] += il.unsigned_abs() as u64;
+                sc[n] = [l, r];
+                if core == 0 {
+                    rings[0][0][n] = il;
+                    rings[0][1][n] = ir;
+                }
+            }
+            sum[core] = sc;
+        }
+        let mut out = [0i16; BATCH * 2];
+        for n in 0..BATCH {
+            // Core 0's output (after its MVOL) is core 1's external input; core
+            // 1's output (after its MVOL) is the DAC.
+            let l0 = clamp16(sum[0][n][0] * master(s.cores[0].mvol[0]) >> 15) as i32;
+            let r0 = clamp16(sum[0][n][1] * master(s.cores[0].mvol[1]) >> 15) as i32;
+            rings[1][0][n] = l0 as i16;
+            rings[1][1][n] = r0 as i16;
+            let l = (sum[1][n][0] + l0) * master(s.cores[1].mvol[0]) >> 15;
+            let r = (sum[1][n][1] + r0) * master(s.cores[1].mvol[1]) >> 15;
+            out[n * 2] = clamp16(l);
+            out[n * 2 + 1] = clamp16(r);
+        }
+        s.write_rings(0, &rings[0]);
+        s.write_rings(1, &rings[1]);
+        if let Some(sink) = s.sink.as_mut() {
+            sink.push(&out);
+        }
+        s.samples_out += BATCH as u64;
+        out
+    }
+
+    /// Queue already-decoded frames as core input (what AutoDMA delivers),
+    /// for a driver that feeds the SPU directly.
+    pub fn push_input(&mut self, core: usize, frames: &[[i16; 2]]) {
+        for f in frames {
+            let k = &mut self.cores[core];
+            if k.input_count >= INPUT_FRAMES {
+                break;
+            }
+            let slot = (k.input_read + k.input_count) % INPUT_FRAMES;
+            k.input[slot] = *f;
+            k.input_count += 1;
+            self.ram[(INPUT_BASE[core] as usize + slot) & RAM_MASK as usize] = f[0] as u16;
+            self.ram[(INPUT_BASE[core] as usize + 0x200 + slot) & RAM_MASK as usize] = f[1] as u16;
+        }
+    }
+
+    /// [`Self::render_batch`] for a driver without the IOP: also advances
+    /// the batch counter (the output rings' write position).
+    pub fn render_next(&mut self) -> [i16; BATCH * 2] {
+        let out = self.render_batch();
+        self.ticks += 1;
+        out
+    }
+
+    /// Frames waiting in a core's input.
+    pub fn input_len(&self, core: usize) -> usize {
+        self.cores[core].input_count
+    }
+
+    /// Write sample data to sound RAM at a byte address (a voice DMA
+    /// transfer done at once).
+    pub fn dma_write(&mut self, byte_addr: u32, data: &[u8]) {
+        let start = byte_addr / 2;
+        self.check_irq(start & RAM_MASK, data.len() as u32 / 2);
+        for (i, h) in data.chunks(2).enumerate() {
+            let v = u16::from_le_bytes([h[0], *h.get(1).unwrap_or(&0)]);
+            self.ram[((start + i as u32) & RAM_MASK) as usize] = v;
+        }
+    }
+
+    /// Take a pending IRQ-address hit (set by register writes and rendering).
+    pub fn take_irq(&mut self) -> bool {
+        std::mem::take(&mut self.raise_irq)
+    }
 }
 
 /// One-line voice summary for diagnostics.
