@@ -2,37 +2,16 @@
 //! forwarding doors into the big state machines
 //! (`docs/investigation/phase2-candidates.md`, groups B2/B3).
 //!
-//! ## The call protocol
-//!
-//! A replacement that calls guest code has to look, from the outside,
-//! exactly like the compiled function:
-//!
-//! - the same stack frame: `sp -= size`, `ra` saved with `sd`, callee-saved
-//!   registers saved with `sq` (all 128 bits) at the same offsets ([`Frame`]);
-//! - the same registers at the moment of each call: arguments, `ra = return
-//!   address`, `pc = callee`, and also the scratch values the original
-//!   happens to leave in v0/v1/a2.. (a callee may not touch them, so they can
-//!   survive to the caller's caller). Each function sets them in a marked
-//!   "registers at the call" block;
-//! - the call itself through the generated function path ([`Callee`]: the
-//!   shard's `f_X`, which goes through its override slot) or through the
-//!   function table ([`call_ptr`]: `call_indirect`, for `jalr`);
-//! - the unwind check: if the callee did not come back to the return address
-//!   (thread switch, unwind to the trampoline), return at once leaving every
-//!   register as it is. The helpers return [`Flow`], so bodies use `?`, and
-//!   [`guest`] turns a body into a plain `fn(&mut Cpu)`;
-//! - cycles charged block by block at the same points relative to the calls
-//!   (a callee sees `c.cycles`);
-//! - the epilogue reloading saved registers through the current `sp`.
-//!
-//! Callee-saved values (`this` in s0 ...) are kept in Rust locals after the
-//! call: every guest function preserves s0-s7 and sp.
+//! Replacements here follow the call protocol of [`crate::call`] (stack
+//! frame, registers at each call, unwind check, cycles between calls).
 
 use crate::guest::Addr;
 use crate::ps2f::{FpuF32, Vec4};
 use ssx3_ee as ee;
+use crate::abi::addu;
+use crate::call::{call_ptr, guest, tail_wrapper, Callee, Flow, Frame, Target, Unwound, VSlot};
 use ssx3_ee_rt::cpu::{reg::*, sx};
-use ssx3_ee_rt::funcs::{call_indirect, GuestFn};
+use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this package: (address, function, name).
@@ -65,157 +44,10 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0037_6938, ps2_graphics_man_set_scissor_clamped, "PS2GraphicsMan_SetScissorClamped"),
 ];
 
-// ---------------------------------------------------------------------------
-// Call protocol helpers.
-
-/// A callee did not return to the expected address: the caller must return
-/// immediately (host-thread unwind).
-#[derive(Debug)]
-pub struct Unwound;
-
-/// Result of a body that makes calls.
-pub type Flow = Result<(), Unwound>;
-
-/// Run a body written with `?` on calls as a guest function.
-#[inline(always)]
-fn guest(c: &mut Cpu, body: impl FnOnce(&mut Cpu) -> Flow) {
-    let _ = body(c);
-}
-
-/// A direct-call target: guest address and the generated function
-/// (`ssx3_ee::sNN::f_X`, which dispatches through its override slot).
-#[derive(Clone, Copy)]
-struct Callee {
-    addr: u32,
-    f: GuestFn,
-}
-
-impl Callee {
-    /// `jal addr` returning to `ret`.
-    #[inline]
-    fn call(self, c: &mut Cpu, ret: u32) -> Flow {
-        c.g[RA][0] = sx(ret);
-        c.pc = self.addr;
-        (self.f)(c);
-        returned(c, ret)
-    }
-}
-
-/// `jalr target` returning to `ret` (through the function table).
-#[inline]
-fn call_ptr(c: &mut Cpu, target: u32, ret: u32) -> Flow {
-    c.g[RA][0] = sx(ret);
-    c.pc = target;
-    call_indirect(c, target);
-    returned(c, ret)
-}
-
-#[inline(always)]
-fn returned(c: &Cpu, ret: u32) -> Flow {
-    if c.pc == ret {
-        Ok(())
-    } else {
-        Err(Unwound)
-    }
-}
-
-/// The function's stack frame. Offsets are relative to the current `sp`
-/// register, read each time as the compiled code does.
-#[derive(Clone, Copy)]
-struct Frame {
-    size: u32,
-}
-
-impl Frame {
-    /// `addiu sp, sp, -size`.
-    #[inline]
-    fn open(c: &mut Cpu, size: u32) -> Frame {
-        c.g[SP][0] = sx(sp(c).wrapping_sub(size));
-        Frame { size }
-    }
-    #[inline]
-    fn at(self, c: &Cpu, off: u32) -> u32 {
-        sp(c).wrapping_add(off)
-    }
-    /// `sd ra, off(sp)`.
-    #[inline]
-    fn save_ra(self, c: &mut Cpu, off: u32) {
-        let a = self.at(c, off);
-        c.sd(a, c.g[RA][0]);
-    }
-    /// `sq reg, off(sp)` (callee-saved GPR, all 128 bits).
-    #[inline]
-    fn save(self, c: &mut Cpu, reg: usize, off: u32) {
-        let a = self.at(c, off);
-        c.sq(reg, a);
-    }
-    /// `lq reg, off(sp)`.
-    #[inline]
-    fn restore(self, c: &mut Cpu, reg: usize, off: u32) {
-        let a = self.at(c, off);
-        c.lq(reg, a);
-    }
-    /// `ld ra, off(sp)`.
-    #[inline]
-    fn restore_ra(self, c: &mut Cpu, off: u32) {
-        let a = self.at(c, off);
-        c.g[RA][0] = c.ld(a);
-    }
-    /// `addiu sp, sp, size; jr ra`.
-    #[inline]
-    fn close(self, c: &mut Cpu) {
-        let ra = c.g[RA][0] as u32;
-        c.g[SP][0] = sx(sp(c).wrapping_add(self.size));
-        c.pc = ra;
-    }
-}
-
-#[inline(always)]
-fn sp(c: &Cpu) -> u32 {
-    c.g[SP][0] as u32
-}
-
 /// `lw` (sign-extended, through the CPU load path).
 #[inline(always)]
 fn lw(c: &mut Cpu, a: u32) -> u64 {
     Addr(a).lw(c)
-}
-
-/// `lh` (sign-extended).
-#[inline(always)]
-fn lh(c: &mut Cpu, a: u32) -> u64 {
-    Addr(a).lh(c)
-}
-
-/// `addu`: 32-bit add, sign-extended.
-#[inline(always)]
-fn addu(a: u64, b: u64) -> u64 {
-    sx((a as u32).wrapping_add(b as u32))
-}
-
-/// A gcc 2.9x vtable entry: `{ short delta; short; void (*fn)(); }`. The
-/// method is called with `this + delta`.
-#[derive(Clone, Copy)]
-struct VSlot {
-    /// `lh vt+off` (sign-extended).
-    delta: u64,
-    /// `lw vt+off+4` (sign-extended).
-    func: u64,
-}
-
-impl VSlot {
-    #[inline]
-    fn read(c: &mut Cpu, vt: u64, off: u32) -> VSlot {
-        let base = (vt as u32).wrapping_add(off);
-        let delta = lh(c, base);
-        let func = lw(c, base.wrapping_add(4));
-        VSlot { delta, func }
-    }
-    /// The adjusted `this` (`addu this, delta`).
-    #[inline]
-    fn this(self, obj: u64) -> u64 {
-        addu(obj, self.delta)
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -619,35 +451,8 @@ pub fn camera_base_update(c: &mut Cpu) {
 // ---------------------------------------------------------------------------
 // Rider.
 
-/// What a one-call wrapper calls.
-#[derive(Clone, Copy)]
-enum Target {
-    Direct(Callee),
-    Table(u32),
-}
-
 const fn table_target(addr: u32) -> Target {
     Target::Table(addr)
-}
-
-/// The shape of the 7-cycle forwarding wrappers: a 0x10 frame holding `ra`,
-/// optionally `a0 = *(a0 + off)`, one call, return what it returns.
-fn tail_wrapper(c: &mut Cpu, a0_field: Option<u32>, target: Target, ret: u32) {
-    guest(c, |c| {
-        c.cycles += 7;
-        let frame = Frame::open(c, 0x10);
-        frame.save_ra(c, 0);
-        if let Some(off) = a0_field {
-            c.g[A0][0] = lw(c, (c.g[A0][0] as u32).wrapping_add(off));
-        }
-        match target {
-            Target::Direct(f) => f.call(c, ret)?,
-            Target::Table(addr) => call_ptr(c, addr, ret)?,
-        }
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
 }
 
 /// `Rider.owner`: the `RiderBase` state machine behind a rider.
@@ -1314,141 +1119,10 @@ pub fn ps2_graphics_man_set_scissor_clamped(c: &mut Cpu) {
 
 #[cfg(test)]
 mod tests {
-    use crate::difftest::{check, scramble, Rng, DATA};
+    use crate::difftest::fakes::*;
+    use crate::difftest::{check, Rng, DATA, GAME_GP};
     use ssx3_ee_rt::cpu::reg::*;
     use ssx3_ee_rt::Cpu;
-
-    // -------------------------------------------------- fake callees
-    //
-    // Callees at addresses outside the function table (vtable slots the test
-    // points there, jump tables in empty RAM) land in the `miss` /
-    // `jump_out` hooks. The fake records everything the caller set up (every
-    // GPR, both halves, f12-f15, cycles, the target) in a log in RAM, so the
-    // RAM comparison checks the register dance; then it returns a pointer in
-    // v0, clobbers the caller-saved registers, and either returns to `ra` or
-    // (at the call index the setup chose) unwinds.
-
-    const LOG: u32 = 0x0090_0000;
-    const LOG_NEXT: u32 = LOG;
-    const LOG_UNWIND_AT: u32 = LOG + 4;
-    const LOG_COUNT: u32 = LOG + 8;
-    /// Results the setup forces for fake call n (0: a pointer from a hash).
-    const LOG_RESULTS: u32 = LOG + 0x10;
-    const LOG_START: u32 = LOG + 0x40;
-    /// Fake method addresses (below the first translated function).
-    const FAKE: u32 = 0x0000_4000;
-
-    fn mix(mut x: u64) -> u64 {
-        x ^= x >> 33;
-        x = x.wrapping_mul(0xff51_afd7_ed55_8ccd);
-        x ^= x >> 33;
-        x
-    }
-
-    thread_local! {
-        /// Fake calls and unwinds made in this test thread.
-        static STATS: std::cell::Cell<(u32, u32)> = const { std::cell::Cell::new((0, 0)) };
-    }
-
-    /// `check`, and also require that the setups reached the fakes (the
-    /// calls were really compared) and made some of them unwind.
-    fn covered(
-        generated: fn(&mut Cpu),
-        hand: fn(&mut Cpu),
-        seeds: u32,
-        setup: &dyn Fn(&mut Cpu, u32),
-    ) {
-        STATS.with(|s| s.set((0, 0)));
-        check(generated, hand, seeds, setup);
-        let (calls, unwinds) = STATS.with(|s| s.get());
-        assert!(calls >= seeds / 4 && unwinds > 0, "fake calls {calls}, unwinds {unwinds}");
-    }
-
-    fn fake_call(c: &mut Cpu, target: u32) {
-        let ra = c.g[RA][0] as u32;
-        fake(c, target, ra)
-    }
-
-    /// A syscall: returns to `c.pc` (already the return address).
-    fn fake_syscall(c: &mut Cpu, at: u32) {
-        let ret = c.pc;
-        fake(c, at, ret)
-    }
-
-    fn fake(c: &mut Cpu, target: u32, ret: u32) {
-        let n = c.bus.read32(LOG_COUNT);
-        c.bus.write32(LOG_COUNT, n + 1);
-        let mut p = c.bus.read32(LOG_NEXT);
-        if p == 0 {
-            p = LOG_START;
-        }
-        c.bus.write32(p, target);
-        c.bus.write32(p + 4, c.pc);
-        c.bus.write64(p + 8, c.cycles);
-        for r in 0..32 {
-            c.bus.write64(p + 0x10 + 16 * r as u32, c.g[r][0]);
-            c.bus.write64(p + 0x18 + 16 * r as u32, c.g[r][1]);
-        }
-        for i in 0..4 {
-            c.bus.write32(p + 0x210 + 4 * i, c.f[12 + i as usize]);
-        }
-        c.bus.write32(LOG_NEXT, p + 0x220);
-        let h = mix(c.g[A0][0] ^ (n as u64) << 40 ^ c.g[A1][0].rotate_left(17) ^ c.cycles);
-        let forced = if n < 8 { c.bus.read32(LOG_RESULTS + 4 * n) } else { 0 };
-        c.g[V0][0] = if forced != 0 { forced as u64 } else { 0x0080_0000 + (h & 0x3fff0) };
-        c.g[V1][0] = mix(h);
-        for (i, r) in [AT, A0, A1, A2, A3, T0, T1, T2, T3, T4, T5, T6, T7, T8, T9].into_iter().enumerate() {
-            c.g[r][0] = mix(h + i as u64);
-        }
-        c.f[0] = mix(h + 99) as u32;
-        c.cycles += 3 + (h & 7);
-        let unwind = n == c.bus.read32(LOG_UNWIND_AT);
-        STATS.with(|s| {
-            let (a, b) = s.get();
-            s.set((a + 1, b + unwind as u32));
-        });
-        c.pc = if unwind {
-            0xdead_0000 | n << 4
-        } else {
-            ret
-        };
-    }
-
-    fn fake_jump_out(c: &mut Cpu, pc: u32, _start: u32, _end: u32) {
-        fake_call(c, pc)
-    }
-
-    /// Scrambled registers, the fake hooks, a game-like gp, and the call
-    /// index (if any) at which a fake unwinds.
-    fn machine(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
-        let mut r = Rng(0x9e37_79b9_7f4a_7c15 ^ (seed as u64) << 8 ^ salt);
-        scramble(c, &mut r);
-        c.g[GP][0] = 0x004a_30f0;
-        c.hooks.miss = fake_call;
-        c.hooks.jump_out = fake_jump_out;
-        c.hooks.syscall = fake_syscall;
-        let unwind = if calls > 0 && r.next_u32() % 3 == 0 { r.next_u32() % calls } else { u32::MAX };
-        c.bus.write32(LOG_UNWIND_AT, unwind);
-        // Random bytes around the stack frame (the saves overwrite them).
-        crate::difftest::fill(c, &mut r, crate::difftest::SP - 0x100, 0x40);
-        r
-    }
-
-    /// A random pointer into the test data area (16-byte aligned).
-    fn ptr(r: &mut Rng) -> u32 {
-        DATA + (r.next_u32() & 0xf_fff0)
-    }
-
-    /// A vtable at a random address whose slot `off` is `{delta, fake}`.
-    fn vtable(c: &mut Cpu, r: &mut Rng, slots: &[u32]) -> u32 {
-        let vt = ptr(r);
-        for (i, &off) in slots.iter().enumerate() {
-            let delta = (r.next_u32() as i16 as i32 & !3) as u32;
-            c.bus.write16(vt + off, delta as u16);
-            c.bus.write32(vt + off + 4, FAKE + 0x10 * i as u32);
-        }
-        vt
-    }
 
     const SEEDS: u32 = 300;
 
@@ -1457,7 +1131,7 @@ mod tests {
         covered(ssx3_ee::s01::f_0014dd58__generated, super::be_library_get_interface, SEEDS, &|c, seed| {
             let mut r = machine(c, seed, 1, 1);
             let index = r.next_u32() % 8;
-            c.bus.write32(0x004a_30f0 - 0x1efc, index);
+            c.bus.write32(GAME_GP - 0x1efc, index);
             let lib = ptr(&mut r);
             c.bus.write32(super::BE_LIBRARY + 4 * index, lib);
             let vt = vtable(c, &mut r, &[8]);
@@ -1823,7 +1497,7 @@ mod tests {
                 c.bus.write32(cam + 0x30 + 4 * i as u32, v);
             }
             for off in super::YAW_CONST_GP {
-                c.bus.write32(0x004a_30f0 - off, r.f32(4.0));
+                c.bus.write32(GAME_GP - off, r.f32(4.0));
             }
         });
     }
@@ -1850,7 +1524,7 @@ mod tests {
                 c.bus.write32(LOG_UNWIND_AT, 1);
             }
             let tables = ptr(&mut r);
-            c.bus.write32(0x004a_30f0 + super::ANIM_TABLES_GP, tables);
+            c.bus.write32(GAME_GP + super::ANIM_TABLES_GP, tables);
             c.bus.write32(tables + 4 * layer + 0x1030, ptr(&mut r));
             // The anim table entry (0x1c bytes at 0x446990 + 0x1c*anim).
             let entry = 0x0044_6990 + 0x1c * anim;

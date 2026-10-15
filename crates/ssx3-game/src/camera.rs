@@ -251,12 +251,6 @@ pub struct CameraTriggerMan(pub Addr);
 
 // ---------------------------------------------------------------- helpers
 
-/// The full 64-bit value of an integer argument (the game compares some
-/// arguments as 64-bit registers).
-fn arg64(c: &Cpu, r: usize) -> i64 {
-    c.g[r][0] as i64
-}
-
 fn lanes(v: Vec4) -> [VuF32; 4] {
     [v.x, v.y, v.z, v.w]
 }
@@ -592,7 +586,7 @@ pub fn add_shake(c: &mut Cpu) {
 /// `mode` is compared as a 64-bit register.
 pub fn set_controller(c: &mut Cpu) {
     let cam = GameCamera(Addr(abi::arg(c, 0)));
-    let mode = arg64(c, A1);
+    let mode = abi::reg(c, A1) as i64;
     c.cycles += 3;
     let slot = if mode == 2 {
         c.cycles += 3;
@@ -725,10 +719,10 @@ pub fn trigger_man_reset_header(c: &mut Cpu) {
 
 #[cfg(test)]
 mod tests {
-    use crate::difftest::{check, put_vec, Rng, DATA, SP};
+    use crate::difftest::{check, fill, put_vec, Rng, DATA, SP};
     use ssx3_ee_rt::Cpu;
 
-    const GP: u64 = 0x004a_30f0;
+    const GP: u64 = crate::difftest::GAME_GP as u64;
 
     /// Random GPRs (except zero/gp/sp/ra), FPRs, FPU condition bit and VU0
     /// registers, so leftovers and missed scratch show up.
@@ -747,12 +741,6 @@ mod tests {
         for reg in 1..32 {
             let v = [r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()];
             c.bus.plat.set_vf(reg, v);
-        }
-    }
-
-    fn fill(c: &mut Cpu, r: &mut Rng, addr: u32, words: u32) {
-        for i in 0..words {
-            c.bus.write32(addr + 4 * i, r.next_u32());
         }
     }
 

@@ -64,12 +64,6 @@ pub mod gs_reg {
     pub const ZBUF_2: u64 = 0x4f;
 }
 
-/// The full 64-bit register (the game compares whole registers).
-#[inline]
-fn reg(c: &Cpu, r: usize) -> u64 {
-    c.g[r][0]
-}
-
 /// The GS context a helper's selector picks: 1 means context 2, anything
 /// else context 1 (compared as a full 64-bit register).
 #[inline]
@@ -164,8 +158,8 @@ impl GsPacket {
 /// selection 3/6/4, mode 7..12, tail 9.
 pub fn gs_pkt_add_clamp(c: &mut Cpu) {
     let p = GsPacket(Addr(abi::arg(c, 0)));
-    let mode = reg(c, A1) as i64;
-    let ctx = reg(c, A2);
+    let mode = abi::reg(c, A1) as i64;
+    let ctx = abi::reg(c, A2);
 
     let reg_id = if ctx == 0 {
         c.cycles += 3;
@@ -215,7 +209,7 @@ pub fn gs_pkt_add_clamp(c: &mut Cpu) {
 pub fn gs_pkt_add_scissor(c: &mut Cpu) {
     c.cycles += 27;
     let p = GsPacket(Addr(abi::arg(c, 0)));
-    let (x, w, y, h) = (reg(c, A1), abi::arg(c, 2), reg(c, A3), abi::arg(c, 4));
+    let (x, w, y, h) = (abi::reg(c, A1), abi::arg(c, 2), abi::reg(c, A3), abi::arg(c, 4));
     let x1 = sx((x as u32).wrapping_sub(1).wrapping_add(w));
     let y1 = sx((y as u32).wrapping_sub(1).wrapping_add(h));
     // 64-bit ORs of the whole registers: wide inputs bleed into neighbours.
@@ -238,7 +232,7 @@ pub fn gs_pkt_add_scissor(c: &mut Cpu) {
 /// Cycles: context 3/7/5, alpha 5/6/9/10, depth 5/7/8, tail 20.
 pub fn gs_pkt_add_test(c: &mut Cpu) {
     let p = GsPacket(Addr(abi::arg(c, 0)));
-    let (zsel, asel, aref, ctx) = (reg(c, A1) as i64, reg(c, A2) as i64, reg(c, A3), reg(c, T0));
+    let (zsel, asel, aref, ctx) = (abi::reg(c, A1) as i64, abi::reg(c, A2) as i64, abi::reg(c, A3), abi::reg(c, T0));
 
     let reg_id = if ctx == 0 {
         c.cycles += 3;
@@ -300,7 +294,7 @@ pub fn gs_pkt_add_test(c: &mut Cpu) {
 /// == 1)}. Cycles: context 3/7/5, 9 (+3 with ZMSK), tail 10.
 pub fn gs_pkt_add_zbuf(c: &mut Cpu) {
     let p = GsPacket(Addr(abi::arg(c, 0)));
-    let (zbp, psm, zmsk, ctx) = (reg(c, A1), abi::arg(c, 2), reg(c, A3), reg(c, T0));
+    let (zbp, psm, zmsk, ctx) = (abi::reg(c, A1), abi::arg(c, 2), abi::reg(c, A3), abi::reg(c, T0));
 
     let reg_id = if ctx == 0 {
         c.cycles += 3;
@@ -421,7 +415,7 @@ pub fn tex_man_build_upload_packet(c: &mut Cpu) {
 /// points; both are reproduced in place.
 pub fn tex_man_build_sprite_packet(c: &mut Cpu) {
     c.cycles += 136;
-    let sp = sx((reg(c, SP) as u32).wrapping_sub(0x20));
+    let sp = sx((abi::reg(c, SP) as u32).wrapping_sub(0x20));
     c.g[SP][0] = sp;
     let frame = Addr(sp as u32);
     c.sq(S1, frame.0);
@@ -523,7 +517,7 @@ impl Bucket {
 pub fn defer_man_append_packet(c: &mut Cpu) {
     c.cycles += 4;
     let bucket = Bucket(Addr(abi::arg(c, 0)));
-    let (start, end) = (reg(c, A1), reg(c, A2));
+    let (start, end) = (abi::reg(c, A1), abi::reg(c, A2));
     let head = bucket.first_start().lw(c);
     if head == 0 {
         c.cycles += 2;
@@ -649,7 +643,7 @@ pub fn lens_fx_clear_sources(c: &mut Cpu) {
 pub fn lens_fx_add_source(c: &mut Cpu) {
     c.cycles += 20;
     let lens = LensFx(Addr(abi::arg(c, 0)));
-    let (source, list) = (reg(c, A1), abi::arg(c, 2));
+    let (source, list) = (abi::reg(c, A1), abi::arg(c, 2));
     let count = lens.count(list);
     let n = count.lw(c) as u32;
     let list_off = abi::mult(c, list, LensFx::LIST_STRIDE);
@@ -686,14 +680,7 @@ pub fn spr_stream_next_index(c: &mut Cpu) {
     let s = Addr(abi::arg(c, 0));
     let next = sx((s.off(0xc).lw(c) as u32).wrapping_add(1));
     let buffers = s.off(0x4).lw(c);
-    let (n, d) = (next as i32, buffers as i32);
-    let (q, r) = if d == 0 {
-        (if n < 0 { 1 } else { -1 }, n)
-    } else {
-        (n.wrapping_div(d), n.wrapping_rem(d))
-    };
-    c.lo[0] = sx(q as u32);
-    c.hi[0] = sx(r as u32);
+    let (_, r) = abi::div(c, next as u32, buffers as u32);
     s.off(0xc).sw(c, sx(r as u32));
     c.g[V0][0] = next;
     c.g[V1][0] = buffers;
@@ -788,23 +775,11 @@ pub fn app_module_update_fade(c: &mut Cpu) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::difftest::{check, fill, scramble, Rng, DATA};
+    use crate::difftest::{check, check_lohi, fill, scramble, Rng, DATA};
 
     const SEEDS: u32 = 600;
-    /// Where the wrappers below dump LO/HI so the RAM compare covers them.
-    const LOHI: u32 = 0x0090_0000;
     /// The game's gp (globals are addressed relative to it).
-    const GP_VALUE: u64 = 0x004a_30f0;
-
-    macro_rules! lohi {
-        ($name:ident, $f:path) => {
-            fn $name(c: &mut Cpu) {
-                $f(c);
-                c.bus.write64(LOHI, c.lo[0]);
-                c.bus.write64(LOHI + 8, c.hi[0]);
-            }
-        };
-    }
+    const GP_VALUE: u64 = crate::difftest::GAME_GP as u64;
 
     fn rng(seed: u32, salt: u64) -> Rng {
         Rng(0x9e37_79b9_7f4a_7c15 ^ ((seed as u64) << 20) ^ salt)
@@ -979,10 +954,6 @@ mod tests {
         });
     }
 
-    lohi!(gen_add_source, ssx3_ee::s09::f_002e2fa8__generated);
-    lohi!(hand_add_source, lens_fx_add_source);
-    lohi!(gen_next_index, ssx3_ee::s12::f_0038f6a8__generated);
-    lohi!(hand_next_index, spr_stream_next_index);
 
     fn lens_fx(c: &mut Cpu, r: &mut Rng) {
         for l in 0..4 {
@@ -995,7 +966,7 @@ mod tests {
 
     #[test]
     fn lens_fx_add_source_matches() {
-        check(gen_add_source, hand_add_source, SEEDS, &|c, seed| {
+        check_lohi(ssx3_ee::s09::f_002e2fa8__generated, lens_fx_add_source, SEEDS, &|c, seed| {
             let mut r = base(c, seed, 11);
             lens_fx(c, &mut r);
         });
@@ -1021,7 +992,7 @@ mod tests {
 
     #[test]
     fn spr_stream_next_index_matches() {
-        check(gen_next_index, hand_next_index, SEEDS, &|c, seed| {
+        check_lohi(ssx3_ee::s12::f_0038f6a8__generated, spr_stream_next_index, SEEDS, &|c, seed| {
             let mut r = base(c, seed, 14);
             let (n, i) = match r.next_u32() % 6 {
                 0 => (0, r.next_u32()),

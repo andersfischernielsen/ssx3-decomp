@@ -11,29 +11,17 @@
 //!
 //! # Event checks
 //!
-//! The generated code has two shapes, and each replacement copies the shape
-//! of its original:
-//!
-//! - **Structured loops** (`'l_…: loop`): at a back edge,
-//!   `if cycles >= next_event { pc = head; event(); }`. The result of
-//!   `event()` is ignored (a requested unwind is only honoured by a later
-//!   check elsewhere) and the function cannot be entered in the middle.
-//! - **Dispatcher loops** (`match pc`): the same check, but an unwind request
-//!   makes the function return at once with `pc` still at the loop head.
-//!   The trampoline later re-enters the function *at that head*, so the
-//!   replacement must accept those resume addresses as entry points and pick
-//!   up its loop state from the registers.
-//!
-//! Either way the registers are the interface: before an event is delivered
-//! every register the loop has changed holds the value the original would
-//! have there (a handler or a thread switch saves the context), and after a
-//! non-unwinding event the loop state is reloaded from the registers, as the
-//! generated code reads them.
+//! Each replacement copies the loop shape of its original (structured loop
+//! or `match pc` dispatcher re-enterable at its loop heads); the rules and
+//! helpers are in [`crate::events`].
 //!
 //! Registers that the original leaves behind (loop flags in v0, the last
 //! loaded quadword in a temporary, 0/-1 sentinels) are reproduced too: the
 //! differential tests compare v0/v1 and the upper GPR halves as hard state.
 
+use crate::abi::{gpr128, r32, ret, set_gpr128, set_word};
+use crate::events::{back_edge_unwinds, deliver_event, event_due, Resume};
+use crate::mmi::{lq, pand, pcpyld, pcpyud, pnot, psubb, psubw};
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
@@ -53,55 +41,6 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0037_1d10, dma_to_scratchpad, "Dma_ToScratchpad"),
     (0x0037_1dd8, dma_from_scratchpad, "Dma_FromScratchpad"),
 ];
-
-// ---------------------------------------------------------------------------
-// Register helpers (candidates for `abi`).
-
-/// The low 32 bits of a GPR (a pointer or a 32-bit count).
-#[inline]
-fn r32(c: &Cpu, r: usize) -> u32 {
-    c.g[r][0] as u32
-}
-
-/// Leave a 32-bit value in a GPR as `addiu`/`lw` would (sign-extended,
-/// upper 64 bits untouched).
-#[inline]
-fn set32(c: &mut Cpu, r: usize, v: u32) {
-    c.g[r][0] = sx(v);
-}
-
-/// A 128-bit GPR as one value (lane 0 in the low bits).
-#[inline]
-fn q(c: &Cpu, r: usize) -> u128 {
-    c.g[r][0] as u128 | (c.g[r][1] as u128) << 64
-}
-
-/// Leave a 128-bit value in a GPR (what `lq` or an MMI op leaves).
-#[inline]
-fn set_q(c: &mut Cpu, r: usize, v: u128) {
-    c.g[r] = [v as u64, (v >> 64) as u64];
-}
-
-/// Is an event due? (`cycles >= next_event`, tested at back edges.)
-#[inline]
-fn event_due(c: &Cpu) -> bool {
-    c.cycles >= c.next_event
-}
-
-/// Deliver an event with `pc` at the loop head `head`; true when the thread
-/// must unwind. Callers spill their loop registers first and reload them
-/// afterwards.
-#[inline]
-fn deliver_event(c: &mut Cpu, head: u32) -> bool {
-    c.pc = head;
-    c.event()
-}
-
-/// Return to the caller (`jr ra`).
-#[inline]
-fn ret(c: &mut Cpu) {
-    c.pc = c.g[RA][0] as u32;
-}
 
 // ---------------------------------------------------------------------------
 // UTF-16 strings.
@@ -129,16 +68,16 @@ pub fn ustr_len(c: &mut Cpu) {
                 break;
             }
             if event_due(c) {
-                set32(c, A0, p);
+                set_word(c, A0, p);
                 c.g[V0][0] = ch;
-                set32(c, V1, len);
+                set_word(c, V1, len);
                 deliver_event(c, HEAD);
                 p = r32(c, A0);
                 len = r32(c, V1);
             }
         }
-        set32(c, A0, p);
-        set32(c, V1, len);
+        set_word(c, A0, p);
+        set_word(c, V1, len);
     }
     c.cycles += 2;
     c.g[V0][0] = c.g[V1][0];
@@ -168,8 +107,8 @@ pub fn ustr_copy(c: &mut Cpu) {
                 break;
             }
             if event_due(c) {
-                set32(c, A0, dst);
-                set32(c, A1, src);
+                set_word(c, A0, dst);
+                set_word(c, A1, src);
                 c.g[V1][0] = ch;
                 deliver_event(c, HEAD);
                 dst = r32(c, A0);
@@ -177,8 +116,8 @@ pub fn ustr_copy(c: &mut Cpu) {
                 ch = c.g[V1][0];
             }
         }
-        set32(c, A0, dst);
-        set32(c, A1, src);
+        set_word(c, A0, dst);
+        set_word(c, A1, src);
         c.g[V1][0] = ch;
     }
     c.cycles += 2;
@@ -217,7 +156,7 @@ pub fn memcpy(c: &mut Cpu) {
             let misaligned = (c.g[A1][0] | dst0) & 0xf;
             c.g[V0][0] = misaligned;
             if misaligned != 0 {
-                set32(c, A2, r32(c, A2).wrapping_sub(1));
+                set_word(c, A2, r32(c, A2).wrapping_sub(1));
                 break 'bytes;
             }
             c.cycles += 1;
@@ -234,17 +173,17 @@ pub fn memcpy(c: &mut Cpu) {
                 src = src.wrapping_add(0x10);
                 c.bus.write128(dst, hi);
                 dst = dst.wrapping_add(0x10);
-                set_q(c, V1, lo);
-                set_q(c, V0, hi);
+                set_gpr128(c, V1, lo);
+                set_gpr128(c, V0, hi);
                 let done = n < 0x20;
                 c.g[A0][0] = done as u64;
                 if done {
                     break;
                 }
                 if event_due(c) {
-                    set32(c, A1, src);
-                    set32(c, A2, n);
-                    set32(c, A3, dst);
+                    set_word(c, A1, src);
+                    set_word(c, A2, n);
+                    set_word(c, A3, dst);
                     deliver_event(c, QUAD_HEAD);
                     (src, n, dst) = (r32(c, A1), r32(c, A2), r32(c, A3));
                 }
@@ -252,7 +191,7 @@ pub fn memcpy(c: &mut Cpu) {
             c.cycles += 3;
             let lt8 = n < 8;
             c.g[V0][0] = lt8 as u64;
-            set32(c, V1, dst);
+            set_word(c, V1, dst);
             if !lt8 {
                 // 8 bytes per iteration.
                 loop {
@@ -269,22 +208,22 @@ pub fn memcpy(c: &mut Cpu) {
                         break;
                     }
                     if event_due(c) {
-                        set32(c, A1, src);
-                        set32(c, A2, n);
-                        set32(c, A3, dst);
+                        set_word(c, A1, src);
+                        set_word(c, A2, n);
+                        set_word(c, A3, dst);
                         deliver_event(c, DOUBLE_HEAD);
                         (src, n, dst) = (r32(c, A1), r32(c, A2), r32(c, A3));
                     }
                 }
                 c.cycles += 1;
-                set32(c, V1, dst);
+                set_word(c, V1, dst);
             }
-            set32(c, A1, src);
-            set32(c, A2, n);
-            set32(c, A3, dst);
+            set_word(c, A1, src);
+            set_word(c, A2, n);
+            set_word(c, A3, dst);
         }
         c.cycles += 1;
-        set32(c, A2, r32(c, A2).wrapping_sub(1));
+        set_word(c, A2, r32(c, A2).wrapping_sub(1));
     }
     // The byte tail: `n` counts down to -1 (kept in a0).
     c.cycles += 3;
@@ -305,16 +244,16 @@ pub fn memcpy(c: &mut Cpu) {
                 break;
             }
             if event_due(c) {
-                set32(c, A1, src);
-                set32(c, A2, n);
-                set32(c, V1, dst);
+                set_word(c, A1, src);
+                set_word(c, A2, n);
+                set_word(c, V1, dst);
                 deliver_event(c, BYTE_HEAD);
                 (src, n, dst) = (r32(c, A1), r32(c, A2), r32(c, V1));
             }
         }
-        set32(c, A1, src);
-        set32(c, A2, n);
-        set32(c, V1, dst);
+        set_word(c, A1, src);
+        set_word(c, A2, n);
+        set_word(c, V1, dst);
     }
     c.cycles += 2;
     c.g[V0][0] = c.g[T0][0];
@@ -354,7 +293,7 @@ pub fn ea_mem_copy(c: &mut Cpu) {
                 }
                 c.cycles += 3;
                 n = n.wrapping_sub(1);
-                set32(c, A2, n);
+                set_word(c, A2, n);
                 let b = c.lbu(src);
                 c.g[T1][0] = b;
                 if n as i32 <= 0 {
@@ -366,8 +305,8 @@ pub fn ea_mem_copy(c: &mut Cpu) {
                 src = src.wrapping_add(1);
                 c.sb(dst, b);
                 dst = dst.wrapping_add(1);
-                set32(c, A0, dst);
-                set32(c, A1, src);
+                set_word(c, A0, dst);
+                set_word(c, A1, src);
                 if event_due(c) {
                     deliver_event(c, ALIGN_HEAD);
                     (dst, src, n) = (r32(c, A0), r32(c, A1), r32(c, A2));
@@ -377,9 +316,9 @@ pub fn ea_mem_copy(c: &mut Cpu) {
         c.cycles += 3;
         c.g[T0][0] = (src & 0xf) as u64;
         if src & 0xf != 0 {
-            set32(c, A0, dst);
-            set32(c, A1, src);
-            set32(c, A2, n);
+            set_word(c, A0, dst);
+            set_word(c, A1, src);
+            set_word(c, A2, n);
             break 'bytes;
         }
         // 128 bytes per iteration while n >= 128 (n is biased by -128).
@@ -397,7 +336,7 @@ pub fn ea_mem_copy(c: &mut Cpu) {
                         c.bus.write128(dst.wrapping_add(half + 0x10 * i as u32), *x);
                     }
                     for (i, x) in v.iter().enumerate() {
-                        set_q(c, T1 + i, *x);
+                        set_gpr128(c, T1 + i, *x);
                     }
                 }
                 n = n.wrapping_sub(0x80);
@@ -407,9 +346,9 @@ pub fn ea_mem_copy(c: &mut Cpu) {
                     break;
                 }
                 if event_due(c) {
-                    set32(c, A0, dst);
-                    set32(c, A1, src);
-                    set32(c, A2, n);
+                    set_word(c, A0, dst);
+                    set_word(c, A1, src);
+                    set_word(c, A2, n);
                     deliver_event(c, BLOCK_HEAD);
                     (dst, src, n) = (r32(c, A0), r32(c, A1), r32(c, A2));
                 }
@@ -433,9 +372,9 @@ pub fn ea_mem_copy(c: &mut Cpu) {
                     break;
                 }
                 if event_due(c) {
-                    set32(c, A0, dst);
-                    set32(c, A1, src);
-                    set32(c, A2, n);
+                    set_word(c, A0, dst);
+                    set_word(c, A1, src);
+                    set_word(c, A2, n);
                     deliver_event(c, DOUBLE_HEAD);
                     (dst, src, n) = (r32(c, A0), r32(c, A1), r32(c, A2));
                 }
@@ -443,15 +382,15 @@ pub fn ea_mem_copy(c: &mut Cpu) {
         }
         c.cycles += 1;
         n = n.wrapping_add(8);
-        set32(c, A0, dst);
-        set32(c, A1, src);
-        set32(c, A2, n);
+        set_word(c, A0, dst);
+        set_word(c, A1, src);
+        set_word(c, A2, n);
     }
     // The byte tail: `n` is decremented before the test, so the loop runs
     // while the count before the decrement was positive.
     c.cycles += 3;
     let mut n = r32(c, A2).wrapping_sub(1);
-    set32(c, A2, n);
+    set_word(c, A2, n);
     if n as i32 >= 0 {
         let (mut dst, mut src) = (r32(c, A0), r32(c, A1));
         loop {
@@ -467,16 +406,16 @@ pub fn ea_mem_copy(c: &mut Cpu) {
                 break;
             }
             if event_due(c) {
-                set32(c, A0, dst);
-                set32(c, A1, src);
-                set32(c, A2, n);
+                set_word(c, A0, dst);
+                set_word(c, A1, src);
+                set_word(c, A2, n);
                 deliver_event(c, BYTE_HEAD);
                 (dst, src, n) = (r32(c, A0), r32(c, A1), r32(c, A2));
             }
         }
-        set32(c, A0, dst);
-        set32(c, A1, src);
-        set32(c, A2, n);
+        set_word(c, A0, dst);
+        set_word(c, A1, src);
+        set_word(c, A2, n);
     }
     c.cycles += 2;
     ret(c);
@@ -484,24 +423,6 @@ pub fn ea_mem_copy(c: &mut Cpu) {
 
 // ---------------------------------------------------------------------------
 // memset / EA_MemSet (dispatcher shape: resumable at their loop heads).
-
-/// Where a resumable function continues: a stage of the original, or out.
-#[derive(Clone, Copy, PartialEq, Debug)]
-enum Flow<S> {
-    Go(S),
-    /// Returned to the caller.
-    Done,
-    /// An event asked the thread to unwind; `pc` is the loop head to resume at.
-    Unwind,
-}
-
-/// Deliver a due event at a back edge of a dispatcher-shaped loop (the
-/// caller has spilled its registers). True when the function must return
-/// now; it is re-entered at `head` later.
-#[inline]
-fn back_edge_unwinds(c: &mut Cpu, head: u32) -> bool {
-    event_due(c) && deliver_event(c, head)
-}
 
 const MEMSET: u32 = 0x0041_6210;
 const MEMSET_END: u32 = 0x0041_62d0;
@@ -552,32 +473,32 @@ pub fn memset(c: &mut Cpu) {
             MemsetStage::Bytes { resume } => memset_bytes(c, resume),
         };
         match flow {
-            Flow::Go(s) => stage = s,
-            Flow::Done => {
+            Resume::Go(s) => stage = s,
+            Resume::Done => {
                 c.cycles += 2;
                 c.g[V0][0] = c.g[A0][0];
                 ret(c);
                 return;
             }
-            Flow::Unwind => return,
+            Resume::Unwind => return,
         }
     }
 }
 
 /// Size and alignment tests; builds the fill pattern for the wide paths.
-fn memset_entry(c: &mut Cpu) -> Flow<MemsetStage> {
+fn memset_entry(c: &mut Cpu) -> Resume<MemsetStage> {
     let n = c.g[A2][0];
     c.cycles += 3;
     c.g[V0][0] = (n < 8) as u64;
     c.g[V1][0] = c.g[A0][0];
     if n < 8 {
-        return Flow::Go(MemsetStage::Bytes { resume: false });
+        return Resume::Go(MemsetStage::Bytes { resume: false });
     }
     c.cycles += 3;
     c.g[V0][0] = c.g[A0][0] & 0xf;
     c.g[A3][0] = c.g[A0][0];
     if c.g[V0][0] != 0 {
-        return Flow::Go(MemsetStage::Bytes { resume: false });
+        return Resume::Go(MemsetStage::Bytes { resume: false });
     }
     c.cycles += 8;
     let byte = c.g[A1][0] & 0xff;
@@ -590,20 +511,20 @@ fn memset_entry(c: &mut Cpu) -> Flow<MemsetStage> {
     c.g[V1] = [rep(c.g[T0][0]), rep(c.g[T0][1])];
     c.g[V0][0] = (n < 8) as u64;
     if n < 0x20 {
-        return Flow::Go(MemsetStage::Doubles { resume: false });
+        return Resume::Go(MemsetStage::Doubles { resume: false });
     }
     c.cycles += 1;
     // pcpyld t0, v1, v1: the 8-byte pattern in both lanes.
     c.g[T0] = [c.g[V1][0], c.g[V1][0]];
-    Flow::Go(MemsetStage::Quads)
+    Resume::Go(MemsetStage::Quads)
 }
 
 /// 32 bytes per iteration (two `sq` of t0) while `n >= 32`.
-fn memset_quads(c: &mut Cpu) -> Flow<MemsetStage> {
+fn memset_quads(c: &mut Cpu) -> Resume<MemsetStage> {
     let (mut dst, mut n) = (r32(c, A3), r32(c, A2));
     loop {
         // The loop state lives in the registers (re-read after an event).
-        let pattern = q(c, T0);
+        let pattern = gpr128(c, T0);
         c.cycles += 7;
         c.bus.write128(dst, pattern);
         n = n.wrapping_sub(0x20);
@@ -612,24 +533,24 @@ fn memset_quads(c: &mut Cpu) -> Flow<MemsetStage> {
         c.bus.write128(dst, pattern);
         dst = dst.wrapping_add(0x10);
         c.g[V0][0] = done as u64;
-        set32(c, A2, n);
-        set32(c, A3, dst);
+        set_word(c, A2, n);
+        set_word(c, A3, dst);
         if done {
             break;
         }
         if back_edge_unwinds(c, MEMSET_QUADS) {
-            return Flow::Unwind;
+            return Resume::Unwind;
         }
         (dst, n) = (r32(c, A3), r32(c, A2));
     }
     c.cycles += 2;
     c.g[V0][0] = (n < 8) as u64;
-    Flow::Go(MemsetStage::Doubles { resume: false })
+    Resume::Go(MemsetStage::Doubles { resume: false })
 }
 
 /// 8 bytes per iteration (`sd` of v1) while `n >= 8`; enters with the
 /// `n < 8` flag in v0.
-fn memset_doubles(c: &mut Cpu, resume: bool) -> Flow<MemsetStage> {
+fn memset_doubles(c: &mut Cpu, resume: bool) -> Resume<MemsetStage> {
     let (mut dst, mut n) = (r32(c, A3), r32(c, A2));
     let mut store = !resume;
     loop {
@@ -640,7 +561,7 @@ fn memset_doubles(c: &mut Cpu, resume: bool) -> Flow<MemsetStage> {
             }
             c.sd(dst, c.g[V1][0]);
             if back_edge_unwinds(c, MEMSET_DOUBLE_STEP) {
-                return Flow::Unwind;
+                return Resume::Unwind;
             }
             (dst, n) = (r32(c, A3), r32(c, A2));
         }
@@ -649,22 +570,22 @@ fn memset_doubles(c: &mut Cpu, resume: bool) -> Flow<MemsetStage> {
         n = n.wrapping_sub(8);
         dst = dst.wrapping_add(8);
         c.g[V0][0] = (n < 8) as u64;
-        set32(c, A2, n);
-        set32(c, A3, dst);
+        set_word(c, A2, n);
+        set_word(c, A3, dst);
     }
     c.cycles += 1;
     c.g[V1][0] = c.g[A3][0];
-    Flow::Go(MemsetStage::Bytes { resume: false })
+    Resume::Go(MemsetStage::Bytes { resume: false })
 }
 
 /// The byte tail: `n` counts down to -1 (kept in v0); the pointer is v1.
-fn memset_bytes(c: &mut Cpu, resume: bool) -> Flow<MemsetStage> {
+fn memset_bytes(c: &mut Cpu, resume: bool) -> Resume<MemsetStage> {
     if !resume {
         c.cycles += 5;
         c.g[V0][0] = u64::MAX;
-        set32(c, A2, r32(c, A2).wrapping_sub(1));
+        set_word(c, A2, r32(c, A2).wrapping_sub(1));
         if r32(c, A2) == u32::MAX {
-            return Flow::Done;
+            return Resume::Done;
         }
         c.cycles += 2;
     }
@@ -674,17 +595,17 @@ fn memset_bytes(c: &mut Cpu, resume: bool) -> Flow<MemsetStage> {
         c.sb(p, c.g[A1][0]);
         n = n.wrapping_sub(1);
         p = p.wrapping_add(1);
-        set32(c, A2, n);
-        set32(c, V1, p);
+        set_word(c, A2, n);
+        set_word(c, V1, p);
         if n == u32::MAX {
             break;
         }
         if back_edge_unwinds(c, MEMSET_BYTES) {
-            return Flow::Unwind;
+            return Resume::Unwind;
         }
         (p, n) = (r32(c, V1), r32(c, A2));
     }
-    Flow::Done
+    Resume::Done
 }
 
 const EA_MEM_SET: u32 = 0x003e_6448;
@@ -715,8 +636,8 @@ fn count(c: &Cpu) -> i64 {
 /// `a2 += k`, `a0 += step` (32-bit adds, as `addiu` leaves them).
 #[inline]
 fn advance(c: &mut Cpu, k: i32, step: u32) {
-    set32(c, A2, r32(c, A2).wrapping_add(k as u32));
-    set32(c, A0, r32(c, A0).wrapping_add(step));
+    set_word(c, A2, r32(c, A2).wrapping_add(k as u32));
+    set_word(c, A0, r32(c, A0).wrapping_add(step));
 }
 
 /// `EA_MemSet(dst, word, n)` (0x3e6448): fills `n` bytes (a signed count)
@@ -750,12 +671,12 @@ pub fn ea_mem_set(c: &mut Cpu) {
             EaMemSetStage::Words4 { resume } => ea_mem_set_words4(c, resume),
         };
         match flow {
-            Flow::Go(s) => stage = s,
-            Flow::Done => {
+            Resume::Go(s) => stage = s,
+            Resume::Done => {
                 ea_mem_set_tail(c);
                 return;
             }
-            Flow::Unwind => return,
+            Resume::Unwind => return,
         }
     }
 }
@@ -785,9 +706,9 @@ fn ea_mem_set_align(c: &mut Cpu, width: u32, next: i64) {
 }
 
 /// Reserve the stack slot, align `dst`, and pick the widest loop.
-fn ea_mem_set_entry(c: &mut Cpu) -> Flow<EaMemSetStage> {
+fn ea_mem_set_entry(c: &mut Cpu) -> Resume<EaMemSetStage> {
     c.cycles += 2;
-    set32(c, SP, r32(c, SP).wrapping_sub(0x10));
+    set_word(c, SP, r32(c, SP).wrapping_sub(0x10));
     // A byte if n > 0 and dst is odd. Leaves v0 = n < 2.
     if count(c) <= 0 {
         c.cycles += 1;
@@ -819,11 +740,11 @@ fn ea_mem_set_entry(c: &mut Cpu) -> Flow<EaMemSetStage> {
     c.sw(sp.wrapping_add(4), c.g[A1][0]);
     c.sw(sp, c.g[A1][0]);
     c.g[V1][0] = c.ld(sp);
-    Flow::Go(EaMemSetStage::Blocks)
+    Resume::Go(EaMemSetStage::Blocks)
 }
 
 /// 64 bytes per iteration while `n >= 64`.
-fn ea_mem_set_blocks(c: &mut Cpu) -> Flow<EaMemSetStage> {
+fn ea_mem_set_blocks(c: &mut Cpu) -> Resume<EaMemSetStage> {
     loop {
         c.cycles += 12;
         let (dst, pattern) = (r32(c, A0), c.g[V1][0]);
@@ -837,7 +758,7 @@ fn ea_mem_set_blocks(c: &mut Cpu) -> Flow<EaMemSetStage> {
             break;
         }
         if back_edge_unwinds(c, EA_MEM_SET_BLOCKS) {
-            return Flow::Unwind;
+            return Resume::Unwind;
         }
     }
     c.cycles += 1;
@@ -846,19 +767,19 @@ fn ea_mem_set_blocks(c: &mut Cpu) -> Flow<EaMemSetStage> {
 }
 
 /// Enter the 16-byte loop if at least 16 bytes remain (v0 = n < 16).
-fn ea_mem_set_words16_check(c: &mut Cpu) -> Flow<EaMemSetStage> {
+fn ea_mem_set_words16_check(c: &mut Cpu) -> Resume<EaMemSetStage> {
     c.cycles += 2;
     let enough = c.g[V0][0] == 0;
     c.g[V0][0] = (count(c) < 4) as u64;
     if !enough {
-        return Flow::Go(EaMemSetStage::Words4 { resume: false });
+        return Resume::Go(EaMemSetStage::Words4 { resume: false });
     }
     c.cycles += 1;
-    Flow::Go(EaMemSetStage::Words16)
+    Resume::Go(EaMemSetStage::Words16)
 }
 
 /// 16 bytes per iteration (four `sw`) while `n >= 16`.
-fn ea_mem_set_words16(c: &mut Cpu) -> Flow<EaMemSetStage> {
+fn ea_mem_set_words16(c: &mut Cpu) -> Resume<EaMemSetStage> {
     loop {
         c.cycles += 8;
         let dst = r32(c, A0);
@@ -872,16 +793,16 @@ fn ea_mem_set_words16(c: &mut Cpu) -> Flow<EaMemSetStage> {
             break;
         }
         if back_edge_unwinds(c, EA_MEM_SET_WORDS16) {
-            return Flow::Unwind;
+            return Resume::Unwind;
         }
     }
     c.cycles += 2;
     c.g[V0][0] = (count(c) < 4) as u64;
-    Flow::Go(EaMemSetStage::Words4 { resume: false })
+    Resume::Go(EaMemSetStage::Words4 { resume: false })
 }
 
 /// 4 bytes per iteration while `n >= 4` (enters with v0 = n < 4).
-fn ea_mem_set_words4(c: &mut Cpu, resume: bool) -> Flow<EaMemSetStage> {
+fn ea_mem_set_words4(c: &mut Cpu, resume: bool) -> Resume<EaMemSetStage> {
     let mut store = !resume;
     loop {
         if store {
@@ -891,7 +812,7 @@ fn ea_mem_set_words4(c: &mut Cpu, resume: bool) -> Flow<EaMemSetStage> {
             }
             c.sw(r32(c, A0), c.g[A1][0]);
             if back_edge_unwinds(c, EA_MEM_SET_WORD_STEP) {
-                return Flow::Unwind;
+                return Resume::Unwind;
             }
         }
         store = true;
@@ -899,7 +820,7 @@ fn ea_mem_set_words4(c: &mut Cpu, resume: bool) -> Flow<EaMemSetStage> {
         advance(c, -4, 4);
         c.g[V0][0] = (count(c) < 4) as u64;
     }
-    Flow::Done
+    Resume::Done
 }
 
 /// A halfword and a byte if they remain; free the stack slot and return.
@@ -917,7 +838,7 @@ fn ea_mem_set_tail(c: &mut Cpu) {
         c.sb(r32(c, A0), c.g[A1][0]);
     }
     c.cycles += 2;
-    set32(c, SP, r32(c, SP).wrapping_add(0x10));
+    set_word(c, SP, r32(c, SP).wrapping_add(0x10));
     ret(c);
 }
 
@@ -1050,59 +971,6 @@ pub fn dma_from_scratchpad(c: &mut Cpu) {
 const ONES: u64 = 0x0101_0101_0101_0101;
 const HIGHS: u64 = 0x8080_8080_8080_8080;
 
-/// A 128-bit GPR image (lane 0 first), as MMI instructions see it.
-type Gpr = [u64; 2];
-
-/// `psubb`: per-byte wrapping subtraction.
-fn psubb(a: Gpr, b: Gpr) -> Gpr {
-    let (x, y) = (gpr_bytes(a), gpr_bytes(b));
-    let mut o = [0u8; 16];
-    for i in 0..16 {
-        o[i] = x[i].wrapping_sub(y[i]);
-    }
-    let v = u128::from_le_bytes(o);
-    [v as u64, (v >> 64) as u64]
-}
-
-fn gpr_bytes(a: Gpr) -> [u8; 16] {
-    (a[0] as u128 | (a[1] as u128) << 64).to_le_bytes()
-}
-
-/// `psubw`: per-word wrapping subtraction.
-fn psubw(a: Gpr, b: Gpr) -> Gpr {
-    let w = |x: u64, y: u64| {
-        ((x as u32).wrapping_sub(y as u32) as u64)
-            | (((x >> 32) as u32).wrapping_sub((y >> 32) as u32) as u64) << 32
-    };
-    [w(a[0], b[0]), w(a[1], b[1])]
-}
-
-/// `pand`.
-fn pand(a: Gpr, b: Gpr) -> Gpr {
-    [a[0] & b[0], a[1] & b[1]]
-}
-
-/// `pnor rd, $zero, x`: the complement.
-fn pnot(a: Gpr) -> Gpr {
-    [!a[0], !a[1]]
-}
-
-/// `pcpyld rd, rs, rt`: lower lanes, rt's below rs's.
-fn pcpyld(rs: Gpr, rt: Gpr) -> Gpr {
-    [rt[0], rs[0]]
-}
-
-/// `pcpyud rd, rs, rt`: upper lanes, rs's below rt's.
-fn pcpyud(rs: Gpr, rt: Gpr) -> Gpr {
-    [rs[1], rt[1]]
-}
-
-/// `lq` as a register image.
-fn lq(c: &mut Cpu, a: u32) -> Gpr {
-    let v = c.bus.read128(a);
-    [v as u64, (v >> 64) as u64]
-}
-
 /// `strlen(s)` (0x416810, newlib): the number of bytes before the NUL.
 ///
 /// From an 8-byte aligned `s` it scans 16 bytes per iteration (MMI) when
@@ -1143,7 +1011,7 @@ pub fn strlen(c: &mut Cpu) {
             }
             // 16 bytes per iteration.
             c.cycles += 1;
-            set32(c, A1, r32(c, A1).wrapping_add(0x10));
+            set_word(c, A1, r32(c, A1).wrapping_add(0x10));
             loop {
                 c.cycles += 9;
                 let x = lq(c, r32(c, A1));
@@ -1155,7 +1023,7 @@ pub fn strlen(c: &mut Cpu) {
                 if c.g[V1][0] != 0 {
                     break;
                 }
-                set32(c, A1, r32(c, A1).wrapping_add(0x10));
+                set_word(c, A1, r32(c, A1).wrapping_add(0x10));
                 if event_due(c) {
                     deliver_event(c, QUAD_HEAD);
                 }
@@ -1177,7 +1045,7 @@ pub fn strlen(c: &mut Cpu) {
         // 8 bytes per iteration.
         c.cycles += 8;
         c.g[A2][0] = ONES;
-        set32(c, A1, r32(c, A1).wrapping_add(8));
+        set_word(c, A1, r32(c, A1).wrapping_add(8));
         loop {
             c.cycles += 7;
             let x = c.ld(r32(c, A1));
@@ -1186,7 +1054,7 @@ pub fn strlen(c: &mut Cpu) {
             if c.g[V0][0] != 0 {
                 break;
             }
-            set32(c, A1, r32(c, A1).wrapping_add(8));
+            set_word(c, A1, r32(c, A1).wrapping_add(8));
             if event_due(c) {
                 deliver_event(c, DOUBLE_HEAD);
             }
@@ -1201,20 +1069,20 @@ pub fn strlen(c: &mut Cpu) {
         if c.g[V0][0] == 0 {
             break;
         }
-        set32(c, A0, r32(c, A0).wrapping_add(1));
+        set_word(c, A0, r32(c, A0).wrapping_add(1));
         if event_due(c) {
             deliver_event(c, BYTE_HEAD);
         }
     }
     c.cycles += 2;
-    set32(c, V0, r32(c, A0).wrapping_sub(r32(c, A3)));
+    set_word(c, V0, r32(c, A0).wrapping_sub(r32(c, A3)));
     ret(c);
 }
 
 /// `addiu r, r, k` on a register.
 #[inline]
 fn bump(c: &mut Cpu, r: usize, k: i32) {
-    set32(c, r, r32(c, r).wrapping_add(k as u32));
+    set_word(c, r, r32(c, r).wrapping_add(k as u32));
 }
 
 /// `strcpy(dst, src)` (0x4166f4, newlib): copies `src` with its NUL and
@@ -1547,28 +1415,28 @@ pub fn strcmp(c: &mut Cpu) {
             StrcmpStage::Bytes => strcmp_bytes(c),
         };
         match flow {
-            Flow::Go(s) => stage = s,
-            Flow::Done | Flow::Unwind => return,
+            Resume::Go(s) => stage = s,
+            Resume::Done | Resume::Unwind => return,
         }
     }
 }
 
 /// Return `v` (equal strings: 0).
-fn strcmp_return(c: &mut Cpu, v: u64) -> Flow<StrcmpStage> {
+fn strcmp_return(c: &mut Cpu, v: u64) -> Resume<StrcmpStage> {
     c.cycles += 2;
     c.g[V0][0] = v;
     ret(c);
-    Flow::Done
+    Resume::Done
 }
 
 /// Leave the block loops for the byte loop at `a` (v0 = `*a`, signed).
-fn strcmp_to_bytes(c: &mut Cpu) -> Flow<StrcmpStage> {
+fn strcmp_to_bytes(c: &mut Cpu) -> Resume<StrcmpStage> {
     c.g[V0][0] = c.lb(r32(c, A0));
-    Flow::Go(StrcmpStage::ByteTest)
+    Resume::Go(StrcmpStage::ByteTest)
 }
 
 /// Alignment tests; compares the first block.
-fn strcmp_entry(c: &mut Cpu) -> Flow<StrcmpStage> {
+fn strcmp_entry(c: &mut Cpu) -> Resume<StrcmpStage> {
     c.cycles += 4;
     c.g[T0][0] = c.g[A0][0] | c.g[A1][0];
     c.g[V0][0] = c.g[T0][0] & 7;
@@ -1590,7 +1458,7 @@ fn strcmp_entry(c: &mut Cpu) -> Flow<StrcmpStage> {
         c.cycles += 2;
         c.g[V0][0] = c.ld(r32(c, A0));
         c.g[T0][0] = !c.g[V0][0];
-        return Flow::Go(StrcmpStage::Doubles);
+        return Resume::Go(StrcmpStage::Doubles);
     }
     // 16-byte blocks: compare the first (a3 = word differences).
     c.cycles += 9;
@@ -1607,10 +1475,10 @@ fn strcmp_entry(c: &mut Cpu) -> Flow<StrcmpStage> {
     c.cycles += 2;
     c.g[V0] = lq(c, r32(c, A0));
     c.g[V1] = pnot(c.g[V0]);
-    Flow::Go(StrcmpStage::Quads)
+    Resume::Go(StrcmpStage::Quads)
 }
 
-fn strcmp_quads(c: &mut Cpu) -> Flow<StrcmpStage> {
+fn strcmp_quads(c: &mut Cpu) -> Resume<StrcmpStage> {
     loop {
         // A NUL in the (equal) block ends the strings.
         c.cycles += 7;
@@ -1635,12 +1503,12 @@ fn strcmp_quads(c: &mut Cpu) -> Flow<StrcmpStage> {
         }
         c.g[V1] = pnot(c.g[V0]);
         if back_edge_unwinds(c, STRCMP_QUADS) {
-            return Flow::Unwind;
+            return Resume::Unwind;
         }
     }
 }
 
-fn strcmp_doubles(c: &mut Cpu) -> Flow<StrcmpStage> {
+fn strcmp_doubles(c: &mut Cpu) -> Resume<StrcmpStage> {
     loop {
         c.cycles += 5;
         c.g[V0][0] = c.g[V0][0].wrapping_sub(c.g[A3][0]) & c.g[T0][0] & c.g[A2][0];
@@ -1658,24 +1526,24 @@ fn strcmp_doubles(c: &mut Cpu) -> Flow<StrcmpStage> {
         }
         c.g[T0][0] = !c.g[V0][0];
         if back_edge_unwinds(c, STRCMP_DOUBLES) {
-            return Flow::Unwind;
+            return Resume::Unwind;
         }
     }
 }
 
-fn strcmp_byte_test(c: &mut Cpu) -> Flow<StrcmpStage> {
+fn strcmp_byte_test(c: &mut Cpu) -> Resume<StrcmpStage> {
     c.cycles += 2;
     c.g[V1][0] = c.lbu(r32(c, A0));
     if c.g[V0][0] == 0 {
         return strcmp_diff(c);
     }
     if back_edge_unwinds(c, STRCMP_BYTES) {
-        return Flow::Unwind;
+        return Resume::Unwind;
     }
-    Flow::Go(StrcmpStage::Bytes)
+    Resume::Go(StrcmpStage::Bytes)
 }
 
-fn strcmp_bytes(c: &mut Cpu) -> Flow<StrcmpStage> {
+fn strcmp_bytes(c: &mut Cpu) -> Resume<StrcmpStage> {
     c.cycles += 5;
     // `*a` sign-extended (sll 24, sra 24) against `*b` loaded signed.
     let a = c.g[V1][0] as u8 as i8 as i64 as u64;
@@ -1689,95 +1557,23 @@ fn strcmp_bytes(c: &mut Cpu) -> Flow<StrcmpStage> {
     bump(c, A0, 1);
     bump(c, A1, 1);
     c.g[V0][0] = c.lb(r32(c, A0));
-    Flow::Go(StrcmpStage::ByteTest)
+    Resume::Go(StrcmpStage::ByteTest)
 }
 
 /// `*a - *b` as unsigned bytes (v1 = `*a`).
-fn strcmp_diff(c: &mut Cpu) -> Flow<StrcmpStage> {
+fn strcmp_diff(c: &mut Cpu) -> Resume<StrcmpStage> {
     c.cycles += 3;
     c.g[V0][0] = c.lbu(r32(c, A1));
-    set32(c, V0, r32(c, V1).wrapping_sub(r32(c, V0)));
+    set_word(c, V0, r32(c, V1).wrapping_sub(r32(c, V0)));
     ret(c);
-    Flow::Done
+    Resume::Done
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::difftest::{compare, fill, fresh, scramble, Rng, DATA, RA};
-
-    /// The `UNWIND` bit the kernel sets in `pc`.
-    const UNWIND: u32 = 1;
-
-    thread_local! {
-        /// Re-entries at a resume point made by [`drive`] (this test thread).
-        static RESUMES: std::cell::RefCell<std::collections::BTreeMap<u32, u32>> =
-            const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
-    }
-
-    /// Run `f` the way the trampoline does: after an unwind, deliver any due
-    /// event and re-enter the function at the (cleared) `pc` until it returns.
-    fn drive(c: &mut Cpu, f: GuestFn) {
-        f(c);
-        for _ in 0..10_000 {
-            if c.pc == RA {
-                return;
-            }
-            assert!(c.pc & UNWIND != 0, "stopped at {:#x} without an unwind", c.pc);
-            c.pc &= !UNWIND;
-            if event_due(c) && c.event() {
-                continue;
-            }
-            RESUMES.with(|r| *r.borrow_mut().entry(c.pc).or_default() += 1);
-            f(c);
-        }
-        panic!("no return after 10000 re-entries (pc {:#x}, cycles {}, next {})", c.pc, c.cycles, c.next_event);
-    }
-
-    /// Wrap a function in [`drive`] (difftest takes plain `fn`s).
-    macro_rules! driven {
-        ($name:ident, $f:path) => {
-            fn $name(c: &mut Cpu) {
-                drive(c, $f)
-            }
-        };
-    }
-
-    /// How a seed exercises event delivery.
-    #[derive(Clone, Copy, PartialEq, Debug)]
-    enum Events {
-        /// No event while the function runs.
-        Off,
-        /// The first back edge after `k` cycles delivers a VBlank, which
-        /// requests an unwind (a frame is ready); later checks unwind too.
-        Unwind,
-        /// Events are delivered but never unwind (no VBlank due).
-        Deliver,
-    }
-
-    /// Enter at `entry` on a running guest thread (so a delivered VBlank has
-    /// a thread to come back to), with the cycle counter and event schedule
-    /// for `seed`. Returns the event mode.
-    fn schedule(c: &mut Cpu, r: &mut Rng, seed: u32, entry: u32) -> Events {
-        let saved = (c.g[A0], c.g[A1], c.g[31]);
-        ssx3_ps2::kernel::start_main_thread(c, entry, 0, 0);
-        (c.g[A0], c.g[A1], c.g[31]) = saved;
-        c.pc = entry;
-        c.cycles = 1000 + (r.next_u32() % 5000) as u64;
-        let k = (r.next_u32() % 48) as u64;
-        match seed % 3 {
-            0 => Events::Off,
-            1 => {
-                c.next_event = c.cycles + k;
-                Events::Unwind
-            }
-            _ => {
-                ssx3_ps2::platform::machine_of(&mut c.bus.plat).sched.next_vblank = 1 << 40;
-                c.next_event = c.cycles + k;
-                Events::Deliver
-            }
-        }
-    }
+    use crate::difftest::events::{check_events, driven, schedule};
+    use crate::difftest::{compare, fill, scramble, Rng, DATA};
 
     /// A length biased toward the edges of each chunking stage.
     fn pick_len(r: &mut Rng) -> u32 {
@@ -1793,43 +1589,6 @@ mod tests {
             8 => r.next_u32() % 2000,
             _ => 3000 + r.next_u32() % 3000,
         }
-    }
-
-    /// Like `difftest::check` (and also requiring equal temporaries), and
-    /// asserts that the event seeds really delivered an event inside the
-    /// function often enough to mean something.
-    fn check_events(
-        generated: GuestFn,
-        hand: GuestFn,
-        seeds: u32,
-        setup: &dyn Fn(&mut Cpu, u32) -> Events,
-    ) {
-        let (mut evented, mut event_seeds) = (0, 0);
-        for seed in 0..seeds {
-            let r = compare(generated, hand, &|c| {
-                setup(c, seed);
-            });
-            assert!(r.hard.is_empty(), "seed {seed}: {:#?}", r.hard);
-            // Temporaries too: the replacements reproduce every register.
-            assert!(r.soft.is_empty(), "seed {seed} (soft): {:#?}", r.soft);
-            let mut c = fresh();
-            let mode = setup(&mut c, seed);
-            let first = c.next_event;
-            generated(&mut c);
-            if mode != Events::Off {
-                event_seeds += 1;
-                // Delivering an event reschedules the next one.
-                if c.next_event != first {
-                    evented += 1;
-                }
-            }
-        }
-        assert!(
-            evented * 4 >= event_seeds,
-            "only {evented} of {event_seeds} event seeds reached an event"
-        );
-        let resumes = RESUMES.with(|r| std::mem::take(&mut *r.borrow_mut()));
-        eprintln!("{evented} of {event_seeds} event seeds delivered an event; resumes (pc: count): {resumes:x?}");
     }
 
     /// Random bytes in the test area, a source and a destination (possibly

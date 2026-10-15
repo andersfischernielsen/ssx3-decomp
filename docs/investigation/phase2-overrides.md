@@ -98,29 +98,39 @@ Lessons from the first packages:
 - Some originals write dead slots below `sp` (VU0/FPU spills); replacements
   write the same values (`CameraBase_UpdateMatrices`,
   `RiderHandplantState_Enter`).
-- Shared helpers each package wrote privately (to consolidate):
-  `set_fcc`, `mult` (LO/HI), `set_gpr128`/`set_word`, `arg64`, a `scramble`
-  randomiser and an edge-case float generator for `difftest`, a `.lit4`
-  constant loader, `Addr` loads/stores routed through `Cpu::lw/sw` (I/O
-  timing side effects), unaligned `ldl/ldr` helpers, `quat_rows` (shared by
-  rider and camera).
+- Helpers each package first wrote privately were consolidated after round
+  2 (see "Shared helpers" below).
 | 2026-10-15 | A4 render packets (16), A5 sound/files (20), Tier B utilities with loops (12: memset/memcpy/str*/EA_Mem*/DMA), Tier B functions with calls (26: wrappers, virtual dispatch, rider/camera updates, allocators) | 147 replacements installed; race to frame 9000 byte-identical (36 shots + full RAM); 140 tests pass |
 
-Patterns established in round 2 (currently private to their modules; to be
-shared):
-- **Loops with event checks** (`util.rs`): structured loops make the same
-  back-edge `c.event()` checks with the same `c.pc`; functions the generator
-  emitted as `match pc` dispatchers must be re-enterable at their resume
-  heads (the trampoline calls them again with `pc` at the loop head after an
-  unwind). Tests deliver real events mid-loop (VBlank on a guest thread) and
-  drive re-entry.
-- **Calls** (`dispatch.rs`): `Flow = Result<(), Unwound>` with `?` for the
-  host-thread unwind check, `Callee{addr,f}.call(c, ret)` (through the
-  readable alias, so override slots apply), `call_ptr` via `call_indirect`,
-  `VSlot` for gcc 2.9x vtable entries, `Frame` for the stack frame. Tests use
-  fake callees (function-table misses) that log every register to RAM and
-  unwind at chosen call indices.
+Patterns established in round 2 (now shared, see below):
+- **Loops with event checks**: structured loops make the same back-edge
+  `c.event()` checks with the same `c.pc`; functions the generator emitted
+  as `match pc` dispatchers must be re-enterable at their resume heads (the
+  trampoline calls them again with `pc` at the loop head after an unwind).
+  Tests deliver real events mid-loop (VBlank on a guest thread) and drive
+  re-entry.
+- **Calls**: `Flow = Result<(), Unwound>` with `?` for the host-thread
+  unwind check; tests use fake callees (function-table misses) that log
+  every register to RAM and unwind at chosen call indices.
 
-Next: share those helpers; Tier B leftovers (VU0 ACC / `cfc2 vi22` camera
+## Shared helpers
+
+For package authors; read the module docs before writing a replacement.
+
+| module | contents |
+| --- | --- |
+| `abi` | `arg`/`arg64`/`farg`, `set_ret`/`set_fret`, `ret`; whole registers `reg`/`set_reg` (64-bit), `r32`, `set_word` (sign-extended 32-bit), `gpr128`/`set_gpr128`; `addu`; FPU `set_fpr`, `mfc1`, `set_fcc`, `c_lt_s` (compare + FCC); `mult`/`multu`, `div`/`divu` (LO/HI exactly as `Cpu::div`/`divu`, incl. zero divisor and MIN/-1) |
+| `guest` | `Addr`: bus `read_*`/`write_*`, CPU-path `lb`..`sd` (I/O timing, sign-extension), `read_u64_unaligned`/`write_u64_unaligned` (`ldl/ldr`, `sdl/sdr` pairs) |
+| `ps2f` | `VuF32`, `FpuF32`, `Vec4`, `vu0_scratch` (final VF/Q values) |
+| `mmi` | 128-bit register images `Gpr = [u64; 2]`: `psubb`, `psubw`, `pand`, `pnot`, `pcpyld`, `pcpyud`, `lq` |
+| `call` | the call protocol (module docs: frame, registers at the call, host-thread unwind): `Flow`/`Unwound`/`guest`, `Callee{addr,f}.call(c, ret)`, `call_ptr` (`call_indirect`), `returned`, `Frame` (open/save/restore/close), `sp`, `VSlot` (gcc 2.9x vtable entry), `Target` + `tail_wrapper` (7-cycle forwarding wrappers) |
+| `events` | loop event checks (module docs: structured vs dispatcher loops): `event_due`, `deliver_event`, `back_edge_unwinds`, `Resume<S>` (`Go`/`Done`/`Unwind`) for resumable stage functions |
+| `difftest` (tests) | `check` (hard state), `check_lohi` (+ LO/HI; LO/HI is otherwise reported only, because e.g. `__muldi3` legitimately differs), `check_paths`/`check_paths_lohi`/`require_paths` (every listed total-cycle path taken), `compare`/`Report`; inputs `Rng` (+`edge_f32`), `scramble`, `fill`, `put_vec`, `put_words` (`.lit4`/ELF constants), `GAME_GP`, `DATA`/`SP`/`RA` |
+| `difftest::fakes` | fake callees: `machine` (scramble, hooks, gp, unwind index), `fake`/`fake_call`/`fake_syscall`/`fake_jump_out`, RAM call log (`LOG*`, forced results at `LOG_RESULTS`, unwind at `LOG_UNWIND_AT`), `FAKE`, `ptr`, `vtable`, `covered` (check + fakes reached + some unwinds) |
+| `difftest::events` | `schedule` (guest thread, `Events::{Off,Unwind,Deliver}` by seed), `drive` / `driven!` (trampoline-style re-entry), `check_events` (also temporaries; requires events reached) |
+
+Still module-private: `quat_rows` (camera; rider inlines the same order).
+
+Next: Tier B leftovers (VU0 ACC / `cfc2 vi22` camera
 functions, the ChaseCameraAlgorithm_Apply* family, loops with calls); a new
 candidate catalogue from the pass-3 names.

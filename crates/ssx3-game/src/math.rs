@@ -77,40 +77,6 @@ const LOAD_INDICATOR_STEP: FpuF32 = FpuF32(0x3c88_8889);
 const HUGE: FpuF32 = FpuF32(0x7149_f2ca);
 
 // ---------------------------------------------------------------------------
-// Small private helpers (candidates for `ps2f`/`abi` once shared).
-
-/// `c.lt.s a, b`: the compare result, also latched in the FCC bit of fcr31
-/// (the original leaves it there; later code may branch on a stale value).
-#[inline]
-fn fpu_lt(c: &mut Cpu, a: FpuF32, b: FpuF32) -> bool {
-    let lt = a.lt(b);
-    if lt {
-        c.fcr31 |= ssx3_ee_rt::fpu::FCC;
-    } else {
-        c.fcr31 &= !ssx3_ee_rt::fpu::FCC;
-    }
-    lt
-}
-
-/// Set an incidental GPR value the original leaves behind (v0/v1 scratch).
-#[inline]
-fn leave_gpr(c: &mut Cpu, r: usize, v: u64) {
-    c.g[r][0] = v;
-}
-
-/// Set an incidental FPU register the original leaves behind.
-#[inline]
-fn leave_fpr(c: &mut Cpu, r: usize, v: FpuF32) {
-    c.f[r] = v.0;
-}
-
-/// The bits of a float register as `mfc1` delivers them (sign-extended).
-#[inline]
-fn mfc1(v: FpuF32) -> u64 {
-    sx(v.0)
-}
-
-// ---------------------------------------------------------------------------
 // Trigonometry.
 
 /// Quarter-turn range reduction shared by `Math_Sin`, `Math_Cos` and
@@ -120,7 +86,7 @@ fn mfc1(v: FpuF32) -> u64 {
 fn reduce_quarter_turns(c: &mut Cpu, x: FpuF32) -> (i32, FpuF32) {
     c.cycles += 6;
     let scaled = x * TWO_OVER_PI;
-    let biased = if fpu_lt(c, x, FpuF32::ZERO) {
+    let biased = if abi::c_lt_s(c, x, FpuF32::ZERO) {
         c.cycles += 4;
         scaled - HALF
     } else {
@@ -174,9 +140,9 @@ pub fn sin(c: &mut Cpu) {
     let v = if n & 2 != 0 { -v } else { v };
     c.cycles += 2;
     abi::set_fret(c, v);
-    leave_fpr(c, 1, partial);
-    leave_gpr(c, V1, sx(n as u32));
-    leave_gpr(c, V0, sx(n as u32) & 2);
+    abi::set_fpr(c, 1, partial);
+    abi::set_reg(c, V1, sx(n as u32));
+    abi::set_reg(c, V0, sx(n as u32) & 2);
     abi::ret(c);
 }
 
@@ -201,9 +167,9 @@ pub fn cos(c: &mut Cpu) {
     let v = if sign != 0 { -v } else { v };
     c.cycles += 2;
     abi::set_fret(c, v);
-    leave_fpr(c, 1, partial);
-    leave_gpr(c, V1, sx(n as u32));
-    leave_gpr(c, V0, sign);
+    abi::set_fpr(c, 1, partial);
+    abi::set_reg(c, V1, sx(n as u32));
+    abi::set_reg(c, V0, sign);
     abi::ret(c);
 }
 
@@ -248,10 +214,10 @@ pub fn sin_cos(c: &mut Cpu) {
     out_cos.write_fpu(c, cos_x);
     // Incidental registers: f0/f1 hold the last values computed per branch,
     // v1 the quadrant, v0 the last immediate of the quadrant dispatch.
-    leave_fpr(c, 0, f0);
-    leave_fpr(c, 1, if quadrant == 2 { -cos_p } else { cos_p });
-    leave_gpr(c, V1, quadrant as u64);
-    leave_gpr(c, V0, if quadrant < 2 { 1 } else { 3 });
+    abi::set_fpr(c, 0, f0);
+    abi::set_fpr(c, 1, if quadrant == 2 { -cos_p } else { cos_p });
+    abi::set_reg(c, V1, quadrant as u64);
+    abi::set_reg(c, V0, if quadrant < 2 { 1 } else { 3 });
     abi::ret(c);
 }
 
@@ -273,7 +239,7 @@ pub fn asin(c: &mut Cpu) {
     let x = abi::farg(c, 0);
     c.cycles += 5;
     let x2 = x * x;
-    let (v, partial) = if fpu_lt(c, x, NEG_SQRT_HALF) {
+    let (v, partial) = if abi::c_lt_s(c, x, NEG_SQRT_HALF) {
         c.cycles += 20;
         let t = ONE - x2;
         let root = t.sqrt();
@@ -281,7 +247,7 @@ pub fn asin(c: &mut Cpu) {
         ((root * (q + ONE)) + (-HALF_PI), partial)
     } else {
         c.cycles += 5;
-        if fpu_lt(c, SQRT_HALF, x) {
+        if abi::c_lt_s(c, SQRT_HALF, x) {
             c.cycles += 20;
             let t = ONE - x2;
             let root = t.sqrt();
@@ -294,7 +260,7 @@ pub fn asin(c: &mut Cpu) {
         }
     };
     abi::set_fret(c, v);
-    leave_fpr(c, 1, partial);
+    abi::set_fpr(c, 1, partial);
     abi::ret(c);
 }
 
@@ -304,7 +270,7 @@ pub fn asin(c: &mut Cpu) {
 pub fn atan(c: &mut Cpu) {
     let x = abi::farg(c, 0);
     c.cycles += 6;
-    let (v, partial) = if fpu_lt(c, x, -ONE) {
+    let (v, partial) = if abi::c_lt_s(c, x, -ONE) {
         c.cycles += 21;
         let u = ONE.div(x * x + ONE);
         let root = u.sqrt();
@@ -313,7 +279,7 @@ pub fn atan(c: &mut Cpu) {
     } else {
         c.cycles += 6;
         let x2 = x * x;
-        if fpu_lt(c, ONE, x) {
+        if abi::c_lt_s(c, ONE, x) {
             c.cycles += 19;
             let u = ONE.div(x2 + ONE);
             let root = u.sqrt();
@@ -326,7 +292,7 @@ pub fn atan(c: &mut Cpu) {
             let (q, partial) = asin_series(c, u);
             let r = root * (q + ONE);
             // Odd symmetry; -0.0 is not below 0, so it keeps +0.
-            let r = if fpu_lt(c, x, FpuF32::ZERO) {
+            let r = if abi::c_lt_s(c, x, FpuF32::ZERO) {
                 c.cycles += 1;
                 -r
             } else {
@@ -337,7 +303,7 @@ pub fn atan(c: &mut Cpu) {
         }
     };
     abi::set_fret(c, v);
-    leave_fpr(c, 1, partial);
+    abi::set_fpr(c, 1, partial);
     abi::ret(c);
 }
 
@@ -346,7 +312,7 @@ pub fn atan(c: &mut Cpu) {
 /// non-integers). Charges `fixup_cycles` for the step. Sets FCC.
 fn fpu_floor(c: &mut Cpu, t: FpuF32, fixup_cycles: u64) -> FpuF32 {
     let fl = FpuF32::from_i32(t.to_i32());
-    if fpu_lt(c, t, fl) {
+    if abi::c_lt_s(c, t, fl) {
         c.cycles += fixup_cycles;
         fl - ONE
     } else {
@@ -365,8 +331,8 @@ pub fn wrap_angle_pi(c: &mut Cpu) {
     c.cycles += 5;
     let r = a - whole * TWO_PI;
     angle.write_fpu(c, r);
-    leave_fpr(c, 0, r);
-    leave_fpr(c, 1, whole);
+    abi::set_fpr(c, 0, r);
+    abi::set_fpr(c, 1, whole);
     abi::ret(c);
 }
 
@@ -382,8 +348,8 @@ pub fn load_indicator_advance(c: &mut Cpu) {
     c.cycles += 3;
     let r = s - whole;
     phase.write_fpu(c, r);
-    leave_fpr(c, 0, r);
-    leave_fpr(c, 1, whole);
+    abi::set_fpr(c, 0, r);
+    abi::set_fpr(c, 1, whole);
     abi::ret(c);
 }
 
@@ -403,9 +369,9 @@ pub fn noise_sample_1d(c: &mut Cpu) {
     let a = a_at.read_fpu(c) * (ONE - frac);
     let b = b_at.read_fpu(c) * frac;
     abi::set_fret(c, a + b);
-    leave_fpr(c, 1, a);
-    leave_gpr(c, V1, sx(a_at.0));
-    leave_gpr(c, V0, sx(b_at.0));
+    abi::set_fpr(c, 1, a);
+    abi::set_reg(c, V1, sx(a_at.0));
+    abi::set_reg(c, V0, sx(b_at.0));
     abi::ret(c);
 }
 
@@ -438,7 +404,7 @@ pub fn cubic_spline_eval_segment(c: &mut Cpu) {
     let low = (lin * t + d) + quad;
     let v = (t * a) * t2 + low;
     abi::set_fret(c, v);
-    leave_fpr(c, 1, quad);
+    abi::set_fpr(c, 1, quad);
     abi::ret(c);
 }
 
@@ -452,8 +418,8 @@ pub fn song_instance_get_beat_ms(c: &mut Cpu) {
     let bpm = Addr(info).off(0x90).read_fpu(c);
     let ms = FpuF32(0x4270_0000).div(bpm) * FpuF32(0x447a_0000); // 60.0, 1000.0
     abi::set_fret(c, ms);
-    leave_fpr(c, 1, bpm);
-    leave_gpr(c, V0, sx(info));
+    abi::set_fpr(c, 1, bpm);
+    abi::set_reg(c, V0, sx(info));
     abi::ret(c);
 }
 
@@ -499,8 +465,8 @@ pub fn rand_seed(c: &mut Cpu) {
     for (i, w) in words.iter().enumerate() {
         state.set_word(c, i as u32, *w);
     }
-    leave_gpr(c, V0, sx(words[4]));
-    leave_gpr(c, V1, sx(words[3]));
+    abi::set_reg(c, V0, sx(words[4]));
+    abi::set_reg(c, V1, sx(words[3]));
     abi::ret(c);
 }
 
@@ -565,7 +531,7 @@ pub fn rand_next(c: &mut Cpu) {
     }
     c.cycles += 2;
     abi::set_ret(c, u0);
-    leave_gpr(c, V1, sx(u2_plus_s1));
+    abi::set_reg(c, V1, sx(u2_plus_s1));
     abi::ret(c);
 }
 
@@ -577,8 +543,8 @@ pub fn fabsf(c: &mut Cpu) {
     c.cycles += 7;
     let r = abi::farg(c, 0).abs();
     abi::set_fret(c, r);
-    leave_gpr(c, V0, 0x7fff_ffff);
-    leave_gpr(c, V1, r.0 as u64);
+    abi::set_reg(c, V0, 0x7fff_ffff);
+    abi::set_reg(c, V1, r.0 as u64);
     abi::ret(c);
 }
 
@@ -588,8 +554,8 @@ pub fn isnanf(c: &mut Cpu) {
     c.cycles += 9;
     let mag = abi::farg(c, 0).0 & 0x7fff_ffff;
     abi::set_ret(c, 0x7f80_0000u32.wrapping_sub(mag) >> 31);
-    leave_gpr(c, A0, 0x7fff_ffff);
-    leave_gpr(c, V1, 0x7f80_0000);
+    abi::set_reg(c, A0, 0x7fff_ffff);
+    abi::set_reg(c, V1, 0x7f80_0000);
     abi::ret(c);
 }
 
@@ -598,8 +564,8 @@ pub fn finitef(c: &mut Cpu) {
     c.cycles += 9;
     let mag = abi::farg(c, 0).0 & 0x7fff_ffff;
     abi::set_ret(c, mag.wrapping_add(0x8080_0000) >> 31);
-    leave_gpr(c, A0, 0x7fff_ffff);
-    leave_gpr(c, V1, sx(0x8080_0000));
+    abi::set_reg(c, A0, 0x7fff_ffff);
+    abi::set_reg(c, V1, sx(0x8080_0000));
     abi::ret(c);
 }
 
@@ -607,13 +573,13 @@ pub fn finitef(c: &mut Cpu) {
 pub fn copysignf(c: &mut Cpu) {
     c.cycles += 12;
     let (x, y) = (abi::farg(c, 0).0, abi::farg(c, 1).0);
-    let sign = mfc1(FpuF32(y)) & 0xffff_ffff_8000_0000;
-    let r = (mfc1(FpuF32(x)) & 0x7fff_ffff) | sign;
+    let sign = abi::mfc1(FpuF32(y)) & 0xffff_ffff_8000_0000;
+    let r = (abi::mfc1(FpuF32(x)) & 0x7fff_ffff) | sign;
     abi::set_fret(c, FpuF32(r as u32));
-    leave_gpr(c, A0, 0xffff_ffff_8000_0000);
-    leave_gpr(c, A1, r);
-    leave_gpr(c, V0, 0x7fff_ffff);
-    leave_gpr(c, V1, sign);
+    abi::set_reg(c, A0, 0xffff_ffff_8000_0000);
+    abi::set_reg(c, A1, r);
+    abi::set_reg(c, V0, 0x7fff_ffff);
+    abi::set_reg(c, V1, sign);
     abi::ret(c);
 }
 
@@ -624,7 +590,7 @@ pub fn copysignf(c: &mut Cpu) {
 pub fn floorf(c: &mut Cpu) {
     let x = abi::farg(c, 0);
     c.cycles += 8;
-    let i0 = mfc1(x);
+    let i0 = abi::mfc1(x);
     let biased_exp = ((i0 as u32 as i32 >> 23) & 0xff) as u64;
     let j0 = biased_exp as i32 - 0x7f;
     let (v0, v1): (u64, u64);
@@ -633,17 +599,17 @@ pub fn floorf(c: &mut Cpu) {
     let probe = |c: &mut Cpu| {
         c.cycles += 8;
         let sum = x + HUGE;
-        leave_fpr(c, 0, sum);
-        leave_fpr(c, 1, FpuF32::ZERO);
-        fpu_lt(c, FpuF32::ZERO, sum)
+        abi::set_fpr(c, 0, sum);
+        abi::set_fpr(c, 1, FpuF32::ZERO);
+        abi::c_lt_s(c, FpuF32::ZERO, sum)
     };
     if j0 >= 23 {
         // Already integral (or exponent 255: x + x as the original returns).
         c.cycles += 2 + 2;
         let r = if j0 == 0x80 { x + x } else { x };
         abi::set_fret(c, r);
-        leave_gpr(c, V0, 0x80);
-        leave_gpr(c, V1, 0);
+        abi::set_reg(c, V0, 0x80);
+        abi::set_reg(c, V1, 0);
         abi::ret(c);
         return;
     }
@@ -678,8 +644,8 @@ pub fn floorf(c: &mut Cpu) {
             // Integral already.
             c.cycles += 2;
             abi::set_fret(c, x);
-            leave_gpr(c, V0, 0x7f_ffff);
-            leave_gpr(c, V1, v1);
+            abi::set_reg(c, V0, 0x7f_ffff);
+            abi::set_reg(c, V1, v1);
             abi::ret(c);
             return;
         }
@@ -701,8 +667,8 @@ pub fn floorf(c: &mut Cpu) {
     let r = FpuF32(bits as u32);
     c.f[12] = r.0;
     abi::set_fret(c, r);
-    leave_gpr(c, V0, v0);
-    leave_gpr(c, V1, v1);
+    abi::set_reg(c, V0, v0);
+    abi::set_reg(c, V1, v1);
     abi::ret(c);
 }
 
@@ -715,16 +681,14 @@ pub fn muldi3(c: &mut Cpu) {
     // The cross terms the original sums in v1 (low words only).
     let cross = a_lo.wrapping_mul(b_hi).wrapping_add(a_hi.wrapping_mul(b_lo));
     c.g[V0][0] = a.wrapping_mul(b);
-    leave_gpr(c, V1, sx(cross));
+    abi::set_reg(c, V1, sx(cross));
     abi::ret(c);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::difftest::{check, Rng, DATA};
-
-    const GP: u32 = 0x004a_30f0;
+    use crate::difftest::{check, put_words, Rng, DATA, GAME_GP as GP};
 
     /// Put the game's constants where the generated code reads them (the
     /// test machine's RAM starts empty): `.lit4` literals, the arcsine
@@ -738,15 +702,10 @@ mod tests {
             0xb9500d03, 0x3c088889, 0xbe2aaaab, 0x37d00d03, 0xbab60b62, 0x3d2aaaab, // Cos
             0xbf3504f3, 0xbfc90fdb, 0x3f3504f3, 0x3fc90fdb, 0xbfc90fdb, 0x3fc90fdb, // Asin/Atan
         ];
-        for (i, w) in LIT_4A0230.iter().enumerate() {
-            c.bus.write32(0x004a_0230 + 4 * i as u32, *w);
-        }
-        for (i, w) in [0x3e2bba25u32, 0x3d8a908b, 0x3d55033a, 0x3d6137ab].iter().enumerate() {
-            c.bus.write32(0x004a_3ee0 + 4 * i as u32, *w);
-        }
-        c.bus.write32(0x0049_cc78, INV_TWO_PI.0);
-        c.bus.write32(0x0049_cc7c, TWO_PI.0);
-        c.bus.write32(0x0049_df48, LOAD_INDICATOR_STEP.0);
+        put_words(c, 0x004a_0230, &LIT_4A0230);
+        put_words(c, 0x004a_3ee0, &[0x3e2bba25, 0x3d8a908b, 0x3d55033a, 0x3d6137ab]);
+        put_words(c, 0x0049_cc78, &[INV_TWO_PI.0, TWO_PI.0]);
+        put_words(c, 0x0049_df48, &[LOAD_INDICATOR_STEP.0]);
     }
 
     /// A float bit pattern biased toward edge cases: zeros, denormals,

@@ -45,50 +45,6 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 ];
 
 // ---------------------------------------------------------------------------
-// Access helpers (candidates for `guest`/`abi`, see the package report).
-
-/// The full 64-bit register (for compares the original does on 64 bits).
-#[inline]
-fn reg(c: &Cpu, r: usize) -> u64 {
-    c.g[r][0]
-}
-
-/// `divu` by a non-zero constant: sets LO (quotient) and HI (remainder),
-/// returns the remainder.
-#[inline]
-fn divu_rem(c: &mut Cpu, n: u32, d: u32) -> u32 {
-    c.lo[0] = sx(n / d);
-    c.hi[0] = sx(n % d);
-    n % d
-}
-
-/// An unaligned doubleword load as the `ldl a+7; ldr a` pair performs it.
-fn load_u64_unaligned(c: &mut Cpu, a: u32) -> u64 {
-    let hi = c.bus.read64(a.wrapping_add(7) & !7);
-    let lo = c.bus.read64(a & !7);
-    let s = a & 7;
-    if s == 0 {
-        lo
-    } else {
-        (lo >> (s * 8)) | (hi << ((8 - s) * 8))
-    }
-}
-
-/// An unaligned doubleword store as the `sdl a+7; sdr a` pair performs it
-/// (two read-modify-writes of the aligned doublewords, high one first).
-fn store_u64_unaligned(c: &mut Cpu, a: u32, v: u64) {
-    let hi_at = a.wrapping_add(7);
-    let s = hi_at & 7;
-    let mem = c.bus.read64(hi_at & !7);
-    let keep = if s == 7 { 0 } else { u64::MAX << ((s + 1) * 8) };
-    c.bus.write64(hi_at & !7, (mem & keep) | (v >> (56 - s * 8)));
-    let s = a & 7;
-    let mem = c.bus.read64(a & !7);
-    let keep = if s == 0 { 0 } else { u64::MAX >> ((8 - s) * 8) };
-    c.bus.write64(a & !7, (mem & keep) | (v << (s * 8)));
-}
-
-// ---------------------------------------------------------------------------
 // Back-end race setup (BENewPlayerInt / BENewRaceInt).
 
 /// The back end's race setup globals.
@@ -183,7 +139,7 @@ pub fn be_new_race_int_get_track_info(c: &mut Cpu) {
 /// 2 cycles.
 pub fn world_get_instance(c: &mut Cpu) {
     c.cycles += 2;
-    let gp = Addr(reg(c, GP) as u32);
+    let gp = Addr(abi::reg(c, GP) as u32);
     c.g[V0][0] = gp.off(0x16c8).lw(c);
     abi::ret(c);
 }
@@ -193,7 +149,7 @@ pub fn world_get_instance(c: &mut Cpu) {
 pub fn game_module_request_overlay_state(c: &mut Cpu) {
     c.cycles += 2;
     let module = Addr(abi::arg(c, 0));
-    module.off(0x208).sw(c, reg(c, A1));
+    module.off(0x208).sw(c, abi::reg(c, A1));
     abi::ret(c);
 }
 
@@ -276,7 +232,7 @@ pub fn pad_queue_advance_write(c: &mut Cpu) {
     let read = q.read_index().lw(c) as u32;
     c.cycles += 6;
     let write = q.write_index().lw(c);
-    let next = divu_rem(c, read.wrapping_add(1), PadQueue::FRAMES);
+    let next = abi::divu(c, read.wrapping_add(1), PadQueue::FRAMES).1;
     if next as u64 == write {
         c.cycles += 2;
         c.g[V0][0] = 0;
@@ -295,7 +251,7 @@ pub fn pad_queue_advance_write(c: &mut Cpu) {
 /// at +0. 2 cycles.
 pub fn replay_set_state(c: &mut Cpu) {
     c.cycles += 2;
-    Addr(abi::arg(c, 0)).sw(c, reg(c, A1));
+    Addr(abi::arg(c, 0)).sw(c, abi::reg(c, A1));
     abi::ret(c);
 }
 
@@ -366,7 +322,7 @@ pub fn snapshot_list_push_back(c: &mut Cpu) {
 /// (+4). 2 + 2 cycles.
 pub fn section_man_next_queued(c: &mut Cpu) {
     c.cycles += 2;
-    let cur = reg(c, A1);
+    let cur = abi::reg(c, A1);
     c.cycles += 2;
     c.g[V0][0] = if cur != 0 {
         Addr(cur as u32).off(0x4).lw(c)
@@ -395,7 +351,7 @@ pub fn ui_list_first(c: &mut Cpu) {
 /// (+4 first, then +0) points at the node itself. 3 + (1 | 3 | 3 + 1) + 2.
 pub fn ui_list_node_is_sentinel(c: &mut Cpu) {
     c.cycles += 3;
-    let me = reg(c, A0);
+    let me = abi::reg(c, A0);
     let n = Addr(me as u32);
     let link1 = n.off(0x4).lw(c);
     let sentinel = if link1 == me {
@@ -420,7 +376,7 @@ pub fn ui_list_node_is_sentinel(c: &mut Cpu) {
 /// self links, and leaves `n` self-linked.
 pub fn ui_list_node_unlink(c: &mut Cpu) {
     c.cycles += 3;
-    let me = reg(c, A0);
+    let me = abi::reg(c, A0);
     let n = Addr(me as u32);
     let a = n.lw(c);
     let b = n.off(0x4).lw(c);
@@ -479,10 +435,10 @@ pub fn path_queue_append(c: &mut Cpu) {
     let next = (index + 1) & 0x3f;
     q.off(0xc).sw(c, ((header & 0xffc0_ffff) | (next << 16)) as u64);
     let slot = (index << 4).wrapping_add(q.off(0x10).0);
-    let lo = load_u64_unaligned(c, src);
-    let hi = load_u64_unaligned(c, src.wrapping_add(8));
-    store_u64_unaligned(c, slot, lo);
-    store_u64_unaligned(c, slot.wrapping_add(8), hi);
+    let lo = Addr(src).read_u64_unaligned(c);
+    let hi = Addr(src).off(8).read_u64_unaligned(c);
+    Addr(slot).write_u64_unaligned(c, lo);
+    Addr(slot).off(8).write_u64_unaligned(c, hi);
     c.g[V1][0] = lo;
     c.g[V0][0] = sx(slot);
     abi::ret(c);
@@ -515,7 +471,7 @@ pub fn path_select_map(c: &mut Cpu) {
         CURRENT_ID.sw(c, u64::MAX);
     }
     c.cycles += 3;
-    let idx = reg(c, A0);
+    let idx = abi::reg(c, A0);
     if idx < 4 {
         c.cycles += 7;
         let off = abi::mult(c, idx as u32, MAP_SIZE);
@@ -552,7 +508,7 @@ pub fn path_select_map(c: &mut Cpu) {
 pub fn world_obj_link_instance(c: &mut Cpu) {
     c.cycles += 2;
     let obj = Addr(abi::arg(c, 1));
-    obj.off(0xc).sw(c, reg(c, A0));
+    obj.off(0xc).sw(c, abi::reg(c, A0));
     abi::ret(c);
 }
 
@@ -561,13 +517,13 @@ pub fn world_obj_link_instance(c: &mut Cpu) {
 /// 2, +3 when obj is non-null, +2.
 pub fn world_obj_unlink_instance(c: &mut Cpu) {
     c.cycles += 2;
-    let obj = reg(c, A1);
+    let obj = abi::reg(c, A1);
     if obj != 0 {
         c.cycles += 3;
         let field = Addr(obj as u32).off(0xc);
         let inst = field.lw(c);
         c.g[V0][0] = inst;
-        if inst == reg(c, A0) {
+        if inst == abi::reg(c, A0) {
             field.sw(c, 0);
         }
     }
@@ -580,21 +536,7 @@ pub fn world_obj_unlink_instance(c: &mut Cpu) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::difftest::{check, Rng, DATA};
-
-    /// Where the wrappers below dump LO/HI so the RAM compare covers them.
-    const LOHI: u32 = 0x0090_0000;
-
-    /// Run `f`, then store LO/HI to RAM (`difftest` doesn't compare them).
-    macro_rules! lohi {
-        ($name:ident, $f:path) => {
-            fn $name(c: &mut Cpu) {
-                $f(c);
-                c.bus.write64(LOHI, c.lo[0]);
-                c.bus.write64(LOHI + 8, c.hi[0]);
-            }
-        };
-    }
+    use crate::difftest::{check, check_lohi, Rng, DATA};
 
     const SEEDS: u32 = 400;
 
@@ -629,20 +571,6 @@ mod tests {
         }
     }
 
-    lohi!(gen_rider_character, ssx3_ee::s01::f_0014a080__generated);
-    lohi!(hand_rider_character, be_get_rider_character);
-    lohi!(gen_rider_profile, ssx3_ee::s01::f_0014a0e0__generated);
-    lohi!(hand_rider_profile, be_get_rider_profile);
-    lohi!(gen_track_info, ssx3_ee::s01::f_00144bc0__generated);
-    lohi!(hand_track_info, be_new_race_int_get_track_info);
-    lohi!(gen_pad_data, ssx3_ee::s10::f_00326cc8__generated);
-    lohi!(hand_pad_data, pad_queue_get_pad_data);
-    lohi!(gen_pad_status, ssx3_ee::s10::f_00326ca0__generated);
-    lohi!(hand_pad_status, pad_queue_get_pad_status);
-    lohi!(gen_advance, ssx3_ee::s10::f_00326b48__generated);
-    lohi!(hand_advance, pad_queue_advance_write);
-    lohi!(gen_select_map, ssx3_ee::s14::f_003d5450__generated);
-    lohi!(hand_select_map, path_select_map);
 
     /// Race setup: random slot table and records (slots 0..15, some
     /// profile words -1).
@@ -664,12 +592,12 @@ mod tests {
 
     #[test]
     fn be_get_rider_character_matches() {
-        check(gen_rider_character, hand_rider_character, SEEDS, &race_setup);
+        check_lohi(ssx3_ee::s01::f_0014a080__generated, be_get_rider_character, SEEDS, &race_setup);
     }
 
     #[test]
     fn be_get_rider_profile_matches() {
-        check(gen_rider_profile, hand_rider_profile, SEEDS, &race_setup);
+        check_lohi(ssx3_ee::s01::f_0014a0e0__generated, be_get_rider_profile, SEEDS, &race_setup);
     }
 
     #[test]
@@ -679,7 +607,7 @@ mod tests {
 
     #[test]
     fn be_new_race_int_get_track_info_matches() {
-        check(gen_track_info, hand_track_info, SEEDS, &|c, seed| {
+        check_lohi(ssx3_ee::s01::f_00144bc0__generated, be_new_race_int_get_track_info, SEEDS, &|c, seed| {
             race_setup(c, seed);
             // Any index, including negative ones (32-bit multiply).
             let mut r = rng(seed, 2);
@@ -692,7 +620,7 @@ mod tests {
         check(ssx3_ee::s09::f_002d1bd8__generated, world_get_instance, SEEDS, &|c, seed| {
             let mut r = rng(seed, 3);
             junk_regs(c, &mut r);
-            let gp = if seed % 2 == 0 { 0x004a_30f0 } else { DATA + (r.next_u32() & 0xfffc) };
+            let gp = if seed % 2 == 0 { crate::difftest::GAME_GP } else { DATA + (r.next_u32() & 0xfffc) };
             c.g[GP][0] = sx(gp);
             c.bus.write32(gp + 0x16c8, r.next_u32());
         });
@@ -744,12 +672,12 @@ mod tests {
 
     #[test]
     fn pad_queue_get_pad_data_matches() {
-        check(gen_pad_data, hand_pad_data, SEEDS, &pad_setup);
+        check_lohi(ssx3_ee::s10::f_00326cc8__generated, pad_queue_get_pad_data, SEEDS, &pad_setup);
     }
 
     #[test]
     fn pad_queue_get_pad_status_matches() {
-        check(gen_pad_status, hand_pad_status, SEEDS, &|c, seed| {
+        check_lohi(ssx3_ee::s10::f_00326ca0__generated, pad_queue_get_pad_status, SEEDS, &|c, seed| {
             pad_setup(c, seed);
             // Keep the status address inside the ring.
             let read = c.bus.read32(DATA + 0x2ee0) % 30;
@@ -759,7 +687,7 @@ mod tests {
 
     #[test]
     fn pad_queue_advance_write_matches() {
-        check(gen_advance, hand_advance, SEEDS, &pad_setup);
+        check_lohi(ssx3_ee::s10::f_00326b48__generated, pad_queue_advance_write, SEEDS, &pad_setup);
     }
 
     #[test]
@@ -870,7 +798,7 @@ mod tests {
 
     #[test]
     fn path_select_map_matches() {
-        check(gen_select_map, hand_select_map, SEEDS, &|c, seed| {
+        check_lohi(ssx3_ee::s14::f_003d5450__generated, path_select_map, SEEDS, &|c, seed| {
             let mut r = rng(seed, 13);
             junk_regs(c, &mut r);
             for m in 0..4 {

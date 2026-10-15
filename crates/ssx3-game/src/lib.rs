@@ -7,15 +7,19 @@
 //! A replacement is an ordinary `fn(&mut Cpu)` with the same contract as the
 //! generated function: arguments and results in the MIPS registers
 //! ([`abi`]), guest memory through typed views ([`guest`]), PS2 float
-//! semantics ([`ps2f`]), and the same EE cycle cost, so that runs stay
+//! semantics ([`ps2f`]), MMI ops ([`mmi`]), calls to other guest functions
+//! ([`call`]), event checks in loops ([`events`]), and the same EE cycle cost, so that runs stay
 //! byte-identical. [`install`] puts them into the generated crates' slots.
 
 use ssx3_ee_rt::funcs::GuestFn;
 
 pub mod abi;
+pub mod call;
 #[cfg(test)]
 pub mod difftest;
+pub mod events;
 pub mod guest;
+pub mod mmi;
 pub mod ps2f;
 pub mod rider;
 #[cfg(feature = "math")]

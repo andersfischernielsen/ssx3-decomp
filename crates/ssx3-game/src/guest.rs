@@ -131,4 +131,36 @@ impl Addr {
     pub fn sd(self, c: &mut Cpu, v: u64) {
         c.sd(self.0, v)
     }
+
+    // ------------------------------------------------ unaligned doublewords
+
+    /// An unaligned doubleword load as the `ldl a+7; ldr a` pair performs it
+    /// (straight to the bus).
+    pub fn read_u64_unaligned(self, c: &mut Cpu) -> u64 {
+        let a = self.0;
+        let hi = c.bus.read64(a.wrapping_add(7) & !7);
+        let lo = c.bus.read64(a & !7);
+        let s = a & 7;
+        if s == 0 {
+            lo
+        } else {
+            (lo >> (s * 8)) | (hi << ((8 - s) * 8))
+        }
+    }
+
+    /// An unaligned doubleword store as the `sdl a+7; sdr a` pair performs
+    /// it (two read-modify-writes of the aligned doublewords, high one
+    /// first; straight to the bus).
+    pub fn write_u64_unaligned(self, c: &mut Cpu, v: u64) {
+        let a = self.0;
+        let hi_at = a.wrapping_add(7);
+        let s = hi_at & 7;
+        let mem = c.bus.read64(hi_at & !7);
+        let keep = if s == 7 { 0 } else { u64::MAX << ((s + 1) * 8) };
+        c.bus.write64(hi_at & !7, (mem & keep) | (v >> (56 - s * 8)));
+        let s = a & 7;
+        let mem = c.bus.read64(a & !7);
+        let keep = if s == 0 { 0 } else { u64::MAX >> ((8 - s) * 8) };
+        c.bus.write64(a & !7, (mem & keep) | (v << (s * 8)));
+    }
 }

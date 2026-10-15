@@ -129,35 +129,14 @@ pub mod async_file {
 pub const EA_TIMER_TICKS: Addr = Addr(0x0045_0dcc);
 
 // ---------------------------------------------------------------------------
-// Small register helpers.
-
-/// The full 64-bit register.
-#[inline]
-fn reg(c: &Cpu, r: usize) -> u64 {
-    c.g[r][0]
-}
-
-/// Set a full 64-bit register.
-#[inline]
-fn set(c: &mut Cpu, r: usize, v: u64) {
-    c.g[r][0] = v;
-}
-
-/// 32-bit address arithmetic as `addu` does it (result sign-extended).
-#[inline]
-fn addu(a: u64, b: u64) -> u64 {
-    sx((a as u32).wrapping_add(b as u32))
-}
-
-// ---------------------------------------------------------------------------
 // Driver state.
 
 /// `SND_IsInitialized` 0x3b5440: the driver's initialised flag (`s8`).
 pub fn snd_is_initialized(c: &mut Cpu) {
     c.cycles += 3;
-    set(c, V1, snd::STATE_HI); // leftover
+    abi::set_reg(c, V1, snd::STATE_HI); // leftover
     let v = snd::INITIALIZED.lb(c);
-    set(c, V0, v);
+    abi::set_reg(c, V0, v);
     abi::ret(c);
 }
 
@@ -182,8 +161,8 @@ pub fn snd_init_play_params(c: &mut Cpu) {
     p.off(0x00).sb(c, 0x7f);
     p.off(0x04).sb(c, 0x7f);
     p.off(0x08).sh(c, 0);
-    set(c, V0, 0);
-    set(c, V1, 0x1000); // leftover
+    abi::set_reg(c, V0, 0);
+    abi::set_reg(c, V1, 0x1000); // leftover
     abi::ret(c);
 }
 
@@ -232,7 +211,7 @@ pub fn snd_list_init(c: &mut Cpu) {
 /// `SND_ListPushFront` 0x3c6288: insert node a1 at the head of list a0.
 pub fn snd_list_push_front(c: &mut Cpu) {
     let l = SndList(Addr(abi::arg(c, 0)));
-    let n = reg(c, A1);
+    let n = abi::reg(c, A1);
     c.cycles += 6;
     let head = l.head().lw(c);
     prev_of(n).sw(c, 0);
@@ -247,16 +226,16 @@ pub fn snd_list_push_front(c: &mut Cpu) {
     c.cycles += 5;
     let count = l.count().lw(c);
     l.head().sw(c, n);
-    let count = addu(count, 1);
+    let count = abi::addu(count, 1);
     l.count().sw(c, count);
-    set(c, V0, count); // leftover
+    abi::set_reg(c, V0, count); // leftover
     abi::ret(c);
 }
 
 /// `SND_ListPushBack` 0x3c62b8: append node a1 to list a0.
 pub fn snd_list_push_back(c: &mut Cpu) {
     let l = SndList(Addr(abi::arg(c, 0)));
-    let n = reg(c, A1);
+    let n = abi::reg(c, A1);
     c.cycles += 6;
     next_of(n).sw(c, 0);
     let tail = l.tail().lw(c);
@@ -271,9 +250,9 @@ pub fn snd_list_push_back(c: &mut Cpu) {
     c.cycles += 5;
     let count = l.count().lw(c);
     l.tail().sw(c, n);
-    let count = addu(count, 1);
+    let count = abi::addu(count, 1);
     l.count().sw(c, count);
-    set(c, V0, count); // leftover
+    abi::set_reg(c, V0, count); // leftover
     abi::ret(c);
 }
 
@@ -295,12 +274,12 @@ pub fn snd_list_pop_front(c: &mut Cpu) {
             l.tail().sw(c, 0);
         }
         c.cycles += 3;
-        let count = addu(l.count().lw(c), u64::MAX);
+        let count = abi::addu(l.count().lw(c), u64::MAX);
         l.count().sw(c, count);
     }
     c.cycles += 2;
-    set(c, V0, node);
-    set(c, V1, node); // leftover
+    abi::set_reg(c, V0, node);
+    abi::set_reg(c, V1, node); // leftover
     abi::ret(c);
 }
 
@@ -309,7 +288,7 @@ pub fn snd_list_pop_front(c: &mut Cpu) {
 /// it may have been rewritten, so the reads below follow it exactly.
 pub fn snd_list_remove(c: &mut Cpu) {
     let l = SndList(Addr(abi::arg(c, 0)));
-    let n = reg(c, A1);
+    let n = abi::reg(c, A1);
 
     c.cycles += 3;
     if n == l.head().lw(c) {
@@ -344,10 +323,10 @@ pub fn snd_list_remove(c: &mut Cpu) {
     let count = l.count().lw(c);
 
     c.cycles += 3;
-    let count = addu(count, u64::MAX);
+    let count = abi::addu(count, u64::MAX);
     l.count().sw(c, count);
-    set(c, V0, count);
-    set(c, V1, next); // leftover
+    abi::set_reg(c, V0, count);
+    abi::set_reg(c, V1, next); // leftover
     abi::ret(c);
 }
 
@@ -359,7 +338,7 @@ pub fn snd_list_remove(c: &mut Cpu) {
 /// when the handle is negative, out of range, the channel is idle or the
 /// handle is stale.
 pub fn snd_handle_to_channel(c: &mut Cpu) {
-    let handle = reg(c, A0);
+    let handle = abi::reg(c, A0);
     c.cycles += 3;
     let mut v1 = snd::STATE_HI;
     let result = 'r: {
@@ -390,8 +369,8 @@ pub fn snd_handle_to_channel(c: &mut Cpu) {
     };
     // Every path ends in a two-cycle return block.
     c.cycles += 2;
-    set(c, V0, result);
-    set(c, V1, v1); // leftover
+    abi::set_reg(c, V0, result);
+    abi::set_reg(c, V1, v1); // leftover
     abi::ret(c);
 }
 
@@ -452,8 +431,8 @@ pub fn snd_channel_calc_volume(c: &mut Cpu) {
 
     c.f[0] = v.0;
     c.f[1] = master_f.0;
-    set(c, V0, master); // leftover
-    set(c, V1, v1); // leftover
+    abi::set_reg(c, V0, master); // leftover
+    abi::set_reg(c, V1, v1); // leftover
     abi::ret(c);
 }
 
@@ -464,28 +443,28 @@ pub fn snd_channel_calc_volume(c: &mut Cpu) {
 /// through the self-relative offset table at +0x14 (count at +6), or 0. The
 /// range check is signed, so negative indices read before the table.
 pub fn snd_bank_get_patch(c: &mut Cpu) {
-    let bank = reg(c, A0);
-    let index = reg(c, A1);
+    let bank = abi::reg(c, A0);
+    let index = abi::reg(c, A1);
     c.cycles += 4;
     let count = Addr(bank as u32).off(6).lhu(c);
     let entry = sx((index as u32) << 2);
     let result = if (index as i64) < (count as i64) {
         c.cycles += 4;
-        let slot = addu(bank, entry);
+        let slot = abi::addu(bank, entry);
         let rel = Addr(slot as u32).off(0x14).lw(c);
-        set(c, V1, rel); // leftover
+        abi::set_reg(c, V1, rel); // leftover
         if rel == 0 {
             c.cycles += 2;
             0
         } else {
             c.cycles += 3;
-            addu(addu(bank, addu(entry, 0x14)), rel)
+            abi::addu(abi::addu(bank, abi::addu(entry, 0x14)), rel)
         }
     } else {
         c.cycles += 2;
         0
     };
-    set(c, V0, result);
+    abi::set_reg(c, V0, result);
     abi::ret(c);
 }
 
@@ -497,43 +476,43 @@ pub fn snd_bank_get_size(c: &mut Cpu) {
     let slot = Addr((id << 4).wrapping_add(banks as u32));
     let header = slot.lw(c);
     let size = Addr(header as u32).off(snd::BANK_HDR_SIZE).lw(c);
-    set(c, V0, size);
-    set(c, V1, header); // leftover
+    abi::set_reg(c, V0, size);
+    abi::set_reg(c, V1, header); // leftover
     abi::ret(c);
 }
 
 /// `SND_BankValidate` 0x3b64d8: 0 when bank a0 is loaded and unlocked, -18
 /// when it is locked, -8 when the id is out of range or the slot is empty.
 pub fn snd_bank_validate(c: &mut Cpu) {
-    let id = reg(c, A0);
+    let id = abi::reg(c, A0);
     c.cycles += 2;
-    set(c, V1, snd::STATE_HI); // leftover
+    abi::set_reg(c, V1, snd::STATE_HI); // leftover
     if (id as i64) >= 0 {
         c.cycles += 5;
-        set(c, V1, sx(snd::STATE.0)); // leftover
+        abi::set_reg(c, V1, sx(snd::STATE.0)); // leftover
         let count = snd::BANK_COUNT.lhu(c);
         if (id as i64) < (count as i64) {
             let banks = snd::BANKS.lw(c);
             c.cycles += 5;
             let offset = sx((id as u32) << 4);
-            set(c, V1, offset); // leftover
-            let slot = Addr(addu(offset, banks) as u32);
+            abi::set_reg(c, V1, offset); // leftover
+            let slot = Addr(abi::addu(offset, banks) as u32);
             let header = slot.lw(c);
             if header == 0 {
                 c.cycles += 2;
-                set(c, V0, ERR_INVALID);
+                abi::set_reg(c, V0, ERR_INVALID);
             } else {
                 c.cycles += 4;
                 let locked = slot.off(snd::BANK_SLOT_LOCKED).lb(c);
-                set(c, V1, locked); // leftover
-                set(c, V0, if locked == 0 { 0 } else { ERR_BANK_LOCKED });
+                abi::set_reg(c, V1, locked); // leftover
+                abi::set_reg(c, V0, if locked == 0 { 0 } else { ERR_BANK_LOCKED });
             }
             abi::ret(c);
             return;
         }
     }
     c.cycles += 2;
-    set(c, V0, ERR_INVALID);
+    abi::set_reg(c, V0, ERR_INVALID);
     abi::ret(c);
 }
 
@@ -543,7 +522,7 @@ pub fn snd_bank_validate(c: &mut Cpu) {
 /// `SNDMIDI_GetSlot` 0x3b8d98: the MIDI slot (0..15) of handle a0 (low five
 /// bits = slot, whole value = the id stored in the slot), or -8.
 pub fn sndmidi_get_slot(c: &mut Cpu) {
-    let handle = reg(c, A0);
+    let handle = abi::reg(c, A0);
     let slot = handle & 0x1f;
     c.cycles += 3;
     let result = if (handle as i64) < 0 {
@@ -557,23 +536,23 @@ pub fn sndmidi_get_slot(c: &mut Cpu) {
         let offset = abi::mult(c, slot as u32, snd::MIDI_SLOT_SIZE);
         let owner = snd::MIDI_SLOTS.off(offset).off(snd::MIDI_SLOT_HANDLE).lw(c);
         let diff = owner ^ handle;
-        set(c, V1, diff); // leftover
+        abi::set_reg(c, V1, diff); // leftover
         if diff == 0 {
             slot
         } else {
             ERR_INVALID
         }
     };
-    set(c, V0, result);
+    abi::set_reg(c, V0, result);
     abi::ret(c);
 }
 
 /// `SNDSTRM_GetStream` 0x3b6a38: the stream object of stream a0, or 0 when
 /// out of range.
 pub fn sndstrm_get_stream(c: &mut Cpu) {
-    let index = reg(c, A0);
+    let index = abi::reg(c, A0);
     c.cycles += 5;
-    set(c, V1, snd::STATE_HI); // leftover
+    abi::set_reg(c, V1, snd::STATE_HI); // leftover
     let count = snd::STREAM_COUNT.lbu(c);
     let result = if (index as i64) >= (count as i64) {
         c.cycles += 2;
@@ -583,11 +562,11 @@ pub fn sndstrm_get_stream(c: &mut Cpu) {
         0
     } else {
         c.cycles += 2 + 5;
-        let entry = addu(sx((index as u32) << 2), sx(snd::STREAMS.0));
-        set(c, V1, entry); // leftover
+        let entry = abi::addu(sx((index as u32) << 2), sx(snd::STREAMS.0));
+        abi::set_reg(c, V1, entry); // leftover
         Addr(entry as u32).lw(c)
     };
-    set(c, V0, result);
+    abi::set_reg(c, V0, result);
     abi::ret(c);
 }
 
@@ -596,15 +575,15 @@ pub fn sndstrm_get_stream(c: &mut Cpu) {
 /// and reloads it as a word; the slot is written the same way here.
 pub fn spch_make_id(c: &mut Cpu) {
     c.cycles += 7;
-    let sp = addu(reg(c, SP), (-0x10i64) as u64);
+    let sp = abi::addu(abi::reg(c, SP), (-0x10i64) as u64);
     let scratch = Addr(sp as u32);
-    let (a, b, d) = (reg(c, A0), reg(c, A1), reg(c, A2));
+    let (a, b, d) = (abi::reg(c, A0), abi::reg(c, A1), abi::reg(c, A2));
     scratch.off(3).sb(c, a);
     scratch.off(2).sb(c, b);
     scratch.sh(c, d);
     let id = scratch.lw(c);
-    set(c, V0, id);
-    set(c, SP, addu(sp, 0x10));
+    abi::set_reg(c, V0, id);
+    abi::set_reg(c, SP, abi::addu(sp, 0x10));
     abi::ret(c);
 }
 
@@ -618,26 +597,26 @@ const STREAM_MAGIC: u64 = 0x4d52_5453;
 /// header starts with "STRM", store the file to `*a2` and its header to
 /// `*a1` and return 0; otherwise return 1.
 pub fn stream_file_validate(c: &mut Cpu) {
-    let file = reg(c, A0);
+    let file = abi::reg(c, A0);
     c.cycles += 2;
     if file == 0 {
         c.cycles += 2;
-        set(c, V0, 1);
+        abi::set_reg(c, V0, 1);
         abi::ret(c);
         return;
     }
     let header = Addr(file as u32).lw(c);
     c.cycles += 5;
     let magic = Addr(header as u32).lw(c);
-    set(c, V1, magic); // leftover
+    abi::set_reg(c, V1, magic); // leftover
     if magic != STREAM_MAGIC {
         c.cycles += 2;
-        set(c, V0, 1);
+        abi::set_reg(c, V0, 1);
     } else {
         c.cycles += 3;
         Addr(abi::arg(c, 2)).sw(c, file);
         Addr(abi::arg(c, 1)).sw(c, header);
-        set(c, V0, 0);
+        abi::set_reg(c, V0, 0);
     }
     abi::ret(c);
 }
@@ -645,7 +624,7 @@ pub fn stream_file_validate(c: &mut Cpu) {
 /// `StreamFile_RingInRange` 0x3dfc08: whether ring position a2 lies in
 /// `[a0, a1)`, wrapping when `a1 < a0` (unsigned 64-bit compares).
 pub fn stream_file_ring_in_range(c: &mut Cpu) {
-    let (start, end, pos) = (reg(c, A0), reg(c, A1), reg(c, A2));
+    let (start, end, pos) = (abi::reg(c, A0), abi::reg(c, A1), abi::reg(c, A2));
     c.cycles += 3;
     let inside = if end < start {
         // Wrapped: [start, top) or [0, end).
@@ -671,15 +650,15 @@ pub fn stream_file_ring_in_range(c: &mut Cpu) {
         }
     };
     c.cycles += 2;
-    set(c, V0, inside as u64);
-    set(c, V1, inside as u64); // leftover
+    abi::set_reg(c, V0, inside as u64);
+    abi::set_reg(c, V1, inside as u64); // leftover
     abi::ret(c);
 }
 
 /// `AsyncFile_FromHandle` 0x3def70: the async-file slot of handle a0 (>= 256,
 /// low byte = slot, whole value = the id stored in the slot), or 0.
 pub fn async_file_from_handle(c: &mut Cpu) {
-    let handle = reg(c, A0);
+    let handle = abi::reg(c, A0);
     let index = handle & 0xff;
     c.cycles += 4;
     let result = 'r: {
@@ -687,7 +666,7 @@ pub fn async_file_from_handle(c: &mut Cpu) {
             break 'r None;
         }
         c.cycles += 5;
-        set(c, V1, 0x0052_0000); // leftover
+        abi::set_reg(c, V1, 0x0052_0000); // leftover
         let count = async_file::COUNT.lw(c);
         if (index as i64) >= (count as i64) {
             break 'r None;
@@ -695,9 +674,9 @@ pub fn async_file_from_handle(c: &mut Cpu) {
         c.cycles += 8;
         let offset = abi::mult(c, index as u32, async_file::SLOT_SIZE);
         let slots = async_file::SLOTS.lw(c);
-        let slot = addu(slots, offset as u64);
+        let slot = abi::addu(slots, offset as u64);
         let diff = Addr(slot as u32).lw(c) ^ handle;
-        set(c, V1, diff); // leftover
+        abi::set_reg(c, V1, diff); // leftover
         Some(if diff == 0 { slot } else { 0 })
     };
     let v0 = match result {
@@ -707,7 +686,7 @@ pub fn async_file_from_handle(c: &mut Cpu) {
             0
         }
     };
-    set(c, V0, v0);
+    abi::set_reg(c, V0, v0);
     abi::ret(c);
 }
 
@@ -734,7 +713,7 @@ pub fn big_file_get_type(c: &mut Cpu) {
     let kind = 'k: {
         if (b0 << 8 | b1) == 0xc0fb {
             c.cycles += 2;
-            set(c, V1, 0xc0fb); // leftover
+            abi::set_reg(c, V1, 0xc0fb); // leftover
             break 'k BigFileType::C0fb;
         }
         let b2 = hdr.off(2).lbu(c);
@@ -742,13 +721,13 @@ pub fn big_file_get_type(c: &mut Cpu) {
         let b3 = hdr.off(3).lbu(c);
         // `sll 24` sign-extends: a header starting >= 0x80 is negative.
         let word = sx((b0 as u32) << 24) | (b1 << 16) | (b2 << 8) | b3;
-        set(c, V1, 0x4249_0000); // leftover
+        abi::set_reg(c, V1, 0x4249_0000); // leftover
         if word == 0x4249_4746 {
             c.cycles += 2;
             break 'k BigFileType::Bigf;
         }
         c.cycles += 7;
-        set(c, V1, 0x4249_4700); // leftover
+        abi::set_reg(c, V1, 0x4249_4700); // leftover
         if word & !0xff == 0x4249_4700 {
             BigFileType::BigOther
         } else {
@@ -756,16 +735,16 @@ pub fn big_file_get_type(c: &mut Cpu) {
         }
     };
     c.cycles += 2;
-    set(c, V0, kind as u64);
+    abi::set_reg(c, V0, kind as u64);
     abi::ret(c);
 }
 
 /// `EATimer_GetTicks` 0x3e4e98: the EA timer's tick counter.
 pub fn ea_timer_get_ticks(c: &mut Cpu) {
     c.cycles += 4;
-    set(c, V1, 0x0045_0000); // leftover
+    abi::set_reg(c, V1, 0x0045_0000); // leftover
     let t = EA_TIMER_TICKS.lw(c);
-    set(c, V0, t);
+    abi::set_reg(c, V0, t);
     abi::ret(c);
 }
 
@@ -774,45 +753,9 @@ pub fn ea_timer_get_ticks(c: &mut Cpu) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::difftest::{check, fill, scramble, Rng, DATA};
+    use crate::difftest::{check_paths, check_paths_lohi, fill, scramble, Rng, DATA};
 
     const SEEDS: u32 = 400;
-    /// Where the wrappers below dump LO/HI so the RAM compare covers them.
-    const LOHI: u32 = 0x0090_0000;
-
-    /// Run `f`, then store LO/HI to RAM (`difftest` doesn't compare them).
-    macro_rules! lohi {
-        ($name:ident, $f:path) => {
-            fn $name(c: &mut Cpu) {
-                $f(c);
-                c.bus.write64(LOHI, c.lo[0]);
-                c.bus.write64(LOHI + 8, c.hi[0]);
-            }
-        };
-    }
-
-    /// `check`, plus: the generated function must take every listed path
-    /// (identified by its total cycle count) for some seed.
-    fn check_paths(
-        generated: GuestFn,
-        hand: GuestFn,
-        seeds: u32,
-        paths: &[u64],
-        setup: &dyn Fn(&mut Cpu, u32),
-    ) {
-        check(generated, hand, seeds, setup);
-        let mut seen = std::collections::BTreeSet::new();
-        for seed in 0..seeds {
-            let mut c = crate::difftest::fresh();
-            setup(&mut c, seed);
-            let before = c.cycles;
-            generated(&mut c);
-            seen.insert(c.cycles - before);
-        }
-        for p in paths {
-            assert!(seen.contains(p), "path costing {p} cycles never taken (seen {seen:?})");
-        }
-    }
 
     /// A scrambled machine and the seed's RNG.
     fn start(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
@@ -986,9 +929,7 @@ mod tests {
 
     #[test]
     fn snd_handle_to_channel_matches() {
-        lohi!(gen, ssx3_ee::s13::f_003ba6e8__generated);
-        lohi!(hand, snd_handle_to_channel);
-        check_paths(gen, hand, SEEDS, &[5, 11, 17, 20], &|c, seed| {
+        check_paths_lohi(ssx3_ee::s13::f_003ba6e8__generated, snd_handle_to_channel, SEEDS, &[5, 11, 17, 20], &|c, seed| {
             let mut r = start(c, seed, 20);
             channel_setup(c, &mut r);
             let handle = match seed % 5 {
@@ -1006,9 +947,7 @@ mod tests {
 
     #[test]
     fn snd_channel_calc_volume_matches() {
-        lohi!(gen, ssx3_ee::s13::f_003ba7b0__generated);
-        lohi!(hand, snd_channel_calc_volume);
-        check_paths(gen, hand, SEEDS * 2, &[32, 42, 44, 54], &|c, seed| {
+        check_paths_lohi(ssx3_ee::s13::f_003ba7b0__generated, snd_channel_calc_volume, SEEDS * 2, &[32, 42, 44, 54], &|c, seed| {
             let mut r = start(c, seed, 21);
             channel_setup(c, &mut r);
             let idx = r.next_u32() % 8;
@@ -1102,9 +1041,7 @@ mod tests {
 
     #[test]
     fn sndmidi_get_slot_matches() {
-        lohi!(gen, ssx3_ee::s13::f_003b8d98__generated);
-        lohi!(hand, sndmidi_get_slot);
-        check_paths(gen, hand, SEEDS, &[5, 8, 15], &|c, seed| {
+        check_paths_lohi(ssx3_ee::s13::f_003b8d98__generated, sndmidi_get_slot, SEEDS, &[5, 8, 15], &|c, seed| {
             let mut r = start(c, seed, 40);
             for i in 0..16 {
                 let id = (r.next_u32() & 0x7fff_ffe0) | i;
@@ -1185,9 +1122,7 @@ mod tests {
 
     #[test]
     fn async_file_from_handle_matches() {
-        lohi!(gen, ssx3_ee::s14::f_003def70__generated);
-        lohi!(hand, async_file_from_handle);
-        check_paths(gen, hand, SEEDS, &[6, 11, 17], &|c, seed| {
+        check_paths_lohi(ssx3_ee::s14::f_003def70__generated, async_file_from_handle, SEEDS, &[6, 11, 17], &|c, seed| {
             let mut r = start(c, seed, 52);
             let slots = DATA + 0x1000;
             fill(c, &mut r, slots, 0x100 * 0x30 / 4);

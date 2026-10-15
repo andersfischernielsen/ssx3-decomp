@@ -86,3 +86,97 @@ pub fn multu(c: &mut Cpu, a: u32, b: u32) -> u32 {
     c.hi[0] = sx((r >> 32) as u32);
     r as u32
 }
+
+// ---------------------------------------------------------------------------
+// Whole registers.
+
+/// The full 64-bit value of a GPR (lane 0), for the 64-bit compares and
+/// moves the game does on whole registers.
+#[inline]
+pub fn reg(c: &Cpu, r: usize) -> u64 {
+    c.g[r][0]
+}
+
+/// Set the full 64-bit value of a GPR (lane 0; the upper 64 bits are left
+/// alone, as non-MMI instructions do). Also for incidental values an
+/// original leaves behind (v0/v1 scratch).
+#[inline]
+pub fn set_reg(c: &mut Cpu, r: usize, v: u64) {
+    c.g[r][0] = v;
+}
+
+/// The low 32 bits of a GPR (a pointer or a 32-bit count).
+#[inline]
+pub fn r32(c: &Cpu, r: usize) -> u32 {
+    c.g[r][0] as u32
+}
+
+/// A 128-bit GPR as one value (lane 0 in the low bits).
+#[inline]
+pub fn gpr128(c: &Cpu, r: usize) -> u128 {
+    c.g[r][0] as u128 | (c.g[r][1] as u128) << 64
+}
+
+/// `addu`: 32-bit add, sign-extended (address arithmetic on registers).
+#[inline]
+pub fn addu(a: u64, b: u64) -> u64 {
+    sx((a as u32).wrapping_add(b as u32))
+}
+
+// ---------------------------------------------------------------------------
+// FPU registers.
+
+/// Set an FPU register (an incidental value the original leaves behind, or
+/// a result in a register other than f0).
+#[inline]
+pub fn set_fpr(c: &mut Cpu, r: usize, v: crate::ps2f::FpuF32) {
+    c.f[r] = v.0;
+}
+
+/// The bits of a float register as `mfc1` delivers them (sign-extended).
+#[inline]
+pub fn mfc1(v: crate::ps2f::FpuF32) -> u64 {
+    sx(v.0)
+}
+
+/// `c.lt.s a, b`: the compare result, also latched in the FCC bit of fcr31
+/// (the original leaves it there; later code may branch on a stale value).
+#[inline]
+pub fn c_lt_s(c: &mut Cpu, a: crate::ps2f::FpuF32, b: crate::ps2f::FpuF32) -> bool {
+    let lt = a.lt(b);
+    set_fcc(c, lt);
+    lt
+}
+
+// ---------------------------------------------------------------------------
+// Division (pipeline 0), LO/HI as `Cpu::div`/`Cpu::divu` leave them.
+
+/// `div n, d`: signed 32-bit division; LO = quotient, HI = remainder
+/// (sign-extended). Hardware results for the special cases: `d == 0` gives
+/// quotient `n < 0 ? 1 : -1` and remainder `n`; `MIN / -1` gives `MIN`
+/// remainder 0. Returns `(quotient, remainder)`.
+#[inline]
+pub fn div(c: &mut Cpu, n: u32, d: u32) -> (u32, u32) {
+    let (n, d) = (n as i32, d as i32);
+    let (q, r) = if d == 0 {
+        (if n < 0 { 1 } else { -1 }, n)
+    } else if n == i32::MIN && d == -1 {
+        (i32::MIN, 0)
+    } else {
+        (n / d, n % d)
+    };
+    c.lo[0] = sx(q as u32);
+    c.hi[0] = sx(r as u32);
+    (q as u32, r as u32)
+}
+
+/// `divu n, d`: unsigned 32-bit division; LO = quotient, HI = remainder
+/// (sign-extended). `d == 0` gives quotient `0xffffffff` and remainder `n`.
+/// Returns `(quotient, remainder)`.
+#[inline]
+pub fn divu(c: &mut Cpu, n: u32, d: u32) -> (u32, u32) {
+    let (q, r) = if d == 0 { (u32::MAX, n) } else { (n / d, n % d) };
+    c.lo[0] = sx(q);
+    c.hi[0] = sx(r);
+    (q, r)
+}

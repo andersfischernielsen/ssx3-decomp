@@ -4,6 +4,21 @@
 //!
 //! Run with the game profile so the generated crates are reused:
 //! `cargo test --profile game -p ssx3-game`.
+//!
+//! - [`check`]: the default comparison (hard state must match);
+//!   [`check_lohi`] also requires equal LO/HI (opt in: some replacements,
+//!   e.g. `__muldi3`, legitimately leave different LO/HI);
+//!   [`check_paths`] also requires every listed path (total cycle cost) to
+//!   be taken by some seed.
+//! - [`fakes`]: fake callees for functions that make calls (log every
+//!   register to RAM, forced results, unwinds at chosen call indices).
+//! - [`events`]: delivering real events inside loops and re-entering
+//!   dispatcher-shaped functions as the trampoline does.
+//! - Input helpers: [`Rng`], [`scramble`], [`fill`], [`put_vec`],
+//!   [`put_words`], [`Rng::edge_f32`], [`GAME_GP`].
+
+pub mod events;
+pub mod fakes;
 
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
@@ -13,6 +28,9 @@ pub const DATA: u32 = 0x0080_0000;
 /// Initial stack pointer and a sentinel return address.
 pub const SP: u32 = 0x01f0_0000;
 pub const RA: u32 = 0x0012_3450;
+/// The value of `gp` the game runs with (globals are addressed relative to
+/// it; set it when a function reads gp-relative data).
+pub const GAME_GP: u32 = 0x004a_30f0;
 
 /// A fresh CPU on a fresh machine, with `sp`/`ra` set and events off.
 pub fn fresh() -> Box<Cpu> {
@@ -29,11 +47,13 @@ pub fn fresh() -> Box<Cpu> {
 /// Everything compared. `hard` differences fail a test; `soft` ones (VU0
 /// status/MAC/clip flags, caller-saved temporaries) are reported only. The
 /// replay's full RAM comparison is the final check that soft state never
-/// reaches memory.
+/// reaches memory. `lohi` (LO/HI of both pipelines) fails only in
+/// [`check_lohi`].
 #[derive(Debug)]
 pub struct Report {
     pub hard: Vec<String>,
     pub soft: Vec<String>,
+    pub lohi: Vec<String>,
 }
 
 /// Run `generated` and `hand` after the same `setup`, return the differences.
@@ -85,6 +105,14 @@ pub fn compare(generated: GuestFn, hand: GuestFn, setup: &dyn Fn(&mut Cpu)) -> R
             hard.push(format!("{name}: {x:#x} vs {y:#x}"));
         }
     }
+    let mut lohi = Vec::new();
+    for p in 0..2 {
+        for (name, x, y) in [("lo", a.lo[p], b.lo[p]), ("hi", a.hi[p], b.hi[p])] {
+            if x != y {
+                lohi.push(format!("{name}[{p}]: {x:#x} vs {y:#x}"));
+            }
+        }
+    }
     for (name, ma, mb) in [("ram", &a.bus.ram, &b.bus.ram), ("spr", &a.bus.spr, &b.bus.spr)] {
         let mut n = 0;
         for i in (0..ma.len()).step_by(4) {
@@ -103,7 +131,7 @@ pub fn compare(generated: GuestFn, hand: GuestFn, setup: &dyn Fn(&mut Cpu)) -> R
             hard.push(format!("{name}: {n} differing words in total"));
         }
     }
-    Report { hard, soft }
+    Report { hard, soft, lohi }
 }
 
 /// Assert no hard differences over many `setup(seed)` states.
@@ -112,6 +140,56 @@ pub fn check(generated: GuestFn, hand: GuestFn, seeds: u32, setup: &dyn Fn(&mut 
         let r = compare(generated, hand, &|c| setup(c, seed));
         assert!(r.hard.is_empty(), "seed {seed}: {:#?}", r.hard);
     }
+}
+
+/// [`check`], and LO/HI must match too (for replacements of code with
+/// `mult`/`div`, whose LO/HI a later `mflo`/`mfhi` could read).
+pub fn check_lohi(generated: GuestFn, hand: GuestFn, seeds: u32, setup: &dyn Fn(&mut Cpu, u32)) {
+    for seed in 0..seeds {
+        let r = compare(generated, hand, &|c| setup(c, seed));
+        assert!(r.hard.is_empty(), "seed {seed}: {:#?}", r.hard);
+        assert!(r.lohi.is_empty(), "seed {seed} (LO/HI): {:#?}", r.lohi);
+    }
+}
+
+/// Require that the generated function takes every listed path (identified
+/// by its total cycle cost) for some seed, so the seeds really cover them.
+pub fn require_paths(generated: GuestFn, seeds: u32, paths: &[u64], setup: &dyn Fn(&mut Cpu, u32)) {
+    let mut seen = std::collections::BTreeSet::new();
+    for seed in 0..seeds {
+        let mut c = fresh();
+        setup(&mut c, seed);
+        let before = c.cycles;
+        generated(&mut c);
+        seen.insert(c.cycles - before);
+    }
+    for p in paths {
+        assert!(seen.contains(p), "path costing {p} cycles never taken (seen {seen:?})");
+    }
+}
+
+/// [`check`] plus [`require_paths`].
+pub fn check_paths(
+    generated: GuestFn,
+    hand: GuestFn,
+    seeds: u32,
+    paths: &[u64],
+    setup: &dyn Fn(&mut Cpu, u32),
+) {
+    check(generated, hand, seeds, setup);
+    require_paths(generated, seeds, paths, setup);
+}
+
+/// [`check_lohi`] plus [`require_paths`].
+pub fn check_paths_lohi(
+    generated: GuestFn,
+    hand: GuestFn,
+    seeds: u32,
+    paths: &[u64],
+    setup: &dyn Fn(&mut Cpu, u32),
+) {
+    check_lohi(generated, hand, seeds, setup);
+    require_paths(generated, seeds, paths, setup);
 }
 
 /// Small deterministic RNG for test inputs.
@@ -176,6 +254,14 @@ impl Rng {
             5 => sign | ((self.next_u32() % 64) as f32 + 0.5).to_bits(),
             _ => self.f32(1000.0),
         }
+    }
+}
+
+/// Write 32-bit words at `addr` (constant tables such as `.lit4`
+/// literals: the test machine's RAM starts empty).
+pub fn put_words(c: &mut Cpu, addr: u32, words: &[u32]) {
+    for (i, w) in words.iter().enumerate() {
+        c.bus.write32(addr + 4 * i as u32, *w);
     }
 }
 

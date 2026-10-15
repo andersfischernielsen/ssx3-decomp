@@ -757,7 +757,7 @@ mod tests {
         for reg in 1..32 {
             c.bus.plat.set_vf(reg, [r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()]);
         }
-        c.g[GP][0] = 0x004a_30f0;
+        c.g[GP][0] = crate::difftest::GAME_GP as u64;
     }
 
     /// A float bit pattern biased toward the cases compares and PS2 rounding
