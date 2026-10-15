@@ -25,6 +25,7 @@ pub mod kernel;
 pub mod machine;
 pub mod pad;
 pub mod sif;
+pub mod snd_native;
 pub mod threads;
 pub mod vif;
 /// The Vector Units live in their own crate (build times); see `ssx3-vu`.

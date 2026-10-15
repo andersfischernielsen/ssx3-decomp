@@ -160,6 +160,7 @@ pub fn service_events(c: &mut Cpu) -> bool {
         m!(c).hw.raise(crate::hw::int::GS);
     }
     crate::iop_bridge::sync(c); // recompiled IOP (SSX3_IOP=1); no-op otherwise
+    let snd_tick = crate::snd_native::service(c); // SSX3_SND=native; no-op otherwise
     crate::sif::pump(c);
     m!(c).hw.irq_dirty = false;
     kernel::service(c);
@@ -172,6 +173,9 @@ pub fn service_events(c: &mut Cpu) -> bool {
         next = next.min(a.max(c.cycles + 1));
     }
     if let Some(t) = m!(c).hw.next_timer_event() {
+        next = next.min(t.max(c.cycles + 1));
+    }
+    if let Some(t) = snd_tick {
         next = next.min(t.max(c.cycles + 1));
     }
     // Poll at least every ~20k cycles so pending I/O interrupts get delivered.

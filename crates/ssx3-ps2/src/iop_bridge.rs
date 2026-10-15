@@ -71,7 +71,9 @@ fn ensure(c: &mut Cpu) {
     let mut iop = Iop::new();
     iop.cycles = c.cycles / 8;
     iop.spu.next_tick = iop.cycles + ssx3_iop::spu2::BATCH as u64 * ssx3_iop::spu2::CYCLES_PER_SAMPLE;
-    iop.spu.sink = Some(ssx3_iop::audio::Sink::from_env());
+    // With native sound the IOP's SPU2 is idle and must not open a second
+    // output (or WAV writer).
+    iop.spu.sink = (!crate::snd_native::enabled()).then(ssx3_iop::audio::Sink::from_env);
     eprintln!("[iop] recompiled IOP enabled (the game's IRX modules run as translated code)");
     m!(c).sif.iop = Some(Box::new(IopSide { iop, syncs: 0, expected_servers: Vec::new() }));
 }
@@ -113,6 +115,10 @@ pub fn load_module(c: &mut Cpu, path: &str) -> Option<(u32, u32)> {
     }
     let name = module_name_of(path);
     layout::base_of(&name)?;
+    if crate::snd_native::enabled() && (name == "LIBSD" || name == "SNDDRV") {
+        // Sound runs natively (snd_native.rs); the HLE LOADFILE path records it.
+        return None;
+    }
     let sio2_module = layout::SIO2_MODULES.contains(&name.as_str());
     if sio2_module && !sio2_enabled() {
         return None;
@@ -281,6 +287,7 @@ pub fn status(c: &Cpu) -> Option<String> {
 
 /// Flush audio capture (WAV) at shutdown.
 pub fn shutdown(c: &mut Cpu) {
+    crate::snd_native::shutdown(c);
     if let Some(side) = m!(c).sif.iop.as_mut() {
         if let Some(s) = side.iop.spu.sink.as_mut() {
             s.flush();

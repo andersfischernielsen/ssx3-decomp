@@ -55,6 +55,8 @@ pub struct Sif {
     pub snd_bound: bool,
     /// Recompiled IOP (`SSX3_IOP=1`), see `iop_bridge.rs`.
     pub iop: Option<Box<crate::iop_bridge::IopSide>>,
+    /// Native sound driver (`SSX3_SND=native`), see `snd_native.rs`.
+    pub native_snd: Option<Box<crate::snd_native::NativeSnd>>,
 }
 
 impl Default for Sif {
@@ -91,6 +93,7 @@ impl Sif {
             pad_frame: 0,
             snd_bound: false,
             iop: None,
+            native_snd: None,
         }
     }
 
@@ -105,6 +108,12 @@ fn rd(c: &mut Cpu, a: u32) -> u32 {
 }
 fn wr(c: &mut Cpu, a: u32, v: u32) {
     c.bus.set_ram_u32(a & 0x01FF_FFFF, v);
+}
+
+/// EA's SNDDRV → EE command (SIF user command 1): `kind` 0 = tick (opt =
+/// the IOP address for the next tag buffer), 2 = upload done (opt = token).
+pub(crate) fn send_user_cmd1(c: &mut Cpu, opt: u32, kind: u32) {
+    send(c, &[0x14, 0, 1, opt, kind]);
 }
 
 /// Queue a raw IOP → EE packet (used by the recompiled IOP).
@@ -317,7 +326,14 @@ fn command(c: &mut Cpu, src: u32, size: u32) {
         // (id at +0x14, see 0x3c4450); the driver acknowledges with user
         // command 1, type 2, opt = id (handled at 0x3c1578 → 0x3c4918).
         0 => {
-            if w[4] == 1 {
+            if crate::snd_native::enabled() {
+                let packet: Vec<u8> = w.iter().take(12).flat_map(|v| v.to_le_bytes()).collect();
+                if let Some(token) = crate::snd_native::user_cmd0(c, &packet) {
+                    if token != 0 {
+                        send_user_cmd1(c, token, 2);
+                    }
+                }
+            } else if w[4] == 1 {
                 send(c, &[0x14, 0, 1, w[5], 2]);
             } else if m!(c).sif.trace {
                 eprintln!("[snd] user cmd type {}", w[4]);
@@ -636,13 +652,16 @@ fn mcserv(c: &mut Cpu, method: u32, _a: u32, _s: u32, ret: u32, rsize: u32) -> b
 /// the sound thread (0x3c19a8), which mixes and DMAs its next command buffer.
 pub fn vblank(c: &mut Cpu) {
     crate::iop_bridge::vblank(c);
-    if m!(c).sif.snd_bound {
+    if m!(c).sif.snd_bound && !crate::snd_native::enabled() {
         send(c, &[0x14, 0, 1, 0, 0]);
     }
 }
 
 /// EA's SNDDRV ('SND'): accept every request.
 fn snd(c: &mut Cpu, method: u32, _a: u32, _s: u32, ret: u32, rsize: u32) -> bool {
+    if crate::snd_native::enabled() {
+        crate::snd_native::rpc(c, method, _a, _s);
+    }
     if m!(c).sif.trace {
         eprintln!("[snd] method {method:#x} recv {rsize}");
     }

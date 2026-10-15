@@ -574,3 +574,47 @@ Supporting artefacts are all in `(scratch, not committed) `:
 - `syms.txt`, `iop.bin`: relocated LIBSD + SNDDRV image at 0x20000;
 - `ee/*.c`: EE decompiles;
 - `reloc.py`, `gh/Setup.java`: how the IOP image and decompile were produced.
+
+---
+
+## Implementation (2026-10-15)
+
+`crates/ssx3-snd` is the native driver:
+- `proto.rs`: the wire formats;
+- `driver.rs`: `SNDIOP_updatevoices`, `updateiopvoices`, `spusetvol`, init and uploads;
+- `output.rs`: the `ee*_iop*` resamplers;
+- `iopmix.rs`: EA's MIX/SFILTER software voices, including EA-XA.
+
+It runs on the SPU2 model (`ssx3_iop::spu2`). That model can now be used without the IOP
+(`write_reg16`, `render_next`, `push_input`, `dma_write`); the split was checked to be
+behaviour-identical: same WAV and RAM after a race.
+
+`crates/ssx3-ps2/src/snd_native.rs` plugs the driver in with `SSX3_SND=native`.
+- LIBSD/SNDDRV are not started on the recompiled IOP, which keeps running the pad and
+  memory-card modules.
+- The `'SND'` RPC and SIF user command 0 fall through to the HLE side, which calls the
+  driver.
+- Ticks run every 3,145,728 EE cycles from `machine::service_events`.
+- The status block is written to the EE, followed by command 1 type 0 with `opt` = the tag
+  receive area (0x3b3c4).
+
+### Verification
+
+Race script to frame 5000, `SSX3_SND=native` vs the recompiled IOP (`SSX3_IOP` default), both
+with WAV capture:
+
+- **Game state** is identical until the sound banks load (screenshots at frames 1000-3000 are
+  byte-identical). Native uploads complete at once instead of after the emulated SPU DMA, so
+  load timing, and with it the race, diverges afterwards (as with native files).
+- **Audio** is bit-identical while the game is: after aligning the captures (they start
+  recording at different times), the menu music at 30 s and 40 s matches on 100% of samples.
+  Later the two runs play different sounds at different times, and only the music stays
+  correlated.
+- **Voice release:** at frame 5000, 12 SPU voices are busy and 29 have reported finished
+  (recompiled IOP: 14 and 26), so the game frees its channels as it should.
+- **Unit tests:** 21 cover the resamplers and the IOP mixer, including PCM8/16 and EA-XA,
+  loops, gain ramps and declick.
+
+Open: reverb (mode 0 throughout SSX 3, not modelled); the sweep phase bit and Gaussian
+interpolation (SPU2 model limits, shared with the IOP path). Native sound is opt-in until it
+has been played through in the windowed game.
