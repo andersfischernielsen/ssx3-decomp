@@ -55,6 +55,12 @@ prompts; permissions explicitly denied in the OpenCode config stay denied).
   and runs OpenCode there. One task, one worktree. **Commit everything the
   worker needs first**: the worktree is cut from HEAD, so uncommitted or
   untracked files are missing there (the first test run hit exactly this).
+- **Write tasks that need gitignored build inputs** (in this repo: anything
+  compiling against `generated/ee`, e.g. `crates/ssx3-game` work):
+  `scripts/delegate.sh --here <task> <prompt>` runs in the main tree. Give each
+  worker its own file (e.g. a feature-gated module) so parallel workers never
+  touch the same file, and review with `git diff -- <file>`. Example:
+  `docs/investigation/phase2-worker-guide.md` (Phase 2 rewrites).
 - **Read-only tasks**: `scripts/delegate.sh <task> <prompt>` runs in the main
   tree. Tell the worker "do not modify any files", and check `git status`
   afterwards.

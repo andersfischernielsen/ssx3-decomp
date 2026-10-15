@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Delegate a mechanical task to a cheap model via OpenCode (one worker per call).
 #
-#   scripts/delegate.sh [--write] [--model M] [--json] <task-name> <prompt | @prompt-file>
+#   scripts/delegate.sh [--write | --here] [--model M] [--json] <task-name> <prompt | @prompt-file>
 #   scripts/delegate.sh --cleanup <task-name>      # remove worktree + branch
 #
 # Every run uses --auto (permissions not explicitly denied are approved;
@@ -10,6 +10,9 @@
 #   modify any files" (check `git status` afterwards).
 # --write: creates .claude/worktrees/delegate-<task> on branch delegate/<task>
 #   (from the current HEAD: commit what the worker needs first) and runs there.
+# --here: a write task in the main tree, for work that needs the main tree's
+#   gitignored build inputs (generated/ee): the prompt must confine the worker
+#   to its own file(s); review with `git diff -- <file>`.
 # Output goes to .delegate/logs/<task>.log (gitignored); the last line of this
 # script's stdout is the log path. Review the worktree's diff yourself.
 set -euo pipefail
@@ -32,6 +35,7 @@ fi
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --write) write=1; shift ;;
+    --here) write=2; shift ;;
     --json) json=1; shift ;;
     --model) model="$2"; shift 2 ;;
     *) break ;;
@@ -65,7 +69,7 @@ fi
   echo "# task: $name"
   echo "# model: $model"
   echo "# dir: $dir"
-  echo "# mode: $([[ $write == 1 ]] && echo write || echo read-only)"
+  echo "# mode: $(case $write in 1) echo write-worktree;; 2) echo write-here;; *) echo read-only;; esac)"
   echo "# started: $(date '+%Y-%m-%d %H:%M:%S')"
   echo "# --- prompt ---"
   echo "$prompt"

@@ -113,6 +113,8 @@ Lessons from the first packages:
 
 | 2026-10-15 | round 3: D4 AI/BE/race logic (39), D6 frontend UI/fonts/HUD (25), D7 audio system (25), D8 memory/containers/replay/script (22) | 331 replacements installed (first override of a function with mid-function entries: GetAttrib5Factor); race to frame 9000 byte-identical (36 shots + full RAM); 302 tests pass |
 
+| 2026-10-15 | round 3: D3 chase camera (24, incl. the Apply* family; VU0 `Acc` + Q read-back helpers) | 355 replacements installed; race to frame 9000 byte-identical (36 shots + full RAM) |
+
 Patterns established in round 2 (now shared, see below):
 - **Loops with event checks**: structured loops make the same back-edge
   `c.event()` checks with the same `c.pc`; functions the generator emitted
