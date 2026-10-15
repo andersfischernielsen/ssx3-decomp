@@ -2,7 +2,9 @@
 
 _Mapped 2026-10-15 from Ghidra and the paused PCSX2 Snow Jam race (PINE). Most
 camera functions were already named in naming pass 2; this file adds the data
-layouts. Confidence: high / med / low as in `rider.md`._
+layouts. Round 2 (same day) added the chase-camera tuning pipeline, the spline
+curves and the filter fields, checked against headless RAM dumps of frames
+5000/5001/5002 of the scripted race. Confidence: high / med / low as in `rider.md`._
 
 World is Z-up (see `rider.md`). Camera orientation is stored as a quaternion and
 turned into a view matrix by `CameraBase_UpdateMatrices` 0x15d928.
@@ -71,9 +73,10 @@ Vtables (vptr at **+0x90**): CameraBase 0x45b8b0 / GameCamera 0x45b888 —
 | 0x458 / 0x45c | i32 | `shakeRequested` / previous | edge-detects the start of a shake | `GameCamera_UpdateShake` | high |
 | 0x460 | f32 | `collisionPull` | how far the eye is pulled in by geometry; decays by a gp factor (4.4 live) | `GameCamera_AvoidCollision` 0x15ee00 | med |
 | 0x470 | vec4 | `collisionNormal` | normal of the last camera ray hit (-0.33, 0.008, 0.94) | `GameCamera_AvoidCollision` | med |
-| 0x480 | struct (0x10) | | collision query result (ptr, flags) | `0x336850(..., cam+0x480)` | low |
-| 0x490 | vec4 | | saved eye used when +0x4a4 == 0 | AvoidCollision | low |
-| 0x4a0 / 0x4a4 | i32 | | collision state flags (0 / 1) | | low |
+| 0x480 | struct (0x10) | `collisionHint` | intersect hint for the camera sweep: passed as the 4th argument of `FUN_00336850` (proposed `World_SweepClosestHit`), which forwards it to the world query `FUN_00335d78`; the result goes into a stack record, not here. Same role as `Rider+0x864` "Line Intersect Hint". Live {0x111d400 ptr, 0x70003, 1, 2}; headless {0x10f8a60, 5→4, 0→1, 2} | `GameCamera_AvoidCollision` | med |
+| 0x490 | vec4 | `lastClearEye` | last eye position that passed the look-at→eye visibility test; restored when the test fails and +0x4a4 == 0 | AvoidCollision | med |
+| 0x4a0 | i32 | `occluded` | 1 while the line from look-at+100 up to the eye is blocked (only tested while a script camera is active, `FUN_0015d020`) | AvoidCollision | med |
+| 0x4a4 | i32 | `snapRequest` | one-shot: on an occluded frame, place the eye 180 above / 180 along +X of the look-at instead of restoring +0x490; cleared every frame | AvoidCollision | med |
 
 Shake: while the rider boosts (target slot 17 = `Rider+0x2fc` above a gp
 threshold) `GameCamera_UpdateShake` requests preset 1, 2 or 3 by boost strength,
@@ -105,10 +108,16 @@ the strongest request of the frame through the embedded algorithm.
 | 0x24 | i32 | algorithm to restore after an override | 0x3d | med |
 | 0x28 | i32 | | 0x3d | low |
 | 0x2c | i32 | override algorithm id (0x5d = timed override) | 0x3d | med |
-| 0x30 | u32/ptr | flags; bit 1 forces cuts (blend rate 1.0) in `SetAlgorithm` | 0xcdce88 (looks like a pointer, unresolved) | low |
+| 0x30 | u32 | flags: bit 0 = override active (`SetOverrideAlgorithm`, cleared by id 0x4c), bit 1 = script camera active (`BeginScriptCamera` / `EndScriptCamera`; while set, `SetAlgorithm` cuts and overrides are deferred unless +0x2c == 0x5d), bit 2 = spoke mode (`EnterSpokeMode` / `ExitSpokeMode`). Bits 3-31 are never initialised: the reset (`FUN_00161950`) only does `&= ~7`, so the upper bits hold stale heap data (the live 0xcdce88 has bits 0-2 clear; headless 0) | 0xcdce88 / 0 | high |
+| 0x34 | f32 | blend rate of the pending override (3rd arg of `SetOverrideAlgorithm`, reused by `BeginScriptCamera(0x5d)`) | 0 | med |
 | 0x38 | f32 | override timer (seconds, >10 restores +0x24) | 0 | med |
-| 0x3c | i32 | spoke mode (entered when the rider's main state is 5 Handplant, left above 35 speed units) | 0 | med |
-| 0x40 | ptr | | 0xcdcedc | low |
+| 0x3c | i32 | spoke mode (entered when the rider's main state is 5 Handplant, left above 35 km/h: \|vel\| × gp 0.036) | 0 | med |
+| 0x40 | i32 | zeroed by the ctor reset and `ResetState`; no other access found (unused) | 0 | med |
+
+The "pointer" seen at +0x40 in round 1 was the word *after* the object (+0x44 =
+0xcdcedc, next heap block); +0x40 itself reads 0 live and headless.
+`FUN_0015d020` = `ChaseCamController_IsScriptCameraActive` (bit 1 set and +0x2c not
+0x5d / 0x3c); `GameCamera_AvoidCollision` uses it.
 
 **ManualCamController (0x20)** — vt 0x45b8d8; +0x18 ManualCamAlgo* ("Manual Cam Algo",
 0x40), +0x1c EditorCamAlgo* ("Editor Cam Algo", 0x40). Default selection 0x51.
@@ -183,27 +192,95 @@ state 2/5/1/4).
 | 0x1a0 | vec4 | forward × 250 | `ResetForRider` | med |
 | 0x1b0 | vec4 | smoothed rider forward (kept when the new value is degenerate) | `GatherRiderState` | high |
 | 0x1c0 | vec4 | forward × 2 | `ResetForRider` | low |
-| 0x1d0 | f32 | smoothed follow distance (200.0 at ctor) | `ApplyFollowDistance` | med |
-| 0x1d4 | f32 | smoothed camera height (reset to slot 13's value) | `ApplyCameraHeight` | med |
-| 0x1dc | f32 | smoothed FOV scale; `fov = base × const × this` | `ApplyFov` | med |
-| 0x1e0 | f32 | 10.0 | ctor, reset | low |
-| 0x1e4 | f32 | smoothed look-at height above the rider | `ApplyTargetHeight` | med |
-| 0x1e8 / 0x1ec | f32 | extra follow distance that decays / last speed value it was computed from | `ApplyFollowDistance` | med |
-| 0x204 / 0x208 | f32 | height bonus for the eye / look-at (held while airborne) | `ApplyCameraHeight` / `ApplyTargetHeight` | med |
-| 0x1f0..0x250 (rest) | f32 | other filter state zeroed on reset; +0x224 gp constant, +0x228 = 1.0, +0x248 = 0.5 | `ResetForRider` | low |
-| 0x2c0 | i32 | 5000 (distance-reset threshold?) | ctor, reset | low |
-| 0x2c4 | i32 | -1 | reset | low |
-| 0x2e4 | i32 | 1 after reset | | low |
+| 0x1d0 | f32 | `followDist`: smoothed eye distance behind the look-at (200.0 at ctor; 439→440→441 in the headless frames 5000-5002) | `ApplyFollowDistance` | high |
+| 0x1d4 | f32 | `eyeDrop`: smoothed amount subtracted from the eye along world up (reset to slot 13's value) | `ApplyCameraHeight` | high |
+| 0x1d8 | f32 | changes slowly (0.469→0.471→0.473); writer not identified (not one of the DEFAULT_3 steps) | dumps | low |
+| 0x1dc | f32 | `fovScale`: smoothed; `fov = base × π/4 × this` (1.0 live) | `ApplyFov` | high |
+| 0x1e0 | f32 | `handplantBlendTime`: seconds since the handplant ended, +1/60 per frame; the eye eases back from the saved offset +0xb0 while < blend time; ≥ 5 = idle (10.0 at ctor) | `FUN_00163450` | med |
+| 0x1e4 | f32 | `lookAtHeight`: smoothed look-at lift along world up (40.4 headless) | `ApplyTargetHeight` | high |
+| 0x1e8 / 0x1ec | f32 | `boostDistBonus` (= gain × √boost when boost rises, then decays by a fixed step per frame) / last boost value seen | `ApplyFollowDistance` | high |
+| 0x1f0 | f32 | 0 | | low |
+| 0x1f4 | f32 | `airCurveTime`: x at which the air-arc splines are evaluated; walks toward +0x200 by 1/60 per frame | `FUN_001635f8` | med |
+| 0x1f8 / 0x1fc | f32 | `jumpCurveGain` / `jumpCurveTimeScale` (1.0 / 1.0 when a curve is built) | `FUN_001635f8` | med |
+| 0x200 | f32 | `airCurveEnd`: predicted air time (target slot 12) when the air-arc curve was built, 4.0 for a takeoff kick | `FUN_001635f8` | med |
+| 0x204 | f32 | `eyeSlopeBonus`: speed² × gain × (slot 18 − 0.5), held while airborne (4.667 headless) | `ApplyCameraHeight` | med |
+| 0x208 | f32 | `lookAtSlopeTerm`: slot 18 (`Rider+0x220`), held while airborne (1.0 headless) | `ApplyTargetHeight` | med |
+| 0x20c / 0x210 | f32 | air-arc spline outputs for look-at / eye (spline 0 / spline 1) | `FUN_001635f8` | med |
+| 0x214 | f32 | `railWeight`: target slot 24 (`Rider+0x5ac` rail flag) low-passed with factor 0.98 | `FUN_001641c0` | med |
+| 0x218 | f32 | `kickCurveTime`: x for the takeoff-kick splines, +1/60 per frame up to 4.0 (start 1/60) | `FUN_001635f8` | med |
+| 0x21c / 0x220 | f32 | takeoff-kick spline outputs for look-at / eye (spline 2 / spline 3); after landing multiplied by +0x224 every frame (headless: −0.2483 → −0.2309 → −0.2148, ratio 0.93) | `FUN_001635f8`, dumps | high |
+| 0x224 | f32 | `landingDecay`: per-frame decay of all four jump offsets after landing; 0.93 by default, raised toward 1 for long air times (slot 23 between 1.05 and 1.4) | `FUN_001635f8` | high |
+| 0x228 | f32 | `kickSize`: jump-size factor from target slot 21 (`Rider+0x5a4`) mapped 300..500 → 0..1 (0.516 headless); scales the air-arc amplitude | `FUN_001635f8` | med |
+| 0x22c | f32 | air-swing elapsed air time (+1/60 per frame, cleared at takeoff of a drop) | `FUN_00162a20`, `FUN_00164878` | med |
+| 0x230 / 0x234 | f32 | air-swing duration (remaining predicted air time, min 2.3 s) / elapsed | `FUN_00164878` | med |
+| 0x238 | f32 | air-swing angle (π/2 − asin of eye-dir · swing-target dir) | `FUN_00164878` | med |
+| 0x23c | f32 | air-swing blend-out timer (set to the 1.527 s argument, counts down 1/60) | `FUN_00164878` | med |
+| 0x240 / 0x244 | f32 | post-swing blend-back timer / its start value | `FUN_00164878` | med |
+| 0x248 | f32 | `lowSpeedBlend`: 0..1 weight of the low-speed hold (0.5 at reset) | `FUN_001643a8` | med |
+| 0x24c / 0x250 | f32 | 0 in every dump; no writer found in the DEFAULT_3 steps | | low |
+| 0x2b8 | f32 | smoothed extra eye height added during/after a handplant | `FUN_00163450` | low |
+| 0x2c0 | i32 | `framesSinceHandplant`: counts up to 820 when not in Handplant; 5000 at ctor (= never); drives a fade weight (`RiderCamState+0x48`) that is 1 for 120 frames then falls by 1/700 per frame | `FUN_00162998` | med |
+| 0x2c4 | i32 | `takeoffCountdown`: set to 15 on takeoff when no air-arc curve is running and the rider was grounded for more than 30 frames, decremented per airborne frame; at 14 the takeoff-kick splines are built, at 0 (or early, when a landing is predicted) the air-arc splines; keeps going negative in the air (−91 headless) | `FUN_00162a20`, `FUN_001635f8` | med |
+| 0x2cc | i32 | AI frame stamp (`AI+0x08`, via `FUN_001298c8`) of the last airborne frame (0x2e8 headless) | `FUN_00162a20` | high |
+| 0x2d0 | i32 | `isDrop`: set at takeoff when the velocity points steeply down (z/\|v\| > 0.85) and the previous ground normal is near-vertical (z < 0.1): use the air swing instead of the jump curves | `FUN_00162a20` | med |
+| 0x2d4 | i32 | `wasAirborne` | `FUN_00162a20` | high |
+| 0x2d8 | i32 | air-swing set up | `FUN_00164878` | med |
+| 0x2e0 / 0x2e8 | i32 | air-arc curve active / takeoff-kick curve active | `FUN_001635f8` | med |
+| 0x2e4 | i32 | landed: jump offsets are now decaying by +0x224 (1 after reset) | `FUN_001635f8` | med |
 | 0x2f0 | i32 | "needs reset" flag, slot 11 | `CheckDistanceReset`, `Tick` | med |
-| 0x2f4..0x2fc | | written by `GatherRiderState` | | low |
-| 0x300 | i32 | 1 after reset | | low |
-| 0x304..0x33c | `cCSICubicSpline[5]` (12 bytes each) | tuning curves (by speed) | ctor | med |
-| 0x340 | f32[5]×3 | ring of recent values (cleared on reset) | `ResetForRider` | low |
-| 0x37c | i32 | | reset | low |
-| 0x380 / 0x384 / 0x388 | f32 | gp tuning constants set by the ctor | ctor | low |
+| 0x2f4 / 0x2f8 / 0x2fc | f32 / f32 / i32 | copies from `GatherRiderState`: boost (slot 17), (boost + 1) / 2 or 0, Handplant flag | `GatherRiderState` | high |
+| 0x300 | i32 | `lowSpeedState`: 0 blending in, 1 blending out, 2 held, 3 off (3 live) | `FUN_001643a8` | med |
+| 0x304 / 0x310 | `cCSICubicSpline` | spline 0 / 1: air-arc look-at / eye height, 13 knots, x = air time × {0, 0.33, 0.66, 1 .. 4}/4, y = amplitude × {−121, −218, −255, −251, −193, −63, 111, 307, 496, 690, 821, 849} (look-at) and {−22, −35, 14, 92, 213, 383, 624, 813, 978, 1071, 1105, 1131} (eye) | `FUN_001635f8` | high |
+| 0x31c / 0x328 | `cCSICubicSpline` | spline 2 / 3: takeoff-kick look-at / eye, same x/y tables but x in seconds 0..4 and amplitude = 1.811 × 0.136 × `kickSize` | `FUN_001635f8` | high |
+| 0x334 | `cCSICubicSpline` | spline 4: air-swing easing profile 0→1, 9 knots at x = 0, 0.125 .. 1 with y = 0, 0.064, 0.308, 0.553, 0.658, 0.729, 0.827, 0.941, 1 (start slope 0) | `FUN_00164878` | high |
+| 0x340 / 0x354 / 0x368 | f32[5] each | chase-heading PID ring: error, output and (error − output) history, indexed by +0x37c (frames 5000-5002 show index 3→4→0) | `FUN_00162c78`, dumps | high |
+| 0x37c | i32 | ring index 0..4 | | high |
+| 0x380 / 0x384 / 0x388 | f32 | PID gains P = 0.0114, I = 0, D = 0.00128 (getters `FUN_00167d88/98/a8` return gp defaults; the ctor then overwrites with gp 0x9500 / 0 / gp 0x94fc) | ctor, live | high |
 
 Live DEFAULT_3 instance (chase controller's list, 0xcdbc50): fov 0.754, near 10,
 far 30000, id 0x3d.
+
+`cCSICubicSpline` (12 bytes): +0x00 bitfield (bit 2 = solved, bits 3-10 = knot
+count, bits 11-18 = capacity), +0x08 knot array (0x14 per knot: x, y, three
+coefficients). `cCSICubicSpline_AddPoint` solves when the last knot is added.
+
+### Where the chase tuning comes from
+
+There is **no tuning file**. Every chase parameter is a compiled-in constant in
+gp-relative `.sdata` (identical in the PCSX2 RAM and the headless dump, no
+writers in Ghidra), passed as arguments by each leaf class's `Update`. Speeds are
+written in km/h converted to cm/s (27.78 = 1 km/h, 833.3 = 30, 1388.9 = 50,
+1666.7 = 60), which also confirms that the rider's distance unit is the
+centimetre. Times are in seconds with a 1/60 step. The five splines are rebuilt at
+runtime from these constants on every jump. `ChaseCameraAlgorithm_StaticInit`
+0x1673f8 fills a block of 0..1 records at 0x4c5020..0x4c539c (read only through
+computed indices, purpose unknown) and the axis-remap matrix 0x4c53a0
+(world Z-up → view: used by `CameraBase_UpdateMatrices`), then the shake presets.
+
+`Default_3ChaseCameraAlgorithm_Update` 0x176e10 (the race camera) runs, in
+order, with these arguments (gp offset → value):
+
+| step | function | arguments (DEFAULT_3) | effect |
+|---|---|---|---|
+| 1 | `GatherRiderState` | 0.271, 0.9, 0.294, 0.851 (normal ground) / 0.85, 0.97, 0.1, 0.6 (surface types 2, 3, 0xd) | low-passes the horizontal velocity into +0x100 with a factor between a and b by forward-vector steepness \|fwd.z\| in [c, d]; fills `RiderCamState` |
+| 2 | `FUN_00162998` | | handplant fade weight (+0x2c0) |
+| 3 | `FUN_00162a20` | | takeoff / landing bookkeeping (+0x2c4, +0x2cc, +0x2d0, +0x2d4) |
+| 4 | `SetLookAtFromRider` | | look-at = rider hips |
+| 5 | `FUN_00162c78` | | chase heading +0x80: PID on the angle between +0x80 and the smoothed forward +0x1c0 (gains +0x380..), blend factor 0.0395 × (1 − PID) + 0.956, fourth-rooted on ground materials 0xb..0xd |
+| 6 | `ApplyFollowDistance` | base 300.9, speed gain 11.55, speed offset 76.7, boost gain 10.76, boost decay 1.77/frame, smoothing 0.924 (growing) / 0.907 (shrinking) | `dist = min(5 × base, base + gain × (v − off)^1.5 × 1e-4) + boostBonus`; eye = look-at − chaseDir × dist |
+| 7 | `ApplyCameraHeight` | 11.68, 31.2, boost 11.39, slope 9.33, smoothing 0.978 | drop = 11.68 × (v − 1388.9)^1.5 × 1e-4 − 31.2 + max(slope bonus +0x204, 11.39 × √boost) |
+| 8 | `ApplyFov` | speed² term 0, base 0.96, boost widen 1.0, smoothing 0.95 (0.999 outside Ground/Air) | `fov = 0.96 × π/4 × fovScale` (0.754 rad live) |
+| 9 | `FUN_00163450` | 348.6, 66.3, 162.3, 2.0, 0.98, 0.96, 0.455 | handplant eye hold and blend back (+0x1e0, +0xb0, +0x2b8) |
+| 10 | `ApplyTargetHeight` | base 31.1, speed 0.375, slope 12.33, boost 10.59, smoothing 0.924 | lift = base + clamp01((v − 1388.9) × 5.1e-4) × 0.375 + boost × 10.59 + 12.33 × slot 18 |
+| 11 | `FUN_001635f8` | kick 1.811, air blend 2.495 s, amplitude 0.136, landing 0.854 | jump curves (splines 0-3) |
+| 12 | `FUN_00164878` | blend-out 1.527 s | air swing for drops (spline 4) |
+| 13 | `FUN_001646a0` | up 146.4, smoothing 0.97 | rail alignment offset +0xc0 (only while Railslide) |
+| 14 | `FUN_001641c0` | side 600, back 300, up 100, rate 0.98 | rail pull-back weighted by +0x214 |
+| 15 | `FUN_001643a8` | below 15 km/h (v cm/s × 0.036 = km/h), not airborne, not in Handplant; in 1.5 s, out 1.5 s | low-speed hold: look-at moves to the rider, distance halves toward +0x1a0 |
+
+Each step ends with `ChaseCameraAlgorithm_CheckDistanceReset`. Other leaf classes
+(DEFAULT_2/4, Idle, Mid, Lazy, ...) call the same steps with their own constant
+sets.
 
 ### Algorithm ids (`ChaseCamController_SetAlgorithm`)
 
@@ -257,12 +334,37 @@ slots are the clearest list of rider fields the camera depends on:
 
 ## Open questions
 
-- Meaning of most ChaseCameraAlgorithm filter fields (+0x1e4..+0x250) and of the
-  five tuning splines; `ApplyFollowDistance` etc. are named but not field-mapped.
-- ChaseCamController +0x30/+0x40 hold pointers, not flags, in the live object.
-- GameCamera +0x480 collision record.
+- Resolved in round 2: the +0x1d0..+0x250 filter fields, the five splines, the
+  tuning source (compiled-in constants), ChaseCamController +0x30 (flag bits with
+  stale upper bits) and +0x40 (unused), GameCamera +0x480 (intersect hint).
+- Still open: ChaseCameraAlgorithm +0x1d8 and +0x24c/+0x250 writers (probably
+  other leaf classes); the exact float-argument order of `FUN_00163450` (the
+  decompiler loses f15-f18); the 0..1 record block 0x4c5020..0x4c539c.
+- Need an airborne dump to confirm the jump-curve fields live (in the headless
+  frames 5000-5002 the player is grounded; only the landing decay was seen).
 - Split-screen: second GameCamera absent in the 1-player race, not inspected.
 
 ## Renames
 
 None in this group (the camera functions were already named by pass 2).
+
+### Proposed names (round 2, not applied: renames are owned by another agent)
+
+| address | proposed name | evidence | conf |
+|---|---|---|---|
+| 0x162998 | ChaseCameraAlgorithm_UpdateHandplantFade | +0x2c0 frame counter reset by the Handplant flag, writes `RiderCamState+0x48` | med |
+| 0x162a20 | ChaseCameraAlgorithm_UpdateAirTransitions | +0x2d4 was-airborne, +0x2d0 drop test, +0x2c4 = 15 at takeoff, +0x2cc frame stamp | med |
+| 0x162c78 | ChaseCameraAlgorithm_UpdateChaseHeading | 5-entry PID ring +0x340..+0x37c with gains +0x380..+0x388, updates +0x80 | high |
+| 0x163450 | ChaseCameraAlgorithm_ApplyHandplantHold | saves look-at − eye in +0xb0 during Handplant, eases back over +0x1e0 | med |
+| 0x1635f8 | ChaseCameraAlgorithm_ApplyJumpCurves | builds/evaluates splines +0x304..+0x328 | high |
+| 0x1641c0 | ChaseCameraAlgorithm_ApplyRailPullback | target slot 24 (rail flag) → +0x214, offsets the eye by (600, 300, 100) × weight | med |
+| 0x1643a8 | ChaseCameraAlgorithm_ApplyLowSpeedHold | state machine +0x300 / weight +0x248, triggers below 15 km/h (v × 0.036) | med |
+| 0x1646a0 | ChaseCameraAlgorithm_ApplyRailAlign | smooths an eye correction into +0xc0 while Railslide | med |
+| 0x164878 | ChaseCameraAlgorithm_ApplyAirSwing | spline +0x334, swing fields +0x22c..+0x244, +0x110..+0x180 | high |
+| 0x161950 | ChaseCamController_Reset | called by the ctor; sets ids to 0x3d, clears +0x34..+0x40, `+0x30 &= ~7` | high |
+| 0x15d020 | ChaseCamController_IsScriptCameraActive | flag bit 1 and +0x2c not 0x5d/0x3c | high |
+| 0x1298c8 | AI_GetFrameCount | returns `GameModule->AI+0x08` | high |
+| 0x167d88 / 0x167d98 / 0x167da8 | ChaseCameraAlgorithm_DefaultHeadingP / I / D | return gp constants stored into +0x380/+0x384/+0x388 | med |
+| 0x167db8 | ChaseCameraAlgorithm_ClearHeadingRing | fills the +0x340 ring (5 × error/output, zero integral) | high |
+| 0x336850 | World_SweepClosestHit | runs the world sweep (`FUN_00335d78`, 64 hits), keeps the closest (ties by object/poly order), copies the 0x80-byte hit, returns its fraction or −1 | med |
+| 0x32e100 | SweepQuery_Init | builds the sweep record (radius 0.5, from, to, flags 2) consumed by 0x336850 | low |
