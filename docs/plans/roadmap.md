@@ -79,6 +79,32 @@ Turn machine-shaped Rust into source a person can read and change.
 
 Done when: the subsystems in phase 3 have clear, typed interfaces.
 
+## Current order of work (owner decision, 2026-10-15)
+
+Phase 2 is not finished function by function before phase 3 starts. Phase 3
+only needs the game/hardware boundary understood and typed; inner code can stay
+generated. Order:
+
+1. **Finish the running OpenCode wave** (oc23-oc28), gate it (`cargo nextest`,
+   5 s per test), integrate what passes, replay, commit. No further bulk
+   OpenCode waves for now (OpenCode tokens are running low).
+2. **Name every remaining function** (~2,100 still `FUN_*` in Ghidra, 82%
+   named after pass 3): naming pass 4 with Ghidra; re-export
+   `generated/functions.tsv`; owner saves Ghidra.
+3. **Phase 3 groundwork:** a per-frame call graph and subsystem map
+   (rendering, files, sound, frame loop / threads), and **typed interfaces
+   for the boundary functions only** (where the game hands work to the
+   hardware: PS2GraphicsMan draw slots / packet builders / DMA kick, EAFile /
+   BigFile / CD, the SND API, GameModule / App frame loop). Inner code stays
+   generated.
+4. **Phase 3 subsystems**, one at a time, each checked against the emulated
+   path running side by side: files → `std::fs`, sound → native mixer, frame
+   loop → host timer, rendering → native draws (the 7 VU1 microprograms as
+   shaders or kept translated with only the GS replaced).
+
+Bulk phase 2 rewriting (typed function bodies) continues later as capacity
+allows (OpenCode waves, `phase2-worker-guide.md`).
+
 ## Phase 3: native port: move the boundary upward ⬜
 
 Replace hardware models with host implementations at the game's own
