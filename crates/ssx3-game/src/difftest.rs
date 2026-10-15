@@ -16,6 +16,9 @@ pub const RA: u32 = 0x0012_3450;
 
 /// A fresh CPU on a fresh machine, with `sp`/`ra` set and events off.
 pub fn fresh() -> Box<Cpu> {
+    // Indirect calls (virtual methods, function pointers) resolve through the
+    // generated function table.
+    ssx3_ee_rt::funcs::register_functions(&ssx3_ee::FUNCTIONS);
     let mut c = ssx3_ps2::new_cpu();
     c.g[29][0] = SP as u64;
     c.g[31][0] = RA as u64;
