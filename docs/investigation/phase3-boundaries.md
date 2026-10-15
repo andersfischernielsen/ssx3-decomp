@@ -273,6 +273,8 @@ Caller lists come from a scan of generated code for `gm(+0x10d8)` virtual calls 
 
 ### 4.4 Native replacement (proposal)
 
+The native renderer is wgpu (owner decision): both stages end in wgpu draws.
+
 1. **Stage 1:** override `Renderer_DmaKickThread` and `Renderer_SetDisplayRegs`. Hand the published chains `{vif1_ph1, gif_ph1, vif1_ph2, gif_ph2}` plus the phase-2 callback to a native consumer: today's VIF/VU1/GS path running in-process, or VU1 translated and only the GS replaced. Set buffer state 5 → 0 on present. The typed boundary is the chain-hand-off struct at gm+0x5a8c..+0x5ab4.
 2. **Stage 2:** intercept at `DeferMan` records plus `EmitMaterialSetup` (the material type gives the shader; the packet gives the vertex data). Or override the draw slots one at a time, starting with the DIRECT 2D slots 72-81 and the slot-71 strips, then 95/99. Texture residency stays in TexMan; replace `TexMan_BindTextures` uploads with host texture creation.
 

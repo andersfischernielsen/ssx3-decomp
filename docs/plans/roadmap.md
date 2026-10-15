@@ -113,6 +113,8 @@ interfaces, one subsystem at a time:
 - Rendering: hook the game's draw layer (meshes, textures, matrices) and issue
   wgpu draws directly, skipping VIF/VU/GS emulation (also removes the main
   performance cost). Allows higher resolutions, widescreen, frame rate.
+  wgpu is the graphics API for this (owner decision, 2026-10-15): the VU1
+  material types become wgpu shaders.
 - Files: the game's file layer → `std::fs` on extracted `DATA/`, skipping
   CD/SIF/IOP.
 - Audio: the game's sound API → a native mixer, skipping SPU2 emulation.
