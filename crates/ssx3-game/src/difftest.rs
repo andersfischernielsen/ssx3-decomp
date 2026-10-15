@@ -85,6 +85,10 @@ pub fn compare(generated: GuestFn, hand: GuestFn, setup: &dyn Fn(&mut Cpu)) -> R
             hard.push(format!("vf{r}: {va:x?} vs {vb:x?}"));
         }
     }
+    let (acc_a, acc_b) = (a.bus.plat.acc(), b.bus.plat.acc());
+    if acc_a != acc_b {
+        hard.push(format!("vu0 acc: {acc_a:x?} vs {acc_b:x?}"));
+    }
     for reg in 0..23u32 {
         let (x, y) = (a.bus.plat.read_ctrl(reg), b.bus.plat.read_ctrl(reg));
         if x != y {
@@ -231,6 +235,7 @@ pub fn scramble(c: &mut Cpu, r: &mut Rng) {
         let v = [r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()];
         c.bus.plat.set_vf(reg, v);
     }
+    c.bus.plat.set_acc([r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()]);
 }
 
 /// Fill `words` 32-bit words at `addr` with random values.

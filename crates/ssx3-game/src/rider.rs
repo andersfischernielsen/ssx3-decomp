@@ -76,8 +76,8 @@ pub fn build_world_matrix(c: &mut Cpu) {
         z: VuF32::msub(one - sx, one, sy),
         w: zero,
     };
-    // VU0 scratch registers as the original leaves them (ACC is not
-    // reproduced: nothing reads it and it can't be spilled without a move).
+    // VU0 scratch registers as the original leaves them (VU0 context savers
+    // can copy them, ACC included, to memory).
     let v = |x, y, z, w| Vec4 { x, y, z, w };
     vu0_scratch::set_vf(c, 1, 0b1110, v(one, one, one, zero));
     vu0_scratch::set_vf(c, 3, 0b1111, pos);
@@ -90,6 +90,8 @@ pub fn build_world_matrix(c: &mut Cpu) {
     vu0_scratch::set_vf(c, 11, 0b1111, row1);
     vu0_scratch::set_vf(c, 12, 0b1111, row2);
     vu0_scratch::set_q(c, inv);
+    // ACC as the last ADDAs leave it (x: 0+zx, y: 0+yz, z: 0+zx; w untouched).
+    vu0_scratch::set_acc(c, 0b1110, v(zero + zx, zero + yz, zero + zx, zero));
 
     m.write_vec4(c, row0);
     m.off(0x10).write_vec4(c, row1);

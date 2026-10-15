@@ -48,7 +48,12 @@ Scratch state counts too when it can reach memory: a later function may
 spill a VU0 register to its stack frame, so a replacement of VU0 code writes
 the final lanes of the VF registers (and Q) the original used as scratch
 (`ps2f::vu0_scratch`). The first replacement differed in exactly one stack
-word until it did this. ACC and the MAC/status flags are not reproduced yet.
+word until it did this. ACC is reproduced too (`vu0_scratch::set_acc`;
+`Vu0::acc/set_acc`): `VU0_SaveContext` and the sound thread's
+`SND_SaveVu0Context` copy ACC (and Q, MAC, status) to memory, so a thread
+switch at an event point could expose it. `difftest` scrambles and compares
+ACC as hard state. The MAC/status flags are still soft (they can't be written
+through the interface).
 
 Helpers: `abi` (arguments, return), `guest::Addr` (typed loads/stores through
 the bus), `ps2f` (`VuF32`, `Vec4`), struct views such as `rider::Rider`

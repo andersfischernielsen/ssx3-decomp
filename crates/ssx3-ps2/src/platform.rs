@@ -159,6 +159,12 @@ macro_rules! impl_vu0 {
             fn set_vf(&mut self, r: usize, v: [u32; 4]) {
                 self.hw.vu0.vf[r] = v;
             }
+            fn acc(&self) -> [u32; 4] {
+                self.hw.vu0.acc
+            }
+            fn set_acc(&mut self, v: [u32; 4]) {
+                self.hw.vu0.acc = v;
+            }
             fn read_ctrl(&mut self, reg: u32) -> u32 {
                 self.hw.vu0.read_ctrl(reg)
             }

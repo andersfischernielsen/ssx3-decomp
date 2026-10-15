@@ -384,6 +384,17 @@ pub fn update_matrices(c: &mut Cpu) {
         vu0_scratch::set_vf(c, 4 + i, 0b1111, *row);
     }
     vu0_scratch::set_vf(c, 8, 0b1111, neg_eye);
+    // ACC as the final MULA/MADDA/MADDA chain leaves it: the translation
+    // before its w term (m0*-ex + m1*-ey + m2*-ez, one rounding per step).
+    let lane = |i: usize, v: Vec4| [v.x, v.y, v.z, v.w][i];
+    let acc: Vec<VuF32> = (0..4)
+        .map(|i| {
+            let a = lane(i, m[0]) * neg_eye.x;
+            let a = VuF32::madd(a, lane(i, m[1]), neg_eye.y);
+            VuF32::madd(a, lane(i, m[2]), neg_eye.z)
+        })
+        .collect();
+    vu0_scratch::set_acc(c, 0b1111, Vec4 { x: acc[0], y: acc[1], z: acc[2], w: acc[3] });
     vu0_scratch::set_vf(c, 9, 0b1111, rows[1]);
     vu0_scratch::set_vf(c, 10, 0b1111, rows[2]);
     vu0_scratch::set_vf(c, 11, 0b1111, rows[3]);

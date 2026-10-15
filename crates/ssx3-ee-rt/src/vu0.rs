@@ -162,6 +162,13 @@ macro_rules! declare_vu0 {
             /// VF register `r` as raw float bits (x, y, z, w).
             fn vf(&self, r: usize) -> [u32; 4];
             fn set_vf(&mut self, r: usize, v: [u32; 4]);
+            /// The FMAC accumulator ACC (x, y, z, w). Not visible to EE code
+            /// directly, but VU0 context savers copy it to memory, so
+            /// hand-written replacements reproduce it.
+            fn acc(&self) -> [u32; 4] {
+                [0; 4]
+            }
+            fn set_acc(&mut self, _v: [u32; 4]) {}
             /// cfc2 / ctc2 control registers.
             fn read_ctrl(&mut self, reg: u32) -> u32;
             fn write_ctrl(&mut self, reg: u32, val: u32);

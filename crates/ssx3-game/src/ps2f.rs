@@ -253,6 +253,18 @@ pub mod vu0_scratch {
         c.bus.plat.set_vf(reg, cur);
     }
 
+    /// The accumulator ACC (only the lanes in `dest` are written).
+    pub fn set_acc(c: &mut Cpu, dest: u8, v: Vec4) {
+        let mut cur = c.bus.plat.acc();
+        let new = [v.x.0, v.y.0, v.z.0, v.w.0];
+        for (l, lane) in cur.iter_mut().enumerate() {
+            if dest & (8 >> l) != 0 {
+                *lane = new[l];
+            }
+        }
+        c.bus.plat.set_acc(cur);
+    }
+
     /// The Q register (VI22).
     pub fn set_q(c: &mut Cpu, q: super::VuF32) {
         c.bus.plat.write_ctrl(22, q.0);
