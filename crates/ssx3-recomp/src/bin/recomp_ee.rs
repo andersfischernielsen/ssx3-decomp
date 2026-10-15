@@ -228,11 +228,7 @@ fn main() {
         })
         .collect();
     for a in &overrides {
-        let f = funcs.iter().find(|f| f.start == *a).unwrap_or_else(|| panic!("override {a:#x}: no function starts there"));
-        assert!(
-            external.range(f.start + 1..f.end).next().is_none(),
-            "override {a:#x}: the function has external mid-function entries (not supported)"
-        );
+        assert!(funcs.iter().any(|f| f.start == *a), "override {a:#x}: no function starts there");
     }
     let out_root = root.join("generated/ee");
     // Keep existing shard crates (files are only rewritten when their
@@ -295,9 +291,20 @@ fn main() {
                 assert!(body.contains(&def), "override {:#x}: definition not found", f.start);
                 code.push_str(&body.replacen(&def, &format!("pub fn {name}__generated(c: &mut Cpu)"), 1));
                 let slot = format!("OVERRIDE_{:08X}", f.start);
+                // Functions entered mid-way from outside (resume points,
+                // computed jumps) keep those entries in the generated
+                // `__entries` twin; only entries at the start reach the slot.
+                let mid = if external.range(f.start + 1..f.end).next().is_some() {
+                    format!(
+                        "    // Entries other than the start run the generated code.\n    if c.pc != {:#010x} {{\n        return {name}__entries(c);\n    }}\n",
+                        f.start
+                    )
+                } else {
+                    String::new()
+                };
                 let _ = writeln!(
                     code,
-                    "/// Slot for the hand-written replacement of `{name}` (crates/ssx3-game), set\n/// once at boot before any guest code runs. Default: the generated body.\npub static mut {slot}: fn(&mut Cpu) = {name}__generated;\n\n#[inline(never)]\npub fn {name}(c: &mut Cpu) {{\n    // SAFETY: written only during single-threaded startup.\n    unsafe {{ {slot}(c) }}\n}}\n"
+                    "/// Slot for the hand-written replacement of `{name}` (crates/ssx3-game), set\n/// once at boot before any guest code runs. Default: the generated body.\npub static mut {slot}: fn(&mut Cpu) = {name}__generated;\n\n#[inline(never)]\npub fn {name}(c: &mut Cpu) {{\n{mid}    // SAFETY: written only during single-threaded startup.\n    unsafe {{ {slot}(c) }}\n}}\n"
                 );
             }
         }

@@ -23,8 +23,10 @@ running and every step is checked by byte-identical replays.
   Editing hand-written code rebuilds `ssx3-game` and relinks; adding an entry
   to `overrides.txt` regenerates one shard plus the table crate (~20 s
   rebuild).
-- Not supported: functions with external mid-function entries (an
-  `f_X__entries` twin); `recomp-ee` refuses them.
+- Functions with external mid-function entries (an `f_X__entries` twin:
+  resume points, computed jumps into the body) can be replaced too: the stub
+  sends any entry other than the start (`c.pc != start`) to the generated
+  twin, so the replacement only has to handle calls to the function start.
 
 ## Contract for a replacement
 
