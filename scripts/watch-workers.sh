@@ -12,11 +12,11 @@ while true; do
   now=$(date +%s)
   for t in $running; do
     log="${t#delegate:}.log"; [[ -f $log ]] || continue
-    if tail -c 4000 "$log" | grep -qiE 'rate.?limit|quota|insufficient|out of (tokens|credits)|model unavailable|429|usage limit|billing'; then
-      echo "ERROR in $log:"; tail -c 600 "$log" | grep -iE 'rate.?limit|quota|insufficient|tokens|credits|unavailable|429|usage|billing' | tail -3; exit 2
+    if tail -c 4000 "$log" | grep -qiE 'rate.?limit|quota exceeded|insufficient (credit|balance|quota)|out of (tokens|credits)|model unavailable|(http|status|error)[^0-9]{0,3}429|too many requests|usage limit|billing'; then
+      echo "ERROR in $log:"; tail -c 600 "$log" | grep -iE 'rate.?limit|quota|insufficient|out of|unavailable|429|too many|usage limit|billing' | tail -3; exit 2
     fi
     s=$(stat -f %z "$log")
-    read -r old t0 < "$state/$log" 2>/dev/null || { old=""; t0=$now; }
+    if [[ -f "$state/$log" ]]; then read -r old t0 < "$state/$log"; else old=""; t0=$now; fi
     if [[ "$old" != "$s" ]]; then echo "$s $now" > "$state/$log"
     elif (( now - t0 > stall )); then echo "STALLED $log (no output for $((now - t0)) s)"; exit 3; fi
   done
