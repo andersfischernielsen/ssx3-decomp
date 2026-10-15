@@ -21,5 +21,16 @@ pub mod r5900;
 pub mod structure;
 pub mod symbols;
 
+/// Write `contents` to `path` only if it differs from what is there. Cargo
+/// decides what to rebuild by file mtime, so regenerating identical output
+/// (or output where only some shards changed) must not touch the other files.
+pub fn write_if_changed(path: impl AsRef<std::path::Path>, contents: impl AsRef<[u8]>) -> std::io::Result<()> {
+    let (path, contents) = (path.as_ref(), contents.as_ref());
+    if std::fs::read(path).is_ok_and(|old| old == contents) {
+        return Ok(());
+    }
+    std::fs::write(path, contents)
+}
+
 pub use boundaries::boundaries;
 pub use symbols::{index, Function, FunctionIndex};

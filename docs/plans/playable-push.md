@@ -13,9 +13,12 @@ possible in one long unattended session. Milestones, in order:
 
 Full static recompilation, no interpreter: EE code via `recomp-ee` (structured
 Rust), VU microcode via `vu_recomp` (`generated/vu`), IOP modules via
-`recomp-iop`. `crates/ssx3-ps2` provides only hardware and firmware (HLE kernel,
-DMAC/INTC/timers, VIF/VU runtime, GS (CPU or wgpu), IPU, SIF/IOP bridge). See
-`docs/architecture.md`. The original "interpreter-first" plan was abandoned
+`recomp-iop`. Generated EE code is compiled against the small core
+`crates/ssx3-ee-rt` (Cpu, instruction semantics, RAM); `crates/ssx3-ps2`
+provides only hardware and firmware (HLE kernel, DMAC/INTC/timers, VIF, GS (CPU
+or wgpu), IPU, SIF/IOP bridge) behind its `Platform` trait, and `crates/ssx3-vu`
+the VUs and their translated microcode. See `docs/architecture.md` and
+`docs/investigation/crate-split.md`. The original "interpreter-first" plan was abandoned
 on night one (see the log below).
 
 ## Status log
@@ -172,19 +175,24 @@ on night one (see the log below).
   headless (more geometry is drawn now; VU1 + EE bound). `SSX3_MTGS=0` gives
   byte-identical shots to frame 12000 (MTGS deterministic).
 
+- **Build-time split (2026-10-15, `crate-split.md`)**: generated EE crates
+  now depend only on `ssx3-ee-rt` (Cpu, semantics, RAM fast paths, function
+  table, `Platform`/`Vu0`/`Hooks` interfaces); `ssx3-ps2` is the `Machine`
+  behind `dyn Platform`; the VU and its translated microcode moved to
+  `ssx3-vu`. Game rebuild after a GS or kernel change: 129-344 s → **3 s**
+  (only `ssx3-ps2` + link); VU change 342 s → ~155 s; IOP change ~5-19 s.
+  Generated output is identical apart from the API spellings; all 18
+  screenshots byte-identical; race 4320-4680 ~38-40 fps for both builds back
+  to back. `recomp-ee` only rewrites changed shard files.
+
 ## Next steps (as of 2026-10-15 early morning)
 
 Done: race geometry (`race-geometry.md`), MTGS (`gs-mtgs.md`), full race to
 results, all VU0 macro ops static. Long-term phases: `roadmap.md`.
 
-1. **Build-time split** (now; no agents running): every `ssx3-ps2` change
-   recompiles all ~79 MB of generated EE crates (2–5 min with 3 jobs, >10 min
-   when agents build concurrently). Split a small, stable core crate (Cpu
-   registers, FPU/MMI/COP2 semantics, memory access) that generated code
-   depends on; GS/VU/VIF/DMA/kernel move behind a narrow interface it calls
-   (MMIO, syscalls, COP2/VU0), so hardware-model changes only rebuild that
-   crate and relink. Also consider lower opt-level for generated crates in dev
-   and a shared sccache for worktree agents.
+1. ~~Build-time split~~ done (`crate-split.md`). Still open: a shared
+   sccache for worktree agents (each worktree still compiles the generated
+   crates once).
 2. **60 fps again**: with the geometry fixes more is drawn and races run ~41
    fps headless (80 before). Guest-bound: VU1 microcode on ee-thread-6, then EE
    code. Profile and optimise (VU1 is serial with the EE thread; consider
@@ -202,7 +210,7 @@ results, all VU0 macro ops static. Long-term phases: `roadmap.md`.
 ```sh
 tools/bootstrap.sh                                   # fresh checkout: stub crates, then recomp-ee/iop
 cargo run --release -p ssx3-recomp --bin recomp-ee   # regenerate generated/ee (+ IOP modules)
-cargo build --profile game -p ssx3                   # ~5 min after a platform change (all EE crates)
+cargo build --profile game -p ssx3                   # ~8 min clean; GS/kernel change ~3 s, VU ~2.5 min, core/regen recompiles EE crates
 tools/run-headless.sh 2400 --shot-every 100          # screenshots → /tmp/ssx3-shots (SSX3_SHOTS=dir)
 SSX3_INPUT="1600:0008:8,2000:4000:8,2500:4000:8,2700:4000:8,2900:4000:8,3100:4000:8,3300:4000:8,3500:4000:8,3700:4000:8,4250:4000:8,4600:4000:3000" \
   ./target/game/ssx3-headless 9000 --shot-every 500  # scripted path into a race, holding Cross
@@ -216,6 +224,8 @@ Runtime misses are appended to `generated/entries.txt` automatically; rerun
 `recomp-ee` after a miss. Debug env: `SSX3_TRACE_SIF`, `SSX3_TRACE_SYSCALLS`,
 `SSX3_TRACE_THREADS`, `SSX3_TRACE_PATH3`, `SSX3_VRAM_DUMP`, `SSX3_GS_CAPTURE`
 (+ `gs_replay`), `SSX3_VU_CAPTURE` (+ `vu_diff`), `SSX3_SKIP_MOVIES`, `SSX3_GS=cpu`.
-Machine limits: worktree agents each build all generated crates; use
+Machine limits: worktree agents each build all generated crates once (after
+that, hardware changes no longer recompile them); use
 `CARGO_BUILD_JOBS=3 nice -n 10`, at most two heavy builds at once, and delete
-finished worktrees' `target/`.
+finished worktrees' `target/`. Keep `ssx3-ee-rt` stable: any change there
+recompiles all generated EE code (`crate-split.md`).

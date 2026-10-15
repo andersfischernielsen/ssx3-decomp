@@ -2,10 +2,10 @@
 //! are no infinities or NaNs (exponent 255 is an ordinary large number), and
 //! denormals are flushed to zero. Overflowing results clamp to ±`0x7f7fffff`.
 //! Rounding is toward zero; arithmetic shares the bit-exact integer routines in
-//! `vu::float` (ported from ps2-web-recomp `fpu.hpp`, MIT).
+//! `float` (ported from ps2-web-recomp `fpu.hpp`, MIT).
 
 use crate::cpu::{sx, Cpu};
-use crate::vu::float as F;
+use crate::float as F;
 
 /// Total order used by PS2 compares: sign-magnitude as an integer, denormals
 /// read as zero (ps2-web-recomp `fp::key`).
@@ -180,7 +180,7 @@ mod tests {
 
     #[test]
     fn cvt_saturates() {
-        let mut c = Cpu::new();
+        let mut c = Cpu::detached();
         c.f[1] = (-3.7f32).to_bits();
         c.cvt_w_s(2, 1);
         assert_eq!(c.f[2] as i32, -3);

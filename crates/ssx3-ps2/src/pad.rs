@@ -28,7 +28,7 @@ pub struct OpenPort {
 pub fn rpc(c: &mut Cpu, method: u32, args: u32, _ssize: u32, ret: u32, rsize: u32) -> bool {
     let w = |c: &mut Cpu, i: u32| c.bus.ram_u32(args + 4 * i);
     let cmd = w(c, 0);
-    if c.sif.trace {
+    if m!(c).sif.trace {
         eprintln!("[pad] fn {method:#x} cmd {cmd:#x}");
     }
     // Default reply: echo the request and report success in word 3.
@@ -40,8 +40,8 @@ pub fn rpc(c: &mut Cpu, method: u32, args: u32, _ssize: u32, ret: u32, rsize: u3
         // Open: [1]=port [2]=slot [4]=buffer.
         0x01 => {
             let p = OpenPort { port: w(c, 1), slot: w(c, 2), buf: w(c, 4) & 0x01FF_FFFF };
-            c.sif.pads.retain(|o| !(o.port == p.port && o.slot == p.slot));
-            c.sif.pads.push(p);
+            m!(c).sif.pads.retain(|o| !(o.port == p.port && o.slot == p.slot));
+            m!(c).sif.pads.push(p);
             eprintln!("[pad] open port {} slot {} buffer {:#x}", p.port, p.slot, p.buf);
             refresh(c);
             1
@@ -62,16 +62,16 @@ pub fn rpc(c: &mut Cpu, method: u32, args: u32, _ssize: u32, ret: u32, rsize: u3
 
 /// Write the current host input into every open pad buffer (called per VBlank).
 pub fn refresh(c: &mut Cpu) {
-    c.sif.pad_frame = c.sif.pad_frame.wrapping_add(1);
-    let frame = c.sif.pad_frame;
-    let pads = c.sif.pads.clone();
+    m!(c).sif.pad_frame = m!(c).sif.pad_frame.wrapping_add(1);
+    let frame = m!(c).sif.pad_frame;
+    let pads = m!(c).sif.pads.clone();
     for p in pads {
-        let buttons = !c.sif.pad_buttons[(p.port & 1) as usize];
+        let buttons = !m!(c).sif.pad_buttons[(p.port & 1) as usize];
         let mut d = [0u8; 0x80];
         d[0] = 0;
         d[1] = 0x73;
         d[2..4].copy_from_slice(&buttons.to_le_bytes());
-        d[4..8].copy_from_slice(&c.sif.pad_sticks[(p.port & 1) as usize]);
+        d[4..8].copy_from_slice(&m!(c).sif.pad_sticks[(p.port & 1) as usize]);
         d[0x58..0x5c].copy_from_slice(&frame.to_le_bytes());
         d[0x60..0x64].copy_from_slice(&32u32.to_le_bytes());
         d[0x64] = 2; // modeConfig: mode table available
@@ -93,7 +93,7 @@ pub fn refresh(c: &mut Cpu) {
 
 /// Host input: set or clear a button (libpad bit layout, active-high here).
 pub fn set_button(c: &mut Cpu, port: usize, bit: u16, pressed: bool) {
-    let b = &mut c.sif.pad_buttons[port & 1];
+    let b = &mut m!(c).sif.pad_buttons[port & 1];
     if pressed {
         *b |= bit;
     } else {
@@ -103,5 +103,5 @@ pub fn set_button(c: &mut Cpu, port: usize, bit: u16, pressed: bool) {
 
 /// Host input: an analog stick axis (`axis` 0..4 = rx, ry, lx, ly; 0x80 = centre).
 pub fn set_stick(c: &mut Cpu, port: usize, axis: usize, value: u8) {
-    c.sif.pad_sticks[port & 1][axis & 3] = value;
+    m!(c).sif.pad_sticks[port & 1][axis & 3] = value;
 }

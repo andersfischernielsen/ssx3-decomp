@@ -661,8 +661,8 @@ pub fn generate_from_disc(iso: &std::path::Path, out: &std::path::Path) -> Resul
     let o = generate(&mods);
     std::fs::create_dir_all(out.join("src")).map_err(|e| e.to_string())?;
     let toml = "[package]\nname = \"ssx3-iop-gen\"\nversion = \"0.1.0\"\nedition = \"2021\"\npublish = false\n\n[lib]\npath = \"src/lib.rs\"\n\n[dependencies]\nssx3-iop = { path = \"../../../crates/ssx3-iop\" }\n";
-    std::fs::write(out.join("Cargo.toml"), toml).map_err(|e| e.to_string())?;
-    std::fs::write(out.join("src/lib.rs"), &o.code).map_err(|e| e.to_string())?;
-    std::fs::write(out.join("report.txt"), &o.report).map_err(|e| e.to_string())?;
+    crate::write_if_changed(out.join("Cargo.toml"), toml).map_err(|e| e.to_string())?;
+    crate::write_if_changed(out.join("src/lib.rs"), &o.code).map_err(|e| e.to_string())?;
+    crate::write_if_changed(out.join("report.txt"), &o.report).map_err(|e| e.to_string())?;
     Ok(o)
 }

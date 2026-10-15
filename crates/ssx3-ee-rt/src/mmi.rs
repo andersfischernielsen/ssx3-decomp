@@ -524,7 +524,7 @@ mod tests {
     use super::*;
 
     fn cpu() -> Box<Cpu> {
-        Cpu::new()
+        Cpu::detached()
     }
 
     #[test]

@@ -45,7 +45,10 @@ Headless runs, scripted input and the debug switches are documented in
 | crate | role |
 | --- | --- |
 | `ssx3-recomp` | Function inventory and boundaries (from Ghidra), the R5900 decoder, and **`recomp-ee`**. The generator lowers all ~808k instructions in 13.3k functions to **structured Rust**: 97% of functions become `if`/`loop` code with no `pc` variable, and the rest use block dispatch. Output is sharded into 16 crates under `generated/ee/`; see [`docs/investigation/recompiler-v2.md`](docs/investigation/recompiler-v2.md). `recomp-iop` does the same for the game's IOP modules (sound, controller, memory card; see [`docs/investigation/sio2-memcard.md`](docs/investigation/sio2-memcard.md)). |
-| `ssx3-ps2` | The platform layer: instruction semantics (128-bit GPRs, MMI, bit-exact FPU, COP2), the bus and MMIO, DMAC, timers and INTC, the HLE EE kernel (threads, semaphores, handlers, alarms), SIF with the IOP services (loadfile, fileio, cdvdfsv, padman, EA SNDDRV protocol), VIF/VU (VU microcode is statically translated in `generated/vu/`), GS (software rasterizer), and IPU (MPEG). |
+| `ssx3-ee-rt` | The EE core that generated code is compiled against: `Cpu` (128-bit GPRs, HI/LO, FPU, COP0), instruction semantics (MMI, bit-exact FPU, COP2 moves, PS2 float), guest RAM/scratchpad, the function table, and the `Platform` trait behind which the hardware sits. Kept small and stable so hardware changes never recompile generated code ([`docs/investigation/crate-split.md`](docs/investigation/crate-split.md)). |
+| `ssx3-vu` | VU0/VU1: register file, pipeline/timing model, the translated-code fast path, the microcode translator, and the statically translated microcode (`generated/vu/`). Used as `ssx3_ps2::vu`. |
+| `ssx3-ps2` | The platform layer (`Machine`): MMIO, DMAC, timers and INTC, the HLE EE kernel (threads, semaphores, handlers, alarms), SIF with the IOP services (loadfile, fileio, cdvdfsv, padman, EA SNDDRV protocol), VIF, GS (GPU or software rasterizer, on its own thread), and IPU (MPEG). |
+| `ssx3-iop` | The IOP runtime for the recompiled IRX modules: IOP kernel, SPU2 audio, SIO2 with pad and memory card. |
 | `ssx3` | Front ends: the windowed `ssx3` (winit + wgpu) and `ssx3-headless` (scripted input, screenshots, diagnostics). |
 | `ssx3-core`, `ssx3-gs`, `ssx3-runtime` | Earlier scaffolding (memory model, first codegen); superseded by the above. |
 
@@ -136,5 +139,5 @@ Findings are recorded under [`docs/investigation/`](docs/investigation/): the bo
 ## Tests
 
 ```sh
-cargo test -p ssx3-ps2 -p ssx3-recomp -p ssx3-core
+cargo test -p ssx3-ee-rt -p ssx3-vu -p ssx3-ps2 -p ssx3-recomp -p ssx3-iop -p ssx3-core
 ```

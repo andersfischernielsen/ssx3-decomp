@@ -65,7 +65,7 @@ pub fn enabled() -> bool {
 }
 
 fn ensure(c: &mut Cpu) {
-    if c.sif.iop.is_some() {
+    if m!(c).sif.iop.is_some() {
         return;
     }
     let mut iop = Iop::new();
@@ -73,24 +73,24 @@ fn ensure(c: &mut Cpu) {
     iop.spu.next_tick = iop.cycles + ssx3_iop::spu2::BATCH as u64 * ssx3_iop::spu2::CYCLES_PER_SAMPLE;
     iop.spu.sink = Some(ssx3_iop::audio::Sink::from_env());
     eprintln!("[iop] recompiled IOP enabled (the game's IRX modules run as translated code)");
-    c.sif.iop = Some(Box::new(IopSide { iop, syncs: 0, expected_servers: Vec::new() }));
+    m!(c).sif.iop = Some(Box::new(IopSide { iop, syncs: 0, expected_servers: Vec::new() }));
 }
 
 /// Run `f` with the IOP owning IOP RAM.
 fn with_iop<R>(c: &mut Cpu, f: impl FnOnce(&mut Iop) -> R) -> Option<R> {
-    let mut side = c.sif.iop.take()?;
-    std::mem::swap(&mut c.bus.iop, &mut side.iop.ram);
+    let mut side = m!(c).sif.iop.take()?;
+    std::mem::swap(&mut m!(c).iop, &mut side.iop.ram);
     side.iop.ee_ram = c.bus.ram.as_ptr();
     side.iop.ee_ram_len = c.bus.ram.len();
     for (i, pad) in side.iop.sio2.pads.iter_mut().enumerate().take(2) {
-        pad.buttons = c.sif.pad_buttons[i];
-        pad.sticks = c.sif.pad_sticks[i];
+        pad.buttons = m!(c).sif.pad_buttons[i];
+        pad.sticks = m!(c).sif.pad_sticks[i];
     }
     let r = f(&mut side.iop);
     side.iop.ee_ram = std::ptr::null();
-    std::mem::swap(&mut c.bus.iop, &mut side.iop.ram);
+    std::mem::swap(&mut m!(c).iop, &mut side.iop.ram);
     flush(c, &mut side.iop);
-    c.sif.iop = Some(side);
+    m!(c).sif.iop = Some(side);
     Some(r)
 }
 
@@ -118,7 +118,7 @@ pub fn load_module(c: &mut Cpu, path: &str) -> Option<(u32, u32)> {
         return None;
     }
     let bytes = {
-        let d = c.sif.disc.as_mut()?;
+        let d = m!(c).sif.disc.as_mut()?;
         let e = d.find(path)?;
         let mut v = d.read_vec(e.sector, e.size.div_ceil(SECTOR as u32));
         v.truncate(e.size as usize);
@@ -126,7 +126,7 @@ pub fn load_module(c: &mut Cpu, path: &str) -> Option<(u32, u32)> {
     };
     ensure(c);
     if name == "SIO2MAN" {
-        let side = c.sif.iop.as_mut().unwrap();
+        let side = m!(c).sif.iop.as_mut().unwrap();
         if side.iop.sio2.card.is_none() {
             side.iop.sio2.card = ssx3_iop::memcard::MemoryCard::from_env();
         }
@@ -149,7 +149,7 @@ pub fn load_module(c: &mut Cpu, path: &str) -> Option<(u32, u32)> {
     match r {
         Ok((id, res)) => {
             if let Some((_, ids)) = MODULE_SERVERS.iter().find(|(m, _)| *m == name) {
-                c.sif.iop.as_mut().unwrap().expected_servers.extend_from_slice(ids);
+                m!(c).sif.iop.as_mut().unwrap().expected_servers.extend_from_slice(ids);
             }
             Some((id as u32 + 100, res))
         }
@@ -164,7 +164,7 @@ pub fn load_module(c: &mut Cpu, path: &str) -> Option<(u32, u32)> {
 /// takes the command. `w` are the first 14 packet words, `data_addr` the EE
 /// address of the last RPC send data, `src` the EE address of the packet.
 pub fn command(c: &mut Cpu, w: &[u32], data_addr: u32, src: u32) -> bool {
-    let Some(side) = c.sif.iop.as_mut() else { return false };
+    let Some(side) = m!(c).sif.iop.as_mut() else { return false };
     if side.iop.halted.is_some() {
         return false;
     }
@@ -186,7 +186,7 @@ pub fn command(c: &mut Cpu, w: &[u32], data_addr: u32, src: u32) -> bool {
             let mut words = [0u32; 14];
             words.copy_from_slice(&w[..14]);
             side.iop.sif.incoming.push_back(Incoming::Bind { words });
-            if c.sif.trace {
+            if m!(c).sif.trace {
                 eprintln!("[iop-bridge] bind {server:#x} queued for the IOP");
             }
             c.next_event = c.cycles;
@@ -201,11 +201,11 @@ pub fn command(c: &mut Cpu, w: &[u32], data_addr: u32, src: u32) -> bool {
             let mut words = [0u32; 14];
             words.copy_from_slice(&w[..14]);
             let data = if ssize > 0 { c.bus.read_bytes(data_addr & 0x01FF_FFFF, ssize) } else { Vec::new() };
-            if c.sif.trace {
+            if m!(c).sif.trace {
                 let ws: Vec<String> = data.chunks(4).take(12).map(|b| format!("{:08x}", u32::from_le_bytes(b.try_into().unwrap()))).collect();
                 eprintln!("[iop-bridge] call {server:#x} fn {:#x} send {ssize} recv {:#x}/{}: {}", w[8], w[10], w[11], ws.join(" "));
             }
-            let side = c.sif.iop.as_mut().unwrap();
+            let side = m!(c).sif.iop.as_mut().unwrap();
             side.iop.sif.incoming.push_back(Incoming::Call { words, data });
             c.next_event = c.cycles;
             true
@@ -216,11 +216,11 @@ pub fn command(c: &mut Cpu, w: &[u32], data_addr: u32, src: u32) -> bool {
             }
             let psize = ((w[0] & 0xFF) as usize).clamp(16, 0x70);
             let packet = c.bus.read_bytes(src & 0x01FF_FFFF, psize);
-            if c.sif.trace {
+            if m!(c).sif.trace {
                 let ws: Vec<String> = packet.chunks(4).map(|b| format!("{:08x}", u32::from_le_bytes(b.try_into().unwrap()))).collect();
                 eprintln!("[iop-bridge] user cmd {cid:#x}: {}", ws.join(" "));
             }
-            let side = c.sif.iop.as_mut().unwrap();
+            let side = m!(c).sif.iop.as_mut().unwrap();
             side.iop.sif.incoming.push_back(Incoming::UserCmd { cid, packet });
             c.next_event = c.cycles;
             true
@@ -232,7 +232,7 @@ pub fn command(c: &mut Cpu, w: &[u32], data_addr: u32, src: u32) -> bool {
 /// EE VBlank start: the IOP's vblank.irx handlers run at its next service
 /// point (called from `sif::vblank`).
 pub fn vblank(c: &mut Cpu) {
-    if let Some(side) = c.sif.iop.as_mut() {
+    if let Some(side) = m!(c).sif.iop.as_mut() {
         if !side.iop.k.vblank.is_empty() {
             side.iop.vblank_pending += 1;
         }
@@ -242,7 +242,7 @@ pub fn vblank(c: &mut Cpu) {
 /// Run the IOP up to the EE's clock (EE cycles / 8). Called from the EE event
 /// service (`machine::service_events`).
 pub fn sync(c: &mut Cpu) {
-    let Some(side) = c.sif.iop.as_mut() else { return };
+    let Some(side) = m!(c).sif.iop.as_mut() else { return };
     let target = c.cycles / 8;
     if side.iop.halted.is_some() || target <= side.iop.cycles && side.iop.sif.incoming.is_empty() && side.iop.vblank_pending == 0 {
         return;
@@ -256,7 +256,7 @@ pub fn sync(c: &mut Cpu) {
 
 /// One-line IOP status for the front ends.
 pub fn status(c: &Cpu) -> Option<String> {
-    let side = c.sif.iop.as_ref()?;
+    let side = mr!(c).sif.iop.as_ref()?;
     let i = &side.iop;
     let threads: Vec<String> = i
         .k
@@ -281,7 +281,7 @@ pub fn status(c: &Cpu) -> Option<String> {
 
 /// Flush audio capture (WAV) at shutdown.
 pub fn shutdown(c: &mut Cpu) {
-    if let Some(side) = c.sif.iop.as_mut() {
+    if let Some(side) = m!(c).sif.iop.as_mut() {
         if let Some(s) = side.iop.spu.sink.as_mut() {
             s.flush();
         }

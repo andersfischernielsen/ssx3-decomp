@@ -44,8 +44,8 @@ the owner's machine at full speed. Progress log and resume instructions:
 - ⬜ Coverage: play every course, mode (career/progression, freestyle,
   replays, other events), menu and option once, so every reachable function
   has run at least once; fix whatever breaks.
-- ⬜ Build times: split `ssx3-ps2` so generated code depends only on a small
-  stable core (see `playable-push.md` next steps).
+- ✅ Build times (`../investigation/crate-split.md`): generated code depends only
+  on `ssx3-ee-rt`; GS/kernel changes rebuild in seconds, VU in ~2.5 min.
 
 Done when: all courses and modes play correctly at 60 fps natively, with no
 misses, and visuals match PCSX2.

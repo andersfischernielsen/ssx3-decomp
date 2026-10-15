@@ -7,8 +7,8 @@ set -e
 cd "$(dirname "$0")/.."
 if [ ! -f generated/ee/game/Cargo.toml ]; then
   mkdir -p generated/ee/game/src
-  printf '[package]\nname = "ssx3-ee"\nversion = "0.1.0"\nedition = "2021"\npublish = false\n\n[dependencies]\nssx3-ps2 = { path = "../../../crates/ssx3-ps2" }\n' > generated/ee/game/Cargo.toml
-  printf 'pub static FUNCTIONS: [ssx3_ps2::machine::FnEntry; 0] = [];\npub const HOST_THREADS: bool = false;\n' > generated/ee/game/src/lib.rs
+  printf '[package]\nname = "ssx3-ee"\nversion = "0.1.0"\nedition = "2021"\npublish = false\n\n[dependencies]\nssx3-ee-rt = { path = "../../../crates/ssx3-ee-rt" }\n' > generated/ee/game/Cargo.toml
+  printf 'pub static FUNCTIONS: [ssx3_ee_rt::funcs::FnEntry; 0] = [];\npub const HOST_THREADS: bool = false;\n' > generated/ee/game/src/lib.rs
 fi
 if [ ! -f generated/iop/modules/Cargo.toml ]; then
   mkdir -p generated/iop/modules/src

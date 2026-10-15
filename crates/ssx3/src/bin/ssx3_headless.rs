@@ -62,7 +62,7 @@ fn main() {
     for f in 1..=frames {
         for (start, _, _) in &captures {
             if f == *start {
-                c.bus.hw.gs.core().start_capture();
+                ssx3_ps2::m!(c).hw.gs.core().start_capture();
             }
         }
         let mut held = [0u16; 2];
@@ -71,7 +71,7 @@ fn main() {
                 held[*pad] |= bits;
             }
         }
-        c.sif.pad_buttons = held;
+        ssx3_ps2::m!(c).sif.pad_buttons = held;
         ssx3_ps2::vu::capture::set_frame(f);
         let alive = ssx3_ps2::machine::run_frame(&mut c);
         if ssx3_ps2::gifstats::enabled() && f % 50 == 0 {
@@ -80,7 +80,7 @@ fn main() {
         }
         for (start, n, path) in &captures {
             if f + 1 == start + n || (!alive && f >= *start && f < start + n) {
-                let trace = c.bus.hw.gs.core().finish_capture();
+                let trace = ssx3_ps2::m!(c).hw.gs.core().finish_capture();
                 match std::fs::write(path, &trace) {
                     Ok(()) => eprintln!("gs capture: frames {start}..{f} -> {path} ({} bytes)", trace.len()),
                     Err(e) => eprintln!("gs capture: {path}: {e}"),
@@ -94,7 +94,7 @@ fn main() {
             }
         }
         if shot_every > 0 && f % shot_every == 0 {
-            let (w, h) = c.bus.hw.gs.core().display(&mut img);
+            let (w, h) = ssx3_ps2::m!(c).hw.gs.core().display(&mut img);
             let path = format!("{shot_dir}/frame{f:05}.png");
             let _ = std::fs::write(&path, png::encode(w, h, &img));
         }
@@ -103,11 +103,11 @@ fn main() {
         }
     }
     // GPU GS backend: bring the CPU copy of VRAM up to date for the dumps.
-    c.bus.hw.gs.core().sync_vram();
+    ssx3_ps2::m!(c).hw.gs.core().sync_vram();
     if std::env::var("SSX3_VRAM_DUMP").is_ok() {
         use ssx3_ps2::gs::swizzle::{read_pixel, PSMCT32};
         let mut v = vec![0u32; 1024 * 1024];
-        let gs = c.bus.hw.gs.core();
+        let gs = ssx3_ps2::m!(c).hw.gs.core();
         for y in 0..1024 {
             for x in 0..1024 {
                 v[y * 1024 + x] = read_pixel(&gs.vram, PSMCT32, 0, 16, x as u32, y as u32) | 0xff00_0000;
@@ -115,7 +115,7 @@ fn main() {
         }
         drop(gs);
         let _ = std::fs::write(format!("{shot_dir}/vram.png"), png::encode(1024, 1024, &v));
-        let regs: Vec<String> = [0x00u32, 0x20, 0x70, 0x80, 0x90, 0xa0, 0xe0].iter().map(|o| format!("{o:#x}={:#x}", c.bus.hw.gs.read_priv(*o))).collect();
+        let regs: Vec<String> = [0x00u32, 0x20, 0x70, 0x80, 0x90, 0xa0, 0xe0].iter().map(|o| format!("{o:#x}={:#x}", ssx3_ps2::m!(c).hw.gs.read_priv(*o))).collect();
         eprintln!("gs priv: {}", regs.join(" "));
     }
     if let Ok(v) = std::env::var("SSX3_MEMSCAN") {
@@ -132,7 +132,7 @@ fn main() {
             }
         };
         scan("ram", &c.bus.ram);
-        scan("vu1data", &c.bus.hw.vu1.data);
+        scan("vu1data", &ssx3_ps2::m!(c).hw.vu1.data);
         scan("spr", &c.bus.spr);
     }
     // Debug: SSX3_RAM_DUMP=path writes the 32 MiB of EE RAM at exit (compare
@@ -162,7 +162,7 @@ fn main() {
                 .map(|i| {
                     let o = (a + 4 * i) as usize;
                     let v = if iop {
-                        u32::from_le_bytes(c.bus.iop[o & 0x1F_FFFC..(o & 0x1F_FFFC) + 4].try_into().unwrap())
+                        u32::from_le_bytes(ssx3_ps2::m!(c).iop[o & 0x1F_FFFC..(o & 0x1F_FFFC) + 4].try_into().unwrap())
                     } else {
                         c.bus.ram_u32((a + 4 * i) & 0x01FF_FFFF)
                     };
@@ -178,7 +178,7 @@ fn main() {
         use ssx3_ps2::gs::swizzle::{read_pixel, PSMCT32};
         let p: Vec<u32> = spec.split(':').map(|x| u32::from_str_radix(x, 16).unwrap_or(0)).collect();
         let (tbp, tbw, psm, w, h, cbp) = (p[0], p[1], p[2], p[3], p[4], p[5]);
-        let gs = c.bus.hw.gs.core();
+        let gs = ssx3_ps2::m!(c).hw.gs.core();
         let vram = &gs.vram;
         let clut = |i: u32| -> u32 {
             // CSM1, CT32: 16-colour = 8x2 block; 256-colour = 16x16 with bit 3/4 swap.
@@ -200,26 +200,26 @@ fn main() {
         }
         let _ = std::fs::write(format!("{shot_dir}/tex.png"), png::encode(w, h, &img));
     }
-    eprintln!("halted: {:?}", c.kernel.halted);
+    eprintln!("halted: {:?}", ssx3_ps2::m!(c).kernel.halted);
     eprint!("{}", game::dump(&c));
-    eprintln!("syscalls: {:?}", c.kernel.syscall_counts.iter().map(|(k, v)| format!("{}={v}", ssx3_ps2::kernel::syscall_name(*k))).collect::<Vec<_>>());
-    eprintln!("modules: {:?}", c.sif.loaded_modules);
-    eprintln!("unknown sif servers: {:x?}", c.sif.unknown_servers);
-    let unk: Vec<String> = c.bus.hw.unknown.iter().take(40).map(|(a, n)| format!("{a:08x}x{n}")).collect();
+    eprintln!("syscalls: {:?}", ssx3_ps2::m!(c).kernel.syscall_counts.iter().map(|(k, v)| format!("{}={v}", ssx3_ps2::kernel::syscall_name(*k))).collect::<Vec<_>>());
+    eprintln!("modules: {:?}", ssx3_ps2::m!(c).sif.loaded_modules);
+    eprintln!("unknown sif servers: {:x?}", ssx3_ps2::m!(c).sif.unknown_servers);
+    let unk: Vec<String> = ssx3_ps2::m!(c).hw.unknown.iter().take(40).map(|(a, n)| format!("{a:08x}x{n}")).collect();
     eprintln!("unknown mmio: {}", unk.join(" "));
-    eprintln!("misses: {:x?}", c.sched.misses);
-    if !c.sched.misses.is_empty() {
+    eprintln!("misses: {:x?}", ssx3_ps2::m!(c).sched.misses);
+    if !ssx3_ps2::m!(c).sched.misses.is_empty() {
         // Record new entry points for the next `recomp-ee` run.
         use std::io::Write;
         let path = game::repo_root().join("generated/entries.txt");
         if let Ok(mut f) = std::fs::OpenOptions::new().append(true).create(true).open(&path) {
-            for pc in c.sched.misses.keys() {
+            for pc in ssx3_ps2::m!(c).sched.misses.keys() {
                 let _ = writeln!(f, "{pc:x}  # runtime miss (ra {:#x})", c.g[31][0] as u32);
             }
         }
-        eprintln!("recorded {} new entry point(s) in generated/entries.txt", c.sched.misses.len());
+        eprintln!("recorded {} new entry point(s) in generated/entries.txt", ssx3_ps2::m!(c).sched.misses.len());
     }
-    if !c.bus.hw.sio_line.is_empty() {
-        eprintln!("sio: {}", String::from_utf8_lossy(&c.bus.hw.sio_line));
+    if !ssx3_ps2::m!(c).hw.sio_line.is_empty() {
+        eprintln!("sio: {}", String::from_utf8_lossy(&ssx3_ps2::m!(c).hw.sio_line));
     }
 }

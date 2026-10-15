@@ -56,7 +56,8 @@ pub mod capture;
 pub mod decode;
 pub mod exec;
 pub mod fast;
-pub mod float;
+/// PS2 float arithmetic, shared with the EE FPU (lives in the core crate).
+pub use ssx3_ee_rt::float;
 pub mod recomp;
 pub mod reference;
 #[cfg(target_arch = "aarch64")]
@@ -70,26 +71,12 @@ pub mod generated;
 
 use crate::Qword;
 use float::{Exc, ABS, MAX, ONE, SIGN};
+use decode::EfuLatency;
 use std::collections::{HashMap, VecDeque};
 
-/// Field indices for broadcast operands.
-pub const X: u8 = 0;
-pub const Y: u8 = 1;
-pub const Z: u8 = 2;
-pub const W: u8 = 3;
-
-/// Second operand of an FMAC op.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Src {
-    /// ft, lane by lane.
-    Vec(u8),
-    /// ft.field broadcast (field 0..3 = x..w).
-    Bc(u8, u8),
-    /// The Q register.
-    Q,
-    /// The I register.
-    I,
-}
+/// Field indices and the FMAC operand type are shared with the EE core
+/// (macro mode, `ssx3_ee_rt::vu0`).
+pub use ssx3_ee_rt::vu0::{Src, W, X, Y, Z};
 
 /// How a translated (or fallback) program returned.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1487,8 +1474,10 @@ impl Vu {
 
     /// Execute one COP2 macro instruction. VCALLMS/VCALLMSR are ignored (the
     /// EE calls `start`). Results and flags are visible immediately.
-    /// Statically translated macro ops (see `recomp::macro_source`) bracket
-    /// their per-op call with these, matching `macro_op`.
+    /// Statically translated macro ops (see `recomp::macro_source`; the EE
+    /// calls them through `ssx3_ee_rt::vu0::Vu0`, implemented in
+    /// `crate::platform`) bracket their per-op call with these, matching
+    /// `macro_op`.
     #[inline]
     pub fn macro_begin(&mut self) {
         self.stage = EMPTY_STAGE;

@@ -332,43 +332,17 @@ pub enum Lower {
     Unknown(u32),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Efu {
-    Esadd,
-    Ersadd,
-    Eleng,
-    Erleng,
-    Eatanxy,
-    Eatanxz,
-    Esum,
-    Esqrt,
-    Ersqrt,
-    Ercpr,
-    Esin,
-    Eatan,
-    Eexp,
+/// EFU ops (defined in the EE core: macro-mode code names them).
+pub use ssx3_ee_rt::vu0::Efu;
+
+/// EFU timing (kept here, with the rest of the VU timing model).
+pub trait EfuLatency {
+    fn latency(self) -> u64;
 }
 
-impl Efu {
-    pub fn name(self) -> &'static str {
-        match self {
-            Efu::Esadd => "esadd",
-            Efu::Ersadd => "ersadd",
-            Efu::Eleng => "eleng",
-            Efu::Erleng => "erleng",
-            Efu::Eatanxy => "eatanxy",
-            Efu::Eatanxz => "eatanxz",
-            Efu::Esum => "esum",
-            Efu::Esqrt => "esqrt",
-            Efu::Ersqrt => "ersqrt",
-            Efu::Ercpr => "ercpr",
-            Efu::Esin => "esin",
-            Efu::Eatan => "eatan",
-            Efu::Eexp => "eexp",
-        }
-    }
+impl EfuLatency for Efu {
     /// Latency in cycles until P holds the result (VU user's manual).
-    pub fn latency(self) -> u64 {
+    fn latency(self) -> u64 {
         match self {
             Efu::Esadd => 11,
             Efu::Ersadd => 18,

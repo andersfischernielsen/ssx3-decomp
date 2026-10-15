@@ -2,10 +2,12 @@
 resolver = "2"
 members = [
     "crates/ssx3-core",
+    "crates/ssx3-ee-rt",
     "crates/ssx3-gs",
     "crates/ssx3-recomp",
     "crates/ssx3-runtime",
     "crates/ssx3-ps2",
+    "crates/ssx3-vu",
     "crates/ssx3-iop",
     "crates/ssx3",
     "generated/ee/*",

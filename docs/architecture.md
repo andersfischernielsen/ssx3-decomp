@@ -15,13 +15,15 @@ natively.
  │   recomp-ee  ──► generated/ee/sNN (Rust)  │──────────┐       ▼
  │   recomp-iop ──► generated/iop/modules    │──────┐   │  ┌──────────────────────────────────────┐
  │ ssx3-ps2 vu_recomp ─► generated/vu/*.rs   │──┐   │   └─►│ EE game code (structured Rust)       │
- └───────────────────────────────────────────┘  │   │      │   calls semantics library (cpu, mmi, │
-                                                │   │      │   fpu, cop2) via `&mut Cpu`          │
+ └───────────────────────────────────────────┘  │   │      │   built against ssx3-ee-rt only:     │
+                                                │   │      │   Cpu, cpu/mmi/fpu/cop2 semantics,   │
+                                                │   │      │   RAM fast paths, call_indirect      │
                                                 │   │      └──────┬───────────────────────────────┘
-                                                │   │             │ loads/stores, syscalls
+                                                │   │             │ MMIO, COP2/VU0, syscalls, events
+                                                │   │             │ (dyn Platform + Hooks)
                                                 │   │             ▼
                                                 │   │      ┌──────────────────────────────────────┐
-                                                │   │      │ ssx3-ps2 (platform layer)            │
+                                                │   │      │ ssx3-ps2 (platform layer, Machine)   │
                                                 │   │      │  kernel: threads (host threads +     │
                                                 │   │      │          baton), semas, handlers,    │
                                                 │   │      │          alarms, syscalls            │
@@ -38,6 +40,21 @@ natively.
                                                            │   tile-parallel rasterizer, display  │
                                                            └──────────────────────────────────────┘
 ```
+
+## Crates
+
+| crate | role |
+| --- | --- |
+| `ssx3-ee-rt` | EE core: `Cpu`, instruction semantics, guest RAM, function table, the `Platform`/`Vu0`/`Hooks` interfaces. The only dependency of generated EE code. |
+| `ssx3-vu` | VU0/VU1: state, timing model, fast path, microcode translator, translated microcode (`generated/vu`). Re-exported as `ssx3_ps2::vu`. |
+| `ssx3-ps2` | The machine (`platform::Machine`): DMAC/INTC/timers, VIF, GS + MTGS, IPU, kernel HLE, threads, SIF/IOP bridge. Implements `Platform`. |
+| `ssx3-iop` | IOP runtime for the recompiled IRX modules, SPU2, SIO2/pad/memory card. |
+| `ssx3-recomp` | `recomp-ee`, `recomp-iop` (generators). |
+| `ssx3` | Front ends (window, headless). |
+
+A hardware change rebuilds only its crate and relinks (GS/kernel ~3 s, VU
+~2.5 min); only `ssx3-ee-rt` changes recompile the generated EE crates
+(`investigation/crate-split.md`).
 
 ## Key documents
 
@@ -56,6 +73,7 @@ natively.
 | IPU (movies) | `investigation/ipu.md` |
 | IOP recompilation, SPU2 audio | `investigation/iop-audio.md` |
 | reference design notes | `investigation/ps2-web-recomp-notes.md` |
+| crate layout for build times (core / VU / machine) | `investigation/crate-split.md` |
 
 ## Invariants worth knowing
 
