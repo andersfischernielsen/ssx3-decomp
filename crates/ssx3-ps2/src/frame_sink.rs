@@ -83,6 +83,17 @@ pub fn skip_chain(vif: bool, tadr: u32) -> bool {
     HEADS[k..k + 2].iter().any(|h| h.load(Ordering::Acquire) == tadr as u64)
 }
 
+/// The sink's latest depth (after the 3D phase), as GS Z values.
+static DEPTH: Mutex<Option<(u32, u32, Vec<u32>)>> = Mutex::new(None);
+
+/// Native mode: run `f` on the sink's latest depth (`w`, `h`, Z values,
+/// row-major), for the light visibility queries.
+pub fn with_depth<R>(f: impl FnOnce(u32, u32, &[u32]) -> R) -> Option<R> {
+    let g = DEPTH.lock().unwrap();
+    let (w, h, z) = g.as_ref()?;
+    Some(f(*w, *h, z))
+}
+
 /// Frames published this recently (VBlanks) keep the native path active.
 const ACTIVE_VBLANKS: u64 = 2;
 
@@ -162,10 +173,8 @@ pub fn on_signal_sema(c: &mut Cpu, id: i32) {
         let depth = s.sink.depth();
         drop(guard);
         LAST_PUBLISH.store(crate::mr!(c).sched.frames.max(1), Ordering::Release);
-        if let Some((w, h, z)) = depth.filter(|_| std::env::var_os("SSX3_NATIVE_NO_Z").is_none()) {
-            let d = &b.frame.display;
-            let bw = d.fb_width.div_ceil(64);
-            crate::m!(c).hw.gs.host_write(d.zpsm, d.zbp * 32, bw, w, h, &z);
+        if let Some(d) = depth {
+            *DEPTH.lock().unwrap() = Some(d);
         }
     }
 }
