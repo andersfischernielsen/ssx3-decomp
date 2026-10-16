@@ -114,7 +114,18 @@ generated. Order:
    - **Frame loop: analysed** (`../investigation/phase3-frame-loop.md`). The
      game already decouples logic and rendering; there is an opt-in
      `SSX3_HOST_CLOCK=1`. The real change waits for native rendering.
-   - **Rendering: next**; the design is in progress.
+   - **Rendering: in progress** (`../investigation/phase3-render.md`). Done so
+     far:
+     - stage 0a: the EE-level frame reader, exact on 2.57M calls;
+     - all six VU1 rendering programs as bit-exact readable Rust
+       (`ssx3-render` mat1-6);
+     - `SSX3_VU1=native`: the full race is byte-identical with them.
+
+     Next:
+     - typed frame (DeferMan draws);
+     - the wgpu composition and draw stages;
+     - native post effects;
+     - resolution scaling and widescreen.
 
 Bulk phase 2 rewriting (typed function bodies) continues later as capacity
 allows (OpenCode waves, `phase2-worker-guide.md`).
