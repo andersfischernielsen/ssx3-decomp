@@ -104,6 +104,13 @@ fn main() {
             let (w, h) = ssx3_ps2::m!(c).hw.gs.core().display(&mut img);
             let path = format!("{shot_dir}/frame{f:05}.png");
             let _ = std::fs::write(&path, png::encode(w, h, &img));
+            // SSX3_HIRES_SHOTS=dir: also the N× copies (SSX3_RENDER_SCALE).
+            if let Ok(dir) = std::env::var("SSX3_HIRES_SHOTS") {
+                for (label, w, h, px) in ssx3_ps2::m!(c).hw.gs.core().hires_snapshots() {
+                    let img: Vec<u32> = px.iter().map(|p| p | 0xFF00_0000).collect();
+                    let _ = std::fs::write(format!("{dir}/frame{f:05}-{label}.png"), png::encode(w, h, &img));
+                }
+            }
         }
         if !alive {
             break;

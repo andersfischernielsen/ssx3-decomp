@@ -688,6 +688,8 @@ pub(super) struct List {
     /// The native run it belongs to (drawn in the run's unswizzle pass).
     pub(super) run: u32,
     slot: u32,
+    /// The same parameters with the N× scale in d.y (`hires`).
+    hslot: u32,
     vw: u32,
     vh: u32,
     calls: Vec<Call>,
@@ -1585,16 +1587,25 @@ impl GpuGs {
         prm[9] = vh;
         prm[12] = eps_knob().to_bits();
         g.slots.push(prm);
+        let hslot = g.slots.len() as u32;
+        prm[13] = super::hires::scale();
+        g.slots.push(prm);
         g.n3.stats.tris += tris.len() as u64;
         g.n3.stats.runs += 1;
         g.n3.stats.draws += calls.len() as u64;
         g.n3.stats.dr_copies += segs.len() as u64;
-        g.n3.lists.push(List { run: rid, slot, vw, vh, calls, segs });
+        g.n3.lists.push(List { run: rid, slot, hslot, vw, vh, calls, segs });
         run.end();
     }
 
     /// The bind group of the native-3 pipelines for this submission.
     pub(super) fn n3_bind_group(&self) -> Option<wgpu::BindGroup> {
+        self.n3_bind_group_with(self.native_prev()?)
+    }
+
+    /// `n3_bind_group` with `prev` as the destination-read copy (the N×
+    /// one for `hires` passes).
+    pub(super) fn n3_bind_group_with(&self, prev: &wgpu::TextureView) -> Option<wgpu::BindGroup> {
         if self.n3.lists.is_empty() {
             return None;
         }
@@ -1621,7 +1632,7 @@ impl GpuGs {
                 b(6, &self.dec),
                 wgpu::BindGroupEntry {
                     binding: 7,
-                    resource: wgpu::BindingResource::TextureView(self.native_prev()?),
+                    resource: wgpu::BindingResource::TextureView(prev),
                 },
             ],
         }))
@@ -1647,12 +1658,19 @@ impl GpuGs {
     /// the run's unswizzle pass, so a run without destination-read breaks
     /// costs one render pass and one compute pass).
     pub(super) fn n3_encode(&self, bg: &wgpu::BindGroup, list: u32, seg: usize, pass: &mut wgpu::RenderPass<'_>) {
+        self.n3_encode_at(bg, list, seg, pass, 1)
+    }
+
+    /// `n3_encode` at `scale` × the resolution (`hires`).
+    pub(super) fn n3_encode_at(&self, bg: &wgpu::BindGroup, list: u32, seg: usize, pass: &mut wgpu::RenderPass<'_>, scale: u32) {
         let l = &self.n3.lists[list as usize];
         let g = self.n3.gpu.as_ref().expect("n3 gpu");
         let c0 = if seg == 0 { 0 } else { l.segs[seg - 1].0 };
         let c1 = l.segs.get(seg).map_or(l.calls.len(), |x| x.0);
-        pass.set_viewport(0.0, 0.0, l.vw as f32, l.vh as f32, 0.0, 1.0);
-        pass.set_bind_group(0, bg, &[l.slot * SLOT as u32]);
+        let k = scale;
+        pass.set_viewport(0.0, 0.0, (l.vw * k) as f32, (l.vh * k) as f32, 0.0, 1.0);
+        let slot = if k > 1 { l.hslot } else { l.slot };
+        pass.set_bind_group(0, bg, &[slot * SLOT as u32]);
         let mut cur = usize::MAX;
         let mut fix = u32::MAX;
         let mut sc = [u32::MAX; 4];
@@ -1666,7 +1684,7 @@ impl GpuGs {
                 cur = c.pipe;
             }
             if c.scissor != sc {
-                pass.set_scissor_rect(x0, y0, x1 - x0 + 1, y1 - y0 + 1);
+                pass.set_scissor_rect(x0 * k, y0 * k, (x1 - x0 + 1) * k, (y1 - y0 + 1) * k);
                 sc = c.scissor;
             }
             if c.fix != fix {

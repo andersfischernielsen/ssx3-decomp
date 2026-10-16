@@ -154,6 +154,18 @@ struct Run {
     full: bool,
     full_w: u32,
     full_h: u32,
+    /// The N× pass of this run (`hires`).
+    hi: Option<HiRun>,
+}
+
+#[derive(Clone, Copy)]
+struct HiRun {
+    frame: Option<super::hires::Key>,
+    z: Option<super::hires::Key>,
+    refresh_frame: bool,
+    refresh_z: bool,
+    /// Unswizzle parameter slot with the scale.
+    slot: u32,
 }
 
 /// What the targets hold after the last run: its surfaces, the rectangle in
@@ -173,7 +185,11 @@ pub(super) struct NativeState {
     bgl0: wgpu::BindGroupLayout,
     bgl1: wgpu::BindGroupLayout,
     unswizzle_pipe: wgpu::RenderPipeline,
+    unswizzle_c: wgpu::RenderPipeline,
+    unswizzle_z: wgpu::RenderPipeline,
     swizzle_pipe: wgpu::ComputePipeline,
+    /// N× copies (`SSX3_RENDER_SCALE`).
+    pub(super) hires: Option<super::hires::Hires>,
     targets: Option<Targets>,
     runs: Vec<Run>,
     records: Vec<Option<NativeRecord>>,
@@ -267,37 +283,43 @@ impl NativeState {
             bind_group_layouts: &[Some(&bgl0), Some(&bgl1)],
             immediate_size: 0,
         });
-        let unswizzle_pipe = dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("gs-native-unswizzle"),
-            layout: Some(&l0),
-            vertex: wgpu::VertexState {
-                module,
-                entry_point: Some("native_vs"),
-                compilation_options: Default::default(),
-                buffers: &[],
-            },
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: DEPTH_FORMAT,
-                depth_write_enabled: Some(true),
-                depth_compare: Some(wgpu::CompareFunction::Always),
-                stencil: Default::default(),
-                bias: Default::default(),
-            }),
-            multisample: wgpu::MultisampleState::default(),
-            fragment: Some(wgpu::FragmentState {
-                module,
-                entry_point: Some("native_unswizzle"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: COLOR_FORMAT,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            multiview_mask: None,
-            cache: None,
-        });
+        let unswizzle = |label: &'static str, colour: wgpu::ColorWrites, depth: bool| {
+            dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(label),
+                layout: Some(&l0),
+                vertex: wgpu::VertexState {
+                    module,
+                    entry_point: Some("native_vs"),
+                    compilation_options: Default::default(),
+                    buffers: &[],
+                },
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: Some(depth),
+                    depth_compare: Some(wgpu::CompareFunction::Always),
+                    stencil: Default::default(),
+                    bias: Default::default(),
+                }),
+                multisample: wgpu::MultisampleState::default(),
+                fragment: Some(wgpu::FragmentState {
+                    module,
+                    entry_point: Some("native_unswizzle"),
+                    compilation_options: Default::default(),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: COLOR_FORMAT,
+                        blend: None,
+                        write_mask: colour,
+                    })],
+                }),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let unswizzle_pipe = unswizzle("gs-native-unswizzle", wgpu::ColorWrites::ALL, true);
+        // N× refreshes of one buffer of a pair (`hires`).
+        let unswizzle_c = unswizzle("gs-hires-unswizzle-colour", wgpu::ColorWrites::ALL, false);
+        let unswizzle_z = unswizzle("gs-hires-unswizzle-depth", wgpu::ColorWrites::empty(), true);
         let swizzle_pipe = dev.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("gs-native-swizzle"),
             layout: Some(&l1),
@@ -310,6 +332,9 @@ impl NativeState {
             bgl0,
             bgl1,
             unswizzle_pipe,
+            unswizzle_c,
+            unswizzle_z,
+            hires: (super::hires::scale() > 1).then(|| super::hires::Hires::new(super::hires::scale())),
             swizzle_pipe,
             targets: None,
             runs: Vec::new(),
@@ -324,6 +349,9 @@ impl NativeState {
 
     /// VRAM `pages` changed outside native runs.
     pub(super) fn note_vram_write(&mut self, pages: &Pages) {
+        if let Some(h) = self.hires.as_mut() {
+            h.note_write(pages);
+        }
         self.clock += 1;
         let c = self.clock;
         for (i, w) in pages.0.iter().enumerate() {
@@ -571,8 +599,46 @@ impl GpuGs {
         self.stats.native.reused += reuse as u64;
         self.stats.native.miss = n.miss;
         let run = n.runs.len() as u32;
-        n.runs.push(Run { surfaces: *s, x0, y0, reuse, full, full_w: fw, full_h: fh });
+        // N× copies: refresh what changed in VRAM, then this run writes them.
+        let mut hi = None;
+        let dev = &self.ctx.device;
+        if let (Some(h), Some(t)) = (n.hires.as_mut(), n.targets.as_ref()) {
+            h.ensure_size(dev, t.w, t.h);
+            let (tw, th) = (t.w, t.h);
+            let mut acquire = |b: &NativeSurface, depth: bool| {
+                let key = super::hires::Key { bp: b.bp, bw: b.bw, psm: b.psm, depth };
+                let surf = Surface::new(b.psm, b.bp, b.bw);
+                let pg = surface_pages(&surf, (b.bw * 64).min(tw).max(1), th)
+                    .or_else(|_| surface_pages(&surf, s.width, s.height))
+                    .unwrap_or(pages);
+                (key, h.acquire(dev, key, &pg))
+            };
+            let f = s.frame.as_ref().map(|b| acquire(b, false));
+            let z = s.z.as_ref().map(|b| acquire(b, true));
+            h.note_write(&pages);
+            for k in f.iter().chain(z.iter()) {
+                h.mark_current(k.0);
+            }
+            hi = Some(HiRun {
+                frame: f.map(|x| x.0),
+                z: z.map(|x| x.0),
+                refresh_frame: f.is_some_and(|x| x.1),
+                refresh_z: z.is_some_and(|x| x.1),
+                slot: 0,
+            });
+        }
+        n.runs.push(Run { surfaces: *s, x0, y0, reuse, full, full_w: fw, full_h: fh, hi });
         let slot = self.native_slot(run);
+        if self.native.as_ref().is_some_and(|n| n.runs[run as usize].hi.is_some()) {
+            // The same parameters with the scale in d.y.
+            let mut p = self.slots[slot as usize];
+            p[13] = super::hires::scale();
+            let hs = self.slots.len() as u32;
+            self.slots.push(p);
+            if let Some(h) = self.native.as_mut().and_then(|n| n.runs[run as usize].hi.as_mut()) {
+                h.slot = hs;
+            }
+        }
         self.cmds.push(Cmd::NativeBegin { run, slot });
         self.gpu_dirty.union(&pages);
         self.decoded.retain(|_, (_, pg)| !pg.hits(&pages));
@@ -675,6 +741,8 @@ pub(super) struct NativeEncode {
     bg0: wgpu::BindGroup,
     bg1: wgpu::BindGroup,
     bg3: Option<wgpu::BindGroup>,
+    /// `bg3` with the N× destination-read copy (`hires`).
+    bg3h: Option<wgpu::BindGroup>,
     records: Vec<Option<NativeRecord>>,
 }
 
@@ -722,11 +790,18 @@ impl GpuGs {
             ],
         });
         let bg3 = self.n3_bind_group();
+        let bg3h = self
+            .native
+            .as_deref()
+            .and_then(|n| n.hires.as_ref())
+            .and_then(|h| h.prev.as_ref())
+            .and_then(|p| self.n3_bind_group_with(p));
         let n = self.native.as_deref_mut().expect("native state");
         Some(NativeEncode {
             bg0,
             bg1,
             bg3,
+            bg3h,
             records: std::mem::take(&mut n.records),
         })
     }
@@ -830,6 +905,11 @@ impl GpuGs {
                         });
                         self.n3_encode(bg, list, seg, &mut pass);
                     }
+                } else {
+                    drop(pass);
+                }
+                if let (Some(hr), Some(h)) = (r.hi, n.hires.as_ref()) {
+                    self.encode_hires(e, n, h, r, &hr, list, enc);
                 }
             }
             Cmd::NativePass { run, rec } => {
@@ -859,6 +939,73 @@ impl GpuGs {
                 pass.dispatch_workgroups((s.width - r.x0).div_ceil(8), (s.height - r.y0).div_ceil(8), 1);
             }
             _ => unreachable!("not a native command"),
+        }
+    }
+
+    /// The N× pass of a run: refresh stale copies from VRAM, then the run's
+    /// draw list at N×, each segment after a copy into the N× `prev`.
+    #[allow(clippy::too_many_arguments)]
+    fn encode_hires(
+        &self,
+        e: &NativeEncode,
+        n: &NativeState,
+        h: &super::hires::Hires,
+        r: &Run,
+        hr: &HiRun,
+        list: Option<u32>,
+        enc: &mut wgpu::CommandEncoder,
+    ) {
+        let k = h.scale;
+        let cview = hr.frame.and_then(|key| h.surfs.get(&key)).map(|x| &x.view).or(h.dummy_color.as_ref()).expect("hires colour");
+        let dview = hr.z.and_then(|key| h.surfs.get(&key)).map(|x| &x.view).or(h.dummy_depth.as_ref()).expect("hires depth");
+        let begin = |enc: &mut wgpu::CommandEncoder| -> wgpu::RenderPass<'static> {
+            enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("gs-hires"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: cview,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: dview,
+                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            })
+            .forget_lifetime()
+        };
+        if hr.refresh_frame || hr.refresh_z {
+            let mut pass = begin(enc);
+            pass.set_viewport(0.0, 0.0, h.w as f32, h.h as f32, 0.0, 1.0);
+            pass.set_scissor_rect(0, 0, h.w, h.h);
+            pass.set_bind_group(0, &e.bg0, &[hr.slot * SLOT as u32]);
+            if hr.refresh_frame {
+                pass.set_pipeline(&n.unswizzle_c);
+                pass.draw(0..3, 0..1);
+            }
+            if hr.refresh_z {
+                pass.set_pipeline(&n.unswizzle_z);
+                pass.draw(0..3, 0..1);
+            }
+        }
+        let (Some(list), Some(bg), Some(prev)) = (list, e.bg3h.as_ref(), h.prev.as_ref()) else { return };
+        let s = &r.surfaces;
+        for seg in 0..self.n3_segments(list) {
+            let [x0, y0, x1, y1] = if seg == 0 { [r.x0, r.y0, s.width - 1, s.height - 1] } else { self.n3_copy_rect(list, seg) };
+            let (cx, cy) = ((x0 * k).min(h.w - 1), (y0 * k).min(h.h - 1));
+            let cw = ((x1 - x0 + 1) * k).min(h.w - cx);
+            let ch = ((y1 - y0 + 1) * k).min(h.h - cy);
+            enc.copy_texture_to_texture(
+                wgpu::TexelCopyTextureInfo { texture: cview.texture(), mip_level: 0, origin: wgpu::Origin3d { x: cx, y: cy, z: 0 }, aspect: wgpu::TextureAspect::All },
+                wgpu::TexelCopyTextureInfo { texture: prev.texture(), mip_level: 0, origin: wgpu::Origin3d { x: cx, y: cy, z: 0 }, aspect: wgpu::TextureAspect::All },
+                wgpu::Extent3d { width: cw, height: ch, depth_or_array_layers: 1 },
+            );
+            let mut pass = begin(enc);
+            self.n3_encode_at(bg, list, seg, &mut pass, k);
         }
     }
 
@@ -931,5 +1078,51 @@ impl GpuGs {
             }
         }
         (c, d)
+    }
+}
+
+impl GpuGs {
+    /// `SSX3_RENDER_SCALE` diagnostics: read back every N× colour copy as
+    /// (label, width, height, RGBA words). Waits for the GPU.
+    pub(crate) fn hires_snapshots(&mut self) -> Vec<(String, u32, u32, Vec<u32>)> {
+        let Some(h) = self.native.as_ref().and_then(|n| n.hires.as_ref()) else { return Vec::new() };
+        let (w, hh) = (h.w, h.h);
+        let row = (w * 4).div_ceil(256) * 256;
+        let bytes = row as u64 * hh as u64;
+        let dev = &self.ctx.device;
+        let mut out = Vec::new();
+        for (key, s) in h.surfs.iter().filter(|(k, _)| !k.depth) {
+            let buf = dev.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("hires-read"),
+                size: bytes,
+                usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            let mut enc = dev.create_command_encoder(&Default::default());
+            enc.copy_texture_to_buffer(
+                wgpu::TexelCopyTextureInfo { texture: s.view.texture(), mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+                wgpu::TexelCopyBufferInfo {
+                    buffer: &buf,
+                    layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(row), rows_per_image: Some(hh) },
+                },
+                wgpu::Extent3d { width: w, height: hh, depth_or_array_layers: 1 },
+            );
+            self.ctx.queue.submit(std::iter::once(enc.finish()));
+            let slice = buf.slice(..);
+            slice.map_async(wgpu::MapMode::Read, |_| {});
+            let _ = dev.poll(wgpu::PollType::wait_indefinitely());
+            let v = slice.get_mapped_range().expect("map");
+            // Only the buffer's width (FBW × 64 × N).
+            let bw = (key.bw * 64 * h.scale).min(w);
+            let mut px = Vec::with_capacity((bw * hh) as usize);
+            for y in 0..hh as usize {
+                for x in 0..bw as usize {
+                    let o = y * row as usize + x * 4;
+                    px.push(u32::from_le_bytes([v[o], v[o + 1], v[o + 2], v[o + 3]]));
+                }
+            }
+            out.push((format!("{:05x}-{}-{:02x}", key.bp, key.bw, key.psm), bw, hh, px));
+        }
+        out
     }
 }

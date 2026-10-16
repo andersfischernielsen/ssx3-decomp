@@ -1044,8 +1044,14 @@ struct NativeOut {
 // Z -> depth Z / 2^24.
 @fragment
 fn native_unswizzle(@builtin(position) pos: vec4<f32>) -> NativeOut {
-    let x = u32(pos.x);
-    let y = u32(pos.y);
+    var x = u32(pos.x);
+    var y = u32(pos.y);
+    // d.y: N× copies (hires) read the GS pixel each N×N block covers.
+    if (params.d.y > 1u) {
+        let k = f32(params.d.y);
+        x = u32(floor(pos.x / k));
+        y = u32(floor(pos.y / k));
+    }
     var o: NativeOut;
     o.color = vec4<f32>(0.0);
     o.depth = 0.0;

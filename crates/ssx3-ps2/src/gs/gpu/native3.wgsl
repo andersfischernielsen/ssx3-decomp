@@ -75,9 +75,36 @@ struct N3Px {
 // texture function, fog, alpha test (AFAIL = KEEP only; the CPU sends other
 // AFAIL modes to the emulated GS). Depth test, blending and the frame write
 // are the render pipeline's.
+// The GS pixel a fragment belongs to (integer) and its position for plane
+// evaluation; at N× (params.d.y > 1, hires) the plane position is the
+// fragment's own, so attributes and Z interpolate at the finer grid.
+struct N3Px0 {
+    px: i32,
+    py: i32,
+    gx: f32,
+    gy: f32,
+}
+
+fn n3_pixel(pos: vec4<f32>) -> N3Px0 {
+    var o: N3Px0;
+    o.px = i32(pos.x);
+    o.py = i32(pos.y);
+    o.gx = f32(o.px);
+    o.gy = f32(o.py);
+    if (params.d.y > 1u) {
+        let k = f32(params.d.y);
+        o.px = i32(floor(pos.x / k));
+        o.py = i32(floor(pos.y / k));
+        o.gx = pos.x / k - 0.5;
+        o.gy = pos.y / k - 0.5;
+    }
+    return o;
+}
+
 fn n3_shade(vin: N3V) -> N3Px {
     var v = vin;
     var n3_eps = bitcast<f32>(params.d.x);
+    let gp = n3_pixel(v.pos);
     // Flag 64: a sprite, its attributes from the GS's own prim record
     // (`frag`, kind 1) at the integer pixel.
     let sprite = (v.info.z & 64u) != 0u;
@@ -85,8 +112,12 @@ fn n3_shade(vin: N3V) -> N3Px {
         // gs.wgsl `frag` (triangles): planes at the integer pixel.
         let p = v.pl;
         let lo = data[p];
-        let i = f32(i32(v.pos.x) - i32(lo & 0xFFFFu));
-        let j = f32(i32(v.pos.y) - i32(lo >> 16u));
+        var i = f32(i32(v.pos.x) - i32(lo & 0xFFFFu));
+        var j = f32(i32(v.pos.y) - i32(lo >> 16u));
+        if (params.d.y > 1u) {
+            i = gp.gx - f32(lo & 0xFFFFu);
+            j = gp.gy - f32(lo >> 16u);
+        }
         var at: array<f32, 8>;
         for (var k = 0u; k < 8u; k = k + 1u) {
             at[k] = fat(p + 1u + k) + fat(p + 9u + k) * i + fat(p + 17u + k) * j;
@@ -116,7 +147,7 @@ fn n3_shade(vin: N3V) -> N3Px {
     let line = (v.info.z & 256u) != 0u;
     var lt = 0.0;
     if (line) {
-        let hit = line_hit(v.pl, i32(v.pos.x), i32(v.pos.y));
+        let hit = line_hit(v.pl, gp.px, gp.py);
         if (hit < 0) {
             o.kill = true;
             return o;
@@ -125,7 +156,7 @@ fn n3_shade(vin: N3V) -> N3Px {
         line_t = lt;
     }
     if (sprite || line) {
-        let f = frag(v.pl, st, i32(v.pos.x), i32(v.pos.y));
+        let f = frag(v.pl, st, gp.px, gp.py);
         r = f.r;
         g = f.g;
         b = f.b;
@@ -143,8 +174,12 @@ fn n3_shade(vin: N3V) -> N3Px {
     } else {
         if ((flags & F_ZTE) != 0u) {
             // gs.wgsl draw_prim: the same f32 plane at the same integer pixel.
-            let i = f32(i32(v.pos.x) - i32(v.zp.x & 0xFFFFu));
-            let j = f32(i32(v.pos.y) - i32(v.zp.x >> 16u));
+            var i = f32(i32(v.pos.x) - i32(v.zp.x & 0xFFFFu));
+            var j = f32(i32(v.pos.y) - i32(v.zp.x >> 16u));
+            if (params.d.y > 1u) {
+                i = gp.gx - f32(v.zp.x & 0xFFFFu);
+                j = gp.gy - f32(v.zp.x >> 16u);
+            }
             z = z_add(v.zp.y, bitcast<f32>(v.zp.z) + bitcast<f32>(v.zp.w) * i + bitcast<f32>(v.zdy) * j, data[st + S_ZMAX]);
         }
         if ((v.info.z & 2u) != 0u) {
@@ -313,7 +348,8 @@ fn n3_dst(v: N3V, fmt: u32) -> u32 {
     let x = u32(v.pos.x);
     let y = u32(v.pos.y);
     var c: u32;
-    if ((v.info.z & 32u) != 0u) {
+    // At N× (hires) the destination is always the N× copy.
+    if ((v.info.z & 32u) != 0u || params.d.y > 1u) {
         let t = textureLoad(n3_prev, vec2<i32>(i32(x), i32(y)), 0);
         c = pack4(vec4<u32>(round(clamp(t, vec4<f32>(0.0), vec4<f32>(1.0)) * 255.0)));
     } else {
@@ -372,8 +408,9 @@ fn n3_fs_dr(v: N3V) -> N3Out {
         b = o.z;
     }
     if ((flags & F_DITHER) != 0u) {
-        let x = i32(v.pos.x);
-        let y = i32(v.pos.y);
+        let gd = n3_pixel(v.pos);
+        let x = gd.px;
+        let y = gd.py;
         let idx = u32(y & 3) * 16u + u32(x & 3) * 4u;
         var bits: u32;
         if (idx >= 32u) {

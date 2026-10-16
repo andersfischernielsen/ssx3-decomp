@@ -798,3 +798,35 @@ about 145 s; the cost is CPU-side command encoding, not the unswizzle.
 
 This is the prerequisite for rendering at a higher resolution, where the targets hold more
 than VRAM can.
+
+### Resolution scaling, step 1: N× copies (`SSX3_RENDER_SCALE=N`, 2026-10-16)
+
+`gs/gpu/hires.rs` draws every native run a second time into N× textures (kept per buffer:
+frame buffers as colour, Z buffers as depth, all N × the 1× target size). Only the 1× targets
+are written back to VRAM, so everything that reads VRAM, and the game state, stays exact.
+
+**Validity.** Each copy is current while nothing else writes its pages. Every VRAM write
+stamps its pages: uploads, compute raster batches, transfers, and other native runs, which
+catches aliasing such as bloom scratch in Z memory. A stale copy is refreshed from VRAM by an
+N× unswizzle (one pipeline variant each for colour and depth).
+
+**The N× pass** per run:
+1. Refresh stale copies from VRAM.
+2. Per segment, copy colour into an N× `prev`.
+3. Replay the run's draw list with the viewport and scissors ×N and the scale in the
+   parameter slot (`d.y`).
+
+**Shader changes** (`n3_pixel`): integer GS-pixel tests (lines, sprites, dither) use
+`floor(pos / N)`. The Z and attribute planes are evaluated at the fragment's own position, so
+depth and attributes interpolate at the finer grid. Destination reads come from the N× `prev`.
+
+**Checks:**
+- With the scale unset, the native and default paths are byte-identical to before (36 shots
+  plus RAM).
+- At 2× the race runs without errors, and `SSX3_HIRES_SHOTS=dir` writes the N× copies at each
+  screenshot. The main frame buffer shows the same image with visibly finer edges.
+
+**Next:**
+- render-target textures from the N× copies, so the display blit, colour filter, bloom and
+  frame copies keep the resolution instead of re-sampling 1× VRAM;
+- presenting the N× display buffer.

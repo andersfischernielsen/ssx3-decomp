@@ -53,6 +53,7 @@ use super::region::Region;
 use super::swizzle::{self, Kind, Surface};
 use super::Vertex;
 
+mod hires;
 mod native;
 mod native3;
 pub use native3::{diag_knob as native3_diag, Fallback as N3Fallback, N3Stats};

@@ -728,6 +728,12 @@ impl Gs {
         }
     }
 
+    /// The N× copies (`SSX3_RENDER_SCALE`) as (label, w, h, RGBA words).
+    pub fn hires_snapshots(&mut self) -> Vec<(String, u32, u32, Vec<u32>)> {
+        self.sync();
+        self.gpu.as_mut().map(|g| g.hires_snapshots()).unwrap_or_default()
+    }
+
     /// Tell the GS that `vram` was modified directly (not through GIF or
     /// register writes), so cached decoded textures are dropped.
     /// On the GPU backend `vram` then replaces the GPU's copy entirely, so
