@@ -887,3 +887,179 @@ fn n3_texture_feedback_vs_compute() {
         assert_eq!(c1 + cmid + cbig, 0, "{name}: pixels differ");
     }
 }
+
+// ---------------------------------------------------------------- N× copies
+// (hires, SSX3_RENDER_SCALE): fast checks that scaling never changes VRAM,
+// that the N× copy is a faithful higher-resolution version of the 1× frame,
+// and that frames used as textures and VRAM writes keep it consistent.
+
+/// Textured gouraud triangles through the native path into the 640x448
+/// frame at block 0 (the scene of `n3_triangles_vs_compute` scene 3).
+fn hires_scene(gs: &mut Gs, seed: u64, tris: usize) {
+    frame(gs);
+    // A smooth texture: finer sampling must average back to the 1× result.
+    upload(gs, 0x3000, 4, 256, 256, |x, y| x | y << 8 | ((x + y) / 2) << 16 | 0x8000_0000);
+    gs.write_reg(0x47, 1 << 16 | 2 << 17); // ZTE, GEQUAL
+    gs.write_reg(0x46, 1); // COLCLAMP
+    gs.write_reg(0x06, 0x3000 | 4 << 14 | 8 << 26 | 8 << 30 | 1 << 34);
+    gs.write_reg(0x14, 0);
+    gs.write_reg(0x42, 0);
+    let mut r = Rng(seed);
+    for _ in 0..tris {
+        let mut v = [Vertex::default(); 3];
+        for k in 0..3 {
+            let q = r.f32_in(0.3, 2.0);
+            v[k] = Vertex {
+                x: (r.below(700 * 16) as u32).wrapping_sub(30 * 16),
+                y: (r.below(500 * 16) as u32).wrapping_sub(30 * 16),
+                z: r.below(1 << 24) as u32,
+                f: 0,
+                rgba: [r.below(256) as u8, r.below(256) as u8, r.below(256) as u8, 128],
+                s: r.f32_in(0.0, 1.0) * q,
+                t: r.f32_in(0.0, 1.0) * q,
+                q,
+                u: 0,
+                v: 0,
+            };
+        }
+        gs.write_reg(0x00, 3 | 1 << 3 | 1 << 4);
+        gs.n3_capture = true;
+        gs.draw_primitive(3, &v);
+        gs.n3_capture = false;
+    }
+}
+
+/// The N× copy of the CT32 buffer at block `bp` (width 10) as (w, h, RGBA).
+fn hires_copy(gs: &mut Gs, bp: u32) -> (u32, u32, Vec<u32>) {
+    let label = format!("{bp:05x}-10-00");
+    let snaps = gs.hires_snapshots();
+    let s = snaps.into_iter().find(|s| s.0 == label).unwrap_or_else(|| panic!("no N× copy {label}"));
+    (s.1, s.2, s.3)
+}
+
+/// Share of 2x2 blocks of an N=2 copy over 640x448 that are not uniform
+/// (an upscale of 1× content has none).
+fn non_uniform(w: u32, px: &[u32]) -> f64 {
+    let mut n = 0;
+    for y in 0..448u32 {
+        for x in 0..640u32 {
+            let at = |dx: u32, dy: u32| px[((2 * y + dy) * w + 2 * x + dx) as usize] & 0xFF_FFFF;
+            if at(0, 0) != at(1, 0) || at(0, 0) != at(0, 1) || at(0, 0) != at(1, 1) {
+                n += 1;
+            }
+        }
+    }
+    n as f64 / (640.0 * 448.0)
+}
+
+#[test]
+fn hires_keeps_vram_exact_and_renders_finer() {
+    let Some((mut a, _)) = gpu_random(21) else { return };
+    let Some((mut b, _)) = gpu_random(21) else { return };
+    b.set_hires_scale(2);
+    hires_scene(&mut a, 99, 300);
+    hires_scene(&mut b, 99, 300);
+    a.sync_vram();
+    b.sync_vram();
+    assert!(a.vram == b.vram, "N× copies changed VRAM");
+    let (w, h, px) = hires_copy(&mut b, 0);
+    assert!(w >= 1280 && h >= 896);
+    // The copy averaged over each 2x2 block is close to the 1× frame.
+    let fb = Surface::new(PSMCT32, 0, 10);
+    let (mut sum, mut big) = (0f64, 0);
+    for y in 0..448u32 {
+        for x in 0..640u32 {
+            let lo = fb.read(&b.vram, x, y);
+            for c in 0..3 {
+                let ch = |v: u32| ((v >> (8 * c)) & 0xFF) as f64;
+                let avg = (0..4).map(|k| ch(px[((2 * y + k / 2) * w + 2 * x + k % 2) as usize])).sum::<f64>() / 4.0;
+                let d = (avg - ch(lo)).abs();
+                sum += d;
+                big += (d > 48.0) as u32;
+            }
+        }
+    }
+    let mean = sum / (640.0 * 448.0 * 3.0);
+    let nu = non_uniform(w, &px);
+    eprintln!("hires 2x: mean |2x2 avg - 1x| {mean:.2}, channels off by >48: {big}, non-uniform blocks {:.1}%", nu * 100.0);
+    assert!(mean < 6.0, "N× copy drifted from the 1× frame (mean {mean:.2})");
+    assert!((big as f64) < 0.02 * 640.0 * 448.0 * 3.0, "too many large differences: {big}");
+    assert!(nu > 0.05, "N× copy has no detail beyond 1× ({:.1}%)", nu * 100.0);
+}
+
+#[test]
+fn hires_frame_as_texture_copies_exactly() {
+    let Some((mut gs, _)) = gpu_random(22) else { return };
+    gs.set_hires_scale(2);
+    hires_scene(&mut gs, 7, 300);
+    // Copy frame A (block 0) into frame B (page 200) with a 1:1 decal
+    // sprite that samples A as a texture (nearest, FST).
+    gs.write_reg(0x4C, 200 | 10 << 16);
+    gs.write_reg(0x47, 0); // no Z
+    gs.write_reg(0x06, 10 << 14 | 10 << 26 | 9 << 30 | 1 << 34 | 1 << 35);
+    // Region clamp to the frame (the 1024x512 texture extent would reach
+    // the Z buffer).
+    gs.write_reg(0x08, 2 | 2 << 2 | 0 << 4 | 639 << 14 | 0 << 24 | 447u64 << 34);
+    gs.write_reg(0x14, 0);
+    gs.write_reg(0x00, 6 | 1 << 4 | 1 << 8);
+    let mut v = [Vertex::default(); 2];
+    v[0] = Vertex { x: 0, y: 0, rgba: [128; 4], u: 0, v: 0, q: 1.0, ..Default::default() };
+    v[1] = Vertex { x: 640 * 16, y: 448 * 16, rgba: [128; 4], u: 640 * 16, v: 448 * 16, q: 1.0, ..Default::default() };
+    gs.n3_capture = true;
+    gs.draw_primitive(6, &v);
+    gs.n3_capture = false;
+    gs.sync_vram();
+    let (w, _, a) = hires_copy(&mut gs, 0);
+    let (_, _, b) = hires_copy(&mut gs, 200 * 32);
+    let mut diff = 0;
+    for y in 0..896u32 {
+        for x in 0..1280u32 {
+            let i = (y * w + x) as usize;
+            diff += ((a[i] ^ b[i]) & 0xFF_FFFF != 0) as u32;
+        }
+    }
+    eprintln!("hires copy: {diff} of {} N× pixels differ, B non-uniform {:.1}%", 1280 * 896, non_uniform(w, &b) * 100.0);
+    assert_eq!(diff, 0, "a 1:1 copy of an N× frame must reproduce it exactly");
+    // And 1× stays the GS's: B equals A in VRAM.
+    let fa = Surface::new(PSMCT32, 0, 10);
+    let fbb = Surface::new(PSMCT32, 200 * 32, 10);
+    let mism = (0..448u32).flat_map(|y| (0..640u32).map(move |x| (x, y))).filter(|&(x, y)| fa.read(&gs.vram, x, y) & 0xFF_FFFF != fbb.read(&gs.vram, x, y) & 0xFF_FFFF).count();
+    assert_eq!(mism, 0, "1× copy differs");
+}
+
+#[test]
+fn hires_refreshes_after_vram_upload() {
+    let Some((mut gs, _)) = gpu_random(23) else { return };
+    gs.set_hires_scale(2);
+    hires_scene(&mut gs, 5, 200);
+    gs.sync_vram();
+    // Overwrite a 64x32 rectangle of the frame from the host, then draw
+    // one more native triangle elsewhere so a run picks the frame up again.
+    gs.write_reg(0x50, 10u64 << 48);
+    gs.write_reg(0x51, 100 | 50 << 16);
+    gs.write_reg(0x52, 64 | 32 << 32);
+    gs.write_reg(0x53, 0);
+    let data: Vec<u32> = (0..64 * 32).map(|i| 0x0011_2233u32.wrapping_mul(i as u32 + 1) | 0x8000_0000).collect();
+    let mut q: Vec<u128> = vec![(data.len() as u64 / 4 | 2 << 58) as u128 | 1 << 15];
+    for c in data.chunks_exact(4) {
+        q.push(c.iter().rev().fold(0u128, |acc, &v| acc << 32 | v as u128));
+    }
+    gs.gif_write(3, &q);
+    hires_scene(&mut gs, 6, 1);
+    gs.sync_vram();
+    let (w, _, px) = hires_copy(&mut gs, 0);
+    let fb = Surface::new(PSMCT32, 0, 10);
+    let mut wrong = 0;
+    for y in 50..82u32 {
+        for x in 100..164u32 {
+            let lo = fb.read(&gs.vram, x, y) & 0xFF_FFFF;
+            // Unless the extra triangle covered it, the copy shows the upload.
+            if lo == data[((y - 50) * 64 + x - 100) as usize] & 0xFF_FFFF {
+                for k in 0..4u32 {
+                    wrong += (px[((2 * y + k / 2) * w + 2 * x + k % 2) as usize] & 0xFF_FFFF != lo) as u32;
+                }
+            }
+        }
+    }
+    assert_eq!(wrong, 0, "N× copy not refreshed after a VRAM upload");
+}

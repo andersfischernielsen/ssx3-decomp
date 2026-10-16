@@ -112,15 +112,19 @@ fn n3_shade(vin: N3V) -> N3Px {
         // gs.wgsl `frag` (triangles): planes at the integer pixel.
         let p = v.pl;
         let lo = data[p];
-        var i = f32(i32(v.pos.x) - i32(lo & 0xFFFFu));
-        var j = f32(i32(v.pos.y) - i32(lo >> 16u));
-        if (params.d.y > 1u) {
-            i = gp.gx - f32(lo & 0xFFFFu);
-            j = gp.gy - f32(lo >> 16u);
-        }
         var at: array<f32, 8>;
-        for (var k = 0u; k < 8u; k = k + 1u) {
-            at[k] = fat(p + 1u + k) + fat(p + 9u + k) * i + fat(p + 17u + k) * j;
+        if (params.d.y > 1u) {
+            let hi = gp.gx - f32(lo & 0xFFFFu);
+            let hj = gp.gy - f32(lo >> 16u);
+            for (var k = 0u; k < 8u; k = k + 1u) {
+                at[k] = fat(p + 1u + k) + fat(p + 9u + k) * hi + fat(p + 17u + k) * hj;
+            }
+        } else {
+            let i = f32(i32(v.pos.x) - i32(lo & 0xFFFFu));
+            let j = f32(i32(v.pos.y) - i32(lo >> 16u));
+            for (var k = 0u; k < 8u; k = k + 1u) {
+                at[k] = fat(p + 1u + k) + fat(p + 9u + k) * i + fat(p + 17u + k) * j;
+            }
         }
         v.col = vec4<f32>(at[0], at[1], at[2], at[3]);
         v.stq = vec3<f32>(at[4], at[5], at[6]);
@@ -164,6 +168,19 @@ fn n3_shade(vin: N3V) -> N3Px {
         fogv = f.f;
         uv = vec2<f32>(f.u, f.v);
         q = f.q;
+        // N× sprites: the record's values at the neighbouring GS pixels,
+        // interpolated at this fragment's position (coverage stays per GS
+        // pixel; texture coordinates vary within it).
+        if (sprite && params.d.y > 1u) {
+            let bx = floor(gp.gx);
+            let by = floor(gp.gy);
+            let f0 = frag(v.pl, st, i32(bx), i32(by));
+            let f1 = frag(v.pl, st, i32(bx) + 1, i32(by));
+            let f2 = frag(v.pl, st, i32(bx), i32(by) + 1);
+            let tx = gp.gx - bx;
+            let ty = gp.gy - by;
+            uv = vec2<f32>(f0.u + (f1.u - f0.u) * tx + (f2.u - f0.u) * ty, f0.v + (f1.v - f0.v) * tx + (f2.v - f0.v) * ty);
+        }
         if ((flags & F_ZTE) != 0u) {
             if (line) {
                 z = z_add(data[v.pl + 27u], fat(v.pl + 28u) * lt, data[st + S_ZMAX]);
@@ -174,13 +191,18 @@ fn n3_shade(vin: N3V) -> N3Px {
     } else {
         if ((flags & F_ZTE) != 0u) {
             // gs.wgsl draw_prim: the same f32 plane at the same integer pixel.
-            var i = f32(i32(v.pos.x) - i32(v.zp.x & 0xFFFFu));
-            var j = f32(i32(v.pos.y) - i32(v.zp.x >> 16u));
             if (params.d.y > 1u) {
-                i = gp.gx - f32(v.zp.x & 0xFFFFu);
-                j = gp.gy - f32(v.zp.x >> 16u);
+                // N×: the plane at this fragment's own position.
+                let hi = gp.gx - f32(v.zp.x & 0xFFFFu);
+                let hj = gp.gy - f32(v.zp.x >> 16u);
+                z = z_add(v.zp.y, bitcast<f32>(v.zp.z) + bitcast<f32>(v.zp.w) * hi + bitcast<f32>(v.zdy) * hj, data[st + S_ZMAX]);
+            } else {
+                // Exactly the compute GS's expression (any restructuring
+                // can change the compiler's FMA contraction and so Z bits).
+                let i = f32(i32(v.pos.x) - i32(v.zp.x & 0xFFFFu));
+                let j = f32(i32(v.pos.y) - i32(v.zp.x >> 16u));
+                z = z_add(v.zp.y, bitcast<f32>(v.zp.z) + bitcast<f32>(v.zp.w) * i + bitcast<f32>(v.zdy) * j, data[st + S_ZMAX]);
             }
-            z = z_add(v.zp.y, bitcast<f32>(v.zp.z) + bitcast<f32>(v.zp.w) * i + bitcast<f32>(v.zdy) * j, data[st + S_ZMAX]);
         }
         if ((v.info.z & 2u) != 0u) {
             let c = unpack_rgba(v.info.w);
@@ -202,7 +224,12 @@ fn n3_shade(vin: N3V) -> N3Px {
     }
     o.depth = f32(z) / NATIVE_DEPTH_SCALE;
     if ((flags & F_TME) != 0u) {
-        let c = sample_tex(st, uv.x, uv.y, q, (v.info.z & 1u) != 0u);
+        var c: u32;
+        if (params.d.y > 1u && (v.info.z & 1536u) != 0u) {
+            c = n3_hires_tex(st, (v.info.z & 512u) != 0u, uv.x, uv.y, (v.info.z & 1u) != 0u, v.info.z);
+        } else {
+            c = sample_tex(st, uv.x, uv.y, q, (v.info.z & 1u) != 0u);
+        }
         let tr = i32(c & 0xFFu);
         let tg = i32((c >> 8u) & 0xFFu);
         let tb = i32((c >> 16u) & 0xFFu);
@@ -448,4 +475,64 @@ fn n3_fs_dr(v: N3V) -> N3Out {
     o.color = vec4<f32>(unpack4(res)) / 255.0;
     o.depth = p.depth;
     return o;
+}
+
+// ------------------------------------------------------------ N× texturing
+// (hires): a texture that is a buffer with a current N× copy is sampled
+// from it: the run's own frame through `n3_prev` (flag 512), another buffer
+// through `n3_src` (flag 1024). The stored value is the frame value as
+// `read_fb` gives it; flags 2048 (CT24) / 4096 (CT16) turn it back into the
+// raw texel, which then goes through the texture's own conversion (TEXA,
+// AEM). Nearest and bilinear as `sample` does, at N× texel coordinates.
+@group(0) @binding(8) var n3_src: texture_2d<f32>;
+
+fn n3_hires_load(prev: bool, x: i32, y: i32) -> u32 {
+    let d = vec2<i32>(textureDimensions(n3_prev)) - vec2<i32>(1);
+    let p = vec2<i32>(clamp(x, 0, d.x), clamp(y, 0, d.y));
+    var t: vec4<f32>;
+    if (prev) {
+        t = textureLoad(n3_prev, p, 0);
+    } else {
+        t = textureLoad(n3_src, p, 0);
+    }
+    return pack4(vec4<u32>(round(clamp(t, vec4<f32>(0.0), vec4<f32>(1.0)) * 255.0)));
+}
+
+fn n3_hires_texel(st: u32, prev: bool, x: i32, y: i32, cvf: u32) -> u32 {
+    var raw = n3_hires_load(prev, x, y);
+    if ((cvf & 2048u) != 0u) {
+        raw = raw & 0xFFFFFFu;
+    } else if ((cvf & 4096u) != 0u) {
+        raw = pack16(raw);
+    }
+    return conv(st, raw);
+}
+
+fn n3_hires_tex(st: u32, prev: bool, u: f32, v: f32, linear: bool, cvf: u32) -> u32 {
+    let k = f32(params.d.y);
+    let hu = u * k;
+    let hv = v * k;
+    if (!linear) {
+        // A frame used as a texture has texel i at GS position i (where its
+        // N×N block of the copy is centred), so the nearest copy texel is
+        // floor(u N + N / 2): a 1:1 copy reproduces the copy exactly.
+        return n3_hires_texel(st, prev, i32(floor(hu + k * 0.5)), i32(floor(hv + k * 0.5)), cvf);
+    }
+    let iu = i32(floor((hu - 0.5) * 256.0));
+    let iv = i32(floor((hv - 0.5) * 256.0));
+    let x0 = iu >> 8u;
+    let y0 = iv >> 8u;
+    let fx = u32(iu & 255);
+    let fy = u32(iv & 255);
+    var acc = vec4<f32>(32768.0);
+    for (var n = 0u; n < 4u; n = n + 1u) {
+        let dx = (n & 1u) == 1u;
+        let dy = (n >> 1u) == 1u;
+        let w = select(256u - fx, fx, dx) * select(256u - fy, fy, dy);
+        if (w == 0u) {
+            continue;
+        }
+        acc = acc + vec4<f32>(unpack4(n3_hires_texel(st, prev, x0 + i32(dx), y0 + i32(dy), cvf))) * f32(w);
+    }
+    return pack4(vec4<u32>(acc) >> vec4<u32>(16u));
 }

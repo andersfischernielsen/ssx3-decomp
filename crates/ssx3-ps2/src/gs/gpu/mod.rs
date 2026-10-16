@@ -257,6 +257,10 @@ enum Cmd {
     NativePass { run: u32, rec: u32 },
     /// Native run `run`: swizzle the targets back into VRAM.
     NativeEnd { run: u32, slot: u32 },
+    /// Mirror a local->local transfer between N× copies (`hires`):
+    /// rectangle at (sx, sy) of `src` to (dx, dy) of `dst`, `w` x `h`
+    /// GS pixels.
+    HiresCopy { src: hires::Key, dst: hires::Key, sx: u32, sy: u32, dx: u32, dy: u32, w: u32, h: u32 },
 }
 
 #[derive(Clone, Copy)]
@@ -342,6 +346,12 @@ pub(crate) struct GpuGs {
     prof_info: Vec<(u32, u32, u32)>,
     /// Native runs: pipelines, targets, queued runs (created by the first run).
     native: Option<Box<native::NativeState>>,
+    /// Local->local transfers to mirror between N× copies once their upload
+    /// is emitted (`hires_l2l`).
+    hires_pending: Vec<[u32; 12]>,
+    /// N× copies (`SSX3_RENDER_SCALE`; 1 = off). Read when the native state
+    /// is created; tests set it with `set_hires_scale`.
+    pub(crate) hires_scale: u32,
     /// The GS shader module (native-run pipelines are made from it).
     module: wgpu::ShaderModule,
     /// Type-3 triangles waiting for their native run (`native3`).
@@ -565,6 +575,8 @@ impl GpuGs {
         let bind_group = Self::make_bind_group(dev, &bgl, [&vram, &tables, &data, &params, &snap, &out, &dec]);
         Some(GpuGs {
             n3: native3::N3::default(),
+            hires_pending: Vec::new(),
+            hires_scale: hires::scale(),
             native: None,
             module,
             ctx,
@@ -1097,6 +1109,7 @@ impl GpuGs {
         if let Some(n) = self.native.as_mut() {
             n.note_vram_write(&up);
         }
+        self.hires_apply_pending();
         self.cpu_dirty = Pages::default();
     }
 
@@ -1289,6 +1302,54 @@ impl GpuGs {
             n.note_vram_write(&pages);
         }
         true
+    }
+
+    /// A local->local transfer (`transfer.rs`): mirror it between the N×
+    /// copies after its upload (`SSX3_RENDER_SCALE`). `p` = sbp, sbw, spsm,
+    /// ssax, ssay, dbp, dbw, dpsm, dsax, dsay, rrw, rrh.
+    pub(crate) fn hires_l2l(&mut self, p: [u32; 12]) {
+        if std::env::var_os("SSX3_HIRES_DEBUG").is_some() {
+            static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+            if N.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 12 {
+                eprintln!("[hires] l2l {p:?}");
+            }
+        }
+        if self.native.as_ref().is_some_and(|n| n.hires.is_some()) {
+            self.hires_pending.push(p);
+        }
+    }
+
+    fn hires_apply_pending(&mut self) {
+        if self.hires_pending.is_empty() {
+            return;
+        }
+        let pending = std::mem::take(&mut self.hires_pending);
+        let dev = &self.ctx.device;
+        let Some(h) = self.native.as_mut().and_then(|n| n.hires.as_mut()) else { return };
+        for p in pending {
+            let [sbp, sbw, spsm, sx, sy, dbp, dbw, dpsm, dx, dy, w, hh] = p;
+            if w == 0 || hh == 0 || sx + w > 2048 || dx + w > 2048 || sy + hh > 2048 || dy + hh > 2048 {
+                continue;
+            }
+            let src = hires::Key { bp: sbp, bw: sbw, psm: spsm, depth: false };
+            let dst = hires::Key { bp: dbp, bw: dbw, psm: dpsm, depth: false };
+            let ss = swizzle::Surface::new(spsm, sbp, sbw);
+            let sp = raster::Pages::rect(&ss, sx, sy, sx + w - 1, sy + hh - 1);
+            if !h.is_current(&src, &sp) {
+                if std::env::var_os("SSX3_HIRES_DEBUG").is_some() {
+                    eprintln!("[hires] l2l source not current: {src:?} (exists {})", h.surfs.contains_key(&src));
+                }
+                continue;
+            }
+            let ds = swizzle::Surface::new(dpsm, dbp, dbw);
+            let dp = raster::Pages::rect(&ds, dx, dy, dx + w - 1, dy + hh - 1);
+            h.acquire(dev, dst, &dp);
+            self.cmds.push(Cmd::HiresCopy { src, dst, sx, sy, dx, dy, w, h: hh });
+            // A copy of the whole buffer width makes the destination current.
+            if dx == 0 && dy == 0 && w >= dbw * 64 {
+                h.mark_current(dst);
+            }
+        }
     }
 
     /// Queue host->local pixels: `pos` = (DSAX, DSAY, RRW, index of the
@@ -1487,6 +1548,23 @@ impl GpuGs {
                     pass.set_pipeline(&self.display_pipe);
                     pass.set_bind_group(0, &self.bind_group, &[slot * SLOT as u32]);
                     pass.dispatch_workgroups(w.div_ceil(8), h.div_ceil(8), 1);
+                }
+                Cmd::HiresCopy { src, dst, sx, sy, dx, dy, w, h } => {
+                    if let Some(hr) = self.native.as_ref().and_then(|n| n.hires.as_ref()) {
+                        if let (Some(a), Some(b)) = (hr.surfs.get(&src), hr.surfs.get(&dst)) {
+                            let k = hr.scale;
+                            let (sx, sy, dx, dy) = (sx * k, sy * k, dx * k, dy * k);
+                            let w = (w * k).min(hr.w.saturating_sub(sx)).min(hr.w.saturating_sub(dx));
+                            let h = (h * k).min(hr.h.saturating_sub(sy)).min(hr.h.saturating_sub(dy));
+                            if w > 0 && h > 0 && src != dst {
+                                enc.copy_texture_to_texture(
+                                    wgpu::TexelCopyTextureInfo { texture: a.view.texture(), mip_level: 0, origin: wgpu::Origin3d { x: sx, y: sy, z: 0 }, aspect: wgpu::TextureAspect::All },
+                                    wgpu::TexelCopyTextureInfo { texture: b.view.texture(), mip_level: 0, origin: wgpu::Origin3d { x: dx, y: dy, z: 0 }, aspect: wgpu::TextureAspect::All },
+                                    wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+                                );
+                            }
+                        }
+                    }
                 }
                 Cmd::NativeBegin { .. } | Cmd::NativePass { .. } | Cmd::NativeEnd { .. } => {
                     let timed = !matches!(c, Cmd::NativePass { .. });

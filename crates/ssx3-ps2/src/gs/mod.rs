@@ -342,6 +342,14 @@ impl Gs {
         o
     }
 
+    /// Tests: keep N× copies at `n` (before the first native run).
+    #[cfg(test)]
+    pub(crate) fn set_hires_scale(&mut self, n: u32) {
+        if let Some(g) = self.gpu.as_mut() {
+            g.hires_scale = n;
+        }
+    }
+
     pub fn gpu_stats(&self) -> Option<gpu::GpuStats> {
         self.gpu.as_ref().map(|g| g.all_stats())
     }

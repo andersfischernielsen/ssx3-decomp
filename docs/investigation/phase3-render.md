@@ -830,3 +830,39 @@ depth and attributes interpolate at the finer grid. Destination reads come from 
 - render-target textures from the N× copies, so the display blit, colour filter, bloom and
   frame copies keep the resolution instead of re-sampling 1× VRAM;
 - presenting the N× display buffer.
+
+### Resolution scaling, step 2: frames as textures keep the resolution (2026-10-16)
+
+The display blit, the colour filter, bloom and frame copies sample frame buffers as textures.
+With step 1 alone they re-sampled 1× VRAM, so the displayed image was only an upscale:
+0.0% of 2×2 blocks in the display buffer's N× copy differed. Now:
+- **Tagging.** At record time, a primitive whose texture is a buffer with a current N× copy
+  is tagged. It is not mipmapped and is CT32, CT24 or CT16. For currency, only the texture
+  pages inside that buffer are checked; a power-of-two texture extent reaches past it.
+- **Sampling.** The N× pass samples the run's own frame from the N× `prev` snapshot and one
+  other buffer per list through a new `n3_src` binding (`n3_hires_tex`).
+  - The stored frame value is turned back into a raw texel and goes through the texture's
+    own conversion (TEXA/AEM).
+  - Nearest uses `floor(u N + N/2)`, because a frame used as a texture has texel *i* at GS
+    position *i*, so a 1:1 copy reproduces the N× frame exactly. Bilinear uses the GS
+    weights at N× coordinates.
+- **Sprites at N×.** Texture coordinates are interpolated from the GS sprite record at the
+  neighbouring GS pixels, by the fragment's sub-pixel position. Coverage stays per GS pixel.
+- **Local→local transfers** are mirrored between N× copies after their upload. The race does
+  none, but the path is there.
+
+Result at 2×: the display buffer's N× copy has 85-89% non-uniform 2×2 blocks (was 0%), and
+the image is visibly smoother.
+
+**Fast tests** (`crates/ssx3-ps2/src/gs/gpu/tests.rs`, about 1 s, no game run needed):
+- `hires_keeps_vram_exact_and_renders_finer`: N× never changes VRAM; the 2×2 average of the
+  copy matches 1× on a smooth texture; the copy has real detail.
+- `hires_frame_as_texture_copies_exactly`: a 1:1 sprite copy of a frame used as a texture
+  reproduces the N× frame bit for bit, and the 1× copy too.
+- `hires_refreshes_after_vram_upload`: a host upload into a buffer shows up in its N× copy.
+
+**Regression the suite caught.** Step 1 had restructured the 1× Z-plane expression
+(`let` → `var` plus a branch). That changed the GPU compiler's FMA contraction, so Z bits
+differed from the compute GS in `n3_dst_read_ct16_sprites_vs_compute`. The race replay never
+hit it. The 1× expressions are now kept verbatim, with the N× evaluation in its own branch.
+Rule for this shader: never restructure the 1× arithmetic.

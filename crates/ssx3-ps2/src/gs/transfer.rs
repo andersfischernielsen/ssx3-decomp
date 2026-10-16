@@ -273,6 +273,9 @@ impl Gs {
     fn local_to_local(&mut self, p: &Params) {
         let src = Surface::new(p.spsm, p.sbp, p.sbw);
         let dst = Surface::new(p.dpsm, p.dbp, p.dbw);
+        if let Some(g) = self.gpu.as_mut() {
+            g.hires_l2l([p.sbp, p.sbw, p.spsm, p.ssax, p.ssay, p.dbp, p.dbw, p.dpsm, p.dsax, p.dsay, p.rrw, p.rrh]);
+        }
         self.before_rect_read(&src, p.ssax, p.ssay, p.rrw, p.rrh);
         // Read everything first so overlapping copies behave deterministically.
         let mut tmp = Vec::with_capacity((p.rrw * p.rrh) as usize);

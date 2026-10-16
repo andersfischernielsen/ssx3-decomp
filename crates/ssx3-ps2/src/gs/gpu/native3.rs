@@ -87,6 +87,9 @@ pub struct N3Stats {
     pub tris: u64,
     pub runs: u64,
     pub draws: u64,
+    /// N× texturing (hires): own frame, other buffer, and why not:
+    /// format, mipmapped, no copy, not current, source slot taken.
+    pub hires_tex: [u64; 7],
     /// Triangles sent to the emulated GS, per reason.
     pub fallback: [u64; 12],
     /// Runs the composition refused (their triangles went emulated).
@@ -145,7 +148,8 @@ impl N3Stats {
             self.flush_why[0], self.flush_why[1], self.flush_why[2], self.flush_why[3], self.flush_why[4]
         );
         s += &format!(
-            "\n    native runs (all) {}, reused targets {} (misses {:?}), refused {}, {:.1} Mpx round-tripped",
+            "\n    hires texturing (own, other, fmt, mip, no copy, stale, slot taken) {:?}\n    native runs (all) {}, reused targets {} (misses {:?}), refused {}, {:.1} Mpx round-tripped",
+            self.hires_tex,
             native.runs,
             native.reused,
             native.miss,
@@ -690,6 +694,8 @@ pub(super) struct List {
     slot: u32,
     /// The same parameters with the N× scale in d.y (`hires`).
     hslot: u32,
+    /// The other buffer whose N× copy this list's N× pass samples.
+    pub(super) src: Option<super::hires::Key>,
     vw: u32,
     vh: u32,
     calls: Vec<Call>,
@@ -854,6 +860,16 @@ impl Gpu {
                 entry(6, S::FRAGMENT, storage(false)),
                 entry(
                     7,
+                    S::FRAGMENT,
+                    wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                ),
+                // N× copy of another buffer sampled as a texture (hires).
+                entry(
+                    8,
                     S::FRAGMENT,
                     wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Float { filterable: false },
@@ -1418,6 +1434,12 @@ impl GpuGs {
         let mut tri_rec: Vec<(usize, usize, usize)> = Vec::with_capacity(tris.len());
         let mut pending_setups: Vec<Arc<Draw>> = Vec::new();
         let fb_fmt16 = s.frame.is_some_and(|f| matches!(f.psm, 0x02 | 0x0A));
+        // N× texturing (hires): textures that are buffers with a current N×
+        // copy sample it: the run's own frame through its `prev` snapshot,
+        // one other buffer per list through the `src` binding.
+        let hi = g.native.as_ref().and_then(|n| n.hires.as_ref());
+        let run_frame = s.frame.map(|f| super::hires::Key { bp: f.bp, bw: f.bw, psm: f.psm, depth: false });
+        let mut src: Option<super::hires::Key> = None;
         for t in &tris {
             let ptr = Arc::as_ptr(&t.d);
             let si = match setups.iter().rposition(|(p, _)| *p == ptr) {
@@ -1485,7 +1507,42 @@ impl GpuGs {
             tri_rec.push((si, recs.len(), nv as usize));
             let dr = t.st.key & K_DR != 0;
             let op = if dr { 0 } else { (t.st.key >> K_OP) & 3 };
-            let flags = t.linear as u32
+            let mut hflags = 0u32;
+            if let (Some(h), Some(tx)) = (hi, t.d.tex.as_ref()) {
+                // Conversion of the stored frame value back to a texel:
+                // 32-bit as is, 24-bit (TEXA alpha), 16-bit (repacked).
+                let conv = match tx.surf.psm {
+                    0x00 => Some(0),
+                    0x01 => Some(1 << 11),
+                    0x02 | 0x0A => Some(1 << 12),
+                    _ => None,
+                };
+                let hs = &mut g.n3.stats.hires_tex;
+                if conv.is_none() {
+                    hs[2] += 1;
+                } else if t.d.mip.is_some() {
+                    hs[3] += 1;
+                }
+                if let (Some(cv), true) = (conv, t.d.mip.is_none()) {
+                    let key = super::hires::Key { bp: tx.surf.base / 64, bw: tx.surf.pages_per_row, psm: tx.surf.psm, depth: false };
+                    if Some(key) == run_frame {
+                        hflags = (1 << 9) | cv;
+                        hs[0] += 1;
+                    } else if !h.surfs.contains_key(&key) {
+                        hs[4] += 1;
+                    } else if !h.is_current(&key, &t.d.tex_pages) {
+                        hs[5] += 1;
+                    } else if src.is_some() && src != Some(key) {
+                        hs[6] += 1;
+                    } else {
+                        src = Some(key);
+                        hflags = (1 << 10) | cv;
+                        hs[1] += 1;
+                    }
+                }
+            }
+            let flags = hflags
+                | t.linear as u32
                 | ((op != 0) as u32) << 2
                 | ((op == 3) as u32) << 3
                 | ((dr && !segs.is_empty()) as u32) << 5
@@ -1587,25 +1644,31 @@ impl GpuGs {
         prm[9] = vh;
         prm[12] = eps_knob().to_bits();
         g.slots.push(prm);
-        let hslot = g.slots.len() as u32;
-        prm[13] = super::hires::scale();
-        g.slots.push(prm);
+        // The N× twin only when scaling: 1× runs are left exactly as before.
+        let hslot = if g.hires_scale > 1 {
+            prm[13] = g.hires_scale;
+            g.slots.push(prm);
+            g.slots.len() as u32 - 1
+        } else {
+            slot
+        };
         g.n3.stats.tris += tris.len() as u64;
         g.n3.stats.runs += 1;
         g.n3.stats.draws += calls.len() as u64;
         g.n3.stats.dr_copies += segs.len() as u64;
-        g.n3.lists.push(List { run: rid, slot, hslot, vw, vh, calls, segs });
+        g.n3.lists.push(List { run: rid, slot, hslot, src, vw, vh, calls, segs });
         run.end();
     }
 
     /// The bind group of the native-3 pipelines for this submission.
     pub(super) fn n3_bind_group(&self) -> Option<wgpu::BindGroup> {
-        self.n3_bind_group_with(self.native_prev()?)
+        let p = self.native_prev()?;
+        self.n3_bind_group_with(p, p)
     }
 
     /// `n3_bind_group` with `prev` as the destination-read copy (the N×
     /// one for `hires` passes).
-    pub(super) fn n3_bind_group_with(&self, prev: &wgpu::TextureView) -> Option<wgpu::BindGroup> {
+    pub(super) fn n3_bind_group_with(&self, prev: &wgpu::TextureView, src: &wgpu::TextureView) -> Option<wgpu::BindGroup> {
         if self.n3.lists.is_empty() {
             return None;
         }
@@ -1633,6 +1696,10 @@ impl GpuGs {
                 wgpu::BindGroupEntry {
                     binding: 7,
                     resource: wgpu::BindingResource::TextureView(prev),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 8,
+                    resource: wgpu::BindingResource::TextureView(src),
                 },
             ],
         }))

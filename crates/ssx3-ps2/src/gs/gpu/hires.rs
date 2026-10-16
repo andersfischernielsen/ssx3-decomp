@@ -35,6 +35,8 @@ pub(crate) struct Key {
 
 pub(crate) struct Surf {
     pub view: wgpu::TextureView,
+    /// The VRAM pages this copy stands for (the buffer's extent).
+    pages: Pages,
     /// Write clock when this copy was last made current.
     clock: u64,
 }
@@ -124,13 +126,31 @@ impl Hires {
         if fresh {
             let format = if key.depth { super::native::DEPTH_FORMAT } else { super::native::COLOR_FORMAT };
             let view = texture(dev, "gs-hires-surface", self.w, self.h, format, wgpu::TextureUsages::COPY_SRC);
-            self.surfs.insert(key, Surf { view, clock: 0 });
+            self.surfs.insert(key, Surf { view, pages: *pages, clock: 0 });
+        }
+        if let Some(s) = self.surfs.get_mut(&key) {
+            s.pages.union(pages);
         }
         let s = &self.surfs[&key];
         let mut stale = fresh;
         each_page(pages, |p| stale |= self.page_clock[p] > s.clock);
         self.refreshes += stale as u64;
         stale
+    }
+
+    /// Whether the N× copy of `key` exists and nothing wrote `pages` since
+    /// it was current (a texture can then be sampled from it).
+    pub fn is_current(&self, key: &Key, pages: &Pages) -> bool {
+        let Some(s) = self.surfs.get(key) else { return false };
+        // Only the texture pages inside the buffer: a texture's extent is a
+        // power of two and can reach past the buffer into other buffers.
+        let mut inside = *pages;
+        for (w, o) in inside.0.iter_mut().zip(s.pages.0.iter()) {
+            *w &= *o;
+        }
+        let mut ok = true;
+        each_page(&inside, |p| ok &= self.page_clock[p] <= s.clock);
+        ok
     }
 
     /// `key` was just drawn by a run over `pages` (after `note_write`).

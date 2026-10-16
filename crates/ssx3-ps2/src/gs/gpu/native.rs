@@ -233,7 +233,8 @@ fn storage(read_only: bool) -> wgpu::BindingType {
 }
 
 impl NativeState {
-    pub(super) fn new(dev: &wgpu::Device, module: &wgpu::ShaderModule) -> NativeState {
+    /// `scale` > 1 also keeps N× copies (`hires`).
+    pub(super) fn new(dev: &wgpu::Device, module: &wgpu::ShaderModule, scale: u32) -> NativeState {
         // Group 0: the GS bindings the native entry points use (vram,
         // tables, params), visible to fragment and compute stages.
         let bgl0 = dev.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -334,7 +335,7 @@ impl NativeState {
             unswizzle_pipe,
             unswizzle_c,
             unswizzle_z,
-            hires: (super::hires::scale() > 1).then(|| super::hires::Hires::new(super::hires::scale())),
+            hires: (scale > 1).then(|| super::hires::Hires::new(scale)),
             swizzle_pipe,
             targets: None,
             runs: Vec::new(),
@@ -566,7 +567,7 @@ impl GpuGs {
         // submission have lost the device): submit what is queued, without
         // waiting (the batch was just closed).
         if self.native.is_none() {
-            self.native = Some(Box::new(NativeState::new(&self.ctx.device, &self.module)));
+            self.native = Some(Box::new(NativeState::new(&self.ctx.device, &self.module, self.hires_scale)));
         }
         if self.native.as_ref().is_some_and(|n| n.runs.len() >= MAX_RUNS_PER_SUBMIT) {
             self.submit_with(|_, _| {});
@@ -632,7 +633,7 @@ impl GpuGs {
         if self.native.as_ref().is_some_and(|n| n.runs[run as usize].hi.is_some()) {
             // The same parameters with the scale in d.y.
             let mut p = self.slots[slot as usize];
-            p[13] = super::hires::scale();
+            p[13] = self.hires_scale;
             let hs = self.slots.len() as u32;
             self.slots.push(p);
             if let Some(h) = self.native.as_mut().and_then(|n| n.runs[run as usize].hi.as_mut()) {
@@ -794,8 +795,8 @@ impl GpuGs {
             .native
             .as_deref()
             .and_then(|n| n.hires.as_ref())
-            .and_then(|h| h.prev.as_ref())
-            .and_then(|p| self.n3_bind_group_with(p));
+            .and_then(|h| h.prev.as_ref().zip(h.dummy_color.as_ref()))
+            .and_then(|(p, d)| self.n3_bind_group_with(p, d));
         let n = self.native.as_deref_mut().expect("native state");
         Some(NativeEncode {
             bg0,
@@ -992,7 +993,13 @@ impl GpuGs {
                 pass.draw(0..3, 0..1);
             }
         }
-        let (Some(list), Some(bg), Some(prev)) = (list, e.bg3h.as_ref(), h.prev.as_ref()) else { return };
+        let (Some(list), Some(bg0h), Some(prev)) = (list, e.bg3h.as_ref(), h.prev.as_ref()) else { return };
+        // A list sampling another buffer's N× copy gets its own bind group.
+        let own = self.n3.lists[list as usize]
+            .src
+            .and_then(|k| h.surfs.get(&k))
+            .and_then(|sv| self.n3_bind_group_with(prev, &sv.view));
+        let bg = own.as_ref().unwrap_or(bg0h);
         let s = &r.surfaces;
         for seg in 0..self.n3_segments(list) {
             let [x0, y0, x1, y1] = if seg == 0 { [r.x0, r.y0, s.width - 1, s.height - 1] } else { self.n3_copy_rect(list, seg) };
