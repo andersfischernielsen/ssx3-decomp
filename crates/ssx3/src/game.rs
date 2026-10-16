@@ -134,6 +134,10 @@ pub fn install_renderer() -> Option<ssx3_gfx::Renderer> {
     };
     let r = ssx3_gfx::Renderer::new(ctx.device.clone(), ctx.queue.clone());
     r.set_want_depth(native);
+    // SSX3_RENDER_SCALE=N: N× internal resolution (1..8).
+    if let Some(n) = std::env::var("SSX3_RENDER_SCALE").ok().and_then(|v| v.parse::<u32>().ok()) {
+        r.set_scale(n);
+    }
     // The light visibility queries from the native depth (unless a debug
     // switch already forces them).
     if native && std::env::var_os("SSX3_DEBUG_LENSFX_VIS").is_none() {

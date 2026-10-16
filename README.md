@@ -122,6 +122,7 @@ emulated VIF/VU1/GS at all. Movies and loading screens still go through the emul
 | --- | --- |
 | `SSX3_RENDER=native` | The default, as above. |
 | `SSX3_RENDER=emu` | The emulated GS only: the exact reference path (RAM-identical to the PS2 model). |
+| `SSX3_RENDER_SCALE=2` (up to 8) | N× internal resolution (native renderer; with `SSX3_RENDER=emu SSX3_RENDER_NATIVE=all`, the emulated GS's). |
 | `SSX3_RENDER=shadow` | Both: the native renderer draws next to the emulated GS, which is shown (headless writes `frameNNNNN-gfx.png` too). |
 
 **Native host implementations (phase 3).** On by default; each has a switch back to the
@@ -135,7 +136,6 @@ emulated PS2 path for comparison:
 | `SSX3_HOST_CLOCK=0` | Window only: emulated time only. By default the window keeps game time real-time when the host falls behind (extra 60 Hz updates, fewer rendered frames); the headless runner never does. |
 | `SSX3_GS=cpu` | With `SSX3_RENDER=emu`: software rasterizer instead of the GPU one (slow; for debugging). |
 | `SSX3_RENDER_NATIVE=all` | With `SSX3_RENDER=emu`: the emulated GS draws with wgpu render pipelines instead of the compute GS. |
-| `SSX3_RENDER_SCALE=2` (up to 8) | With `SSX3_RENDER=emu SSX3_RENDER_NATIVE=all`: N× internal resolution (the native renderer does not scale yet). |
 
 The fully emulated reference path is:
 

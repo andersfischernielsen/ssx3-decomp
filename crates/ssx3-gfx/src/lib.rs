@@ -90,6 +90,8 @@ pub struct Inner {
     pub stats: Stats,
     /// The display buffer, when the game blends frames into it.
     display_fbp: Option<u32>,
+    /// Internal resolution: GPU targets are this many times the GS's.
+    scale: u32,
     /// Batches of VIF phase 1 (the 3D scene) in this frame.
     phase1_end: usize,
     /// Keep the depth after phase 1 (`depth()`, native mode).
@@ -168,6 +170,7 @@ impl Renderer {
             failed: Default::default(),
             stats: Stats::default(),
             display_fbp: None,
+            scale: 1,
             phase1_end: usize::MAX,
             want_depth: false,
             last_depth: None,
@@ -190,6 +193,11 @@ impl Renderer {
         let t = g.present.as_ref()?;
         let view = t.create_view(&wgpu::TextureViewDescriptor { format: Some(wgpu::TextureFormat::Rgba8UnormSrgb), ..Default::default() });
         Some((view, t.width(), t.height()))
+    }
+
+    /// Render at `n`× the GS resolution (1..=8).
+    pub fn set_scale(&self, n: u32) {
+        self.0.lock().unwrap().scale = n.clamp(1, 8);
     }
 
     /// Native mode: keep each frame's depth after the 3D phase for the
@@ -281,14 +289,16 @@ impl Inner {
     /// Textures for the render targets the game drew into (resized when
     /// they grow).
     fn ensure_rts(&mut self) {
+        let s = self.scale;
         for (&fbp, rt) in &self.gs.rts {
-            if self.rts.get(&fbp).is_some_and(|t| t.w == rt.w && t.h == rt.h) {
+            let (pw, ph) = (rt.w * s, rt.h * s);
+            if self.rts.get(&fbp).is_some_and(|t| t.w == pw && t.h == ph) {
                 continue;
             }
             let mk = |format, extra| {
                 self.dev.create_texture(&wgpu::TextureDescriptor {
                     label: Some("ssx3-gfx rt"),
-                    size: wgpu::Extent3d { width: rt.w, height: rt.h, depth_or_array_layers: 1 },
+                    size: wgpu::Extent3d { width: pw, height: ph, depth_or_array_layers: 1 },
                     mip_level_count: 1,
                     sample_count: 1,
                     dimension: wgpu::TextureDimension::D2,
@@ -299,7 +309,7 @@ impl Inner {
             };
             let color = mk(draw::COLOR_FORMAT, wgpu::TextureUsages::COPY_SRC);
             let depth = mk(draw::DEPTH_FORMAT, wgpu::TextureUsages::empty());
-            self.rts.insert(fbp, RtTarget { w: rt.w, h: rt.h, color, depth });
+            self.rts.insert(fbp, RtTarget { w: pw, h: ph, color, depth });
         }
     }
 
@@ -692,7 +702,7 @@ impl Inner {
         self.timing.0 += 1;
         self.timing.1[0] += (t_built - t_start).as_secs_f64() * 1e3;
         let (w, h) = self.gs.size;
-        self.ensure_targets(w, h);
+        self.ensure_targets(w * self.scale, h * self.scale);
         self.ensure_rts();
         self.stats.prims += self.gs.prims - p0.0;
         self.stats.dropped += self.gs.dropped - p0.1;
@@ -787,17 +797,20 @@ impl Inner {
                     binds.len() - 1
                 }
             };
+            // Logical (GS pixel) size of the target; the GPU target is
+            // `scale` times that.
             let (tw, th) = if st.target == self.gs.main_fbp {
                 (w, h)
             } else {
-                match self.rts.get(&st.target) {
+                match self.gs.rts.get(&st.target).filter(|_| self.rts.contains_key(&st.target)) {
                     Some(r) => (r.w, r.h),
                     None => continue,
                 }
             };
             let sc = st.ctx.scissor;
             let (x0, x1, y0, y1) = ((sc & 0x7ff) as u32, ((sc >> 16) & 0x7ff) as u32, ((sc >> 32) & 0x7ff) as u32, ((sc >> 48) & 0x7ff) as u32);
-            let scissor = (x0 <= x1 && y0 <= y1 && x0 < tw && y0 < th).then(|| [x0, y0, (x1 + 1).min(tw) - x0, (y1 + 1).min(th) - y0]);
+            let sc_ = self.scale;
+            let scissor = (x0 <= x1 && y0 <= y1 && x0 < tw && y0 < th).then(|| [x0 * sc_, y0 * sc_, ((x1 + 1).min(tw) - x0) * sc_, ((y1 + 1).min(th) - y0) * sc_]);
             if scissor.is_none() {
                 continue;
             }
@@ -1103,16 +1116,21 @@ impl Inner {
                 let slice = prev.slice(..);
                 let _ = self.dev.poll(wgpu::PollType::Wait { submission_index: Some(prev_idx), timeout: None });
                 if let Ok(v) = slice.get_mapped_range() {
+                    // In GS pixels: the sample at each pixel's centre.
+                    let s = self.scale as usize;
+                    let (lw, lh) = (pw as usize / s, ph as usize / s);
                     let row = (pw * 4).next_multiple_of(256) as usize;
                     let zs = zs as f64;
-                    let mut z = Vec::with_capacity((pw * ph) as usize);
-                    for y in 0..ph as usize {
-                        for d in v[y * row..y * row + 4 * pw as usize].chunks_exact(4) {
-                            let d = f32::from_le_bytes([d[0], d[1], d[2], d[3]]);
+                    let mut z = Vec::with_capacity(lw * lh);
+                    for y in 0..lh {
+                        let r = (y * s + s / 2) * row;
+                        for x in 0..lw {
+                            let o = r + 4 * (x * s + s / 2);
+                            let d = f32::from_le_bytes([v[o], v[o + 1], v[o + 2], v[o + 3]]);
                             z.push((d as f64 * zs).round().min(zs - 1.0) as u32);
                         }
                     }
-                    self.last_depth = Some((pw, ph, z));
+                    self.last_depth = Some((lw as u32, lh as u32, z));
                 }
             }
             buf.slice(..).map_async(wgpu::MapMode::Read, |_| {});

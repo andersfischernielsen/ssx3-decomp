@@ -40,6 +40,9 @@ fn main() {
             frame_sink::load_dump(&bytes).unwrap_or_else(|e| panic!("{path}: {e}"))
         })
         .collect();
+    if let Some(n) = std::env::var("SSX3_RENDER_SCALE").ok().and_then(|v| v.parse::<u32>().ok()) {
+        r.set_scale(n);
+    }
     if std::env::var_os("SSX3_REPLAY_DEPTH").is_some() {
         r.set_want_depth(true);
     }
