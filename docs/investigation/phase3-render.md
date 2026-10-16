@@ -451,3 +451,26 @@ Notes:
   the bit-exact CPU reference.
 - Declined, never seen in play: the pass-1 sphere map reads a stale vi11 pointer (a game
   bug), and inputs whose original loops would never terminate.
+
+### Stage 2A, types 6/7: rider (2026-10-16)
+
+`crates/ssx3-render/src/mat6.rs` is VU1 program 9fa47842 in readable Rust, covering every
+entry:
+- 0x00/0x398 lit draw (bone per vertex), 0x50 lit draw (one bone per batch);
+- 0x10 morph, 0x20 shadow silhouette, 0x30 env pass, 0x40 ctx2 tag;
+- 0x70/0x80 bone setup and 0x1150 SH lighting ×255.
+
+Check (`SSX3_VERIFY_MAT6=1`): menus, character select and race to frame 4800, **1,434,419
+calls, 0 mismatches** in kicked packets and VU1 memory.
+
+Notes:
+- State between calls lives only in VU1 memory. The env pass reads each vertex's Q back from
+  the draw's output at TOP+0xb4, which explains the 0x50/0x30/0x30 parity.
+- Morph quirk: an entry's target is read before the previous entry's result is stored, so two
+  consecutive entries with the same target replace instead of adding.
+- Shader inputs:
+  - per draw: guard scale and offset, 10 SH coefficients;
+  - per bone: M·B (positions), R (normals), E·R (env);
+  - per vertex: {u, v, boneAddr, nrmAddr}, the normal (1.15), the position.
+- The ADC rule: the first two vertices of a strip, or any of the last three vertices outside
+  the guard band.

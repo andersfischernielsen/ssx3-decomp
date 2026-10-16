@@ -28,6 +28,7 @@ pub mod sif;
 pub mod snd_native;
 pub mod render_verify;
 pub mod mat3_verify;
+pub mod mat6_verify;
 pub mod threads;
 pub mod vif;
 /// The Vector Units live in their own crate (build times); see `ssx3-vu`.

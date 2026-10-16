@@ -9,10 +9,13 @@
 //!   every microprogram start (MSCAL/MSCALF/MSCNT) into a [`vif::VuCall`]
 //!   with exactly the input the program sees; DIRECT/DIRECTHL become GIF
 //!   streams.
+//! - [`mat3`], [`mat6`]: VU1 programs d159716b (type 3) and 9fa47842 (types
+//!   6/7, riders) in readable Rust, bit-exact with the translated microcode.
 //!
 //! Later stages implement each VU1 material natively on wgpu from these
 //! calls.
 
 pub mod chain;
 pub mod mat3;
+pub mod mat6;
 pub mod vif;
