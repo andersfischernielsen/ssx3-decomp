@@ -1,6 +1,8 @@
 # ssx3-decomp
 
-![SSX 3 running as recompiled Rust: title screen, mode select, race start and three moments of a Snow Jam race](docs/images/screenshots.jpg)
+[![SSX 3 running as recompiled Rust: title screen, mode select, race start and three moments of a Snow Jam race](docs/images/screenshots.jpg)](docs/ssx3.mp4)
+
+▶ **[Watch it running natively (video, docs/ssx3.mp4)](docs/ssx3.mp4)**
 
 <sub>The recompiled game running headless at 2× internal resolution (`SSX3_RENDER_NATIVE=all SSX3_RENDER_SCALE=2`): title, mode select, and the first 75 seconds of a Snow Jam race.</sub>
 
