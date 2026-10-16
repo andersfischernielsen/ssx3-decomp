@@ -95,7 +95,7 @@ impl Packet {
 #[inline]
 fn apply(gs: &mut Gs, c: Cmd, data: &[Qword], slot: &DisplaySlot, job: Option<NativeJob>) {
     match c {
-        Cmd::Gif { path, .. } if path & 0x80 != 0 => gs.gif_write_type3(data),
+        Cmd::Gif { path, .. } if path & 0x80 != 0 => gs.gif_write_native((path & 3) as usize, data),
         Cmd::Gif { path, .. } => gs.gif_write(path as usize, data),
         Cmd::Reg { addr, value } => gs.write_reg(addr, value),
         Cmd::Priv { offset, value } => gs.write_priv(offset, value),
@@ -610,9 +610,16 @@ impl Mtgs {
     /// `SSX3_RENDER_NATIVE=type3` the GS draws its triangles with the
     /// hardware rasterizer (`Gs::gif_write_type3`).
     pub fn gif_write_type3(&mut self, data: &[Qword]) {
+        self.gif_write_native(1, data);
+    }
+
+    /// `gif_write(path, data)` with the packet's primitives drawn natively
+    /// where possible (`Gs::gif_write_native`).
+    pub fn gif_write_native(&mut self, path: usize, data: &[Qword]) {
+        let path = path.min(3);
         let (csr, sig) = (&mut self.csr, &mut self.siglblid);
-        self.tags[1].scan(data, |addr, value| ad_side_effects(csr, sig, addr, value));
-        self.exec(Cmd::Gif { path: 0x81, len: data.len() as u32 }, data);
+        self.tags[path].scan(data, |addr, value| ad_side_effects(csr, sig, addr, value));
+        self.exec(Cmd::Gif { path: 0x80 | path as u8, len: data.len() as u32 }, data);
     }
 
     pub fn write_reg(&mut self, addr: u8, value: u64) {
@@ -630,9 +637,19 @@ impl Mtgs {
     // The same arbitration as `Gs::path3_dma` and friends (see there), kept
     // on the guest side because GIF_STAT shows it.
 
+    /// PATH3 GIF DMA data into the GS (natively drawn with
+    /// `SSX3_RENDER_NATIVE=post`).
+    fn gif_write_p3(&mut self, data: &[Qword]) {
+        if super::render_native_post() {
+            self.gif_write_native(3, data);
+        } else {
+            self.gif_write(3, data);
+        }
+    }
+
     pub fn path3_dma(&mut self, data: &[Qword]) {
         if !super::path3_mask_enabled() {
-            self.gif_write(3, data);
+            self.gif_write_p3(data);
             return;
         }
         self.p3_queue.extend(data.iter().copied());
@@ -704,7 +721,7 @@ impl Mtgs {
             if !self.p3_mid {
                 packets += 1;
             }
-            self.gif_write(3, &chunk);
+            self.gif_write_p3(&chunk);
             self.scratch = chunk;
             self.p3_mid = mid;
         }

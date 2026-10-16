@@ -552,13 +552,28 @@ impl Gs {
     /// state) is processed as usual. Otherwise the same as
     /// `gif_write(1, data)`.
     pub fn gif_write_type3(&mut self, data: &[Qword]) {
+        self.gif_write_native(1, data);
+    }
+
+    /// `gif_write(path, data)` with the packet's primitives drawn by the
+    /// native (wgpu) path where it can (`gpu::native3`): VU1 material
+    /// packets (PATH1), VIF1 DIRECT packets (PATH2, `SSX3_RENDER_NATIVE=2d`)
+    /// and GIF DMA packets (PATH3, `post`). State handling is unchanged.
+    pub fn gif_write_native(&mut self, path: usize, data: &[Qword]) {
         if !render_native_type3() || self.gpu.is_none() || self.capture.is_some() {
-            self.gif_write(1, data);
+            self.gif_write(path, data);
             return;
         }
+        let exact = path == 2 && exact_2d();
+        if exact {
+            self.gpu.as_mut().unwrap().n3.exact = true;
+        }
         self.n3_capture = true;
-        self.gif_write(1, data);
+        self.gif_write(path, data);
         self.n3_capture = false;
+        if exact {
+            self.gpu.as_mut().unwrap().n3.exact = false;
+        }
     }
 
     /// MSKPATH3 from VIF1. Lifting the mask lets PATH3 start its next
@@ -1054,7 +1069,29 @@ pub fn render_native_hash(hash: u64) -> bool {
 /// Any material is drawn natively (enables the native pipelines).
 fn render_native_type3_cached() -> bool {
     static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *E.get_or_init(|| ["type3", "terrain", "rider", "particles"].iter().any(|n| render_native_has(n)))
+    *E.get_or_init(|| ["type3", "terrain", "rider", "particles", "2d", "post"].iter().any(|n| render_native_has(n)))
+}
+
+/// Blended PATH2 (2D) primitives use the exact destination-read blend
+/// (the blend unit rounds differently by 1-2 on UI edges);
+/// `SSX3_N3_EXACT_2D=0` uses the blend unit.
+fn exact_2d() -> bool {
+    static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *E.get_or_init(|| std::env::var("SSX3_N3_EXACT_2D").map_or(true, |v| v != "0"))
+}
+
+/// `SSX3_RENDER_NATIVE` lists `2d` (or `all`): VIF1 DIRECT/DIRECTHL
+/// packets (PATH2: UI, HUD, fonts, menus) are drawn natively.
+pub fn render_native_2d() -> bool {
+    static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *E.get_or_init(|| render_native_has("2d"))
+}
+
+/// `SSX3_RENDER_NATIVE` lists `post` (or `all`): GIF DMA packets (PATH3:
+/// post effects such as depth fog, bloom, colour filter) are drawn natively.
+pub fn render_native_post() -> bool {
+    static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *E.get_or_init(|| render_native_has("post"))
 }
 
 fn clamp_trace() -> bool {

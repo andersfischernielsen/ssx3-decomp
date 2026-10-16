@@ -686,3 +686,40 @@ Full race with `SSX3_RENDER_NATIVE=all`, against the emulated reference:
 
 Open: 4-13 px per scene differ by more than 8 in the PABE and CT16-blend unit-test scenes
 (none in game frames).
+
+### 2D and post effects through the native path (2026-10-16)
+
+Two new `SSX3_RENDER_NATIVE` tokens, both included in `all`:
+- **`2d`:** VIF1 DIRECT/DIRECTHL packets (PATH2: UI, HUD, fonts, menus).
+- **`post`:** GIF DMA packets (PATH3: depth fog, bloom, colour filter).
+
+Both go through `Gs::gif_write_native(path, ..)`, which generalises `gif_write_type3`. In
+`Mtgs`, the native flag is `0x80 | path` in `Cmd::Gif`. The GS model still parses the packet,
+handles IMAGE transfers and state as before, and hands set-up primitives to `n3_push`.
+
+- **Exact blending for PATH2:** with the blend unit, 6-8% of menu pixels were off by 1-2 on
+  UI and font edges because its rounding differs from the GS. PATH2 primitives now use the
+  exact destination-read blend (`N3::exact`, the `K_DR` path). `SSX3_N3_EXACT_2D=0` turns
+  this off. After the change, menu shots match the earlier `all` run digit for digit
+  (1.45-1.92% differ, max 2, all from the 3D rider). 2D adds no differences of its own.
+
+Full race with `SSX3_RENDER_NATIVE=all`, against the emulated reference:
+
+| | Before | Now |
+|---|---|---|
+| Native triangles | — | 99.34M in 288k runs |
+| Fallback triangles | 0.40% | 0.84% |
+| Mean pixels differing | 0.875% | **0.824%** |
+| Worst shot | 3.4% | 3.4% |
+| Pixels off by more than 8 | 0 | 0 |
+| Wall time | 142 s | 152 s |
+
+- **Fallbacks:** 0.84% overall (377k line strips, 468k texture-feedback sprites).
+- **Game state:** final RAM identical.
+- **Wall time:** 152 s on this run. The default path took 122-126 s on the same machine, so
+  timings are noisy.
+- **Default path:** byte-identical.
+
+What falls back now is mostly post-effect and 2D sprites that sample their own frame (bloom
+and colour-filter passes, which copy the frame to itself), plus line strips. Drawing these
+natively needs a copy of the target as a texture.

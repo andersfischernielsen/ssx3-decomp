@@ -299,7 +299,11 @@ impl Vif {
                                 | (c[3] as u128) << 96
                         })
                         .collect();
-                    gs.gif_write(2, &qws);
+                    if crate::gs::render_native_2d() {
+                        gs.gif_write_native(2, &qws);
+                    } else {
+                        gs.gif_write(2, &qws);
+                    }
                 } else {
                     self.error(cmd);
                 }

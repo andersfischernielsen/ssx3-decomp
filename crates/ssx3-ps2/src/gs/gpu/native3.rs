@@ -193,7 +193,7 @@ fn factor(i: u32) -> wgpu::BlendFactor {
 /// The fixed-function state of `d`, or why the native path cannot draw it.
 /// States the blend unit cannot express exactly read the destination in
 /// the shader instead (`K_DR`, see `dr_state`).
-fn classify(d: &Draw, dual_ok: bool) -> Result<State, Fallback> {
+fn classify(d: &Draw, dual_ok: bool, exact: bool) -> Result<State, Fallback> {
     if d.ate && d.afail > 1 {
         return Err(Fallback::AlphaFail);
     }
@@ -231,7 +231,7 @@ fn classify(d: &Draw, dual_ok: bool) -> Result<State, Fallback> {
     let blending = d.abe && d.blend != Blend::Src;
     // CT16: the target holds what the GS stores (5:5:5:1); blending
     // results are not, so blended CT16 draws read the destination.
-    dr |= blending && (d.pabe || !d.colclamp || d.fb_fmt == FbFmt::C16);
+    dr |= blending && (exact || d.pabe || !d.colclamp || d.fb_fmt == FbFmt::C16);
     if dr {
         return Ok(dr_state(key, fb_only));
     }
@@ -699,7 +699,10 @@ pub(crate) struct N3 {
     /// Pages the pending run draws, and the pages its textures read.
     target_pages: Pages,
     tex_pages: Pages,
-    last: Option<(Arc<Draw>, Result<State, Fallback>)>,
+    last: Option<(Arc<Draw>, bool, Result<State, Fallback>)>,
+    /// Blended primitives read the destination (the exact GS integer
+    /// blend) instead of using the blend unit (PATH2 2D packets).
+    pub(crate) exact: bool,
     /// Bounding box of the pending triangles (the run round-trips only it).
     rect: [i32; 4],
     /// Destination reads: pixels drawn since the last copy to `prev` (or
@@ -983,14 +986,14 @@ impl GpuGs {
         };
         let is_sprite = matches!(geo, Geo::Rect(_));
         let mut st = match &self.n3.last {
-            Some((ld, r)) if Arc::ptr_eq(ld, d) => *r,
+            Some((ld, x, r)) if Arc::ptr_eq(ld, d) && *x == self.n3.exact => *r,
             _ => {
                 if self.n3.gpu.is_none() {
                     self.n3.gpu = Some(Box::new(Gpu::new(&self.ctx.device)));
                 }
                 let dual = self.n3.gpu.as_ref().is_some_and(|g| g.dual);
-                let r = classify(d, dual);
-                self.n3.last = Some((d.clone(), r));
+                let r = classify(d, dual, self.n3.exact);
+                self.n3.last = Some((d.clone(), self.n3.exact, r));
                 r
             }
         }?;
