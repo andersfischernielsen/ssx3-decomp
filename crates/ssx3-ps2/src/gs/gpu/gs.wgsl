@@ -1002,7 +1002,7 @@ fn display(@builtin(global_invocation_id) gid: vec3<u32>) {
 // Composition with host wgpu rendering (`gpu/native.rs`). params:
 // a = frame surface [base, packed, pages per row], a.w = FbFmt | 0x100 when
 // the run has a frame; b = Z surface, b.w = its largest Z (0 = no Z); c.xy = the
-// run's width and height.
+// run's width and height (exclusive end), c.zw = its top-left corner.
 @group(1) @binding(0) var native_color: texture_2d<f32>;
 @group(1) @binding(1) var native_depth: texture_depth_2d;
 
@@ -1047,7 +1047,9 @@ fn native_unswizzle(@builtin(position) pos: vec4<f32>) -> NativeOut {
 
 // Swizzle the targets back into VRAM (every pixel of the run's rectangle).
 @compute @workgroup_size(8, 8)
-fn native_swizzle(@builtin(global_invocation_id) gid: vec3<u32>) {
+fn native_swizzle(@builtin(global_invocation_id) id: vec3<u32>) {
+    // c.zw: the rectangle's top-left corner (0 for whole runs).
+    let gid = id.xy + params.c.zw;
     if (gid.x >= params.c.x || gid.y >= params.c.y) {
         return;
     }

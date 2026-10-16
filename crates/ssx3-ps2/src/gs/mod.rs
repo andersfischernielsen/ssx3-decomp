@@ -207,6 +207,8 @@ pub struct Gs {
     pub(crate) p3_mask_reg: bool,
     /// PATH3 is inside a GIF packet (a mask only stops it at the end of one).
     pub(crate) p3_mid: bool,
+    /// Inside `gif_write_type3`: triangles go to the native (wgpu) path.
+    pub(crate) n3_capture: bool,
 }
 
 /// One draw setup recorded by `Gs::draw_log`.
@@ -293,6 +295,7 @@ impl Gs {
             p3_mask_vif: false,
             p3_mask_reg: false,
             p3_mid: false,
+            n3_capture: false,
         }
     }
 
@@ -331,7 +334,7 @@ impl Gs {
 
     /// GPU backend statistics (`None` on the CPU backend).
     pub fn gpu_stats(&self) -> Option<gpu::GpuStats> {
-        self.gpu.as_ref().map(|g| g.stats)
+        self.gpu.as_ref().map(|g| g.all_stats())
     }
 
     /// The device the GPU backend draws with (for presenting its frames).
@@ -531,6 +534,22 @@ impl Gs {
         }
         self.p3_queue.extend(data.iter().copied());
         self.pump_path3();
+    }
+
+    /// A PATH1 packet of the type-3 VU1 program. With
+    /// `SSX3_RENDER_NATIVE=type3` on the GPU backend, its triangles are
+    /// drawn with the hardware rasterizer inside native runs
+    /// (`gpu::native3`); everything else about the packet (registers, GIF
+    /// state) is processed as usual. Otherwise the same as
+    /// `gif_write(1, data)`.
+    pub fn gif_write_type3(&mut self, data: &[Qword]) {
+        if !render_native_type3() || self.gpu.is_none() || self.capture.is_some() {
+            self.gif_write(1, data);
+            return;
+        }
+        self.n3_capture = true;
+        self.gif_write(1, data);
+        self.n3_capture = false;
     }
 
     /// MSKPATH3 from VIF1. Lifting the mask lets PATH3 start its next
@@ -994,6 +1013,15 @@ fn qword_bytes(q: &[Qword]) -> &[u8] {
     // SAFETY: u128 has no padding; on little-endian targets its memory
     // layout is `to_le_bytes`.
     unsafe { std::slice::from_raw_parts(q.as_ptr() as *const u8, q.len() * 16) }
+}
+
+/// `SSX3_RENDER_NATIVE` contains `type3`: draw the type-3 VU1 program's
+/// triangles with the hardware rasterizer (phase 3, stage 2B).
+pub fn render_native_type3() -> bool {
+    static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *E.get_or_init(|| {
+        std::env::var("SSX3_RENDER_NATIVE").is_ok_and(|v| v.split(',').any(|x| x.trim() == "type3"))
+    })
 }
 
 fn clamp_trace() -> bool {

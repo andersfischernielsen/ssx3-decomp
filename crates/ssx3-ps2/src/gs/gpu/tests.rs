@@ -462,3 +462,113 @@ fn native_roundtrip_cost() {
         gpu as f64 / 1e3 / n as f64
     );
 }
+
+// ---------------------------------------------------------------- native type-3 triangles
+
+/// Native-3 triangles (hardware rasterizer) against the compute GS on the
+/// same random triangles: prints how many frame/Z words differ and by how
+/// much (rasterization-rule and interpolation residuals). Run with
+/// `SSX3_RENDER_NATIVE=type3` and `--nocapture`.
+#[test]
+fn n3_triangles_vs_compute() {
+    for scene in 0..8u32 {
+        let Some((mut emu, _)) = gpu_random(7) else { return };
+        let Some((mut nat, _)) = gpu_random(7) else { return };
+        let mut r = Rng(0x1234_5678 + scene as u64);
+        for gs in [&mut emu, &mut nat] {
+            frame(gs);
+            // CT32 texture at block 0x2000, 256x256 noise.
+            upload(gs, 0x3000, 4, 256, 256, |x, y| {
+                let h = (x.wrapping_mul(0x9E37_79B9) ^ y.wrapping_mul(0x85EB_CA6B)).rotate_left(13);
+                h & 0x00FF_FFFF | 0x8000_0000
+            });
+            gs.write_reg(0x47, 1 << 16 | 2 << 17); // ZTE, GEQUAL
+            gs.write_reg(0x46, 1); // COLCLAMP
+        }
+        let (prim_attr, tex0, tex1, alpha): (u64, u64, u64, u64) = match scene {
+            0 => (0, 0, 0, 0),                                         // flat
+            1 => (1 << 3, 0, 0, 0),                                    // gouraud
+            2 => (1 << 3 | 1 << 4, 1, 0, 0),                           // textured nearest, modulate
+            3 => (1 << 3 | 1 << 4, 1, 1 << 5 | 1 << 6, 0),             // textured bilinear
+            4 => (1 << 3 | 1 << 6, 0, 0, 0x44),                        // (Cs-Cd)As+Cd
+            6 => (1 << 3 | 1 << 4, 1, 1 << 5 | 1 << 6, 0),             // constant gouraud, bilinear
+            7 => (1 << 3, 0, 0, 0),                                    // FB_ONLY alpha test
+            _ => (1 << 3 | 1 << 4 | 1 << 6, 1, 1 << 5 | 1 << 6, 0x48), // Cs As + Cd, bilinear
+        };
+        for gs in [&mut emu, &mut nat] {
+            if tex0 != 0 {
+                gs.write_reg(0x06, 0x3000 | 4 << 14 | 8 << 26 | 8 << 30 | 1 << 34);
+                gs.write_reg(0x14, tex1);
+            }
+            gs.write_reg(0x42, alpha);
+            if scene == 7 {
+                // ATE GREATER 0x40, AFAIL = FB_ONLY, ZTE GEQUAL.
+                gs.write_reg(0x47, 1 | 6 << 1 | 0x40 << 4 | 1 << 12 | 1 << 16 | 2 << 17);
+            }
+        }
+        for i in 0..400 {
+            let mut v = [Vertex::default(); 3];
+            for k in 0..3 {
+                let q = r.f32_in(0.3, 2.0);
+                v[k] = Vertex {
+                    x: (r.below(700 * 16) as u32).wrapping_sub(30 * 16),
+                    y: (r.below(500 * 16) as u32).wrapping_sub(30 * 16),
+                    z: r.below(1 << 24) as u32,
+                    f: 0,
+                    rgba: [r.below(256) as u8, r.below(256) as u8, r.below(256) as u8, r.below(129) as u8],
+                    s: r.f32_in(0.0, 1.0) * q,
+                    t: r.f32_in(0.0, 1.0) * q,
+                    q,
+                    u: 0,
+                    v: 0,
+                };
+                if scene == 6 && k > 0 {
+                    v[k].rgba = v[0].rgba;
+                }
+                // Small triangles too.
+                if i % 2 == 1 && k > 0 {
+                    v[k].x = v[0].x.wrapping_add(r.below(40 * 16) as u32);
+                    v[k].y = v[0].y.wrapping_add(r.below(40 * 16) as u32);
+                }
+            }
+            for (j, gs) in [&mut emu, &mut nat].into_iter().enumerate() {
+                gs.write_reg(0x00, 3 | prim_attr);
+                gs.n3_capture = j == 1;
+                gs.draw_primitive(3, &v);
+                gs.n3_capture = false;
+            }
+        }
+        emu.sync_vram();
+        nat.sync_vram();
+        let st = nat.gpu_stats().unwrap().n3;
+        let fb = Surface::new(PSMCT32, 0, 10);
+        let zb = Surface::new(PSMZ24, 140 * 32, 10);
+        let (mut cov, mut c1, mut cbig, mut zd, mut maxz) = (0, 0, 0, 0, 0i64);
+        for y in 0..448 {
+            for x in 0..640 {
+                let a = fb.read(&emu.vram, x, y);
+                let b = fb.read(&nat.vram, x, y);
+                if a != b {
+                    let m = (0..4).map(|k| ((a >> (8 * k)) & 0xFF) as i32 - ((b >> (8 * k)) & 0xFF) as i32).map(i32::abs).max().unwrap();
+                    if m <= 1 {
+                        c1 += 1;
+                    } else if m > 8 {
+                        cbig += 1;
+                    } else {
+                        cov += 1;
+                    }
+                }
+                let za = zb.read(&emu.vram, x, y) & 0xFF_FFFF;
+                let zbv = zb.read(&nat.vram, x, y) & 0xFF_FFFF;
+                if za != zbv {
+                    zd += 1;
+                    maxz = maxz.max((za as i64 - zbv as i64).abs());
+                }
+            }
+        }
+        eprintln!(
+            "n3 scene {scene}: native tris {} fallback {:?}; frame px differing: <=1 {c1}, 2..8 {cov}, >8 {cbig}; z differ {zd} (max {maxz})",
+            st.tris, st.fallback
+        );
+    }
+}

@@ -124,6 +124,9 @@ fn unpack_plain<const VN: u32, const VL: u32>(data: &[u32], num: usize, addr: u3
     }
 }
 
+/// Segment hash of the type-3 VU1 program (d159716b).
+const TYPE3_HASH: u64 = ssx3_render::mat3::HASH;
+
 fn native_vu1() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("SSX3_VU1").is_ok_and(|v| v == "native"))
@@ -342,11 +345,16 @@ impl Vif {
         if self.index == 1 && native_vu1() {
             let hash = vu.segment_hash_pub(pc);
             let mem: &mut [u8; 16384] = (&mut vu.data[..16384]).try_into().unwrap();
+            let type3 = hash == TYPE3_HASH && crate::gs::render_native_type3();
             let done = ssx3_render::run_native(hash, pc, self.top, self.itop, mem, &mut |p: &[Qword]| {
                 if crate::gifstats::enabled() {
                     crate::gifstats::scan(p);
                 }
-                gs.gif_write(1, p)
+                if type3 {
+                    gs.gif_write_type3(p)
+                } else {
+                    gs.gif_write(1, p)
+                }
             });
             if done {
                 return;
@@ -364,6 +372,7 @@ impl Vif {
         // SSX3_VERIFY_PARTICLES: native particle/snow programs (types 4/5) vs the translated ones.
         let mut particles = if vif1 { crate::particle_verify::begin(vu, pc, self.top, self.itop) } else { None };
         let watch = crate::hw::watch_qword_pub();
+        let type3 = vif1 && crate::gs::render_native_type3() && vu.segment_hash_pub(pc) == TYPE3_HASH;
         let mut hit: Option<(usize, u128)> = None;
         let done = vu.run(self.vu_budget, &mut |p: &[Qword]| {
             if let Some(c) = cap.as_mut() {
@@ -398,7 +407,11 @@ impl Vif {
                 if crate::gifstats::enabled() {
                     crate::gifstats::scan(p);
                 }
-                gs.gif_write(1, p)
+                if type3 {
+                    gs.gif_write_type3(p)
+                } else {
+                    gs.gif_write(1, p)
+                }
             }
         });
         if let Some((k, q)) = hit {

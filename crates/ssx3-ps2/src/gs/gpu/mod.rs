@@ -54,6 +54,8 @@ use super::swizzle::{self, Kind, Surface};
 use super::Vertex;
 
 mod native;
+mod native3;
+pub use native3::{Fallback as N3Fallback, N3Stats};
 pub use native::{
     NativeError, NativeRecord, NativeStats, NativeSurface, NativeSurfaces, NativeTargets, COLOR_FORMAT, DEPTH_FORMAT,
     DEPTH_SCALE,
@@ -159,8 +161,12 @@ async fn create_context() -> Result<GpuContext, String> {
         .request_device(&wgpu::DeviceDescriptor {
             label: Some("ssx3-gs"),
             required_limits: adapter.limits(),
-            required_features: if profiling() {
+            required_features: (if profiling() {
                 adapter.features() & wgpu::Features::TIMESTAMP_QUERY
+            } else {
+                wgpu::Features::empty()
+            }) | if super::render_native_type3() {
+                adapter.features() & wgpu::Features::DUAL_SOURCE_BLENDING
             } else {
                 wgpu::Features::empty()
             },
@@ -229,6 +235,8 @@ pub struct GpuStats {
     pub gpu_raster_ns: u64,
     /// Native runs (see `native`).
     pub native: NativeStats,
+    /// Type-3 triangles on the hardware rasterizer (see `native3`).
+    pub n3: N3Stats,
 }
 
 enum Cmd {
@@ -335,6 +343,8 @@ pub(crate) struct GpuGs {
     native: Option<Box<native::NativeState>>,
     /// The GS shader module (native-run pipelines are made from it).
     module: wgpu::ShaderModule,
+    /// Type-3 triangles waiting for their native run (`native3`).
+    n3: native3::N3,
 }
 
 fn storage_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
@@ -553,6 +563,7 @@ impl GpuGs {
         let pixels_pipe = pipe("pixels");
         let bind_group = Self::make_bind_group(dev, &bgl, [&vram, &tables, &data, &params, &snap, &out, &dec]);
         Some(GpuGs {
+            n3: native3::N3::default(),
             native: None,
             module,
             ctx,
@@ -630,6 +641,13 @@ impl GpuGs {
             layout: bgl,
             entries: &entries,
         })
+    }
+
+    /// Statistics, including the native-3 path's.
+    pub(crate) fn all_stats(&self) -> GpuStats {
+        let mut s = self.stats;
+        s.n3 = self.n3.stats;
+        s
     }
 
     pub(crate) fn device(&self) -> &'static GpuContext {
@@ -755,6 +773,8 @@ impl GpuGs {
     /// Queue a set-up primitive. `vram` is the CPU mirror (for uploads when
     /// a batch closes).
     pub(crate) fn push(&mut self, d: &Arc<Draw>, p: &Prim, prim: u32, verts: &[Vertex], vram: &[u32]) {
+        // Native triangles queued before this primitive draw before it.
+        self.n3_flush_why(vram, 0);
         let (x0, y0, x1, y1) = (p.x0 as u32, p.y0 as u32, p.x1 as u32, p.y1 as u32);
         let fb_pages = Pages::rect(&d.fb, x0, y0, x1, y1);
         let zb_pages = if d.z_used {
@@ -1077,6 +1097,7 @@ impl GpuGs {
 
     /// Close the open batch: uploads, then the raster dispatch.
     pub(crate) fn close(&mut self, vram: &[u32]) {
+        self.n3_flush(vram);
         self.emit_uploads(vram);
         if self.batch.prims == 0 {
             self.batch.clear();
@@ -1231,13 +1252,14 @@ impl GpuGs {
 
     /// Whether the open batch reads or writes blocks of `r`.
     pub(crate) fn batch_touches(&mut self, r: &Region) -> bool {
-        self.batch.prims > 0 && (r.pages.hits(&self.batch.read) || self.batch.write.hits(r))
+        self.n3_writes(&r.pages) || self.batch.prims > 0 && (r.pages.hits(&self.batch.read) || self.batch.write.hits(r))
     }
 
     /// Host->local data for `r` in a partial-word format: when those pages
     /// were drawn on the GPU, write the pixels on the GPU (`pixel_write`)
     /// rather than reading the pages back. Returns whether to do so.
     pub(crate) fn direct_upload(&mut self, r: &Region, vram: &[u32]) -> bool {
+        self.n3_touch(&r.pages, vram);
         if std::env::var_os("SSX3_GS_NO_DIRECT").is_some() {
             return false;
         }
@@ -1297,7 +1319,7 @@ impl GpuGs {
 
     /// Whether the open batch writes blocks of `r`.
     pub(crate) fn batch_writes(&mut self, r: &Region) -> bool {
-        self.batch.prims > 0 && self.batch.write.hits(r)
+        self.n3_writes(&r.pages) || self.batch.prims > 0 && self.batch.write.hits(r)
     }
 
     pub(crate) fn note_transfer_close(&mut self) {

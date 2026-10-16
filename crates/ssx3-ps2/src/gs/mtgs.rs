@@ -95,6 +95,7 @@ impl Packet {
 #[inline]
 fn apply(gs: &mut Gs, c: Cmd, data: &[Qword], slot: &DisplaySlot, job: Option<NativeJob>) {
     match c {
+        Cmd::Gif { path, .. } if path & 0x80 != 0 => gs.gif_write_type3(data),
         Cmd::Gif { path, .. } => gs.gif_write(path as usize, data),
         Cmd::Reg { addr, value } => gs.write_reg(addr, value),
         Cmd::Priv { offset, value } => gs.write_priv(offset, value),
@@ -604,6 +605,16 @@ impl Mtgs {
         self.exec(Cmd::Gif { path: path as u8, len: data.len() as u32 }, data);
     }
 
+    /// A PATH1 (XGKICK) packet of the type-3 VU1 program (d159716b): the
+    /// same as `gif_write(1, data)`, except that with
+    /// `SSX3_RENDER_NATIVE=type3` the GS draws its triangles with the
+    /// hardware rasterizer (`Gs::gif_write_type3`).
+    pub fn gif_write_type3(&mut self, data: &[Qword]) {
+        let (csr, sig) = (&mut self.csr, &mut self.siglblid);
+        self.tags[1].scan(data, |addr, value| ad_side_effects(csr, sig, addr, value));
+        self.exec(Cmd::Gif { path: 0x81, len: data.len() as u32 }, data);
+    }
+
     pub fn write_reg(&mut self, addr: u8, value: u64) {
         ad_side_effects(&mut self.csr, &mut self.siglblid, addr, value);
         self.exec(Cmd::Reg { addr, value }, &[]);
@@ -727,6 +738,12 @@ impl Drop for Mtgs {
     fn drop(&mut self) {
         if std::env::var_os("SSX3_MTGS_STATS").is_some() {
             eprintln!("[mtgs] {:?}", self.stats);
+        }
+        if super::render_native_type3() {
+            self.drain();
+            if let Some(st) = self.lock().gpu_stats() {
+                eprintln!("{}", st.n3.report(&st.native));
+            }
         }
         if self.roundtrip_every != 0 {
             self.drain();

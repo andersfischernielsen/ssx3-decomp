@@ -235,6 +235,14 @@ impl Gs {
             }
             e.prims += 1;
         }
+        if self.n3_capture {
+            let surfaces = self.n3_surfaces();
+            if let Some(g) = self.gpu.as_mut() {
+                if g.n3_push(&d, &p, prim, verts, surfaces, &self.vram) {
+                    return;
+                }
+            }
+        }
         if let Some(g) = self.gpu.as_mut() {
             g.push(&d, &p, prim, verts, &self.vram);
             return;
@@ -401,6 +409,20 @@ impl Gs {
         }
     }
 
+    /// The frame (and Z) surfaces of the current draw context for a native
+    /// run; Z is left out when the draw does not use it.
+    fn n3_surfaces(&self) -> super::gpu::NativeSurfaces {
+        let r = &self.regs;
+        let attr = if r.prmodecont & 1 != 0 { r.prim } else { (r.prim & 7) | (r.prmode & !7) };
+        let c = &r.ctx[((attr >> 9) & 1) as usize];
+        let mut s = super::gpu::NativeSurfaces::from_regs(c.frame, c.zbuf, c.scissor);
+        let z_used = self.draw.as_ref().is_some_and(|d| d.z_used);
+        if !z_used {
+            s.z = None;
+        }
+        s
+    }
+
     /// Flush, then draw one primitive on this thread.
     fn draw_alone(&mut self, d: &Draw, p: &Prim) {
         self.batch.stats.serial_prims += 1;
@@ -519,6 +541,8 @@ impl Gs {
     /// be read back first on the GPU backend).
     pub(super) fn before_vram_write_full(&mut self, r: &Region, whole_words: bool) {
         if let Some(g) = self.gpu.as_mut() {
+            // Pending native triangles that read or draw these pages go first.
+            g.n3_touch(&r.pages, &self.vram);
             // The CPU writes the mirror and whole pages are uploaded later,
             // so the pages must be current in the mirror first.
             if g.batch_touches(r) {
@@ -556,6 +580,7 @@ impl Gs {
         if let Some(g) = self.gpu.as_mut() {
             let mut r = Region::default();
             r.add_rect(surf, x0, y0, x1, y1);
+            g.n3_touch(&r.pages, &self.vram);
             if g.batch_writes(&r) {
                 g.close(&self.vram);
             }

@@ -143,6 +143,9 @@ pub type NativeRecord = Box<dyn FnOnce(&NativeTargets<'_>, &mut wgpu::CommandEnc
 
 struct Run {
     surfaces: NativeSurfaces,
+    /// Top-left corner of the round-tripped rectangle (`begin_native_run_at`).
+    x0: u32,
+    y0: u32,
 }
 
 /// Pipelines, targets and the queued runs of the open submission.
@@ -293,6 +296,9 @@ impl NativeState {
             Some(t) => (t.w.max(w), t.h.max(h)),
             None => (w.max(640), h.max(512)),
         };
+        // Powers of two: native-3 maps window pixels to NDC exactly over
+        // the whole target.
+        let (w, h) = (w.next_power_of_two(), h.next_power_of_two());
         let mk = |label, format| {
             dev.create_texture(&wgpu::TextureDescriptor {
                 label: Some(label),
@@ -363,8 +369,8 @@ pub struct NativeStats {
 /// and the swizzle; [`NativeRun::end`] (or dropping the run) queues the
 /// swizzle.
 pub(crate) struct NativeRun<'a> {
-    gs: &'a mut GpuGs,
-    run: u32,
+    pub(super) gs: &'a mut GpuGs,
+    pub(super) run: u32,
     ended: bool,
 }
 
@@ -404,6 +410,19 @@ impl GpuGs {
     /// queues the unswizzle. The surfaces' pages count as GPU-drawn from
     /// here on; textures decoded from them are dropped.
     pub(crate) fn begin_native_run(&mut self, s: &NativeSurfaces, vram: &[u32]) -> Result<NativeRun<'_>, NativeError> {
+        self.begin_native_run_at(s, 0, 0, vram)
+    }
+
+    /// `begin_native_run` over the rectangle `(x0, y0)..(width, height)`
+    /// only: pixels outside it are neither read nor written back, so passes
+    /// must not draw there.
+    pub(crate) fn begin_native_run_at(
+        &mut self,
+        s: &NativeSurfaces,
+        x0: u32,
+        y0: u32,
+        vram: &[u32],
+    ) -> Result<NativeRun<'_>, NativeError> {
         let r = self.check_native(s);
         let pages = match r {
             Ok(p) => p,
@@ -428,7 +447,7 @@ impl GpuGs {
         let n = self.native.as_mut().expect("native state");
         n.ensure_targets(&self.ctx.device, s.width, s.height);
         let run = n.runs.len() as u32;
-        n.runs.push(Run { surfaces: *s });
+        n.runs.push(Run { surfaces: *s, x0: x0.min(s.width - 1), y0: y0.min(s.height - 1) });
         let slot = self.native_slot(run);
         self.cmds.push(Cmd::NativeBegin { run, slot });
         self.gpu_dirty.union(&pages);
@@ -442,6 +461,13 @@ impl GpuGs {
         })
     }
 
+    /// The size of the run targets (powers of two); valid after
+    /// `begin_native_run`.
+    pub(super) fn native_viewport(&self) -> (u32, u32) {
+        let t = self.native.as_ref().and_then(|n| n.targets.as_ref()).expect("native targets");
+        (t.w, t.h)
+    }
+
     /// A whole run: unswizzle, `passes` in order, swizzle.
     pub(crate) fn native_run(&mut self, s: &NativeSurfaces, vram: &[u32], passes: Vec<NativeRecord>) -> Result<(), NativeError> {
         let mut run = self.begin_native_run(s, vram)?;
@@ -453,7 +479,7 @@ impl GpuGs {
     }
 
     /// Validate `s`; returns the pages it covers.
-    fn check_native(&self, s: &NativeSurfaces) -> Result<Pages, NativeError> {
+    pub(super) fn check_native(&self, s: &NativeSurfaces) -> Result<Pages, NativeError> {
         if (s.frame.is_none() && s.z.is_none()) || s.width == 0 || s.height == 0 {
             return Err(NativeError::Empty);
         }
@@ -491,7 +517,8 @@ impl GpuGs {
     /// Parameter slot of run `run`: a = frame (surface words, format |
     /// 0x100 when present), b = Z (surface words, largest Z or 0), c = (w, h).
     fn native_slot(&mut self, run: u32) -> u32 {
-        let s = self.native.as_ref().expect("native state").runs[run as usize].surfaces;
+        let r = &self.native.as_ref().expect("native state").runs[run as usize];
+        let (s, x0, y0) = (r.surfaces, r.x0, r.y0);
         let mut p = [0u32; 16];
         if let Some(f) = &s.frame {
             let sw = surf_words(&Surface::new(f.psm, f.bp, f.bw));
@@ -505,6 +532,8 @@ impl GpuGs {
         }
         p[8] = s.width;
         p[9] = s.height;
+        p[10] = x0;
+        p[11] = y0;
         let slot = self.slots.len() as u32;
         self.slots.push(p);
         slot
@@ -515,6 +544,7 @@ impl GpuGs {
 pub(super) struct NativeEncode {
     bg0: wgpu::BindGroup,
     bg1: wgpu::BindGroup,
+    bg3: Option<wgpu::BindGroup>,
     records: Vec<Option<NativeRecord>>,
 }
 
@@ -561,9 +591,12 @@ impl GpuGs {
                 },
             ],
         });
+        let bg3 = self.n3_bind_group();
+        let n = self.native.as_deref_mut().expect("native state");
         Some(NativeEncode {
             bg0,
             bg1,
+            bg3,
             records: std::mem::take(&mut n.records),
         })
     }
@@ -581,7 +614,8 @@ impl GpuGs {
         let t = n.targets.as_ref().expect("native targets");
         match *c {
             Cmd::NativeBegin { run, slot } => {
-                let s = &n.runs[run as usize].surfaces;
+                let r = &n.runs[run as usize];
+                let s = &r.surfaces;
                 let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("gs-native-unswizzle"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -606,10 +640,15 @@ impl GpuGs {
                     multiview_mask: None,
                 });
                 pass.set_viewport(0.0, 0.0, s.width as f32, s.height as f32, 0.0, 1.0);
-                pass.set_scissor_rect(0, 0, s.width, s.height);
+                pass.set_scissor_rect(r.x0, r.y0, s.width - r.x0, s.height - r.y0);
                 pass.set_pipeline(&n.unswizzle_pipe);
                 pass.set_bind_group(0, &e.bg0, &[slot * SLOT as u32]);
                 pass.draw(0..3, 0..1);
+                // Native-3 triangles draw in the same pass.
+                if let Some(list) = self.n3_list_of(run) {
+                    let bg = e.bg3.as_ref().expect("n3 bind group");
+                    self.n3_encode(bg, list, &mut pass);
+                }
             }
             Cmd::NativePass { run, rec } => {
                 let s = n.runs[run as usize].surfaces;
@@ -626,7 +665,8 @@ impl GpuGs {
                 }
             }
             Cmd::NativeEnd { run, slot } => {
-                let s = &n.runs[run as usize].surfaces;
+                let r = &n.runs[run as usize];
+                let s = &r.surfaces;
                 let mut pass = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
                     label: Some("gs-native-swizzle"),
                     timestamp_writes: ts_compute,
@@ -634,7 +674,7 @@ impl GpuGs {
                 pass.set_pipeline(&n.swizzle_pipe);
                 pass.set_bind_group(0, &e.bg0, &[slot * SLOT as u32]);
                 pass.set_bind_group(1, &e.bg1, &[]);
-                pass.dispatch_workgroups(s.width.div_ceil(8), s.height.div_ceil(8), 1);
+                pass.dispatch_workgroups((s.width - r.x0).div_ceil(8), (s.height - r.y0).div_ceil(8), 1);
             }
             _ => unreachable!("not a native command"),
         }
@@ -646,6 +686,7 @@ impl GpuGs {
             n.runs.clear();
             n.records.clear();
         }
+        self.n3.lists.clear();
     }
 
     /// Debug/test: read the run targets back (`width` x `height` RGBA8

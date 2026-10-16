@@ -598,3 +598,39 @@ What stage 2B needs from it:
 - AFAIL = FB_ONLY as two pipelines;
 - per-run buffers;
 - textures from a decode cache, or by binding the VRAM buffer.
+
+### Stage 2B: type 3 drawn by wgpu (2026-10-16, `SSX3_RENDER_NATIVE=type3`)
+
+`crates/ssx3-ps2/src/gs/gpu/native3.rs`, `native3.wgsl` and `native3_dual.wgsl` draw the
+type-3 material with wgpu's hardware rasterizer inside composition runs.
+
+**How it works.**
+- **Stream order.** Type-3 VU1 packets go through `Mtgs::gif_write_type3`. On the GS thread
+  they are parsed by the GS model as usual: tags, PRIM, ADC, A+D. Each triangle then carries
+  the full register state of its context and is drawn natively instead of by the compute GS.
+- **Batching.** Triangles collect into one run until emulated GS work, a transfer touching
+  the run's pages, or a surface change intervenes. That is about 16 runs per frame, each
+  round-tripping only the bounding rectangle.
+- **Positions and depth.** Vertices are pulled in window pixels. The GS's own per-triangle Z
+  plane makes depth tests and Z writes bit-exact.
+- **Fragment shader.** It reuses the GS WGSL texturing (all PSMs, CLUT, wrap, filtering, mips,
+  read from VRAM), TFX, fog, the alpha test and FBA.
+- **Blending.** Premultiplied source with a rounding bias, plus a fixed-function destination
+  factor (dual-source As/128 or FIX/128).
+- **AFAIL = FB_ONLY.** The alpha range is bounded from vertex and texture alpha. Mixed
+  outcomes draw twice, over coverage-disjoint groups.
+
+**Results** (race and menus to frame 9000, against the emulated GS):
+- Final RAM is identical, so the game state is unaffected, including the flare Z readback.
+- On average 0.67% of pixels differ (worst shot 1.91%, a menu). No difference exceeds 8; in
+  practice almost all are ±1 from interpolation and blend rounding.
+- 35.8M triangles native, 3.3% fall back to the emulated GS: As > 0x80 factors,
+  destination-alpha/DATE presets, 0x3bf0 lines, and textures that overlap the target.
+- Wall time +4%: wgpu encoding overhead while both paths coexist.
+- The default path is unchanged: the A/B is byte-identical.
+
+**Next:**
+- make more materials native (2D/DIRECT, terrain types 1/2) so runs merge;
+- move vertex maths into WGSL;
+- use a wider alpha target for destination-alpha presets;
+- then flip the master surfaces to wgpu, which allows resolution scaling.
