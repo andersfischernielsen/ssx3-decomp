@@ -181,11 +181,6 @@ More debug switches: `SSX3_GFX_SKIP=n,a-b` (drop draws), `SSX3_GFX_SKIPTEST=<tes
 `SSX3_GFX_TEXLOG=<frame>`.
 
 **Still open (for later; none blocks the render cut):**
-- **HUD tint.** White HUD elements come out slightly pink or yellow depending on the scene's
-  light colour, a few levels off the emulator. Likely the end-of-frame colour filter (GIF
-  phase 2, FRAME_TEX, ALPHA 0x44 with a per-scene tint) is applied over the HUD with a
-  different As or ordering than on the GS; probe a white HUD pixel (`SSX3_GFX_PROBE`)
-  against the emulator.
 - **A few highlights** differ by a few levels (sun glare edges, some additive sprites).
 - **CT16 render targets** keep only the 1-bit alpha; RGB is not quantised to 5 bits.
 - **Depth precision.** Depth comes from hardware interpolation, so it differs from the GS's
@@ -193,3 +188,34 @@ More debug switches: `SSX3_GFX_SKIP=n,a-b` (drop draws), `SSX3_GFX_SKIPTEST=<tes
   light visibility queries) sees slightly different values, so RAM identity with the
   emulated build is not reachable on this path. The gate is behavioural: same inputs, same
   race (positions, timer, score).
+
+### 2026-10-16 (later): native by default, the render cut
+
+- **Native is the default** (`SSX3_RENDER=native`; `emu` and `shadow` remain). In gameplay
+  the frame's VIF1/GIF chains complete at the DMA kick without being walked
+  (`frame_sink::skip_chain`): the kick thread's state machine (DMA end interrupts,
+  semaphores, VBlank) is unchanged, but no VIF, VU1 or GS work happens for the frame. While
+  frames are published the emulated GS does not rasterize; movies and loading screens,
+  which publish none, still draw there.
+- **Light visibility** (`LensFX_v04`) is a native override counting the light's pixels in
+  `ssx3-gfx`'s depth after the 3D phase, one frame late (the readback waits only on that
+  frame's submission). Unit tests cover the count and the game's off-screen formula.
+- **PATH3 ordering** follows the GS: each phase's GIF chain is queued masked, each
+  MSKPATH3 0 releases one packet, and an unmasked stream end drains the rest. This put
+  the colour filter before the HUD (the HUD tint) and brought the race frames to a mean
+  difference of about 1 against the emulator.
+- **Depth-fog CLUT** is taken when the fog pass is drawn (the same VRAM is reused later in
+  the frame: black sky at frame 5500).
+- **Performance**:
+  - VU1 calls run in parallel chunks, which start only at draw boundaries between
+    different programs (programs pass state within a draw, and terrain across draws;
+    `SSX3_GFX_VUCHECK` compares every call with a sequential run, `SSX3_GFX_SEQ_VU=1`
+    forces it);
+  - the vertex upload uses raw bytes;
+  - the debug switches are read once.
+
+  The race replay runs at about 8.7 ms per frame, against 15 ms emulated.
+- **Native sound, native files and native VU1 are the defaults too.** VU1 native is
+  identical to the microcode. Native sound and the native light query shift how the
+  game's threads interleave, so a scripted race differs from the emulated one while each
+  path stays deterministic.

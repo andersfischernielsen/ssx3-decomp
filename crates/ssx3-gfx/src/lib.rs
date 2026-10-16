@@ -330,9 +330,13 @@ impl Inner {
             }
         }
         let draws: Vec<&frame::Draw> = fr.draws().collect();
-        // The PATH3 chains (GifBuff) follow their VIF phases: phase 1
-        // (the colour filter and other post passes) between VIF phase 1
-        // and 2, phase 2 at the end.
+        // The PATH3 chains (GifBuff), one per phase, kicked with PATH3
+        // masked (the kick thread writes MSKPATH3 1 into the VIF1 FIFO
+        // first). As on the GS (`ssx3_ps2::gs::Mtgs::set_path3_mask`), each
+        // MSKPATH3 0 in the VIF stream releases one GIF packet (texture
+        // uploads in the gaps between draws); what is left drains when the
+        // phase's VIF stream ends unmasked (the post passes, before the
+        // HUD of phase 2 is drawn).
         let path3 = |head: u32| -> Vec<u128> {
             let mut q = Vec::new();
             if head != 0 {
@@ -360,9 +364,13 @@ impl Inner {
         self.gs.gif(&flip[split..]);
         self.display_fbp = (split > 0).then(|| d.draw_fbp + (d.fb_width.div_ceil(64) * d.fb_height.div_ceil(32)).max(1));
         let mode = dbg.path3;
-        let mut p1_done = mode & 1 == 0;
+        let mut p3: std::collections::VecDeque<Vec<u128>> = std::collections::VecDeque::new();
+        if mode & 1 != 0 {
+            p3.extend(gif_packets(&p1));
+        }
+        let mut p3_masked = true;
+        let mut phase2_started = false;
         let mut cur: Option<usize> = None;
-        let mut hash: Option<u64> = None;
         // Debug: SSX3_GFX_SKIP=n,m,... drops those draws' payloads.
         // (`a-b` ranges too.)
         let skip = &dbg.skip;
@@ -371,11 +379,19 @@ impl Inner {
             if matches!(owner, Owner::Payload(n) if skip.contains(n)) {
                 continue;
             }
-            if !p1_done && i >= built.phase2 {
-                p1_done = true;
+            if !phase2_started && i >= built.phase2 {
+                phase2_started = true;
+                label(&mut self.gs, "path3".into());
+                if !p3_masked {
+                    while let Some(pk) = p3.pop_front() {
+                        self.gs.gif(&pk);
+                    }
+                }
                 self.phase1_end = self.gs.batches.len();
-                label(&mut self.gs, "path3-1".into());
-                self.gs.gif(&p1);
+                p3_masked = true;
+                if mode & 2 != 0 {
+                    p3.extend(gif_packets(&p2));
+                }
             }
             let n = match owner {
                 Owner::Prelude(n) | Owner::Payload(n) => Some(*n),
@@ -386,9 +402,6 @@ impl Inner {
                     cur = Some(n);
                     if let Some(d) = draws.get(n) {
                         label(&mut self.gs, format!("draw{n} {:?} layer {} tex {:?}", d.state.material, d.state.layer, d.tex));
-                    }
-                    if let Some(p) = draws.get(n).and_then(|d| program(d.state.material)) {
-                        hash = Some(p);
                     }
                 }
                 // In a draw's payload its textures are bound to the TBPs its
@@ -417,17 +430,28 @@ impl Inner {
                     }
                 }
                 Event::Direct(dd) => self.gs.gif(&dd.qwords),
+                Event::MaskPath3(m) => {
+                    if !m {
+                        if let Some(pk) = p3.pop_front() {
+                            label(&mut self.gs, "path3".into());
+                            self.gs.gif(&pk);
+                        }
+                    }
+                    p3_masked = *m;
+                }
                 _ => {}
             }
         }
-        if !p1_done {
+        if !phase2_started {
             self.phase1_end = self.gs.batches.len();
-            label(&mut self.gs, "path3-1".into());
-            self.gs.gif(&p1);
+            if mode & 2 != 0 {
+                p3.extend(gif_packets(&p2));
+            }
         }
-        if mode & 2 != 0 {
-            label(&mut self.gs, "path3-2".into());
-            self.gs.gif(&p2);
+        // Whatever is left runs before the next frame.
+        label(&mut self.gs, "path3".into());
+        while let Some(pk) = p3.pop_front() {
+            self.gs.gif(&pk);
         }
         if split > 0 {
             label(&mut self.gs, "flip-blend".into());
@@ -1198,4 +1222,48 @@ pub fn flip_packet(mem: &dyn Mem) -> Vec<u128> {
         }
     }
     q
+}
+
+/// Split a GIF stream into packets: tags up to and including one with EOP,
+/// with their data.
+fn gif_packets(q: &[u128]) -> Vec<Vec<u128>> {
+    let mut out = Vec::new();
+    let (mut i, mut start) = (0, 0);
+    while i < q.len() {
+        let lo = q[i] as u64;
+        let nloop = (lo & 0x7fff) as usize;
+        let eop = (lo >> 15) & 1 != 0;
+        let nreg = match (lo >> 60) as usize {
+            0 => 16,
+            n => n,
+        };
+        i += 1 + match (lo >> 58) & 3 {
+            0 => nloop * nreg,
+            1 => (nloop * nreg).div_ceil(2),
+            _ => nloop,
+        };
+        if eop || i >= q.len() {
+            out.push(q[start..i.min(q.len())].to_vec());
+            start = i;
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::gif_packets;
+
+    #[test]
+    fn gif_packets_end_at_eop() {
+        // A+D tag (2 regs, no EOP), its 2 qwords; IMAGE tag (3 qwords, EOP),
+        // its data; a second packet: A+D tag with EOP and 1 qword.
+        let ad = |n: u128, eop: bool| n | (eop as u128) << 15 | 1 << 60 | 0xe << 64;
+        let image = |n: u128| n | 1 << 15 | 2 << 58;
+        let q = vec![ad(2, false), 1, 2, image(3), 3, 4, 5, ad(1, true), 6];
+        let p = gif_packets(&q);
+        assert_eq!(p.len(), 2);
+        assert_eq!(p[0].len(), 7);
+        assert_eq!(p[1], vec![ad(1, true), 6]);
+    }
 }
