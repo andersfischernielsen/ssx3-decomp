@@ -744,6 +744,9 @@ impl Drop for Mtgs {
             if let Some(st) = self.lock().gpu_stats() {
                 eprintln!("{}", st.n3.report(&st.native));
             }
+            if super::gpu::native3_diag() {
+                eprint!("{}", self.lock().n3_diag_report());
+            }
         }
         if self.roundtrip_every != 0 {
             self.drain();

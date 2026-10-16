@@ -55,7 +55,7 @@ use super::Vertex;
 
 mod native;
 mod native3;
-pub use native3::{Fallback as N3Fallback, N3Stats};
+pub use native3::{diag_knob as native3_diag, Fallback as N3Fallback, N3Stats};
 pub use native::{
     NativeError, NativeRecord, NativeStats, NativeSurface, NativeSurfaces, NativeTargets, COLOR_FORMAT, DEPTH_FORMAT,
     DEPTH_SCALE,
@@ -344,7 +344,7 @@ pub(crate) struct GpuGs {
     /// The GS shader module (native-run pipelines are made from it).
     module: wgpu::ShaderModule,
     /// Type-3 triangles waiting for their native run (`native3`).
-    n3: native3::N3,
+    pub(crate) n3: native3::N3,
 }
 
 fn storage_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
@@ -1092,6 +1092,7 @@ impl GpuGs {
         }
         let up = self.cpu_dirty;
         self.decoded.retain(|_, (_, pg)| !pg.hits(&up));
+        self.n3.alpha_cache.bump(&up);
         self.cpu_dirty = Pages::default();
     }
 
@@ -1187,6 +1188,7 @@ impl GpuGs {
         let written = self.batch.write.pages;
         self.gpu_dirty.union(&written);
         self.decoded.retain(|_, (_, pg)| !pg.hits(&written));
+        self.n3.alpha_cache.bump(&written);
         // Setup records carry this batch's decoded textures.
         self.last_draw = None;
         self.batch.clear();
@@ -1275,6 +1277,7 @@ impl GpuGs {
         self.gpu_dirty.union(&r.pages);
         let pages = r.pages;
         self.decoded.retain(|_, (_, pg)| !pg.hits(&pages));
+        self.n3.alpha_cache.bump(&pages);
         true
     }
 

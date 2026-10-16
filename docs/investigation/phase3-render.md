@@ -659,3 +659,30 @@ Next:
 - sprites;
 - a per-texture alpha-range cache;
 - then fewer runs.
+
+### Fallbacks nearly gone (2026-10-16)
+
+`gs/gpu/native3.rs` and `native3.wgsl` cover the cases the blend unit cannot express.
+- **Destination reads in the shader:** the full GS integer blend for As > 0x80, destination
+  alpha, DATE, PABE, no COLCLAMP, partial FBMSK, dithering and CT16 blends. The shader reads
+  VRAM, then a copy of the target taken at segment breaks. Deferred triangles are kept in up
+  to 8 overlap layers, so few copies are needed.
+- **CT16 frames:** native, with GS 5:5:5:1 rounding.
+- **Sprites:** native, from the GS sprite record, so the GS sprite rules hold exactly.
+- **Alpha bounds:** cached per texture and invalidated through VRAM page stamps.
+
+Full race with `SSX3_RENDER_NATIVE=all`, against the emulated reference:
+
+| | Before | Now |
+|---|---|---|
+| Fallback triangles | 22.7% | **0.40%** |
+| Runs | 589k | 297k |
+| Wall time | 156 s | 142 s |
+
+- **What still falls back:** line strips, and sprites/triangles that sample their own frame.
+- **Game state and images:** final RAM identical. On average 0.88% of pixels differ (worst
+  3.4%), none by more than 8.
+- **Default path:** byte-identical.
+
+Open: 4-13 px per scene differ by more than 8 in the PABE and CT16-blend unit-test scenes
+(none in game frames).

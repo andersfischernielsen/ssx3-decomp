@@ -333,6 +333,15 @@ impl Gs {
     }
 
     /// GPU backend statistics (`None` on the CPU backend).
+    /// `SSX3_N3_DIAG`: the native-path fallback tallies, largest first.
+    pub fn n3_diag_report(&self) -> String {
+        let Some(g) = self.gpu.as_ref() else { return String::new() };
+        let mut v: Vec<_> = g.n3.diag.iter().collect();
+        v.sort_by(|a, b| b.1.cmp(a.1));
+        let o: String = v.iter().take(60).map(|(k, n)| format!("  {n:>10} {k}\n")).collect();
+        o
+    }
+
     pub fn gpu_stats(&self) -> Option<gpu::GpuStats> {
         self.gpu.as_ref().map(|g| g.all_stats())
     }

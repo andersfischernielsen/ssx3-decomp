@@ -164,6 +164,9 @@ struct Targets {
     h: u32,
     color: wgpu::TextureView,
     depth: wgpu::TextureView,
+    /// Copy of `color` at the last segment break of a run (native-3
+    /// destination reads, `native3.wgsl` `n3_fs_dr`).
+    prev: wgpu::TextureView,
 }
 
 fn layout_entry(binding: u32, ty: wgpu::BindingType) -> wgpu::BindGroupLayoutEntry {
@@ -299,7 +302,8 @@ impl NativeState {
         // Powers of two: native-3 maps window pixels to NDC exactly over
         // the whole target.
         let (w, h) = (w.next_power_of_two(), h.next_power_of_two());
-        let mk = |label, format| {
+        let rt = wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC;
+        let mk = |label, format, usage| {
             dev.create_texture(&wgpu::TextureDescriptor {
                 label: Some(label),
                 size: wgpu::Extent3d {
@@ -311,9 +315,7 @@ impl NativeState {
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::TEXTURE_BINDING
-                    | wgpu::TextureUsages::COPY_SRC,
+                usage,
                 view_formats: &[],
             })
             .create_view(&Default::default())
@@ -321,8 +323,13 @@ impl NativeState {
         self.targets = Some(Targets {
             w,
             h,
-            color: mk("gs-native-color", COLOR_FORMAT),
-            depth: mk("gs-native-depth", DEPTH_FORMAT),
+            color: mk("gs-native-color", COLOR_FORMAT, rt),
+            depth: mk("gs-native-depth", DEPTH_FORMAT, rt),
+            prev: mk(
+                "gs-native-prev",
+                COLOR_FORMAT,
+                wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            ),
         });
     }
 
@@ -452,6 +459,7 @@ impl GpuGs {
         self.cmds.push(Cmd::NativeBegin { run, slot });
         self.gpu_dirty.union(&pages);
         self.decoded.retain(|_, (_, pg)| !pg.hits(&pages));
+        self.n3.alpha_cache.bump(&pages);
         self.stats.native.runs += 1;
         self.stats.native.pixels += s.width as u64 * s.height as u64;
         Ok(NativeRun {
@@ -459,6 +467,11 @@ impl GpuGs {
             run,
             ended: false,
         })
+    }
+
+    /// The destination-read copy of the colour target (`Targets::prev`).
+    pub(super) fn native_prev(&self) -> Option<&wgpu::TextureView> {
+        self.native.as_ref().and_then(|n| n.targets.as_ref()).map(|t| &t.prev)
     }
 
     /// The size of the run targets (powers of two); valid after
@@ -616,6 +629,7 @@ impl GpuGs {
             Cmd::NativeBegin { run, slot } => {
                 let r = &n.runs[run as usize];
                 let s = &r.surfaces;
+                let list = self.n3_list_of(run);
                 let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("gs-native-unswizzle"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -644,10 +658,49 @@ impl GpuGs {
                 pass.set_pipeline(&n.unswizzle_pipe);
                 pass.set_bind_group(0, &e.bg0, &[slot * SLOT as u32]);
                 pass.draw(0..3, 0..1);
-                // Native-3 triangles draw in the same pass.
-                if let Some(list) = self.n3_list_of(run) {
+                // Native-3 triangles draw in the same pass; destination-read
+                // segments after the first follow a copy of the colour
+                // target into `prev`, each in a pass of its own.
+                if let Some(list) = list {
                     let bg = e.bg3.as_ref().expect("n3 bind group");
-                    self.n3_encode(bg, list, &mut pass);
+                    self.n3_encode(bg, list, 0, &mut pass);
+                    drop(pass);
+                    for seg in 1..self.n3_segments(list) {
+                        let [x0, y0, x1, y1] = self.n3_copy_rect(list, seg);
+                        enc.copy_texture_to_texture(
+                            wgpu::TexelCopyTextureInfo {
+                                texture: t.color.texture(),
+                                mip_level: 0,
+                                origin: wgpu::Origin3d { x: x0, y: y0, z: 0 },
+                                aspect: wgpu::TextureAspect::All,
+                            },
+                            wgpu::TexelCopyTextureInfo {
+                                texture: t.prev.texture(),
+                                mip_level: 0,
+                                origin: wgpu::Origin3d { x: x0, y: y0, z: 0 },
+                                aspect: wgpu::TextureAspect::All,
+                            },
+                            wgpu::Extent3d { width: x1 - x0 + 1, height: y1 - y0 + 1, depth_or_array_layers: 1 },
+                        );
+                        let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                            label: Some("gs-native-n3"),
+                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                view: &t.color,
+                                depth_slice: None,
+                                resolve_target: None,
+                                ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
+                            })],
+                            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                                view: &t.depth,
+                                depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store }),
+                                stencil_ops: None,
+                            }),
+                            timestamp_writes: None,
+                            occlusion_query_set: None,
+                            multiview_mask: None,
+                        });
+                        self.n3_encode(bg, list, seg, &mut pass);
+                    }
                 }
             }
             Cmd::NativePass { run, rec } => {

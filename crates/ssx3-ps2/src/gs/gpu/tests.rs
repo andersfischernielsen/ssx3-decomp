@@ -572,3 +572,119 @@ fn n3_triangles_vs_compute() {
         );
     }
 }
+
+/// Destination-read draws (As > 0x80, Ad, DATE, PABE, partial FBMSK, no
+/// COLCLAMP), CT16 frames and sprites through the native path against the
+/// compute GS, over random VRAM (so destination alpha varies). These have
+/// no fixed-function form; the shader computes the GS blend from the
+/// destination pixel, so only interpolation residuals (+-1, rarely more at
+/// texel boundaries) may differ, and nothing falls back.
+#[test]
+fn n3_dst_read_ct16_sprites_vs_compute() {
+    use super::N3Fallback as Fb;
+    // (name, frame psm, ALPHA_1, TEST_1 extra bits, PABE, COLCLAMP, FBMSK, textured, sprites)
+    let scenes: &[(&str, u32, u64, u64, bool, bool, u32, bool, bool)] = &[
+        ("(Cd-Cs)As, As<=0xFF", PSMCT32, 1 | 2 << 6, 0, false, true, 0, true, false),
+        ("(Cs-Cd)As+Cd, As<=0xFF", PSMCT32, 0x44, 0, false, true, 0, false, false),
+        ("Cs*Ad+Cd", PSMCT32, 2 << 2 | 1 << 4 | 1 << 6, 0, false, true, 0, true, false),
+        ("DATE + (Cs-Cd)As+Cd", PSMCT32, 0x44, 1 << 14, false, true, 0, false, false),
+        ("PABE, no COLCLAMP", PSMCT32, 2 << 2 | 1 << 6, 0, true, false, 0, true, false),
+        ("partial FBMSK", PSMCT32, 0x44, 0, false, true, 0x0F00_F0F0, false, false),
+        ("CT16, no blend, FB_ONLY", PSMCT16, 0, 1 | 6 << 1 | 0x40 << 4 | 1 << 12, false, true, 0, false, false),
+        ("CT16, (Cs-Cd)As+Cd", PSMCT16, 0x44, 0, false, true, 0, true, false),
+        ("sprites, (Cs-Cd)As+Cd", PSMCT32, 0x44, 0, false, true, 0, true, true),
+        ("sprites, Cs*As+Cd, FB_ONLY", PSMCT32, 2 << 2 | 1 << 6, 1 | 6 << 1 | 0x40 << 4 | 1 << 12, false, true, 0, true, true),
+        ("sprites, CT16, flat", PSMCT16, 0, 0, false, true, 0, false, true),
+    ];
+    for (si, &(name, fpsm, alpha, test, pabe, colclamp, fbmsk, tex, sprites)) in scenes.iter().enumerate() {
+        let Some((mut emu, _)) = gpu_random(11 + si as u64) else { return };
+        let Some((mut nat, _)) = gpu_random(11 + si as u64) else { return };
+        let mut r = Rng(0xABCD_0000 + si as u64);
+        for gs in [&mut emu, &mut nat] {
+            frame(gs);
+            gs.write_reg(0x4C, 10 << 16 | (fpsm as u64) << 24 | (fbmsk as u64) << 32);
+            upload(gs, 0x3000, 4, 256, 256, |x, y| {
+                let h = (x.wrapping_mul(0x9E37_79B9) ^ y.wrapping_mul(0x85EB_CA6B)).rotate_left(13);
+                // Texel alpha over the whole 0..=255 range.
+                h
+            });
+            gs.write_reg(0x47, test | 1 << 16 | 2 << 17); // ZTE, GEQUAL
+            gs.write_reg(0x46, colclamp as u64);
+            gs.write_reg(0x49, pabe as u64);
+            gs.write_reg(0x42, alpha);
+            if tex {
+                gs.write_reg(0x06, 0x3000 | 4 << 14 | 8 << 26 | 8 << 30 | 1 << 34);
+                gs.write_reg(0x14, 0);
+            }
+        }
+        let attr: u64 = 1 << 3 | (tex as u64) << 4 | ((alpha != 0) as u64) << 6;
+        for i in 0..300 {
+            let mut v = [Vertex::default(); 3];
+            for k in 0..3 {
+                let q = r.f32_in(0.3, 2.0);
+                v[k] = Vertex {
+                    x: (r.below(700 * 16) as u32).wrapping_sub(30 * 16),
+                    y: (r.below(500 * 16) as u32).wrapping_sub(30 * 16),
+                    z: r.below(1 << 24) as u32,
+                    f: 0,
+                    rgba: [r.below(256) as u8, r.below(256) as u8, r.below(256) as u8, r.below(256) as u8],
+                    s: r.f32_in(0.0, 1.0) * q,
+                    t: r.f32_in(0.0, 1.0) * q,
+                    q,
+                    u: 0,
+                    v: 0,
+                };
+                if i % 2 == 1 && k > 0 {
+                    v[k].x = v[0].x.wrapping_add(r.below(40 * 16) as u32);
+                    v[k].y = v[0].y.wrapping_add(r.below(40 * 16) as u32);
+                }
+            }
+            let (prim, n) = if sprites { (6u32, 2usize) } else { (3, 3) };
+            if sprites {
+                // Sprites: Q of the second vertex.
+                v[0].q = v[1].q;
+            }
+            for (j, gs) in [&mut emu, &mut nat].into_iter().enumerate() {
+                gs.write_reg(0x00, prim as u64 | attr);
+                gs.n3_capture = j == 1;
+                gs.draw_primitive(prim, &v[..n]);
+                gs.n3_capture = false;
+            }
+        }
+        emu.sync_vram();
+        nat.sync_vram();
+        let st = nat.gpu_stats().unwrap().n3;
+        let fb = Surface::new(fpsm, 0, 10);
+        let zb = Surface::new(PSMZ24, 140 * 32, 10);
+        let (mut c1, mut cmid, mut cbig, mut zd) = (0, 0, 0, 0);
+        for y in 0..448 {
+            for x in 0..640 {
+                let a = frame_rgba8(fpsm, fb.read(&emu.vram, x, y));
+                let b = frame_rgba8(fpsm, fb.read(&nat.vram, x, y));
+                if a != b {
+                    let m = (0..4).map(|k| ((a >> (8 * k)) & 0xFF) as i32 - ((b >> (8 * k)) & 0xFF) as i32).map(i32::abs).max().unwrap();
+                    match m {
+                        0..=1 => c1 += 1,
+                        // One CT16 step.
+                        2..=8 => cmid += 1,
+                        _ => cbig += 1,
+                    }
+                }
+                if zb.read(&emu.vram, x, y) & 0xFF_FFFF != zb.read(&nat.vram, x, y) & 0xFF_FFFF {
+                    zd += 1;
+                }
+            }
+        }
+        eprintln!(
+            "n3 dst-read scene {si} ({name}): native prims {} (sprites {}, dst-read {}, copies {}), fallback {:?}; px differing <=1 {c1}, 2..8 {cmid}, >8 {cbig}; z differ {zd}",
+            st.tris, st.sprites, st.dr_prims, st.dr_copies, st.fallback
+        );
+        let fallbacks: u64 = st.fallback.iter().sum();
+        assert_eq!(fallbacks - st.fallback[Fb::NotTri as usize], 0, "{name}: fallbacks");
+        assert!(st.tris > 200, "{name}: native prims");
+        assert_eq!(zd, 0, "{name}: Z differs");
+        // Interpolation residuals only: a handful of pixels near texel or
+        // rounding boundaries (each a few in 10^4 of the frame).
+        assert!(cbig <= 40 && c1 + cmid <= 2500, "{name}: {c1} {cmid} {cbig}");
+    }
+}

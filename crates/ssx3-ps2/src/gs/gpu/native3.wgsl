@@ -78,7 +78,10 @@ struct N3Px {
 fn n3_shade(vin: N3V) -> N3Px {
     var v = vin;
     let n3_eps = bitcast<f32>(params.d.x);
-    if (v.pl != 0xFFFFFFFFu) {
+    // Flag 64: a sprite, its attributes from the GS's own prim record
+    // (`frag`, kind 1) at the integer pixel.
+    let sprite = (v.info.z & 64u) != 0u;
+    if (!sprite && v.pl != 0xFFFFFFFFu) {
         // gs.wgsl `frag` (triangles): planes at the integer pixel.
         let p = v.pl;
         let lo = data[p];
@@ -98,32 +101,52 @@ fn n3_shade(vin: N3V) -> N3Px {
     var o: N3Px;
     o.kill = false;
     var z = 0u;
-    if ((flags & F_ZTE) != 0u) {
-        // gs.wgsl draw_prim: the same f32 plane at the same integer pixel.
-        let i = f32(i32(v.pos.x) - i32(v.zp.x & 0xFFFFu));
-        let j = f32(i32(v.pos.y) - i32(v.zp.x >> 16u));
-        z = z_add(v.zp.y, bitcast<f32>(v.zp.z) + bitcast<f32>(v.zp.w) * i + bitcast<f32>(v.zdy) * j, data[st + S_ZMAX]);
-    }
-    o.depth = f32(z) / NATIVE_DEPTH_SCALE;
     var r: i32;
     var g: i32;
     var b: i32;
     var a: i32;
-    if ((v.info.z & 2u) != 0u) {
-        let c = unpack_rgba(v.info.w);
-        r = c.x;
-        g = c.y;
-        b = c.z;
-        a = c.w;
+    var fogv = 0;
+    var uv = vec2<f32>(0.0);
+    var q = 1.0;
+    if (sprite) {
+        let f = frag(v.pl, st, i32(v.pos.x), i32(v.pos.y));
+        r = f.r;
+        g = f.g;
+        b = f.b;
+        a = f.a;
+        fogv = f.f;
+        uv = vec2<f32>(f.u, f.v);
+        q = f.q;
+        if ((flags & F_ZTE) != 0u) {
+            z = min(data[v.pl + 13u], data[st + S_ZMAX]);
+        }
     } else {
-        r = i32(v.col.x + n3_eps);
-        g = i32(v.col.y + n3_eps);
-        b = i32(v.col.z + n3_eps);
-        a = i32(v.col.w + n3_eps);
+        if ((flags & F_ZTE) != 0u) {
+            // gs.wgsl draw_prim: the same f32 plane at the same integer pixel.
+            let i = f32(i32(v.pos.x) - i32(v.zp.x & 0xFFFFu));
+            let j = f32(i32(v.pos.y) - i32(v.zp.x >> 16u));
+            z = z_add(v.zp.y, bitcast<f32>(v.zp.z) + bitcast<f32>(v.zp.w) * i + bitcast<f32>(v.zdy) * j, data[st + S_ZMAX]);
+        }
+        if ((v.info.z & 2u) != 0u) {
+            let c = unpack_rgba(v.info.w);
+            r = c.x;
+            g = c.y;
+            b = c.z;
+            a = c.w;
+        } else {
+            r = i32(v.col.x + n3_eps);
+            g = i32(v.col.y + n3_eps);
+            b = i32(v.col.z + n3_eps);
+            a = i32(v.col.w + n3_eps);
+        }
+        fogv = i32(v.fz.x + n3_eps);
+        if ((flags & F_TME) != 0u) {
+            q = v.stq.z;
+            uv = tex_uv(st, v.stq.x, v.stq.y, q);
+        }
     }
+    o.depth = f32(z) / NATIVE_DEPTH_SCALE;
     if ((flags & F_TME) != 0u) {
-        let q = v.stq.z;
-        let uv = tex_uv(st, v.stq.x, v.stq.y, q);
         let c = sample_tex(st, uv.x, uv.y, q, (v.info.z & 1u) != 0u);
         let tr = i32(c & 0xFFu);
         let tg = i32((c >> 8u) & 0xFFu);
@@ -166,7 +189,7 @@ fn n3_shade(vin: N3V) -> N3Px {
         }
     }
     if ((flags & F_FGE) != 0u) {
-        let fv = clamp(i32(v.fz.x + n3_eps), 0, 255);
+        let fv = clamp(fogv, 0, 255);
         let fc = data[st + S_FOGCOL];
         r = (fv * r + (255 - fv) * i32(fc & 0xFFu)) >> 8u;
         g = (fv * g + (255 - fv) * i32((fc >> 8u) & 0xFFu)) >> 8u;
@@ -195,6 +218,12 @@ fn n3_shade(vin: N3V) -> N3Px {
     o.c = vec4<i32>(r, g, b, oa);
     o.a = a;
     o.rgb = vec3<f32>(f32(r), f32(g), f32(b));
+    if ((v.info.z & 128u) != 0u) {
+        // CT16 frame without blending: store what the GS stores (5:5:5:1),
+        // so later reads in the run see the GS's values.
+        o.rgb = vec3<f32>(f32(r & 0xF8), f32(g & 0xF8), f32(b & 0xF8));
+        o.c.w = oa & 0x80;
+    }
     if ((v.info.z & 4u) != 0u) {
         // Blending: the source term of (A - B) * C + D premultiplied here
         // (the pipeline adds it with factor One), biased so that the
@@ -234,6 +263,132 @@ fn n3_fs(v: N3V) -> N3Out {
     }
     var o: N3Out;
     o.color = vec4<f32>(p.rgb, f32(p.c.w)) / 255.0;
+    o.depth = p.depth;
+    return o;
+}
+
+// ------------------------------------------------------------ destination reads
+//
+// Draws whose blend has no fixed-function form (As > 0x80, Ad, DATE, PABE,
+// no COLCLAMP, partial FBMSK, CT16 with blending or dithering) compute the
+// whole GS pixel pipeline here, reading the destination pixel: from the
+// frame in VRAM (flag 32 clear: no draw of the run touched the pixel yet),
+// or from `n3_prev`, a copy of the run's colour target taken at the last
+// segment break (`native3.rs`: a segment's destination-read triangles cover
+// pixels nothing touched since that copy). The result is written without
+// blending; the arithmetic is the GS's own integer arithmetic.
+//
+// params.b: the run's frame surface, b.w = FbFmt.
+@group(0) @binding(7) var n3_prev: texture_2d<f32>;
+
+fn n3_expand16(c: u32) -> u32 {
+    var a = 0u;
+    if ((c & 0x8000u) != 0u) {
+        a = 0x80000000u;
+    }
+    return ((c & 0x1Fu) << 3u) | (((c >> 5u) & 0x1Fu) << 11u) | (((c >> 10u) & 0x1Fu) << 19u) | a;
+}
+
+fn n3_dst(v: N3V, fmt: u32) -> u32 {
+    let x = u32(v.pos.x);
+    let y = u32(v.pos.y);
+    var c: u32;
+    if ((v.info.z & 32u) != 0u) {
+        let t = textureLoad(n3_prev, vec2<i32>(i32(x), i32(y)), 0);
+        c = pack4(vec4<u32>(round(clamp(t, vec4<f32>(0.0), vec4<f32>(1.0)) * 255.0)));
+    } else {
+        let fb = param_surf(params.b);
+        c = read_fb(fmt, fb, locate(fb, x, y));
+    }
+    if (fmt == 1u) {
+        c = (c & 0xFFFFFFu) | 0x80000000u;
+    }
+    return c;
+}
+
+@fragment
+fn n3_fs_dr(v: N3V) -> N3Out {
+    let p = n3_shade(v);
+    if (p.kill) {
+        discard;
+    }
+    let st = v.info.x;
+    let flags = data[st + S_FLAGS];
+    let modes = data[st + S_MODES];
+    let fmt = (modes >> 23u) & 3u;
+    let dc = n3_dst(v, fmt);
+    if ((flags & F_DATE) != 0u) {
+        if (((dc >> 31u) != 0u) != ((flags & F_DATM) != 0u)) {
+            discard;
+        }
+    }
+    var r = p.c.x;
+    var g = p.c.y;
+    var b = p.c.z;
+    let a = p.a;
+    if ((flags & F_ABE) != 0u && ((flags & F_PABE) == 0u || a >= 0x80)) {
+        let cd = vec3<i32>(i32(dc & 0xFFu), i32((dc >> 8u) & 0xFFu), i32((dc >> 16u) & 0xFFu));
+        let cs = vec3<i32>(r, g, b);
+        let ad = i32(dc >> 24u);
+        let ba = (modes >> 7u) & 3u;
+        let bb = (modes >> 9u) & 3u;
+        let bc = (modes >> 11u) & 3u;
+        let bd = (modes >> 13u) & 3u;
+        var cc = i32((data[st + S_REFS] >> 8u) & 0xFFu);
+        if (bc == 0u) {
+            cc = a;
+        } else if (bc == 1u) {
+            cc = ad;
+        }
+        var av = vec3<i32>(0);
+        var bv = vec3<i32>(0);
+        var dv = vec3<i32>(0);
+        if (ba == 0u) { av = cs; } else if (ba == 1u) { av = cd; }
+        if (bb == 0u) { bv = cs; } else if (bb == 1u) { bv = cd; }
+        if (bd == 0u) { dv = cs; } else if (bd == 1u) { dv = cd; }
+        let o = (((av - bv) * cc) >> vec3<u32>(7u)) + dv;
+        r = o.x;
+        g = o.y;
+        b = o.z;
+    }
+    if ((flags & F_DITHER) != 0u) {
+        let x = i32(v.pos.x);
+        let y = i32(v.pos.y);
+        let idx = u32(y & 3) * 16u + u32(x & 3) * 4u;
+        var bits: u32;
+        if (idx >= 32u) {
+            bits = (data[st + S_DIMX + 1u] >> (idx - 32u)) & 7u;
+        } else {
+            bits = (data[st + S_DIMX] >> idx) & 7u;
+        }
+        var dv = i32(bits);
+        if ((bits & 4u) != 0u) {
+            dv = dv - 8;
+        }
+        r = r + dv;
+        g = g + dv;
+        b = b + dv;
+    }
+    if ((flags & F_COLCLAMP) != 0u) {
+        r = clamp(r, 0, 255);
+        g = clamp(g, 0, 255);
+        b = clamp(b, 0, 255);
+    } else {
+        r = r & 0xFF;
+        g = g & 0xFF;
+        b = b & 0xFF;
+    }
+    let c = u32(r) | (u32(g) << 8u) | (u32(b) << 16u) | (u32(p.c.w & 0xFF) << 24u);
+    let keep = data[st + S_FBMSK];
+    var res: u32;
+    if (fmt == 2u) {
+        let m = pack16(keep);
+        res = n3_expand16((pack16(c) & ~m) | (pack16(dc) & m));
+    } else {
+        res = (c & ~keep) | (dc & keep);
+    }
+    var o: N3Out;
+    o.color = vec4<f32>(unpack4(res)) / 255.0;
     o.depth = p.depth;
     return o;
 }
