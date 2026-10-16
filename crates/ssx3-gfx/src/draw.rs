@@ -347,3 +347,53 @@ pub fn sampler(dev: &wgpu::Device, k: SampKey) -> wgpu::Sampler {
         ..Default::default()
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gs::{Ctx, DrawState};
+
+    /// A textured, blended triangle with ALPHA = (Cs - Cd)·As + Cd.
+    fn blended(fba: u64, fbmsk: u32) -> DrawState {
+        DrawState {
+            prim: (1 << 4) | (1 << 6),
+            ctx: Ctx { alpha: 0x44, fba, frame: (fbmsk as u64) << 32, test: 0x5_0000, zbuf: 0, ..Default::default() },
+            texa: 0,
+            fogcol: 0,
+            tex: None,
+            target: 0,
+        }
+    }
+
+    #[test]
+    fn blend_reads_source_alpha() {
+        let p = plans(&blended(0, 0), (512, 448), None);
+        assert_eq!(p.len(), 1);
+        assert_eq!(p[0].key.blend, Some((wgpu::BlendFactor::One, wgpu::BlendFactor::OneMinusSrcAlpha, wgpu::BlendOperation::Add)));
+        assert_eq!(p[0].u.src_mode, 1);
+    }
+
+    #[test]
+    fn fba_does_not_change_the_blend_factor() {
+        // The GS blends with As and stores As | 0x80: colour with the true
+        // As first (FBA off, no depth write), then the stored alpha alone.
+        let p = plans(&blended(1, 0), (512, 448), None);
+        assert_eq!(p.len(), 2);
+        assert_eq!(p[0].key.write, 7);
+        assert_eq!(p[0].u.flags & 8, 0);
+        assert!(!p[0].key.depth_write);
+        assert!(p[0].key.blend.is_some());
+        assert_eq!(p[1].key.write, 8);
+        assert_eq!(p[1].u.flags & 8, 8);
+        assert!(p[1].key.blend.is_none());
+        assert!(p[1].key.depth_write);
+    }
+
+    #[test]
+    fn fba_alone_needs_no_split() {
+        // Alpha masked off (FBMSK 0xff000000): one colour draw.
+        let p = plans(&blended(1, 0xff00_0000), (512, 448), None);
+        assert_eq!(p.len(), 1);
+        assert_eq!(p[0].key.write, 7);
+    }
+}
