@@ -769,6 +769,29 @@ impl Drop for Mtgs {
             self.drain();
             self.roundtrip_report();
         }
+        if std::env::var_os("SSX3_GS_WAITS").is_some() {
+            self.drain();
+            if let Some(st) = self.lock().gpu_stats() {
+                eprintln!(
+                    "[gs-waits] {} readbacks: waiting for the submit thread {:.1} ms, for the GPU {:.1} ms; {} submits",
+                    st.readback_count,
+                    st.readback_drain_ns as f64 / 1e6,
+                    st.readback_gpu_ns as f64 / 1e6,
+                    st.submits
+                );
+            }
+        }
+        if std::env::var_os("SSX3_GS_PROFILE").is_some() {
+            self.drain();
+            if let Some(st) = self.lock().gpu_stats() {
+                eprintln!(
+                    "[gs-prof] GPU time: compute raster {:.1} ms, native runs {:.1} ms; {} submits",
+                    st.gpu_raster_ns as f64 / 1e6,
+                    st.native.gpu_ns as f64 / 1e6,
+                    st.submits
+                );
+            }
+        }
         if let Mode::Threaded(t) = &mut self.mode {
             t.shared.queue.lock().unwrap().shutdown = true;
             t.shared.work.notify_all();

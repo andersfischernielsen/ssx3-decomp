@@ -906,3 +906,58 @@ pillarboxing it inside the window instead of stretching it over the window. The 
 16:9 when the game is set to anamorphic and 4:3 otherwise. `SSX3_ASPECT=4:3|16:9|stretch`
 overrides it. The game itself is untouched: no projection patches, so every replay and gate
 is unaffected. Wider-than-16:9 field of view (a projection patch) is not done.
+
+### Native performance (2026-10-16)
+
+**Starting point.** Race replay frames 6000-6900 (headless, uncapped): 20.7 s emulated,
+29.3 s with `SSX3_RENDER_NATIVE=all`.
+
+**Measurement tools** (`SSX3_GS_WAITS=1`, printed at exit):
+- latent-readback waits;
+- GPU busy time, from submission/completion timestamps of every command buffer (a poller
+  thread keeps completion callbacks prompt).
+
+`SSX3_MTGS_STATS=1` shows how long the EE waits for the GS thread.
+
+**What it showed:**
+- The EE waited 55 s for the GS in native mode (22 s emulated), almost all of it at the
+  flare queries' local→host reads, about 4 per race frame.
+- Readbacks are latent: they return the previous frame's copy. But waiting for that copy
+  used `poll(wait_indefinitely)`, which also waits for all of the current frame's drawing
+  queued since. In native mode that was 24 ms per wait.
+- The GPU is busy 99% of the time in native mode (89% emulated): both modes are GPU-bound
+  at roughly 43 fps in the race. Throwaway experiments that skip parts:
+  - the n3 draws cost about as much GPU as the compute rasterizer they replace;
+  - the swizzle-back costs about 5 s per 1,100 race frames;
+  - the unswizzle costs next to nothing.
+
+**Changes:**
+- **Submit thread** (`gs/gpu/submit.rs`).
+  - `CommandEncoder::finish` (wgpu's validation and Metal encoding) and `submit` run off
+    the GS thread. They were about a third of the GS thread in native mode.
+  - Jobs carry their own buffer uploads, so queue order is preserved.
+  - Everything that maps, polls or hands a buffer to the presenter drains it first.
+  - `SSX3_GS_SUBMIT_THREAD=0` turns it off.
+- **Targeted latent wait.** The latent copy's map is issued right after its submission
+  (a post-submit hook on the job), and its `SubmissionIndex` is recorded. `latent_read`
+  waits for that submission only. The data is the same, so the result stays
+  deterministic. The EE wait dropped from 55 s to 40 s.
+- **Swizzle back only what a run drew.** The run's rectangle is clipped to the union of its
+  primitives' bounding boxes. Undrawn target pixels already equal VRAM.
+- **Lazy coverage.** The "drawn since the last copy" bitmap is only consulted by later
+  destination-read primitives. Shapes are queued and rasterized only when a test's
+  bounding box overlaps them.
+
+**Result.** Frames 6000-6900 with native rendering take 24.8 s (was 29.3 s). Emulated is
+unchanged at about 20.7 s.
+
+**Not done, and why:**
+- **The n3 fragment cost is structural.** The shader writes `frag_depth` (GS-exact Z from
+  the compute GS's planes), so the GPU cannot reject occluded fragments early. Every
+  covered fragment runs the full GS texture/fog/alpha/blend emulation.
+- **Lowering it needs a design change.** One option is a non-exact fast path for the
+  native port. Another is hardware-interpolated Z where it provably matches the GS
+  (`docs/plans/roadmap.md` phase 4 territory).
+- **Most native runs end at texture uploads.** 44k of 47k runs end because the game
+  streams textures through a small VRAM region it reuses within a frame. Continuing a run
+  across such an upload needs versioned texture pages in the shader.

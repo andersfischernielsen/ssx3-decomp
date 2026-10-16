@@ -156,6 +156,10 @@ struct Run {
     full_h: u32,
     /// The N× pass of this run (`hires`).
     hi: Option<HiRun>,
+    /// Swizzle back only this rectangle (x0, y0, x1, y1 exclusive): the
+    /// pixels the run's draws can cover (native-3 runs). Elsewhere the
+    /// targets still equal VRAM.
+    wb: Option<[u32; 4]>,
 }
 
 #[derive(Clone, Copy)]
@@ -628,7 +632,7 @@ impl GpuGs {
                 slot: 0,
             });
         }
-        n.runs.push(Run { surfaces: *s, x0, y0, reuse, full, full_w: fw, full_h: fh, hi });
+        n.runs.push(Run { surfaces: *s, x0, y0, reuse, full, full_w: fw, full_h: fh, hi, wb: None });
         let slot = self.native_slot(run);
         if self.native.as_ref().is_some_and(|n| n.runs[run as usize].hi.is_some()) {
             // The same parameters with the scale in d.y.
@@ -713,9 +717,17 @@ impl GpuGs {
 
     /// Parameter slot of run `run`: a = frame (surface words, format |
     /// 0x100 when present), b = Z (surface words, largest Z or 0), c = (w, h).
+    /// Write back only `rect` (x0, y0, x1, y1 exclusive, inside the run's
+    /// rectangle) at the end of `run`: what its draws can cover.
+    pub(super) fn set_native_writeback(&mut self, run: u32, rect: [u32; 4]) {
+        let n = self.native.as_mut().expect("native state");
+        n.runs[run as usize].wb = Some(rect);
+    }
+
     fn native_slot(&mut self, run: u32) -> u32 {
         let r = &self.native.as_ref().expect("native state").runs[run as usize];
         let (s, x0, y0) = (r.surfaces, r.x0, r.y0);
+        let [x0, y0, ex, ey] = r.wb.unwrap_or([x0, y0, s.width, s.height]);
         let mut p = [0u32; 16];
         if let Some(f) = &s.frame {
             let sw = surf_words(&Surface::new(f.psm, f.bp, f.bw));
@@ -727,8 +739,8 @@ impl GpuGs {
             p[4..7].copy_from_slice(&sw);
             p[7] = if z.psm == swizzle::PSMZ24 { 0xFF_FFFF } else { 0xFFFF };
         }
-        p[8] = s.width;
-        p[9] = s.height;
+        p[8] = ex;
+        p[9] = ey;
         p[10] = x0;
         p[11] = y0;
         let slot = self.slots.len() as u32;
@@ -930,6 +942,10 @@ impl GpuGs {
             Cmd::NativeEnd { run, slot } => {
                 let r = &n.runs[run as usize];
                 let s = &r.surfaces;
+                let [x0, y0, x1, y1] = r.wb.unwrap_or([r.x0, r.y0, s.width, s.height]);
+                if x1 <= x0 || y1 <= y0 {
+                    return;
+                }
                 let mut pass = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
                     label: Some("gs-native-swizzle"),
                     timestamp_writes: ts_compute,
@@ -937,7 +953,7 @@ impl GpuGs {
                 pass.set_pipeline(&n.swizzle_pipe);
                 pass.set_bind_group(0, &e.bg0, &[slot * SLOT as u32]);
                 pass.set_bind_group(1, &e.bg1, &[]);
-                pass.dispatch_workgroups((s.width - r.x0).div_ceil(8), (s.height - r.y0).div_ceil(8), 1);
+                pass.dispatch_workgroups((x1 - x0).div_ceil(8), (y1 - y0).div_ceil(8), 1);
             }
             _ => unreachable!("not a native command"),
         }
@@ -1070,6 +1086,7 @@ impl GpuGs {
                 },
             );
         }
+        self.drain_submits();
         self.ctx.queue.submit(std::iter::once(enc.finish()));
         let slice = buf.slice(..);
         slice.map_async(wgpu::MapMode::Read, |_| {});
@@ -1114,6 +1131,7 @@ impl GpuGs {
                 },
                 wgpu::Extent3d { width: w, height: hh, depth_or_array_layers: 1 },
             );
+            self.drain_submits();
             self.ctx.queue.submit(std::iter::once(enc.finish()));
             let slice = buf.slice(..);
             slice.map_async(wgpu::MapMode::Read, |_| {});
@@ -1133,3 +1151,4 @@ impl GpuGs {
         out
     }
 }
+

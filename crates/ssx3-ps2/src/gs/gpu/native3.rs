@@ -329,26 +329,48 @@ fn fixed_blend(d: &Draw, dual_ok: bool) -> Option<(u32, u32, bool)> {
 
 /// What a primitive covers, for `Coverage`.
 #[derive(Clone, Copy)]
-enum Geo<'a> {
-    Tri(&'a super::super::raster::TriSetup, &'a Prim),
+enum Geo {
+    /// A triangle's edge functions (`TriSetup`) within its bounding box.
+    Tri(Edges),
     /// Pixels x0..=x1, y0..=y1 (a sprite).
     Rect([i32; 4]),
 }
 
-impl Geo<'_> {
-    fn rows(&self) -> (i32, i32) {
+#[derive(Clone, Copy)]
+struct Edges {
+    bx0: i32,
+    by0: i32,
+    e0: [i64; 3],
+    edx: [i64; 3],
+    edy: [i64; 3],
+    /// Bounding box x0, y0, x1, y1 (the Prim's).
+    bb: [i32; 4],
+}
+
+impl Geo {
+    fn tri(t: &super::super::raster::TriSetup, p: &Prim) -> Geo {
+        Geo::Tri(Edges { bx0: t.bx0, by0: t.by0, e0: t.e0, edx: t.edx, edy: t.edy, bb: [p.x0, p.y0, p.x1, p.y1] })
+    }
+
+    /// Bounding box x0, y0, x1, y1.
+    fn bbox(&self) -> [i32; 4] {
         match self {
-            Geo::Tri(_, p) => (p.y0, p.y1),
-            Geo::Rect(r) => (r[1], r[3]),
+            Geo::Tri(e) => e.bb,
+            Geo::Rect(r) => *r,
         }
+    }
+
+    fn rows(&self) -> (i32, i32) {
+        let b = self.bbox();
+        (b[1], b[3])
     }
 
     /// The covered columns of row `y` (empty when a > b).
     fn span(&self, y: i32) -> (i64, i64) {
         match self {
-            Geo::Tri(t, p) => {
+            Geo::Tri(t) => {
                 let j = (y - t.by0) as i64;
-                let (mut lo, mut hi) = (0i64, (p.x1 - t.bx0) as i64);
+                let (mut lo, mut hi) = (0i64, (t.bb[2] - t.bx0) as i64);
                 for k in 0..3 {
                     super::super::raster::edge_span(t.e0[k] + t.edy[k] * j, t.edx[k], &mut lo, &mut hi);
                 }
@@ -367,10 +389,37 @@ struct Coverage {
     /// Rows touched since the last clear.
     y0: i32,
     y1: i32,
+    /// `mark_lazy`: shapes not yet in the bitmap, and their bounding box.
+    lazy: Vec<Geo>,
+    lazy_bb: [i32; 4],
 }
 
 impl Coverage {
+    /// Add the pixels of `g` when the bitmap is next looked at: most
+    /// bitmaps of drawn pixels are never tested.
+    fn mark_lazy(&mut self, g: Geo) {
+        let b = g.bbox();
+        let r = &mut self.lazy_bb;
+        if self.lazy.is_empty() {
+            *r = b;
+        } else {
+            *r = [r[0].min(b[0]), r[1].min(b[1]), r[2].max(b[2]), r[3].max(b[3])];
+        }
+        self.lazy.push(g);
+    }
+
+    /// Put the lazily marked shapes into the bitmap.
+    fn settle(&mut self) {
+        if self.lazy.is_empty() {
+            return;
+        }
+        for g in std::mem::take(&mut self.lazy) {
+            self.mark(g);
+        }
+    }
+
     fn clear(&mut self) {
+        self.lazy.clear();
         if !self.rows.is_empty() && self.y0 <= self.y1 {
             for r in &mut self.rows[self.y0 as usize..=self.y1 as usize] {
                 *r = [0; 32];
@@ -390,6 +439,12 @@ impl Coverage {
 
     /// Whether `g` covers a pixel of the bitmap.
     fn hits(&mut self, g: Geo) -> bool {
+        if !self.lazy.is_empty() {
+            let (b, l) = (g.bbox(), self.lazy_bb);
+            if b[0] <= l[2] && l[0] <= b[2] && b[1] <= l[3] && l[1] <= b[3] {
+                self.settle();
+            }
+        }
         self.init();
         let (y0, y1) = g.rows();
         for y in y0.max(self.y0)..=y1.min(self.y1) {
@@ -800,6 +855,7 @@ impl N3 {
         }
         if n == 1 && !copy0 {
             // The group's pixels join the drawn ones.
+            self.dirty.settle();
             let cd = &self.cov_d[0];
             if cd.y0 <= cd.y1 {
                 self.dirty.init();
@@ -1033,7 +1089,7 @@ impl GpuGs {
             _ => None,
         };
         let geo = match (&p.shape, prim) {
-            (Shape::Tri(t), 3..=5) => Geo::Tri(t, p),
+            (Shape::Tri(t), 3..=5) => Geo::tri(t, p),
             (Shape::Sprite { .. }, 6) => Geo::Rect([p.x0, p.y0, p.x1, p.y1]),
             (Shape::Line { .. }, 1 | 2) => Geo::Rect(line_box.expect("line")),
             _ => return Err(Fallback::NotTri),
@@ -1325,7 +1381,7 @@ impl GpuGs {
                 _ => self.n3.emit_deferred("nondr"),
             }
         }
-        self.n3.dirty.mark(geo);
+        self.n3.dirty.mark_lazy(geo);
         tri.brk = if mode == 2 {
             let gk = (st.key, st.fix, [d.sx0, d.sy0, d.sx1, d.sy1]);
             if self.n3.cov_key != Some(gk) {
@@ -1438,9 +1494,14 @@ impl GpuGs {
         // copy sample it: the run's own frame through its `prev` snapshot,
         // one other buffer per list through the `src` binding.
         let hi = g.native.as_ref().and_then(|n| n.hires.as_ref());
+        // The pixels the run's primitives can cover: only those are
+        // swizzled back.
+        let mut drawn = [i32::MAX, i32::MAX, i32::MIN, i32::MIN];
         let run_frame = s.frame.map(|f| super::hires::Key { bp: f.bp, bw: f.bw, psm: f.psm, depth: false });
         let mut src: Option<super::hires::Key> = None;
         for t in &tris {
+            let b = t.bbox();
+            drawn = [drawn[0].min(b[0]), drawn[1].min(b[1]), drawn[2].max(b[2]), drawn[3].max(b[3])];
             let ptr = Arc::as_ptr(&t.d);
             let si = match setups.iter().rposition(|(p, _)| *p == ptr) {
                 Some(i) => i,
@@ -1657,6 +1718,11 @@ impl GpuGs {
         g.n3.stats.draws += calls.len() as u64;
         g.n3.stats.dr_copies += segs.len() as u64;
         g.n3.lists.push(List { run: rid, slot, hslot, src, vw, vh, calls, segs });
+        let x0 = (drawn[0].max(0) as u32).max(rx0);
+        let y0 = (drawn[1].max(0) as u32).max(ry0);
+        let x1 = ((drawn[2] + 1).max(0) as u32).min(s.width).max(x0);
+        let y1 = ((drawn[3] + 1).max(0) as u32).min(s.height).max(y0);
+        g.set_native_writeback(rid, [x0, y0, x1, y1]);
         run.end();
     }
 

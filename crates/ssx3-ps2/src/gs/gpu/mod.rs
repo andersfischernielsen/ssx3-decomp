@@ -54,6 +54,7 @@ use super::swizzle::{self, Kind, Surface};
 use super::Vertex;
 
 pub(crate) mod hires;
+mod submit;
 mod native;
 mod native3;
 pub use native3::{diag_knob as native3_diag, Fallback as N3Fallback, N3Stats};
@@ -234,6 +235,11 @@ pub struct GpuStats {
     pub decoded_texels: u64,
     /// GPU time of the raster passes (only with `SSX3_GS_PROFILE`).
     pub gpu_raster_ns: u64,
+    /// Readbacks (`read_staging`): wall time waiting for the submit thread,
+    /// then for the GPU.
+    pub readback_drain_ns: u64,
+    pub readback_gpu_ns: u64,
+    pub readback_count: u64,
     /// Native runs (see `native`).
     pub native: NativeStats,
     /// Type-3 triangles on the hardware rasterizer (see `native3`).
@@ -332,6 +338,10 @@ pub(crate) struct GpuGs {
     pub(crate) cpu_dirty: Pages,
     pub(crate) gpu_dirty: Pages,
     inflight: VecDeque<wgpu::SubmissionIndex>,
+    /// The submit thread (`submit.rs`); `None`: submit here.
+    submitter: Option<submit::Submitter>,
+    /// Run after the next submission (`submit::Job::after`).
+    after_submit_hook: Option<submit::AfterSubmit>,
     counts: Vec<u32>,
     fill: Vec<u32>,
     touched: Vec<u32>,
@@ -456,6 +466,8 @@ struct Latent {
     buf: wgpu::Buffer,
     /// Set when the mapping of the last copy completed.
     ready: Arc<std::sync::atomic::AtomicBool>,
+    /// The submission of the last copy, once submitted.
+    idx: Arc<std::sync::Mutex<Option<wgpu::SubmissionIndex>>>,
     /// Pages of the copy in flight or mapped.
     pending: Option<Pages>,
     /// Pages read this frame.
@@ -612,6 +624,8 @@ impl GpuGs {
             cpu_dirty: Pages::ALL,
             gpu_dirty: Pages::default(),
             inflight: VecDeque::new(),
+            submitter: submit::Submitter::new(&ctx.device, &ctx.queue),
+            after_submit_hook: None,
             counts: vec![0; TILES_X * TILES_X],
             fill: vec![0; TILES_X * TILES_X],
             touched: Vec::new(),
@@ -621,6 +635,7 @@ impl GpuGs {
             latent: Latent {
                 buf: mk("gs-latent", VRAM_BYTES, U::MAP_READ | U::COPY_DST),
                 ready: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                idx: Arc::new(std::sync::Mutex::new(None)),
                 pending: None,
                 want: Pages::default(),
             },
@@ -1473,16 +1488,23 @@ impl GpuGs {
     fn submit_with(&mut self, extra: impl FnOnce(&Self, &mut wgpu::CommandEncoder)) {
         self.ensure_capacity();
         let q = &self.ctx.queue;
-        if !self.arena.is_empty() {
+        // On the submit thread the uploads travel with the job.
+        let threaded = self.submitter.is_some() && self.prof.is_none();
+        self.stats.data_bytes += self.arena.len() as u64 * 4;
+        if !self.arena.is_empty() && !threaded {
             q.write_buffer(&self.data, 0, bytes_of(&self.arena));
-            self.stats.data_bytes += self.arena.len() as u64 * 4;
         }
+        let mut params = None;
         if !self.slots.is_empty() {
             let mut bytes = vec![0u8; self.slots.len() * SLOT as usize];
             for (i, s) in self.slots.iter().enumerate() {
                 bytes[i * SLOT as usize..i * SLOT as usize + 64].copy_from_slice(bytes_of(s));
             }
-            q.write_buffer(&self.params, 0, &bytes);
+            if threaded {
+                params = Some((self.params.clone(), bytes));
+            } else {
+                q.write_buffer(&self.params, 0, &bytes);
+            }
         }
         let mut enc = self
             .ctx
@@ -1622,7 +1644,22 @@ impl GpuGs {
             enc.resolve_query_set(&p.qs, 0..2 * passes, &p.resolve, 0);
             enc.copy_buffer_to_buffer(&p.resolve, 0, &p.read, 0, passes as u64 * 16);
         }
+        if threaded {
+            let data = (!self.arena.is_empty()).then(|| {
+                let spare = self.submitter.as_ref().expect("submitter").spare();
+                (self.data.clone(), std::mem::replace(&mut self.arena, spare))
+            });
+            let after = self.after_submit_hook.take();
+            self.submitter.as_mut().expect("submitter").submit(submit::Job { enc, data, params, after });
+            self.after_submit();
+            return;
+        }
+        self.drain_submits();
+        let q = &self.ctx.queue;
         let idx = q.submit(std::iter::once(enc.finish()));
+        if let Some(f) = self.after_submit_hook.take() {
+            f(&idx);
+        }
         if let (Some(p), true) = (&self.prof, passes > 0) {
             let slice = p.read.slice(0..passes as u64 * 16);
             slice.map_async(wgpu::MapMode::Read, |_| {});
@@ -1652,6 +1689,19 @@ impl GpuGs {
             }
             p.read.unmap();
         }
+        self.after_submit();
+        self.inflight.push_back(idx);
+        while self.inflight.len() > MAX_INFLIGHT {
+            let old = self.inflight.pop_front().expect("inflight");
+            let _ = self.ctx.device.poll(wgpu::PollType::Wait {
+                submission_index: Some(old),
+                timeout: None,
+            });
+        }
+    }
+
+    /// Reset the recording state after a submission.
+    fn after_submit(&mut self) {
         self.prof_info.clear();
         self.native_encode_done();
         self.stats.submits += 1;
@@ -1662,13 +1712,13 @@ impl GpuGs {
         self.decoded.clear();
         self.dec_used = 0;
         self.last_draw = None;
-        self.inflight.push_back(idx);
-        while self.inflight.len() > MAX_INFLIGHT {
-            let old = self.inflight.pop_front().expect("inflight");
-            let _ = self.ctx.device.poll(wgpu::PollType::Wait {
-                submission_index: Some(old),
-                timeout: None,
-            });
+    }
+
+    /// Wait until the submit thread has submitted everything handed to it
+    /// (before mapping, polling, or another submitter using our buffers).
+    pub(crate) fn drain_submits(&self) {
+        if let Some(s) = &self.submitter {
+            s.drain();
         }
     }
 
@@ -1681,16 +1731,25 @@ impl GpuGs {
             // are once the frame is drawn, for the next frame's transfers.
             let runs = page_runs(&want);
             let bpp = PAGE_WORDS as u64 * 4;
+            // Map the copy as soon as it is submitted (on the submit
+            // thread), and note its submission: `latent_read` waits for
+            // that one only, not for the drawing queued after it.
+            let ready = self.latent.ready.clone();
+            ready.store(false, std::sync::atomic::Ordering::Release);
+            let idx = self.latent.idx.clone();
+            *idx.lock().unwrap() = None;
+            let buf = self.latent.buf.clone();
+            self.after_submit_hook = Some(Box::new(move |i| {
+                *idx.lock().unwrap() = Some(i.clone());
+                buf.slice(..).map_async(wgpu::MapMode::Read, move |r| {
+                    ready.store(r.is_ok(), std::sync::atomic::Ordering::Release);
+                });
+            }));
             self.submit_with(|s, enc| {
                 for &(a, b) in &runs {
                     let off = a as u64 * bpp;
                     enc.copy_buffer_to_buffer(&s.vram, off, &s.latent.buf, off, (b - a) as u64 * bpp);
                 }
-            });
-            let ready = self.latent.ready.clone();
-            ready.store(false, std::sync::atomic::Ordering::Release);
-            self.latent.buf.slice(..).map_async(wgpu::MapMode::Read, move |r| {
-                ready.store(r.is_ok(), std::sync::atomic::Ordering::Release);
             });
             self.latent.pending = Some(want);
             self.latent.want = Pages::default();
@@ -1716,7 +1775,20 @@ impl GpuGs {
         if !self.latent.ready.load(std::sync::atomic::Ordering::Acquire) {
             // Wait for the previous frame's copy rather than skipping it:
             // what the game reads must not depend on GPU timing (determinism).
-            let _ = self.ctx.device.poll(wgpu::PollType::wait_indefinitely());
+            // Only that submission: not the drawing queued since.
+            let t0 = std::time::Instant::now();
+            let idx = loop {
+                if let Some(i) = self.latent.idx.lock().unwrap().clone() {
+                    break i;
+                }
+                std::thread::yield_now();
+            };
+            let _ = self.ctx.device.poll(wgpu::PollType::Wait { submission_index: Some(idx), timeout: None });
+            if !self.latent.ready.load(std::sync::atomic::Ordering::Acquire) {
+                let _ = self.ctx.device.poll(wgpu::PollType::wait_indefinitely());
+            }
+            self.stats.readback_gpu_ns += t0.elapsed().as_nanos() as u64;
+            self.stats.readback_count += 1;
             if !self.latent.ready.load(std::sync::atomic::Ordering::Acquire) {
                 return;
             }
@@ -1739,12 +1811,16 @@ impl GpuGs {
 
     /// Wait until the GPU has finished everything submitted.
     pub(crate) fn wait_idle(&mut self) {
+        self.drain_submits();
         let _ = self.ctx.device.poll(wgpu::PollType::wait_indefinitely());
         self.inflight.clear();
     }
 
     /// Map `staging[..bytes]`, hand it to `f`, unmap.
     fn read_staging(&mut self, bytes: u64, f: impl FnOnce(&[u8])) {
+        let t0 = std::time::Instant::now();
+        self.drain_submits();
+        let t1 = std::time::Instant::now();
         let slice = self.staging.slice(0..bytes);
         slice.map_async(wgpu::MapMode::Read, |r| {
             if let Err(e) = r {
@@ -1753,6 +1829,9 @@ impl GpuGs {
         });
         let _ = self.ctx.device.poll(wgpu::PollType::wait_indefinitely());
         self.inflight.clear();
+        self.stats.readback_drain_ns += (t1 - t0).as_nanos() as u64;
+        self.stats.readback_gpu_ns += t1.elapsed().as_nanos() as u64;
+        self.stats.readback_count += 1;
         {
             let view = slice.get_mapped_range().expect("readback map");
             f(&view);
@@ -1886,6 +1965,8 @@ impl GpuGs {
     pub(crate) fn display_gpu(&mut self, d: &DisplaySetup, vram: &[u32]) -> GpuFrame {
         let (width, height) = self.queue_display(d, vram, true);
         self.submit_with(|_, _| {});
+        // The presenter submits on the same queue: ours must come first.
+        self.drain_submits();
         GpuFrame {
             buffer: self.out.clone(),
             width,
