@@ -1,147 +1,224 @@
 # ssx3-decomp
 
-Native **Rust** static recompilation of **SSX 3 (USA)** (serial `SLUS_207.72`).
-Every instruction of the game's Emotion Engine code and its VU microcode is
-translated to Rust at build time and runs on a native PS2 platform layer:
+![SSX 3 running as recompiled Rust: title screen, mode select, race start and three moments of a Snow Jam race](docs/images/screenshots.jpg)
 
-- kernel
-- DMA, VIF and GIF
-- a software GS
-- the IPU
-- the IOP services
+<sub>The recompiled game running headless at 2× internal resolution (`SSX3_RENDER_NATIVE=all SSX3_RENDER_SCALE=2`): title, mode select, and the first 75 seconds of a Snow Jam race.</sub>
 
-**Status (2026-10-14):** the game boots, plays its intro movies, runs the menus,
-loads a course and **races** with music and sound effects: HUD, rivals, and
-position and speed tracking all work. It also **saves and loads** to a
-file-backed memory card, and 4,325 of 11,844 functions carry recovered names. It saves to and loads from an emulated memory card (`saves/ssx3-mc0.ps2`). Gaps remain: speed (software GS), audio, and some rendering
-issues. Screenshots and the full log are in
-[`docs/plans/playable-push.md`](docs/plans/playable-push.md).
+A native **Rust** static recompilation of **SSX 3 (USA)** (`SLUS_207.72`) for the
+PlayStation 2. Every instruction of the game's Emotion Engine code, VU microcode and
+IOP drivers is translated to Rust ahead of time and runs on a native PS2 platform layer
+(kernel, DMA/VIF/GIF, GS on wgpu, IPU, SPU2, memory card). No emulator interprets the
+game's code at runtime.
 
-> SSX 3 is © Electronic Arts; "SSX" is an EA trademark. This project is not
-> affiliated with or endorsed by EA. The repository contains no game data and
-> no game code: the disc image, the extracted executable and everything
-> translated from them (`generated/ee`, `generated/iop`, `generated/vu`) are
-> produced locally from **your own copy** of the game and are never committed
-> (see [`tools/extract-from-iso.sh`](tools/extract-from-iso.sh) and
-> [`tools/bootstrap.sh`](tools/bootstrap.sh)).
+**Status (2026-10-16):**
+- **The game is playable.** It boots and plays the intro movies. Menus, races, music and
+  sound work, and saves go to a file-backed memory card. A scripted race replay is
+  byte-identical run to run.
+- **Every function has a name, and many are hand-written Rust.** All 13.3k functions are
+  named. 1,368 are typed Rust rewrites that are checked against the generated code.
+- **Opt-in native host implementations** (phase 3) exist for:
+  - files (`std::fs`);
+  - sound (a native mixer);
+  - rendering (direct wgpu draws, with resolution scaling and widescreen).
 
-## Quick start
+  Each is checked byte-for-byte against the emulated path.
+
+See [`docs/plans/roadmap.md`](docs/plans/roadmap.md) for the plan and
+[`docs/investigation/limitations.md`](docs/investigation/limitations.md) for known
+issues.
+
+> SSX 3 is © Electronic Arts; "SSX" is an EA trademark. This project is not affiliated
+> with or endorsed by EA. **The repository contains no game data and no game code.** The
+> disc image, the executable and everything translated from them (`orig/`,
+> `generated/ee`, `generated/iop`, `generated/vu`) are produced locally from **your own
+> copy** of the game. They are ignored by git, and must never be committed or shared.
+
+## Getting started
+
+### 1. What you need
+
+- **A disc image of SSX 3, USA version** (`SLUS-20772`, Redump name `SSX 3 (USA)`, about
+  3.0 GB). Make it from a disc you own, for example with a DVD drive and `dd`,
+  ImgBurn, or a PS2 dumping tool. Other regions and revisions are not supported. The
+  extraction step checks the executable's SHA-256:
+  `1b49d05ca2793922180851b9e1ce9ae2291d61a7863565ac4e71f12e967af7bc`.
+- **Rust**, current stable, via [rustup](https://rustup.rs).
+- **bsdtar** (libarchive) to read the image. macOS has it built in. On Debian/Ubuntu
+  install `libarchive-tools`.
+- **A GPU with Metal, Vulkan or DX12.** The GS runs on wgpu.
+- **Disk:** about 15 GB free for the image, the generated code and the build.
+- **OS:** developed and tested on macOS (Apple Silicon). Linux should work but is
+  untested. Windows needs a POSIX shell for the two setup scripts.
+
+### 2. Set up (once)
 
 ```sh
-tools/extract-from-iso.sh "SSX 3 (USA).iso"            # -> orig/SLUS_207.72 (keep the ISO in the repo root)
-tools/bootstrap.sh                                     # translate EE + IOP code -> generated/ee/ (~79 MB of Rust)
-cargo run --profile game -p ssx3                       # play (window; ~2 min first build)
+git clone https://github.com/andersfischernielsen/ssx3-decomp.git
+cd ssx3-decomp
+
+# Put your image at the repository root with exactly this name
+# (or point SSX3_ISO at it, see "Options" below):
+cp /path/to/your/image.iso "SSX 3 (USA).iso"
+
+tools/extract-from-iso.sh   # -> orig/SLUS_207.72, checks the SHA-256
+tools/bootstrap.sh          # translates EE, VU and IOP code into generated/ (Rust)
 ```
 
-Keys: arrows = d-pad, X = Cross, Z = Square, S = Circle, A = Triangle,
-Enter = Start, Right Shift = Select, Q/W = L1/R1, 1/2 = L2/R2, F12 = screenshot.
+`bootstrap.sh` builds the recompiler and writes the translated game into `generated/`.
+Run it again after pulling changes to the recompiler (`crates/ssx3-recomp`).
 
-Useful switches: `SSX3_SKIP_MOVIES=1` skips the boot movies (the headless runner
-skips them by default), `SSX3_GS=cpu` uses the software rasterizer instead of
-the wgpu one, `SSX3_MEMCARD=<path>` picks the memory card file (default
-`saves/ssx3-mc0.ps2`), `SSX3_REAL_CLOCK=1` uses the host clock.
+### 3. Build and play
 
-Headless runs, scripted input and the debug switches are documented in
-[`docs/plans/playable-push.md`](docs/plans/playable-push.md#how-to-resume).
+```sh
+cargo run --profile game -p ssx3
+```
+
+The first build compiles the generated game, about 55 MB of Rust, and takes a while.
+Later builds are incremental. The `game` profile is an optimized profile that builds much
+faster than `--release` (no LTO). The built binary is `target/game/ssx3`. You can run it
+directly from the repository root.
+
+**Controls.** A game controller is picked up automatically (USB or paired Bluetooth;
+DualShock/DualSense, Xbox and similar). Buttons map by position: the bottom face button is
+✕, the right one ○, the left one □, the top one △. The first controller drives player 1,
+together with the keyboard.
+
+| Keyboard | PS2 |
+| --- | --- |
+| Arrow keys | D-pad |
+| X / S / Z / A | ✕ / ○ / □ / △ |
+| Q / W | L1 / R1 |
+| 1 / 2 | L2 / R2 |
+| Enter / Right Shift | Start / Select |
+| F12 | Screenshot |
+
+Saves go to `saves/ssx3-mc0.ps2`.
+
+## Options
+
+All options are environment variables. The defaults are the verified, exact
+configuration. The plain command above is the recommended way to play.
+
+**Everyday:**
+
+| Variable | Effect |
+| --- | --- |
+| `SSX3_SKIP_MOVIES=1` | Skip the EA, THX and intro movies at boot. |
+| `SSX3_ISO=<path>` | Disc image location (default `./SSX 3 (USA).iso`). |
+| `SSX3_MEMCARD=<path>` | Memory card file (default `saves/ssx3-mc0.ps2`). |
+| `SSX3_PAD2=1` | Plug in pad 2; a second controller drives it (Multi Play). |
+| `SSX3_ASPECT=4:3\|16:9\|stretch` | Window aspect. By default it follows the game's widescreen option: 16:9 when the game is set to *Anamorphic*, 4:3 otherwise. |
+| `SSX3_AUDIO=0` | No audio output. |
+| `SSX3_REAL_CLOCK=1` | Give the PS2 the host's date and time (the default is a fixed time, so runs are reproducible). |
+
+**Experimental: native host implementations (phase 3).** Each one is byte-identical to
+the default path in the race replay. None is the default yet, because they still need
+playtesting:
+
+| Variable | Effect |
+| --- | --- |
+| `SSX3_RENDER_NATIVE=all` | Draw with wgpu render pipelines instead of the compute GS. Currently GPU-heavier than the default. |
+| `SSX3_RENDER_SCALE=2` (up to 8) | Render N× internal resolution and show it in the window. Needs `SSX3_RENDER_NATIVE=all`. |
+| `SSX3_HOST_CLOCK=1` | Keep game time real-time when the host falls behind (extra 60 Hz updates, fewer rendered frames). |
+| `SSX3_SND=native` | Native sound mixer instead of the recompiled IOP sound driver. |
+| `SSX3_NATIVE_FILES=1` | Read game files through `std::fs` instead of the emulated CD. Add `SSX3_DATA_DIR=<dir>` to use an extracted `DATA/` folder. |
+| `SSX3_VU1=native` | Run VU1 rendering programs as readable Rust (`ssx3-render`) instead of translated microcode. |
+| `SSX3_GS=cpu` | Software rasterizer instead of the GPU one (slow; for debugging). |
+
+To try the full native stack:
+
+```sh
+SSX3_RENDER_NATIVE=all SSX3_RENDER_SCALE=2 SSX3_HOST_CLOCK=1 SSX3_SND=native SSX3_NATIVE_FILES=1 target/game/ssx3
+```
+
+## Contributing
+
+1. **Read the plan.** [`docs/plans/roadmap.md`](docs/plans/roadmap.md) has the phases
+   and current status. Findings live in [`docs/investigation/`](docs/investigation/), one
+   file per subsystem.
+2. **Run the tests.** They need no game data except where noted:
+
+   ```sh
+   cargo test -p ssx3-ee-rt -p ssx3-vu -p ssx3-ps2 -p ssx3-recomp -p ssx3-iop -p ssx3-core
+   ```
+
+   The GS tests (`ssx3-ps2`, `gs::`) compare the wgpu paths against the reference
+   rasterizer in about 10 s. Run them for any rendering change.
+3. **Check game behaviour headless.** `ssx3-headless` runs without a window and takes
+   scripted input, screenshots and a RAM dump. This replays the reference race and dumps
+   36 screenshots:
+
+   ```sh
+   cargo build --profile game -p ssx3
+   SSX3_INPUT="1600:0008:8,2000:4000:8,2500:4000:8,2700:4000:8,2900:4000:8,3100:4000:8,3300:4000:8,3500:4000:8,3700:4000:8,4250:4000:8,4600:4000:3000,7700:4000:3000" \
+   SSX3_SHOTS=shots SSX3_RAM_DUMP=shots/ram.bin \
+     target/game/ssx3-headless 9000 --shot-every 250
+   ```
+
+   - **Exactness is the rule.** The same run before and after your change must give
+     identical screenshots and RAM, unless the change is meant to alter behaviour.
+   - **Rewrites are checked against the generated code.** Hand-written functions are
+     compared by running with `SSX3_NO_OVERRIDES=1` (generated code only) and comparing.
+   - More switches for headless runs and debugging:
+     [`docs/plans/playable-push.md`](docs/plans/playable-push.md#how-to-resume).
+4. **Rewrite functions as typed Rust (phase 2).** The guide is
+   [`docs/investigation/phase2-worker-guide.md`](docs/investigation/phase2-worker-guide.md).
+   Rewrites live in `crates/ssx3-game` and are registered in its `overrides.txt`.
+5. **Don't commit game material:**
+   - the disc image or files from it;
+   - translated code (`generated/ee`, `generated/iop`, `generated/vu`);
+   - disassembly listings;
+   - RAM or VRAM dumps;
+   - screenshots of large parts of the game.
+
+   `.gitignore` covers the standard locations.
+
+Ghidra is optional. The function inventory (`generated/functions.tsv`, names and
+boundaries) is committed. To explore the binary yourself, see
+[Analysis in Ghidra](#analysis-in-ghidra) below.
 
 ## Architecture
 
-| crate | role |
+| Crate | Role |
 | --- | --- |
-| `ssx3-recomp` | Function inventory and boundaries (from Ghidra), the R5900 decoder, and **`recomp-ee`**. The generator lowers all ~808k instructions in 13.3k functions to **structured Rust**: 97% of functions become `if`/`loop` code with no `pc` variable, and the rest use block dispatch. Output is sharded into 16 crates under `generated/ee/`; see [`docs/investigation/recompiler-v2.md`](docs/investigation/recompiler-v2.md). `recomp-iop` does the same for the game's IOP modules (sound, controller, memory card; see [`docs/investigation/sio2-memcard.md`](docs/investigation/sio2-memcard.md)). |
-| `ssx3-ee-rt` | The EE core that generated code is compiled against: `Cpu` (128-bit GPRs, HI/LO, FPU, COP0), instruction semantics (MMI, bit-exact FPU, COP2 moves, PS2 float), guest RAM/scratchpad, the function table, and the `Platform` trait behind which the hardware sits. Kept small and stable so hardware changes never recompile generated code ([`docs/investigation/crate-split.md`](docs/investigation/crate-split.md)). |
-| `ssx3-vu` | VU0/VU1: register file, pipeline/timing model, the translated-code fast path, the microcode translator, and the statically translated microcode (`generated/vu/`). Used as `ssx3_ps2::vu`. |
-| `ssx3-ps2` | The platform layer (`Machine`): MMIO, DMAC, timers and INTC, the HLE EE kernel (threads, semaphores, handlers, alarms), SIF with the IOP services (loadfile, fileio, cdvdfsv, padman, EA SNDDRV protocol), VIF, GS (GPU or software rasterizer, on its own thread), and IPU (MPEG). |
+| `ssx3-recomp` | The function inventory, the R5900 decoder, and **`recomp-ee`**. It lowers ~808k instructions in 13.3k functions to structured Rust (97% of functions without a `pc` variable), sharded into 16 crates under `generated/ee/`. `recomp-iop` does the same for the game's IOP modules. See [`docs/investigation/recompiler-v2.md`](docs/investigation/recompiler-v2.md). |
+| `ssx3-ee-rt` | The EE core the generated code compiles against: `Cpu` (128-bit GPRs, FPU, COP0), instruction semantics (MMI, bit-exact PS2 float), guest memory, the function table, and the `Platform` trait. Kept small so hardware changes never recompile generated code. |
+| `ssx3-game` | Hand-written typed Rust replacements for game functions (phase 2), checked against the generated ones. Also the native file layer. |
+| `ssx3-vu` | VU0/VU1: registers, pipeline timing, and the translated microcode (`generated/vu/`). |
+| `ssx3-ps2` | The platform (`Machine`): MMIO, DMAC, timers, INTC, an HLE EE kernel (threads, semaphores, alarms), SIF and IOP services, VIF, the GS (wgpu compute rasterizer, native wgpu render paths, software fallback; on its own thread), and the IPU (MPEG). |
 | `ssx3-iop` | The IOP runtime for the recompiled IRX modules: IOP kernel, SPU2 audio, SIO2 with pad and memory card. |
-| `ssx3` | Front ends: the windowed `ssx3` (winit + wgpu) and `ssx3-headless` (scripted input, screenshots, diagnostics). |
-| `ssx3-core`, `ssx3-gs`, `ssx3-runtime` | Earlier scaffolding (memory model, first codegen); superseded by the above. |
+| `ssx3-render` | The VU1 rendering programs as readable Rust (`SSX3_VU1=native`). |
+| `ssx3-snd` | The native sound mixer (`SSX3_SND=native`). |
+| `ssx3` | Front ends: the windowed `ssx3` (winit + wgpu + gilrs + cpal) and `ssx3-headless`. |
 
-Each guest thread runs on its own host thread, and a baton ensures only one runs
-at a time. A guest call is a plain Rust call, and a thread switch blocks inside
-the syscall. `recomp-ee --unwind` generates the original resumable form, which
-uses the unwind/trampoline model from
+Each guest thread runs on its own host thread, and a baton lets only one run at a time.
+A guest call is a plain Rust call. `recomp-ee --unwind` generates the original
+resumable form, which uses the unwind/trampoline model from
 [ps2-web-recomp](https://github.com/snuri00/ps2-web-recomp) (MIT).
 
-## What the disc actually contains
-
-An `.iso` is a UDF disc image, not a program — it cannot be decompiled directly.
-The disc root holds:
+## What the disc contains
 
 | File | Purpose |
 | --- | --- |
 | `SYSTEM.CNF` | Boot config: `BOOT2=cdrom0:\SLUS_207.72;1` |
-| `SLUS_207.72` | The game executable: ELF32, little-endian, **MIPS (R5900)**, stripped |
-| `DATA/` | ~2.3 GB of level/asset archives |
+| `SLUS_207.72` | The game executable: ELF32, little-endian, MIPS R5900, stripped |
+| `DATA/` | ~2.3 GB of level and asset archives, read at runtime from the image |
 | `NETGUI/` | ~8 MB network UI |
 
-The ELF is the decompilation target. Known facts (from Ghidra):
-
-- image base `0x00100000`, entry `0x00100008`
-- SHA-256 `1b49d05ca2793922180851b9e1ce9ae2291d61a7863565ac4e71f12e967af7bc`
-- 93 memory segments; 11,844 functions after auto-analysis
-- `.vutext` (`0x0042e590`) holds VU1 microcode
-
-## Extracting the executable
-
-```sh
-tools/extract-from-iso.sh "/path/to/SSX 3 (USA).iso"   # -> orig/SLUS_207.72
-```
+The executable's image base is `0x00100000` and its entry point is `0x00100008`. It has
+93 segments, and `.vutext` (`0x0042e590`) holds the VU1 microcode.
 
 ## Analysis in Ghidra
 
 1. Import `orig/SLUS_207.72` as an ELF.
-2. Set the language to **`r5900:LE:32:default`** ("Emotion Engine (Play
-   Station 2) R5900 MIPS Core") from
+2. Set the language to **`r5900:LE:32:default`** from
    [`chaoticgd/ghidra-emotionengine-reloaded`](https://github.com/chaoticgd/ghidra-emotionengine-reloaded).
-   The plain MIPS language will not decode the EE instructions.
+   The plain MIPS language does not decode EE instructions.
 3. Run **Analysis → Auto Analyze**.
-4. Query it through the Ghidra MCP server (see below).
+4. To import the project's names: `tools/import-ghidra-names.py`. With the GhidraMCP
+   plugin running, `tools/export-ghidra-functions.py` writes them back to
+   `generated/functions.{json,tsv}`. See
+   [`docs/investigation/ghidra-mcp.md`](docs/investigation/ghidra-mcp.md).
 
-The ELF is stripped, but because it was built with `-ffunction-sections`, its
-`.gnu.linkonce.t.*` **section names still carry mangled C++ symbol names**
-(e.g. `RCMP5CODEC`, `RCMP7DECODER`), which is a free naming source.
-
-## Function inventory
-
-`tools/export-ghidra-functions.py` pulls every function from the GhidraMCP
-backend and writes a canonical, sorted table:
-
-```sh
-python3 tools/export-ghidra-functions.py            # -> generated/functions.{json,tsv}
-```
-
-`generated/functions.tsv` (`<hex-address>\t<name>`) is embedded into
-`ssx3-recomp` at compile time. As of the current export it holds **11,844**
-functions, of which **75** have recovered names (`entry`, `SetGsCrt`,
-`AddIntcHandler`, `_Exit`, ...); the rest are Ghidra placeholders.
-
-Query it with the bundled CLI:
-
-```sh
-cargo run -p ssx3-recomp --bin recomp-stats            # summary + named list
-cargo run -p ssx3-recomp --bin recomp-stats -- 0x0012ab34
-cargo run -p ssx3-recomp --bin recomp-stats -- SetGsCrt
-```
-
-## R5900 decoder
-
-`ssx3-recomp::r5900` decodes the raw `.text` bytes from the ELF into structured
-instructions. Across the whole image it decodes **99.74%** of 801,242
-instructions; the rest are preserved as raw words. See
-[`docs/investigation/r5900-decoder.md`](docs/investigation/r5900-decoder.md).
-
-## Ghidra MCP
-
-OpenCode is configured with the `ghidra` MCP server (LaurieWired GhidraMCP).
-For it to work, Ghidra must be running with the **GhidraMCPPlugin** enabled (it
-then serves a loopback HTTP backend on `127.0.0.1:8080`) and the program open.
-
-## Investigation notes
-
-Findings are recorded under [`docs/investigation/`](docs/investigation/): the boot path, naming, the recompiler, GS, VU/VIF, IPU, the ps2-web-recomp notes, and earlier decoder and boundary work. Plans live in [`docs/plans/`](docs/plans/); the long-term phases (full static recompilation → typed Rust → native port) are in [`docs/plans/roadmap.md`](docs/plans/roadmap.md).
-
-## Tests
-
-```sh
-cargo test -p ssx3-ee-rt -p ssx3-vu -p ssx3-ps2 -p ssx3-recomp -p ssx3-iop -p ssx3-core
-```
+The ELF is stripped. It was built with `-ffunction-sections`, though, so its
+`.gnu.linkonce.t.*` section names still carry mangled C++ symbol names.
