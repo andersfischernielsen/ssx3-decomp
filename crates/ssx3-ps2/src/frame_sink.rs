@@ -17,10 +17,12 @@ use crate::cpu::Cpu;
 
 /// A host renderer fed with the game's frames.
 pub trait FrameSink: Send {
-    /// One frame: the typed frame and its chain events, and a snapshot of
-    /// EE memory as the game left it at that point (the sink may keep both
-    /// and render later; hand the snapshot back with [`recycle`]).
-    fn frame(&mut self, built: Built, mem: Box<DumpMem>);
+    /// One frame: the GraphicsMan at `gm` published it, `mem` is a
+    /// snapshot of EE memory as the game left it at that point. The sink
+    /// builds the typed frame from it with a [`FrameBuilder`] (in order:
+    /// the builder carries VIF state from frame to frame), may do that and
+    /// render later, and hands the snapshot back with [`recycle`].
+    fn frame(&mut self, gm: u32, mem: Box<DumpMem>);
 
     /// The last frame's depth after its 3D phase (VIF phase 1), as GS Z
     /// values (`w`×`h`), for the light visibility queries in native mode.
@@ -31,7 +33,30 @@ pub trait FrameSink: Send {
 
 struct Sink {
     sink: Box<dyn FrameSink>,
+}
+
+/// Builds a sink's typed frames, carrying the VIF state from one frame to
+/// the next (frames must be built in order).
+#[derive(Default)]
+pub struct FrameBuilder {
     carry: Carry,
+    /// Time spent building, frames built.
+    pub ms: f64,
+    pub frames: u64,
+}
+
+impl FrameBuilder {
+    /// The typed frame published by the GraphicsMan at `gm`, and the carry
+    /// it was built with (for [`dump_frame`]).
+    pub fn build(&mut self, gm: u32, mem: &DumpMem) -> (Built, Carry) {
+        let t = std::time::Instant::now();
+        let carry = self.carry.clone();
+        let b = frame::build(mem, gm, &carry);
+        self.carry = Carry { regs: b.regs_end, matrix: b.emitter.matrix, material_param: b.emitter.material_param };
+        self.ms += t.elapsed().as_secs_f64() * 1e3;
+        self.frames += 1;
+        (b, carry)
+    }
 }
 
 static SINK: Mutex<Option<Sink>> = Mutex::new(None);
@@ -39,7 +64,7 @@ static ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(fa
 
 /// Install the renderer that receives every frame from now on.
 pub fn install(sink: Box<dyn FrameSink>) {
-    *SINK.lock().unwrap() = Some(Sink { sink, carry: Carry::default() });
+    *SINK.lock().unwrap() = Some(Sink { sink });
     ON.store(true, std::sync::atomic::Ordering::Release);
 }
 
@@ -56,12 +81,12 @@ pub fn enabled() -> bool {
 /// Frames, ms in `frame::build`, ms in the sink.
 static TIMING: Mutex<(u64, f64, f64)> = Mutex::new((0, 0.0, 0.0));
 
-/// Mean time per published frame in building the typed frame and in the
-/// sink.
+/// Mean time per published frame on the game's thread (memory snapshot and
+/// hand-over).
 pub fn timing_report() -> String {
     let t = TIMING.lock().unwrap();
     let n = t.0.max(1) as f64;
-    format!("frame sink: typed frame build {:.2} ms, sink {:.2} ms per frame ({} frames)", t.1 / n, t.2 / n, t.0)
+    format!("frame sink: {:.2} ms per frame on the game thread ({} frames)", t.2 / n, t.0)
 }
 
 static NATIVE: AtomicBool = AtomicBool::new(false);
@@ -147,35 +172,27 @@ pub fn on_signal_sema(c: &mut Cpu, id: i32) {
     }
     let mut guard = SINK.lock().unwrap();
     let Some(s) = guard.as_mut() else { return };
-    if let Some(keep) = dump_keep() {
-        let mut ring = RING.lock().unwrap();
-        while ring.len() >= keep {
-            ring.pop_front();
-        }
-        ring.push_back(encode(&s.carry, &c.bus.ram, &c.bus.spr, &crate::mr!(c).hw.vu1.data));
-    }
     let t0 = std::time::Instant::now();
-    let b = frame::build(&mem, g, &s.carry);
-    let t1 = std::time::Instant::now();
-    let carry = Carry { regs: b.regs_end, matrix: b.emitter.matrix, material_param: b.emitter.material_param };
-    let f = &b.frame;
-    let heads = [f.vif_heads[0], f.vif_heads[1], f.gif_heads[0], f.gif_heads[1]];
-    // The memory the sink reads: a copy (about a millisecond for 32 MiB),
-    // so the sink can render while the game goes on.
+    let heads = [frame::gm::QUEUED_VIF1, frame::gm::QUEUED_VIF2, frame::gm::QUEUED_GIF1, frame::gm::QUEUED_GIF2].map(|o| frame::word(&mem, g + o));
+    // The memory the sink reads: a copy (32 MiB, split over a few threads),
+    // so the sink can build and render the frame while the game goes on.
     let mut snap = POOL.lock().unwrap().pop().unwrap_or_else(|| Box::new(DumpMem { ram: Vec::new(), spr: Vec::new(), vu1: Vec::new() }));
-    snap.ram.clear();
-    snap.ram.extend_from_slice(&c.bus.ram);
+    snap.ram.resize(c.bus.ram.len(), 0);
+    let parts = 4;
+    let chunk = c.bus.ram.len().div_ceil(parts);
+    std::thread::scope(|sc| {
+        for (d, src) in snap.ram.chunks_mut(chunk).zip(c.bus.ram.chunks(chunk)) {
+            sc.spawn(move || d.copy_from_slice(src));
+        }
+    });
     snap.spr.clear();
     snap.spr.extend_from_slice(&c.bus.spr);
-    s.sink.frame(b, snap);
-    let t2 = std::time::Instant::now();
+    s.sink.frame(g, snap);
     {
         let mut t = TIMING.lock().unwrap();
         t.0 += 1;
-        t.1 += (t1 - t0).as_secs_f64() * 1e3;
-        t.2 += (t2 - t1).as_secs_f64() * 1e3;
+        t.2 += t0.elapsed().as_secs_f64() * 1e3;
     }
-    s.carry = carry;
     if native() {
         for (h, v) in HEADS.iter().zip(heads) {
             h.store(v as u64, Ordering::Release);
@@ -190,7 +207,7 @@ pub fn on_signal_sema(c: &mut Cpu, id: i32) {
 }
 
 // Frame dumps (debug): `SSX3_FRAME_DUMP=<n>` keeps the inputs of the last n
-// frames (EE RAM, scratchpad, the carried chain state and the emulated VU1
+// frames (EE RAM, scratchpad, the carried chain state and the sink's VU1
 // data memory at that point), so a renderer can
 // be run on them offline (`gfx_replay`). They contain game data: keep them
 // out of the repository.
@@ -219,6 +236,17 @@ fn encode(carry: &Carry, ram: &[u8], spr: &[u8], vu1: &[u8]) -> Vec<u8> {
     out.extend_from_slice(spr);
     out.extend_from_slice(vu1);
     out
+}
+
+/// Keep a frame's inputs in the dump ring (`SSX3_FRAME_DUMP`): the carry it
+/// was built with, its memory and the sink's VU1 memory at its start.
+pub fn dump_frame(carry: &Carry, mem: &DumpMem, vu1: &[u8]) {
+    let Some(keep) = dump_keep() else { return };
+    let mut ring = RING.lock().unwrap();
+    while ring.len() >= keep {
+        ring.pop_front();
+    }
+    ring.push_back(encode(carry, &mem.ram, &mem.spr, vu1));
 }
 
 /// Write the kept frames to `dir/frame-K.bin`, K = 0 for the newest.

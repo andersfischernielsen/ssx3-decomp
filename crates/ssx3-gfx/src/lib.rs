@@ -76,6 +76,8 @@ struct CachedTex {
 
 pub struct Inner {
     shared: Arc<Shared>,
+    /// Typed frames from the published memory (in order).
+    builder: ssx3_ps2::frame_sink::FrameBuilder,
     dev: wgpu::Device,
     queue: wgpu::Queue,
     pipes: draw::Pipelines,
@@ -115,8 +117,9 @@ pub struct Inner {
 #[derive(Clone)]
 pub struct Renderer(pub Arc<Mutex<Inner>>, Arc<Shared>);
 
-/// A frame handed to the render thread.
-type Job = (Built, Box<ssx3_ps2::frame_sink::DumpMem>);
+/// A frame handed to the render thread: the GraphicsMan that published it
+/// and a snapshot of EE memory.
+type Job = (u32, Box<ssx3_ps2::frame_sink::DumpMem>);
 
 /// What the render thread shares with the game and the window without
 /// holding the renderer: the latest depth for the light queries and the
@@ -129,6 +132,8 @@ pub struct Shared {
     idle: std::sync::Condvar,
     depth: Mutex<Option<(u32, u32, Vec<u32>)>>,
     present: Mutex<Option<wgpu::Texture>>,
+    /// The frame thread's building time (ms) and frames.
+    build_ms: Mutex<(f64, u64)>,
 }
 
 fn program(m: Material) -> Option<u64> {
@@ -178,6 +183,7 @@ impl Renderer {
         let shared = Arc::new(Shared::default());
         Renderer(Arc::new(Mutex::new(Inner {
             shared: shared.clone(),
+            builder: Default::default(),
             dev,
             queue,
             pipes,
@@ -207,14 +213,31 @@ impl Renderer {
     /// the game goes on (at most one frame queued; the game waits if the
     /// renderer falls further behind).
     pub fn start_worker(&self) {
+        // Two stages: the typed frame is built from the snapshot on one
+        // thread while the previous frame renders on another.
         let (tx, rx) = std::sync::mpsc::sync_channel::<Job>(1);
+        let (btx, brx) = std::sync::mpsc::sync_channel::<(Built, ssx3_render::frame::Carry, Box<ssx3_ps2::frame_sink::DumpMem>)>(1);
         *self.1.tx.lock().unwrap() = Some(tx);
+        let mut builder = ssx3_ps2::frame_sink::FrameBuilder::default();
+        let stats = self.1.clone();
+        std::thread::Builder::new()
+            .name("ssx3-gfx-frame".into())
+            .spawn(move || {
+                while let Ok((gm, mem)) = rx.recv() {
+                    let (built, carry) = builder.build(gm, &mem);
+                    *stats.build_ms.lock().unwrap() = (builder.ms, builder.frames);
+                    if btx.send((built, carry, mem)).is_err() {
+                        break;
+                    }
+                }
+            })
+            .expect("frame thread");
         let (inner, shared) = (self.0.clone(), self.1.clone());
         std::thread::Builder::new()
             .name("ssx3-gfx".into())
             .spawn(move || {
-                while let Ok((built, mem)) = rx.recv() {
-                    inner.lock().unwrap().render(&built, &*mem);
+                while let Ok((built, carry, mem)) = brx.recv() {
+                    inner.lock().unwrap().render_built(&built, &carry, &mem);
                     drop(built);
                     ssx3_ps2::frame_sink::recycle(mem);
                     let mut p = shared.pending.lock().unwrap();
@@ -282,17 +305,17 @@ impl Renderer {
 }
 
 impl ssx3_ps2::frame_sink::FrameSink for Renderer {
-    fn frame(&mut self, built: Built, mem: Box<ssx3_ps2::frame_sink::DumpMem>) {
+    fn frame(&mut self, gm: u32, mem: Box<ssx3_ps2::frame_sink::DumpMem>) {
         let tx = self.1.tx.lock().unwrap().clone();
         match tx {
             Some(tx) => {
                 *self.1.pending.lock().unwrap() += 1;
-                if tx.send((built, mem)).is_err() {
+                if tx.send((gm, mem)).is_err() {
                     *self.1.pending.lock().unwrap() -= 1;
                 }
             }
             None => {
-                self.0.lock().unwrap().render(&built, &*mem);
+                self.0.lock().unwrap().publish(gm, &mem);
                 ssx3_ps2::frame_sink::recycle(mem);
             }
         }
@@ -707,9 +730,27 @@ impl Inner {
         let n = self.timing.0.max(1) as f64;
         let t = &self.timing.1;
         format!(
-            "gfx per frame: build {:.2} ms, prepare {:.2} ms, encode+submit {:.2} ms, depth readback {:.2} ms ({} frames)",
+            "gfx per frame: typed frame {:.2} ms, build {:.2} ms, prepare {:.2} ms, encode+submit {:.2} ms, depth readback {:.2} ms ({} frames)",
+            {
+                let (ms, n) = *self.shared.build_ms.lock().unwrap();
+                let (ms, n) = if n > 0 { (ms, n) } else { (self.builder.ms, self.builder.frames) };
+                ms / n.max(1) as f64
+            },
             t[0] / n, t[1] / n, t[2] / n, t[3] / n, self.timing.0
         )
+    }
+
+    /// A published frame: build the typed frame from the memory snapshot
+    /// and render it.
+    pub fn publish(&mut self, gm: u32, mem: &ssx3_ps2::frame_sink::DumpMem) {
+        let (built, carry) = self.builder.build(gm, mem);
+        self.render_built(&built, &carry, mem);
+    }
+
+    /// Render a typed frame (built with `carry`) over its memory snapshot.
+    pub fn render_built(&mut self, built: &Built, carry: &ssx3_render::frame::Carry, mem: &ssx3_ps2::frame_sink::DumpMem) {
+        ssx3_ps2::frame_sink::dump_frame(carry, mem, &self.vu[..]);
+        self.render(built, mem);
     }
 
     pub fn render(&mut self, built: &Built, mem: &dyn Mem) {
