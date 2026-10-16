@@ -75,6 +75,7 @@ struct CachedTex {
 }
 
 pub struct Inner {
+    shared: Arc<Shared>,
     dev: wgpu::Device,
     queue: wgpu::Queue,
     pipes: draw::Pipelines,
@@ -96,7 +97,6 @@ pub struct Inner {
     phase1_end: usize,
     /// Keep the depth after phase 1 (`depth()`, native mode).
     pub want_depth: bool,
-    last_depth: Option<(u32, u32, Vec<u32>)>,
     /// This frame's depth readback in flight (buffer, size, ZMAX + 1).
     pending_depth: Option<(wgpu::Buffer, wgpu::SubmissionIndex, u32, u32, f32)>,
     /// ZMAX + 1 of the frame's Z buffer (depth is stored as Z / it).
@@ -113,7 +113,23 @@ pub struct Inner {
 
 /// The renderer; clone the handle to read images from another thread.
 #[derive(Clone)]
-pub struct Renderer(pub Arc<Mutex<Inner>>);
+pub struct Renderer(pub Arc<Mutex<Inner>>, Arc<Shared>);
+
+/// A frame handed to the render thread.
+type Job = (Built, Box<ssx3_ps2::frame_sink::DumpMem>);
+
+/// What the render thread shares with the game and the window without
+/// holding the renderer: the latest depth for the light queries and the
+/// latest image on screen.
+#[derive(Default)]
+pub struct Shared {
+    tx: Mutex<Option<std::sync::mpsc::SyncSender<Job>>>,
+    /// Frames sent and not yet rendered.
+    pending: Mutex<usize>,
+    idle: std::sync::Condvar,
+    depth: Mutex<Option<(u32, u32, Vec<u32>)>>,
+    present: Mutex<Option<wgpu::Texture>>,
+}
 
 fn program(m: Material) -> Option<u64> {
     use ssx3_render::*;
@@ -159,7 +175,9 @@ impl Renderer {
             wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4), rows_per_image: Some(1) },
             wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
         );
+        let shared = Arc::new(Shared::default());
         Renderer(Arc::new(Mutex::new(Inner {
+            shared: shared.clone(),
             dev,
             queue,
             pipes,
@@ -176,26 +194,57 @@ impl Renderer {
             scale: 1,
             phase1_end: usize::MAX,
             want_depth: false,
-            last_depth: None,
             pending_depth: None,
             zscale: 16777216.0,
             timing: (0, [0.0; 4]),
             present: None,
             vbuf: None,
             ubuf: None,
-        })))
+        })), shared)
     }
 
-    /// The master colour target as RGBA8 (GS alpha), read back.
+    /// Render on a thread of its own from now on: frames are rendered while
+    /// the game goes on (at most one frame queued; the game waits if the
+    /// renderer falls further behind).
+    pub fn start_worker(&self) {
+        let (tx, rx) = std::sync::mpsc::sync_channel::<Job>(1);
+        *self.1.tx.lock().unwrap() = Some(tx);
+        let (inner, shared) = (self.0.clone(), self.1.clone());
+        std::thread::Builder::new()
+            .name("ssx3-gfx".into())
+            .spawn(move || {
+                while let Ok((built, mem)) = rx.recv() {
+                    inner.lock().unwrap().render(&built, &*mem);
+                    drop(built);
+                    ssx3_ps2::frame_sink::recycle(mem);
+                    let mut p = shared.pending.lock().unwrap();
+                    *p -= 1;
+                    shared.idle.notify_all();
+                }
+            })
+            .expect("render thread");
+    }
+
+    /// Wait until every frame handed over is rendered.
+    pub fn flush(&self) {
+        let mut p = self.1.pending.lock().unwrap();
+        while *p > 0 {
+            p = self.1.idle.wait(p).unwrap();
+        }
+    }
+
+    /// The image on screen as RGBA8 (GS alpha), read back (after the
+    /// frames handed over are rendered).
     pub fn read_image(&self) -> Option<(u32, u32, Vec<u32>)> {
+        self.flush();
         self.0.lock().unwrap().read_image()
     }
 
     /// The last frame's image on screen as an sRGB view (same device as
     /// the GS), with its size.
     pub fn present_view(&self) -> Option<(wgpu::TextureView, u32, u32)> {
-        let g = self.0.lock().unwrap();
-        let t = g.present.as_ref()?;
+        let g = self.1.present.lock().unwrap();
+        let t = g.as_ref()?;
         let view = t.create_view(&wgpu::TextureViewDescriptor { format: Some(wgpu::TextureFormat::Rgba8UnormSrgb), ..Default::default() });
         Some((view, t.width(), t.height()))
     }
@@ -233,12 +282,24 @@ impl Renderer {
 }
 
 impl ssx3_ps2::frame_sink::FrameSink for Renderer {
-    fn frame(&mut self, built: &Built, mem: &dyn Mem) {
-        self.0.lock().unwrap().render(built, mem);
+    fn frame(&mut self, built: Built, mem: Box<ssx3_ps2::frame_sink::DumpMem>) {
+        let tx = self.1.tx.lock().unwrap().clone();
+        match tx {
+            Some(tx) => {
+                *self.1.pending.lock().unwrap() += 1;
+                if tx.send((built, mem)).is_err() {
+                    *self.1.pending.lock().unwrap() -= 1;
+                }
+            }
+            None => {
+                self.0.lock().unwrap().render(&built, &*mem);
+                ssx3_ps2::frame_sink::recycle(mem);
+            }
+        }
     }
 
     fn depth(&mut self) -> Option<(u32, u32, Vec<u32>)> {
-        self.0.lock().unwrap().last_depth.take()
+        self.1.depth.lock().unwrap().take()
     }
 }
 
@@ -1035,6 +1096,7 @@ impl Inner {
             wgpu::TexelCopyTextureInfo { texture: present, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
             wgpu::Extent3d { width: t.w, height: t.h, depth_or_array_layers: 1 },
         );
+        *self.shared.present.lock().unwrap() = self.present.clone();
         // Depth after phase 1, read back for the light queries.
         let depth_buf = self.want_depth.then(|| {
             let buf = self.dev.create_buffer(&wgpu::BufferDescriptor {
@@ -1078,7 +1140,7 @@ impl Inner {
                             z.push((d as f64 * zs).round().min(zs - 1.0) as u32);
                         }
                     }
-                    self.last_depth = Some((lw as u32, lh as u32, z));
+                    *self.shared.depth.lock().unwrap() = Some((lw as u32, lh as u32, z));
                 }
             }
             buf.slice(..).map_async(wgpu::MapMode::Read, |_| {});

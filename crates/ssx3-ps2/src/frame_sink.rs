@@ -17,9 +17,10 @@ use crate::cpu::Cpu;
 
 /// A host renderer fed with the game's frames.
 pub trait FrameSink: Send {
-    /// One frame: the typed frame and its chain events, and EE memory as
-    /// the game left it at that point.
-    fn frame(&mut self, built: &Built, mem: &dyn Mem);
+    /// One frame: the typed frame and its chain events, and a snapshot of
+    /// EE memory as the game left it at that point (the sink may keep both
+    /// and render later; hand the snapshot back with [`recycle`]).
+    fn frame(&mut self, built: Built, mem: Box<DumpMem>);
 
     /// The last frame's depth after its 3D phase (VIF phase 1), as GS Z
     /// values (`w`×`h`), for the light visibility queries in native mode.
@@ -156,7 +157,17 @@ pub fn on_signal_sema(c: &mut Cpu, id: i32) {
     let t0 = std::time::Instant::now();
     let b = frame::build(&mem, g, &s.carry);
     let t1 = std::time::Instant::now();
-    s.sink.frame(&b, &mem);
+    let carry = Carry { regs: b.regs_end, matrix: b.emitter.matrix, material_param: b.emitter.material_param };
+    let f = &b.frame;
+    let heads = [f.vif_heads[0], f.vif_heads[1], f.gif_heads[0], f.gif_heads[1]];
+    // The memory the sink reads: a copy (about a millisecond for 32 MiB),
+    // so the sink can render while the game goes on.
+    let mut snap = POOL.lock().unwrap().pop().unwrap_or_else(|| Box::new(DumpMem { ram: Vec::new(), spr: Vec::new(), vu1: Vec::new() }));
+    snap.ram.clear();
+    snap.ram.extend_from_slice(&c.bus.ram);
+    snap.spr.clear();
+    snap.spr.extend_from_slice(&c.bus.spr);
+    s.sink.frame(b, snap);
     let t2 = std::time::Instant::now();
     {
         let mut t = TIMING.lock().unwrap();
@@ -164,10 +175,9 @@ pub fn on_signal_sema(c: &mut Cpu, id: i32) {
         t.1 += (t1 - t0).as_secs_f64() * 1e3;
         t.2 += (t2 - t1).as_secs_f64() * 1e3;
     }
-    s.carry = Carry { regs: b.regs_end, matrix: b.emitter.matrix, material_param: b.emitter.material_param };
+    s.carry = carry;
     if native() {
-        let f = &b.frame;
-        for (h, v) in HEADS.iter().zip([f.vif_heads[0], f.vif_heads[1], f.gif_heads[0], f.gif_heads[1]]) {
+        for (h, v) in HEADS.iter().zip(heads) {
             h.store(v as u64, Ordering::Release);
         }
         let depth = s.sink.depth();
@@ -220,7 +230,18 @@ pub fn write_dumps(dir: &str) -> std::io::Result<usize> {
     Ok(ring.len())
 }
 
-/// EE memory from a frame dump.
+/// Snapshot buffers handed back by sinks.
+static POOL: Mutex<Vec<Box<DumpMem>>> = Mutex::new(Vec::new());
+
+/// Hand a memory snapshot back for reuse (it is 32 MiB).
+pub fn recycle(m: Box<DumpMem>) {
+    let mut p = POOL.lock().unwrap();
+    if p.len() < 4 {
+        p.push(m);
+    }
+}
+
+/// EE memory from a frame dump, or a snapshot handed to a sink.
 pub struct DumpMem {
     pub ram: Vec<u8>,
     pub spr: Vec<u8>,

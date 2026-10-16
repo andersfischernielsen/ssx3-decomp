@@ -144,6 +144,8 @@ pub fn install_renderer() -> Option<ssx3_gfx::Renderer> {
         assert!(ssx3_ee::set_override(LENSFX_QUERY, lensfx_query_native));
     }
     ssx3_ps2::frame_sink::set_native(native);
+    // Rendering runs on its own thread, next to the game.
+    r.start_worker();
     ssx3_ps2::frame_sink::install(Box::new(r.clone()));
     eprintln!("[gfx] draw-layer renderer installed ({})", if native { "native" } else { "shadow" });
     Some(r)
