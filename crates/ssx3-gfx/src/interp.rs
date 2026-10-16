@@ -26,11 +26,15 @@ use std::collections::HashMap;
 
 pub type M4 = [[f32; 4]; 4];
 
-/// A frame's matrix records, each with the `alt` keys (state and textures)
-/// of the draws that use it.
+/// A frame's matrix records, each with the draws that use it: `(alt, n)`
+/// = the n-th draw of the frame with that state and textures.
 #[derive(Clone, Default)]
 pub struct Records {
-    pub records: Vec<(MatrixRecord, Vec<u64>)>,
+    pub records: Vec<(MatrixRecord, Vec<(u64, u32)>)>,
+    /// Mesh model matrices (General mesh setups, VU TOP qw0-3) by (draw,
+    /// n-th setup in it): blended like the records for objects that move
+    /// (the sky and backdrop follow the camera; props).
+    pub models: HashMap<((u64, u32), u32), [u32; 16]>,
 }
 
 fn bits(m: &M4) -> [u32; 16] {
@@ -54,27 +58,64 @@ fn position(m: &M4) -> [f32; 3] {
 /// For each record of `cur`, its counterpart in `prev`.
 pub fn pair(prev: &Records, cur: &Records) -> Vec<Option<usize>> {
     let mut by_world: HashMap<[u32; 16], Vec<usize>> = HashMap::new();
+    let mut by_draw: HashMap<(u64, u32), usize> = HashMap::new();
     let mut by_alt: HashMap<u64, Vec<usize>> = HashMap::new();
-    for (j, (r, alts)) in prev.records.iter().enumerate() {
+    for (j, (r, draws)) in prev.records.iter().enumerate() {
         by_world.entry(bits(&r.world)).or_default().push(j);
-        for a in alts {
-            by_alt.entry(*a).or_default().push(j);
+        for &(a, n) in draws {
+            by_draw.entry((a, n)).or_insert(j);
+            by_alt.entry(a).or_default().push(j);
         }
     }
     cur.records
         .iter()
-        .map(|(r, alts)| {
+        .map(|(r, draws)| {
             if let Some(js) = by_world.get(&bits(&r.world)) {
                 return js.iter().copied().min_by(|&a, &b| dist(&prev.records[a].0.view, &r.view).total_cmp(&dist(&prev.records[b].0.view, &r.view)));
+            }
+            // A moving object: the record of the same draw (n-th with this
+            // state and textures) last frame, else the nearest record of a
+            // draw with this state and textures.
+            if let Some(&j) = draws.iter().find_map(|d| by_draw.get(d)) {
+                return Some(j);
             }
             let p = position(&r.world);
             let d = |j: usize| {
                 let q = position(&prev.records[j].0.world);
                 (0..3).map(|k| (p[k] - q[k]) * (p[k] - q[k])).sum::<f32>()
             };
-            alts.iter().filter_map(|a| by_alt.get(a)).flatten().copied().min_by(|&a, &b| d(a).total_cmp(&d(b)))
+            draws.iter().filter_map(|(a, _)| by_alt.get(a)).flatten().copied().min_by(|&a, &b| d(a).total_cmp(&d(b)))
         })
         .collect()
+}
+
+/// Two matrices (as words) within a quarter of the second's size of each
+/// other: the same moving object a frame apart.
+pub fn close(a: &[u32; 16], b: &[u32; 16]) -> bool {
+    let f = |w: &[u32; 16], k: usize| f32::from_bits(w[k]) as f64;
+    let (mut d, mut n) = (0.0, 0.0);
+    for k in 0..16 {
+        d += (f(a, k) - f(b, k)).powi(2);
+        n += f(b, k).powi(2);
+    }
+    d <= 0.0625 * n
+}
+
+/// Mesh model matrix substitutions for the image at `t`: this frame's
+/// model (words) → the blend from the same mesh's last frame, for meshes
+/// whose model moved (a little).
+pub fn model_substitutions(prev: &Records, cur: &Records, t: f32) -> HashMap<[u32; 16], [u32; 16]> {
+    let m4 = |w: &[u32; 16]| -> M4 { std::array::from_fn(|i| std::array::from_fn(|j| f32::from_bits(w[i * 4 + j]))) };
+    let mut m = HashMap::new();
+    for (k, now) in &cur.models {
+        let Some(p) = prev.models.get(k) else { continue };
+        if p == now || !close(p, now) {
+            continue;
+        }
+        let l = lerp(&m4(p), &m4(now), t);
+        m.entry(*now).or_insert_with(|| bits(&l));
+    }
+    m
 }
 
 pub fn lerp(a: &M4, b: &M4, t: f32) -> M4 {
@@ -138,23 +179,34 @@ mod tests {
     }
 
     #[test]
-    fn static_objects_pair_by_world_riders_by_state_and_place() {
-        let prev = Records { records: vec![(rec(I, at(0.0)), vec![1]), (rec(at(10.0), at(0.0)), vec![2]), (rec(at(50.0), at(0.0)), vec![2])] };
-        let cur = Records { records: vec![(rec(at(52.0), at(1.0)), vec![2]), (rec(I, at(1.0)), vec![1]), (rec(at(11.0), at(1.0)), vec![2]), (rec(at(5.0), at(1.0)), vec![3])] };
-        assert_eq!(pair(&prev, &cur), [Some(2), Some(0), Some(1), None]);
+    fn static_objects_pair_by_world_moving_ones_by_draw_then_place() {
+        let prev = Records { models: HashMap::new(), records: vec![(rec(I, at(0.0)), vec![(1, 0)]), (rec(at(10.0), at(0.0)), vec![(2, 0)]), (rec(at(50.0), at(0.0)), vec![(2, 1)])] };
+        let cur = Records {
+            models: HashMap::new(),
+            records: vec![
+                // Same draw (2, 1): paired whatever the order.
+                (rec(at(52.0), at(1.0)), vec![(2, 1)]),
+                (rec(I, at(1.0)), vec![(1, 0)]),
+                (rec(at(11.0), at(1.0)), vec![(2, 0)]),
+                // No such draw last frame: the nearest of its kind.
+                (rec(at(48.0), at(1.0)), vec![(2, 7)]),
+                (rec(at(5.0), at(1.0)), vec![(3, 0)]),
+            ],
+        };
+        assert_eq!(pair(&prev, &cur), [Some(2), Some(0), Some(1), Some(2), None]);
     }
 
     #[test]
     fn split_screen_pairs_the_closest_view() {
-        let prev = Records { records: vec![(rec(I, at(0.0)), vec![]), (rec(I, at(100.0)), vec![])] };
-        let cur = Records { records: vec![(rec(I, at(101.0)), vec![]), (rec(I, at(1.0)), vec![])] };
+        let prev = Records { models: HashMap::new(), records: vec![(rec(I, at(0.0)), vec![]), (rec(I, at(100.0)), vec![])] };
+        let cur = Records { models: HashMap::new(), records: vec![(rec(I, at(101.0)), vec![]), (rec(I, at(1.0)), vec![])] };
         assert_eq!(pair(&prev, &cur), [Some(1), Some(0)]);
     }
 
     #[test]
     fn headers_are_replaced_by_the_blend() {
-        let prev = Records { records: vec![(rec(I, at(0.0)), vec![])] };
-        let cur = Records { records: vec![(rec(I, at(4.0)), vec![])] };
+        let prev = Records { models: HashMap::new(), records: vec![(rec(I, at(0.0)), vec![])] };
+        let cur = Records { models: HashMap::new(), records: vec![(rec(I, at(4.0)), vec![])] };
         let s = substitutions(&prev, &cur, &pair(&prev, &cur), 0.25);
         let mut mem = vec![0u8; 64];
         for (i, v) in cur.records[0].0.world_view.iter().flatten().enumerate() {

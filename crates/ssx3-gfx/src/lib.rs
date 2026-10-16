@@ -120,13 +120,16 @@ pub struct Inner {
     /// The images on screen, for presenting (sRGB view allowed): with
     /// interpolation the in-between images first, the frame's own last.
     present: Vec<wgpu::Texture>,
-    /// Images per game frame (1: no interpolation; see `interp`).
+    /// Images per game frame (1: no interpolation; see `interp`), and how
+    /// many frames in a row took longer than the game's frame time.
     subframes: u32,
+    over_budget: u32,
     /// The last frame's matrix records (interpolation).
     prev_records: Option<interp::Records>,
     /// While an in-between image is drawn: its VU header substitutions and
     /// its slot in `present`.
     subst: Option<Arc<HashMap<[u32; 16], [u32; 16]>>>,
+    model_subst: Option<Arc<HashMap<[u32; 16], [u32; 16]>>>,
     slot: Option<usize>,
     /// Images per frame this frame (1, or `subframes` once there is a
     /// previous frame to interpolate from).
@@ -236,8 +239,10 @@ impl Renderer {
             timing: (0, [0.0; 4]),
             present: Vec::new(),
             subframes: 1,
+            over_budget: 0,
             prev_records: None,
             subst: None,
+            model_subst: None,
             slot: None,
             nslots: 1,
             backups: HashMap::new(),
@@ -484,245 +489,9 @@ impl Inner {
     }
 
     /// Build the geometry of one frame.
-    fn build(&mut self, built: &Built, mem: &dyn Mem) {
-        let fr = &built.frame;
-        let d = &fr.display;
-        let (w, h) = (d.fb_width.clamp(64, 2048), d.fb_height.clamp(64, 2048));
-        // FRAME.FBP is in 2048-word units, gm's draw_fbp likewise.
-        self.gs.begin((w, h), d.draw_fbp, d.zbp);
-        self.gs.hud = false;
-        self.gs.hud_squeeze = self.hud_squeeze;
-        self.zscale = match d.zpsm {
-            0x30 => 4294967296.0,
-            0x31 => 16777216.0,
-            _ => 65536.0,
-        };
-        // Resident textures by their permanent VRAM address.
-        let texman = frame::word(mem, fr.gm + frame::gm::TEXMAN);
-        self.gs.tex_map.clear();
-        for id in 0..tex::tm::MAX as u16 {
-            let info = tex::info(mem, texman, id);
-            if info != 0 {
-                let tbp = frame::word(mem, info + tex::ti::TBP) as i32;
-                // Never the frame, display or Z buffers (self-sampling post
-                // passes address them; those become native passes).
-                if tbp >= 0 && !in_buffers(tbp as u32, d) {
-                    self.gs.tex_map.insert(tbp as u32, info);
-                }
-            }
-        }
-        let draws: Vec<&frame::Draw> = fr.draws().collect();
-        // The PATH3 chains (GifBuff), one per phase, kicked with PATH3
-        // masked (the kick thread writes MSKPATH3 1 into the VIF1 FIFO
-        // first). As on the GS (`ssx3_ps2::gs::Mtgs::set_path3_mask`), each
-        // MSKPATH3 0 in the VIF stream releases one GIF packet (texture
-        // uploads in the gaps between draws); what is left drains when the
-        // phase's VIF stream ends unmasked (the post passes, before the
-        // HUD of phase 2 is drawn).
-        let path3 = |head: u32| -> Vec<u128> {
-            let mut q = Vec::new();
-            if head != 0 {
-                let mut asr = [0u32; 2];
-                ssx3_render::chain::walk(mem, head, false, false, 0, &mut asr, &mut |d: &[u128]| q.extend_from_slice(d));
-            }
-            q
-        };
-        let (p1, p2) = (path3(fr.gif_heads[0]), path3(fr.gif_heads[1]));
-        let dbg = debug::get();
-        let tracing = dbg.trace == Some(self.stats.frames);
-        let label = |gs: &mut gs::Gs, l: String| {
-            if tracing {
-                gs.trace = Some(l);
-            }
-        };
-        // The flip packet (FRAME, ZBUF, XYOFFSET, TEXA, PRMODECONT, ...,
-        // and the clear) the game sent before this frame's drawing.
-        // With the frame blend on (gm+0x59e8 ≠ 0), the packet starts with a
-        // block that blends the finished draw buffer into the display
-        // buffer (the image on screen): that part runs at the end.
-        let flip = if !dbg.no_flip { flip_packet(mem) } else { Vec::new() };
-        let split = flip.iter().position(|&q| q as u64 == 0x1000_0000_0000_8010).unwrap_or(0);
-        label(&mut self.gs, "flip".into());
-        self.gs.gif(&flip[split..]);
-        self.display_fbp = (split > 0).then(|| d.draw_fbp + (d.fb_width.div_ceil(64) * d.fb_height.div_ceil(32)).max(1));
-        let mode = dbg.path3;
-        let mut p3: std::collections::VecDeque<Vec<u128>> = std::collections::VecDeque::new();
-        if mode & 1 != 0 {
-            p3.extend(gif_packets(&p1));
-        }
-        let mut p3_masked = true;
-        let mut phase2_started = false;
-        let mut cur: Option<usize> = None;
-        // Debug: SSX3_GFX_SKIP=n,m,... drops those draws' payloads.
-        // (`a-b` ranges too.)
-        let skip = &dbg.skip;
-        // The VU1 calls run on worker threads while this loop parses their
-        // output in order (`VuPlan`).
-        let plan = self.plan_vu_calls(built, &draws);
-        let mut vu = VuReceiver::default();
-        std::thread::scope(|sc| {
-        for _ in 0..plan.threads {
-            sc.spawn(|| plan.work());
-        }
-        for (i, (owner, ev)) in built.events.iter().enumerate() {
-            if matches!(owner, Owner::Payload(n) if skip.contains(n)) {
-                continue;
-            }
-            if !phase2_started && i >= built.phase2 {
-                phase2_started = true;
-                label(&mut self.gs, "path3".into());
-                if !p3_masked {
-                    while let Some(pk) = p3.pop_front() {
-                        let hud = std::mem::replace(&mut self.gs.hud, false);
-                    self.gs.gif(&pk);
-                    self.gs.hud = hud;
-                    }
-                }
-                self.phase1_end = self.gs.batches.len();
-                p3_masked = true;
-                if mode & 2 != 0 {
-                    p3.extend(gif_packets(&p2));
-                }
-            }
-            let n = match owner {
-                Owner::Prelude(n) | Owner::Payload(n) => Some(*n),
-                _ => None,
-            };
-            if let Some(n) = n {
-                if cur != Some(n) {
-                    cur = Some(n);
-                    self.gs.hud = draws.get(n).is_some_and(|d| d.state.layer >= 9);
-                    if let Some(d) = draws.get(n) {
-                        label(&mut self.gs, format!("draw{n} {:?} layer {} tex {:?}", d.state.material, d.state.layer, d.tex));
-                    }
-                }
-                // In a draw's payload its textures are bound to the TBPs its
-                // prelude wrote.
-                if let (Owner::Payload(_), Some(dr)) = (owner, draws.get(n)) {
-                    for (ctx, id) in dr.tex.iter().enumerate() {
-                        if let Some(id) = id {
-                            let info = tex::info(mem, texman, *id);
-                            if info != 0 {
-                                let tbp = (self.gs.ctx[ctx].tex0 & 0x3fff) as u32;
-                                self.gs.tex_map.insert(tbp, info);
-                            }
-                        }
-                    }
-                }
-            }
-            match ev {
-                Event::Call(_) => {
-                    self.stats.vu_calls += 1;
-                    match vu.take(&plan, i) {
-                        Some(out) => {
-                            self.stats.vu_native += 1;
-                            self.gs.gif(&out);
-                        }
-                        None => self.stats.vu_missing += 1,
-                    }
-                }
-                Event::Direct(dd) => self.gs.gif(&dd.qwords),
-                Event::MaskPath3(m) => {
-                    if !m {
-                        if let Some(pk) = p3.pop_front() {
-                            label(&mut self.gs, "path3".into());
-                            let hud = std::mem::replace(&mut self.gs.hud, false);
-                    self.gs.gif(&pk);
-                    self.gs.hud = hud;
-                        }
-                    }
-                    p3_masked = *m;
-                }
-                _ => {}
-            }
-        }
-        if !phase2_started {
-            self.phase1_end = self.gs.batches.len();
-            if mode & 2 != 0 {
-                p3.extend(gif_packets(&p2));
-            }
-        }
-        vu.finish(&plan, &mut self.vu);
-        });
-        // Whatever is left runs before the next frame.
-        label(&mut self.gs, "path3".into());
-        while let Some(pk) = p3.pop_front() {
-            let hud = std::mem::replace(&mut self.gs.hud, false);
-                    self.gs.gif(&pk);
-                    self.gs.hud = hud;
-        }
-        if split > 0 {
-            label(&mut self.gs, "flip-blend".into());
-            self.gs.hud = false;
-            self.gs.gif(&flip[..split]);
-        }
-        if tracing {
-            self.gs.trace = None;
-            let log = std::mem::take(&mut self.gs.trace_log);
-            let path = &dbg.trace_out;
-            let _ = std::fs::write(&path, log.join("\n"));
-            eprintln!("[gfx] frame {} traced: {} lines -> {path}", self.stats.frames, log.len());
-        }
-    }
-
     /// The texture for a TexInfo, and its largest texel alpha.
     /// Plan the frame's VU1 calls: split into chunks (see `VuPlan`), each
     /// with the VU memory it starts from.
-    fn plan_vu_calls<'a>(&self, built: &'a Built, draws: &[&frame::Draw]) -> VuPlan<'a> {
-        // Each call's program: the material of the draw it belongs to.
-        let mut calls: Vec<(usize, &ssx3_render::vif::VuCall, Option<u64>)> = Vec::new();
-        // Calls that start a draw (chunks may only begin there: within a
-        // draw, programs pass state from call to call).
-        let mut draw_start: Vec<bool> = Vec::new();
-        let mut last_draw = None;
-        let (mut cur, mut hash) = (None, None);
-        for (i, (owner, ev)) in built.events.iter().enumerate() {
-            if let Owner::Prelude(n) | Owner::Payload(n) = owner {
-                if cur != Some(*n) {
-                    cur = Some(*n);
-                    if let Some(p) = draws.get(*n).and_then(|d| program(d.state.material)) {
-                        hash = Some(p);
-                    }
-                }
-            }
-            if let Event::Call(c) = ev {
-                // (And not between two draws of the same program: terrain
-                // patches share state across draws.)
-                draw_start.push(cur != last_draw && calls.last().is_none_or(|l| l.2 != hash));
-                last_draw = cur;
-                calls.push((i, c, hash));
-            }
-        }
-        static SEQ: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let seq = *SEQ.get_or_init(|| std::env::var_os("SSX3_GFX_SEQ_VU").is_some());
-        let threads = if seq || calls.len() < 64 { 1 } else { std::thread::available_parallelism().map_or(4, |n| n.get()).clamp(1, 8) };
-        // About four chunks per thread, taken by whichever thread is free.
-        let per = calls.len().div_ceil(threads * 4).max(1);
-        // Chunk boundaries: the first draw start at or after each multiple
-        // of `per`; the start images have every earlier call's inputs applied.
-        let mut bounds: Vec<usize> = Vec::new();
-        let mut starts = Vec::new();
-        let mut img = self.vu.clone();
-        for (k, (_, c, _)) in calls.iter().enumerate() {
-            if k == 0 || (k >= bounds.last().unwrap() + per && draw_start[k] && threads > 1) {
-                bounds.push(k);
-                starts.push(std::sync::Mutex::new(Some(img.clone())));
-            }
-            if threads > 1 {
-                for &(a, v) in &c.input {
-                    let a = (a as usize & 1023) * 16;
-                    img[a..a + 16].copy_from_slice(&v.to_le_bytes());
-                }
-            }
-        }
-        if bounds.is_empty() {
-            bounds.push(0);
-            starts.push(std::sync::Mutex::new(Some(self.vu.clone())));
-        }
-        let chunk_of: HashMap<usize, usize> = calls.iter().enumerate().map(|(k, c)| (c.0, bounds.partition_point(|&b| b <= k) - 1)).collect();
-        let done = (0..bounds.len()).map(|_| (std::sync::Mutex::new(None), std::sync::Condvar::new())).collect();
-        VuPlan { vu0: self.vu.clone(), calls, bounds, starts, done, chunk_of, next: std::sync::atomic::AtomicUsize::new(0), threads, subst: self.subst.clone() }
-    }
 
     fn texture(&mut self, info: u32, texa: u64, mem: &dyn Mem) -> Option<(wgpu::TextureView, u8)> {
         let key = tex::key(mem, info, texa);
@@ -857,34 +626,76 @@ impl Inner {
     /// in-between images (frame N with its matrices moved back towards
     /// N-1, see `interp`), each from the state frame N starts from, then
     /// the frame's own (exactly as without interpolation).
-    pub fn render(&mut self, built: &Built, mem: &dyn Mem) {
+    pub fn render(&mut self, built: &Built, mem: &(dyn Mem + Sync)) {
+        let t_frame = std::time::Instant::now();
         let cur = (self.subframes > 1).then(|| records(built));
         let k = if cur.is_some() && self.prev_records.is_some() { self.subframes as usize } else { 1 };
         self.nslots = k;
         if k > 1 {
             let (prev, now) = (self.prev_records.as_ref().unwrap(), cur.as_ref().unwrap());
             let pairs = interp::pair(prev, now);
-            let subs: Vec<_> = (1..k).map(|s| interp::substitutions(prev, now, &pairs, s as f32 / k as f32)).collect();
+            let subs: Vec<_> = (1..k)
+                .map(|s| {
+                    let t = debug_t().unwrap_or(s as f32 / k as f32);
+                    (interp::substitutions(prev, now, &pairs, t), interp::model_substitutions(prev, now, t))
+                })
+                .collect();
+            // Build every image's geometry at once: the in-between ones from
+            // copies of the state the frame starts from, the frame's own
+            // from the renderer's.
             self.gs.verts.clear();
             self.gs.batches.clear();
-            let (gs0, vu0) = (self.gs.clone(), self.vu.clone());
+            self.stats.frames += 1;
+            let t_start = std::time::Instant::now();
+            let mut fin = self.take_build();
+            let mut mids: Vec<Build> = subs
+                .into_iter()
+                .map(|(m, mm)| {
+                    let mut b = fin.clone();
+                    b.subst = Some(Arc::new(m));
+                    b.model_subst = Some(Arc::new(mm));
+                    b
+                })
+                .collect();
+            std::thread::scope(|sc| {
+                for b in mids.iter_mut() {
+                    sc.spawn(|| Build::run(b, built, mem));
+                }
+                Build::run(&mut fin, built, mem);
+            });
+            self.timing.1[0] += t_start.elapsed().as_secs_f64() * 1e3;
+            // Draw them in order; what the in-between ones leave in the
+            // render targets is undone before the frame's own.
+            let final_stats = fin.stats;
             self.save_targets();
-            for (s, m) in subs.into_iter().enumerate() {
-                self.subst = Some(Arc::new(m));
+            for (s, b) in mids.into_iter().enumerate() {
+                self.put_build(b);
                 self.slot = Some(s);
-                self.render_one(built, mem);
-                self.gs = gs0.clone();
-                self.vu = vu0.clone();
+                self.draw_built(mem);
             }
-            self.subst = None;
             self.slot = None;
             self.restore_targets();
+            self.put_build(fin);
+            self.stats = final_stats;
+            self.draw_built(mem);
+        } else {
+            self.render_one(built, mem);
         }
-        self.render_one(built, mem);
         if !self.present.is_empty() {
             *self.shared.present.lock().unwrap() = Some((self.present.clone(), std::time::Instant::now()));
         }
         self.prev_records = cur;
+        // Interpolation must keep up with the game: after a second of
+        // frames over budget, one image per frame fewer.
+        if k > 1 {
+            let over = t_frame.elapsed().as_secs_f64() > 0.016;
+            self.over_budget = if over { self.over_budget + 1 } else { 0 };
+            if self.over_budget >= 60 {
+                self.over_budget = 0;
+                self.subframes -= 1;
+                eprintln!("[gfx] interpolation too slow here: {} images per game frame from now on", self.subframes);
+            }
+        }
     }
 
     /// The colour of every target (main, render targets) into `backups`.
@@ -928,16 +739,48 @@ impl Inner {
         self.queue.submit(std::iter::once(enc.finish()));
     }
 
-    fn render_one(&mut self, built: &Built, mem: &dyn Mem) {
+    /// The build state, moved out of the renderer (see `Build`).
+    fn take_build(&mut self) -> Build {
+        Build {
+            gs: std::mem::take(&mut self.gs),
+            vu: std::mem::replace(&mut self.vu, Box::new([0; 16384])),
+            stats: self.stats,
+            phase1_end: self.phase1_end,
+            display_fbp: self.display_fbp,
+            zscale: self.zscale,
+            hud_squeeze: self.hud_squeeze,
+            frame: self.stats.frames,
+            subst: self.subst.clone(),
+            model_subst: self.model_subst.clone(),
+        }
+    }
+
+    fn put_build(&mut self, b: Build) {
+        self.gs = b.gs;
+        self.vu = b.vu;
+        self.stats = b.stats;
+        self.phase1_end = b.phase1_end;
+        self.display_fbp = b.display_fbp;
+        self.zscale = b.zscale;
+    }
+
+    fn render_one(&mut self, built: &Built, mem: &(dyn Mem + Sync)) {
         if self.slot.is_none() {
             self.stats.frames += 1;
         }
-        let p0 = (self.gs.prims, self.gs.dropped, self.gs.unknown_tex);
         let t_start = std::time::Instant::now();
-        self.build(built, mem);
+        let mut b = self.take_build();
+        Build::run(&mut b, built, mem);
+        self.put_build(b);
+        self.timing.1[0] += t_start.elapsed().as_secs_f64() * 1e3;
+        self.draw_built(mem);
+    }
+
+    /// Draw the geometry built last (`Build::run`).
+    fn draw_built(&mut self, mem: &dyn Mem) {
         let t_built = std::time::Instant::now();
         self.timing.0 += 1;
-        self.timing.1[0] += (t_built - t_start).as_secs_f64() * 1e3;
+        let p0 = (self.gs.prims, self.gs.dropped, self.gs.unknown_tex);
         let (w, h) = self.gs.size;
         let (pw, ph) = self.out_size.unwrap_or((w * self.scale, h * self.scale));
         self.fxy = (pw as f32 / w as f32, ph as f32 / h as f32);
@@ -1537,12 +1380,14 @@ struct VuPlan<'a> {
     chunk_of: HashMap<usize, usize>,
     next: std::sync::atomic::AtomicUsize,
     threads: usize,
-    /// VU header substitutions (an in-between image, see `interp`).
+    /// VU header substitutions (an in-between image, see `interp`), and
+    /// mesh model matrix ones.
     subst: Option<Arc<HashMap<[u32; 16], [u32; 16]>>>,
+    model_subst: Option<Arc<HashMap<[u32; 16], [u32; 16]>>>,
 }
 
 impl VuPlan<'_> {
-    fn run(chunk: &[(usize, &ssx3_render::vif::VuCall, Option<u64>)], mut mem: Box<[u8; 16384]>, subst: Option<&HashMap<[u32; 16], [u32; 16]>>) -> VuChunk {
+    fn run(chunk: &[(usize, &ssx3_render::vif::VuCall, Option<u64>)], mut mem: Box<[u8; 16384]>, subst: Option<&HashMap<[u32; 16], [u32; 16]>>, model_subst: Option<&HashMap<[u32; 16], [u32; 16]>>) -> VuChunk {
         let mut outs = Vec::with_capacity(chunk.len());
         for &(i, c, hash) in chunk {
             for &(a, v) in &c.input {
@@ -1552,6 +1397,12 @@ impl VuPlan<'_> {
             let (Some(entry), Some(hh)) = (c.entry, hash) else { continue };
             if let Some(s) = subst {
                 interp::substitute(&mut mem[..64], s);
+            }
+            if let Some(s) = model_subst.filter(|_| hh == ssx3_render::mat3::HASH && ssx3_render::mat3::mesh_matrix_use(entry, c.itop) == Some(true)) {
+                let top = (c.top as usize & 1023) * 16;
+                if top + 64 <= mem.len() {
+                    interp::substitute(&mut mem[top..top + 64], s);
+                }
             }
             let mut out: Vec<u128> = Vec::new();
             if ssx3_render::run_native(hh, entry, c.top, c.itop, &mut mem, &mut |p: &[u128]| out.extend_from_slice(p)) {
@@ -1568,7 +1419,7 @@ impl VuPlan<'_> {
             let Some(start) = self.starts.get(j) else { break };
             let st = start.lock().unwrap().take().expect("chunk");
             let e = self.bounds.get(j + 1).copied().unwrap_or(self.calls.len());
-            let r = Self::run(&self.calls[self.bounds[j]..e], st, self.subst.as_deref());
+            let r = Self::run(&self.calls[self.bounds[j]..e], st, self.subst.as_deref(), self.model_subst.as_deref());
             let (slot, cv) = &self.done[j];
             *slot.lock().unwrap() = Some(r);
             cv.notify_all();
@@ -1641,11 +1492,17 @@ impl VuReceiver {
         if let Some(all) = all {
             // Debug: which calls differ from a sequential run (only the calls
             // not yet consumed are compared).
-            let (seq, _) = VuPlan::run(&plan.calls, plan.vu0.clone(), plan.subst.as_deref());
+            let (seq, _) = VuPlan::run(&plan.calls, plan.vu0.clone(), plan.subst.as_deref(), plan.model_subst.as_deref());
             let bad = seq.iter().filter(|(i, out)| all.get(i).is_some_and(|o| o != out)).count();
             eprintln!("[vucheck] {bad} of {} calls differ from a sequential run ({} chunks)", seq.len(), n);
         }
     }
+}
+
+/// Debug: `SSX3_INTERP_T` forces the in-between images' t.
+fn debug_t() -> Option<f32> {
+    static T: std::sync::OnceLock<Option<f32>> = std::sync::OnceLock::new();
+    *T.get_or_init(|| std::env::var("SSX3_INTERP_T").ok().and_then(|v| v.parse().ok()))
 }
 
 /// Copy a whole texture (same size and format).
@@ -1660,18 +1517,319 @@ fn copy_whole(enc: &mut wgpu::CommandEncoder, from: &wgpu::Texture, to: &wgpu::T
 /// A frame's matrix records with the draws' state keys (interpolation).
 fn records(built: &Built) -> interp::Records {
     let fr = &built.frame;
-    let mut alts: Vec<Vec<u64>> = vec![Vec::new(); fr.matrices.len()];
-    for d in fr.draws() {
-        let alt = hash(&(d.state.raw, d.tex, d.state.layer));
+    let draws: Vec<&frame::Draw> = fr.draws().collect();
+    // Each draw as (state and textures, n-th such draw).
+    let mut nth: HashMap<u64, u32> = HashMap::new();
+    let keys: Vec<(u64, u32)> = draws
+        .iter()
+        .map(|d| {
+            let alt = hash(&(d.state.raw, d.tex, d.state.layer));
+            let n = nth.entry(alt).or_insert(0);
+            *n += 1;
+            (alt, *n - 1)
+        })
+        .collect();
+    let mut users: Vec<Vec<(u64, u32)>> = vec![Vec::new(); fr.matrices.len()];
+    for (d, key) in draws.iter().zip(&keys) {
         for m in [d.matrix as i32, d.header_matrix] {
-            if let Some(a) = usize::try_from(m).ok().and_then(|m| alts.get_mut(m)) {
-                if !a.contains(&alt) {
-                    a.push(alt);
+            if let Some(a) = usize::try_from(m).ok().and_then(|m| users.get_mut(m)) {
+                if !a.contains(key) {
+                    a.push(*key);
                 }
             }
         }
     }
-    interp::Records { records: fr.matrices.iter().copied().zip(alts).collect() }
+    // Mesh setups' model matrices: TOP qw0-3 of their input.
+    let mut models = HashMap::new();
+    let mut setups: HashMap<usize, u32> = HashMap::new();
+    let mut cur = None;
+    for (owner, ev) in &built.events {
+        if let Owner::Prelude(n) | Owner::Payload(n) = owner {
+            cur = Some(*n);
+        }
+        let (Event::Call(c), Some(n)) = (ev, cur) else { continue };
+        let (Some(e), Some(d)) = (c.entry, draws.get(n)) else { continue };
+        if program(d.state.material) != Some(ssx3_render::mat3::HASH) || ssx3_render::mat3::mesh_matrix_use(e, c.itop) != Some(true) {
+            continue;
+        }
+        let top = c.top as u16 & 1023;
+        let mut w = [0u32; 16];
+        let mut got = 0;
+        for &(a, v) in &c.input {
+            let k = (a & 1023).wrapping_sub(top);
+            if k < 4 {
+                for l in 0..4 {
+                    w[k as usize * 4 + l] = (v >> (32 * l)) as u32;
+                }
+                got += 1;
+            }
+        }
+        let s = setups.entry(n).or_insert(0);
+        if got == 4 {
+            models.insert((keys[n], *s), w);
+        }
+        *s += 1;
+    }
+    interp::Records { records: fr.matrices.iter().copied().zip(users).collect(), models }
+}
+
+
+/// What building one image's geometry from a frame uses and changes: the
+/// GS state the frame starts from, VU memory, counters, and the frame's
+/// facts the drawing needs. In-between images (interpolation) each build
+/// from a copy, on their own threads, while the frame's own builds.
+#[derive(Clone)]
+struct Build {
+    gs: gs::Gs,
+    vu: Box<[u8; 16384]>,
+    stats: Stats,
+    phase1_end: usize,
+    display_fbp: Option<u32>,
+    zscale: f32,
+    hud_squeeze: f32,
+    /// The frame number (debug switches).
+    frame: u64,
+    subst: Option<Arc<HashMap<[u32; 16], [u32; 16]>>>,
+    model_subst: Option<Arc<HashMap<[u32; 16], [u32; 16]>>>,
+}
+
+impl Build {
+    fn run(b: &mut Build, built: &Built, mem: &(dyn Mem + Sync)) {
+        let fr = &built.frame;
+        let d = &fr.display;
+        let (w, h) = (d.fb_width.clamp(64, 2048), d.fb_height.clamp(64, 2048));
+        // FRAME.FBP is in 2048-word units, gm's draw_fbp likewise.
+        b.gs.begin((w, h), d.draw_fbp, d.zbp);
+        b.gs.hud = false;
+        b.gs.hud_squeeze = b.hud_squeeze;
+        b.zscale = match d.zpsm {
+            0x30 => 4294967296.0,
+            0x31 => 16777216.0,
+            _ => 65536.0,
+        };
+        // Resident textures by their permanent VRAM address.
+        let texman = frame::word(mem, fr.gm + frame::gm::TEXMAN);
+        b.gs.tex_map.clear();
+        for id in 0..tex::tm::MAX as u16 {
+            let info = tex::info(mem, texman, id);
+            if info != 0 {
+                let tbp = frame::word(mem, info + tex::ti::TBP) as i32;
+                // Never the frame, display or Z buffers (self-sampling post
+                // passes address them; those become native passes).
+                if tbp >= 0 && !in_buffers(tbp as u32, d) {
+                    b.gs.tex_map.insert(tbp as u32, info);
+                }
+            }
+        }
+        let draws: Vec<&frame::Draw> = fr.draws().collect();
+        // The PATH3 chains (GifBuff), one per phase, kicked with PATH3
+        // masked (the kick thread writes MSKPATH3 1 into the VIF1 FIFO
+        // first). As on the GS (`ssx3_ps2::gs::Mtgs::set_path3_mask`), each
+        // MSKPATH3 0 in the VIF stream releases one GIF packet (texture
+        // uploads in the gaps between draws); what is left drains when the
+        // phase's VIF stream ends unmasked (the post passes, before the
+        // HUD of phase 2 is drawn).
+        let path3 = |head: u32| -> Vec<u128> {
+            let mut q = Vec::new();
+            if head != 0 {
+                let mut asr = [0u32; 2];
+                ssx3_render::chain::walk(mem, head, false, false, 0, &mut asr, &mut |d: &[u128]| q.extend_from_slice(d));
+            }
+            q
+        };
+        let (p1, p2) = (path3(fr.gif_heads[0]), path3(fr.gif_heads[1]));
+        let dbg = debug::get();
+        let tracing = dbg.trace == Some(b.frame);
+        let label = |gs: &mut gs::Gs, l: String| {
+            if tracing {
+                gs.trace = Some(l);
+            }
+        };
+        // The flip packet (FRAME, ZBUF, XYOFFSET, TEXA, PRMODECONT, ...,
+        // and the clear) the game sent before this frame's drawing.
+        // With the frame blend on (gm+0x59e8 ≠ 0), the packet starts with a
+        // block that blends the finished draw buffer into the display
+        // buffer (the image on screen): that part runs at the end.
+        let flip = if !dbg.no_flip { flip_packet(mem) } else { Vec::new() };
+        let split = flip.iter().position(|&q| q as u64 == 0x1000_0000_0000_8010).unwrap_or(0);
+        label(&mut b.gs, "flip".into());
+        b.gs.gif(&flip[split..]);
+        b.display_fbp = (split > 0).then(|| d.draw_fbp + (d.fb_width.div_ceil(64) * d.fb_height.div_ceil(32)).max(1));
+        let mode = dbg.path3;
+        let mut p3: std::collections::VecDeque<Vec<u128>> = std::collections::VecDeque::new();
+        if mode & 1 != 0 {
+            p3.extend(gif_packets(&p1));
+        }
+        let mut p3_masked = true;
+        let mut phase2_started = false;
+        let mut cur: Option<usize> = None;
+        // Debug: SSX3_GFX_SKIP=n,m,... drops those draws' payloads.
+        // (`a-b` ranges too.)
+        let skip = &dbg.skip;
+        // The VU1 calls run on worker threads while this loop parses their
+        // output in order (`VuPlan`).
+        let plan = Build::plan_vu_calls(b, built, &draws);
+        let mut vu = VuReceiver::default();
+        std::thread::scope(|sc| {
+        for _ in 0..plan.threads {
+            sc.spawn(|| plan.work());
+        }
+        for (i, (owner, ev)) in built.events.iter().enumerate() {
+            if matches!(owner, Owner::Payload(n) if skip.contains(n)) {
+                continue;
+            }
+            if !phase2_started && i >= built.phase2 {
+                phase2_started = true;
+                label(&mut b.gs, "path3".into());
+                if !p3_masked {
+                    while let Some(pk) = p3.pop_front() {
+                        let hud = std::mem::replace(&mut b.gs.hud, false);
+                    b.gs.gif(&pk);
+                    b.gs.hud = hud;
+                    }
+                }
+                b.phase1_end = b.gs.batches.len();
+                p3_masked = true;
+                if mode & 2 != 0 {
+                    p3.extend(gif_packets(&p2));
+                }
+            }
+            let n = match owner {
+                Owner::Prelude(n) | Owner::Payload(n) => Some(*n),
+                _ => None,
+            };
+            if let Some(n) = n {
+                if cur != Some(n) {
+                    cur = Some(n);
+                    b.gs.hud = draws.get(n).is_some_and(|d| d.state.layer >= 9);
+                    if let Some(d) = draws.get(n) {
+                        label(&mut b.gs, format!("draw{n} {:?} layer {} tex {:?}", d.state.material, d.state.layer, d.tex));
+                    }
+                }
+                // In a draw's payload its textures are bound to the TBPs its
+                // prelude wrote.
+                if let (Owner::Payload(_), Some(dr)) = (owner, draws.get(n)) {
+                    for (ctx, id) in dr.tex.iter().enumerate() {
+                        if let Some(id) = id {
+                            let info = tex::info(mem, texman, *id);
+                            if info != 0 {
+                                let tbp = (b.gs.ctx[ctx].tex0 & 0x3fff) as u32;
+                                b.gs.tex_map.insert(tbp, info);
+                            }
+                        }
+                    }
+                }
+            }
+            match ev {
+                Event::Call(_) => {
+                    b.stats.vu_calls += 1;
+                    match vu.take(&plan, i) {
+                        Some(out) => {
+                            b.stats.vu_native += 1;
+                            b.gs.gif(&out);
+                        }
+                        None => b.stats.vu_missing += 1,
+                    }
+                }
+                Event::Direct(dd) => b.gs.gif(&dd.qwords),
+                Event::MaskPath3(m) => {
+                    if !m {
+                        if let Some(pk) = p3.pop_front() {
+                            label(&mut b.gs, "path3".into());
+                            let hud = std::mem::replace(&mut b.gs.hud, false);
+                    b.gs.gif(&pk);
+                    b.gs.hud = hud;
+                        }
+                    }
+                    p3_masked = *m;
+                }
+                _ => {}
+            }
+        }
+        if !phase2_started {
+            b.phase1_end = b.gs.batches.len();
+            if mode & 2 != 0 {
+                p3.extend(gif_packets(&p2));
+            }
+        }
+        vu.finish(&plan, &mut b.vu);
+        });
+        // Whatever is left runs before the next frame.
+        label(&mut b.gs, "path3".into());
+        while let Some(pk) = p3.pop_front() {
+            let hud = std::mem::replace(&mut b.gs.hud, false);
+                    b.gs.gif(&pk);
+                    b.gs.hud = hud;
+        }
+        if split > 0 {
+            label(&mut b.gs, "flip-blend".into());
+            b.gs.hud = false;
+            b.gs.gif(&flip[..split]);
+        }
+        if tracing {
+            b.gs.trace = None;
+            let log = std::mem::take(&mut b.gs.trace_log);
+            let path = &dbg.trace_out;
+            let _ = std::fs::write(&path, log.join("\n"));
+            eprintln!("[gfx] frame {} traced: {} lines -> {path}", b.frame, log.len());
+        }
+    }
+
+    fn plan_vu_calls<'a>(b: &Build, built: &'a Built, draws: &[&frame::Draw]) -> VuPlan<'a> {
+        // Each call's program: the material of the draw it belongs to.
+        let mut calls: Vec<(usize, &ssx3_render::vif::VuCall, Option<u64>)> = Vec::new();
+        // Calls that start a draw (chunks may only begin there: within a
+        // draw, programs pass state from call to call).
+        let mut draw_start: Vec<bool> = Vec::new();
+        let mut last_draw = None;
+        let (mut cur, mut hash) = (None, None);
+        for (i, (owner, ev)) in built.events.iter().enumerate() {
+            if let Owner::Prelude(n) | Owner::Payload(n) = owner {
+                if cur != Some(*n) {
+                    cur = Some(*n);
+                    if let Some(p) = draws.get(*n).and_then(|d| program(d.state.material)) {
+                        hash = Some(p);
+                    }
+                }
+            }
+            if let Event::Call(c) = ev {
+                // (And not between two draws of the same program: terrain
+                // patches share state across draws.)
+                draw_start.push(cur != last_draw && calls.last().is_none_or(|l| l.2 != hash));
+                last_draw = cur;
+                calls.push((i, c, hash));
+            }
+        }
+        static SEQ: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        let seq = *SEQ.get_or_init(|| std::env::var_os("SSX3_GFX_SEQ_VU").is_some());
+        let threads = if seq || calls.len() < 64 { 1 } else { std::thread::available_parallelism().map_or(4, |n| n.get()).clamp(1, 8) };
+        // About four chunks per thread, taken by whichever thread is free.
+        let per = calls.len().div_ceil(threads * 4).max(1);
+        // Chunk boundaries: the first draw start at or after each multiple
+        // of `per`; the start images have every earlier call's inputs applied.
+        let mut bounds: Vec<usize> = Vec::new();
+        let mut starts = Vec::new();
+        let mut img = b.vu.clone();
+        for (k, (_, c, _)) in calls.iter().enumerate() {
+            if k == 0 || (k >= bounds.last().unwrap() + per && draw_start[k] && threads > 1) {
+                bounds.push(k);
+                starts.push(std::sync::Mutex::new(Some(img.clone())));
+            }
+            if threads > 1 {
+                for &(a, v) in &c.input {
+                    let a = (a as usize & 1023) * 16;
+                    img[a..a + 16].copy_from_slice(&v.to_le_bytes());
+                }
+            }
+        }
+        if bounds.is_empty() {
+            bounds.push(0);
+            starts.push(std::sync::Mutex::new(Some(b.vu.clone())));
+        }
+        let chunk_of: HashMap<usize, usize> = calls.iter().enumerate().map(|(k, c)| (c.0, bounds.partition_point(|&b| b <= k) - 1)).collect();
+        let done = (0..bounds.len()).map(|_| (std::sync::Mutex::new(None), std::sync::Condvar::new())).collect();
+        VuPlan { vu0: b.vu.clone(), calls, bounds, starts, done, chunk_of, next: std::sync::atomic::AtomicUsize::new(0), threads, subst: b.subst.clone(), model_subst: b.model_subst.clone() }
+    }
 }
 
 /// A stable hash (interpolation keys).

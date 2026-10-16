@@ -292,3 +292,24 @@ More debug switches: `SSX3_GFX_SKIP=n,a-b` (drop draws), `SSX3_GFX_SKIPTEST=<tes
   - Screen-space draws (HUD, flares, particles built on the EE) stay at frame N.
 - The window steps the game on its own 59.94 Hz clock and presents every vsync, showing
   the in-between images in turn (`Renderer::present_view_at`). One frame of extra latency.
+
+Follow-up (same night):
+- **Pairing moving objects:** a MatrixRecord without an identical world matrix last frame
+  is paired through its draw: the n-th draw with the same state and textures (stable for
+  riders and props), then the nearest record of such draws.
+- **Meshes that move by their model matrix** (the sky and backdrop follow the camera,
+  props): General mesh setups compute qw6-9 = qw0-3 × the model matrix at TOP qw0-3, which
+  the EE uploads. The model matrices are paired by (draw, n-th setup) and blended like the
+  headers (`interp::model_substitutions`). Without this the backdrop overshot by 5×.
+- **Checked with `SSX3_INTERP_T=0`:** an in-between image at t = 0 must reproduce frame
+  N-1. Landmarks match it exactly in Conquer the Mountain and Metro City; the remaining
+  differences are screen-space effects (lens flare, particle trails) that stay frame N's.
+- **Tried and dropped: reprojecting frame N's vertices** instead of re-running the VU
+  programs (clip = w·(k, 1) from the screen position, `M_t·M_N⁻¹`). It matched the VU
+  re-run per call (0.05 px) and is far cheaper, but it cannot redo the clipper: geometry
+  cut by the near plane (walls the rider passes) overshot badly.
+- **Cost:** the in-between images' geometry is built on their own threads (copies of the
+  GS and VU state) while the frame's own builds, then all are drawn in order. Render
+  thread per game frame at 2560×1440: 7.7 ms alone, 14.1 ms with one in-between image
+  (120 Hz), 20.3 ms with two. If interpolation keeps running over the game's frame time,
+  the renderer drops to fewer images per frame.

@@ -678,6 +678,18 @@ impl Mesh {
 
 /// Which mesh routine an entry runs (`link` = the BAL return address the
 /// routine saves at qw33.x).
+/// Which matrix a call's vertices go through: `Some(true)` a mesh setup
+/// (qw6-9 = qw0-3 × the model matrix at TOP qw0-3, then drawn with it),
+/// `Some(false)` a mesh call drawn with the qw6-9 an earlier setup left
+/// (or the EE uploaded), `None` the strip entries (qw0-3).
+pub fn mesh_matrix_use(entry: u32, itop: u32) -> Option<bool> {
+    match (entry, itop != 0) {
+        (0x2270, false) | (0x2320, _) => Some(true),
+        (0x22c8, _) | (0x2358, _) | (0x2270, true) => Some(false),
+        _ => None,
+    }
+}
+
 fn mesh_entry(m: &mut Mem, entry: u32, top: u16, itop: u32, kick: &mut dyn FnMut(&[u128])) -> bool {
     let after_header = top.wrapping_add(MESH_AFTER_HEADER);
     match (entry, itop != 0) {
