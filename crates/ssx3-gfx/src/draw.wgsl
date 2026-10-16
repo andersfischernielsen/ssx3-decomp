@@ -11,7 +11,9 @@ struct Batch {
     tfx: u32,
     // Bit 0 TME, 1 TCC, 2 FGE, 3 FBA, 4 the texture is a target we drew
     // (alpha stored as a/128), 5 that target is CT16 (1-bit alpha read
-    // through TEXA), 6 DATE (destination alpha test), 7 DATM.
+    // through TEXA), 6 DATE (destination alpha test), 7 DATM, 8 depth fog
+    // (the texel is the CLUT entry for depth bits 8..15), 9 half strength
+    // (C = As halved; a second draw doubles the result).
     flags: u32,
     // Alpha test: ATST, AREF, side (0 none, 1 draw passing, 2 draw failing).
     atst: u32,
@@ -27,12 +29,16 @@ struct Batch {
     fogcol: vec4<f32>,
     // TEXA TA0, TA1.
     ta: vec2<f32>,
+    // Depth fog: ZMAX + 1 (depth is stored as Z / (ZMAX + 1)).
+    zscale: f32,
+    pad: f32,
 }
 
 @group(0) @binding(0) var<uniform> b: Batch;
 @group(0) @binding(1) var tex: texture_2d<f32>;
 @group(0) @binding(2) var samp: sampler;
 @group(0) @binding(3) var dst: texture_2d<f32>;
+@group(0) @binding(4) var zsnap: texture_depth_2d;
 
 struct VIn {
     @location(0) pos: vec3<f32>,
@@ -87,7 +93,11 @@ fn fs(v: VOut) -> @location(0) vec4<f32> {
     var rgb = floor(v.col.rgb);
     var a = floor(v.col.a);
     if ((b.flags & 1u) != 0u) {
-        let ts = textureSample(tex, samp, v.stq.xy / v.stq.z);
+        var ts = textureSample(tex, samp, v.stq.xy / v.stq.z);
+        if ((b.flags & 256u) != 0u) {
+            let z = u32(round(textureLoad(zsnap, vec2<i32>(v.pos.xy), 0) * b.zscale));
+            ts = textureLoad(tex, vec2<i32>(i32((z >> 8u) & 255u), 0), 0);
+        }
         var t = floor(ts * 255.0 + 0.5);
         if ((b.flags & 16u) != 0u) {
             t.a = floor(ts.a * 128.0 + 0.5);
@@ -132,6 +142,9 @@ fn fs(v: VOut) -> @location(0) vec4<f32> {
         c = b.fix;
     } else {
         c = a / 128.0;
+        if ((b.flags & 512u) != 0u) {
+            c = c * 0.5;
+        }
     }
     var out = rgb / 255.0;
     if (b.src_mode == 1u) {
@@ -140,6 +153,9 @@ fn fs(v: VOut) -> @location(0) vec4<f32> {
         out = vec3<f32>(c);
     }
     var oa = a;
+    if ((b.flags & 512u) != 0u) {
+        oa = a * 0.5;
+    }
     if ((b.flags & 8u) != 0u) {
         oa = max(oa, 128.0);
     }

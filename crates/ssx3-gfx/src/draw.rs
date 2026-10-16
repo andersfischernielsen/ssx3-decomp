@@ -132,11 +132,36 @@ fn compare(test: u64) -> wgpu::CompareFunction {
 /// is set and the blend reads the source alpha (the GS blends with As but
 /// stores As | 0x80; the output alpha is both here).
 /// `rt_psm`: the PSM of the render target the batch samples, if any.
-pub fn plans(st: &DrawState, size: (u32, u32), rt_psm: Option<u32>) -> Vec<Plan> {
+///
+/// `as_max`: the largest As the batch can produce. The shader's output is
+/// clamped to 1.0 before blending, so a blend without a D term
+/// ((A - B)·As) whose As can exceed 1.0 is drawn at half strength and then
+/// doubled (Cd + Cd), the stored alpha separately.
+pub fn plans(st: &DrawState, size: (u32, u32), rt_psm: Option<u32>, as_max: f32) -> Vec<Plan> {
     use wgpu::BlendFactor as F;
     let reads_as = |k: &PipeKey| k.blend.is_some_and(|(s, d, _)| [s, d].iter().any(|f| matches!(f, F::SrcAlpha | F::OneMinusSrcAlpha)));
+    let alpha = st.ctx.alpha;
+    let half = st.prim & (1 << 6) != 0 && (alpha >> 4) & 3 == 0 && (alpha >> 6) & 3 == 2 && as_max > 128.0;
     let mut out = Vec::new();
     for p in plans_unsplit(st, size, rt_psm) {
+        if half && p.key.blend.is_some() && p.key.write & 7 != 0 {
+            let last_z = p.key.depth_write;
+            let alpha_too = p.key.write & 8 != 0;
+            out.push(Plan {
+                key: PipeKey { depth_write: false, write: p.key.write & 7, ..p.key },
+                u: BatchU { flags: (p.u.flags | 512) & !8, ..p.u },
+                constant: p.constant,
+            });
+            out.push(Plan {
+                key: PipeKey { blend: Some((F::Dst, F::One, wgpu::BlendOperation::Add)), depth_write: last_z && !alpha_too, write: p.key.write & 7, ..p.key },
+                u: BatchU { flags: p.u.flags & !8, src_mode: 2, c_kind: 2, fix: 1.0, ..p.u },
+                constant: p.constant,
+            });
+            if alpha_too {
+                out.push(Plan { key: PipeKey { blend: None, write: 8, ..p.key }, u: p.u, constant: p.constant });
+            }
+            continue;
+        }
         if p.u.flags & 8 == 0 || p.key.write & 8 == 0 || p.key.write & 7 == 0 || !reads_as(&p.key) {
             out.push(p);
             continue;
@@ -246,6 +271,17 @@ impl Pipelines {
                     binding: 2,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                // The depth buffer as drawn before this batch (depth fog).
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
                     count: None,
                 },
                 // The frame as drawn before this batch (destination alpha
@@ -367,7 +403,7 @@ mod tests {
 
     #[test]
     fn blend_reads_source_alpha() {
-        let p = plans(&blended(0, 0), (512, 448), None);
+        let p = plans(&blended(0, 0), (512, 448), None, 128.0);
         assert_eq!(p.len(), 1);
         assert_eq!(p[0].key.blend, Some((wgpu::BlendFactor::One, wgpu::BlendFactor::OneMinusSrcAlpha, wgpu::BlendOperation::Add)));
         assert_eq!(p[0].u.src_mode, 1);
@@ -377,7 +413,7 @@ mod tests {
     fn fba_does_not_change_the_blend_factor() {
         // The GS blends with As and stores As | 0x80: colour with the true
         // As first (FBA off, no depth write), then the stored alpha alone.
-        let p = plans(&blended(1, 0), (512, 448), None);
+        let p = plans(&blended(1, 0), (512, 448), None, 128.0);
         assert_eq!(p.len(), 2);
         assert_eq!(p[0].key.write, 7);
         assert_eq!(p[0].u.flags & 8, 0);
@@ -390,9 +426,29 @@ mod tests {
     }
 
     #[test]
+    fn source_alpha_over_one_without_d_is_halved_then_doubled() {
+        // (Cd - Cs)·As (lightmaps) with As up to 212/128: half strength,
+        // then Cd + Cd; the depth write on the last draw.
+        let mut st = blended(0, 0xff00_0000);
+        st.ctx.alpha = 0x81;
+        let p = plans(&st, (512, 448), None, 212.0);
+        assert_eq!(p.len(), 2);
+        assert_eq!(p[0].u.flags & 512, 512);
+        assert!(!p[0].key.depth_write);
+        assert_eq!(p[1].key.blend, Some((wgpu::BlendFactor::Dst, wgpu::BlendFactor::One, wgpu::BlendOperation::Add)));
+        assert_eq!((p[1].u.src_mode, p[1].u.c_kind, p[1].u.fix), (2, 2, 1.0));
+        assert!(p[1].key.depth_write);
+        // As never above 1.0: one draw.
+        assert_eq!(plans(&st, (512, 448), None, 128.0).len(), 1);
+        // With a D term (Cs·As + Cd) halving would be wrong: one draw.
+        st.ctx.alpha = 0x48;
+        assert_eq!(plans(&st, (512, 448), None, 212.0).len(), 1);
+    }
+
+    #[test]
     fn fba_alone_needs_no_split() {
         // Alpha masked off (FBMSK 0xff000000): one colour draw.
-        let p = plans(&blended(1, 0xff00_0000), (512, 448), None);
+        let p = plans(&blended(1, 0xff00_0000), (512, 448), None, 128.0);
         assert_eq!(p.len(), 1);
         assert_eq!(p[0].key.write, 7);
     }

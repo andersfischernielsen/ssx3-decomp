@@ -26,6 +26,23 @@ pub const FRAME_TEX: u32 = u32::MAX;
 /// `DrawState::tex` for a render target: this bit | its FBP.
 pub const RT_TEX: u32 = 0x8000_0000;
 
+/// `DrawState::tex` for the depth-fog pass: this bit | the CBP of its
+/// CLUT (an upload this frame, `Gs::uploads`). The game first copies Z
+/// bits 8..15 into the frame's alpha (a 16-bit view of the frame drawn
+/// from a 16-bit view of Z), then draws the frame's alpha as a PSMT8H
+/// texture through that CLUT (fog colour and amount per depth). Here the
+/// copy is dropped and the second pass reads the depth buffer directly.
+pub const ZFOG_TEX: u32 = 0x4000_0000;
+
+/// A small host→VRAM upload (CLUTs), as PSMCT32 words in transfer order.
+#[derive(Clone, Debug, Default)]
+pub struct Upload {
+    pub psm: u32,
+    pub w: u32,
+    pub h: u32,
+    pub data: Vec<u32>,
+}
+
 /// An offscreen frame buffer the game renders into (rider shadows):
 /// width from FBW, height from the largest scissor seen.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -95,8 +112,16 @@ pub struct Gs {
     pub main_fbp: u32,
     pub main_zbp: u32,
     pub size: (u32, u32),
-    /// IMAGE transfers in progress (skipped).
+    /// IMAGE transfers in progress (skipped unless captured).
     image_left: u32,
+    bitbltbuf: u64,
+    trxreg: u64,
+    /// The upload being captured (DBP, data so far).
+    capture: Option<(u32, Upload)>,
+    /// Small PSMCT32 uploads by DBP (CLUTs), kept across frames.
+    pub uploads: std::collections::HashMap<u32, Upload>,
+    /// The frame's alpha holds Z bits 8..15 (the depth-fog copy ran).
+    zalpha: bool,
     /// XYOFFSET_1/2 written: the game sets context 2's once at startup,
     /// outside any frame, so until then it follows context 1.
     xyoffset_set: [bool; 2],
@@ -149,6 +174,24 @@ impl Gs {
         self.main_fbp = fbp;
         self.main_zbp = zbp;
         self.image_left = 0;
+        self.capture = None;
+        self.zalpha = false;
+    }
+
+    /// IMAGE data for the transfer in progress.
+    fn image_data(&mut self, q: &[u128]) {
+        let Some((dbp, up)) = self.capture.as_mut() else { return };
+        for v in q {
+            for k in 0..4 {
+                up.data.push((v >> (32 * k)) as u32);
+            }
+        }
+        if up.data.len() >= (up.w * up.h) as usize {
+            up.data.truncate((up.w * up.h) as usize);
+            let (dbp, up) = (*dbp, std::mem::take(up));
+            self.uploads.insert(dbp, up);
+            self.capture = None;
+        }
     }
 
     fn cur_prim(&self) -> u64 {
@@ -167,6 +210,7 @@ impl Gs {
             if self.image_left > 0 {
                 let n = (self.image_left as usize).min(qwords.len() - i);
                 self.image_left -= n as u32;
+                self.image_data(&qwords[i..i + n]);
                 i += n;
                 continue;
             }
@@ -218,6 +262,7 @@ impl Gs {
                     // IMAGE (host→local uploads): textures come from TexMan.
                     let n = nloop.min(qwords.len() - i);
                     self.image_left = (nloop - n) as u32;
+                    self.image_data(&qwords[i..i + n]);
                     i += n;
                 }
             }
@@ -266,7 +311,20 @@ impl Gs {
     }
 
     pub fn write_reg(&mut self, a: u32, v: u64) {
+        if matches!(a, 0x50..=0x53) {
+            if let Some(label) = &self.trace {
+                self.trace_log.push(format!("{label} reg {a:#x} = {v:#x}"));
+            }
+        }
         match a {
+            0x50 => self.bitbltbuf = v,
+            0x52 => self.trxreg = v,
+            0x53 => {
+                // Host→local, PSMCT32, small: capture (CLUTs).
+                let (dbp, dpsm) = (bits(self.bitbltbuf, 32, 14) as u32, bits(self.bitbltbuf, 56, 6) as u32);
+                let (w, h) = (bits(self.trxreg, 0, 12) as u32, bits(self.trxreg, 32, 12) as u32);
+                self.capture = (v & 3 == 0 && dpsm == 0 && w * h <= 1024).then(|| (dbp, Upload { psm: dpsm, w, h, data: Vec::new() }));
+            }
             0x00 => {
                 self.prim = v;
                 self.queue.clear();
@@ -419,11 +477,21 @@ impl Gs {
         }
         let tbp = bits(c.tex0, 0, 14) as u32;
         let psm = bits(c.tex0, 20, 6);
-        let tex = if p & (1 << 4) != 0 && tbp == self.main_fbp * 32 && matches!(psm, 0 | 1) {
+        let fpsm = bits(c.frame, 24, 6);
+        if p & (1 << 4) != 0 && tbp == self.main_zbp * 32 && (0x30..=0x3a).contains(&psm) && fpsm == 2 && target == self.main_fbp {
+            // The depth-fog Z → alpha copy (see ZFOG_TEX).
+            self.zalpha = true;
+            return None;
+        }
+        let tex = if p & (1 << 4) != 0 && self.zalpha && tbp == self.main_fbp * 32 && psm == 0x1b {
+            Some(ZFOG_TEX | bits(c.tex0, 37, 14) as u32)
+        } else if p & (1 << 4) != 0 && tbp == self.main_fbp * 32 && matches!(psm, 0 | 1) {
             // The frame itself (colour filter, speed blur): sampled from a
             // snapshot of the colour target.
             Some(FRAME_TEX)
-        } else if p & (1 << 4) != 0 && tbp % 32 == 0 && self.rts.contains_key(&(tbp / 32)) {
+        } else if p & (1 << 4) != 0 && tbp % 32 == 0 && matches!(psm, 0 | 1 | 2 | 0xa) && self.rts.contains_key(&(tbp / 32)) {
+            // (PSMT8H/T4HL/T4HH textures live in the alpha bits of a
+            // colour buffer: those are TexMan textures, not the target.)
             Some(RT_TEX | tbp / 32)
         } else if p & (1 << 4) != 0 {
             match self.tex_map.get(&tbp) {
@@ -494,7 +562,7 @@ impl Gs {
                 x1,
                 y1
             );
-            let line = format!("{line} v{}", vs.iter().map(|v| format!(" {:.2},{:.2},q{:.3e}", v.x, v.y, v.q)).collect::<String>());
+            let line = format!("{line} frame {:#x} tex0 {:#x} tex1 {:#x} v{}", c.frame, c.tex0, c.tex1, vs.iter().map(|v| format!(" {:.2},{:.2},q{:.3e}", v.x, v.y, v.q)).collect::<String>());
             match self.trace_log.last_mut() {
                 Some(l) if l.ends_with(&format!("|{line}")) || l.starts_with(&line) => {}
                 _ => self.trace_log.push(line),
