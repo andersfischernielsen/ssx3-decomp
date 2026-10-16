@@ -14,6 +14,9 @@
 //! - [`mat1`], [`mat2`]: the Bezier terrain programs f4babac5 (type 1,
 //!   uniform LOD) and 9790369f (type 2, stitched LOD edges), likewise; the
 //!   strip emission, guard test and clipper they share are in [`bezier`].
+//! - [`mat4`], [`mat5`]: the particle program f55ee634 (type 4: emitters,
+//!   ring emitters, patch glitter) and the SnowBox program e72540c9 (type
+//!   5), likewise, with the VU LFSR reproduced exactly ([`mat4::Lfsr`]).
 //!
 //! Later stages implement each VU1 material natively on wgpu from these
 //! calls.
@@ -23,5 +26,7 @@ pub mod chain;
 pub mod mat1;
 pub mod mat2;
 pub mod mat3;
+pub mod mat4;
+pub mod mat5;
 pub mod mat6;
 pub mod vif;

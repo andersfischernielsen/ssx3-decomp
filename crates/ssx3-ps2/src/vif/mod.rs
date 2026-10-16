@@ -340,6 +340,8 @@ impl Vif {
         let mut mat6 = if vif1 { crate::mat6_verify::begin(vu, pc, self.top, self.itop) } else { None };
         // SSX3_VERIFY_BEZIER: native Bezier programs (types 1/2) vs the translated ones.
         let mut bezier = if vif1 { crate::bezier_verify::begin(vu, pc, self.top, self.itop) } else { None };
+        // SSX3_VERIFY_PARTICLES: native particle/snow programs (types 4/5) vs the translated ones.
+        let mut particles = if vif1 { crate::particle_verify::begin(vu, pc, self.top, self.itop) } else { None };
         let watch = crate::hw::watch_qword_pub();
         let mut hit: Option<(usize, u128)> = None;
         let done = vu.run(self.vu_budget, &mut |p: &[Qword]| {
@@ -353,6 +355,9 @@ impl Vif {
                 m.kick(p);
             }
             if let Some(m) = bezier.as_mut() {
+                m.kick(p);
+            }
+            if let Some(m) = particles.as_mut() {
                 m.kick(p);
             }
             if let Some(w) = watch {
@@ -398,6 +403,9 @@ impl Vif {
         }
         if let (Some(m), true) = (bezier, done) {
             crate::bezier_verify::end(m, vu);
+        }
+        if let (Some(m), true) = (particles, done) {
+            crate::particle_verify::end(m, vu);
         }
     }
 

@@ -491,3 +491,23 @@ Findings:
 - Type 2 projector/shine reuse the previous call's tags and saved return address (qw511.x).
 - Index-buffer layouts per n and per edge-LOD combination are documented in the module
   headers.
+
+### Stage 2A, types 4/5: particles and snow (2026-10-16)
+
+`crates/ssx3-render/src/mat4.rs` (f55ee634) and `mat5.rs` (e72540c9) are native Rust, with
+the exact LFSR (`Lfsr`, checked against `Vu::rinit/rnext`).
+
+Check (`SSX3_VERIFY_PARTICLES=1`): race to frame 7000, **50,321 type-4 calls, 0 mismatches**,
+about 980,000 sprites. Entry 0x0f10 and the snow program did not run on that course; their
+check is a unit test that runs the translated microcode on random inputs for every entry.
+
+Corrections and findings:
+- The type-4 header carried the worldClip matrix and qw4.x = 1024 (the guard scale) on every
+  call. The "mode-0 header bug" of §1.5 was not seen, and §1.5 / `render.md` give 256 for this
+  field, which looks wrong.
+- Snow's depth fade (0x0408) compares against a reused register (a game bug; kept for parity).
+- What a compute-shader version must reproduce: LFSR lanes and seeds, operation order, the
+  per-entry colour and size clamps, and the corner order. See the module docs.
+
+**All six VU1 rendering programs now have bit-exact readable Rust implementations.** The
+seventh microprogram, 27649fa5, runs on VU0 for the EE and is not part of rendering.
