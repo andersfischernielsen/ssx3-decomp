@@ -129,7 +129,8 @@ const TYPE3_HASH: u64 = ssx3_render::mat3::HASH;
 
 fn native_vu1() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("SSX3_VU1").is_ok_and(|v| v == "native"))
+    // Native by default; SSX3_VU1=emu runs the translated microcode.
+    *ON.get_or_init(|| std::env::var("SSX3_VU1").map_or(true, |v| v != "emu"))
 }
 
 impl Vif {

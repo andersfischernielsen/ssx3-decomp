@@ -70,7 +70,7 @@ fn host_clock_behind(c: &mut Cpu) -> bool {
 
 fn follow_host_clock(c: &mut Cpu) {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    if !env_flag(&ON, "SSX3_HOST_CLOCK") {
+    if !*ON.get_or_init(|| std::env::var("SSX3_HOST_CLOCK").is_ok_and(|v| v != "0")) {
         return;
     }
     let now = std::time::Instant::now();

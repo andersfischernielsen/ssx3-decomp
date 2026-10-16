@@ -1,7 +1,7 @@
 //! Phase 3, sound: the native sound driver (`ssx3-snd`) in place of EA's IOP
 //! driver (`docs/investigation/phase3-sound.md`).
 //!
-//! On with `SSX3_SND=native`. Then LIBSD.IRX / SNDDRV.IRX are not started
+//! On by default (`SSX3_SND=iop` for the recompiled IOP driver). Then LIBSD.IRX / SNDDRV.IRX are not started
 //! on the recompiled IOP (which keeps running the pad and memory-card
 //! modules), so the game's `'SND'` RPC and SIF user command 0 reach the HLE
 //! side (`sif.rs`), which hands them to [`NativeSnd`]:
@@ -37,7 +37,8 @@ pub struct NativeSnd {
 
 pub fn enabled() -> bool {
     static ON: OnceLock<bool> = OnceLock::new();
-    *ON.get_or_init(|| std::env::var("SSX3_SND").is_ok_and(|v| v == "native"))
+    // Native by default; SSX3_SND=iop runs the recompiled IOP sound driver.
+    *ON.get_or_init(|| std::env::var("SSX3_SND").map_or(true, |v| v != "iop"))
 }
 
 fn state(c: &mut Cpu) -> &mut NativeSnd {

@@ -23,7 +23,7 @@
 //! `SSX3_DATA_DIR`, from an extracted copy of the disc (any case), which makes
 //! files replaceable on the host.
 //!
-//! Off by default; `SSX3_NATIVE_FILES=1` turns it on. `SSX3_FILE_LOG=path`
+//! On by default; `SSX3_NATIVE_FILES=0` keeps the emulated CD. `SSX3_FILE_LOG=path`
 //! (either mode) logs every completed read as `name offset size fnv64`, so a
 //! native run can be compared with an emulated one (`tools/compare-file-logs.py`).
 //! These are not byte-identical replacements: loading timing changes.
@@ -119,7 +119,8 @@ pub fn install() -> bool {
             Err(e) => eprintln!("SSX3_FILE_LOG {p}: {e}"),
         }
     }
-    if std::env::var_os("SSX3_NATIVE_FILES").is_none() {
+    // On by default; SSX3_NATIVE_FILES=0 keeps the emulated CD.
+    if std::env::var("SSX3_NATIVE_FILES").is_ok_and(|v| v == "0") {
         return false;
     }
     let src = match std::env::var_os("SSX3_DATA_DIR") {

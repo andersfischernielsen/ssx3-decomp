@@ -124,25 +124,29 @@ emulated VIF/VU1/GS at all. Movies and loading screens still go through the emul
 | `SSX3_RENDER=emu` | The emulated GS only: the exact reference path (RAM-identical to the PS2 model). |
 | `SSX3_RENDER=shadow` | Both: the native renderer draws next to the emulated GS, which is shown (headless writes `frameNNNNN-gfx.png` too). |
 
-**Experimental: native host implementations (phase 3).** Each one is byte-identical to
-the default path in the race replay. None is the default yet, because they still need
-playtesting:
+**Native host implementations (phase 3).** On by default; each has a switch back to the
+emulated PS2 path for comparison:
 
 | Variable | Effect |
 | --- | --- |
+| `SSX3_SND=iop` | The recompiled IOP sound driver instead of the native mixer (`ssx3-snd`). |
+| `SSX3_NATIVE_FILES=0` | The emulated CD instead of reading game files through `std::fs` (from the ISO, or an extracted `DATA/` folder with `SSX3_DATA_DIR=<dir>`). |
+| `SSX3_VU1=emu` | The translated VU1 microcode instead of the native Rust programs (only used outside native rendering). |
+| `SSX3_HOST_CLOCK=0` | Window only: emulated time only. By default the window keeps game time real-time when the host falls behind (extra 60 Hz updates, fewer rendered frames); the headless runner never does. |
+| `SSX3_GS=cpu` | With `SSX3_RENDER=emu`: software rasterizer instead of the GPU one (slow; for debugging). |
 | `SSX3_RENDER_NATIVE=all` | With `SSX3_RENDER=emu`: the emulated GS draws with wgpu render pipelines instead of the compute GS. |
-| `SSX3_RENDER_SCALE=2` (up to 8) | With `SSX3_RENDER=emu SSX3_RENDER_NATIVE=all`: N× internal resolution. |
-| `SSX3_HOST_CLOCK=1` | Keep game time real-time when the host falls behind (extra 60 Hz updates, fewer rendered frames). |
-| `SSX3_SND=native` | Native sound mixer instead of the recompiled IOP sound driver. |
-| `SSX3_NATIVE_FILES=1` | Read game files through `std::fs` instead of the emulated CD. Add `SSX3_DATA_DIR=<dir>` to use an extracted `DATA/` folder. |
-| `SSX3_VU1=native` | Run VU1 rendering programs as readable Rust (`ssx3-render`) instead of translated microcode. |
-| `SSX3_GS=cpu` | Software rasterizer instead of the GPU one (slow; for debugging). |
+| `SSX3_RENDER_SCALE=2` (up to 8) | With `SSX3_RENDER=emu SSX3_RENDER_NATIVE=all`: N× internal resolution (the native renderer does not scale yet). |
 
-To try the full native stack:
+The fully emulated reference path is:
 
 ```sh
-SSX3_RENDER_NATIVE=all SSX3_RENDER_SCALE=2 SSX3_HOST_CLOCK=1 SSX3_SND=native SSX3_NATIVE_FILES=1 target/game/ssx3
+SSX3_RENDER=emu SSX3_SND=iop SSX3_NATIVE_FILES=0 target/game/ssx3
 ```
+
+The native paths don't keep emulated timing byte-identical (native sound and the native
+renderer's light queries shift how the game's threads interleave), so a scripted race
+plays out a little differently than on the emulated path; each path is deterministic on its
+own.
 
 ## Contributing
 
