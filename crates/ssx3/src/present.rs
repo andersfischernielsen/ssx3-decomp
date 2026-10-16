@@ -144,6 +144,9 @@ pub struct Presenter {
     /// Display aspect ratio the image is fitted to (letterboxed or
     /// pillarboxed); 0 stretches it over the whole window.
     aspect: f32,
+    /// The surface needs reconfiguring (a resize, or a configure that
+    /// failed: retried at the next present).
+    reconfigure: bool,
     // Keep the window handle alive for as long as the surface exists.
     _window: Arc<Window>,
 }
@@ -307,6 +310,7 @@ impl Presenter {
             tex_size: (640, 448),
             buffer_path,
             aspect: 4.0 / 3.0,
+            reconfigure: false,
             _window: window,
         }
     }
@@ -362,7 +366,21 @@ impl Presenter {
         }
         self.config.width = width;
         self.config.height = height;
+        // Not here (in winit's resize callback, which must not panic): at
+        // the next present.
+        self.reconfigure = true;
+    }
+
+    /// Configure the surface. The device is shared with the renderer's
+    /// threads, so configuring (which waits for the GPU to go idle) can
+    /// fail while they keep it busy: the error is caught and the configure
+    /// retried at the next present.
+    fn configure(&mut self) -> bool {
+        let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         self.surface.configure(&self.device, &self.config);
+        let err = pollster::block_on(scope.pop());
+        self.reconfigure = err.is_some();
+        !self.reconfigure
     }
 
     /// Fit the image to `aspect` (width / height; 0 = fill the window).
@@ -417,12 +435,15 @@ impl Presenter {
 
     /// Acquire the next surface texture and draw a fullscreen triangle.
     fn draw_fullscreen(&mut self, pipeline: &wgpu::RenderPipeline, bind_group: &wgpu::BindGroup) -> Result<(), PresentError> {
+        if self.reconfigure && !self.configure() {
+            return Err(PresentError::Skip);
+        }
         let frame = self.surface.get_current_texture();
         let acquired = match frame {
             wgpu::CurrentSurfaceTexture::Success(t)
             | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
             wgpu::CurrentSurfaceTexture::Outdated => {
-                self.surface.configure(&self.device, &self.config);
+                self.configure();
                 return Err(PresentError::Reconfigured);
             }
             wgpu::CurrentSurfaceTexture::Lost | wgpu::CurrentSurfaceTexture::Validation => {
