@@ -311,8 +311,8 @@ fn display_aspect(cpu: &Cpu) -> f32 {
 
 fn main() {
     env_logger::init();
-    let cpu = game::boot(false);
-    let gfx = game::install_renderer();
+    let mut cpu = game::boot(false);
+    let gfx = game::install_renderer(&mut cpu);
     let event_loop = EventLoop::new().expect("event loop");
     event_loop.set_control_flow(ControlFlow::Poll);
     let mut app = App {

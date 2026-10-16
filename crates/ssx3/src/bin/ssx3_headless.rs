@@ -32,7 +32,7 @@ fn main() {
         std::env::set_var("SSX3_AUDIO", "0");
     }
     let mut c = game::boot(true);
-    let gfx = game::install_renderer();
+    let gfx = game::install_renderer(&mut c);
     let t0 = Instant::now();
     let mut img = Vec::new();
     // Scripted input: SSX3_INPUT="300:4000:10,400:0008:10" presses Cross (0x4000)

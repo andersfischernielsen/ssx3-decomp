@@ -117,7 +117,7 @@ pub fn dump(c: &Cpu) -> String {
 ///   frames are published (movies and loading screens still draw there);
 /// - `shadow`: it draws next to the emulated GS, which stays what is shown;
 /// - `emu`: not installed (the emulated GS only).
-pub fn install_renderer() -> Option<ssx3_gfx::Renderer> {
+pub fn install_renderer(c: &mut Cpu) -> Option<ssx3_gfx::Renderer> {
     let mode = std::env::var("SSX3_RENDER").unwrap_or_else(|_| "native".into());
     let native = match mode.as_str() {
         "native" => true,
@@ -146,6 +146,12 @@ pub fn install_renderer() -> Option<ssx3_gfx::Renderer> {
     ssx3_ps2::frame_sink::set_native(native);
     // Rendering runs on its own thread, next to the game.
     r.start_worker();
+    // Native: no GS emulation. The game's frames (menus, movies, loading
+    // screens and races all come through them) are drawn by ssx3-gfx; the
+    // GS keeps only what the game can observe (registers and events).
+    if native {
+        ssx3_ps2::m!(c).hw.gs.detach();
+    }
     ssx3_ps2::frame_sink::install(Box::new(r.clone()));
     eprintln!("[gfx] draw-layer renderer installed ({})", if native { "native" } else { "shadow" });
     Some(r)
