@@ -230,6 +230,8 @@ pub struct Mtgs {
     tags: [GifPath; 4],
     scratch: Vec<Qword>,
     pub stats: MtgsStats,
+    /// No GS core: the native renderer draws everything (`detach`).
+    detached: bool,
     /// Debug (`SSX3_RENDER_ROUNDTRIP=N`): queue an empty native run (a
     /// VRAM -> wgpu targets -> VRAM round trip of context 1's frame and Z)
     /// before every N-th GIF transfer; 0 = off.
@@ -301,6 +303,7 @@ impl Mtgs {
             scratch: Vec::new(),
             stats: MtgsStats::default(),
             roundtrip_every: roundtrip_every(),
+            detached: false,
             gif_writes: 0,
             vblanks: 0,
         }
@@ -315,6 +318,9 @@ impl Mtgs {
     /// Queue (or, in direct mode, run) one command; `data` is the GIF payload.
     #[inline]
     fn exec(&mut self, cmd: Cmd, data: &[Qword]) {
+        if self.detached {
+            return;
+        }
         match &mut self.mode {
             Mode::Direct(core, slot) => {
                 apply(&mut core.lock().unwrap(), cmd, data, slot, None);
@@ -333,6 +339,9 @@ impl Mtgs {
     /// everything queued so far, before everything queued later). It runs
     /// on the GS thread; see `Gs::native_run`.
     pub fn native_run(&mut self, job: NativeJob) {
+        if self.detached {
+            return;
+        }
         match &mut self.mode {
             Mode::Direct(core, slot) => {
                 apply(&mut core.lock().unwrap(), Cmd::Native, &[], slot, Some(job));
@@ -445,6 +454,19 @@ impl Mtgs {
 
     /// Exclusive access to the GS, after every queued command has run
     /// (display, VRAM, captures, statistics, backend switches).
+    /// Native rendering: stop feeding the GS core. The guest-visible GS
+    /// (CSR, privileged registers, SIGNAL/FINISH/LABEL, PATH3 arbitration,
+    /// GIF_STAT) stays here, on the guest side; drawing, VRAM and the
+    /// display are the native renderer's.
+    pub fn detach(&mut self) {
+        self.sync();
+        self.detached = true;
+    }
+
+    pub fn detached(&self) -> bool {
+        self.detached
+    }
+
     pub fn core(&mut self) -> MutexGuard<'_, Gs> {
         self.stats.sync_core += 1;
         self.synced()
@@ -465,6 +487,9 @@ impl Mtgs {
     /// windowed front end, after `run_frame`). Returns a ticket for
     /// [`Mtgs::take_display`].
     pub fn request_display(&mut self) -> u64 {
+        if self.detached {
+            return 0;
+        }
         self.exec(Cmd::Display, &[]);
         self.kick();
         match &self.mode {
@@ -479,6 +504,9 @@ impl Mtgs {
     /// has no GPU frame (nothing displayed, or the CPU backend), so use
     /// `core().display()`.
     pub fn take_display(&mut self, ticket: u64) -> Option<Option<super::gpu::GpuFrame>> {
+        if self.detached {
+            return None;
+        }
         match &self.mode {
             Mode::Threaded(t) => {
                 let shared = t.shared.clone();
@@ -639,6 +667,11 @@ impl Mtgs {
 
     /// Pop up to `max` quadwords of a pending local->host transfer.
     pub fn read_local(&mut self, max: usize) -> Vec<Qword> {
+        if self.detached {
+            // No GS behind: nothing to read back (the game tolerates short
+            // reads; its one readback, the light query, is native).
+            return Vec::new();
+        }
         self.stats.sync_read_local += 1;
         self.synced().read_local(max)
     }

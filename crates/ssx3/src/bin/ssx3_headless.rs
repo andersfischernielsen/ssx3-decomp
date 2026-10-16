@@ -32,7 +32,7 @@ fn main() {
         std::env::set_var("SSX3_AUDIO", "0");
     }
     let mut c = game::boot(true);
-    let gfx = game::install_renderer();
+    let gfx = game::install_renderer(&mut c);
     let t0 = Instant::now();
     let mut img = Vec::new();
     // Scripted input: SSX3_INPUT="300:4000:10,400:0008:10" presses Cross (0x4000)
@@ -104,7 +104,7 @@ fn main() {
         if shot_every > 0 && f % shot_every == 0 {
             let path = format!("{shot_dir}/frame{f:05}.png");
             // Native: the draw-layer renderer's image is the one shown.
-            match gfx.as_ref().filter(|_| ssx3_ps2::frame_sink::native_active()).and_then(|g| g.read_image()) {
+            match gfx.as_ref().filter(|_| ssx3_ps2::frame_sink::native()).and_then(|g| g.read_image()) {
                 Some((w, h, px)) => {
                     let img: Vec<u32> = px.iter().map(|p| p | 0xFF00_0000).collect();
                     let _ = std::fs::write(&path, png::encode(w, h, &img));

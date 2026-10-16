@@ -40,6 +40,9 @@ fn main() {
             frame_sink::load_dump(&bytes).unwrap_or_else(|e| panic!("{path}: {e}"))
         })
         .collect();
+    if let Some((w, h)) = std::env::var("SSX3_RENDER_SIZE").ok().and_then(|v| v.split_once('x').and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?)))) {
+        r.set_output_size(Some((w, h)));
+    }
     if let Some(n) = std::env::var("SSX3_RENDER_SCALE").ok().and_then(|v| v.parse::<u32>().ok()) {
         r.set_scale(n);
     }

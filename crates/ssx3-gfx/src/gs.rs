@@ -126,6 +126,10 @@ pub struct Gs {
     pub uploads: std::collections::HashMap<u32, Upload>,
     /// The frame's alpha holds Z bits 8..15 (the depth-fog copy ran).
     zalpha: bool,
+    /// The primitives now coming are HUD (squeezed horizontally by
+    /// `hud_squeeze` around the frame's centre, main target only).
+    pub hud: bool,
+    pub hud_squeeze: f32,
     /// CLUTs of this frame's depth-fog passes (see ZFOG_TEX).
     pub fog_cluts: Vec<Upload>,
     /// XYOFFSET_1/2 written: the game sets context 2's once at startup,
@@ -604,8 +608,14 @@ impl Gs {
             } else {
                 [q.s, q.t, q.q, 0.0]
             };
+            let x = if self.hud && self.hud_squeeze != 1.0 && st.target == self.main_fbp {
+                let cx = self.size.0 as f32 / 2.0;
+                cx + (q.x - cx) * self.hud_squeeze
+            } else {
+                q.x
+            };
             self.verts.push(Vtx {
-                pos: [q.x, q.y, (q.z.min(zmax) as f64 * zscale) as f32],
+                pos: [x, q.y, (q.z.min(zmax) as f64 * zscale) as f32],
                 fog: q.fog as f32,
                 col: [rgba[0] as f32, rgba[1] as f32, rgba[2] as f32, rgba[3] as f32],
                 stq,

@@ -169,7 +169,9 @@ impl ApplicationHandler for App {
         let gs = ssx3_ps2::m!(self.cpu).hw.gs.core().gpu_context();
         self.gpu_ctx = gs;
         self.presenter = Some(pollster::block_on(Presenter::new(window.clone(), gs)));
+        let size = window.inner_size();
         self.window = Some(window);
+        self.follow_window_size(size.width, size.height);
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
@@ -179,12 +181,13 @@ impl ApplicationHandler for App {
                 if let Some(p) = self.presenter.as_mut() {
                     p.resize(size.width, size.height);
                 }
+                self.follow_window_size(size.width, size.height);
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(code) = event.physical_key {
                     if code == KeyCode::F12 && event.state == ElementState::Pressed {
                         // The image on screen: the native renderer's while it is active.
-                        let native = self.gfx.as_ref().filter(|_| ssx3_ps2::frame_sink::native_active()).and_then(|g| g.read_image());
+                        let native = self.gfx.as_ref().filter(|_| ssx3_ps2::frame_sink::native()).and_then(|g| g.read_image());
                         let (w, h) = match native {
                             Some((w, h, px)) => {
                                 self.frame = px.iter().map(|p| p | 0xFF00_0000).collect();
@@ -224,13 +227,15 @@ impl ApplicationHandler for App {
                     return;
                 }
                 if let Some(p) = self.presenter.as_mut() {
-                    p.set_aspect(display_aspect(&self.cpu));
+                    // Rendering at the window's size fills it exactly.
+                    let native_fill = self.gfx.is_some() && ssx3_ps2::frame_sink::native() && game::follows_window();
+                    p.set_aspect(if native_fill { 0.0 } else { display_aspect(&self.cpu) });
                 }
                 let gs = &mut ssx3_ps2::m!(self.cpu).hw.gs;
-                let native = ssx3_ps2::frame_sink::native_active();
+                let native = ssx3_ps2::frame_sink::native();
                 match self.presenter.as_mut() {
-                    // The native renderer's image while the game publishes
-                    // frames (it lives on the GS device: no copy).
+                    // Native: the renderer's latest image (it lives on the
+                    // GS device: no copy).
                     Some(p) if native && self.gfx.is_some() => {
                         let g = self.gfx.as_ref().unwrap();
                         if p.same_device(self.gpu_ctx) {
@@ -291,6 +296,20 @@ impl ApplicationHandler for App {
     }
 }
 
+impl App {
+    /// Native window: render at the window's pixel size, the game's view
+    /// widened to its aspect (and `SSX3_FOV`).
+    fn follow_window_size(&mut self, w: u32, h: u32) {
+        if w == 0 || h == 0 || !game::follows_window() || !ssx3_ps2::frame_sink::native() {
+            return;
+        }
+        if let Some(g) = self.gfx.as_ref() {
+            g.set_output_size(Some((w, h)));
+            ssx3_ps2::frame_sink::set_view(w as f32 / h as f32, game::fov());
+        }
+    }
+}
+
 /// The aspect ratio to show the game at. SSX3_ASPECT=4:3 / 16:9 / stretch
 /// overrides; by default it follows the game's own widescreen option
 /// (options word at 0x535610, bits 20-21: off, 16:9 letterboxed in a 4:3
@@ -311,8 +330,8 @@ fn display_aspect(cpu: &Cpu) -> f32 {
 
 fn main() {
     env_logger::init();
-    let cpu = game::boot(false);
-    let gfx = game::install_renderer();
+    let mut cpu = game::boot(false);
+    let gfx = game::install_renderer(&mut cpu);
     let event_loop = EventLoop::new().expect("event loop");
     event_loop.set_control_flow(ControlFlow::Poll);
     let mut app = App {

@@ -117,7 +117,7 @@ pub fn dump(c: &Cpu) -> String {
 ///   frames are published (movies and loading screens still draw there);
 /// - `shadow`: it draws next to the emulated GS, which stays what is shown;
 /// - `emu`: not installed (the emulated GS only).
-pub fn install_renderer() -> Option<ssx3_gfx::Renderer> {
+pub fn install_renderer(c: &mut Cpu) -> Option<ssx3_gfx::Renderer> {
     let mode = std::env::var("SSX3_RENDER").unwrap_or_else(|_| "native".into());
     let native = match mode.as_str() {
         "native" => true,
@@ -134,6 +134,13 @@ pub fn install_renderer() -> Option<ssx3_gfx::Renderer> {
     };
     let r = ssx3_gfx::Renderer::new(ctx.device.clone(), ctx.queue.clone());
     r.set_want_depth(native);
+    // SSX3_RENDER_SIZE=WxH: render at that size, widened to its aspect.
+    if let Some((w, h)) = render_size() {
+        r.set_output_size(Some((w, h)));
+        ssx3_ps2::frame_sink::set_view(w as f32 / h as f32, fov());
+    } else if fov() != 1.0 {
+        ssx3_ps2::frame_sink::set_view(0.0, fov());
+    }
     // SSX3_RENDER_SCALE=N: N× internal resolution (1..8).
     if let Some(n) = std::env::var("SSX3_RENDER_SCALE").ok().and_then(|v| v.parse::<u32>().ok()) {
         r.set_scale(n);
@@ -146,6 +153,12 @@ pub fn install_renderer() -> Option<ssx3_gfx::Renderer> {
     ssx3_ps2::frame_sink::set_native(native);
     // Rendering runs on its own thread, next to the game.
     r.start_worker();
+    // Native: no GS emulation. The game's frames (menus, movies, loading
+    // screens and races all come through them) are drawn by ssx3-gfx; the
+    // GS keeps only what the game can observe (registers and events).
+    if native {
+        ssx3_ps2::m!(c).hw.gs.detach();
+    }
     ssx3_ps2::frame_sink::install(Box::new(r.clone()));
     eprintln!("[gfx] draw-layer renderer installed ({})", if native { "native" } else { "shadow" });
     Some(r)
@@ -164,7 +177,7 @@ const LENSFX_QUERY: u32 = 0x002e_c478;
 
 fn lensfx_query_native(c: &mut Cpu) {
     use ssx3_ee_rt::cpu::reg::*;
-    if !ssx3_ps2::frame_sink::native_active() {
+    if !ssx3_ps2::frame_sink::native() {
         ssx3_ee::s09::f_002ec478__generated(c);
         return;
     }
@@ -267,4 +280,24 @@ mod tests {
         let z = vec![5000u32; 64 * 64];
         assert_eq!(lensfx_visibility(&query(8.0, 8.0), 64, 64, &z), 0.0);
     }
+}
+
+/// `SSX3_RENDER_SIZE=WxH`: a fixed output size.
+pub fn render_size() -> Option<(u32, u32)> {
+    let v = std::env::var("SSX3_RENDER_SIZE").ok()?;
+    let (w, h) = v.split_once(['x', 'X'])?;
+    Some((w.trim().parse().ok()?, h.trim().parse().ok()?))
+}
+
+/// `SSX3_FOV=<multiplier>`: field of view relative to the game's (1.2 =
+/// 20% wider, in the projection's tangent).
+pub fn fov() -> f32 {
+    std::env::var("SSX3_FOV").ok().and_then(|v| v.parse::<f32>().ok()).filter(|v| *v > 0.1 && *v < 4.0).unwrap_or(1.0)
+}
+
+/// Native window: render at the window's pixel size and widen the view to
+/// its aspect, unless a fixed size (`SSX3_RENDER_SIZE`) or the classic
+/// fixed aspect (`SSX3_ASPECT`) is asked for.
+pub fn follows_window() -> bool {
+    render_size().is_none() && std::env::var_os("SSX3_ASPECT").is_none()
 }
