@@ -1,0 +1,8 @@
+[package]
+name = "ssx3-mc"
+description = "PS2 memory card filesystem (what MCMAN/MCSERV do), native, on the raw 8 MB card image."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]

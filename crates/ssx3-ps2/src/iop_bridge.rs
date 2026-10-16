@@ -3,11 +3,12 @@
 //! Enabled with `SSX3_IOP=1` (and only if the game registered the generated
 //! IOP code). Then:
 //!
-//! * loading `LIBSD.IRX` / `SNDDRV.IRX` (sound) and `SIO2MAN.IRX`,
-//!   `PADMAN.IRX`, `MCMAN.IRX`, `MCSERV.IRX` (controllers and memory card;
-//!   `SSX3_IOP_SIO2=0` keeps these four on the HLE servers) through the
-//!   LOADFILE RPC starts the real (recompiled) modules on the native IOP
-//!   kernel instead of only recording the name;
+//! * loading `LIBSD.IRX` / `SNDDRV.IRX` (sound, with `SSX3_SND=iop`) and
+//!   `SIO2MAN.IRX`, `PADMAN.IRX`, `MCMAN.IRX`, `MCSERV.IRX` (controllers and
+//!   memory card, with `SSX3_IOP_SIO2=1`; by default these are native:
+//!   `pad.rs`, `mc_native.rs`) through the LOADFILE RPC starts the real
+//!   (recompiled) modules on the native IOP kernel instead of only
+//!   recording the name. With all of them native the IOP never starts;
 //! * SIF binds/calls to RPC servers the IOP registered or will register
 //!   (EA's `'SND'` 0x00534E44, padman 0x80000100/0x80000101, mcserv
 //!   0x80000400) and user SIF commands with an IOP handler (EA's command 0)
@@ -45,11 +46,12 @@ pub struct IopSide {
 /// the IOP instead of being answered by the HLE servers).
 const MODULE_SERVERS: &[(&str, &[u32])] = &[("PADMAN", &[0x8000_0100, 0x8000_0101]), ("MCSERV", &[0x8000_0400])];
 
-/// Recompiled SIO2MAN/PADMAN/MCMAN/MCSERV (default on; `SSX3_IOP_SIO2=0`
-/// leaves pads and memory card to the HLE servers in `pad.rs`/`sif.rs`).
+/// Recompiled SIO2MAN/PADMAN/MCMAN/MCSERV (`SSX3_IOP_SIO2=1`). By default
+/// pads and memory card are native: the padman server in `pad.rs`, the
+/// memory card in `mc_native.rs`.
 pub fn sio2_enabled() -> bool {
     static ON: OnceLock<bool> = OnceLock::new();
-    *ON.get_or_init(|| std::env::var("SSX3_IOP_SIO2").map(|v| v != "0").unwrap_or(true))
+    *ON.get_or_init(|| std::env::var("SSX3_IOP_SIO2").is_ok_and(|v| v != "0"))
 }
 
 pub fn enabled() -> bool {
@@ -99,6 +101,10 @@ fn with_iop<R>(c: &mut Cpu, f: impl FnOnce(&mut Iop) -> R) -> Option<R> {
 /// Deliver IOP → EE traffic.
 fn flush(c: &mut Cpu, iop: &mut Iop) {
     for (a, d) in iop.out.ee_writes.drain(..) {
+        if m!(c).sif.trace {
+            let ws: Vec<String> = d.chunks(4).take(8).map(|b| b.iter().rev().map(|x| format!("{x:02x}")).collect()).collect();
+            eprintln!("[iop-bridge] ee write {a:#x} {} bytes: {}", d.len(), ws.join(" "));
+        }
         c.bus.write_bytes(a & 0x01FF_FFFF, &d);
     }
     let packets: Vec<Vec<u8>> = iop.out.packets.drain(..).collect();

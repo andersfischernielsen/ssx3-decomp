@@ -22,12 +22,13 @@ game's code at runtime.
 - **Modern displays.** The renderer works at any resolution and aspect ratio, widens the
   game's 3D view to fit (16:9, ultrawide), keeps the HUD at its 4:3 shape, and has an
   adjustable field of view.
-- **Native sound and files** (a native mixer; game files read through `std::fs`) are on
-  by default too. Each native path can be switched back to the emulated one for comparison.
+- **Native sound, files, controllers and memory card** (a native mixer; game files read
+  through `std::fs`; libpad and libmc answered natively, saves on the same `.ps2` card
+  image) are on by default too, so the IOP doesn't run at all. Each native path can be
+  switched back to the emulated one for comparison.
 - **Every function has a name, and many are hand-written Rust.** All 13.3k functions are
   named. 1,368 are typed Rust rewrites that are checked against the generated code.
-- **Still emulated:** the EE kernel, DMA controller and timers the game code talks to, and
-  the IOP's controller and memory-card drivers (recompiled modules).
+- **Still emulated:** the EE kernel, DMA controller and timers the game code talks to.
 
 ## Screenshots
 
@@ -163,6 +164,7 @@ emulated PS2 path for comparison:
 | --- | --- |
 | `SSX3_SND=iop` | The recompiled IOP sound driver instead of the native mixer (`ssx3-snd`). |
 | `SSX3_NATIVE_FILES=0` | The emulated CD instead of reading game files through `std::fs` (from the ISO, or an extracted `DATA/` folder with `SSX3_DATA_DIR=<dir>`). |
+| `SSX3_IOP_SIO2=1` | The recompiled IOP controller and memory-card modules (SIO2MAN, PADMAN, MCMAN, MCSERV) on a modelled card, instead of the native padman server and memory card (`ssx3-mc`). |
 | `SSX3_VU1=emu` | The translated VU1 microcode instead of the native Rust programs (only used outside native rendering). |
 | `SSX3_HOST_CLOCK=1` | Keep game time real-time when the host falls behind (extra 60 Hz updates, fewer rendered frames). Known issue: with a host that stays behind, the game can stall (all threads waiting); off by default. |
 | `SSX3_GS=cpu` | With `SSX3_RENDER=emu`: software rasterizer instead of the GPU one (slow; for debugging). |
@@ -235,6 +237,7 @@ boundaries) is committed. To explore the binary yourself, see
 | `ssx3-vu` | VU0/VU1: registers, pipeline timing, and the translated microcode (`generated/vu/`). |
 | `ssx3-ps2` | The platform (`Machine`): MMIO, DMAC, timers, INTC, an HLE EE kernel (threads, semaphores, alarms), SIF and IOP services, VIF, the GS (wgpu compute rasterizer, native wgpu render paths, software fallback; on its own thread), and the IPU (MPEG). |
 | `ssx3-iop` | The IOP runtime for the recompiled IRX modules: IOP kernel, SPU2 audio, SIO2 with pad and memory card. |
+| `ssx3-mc` | The memory card natively: the PS2 card filesystem (FAT, directories, ECC) on the raw `.ps2` image, answering libmc the way MCMAN/MCSERV do (saves are byte-identical to theirs). |
 | `ssx3-render` | The VU1 rendering programs as readable Rust (`SSX3_VU1=native`). |
 | `ssx3-snd` | The native sound mixer (`SSX3_SND=native`). |
 | `ssx3` | Front ends: the windowed `ssx3` (winit + wgpu + gilrs + cpal) and `ssx3-headless`. |

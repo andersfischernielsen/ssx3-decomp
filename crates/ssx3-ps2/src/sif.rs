@@ -359,6 +359,7 @@ fn server_for(id: u32) -> Option<Server> {
         0x8000_0597 => cd_search,
         0x8000_059A | 0x8000_059C => cd_ready,
         0x8000_0100 | 0x8000_0101 => crate::pad::rpc,
+        0x8000_0400 if crate::mc_native::enabled() => crate::mc_native::rpc,
         0x8000_0400 => mcserv,
         0x0053_4E44 => snd,
         _ => return None,

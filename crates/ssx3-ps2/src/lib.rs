@@ -23,6 +23,7 @@ pub mod ipu;
 pub use ssx3_core::iso;
 pub mod kernel;
 pub mod machine;
+pub mod mc_native;
 pub mod pad;
 pub mod sif;
 pub mod snd_native;

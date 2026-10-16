@@ -44,9 +44,9 @@ pub mod layout {
         ("PADMAN", 0x0004_E000),
         ("MCMAN", 0x0005_8000),
     ];
-    /// Modules that drive the SIO2 port (pads, memory cards). They can be
-    /// switched off as a group (`SSX3_IOP_SIO2=0`): the HLE servers in
-    /// `ssx3-ps2` then answer the EE.
+    /// Modules that drive the SIO2 port (pads, memory cards). They run as a
+    /// group with `SSX3_IOP_SIO2=1`; by default the native servers in
+    /// `ssx3-ps2` (`pad.rs`, `mc_native.rs`) answer the EE instead.
     pub const SIO2_MODULES: &[&str] = &["SIO2MAN", "PADMAN", "MCMAN", "MCSERV"];
     pub const HEAP_START: u32 = 0x0008_0000;
     pub const HEAP_END: u32 = 0x0010_0000;
