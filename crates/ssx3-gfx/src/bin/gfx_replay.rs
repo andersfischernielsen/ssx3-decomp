@@ -79,5 +79,16 @@ fn main() {
     let (w, h, px) = r.read_image().expect("image");
     let img: Vec<u32> = px.iter().map(|p| p | 0xFF00_0000).collect();
     std::fs::write(out, png::encode(w, h, &img)).unwrap();
+    // SSX3_DUMP_RTS=DIR: the render targets too, as DIR/rt<fbp>.png (RGB)
+    // and DIR/rt<fbp>-a.png (alpha, stored as a/128).
+    if let Ok(dir) = std::env::var("SSX3_DUMP_RTS") {
+        std::fs::create_dir_all(&dir).unwrap();
+        for (fbp, w, h, px) in r.read_rts() {
+            let rgb: Vec<u32> = px.iter().map(|p| p | 0xFF00_0000).collect();
+            std::fs::write(format!("{dir}/rt{fbp}.png"), png::encode(w, h, &rgb)).unwrap();
+            let a: Vec<u32> = px.iter().map(|p| { let a = p >> 24; a | a << 8 | a << 16 | 0xFF00_0000 }).collect();
+            std::fs::write(format!("{dir}/rt{fbp}-a.png"), png::encode(w, h, &a)).unwrap();
+        }
+    }
     eprintln!("{} frames in {:.0} ms -> {out} ({w}x{h})", dumps.len(), t.elapsed().as_secs_f64() * 1e3);
 }

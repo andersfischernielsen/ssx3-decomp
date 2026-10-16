@@ -47,8 +47,8 @@ pub struct Upload {
     pub data: Vec<u32>,
 }
 
-/// An offscreen frame buffer the game renders into (rider shadows):
-/// width from FBW, height from the largest scissor seen.
+/// An offscreen frame buffer the game renders into (rider shadows, glow):
+/// width from the largest FBW, height from the largest scissor seen.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rt {
     pub w: u32,
@@ -481,8 +481,12 @@ impl Gs {
                 *self.dropped_fbp.entry((target, fbw, fpsm)).or_default() += 1;
                 return None;
             }
+            // The game reuses a buffer at several widths (the glow chain
+            // draws 256, then 64, then 32 wide into the same FBP): the
+            // texture covers the largest, and each image keeps its pixel
+            // positions.
             let rt = self.rts.entry(target).or_insert(Rt { w: fbw * 64, h, psm: fpsm });
-            rt.w = fbw * 64;
+            rt.w = rt.w.max(fbw * 64);
             rt.h = rt.h.max(h);
             rt.psm = fpsm;
         }
@@ -600,13 +604,21 @@ impl Gs {
             Some(t) if t & RT_TEX != 0 => self.rts.get(&(t & !RT_TEX)).map_or((1, 1), |r| (r.w, r.h)),
             _ => (1u32 << bits(c.tex0, 26, 4), 1u32 << bits(c.tex0, 30, 4)),
         };
+        // STQ coordinates are relative to the texture's 2^TW × 2^TH; a
+        // render target's texture can be larger.
+        let (ss, ts) = match st.tex {
+            Some(t) if t & RT_TEX != 0 && t != FRAME_TEX => {
+                ((1u32 << bits(c.tex0, 26, 4)) as f32 / tw as f32, (1u32 << bits(c.tex0, 30, 4)) as f32 / th as f32)
+            }
+            _ => (1.0, 1.0),
+        };
         let first = self.verts.len() as u32;
         for q in vs {
             let rgba = flat.unwrap_or(q.rgba);
             let stq = if fst {
                 [q.u as f32 / 16.0 / tw as f32, q.v as f32 / 16.0 / th as f32, 1.0, 0.0]
             } else {
-                [q.s, q.t, q.q, 0.0]
+                [q.s * ss, q.t * ts, q.q, 0.0]
             };
             let x = if self.hud && self.hud_squeeze != 1.0 && st.target == self.main_fbp {
                 let cx = self.size.0 as f32 / 2.0;
@@ -716,5 +728,18 @@ mod tests {
         assert_eq!(gs.fog_cluts.len(), 1);
         assert!(gs.fog_cluts[0].data.iter().all(|&v| v == 1));
         assert!(gs.uploads[&0x2fd4].data.iter().all(|&v| v == 2));
+    }
+
+    #[test]
+    fn a_target_reused_narrower_keeps_its_widest_size() {
+        let mut gs = Gs::new();
+        gs.begin((512, 448), 0, 0xe0);
+        // The glow chain: 256×256 (FBW 4) into FBP 0xe0, then 64×64 (FBW 1).
+        for (fbw, max) in [(4u64, 255u64), (1, 63)] {
+            let mut a = vec![(0x4c, 0xe0 | fbw << 16 | 1 << 24), (0x40, max << 16 | max << 48)];
+            a.extend(sprite(6));
+            gs.gif(&ad(&a));
+        }
+        assert_eq!(gs.rts[&0xe0], Rt { w: 256, h: 256, psm: 1 });
     }
 }

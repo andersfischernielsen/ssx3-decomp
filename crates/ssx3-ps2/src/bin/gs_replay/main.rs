@@ -227,6 +227,17 @@ fn draws(path: &str, bytes: &[u8], dir: &str) {
         let mut img = Vec::new();
         let (w, h) = gs.display(&mut img);
         std::fs::write(format!("{dir}/f{seg:02}.png"), png::encode(w, h, &img)).unwrap();
+        // SSX3_DUMP_FB=fbp:fbw:psm:w:h,...: also those buffers as
+        // DIR/fNN-fb<fbp>.png (RGB, alpha in DIR/fNN-fb<fbp>-a.png).
+        for spec in std::env::var("SSX3_DUMP_FB").unwrap_or_default().split(',').filter(|s| !s.is_empty()) {
+            let v: Vec<u32> = spec.split(':').filter_map(|x| x.parse().ok()).collect();
+            let [fbp, fbw, psm, w, h] = v[..] else { continue };
+            let px: Vec<u32> = (0..h).flat_map(|y| (0..w).map(move |x| (x, y))).map(|(x, y)| ssx3_ps2::gs::swizzle::read_pixel(&gs.vram, psm, fbp * 32, fbw, x, y)).collect();
+            let rgb: Vec<u32> = px.iter().map(|v| v | 0xFF00_0000).collect();
+            std::fs::write(format!("{dir}/f{seg:02}-fb{fbp}.png"), png::encode(w, h, &rgb)).unwrap();
+            let a: Vec<u32> = px.iter().map(|v| { let a = v >> 24; a | a << 8 | a << 16 | 0xFF00_0000 }).collect();
+            std::fs::write(format!("{dir}/f{seg:02}-fb{fbp}-a.png"), png::encode(w, h, &a)).unwrap();
+        }
     };
     // --events: also print the event stream with the draw setups it creates
     // (and, with SSX3_TRACE_XFER, the transfers) in order.
