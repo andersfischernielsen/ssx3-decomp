@@ -145,8 +145,10 @@ impl N3Stats {
             self.flush_why[0], self.flush_why[1], self.flush_why[2], self.flush_why[3], self.flush_why[4]
         );
         s += &format!(
-            "\n    native runs (all) {}, refused {}, {:.1} Mpx round-tripped",
+            "\n    native runs (all) {}, reused targets {} (misses {:?}), refused {}, {:.1} Mpx round-tripped",
             native.runs,
+            native.reused,
+            native.miss,
             native.refused,
             native.pixels as f64 / 1e6
         );

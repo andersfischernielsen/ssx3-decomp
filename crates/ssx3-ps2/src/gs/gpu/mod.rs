@@ -1093,6 +1093,9 @@ impl GpuGs {
         let up = self.cpu_dirty;
         self.decoded.retain(|_, (_, pg)| !pg.hits(&up));
         self.n3.alpha_cache.bump(&up);
+        if let Some(n) = self.native.as_mut() {
+            n.note_vram_write(&up);
+        }
         self.cpu_dirty = Pages::default();
     }
 
@@ -1189,6 +1192,9 @@ impl GpuGs {
         self.gpu_dirty.union(&written);
         self.decoded.retain(|_, (_, pg)| !pg.hits(&written));
         self.n3.alpha_cache.bump(&written);
+        if let Some(n) = self.native.as_mut() {
+            n.note_vram_write(&written);
+        }
         // Setup records carry this batch's decoded textures.
         self.last_draw = None;
         self.batch.clear();
@@ -1278,6 +1284,9 @@ impl GpuGs {
         let pages = r.pages;
         self.decoded.retain(|_, (_, pg)| !pg.hits(&pages));
         self.n3.alpha_cache.bump(&pages);
+        if let Some(n) = self.native.as_mut() {
+            n.note_vram_write(&pages);
+        }
         true
     }
 

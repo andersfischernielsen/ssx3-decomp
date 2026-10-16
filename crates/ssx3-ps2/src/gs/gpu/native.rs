@@ -146,6 +146,26 @@ struct Run {
     /// Top-left corner of the round-tripped rectangle (`begin_native_run_at`).
     x0: u32,
     y0: u32,
+    /// The targets already hold these surfaces (`Held`): no unswizzle.
+    reuse: bool,
+    /// Unswizzle the whole target within the buffer width
+    /// (`full_w` x `full_h`), not just the run's rectangle: the run continues
+    /// on buffers the targets held, so later runs can reuse.
+    full: bool,
+    full_w: u32,
+    full_h: u32,
+}
+
+/// What the targets hold after the last run: its surfaces, the rectangle in
+/// which they equal VRAM (`x0, y0, x1, y1` exclusive), and the write clock
+/// at that point. A later run over the same surfaces inside that rectangle
+/// can skip the unswizzle as long as nothing else wrote their pages since
+/// (`note_vram_write`). VRAM is still written back at every run's end.
+#[derive(Clone, Copy)]
+struct Held {
+    surfaces: NativeSurfaces,
+    valid: [u32; 4],
+    clock: u64,
 }
 
 /// Pipelines, targets and the queued runs of the open submission.
@@ -157,6 +177,16 @@ pub(super) struct NativeState {
     targets: Option<Targets>,
     runs: Vec<Run>,
     records: Vec<Option<NativeRecord>>,
+    held: Option<Held>,
+    /// Per VRAM page: write clock of the last write that did not come from
+    /// a native run (uploads, compute raster batches, GPU transfers).
+    page_clock: Box<[u64; 512]>,
+    clock: u64,
+    /// Runs that skipped the unswizzle.
+    pub(super) reused: u64,
+    /// Why a run could not reuse: nothing held, other surfaces, outside
+    /// the valid rectangle, pages written since.
+    pub(super) miss: [u64; 4],
 }
 
 struct Targets {
@@ -284,7 +314,54 @@ impl NativeState {
             targets: None,
             runs: Vec::new(),
             records: Vec::new(),
+            held: None,
+            page_clock: Box::new([0; 512]),
+            clock: 1,
+            reused: 0,
+            miss: [0; 4],
         }
+    }
+
+    /// VRAM `pages` changed outside native runs.
+    pub(super) fn note_vram_write(&mut self, pages: &Pages) {
+        self.clock += 1;
+        let c = self.clock;
+        for (i, w) in pages.0.iter().enumerate() {
+            let mut w = *w;
+            while w != 0 {
+                self.page_clock[i * 64 + w.trailing_zeros() as usize] = c;
+                w &= w - 1;
+            }
+        }
+    }
+
+    /// Whether a run over `s` / `pages` from `(x0, y0)` can use what the
+    /// targets hold.
+    fn can_reuse(&mut self, s: &NativeSurfaces, pages: &Pages, x0: u32, y0: u32) -> bool {
+        let Some(h) = self.held else {
+            self.miss[0] += 1;
+            return false;
+        };
+        if !compatible(&h.surfaces, s) {
+            self.miss[1] += 1;
+            return false;
+        }
+        if x0 < h.valid[0] || y0 < h.valid[1] || s.width > h.valid[2] || s.height > h.valid[3] {
+            self.miss[2] += 1;
+            return false;
+        }
+        let mut ok = true;
+        for (i, w) in pages.0.iter().enumerate() {
+            let mut w = *w;
+            while w != 0 {
+                ok &= self.page_clock[i * 64 + w.trailing_zeros() as usize] <= h.clock;
+                w &= w - 1;
+            }
+        }
+        if !ok {
+            self.miss[3] += 1;
+        }
+        ok
     }
 
     /// Grow the targets to at least `w` x `h` (runs queued earlier in the
@@ -299,6 +376,8 @@ impl NativeState {
             Some(t) => (t.w.max(w), t.h.max(h)),
             None => (w.max(640), h.max(512)),
         };
+        // New textures: nothing is held any more.
+        self.held = None;
         // Powers of two: native-3 maps window pixels to NDC exactly over
         // the whole target.
         let (w, h) = (w.next_power_of_two(), h.next_power_of_two());
@@ -338,6 +417,19 @@ impl NativeState {
     }
 }
 
+/// Whether targets holding `held` serve a run over `s`: the same frame
+/// buffer (and the same Z buffer when `s` uses one); the extent (from the
+/// scissor) is checked separately.
+fn compatible(held: &NativeSurfaces, s: &NativeSurfaces) -> bool {
+    held.frame == s.frame && (s.z.is_none() || held.z == s.z)
+}
+
+/// `SSX3_NATIVE_NO_REUSE=1`: always unswizzle (A/B check of the reuse).
+fn no_reuse() -> bool {
+    static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *E.get_or_init(|| std::env::var_os("SSX3_NATIVE_NO_REUSE").is_some())
+}
+
 /// `FbFmt` code of a frame format (gs.wgsl `read_fb`/`write_fb`), as
 /// `Draw::build` maps it; `None` for formats a frame cannot have.
 fn frame_fmt(psm: u32) -> Option<u32> {
@@ -367,6 +459,9 @@ pub struct NativeStats {
     /// Pixels round-tripped (width x height per run).
     pub pixels: u64,
     pub refused: u64,
+    /// Runs that reused the held targets (no unswizzle).
+    pub reused: u64,
+    pub miss: [u64; 4],
     /// GPU time of the unswizzle and swizzle passes (`SSX3_GS_PROFILE`).
     pub gpu_ns: u64,
 }
@@ -453,8 +548,30 @@ impl GpuGs {
         self.emit_uploads(vram);
         let n = self.native.as_mut().expect("native state");
         n.ensure_targets(&self.ctx.device, s.width, s.height);
+        let (x0, y0) = (x0.min(s.width - 1), y0.min(s.height - 1));
+        let reuse = !no_reuse() && n.can_reuse(s, &pages, x0, y0);
+        let full = !reuse && !no_reuse() && n.held.is_some_and(|h| compatible(&h.surfaces, s) || compatible(s, &h.surfaces));
+        // A full unswizzle covers the whole target within the buffer width,
+        // so runs with other scissors on the same buffers reuse it.
+        let (tw, th) = n.targets.as_ref().map_or((s.width, s.height), |t| (t.w, t.h));
+        let buf_w = s.frame.or(s.z).map_or(s.width, |f| (f.bw * 64).min(tw)).max(s.width);
+        let (fw, fh) = (buf_w, th.max(s.height));
+        let held_surfaces = match (reuse, &n.held) {
+            // Keep the Z buffer the targets still hold for a run without Z.
+            (true, Some(h)) => NativeSurfaces { z: s.z.or(h.surfaces.z), ..*s },
+            _ => *s,
+        };
+        let valid = match (reuse, &n.held) {
+            (true, Some(h)) => h.valid,
+            _ if full => [0, 0, fw, fh],
+            _ => [x0, y0, s.width, s.height],
+        };
+        n.held = Some(Held { surfaces: held_surfaces, valid, clock: n.clock });
+        n.reused += reuse as u64;
+        self.stats.native.reused += reuse as u64;
+        self.stats.native.miss = n.miss;
         let run = n.runs.len() as u32;
-        n.runs.push(Run { surfaces: *s, x0: x0.min(s.width - 1), y0: y0.min(s.height - 1) });
+        n.runs.push(Run { surfaces: *s, x0, y0, reuse, full, full_w: fw, full_h: fh });
         let slot = self.native_slot(run);
         self.cmds.push(Cmd::NativeBegin { run, slot });
         self.gpu_dirty.union(&pages);
@@ -630,6 +747,11 @@ impl GpuGs {
                 let r = &n.runs[run as usize];
                 let s = &r.surfaces;
                 let list = self.n3_list_of(run);
+                let (load_c, load_d) = if r.reuse {
+                    (wgpu::LoadOp::Load, wgpu::LoadOp::Load)
+                } else {
+                    (wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), wgpu::LoadOp::Clear(0.0))
+                };
                 let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("gs-native-unswizzle"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -637,14 +759,14 @@ impl GpuGs {
                         depth_slice: None,
                         resolve_target: None,
                         ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                            load: load_c,
                             store: wgpu::StoreOp::Store,
                         },
                     })],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                         view: &t.depth,
                         depth_ops: Some(wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(0.0),
+                            load: load_d,
                             store: wgpu::StoreOp::Store,
                         }),
                         stencil_ops: None,
@@ -654,10 +776,17 @@ impl GpuGs {
                     multiview_mask: None,
                 });
                 pass.set_viewport(0.0, 0.0, s.width as f32, s.height as f32, 0.0, 1.0);
-                pass.set_scissor_rect(r.x0, r.y0, s.width - r.x0, s.height - r.y0);
-                pass.set_pipeline(&n.unswizzle_pipe);
-                pass.set_bind_group(0, &e.bg0, &[slot * SLOT as u32]);
-                pass.draw(0..3, 0..1);
+                if r.full {
+                    pass.set_viewport(0.0, 0.0, r.full_w as f32, r.full_h as f32, 0.0, 1.0);
+                    pass.set_scissor_rect(0, 0, r.full_w, r.full_h);
+                } else {
+                    pass.set_scissor_rect(r.x0, r.y0, s.width - r.x0, s.height - r.y0);
+                }
+                if !r.reuse {
+                    pass.set_pipeline(&n.unswizzle_pipe);
+                    pass.set_bind_group(0, &e.bg0, &[slot * SLOT as u32]);
+                    pass.draw(0..3, 0..1);
+                }
                 // Native-3 triangles draw in the same pass; destination-read
                 // segments after the first follow a copy of the colour
                 // target into `prev`, each in a pass of its own.

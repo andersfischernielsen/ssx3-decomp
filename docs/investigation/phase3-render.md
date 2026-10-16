@@ -777,3 +777,24 @@ Full race with `SSX3_RENDER_NATIVE=all`, against the emulated reference:
 Remaining differences come from hardware interpolation and blend-unit residuals of ordinary
 native triangles, the same as before. Using the compute GS's planes, or the exact blend,
 more widely would reduce them, at some cost.
+
+### Persistent native targets (2026-10-16)
+
+The wgpu colour and depth targets now persist across runs (`native.rs` `Held`). A run on the
+same frame (and Z) buffer reuses what the targets hold, loading instead of clearing and
+unswizzling, as long as both of these hold:
+- the run's extent lies inside the held rectangle;
+- no page of those buffers was written outside native runs since. Uploads, compute raster
+  batches and GPU transfers stamp pages (`note_vram_write`).
+
+When reuse fails on the same buffers, the whole buffer width is unswizzled once, so later
+runs with other scissors reuse it. VRAM is still written back at every run's end, so
+everything that reads VRAM stays exact. `SSX3_NATIVE_NO_REUSE=1` turns reuse off for A/B.
+
+Full race: **252,016 of 300,797 runs reuse the targets** (misses: 44k other buffers, 4.7k
+outside the rectangle, 3 written pages). Output is byte-identical to the previous native run
+(36 shots) and the RAM is identical to the emulated reference. Wall time is unchanged at
+about 145 s; the cost is CPU-side command encoding, not the unswizzle.
+
+This is the prerequisite for rendering at a higher resolution, where the targets hold more
+than VRAM can.
