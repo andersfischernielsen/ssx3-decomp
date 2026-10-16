@@ -1018,10 +1018,34 @@ fn qword_bytes(q: &[Qword]) -> &[u8] {
 /// `SSX3_RENDER_NATIVE` contains `type3`: draw the type-3 VU1 program's
 /// triangles with the hardware rasterizer (phase 3, stage 2B).
 pub fn render_native_type3() -> bool {
+    render_native_type3_cached()
+}
+
+/// `SSX3_RENDER_NATIVE` lists `name` (comma separated).
+fn render_native_has(name: &str) -> bool {
+    std::env::var("SSX3_RENDER_NATIVE").is_ok_and(|v| v.split(',').any(|x| x.trim() == name || x.trim() == "all"))
+}
+
+/// The VU1 program with this segment hash is drawn natively
+/// (`SSX3_RENDER_NATIVE`: `type3`, `terrain` (types 1/2), `rider` (types
+/// 6/7), `particles` (types 4/5), or `all`). Cached per hash.
+pub fn render_native_hash(hash: u64) -> bool {
+    use ssx3_render::{mat1, mat2, mat3, mat4, mat5, mat6};
+    static E: std::sync::OnceLock<[bool; 4]> = std::sync::OnceLock::new();
+    let on = E.get_or_init(|| [render_native_has("type3"), render_native_has("terrain"), render_native_has("rider"), render_native_has("particles")]);
+    match hash {
+        mat3::HASH => on[0],
+        mat1::HASH | mat2::HASH => on[1],
+        mat6::HASH => on[2],
+        mat4::HASH | mat5::HASH => on[3],
+        _ => false,
+    }
+}
+
+/// Any material is drawn natively (enables the native pipelines).
+fn render_native_type3_cached() -> bool {
     static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *E.get_or_init(|| {
-        std::env::var("SSX3_RENDER_NATIVE").is_ok_and(|v| v.split(',').any(|x| x.trim() == "type3"))
-    })
+    *E.get_or_init(|| ["type3", "terrain", "rider", "particles"].iter().any(|n| render_native_has(n)))
 }
 
 fn clamp_trace() -> bool {

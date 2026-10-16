@@ -345,7 +345,7 @@ impl Vif {
         if self.index == 1 && native_vu1() {
             let hash = vu.segment_hash_pub(pc);
             let mem: &mut [u8; 16384] = (&mut vu.data[..16384]).try_into().unwrap();
-            let type3 = hash == TYPE3_HASH && crate::gs::render_native_type3();
+            let type3 = crate::gs::render_native_hash(hash);
             let done = ssx3_render::run_native(hash, pc, self.top, self.itop, mem, &mut |p: &[Qword]| {
                 if crate::gifstats::enabled() {
                     crate::gifstats::scan(p);
@@ -372,7 +372,7 @@ impl Vif {
         // SSX3_VERIFY_PARTICLES: native particle/snow programs (types 4/5) vs the translated ones.
         let mut particles = if vif1 { crate::particle_verify::begin(vu, pc, self.top, self.itop) } else { None };
         let watch = crate::hw::watch_qword_pub();
-        let type3 = vif1 && crate::gs::render_native_type3() && vu.segment_hash_pub(pc) == TYPE3_HASH;
+        let type3 = vif1 && crate::gs::render_native_hash(vu.segment_hash_pub(pc));
         let mut hit: Option<(usize, u128)> = None;
         let done = vu.run(self.vu_budget, &mut |p: &[Qword]| {
             if let Some(c) = cap.as_mut() {

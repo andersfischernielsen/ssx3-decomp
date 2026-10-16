@@ -634,3 +634,28 @@ type-3 material with wgpu's hardware rasterizer inside composition runs.
 - move vertex maths into WGSL;
 - use a wider alpha target for destination-alpha presets;
 - then flip the master surfaces to wgpu, which allows resolution scaling.
+
+### All materials through the native path (`SSX3_RENDER_NATIVE=all`, 2026-10-16)
+
+The routing takes material names: `type3`, `terrain` (types 1/2), `rider` (types 6/7),
+`particles` (types 4/5), or `all`.
+
+With `all`, through the full race to frame 9000:
+- **Game state:** final RAM identical.
+- **Images:** 0.68% of pixels differ on average (worst 1.92%), none by more than 8.
+- **Triangles:** 75.8M native, 22.3M (22.7%) fall back to the emulated GS:
+  - As > 0x80 blend factors: 12.2M (needs a wider alpha target);
+  - unsupported frame format: 7.1M (likely the rider shadow's 16-bit render target);
+  - destination alpha: 1.6M;
+  - non-triangles (sprites, lines): 1.3M.
+- **Runs:** 589k (about 65 per frame), mostly cut by interleaved fallbacks.
+- **Wall time:** 156 s against about 120 s emulated. The overhead is run splitting and the
+  FB_ONLY texel scans (10.2G texels): bound alpha per texture once and cache it.
+
+Next:
+- a wider alpha target (e.g. Rgba16Float or a 2× alpha encoding) for As > 0x80 and
+  destination alpha;
+- CT16 frames;
+- sprites;
+- a per-texture alpha-range cache;
+- then fewer runs.
