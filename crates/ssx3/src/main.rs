@@ -75,7 +75,28 @@ impl App {
     fn update_pad(&mut self) {
         let mut state = [(self.keys, [0x80u8; 4]), (0u16, [0x80u8; 4])];
         if let Some(g) = self.gilrs.as_mut() {
-            while g.next_event().is_some() {}
+            while let Some(ev) = g.next_event() {
+                match ev.event {
+                    gilrs::EventType::Connected => {
+                        let p = g.gamepad(ev.id);
+                        eprintln!(
+                            "[pad] controller connected: {} (vendor {:04x?}, product {:04x?}, mapping {:?})",
+                            p.name(),
+                            p.vendor_id(),
+                            p.product_id(),
+                            p.mapping_source()
+                        );
+                    }
+                    gilrs::EventType::ButtonPressed(b, code) if std::env::var_os("SSX3_PAD_DEBUG").is_some() => {
+                        eprintln!("[pad] pressed {b:?} (code {code:?})");
+                    }
+                    gilrs::EventType::AxisChanged(a, v, code) if std::env::var_os("SSX3_PAD_DEBUG").is_some() && v.abs() > 0.5 => {
+                        eprintln!("[pad] axis {a:?} {v:.2} (code {code:?})");
+                    }
+                    gilrs::EventType::Disconnected => eprintln!("[pad] controller disconnected: {}", g.gamepad(ev.id).name()),
+                    _ => {}
+                }
+            }
             for (port, (_, pad)) in g.gamepads().take(2).enumerate() {
                 let (buttons, sticks) = &mut state[port];
                 for b in [
@@ -282,7 +303,18 @@ fn main() {
         keys: 0,
         pending_display: None,
         gpu_ctx: None,
-        gilrs: gilrs::Gilrs::new().map_err(|e| eprintln!("no game controller support: {e}")).ok(),
+        gilrs: gilrs::Gilrs::new()
+            .map(|g| {
+                let pads: Vec<String> = g.gamepads().map(|(_, p)| p.name().to_string()).collect();
+                // Controllers usually arrive a moment later, as Connected
+                // events (logged in `update_pad`).
+                if !pads.is_empty() {
+                    eprintln!("[pad] controllers: {}", pads.join(", "));
+                }
+                g
+            })
+            .map_err(|e| eprintln!("no game controller support: {e}"))
+            .ok(),
     };
     if let Err(e) = event_loop.run_app(&mut app) {
         eprintln!("event loop error: {e}");

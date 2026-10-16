@@ -1,0 +1,522 @@
+//! GS register state and primitive assembly from GIF packets, producing
+//! hardware-friendly triangle batches (no GS rasterization semantics beyond
+//! what the GPU does natively).
+//!
+//! The GIF formats (PACKED, REGLIST, IMAGE) and register layouts follow the
+//! GS User's Manual. Primitives are expanded on the CPU into triangle lists
+//! in target pixel coordinates; flat shading takes the last vertex's colour
+//! (the GS's provoking vertex), sprites become two triangles.
+
+/// One vertex as the shaders see it.
+#[derive(Clone, Copy, Debug, Default)]
+#[repr(C)]
+pub struct Vtx {
+    /// Target pixels (GS sample points at integer coordinates; the shader
+    /// adds the half-pixel), depth in 0..1.
+    pub pos: [f32; 3],
+    pub fog: f32,
+    /// RGBA in GS units (0..255, 0x80 = 1.0 for alpha and modulation).
+    pub col: [f32; 4],
+    /// S, T, Q (normalized texture coordinates × Q).
+    pub stq: [f32; 4],
+}
+
+/// Per-context state that changes how a primitive is drawn.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Ctx {
+    pub tex0: u64,
+    pub tex1: u64,
+    pub clamp: u64,
+    pub xyoffset: u64,
+    pub scissor: u64,
+    pub alpha: u64,
+    pub test: u64,
+    pub fba: u64,
+    pub frame: u64,
+    pub zbuf: u64,
+}
+
+/// What a batch of triangles is drawn with.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct DrawState {
+    /// PRIM bits that matter: TME, FGE, ABE, FST (as in PRIM).
+    pub prim: u32,
+    pub ctx: Ctx,
+    pub texa: u64,
+    pub fogcol: u64,
+    /// TexMan texture for TEX0 (resolved by the caller), or none.
+    pub tex: Option<u32>,
+}
+
+pub struct Batch {
+    pub state: DrawState,
+    pub first: u32,
+    pub count: u32,
+}
+
+#[derive(Default)]
+pub struct Gs {
+    pub ctx: [Ctx; 2],
+    prim: u64,
+    prmode: u64,
+    prmodecont: u64,
+    rgbaq: [u8; 4],
+    q: f32,
+    s: f32,
+    t: f32,
+    uv: (u32, u32),
+    fog: u8,
+    pub texa: u64,
+    pub fogcol: u64,
+    /// Kicked vertices of the current primitive.
+    queue: Vec<QVtx>,
+    pub verts: Vec<Vtx>,
+    pub batches: Vec<Batch>,
+    /// Primitives dropped (unsupported target, unknown texture, ...).
+    pub dropped: u64,
+    pub prims: u64,
+    /// Frame buffer this renderer draws (FRAME.FBP), Z buffer (ZBUF.ZBP).
+    pub main_fbp: u32,
+    pub main_zbp: u32,
+    pub size: (u32, u32),
+    /// IMAGE transfers in progress (skipped).
+    image_left: u32,
+    /// Texture base pointer (TEX0.TBP0) → TexInfo, kept current by the
+    /// renderer as it walks the frame.
+    pub tex_map: std::collections::HashMap<u32, u32>,
+    /// Textured primitives whose TBP is not in `tex_map`.
+    pub unknown_tex: u64,
+    /// Debug trace (`SSX3_GFX_TRACE`): label of what is being processed,
+    /// and per (label, outcome, PRIM type, FBP, TBP, ALPHA, TEST, rgba)
+    /// the primitive count.
+    pub trace: Option<String>,
+    pub trace_log: Vec<String>,
+    /// Primitives for other frame buffers: (FBP, FBW, PSM) → count.
+    pub dropped_fbp: std::collections::HashMap<(u32, u32, u32), u64>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct QVtx {
+    x: f32,
+    y: f32,
+    z: u32,
+    rgba: [u8; 4],
+    s: f32,
+    t: f32,
+    q: f32,
+    u: u32,
+    v: u32,
+    fog: u8,
+}
+
+fn bits(v: u64, lo: u32, n: u32) -> u64 {
+    (v >> lo) & ((1u64 << n) - 1)
+}
+
+impl Gs {
+    pub fn new() -> Gs {
+        // Reset values: PRMODECONT.AC = 1 (attributes from PRIM).
+        Gs { texa: 0x80 << 32, prmodecont: 1, ..Gs::default() }
+    }
+
+    /// Start a frame: drop the previous frame's geometry.
+    pub fn begin(&mut self, size: (u32, u32), fbp: u32, zbp: u32) {
+        self.verts.clear();
+        self.batches.clear();
+        self.queue.clear();
+        self.size = size;
+        self.main_fbp = fbp;
+        self.main_zbp = zbp;
+        self.image_left = 0;
+    }
+
+    fn cur_prim(&self) -> u64 {
+        // PRMODECONT.AC = 1: attributes from PRIM, else from PRMODE.
+        if self.prmodecont & 1 != 0 {
+            self.prim
+        } else {
+            (self.prim & 7) | (self.prmode & !7)
+        }
+    }
+
+    /// A GIF packet (one or more tags with their data).
+    pub fn gif(&mut self, qwords: &[u128]) {
+        let mut i = 0;
+        while i < qwords.len() {
+            if self.image_left > 0 {
+                let n = (self.image_left as usize).min(qwords.len() - i);
+                self.image_left -= n as u32;
+                i += n;
+                continue;
+            }
+            let tag = qwords[i];
+            i += 1;
+            let lo = tag as u64;
+            let nloop = bits(lo, 0, 15) as usize;
+            let pre = bits(lo, 46, 1) != 0;
+            let prim = bits(lo, 47, 11);
+            let flg = bits(lo, 58, 2);
+            let nreg = match bits(lo, 60, 4) {
+                0 => 16,
+                n => n as usize,
+            };
+            let regs = (tag >> 64) as u64;
+            if pre && flg != 2 {
+                self.write_reg(0, prim);
+            }
+            match flg {
+                0 => {
+                    for _ in 0..nloop {
+                        for r in 0..nreg {
+                            if i >= qwords.len() {
+                                return;
+                            }
+                            let d = qwords[i];
+                            i += 1;
+                            self.packed(((regs >> (4 * r)) & 15) as u8, d);
+                        }
+                    }
+                }
+                1 => {
+                    let total = nloop * nreg;
+                    let words = total.div_ceil(2);
+                    for k in 0..total {
+                        let q = i + k / 2;
+                        if q >= qwords.len() {
+                            return;
+                        }
+                        let v = (qwords[q] >> (64 * (k & 1))) as u64;
+                        let r = ((regs >> (4 * (k % nreg))) & 15) as u8;
+                        if r != 0xe {
+                            self.write_reg(r as u32, v);
+                        }
+                    }
+                    i += words;
+                }
+                _ => {
+                    // IMAGE (host→local uploads): textures come from TexMan.
+                    let n = nloop.min(qwords.len() - i);
+                    self.image_left = (nloop - n) as u32;
+                    i += n;
+                }
+            }
+        }
+    }
+
+    fn packed(&mut self, r: u8, d: u128) {
+        let w = |k: u32| (d >> (32 * k)) as u32;
+        match r {
+            0x0 => self.write_reg(0, d as u64 & 0x7ff),
+            0x1 => {
+                self.rgbaq = [w(0) as u8, w(1) as u8, w(2) as u8, w(3) as u8];
+            }
+            0x2 => {
+                self.s = f32::from_bits(w(0));
+                self.t = f32::from_bits(w(1));
+                self.q = f32::from_bits(w(2));
+            }
+            0x3 => self.uv = (w(0) & 0x3fff, w(1) & 0x3fff),
+            0x4 => {
+                let adc = (d >> 111) & 1 != 0;
+                let (x, y, z, f) = (w(0) & 0xffff, w(1) & 0xffff, (w(2) >> 4) & 0xff_ffff, (w(3) >> 4) & 0xff);
+                self.fog = f as u8;
+                self.vertex(x, y, z, !adc);
+            }
+            0x5 => {
+                let adc = (d >> 111) & 1 != 0;
+                self.vertex(w(0) & 0xffff, w(1) & 0xffff, w(2), !adc);
+            }
+            0xa => self.fog = (w(3) >> 4) as u8,
+            0xc => {
+                let (x, y, z, f) = (w(0) & 0xffff, w(1) & 0xffff, (w(2) >> 4) & 0xff_ffff, (w(3) >> 4) & 0xff);
+                self.fog = f as u8;
+                self.vertex(x, y, z, false);
+            }
+            0xd => self.vertex(w(0) & 0xffff, w(1) & 0xffff, w(2), false),
+            0xe => {
+                let a = ((d >> 64) & 0xff) as u32;
+                self.write_reg(a, d as u64);
+            }
+            0xf => {}
+            // TEX0_1/2, CLAMP_1/2 by their register numbers.
+            0x6 | 0x7 | 0x8 | 0x9 => self.write_reg(r as u32, d as u64),
+            _ => {}
+        }
+    }
+
+    pub fn write_reg(&mut self, a: u32, v: u64) {
+        match a {
+            0x00 => {
+                self.prim = v;
+                self.queue.clear();
+            }
+            0x01 => {
+                self.rgbaq = [v as u8, (v >> 8) as u8, (v >> 16) as u8, (v >> 24) as u8];
+                self.q = f32::from_bits((v >> 32) as u32);
+            }
+            0x02 => {
+                self.s = f32::from_bits(v as u32);
+                self.t = f32::from_bits((v >> 32) as u32);
+            }
+            0x03 => self.uv = (v as u32 & 0x3fff, (v >> 16) as u32 & 0x3fff),
+            0x04 => {
+                self.fog = (v >> 56) as u8;
+                self.vertex(v as u32 & 0xffff, (v >> 16) as u32 & 0xffff, (v >> 32) as u32 & 0xff_ffff, true);
+            }
+            0x05 => self.vertex(v as u32 & 0xffff, (v >> 16) as u32 & 0xffff, (v >> 32) as u32, true),
+            0x0c => {
+                self.fog = (v >> 56) as u8;
+                self.vertex(v as u32 & 0xffff, (v >> 16) as u32 & 0xffff, (v >> 32) as u32 & 0xff_ffff, false);
+            }
+            0x0d => self.vertex(v as u32 & 0xffff, (v >> 16) as u32 & 0xffff, (v >> 32) as u32, false),
+            0x06 | 0x07 => self.ctx[(a - 6) as usize].tex0 = v,
+            0x08 | 0x09 => self.ctx[(a - 8) as usize].clamp = v,
+            0x0a => self.fog = (v >> 56) as u8,
+            0x14 | 0x15 => self.ctx[(a - 0x14) as usize].tex1 = v,
+            0x16 | 0x17 => {
+                // TEX2: PSM and CLUT fields only.
+                let c = &mut self.ctx[(a - 0x16) as usize];
+                let m = (0x3fu64 << 20) | (0x7ff_ffffu64 << 37);
+                c.tex0 = (c.tex0 & !m) | (v & m);
+            }
+            0x18 | 0x19 => self.ctx[(a - 0x18) as usize].xyoffset = v,
+            0x1a => self.prmodecont = v,
+            0x1b => self.prmode = v,
+            0x3b => self.texa = v,
+            0x3d => self.fogcol = v,
+            0x40 | 0x41 => self.ctx[(a - 0x40) as usize].scissor = v,
+            0x42 | 0x43 => self.ctx[(a - 0x42) as usize].alpha = v,
+            0x47 | 0x48 => self.ctx[(a - 0x47) as usize].test = v,
+            0x4a | 0x4b => self.ctx[(a - 0x4a) as usize].fba = v,
+            0x4c | 0x4d => self.ctx[(a - 0x4c) as usize].frame = v,
+            0x4e | 0x4f => self.ctx[(a - 0x4e) as usize].zbuf = v,
+            _ => {}
+        }
+    }
+
+    fn vertex(&mut self, x: u32, y: u32, z: u32, kick: bool) {
+        let p = self.cur_prim();
+        let c = &self.ctx[(bits(p, 9, 1)) as usize];
+        let ox = bits(c.xyoffset, 0, 16) as f32;
+        let oy = bits(c.xyoffset, 32, 16) as f32;
+        let v = QVtx {
+            x: (x as f32 - ox) / 16.0,
+            y: (y as f32 - oy) / 16.0,
+            z,
+            rgba: self.rgbaq,
+            s: self.s,
+            t: self.t,
+            q: self.q,
+            u: self.uv.0,
+            v: self.uv.1,
+            fog: self.fog,
+        };
+        self.queue.push(v);
+        let ty = bits(p, 0, 3);
+        let need = match ty {
+            0 => 1,
+            1 | 2 | 6 => 2,
+            7 => {
+                self.queue.clear();
+                return;
+            }
+            _ => 3,
+        };
+        if self.queue.len() < need {
+            return;
+        }
+        if kick {
+            let n = self.queue.len();
+            let tri = |a: usize, b: usize, c: usize, q: &[QVtx]| [q[a], q[b], q[c]];
+            match ty {
+                0 => {
+                    let a = self.queue[n - 1];
+                    self.point(a);
+                }
+                1 | 2 => {
+                    let (a, b) = (self.queue[n - 2], self.queue[n - 1]);
+                    self.line(a, b);
+                }
+                3 | 4 => {
+                    let t = tri(n - 3, n - 2, n - 1, &self.queue);
+                    self.tri(t);
+                }
+                5 => {
+                    let t = tri(0, n - 2, n - 1, &self.queue);
+                    self.tri(t);
+                }
+                6 => {
+                    let (a, b) = (self.queue[n - 2], self.queue[n - 1]);
+                    self.sprite(a, b);
+                }
+                _ => {}
+            }
+        }
+        // Keep what the next primitive needs.
+        match ty {
+            0 | 1 | 3 | 6 => self.queue.clear(),
+            2 => {
+                let l = *self.queue.last().unwrap();
+                self.queue.clear();
+                self.queue.push(l);
+            }
+            4 => {
+                let n = self.queue.len();
+                self.queue.drain(..n - 2);
+            }
+            5 => {
+                let (f, l) = (self.queue[0], *self.queue.last().unwrap());
+                self.queue.clear();
+                self.queue.push(f);
+                self.queue.push(l);
+            }
+            _ => {}
+        }
+    }
+
+    /// The draw state for a primitive kicked now; `None` when it can't be
+    /// drawn (another target, unknown texture).
+    fn state(&mut self) -> Option<DrawState> {
+        let p = self.cur_prim();
+        let c = self.ctx[bits(p, 9, 1) as usize];
+        if bits(c.frame, 0, 9) as u32 != self.main_fbp {
+            *self.dropped_fbp.entry((bits(c.frame, 0, 9) as u32, bits(c.frame, 16, 6) as u32, bits(c.frame, 24, 6) as u32)).or_default() += 1;
+            return None;
+        }
+        let tex = if p & (1 << 4) != 0 {
+            match self.tex_map.get(&(bits(c.tex0, 0, 14) as u32)) {
+                Some(&t) => Some(t),
+                None => {
+                    self.unknown_tex += 1;
+                    return None;
+                }
+            }
+        } else {
+            None
+        };
+        Some(DrawState {
+            prim: (p & ((1 << 4) | (1 << 5) | (1 << 6) | (1 << 8) | (1 << 3))) as u32,
+            ctx: c,
+            texa: self.texa,
+            fogcol: self.fogcol,
+            tex,
+        })
+    }
+
+    fn zmax(c: &Ctx) -> u32 {
+        match bits(c.zbuf, 24, 4) {
+            0 => u32::MAX,  // Z32
+            1 => 0xff_ffff, // Z24
+            _ => 0xffff,    // Z16/Z16S
+        }
+    }
+
+    fn emit(&mut self, vs: &[QVtx], flat: Option<[u8; 4]>) {
+        let got = self.state();
+        if let Some(label) = &self.trace {
+            let p = self.cur_prim();
+            let c = &self.ctx[bits(p, 9, 1) as usize];
+            let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+            for v in vs {
+                x0 = x0.min(v.x);
+                y0 = y0.min(v.y);
+                x1 = x1.max(v.x);
+                y1 = y1.max(v.y);
+            }
+            let rgba = flat.unwrap_or(vs[0].rgba);
+            let line = format!(
+                "{label} {} prim {:#05x} fbp {} fbmsk {:08x} tbp {:#x} psm {:#x} alpha {:#x} test {:#x} zbuf {:#x} rgba {:?} z {:#x} box {:.0},{:.0}-{:.0},{:.0}",
+                if got.is_some() { "draw" } else { "DROP" },
+                p & 0x7ff,
+                bits(c.frame, 0, 9),
+                c.frame >> 32,
+                bits(c.tex0, 0, 14),
+                bits(c.tex0, 20, 6),
+                c.alpha,
+                c.test,
+                c.zbuf,
+                rgba,
+                vs[0].z,
+                x0,
+                y0,
+                x1,
+                y1
+            );
+            match self.trace_log.last_mut() {
+                Some(l) if l.ends_with(&format!("|{line}")) || l.starts_with(&line) => {}
+                _ => self.trace_log.push(line),
+            }
+        }
+        let Some(st) = got else {
+            self.dropped += 1;
+            return;
+        };
+        self.prims += 1;
+        let c = st.ctx;
+        let zmax = Self::zmax(&c);
+        let zscale = 1.0 / (zmax as f64 + 1.0);
+        let fst = st.prim & (1 << 8) != 0;
+        let (tw, th) = (1u32 << bits(c.tex0, 26, 4), 1u32 << bits(c.tex0, 30, 4));
+        let first = self.verts.len() as u32;
+        for q in vs {
+            let rgba = flat.unwrap_or(q.rgba);
+            let stq = if fst {
+                [q.u as f32 / 16.0 / tw as f32, q.v as f32 / 16.0 / th as f32, 1.0, 0.0]
+            } else {
+                [q.s, q.t, q.q, 0.0]
+            };
+            self.verts.push(Vtx {
+                pos: [q.x, q.y, (q.z.min(zmax) as f64 * zscale) as f32],
+                fog: q.fog as f32,
+                col: [rgba[0] as f32, rgba[1] as f32, rgba[2] as f32, rgba[3] as f32],
+                stq,
+            });
+        }
+        let n = vs.len() as u32;
+        match self.batches.last_mut() {
+            Some(b) if b.state == st && b.first + b.count == first => b.count += n,
+            _ => self.batches.push(Batch { state: st, first, count: n }),
+        }
+    }
+
+    fn flat(&self, last: &QVtx) -> Option<[u8; 4]> {
+        (bits(self.cur_prim(), 3, 1) == 0).then_some(last.rgba)
+    }
+
+    fn tri(&mut self, t: [QVtx; 3]) {
+        let f = self.flat(&t[2]);
+        self.emit(&t, f);
+    }
+
+    fn sprite(&mut self, a: QVtx, b: QVtx) {
+        // Corners: a (x0, y0), b (x1, y1); attributes of b for colour,
+        // texture coordinates per corner.
+        let corner = |x: &QVtx, y: &QVtx| QVtx { x: x.x, u: x.u, s: x.s, y: y.y, v: y.v, t: y.t, ..b };
+        let (c00, c11) = (corner(&a, &a), corner(&b, &b));
+        let (c10, c01) = (corner(&b, &a), corner(&a, &b));
+        let f = Some(b.rgba);
+        let z = |mut v: QVtx| {
+            v.z = b.z;
+            v.q = b.q;
+            v
+        };
+        self.emit(&[z(c00), z(c10), z(c11), z(c00), z(c11), z(c01)], f);
+    }
+
+    fn line(&mut self, a: QVtx, b: QVtx) {
+        // A one-pixel-wide quad along the line.
+        let (dx, dy) = (b.x - a.x, b.y - a.y);
+        let len = (dx * dx + dy * dy).sqrt().max(1e-6);
+        let (nx, ny) = (-dy / len * 0.5, dx / len * 0.5);
+        let off = |v: QVtx, s: f32| QVtx { x: v.x + nx * s, y: v.y + ny * s, ..v };
+        let f = self.flat(&b);
+        let q = [off(a, 1.0), off(b, 1.0), off(b, -1.0), off(a, 1.0), off(b, -1.0), off(a, -1.0)];
+        self.emit(&q, f);
+    }
+
+    fn point(&mut self, a: QVtx) {
+        let c = |dx: f32, dy: f32| QVtx { x: a.x + dx, y: a.y + dy, ..a };
+        let q = [c(-0.5, -0.5), c(0.5, -0.5), c(0.5, 0.5), c(-0.5, -0.5), c(0.5, 0.5), c(-0.5, 0.5)];
+        self.emit(&q, Some(a.rgba));
+    }
+}

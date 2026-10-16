@@ -1,0 +1,13 @@
+[package]
+name = "ssx3-gfx"
+description = "Phase 3 host renderer for SSX 3: draws the game's typed frames (ssx3-render) with wgpu, without the PS2 DMA/VIF/VU1/GS models (docs/plans/phase3-draw-layer.md)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ssx3-render = { path = "../ssx3-render" }
+# The GS swizzle model (pre-swizzled texture formats), the frame-sink hook
+# and the shared wgpu device.
+ssx3-ps2 = { path = "../ssx3-ps2" }
+wgpu = "30.0.1"

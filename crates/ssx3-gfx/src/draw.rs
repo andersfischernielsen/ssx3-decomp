@@ -1,0 +1,308 @@
+//! wgpu pipelines for GS draw states.
+//!
+//! GS blending is `(A − B) · C + D` (`docs/investigation/phase3-render.md`
+//! §2.1), with A, B, D ∈ {Cs, Cd, 0} and C ∈ {As, Ad, FIX}. The coefficients
+//! of Cs and Cd are each `α·C + β`. When C is known in the shader (As, FIX)
+//! the source term is premultiplied there and the hardware adds the
+//! destination term; with C = Ad both sides use the DstAlpha factor. Two
+//! forms have no direct factor: `Cd·(1 + C)` (drawn as `C · Cd + Cd`, the
+//! shader outputting C) and `Cs·(1 + C)` (premultiplied; the clamp matches
+//! the GS's).
+
+use std::collections::HashMap;
+
+use crate::gs::DrawState;
+
+pub const COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+
+/// Uniforms of one batch (`draw.wgsl` `Batch`), padded to 256 bytes.
+#[derive(Clone, Copy, Default)]
+#[repr(C)]
+pub struct BatchU {
+    pub size: [f32; 2],
+    pub tfx: u32,
+    pub flags: u32,
+    pub atst: u32,
+    pub aref: u32,
+    pub side: u32,
+    pub src_mode: u32,
+    pub cs_a: f32,
+    pub cs_b: f32,
+    pub c_kind: u32,
+    pub fix: f32,
+    pub fogcol: [f32; 4],
+}
+
+pub const UNIFORM_STRIDE: u64 = 256;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct PipeKey {
+    pub blend: Option<(wgpu::BlendFactor, wgpu::BlendFactor, wgpu::BlendOperation)>,
+    pub depth: wgpu::CompareFunction,
+    pub depth_write: bool,
+    pub write: u8, // ColorWrites bits
+}
+
+/// What one draw of a batch needs: pipeline, uniforms, blend constant.
+pub struct Plan {
+    pub key: PipeKey,
+    pub u: BatchU,
+    pub constant: f64,
+}
+
+fn coef(a: u64, b: u64, d: u64, which: u64) -> (f32, f32) {
+    let al = (a == which) as i32 - (b == which) as i32;
+    (al as f32, (d == which) as u32 as f32)
+}
+
+/// Blend plan for ALPHA (with ABE) → (blend, src_mode, cs_a, cs_b, c_kind).
+fn blend(alpha: u64) -> (Option<(wgpu::BlendFactor, wgpu::BlendFactor, wgpu::BlendOperation)>, u32, f32, f32, u32) {
+    use wgpu::BlendFactor as F;
+    use wgpu::BlendOperation as O;
+    let (a, b, c, d) = (alpha & 3, (alpha >> 2) & 3, (alpha >> 4) & 3, (alpha >> 6) & 3);
+    let (sa, sb) = coef(a, b, d, 0);
+    let (da, db) = coef(a, b, d, 1);
+    if c == 1 {
+        // C = Ad: factors from the stored destination alpha.
+        let f = |al: f32, be: f32| match (al as i32, be as i32) {
+            (0, 0) => (F::Zero, false),
+            (0, 1) => (F::One, false),
+            (1, 0) => (F::DstAlpha, false),
+            (-1, 1) => (F::OneMinusDstAlpha, false),
+            (-1, 0) => (F::DstAlpha, true),
+            _ => (F::One, false),
+        };
+        let ((fs, ns), (fd, nd)) = (f(sa, sb), f(da, db));
+        let op = match (ns, nd) {
+            (true, false) => O::ReverseSubtract,
+            (false, true) => O::Subtract,
+            _ => O::Add,
+        };
+        return (Some((fs, fd, op)), 0, 0.0, 0.0, 1);
+    }
+    let c_kind = if c == 2 { 2 } else { 0 };
+    let cf = if c == 2 { F::Constant } else { F::SrcAlpha };
+    let cf1 = if c == 2 { F::OneMinusConstant } else { F::OneMinusSrcAlpha };
+    let s_neg = sa < 0.0 && sb == 0.0;
+    let (fd, d_neg) = match (da as i32, db as i32) {
+        (0, 0) => (F::Zero, false),
+        (0, 1) => (F::One, false),
+        (1, 0) => (cf, false),
+        (-1, 1) => (cf1, false),
+        (-1, 0) => (cf, true),
+        _ => {
+            // Cd·(1 + C): only without a source term.
+            if sa == 0.0 && sb == 0.0 {
+                return (Some((F::Dst, F::One, O::Add)), 2, 0.0, 0.0, c_kind);
+            }
+            (F::One, false)
+        }
+    };
+    let op = if s_neg {
+        O::ReverseSubtract
+    } else if d_neg {
+        O::Subtract
+    } else {
+        O::Add
+    };
+    (Some((F::One, fd, op)), 1, sa, sb, c_kind)
+}
+
+fn compare(test: u64) -> wgpu::CompareFunction {
+    use wgpu::CompareFunction as C;
+    if (test >> 16) & 1 == 0 {
+        return C::Always;
+    }
+    match (test >> 17) & 3 {
+        0 => C::Never,
+        1 => C::Always,
+        2 => C::GreaterEqual,
+        _ => C::Greater,
+    }
+}
+
+/// The draws for one batch: one, or two for an alpha test whose failing
+/// pixels still write something (AFAIL ≠ KEEP).
+pub fn plans(st: &DrawState, size: (u32, u32)) -> Vec<Plan> {
+    let c = &st.ctx;
+    let abe = st.prim & (1 << 6) != 0;
+    let (bl, src_mode, cs_a, cs_b, c_kind) = if abe { blend(c.alpha) } else { (None, 0, 0.0, 0.0, 0) };
+    let fix = ((c.alpha >> 32) & 0xff) as f64 / 128.0;
+    let fbmsk = (c.frame >> 32) as u32;
+    let mut write = 0xfu8;
+    if fbmsk & 0xff00_0000 == 0xff00_0000 {
+        write &= !8;
+    }
+    if fbmsk & 0x00ff_ffff == 0x00ff_ffff {
+        write &= 8;
+    }
+    let zmsk = (c.zbuf >> 32) & 1 != 0;
+    let depth = compare(c.test);
+    let tex0 = c.tex0;
+    let fogcol = [(st.fogcol & 0xff) as f32, ((st.fogcol >> 8) & 0xff) as f32, ((st.fogcol >> 16) & 0xff) as f32, 0.0];
+    let flags = (st.prim >> 4 & 1) | (((tex0 >> 34) & 1) as u32) << 1 | (st.prim >> 5 & 1) << 2 | ((c.fba & 1) as u32) << 3;
+    let u = BatchU {
+        size: [size.0 as f32, size.1 as f32],
+        tfx: ((tex0 >> 35) & 3) as u32,
+        flags,
+        atst: ((c.test >> 1) & 7) as u32,
+        aref: ((c.test >> 4) & 0xff) as u32,
+        side: 0,
+        src_mode,
+        cs_a,
+        cs_b,
+        c_kind,
+        fix: fix as f32,
+        fogcol,
+    };
+    let base = PipeKey { blend: bl, depth, depth_write: !zmsk && depth != wgpu::CompareFunction::Never, write };
+    let ate = c.test & 1 != 0;
+    let atst = (c.test >> 1) & 7;
+    let afail = (c.test >> 12) & 3;
+    if !ate || atst == 1 {
+        return vec![Plan { key: base, u, constant: fix }];
+    }
+    let mut out = Vec::new();
+    out.push(Plan { key: base, u: BatchU { side: 1, ..u }, constant: fix });
+    let fail = match afail {
+        0 => None,
+        1 => Some(PipeKey { depth_write: false, ..base }),
+        2 => Some(PipeKey { write: 0, ..base }),
+        _ => Some(PipeKey { depth_write: false, write: write & 7, ..base }),
+    };
+    if let Some(k) = fail {
+        out.push(Plan { key: k, u: BatchU { side: 2, ..u }, constant: fix });
+    }
+    out
+}
+
+pub struct Pipelines {
+    module: wgpu::ShaderModule,
+    pub layout: wgpu::BindGroupLayout,
+    pl: wgpu::PipelineLayout,
+    cache: HashMap<PipeKey, wgpu::RenderPipeline>,
+}
+
+impl Pipelines {
+    pub fn new(dev: &wgpu::Device) -> Pipelines {
+        let module = dev.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("ssx3-gfx draw.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("draw.wgsl").into()),
+        });
+        let layout = dev.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("ssx3-gfx"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: true,
+                        min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<BatchU>() as u64),
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+        let pl = dev.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("ssx3-gfx"),
+            bind_group_layouts: &[Some(&layout)],
+            immediate_size: 0,
+        });
+        Pipelines { module, layout, pl, cache: HashMap::new() }
+    }
+
+    /// A pipeline made earlier with [`Pipelines::get`].
+    pub fn cached(&self, k: PipeKey) -> &wgpu::RenderPipeline {
+        &self.cache[&k]
+    }
+
+    pub fn get(&mut self, dev: &wgpu::Device, k: PipeKey) -> &wgpu::RenderPipeline {
+        let (module, pl) = (&self.module, &self.pl);
+        self.cache.entry(k).or_insert_with(|| {
+            let attrs = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32, 2 => Float32x4, 3 => Float32x4];
+            let blend = k.blend.map(|(s, d, op)| wgpu::BlendState {
+                color: wgpu::BlendComponent { src_factor: s, dst_factor: d, operation: op },
+                alpha: wgpu::BlendComponent::REPLACE,
+            });
+            dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("ssx3-gfx draw"),
+                layout: Some(pl),
+                vertex: wgpu::VertexState {
+                    module,
+                    entry_point: Some("vs"),
+                    compilation_options: Default::default(),
+                    buffers: &[Some(wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<crate::gs::Vtx>() as u64,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &attrs,
+                    })],
+                },
+                primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: Some(k.depth_write),
+                    depth_compare: Some(k.depth),
+                    stencil: Default::default(),
+                    bias: Default::default(),
+                }),
+                multisample: Default::default(),
+                fragment: Some(wgpu::FragmentState {
+                    module,
+                    entry_point: Some("fs"),
+                    compilation_options: Default::default(),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: COLOR_FORMAT,
+                        blend,
+                        write_mask: wgpu::ColorWrites::from_bits_truncate(k.write as u32),
+                    })],
+                }),
+                multiview_mask: None,
+                cache: None,
+            })
+        })
+    }
+}
+
+/// Sampler description from CLAMP and TEX1.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct SampKey {
+    pub linear: bool,
+    pub wrap_s: bool,
+    pub wrap_t: bool,
+}
+
+pub fn samp_key(st: &DrawState) -> SampKey {
+    let c = &st.ctx;
+    SampKey { linear: (c.tex1 >> 5) & 1 != 0, wrap_s: c.clamp & 3 == 0, wrap_t: (c.clamp >> 2) & 3 == 0 }
+}
+
+pub fn sampler(dev: &wgpu::Device, k: SampKey) -> wgpu::Sampler {
+    let mode = |w: bool| if w { wgpu::AddressMode::Repeat } else { wgpu::AddressMode::ClampToEdge };
+    let f = if k.linear { wgpu::FilterMode::Linear } else { wgpu::FilterMode::Nearest };
+    dev.create_sampler(&wgpu::SamplerDescriptor {
+        label: Some("ssx3-gfx"),
+        address_mode_u: mode(k.wrap_s),
+        address_mode_v: mode(k.wrap_t),
+        mag_filter: f,
+        min_filter: f,
+        ..Default::default()
+    })
+}

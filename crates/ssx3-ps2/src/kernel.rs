@@ -1097,6 +1097,9 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
             if crate::frame_verify::enabled() {
                 crate::frame_verify::on_signal_sema(c, arg(c, 0) as i32);
             }
+            if crate::frame_sink::enabled() {
+                crate::frame_sink::on_signal_sema(c, arg(c, 0) as i32);
+            }
             signal_sema(c, arg(c, 0) as i32, false)
         }
         0x43 => signal_sema(c, arg(c, 0) as i32, true),

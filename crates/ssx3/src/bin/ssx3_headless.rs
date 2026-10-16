@@ -32,6 +32,7 @@ fn main() {
         std::env::set_var("SSX3_AUDIO", "0");
     }
     let mut c = game::boot(true);
+    let gfx = game::install_renderer();
     let t0 = Instant::now();
     let mut img = Vec::new();
     // Scripted input: SSX3_INPUT="300:4000:10,400:0008:10" presses Cross (0x4000)
@@ -104,6 +105,11 @@ fn main() {
             let (w, h) = ssx3_ps2::m!(c).hw.gs.core().display(&mut img);
             let path = format!("{shot_dir}/frame{f:05}.png");
             let _ = std::fs::write(&path, png::encode(w, h, &img));
+            // SSX3_RENDER=shadow: the draw-layer renderer's image too.
+            if let Some((w, h, px)) = gfx.as_ref().and_then(|g| g.read_image()) {
+                let img: Vec<u32> = px.iter().map(|p| p | 0xFF00_0000).collect();
+                let _ = std::fs::write(format!("{shot_dir}/frame{f:05}-gfx.png"), png::encode(w, h, &img));
+            }
             // SSX3_HIRES_SHOTS=dir: also the N× copies (SSX3_RENDER_SCALE).
             if let Ok(dir) = std::env::var("SSX3_HIRES_SHOTS") {
                 for (label, w, h, px) in ssx3_ps2::m!(c).hw.gs.core().hires_snapshots() {
@@ -120,6 +126,10 @@ fn main() {
         if !alive {
             break;
         }
+    }
+    if let Some(g) = &gfx {
+        eprintln!("[gfx] {:?}", g.stats());
+        eprintln!("[gfx] other frame buffers (fbp, fbw, psm): {:?}", g.dropped_fbp());
     }
     // GPU GS backend: bring the CPU copy of VRAM up to date for the dumps.
     ssx3_ps2::m!(c).hw.gs.core().sync_vram();

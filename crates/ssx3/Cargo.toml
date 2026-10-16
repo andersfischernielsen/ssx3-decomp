@@ -25,6 +25,7 @@ pollster = "1.0.1"
 ssx3-core.workspace = true
 ssx3-gs.workspace = true
 ssx3-ps2 = { path = "../ssx3-ps2" }
+ssx3-gfx = { path = "../ssx3-gfx" }
 ssx3-ee-rt = { path = "../ssx3-ee-rt" }
 ssx3-ee = { path = "../../generated/ee/game" }
 ssx3-game = { path = "../ssx3-game" }
