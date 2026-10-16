@@ -201,6 +201,7 @@ pub fn service_events(c: &mut Cpu) -> bool {
         m!(c).hw.gs.vblank(field);
         m!(c).hw.raise(crate::hw::int::VBON);
         kernel::on_vblank_start(c);
+        crate::frame_sink::on_vblank(c);
         crate::pad::refresh(c);
         crate::sif::vblank(c);
         m!(c).sched.frame_ready = true;

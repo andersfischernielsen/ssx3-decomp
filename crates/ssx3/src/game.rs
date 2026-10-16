@@ -110,19 +110,32 @@ pub fn dump(c: &Cpu) -> String {
     out
 }
 
-/// `SSX3_RENDER=shadow`: the draw-layer renderer (`ssx3-gfx`) draws every
-/// frame the game publishes next to the emulated GS, which stays master
-/// (`docs/plans/phase3-draw-layer.md`).
-#[allow(dead_code)]
+/// The draw-layer renderer (`ssx3-gfx`, `docs/plans/phase3-draw-layer.md`),
+/// by `SSX3_RENDER`:
+/// - `native` (default): it draws every frame the game publishes and is
+///   shown; the emulated GS keeps running everything but rasterizing while
+///   frames are published (movies and loading screens still draw there);
+/// - `shadow`: it draws next to the emulated GS, which stays what is shown;
+/// - `emu`: not installed (the emulated GS only).
 pub fn install_renderer() -> Option<ssx3_gfx::Renderer> {
-    let mode = std::env::var("SSX3_RENDER").ok()?;
-    if mode != "shadow" {
-        eprintln!("SSX3_RENDER={mode}: only `shadow` exists so far");
+    let mode = std::env::var("SSX3_RENDER").unwrap_or_else(|_| "native".into());
+    let native = match mode.as_str() {
+        "native" => true,
+        "shadow" => false,
+        "emu" => return None,
+        m => {
+            eprintln!("SSX3_RENDER={m}: expected native, shadow or emu; using native");
+            true
+        }
+    };
+    let Some(ctx) = ssx3_ps2::gs::gpu::context() else {
+        eprintln!("[gfx] no GPU: using the emulated GS");
         return None;
-    }
-    let ctx = ssx3_ps2::gs::gpu::context()?;
+    };
     let r = ssx3_gfx::Renderer::new(ctx.device.clone(), ctx.queue.clone());
+    r.set_want_depth(native);
+    ssx3_ps2::frame_sink::set_native(native);
     ssx3_ps2::frame_sink::install(Box::new(r.clone()));
-    eprintln!("[gfx] draw-layer renderer installed (shadow)");
+    eprintln!("[gfx] draw-layer renderer installed ({})", if native { "native" } else { "shadow" });
     Some(r)
 }

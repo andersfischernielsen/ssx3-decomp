@@ -54,6 +54,11 @@ enum Cmd {
     Display,
     /// `Gs::native_run` with the packet's next [`NativeJob`].
     Native,
+    /// `Gs::set_draws_suppressed`.
+    Suppress(bool),
+    /// `Gs::host_write`: a `w`×`h` rectangle of `psm` pixels at (`bp`,
+    /// `bw`) from the packet data (4 pixels per qword).
+    HostWrite { psm: u8, bp: u16, bw: u8, w: u16, h: u16, len: u32 },
 }
 
 /// A native run queued at a point of the GS command stream
@@ -107,6 +112,11 @@ fn apply(gs: &mut Gs, c: Cmd, data: &[Qword], slot: &DisplaySlot, job: Option<Na
             let f = gs.display_gpu();
             *slot.lock().unwrap() = Some(f);
         }
+        Cmd::Suppress(on) => gs.set_draws_suppressed(on),
+        Cmd::HostWrite { psm, bp, bw, w, h, .. } => {
+            let px: Vec<u32> = data.iter().flat_map(|q| (0..4).map(move |k| (q >> (32 * k)) as u32)).collect();
+            gs.host_write(psm as u32, bp as u32, bw as u32, w as u32, h as u32, &px);
+        }
         Cmd::Native => {
             let job = job.expect("native job");
             // A refused run queues nothing (counted in `GpuStats::native`).
@@ -121,7 +131,7 @@ fn run(gs: &mut Gs, p: &mut Packet, slot: &DisplaySlot) {
     let Packet { cmds, data, natives } = p;
     for &c in cmds.iter() {
         let len = match c {
-            Cmd::Gif { len, .. } => len as usize,
+            Cmd::Gif { len, .. } | Cmd::HostWrite { len, .. } => len as usize,
             _ => 0,
         };
         let job = if matches!(c, Cmd::Native) { natives.pop_front() } else { None };
@@ -620,6 +630,19 @@ impl Mtgs {
         let (csr, sig) = (&mut self.csr, &mut self.siglblid);
         self.tags[path].scan(data, |addr, value| ad_side_effects(csr, sig, addr, value));
         self.exec(Cmd::Gif { path: 0x80 | path as u8, len: data.len() as u32 }, data);
+    }
+
+    /// Stop (or resume) rasterizing primitives; everything else (state,
+    /// transfers, events) runs as before. For the native renderer, which
+    /// draws the frames itself.
+    pub fn set_draws_suppressed(&mut self, on: bool) {
+        self.exec(Cmd::Suppress(on), &[]);
+    }
+
+    /// Write a rectangle of pixels into VRAM from the host, in stream order.
+    pub fn host_write(&mut self, psm: u32, bp: u32, bw: u32, w: u32, h: u32, px: &[u32]) {
+        let data: Vec<Qword> = px.chunks(4).map(|c| c.iter().enumerate().fold(0u128, |q, (k, &v)| q | (v as u128) << (32 * k))).collect();
+        self.exec(Cmd::HostWrite { psm: psm as u8, bp: bp as u16, bw: bw as u8, w: w as u16, h: h as u16, len: data.len() as u32 }, &data);
     }
 
     pub fn write_reg(&mut self, addr: u8, value: u64) {

@@ -340,6 +340,21 @@ impl Presenter {
         self.draw_fullscreen(&pipeline, &bg)
     }
 
+    /// Draw a texture view on this presenter's device (an sRGB view of the
+    /// native renderer's image) to the window.
+    pub fn render_view(&mut self, view: &wgpu::TextureView) -> Result<(), PresentError> {
+        let bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("gfx-frame-bg"),
+            layout: &self.bgl,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(view) },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+            ],
+        });
+        let pipeline = self.pipeline.clone();
+        self.draw_fullscreen(&pipeline, &bg)
+    }
+
     /// Resize the swapchain to the window's new size.
     pub fn resize(&mut self, width: u32, height: u32) {
         if width == 0 || height == 0 {

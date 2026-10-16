@@ -114,14 +114,24 @@ configuration. The plain command above is the recommended way to play.
 | `SSX3_AUDIO=0` | No audio output. |
 | `SSX3_REAL_CLOCK=1` | Give the PS2 the host's date and time (the default is a fixed time, so runs are reproducible). |
 
+**Rendering.** By default the game's frames are drawn by the native renderer
+(`crates/ssx3-gfx`, wgpu): during gameplay the frame's DMA chains are not run through the
+emulated VIF/VU1/GS at all. Movies and loading screens still go through the emulated GS.
+
+| Variable | Effect |
+| --- | --- |
+| `SSX3_RENDER=native` | The default, as above. |
+| `SSX3_RENDER=emu` | The emulated GS only: the exact reference path (RAM-identical to the PS2 model). |
+| `SSX3_RENDER=shadow` | Both: the native renderer draws next to the emulated GS, which is shown (headless writes `frameNNNNN-gfx.png` too). |
+
 **Experimental: native host implementations (phase 3).** Each one is byte-identical to
 the default path in the race replay. None is the default yet, because they still need
 playtesting:
 
 | Variable | Effect |
 | --- | --- |
-| `SSX3_RENDER_NATIVE=all` | Draw with wgpu render pipelines instead of the compute GS. Currently GPU-heavier than the default. |
-| `SSX3_RENDER_SCALE=2` (up to 8) | Render N× internal resolution and show it in the window. Needs `SSX3_RENDER_NATIVE=all`. |
+| `SSX3_RENDER_NATIVE=all` | With `SSX3_RENDER=emu`: the emulated GS draws with wgpu render pipelines instead of the compute GS. |
+| `SSX3_RENDER_SCALE=2` (up to 8) | With `SSX3_RENDER=emu SSX3_RENDER_NATIVE=all`: N× internal resolution. |
 | `SSX3_HOST_CLOCK=1` | Keep game time real-time when the host falls behind (extra 60 Hz updates, fewer rendered frames). |
 | `SSX3_SND=native` | Native sound mixer instead of the recompiled IOP sound driver. |
 | `SSX3_NATIVE_FILES=1` | Read game files through `std::fs` instead of the emulated CD. Add `SSX3_DATA_DIR=<dir>` to use an extracted `DATA/` folder. |

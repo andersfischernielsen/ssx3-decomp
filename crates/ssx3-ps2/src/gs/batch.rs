@@ -217,6 +217,9 @@ impl Gs {
     /// Queue a kicked primitive for drawing.
     pub(super) fn draw_primitive(&mut self, prim: u32, verts: &[Vertex]) {
         self.prims_drawn += 1;
+        if self.draws_suppressed {
+            return;
+        }
         if self.draw.is_none() {
             self.draw = Some(Arc::new(Draw::build(&self.regs, &self.clut)));
             if self.draw_log.is_some() {

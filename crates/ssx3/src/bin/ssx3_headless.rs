@@ -102,11 +102,20 @@ fn main() {
             }
         }
         if shot_every > 0 && f % shot_every == 0 {
-            let (w, h) = ssx3_ps2::m!(c).hw.gs.core().display(&mut img);
             let path = format!("{shot_dir}/frame{f:05}.png");
-            let _ = std::fs::write(&path, png::encode(w, h, &img));
+            // Native: the draw-layer renderer's image is the one shown.
+            match gfx.as_ref().filter(|_| ssx3_ps2::frame_sink::native_active()).and_then(|g| g.read_image()) {
+                Some((w, h, px)) => {
+                    let img: Vec<u32> = px.iter().map(|p| p | 0xFF00_0000).collect();
+                    let _ = std::fs::write(&path, png::encode(w, h, &img));
+                }
+                None => {
+                    let (w, h) = ssx3_ps2::m!(c).hw.gs.core().display(&mut img);
+                    let _ = std::fs::write(&path, png::encode(w, h, &img));
+                }
+            }
             // SSX3_RENDER=shadow: the draw-layer renderer's image too.
-            if let Some((w, h, px)) = gfx.as_ref().and_then(|g| g.read_image()) {
+            if let Some((w, h, px)) = gfx.as_ref().filter(|_| !ssx3_ps2::frame_sink::native()).and_then(|g| g.read_image()) {
                 let img: Vec<u32> = px.iter().map(|p| p | 0xFF00_0000).collect();
                 let _ = std::fs::write(format!("{shot_dir}/frame{f:05}-gfx.png"), png::encode(w, h, &img));
             }

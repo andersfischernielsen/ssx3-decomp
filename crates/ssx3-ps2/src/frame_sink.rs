@@ -7,6 +7,7 @@
 //! the EE thread before the game continues, so the memory it reads is the
 //! frame's.
 
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use ssx3_render::chain::Mem;
@@ -19,6 +20,12 @@ pub trait FrameSink: Send {
     /// One frame: the typed frame and its chain events, and EE memory as
     /// the game left it at that point.
     fn frame(&mut self, built: &Built, mem: &dyn Mem);
+
+    /// The last frame's depth after its 3D phase (VIF phase 1), as GS Z
+    /// values (`w`×`h`), for the light visibility queries in native mode.
+    fn depth(&mut self) -> Option<(u32, u32, Vec<u32>)> {
+        None
+    }
 }
 
 struct Sink {
@@ -39,6 +46,63 @@ pub fn enabled() -> bool {
     ON.load(std::sync::atomic::Ordering::Acquire)
 }
 
+// Native mode: the sink is the renderer. While the game publishes frames
+// the emulated GS stops rasterizing (it still runs state, transfers and
+// events, so the game sees the same hardware), and the Z buffer the light
+// visibility queries read back is the sink's depth. Movies and loading
+// screens, which do not publish frames, draw on the emulated GS as before.
+
+static NATIVE: AtomicBool = AtomicBool::new(false);
+static ACTIVE: AtomicBool = AtomicBool::new(false);
+static LAST_PUBLISH: AtomicU64 = AtomicU64::new(0);
+
+/// The published frame's chain heads: VIF1 phase 1/2, GIF phase 1/2.
+static HEADS: [AtomicU64; 4] = [const { AtomicU64::new(0) }; 4];
+
+/// Native mode: the DMA kick of a chain the sink already drew (`ch`: true
+/// for VIF1, false for GIF) completes without running it. The game's
+/// handshake (DMA end interrupts, the kick thread's state machine) is
+/// unchanged; no VIF, VU1 or GS work happens for the frame.
+pub fn skip_chain(vif: bool, tadr: u32) -> bool {
+    static RUN: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if !native_active() || tadr == 0 || *RUN.get_or_init(|| std::env::var_os("SSX3_NATIVE_RUN_CHAINS").is_some()) {
+        return false;
+    }
+    let k = if vif { 0 } else { 2 };
+    HEADS[k..k + 2].iter().any(|h| h.load(Ordering::Acquire) == tadr as u64)
+}
+
+/// Frames published this recently (VBlanks) keep the native path active.
+const ACTIVE_VBLANKS: u64 = 2;
+
+pub fn set_native(on: bool) {
+    NATIVE.store(on, Ordering::Release);
+}
+
+pub fn native() -> bool {
+    NATIVE.load(Ordering::Acquire)
+}
+
+/// Native mode and the game is publishing frames: the sink's image is the
+/// one to show.
+pub fn native_active() -> bool {
+    ACTIVE.load(Ordering::Acquire)
+}
+
+/// At each VBlank: switch the emulated GS's rasterizing off while frames
+/// are being published, back on when they stop.
+pub fn on_vblank(c: &mut Cpu) {
+    if !native() {
+        return;
+    }
+    let frames = crate::mr!(c).sched.frames;
+    let last = LAST_PUBLISH.load(Ordering::Acquire);
+    let active = last != 0 && frames.saturating_sub(last) <= ACTIVE_VBLANKS;
+    if active != ACTIVE.swap(active, Ordering::AcqRel) && std::env::var_os("SSX3_NATIVE_KEEP_GS").is_none() {
+        crate::m!(c).hw.gs.set_draws_suppressed(active);
+    }
+}
+
 struct EeMem<'a> {
     ram: &'a [u8],
     spr: &'a [u8],
@@ -52,7 +116,7 @@ impl Mem for EeMem<'_> {
 
 /// `SignalSema(id)` from the EE: if it is the kick semaphore, the frame was
 /// just published.
-pub fn on_signal_sema(c: &Cpu, id: i32) {
+pub fn on_signal_sema(c: &mut Cpu, id: i32) {
     let mem = EeMem { ram: &c.bus.ram, spr: &c.bus.spr };
     let g = frame::word(&mem, frame::addr::GM_PTR);
     if g == 0 || frame::word(&mem, g + frame::gm::KICK_SEMA) as i32 != id {
@@ -70,6 +134,20 @@ pub fn on_signal_sema(c: &Cpu, id: i32) {
     let b = frame::build(&mem, g, &s.carry);
     s.sink.frame(&b, &mem);
     s.carry = Carry { regs: b.regs_end, matrix: b.emitter.matrix, material_param: b.emitter.material_param };
+    if native() {
+        let f = &b.frame;
+        for (h, v) in HEADS.iter().zip([f.vif_heads[0], f.vif_heads[1], f.gif_heads[0], f.gif_heads[1]]) {
+            h.store(v as u64, Ordering::Release);
+        }
+        let depth = s.sink.depth();
+        drop(guard);
+        LAST_PUBLISH.store(crate::mr!(c).sched.frames.max(1), Ordering::Release);
+        if let Some((w, h, z)) = depth.filter(|_| std::env::var_os("SSX3_NATIVE_NO_Z").is_none()) {
+            let d = &b.frame.display;
+            let bw = d.fb_width.div_ceil(64);
+            crate::m!(c).hw.gs.host_write(d.zpsm, d.zbp * 32, bw, w, h, &z);
+        }
+    }
 }
 
 // Frame dumps (debug): `SSX3_FRAME_DUMP=<n>` keeps the inputs of the last n

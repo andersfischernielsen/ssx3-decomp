@@ -658,7 +658,9 @@ impl Hw {
                 self.ch[c].qwc = 0;
             }
             _ => {
-                if mode == 1 {
+                if mode == 1 && (c == ch::VIF1 || c == ch::GIF) && crate::frame_sink::skip_chain(c == ch::VIF1, self.ch[c].tadr) {
+                    // Native: the frame was drawn by the host renderer.
+                } else if mode == 1 {
                     self.dma_chain(c, ram, spr);
                 } else {
                     let n = self.ch[c].qwc;

@@ -42,6 +42,8 @@ struct App {
     pending_display: Option<u64>,
     /// The GS's wgpu device (GPU backend).
     gpu_ctx: Option<&'static ssx3_ps2::gs::gpu::GpuContext>,
+    /// The draw-layer renderer (`SSX3_RENDER`, native by default).
+    gfx: Option<ssx3_gfx::Renderer>,
 }
 
 /// libpad button bit for a controller button.
@@ -181,7 +183,15 @@ impl ApplicationHandler for App {
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(code) = event.physical_key {
                     if code == KeyCode::F12 && event.state == ElementState::Pressed {
-                        let (w, h) = ssx3_ps2::m!(self.cpu).hw.gs.core().display(&mut self.frame);
+                        // The image on screen: the native renderer's while it is active.
+                        let native = self.gfx.as_ref().filter(|_| ssx3_ps2::frame_sink::native_active()).and_then(|g| g.read_image());
+                        let (w, h) = match native {
+                            Some((w, h, px)) => {
+                                self.frame = px.iter().map(|p| p | 0xFF00_0000).collect();
+                                (w, h)
+                            }
+                            None => ssx3_ps2::m!(self.cpu).hw.gs.core().display(&mut self.frame),
+                        };
                         let path = format!("/tmp/ssx3-shot-{}.png", self.shots);
                         self.shots += 1;
                         let _ = std::fs::write(&path, png::encode(w, h, &self.frame));
@@ -217,7 +227,21 @@ impl ApplicationHandler for App {
                     p.set_aspect(display_aspect(&self.cpu));
                 }
                 let gs = &mut ssx3_ps2::m!(self.cpu).hw.gs;
+                let native = ssx3_ps2::frame_sink::native_active();
                 match self.presenter.as_mut() {
+                    // The native renderer's image while the game publishes
+                    // frames (it lives on the GS device: no copy).
+                    Some(p) if native && self.gfx.is_some() => {
+                        let g = self.gfx.as_ref().unwrap();
+                        if p.same_device(self.gpu_ctx) {
+                            if let Some((view, _, _)) = g.present_view() {
+                                let _ = p.render_view(&view);
+                            }
+                        } else if let Some((w, h, px)) = g.read_image() {
+                            self.frame = px.iter().map(|p| p | 0xFF00_0000).collect();
+                            let _ = p.render(w, h, &self.frame);
+                        }
+                    }
                     // GPU GS: the frame stays on the GPU. The display pass
                     // is queued on the GS thread right behind this frame's
                     // drawing; the previous request's frame (or a newer
@@ -288,12 +312,14 @@ fn display_aspect(cpu: &Cpu) -> f32 {
 fn main() {
     env_logger::init();
     let cpu = game::boot(false);
+    let gfx = game::install_renderer();
     let event_loop = EventLoop::new().expect("event loop");
     event_loop.set_control_flow(ControlFlow::Poll);
     let mut app = App {
         cpu,
         window: None,
         presenter: None,
+        gfx,
         frame: Vec::new(),
         last: Instant::now(),
         started: Instant::now(),

@@ -21,13 +21,17 @@ pub struct Vtx {
     pub stq: [f32; 4],
 }
 
+// The renderer uploads `Vtx` slices as raw bytes (twelve f32s, no padding).
+const _: () = assert!(std::mem::size_of::<Vtx>() == 48);
+
 /// `DrawState::tex` for primitives that sample the frame being drawn.
 pub const FRAME_TEX: u32 = u32::MAX;
 /// `DrawState::tex` for a render target: this bit | its FBP.
 pub const RT_TEX: u32 = 0x8000_0000;
 
-/// `DrawState::tex` for the depth-fog pass: this bit | the CBP of its
-/// CLUT (an upload this frame, `Gs::uploads`). The game first copies Z
+/// `DrawState::tex` for the depth-fog pass: this bit | the index of its
+/// CLUT in `Gs::fog_cluts` (the upload at its CBP when the pass was drawn:
+/// the same VRAM is reused for other uploads later in the frame). The game first copies Z
 /// bits 8..15 into the frame's alpha (a 16-bit view of the frame drawn
 /// from a 16-bit view of Z), then draws the frame's alpha as a PSMT8H
 /// texture through that CLUT (fog colour and amount per depth). Here the
@@ -122,6 +126,8 @@ pub struct Gs {
     pub uploads: std::collections::HashMap<u32, Upload>,
     /// The frame's alpha holds Z bits 8..15 (the depth-fog copy ran).
     zalpha: bool,
+    /// CLUTs of this frame's depth-fog passes (see ZFOG_TEX).
+    pub fog_cluts: Vec<Upload>,
     /// XYOFFSET_1/2 written: the game sets context 2's once at startup,
     /// outside any frame, so until then it follows context 1.
     xyoffset_set: [bool; 2],
@@ -176,6 +182,7 @@ impl Gs {
         self.image_left = 0;
         self.capture = None;
         self.zalpha = false;
+        self.fog_cluts.clear();
     }
 
     /// IMAGE data for the transfer in progress.
@@ -484,7 +491,11 @@ impl Gs {
             return None;
         }
         let tex = if p & (1 << 4) != 0 && self.zalpha && tbp == self.main_fbp * 32 && psm == 0x1b {
-            Some(ZFOG_TEX | bits(c.tex0, 37, 14) as u32)
+            let clut = self.uploads.get(&(bits(c.tex0, 37, 14) as u32)).cloned().unwrap_or_default();
+            if self.fog_cluts.last().is_none_or(|l| l.data != clut.data) {
+                self.fog_cluts.push(clut);
+            }
+            Some(ZFOG_TEX | (self.fog_cluts.len() - 1) as u32)
         } else if p & (1 << 4) != 0 && tbp == self.main_fbp * 32 && matches!(psm, 0 | 1) {
             // The frame itself (colour filter, speed blur): sampled from a
             // snapshot of the colour target.
@@ -649,3 +660,51 @@ impl Gs {
     }
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// One A+D GIF packet writing `regs` in order.
+    fn ad(regs: &[(u32, u64)]) -> Vec<u128> {
+        let tag = regs.len() as u128 | 1 << 60 | 0xe << 64;
+        std::iter::once(tag).chain(regs.iter().map(|&(a, v)| v as u128 | (a as u128) << 64)).collect()
+    }
+
+    /// A 16×16 PSMCT32 host→local upload of `v` at `dbp`.
+    fn upload(dbp: u32, v: u32) -> Vec<u128> {
+        let mut q = ad(&[(0x50, (dbp as u64) << 32 | 1 << 48), (0x51, 0), (0x52, 16 | 16 << 32), (0x53, 0)]);
+        q.push(64 | 2 << 58);
+        q.extend(std::iter::repeat_n(v as u128 * 0x0000_0001_0000_0001_0000_0001_0000_0001, 64));
+        q
+    }
+
+    fn sprite(prim: u64) -> Vec<(u32, u64)> {
+        vec![(0x00, prim), (0x05, 0), (0x05, 16 * 16 | (16 * 16) << 32)]
+    }
+
+    #[test]
+    fn fog_pass_keeps_the_clut_current_when_it_is_drawn() {
+        let mut gs = Gs::new();
+        let zbp = 0xe0;
+        gs.begin((512, 448), 0, zbp);
+        gs.gif(&upload(0x2fd4, 1));
+        // The Z → alpha copy: Z as a 16-bit texture into a CT16 view of the
+        // frame. Dropped, but it arms the fog pass.
+        let mut a = vec![(0x06, (zbp * 32) as u64 | 0x32 << 20), (0x4c, 8 << 16 | 2 << 24)];
+        a.extend(sprite(6 | 1 << 4));
+        gs.gif(&ad(&a));
+        assert!(gs.batches.is_empty());
+        // The fog pass: the frame's alpha as PSMT8H through the CLUT.
+        let mut b = vec![(0x06, 0x1b << 20 | 0x2fd4 << 37), (0x4c, 8 << 16)];
+        b.extend(sprite(6 | 1 << 4 | 1 << 6));
+        gs.gif(&ad(&b));
+        // The same VRAM is reused later in the frame.
+        gs.gif(&upload(0x2fd4, 2));
+        let st = gs.batches.last().expect("fog batch").state;
+        assert_eq!(st.tex, Some(ZFOG_TEX));
+        assert_eq!(gs.fog_cluts.len(), 1);
+        assert!(gs.fog_cluts[0].data.iter().all(|&v| v == 1));
+        assert!(gs.uploads[&0x2fd4].data.iter().all(|&v| v == 2));
+    }
+}

@@ -180,5 +180,16 @@ More debug switches: `SSX3_GFX_SKIP=n,a-b` (drop draws), `SSX3_GFX_SKIPTEST=<tes
 `SSX3_GFX_PROBE=x,y` (a pixel after every item that changes it), `SSX3_GFX_PLANLOG=<test>`,
 `SSX3_GFX_TEXLOG=<frame>`.
 
-**Still open:** the HUD and a few highlights differ by a few levels; CT16 targets keep only
-the 1-bit alpha (RGB is not quantised to 5 bits).
+**Still open (for later; none blocks the render cut):**
+- **HUD tint.** White HUD elements come out slightly pink or yellow depending on the scene's
+  light colour, a few levels off the emulator. Likely the end-of-frame colour filter (GIF
+  phase 2, FRAME_TEX, ALPHA 0x44 with a per-scene tint) is applied over the HUD with a
+  different As or ordering than on the GS; probe a white HUD pixel (`SSX3_GFX_PROBE`)
+  against the emulator.
+- **A few highlights** differ by a few levels (sun glare edges, some additive sprites).
+- **CT16 render targets** keep only the 1-bit alpha; RGB is not quantised to 5 bits.
+- **Depth precision.** Depth comes from hardware interpolation, so it differs from the GS's
+  by a few units at some pixels. Visually invisible, but anything that reads Z back (the
+  light visibility queries) sees slightly different values, so RAM identity with the
+  emulated build is not reachable on this path. The gate is behavioural: same inputs, same
+  race (positions, timer, score).
