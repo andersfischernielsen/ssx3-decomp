@@ -106,6 +106,9 @@ pub struct Inner {
     timing: (u64, [f64; 4]),
     /// The image on screen, for presenting (sRGB view allowed).
     present: Option<wgpu::Texture>,
+    /// Vertex and uniform buffers, kept across frames (grown as needed).
+    vbuf: Option<wgpu::Buffer>,
+    ubuf: Option<wgpu::Buffer>,
 }
 
 /// The renderer; clone the handle to read images from another thread.
@@ -178,6 +181,8 @@ impl Renderer {
             zscale: 16777216.0,
             timing: (0, [0.0; 4]),
             present: None,
+            vbuf: None,
+            ubuf: None,
         })))
     }
 
@@ -384,7 +389,14 @@ impl Inner {
         // Debug: SSX3_GFX_SKIP=n,m,... drops those draws' payloads.
         // (`a-b` ranges too.)
         let skip = &dbg.skip;
-        let mut vu_out = self.run_vu_calls(built, &draws);
+        // The VU1 calls run on worker threads while this loop parses their
+        // output in order (`VuPlan`).
+        let plan = self.plan_vu_calls(built, &draws);
+        let mut vu = VuReceiver::default();
+        std::thread::scope(|sc| {
+        for _ in 0..plan.threads {
+            sc.spawn(|| plan.work());
+        }
         for (i, (owner, ev)) in built.events.iter().enumerate() {
             if matches!(owner, Owner::Payload(n) if skip.contains(n)) {
                 continue;
@@ -431,7 +443,7 @@ impl Inner {
             match ev {
                 Event::Call(_) => {
                     self.stats.vu_calls += 1;
-                    match vu_out.remove(&i) {
+                    match vu.take(&plan, i) {
                         Some(out) => {
                             self.stats.vu_native += 1;
                             self.gs.gif(&out);
@@ -458,6 +470,8 @@ impl Inner {
                 p3.extend(gif_packets(&p2));
             }
         }
+        vu.finish(&plan, &mut self.vu);
+        });
         // Whatever is left runs before the next frame.
         label(&mut self.gs, "path3".into());
         while let Some(pk) = p3.pop_front() {
@@ -477,13 +491,9 @@ impl Inner {
     }
 
     /// The texture for a TexInfo, and its largest texel alpha.
-    /// Run the frame's VU1 calls and return each call's GIF output by event
-    /// index (calls with no native program are absent). The calls are split
-    /// into chunks run on separate threads; each chunk starts from the VU
-    /// memory with every earlier call's inputs applied (the programs keep no
-    /// state between calls that a later call reads without uploading it
-    /// again: checked against a sequential run, `SSX3_GFX_SEQ_VU=1`).
-    fn run_vu_calls(&mut self, built: &Built, draws: &[&frame::Draw]) -> HashMap<usize, Vec<u128>> {
+    /// Plan the frame's VU1 calls: split into chunks (see `VuPlan`), each
+    /// with the VU memory it starts from.
+    fn plan_vu_calls<'a>(&self, built: &'a Built, draws: &[&frame::Draw]) -> VuPlan<'a> {
         // Each call's program: the material of the draw it belongs to.
         let mut calls: Vec<(usize, &ssx3_render::vif::VuCall, Option<u64>)> = Vec::new();
         // Calls that start a draw (chunks may only begin there: within a
@@ -516,12 +526,12 @@ impl Inner {
         // Chunk boundaries: the first draw start at or after each multiple
         // of `per`; the start images have every earlier call's inputs applied.
         let mut bounds: Vec<usize> = Vec::new();
-        let mut starts: Vec<Box<[u8; 16384]>> = Vec::new();
+        let mut starts = Vec::new();
         let mut img = self.vu.clone();
         for (k, (_, c, _)) in calls.iter().enumerate() {
-            if k == 0 || (k >= bounds.last().unwrap() + per && draw_start[k]) {
+            if k == 0 || (k >= bounds.last().unwrap() + per && draw_start[k] && threads > 1) {
                 bounds.push(k);
-                starts.push(img.clone());
+                starts.push(std::sync::Mutex::new(Some(img.clone())));
             }
             if threads > 1 {
                 for &(a, v) in &c.input {
@@ -530,65 +540,13 @@ impl Inner {
                 }
             }
         }
-        let run = |chunk: &[(usize, &ssx3_render::vif::VuCall, Option<u64>)], mut mem: Box<[u8; 16384]>| {
-            let mut outs = Vec::with_capacity(chunk.len());
-            for &(i, c, hash) in chunk {
-                for &(a, v) in &c.input {
-                    let a = (a as usize & 1023) * 16;
-                    mem[a..a + 16].copy_from_slice(&v.to_le_bytes());
-                }
-                let (Some(entry), Some(hh)) = (c.entry, hash) else { continue };
-                let mut out: Vec<u128> = Vec::new();
-                if ssx3_render::run_native(hh, entry, c.top, c.itop, &mut mem, &mut |p: &[u128]| out.extend_from_slice(p)) {
-                    outs.push((i, out));
-                }
-            }
-            (outs, mem)
-        };
-        let results: Vec<(Vec<(usize, Vec<u128>)>, Box<[u8; 16384]>)> = if starts.len() <= 1 {
-            vec![run(&calls, starts.pop().unwrap_or_else(|| self.vu.clone()))]
-        } else {
-            let jobs: Vec<std::sync::Mutex<Option<Box<[u8; 16384]>>>> = starts.into_iter().map(|s| std::sync::Mutex::new(Some(s))).collect();
-            let done: Vec<std::sync::Mutex<Option<(Vec<(usize, Vec<u128>)>, Box<[u8; 16384]>)>>> = (0..jobs.len()).map(|_| std::sync::Mutex::new(None)).collect();
-            let next = std::sync::atomic::AtomicUsize::new(0);
-            std::thread::scope(|sc| {
-                for _ in 0..threads {
-                    sc.spawn(|| loop {
-                        let j = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        let Some(job) = jobs.get(j) else { break };
-                        let st = job.lock().unwrap().take().expect("chunk");
-                        let e = bounds.get(j + 1).copied().unwrap_or(calls.len());
-                        *done[j].lock().unwrap() = Some(run(&calls[bounds[j]..e], st));
-                    });
-                }
-            });
-            done.into_iter().map(|d| d.into_inner().unwrap().expect("chunk result")).collect()
-        };
-        let mut map = HashMap::with_capacity(calls.len());
-        let vu0 = self.vu.clone();
-        for (outs, mem) in results {
-            map.extend(outs);
-            self.vu = mem;
+        if bounds.is_empty() {
+            bounds.push(0);
+            starts.push(std::sync::Mutex::new(Some(self.vu.clone())));
         }
-        if std::env::var_os("SSX3_GFX_VUCHECK").is_some() && threads > 1 {
-            // Debug: which calls' output differs from a sequential run.
-            let (outs, _) = run(&calls, vu0);
-            let mut bad: HashMap<u64, (usize, usize, Vec<usize>)> = HashMap::new();
-            for (k, (i, out)) in outs.iter().enumerate() {
-                let e = bad.entry(calls.iter().find(|c| c.0 == *i).and_then(|c| c.2).unwrap_or(0)).or_default();
-                e.0 += 1;
-                if map.get(i) != Some(out) {
-                    e.1 += 1;
-                    if e.2.len() < 6 {
-                        e.2.push(k);
-                    }
-                }
-            }
-            for (h, (n, b, ks)) in bad {
-                eprintln!("[vucheck] program {h:#x}: {b}/{n} calls differ (first at call #{ks:?} of {}; chunk size {per})", calls.len());
-            }
-        }
-        map
+        let chunk_of: HashMap<usize, usize> = calls.iter().enumerate().map(|(k, c)| (c.0, bounds.partition_point(|&b| b <= k) - 1)).collect();
+        let done = (0..bounds.len()).map(|_| (std::sync::Mutex::new(None), std::sync::Condvar::new())).collect();
+        VuPlan { vu0: self.vu.clone(), calls, bounds, starts, done, chunk_of, next: std::sync::atomic::AtomicUsize::new(0), threads }
     }
 
     fn texture(&mut self, info: u32, texa: u64, mem: &dyn Mem) -> Option<(wgpu::TextureView, u8)> {
@@ -714,12 +672,7 @@ impl Inner {
         // SAFETY: `Vtx` is `repr(C)`, twelve f32s with no padding, in the
         // vertex layout's order; the slice covers exactly the vertices.
         let vbytes: &[u8] = unsafe { std::slice::from_raw_parts(self.gs.verts.as_ptr() as *const u8, std::mem::size_of_val(&self.gs.verts[..])) };
-        let vbuf = self.dev.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("ssx3-gfx verts"),
-            size: vbytes.len() as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        let vbuf = grow_buffer(&self.dev, &mut self.vbuf, vbytes.len() as u64, wgpu::BufferUsages::VERTEX, "ssx3-gfx verts");
         self.queue.write_buffer(&vbuf, 0, vbytes);
         // Plans per batch, uniforms, bind groups.
         let batches = std::mem::take(&mut self.gs.batches);
@@ -893,12 +846,7 @@ impl Inner {
         }
         let t_prepared = std::time::Instant::now();
         self.timing.1[1] += (t_prepared - t_built).as_secs_f64() * 1e3;
-        let ubuf = self.dev.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("ssx3-gfx uniforms"),
-            size: ubytes.len() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        let ubuf = grow_buffer(&self.dev, &mut self.ubuf, ubytes.len() as u64, wgpu::BufferUsages::UNIFORM, "ssx3-gfx uniforms");
         self.queue.write_buffer(&ubuf, 0, &ubytes);
         let snap = self.targets.as_ref().expect("targets").snapshot.create_view(&Default::default());
         let zsnap = self.targets.as_ref().expect("targets").zsnap.create_view(&Default::default());
@@ -1284,4 +1232,146 @@ mod tests {
         assert_eq!(p[0].len(), 7);
         assert_eq!(p[1], vec![ad(1, true), 6]);
     }
+}
+
+/// One chunk's result: (event index, GIF output) per call with a native
+/// program, and the VU memory after the chunk.
+type VuChunk = (Vec<(usize, Vec<u128>)>, Box<[u8; 16384]>);
+
+/// A frame's VU1 calls split into chunks run by worker threads. Chunks
+/// start only where a draw of a different program begins (programs pass
+/// state within a draw, and terrain patches across draws), from the VU
+/// memory with every earlier call's inputs applied. Checked against a
+/// sequential run with `SSX3_GFX_VUCHECK`; `SSX3_GFX_SEQ_VU=1` forces one
+/// chunk.
+struct VuPlan<'a> {
+    vu0: Box<[u8; 16384]>,
+    calls: Vec<(usize, &'a ssx3_render::vif::VuCall, Option<u64>)>,
+    bounds: Vec<usize>,
+    starts: Vec<std::sync::Mutex<Option<Box<[u8; 16384]>>>>,
+    done: Vec<(std::sync::Mutex<Option<VuChunk>>, std::sync::Condvar)>,
+    /// Event index → chunk.
+    chunk_of: HashMap<usize, usize>,
+    next: std::sync::atomic::AtomicUsize,
+    threads: usize,
+}
+
+impl VuPlan<'_> {
+    fn run(chunk: &[(usize, &ssx3_render::vif::VuCall, Option<u64>)], mut mem: Box<[u8; 16384]>) -> VuChunk {
+        let mut outs = Vec::with_capacity(chunk.len());
+        for &(i, c, hash) in chunk {
+            for &(a, v) in &c.input {
+                let a = (a as usize & 1023) * 16;
+                mem[a..a + 16].copy_from_slice(&v.to_le_bytes());
+            }
+            let (Some(entry), Some(hh)) = (c.entry, hash) else { continue };
+            let mut out: Vec<u128> = Vec::new();
+            if ssx3_render::run_native(hh, entry, c.top, c.itop, &mut mem, &mut |p: &[u128]| out.extend_from_slice(p)) {
+                outs.push((i, out));
+            }
+        }
+        (outs, mem)
+    }
+
+    /// Worker: take chunks until none are left.
+    fn work(&self) {
+        loop {
+            let j = self.next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let Some(start) = self.starts.get(j) else { break };
+            let st = start.lock().unwrap().take().expect("chunk");
+            let e = self.bounds.get(j + 1).copied().unwrap_or(self.calls.len());
+            let r = Self::run(&self.calls[self.bounds[j]..e], st);
+            let (slot, cv) = &self.done[j];
+            *slot.lock().unwrap() = Some(r);
+            cv.notify_all();
+        }
+    }
+
+    fn wait(&self, j: usize) -> VuChunk {
+        let (slot, cv) = &self.done[j];
+        let mut g = slot.lock().unwrap();
+        loop {
+            if let Some(r) = g.take() {
+                return r;
+            }
+            g = cv.wait(g).unwrap();
+        }
+    }
+}
+
+/// The consuming side of a `VuPlan`: chunks merged in order as calls need
+/// them.
+#[derive(Default)]
+struct VuReceiver {
+    merged: usize,
+    outs: HashMap<usize, Vec<u128>>,
+    last_mem: Option<Box<[u8; 16384]>>,
+    /// `SSX3_GFX_VUCHECK`: every output, for the comparison in `finish`.
+    seen: Option<HashMap<usize, Vec<u128>>>,
+}
+
+impl VuReceiver {
+    fn merge_to(&mut self, plan: &VuPlan, j: usize) {
+        while self.merged <= j && self.merged < plan.done.len() {
+            let (outs, mem) = plan.wait(self.merged);
+            self.outs.extend(outs);
+            self.last_mem = Some(mem);
+            self.merged += 1;
+        }
+    }
+
+    /// The GIF output of the call at event `i` (None: no native program).
+    fn take(&mut self, plan: &VuPlan, i: usize) -> Option<Vec<u128>> {
+        let j = *plan.chunk_of.get(&i)?;
+        self.merge_to(plan, j);
+        let out = self.outs.remove(&i);
+        if plan.bounds.len() > 1 && debug::get().vucheck {
+            if let Some(o) = &out {
+                self.seen.get_or_insert_with(HashMap::new).insert(i, o.clone());
+            }
+        }
+        out
+    }
+
+    /// Wait for every chunk; `vu` becomes the memory after the last.
+    fn finish(&mut self, plan: &VuPlan, vu: &mut Box<[u8; 16384]>) {
+        let check = debug::get().vucheck && plan.bounds.len() > 1;
+        let mut all = if check { Some(self.seen.take().unwrap_or_default()) } else { None };
+        let n = plan.done.len();
+        while self.merged < n {
+            let (outs, mem) = plan.wait(self.merged);
+            match all.as_mut() {
+                Some(a) => a.extend(outs),
+                None => {}
+            }
+            self.last_mem = Some(mem);
+            self.merged += 1;
+        }
+        if let Some(m) = self.last_mem.take() {
+            *vu = m;
+        }
+        if let Some(all) = all {
+            // Debug: which calls differ from a sequential run (only the calls
+            // not yet consumed are compared).
+            let (seq, _) = VuPlan::run(&plan.calls, plan.vu0.clone());
+            let bad = seq.iter().filter(|(i, out)| all.get(i).is_some_and(|o| o != out)).count();
+            eprintln!("[vucheck] {bad} of {} calls differ from a sequential run ({} chunks)", seq.len(), n);
+        }
+    }
+}
+
+/// `slot`'s buffer if it holds `size` bytes, else a new one (twice as big as
+/// needed, so it rarely grows again).
+fn grow_buffer(dev: &wgpu::Device, slot: &mut Option<wgpu::Buffer>, size: u64, usage: wgpu::BufferUsages, label: &str) -> wgpu::Buffer {
+    if let Some(b) = slot.as_ref().filter(|b| b.size() >= size) {
+        return b.clone();
+    }
+    let b = dev.create_buffer(&wgpu::BufferDescriptor {
+        label: Some(label),
+        size: (size * 2).next_multiple_of(256),
+        usage: usage | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    *slot = Some(b.clone());
+    b
 }

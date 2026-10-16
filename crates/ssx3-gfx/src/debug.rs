@@ -24,6 +24,9 @@ pub struct Dbg {
     pub texlog: Option<u64>,
     /// `SSX3_GFX_PLANLOG=<test>`: blend plans of batches with that TEST.
     pub planlog: Option<u64>,
+    /// `SSX3_GFX_VUCHECK=1`: compare the parallel VU1 calls with a
+    /// sequential run.
+    pub vucheck: bool,
 }
 
 pub fn get() -> &'static Dbg {
@@ -59,6 +62,7 @@ pub fn get() -> &'static Dbg {
             probe: var("SSX3_GFX_PROBE").and_then(|v| v.split_once(',').and_then(|(x, y)| Some((x.parse().ok()?, y.parse().ok()?)))),
             texlog: var("SSX3_GFX_TEXLOG").and_then(|v| v.parse().ok()),
             planlog: var("SSX3_GFX_PLANLOG").and_then(|v| u64::from_str_radix(&v, 16).ok()),
+            vucheck: var("SSX3_GFX_VUCHECK").is_some(),
         }
     })
 }
