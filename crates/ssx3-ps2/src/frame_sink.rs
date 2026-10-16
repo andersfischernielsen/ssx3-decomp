@@ -122,6 +122,53 @@ pub fn with_depth<R>(f: impl FnOnce(u32, u32, &[u32]) -> R) -> Option<R> {
     Some(f(*w, *h, z))
 }
 
+// View settings: the aspect ratio the game renders for and a field-of-view
+// multiplier. The game's own widescreen setting (gm+0x6b94, written by
+// 0x377950 when the option changes) scales its projection in
+// `PS2GraphicsMan_SetPerspective` by gm+0x6ba0 (x) and gm+0x6ba4 (y) before
+// it derives its cull matrices; mode 2 is "anamorphic" (x 0.75). Writing those
+// fields at every publish makes the next frame's projection and culling
+// match any aspect and field of view.
+
+static VIEW_ASPECT: AtomicU64 = AtomicU64::new(0);
+static VIEW_FOV: AtomicU64 = AtomicU64::new(0);
+
+/// Render for `aspect` (width / height; 0: the game's own setting) with the
+/// field of view scaled by `fov` (1: the game's).
+pub fn set_view(aspect: f32, fov: f32) {
+    VIEW_ASPECT.store(aspect.to_bits() as u64, Ordering::Release);
+    VIEW_FOV.store(fov.to_bits() as u64, Ordering::Release);
+}
+
+/// The aspect set with [`set_view`] (0: the game's own).
+pub fn view_aspect() -> f32 {
+    f32::from_bits(VIEW_ASPECT.load(Ordering::Acquire) as u32)
+}
+
+mod view {
+    pub const MODE: u32 = 0x6b94;
+    pub const Y_OFFSET: u32 = 0x6b98;
+    pub const X_SCALE2: u32 = 0x6b9c;
+    pub const X_SCALE: u32 = 0x6ba0;
+    pub const Y_SCALE: u32 = 0x6ba4;
+}
+
+fn apply_view(c: &mut Cpu, gm: u32) {
+    let aspect = view_aspect();
+    let fov = f32::from_bits(VIEW_FOV.load(Ordering::Acquire) as u32);
+    let fov = if fov > 0.0 { fov } else { 1.0 };
+    if aspect <= 0.0 && fov == 1.0 {
+        return;
+    }
+    // The game renders for 4:3 at x 1.0 (and 16:9 anamorphic at x 0.75).
+    let x = if aspect > 0.0 { (4.0 / 3.0) / aspect } else { 1.0 } / fov;
+    c.bus.write32(gm + view::MODE, 2);
+    c.bus.write32(gm + view::Y_OFFSET, 0);
+    c.bus.write32(gm + view::X_SCALE2, 1.0f32.to_bits());
+    c.bus.write32(gm + view::X_SCALE, x.to_bits());
+    c.bus.write32(gm + view::Y_SCALE, (1.0 / fov).to_bits());
+}
+
 /// Frames published this recently (VBlanks) keep the native path active.
 const ACTIVE_VBLANKS: u64 = 2;
 
@@ -190,6 +237,8 @@ pub fn on_signal_sema(c: &mut Cpu, id: i32) {
     snap.spr.clear();
     snap.spr.extend_from_slice(&c.bus.spr);
     s.sink.frame(g, snap);
+    // For the next frame (this one's projection is already built).
+    apply_view(c, g);
     {
         let mut t = TIMING.lock().unwrap();
         t.0 += 1;

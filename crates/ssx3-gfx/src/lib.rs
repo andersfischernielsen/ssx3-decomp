@@ -95,12 +95,22 @@ pub struct Inner {
     display_fbp: Option<u32>,
     /// Internal resolution: GPU targets are this many times the GS's.
     scale: u32,
+    /// Output size (overrides `scale`): the main target at any size; GS
+    /// pixels map to it with separate x and y factors.
+    out_size: Option<(u32, u32)>,
+    /// This frame's GS → target pixel factors (main target), and the
+    /// integer factor of the render targets.
+    fxy: (f32, f32),
+    rt_scale: u32,
+    /// Horizontal squeeze of the HUD (layers 9 and up) around the centre,
+    /// so 4:3 HUD art keeps its shape on a wider output (1: none).
+    pub hud_squeeze: f32,
     /// Batches of VIF phase 1 (the 3D scene) in this frame.
     phase1_end: usize,
     /// Keep the depth after phase 1 (`depth()`, native mode).
     pub want_depth: bool,
     /// This frame's depth readback in flight (buffer, size, ZMAX + 1).
-    pending_depth: Option<(wgpu::Buffer, wgpu::SubmissionIndex, u32, u32, f32)>,
+    pending_depth: Option<(wgpu::Buffer, wgpu::SubmissionIndex, u32, u32, f32, u32, u32)>,
     /// ZMAX + 1 of the frame's Z buffer (depth is stored as Z / it).
     zscale: f32,
     /// Frames timed and the time (ms) in build, prepare, encode+submit,
@@ -198,6 +208,10 @@ impl Renderer {
             stats: Stats::default(),
             display_fbp: None,
             scale: 1,
+            out_size: None,
+            fxy: (1.0, 1.0),
+            rt_scale: 1,
+            hud_squeeze: 1.0,
             phase1_end: usize::MAX,
             want_depth: false,
             pending_depth: None,
@@ -275,6 +289,19 @@ impl Renderer {
     /// Render at `n`× the GS resolution (1..=8).
     pub fn set_scale(&self, n: u32) {
         self.0.lock().unwrap().scale = n.clamp(1, 8);
+    }
+
+    /// Render to `w`×`h` pixels whatever the GS resolution (None: `scale`×
+    /// the GS's). With an aspect wider than 4:3 the HUD is drawn at 4:3
+    /// proportions in the centre (the game's 3D view is widened separately,
+    /// `ssx3_ps2::frame_sink::set_view`).
+    pub fn set_output_size(&self, size: Option<(u32, u32)>) {
+        let mut g = self.0.lock().unwrap();
+        g.out_size = size.map(|(w, h)| (w.clamp(64, 8192), h.clamp(64, 8192)));
+        g.hud_squeeze = match g.out_size {
+            Some((w, h)) => ((4.0 / 3.0) / (w as f32 / h as f32)).min(1.0),
+            None => 1.0,
+        };
     }
 
     /// Native mode: keep each frame's depth after the 3D phase for the
@@ -378,9 +405,13 @@ impl Inner {
     /// Textures for the render targets the game drew into (resized when
     /// they grow).
     fn ensure_rts(&mut self) {
-        let s = self.scale;
+        let s = self.rt_scale;
         for (&fbp, rt) in &self.gs.rts {
-            let (pw, ph) = (rt.w * s, rt.h * s);
+            // The display buffer is a copy of the frame: the main target's
+            // scale; other targets an integer one.
+            let (fx, fy) = self.rt_fxy(fbp);
+            let _ = s;
+            let (pw, ph) = ((rt.w as f32 * fx).round() as u32, (rt.h as f32 * fy).round() as u32);
             if self.rts.get(&fbp).is_some_and(|t| t.w == pw && t.h == ph) {
                 continue;
             }
@@ -409,6 +440,8 @@ impl Inner {
         let (w, h) = (d.fb_width.clamp(64, 2048), d.fb_height.clamp(64, 2048));
         // FRAME.FBP is in 2048-word units, gm's draw_fbp likewise.
         self.gs.begin((w, h), d.draw_fbp, d.zbp);
+        self.gs.hud = false;
+        self.gs.hud_squeeze = self.hud_squeeze;
         self.zscale = match d.zpsm {
             0x30 => 4294967296.0,
             0x31 => 16777216.0,
@@ -490,7 +523,9 @@ impl Inner {
                 label(&mut self.gs, "path3".into());
                 if !p3_masked {
                     while let Some(pk) = p3.pop_front() {
-                        self.gs.gif(&pk);
+                        let hud = std::mem::replace(&mut self.gs.hud, false);
+                    self.gs.gif(&pk);
+                    self.gs.hud = hud;
                     }
                 }
                 self.phase1_end = self.gs.batches.len();
@@ -506,6 +541,7 @@ impl Inner {
             if let Some(n) = n {
                 if cur != Some(n) {
                     cur = Some(n);
+                    self.gs.hud = draws.get(n).is_some_and(|d| d.state.layer >= 9);
                     if let Some(d) = draws.get(n) {
                         label(&mut self.gs, format!("draw{n} {:?} layer {} tex {:?}", d.state.material, d.state.layer, d.tex));
                     }
@@ -540,7 +576,9 @@ impl Inner {
                     if !m {
                         if let Some(pk) = p3.pop_front() {
                             label(&mut self.gs, "path3".into());
-                            self.gs.gif(&pk);
+                            let hud = std::mem::replace(&mut self.gs.hud, false);
+                    self.gs.gif(&pk);
+                    self.gs.hud = hud;
                         }
                     }
                     p3_masked = *m;
@@ -559,10 +597,13 @@ impl Inner {
         // Whatever is left runs before the next frame.
         label(&mut self.gs, "path3".into());
         while let Some(pk) = p3.pop_front() {
-            self.gs.gif(&pk);
+            let hud = std::mem::replace(&mut self.gs.hud, false);
+                    self.gs.gif(&pk);
+                    self.gs.hud = hud;
         }
         if split > 0 {
             label(&mut self.gs, "flip-blend".into());
+            self.gs.hud = false;
             self.gs.gif(&flip[..split]);
         }
         if tracing {
@@ -695,6 +736,15 @@ impl Inner {
         self.vu[..n].copy_from_slice(&data[..n]);
     }
 
+    /// GS → target pixel factors of render target `fbp`.
+    fn rt_fxy(&self, fbp: u32) -> (f32, f32) {
+        if Some(fbp) == self.display_fbp {
+            self.fxy
+        } else {
+            (self.rt_scale as f32, self.rt_scale as f32)
+        }
+    }
+
     /// A 256×1 texture from the depth-fog CLUT `i` of this frame (PSMCT32,
     /// CSM1).
     fn clut_texture(&self, i: u32) -> Option<wgpu::TextureView> {
@@ -762,7 +812,10 @@ impl Inner {
         self.timing.0 += 1;
         self.timing.1[0] += (t_built - t_start).as_secs_f64() * 1e3;
         let (w, h) = self.gs.size;
-        self.ensure_targets(w * self.scale, h * self.scale);
+        let (pw, ph) = self.out_size.unwrap_or((w * self.scale, h * self.scale));
+        self.fxy = (pw as f32 / w as f32, ph as f32 / h as f32);
+        self.rt_scale = (self.fxy.0.max(self.fxy.1).round() as u32).clamp(1, 8);
+        self.ensure_targets(pw, ph);
         self.ensure_rts();
         self.stats.prims += self.gs.prims - p0.0;
         self.stats.dropped += self.gs.dropped - p0.1;
@@ -864,8 +917,13 @@ impl Inner {
             };
             let sc = st.ctx.scissor;
             let (x0, x1, y0, y1) = ((sc & 0x7ff) as u32, ((sc >> 16) & 0x7ff) as u32, ((sc >> 32) & 0x7ff) as u32, ((sc >> 48) & 0x7ff) as u32);
-            let sc_ = self.scale;
-            let scissor = (x0 <= x1 && y0 <= y1 && x0 < tw && y0 < th).then(|| [x0 * sc_, y0 * sc_, ((x1 + 1).min(tw) - x0) * sc_, ((y1 + 1).min(th) - y0) * sc_]);
+            // In target pixels.
+            let (fx, fy) = if st.target == self.gs.main_fbp { self.fxy } else { self.rt_fxy(st.target) };
+            let px = |v: u32, f: f32| (v as f32 * f).round() as u32;
+            let scissor = (x0 <= x1 && y0 <= y1 && x0 < tw && y0 < th).then(|| {
+                let (a, b) = (px(x0, fx), px(y0, fy));
+                [a, b, px((x1 + 1).min(tw), fx).max(a + 1) - a, px((y1 + 1).min(th), fy).max(b + 1) - b]
+            });
             if scissor.is_none() {
                 continue;
             }
@@ -1163,20 +1221,21 @@ impl Inner {
             // The previous frame's depth (its readback has had a frame to
             // complete): the light queries see depth one frame late, and
             // the CPU does not wait for this frame's GPU work.
-            if let Some((prev, prev_idx, pw, ph, zs)) = self.pending_depth.take() {
+            if let Some((prev, prev_idx, pw, ph, zs, lw, lh)) = self.pending_depth.take() {
                 let slice = prev.slice(..);
                 let _ = self.dev.poll(wgpu::PollType::Wait { submission_index: Some(prev_idx), timeout: None });
                 if let Ok(v) = slice.get_mapped_range() {
                     // In GS pixels: the sample at each pixel's centre.
-                    let s = self.scale as usize;
-                    let (lw, lh) = (pw as usize / s, ph as usize / s);
+                    let (lw, lh) = (lw as usize, lh as usize);
                     let row = (pw * 4).next_multiple_of(256) as usize;
                     let zs = zs as f64;
                     let mut z = Vec::with_capacity(lw * lh);
                     for y in 0..lh {
-                        let r = (y * s + s / 2) * row;
+                        let py = (((y as f32 + 0.5) * ph as f32 / lh as f32) as usize).min(ph as usize - 1);
+                        let r = py * row;
                         for x in 0..lw {
-                            let o = r + 4 * (x * s + s / 2);
+                            let pxl = (((x as f32 + 0.5) * pw as f32 / lw as f32) as usize).min(pw as usize - 1);
+                            let o = r + 4 * pxl;
                             let d = f32::from_le_bytes([v[o], v[o + 1], v[o + 2], v[o + 3]]);
                             z.push((d as f64 * zs).round().min(zs - 1.0) as u32);
                         }
@@ -1185,7 +1244,7 @@ impl Inner {
                 }
             }
             buf.slice(..).map_async(wgpu::MapMode::Read, |_| {});
-            self.pending_depth = Some((buf, sub_idx, t.w, t.h, self.zscale));
+            self.pending_depth = Some((buf, sub_idx, t.w, t.h, self.zscale, w, h));
             self.timing.1[3] += t_sub.elapsed().as_secs_f64() * 1e3;
         }
         if let Some(pb) = probe_buf {

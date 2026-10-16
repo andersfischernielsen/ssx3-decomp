@@ -169,7 +169,9 @@ impl ApplicationHandler for App {
         let gs = ssx3_ps2::m!(self.cpu).hw.gs.core().gpu_context();
         self.gpu_ctx = gs;
         self.presenter = Some(pollster::block_on(Presenter::new(window.clone(), gs)));
+        let size = window.inner_size();
         self.window = Some(window);
+        self.follow_window_size(size.width, size.height);
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
@@ -179,6 +181,7 @@ impl ApplicationHandler for App {
                 if let Some(p) = self.presenter.as_mut() {
                     p.resize(size.width, size.height);
                 }
+                self.follow_window_size(size.width, size.height);
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(code) = event.physical_key {
@@ -224,7 +227,9 @@ impl ApplicationHandler for App {
                     return;
                 }
                 if let Some(p) = self.presenter.as_mut() {
-                    p.set_aspect(display_aspect(&self.cpu));
+                    // Rendering at the window's size fills it exactly.
+                    let native_fill = self.gfx.is_some() && ssx3_ps2::frame_sink::native() && game::follows_window();
+                    p.set_aspect(if native_fill { 0.0 } else { display_aspect(&self.cpu) });
                 }
                 let gs = &mut ssx3_ps2::m!(self.cpu).hw.gs;
                 let native = ssx3_ps2::frame_sink::native();
@@ -287,6 +292,20 @@ impl ApplicationHandler for App {
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
         if let Some(w) = self.window.as_ref() {
             w.request_redraw();
+        }
+    }
+}
+
+impl App {
+    /// Native window: render at the window's pixel size, the game's view
+    /// widened to its aspect (and `SSX3_FOV`).
+    fn follow_window_size(&mut self, w: u32, h: u32) {
+        if w == 0 || h == 0 || !game::follows_window() || !ssx3_ps2::frame_sink::native() {
+            return;
+        }
+        if let Some(g) = self.gfx.as_ref() {
+            g.set_output_size(Some((w, h)));
+            ssx3_ps2::frame_sink::set_view(w as f32 / h as f32, game::fov());
         }
     }
 }

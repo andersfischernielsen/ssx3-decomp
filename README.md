@@ -110,7 +110,7 @@ configuration. The plain command above is the recommended way to play.
 | `SSX3_ISO=<path>` | Disc image location (default `./SSX 3 (USA).iso`). |
 | `SSX3_MEMCARD=<path>` | Memory card file (default `saves/ssx3-mc0.ps2`). |
 | `SSX3_PAD2=1` | Plug in pad 2; a second controller drives it (Multi Play). |
-| `SSX3_ASPECT=4:3\|16:9\|stretch` | Window aspect. By default it follows the game's widescreen option: 16:9 when the game is set to *Anamorphic*, 4:3 otherwise. |
+
 | `SSX3_AUDIO=0` | No audio output. |
 | `SSX3_REAL_CLOCK=1` | Give the PS2 the host's date and time (the default is a fixed time, so runs are reproducible). |
 
@@ -122,6 +122,10 @@ emulated VIF/VU1/GS at all. Movies and loading screens still go through the emul
 | --- | --- |
 | `SSX3_RENDER=native` | The default, as above. |
 | `SSX3_RENDER=emu` | The emulated GS only: the exact reference path (RAM-identical to the PS2 model). |
+| (window size) | The native renderer draws at the window's pixel size and the game's 3D view is widened to the window's aspect (ultrawide included); the HUD keeps its 4:3 shape in the centre. |
+| `SSX3_RENDER_SIZE=2560x1080` | A fixed output size instead (any size and aspect; headless too). |
+| `SSX3_FOV=1.2` | Field of view relative to the game's (here 20% wider). |
+| `SSX3_ASPECT=4:3\|16:9\|stretch` | The classic fixed-aspect image (512×448 scaled, letterboxed) instead of following the window. |
 | `SSX3_RENDER_SCALE=2` (up to 8) | N× internal resolution (native renderer; with `SSX3_RENDER=emu SSX3_RENDER_NATIVE=all`, the emulated GS's). |
 | `SSX3_RENDER=shadow` | Both: the native renderer draws next to the emulated GS, which is shown (headless writes `frameNNNNN-gfx.png` too). |
 
