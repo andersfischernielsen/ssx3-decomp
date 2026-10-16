@@ -94,3 +94,32 @@ camera-against-terrain shot with a light behind it, with `SSX3_TRACE_DOWNLOAD=1`
 that light's query and depth. A rock clipped by the near plane would leave no depth there, so
 the light would count as visible: compare with PCSX2 before treating that as a bug. Until this
 is confirmed in the windowed game, the final task stays open.
+
+## Update 2026-10-16 (later): a sweep over every query in the race replay
+
+**The rock-face glows are not the bug.**
+- In the race replay (`SSX3_INPUT` race, frame 7500), coloured glows sit on a dark rock face,
+  much like `flare-occlusion-rock.png`.
+- With `SSX3_DEBUG_LENSFX_VIS=0` the lamp fixtures stay there, white and without glare. These
+  are lamps mounted on the rock, in front of it, so their glows are correctly visible.
+
+**Every Z readback in the replay.** `SSX3_TRACE_DOWNLOAD=1`, frames 0-9000: 12,299 queries,
+all from the Z buffer (0x1c00, PSMZ24), 543 of them all-zero (Z 0 = nothing drawn, i.e. sky).
+- The all-zero reads come in clusters:
+  - menus and loading, around frame 3500, where no scene is drawn;
+  - lights in the sky during the race.
+- Every all-zero read below the top of the screen during the race (80 reads, frames
+  5220-5280) is the sun:
+  - in open sky beside a jumping rider, glare correct;
+  - just above a ridge line, partly visible, glare plausible.
+  - Side-by-side with visibility forced to 0: `scratchpad` run, frames 5220/5260.
+- No query read an empty rectangle where the screen shows terrain.
+
+**Conclusion.**
+- **Fixed:** the sun-through-the-roof glare, by the synchronous readback / VIF1 FIFO fix.
+- **Not reproduced:** the Peak 3 freestyle rock case. Nothing in the replay suggests a
+  remaining emulation fault.
+- **Remaining explanation:** a rock clipped by the camera's near plane would leave no depth
+  and count as visible. That would happen on a PS2 too.
+- **To close it:** a windowed playtest at the original spot (Peak 3 freestyle, around 0:42).
+  If the glow shows there, compare against PCSX2 at the same spot before treating it as a bug.
