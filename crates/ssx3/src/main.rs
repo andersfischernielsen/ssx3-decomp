@@ -192,6 +192,9 @@ impl ApplicationHandler for App {
                     event_loop.exit();
                     return;
                 }
+                if let Some(p) = self.presenter.as_mut() {
+                    p.set_aspect(display_aspect(&self.cpu));
+                }
                 let gs = &mut ssx3_ps2::m!(self.cpu).hw.gs;
                 match self.presenter.as_mut() {
                     // GPU GS: the frame stays on the GPU. The display pass
@@ -241,6 +244,24 @@ impl ApplicationHandler for App {
             w.request_redraw();
         }
     }
+}
+
+/// The aspect ratio to show the game at. SSX3_ASPECT=4:3 / 16:9 / stretch
+/// overrides; by default it follows the game's own widescreen option
+/// (options word at 0x535610, bits 20-21: off, 16:9 letterboxed in a 4:3
+/// image, anamorphic), so anamorphic is shown at 16:9.
+fn display_aspect(cpu: &Cpu) -> f32 {
+    static FORCED: std::sync::OnceLock<Option<f32>> = std::sync::OnceLock::new();
+    let forced = *FORCED.get_or_init(|| match std::env::var("SSX3_ASPECT").ok()?.as_str() {
+        "stretch" => Some(0.0),
+        "16:9" => Some(16.0 / 9.0),
+        "4:3" => Some(4.0 / 3.0),
+        v => {
+            eprintln!("SSX3_ASPECT={v}: expected 4:3, 16:9 or stretch");
+            None
+        }
+    });
+    forced.unwrap_or(if (cpu.bus.ram_u32(0x0053_5610) >> 20) & 3 == 2 { 16.0 / 9.0 } else { 4.0 / 3.0 })
 }
 
 fn main() {

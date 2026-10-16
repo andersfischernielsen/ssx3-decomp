@@ -53,7 +53,7 @@ use super::region::Region;
 use super::swizzle::{self, Kind, Surface};
 use super::Vertex;
 
-mod hires;
+pub(crate) mod hires;
 mod native;
 mod native3;
 pub use native3::{diag_knob as native3_diag, Fallback as N3Fallback, N3Stats};
@@ -261,6 +261,9 @@ enum Cmd {
     /// rectangle at (sx, sy) of `src` to (dx, dy) of `dst`, `w` x `h`
     /// GS pixels.
     HiresCopy { src: hires::Key, dst: hires::Key, sx: u32, sy: u32, dx: u32, dy: u32, w: u32, h: u32 },
+    /// `Display` at N× output size from the circuits' N× copies (`None`:
+    /// that circuit reads VRAM).
+    DisplayHires { slot: u32, w: u32, h: u32, keys: [Option<hires::Key>; 2] },
 }
 
 #[derive(Clone, Copy)]
@@ -346,6 +349,8 @@ pub(crate) struct GpuGs {
     prof_info: Vec<(u32, u32, u32)>,
     /// Native runs: pipelines, targets, queued runs (created by the first run).
     native: Option<Box<native::NativeState>>,
+    /// `display_hires` pipeline and its texture group (made on first use).
+    hires_display: Option<(wgpu::ComputePipeline, wgpu::BindGroupLayout)>,
     /// Local->local transfers to mirror between N× copies once their upload
     /// is emitted (`hires_l2l`).
     hires_pending: Vec<[u32; 12]>,
@@ -578,6 +583,7 @@ impl GpuGs {
             hires_pending: Vec::new(),
             hires_scale: hires::scale(),
             native: None,
+            hires_display: None,
             module,
             ctx,
             vram,
@@ -1549,6 +1555,29 @@ impl GpuGs {
                     pass.set_bind_group(0, &self.bind_group, &[slot * SLOT as u32]);
                     pass.dispatch_workgroups(w.div_ceil(8), h.div_ceil(8), 1);
                 }
+                Cmd::DisplayHires { slot, w, h, keys } => {
+                    let dev = &self.ctx.device;
+                    let (pipe, bgl) = self.hires_display.as_ref().expect("hires display pipeline");
+                    let hr = self.native.as_ref().and_then(|n| n.hires.as_ref()).expect("hires");
+                    let dummy = hr.dummy_color.as_ref().expect("hires size");
+                    let view = |k: Option<hires::Key>| k.and_then(|k| hr.surfs.get(&k)).map(|s| &s.view).unwrap_or(dummy);
+                    let bg = dev.create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: Some("gs-display-hires"),
+                        layout: bgl,
+                        entries: &[
+                            wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(view(keys[0])) },
+                            wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(view(keys[1])) },
+                        ],
+                    });
+                    let mut pass = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                        label: Some("gs-display-hires"),
+                        timestamp_writes: None,
+                    });
+                    pass.set_pipeline(pipe);
+                    pass.set_bind_group(0, &self.bind_group, &[slot * SLOT as u32]);
+                    pass.set_bind_group(1, &bg, &[]);
+                    pass.dispatch_workgroups(w.div_ceil(8), h.div_ceil(8), 1);
+                }
                 Cmd::HiresCopy { src, dst, sx, sy, dx, dy, w, h } => {
                     if let Some(hr) = self.native.as_ref().and_then(|n| n.hires.as_ref()) {
                         if let (Some(a), Some(b)) = (hr.surfs.get(&src), hr.surfs.get(&dst)) {
@@ -1784,38 +1813,108 @@ impl GpuGs {
 
     // ------------------------------------------------------------ display
 
-    /// Queue the display circuits into the output buffer; `None` when the
-    /// circuit setup has nothing to show (the caller produces black).
-    pub(crate) fn queue_display(&mut self, d: &DisplaySetup, vram: &[u32]) {
+    /// Queue the display circuits into the output buffer; `hires` shows
+    /// the N× copies when there are any (`SSX3_RENDER_SCALE`). Returns the
+    /// output size.
+    pub(crate) fn queue_display(&mut self, d: &DisplaySetup, vram: &[u32], hires: bool) -> (u32, u32) {
         self.close(vram);
-        self.ensure_out(d.w as u64 * d.h as u64);
+        let (k, keys) = if hires { self.hires_display_plan(d) } else { (1, [None; 2]) };
+        let (w, h) = (d.w * k, d.h * k);
+        self.ensure_out(w as u64 * h as u64);
         let at = self.arena.len() as u32;
         self.arena.extend_from_slice(&d.circuits);
         let slot = self.slots.len() as u32;
         let mut s = [0u32; 16];
-        s[..7].copy_from_slice(&[d.w, d.h, d.row_div, d.flags, d.alp, d.bg, at]);
+        let use_ = (keys[0].is_some() as u32) << 8 | (keys[1].is_some() as u32) << 9;
+        s[..8].copy_from_slice(&[w, h, d.row_div, d.flags, d.alp, d.bg, at, k | use_]);
         self.slots.push(s);
-        self.cmds.push(Cmd::Display {
-            slot,
-            w: d.w,
-            h: d.h,
-        });
+        self.cmds.push(if k > 1 { Cmd::DisplayHires { slot, w, h, keys } } else { Cmd::Display { slot, w, h } });
+        (w, h)
     }
 
-    /// Show the display on the GPU: returns the output buffer.
+    /// The N× display: the scale and, per circuit, the N× copy to read
+    /// (one that covers the displayed rectangle and is current); scale 1
+    /// until a native run made the copies.
+    fn hires_display_plan(&mut self, d: &DisplaySetup) -> (u32, [Option<hires::Key>; 2]) {
+        let Some(hr) = self.native.as_ref().and_then(|n| n.hires.as_ref()) else { return (1, [None; 2]) };
+        if hr.dummy_color.is_none() {
+            return (1, [None; 2]);
+        }
+        let k = hr.scale;
+        let mut keys = [None; 2];
+        for (i, c) in d.hires.iter().enumerate() {
+            let Some((key, pages)) = c else { continue };
+            let w = &d.circuits[i * 8..i * 8 + 8];
+            let fits = (w[4] + w[6]) * k <= hr.w && (w[5] + w[7]) * k <= hr.h;
+            if fits && hr.covers(key, pages) {
+                keys[i] = Some(*key);
+            }
+        }
+        if self.hires_display.is_none() {
+            let dev = &self.ctx.device;
+            let tex = |binding| wgpu::BindGroupLayoutEntry {
+                binding,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            };
+            let bgl = dev.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("gs-display-hires"), entries: &[tex(2), tex(3)] });
+            let layout = dev.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("gs-display-hires"),
+                bind_group_layouts: &[Some(&self.bgl), Some(&bgl)],
+                immediate_size: 0,
+            });
+            let pipe = dev.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("display_hires"),
+                layout: Some(&layout),
+                module: &self.module,
+                entry_point: Some("display_hires"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
+            self.hires_display = Some((pipe, bgl));
+        }
+        (k, keys)
+    }
+
+    /// Show the display on the GPU: returns the output buffer (N× with
+    /// `SSX3_RENDER_SCALE` once native runs made N× copies).
     pub(crate) fn display_gpu(&mut self, d: &DisplaySetup, vram: &[u32]) -> GpuFrame {
-        self.queue_display(d, vram);
+        let (width, height) = self.queue_display(d, vram, true);
         self.submit_with(|_, _| {});
         GpuFrame {
             buffer: self.out.clone(),
-            width: d.w,
-            height: d.h,
+            width,
+            height,
         }
+    }
+
+    /// Read a displayed frame back (tests, debug dumps).
+    pub(crate) fn read_frame(&mut self, f: &GpuFrame) -> Vec<u32> {
+        let len = f.width as u64 * f.height as u64 * 4;
+        if len > self.staging.size() {
+            self.staging = self.ctx.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("gs-readback"),
+                size: len.next_power_of_two(),
+                usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+        }
+        self.submit_with(|s, enc| enc.copy_buffer_to_buffer(&f.buffer, 0, &s.staging, 0, len));
+        let mut out = Vec::new();
+        self.read_staging(len, |bytes| {
+            out.extend(bytes.chunks_exact(4).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])));
+        });
+        out
     }
 
     /// Show the display and read the image back.
     pub(crate) fn display_read(&mut self, d: &DisplaySetup, vram: &[u32], out: &mut Vec<u32>) {
-        self.queue_display(d, vram);
+        self.queue_display(d, vram, false);
         let len = d.w as u64 * d.h as u64 * 4;
         if len > self.staging.size() {
             self.staging = self.ctx.device.create_buffer(&wgpu::BufferDescriptor {
@@ -1844,6 +1943,8 @@ pub(crate) struct DisplaySetup {
     pub bg: u32,
     /// Primary circuit then circuit 2: [surf(3), is16, dbx, dby, w, h] each.
     pub circuits: [u32; 16],
+    /// The same circuits' buffers and displayed pages (N× copies).
+    pub hires: [Option<(hires::Key, Pages)>; 2],
 }
 
 pub(crate) fn circuit_words(s: &Surface, is16: bool, dbx: u32, dby: u32, w: u32, h: u32) -> [u32; 8] {

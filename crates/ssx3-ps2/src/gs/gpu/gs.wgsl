@@ -1012,6 +1012,72 @@ fn display(@builtin(global_invocation_id) gid: vec3<u32>) {
     outbuf[y * w + x] = px | 0xFF000000u;
 }
 
+// Display from the N× copies (`hires`, SSX3_RENDER_SCALE): `display` at N×
+// output size. params.b.w = N | bit 8 / bit 9: circuit 1 / 2 is read from its
+// N× copy (`hd_c0` / `hd_c1`), else from VRAM at the GS pixel it covers.
+@group(1) @binding(2) var hd_c0: texture_2d<f32>;
+@group(1) @binding(3) var hd_c1: texture_2d<f32>;
+
+fn hd_fetch(c: u32, which: u32, x: u32, y: u32, row_div: u32) -> u32 {
+    let k = params.b.w & 0xFFu;
+    if ((params.b.w & (0x100u << which)) == 0u) {
+        return circ_fetch(c, x / k, y / k, row_div);
+    }
+    let at = vec2<i32>(i32(data[c + 4u] * k + x), i32(data[c + 5u] * k + y / row_div));
+    var t: vec4<f32>;
+    if (which == 0u) {
+        t = textureLoad(hd_c0, at, 0);
+    } else {
+        t = textureLoad(hd_c1, at, 0);
+    }
+    let v = pack4(vec4<u32>(round(clamp(t, vec4<f32>(0.0), vec4<f32>(1.0)) * 255.0)));
+    // The formats as VRAM would hold them (5 bits per channel, 1-bit alpha).
+    if (data[c + 3u] != 0u) {
+        return (v & 0xF8F8F8u) | (v & 0x80000000u);
+    }
+    if (surf_at(c).kind == KIND_W24) {
+        return (v & 0xFFFFFFu) | 0x80000000u;
+    }
+    return v;
+}
+
+@compute @workgroup_size(8, 8)
+fn display_hires(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let w = params.a.x;
+    let h = params.a.y;
+    if (gid.x >= w || gid.y >= h) {
+        return;
+    }
+    let x = gid.x;
+    let y = gid.y;
+    let k = params.b.w & 0xFFu;
+    let row_div = params.a.z;
+    let flags = params.a.w;
+    let c0 = params.b.z;
+    let c1 = c0 + 8u;
+    var px = hd_fetch(c0, 0u, x, y, row_div);
+    if ((flags & 1u) != 0u) {
+        var c2 = 0u;
+        if ((flags & 2u) != 0u) {
+            c2 = params.b.y;
+        } else if (x / k < data[c1 + 6u] && y / k < data[c1 + 7u]) {
+            c2 = hd_fetch(c1, 1u, x, y, row_div);
+        }
+        var a = min((px >> 24u) * 2u, 255u);
+        if ((flags & 4u) != 0u) {
+            a = params.b.x;
+        }
+        var o = 0u;
+        for (var sh = 0u; sh < 24u; sh = sh + 8u) {
+            let s1 = (px >> sh) & 0xFFu;
+            let s2 = (c2 >> sh) & 0xFFu;
+            o = o | (((s1 * a + s2 * (255u - a) + 127u) / 255u) << sh);
+        }
+        px = o;
+    }
+    outbuf[y * w + x] = px | 0xFF000000u;
+}
+
 // ------------------------------------------------------------------ native runs
 
 // Composition with host wgpu rendering (`gpu/native.rs`). params:

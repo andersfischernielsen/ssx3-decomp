@@ -866,3 +866,43 @@ the image is visibly smoother.
 differed from the compute GS in `n3_dst_read_ct16_sprites_vs_compute`. The race replay never
 hit it. The 1× expressions are now kept verbatim, with the N× evaluation in its own branch.
 Rule for this shader: never restructure the 1× arithmetic.
+
+### Resolution scaling, step 3: presenting at N× (2026-10-16)
+
+`display_gpu` (the windowed game's path) now evaluates the display circuits at N× output
+size with a `display_hires` entry point in `gs.wgsl`. It uses the same merge, alpha and
+field logic as `display`, with one difference per circuit:
+- if the circuit's buffer has an N× copy that covers the whole displayed rectangle and is
+  current there, the circuit reads that copy (16- and 24-bit formats are reduced the way
+  VRAM would hold them);
+- otherwise it reads VRAM at the GS pixel each N×N block covers. A host upload into the
+  shown frame after the last native run is one such case.
+
+The output size stays N× once native runs have made copies, so the window never switches
+resolution between frames. Screenshots (`Gs::display`) stay 1× and exact, so the A/B gates
+are unaffected.
+
+The presenter's buffer shader box-filters when the frame is larger than the window (an N×
+frame in a small window). Otherwise it samples nearest as before.
+
+`SSX3_HIRES_SHOTS=dir` also writes the presented frame (`frameNNNNN-display.png`).
+
+**Fast tests:**
+- `hires_display_shows_the_n_copy`: the 2× display equals the N× copy pixel for pixel, and
+  the 1× display still equals VRAM.
+- `hires_display_falls_back_to_vram_when_stale`: after a host upload, the display shows
+  VRAM at nearest.
+
+### Widescreen (2026-10-16)
+
+SSX 3 has its own widescreen option (Options → Game). `cFEStateOptionsGame_Init` reads it
+from the options word at `0x535610`, bits 20-21:
+- 0 = off;
+- 1 = 16:9, letterboxed inside a 4:3 image;
+- 2 = anamorphic: a full-height image squeezed horizontally, meant to be stretched to 16:9.
+
+The windowed presenter now fits the image to a display aspect ratio, letterboxing or
+pillarboxing it inside the window instead of stretching it over the window. The ratio is
+16:9 when the game is set to anamorphic and 4:3 otherwise. `SSX3_ASPECT=4:3|16:9|stretch`
+overrides it. The game itself is untouched: no projection patches, so every replay and gate
+is unaffected. Wider-than-16:9 field of view (a projection patch) is not done.

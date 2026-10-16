@@ -1063,3 +1063,57 @@ fn hires_refreshes_after_vram_upload() {
     }
     assert_eq!(wrong, 0, "N× copy not refreshed after a VRAM upload");
 }
+
+/// Show the CT32 640x448 frame at block 0 (circuit 1 only).
+fn show_frame0(gs: &mut Gs) -> (u32, u32, Vec<u32>) {
+    gs.write_priv(0x00, 1);
+    gs.write_priv(0x70, 10 << 9);
+    gs.write_priv(0x80, 2559u64 << 32 | 447 << 44 | 3 << 23);
+    let f = gs.display_gpu().expect("display");
+    let px = gs.gpu.as_mut().unwrap().read_frame(&f);
+    (f.width, f.height, px)
+}
+
+#[test]
+fn hires_display_shows_the_n_copy() {
+    let Some((mut gs, _)) = gpu_random(24) else { return };
+    gs.set_hires_scale(2);
+    hires_scene(&mut gs, 3, 300);
+    let (w, h, px) = show_frame0(&mut gs);
+    assert_eq!((w, h), (1280, 896), "display not at N×");
+    let (cw, _, copy) = hires_copy(&mut gs, 0);
+    let diff = (0..896u32).flat_map(|y| (0..1280u32).map(move |x| (x, y))).filter(|&(x, y)| px[(y * 1280 + x) as usize] != copy[(y * cw + x) as usize] | 0xFF00_0000).count();
+    eprintln!("hires display: {diff} pixels differ from the N× copy, non-uniform {:.1}%", non_uniform(1280, &px) * 100.0);
+    assert_eq!(diff, 0, "N× display differs from the N× copy");
+    // Screenshots (`display`) stay 1× and exact.
+    let mut lo = Vec::new();
+    assert_eq!(gs.display(&mut lo), (640, 448));
+    gs.sync_vram();
+    let fb = Surface::new(PSMCT32, 0, 10);
+    assert!((0..448u32).all(|y| (0..640u32).all(|x| lo[(y * 640 + x) as usize] == fb.read(&gs.vram, x, y) | 0xFF00_0000)), "1× display changed");
+}
+
+#[test]
+fn hires_display_falls_back_to_vram_when_stale() {
+    let Some((mut gs, _)) = gpu_random(25) else { return };
+    gs.set_hires_scale(2);
+    hires_scene(&mut gs, 4, 200);
+    // A host upload into the frame after the last native run: the N× copy
+    // no longer stands for it, so the display reads VRAM (at nearest).
+    gs.write_reg(0x50, 10u64 << 48);
+    gs.write_reg(0x51, 100 | 50 << 16);
+    gs.write_reg(0x52, 64 | 32 << 32);
+    gs.write_reg(0x53, 0);
+    let data: Vec<u32> = (0..64 * 32).map(|i| 0x0011_2233u32.wrapping_mul(i as u32 + 1) | 0x8000_0000).collect();
+    let mut q: Vec<u128> = vec![(data.len() as u64 / 4 | 2 << 58) as u128 | 1 << 15];
+    for c in data.chunks_exact(4) {
+        q.push(c.iter().rev().fold(0u128, |acc, &v| acc << 32 | v as u128));
+    }
+    gs.gif_write(3, &q);
+    let (w, h, px) = show_frame0(&mut gs);
+    assert_eq!((w, h), (1280, 896));
+    gs.sync_vram();
+    let fb = Surface::new(PSMCT32, 0, 10);
+    let wrong = (0..896u32).flat_map(|y| (0..1280u32).map(move |x| (x, y))).filter(|&(x, y)| px[(y * 1280 + x) as usize] != fb.read(&gs.vram, x / 2, y / 2) | 0xFF00_0000).count();
+    assert_eq!(wrong, 0, "stale N× copy shown");
+}

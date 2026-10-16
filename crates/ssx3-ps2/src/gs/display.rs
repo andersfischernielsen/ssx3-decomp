@@ -147,5 +147,13 @@ pub(super) fn gpu_setup(gs: &Gs) -> Result<super::gpu::DisplaySetup, (u32, u32)>
         alp: ((pmode >> 8) & 0xFF) as u32,
         bg: gs.pr.bgcolor as u32 & 0xFF_FFFF,
         circuits,
+        hires: [Some(hires_key(p)), c[1].as_ref().map(hires_key)],
     })
+}
+
+/// The buffer a circuit shows and the pages of its displayed rectangle,
+/// for the N× copies (`gpu/hires.rs`).
+fn hires_key(c: &Circuit) -> (super::gpu::hires::Key, super::raster::Pages) {
+    let key = super::gpu::hires::Key { bp: c.surf.base / 64, bw: c.surf.pages_per_row, psm: c.surf.psm, depth: false };
+    (key, super::raster::Pages::rect(&c.surf, c.dbx, c.dby, c.dbx + c.w - 1, c.dby + c.h - 1))
 }

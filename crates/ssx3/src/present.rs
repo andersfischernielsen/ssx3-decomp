@@ -77,20 +77,38 @@ fn to_linear(c: vec3<f32>) -> vec3<f32> {
     return select(pow((c + 0.055) / 1.055, vec3<f32>(2.4)), c / 12.92, c <= vec3<f32>(0.04045));
 }
 
-@fragment
-fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    let w = dims.x;
-    let h = dims.y;
-    let x = min(u32(max(in.uv.x, 0.0) * f32(w)), w - 1u);
-    let y = min(u32(max(in.uv.y, 0.0) * f32(h)), h - 1u);
-    let c = frame[y * w + x];
+fn frame_rgb(x: u32, y: u32) -> vec3<f32> {
+    let c = frame[y * dims.x + x];
     var rgb = vec3<f32>(f32(c & 0xFFu), f32((c >> 8u) & 0xFFu), f32((c >> 16u) & 0xFFu)) / 255.0;
     if (dims.z != 0u) {
         // The texture path samples an sRGB texture (decoding to linear) into
         // an sRGB surface (encoding again); do the same.
         rgb = to_linear(rgb);
     }
-    return vec4<f32>(rgb, 1.0);
+    return rgb;
+}
+
+@fragment
+fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+    let w = dims.x;
+    let h = dims.y;
+    // Frame pixels per window pixel: above 1 (an N× frame in a smaller
+    // window) average the footprint, otherwise nearest.
+    let n = vec2<u32>(clamp(ceil(fwidth(in.uv) * vec2<f32>(f32(w), f32(h)) - 0.01), vec2<f32>(1.0), vec2<f32>(4.0)));
+    let x = min(u32(max(in.uv.x, 0.0) * f32(w)), w - 1u);
+    let y = min(u32(max(in.uv.y, 0.0) * f32(h)), h - 1u);
+    if (n.x == 1u && n.y == 1u) {
+        return vec4<f32>(frame_rgb(x, y), 1.0);
+    }
+    let x0 = min(u32(max(in.uv.x * f32(w) - 0.5 * f32(n.x - 1u), 0.0)), w - 1u);
+    let y0 = min(u32(max(in.uv.y * f32(h) - 0.5 * f32(n.y - 1u), 0.0)), h - 1u);
+    var sum = vec3<f32>(0.0);
+    for (var j = 0u; j < n.y; j = j + 1u) {
+        for (var i = 0u; i < n.x; i = i + 1u) {
+            sum = sum + frame_rgb(min(x0 + i, w - 1u), min(y0 + j, h - 1u));
+        }
+    }
+    return vec4<f32>(sum / f32(n.x * n.y), 1.0);
 }
 "#;
 
@@ -123,6 +141,9 @@ pub struct Presenter {
     tex: wgpu::Texture,
     tex_size: (u32, u32),
     buffer_path: BufferPath,
+    /// Display aspect ratio the image is fitted to (letterboxed or
+    /// pillarboxed); 0 stretches it over the whole window.
+    aspect: f32,
     // Keep the window handle alive for as long as the surface exists.
     _window: Arc<Window>,
 }
@@ -285,6 +306,7 @@ impl Presenter {
             tex,
             tex_size: (640, 448),
             buffer_path,
+            aspect: 4.0 / 3.0,
             _window: window,
         }
     }
@@ -326,6 +348,11 @@ impl Presenter {
         self.config.width = width;
         self.config.height = height;
         self.surface.configure(&self.device, &self.config);
+    }
+
+    /// Fit the image to `aspect` (width / height; 0 = fill the window).
+    pub fn set_aspect(&mut self, aspect: f32) {
+        self.aspect = aspect;
     }
 
     pub fn size(&self) -> (u32, u32) {
@@ -419,6 +446,11 @@ impl Presenter {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
+            let (w, h) = (self.config.width as f32, self.config.height as f32);
+            if self.aspect > 0.0 {
+                let (vw, vh) = if w / h > self.aspect { (h * self.aspect, h) } else { (w, w / self.aspect) };
+                pass.set_viewport(((w - vw) / 2.0).floor(), ((h - vh) / 2.0).floor(), vw.round(), vh.round(), 0.0, 1.0);
+            }
             pass.set_pipeline(pipeline);
             pass.set_bind_group(0, bind_group, &[]);
             pass.draw(0..3, 0..1);

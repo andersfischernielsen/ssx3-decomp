@@ -110,6 +110,11 @@ fn main() {
                     let img: Vec<u32> = px.iter().map(|p| p | 0xFF00_0000).collect();
                     let _ = std::fs::write(format!("{dir}/frame{f:05}-{label}.png"), png::encode(w, h, &img));
                 }
+                let mut img = Vec::new();
+                let (w, h) = ssx3_ps2::m!(c).hw.gs.core().display_presented(&mut img);
+                if w > 0 {
+                    let _ = std::fs::write(format!("{dir}/frame{f:05}-display.png"), png::encode(w, h, &img));
+                }
             }
         }
         if !alive {

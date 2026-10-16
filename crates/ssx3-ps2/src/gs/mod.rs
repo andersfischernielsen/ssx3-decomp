@@ -397,6 +397,14 @@ impl Gs {
         Some(g.display_gpu(&setup, &self.vram))
     }
 
+    /// The image `display_gpu` shows (N× with `SSX3_RENDER_SCALE`), read
+    /// back; (0, 0) on the CPU backend or when nothing is displayed.
+    pub fn display_presented(&mut self, out: &mut Vec<u32>) -> (u32, u32) {
+        let Some(f) = self.display_gpu() else { return (0, 0) };
+        *out = self.gpu.as_mut().map(|g| g.read_frame(&f)).unwrap_or_default();
+        (f.width, f.height)
+    }
+
     // ---------------------------------------------------------------- privileged
 
     pub fn write_priv(&mut self, offset: u32, value: u64) {

@@ -153,6 +153,15 @@ impl Hires {
         ok
     }
 
+    /// Whether the N× copy of `key` stands for all of `pages` and is
+    /// current there (a displayed rectangle).
+    pub fn covers(&self, key: &Key, pages: &Pages) -> bool {
+        let Some(s) = self.surfs.get(key) else { return false };
+        let mut ok = true;
+        each_page(pages, |p| ok &= s.pages.0[p / 64] & 1 << (p % 64) != 0 && self.page_clock[p] <= s.clock);
+        ok
+    }
+
     /// `key` was just drawn by a run over `pages` (after `note_write`).
     pub fn mark_current(&mut self, key: Key) {
         let c = self.clock;
