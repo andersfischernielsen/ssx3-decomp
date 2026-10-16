@@ -474,3 +474,20 @@ Notes:
   - per vertex: {u, v, boneAddr, nrmAddr}, the normal (1.15), the position.
 - The ADC rule: the first two vertices of a strip, or any of the last three vertices outside
   the guard band.
+
+### Stage 2A, types 1/2: Bezier terrain (2026-10-16)
+
+The Bezier programs are native Rust: `crates/ssx3-render/src/mat1.rs` (f4babac5),
+`mat2.rs` (9790369f), and `bezier.rs` for the shared strip/fan emission, second passes, UV
+projection and clipper. The clipper is not mat3's: it uses different buffers and
+interpolates from the inside end of each edge.
+
+Check (`SSX3_VERIFY_BEZIER=1`): race to frame 7000, **350,267 calls, 0 mismatches**, about
+42,000 of them with clipped fans. That covers every n = 4/6/8 strip entry, the
+projector/shine passes and 80 type-2 edge-LOD combinations.
+
+Findings:
+- Terrain F is always 0 with FGE off: fog comes only from the depth-fog post pass.
+- Type 2 projector/shine reuse the previous call's tags and saved return address (qw511.x).
+- Index-buffer layouts per n and per edge-LOD combination are documented in the module
+  headers.

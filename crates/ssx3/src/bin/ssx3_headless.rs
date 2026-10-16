@@ -159,6 +159,9 @@ fn main() {
     if let Some(s) = ssx3_ps2::mat6_verify::summary() {
         eprintln!("{s}");
     }
+    if let Some(s) = ssx3_ps2::bezier_verify::summary() {
+        eprintln!("{s}");
+    }
     if let Some(h) = ssx3_ps2::m!(c).sched.host_clock {
         let wall = started.elapsed().as_secs_f64();
         let app = 0x004c_9428u32;
