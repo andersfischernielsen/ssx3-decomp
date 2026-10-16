@@ -26,6 +26,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 
 use super::gif::GifPath;
+use super::gpu::{NativeRecord, NativeSurfaces};
 use super::{Gs, Priv, CSR_FINISH, CSR_SIGNAL, CSR_VSINT};
 use crate::Qword;
 
@@ -51,6 +52,19 @@ enum Cmd {
     Path3Reset,
     /// `Gs::display_gpu`, result into the display slot.
     Display,
+    /// `Gs::native_run` with the packet's next [`NativeJob`].
+    Native,
+}
+
+/// A native run queued at a point of the GS command stream
+/// ([`Mtgs::native_run`]): host wgpu passes composed with the emulated GS
+/// output there (`gs::gpu::native`).
+pub struct NativeJob {
+    /// The frame/Z surfaces to borrow; `None` takes context 1's FRAME,
+    /// ZBUF and SCISSOR as they are at that point of the stream.
+    pub surfaces: Option<NativeSurfaces>,
+    /// Passes recorded between the unswizzle and the swizzle.
+    pub passes: Vec<NativeRecord>,
 }
 
 /// The latest `Cmd::Display` result: `Some(frame)` once one has run
@@ -61,6 +75,8 @@ type DisplaySlot = Mutex<Option<Option<super::gpu::GpuFrame>>>;
 struct Packet {
     cmds: Vec<Cmd>,
     data: Vec<Qword>,
+    /// Payloads of the packet's `Cmd::Native`, in order.
+    natives: VecDeque<NativeJob>,
 }
 
 impl Packet {
@@ -71,12 +87,13 @@ impl Packet {
     fn clear(&mut self) {
         self.cmds.clear();
         self.data.clear();
+        self.natives.clear();
     }
 }
 
-/// Run one command (`data`: its GIF payload).
+/// Run one command (`data`: its GIF payload; `job`: a `Cmd::Native`'s).
 #[inline]
-fn apply(gs: &mut Gs, c: Cmd, data: &[Qword], slot: &DisplaySlot) {
+fn apply(gs: &mut Gs, c: Cmd, data: &[Qword], slot: &DisplaySlot, job: Option<NativeJob>) {
     match c {
         Cmd::Gif { path, .. } => gs.gif_write(path as usize, data),
         Cmd::Reg { addr, value } => gs.write_reg(addr, value),
@@ -89,18 +106,25 @@ fn apply(gs: &mut Gs, c: Cmd, data: &[Qword], slot: &DisplaySlot) {
             let f = gs.display_gpu();
             *slot.lock().unwrap() = Some(f);
         }
+        Cmd::Native => {
+            let job = job.expect("native job");
+            // A refused run queues nothing (counted in `GpuStats::native`).
+            let _ = gs.native_run(job.surfaces, job.passes);
+        }
     }
 }
 
 /// Replay a packet into the GS.
-fn run(gs: &mut Gs, p: &Packet, slot: &DisplaySlot) {
+fn run(gs: &mut Gs, p: &mut Packet, slot: &DisplaySlot) {
     let mut pos = 0usize;
-    for &c in &p.cmds {
+    let Packet { cmds, data, natives } = p;
+    for &c in cmds.iter() {
         let len = match c {
             Cmd::Gif { len, .. } => len as usize,
             _ => 0,
         };
-        apply(gs, c, &p.data[pos..pos + len], slot);
+        let job = if matches!(c, Cmd::Native) { natives.pop_front() } else { None };
+        apply(gs, c, &data[pos..pos + len], slot, job);
         pos += len;
     }
 }
@@ -142,7 +166,7 @@ fn worker(sh: Arc<Shared>) {
         };
         {
             let mut gs = sh.core.lock().unwrap();
-            run(&mut gs, &pkt, &sh.display);
+            run(&mut gs, &mut pkt, &sh.display);
         }
         pkt.clear();
         sh.free.lock().unwrap().push(pkt);
@@ -202,6 +226,18 @@ pub struct Mtgs {
     tags: [GifPath; 4],
     scratch: Vec<Qword>,
     pub stats: MtgsStats,
+    /// Debug (`SSX3_RENDER_ROUNDTRIP=N`): queue an empty native run (a
+    /// VRAM -> wgpu targets -> VRAM round trip of context 1's frame and Z)
+    /// before every N-th GIF transfer; 0 = off.
+    roundtrip_every: u64,
+    gif_writes: u64,
+    vblanks: u64,
+}
+
+/// `SSX3_RENDER_ROUNDTRIP=N` (see `Mtgs::roundtrip_every`); `1` is every
+/// GIF transfer.
+fn roundtrip_every() -> u64 {
+    std::env::var("SSX3_RENDER_ROUNDTRIP").ok().and_then(|v| v.parse().ok()).unwrap_or(0)
 }
 
 fn mtgs_enabled() -> bool {
@@ -260,6 +296,9 @@ impl Mtgs {
             tags,
             scratch: Vec::new(),
             stats: MtgsStats::default(),
+            roundtrip_every: roundtrip_every(),
+            gif_writes: 0,
+            vblanks: 0,
         }
     }
 
@@ -274,7 +313,7 @@ impl Mtgs {
     fn exec(&mut self, cmd: Cmd, data: &[Qword]) {
         match &mut self.mode {
             Mode::Direct(core, slot) => {
-                apply(&mut core.lock().unwrap(), cmd, data, slot);
+                apply(&mut core.lock().unwrap(), cmd, data, slot, None);
             }
             Mode::Threaded(t) => {
                 t.cur.cmds.push(cmd);
@@ -283,6 +322,43 @@ impl Mtgs {
                     self.kick();
                 }
             }
+        }
+    }
+
+    /// Queue a native run at this point of the GS command stream (after
+    /// everything queued so far, before everything queued later). It runs
+    /// on the GS thread; see `Gs::native_run`.
+    pub fn native_run(&mut self, job: NativeJob) {
+        match &mut self.mode {
+            Mode::Direct(core, slot) => {
+                apply(&mut core.lock().unwrap(), Cmd::Native, &[], slot, Some(job));
+            }
+            Mode::Threaded(t) => {
+                t.cur.natives.push_back(job);
+                t.cur.cmds.push(Cmd::Native);
+                if t.cur.cmds.len() >= PACKET_CMDS {
+                    self.kick();
+                }
+            }
+        }
+    }
+
+    /// Debug `SSX3_RENDER_ROUNDTRIP`: native-run statistics so far.
+    fn roundtrip_report(&self) {
+        if let Some(st) = self.lock().gpu_stats() {
+            let n = st.native;
+            eprintln!(
+                "[gs-native] round trips {} (refused {}), {:.1} Mpx, GPU {:.1} ms{}",
+                n.runs,
+                n.refused,
+                n.pixels as f64 / 1e6,
+                n.gpu_ns as f64 / 1e6,
+                if n.runs > 0 && n.gpu_ns > 0 {
+                    format!(" ({:.1} us/run)", n.gpu_ns as f64 / 1e3 / n.runs as f64)
+                } else {
+                    String::new()
+                }
+            );
         }
     }
 
@@ -493,6 +569,12 @@ impl Mtgs {
         }
         self.exec(Cmd::Vblank(field), &[]);
         self.kick();
+        if self.roundtrip_every != 0 {
+            self.vblanks += 1;
+            if self.vblanks % 1200 == 0 {
+                self.roundtrip_report();
+            }
+        }
     }
 
     pub fn raise_event(&mut self, bit: u64) {
@@ -513,6 +595,12 @@ impl Mtgs {
         let path = path.min(3);
         let (csr, sig) = (&mut self.csr, &mut self.siglblid);
         self.tags[path].scan(data, |addr, value| ad_side_effects(csr, sig, addr, value));
+        if self.roundtrip_every != 0 {
+            self.gif_writes += 1;
+            if self.gif_writes % self.roundtrip_every == 0 {
+                self.native_run(NativeJob { surfaces: None, passes: Vec::new() });
+            }
+        }
         self.exec(Cmd::Gif { path: path as u8, len: data.len() as u32 }, data);
     }
 
@@ -639,6 +727,10 @@ impl Drop for Mtgs {
     fn drop(&mut self) {
         if std::env::var_os("SSX3_MTGS_STATS").is_some() {
             eprintln!("[mtgs] {:?}", self.stats);
+        }
+        if self.roundtrip_every != 0 {
+            self.drain();
+            self.roundtrip_report();
         }
         if let Mode::Threaded(t) = &mut self.mode {
             t.shared.queue.lock().unwrap().shutdown = true;

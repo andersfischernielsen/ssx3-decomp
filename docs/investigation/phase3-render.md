@@ -567,3 +567,34 @@ Corrections found while doing this (they supersede the earlier text and `structs
    run under it. The native renderer must apply A+D writes made inside payloads.
 8. **Streamed textures get VRAM per draw.** Identify textures by id, and take TBP/CBP from
    the TEX0 in the prelude.
+
+### Composition round trip (2026-10-16)
+
+`crates/ssx3-ps2/src/gs/gpu/native.rs` implements a native run at an exact point in the GS
+command stream (`Cmd::Native` through MTGS):
+1. Unswizzle the current frame (CT32/24/16/16S) into `Rgba8Unorm` and Z (Z24/16/16S) into
+   `Depth32Float` (Z/2^24, exact for 24-bit integers; Z32 is refused).
+2. Run the recorded native passes (`NativeRecord` closures with access to the targets and the
+   encoder).
+3. Swizzle both back into VRAM.
+
+API: `Gs::native_run`, `Mtgs::native_run(NativeJob)`, `GpuGs::begin_native_run`.
+
+Check:
+- Unit tests compare round-trip identity on random VRAM across formats and widths, the
+  targets against the CPU swizzle model bit for bit, write-back of a pass, and ordering in the
+  stream.
+- `SSX3_RENDER_ROUNDTRIP=N` inserts an empty run before every N-th GIF transfer. With N = 1,
+  the full race to frame 9000 did 11.4M round trips and stayed byte-identical (36 shots plus
+  RAM). A check with N = 7 to frame 4700 (495k round trips) matched 47 of 47 shots.
+
+Cost: about 150 µs per round trip at 640x448, so about 1 ms per frame at the planned few runs
+per frame.
+
+What stage 2B needs from it:
+- depth `Greater`/`GreaterEqual` with `z = min(Zgs, 2^24−1)/2^24`;
+- source alpha doubled for the 0x80 = 1.0 convention;
+- destination-alpha presets need a float target;
+- AFAIL = FB_ONLY as two pipelines;
+- per-run buffers;
+- textures from a decode cache, or by binding the VRAM buffer.

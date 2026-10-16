@@ -53,6 +53,12 @@ use super::region::Region;
 use super::swizzle::{self, Kind, Surface};
 use super::Vertex;
 
+mod native;
+pub use native::{
+    NativeError, NativeRecord, NativeStats, NativeSurface, NativeSurfaces, NativeTargets, COLOR_FORMAT, DEPTH_FORMAT,
+    DEPTH_SCALE,
+};
+
 const SHADER: &str = include_str!("gs.wgsl");
 
 const VRAM_BYTES: u64 = (swizzle::VRAM_WORDS * 4) as u64;
@@ -221,6 +227,8 @@ pub struct GpuStats {
     pub decoded_texels: u64,
     /// GPU time of the raster passes (only with `SSX3_GS_PROFILE`).
     pub gpu_raster_ns: u64,
+    /// Native runs (see `native`).
+    pub native: NativeStats,
 }
 
 enum Cmd {
@@ -234,6 +242,12 @@ enum Cmd {
     /// Decode `n` texels of a texture level into the decoded buffer.
     Decode { slot: u32, n: u32 },
     Display { slot: u32, w: u32, h: u32 },
+    /// Native run `run`: unswizzle its surfaces into the targets.
+    NativeBegin { run: u32, slot: u32 },
+    /// Native run `run`: recorded passes `rec`.
+    NativePass { run: u32, rec: u32 },
+    /// Native run `run`: swizzle the targets back into VRAM.
+    NativeEnd { run: u32, slot: u32 },
 }
 
 #[derive(Clone, Copy)]
@@ -317,6 +331,10 @@ pub(crate) struct GpuGs {
     pub(crate) latent_readback: bool,
     /// Per raster pass of the submission: primitives, tiles, entries.
     prof_info: Vec<(u32, u32, u32)>,
+    /// Native runs: pipelines, targets, queued runs (created by the first run).
+    native: Option<Box<native::NativeState>>,
+    /// The GS shader module (native-run pipelines are made from it).
+    module: wgpu::ShaderModule,
 }
 
 fn storage_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
@@ -535,6 +553,8 @@ impl GpuGs {
         let pixels_pipe = pipe("pixels");
         let bind_group = Self::make_bind_group(dev, &bgl, [&vram, &tables, &data, &params, &snap, &out, &dec]);
         Some(GpuGs {
+            native: None,
+            module,
             ctx,
             vram,
             snap,
@@ -1367,6 +1387,9 @@ impl GpuGs {
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("gs") });
         let mut passes = 0u32;
+        // Per timestamped pass: true for native-run passes.
+        let mut native_pass: Vec<bool> = Vec::new();
+        let mut nat = self.native_encode_start();
         for c in &self.cmds {
             match *c {
                 Cmd::Upload { page, n, src } => enc.copy_buffer_to_buffer(
@@ -1386,6 +1409,7 @@ impl GpuGs {
                 Cmd::Raster { slot, tiles } => {
                     let ts = self.prof.as_ref().filter(|_| passes < PROF_PASSES).map(|p| {
                         passes += 1;
+                        native_pass.push(false);
                         wgpu::ComputePassTimestampWrites {
                             query_set: &p.qs,
                             beginning_of_pass_write_index: Some(2 * passes - 2),
@@ -1429,8 +1453,28 @@ impl GpuGs {
                     pass.set_bind_group(0, &self.bind_group, &[slot * SLOT as u32]);
                     pass.dispatch_workgroups(w.div_ceil(8), h.div_ceil(8), 1);
                 }
+                Cmd::NativeBegin { .. } | Cmd::NativePass { .. } | Cmd::NativeEnd { .. } => {
+                    let timed = !matches!(c, Cmd::NativePass { .. });
+                    let idx = self.prof.as_ref().filter(|_| timed && passes < PROF_PASSES).map(|p| {
+                        passes += 1;
+                        native_pass.push(true);
+                        (p, 2 * passes - 2)
+                    });
+                    let ts_r = idx.map(|(p, i)| wgpu::RenderPassTimestampWrites {
+                        query_set: &p.qs,
+                        beginning_of_pass_write_index: Some(i),
+                        end_of_pass_write_index: Some(i + 1),
+                    });
+                    let ts_c = idx.map(|(p, i)| wgpu::ComputePassTimestampWrites {
+                        query_set: &p.qs,
+                        beginning_of_pass_write_index: Some(i),
+                        end_of_pass_write_index: Some(i + 1),
+                    });
+                    self.native_encode(nat.as_mut().expect("native work"), c, &mut enc, ts_r, ts_c);
+                }
             }
         }
+        drop(nat);
         extra(self, &mut enc);
         if let (Some(p), true) = (&self.prof, passes > 0) {
             enc.resolve_query_set(&p.qs, 0..2 * passes, &p.resolve, 0);
@@ -1446,18 +1490,28 @@ impl GpuGs {
                 let v = slice.get_mapped_range().expect("timestamps");
                 let t: Vec<u64> = v.chunks_exact(8).map(|c| u64::from_le_bytes(c.try_into().unwrap())).collect();
                 let verbose = std::env::var("SSX3_GS_PROFILE").is_ok_and(|v| v == "2");
+                let mut raster_i = 0;
                 for (i, pair) in t.chunks_exact(2).enumerate() {
                     let ns = (pair[1].saturating_sub(pair[0]) as f64 * period) as u64;
+                    if native_pass[i] {
+                        self.stats.native.gpu_ns += ns;
+                        if verbose {
+                            eprintln!("[gs-prof] pass {i}: {:.3} ms, native round trip", ns as f64 / 1e6);
+                        }
+                        continue;
+                    }
                     self.stats.gpu_raster_ns += ns;
                     if verbose {
-                        let (pr, ti, en) = self.prof_info.get(i).copied().unwrap_or_default();
+                        let (pr, ti, en) = self.prof_info.get(raster_i).copied().unwrap_or_default();
                         eprintln!("[gs-prof] pass {i}: {:.3} ms, {pr} prims, {ti} tiles, {en} entries", ns as f64 / 1e6);
                     }
+                    raster_i += 1;
                 }
             }
             p.read.unmap();
         }
         self.prof_info.clear();
+        self.native_encode_done();
         self.stats.submits += 1;
         self.arena.clear();
         self.slots.clear();

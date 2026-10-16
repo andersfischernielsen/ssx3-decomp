@@ -43,7 +43,7 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use swizzle::Surface;
-pub use mtgs::{Mtgs, MtgsStats};
+pub use mtgs::{Mtgs, MtgsStats, NativeJob};
 
 /// CSR event bits.
 pub const CSR_SIGNAL: u64 = 1 << 0;
@@ -645,6 +645,34 @@ impl Gs {
         if !self.deferred {
             self.flush_wait();
         }
+    }
+
+    /// The surfaces of drawing context `ctx` (0 or 1) for a native run:
+    /// FRAME, ZBUF and the scissor's height (`gpu::NativeSurfaces::from_regs`).
+    pub fn native_surfaces(&self, ctx: usize) -> gpu::NativeSurfaces {
+        let c = &self.regs.ctx[ctx & 1];
+        gpu::NativeSurfaces::from_regs(c.frame, c.zbuf, c.scissor)
+    }
+
+    /// Run host wgpu passes at this point of the GS command stream (phase 3
+    /// composition, `gpu::native`): everything drawn before is ordered
+    /// before the run, the surfaces (default: context 1's) are unswizzled
+    /// into wgpu targets, `passes` render into them in order, and they are
+    /// swizzled back into VRAM. GPU backend only; nothing is queued on an
+    /// error.
+    pub fn native_run(
+        &mut self,
+        surfaces: Option<gpu::NativeSurfaces>,
+        passes: Vec<gpu::NativeRecord>,
+    ) -> Result<(), gpu::NativeError> {
+        if self.gpu.is_none() {
+            return Err(gpu::NativeError::NoGpu);
+        }
+        let s = surfaces.unwrap_or_else(|| self.native_surfaces(0));
+        // GPU backend: closes the open raster batch.
+        self.flush();
+        let g = self.gpu.as_mut().expect("gpu");
+        g.native_run(&s, &self.vram, passes)
     }
 
     /// Wait for all queued drawing to land in `vram`.

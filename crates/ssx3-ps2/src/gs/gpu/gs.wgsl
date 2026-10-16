@@ -996,3 +996,70 @@ fn display(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
     outbuf[y * w + x] = px | 0xFF000000u;
 }
+
+// ------------------------------------------------------------------ native runs
+
+// Composition with host wgpu rendering (`gpu/native.rs`). params:
+// a = frame surface [base, packed, pages per row], a.w = FbFmt | 0x100 when
+// the run has a frame; b = Z surface, b.w = its largest Z (0 = no Z); c.xy = the
+// run's width and height.
+@group(1) @binding(0) var native_color: texture_2d<f32>;
+@group(1) @binding(1) var native_depth: texture_depth_2d;
+
+// GS Z units per 1.0 of depth: Z < 2^24 is exact in f32, and so is Z / 2^24.
+const NATIVE_DEPTH_SCALE: f32 = 16777216.0;
+
+fn param_surf(v: vec4<u32>) -> Surf {
+    let p = v.y;
+    return Surf(v.x, p & 0xFFFFu, (p >> 16u) & 7u, (p >> 19u) & 7u, (p >> 22u) & 3u, (p >> 24u) & 7u, v.z);
+}
+
+// Fullscreen triangle.
+@vertex
+fn native_vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {
+    return vec4<f32>(f32((i << 1u) & 2u) * 2.0 - 1.0, f32(i & 2u) * 2.0 - 1.0, 0.0, 1.0);
+}
+
+struct NativeOut {
+    @location(0) color: vec4<f32>,
+    @builtin(frag_depth) depth: f32,
+}
+
+// Unswizzle: frame pixel -> colour (c / 255 in a unorm8 target stores c),
+// Z -> depth Z / 2^24.
+@fragment
+fn native_unswizzle(@builtin(position) pos: vec4<f32>) -> NativeOut {
+    let x = u32(pos.x);
+    let y = u32(pos.y);
+    var o: NativeOut;
+    o.color = vec4<f32>(0.0);
+    o.depth = 0.0;
+    if ((params.a.w & 0x100u) != 0u) {
+        let fb = param_surf(params.a);
+        o.color = vec4<f32>(unpack4(read_fb(params.a.w & 3u, fb, locate(fb, x, y)))) / 255.0;
+    }
+    if (params.b.w != 0u) {
+        let zb = param_surf(params.b);
+        o.depth = f32(read_at(zb, locate(zb, x, y))) / NATIVE_DEPTH_SCALE;
+    }
+    return o;
+}
+
+// Swizzle the targets back into VRAM (every pixel of the run's rectangle).
+@compute @workgroup_size(8, 8)
+fn native_swizzle(@builtin(global_invocation_id) gid: vec3<u32>) {
+    if (gid.x >= params.c.x || gid.y >= params.c.y) {
+        return;
+    }
+    let at = vec2<i32>(gid.xy);
+    if ((params.a.w & 0x100u) != 0u) {
+        let fb = param_surf(params.a);
+        let v = vec4<u32>(round(clamp(textureLoad(native_color, at, 0), vec4<f32>(0.0), vec4<f32>(1.0)) * 255.0));
+        write_fb(params.a.w & 3u, fb, locate(fb, gid.x, gid.y), pack4(v), 0u);
+    }
+    if (params.b.w != 0u) {
+        let zb = param_surf(params.b);
+        let d = clamp(textureLoad(native_depth, at, 0), 0.0, 1.0);
+        write_at(zb, locate(zb, gid.x, gid.y), min(u32(d * NATIVE_DEPTH_SCALE), params.b.w));
+    }
+}

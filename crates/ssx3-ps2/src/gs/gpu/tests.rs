@@ -181,3 +181,284 @@ fn random_scenes_mostly_match() {
     eprintln!("random scenes: {differ} of {total} words differ ({:.4}%)", frac * 100.0);
     assert!(frac < 0.005, "too many differing words: {frac}");
 }
+
+// ---------------------------------------------------------------- native runs
+
+use super::{NativeRecord, NativeSurface, NativeSurfaces, DEPTH_SCALE};
+
+/// A GPU GS over random VRAM, and a copy of that VRAM.
+fn gpu_random(seed: u64) -> Option<(Gs, Vec<u32>)> {
+    let mut gs = Gs::new_cpu();
+    let mut r = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
+    for v in gs.vram.iter_mut() {
+        *v = r.next() as u32;
+    }
+    let orig = gs.vram.clone();
+    if !gs.set_backend(Backend::Gpu) {
+        eprintln!("no GPU adapter: skipping GPU GS test");
+        return None;
+    }
+    gs.set_deferred(true);
+    Some((gs, orig))
+}
+
+/// Frame at block 0 and Z right after it (block `z_off` further), `fbw` wide, `h` tall.
+fn surfaces(fpsm: u32, zpsm: u32, fbw: u32, h: u32, z_off: u32) -> NativeSurfaces {
+    let rows = if fpsm == PSMCT32 || fpsm == PSMCT24 { 32 } else { 64 };
+    let fb_pages = h.div_ceil(rows) * fbw;
+    NativeSurfaces {
+        frame: Some(NativeSurface { bp: 0, bw: fbw, psm: fpsm }),
+        z: Some(NativeSurface { bp: (fb_pages + 1) * 32 + z_off, bw: fbw, psm: zpsm }),
+        width: fbw * 64,
+        height: h,
+    }
+}
+
+/// The GS's 8-bit-per-channel view of a frame pixel (gs.wgsl `read_fb`).
+fn frame_rgba8(psm: u32, raw: u32) -> u32 {
+    match psm {
+        PSMCT24 => raw | 0x8000_0000,
+        PSMCT16 | PSMCT16S => {
+            (raw & 0x1F) << 3
+                | ((raw >> 5) & 0x1F) << 11
+                | ((raw >> 10) & 0x1F) << 19
+                | if raw & 0x8000 != 0 { 0x8000_0000 } else { 0 }
+        }
+        _ => raw,
+    }
+}
+
+const FRAME_PSMS: [u32; 4] = [PSMCT32, PSMCT24, PSMCT16, PSMCT16S];
+const Z_PSMS: [u32; 3] = [PSMZ24, PSMZ16, PSMZ16S];
+
+/// Unswizzle -> swizzle with no passes leaves every VRAM word as it was,
+/// for every frame/Z format pair and several buffer widths, with several
+/// runs in one submission.
+#[test]
+fn native_roundtrip_is_identity() {
+    let mut seed = 500;
+    for &fbw in &[1u32, 5, 10, 16] {
+        for (i, &fpsm) in FRAME_PSMS.iter().enumerate() {
+            let Some((mut gs, orig)) = gpu_random(seed) else { return };
+            seed += 1;
+            for (j, &zpsm) in Z_PSMS.iter().enumerate() {
+                let h = [200, 448, 37][(i + j) % 3];
+                let s = surfaces(fpsm, zpsm, fbw, h, (j as u32 * 5) % 32);
+                gs.native_run(Some(s), Vec::new()).expect("native run");
+            }
+            gs.sync();
+            gs.sync_vram();
+            let bad = gs.vram.iter().zip(&orig).filter(|(a, b)| a != b).count();
+            assert_eq!(bad, 0, "fbw {fbw} frame psm {fpsm:#x}: {bad} words changed");
+            assert_eq!(gs.gpu_stats().unwrap().native.runs, 3);
+        }
+    }
+}
+
+/// The run's targets hold exactly what the CPU swizzle model reads:
+/// colour as the GS's 8-bit channels, depth as Z / 2^24 (bit-exact).
+#[test]
+fn native_targets_match_cpu_model() {
+    let mut seed = 600;
+    for &fpsm in &FRAME_PSMS {
+        for &zpsm in &Z_PSMS {
+            for &fbw in &[3u32, 10] {
+                let Some((mut gs, orig)) = gpu_random(seed) else { return };
+                seed += 1;
+                let s = surfaces(fpsm, zpsm, fbw, 123, 0);
+                gs.native_run(Some(s), Vec::new()).expect("native run");
+                gs.sync();
+                let (w, h) = (s.width, s.height);
+                let (c, d) = gs.gpu.as_mut().unwrap().native_read_targets(w, h);
+                let f = s.frame.unwrap();
+                let z = s.z.unwrap();
+                let fs = Surface::new(f.psm, f.bp, f.bw);
+                let zs = Surface::new(z.psm, z.bp, z.bw);
+                for y in 0..h {
+                    for x in 0..w {
+                        let i = (y * w + x) as usize;
+                        let want = frame_rgba8(fpsm, fs.read(&orig, x, y));
+                        assert_eq!(c[i], want, "colour at ({x}, {y}), psm {fpsm:#x}");
+                        let zv = zs.read(&orig, x, y);
+                        let dw = zv as f32 / DEPTH_SCALE;
+                        assert_eq!(d[i].to_bits(), dw.to_bits(), "depth at ({x}, {y}), psm {zpsm:#x}");
+                        assert_eq!((d[i] * DEPTH_SCALE) as u32, zv);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// A clear render pass inside a run: colour and depth land in VRAM through
+/// the swizzle exactly as the CPU model writes them, and nothing outside
+/// the surfaces changes.
+#[test]
+fn native_pass_writes_back() {
+    let mut seed = 700;
+    for &fpsm in &[PSMCT32, PSMCT24, PSMCT16] {
+        for &zpsm in &[PSMZ24, PSMZ16] {
+            let Some((mut gs, orig)) = gpu_random(seed) else { return };
+            seed += 1;
+            let s = surfaces(fpsm, zpsm, 10, 96, 0);
+            let (rgba, zval) = (0x7856_3412u32, if zpsm == PSMZ24 { 0x12_3456u32 } else { 0xBEEF });
+            let pass: NativeRecord = Box::new(move |t, enc| {
+                let _ = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("test-clear"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: t.color,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                r: (rgba & 0xFF) as f64 / 255.0,
+                                g: ((rgba >> 8) & 0xFF) as f64 / 255.0,
+                                b: ((rgba >> 16) & 0xFF) as f64 / 255.0,
+                                a: (rgba >> 24) as f64 / 255.0,
+                            }),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: t.depth,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(zval as f32 / DEPTH_SCALE),
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                    }),
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+            });
+            gs.native_run(Some(s), vec![pass]).expect("native run");
+            gs.sync();
+            gs.sync_vram();
+            let mut want = orig.clone();
+            let f = s.frame.unwrap();
+            let z = s.z.unwrap();
+            let fs = Surface::new(f.psm, f.bp, f.bw);
+            let zs = Surface::new(z.psm, z.bp, z.bw);
+            let packed = match fpsm {
+                PSMCT16 => (rgba >> 3) & 0x1F | ((rgba >> 11) & 0x1F) << 5 | ((rgba >> 19) & 0x1F) << 10,
+                _ => rgba,
+            };
+            for y in 0..s.height {
+                for x in 0..s.width {
+                    fs.write(&mut want, x, y, packed);
+                    zs.write(&mut want, x, y, zval);
+                }
+            }
+            let bad = gs.vram.iter().zip(&want).filter(|(a, b)| a != b).count();
+            assert_eq!(bad, 0, "frame {fpsm:#x} z {zpsm:#x}: {bad} words differ");
+        }
+    }
+}
+
+/// A run sits exactly between the primitives sent before and after it.
+#[test]
+fn native_run_is_ordered_in_the_stream() {
+    let Some((mut gs, _)) = gpu_random(800) else { return };
+    frame(&mut gs);
+    gs.write_reg(0x00, 6);
+    gs.write_reg(0x01, 0x8011_2233);
+    gs.write_reg(0x05, xyz(0, 0));
+    gs.write_reg(0x05, xyz(100, 100));
+    let s = gs.native_surfaces(0);
+    assert_eq!((s.width, s.height), (640, 448));
+    let pass: NativeRecord = Box::new(|t, enc| {
+        let _ = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("test-clear"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: t.color,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color { r: 1.0, g: 0.0, b: 0.0, a: 128.0 / 255.0 }),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: t.depth,
+                depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(0.5), store: wgpu::StoreOp::Store }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+    });
+    gs.native_run(None, vec![pass]).expect("native run");
+    gs.write_reg(0x01, 0x8044_5566);
+    gs.write_reg(0x05, xyz(50, 50));
+    gs.write_reg(0x05, xyz(150, 150));
+    gs.sync();
+    gs.sync_vram();
+    let fb = Surface::new(PSMCT32, 0, 10);
+    let zb = Surface::new(PSMZ24, 140 * 32, 10);
+    // Before the run: overwritten by the clear.
+    assert_eq!(fb.read(&gs.vram, 10, 10), 0x8000_00FF);
+    assert_eq!(zb.read(&gs.vram, 10, 10), 0x80_0000);
+    // After the run: the second sprite.
+    assert_eq!(fb.read(&gs.vram, 120, 120), 0x8044_5566);
+    assert_eq!(zb.read(&gs.vram, 120, 120), 0x1234);
+    assert_eq!(fb.read(&gs.vram, 600, 400), 0x8000_00FF);
+}
+
+/// Refused runs queue nothing.
+#[test]
+fn native_run_refusals() {
+    use super::NativeError;
+    let Some((mut gs, _)) = gpu_random(900) else { return };
+    let mut s = surfaces(PSMCT32, PSMZ24, 10, 448, 0);
+    s.z.as_mut().unwrap().psm = PSMZ32;
+    assert_eq!(gs.native_run(Some(s), Vec::new()), Err(NativeError::ZFormat(PSMZ32)));
+    let mut s = surfaces(PSMCT32, PSMZ24, 10, 448, 0);
+    s.z.as_mut().unwrap().bp = 32;
+    assert_eq!(gs.native_run(Some(s), Vec::new()), Err(NativeError::Aliased));
+    let mut s = surfaces(PSMCT32, PSMZ24, 10, 448, 0);
+    s.frame.as_mut().unwrap().bp = 500 * 32;
+    assert_eq!(gs.native_run(Some(s), Vec::new()), Err(NativeError::Wraps));
+    let mut s = surfaces(PSMCT32, PSMZ24, 10, 448, 0);
+    s.width = 700;
+    assert_eq!(gs.native_run(Some(s), Vec::new()), Err(NativeError::TooLarge));
+    let st = gs.gpu_stats().unwrap().native;
+    assert_eq!((st.runs, st.refused), (0, 4));
+    let mut cpu = Gs::new_cpu();
+    assert_eq!(cpu.native_run(None, Vec::new()), Err(NativeError::NoGpu));
+}
+
+/// Cost of an empty round trip of a 640x448 CT32 frame + Z24 (run with
+/// `SSX3_GS_PROFILE=1 cargo test --release -p ssx3-ps2 native_roundtrip_cost -- --ignored --nocapture`
+/// for GPU timestamps).
+#[test]
+#[ignore]
+fn native_roundtrip_cost() {
+    let Some((mut gs, _)) = gpu_random(1000) else { return };
+    let s = surfaces(PSMCT32, PSMZ24, 10, 448, 0);
+    // Warm up.
+    for _ in 0..20 {
+        gs.native_run(Some(s), Vec::new()).unwrap();
+    }
+    gs.sync();
+    gs.gpu_wait_idle();
+    let gpu0 = gs.gpu_stats().unwrap().native.gpu_ns;
+    let n = 1000;
+    let t0 = std::time::Instant::now();
+    for i in 0..n {
+        gs.native_run(Some(s), Vec::new()).unwrap();
+        if i % 50 == 49 {
+            gs.sync();
+        }
+    }
+    gs.sync();
+    gs.gpu_wait_idle();
+    let wall = t0.elapsed().as_secs_f64();
+    let gpu = gs.gpu_stats().unwrap().native.gpu_ns - gpu0;
+    eprintln!(
+        "native round trip 640x448 CT32+Z24: wall {:.1} us/run, GPU timestamps {:.1} us/run",
+        wall * 1e6 / n as f64,
+        gpu as f64 / 1e3 / n as f64
+    );
+}
