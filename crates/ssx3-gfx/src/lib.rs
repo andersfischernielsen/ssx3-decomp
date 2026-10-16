@@ -85,6 +85,8 @@ pub struct Inner {
     /// TexInfos that failed to decode (reported once).
     failed: std::collections::HashSet<u32>,
     pub stats: Stats,
+    /// The display buffer, when the game blends frames into it.
+    display_fbp: Option<u32>,
 }
 
 /// The renderer; clone the handle to read images from another thread.
@@ -148,6 +150,7 @@ impl Renderer {
             white,
             failed: Default::default(),
             stats: Stats::default(),
+            display_fbp: None,
         })))
     }
 
@@ -298,10 +301,14 @@ impl Inner {
         };
         // The flip packet (FRAME, ZBUF, XYOFFSET, TEXA, PRMODECONT, ...,
         // and the clear) the game sent before this frame's drawing.
-        if std::env::var("SSX3_GFX_FLIP").map_or(true, |v| v != "0") {
-            label(&mut self.gs, "flip".into());
-            self.gs.gif(&flip_packet(mem));
-        }
+        // With the frame blend on (gm+0x59e8 ≠ 0), the packet starts with a
+        // block that blends the finished draw buffer into the display
+        // buffer (the image on screen): that part runs at the end.
+        let flip = if std::env::var("SSX3_GFX_FLIP").map_or(true, |v| v != "0") { flip_packet(mem) } else { Vec::new() };
+        let split = flip.iter().position(|&q| q as u64 == 0x1000_0000_0000_8010).unwrap_or(0);
+        label(&mut self.gs, "flip".into());
+        self.gs.gif(&flip[split..]);
+        self.display_fbp = (split > 0).then(|| d.draw_fbp + (d.fb_width.div_ceil(64) * d.fb_height.div_ceil(32)).max(1));
         let mode = std::env::var("SSX3_GFX_PATH3").ok().and_then(|v| v.parse::<u32>().ok()).unwrap_or(3);
         let mut p1_done = mode & 1 == 0;
         let mut cur: Option<usize> = None;
@@ -386,6 +393,10 @@ impl Inner {
         if mode & 2 != 0 {
             label(&mut self.gs, "path3-2".into());
             self.gs.gif(&p2);
+        }
+        if split > 0 {
+            label(&mut self.gs, "flip-blend".into());
+            self.gs.gif(&flip[..split]);
         }
         if tracing {
             self.gs.trace = None;
@@ -786,7 +797,11 @@ impl Inner {
         });
         for it in &items {
             let Some([x, y, sw, sh]) = it.scissor else { continue };
-            let snapshot = (it.frame && !prev_frame || it.date) && it.target == main;
+            // (Frame-sampling items may draw into another target: the
+            // display buffer copy.)
+            // A new run of frame-sampling items, or one into another target
+            // (the display copy after the colour filter), needs a fresh one.
+            let snapshot = it.frame && (!prev_frame || it.target != cur_target) || it.date && it.target == main;
             let zsnapshot = it.zfog && it.target == main;
             if it.target != cur_target || snapshot || zsnapshot {
                 drop(pass);
@@ -853,7 +868,21 @@ impl Inner {
         self.texcache.retain(|_, t| frame - t.used < 600);
     }
 
+    /// The image on screen: the display buffer when the game blends frames
+    /// into it, else the draw buffer.
     pub fn read_image(&self) -> Option<(u32, u32, Vec<u32>)> {
+        let t = self.targets.as_ref()?;
+        if let Some(r) = self.display_fbp.and_then(|f| self.rts.get(&f)) {
+            let (rw, _, px) = self.read_texture(&r.color, r.w, r.h);
+            let (w, h) = (t.w.min(rw), t.h.min(r.h));
+            let out = (0..h).flat_map(|y| px[(y * rw) as usize..(y * rw + w) as usize].iter().copied()).collect();
+            return Some((w, h, out));
+        }
+        Some(self.read_texture(&t.color, t.w, t.h))
+    }
+
+    /// The draw buffer as last drawn.
+    pub fn read_draw_buffer(&self) -> Option<(u32, u32, Vec<u32>)> {
         let t = self.targets.as_ref()?;
         Some(self.read_texture(&t.color, t.w, t.h))
     }

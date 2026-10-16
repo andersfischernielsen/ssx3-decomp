@@ -132,28 +132,53 @@ Those are later seams.
 - Headless `SSX3_DUMP_TEX=tbp:tbw:psm:w:h:path`: a VRAM texture from the emulated GS.
 - `gs_replay --draws` now also writes each decoded texture's alpha channel.
 
-**Open: the black snow around riders (projected shadows).**
-- The terrain near each rider gets a context-2 pass with the rider's CT16 shadow target and
-  ALPHA (Cd − Cs)·As. Texels outside the silhouette have the alpha bit clear.
-- With TEXA TA0 = 0 they read As = 0, which turns the whole patch black. That is the
-  emulator's own semantics too (checked with a probe on the CPU GS).
-- The emulator is not black because at sampling time **TEXA has TA0 = 0x80**: its decoded
-  texture has alpha 0x80 on every texel (`gs_replay --draws` alpha dump).
-- The TA0 = 0x80 write comes from a 106-qword **GS state packet at 0x4ffcc0**, sent through
-  PATH3 by a REF from GIF chains (DMA watch: chains around 0x7bca10 / 0x7e3010). It also
-  sets:
-  - XYOFFSET_2 (which is why context 2's offset looked unset);
-  - FBA_1/2, PRMODECONT, COLCLAMP, DTHE, DIMX.
-- That packet never reaches `ssx3-gfx`; its TEXA writes are always the restores to TA0 = 0.
-- **Next:**
-  - find which code kicks that packet and in which chain (Ghidra), then replay that chain
-    in order;
-  - or, more robustly, replay the frame's whole GIF stream in the order the GS receives it.
-- Interim result: dropping the shadow-projection passes gives correct lightmapped snow (the
-  `nort` experiment, frames 4500/6000 close to the reference).
+**Resolved since (same day):**
+- **Black snow under the projected shadows.** `Renderer_SetDisplayRegs` (0x382af0) builds
+  a GS state packet at 0x4ffcc0 on every flip and sends it by normal GIF DMA, outside the
+  chains: FRAME/ZBUF, XYOFFSET_1/2, FBA, TEXA (TA0 = 0x80), PRMODECONT, COLCLAMP, DTHE,
+  DIMX, TEST, the frame clear. It is replayed at the start of each frame. The GIF phase-1
+  chain (colour filter and the depth-fog setup, which set TEXA TA0 = 0) runs between the
+  VIF phases, phase 2 at the end; `Built::phase2` marks where VIF phase 2 starts.
+- **Black rider trails.** The trail passes run with FBA_1 = 1. FBA only sets bit 7 of the
+  *stored* alpha; the blend still uses the true As. Batches that blend with As and store
+  alpha are drawn as a colour draw and an alpha-only draw. The trail also uses the
+  destination alpha test (DATE/DATM), done from a snapshot of the frame.
+- **Coloured flares.** Their PSMT8H texture lives in the alpha bits of the display
+  buffer, so a texture at a render target's address is that target only for colour PSMs.
+- **Depth fog.** The game copies Z bits 8..15 into the frame's alpha (a CT16 view of the
+  frame drawn from a Z16 view of Z24; measured with `fogprobe` on the software GS), then
+  draws the frame's alpha as a PSMT8H texture through a 256-entry CLUT uploaded each frame
+  (fog colour and amount per depth), ZTST GREATER. Natively the copy is dropped and the
+  CLUT pass reads a snapshot of the depth buffer.
+- **Lightmap light pools.** Blends without a D term whose As can exceed 1.0 (lightmap
+  alpha up to 212) are drawn at half strength and doubled: the shader output is clamped
+  to 1.0 before fixed-function blending.
+- **Frame blend / display buffer.** When gm+0x59e8 is set, the flip packet starts with a
+  block that copies (FIX 0x80) the finished draw buffer into the display buffer; that
+  block runs at the end of the frame and `read_image` returns the display buffer.
 
-**Also open:**
-- the rider trails (frame 4500);
-- depth fog (the emulated haze, purple tint at the gate);
-- bloom where used;
-- CT16 targets reproduce only the 1-bit alpha; RGB is not quantised to 5 bits.
+**Comparing with the emulator:** the emulated GS shows the frame published one step
+earlier, so the native image of dump `frame-1` is the one to compare with the emulator's
+screenshot. Measured that way (mean difference, % of pixels off by more than 32):
+
+| Frame | Mean | >32 |
+| --- | --- | --- |
+| 1500 (menu) | 0.76 | 0.0% |
+| 3000 (menu) | 3.32 | 0.0% |
+| 4500 (race start) | 3.25 | 0.0% |
+| 6000 (race) | 1.03 | 0.0% |
+| 7500 (race, flares) | 1.28 | 0.3% |
+
+**Offline replay.** `SSX3_FRAME_DUMP=3` keeps the last three frames' inputs (EE RAM,
+scratchpad, the carried chain state and the VU1 data memory); the headless runner writes
+them next to each screenshot (`frameNNNNN-dump/frame-K.bin`, K = 0 newest). `gfx_replay
+OUT.png frame-2.bin frame-1.bin` renders them in well under a second, identical to the live
+render. The dumps hold game data and stay out of the repository.
+
+More debug switches: `SSX3_GFX_SKIP=n,a-b` (drop draws), `SSX3_GFX_SKIPTEST=<test>[a|c|z]`
+(drop batches by TEST, alpha-only/colour only, or keep without depth writes),
+`SSX3_GFX_PROBE=x,y` (a pixel after every item that changes it), `SSX3_GFX_PLANLOG=<test>`,
+`SSX3_GFX_TEXLOG=<frame>`.
+
+**Still open:** the HUD and a few highlights differ by a few levels; CT16 targets keep only
+the 1-bit alpha (RGB is not quantised to 5 bits).
