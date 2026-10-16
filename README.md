@@ -19,9 +19,12 @@ game's code at runtime.
 - **Opt-in native host implementations** (phase 3) exist for:
   - files (`std::fs`);
   - sound (a native mixer);
-  - rendering (direct wgpu draws, with resolution scaling and widescreen).
+  - rasterizing GS primitives with wgpu render pipelines, with resolution scaling and
+    widescreen.
 
-  Each is checked byte-for-byte against the emulated path.
+  Each is checked byte-for-byte against the emulated path. The PS2 hardware models
+  (DMA, VIF, VU1, GS, timers, IOP) still sit underneath. Removing them from the frame
+  path, by rendering at the game's own draw layer, is the next step.
 
 See [`docs/plans/roadmap.md`](docs/plans/roadmap.md) for the plan and
 [`docs/investigation/limitations.md`](docs/investigation/limitations.md) for known

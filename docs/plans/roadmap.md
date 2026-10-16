@@ -114,7 +114,13 @@ generated. Order:
    - **Frame loop: analysed** (`../investigation/phase3-frame-loop.md`). The
      game already decouples logic and rendering; there is an opt-in
      `SSX3_HOST_CLOCK=1`. The real change waits for native rendering.
-   - **Rendering: done, opt-in** (`../investigation/phase3-render.md`).
+   - **Rendering: GS-primitive level done, opt-in; draw layer not started**
+     (`../investigation/phase3-render.md`). The game's frames still go
+     through the DMA, VIF, VU1 and GS models; `SSX3_RENDER_NATIVE` replaces
+     only how GS primitives are rasterized, with GS-exact shaders (so it
+     costs about as much GPU as the emulated path). Hooking the game's draw
+     layer (phase 3 below) is the step that removes those models from the
+     frame path. Done so far:
      - Stage 0a: the EE-level frame reader, exact on 2.57M calls.
      - All six VU1 rendering programs as bit-exact readable Rust
        (`ssx3-render` mat1-6). With `SSX3_VU1=native` the full race is
