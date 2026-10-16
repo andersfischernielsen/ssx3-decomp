@@ -102,7 +102,9 @@ static HEADS: [AtomicU64; 4] = [const { AtomicU64::new(0) }; 4];
 /// unchanged; no VIF, VU1 or GS work happens for the frame.
 pub fn skip_chain(vif: bool, tadr: u32) -> bool {
     static RUN: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    if !native_active() || tadr == 0 || *RUN.get_or_init(|| std::env::var_os("SSX3_NATIVE_RUN_CHAINS").is_some()) {
+    // (Any chain of a frame the sink drew, even while the game publishes
+    // frames only now and then, as on loading screens.)
+    if !native() || tadr == 0 || *RUN.get_or_init(|| std::env::var_os("SSX3_NATIVE_RUN_CHAINS").is_some()) {
         return false;
     }
     let k = if vif { 0 } else { 2 };
