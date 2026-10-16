@@ -777,28 +777,6 @@ impl Gs {
         self.draws_suppressed = on;
     }
 
-    /// Write a `w`×`h` rectangle of `psm` pixels at (`bp`, `bw`) from the
-    /// host (`Mtgs::host_write`).
-    pub fn host_write(&mut self, psm: u32, bp: u32, bw: u32, w: u32, h: u32, px: &[u32]) {
-        if w == 0 || h == 0 {
-            return;
-        }
-        // As a host->local transfer: only the pages it touches are read back
-        // (when drawn on the GPU) and uploaded again.
-        let surf = swizzle::Surface::new(psm, bp, bw);
-        let mut r = region::Region::default();
-        r.add_rect(&surf, 0, 0, w - 1, h - 1);
-        self.before_vram_write_full(&r, false);
-        for y in 0..h {
-            for x in 0..w {
-                if let Some(&v) = px.get((y * w + x) as usize) {
-                    surf.write(&mut self.vram, x, y, v);
-                }
-            }
-        }
-        self.texcache.written(&r.pages);
-    }
-
     pub fn vram_written(&mut self) {
         self.flush_wait();
         self.texcache.written(&raster::Pages::ALL);

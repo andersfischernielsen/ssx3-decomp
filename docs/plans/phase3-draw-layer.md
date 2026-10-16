@@ -219,3 +219,13 @@ More debug switches: `SSX3_GFX_SKIP=n,a-b` (drop draws), `SSX3_GFX_SKIPTEST=<tes
   identical to the microcode. Native sound and the native light query shift how the
   game's threads interleave, so a scripted race differs from the emulated one while each
   path stays deterministic.
+- **Threads.** At each publish the game thread only copies EE memory (32 MiB in four
+  parallel parts, about 1 ms) into a pooled snapshot and reads the four chain heads it
+  needs for the DMA cut. A frame thread builds the typed frame from the snapshot (carrying
+  the VIF state in order), and the render thread renders it (one frame queued per stage;
+  the game waits only if the renderer falls further behind). The light queries read the
+  latest depth from a shared slot, and the window presents a shared texture, so neither
+  waits on a render in progress. Race replay to frame 7500: 45 s (emulated path: about
+  110 s); the render stage, about 5 ms per frame, sets the unpaced pace.
+- **Resolution.** `SSX3_RENDER_SCALE=N` renders at N× (targets, render targets and
+  scissors scaled; the light-query depth is sampled back at GS resolution).

@@ -146,7 +146,7 @@ pub fn on_vblank(c: &mut Cpu) {
     let frames = crate::mr!(c).sched.frames;
     let last = LAST_PUBLISH.load(Ordering::Acquire);
     let active = last != 0 && frames.saturating_sub(last) <= ACTIVE_VBLANKS;
-    if active != ACTIVE.swap(active, Ordering::AcqRel) && std::env::var_os("SSX3_NATIVE_KEEP_GS").is_none() {
+    if active != ACTIVE.swap(active, Ordering::AcqRel) {
         crate::m!(c).hw.gs.set_draws_suppressed(active);
     }
 }
