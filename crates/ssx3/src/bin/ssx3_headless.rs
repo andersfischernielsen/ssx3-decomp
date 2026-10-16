@@ -153,6 +153,7 @@ fn main() {
     if let Some(g) = &gfx {
         eprintln!("[gfx] emulated GS persistent regs: {:x?}", ssx3_ps2::m!(c).hw.gs.core().persistent_regs());
         eprintln!("[gfx] {:?}", g.stats());
+        eprintln!("[gfx] {}", g.0.lock().unwrap().timing_report());
         eprintln!("[gfx] other frame buffers (fbp, fbw, psm): {:?}", g.dropped_fbp());
     }
     // GPU GS backend: bring the CPU copy of VRAM up to date for the dumps.

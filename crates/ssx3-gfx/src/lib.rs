@@ -95,6 +95,8 @@ pub struct Inner {
     /// Keep the depth after phase 1 (`depth()`, native mode).
     pub want_depth: bool,
     last_depth: Option<(u32, u32, Vec<u32>)>,
+    /// This frame's depth readback in flight (buffer, size, ZMAX + 1).
+    pending_depth: Option<(wgpu::Buffer, wgpu::SubmissionIndex, u32, u32, f32)>,
     /// ZMAX + 1 of the frame's Z buffer (depth is stored as Z / it).
     zscale: f32,
     /// Frames timed and the time (ms) in build, prepare, encode+submit,
@@ -169,6 +171,7 @@ impl Renderer {
             phase1_end: usize::MAX,
             want_depth: false,
             last_depth: None,
+            pending_depth: None,
             zscale: 16777216.0,
             timing: (0, [0.0; 4]),
             present: None,
@@ -959,25 +962,31 @@ impl Inner {
             );
             buf
         });
-        self.queue.submit(std::iter::once(enc.finish()));
+        let sub_idx = self.queue.submit(std::iter::once(enc.finish()));
         let t_sub = std::time::Instant::now();
         self.timing.1[2] += (t_sub - t_prepared).as_secs_f64() * 1e3;
         if let Some(buf) = depth_buf {
-            let slice = buf.slice(..);
-            slice.map_async(wgpu::MapMode::Read, |_| {});
-            let _ = self.dev.poll(wgpu::PollType::wait_indefinitely());
-            if let Ok(v) = slice.get_mapped_range() {
-                let row = (t.w * 4).next_multiple_of(256) as usize;
-                let zs = self.zscale as f64;
-                let mut z = Vec::with_capacity((t.w * t.h) as usize);
-                for y in 0..t.h as usize {
-                    for d in v[y * row..y * row + 4 * t.w as usize].chunks_exact(4) {
-                        let d = f32::from_le_bytes([d[0], d[1], d[2], d[3]]);
-                        z.push((d as f64 * zs).round().min(zs - 1.0) as u32);
+            // The previous frame's depth (its readback has had a frame to
+            // complete): the light queries see depth one frame late, and
+            // the CPU does not wait for this frame's GPU work.
+            if let Some((prev, prev_idx, pw, ph, zs)) = self.pending_depth.take() {
+                let slice = prev.slice(..);
+                let _ = self.dev.poll(wgpu::PollType::Wait { submission_index: Some(prev_idx), timeout: None });
+                if let Ok(v) = slice.get_mapped_range() {
+                    let row = (pw * 4).next_multiple_of(256) as usize;
+                    let zs = zs as f64;
+                    let mut z = Vec::with_capacity((pw * ph) as usize);
+                    for y in 0..ph as usize {
+                        for d in v[y * row..y * row + 4 * pw as usize].chunks_exact(4) {
+                            let d = f32::from_le_bytes([d[0], d[1], d[2], d[3]]);
+                            z.push((d as f64 * zs).round().min(zs - 1.0) as u32);
+                        }
                     }
+                    self.last_depth = Some((pw, ph, z));
                 }
-                self.last_depth = Some((t.w, t.h, z));
             }
+            buf.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+            self.pending_depth = Some((buf, sub_idx, t.w, t.h, self.zscale));
             self.timing.1[3] += t_sub.elapsed().as_secs_f64() * 1e3;
         }
         if let Some(pb) = probe_buf {
