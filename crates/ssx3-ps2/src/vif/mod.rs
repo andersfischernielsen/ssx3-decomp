@@ -124,6 +124,11 @@ fn unpack_plain<const VN: u32, const VL: u32>(data: &[u32], num: usize, addr: u3
     }
 }
 
+fn native_vu1() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("SSX3_VU1").is_ok_and(|v| v == "native"))
+}
+
 impl Vif {
     pub fn new(index: usize) -> Self {
         Self {
@@ -331,6 +336,22 @@ impl Vif {
         }
         vu.vif_top = self.top;
         vu.vif_itop = self.itop;
+        // SSX3_VU1=native: the VU1 rendering programs as native Rust
+        // (ssx3-render, each verified bit-exact against the translated
+        // microcode); calls they do not cover run translated.
+        if self.index == 1 && native_vu1() {
+            let hash = vu.segment_hash_pub(pc);
+            let mem: &mut [u8; 16384] = (&mut vu.data[..16384]).try_into().unwrap();
+            let done = ssx3_render::run_native(hash, pc, self.top, self.itop, mem, &mut |p: &[Qword]| {
+                if crate::gifstats::enabled() {
+                    crate::gifstats::scan(p);
+                }
+                gs.gif_write(1, p)
+            });
+            if done {
+                return;
+            }
+        }
         vu.start(pc);
         let mut cap = crate::vu::capture::begin(vu, pc);
         let vif1 = self.index == 1;

@@ -511,3 +511,15 @@ Corrections and findings:
 
 **All six VU1 rendering programs now have bit-exact readable Rust implementations.** The
 seventh microprogram, 27649fa5, runs on VU0 for the EE and is not part of rendering.
+
+### Native VU1 at run time (`SSX3_VU1=native`, 2026-10-16)
+
+`vif::run_vu` dispatches each VU1 call to `ssx3_render::run_native` by segment hash and entry.
+Calls that are not covered run the translated microcode.
+
+Check: the full race replay to frame 9000 with native VU1 against the translated microcode is
+**byte-identical: 0 of 36 screenshots differ, final RAM identical**, with about 6% less CPU
+(155 s vs 164 s user). VU1 rendering now runs as readable Rust end to end.
+
+Next: the wgpu stages (2B and on) draw from the same calls instead of producing GIF packets
+for the GS model.
