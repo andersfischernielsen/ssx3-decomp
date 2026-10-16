@@ -494,6 +494,7 @@ impl Gs {
                 x1,
                 y1
             );
+            let line = format!("{line} v{}", vs.iter().map(|v| format!(" {:.2},{:.2},q{:.3e}", v.x, v.y, v.q)).collect::<String>());
             match self.trace_log.last_mut() {
                 Some(l) if l.ends_with(&format!("|{line}")) || l.starts_with(&line) => {}
                 _ => self.trace_log.push(line),

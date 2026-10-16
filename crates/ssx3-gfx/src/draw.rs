@@ -128,9 +128,28 @@ fn compare(test: u64) -> wgpu::CompareFunction {
 }
 
 /// The draws for one batch: one, or two for an alpha test whose failing
-/// pixels still write something (AFAIL ≠ KEEP).
+/// pixels still write something (AFAIL ≠ KEEP); each split in two when FBA
+/// is set and the blend reads the source alpha (the GS blends with As but
+/// stores As | 0x80; the output alpha is both here).
 /// `rt_psm`: the PSM of the render target the batch samples, if any.
 pub fn plans(st: &DrawState, size: (u32, u32), rt_psm: Option<u32>) -> Vec<Plan> {
+    use wgpu::BlendFactor as F;
+    let reads_as = |k: &PipeKey| k.blend.is_some_and(|(s, d, _)| [s, d].iter().any(|f| matches!(f, F::SrcAlpha | F::OneMinusSrcAlpha)));
+    let mut out = Vec::new();
+    for p in plans_unsplit(st, size, rt_psm) {
+        if p.u.flags & 8 == 0 || p.key.write & 8 == 0 || p.key.write & 7 == 0 || !reads_as(&p.key) {
+            out.push(p);
+            continue;
+        }
+        // Colour with the true As (no depth write, so the alpha draw still
+        // passes the same depth test), then the stored alpha.
+        out.push(Plan { key: PipeKey { depth_write: false, write: p.key.write & 7, ..p.key }, u: BatchU { flags: p.u.flags & !8, ..p.u }, constant: p.constant });
+        out.push(Plan { key: PipeKey { blend: None, write: 8, ..p.key }, u: p.u, constant: p.constant });
+    }
+    out
+}
+
+fn plans_unsplit(st: &DrawState, size: (u32, u32), rt_psm: Option<u32>) -> Vec<Plan> {
     let c = &st.ctx;
     let abe = st.prim & (1 << 6) != 0;
     let (bl, src_mode, cs_a, cs_b, c_kind) = if abe { blend(c.alpha) } else { (None, 0, 0.0, 0.0, 0) };
@@ -227,6 +246,18 @@ impl Pipelines {
                     binding: 2,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                // The frame as drawn before this batch (destination alpha
+                // test).
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
                     count: None,
                 },
             ],

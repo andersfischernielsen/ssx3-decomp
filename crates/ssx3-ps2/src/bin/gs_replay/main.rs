@@ -231,12 +231,12 @@ fn draws(path: &str, bytes: &[u8], dir: &str) {
     // --events: also print the event stream with the draw setups it creates
     // (and, with SSX3_TRACE_XFER, the transfers) in order.
     let verbose = std::env::args().any(|a| a == "--events");
-    for ev in &events {
+    for (ei, ev) in events.iter().enumerate() {
         let before = gs.draw_log.as_ref().map_or(0, |l| l.len());
         ev.apply(&mut gs);
         if verbose {
             match ev {
-                Event::Gif { path, data } => println!("[ev] gif path {path} {} qw", data.len()),
+                Event::Gif { path, data } => println!("[ev {ei}] gif path {path} {} qw", data.len()),
                 Event::Reg { addr, value } => println!("[ev] reg {addr:#x} = {value:#x}"),
                 Event::Priv { offset, value } => println!("[ev] priv {offset:#x} = {value:#x}"),
                 Event::VBlank { .. } => println!("[ev] vblank (segment {seg})"),

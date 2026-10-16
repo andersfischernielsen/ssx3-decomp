@@ -11,7 +11,7 @@ struct Batch {
     tfx: u32,
     // Bit 0 TME, 1 TCC, 2 FGE, 3 FBA, 4 the texture is a target we drew
     // (alpha stored as a/128), 5 that target is CT16 (1-bit alpha read
-    // through TEXA).
+    // through TEXA), 6 DATE (destination alpha test), 7 DATM.
     flags: u32,
     // Alpha test: ATST, AREF, side (0 none, 1 draw passing, 2 draw failing).
     atst: u32,
@@ -32,6 +32,7 @@ struct Batch {
 @group(0) @binding(0) var<uniform> b: Batch;
 @group(0) @binding(1) var tex: texture_2d<f32>;
 @group(0) @binding(2) var samp: sampler;
+@group(0) @binding(3) var dst: texture_2d<f32>;
 
 struct VIn {
     @location(0) pos: vec3<f32>,
@@ -76,6 +77,13 @@ fn alpha_ok(a: f32) -> bool {
 
 @fragment
 fn fs(v: VOut) -> @location(0) vec4<f32> {
+    if ((b.flags & 64u) != 0u) {
+        // Destination alpha bit 7 (stored as a/128, so a >= 128 is 1.0).
+        let da = textureLoad(dst, vec2<i32>(v.pos.xy), 0).a;
+        if ((da > 0.996) != ((b.flags & 128u) != 0u)) {
+            discard;
+        }
+    }
     var rgb = floor(v.col.rgb);
     var a = floor(v.col.a);
     if ((b.flags & 1u) != 0u) {

@@ -110,6 +110,12 @@ fn main() {
                 let img: Vec<u32> = px.iter().map(|p| p | 0xFF00_0000).collect();
                 let _ = std::fs::write(format!("{shot_dir}/frame{f:05}-gfx.png"), png::encode(w, h, &img));
             }
+            // SSX3_FRAME_DUMP=n: the last n frames' inputs, for gfx_replay.
+            if std::env::var_os("SSX3_FRAME_DUMP").is_some() {
+                let dir = format!("{shot_dir}/frame{f:05}-dump");
+                let _ = std::fs::create_dir_all(&dir);
+                let _ = ssx3_ps2::frame_sink::write_dumps(&dir);
+            }
             if std::env::var_os("SSX3_GFX_RTDUMP").is_some() {
                 for (fbp, w, h, px) in gfx.as_ref().map(|g| g.read_rts()).unwrap_or_default() {
                     let img: Vec<u32> = px.iter().map(|p| p | 0xFF00_0000).collect();

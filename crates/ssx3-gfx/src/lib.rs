@@ -301,7 +301,12 @@ impl Inner {
         let mut p1_done = mode & 1 == 0;
         let mut cur: Option<usize> = None;
         let mut hash: Option<u64> = None;
+        // Debug: SSX3_GFX_SKIP=n,m,... drops those draws' payloads.
+        let skip: Vec<usize> = std::env::var("SSX3_GFX_SKIP").map(|v| v.split(',').filter_map(|x| x.parse().ok()).collect()).unwrap_or_default();
         for (i, (owner, ev)) in built.events.iter().enumerate() {
+            if matches!(owner, Owner::Payload(n) if skip.contains(n)) {
+                continue;
+            }
             if !p1_done && i >= built.phase2 {
                 p1_done = true;
                 label(&mut self.gs, "path3-1".into());
@@ -430,6 +435,13 @@ impl Inner {
         Some(view)
     }
 
+    /// Replace the VU1 data memory image (offline replays start from the
+    /// emulated one).
+    pub fn seed_vu(&mut self, data: &[u8]) {
+        let n = data.len().min(self.vu.len());
+        self.vu[..n].copy_from_slice(&data[..n]);
+    }
+
     pub fn render(&mut self, built: &Built, mem: &dyn Mem) {
         self.stats.frames += 1;
         let p0 = (self.gs.prims, self.gs.dropped, self.gs.unknown_tex);
@@ -467,6 +479,8 @@ impl Inner {
             /// Samples the frame: needs a fresh snapshot unless the previous
             /// item did too.
             frame: bool,
+            /// Tests the destination alpha: needs a fresh snapshot.
+            date: bool,
             /// FBP drawn into.
             target: u32,
             key: draw::PipeKey,
@@ -481,8 +495,26 @@ impl Inner {
         let mut ubytes: Vec<u8> = Vec::new();
         let mut binds: Vec<(Option<wgpu::TextureView>, draw::SampKey)> = Vec::new();
         let mut bind_ix: HashMap<(Option<u32>, u64, draw::SampKey), usize> = HashMap::new();
+        // Debug: SSX3_GFX_SKIPTEST=hex,... drops batches with that TEST.
+        // A trailing `c`/`a`: only colour-writing / only alpha-only batches.
+        let skip_test: Vec<(u64, u8)> = std::env::var("SSX3_GFX_SKIPTEST")
+            .map(|v| {
+                v.split(',')
+                    .filter_map(|x| {
+                        let m = x.as_bytes().last().copied().filter(|c| matches!(c, b'c' | b'a' | b'z')).unwrap_or(0);
+                        u64::from_str_radix(x.trim_start_matches("0x").trim_end_matches(['a', 'c', 'z']), 16).ok().map(|t| (t, m))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
         for b in &batches {
             let st = &b.state;
+            let alpha_only = (st.ctx.frame >> 32) as u32 & 0x00ff_ffff == 0x00ff_ffff;
+            // `z`: keep the batch but without depth writes.
+            let no_zw = skip_test.iter().any(|&(t, m)| t == st.ctx.test && m == b'z');
+            if skip_test.iter().any(|&(t, m)| t == st.ctx.test && m != b'z' && (m == 0 || (m == b'a') == alpha_only)) {
+                continue;
+            }
             let sk = draw::samp_key(st);
             let bkey = (st.tex, st.texa, sk);
             let bind = match bind_ix.get(&bkey) {
@@ -494,7 +526,13 @@ impl Inner {
                             Some(t.snapshot.create_view(&Default::default()))
                         }
                         Some(t) if t & gs::RT_TEX != 0 => self.rts.get(&(t & !gs::RT_TEX)).map(|r| r.color.create_view(&Default::default())),
-                        Some(info) => self.texture(info, st.texa, mem),
+                        Some(info) => {
+                            if std::env::var("SSX3_GFX_TEXLOG").is_ok_and(|v| v.parse::<u64>().ok() == Some(self.stats.frames)) {
+                                let k = tex::key(mem, info, st.texa);
+                                eprintln!("[gfx-tex] info {info:#x} format {:#x} pixels {:#x} tex0 {:#x} hash {:#x}", k.format, k.pixels, k.tex0, k.hash);
+                            }
+                            self.texture(info, st.texa, mem)
+                        }
                         None => None,
                     };
                     binds.push((view, sk));
@@ -517,8 +555,19 @@ impl Inner {
                 continue;
             }
             let rt_psm = st.tex.filter(|t| *t != gs::FRAME_TEX && t & gs::RT_TEX != 0).and_then(|t| self.gs.rts.get(&(t & !gs::RT_TEX))).map(|r| r.psm);
-            for p in draw::plans(st, (tw, th), rt_psm) {
+            // DATE on the main target (render targets: not yet).
+            let date = (st.ctx.test >> 14) & 1 != 0 && st.target == self.gs.main_fbp;
+            for mut p in draw::plans(st, (tw, th), rt_psm) {
+                if no_zw {
+                    p.key.depth_write = false;
+                }
+                if std::env::var("SSX3_GFX_PLANLOG").ok().and_then(|v| u64::from_str_radix(&v, 16).ok()) == Some(st.ctx.test) {
+                    eprintln!("[gfx-plan] alpha {:#x} fba {} flags {:#x} tfx {} src_mode {} cs {} {} c_kind {} fix {} key {:?}", st.ctx.alpha, st.ctx.fba, p.u.flags, p.u.tfx, p.u.src_mode, p.u.cs_a, p.u.cs_b, p.u.c_kind, p.u.fix, p.key);
+                }
                 let ubo = (ubytes.len() as u64 / draw::UNIFORM_STRIDE) as u32;
+                if date {
+                    p.u.flags |= 64 | (((st.ctx.test >> 15) & 1) as u32) << 7;
+                }
                 let u = &p.u;
                 let words: [u32; 20] = [
                     u.size[0].to_bits(),
@@ -544,7 +593,7 @@ impl Inner {
                 ];
                 ubytes.extend(words.iter().flat_map(|w| w.to_le_bytes()));
                 ubytes.resize(ubytes.len().next_multiple_of(draw::UNIFORM_STRIDE as usize), 0);
-                items.push(Item { frame: st.tex == Some(gs::FRAME_TEX), target: st.target, key: p.key, ubo, constant: p.constant, bind, first: b.first, count: b.count, scissor });
+                items.push(Item { frame: st.tex == Some(gs::FRAME_TEX), date, target: st.target, key: p.key, ubo, constant: p.constant, bind, first: b.first, count: b.count, scissor });
             }
         }
         if items.is_empty() {
@@ -557,6 +606,7 @@ impl Inner {
             mapped_at_creation: false,
         });
         self.queue.write_buffer(&ubuf, 0, &ubytes);
+        let snap = self.targets.as_ref().expect("targets").snapshot.create_view(&Default::default());
         let groups: Vec<wgpu::BindGroup> = binds
             .iter()
             .map(|(view, sk)| {
@@ -575,6 +625,7 @@ impl Inner {
                         },
                         wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(view.as_ref().unwrap_or(&self.white)) },
                         wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&samp) },
+                        wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&snap) },
                     ],
                 })
             })
@@ -629,7 +680,7 @@ impl Inner {
         let mut prev_frame = false;
         for it in &items {
             let Some([x, y, sw, sh]) = it.scissor else { continue };
-            let snapshot = it.frame && !prev_frame && it.target == main;
+            let snapshot = (it.frame && !prev_frame || it.date) && it.target == main;
             if it.target != cur_target || snapshot {
                 drop(pass);
                 if snapshot {
