@@ -153,6 +153,9 @@ fn main() {
     if let Some(s) = ssx3_ps2::render_verify::summary() {
         eprintln!("{s}");
     }
+    if let Some(s) = ssx3_ps2::frame_verify::summary() {
+        eprintln!("{s}");
+    }
     if let Some(s) = ssx3_ps2::mat3_verify::summary() {
         eprintln!("{s}");
     }

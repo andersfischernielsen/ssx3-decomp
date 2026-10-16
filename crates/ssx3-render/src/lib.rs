@@ -17,12 +17,18 @@
 //! - [`mat4`], [`mat5`]: the particle program f55ee634 (type 4: emitters,
 //!   ring emitters, patch glitter) and the SnowBox program e72540c9 (type
 //!   5), likewise, with the VU LFSR reproduced exactly ([`mat4::Lfsr`]).
+//! - [`frame`]: stage 0b, one frame as typed draws: the DeferMan buckets
+//!   (decoded [`frame::RenderState`], textures, MatrixRecord) with their
+//!   payloads from the chain walk, plus the depth-fog / phase / bloom /
+//!   colour-filter markers. [`gif`] reads the A+D writes of GIF streams.
 //!
 //! Later stages implement each VU1 material natively on wgpu from these
 //! calls.
 
 pub mod bezier;
 pub mod chain;
+pub mod frame;
+pub mod gif;
 pub mod mat1;
 pub mod mat2;
 pub mod mat3;

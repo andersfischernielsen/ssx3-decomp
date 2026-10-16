@@ -1093,7 +1093,12 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
             ret(c, id as i64);
             reschedule(c);
         }
-        0x42 => signal_sema(c, arg(c, 0) as i32, false),
+        0x42 => {
+            if crate::frame_verify::enabled() {
+                crate::frame_verify::on_signal_sema(c, arg(c, 0) as i32);
+            }
+            signal_sema(c, arg(c, 0) as i32, false)
+        }
         0x43 => signal_sema(c, arg(c, 0) as i32, true),
         0x44 => wait_sema(c, arg(c, 0) as i32),
         0x45 | 0x46 => {

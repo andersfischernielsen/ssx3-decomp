@@ -523,3 +523,47 @@ Check: the full race replay to frame 9000 with native VU1 against the translated
 
 Next: the wgpu stages (2B and on) draw from the same calls instead of producing GIF packets
 for the GS model.
+
+### Stage 0b: the typed frame (2026-10-16)
+
+`crates/ssx3-render/src/frame.rs` builds the typed `Frame` (§2.2) from EE memory at the moment
+`PS2GraphicsMan_EndFrame` signals the kick thread (syscall 0x42 on gm+0x5ac8; hook behind
+`SSX3_VERIFY_FRAME=1`). The frame holds:
+- views, matrices and scissors;
+- passes: draws, default state, depth fog, phase boundary, bloom, colour filter, post chain;
+- per draw:
+  - the decoded `RenderState`: blend preset and FIX, alpha/depth test, clamp, scissor,
+    layer, sort, material;
+  - its textures and the predicted GS registers;
+  - the prelude (state change, material setup, texture bind) and the payload: VU calls and
+    GIF streams from the stage-0a interpreter.
+
+`crates/ssx3-render/src/gif.rs` is a streaming GIF reader (PACKED, REGLIST, IMAGE) that
+reports the A+D writes.
+
+Check, menus and race to frame 4800 (4,745 frames):
+- **(a)** all 2,574,506 VU calls are attributed to exactly one draw, in order, with no
+  leftovers;
+- **(b)** 3,375,730 predicted SCISSOR/ZBUF/TEST/CLAMP/ALPHA values equal the chain's A+D
+  writes, 0 bad;
+- **(c)** TEX0 matches the draw's texture (for streamed textures, apart from VRAM
+  placement), 0 bad;
+- the VU1 header qw0-3 equals the draw's MatrixRecord on 2,363,299 calls.
+
+Corrections found while doing this (they supersede the earlier text and `structs/render.md`):
+1. **Matrix header re-upload is keyed on the state pointer.** A bucket that shares its
+   predecessor's state keeps the old header. This never happened in the run, but
+   `Draw::header_matrix` models it.
+2. **`EmitDefaultState` encodes context 2 differently.** ZBUF_2's ZMSK comes from w1 bit 23,
+   and TEST_2 takes ZTST from bits 25-26 and ATST from bits 22-23.
+3. **ALPHA presets.** Presets 15 and 18-31 emit an A+D with stale data. Presets 11-14 OR in
+   FIX; preset 2 uses FIX 0x80.
+4. **The layer split is a binary search that is `< 6` / `< 9`.** It never tests the first
+   bucket of a range. Continuation buckets follow their head regardless of their layer.
+5. **Menus have numViews = 0**, so they emit no fog, bloom or colour-filter passes.
+6. **Post passes write GS packets through PATH3 (GifBuff).** No VU calls happen outside draws.
+7. **Render targets are switched by A+D writes inside type-0 payloads.** Example: the
+   once-per-race-frame 128×128 render-to-texture with texture 0x60d; about 37 draws per frame
+   run under it. The native renderer must apply A+D writes made inside payloads.
+8. **Streamed textures get VRAM per draw.** Identify textures by id, and take TBP/CBP from
+   the TEX0 in the prelude.

@@ -27,6 +27,7 @@ pub mod pad;
 pub mod sif;
 pub mod snd_native;
 pub mod render_verify;
+pub mod frame_verify;
 pub mod bezier_verify;
 pub mod mat3_verify;
 pub mod mat6_verify;
