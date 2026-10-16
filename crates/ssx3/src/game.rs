@@ -170,7 +170,7 @@ const LENSFX_QUERY: u32 = 0x002e_c478;
 
 fn lensfx_query_native(c: &mut Cpu) {
     use ssx3_ee_rt::cpu::reg::*;
-    if !ssx3_ps2::frame_sink::native_active() {
+    if !ssx3_ps2::frame_sink::native() {
         ssx3_ee::s09::f_002ec478__generated(c);
         return;
     }

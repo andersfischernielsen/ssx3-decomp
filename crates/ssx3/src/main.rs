@@ -184,7 +184,7 @@ impl ApplicationHandler for App {
                 if let PhysicalKey::Code(code) = event.physical_key {
                     if code == KeyCode::F12 && event.state == ElementState::Pressed {
                         // The image on screen: the native renderer's while it is active.
-                        let native = self.gfx.as_ref().filter(|_| ssx3_ps2::frame_sink::native_active()).and_then(|g| g.read_image());
+                        let native = self.gfx.as_ref().filter(|_| ssx3_ps2::frame_sink::native()).and_then(|g| g.read_image());
                         let (w, h) = match native {
                             Some((w, h, px)) => {
                                 self.frame = px.iter().map(|p| p | 0xFF00_0000).collect();
@@ -227,10 +227,10 @@ impl ApplicationHandler for App {
                     p.set_aspect(display_aspect(&self.cpu));
                 }
                 let gs = &mut ssx3_ps2::m!(self.cpu).hw.gs;
-                let native = ssx3_ps2::frame_sink::native_active();
+                let native = ssx3_ps2::frame_sink::native();
                 match self.presenter.as_mut() {
-                    // The native renderer's image while the game publishes
-                    // frames (it lives on the GS device: no copy).
+                    // Native: the renderer's latest image (it lives on the
+                    // GS device: no copy).
                     Some(p) if native && self.gfx.is_some() => {
                         let g = self.gfx.as_ref().unwrap();
                         if p.same_device(self.gpu_ctx) {
