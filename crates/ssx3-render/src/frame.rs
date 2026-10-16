@@ -813,6 +813,9 @@ pub struct Built {
     pub obs: Vec<ChainObs>,
     /// Structural problems found while matching chain and buckets.
     pub issues: Vec<String>,
+    /// Index into `events` where the VIF phase-2 chain starts (the GIF
+    /// phase-1 chain runs between the two).
+    pub phase2: usize,
     /// VIF registers after the frame (seed for the next one).
     pub regs_end: VifRegs,
     /// The emitter after the frame (+0x69cbc/+0x69cc0 must match memory).
@@ -1048,7 +1051,11 @@ pub fn build(m: &dyn Mem, g: u32, carry: &Carry) -> Built {
     let mut obs = vec![ChainObs::default(); plan.draws.len()];
     let mut payload_ranges: Vec<Option<Range<usize>>> = vec![None; plan.draws.len()];
     let mut regions: Vec<Region> = Vec::new();
+    let mut phase2 = 0;
     for (phase, &head) in vif_heads.iter().enumerate() {
+        if phase == 1 {
+            phase2 = w.events.len();
+        }
         let mut region_start = w.events.len();
         w.flushe.clear();
         let mut tadr = head;
@@ -1289,6 +1296,7 @@ pub fn build(m: &dyn Mem, g: u32, carry: &Carry) -> Built {
         events,
         obs,
         issues,
+        phase2,
         regs_end: w.vif.regs,
         emitter,
     }

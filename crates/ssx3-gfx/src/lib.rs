@@ -273,9 +273,9 @@ impl Inner {
             }
         }
         let draws: Vec<&frame::Draw> = fr.draws().collect();
-        // The PATH3 chains (GifBuff): phase 1 before the VIF phase-1
-        // draws, phase 2 (post passes, display blit) before the first
-        // draw of layer 9 or above.
+        // The PATH3 chains (GifBuff) follow their VIF phases: phase 1
+        // (the colour filter and other post passes) between VIF phase 1
+        // and 2, phase 2 at the end.
         let path3 = |head: u32| -> Vec<u128> {
             let mut q = Vec::new();
             if head != 0 {
@@ -291,25 +291,27 @@ impl Inner {
                 gs.trace = Some(l);
             }
         };
-        label(&mut self.gs, "path3-1".into());
-        let mode = std::env::var("SSX3_GFX_PATH3").ok().and_then(|v| v.parse::<u32>().ok()).unwrap_or(3);
-        if mode & 1 != 0 {
-            self.gs.gif(&p1);
+        // The flip packet (FRAME, ZBUF, XYOFFSET, TEXA, PRMODECONT, ...,
+        // and the clear) the game sent before this frame's drawing.
+        if std::env::var("SSX3_GFX_FLIP").map_or(true, |v| v != "0") {
+            label(&mut self.gs, "flip".into());
+            self.gs.gif(&flip_packet(mem));
         }
-        let mut p2_done = mode & 2 == 0;
+        let mode = std::env::var("SSX3_GFX_PATH3").ok().and_then(|v| v.parse::<u32>().ok()).unwrap_or(3);
+        let mut p1_done = mode & 1 == 0;
         let mut cur: Option<usize> = None;
         let mut hash: Option<u64> = None;
-        for (owner, ev) in &built.events {
+        for (i, (owner, ev)) in built.events.iter().enumerate() {
+            if !p1_done && i >= built.phase2 {
+                p1_done = true;
+                label(&mut self.gs, "path3-1".into());
+                self.gs.gif(&p1);
+            }
             let n = match owner {
                 Owner::Prelude(n) | Owner::Payload(n) => Some(*n),
                 _ => None,
             };
             if let Some(n) = n {
-                if !p2_done && draws.get(n).is_some_and(|d| d.state.layer >= 9) {
-                    p2_done = true;
-                    label(&mut self.gs, "path3-2".into());
-                    self.gs.gif(&p2);
-                }
                 if cur != Some(n) {
                     cur = Some(n);
                     if let Some(d) = draws.get(n) {
@@ -357,7 +359,11 @@ impl Inner {
                 _ => {}
             }
         }
-        if !p2_done {
+        if !p1_done {
+            label(&mut self.gs, "path3-1".into());
+            self.gs.gif(&p1);
+        }
+        if mode & 2 != 0 {
             label(&mut self.gs, "path3-2".into());
             self.gs.gif(&p2);
         }
@@ -691,4 +697,34 @@ impl Inner {
         }
         (t.w, t.h, px)
     }
+}
+
+/// Renderer_SetDisplayRegs (0x382af0) builds a GS state packet at
+/// 0x4ffcc0 on every flip and sends it by normal GIF DMA, outside every
+/// chain. Its last tag writes SCISSOR_1/2 (NLOOP 2, A+D, EOP).
+const FLIP_PACKET: u32 = 0x4ffcc0;
+
+fn flip_packet(mem: &dyn Mem) -> Vec<u128> {
+    let mut q = Vec::new();
+    let mut a = FLIP_PACKET;
+    while q.len() < 512 {
+        let tag = mem.qword(a);
+        let lo = tag as u64;
+        let nloop = (lo & 0x7fff) as usize;
+        let flg = (lo >> 58) & 3;
+        let nreg = match (lo >> 60) as usize { 0 => 16, n => n };
+        let n = match flg {
+            0 => nloop * nreg,
+            1 => (nloop * nreg).div_ceil(2),
+            _ => nloop,
+        };
+        for k in 0..=n as u32 {
+            q.push(mem.qword(a + 16 * k));
+        }
+        a += 16 * (n as u32 + 1);
+        if lo == 0x1000_0000_0000_8002 && (tag >> 64) as u64 == 0xe {
+            break;
+        }
+    }
+    q
 }

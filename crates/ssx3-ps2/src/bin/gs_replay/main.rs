@@ -245,8 +245,8 @@ fn draws(path: &str, bytes: &[u8], dir: &str) {
             for e in &gs.draw_log.as_ref().unwrap()[before..] {
                 let t = e.tex0;
                 println!(
-                    "[draw] prim {:#x} tbp {:#x} psm {:#x} cbp {:#x} tme {}",
-                    e.prim, t & 0x3fff, (t >> 20) & 0x3f, (t >> 37) & 0x3fff, (e.prim >> 4) & 1
+                    "[draw] prim {:#x} tbp {:#x} psm {:#x} cbp {:#x} tme {} texa {:#x}",
+                    e.prim, t & 0x3fff, (t >> 20) & 0x3f, (t >> 37) & 0x3fff, (e.prim >> 4) & 1, gs.persistent_regs()[0].1
                 );
             }
         }
