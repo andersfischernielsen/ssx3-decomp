@@ -44,7 +44,16 @@ struct App {
     gpu_ctx: Option<&'static ssx3_ps2::gs::gpu::GpuContext>,
     /// The draw-layer renderer (`SSX3_RENDER`, native by default).
     gfx: Option<ssx3_gfx::Renderer>,
+    /// Images shown per game frame (interpolation, native renderer): the
+    /// display's refresh rate over the game's 59.94 Hz, or `SSX3_FPS`.
+    subframes: u32,
+    /// When the next game frame is due (interpolation: the game runs on its
+    /// own clock while the window presents at the display's rate).
+    next_tick: Instant,
 }
+
+/// The game's field time.
+const FIELD: Duration = Duration::from_micros(16_683);
 
 /// libpad button bit for a controller button.
 fn gamepad_bit(b: gilrs::Button) -> Option<u16> {
@@ -170,6 +179,20 @@ impl ApplicationHandler for App {
         self.gpu_ctx = gs;
         self.presenter = Some(pollster::block_on(Presenter::new(window.clone(), gs)));
         let size = window.inner_size();
+        // Interpolate up to the display's refresh rate (SSX3_FPS=<Hz>
+        // overrides; 60 turns it off).
+        let hz = std::env::var("SSX3_FPS")
+            .ok()
+            .and_then(|v| v.parse::<f64>().ok())
+            .or_else(|| window.current_monitor().and_then(|m| m.refresh_rate_millihertz()).map(|m| m as f64 / 1000.0))
+            .unwrap_or(60.0);
+        if let Some(g) = self.gfx.as_ref().filter(|_| ssx3_ps2::frame_sink::native()) {
+            self.subframes = ((hz / 59.94).round() as u32).clamp(1, 8);
+            g.set_subframes(self.subframes);
+            if self.subframes > 1 {
+                eprintln!("[gfx] {hz:.0} Hz display: {} images per game frame ({} interpolated)", self.subframes, self.subframes - 1);
+            }
+        }
         self.window = Some(window);
         self.follow_window_size(size.width, size.height);
     }
@@ -210,80 +233,22 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::RedrawRequested => {
-                self.update_pad();
-                let alive = ssx3_ps2::machine::run_frame(&mut self.cpu);
-                if ssx3_ps2::m!(self.cpu).sched.frames % 60 == 0 {
-                    eprintln!("[{:6.1}s] {}", self.started.elapsed().as_secs_f64(), game::status(&self.cpu));
-                    let now = Instant::now();
-                    let fps = 60.0 / now.duration_since(self.fps_mark).as_secs_f64().max(1e-6);
-                    self.fps_mark = now;
-                    if let Some(w) = self.window.as_ref() {
-                        w.set_title(&format!("SSX 3 (USA) — native recompilation — {fps:.0} fps"));
-                    }
-                }
-                if !alive {
-                    eprintln!("halted: {:?}", ssx3_ps2::m!(self.cpu).kernel.halted);
-                    event_loop.exit();
-                    return;
-                }
-                if let Some(p) = self.presenter.as_mut() {
-                    // Rendering at the window's size fills it exactly.
-                    let native_fill = self.gfx.is_some() && ssx3_ps2::frame_sink::native() && game::follows_window();
-                    p.set_aspect(if native_fill { 0.0 } else { display_aspect(&self.cpu) });
-                }
-                let gs = &mut ssx3_ps2::m!(self.cpu).hw.gs;
-                let native = ssx3_ps2::frame_sink::native();
-                match self.presenter.as_mut() {
-                    // Native: the renderer's latest image (it lives on the
-                    // GS device: no copy).
-                    Some(p) if native && self.gfx.is_some() => {
-                        let g = self.gfx.as_ref().unwrap();
-                        if p.same_device(self.gpu_ctx) {
-                            if let Some((view, _, _)) = g.present_view() {
-                                let _ = p.render_view(&view);
-                            }
-                        } else if let Some((w, h, px)) = g.read_image() {
-                            self.frame = px.iter().map(|p| p | 0xFF00_0000).collect();
-                            let _ = p.render(w, h, &self.frame);
+                // With interpolation the window presents at the display's
+                // rate (vsync) and the game steps when its next field is due.
+                let interp = self.subframes > 1;
+                let due = !interp || Instant::now() >= self.next_tick;
+                if due {
+                    if interp {
+                        self.next_tick += FIELD;
+                        if self.next_tick + FIELD * 4 < Instant::now() {
+                            self.next_tick = Instant::now() + FIELD;
                         }
                     }
-                    // GPU GS: the frame stays on the GPU. The display pass
-                    // is queued on the GS thread right behind this frame's
-                    // drawing; the previous request's frame (or a newer
-                    // one) is presented, so the guest never waits for the
-                    // GS thread to finish the frame it just produced.
-                    Some(p) if p.same_device(self.gpu_ctx) => {
-                        let ticket = gs.request_display();
-                        let prev = self.pending_display.replace(ticket).unwrap_or(ticket);
-                        match gs.take_display(prev) {
-                            Some(Some(frame)) => {
-                                let _ = p.render_gpu(&frame);
-                            }
-                            Some(None) => {
-                                let (w, h) = gs.core().display(&mut self.frame);
-                                let _ = p.render(w, h, &self.frame);
-                            }
-                            None => {} // nothing new: keep the last image
-                        }
-                    }
-                    Some(p) => {
-                        let (w, h) = gs.core().display(&mut self.frame);
-                        let _ = p.render(w, h, &self.frame);
-                    }
-                    None => {}
-                }
-                if let Some(n) = self.exit_after {
-                    if ssx3_ps2::m!(self.cpu).sched.frames >= n {
-                        event_loop.exit();
+                    if !self.step(event_loop) {
+                        return;
                     }
                 }
-                // Pace to ~59.94 fields per second.
-                let target = Duration::from_micros(16_683);
-                let el = self.last.elapsed();
-                if el < target {
-                    std::thread::sleep(target - el);
-                }
-                self.last = Instant::now();
+                self.show();
             }
             _ => {}
         }
@@ -297,6 +262,91 @@ impl ApplicationHandler for App {
 }
 
 impl App {
+    /// Run one game frame; false when the game halted.
+    fn step(&mut self, event_loop: &ActiveEventLoop) -> bool {
+        self.update_pad();
+        let alive = ssx3_ps2::machine::run_frame(&mut self.cpu);
+        if ssx3_ps2::m!(self.cpu).sched.frames % 60 == 0 {
+            eprintln!("[{:6.1}s] {}", self.started.elapsed().as_secs_f64(), game::status(&self.cpu));
+            let now = Instant::now();
+            let fps = 60.0 / now.duration_since(self.fps_mark).as_secs_f64().max(1e-6);
+            self.fps_mark = now;
+            if let Some(w) = self.window.as_ref() {
+                w.set_title(&format!("SSX 3 (USA) — native recompilation — {fps:.0} fps"));
+            }
+        }
+        if !alive {
+            eprintln!("halted: {:?}", ssx3_ps2::m!(self.cpu).kernel.halted);
+            event_loop.exit();
+            return false;
+        }
+        if let Some(n) = self.exit_after {
+            if ssx3_ps2::m!(self.cpu).sched.frames >= n {
+                event_loop.exit();
+            }
+        }
+        true
+    }
+
+    /// Present the latest image.
+    fn show(&mut self) {
+        if let Some(p) = self.presenter.as_mut() {
+            // Rendering at the window's size fills it exactly.
+            let native_fill = self.gfx.is_some() && ssx3_ps2::frame_sink::native() && game::follows_window();
+            p.set_aspect(if native_fill { 0.0 } else { display_aspect(&self.cpu) });
+        }
+        let gs = &mut ssx3_ps2::m!(self.cpu).hw.gs;
+        let native = ssx3_ps2::frame_sink::native();
+        match self.presenter.as_mut() {
+            // Native: the renderer's latest image (it lives on the
+            // GS device: no copy).
+            Some(p) if native && self.gfx.is_some() => {
+                let g = self.gfx.as_ref().unwrap();
+                if p.same_device(self.gpu_ctx) {
+                    if let Some((view, _, _)) = g.present_view_at((self.subframes > 1).then_some(FIELD)) {
+                        let _ = p.render_view(&view);
+                    }
+                } else if let Some((w, h, px)) = g.read_image() {
+                    self.frame = px.iter().map(|p| p | 0xFF00_0000).collect();
+                    let _ = p.render(w, h, &self.frame);
+                }
+            }
+            // GPU GS: the frame stays on the GPU. The display pass
+            // is queued on the GS thread right behind this frame's
+            // drawing; the previous request's frame (or a newer
+            // one) is presented, so the guest never waits for the
+            // GS thread to finish the frame it just produced.
+            Some(p) if p.same_device(self.gpu_ctx) => {
+                let ticket = gs.request_display();
+                let prev = self.pending_display.replace(ticket).unwrap_or(ticket);
+                match gs.take_display(prev) {
+                    Some(Some(frame)) => {
+                        let _ = p.render_gpu(&frame);
+                    }
+                    Some(None) => {
+                        let (w, h) = gs.core().display(&mut self.frame);
+                        let _ = p.render(w, h, &self.frame);
+                    }
+                    None => {} // nothing new: keep the last image
+                }
+            }
+            Some(p) => {
+                let (w, h) = gs.core().display(&mut self.frame);
+                let _ = p.render(w, h, &self.frame);
+            }
+            None => {}
+        }
+        // Pace to ~59.94 fields per second (with interpolation the
+        // display's vsync paces the window).
+        if self.subframes <= 1 {
+            let el = self.last.elapsed();
+            if el < FIELD {
+                std::thread::sleep(FIELD - el);
+            }
+        }
+        self.last = Instant::now();
+    }
+
     /// Native window: render at the window's pixel size, the game's view
     /// widened to its aspect (and `SSX3_FOV`).
     fn follow_window_size(&mut self, w: u32, h: u32) {
@@ -348,6 +398,8 @@ fn main() {
         keys: 0,
         pending_display: None,
         gpu_ctx: None,
+        subframes: 1,
+        next_tick: Instant::now(),
         gilrs: gilrs::Gilrs::new()
             .map(|g| {
                 let pads: Vec<String> = g.gamepads().map(|(_, p)| p.name().to_string()).collect();

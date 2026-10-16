@@ -85,13 +85,14 @@ pub struct DrawState {
     pub target: u32,
 }
 
+#[derive(Clone)]
 pub struct Batch {
     pub state: DrawState,
     pub first: u32,
     pub count: u32,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Gs {
     pub ctx: [Ctx; 2],
     prim: u64,

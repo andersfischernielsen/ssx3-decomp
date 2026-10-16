@@ -21,7 +21,8 @@ game's code at runtime.
   come through it.
 - **Modern displays.** The renderer works at any resolution and aspect ratio, widens the
   game's 3D view to fit (16:9, ultrawide), keeps the HUD at its 4:3 shape, and has an
-  adjustable field of view.
+  adjustable field of view. On high-refresh displays it interpolates between the game's
+  60 Hz frames.
 - **Native sound, files, controllers and memory card** (a native mixer; game files read
   through `std::fs`; libpad and libmc answered natively, saves on the same `.ps2` card
   image) are on by default too, so the IOP doesn't run at all. Each native path can be
@@ -153,6 +154,7 @@ through the native renderer too.
 | (window size) | The native renderer draws at the window's pixel size and the game's 3D view is widened to the window's aspect (ultrawide included); the HUD keeps its 4:3 shape in the centre. |
 | `SSX3_RENDER_SIZE=2560x1080` | A fixed output size instead (any size and aspect; headless too). |
 | `SSX3_FOV=1.2` | Field of view relative to the game's (here 20% wider). |
+| `SSX3_FPS=120` | Display rate to interpolate to. By default the monitor's refresh rate: on a 120 Hz display the native renderer draws an in-between image for every game frame (the game's matrices blended towards the next frame, VU programs re-run), so motion is smooth beyond the game's 60 Hz logic. One frame of extra latency; `SSX3_FPS=60` turns it off. |
 | `SSX3_ASPECT=4:3\|16:9\|stretch` | The classic fixed-aspect image (512×448 scaled, letterboxed) instead of following the window. |
 | `SSX3_RENDER_SCALE=2` (up to 8) | N× internal resolution (native renderer; with `SSX3_RENDER=emu SSX3_RENDER_NATIVE=all`, the emulated GS's). |
 | `SSX3_RENDER=shadow` | Both: the native renderer draws next to the emulated GS, which is shown (headless writes `frameNNNNN-gfx.png` too). |

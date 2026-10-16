@@ -22,6 +22,7 @@
 pub mod debug;
 mod draw;
 pub mod gs;
+pub mod interp;
 pub mod tex;
 
 use std::collections::HashMap;
@@ -116,8 +117,22 @@ pub struct Inner {
     /// Frames timed and the time (ms) in build, prepare, encode+submit,
     /// depth readback.
     timing: (u64, [f64; 4]),
-    /// The image on screen, for presenting (sRGB view allowed).
-    present: Option<wgpu::Texture>,
+    /// The images on screen, for presenting (sRGB view allowed): with
+    /// interpolation the in-between images first, the frame's own last.
+    present: Vec<wgpu::Texture>,
+    /// Images per game frame (1: no interpolation; see `interp`).
+    subframes: u32,
+    /// The last frame's matrix records (interpolation).
+    prev_records: Option<interp::Records>,
+    /// While an in-between image is drawn: its VU header substitutions and
+    /// its slot in `present`.
+    subst: Option<Arc<HashMap<[u32; 16], [u32; 16]>>>,
+    slot: Option<usize>,
+    /// Images per frame this frame (1, or `subframes` once there is a
+    /// previous frame to interpolate from).
+    nslots: usize,
+    /// Render target contents saved while in-between images are drawn.
+    backups: HashMap<u32, wgpu::Texture>,
     /// Vertex and uniform buffers, kept across frames (grown as needed).
     vbuf: Option<wgpu::Buffer>,
     ubuf: Option<wgpu::Buffer>,
@@ -141,7 +156,9 @@ pub struct Shared {
     pending: Mutex<usize>,
     idle: std::sync::Condvar,
     depth: Mutex<Option<(u32, u32, Vec<u32>)>>,
-    present: Mutex<Option<wgpu::Texture>>,
+    /// The latest frame's images (in-between ones first) and when they
+    /// were ready.
+    present: Mutex<Option<(Vec<wgpu::Texture>, std::time::Instant)>>,
     /// The frame thread's building time (ms) and frames.
     build_ms: Mutex<(f64, u64)>,
 }
@@ -217,7 +234,13 @@ impl Renderer {
             pending_depth: None,
             zscale: 16777216.0,
             timing: (0, [0.0; 4]),
-            present: None,
+            present: Vec::new(),
+            subframes: 1,
+            prev_records: None,
+            subst: None,
+            slot: None,
+            nslots: 1,
+            backups: HashMap::new(),
             vbuf: None,
             ubuf: None,
         })), shared)
@@ -280,10 +303,37 @@ impl Renderer {
     /// The last frame's image on screen as an sRGB view (same device as
     /// the GS), with its size.
     pub fn present_view(&self) -> Option<(wgpu::TextureView, u32, u32)> {
+        self.present_view_at(None)
+    }
+
+    /// The image to show now: with interpolation, the in-between images of
+    /// the latest frame one after another over `frame` (the game's frame
+    /// time) from when they were ready, then the frame's own.
+    pub fn present_view_at(&self, frame: Option<std::time::Duration>) -> Option<(wgpu::TextureView, u32, u32)> {
         let g = self.1.present.lock().unwrap();
-        let t = g.as_ref()?;
+        let (ts, at) = g.as_ref()?;
+        let i = match frame {
+            Some(f) if ts.len() > 1 => ((at.elapsed().as_secs_f64() / f.as_secs_f64() * ts.len() as f64) as usize).min(ts.len() - 1),
+            _ => ts.len() - 1,
+        };
+        let t = &ts[i];
         let view = t.create_view(&wgpu::TextureViewDescriptor { format: Some(wgpu::TextureFormat::Rgba8UnormSrgb), ..Default::default() });
         Some((view, t.width(), t.height()))
+    }
+
+    /// Images per game frame: 1 (the default) shows the game's frames; `n`
+    /// adds `n - 1` interpolated ones before each (see `interp`), for a
+    /// display at `n` × 60 Hz. One frame of extra latency.
+    pub fn set_subframes(&self, n: u32) {
+        self.0.lock().unwrap().subframes = n.clamp(1, 8);
+    }
+
+    /// The last frame's images on screen, read back (in-between ones
+    /// first; debug).
+    pub fn read_presents(&self) -> Vec<(u32, u32, Vec<u32>)> {
+        self.flush();
+        let g = self.0.lock().unwrap();
+        g.present.iter().map(|p| g.read_texture(p, p.width(), p.height())).collect()
     }
 
     /// Render at `n`× the GS resolution (1..=8).
@@ -370,7 +420,7 @@ impl Inner {
                 view_formats: &[],
             })
         };
-        let color = mk("ssx3-gfx colour", draw::COLOR_FORMAT, wgpu::TextureUsages::COPY_SRC);
+        let color = mk("ssx3-gfx colour", draw::COLOR_FORMAT, wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST);
         let snapshot = mk("ssx3-gfx snapshot", draw::COLOR_FORMAT, wgpu::TextureUsages::COPY_DST);
         let depth = mk("ssx3-gfx depth", draw::DEPTH_FORMAT, wgpu::TextureUsages::COPY_SRC);
         let zsnap = mk("ssx3-gfx depth snapshot", draw::DEPTH_FORMAT, wgpu::TextureUsages::COPY_DST);
@@ -427,7 +477,7 @@ impl Inner {
                     view_formats: &[],
                 })
             };
-            let color = mk(draw::COLOR_FORMAT, wgpu::TextureUsages::COPY_SRC);
+            let color = mk(draw::COLOR_FORMAT, wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST);
             let depth = mk(draw::DEPTH_FORMAT, wgpu::TextureUsages::empty());
             self.rts.insert(fbp, RtTarget { w: pw, h: ph, color, depth });
         }
@@ -671,7 +721,7 @@ impl Inner {
         }
         let chunk_of: HashMap<usize, usize> = calls.iter().enumerate().map(|(k, c)| (c.0, bounds.partition_point(|&b| b <= k) - 1)).collect();
         let done = (0..bounds.len()).map(|_| (std::sync::Mutex::new(None), std::sync::Condvar::new())).collect();
-        VuPlan { vu0: self.vu.clone(), calls, bounds, starts, done, chunk_of, next: std::sync::atomic::AtomicUsize::new(0), threads }
+        VuPlan { vu0: self.vu.clone(), calls, bounds, starts, done, chunk_of, next: std::sync::atomic::AtomicUsize::new(0), threads, subst: self.subst.clone() }
     }
 
     fn texture(&mut self, info: u32, texa: u64, mem: &dyn Mem) -> Option<(wgpu::TextureView, u8)> {
@@ -803,8 +853,85 @@ impl Inner {
         self.render(built, mem);
     }
 
+    /// Render a frame. With interpolation (`set_subframes`), first the
+    /// in-between images (frame N with its matrices moved back towards
+    /// N-1, see `interp`), each from the state frame N starts from, then
+    /// the frame's own (exactly as without interpolation).
     pub fn render(&mut self, built: &Built, mem: &dyn Mem) {
-        self.stats.frames += 1;
+        let cur = (self.subframes > 1).then(|| records(built));
+        let k = if cur.is_some() && self.prev_records.is_some() { self.subframes as usize } else { 1 };
+        self.nslots = k;
+        if k > 1 {
+            let (prev, now) = (self.prev_records.as_ref().unwrap(), cur.as_ref().unwrap());
+            let pairs = interp::pair(prev, now);
+            let subs: Vec<_> = (1..k).map(|s| interp::substitutions(prev, now, &pairs, s as f32 / k as f32)).collect();
+            self.gs.verts.clear();
+            self.gs.batches.clear();
+            let (gs0, vu0) = (self.gs.clone(), self.vu.clone());
+            self.save_targets();
+            for (s, m) in subs.into_iter().enumerate() {
+                self.subst = Some(Arc::new(m));
+                self.slot = Some(s);
+                self.render_one(built, mem);
+                self.gs = gs0.clone();
+                self.vu = vu0.clone();
+            }
+            self.subst = None;
+            self.slot = None;
+            self.restore_targets();
+        }
+        self.render_one(built, mem);
+        if !self.present.is_empty() {
+            *self.shared.present.lock().unwrap() = Some((self.present.clone(), std::time::Instant::now()));
+        }
+        self.prev_records = cur;
+    }
+
+    /// The colour of every target (main, render targets) into `backups`.
+    fn save_targets(&mut self) {
+        let mut srcs: Vec<(u32, &wgpu::Texture)> = self.rts.iter().map(|(&f, r)| (f, &r.color)).collect();
+        if let Some(t) = self.targets.as_ref() {
+            srcs.push((u32::MAX, &t.color));
+        }
+        let mut enc = self.dev.create_command_encoder(&Default::default());
+        for (f, tex) in srcs {
+            if !self.backups.get(&f).is_some_and(|b| (b.width(), b.height()) == (tex.width(), tex.height())) {
+                let b = self.dev.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("ssx3-gfx target backup"),
+                    size: wgpu::Extent3d { width: tex.width(), height: tex.height(), depth_or_array_layers: 1 },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: tex.format(),
+                    usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::COPY_SRC,
+                    view_formats: &[],
+                });
+                self.backups.insert(f, b);
+            }
+            copy_whole(&mut enc, tex, &self.backups[&f]);
+        }
+        self.queue.submit(std::iter::once(enc.finish()));
+    }
+
+    /// Put back what `save_targets` saved (targets of the same size).
+    fn restore_targets(&mut self) {
+        let mut enc = self.dev.create_command_encoder(&Default::default());
+        let mut dsts: Vec<(u32, &wgpu::Texture)> = self.rts.iter().map(|(&f, r)| (f, &r.color)).collect();
+        if let Some(t) = self.targets.as_ref() {
+            dsts.push((u32::MAX, &t.color));
+        }
+        for (f, tex) in dsts {
+            if let Some(b) = self.backups.get(&f).filter(|b| (b.width(), b.height()) == (tex.width(), tex.height())) {
+                copy_whole(&mut enc, b, tex);
+            }
+        }
+        self.queue.submit(std::iter::once(enc.finish()));
+    }
+
+    fn render_one(&mut self, built: &Built, mem: &dyn Mem) {
+        if self.slot.is_none() {
+            self.stats.frames += 1;
+        }
         let p0 = (self.gs.prims, self.gs.dropped, self.gs.unknown_tex);
         let t_start = std::time::Instant::now();
         self.build(built, mem);
@@ -1166,38 +1293,32 @@ impl Inner {
             Some(r) => &r.color,
             None => &t.color,
         };
-        let present = self.present.get_or_insert_with(|| {
-            self.dev.create_texture(&wgpu::TextureDescriptor {
-                label: Some("ssx3-gfx present"),
-                size: wgpu::Extent3d { width: t.w, height: t.h, depth_or_array_layers: 1 },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8Unorm,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-                view_formats: &[wgpu::TextureFormat::Rgba8UnormSrgb],
-            })
-        });
-        if (present.width(), present.height()) != (t.w, t.h) {
-            *present = self.dev.create_texture(&wgpu::TextureDescriptor {
-                label: Some("ssx3-gfx present"),
-                size: wgpu::Extent3d { width: t.w, height: t.h, depth_or_array_layers: 1 },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8Unorm,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-                view_formats: &[wgpu::TextureFormat::Rgba8UnormSrgb],
-            });
+        // One image per sub-frame (see `render`); this one's slot.
+        let slots = self.nslots.max(1);
+        let slot = self.slot.unwrap_or(slots - 1);
+        if self.present.len() != slots || self.present.first().is_some_and(|p| (p.width(), p.height()) != (t.w, t.h)) {
+            self.present = (0..slots)
+                .map(|_| {
+                    self.dev.create_texture(&wgpu::TextureDescriptor {
+                        label: Some("ssx3-gfx present"),
+                        size: wgpu::Extent3d { width: t.w, height: t.h, depth_or_array_layers: 1 },
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: wgpu::TextureDimension::D2,
+                        format: wgpu::TextureFormat::Rgba8Unorm,
+                        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::COPY_SRC,
+                        view_formats: &[wgpu::TextureFormat::Rgba8UnormSrgb],
+                    })
+                })
+                .collect();
         }
         enc.copy_texture_to_texture(
             wgpu::TexelCopyTextureInfo { texture: shown, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
-            wgpu::TexelCopyTextureInfo { texture: present, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+            wgpu::TexelCopyTextureInfo { texture: &self.present[slot], mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
             wgpu::Extent3d { width: t.w, height: t.h, depth_or_array_layers: 1 },
         );
-        *self.shared.present.lock().unwrap() = self.present.clone();
         // Depth after phase 1, read back for the light queries.
-        let depth_buf = self.want_depth.then(|| {
+        let depth_buf = (self.want_depth && self.slot.is_none()).then(|| {
             let buf = self.dev.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("ssx3-gfx depth readback"),
                 size: (t.w * 4).next_multiple_of(256) as u64 * t.h as u64,
@@ -1416,10 +1537,12 @@ struct VuPlan<'a> {
     chunk_of: HashMap<usize, usize>,
     next: std::sync::atomic::AtomicUsize,
     threads: usize,
+    /// VU header substitutions (an in-between image, see `interp`).
+    subst: Option<Arc<HashMap<[u32; 16], [u32; 16]>>>,
 }
 
 impl VuPlan<'_> {
-    fn run(chunk: &[(usize, &ssx3_render::vif::VuCall, Option<u64>)], mut mem: Box<[u8; 16384]>) -> VuChunk {
+    fn run(chunk: &[(usize, &ssx3_render::vif::VuCall, Option<u64>)], mut mem: Box<[u8; 16384]>, subst: Option<&HashMap<[u32; 16], [u32; 16]>>) -> VuChunk {
         let mut outs = Vec::with_capacity(chunk.len());
         for &(i, c, hash) in chunk {
             for &(a, v) in &c.input {
@@ -1427,6 +1550,9 @@ impl VuPlan<'_> {
                 mem[a..a + 16].copy_from_slice(&v.to_le_bytes());
             }
             let (Some(entry), Some(hh)) = (c.entry, hash) else { continue };
+            if let Some(s) = subst {
+                interp::substitute(&mut mem[..64], s);
+            }
             let mut out: Vec<u128> = Vec::new();
             if ssx3_render::run_native(hh, entry, c.top, c.itop, &mut mem, &mut |p: &[u128]| out.extend_from_slice(p)) {
                 outs.push((i, out));
@@ -1442,7 +1568,7 @@ impl VuPlan<'_> {
             let Some(start) = self.starts.get(j) else { break };
             let st = start.lock().unwrap().take().expect("chunk");
             let e = self.bounds.get(j + 1).copied().unwrap_or(self.calls.len());
-            let r = Self::run(&self.calls[self.bounds[j]..e], st);
+            let r = Self::run(&self.calls[self.bounds[j]..e], st, self.subst.as_deref());
             let (slot, cv) = &self.done[j];
             *slot.lock().unwrap() = Some(r);
             cv.notify_all();
@@ -1515,11 +1641,45 @@ impl VuReceiver {
         if let Some(all) = all {
             // Debug: which calls differ from a sequential run (only the calls
             // not yet consumed are compared).
-            let (seq, _) = VuPlan::run(&plan.calls, plan.vu0.clone());
+            let (seq, _) = VuPlan::run(&plan.calls, plan.vu0.clone(), plan.subst.as_deref());
             let bad = seq.iter().filter(|(i, out)| all.get(i).is_some_and(|o| o != out)).count();
             eprintln!("[vucheck] {bad} of {} calls differ from a sequential run ({} chunks)", seq.len(), n);
         }
     }
+}
+
+/// Copy a whole texture (same size and format).
+fn copy_whole(enc: &mut wgpu::CommandEncoder, from: &wgpu::Texture, to: &wgpu::Texture) {
+    enc.copy_texture_to_texture(
+        wgpu::TexelCopyTextureInfo { texture: from, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+        wgpu::TexelCopyTextureInfo { texture: to, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+        wgpu::Extent3d { width: from.width(), height: from.height(), depth_or_array_layers: 1 },
+    );
+}
+
+/// A frame's matrix records with the draws' state keys (interpolation).
+fn records(built: &Built) -> interp::Records {
+    let fr = &built.frame;
+    let mut alts: Vec<Vec<u64>> = vec![Vec::new(); fr.matrices.len()];
+    for d in fr.draws() {
+        let alt = hash(&(d.state.raw, d.tex, d.state.layer));
+        for m in [d.matrix as i32, d.header_matrix] {
+            if let Some(a) = usize::try_from(m).ok().and_then(|m| alts.get_mut(m)) {
+                if !a.contains(&alt) {
+                    a.push(alt);
+                }
+            }
+        }
+    }
+    interp::Records { records: fr.matrices.iter().copied().zip(alts).collect() }
+}
+
+/// A stable hash (interpolation keys).
+fn hash<T: std::hash::Hash>(v: &T) -> u64 {
+    use std::hash::Hasher;
+    let mut h = std::hash::DefaultHasher::new();
+    v.hash(&mut h);
+    h.finish()
 }
 
 /// `slot`'s buffer if it holds `size` bytes, else a new one (twice as big as

@@ -272,3 +272,23 @@ More debug switches: `SSX3_GFX_SKIP=n,a-b` (drop draws), `SSX3_GFX_SKIPTEST=<tes
   Interpolating the camera alone makes the riders judder at speed. This is the next design
   task for "detach frame rate from logic"; the host clock mode (real-time catch-up) still
   stalls with a host that stays behind and stays off.
+
+### 2026-10-17 (night): frame interpolation
+
+- **Rendering faster than the 60 Hz logic.** `ssx3-gfx` draws `n - 1` in-between images
+  before each game frame (`set_subframes`; the window picks `n` from the monitor's
+  refresh rate, `SSX3_FPS` overrides). An in-between image is frame N drawn again with its
+  objects' VU headers (worldView, VU qw0-3) replaced by a blend of frame N-1's and N's
+  (`interp.rs`):
+  - each MatrixRecord of N is paired with one of N-1: the same world matrix (static
+    objects; the closest view for split screen), else the nearest world position among
+    records of draws with the same state and textures (riders);
+  - the VU programs re-run with the substituted header, so culling and clipping are
+    consistent within each image (the first attempt, blending GS vertex kicks per draw,
+    cracked: terrain draws change their kick counts frame to frame);
+  - the GS register state, VU memory and render targets are saved before the in-between
+    images and restored after, so the frame's own image is unchanged (checked: identical
+    bytes with and without interpolation, `gfx_replay --interp K`).
+  - Screen-space draws (HUD, flares, particles built on the EE) stay at frame N.
+- The window steps the game on its own 59.94 Hz clock and presents every vsync, showing
+  the in-between images in turn (`Renderer::present_view_at`). One frame of extra latency.
