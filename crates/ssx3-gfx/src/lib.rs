@@ -366,6 +366,7 @@ impl Inner {
         // Debug: SSX3_GFX_SKIP=n,m,... drops those draws' payloads.
         // (`a-b` ranges too.)
         let skip = &dbg.skip;
+        let mut vu_out = self.run_vu_calls(built, &draws);
         for (i, (owner, ev)) in built.events.iter().enumerate() {
             if matches!(owner, Owner::Payload(n) if skip.contains(n)) {
                 continue;
@@ -405,23 +406,14 @@ impl Inner {
                 }
             }
             match ev {
-                Event::Call(c) => {
+                Event::Call(_) => {
                     self.stats.vu_calls += 1;
-                    for &(a, v) in &c.input {
-                        let a = (a as usize & 1023) * 16;
-                        self.vu[a..a + 16].copy_from_slice(&v.to_le_bytes());
-                    }
-                    let (Some(entry), Some(hh)) = (c.entry, hash) else {
-                        self.stats.vu_missing += 1;
-                        continue;
-                    };
-                    let mut out: Vec<u128> = Vec::new();
-                    let ok = ssx3_render::run_native(hh, entry, c.top, c.itop, &mut self.vu, &mut |p: &[u128]| out.extend_from_slice(p));
-                    if ok {
-                        self.stats.vu_native += 1;
-                        self.gs.gif(&out);
-                    } else {
-                        self.stats.vu_missing += 1;
+                    match vu_out.remove(&i) {
+                        Some(out) => {
+                            self.stats.vu_native += 1;
+                            self.gs.gif(&out);
+                        }
+                        None => self.stats.vu_missing += 1,
                     }
                 }
                 Event::Direct(dd) => self.gs.gif(&dd.qwords),
@@ -451,6 +443,117 @@ impl Inner {
     }
 
     /// The texture for a TexInfo, and its largest texel alpha.
+    /// Run the frame's VU1 calls and return each call's GIF output by event
+    /// index (calls with no native program are absent). The calls are split
+    /// into chunks run on separate threads; each chunk starts from the VU
+    /// memory with every earlier call's inputs applied (the programs keep no
+    /// state between calls that a later call reads without uploading it
+    /// again: checked against a sequential run, `SSX3_GFX_SEQ_VU=1`).
+    fn run_vu_calls(&mut self, built: &Built, draws: &[&frame::Draw]) -> HashMap<usize, Vec<u128>> {
+        // Each call's program: the material of the draw it belongs to.
+        let mut calls: Vec<(usize, &ssx3_render::vif::VuCall, Option<u64>)> = Vec::new();
+        // Calls that start a draw (chunks may only begin there: within a
+        // draw, programs pass state from call to call).
+        let mut draw_start: Vec<bool> = Vec::new();
+        let mut last_draw = None;
+        let (mut cur, mut hash) = (None, None);
+        for (i, (owner, ev)) in built.events.iter().enumerate() {
+            if let Owner::Prelude(n) | Owner::Payload(n) = owner {
+                if cur != Some(*n) {
+                    cur = Some(*n);
+                    if let Some(p) = draws.get(*n).and_then(|d| program(d.state.material)) {
+                        hash = Some(p);
+                    }
+                }
+            }
+            if let Event::Call(c) = ev {
+                // (And not between two draws of the same program: terrain
+                // patches share state across draws.)
+                draw_start.push(cur != last_draw && calls.last().is_none_or(|l| l.2 != hash));
+                last_draw = cur;
+                calls.push((i, c, hash));
+            }
+        }
+        static SEQ: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        let seq = *SEQ.get_or_init(|| std::env::var_os("SSX3_GFX_SEQ_VU").is_some());
+        let threads = if seq || calls.len() < 64 { 1 } else { std::thread::available_parallelism().map_or(4, |n| n.get()).clamp(1, 8) };
+        let per = calls.len().div_ceil(threads).max(1);
+        // Chunk boundaries: the first draw start at or after each multiple
+        // of `per`; the start images have every earlier call's inputs applied.
+        let mut bounds: Vec<usize> = Vec::new();
+        let mut starts: Vec<Box<[u8; 16384]>> = Vec::new();
+        let mut img = self.vu.clone();
+        for (k, (_, c, _)) in calls.iter().enumerate() {
+            if k == 0 || (k >= bounds.last().unwrap() + per && draw_start[k]) {
+                bounds.push(k);
+                starts.push(img.clone());
+            }
+            if threads > 1 {
+                for &(a, v) in &c.input {
+                    let a = (a as usize & 1023) * 16;
+                    img[a..a + 16].copy_from_slice(&v.to_le_bytes());
+                }
+            }
+        }
+        let run = |chunk: &[(usize, &ssx3_render::vif::VuCall, Option<u64>)], mut mem: Box<[u8; 16384]>| {
+            let mut outs = Vec::with_capacity(chunk.len());
+            for &(i, c, hash) in chunk {
+                for &(a, v) in &c.input {
+                    let a = (a as usize & 1023) * 16;
+                    mem[a..a + 16].copy_from_slice(&v.to_le_bytes());
+                }
+                let (Some(entry), Some(hh)) = (c.entry, hash) else { continue };
+                let mut out: Vec<u128> = Vec::new();
+                if ssx3_render::run_native(hh, entry, c.top, c.itop, &mut mem, &mut |p: &[u128]| out.extend_from_slice(p)) {
+                    outs.push((i, out));
+                }
+            }
+            (outs, mem)
+        };
+        let results: Vec<(Vec<(usize, Vec<u128>)>, Box<[u8; 16384]>)> = if starts.len() <= 1 {
+            vec![run(&calls, starts.pop().unwrap_or_else(|| self.vu.clone()))]
+        } else {
+            std::thread::scope(|sc| {
+                let calls = &calls;
+                let hs: Vec<_> = bounds
+                    .iter()
+                    .enumerate()
+                    .zip(starts)
+                    .map(|((j, &b), st)| {
+                        let e = bounds.get(j + 1).copied().unwrap_or(calls.len());
+                        sc.spawn(move || run(&calls[b..e], st))
+                    })
+                    .collect();
+                hs.into_iter().map(|h| h.join().expect("VU thread")).collect()
+            })
+        };
+        let mut map = HashMap::with_capacity(calls.len());
+        let vu0 = self.vu.clone();
+        for (outs, mem) in results {
+            map.extend(outs);
+            self.vu = mem;
+        }
+        if std::env::var_os("SSX3_GFX_VUCHECK").is_some() && threads > 1 {
+            // Debug: which calls' output differs from a sequential run.
+            let (outs, _) = run(&calls, vu0);
+            let mut bad: HashMap<u64, (usize, usize, Vec<usize>)> = HashMap::new();
+            for (k, (i, out)) in outs.iter().enumerate() {
+                let e = bad.entry(calls.iter().find(|c| c.0 == *i).and_then(|c| c.2).unwrap_or(0)).or_default();
+                e.0 += 1;
+                if map.get(i) != Some(out) {
+                    e.1 += 1;
+                    if e.2.len() < 6 {
+                        e.2.push(k);
+                    }
+                }
+            }
+            for (h, (n, b, ks)) in bad {
+                eprintln!("[vucheck] program {h:#x}: {b}/{n} calls differ (first at call #{ks:?} of {}; chunk size {per})", calls.len());
+            }
+        }
+        map
+    }
+
     fn texture(&mut self, info: u32, texa: u64, mem: &dyn Mem) -> Option<(wgpu::TextureView, u8)> {
         let key = tex::key(mem, info, texa);
         let frame = self.stats.frames;
