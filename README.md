@@ -49,7 +49,7 @@ issues.
 - **bsdtar** (libarchive) to read the image. macOS has it built in. On Debian/Ubuntu
   install `libarchive-tools`.
 - **A GPU with Metal, Vulkan or DX12.** The GS runs on wgpu.
-- **Disk:** about 15 GB free for the image, the generated code and the build.
+- **Disk:** about 7 GB free: the 3 GB image, 64 MB of generated code and about 3 GB of build output.
 - **OS:** developed and tested on macOS (Apple Silicon). Linux should work but is
   untested. Windows needs a POSIX shell for the two setup scripts.
 
