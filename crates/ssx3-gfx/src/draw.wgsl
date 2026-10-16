@@ -9,7 +9,9 @@ struct Batch {
     size: vec2<f32>,
     // TFX (0 modulate, 1 decal, 2 highlight, 3 highlight2).
     tfx: u32,
-    // Bit 0 TME, 1 TCC, 2 FGE, 3 FBA.
+    // Bit 0 TME, 1 TCC, 2 FGE, 3 FBA, 4 the texture is a target we drew
+    // (alpha stored as a/128), 5 that target is CT16 (1-bit alpha read
+    // through TEXA).
     flags: u32,
     // Alpha test: ATST, AREF, side (0 none, 1 draw passing, 2 draw failing).
     atst: u32,
@@ -23,6 +25,8 @@ struct Batch {
     c_kind: u32,
     fix: f32,
     fogcol: vec4<f32>,
+    // TEXA TA0, TA1.
+    ta: vec2<f32>,
 }
 
 @group(0) @binding(0) var<uniform> b: Batch;
@@ -75,7 +79,14 @@ fn fs(v: VOut) -> @location(0) vec4<f32> {
     var rgb = floor(v.col.rgb);
     var a = floor(v.col.a);
     if ((b.flags & 1u) != 0u) {
-        let t = floor(textureSample(tex, samp, v.stq.xy / v.stq.z) * 255.0 + 0.5);
+        let ts = textureSample(tex, samp, v.stq.xy / v.stq.z);
+        var t = floor(ts * 255.0 + 0.5);
+        if ((b.flags & 16u) != 0u) {
+            t.a = floor(ts.a * 128.0 + 0.5);
+            if ((b.flags & 32u) != 0u) {
+                t.a = select(b.ta.x, b.ta.y, t.a >= 128.0);
+            }
+        }
         let tcc = (b.flags & 2u) != 0u;
         switch b.tfx {
             case 0u: {

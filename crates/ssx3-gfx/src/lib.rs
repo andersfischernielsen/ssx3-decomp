@@ -50,6 +50,16 @@ struct Targets {
     h: u32,
     color: wgpu::Texture,
     depth: wgpu::Texture,
+    /// Copy of `color` for primitives that sample the frame.
+    snapshot: wgpu::Texture,
+}
+
+/// An offscreen render target (`gs::Rt`) on the GPU.
+struct RtTarget {
+    w: u32,
+    h: u32,
+    color: wgpu::Texture,
+    depth: wgpu::Texture,
 }
 
 struct CachedTex {
@@ -62,11 +72,14 @@ pub struct Inner {
     queue: wgpu::Queue,
     pipes: draw::Pipelines,
     targets: Option<Targets>,
+    rts: HashMap<u32, RtTarget>,
     gs: gs::Gs,
     vu: Box<[u8; 16384]>,
     texcache: HashMap<tex::TexKey, CachedTex>,
     samplers: HashMap<draw::SampKey, wgpu::Sampler>,
     white: wgpu::TextureView,
+    /// TexInfos that failed to decode (reported once).
+    failed: std::collections::HashSet<u32>,
     pub stats: Stats,
 }
 
@@ -112,16 +125,24 @@ impl Renderer {
                 view_formats: &[],
             })
             .create_view(&Default::default());
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo { texture: white.texture(), mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+            &[255, 255, 255, 128],
+            wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4), rows_per_image: Some(1) },
+            wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+        );
         Renderer(Arc::new(Mutex::new(Inner {
             dev,
             queue,
             pipes,
             targets: None,
+            rts: HashMap::new(),
             gs: gs::Gs::new(),
             vu: Box::new([0; 16384]),
             texcache: HashMap::new(),
             samplers: HashMap::new(),
             white,
+            failed: Default::default(),
             stats: Stats::default(),
         })))
     }
@@ -129,6 +150,15 @@ impl Renderer {
     /// The master colour target as RGBA8 (GS alpha), read back.
     pub fn read_image(&self) -> Option<(u32, u32, Vec<u32>)> {
         self.0.lock().unwrap().read_image()
+    }
+
+    /// The render targets (FBP, width, height, RGBA8), read back (debug).
+    pub fn read_rts(&self) -> Vec<(u32, u32, u32, Vec<u32>)> {
+        let g = self.0.lock().unwrap();
+        g.rts.iter().map(|(&fbp, r)| {
+            let (w, h, px) = g.read_texture(&r.color, r.w, r.h);
+            (fbp, w, h, px)
+        }).collect()
     }
 
     pub fn stats(&self) -> Stats {
@@ -167,6 +197,7 @@ impl Inner {
             })
         };
         let color = mk("ssx3-gfx colour", draw::COLOR_FORMAT, wgpu::TextureUsages::COPY_SRC);
+        let snapshot = mk("ssx3-gfx snapshot", draw::COLOR_FORMAT, wgpu::TextureUsages::COPY_DST);
         let depth = mk("ssx3-gfx depth", draw::DEPTH_FORMAT, wgpu::TextureUsages::empty());
         // Start cleared (the game clears with its own draws afterwards).
         let mut enc = self.dev.create_command_encoder(&Default::default());
@@ -192,7 +223,32 @@ impl Inner {
             });
         }
         self.queue.submit(std::iter::once(enc.finish()));
-        self.targets = Some(Targets { w, h, color, depth });
+        self.targets = Some(Targets { w, h, color, depth, snapshot });
+    }
+
+    /// Textures for the render targets the game drew into (resized when
+    /// they grow).
+    fn ensure_rts(&mut self) {
+        for (&fbp, rt) in &self.gs.rts {
+            if self.rts.get(&fbp).is_some_and(|t| t.w == rt.w && t.h == rt.h) {
+                continue;
+            }
+            let mk = |format, extra| {
+                self.dev.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("ssx3-gfx rt"),
+                    size: wgpu::Extent3d { width: rt.w, height: rt.h, depth_or_array_layers: 1 },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | extra,
+                    view_formats: &[],
+                })
+            };
+            let color = mk(draw::COLOR_FORMAT, wgpu::TextureUsages::COPY_SRC);
+            let depth = mk(draw::DEPTH_FORMAT, wgpu::TextureUsages::empty());
+            self.rts.insert(fbp, RtTarget { w: rt.w, h: rt.h, color, depth });
+        }
     }
 
     /// Build the geometry of one frame.
@@ -322,7 +378,7 @@ impl Inner {
             return Some(t.view.clone());
         }
         let Some(d) = tex::decode(mem, info, texa) else {
-            if self.stats.textures == 0 && self.stats.frames % 300 == 1 {
+            if self.failed.insert(info) {
                 eprintln!(
                     "[gfx] texture {info:#x} not decoded: format {:#x} pixels {:#x} tex0 {:#x}",
                     frame::word(mem, info + tex::ti::FORMAT),
@@ -350,6 +406,19 @@ impl Inner {
             wgpu::Extent3d { width: d.width, height: d.height, depth_or_array_layers: 1 },
         );
         self.stats.textures += 1;
+        // Debug: SSX3_GFX_TEXDUMP=dir writes each decoded texture as raw RGBA.
+        if let Ok(dir) = std::env::var("SSX3_GFX_TEXDUMP") {
+            let t0 = tex::tex0(mem, info);
+            let name = format!(
+                "{dir}/tex_{info:08x}_f{:x}_psm{:x}_tcc{}_{}x{}.rgba",
+                frame::word(mem, info + tex::ti::FORMAT),
+                (t0 >> 20) & 0x3f,
+                (t0 >> 34) & 1,
+                d.width,
+                d.height
+            );
+            let _ = std::fs::write(name, &bytes);
+        }
         let view = t.create_view(&Default::default());
         self.texcache.insert(key, CachedTex { view: view.clone(), used: frame });
         Some(view)
@@ -361,6 +430,7 @@ impl Inner {
         self.build(built, mem);
         let (w, h) = self.gs.size;
         self.ensure_targets(w, h);
+        self.ensure_rts();
         self.stats.prims += self.gs.prims - p0.0;
         self.stats.dropped += self.gs.dropped - p0.1;
         self.stats.unknown_tex += self.gs.unknown_tex - p0.2;
@@ -388,6 +458,11 @@ impl Inner {
         let batches = std::mem::take(&mut self.gs.batches);
         self.stats.batches += batches.len() as u64;
         struct Item {
+            /// Samples the frame: needs a fresh snapshot unless the previous
+            /// item did too.
+            frame: bool,
+            /// FBP drawn into.
+            target: u32,
             key: draw::PipeKey,
             ubo: u32,
             constant: f64,
@@ -407,22 +482,39 @@ impl Inner {
             let bind = match bind_ix.get(&bkey) {
                 Some(&i) => i,
                 None => {
-                    let view = st.tex.and_then(|info| self.texture(info, st.texa, mem));
+                    let view = match st.tex {
+                        Some(gs::FRAME_TEX) => {
+                            let t = self.targets.as_ref().expect("targets");
+                            Some(t.snapshot.create_view(&Default::default()))
+                        }
+                        Some(t) if t & gs::RT_TEX != 0 => self.rts.get(&(t & !gs::RT_TEX)).map(|r| r.color.create_view(&Default::default())),
+                        Some(info) => self.texture(info, st.texa, mem),
+                        None => None,
+                    };
                     binds.push((view, sk));
                     bind_ix.insert(bkey, binds.len() - 1);
                     binds.len() - 1
                 }
             };
+            let (tw, th) = if st.target == self.gs.main_fbp {
+                (w, h)
+            } else {
+                match self.rts.get(&st.target) {
+                    Some(r) => (r.w, r.h),
+                    None => continue,
+                }
+            };
             let sc = st.ctx.scissor;
             let (x0, x1, y0, y1) = ((sc & 0x7ff) as u32, ((sc >> 16) & 0x7ff) as u32, ((sc >> 32) & 0x7ff) as u32, ((sc >> 48) & 0x7ff) as u32);
-            let scissor = (x0 <= x1 && y0 <= y1 && x0 < w && y0 < h).then(|| [x0, y0, (x1 + 1).min(w) - x0, (y1 + 1).min(h) - y0]);
+            let scissor = (x0 <= x1 && y0 <= y1 && x0 < tw && y0 < th).then(|| [x0, y0, (x1 + 1).min(tw) - x0, (y1 + 1).min(th) - y0]);
             if scissor.is_none() {
                 continue;
             }
-            for p in draw::plans(st, (w, h)) {
+            let rt_psm = st.tex.filter(|t| *t != gs::FRAME_TEX && t & gs::RT_TEX != 0).and_then(|t| self.gs.rts.get(&(t & !gs::RT_TEX))).map(|r| r.psm);
+            for p in draw::plans(st, (tw, th), rt_psm) {
                 let ubo = (ubytes.len() as u64 / draw::UNIFORM_STRIDE) as u32;
                 let u = &p.u;
-                let words: [u32; 16] = [
+                let words: [u32; 20] = [
                     u.size[0].to_bits(),
                     u.size[1].to_bits(),
                     u.tfx,
@@ -439,10 +531,14 @@ impl Inner {
                     u.fogcol[1].to_bits(),
                     u.fogcol[2].to_bits(),
                     u.fogcol[3].to_bits(),
+                    u.ta[0].to_bits(),
+                    u.ta[1].to_bits(),
+                    0,
+                    0,
                 ];
                 ubytes.extend(words.iter().flat_map(|w| w.to_le_bytes()));
                 ubytes.resize(ubytes.len().next_multiple_of(draw::UNIFORM_STRIDE as usize), 0);
-                items.push(Item { key: p.key, ubo, constant: p.constant, bind, first: b.first, count: b.count, scissor });
+                items.push(Item { frame: st.tex == Some(gs::FRAME_TEX), target: st.target, key: p.key, ubo, constant: p.constant, bind, first: b.first, count: b.count, scissor });
             }
         }
         if items.is_empty() {
@@ -468,7 +564,7 @@ impl Inner {
                             resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                                 buffer: &ubuf,
                                 offset: 0,
-                                size: wgpu::BufferSize::new(64),
+                                size: wgpu::BufferSize::new(draw::BATCH_BYTES),
                             }),
                         },
                         wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(view.as_ref().unwrap_or(&self.white)) },
@@ -484,36 +580,73 @@ impl Inner {
         let cv = t.color.create_view(&Default::default());
         let dv = t.depth.create_view(&Default::default());
         let mut enc = self.dev.create_command_encoder(&Default::default());
-        {
-            let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+        let main = self.gs.main_fbp;
+        let rts = &self.rts;
+        // A pass on target `fbp`; depth starts cleared on a target's first
+        // pass of the frame.
+        let begin = |enc: &mut wgpu::CommandEncoder, fbp: u32, first: bool| -> wgpu::RenderPass<'static> {
+            let (c, d) = if fbp == main {
+                (cv.clone(), dv.clone())
+            } else {
+                let r = &rts[&fbp];
+                (r.color.create_view(&Default::default()), r.depth.create_view(&Default::default()))
+            };
+            enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("ssx3-gfx frame"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &cv,
+                    view: &c,
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &dv,
+                    view: &d,
                     // Each frame starts with depth cleared to the farthest
                     // value (the GS's Z history across frames is not kept).
-                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(0.0), store: wgpu::StoreOp::Store }),
+                    depth_ops: Some(wgpu::Operations {
+                        load: if first { wgpu::LoadOp::Clear(0.0) } else { wgpu::LoadOp::Load },
+                        store: wgpu::StoreOp::Store,
+                    }),
                     stencil_ops: None,
                 }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
                 multiview_mask: None,
-            });
-            pass.set_vertex_buffer(0, vbuf.slice(..));
-            for it in &items {
-                let Some([x, y, sw, sh]) = it.scissor else { continue };
-                pass.set_pipeline(self.pipes.cached(it.key));
-                pass.set_bind_group(0, &groups[it.bind], &[it.ubo * draw::UNIFORM_STRIDE as u32]);
-                pass.set_blend_constant(wgpu::Color { r: it.constant, g: it.constant, b: it.constant, a: it.constant });
-                pass.set_scissor_rect(x, y, sw, sh);
-                pass.draw(it.first..it.first + it.count, 0..1);
+            })
+            .forget_lifetime()
+        };
+        let mut started: std::collections::HashSet<u32> = Default::default();
+        let mut cur_target = main;
+        started.insert(main);
+        let mut pass = begin(&mut enc, main, true);
+        pass.set_vertex_buffer(0, vbuf.slice(..));
+        let mut prev_frame = false;
+        for it in &items {
+            let Some([x, y, sw, sh]) = it.scissor else { continue };
+            let snapshot = it.frame && !prev_frame && it.target == main;
+            if it.target != cur_target || snapshot {
+                drop(pass);
+                if snapshot {
+                    // Snapshot the frame as drawn so far.
+                    enc.copy_texture_to_texture(
+                        wgpu::TexelCopyTextureInfo { texture: &t.color, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+                        wgpu::TexelCopyTextureInfo { texture: &t.snapshot, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+                        wgpu::Extent3d { width: t.w, height: t.h, depth_or_array_layers: 1 },
+                    );
+                }
+                cur_target = it.target;
+                let first = started.insert(cur_target);
+                pass = begin(&mut enc, cur_target, first);
+                pass.set_vertex_buffer(0, vbuf.slice(..));
             }
+            prev_frame = it.frame;
+            pass.set_pipeline(self.pipes.cached(it.key));
+            pass.set_bind_group(0, &groups[it.bind], &[it.ubo * draw::UNIFORM_STRIDE as u32]);
+            pass.set_blend_constant(wgpu::Color { r: it.constant, g: it.constant, b: it.constant, a: it.constant });
+            pass.set_scissor_rect(x, y, sw, sh);
+            pass.draw(it.first..it.first + it.count, 0..1);
         }
+        drop(pass);
         self.queue.submit(std::iter::once(enc.finish()));
         // Drop textures unused for a while.
         let frame = self.stats.frames;
@@ -522,6 +655,15 @@ impl Inner {
 
     pub fn read_image(&self) -> Option<(u32, u32, Vec<u32>)> {
         let t = self.targets.as_ref()?;
+        Some(self.read_texture(&t.color, t.w, t.h))
+    }
+
+    fn read_texture(&self, tex: &wgpu::Texture, w: u32, h: u32) -> (u32, u32, Vec<u32>) {
+        struct T {
+            w: u32,
+            h: u32,
+        }
+        let t = T { w, h };
         let row = (t.w * 4).next_multiple_of(256);
         let buf = self.dev.create_buffer(&wgpu::BufferDescriptor {
             label: Some("ssx3-gfx read"),
@@ -531,7 +673,7 @@ impl Inner {
         });
         let mut enc = self.dev.create_command_encoder(&Default::default());
         enc.copy_texture_to_buffer(
-            wgpu::TexelCopyTextureInfo { texture: &t.color, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+            wgpu::TexelCopyTextureInfo { texture: tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
             wgpu::TexelCopyBufferInfo { buffer: &buf, layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(row), rows_per_image: Some(t.h) } },
             wgpu::Extent3d { width: t.w, height: t.h, depth_or_array_layers: 1 },
         );
@@ -539,7 +681,7 @@ impl Inner {
         let slice = buf.slice(..);
         slice.map_async(wgpu::MapMode::Read, |_| {});
         let _ = self.dev.poll(wgpu::PollType::wait_indefinitely());
-        let v = slice.get_mapped_range().ok()?;
+        let Ok(v) = slice.get_mapped_range() else { return (w, h, Vec::new()) };
         let mut px = Vec::with_capacity((t.w * t.h) as usize);
         for y in 0..t.h as usize {
             for x in 0..t.w as usize {
@@ -547,6 +689,6 @@ impl Inner {
                 px.push(u32::from_le_bytes([v[o], v[o + 1], v[o + 2], v[o + 3]]));
             }
         }
-        Some((t.w, t.h, px))
+        (t.w, t.h, px)
     }
 }

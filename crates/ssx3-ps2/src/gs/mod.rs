@@ -355,6 +355,20 @@ impl Gs {
     }
 
     /// The device the GPU backend draws with (for presenting its frames).
+    /// GS registers a host renderer needs but frames may never write
+    /// (set once at boot): TEXA, FOGCOL, XYOFFSET_1/2, by register address.
+    pub fn persistent_regs(&self) -> Vec<(u32, u64)> {
+        let r = &self.regs;
+        vec![
+            (0x3b, r.texa),
+            (0x3d, r.fogcol),
+            (0x18, r.ctx[0].xyoffset),
+            (0x19, r.ctx[1].xyoffset),
+            (0x40, r.ctx[0].scissor),
+            (0x41, r.ctx[1].scissor),
+        ]
+    }
+
     pub fn gpu_context(&self) -> Option<&'static gpu::GpuContext> {
         self.gpu.as_ref().map(|g| g.device())
     }
@@ -1127,3 +1141,4 @@ fn path3_mask_enabled() -> bool {
     static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *E.get_or_init(|| std::env::var("SSX3_PATH3_MASK").map_or(true, |v| v != "0"))
 }
+

@@ -211,6 +211,8 @@ fn draws(path: &str, bytes: &[u8], dir: &str) {
                 if written.insert(name.clone()) {
                     let opaque: Vec<u32> = img.iter().map(|v| v | 0xFF00_0000).collect();
                     std::fs::write(format!("{dir}/{name}"), png::encode(*w, *h, &opaque)).unwrap();
+                    let alpha: Vec<u32> = img.iter().map(|v| { let a = v >> 24; a | a << 8 | a << 16 | 0xFF00_0000 }).collect();
+                    std::fs::write(format!("{dir}/alpha-{name}"), png::encode(*w, *h, &alpha)).unwrap();
                 }
             }
             txt += &format!(

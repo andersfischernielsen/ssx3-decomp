@@ -109,3 +109,51 @@ Those are later seams.
 ## Progress
 
 (Entries are added as stages land.)
+
+### 2026-10-16: stage 1 and part of stage 2 (`SSX3_RENDER=shadow`)
+
+**Working:**
+- Menus match the emulated GS within a few levels: mean difference 3-6, >32 on 1-3% of
+  pixels.
+- In the race:
+  - geometry from all 4.9M VU calls, run through the native programs;
+  - textures, including the pre-swizzled formats and CSM1 CLUTs;
+  - terrain lightmaps (context 2, (Cd − Cs)·As);
+  - render-to-texture: the six rider-shadow CT16 targets;
+  - frame self-sampling (the colour filter / speed blur, from a snapshot of the colour
+    target).
+
+**Debug tools:**
+- `SSX3_GFX_TRACE=<frame>`: every primitive with its state and resolved texture. The
+  renderer counts frames about 55 behind the runner's VBlanks.
+- `SSX3_GFX_TEXDUMP=dir`: decoded textures, as raw RGBA.
+- `SSX3_GFX_RTDUMP=1`: render targets, written as PNG at each screenshot.
+- `SSX3_GFX_PATH3=0..3`: which PATH3 chains are replayed.
+- Headless `SSX3_DUMP_TEX=tbp:tbw:psm:w:h:path`: a VRAM texture from the emulated GS.
+- `gs_replay --draws` now also writes each decoded texture's alpha channel.
+
+**Open: the black snow around riders (projected shadows).**
+- The terrain near each rider gets a context-2 pass with the rider's CT16 shadow target and
+  ALPHA (Cd − Cs)·As. Texels outside the silhouette have the alpha bit clear.
+- With TEXA TA0 = 0 they read As = 0, which turns the whole patch black. That is the
+  emulator's own semantics too (checked with a probe on the CPU GS).
+- The emulator is not black because at sampling time **TEXA has TA0 = 0x80**: its decoded
+  texture has alpha 0x80 on every texel (`gs_replay --draws` alpha dump).
+- The TA0 = 0x80 write comes from a 106-qword **GS state packet at 0x4ffcc0**, sent through
+  PATH3 by a REF from GIF chains (DMA watch: chains around 0x7bca10 / 0x7e3010). It also
+  sets:
+  - XYOFFSET_2 (which is why context 2's offset looked unset);
+  - FBA_1/2, PRMODECONT, COLCLAMP, DTHE, DIMX.
+- That packet never reaches `ssx3-gfx`; its TEXA writes are always the restores to TA0 = 0.
+- **Next:**
+  - find which code kicks that packet and in which chain (Ghidra), then replay that chain
+    in order;
+  - or, more robustly, replay the frame's whole GIF stream in the order the GS receives it.
+- Interim result: dropping the shadow-projection passes gives correct lightmapped snow (the
+  `nort` experiment, frames 4500/6000 close to the reference).
+
+**Also open:**
+- the rider trails (frame 4500);
+- depth fog (the emulated haze, purple tint at the gate);
+- bloom where used;
+- CT16 targets reproduce only the 1-bit alpha; RGB is not quantised to 5 bits.

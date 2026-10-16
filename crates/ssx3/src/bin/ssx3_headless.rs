@@ -110,6 +110,14 @@ fn main() {
                 let img: Vec<u32> = px.iter().map(|p| p | 0xFF00_0000).collect();
                 let _ = std::fs::write(format!("{shot_dir}/frame{f:05}-gfx.png"), png::encode(w, h, &img));
             }
+            if std::env::var_os("SSX3_GFX_RTDUMP").is_some() {
+                for (fbp, w, h, px) in gfx.as_ref().map(|g| g.read_rts()).unwrap_or_default() {
+                    let img: Vec<u32> = px.iter().map(|p| p | 0xFF00_0000).collect();
+                    let _ = std::fs::write(format!("{shot_dir}/frame{f:05}-rt{fbp}.png"), png::encode(w, h, &img));
+                    let alpha: Vec<u32> = px.iter().map(|p| { let a = p >> 24; a | a << 8 | a << 16 | 0xFF00_0000 }).collect();
+                    let _ = std::fs::write(format!("{shot_dir}/frame{f:05}-rt{fbp}-alpha.png"), png::encode(w, h, &alpha));
+                }
+            }
             // SSX3_HIRES_SHOTS=dir: also the N× copies (SSX3_RENDER_SCALE).
             if let Ok(dir) = std::env::var("SSX3_HIRES_SHOTS") {
                 for (label, w, h, px) in ssx3_ps2::m!(c).hw.gs.core().hires_snapshots() {
@@ -128,11 +136,27 @@ fn main() {
         }
     }
     if let Some(g) = &gfx {
+        eprintln!("[gfx] emulated GS persistent regs: {:x?}", ssx3_ps2::m!(c).hw.gs.core().persistent_regs());
         eprintln!("[gfx] {:?}", g.stats());
         eprintln!("[gfx] other frame buffers (fbp, fbw, psm): {:?}", g.dropped_fbp());
     }
     // GPU GS backend: bring the CPU copy of VRAM up to date for the dumps.
     ssx3_ps2::m!(c).hw.gs.core().sync_vram();
+    // Debug: SSX3_DUMP_TEX=tbp:tbw:psm:w:h:path writes that VRAM texture as
+    // raw RGBA (CT32/CT24) at exit.
+    if let Ok(spec) = std::env::var("SSX3_DUMP_TEX") {
+        let p: Vec<&str> = spec.split(':').collect();
+        let n = |i: usize| u32::from_str_radix(p[i].trim_start_matches("0x"), 16).unwrap_or(0);
+        let (tbp, tbw, psm, w, h) = (n(0), n(1), n(2), n(3), n(4));
+        let gs = ssx3_ps2::m!(c).hw.gs.core();
+        let mut out = Vec::new();
+        for y in 0..h {
+            for x in 0..w {
+                out.extend_from_slice(&ssx3_ps2::gs::swizzle::read_pixel(&gs.vram, psm, tbp, tbw, x, y).to_le_bytes());
+            }
+        }
+        let _ = std::fs::write(p[5], out);
+    }
     if std::env::var("SSX3_VRAM_DUMP").is_ok() {
         use ssx3_ps2::gs::swizzle::{read_pixel, PSMCT32};
         let mut v = vec![0u32; 1024 * 1024];

@@ -21,6 +21,20 @@ pub struct Vtx {
     pub stq: [f32; 4],
 }
 
+/// `DrawState::tex` for primitives that sample the frame being drawn.
+pub const FRAME_TEX: u32 = u32::MAX;
+/// `DrawState::tex` for a render target: this bit | its FBP.
+pub const RT_TEX: u32 = 0x8000_0000;
+
+/// An offscreen frame buffer the game renders into (rider shadows):
+/// width from FBW, height from the largest scissor seen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Rt {
+    pub w: u32,
+    pub h: u32,
+    pub psm: u32,
+}
+
 /// Per-context state that changes how a primitive is drawn.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Ctx {
@@ -46,6 +60,8 @@ pub struct DrawState {
     pub fogcol: u64,
     /// TexMan texture for TEX0 (resolved by the caller), or none.
     pub tex: Option<u32>,
+    /// FRAME.FBP drawn into (the main buffer or a render target).
+    pub target: u32,
 }
 
 pub struct Batch {
@@ -81,6 +97,9 @@ pub struct Gs {
     pub size: (u32, u32),
     /// IMAGE transfers in progress (skipped).
     image_left: u32,
+    /// XYOFFSET_1/2 written: the game sets context 2's once at startup,
+    /// outside any frame, so until then it follows context 1.
+    xyoffset_set: [bool; 2],
     /// Texture base pointer (TEX0.TBP0) → TexInfo, kept current by the
     /// renderer as it walks the frame.
     pub tex_map: std::collections::HashMap<u32, u32>,
@@ -91,6 +110,8 @@ pub struct Gs {
     /// the primitive count.
     pub trace: Option<String>,
     pub trace_log: Vec<String>,
+    /// Render targets by FBP (kept across frames).
+    pub rts: std::collections::HashMap<u32, Rt>,
     /// Primitives for other frame buffers: (FBP, FBW, PSM) → count.
     pub dropped_fbp: std::collections::HashMap<(u32, u32, u32), u64>,
 }
@@ -279,7 +300,10 @@ impl Gs {
                 let m = (0x3fu64 << 20) | (0x7ff_ffffu64 << 37);
                 c.tex0 = (c.tex0 & !m) | (v & m);
             }
-            0x18 | 0x19 => self.ctx[(a - 0x18) as usize].xyoffset = v,
+            0x18 | 0x19 => {
+                self.ctx[(a - 0x18) as usize].xyoffset = v;
+                self.xyoffset_set[(a - 0x18) as usize] = true;
+            }
             0x1a => self.prmodecont = v,
             0x1b => self.prmode = v,
             0x3b => self.texa = v,
@@ -296,9 +320,10 @@ impl Gs {
 
     fn vertex(&mut self, x: u32, y: u32, z: u32, kick: bool) {
         let p = self.cur_prim();
-        let c = &self.ctx[(bits(p, 9, 1)) as usize];
-        let ox = bits(c.xyoffset, 0, 16) as f32;
-        let oy = bits(c.xyoffset, 32, 16) as f32;
+        let ci = bits(p, 9, 1) as usize;
+        let xy = if self.xyoffset_set[ci] { self.ctx[ci].xyoffset } else { self.ctx[0].xyoffset };
+        let ox = bits(xy, 0, 16) as f32;
+        let oy = bits(xy, 32, 16) as f32;
         let v = QVtx {
             x: (x as f32 - ox) / 16.0,
             y: (y as f32 - oy) / 16.0,
@@ -379,12 +404,29 @@ impl Gs {
     fn state(&mut self) -> Option<DrawState> {
         let p = self.cur_prim();
         let c = self.ctx[bits(p, 9, 1) as usize];
-        if bits(c.frame, 0, 9) as u32 != self.main_fbp {
-            *self.dropped_fbp.entry((bits(c.frame, 0, 9) as u32, bits(c.frame, 16, 6) as u32, bits(c.frame, 24, 6) as u32)).or_default() += 1;
-            return None;
+        let target = bits(c.frame, 0, 9) as u32;
+        if target != self.main_fbp {
+            let (fbw, fpsm) = (bits(c.frame, 16, 6) as u32, bits(c.frame, 24, 6) as u32);
+            let h = (bits(c.scissor, 48, 11) as u32 + 1).next_power_of_two().clamp(8, 1024);
+            if fbw == 0 || fbw > 16 {
+                *self.dropped_fbp.entry((target, fbw, fpsm)).or_default() += 1;
+                return None;
+            }
+            let rt = self.rts.entry(target).or_insert(Rt { w: fbw * 64, h, psm: fpsm });
+            rt.w = fbw * 64;
+            rt.h = rt.h.max(h);
+            rt.psm = fpsm;
         }
-        let tex = if p & (1 << 4) != 0 {
-            match self.tex_map.get(&(bits(c.tex0, 0, 14) as u32)) {
+        let tbp = bits(c.tex0, 0, 14) as u32;
+        let psm = bits(c.tex0, 20, 6);
+        let tex = if p & (1 << 4) != 0 && tbp == self.main_fbp * 32 && matches!(psm, 0 | 1) {
+            // The frame itself (colour filter, speed blur): sampled from a
+            // snapshot of the colour target.
+            Some(FRAME_TEX)
+        } else if p & (1 << 4) != 0 && tbp % 32 == 0 && self.rts.contains_key(&(tbp / 32)) {
+            Some(RT_TEX | tbp / 32)
+        } else if p & (1 << 4) != 0 {
+            match self.tex_map.get(&tbp) {
                 Some(&t) => Some(t),
                 None => {
                     self.unknown_tex += 1;
@@ -400,6 +442,7 @@ impl Gs {
             texa: self.texa,
             fogcol: self.fogcol,
             tex,
+            target,
         })
     }
 
@@ -425,17 +468,26 @@ impl Gs {
             }
             let rgba = flat.unwrap_or(vs[0].rgba);
             let line = format!(
-                "{label} {} prim {:#05x} fbp {} fbmsk {:08x} tbp {:#x} psm {:#x} alpha {:#x} test {:#x} zbuf {:#x} rgba {:?} z {:#x} box {:.0},{:.0}-{:.0},{:.0}",
+                "{label} {} prim {:#05x} fbp {} fbmsk {:08x} tbp {:#x} info {:x?} psm {:#x} clamp {:#x} texa {:#x} scissor {:#x} alpha {:#x} test {:#x} zbuf {:#x} rgba {:?} stq {:e},{:e},{:e} uv {},{} z {:#x} box {:.0},{:.0}-{:.0},{:.0}",
                 if got.is_some() { "draw" } else { "DROP" },
                 p & 0x7ff,
                 bits(c.frame, 0, 9),
                 c.frame >> 32,
                 bits(c.tex0, 0, 14),
+                self.tex_map.get(&(bits(c.tex0, 0, 14) as u32)),
                 bits(c.tex0, 20, 6),
+                c.clamp,
+                self.texa,
+                c.scissor,
                 c.alpha,
                 c.test,
                 c.zbuf,
                 rgba,
+                vs[0].s,
+                vs[0].t,
+                vs[0].q,
+                vs[0].u,
+                vs[0].v,
                 vs[0].z,
                 x0,
                 y0,
@@ -451,12 +503,19 @@ impl Gs {
             self.dropped += 1;
             return;
         };
+
         self.prims += 1;
         let c = st.ctx;
         let zmax = Self::zmax(&c);
         let zscale = 1.0 / (zmax as f64 + 1.0);
         let fst = st.prim & (1 << 8) != 0;
-        let (tw, th) = (1u32 << bits(c.tex0, 26, 4), 1u32 << bits(c.tex0, 30, 4));
+        // Texture size for FST coordinates; the frame snapshot is the target's
+        // size (texels = pixels).
+        let (tw, th) = match st.tex {
+            Some(FRAME_TEX) => self.size,
+            Some(t) if t & RT_TEX != 0 => self.rts.get(&(t & !RT_TEX)).map_or((1, 1), |r| (r.w, r.h)),
+            _ => (1u32 << bits(c.tex0, 26, 4), 1u32 << bits(c.tex0, 30, 4)),
+        };
         let first = self.verts.len() as u32;
         for q in vs {
             let rgba = flat.unwrap_or(q.rgba);
@@ -520,3 +579,4 @@ impl Gs {
         self.emit(&q, Some(a.rgba));
     }
 }
+

@@ -32,7 +32,12 @@ pub struct BatchU {
     pub c_kind: u32,
     pub fix: f32,
     pub fogcol: [f32; 4],
+    pub ta: [f32; 2],
+    pub pad: [f32; 2],
 }
+
+/// Size of [`BatchU`] in bytes.
+pub const BATCH_BYTES: u64 = 80;
 
 pub const UNIFORM_STRIDE: u64 = 256;
 
@@ -124,7 +129,8 @@ fn compare(test: u64) -> wgpu::CompareFunction {
 
 /// The draws for one batch: one, or two for an alpha test whose failing
 /// pixels still write something (AFAIL ≠ KEEP).
-pub fn plans(st: &DrawState, size: (u32, u32)) -> Vec<Plan> {
+/// `rt_psm`: the PSM of the render target the batch samples, if any.
+pub fn plans(st: &DrawState, size: (u32, u32), rt_psm: Option<u32>) -> Vec<Plan> {
     let c = &st.ctx;
     let abe = st.prim & (1 << 6) != 0;
     let (bl, src_mode, cs_a, cs_b, c_kind) = if abe { blend(c.alpha) } else { (None, 0, 0.0, 0.0, 0) };
@@ -141,7 +147,9 @@ pub fn plans(st: &DrawState, size: (u32, u32)) -> Vec<Plan> {
     let depth = compare(c.test);
     let tex0 = c.tex0;
     let fogcol = [(st.fogcol & 0xff) as f32, ((st.fogcol >> 8) & 0xff) as f32, ((st.fogcol >> 16) & 0xff) as f32, 0.0];
-    let flags = (st.prim >> 4 & 1) | (((tex0 >> 34) & 1) as u32) << 1 | (st.prim >> 5 & 1) << 2 | ((c.fba & 1) as u32) << 3;
+    let frame_src = (st.tex == Some(crate::gs::FRAME_TEX) || rt_psm.is_some()) as u32;
+    let ct16 = rt_psm.is_some_and(|p| matches!(p, 2 | 10)) as u32;
+    let flags = (st.prim >> 4 & 1) | (((tex0 >> 34) & 1) as u32) << 1 | (st.prim >> 5 & 1) << 2 | ((c.fba & 1) as u32) << 3 | frame_src << 4 | ct16 << 5;
     let u = BatchU {
         size: [size.0 as f32, size.1 as f32],
         tfx: ((tex0 >> 35) & 3) as u32,
@@ -155,6 +163,8 @@ pub fn plans(st: &DrawState, size: (u32, u32)) -> Vec<Plan> {
         c_kind,
         fix: fix as f32,
         fogcol,
+        ta: [(st.texa & 0xff) as f32, ((st.texa >> 32) & 0xff) as f32],
+        pad: [0.0; 2],
     };
     let base = PipeKey { blend: bl, depth, depth_write: !zmsk && depth != wgpu::CompareFunction::Never, write };
     let ate = c.test & 1 != 0;
@@ -199,7 +209,7 @@ impl Pipelines {
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: true,
-                        min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<BatchU>() as u64),
+                        min_binding_size: wgpu::BufferSize::new(BATCH_BYTES),
                     },
                     count: None,
                 },

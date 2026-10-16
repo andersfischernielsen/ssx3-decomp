@@ -1117,3 +1117,4 @@ fn hires_display_falls_back_to_vram_when_stale() {
     let wrong = (0..896u32).flat_map(|y| (0..1280u32).map(move |x| (x, y))).filter(|&(x, y)| px[(y * 1280 + x) as usize] != fb.read(&gs.vram, x / 2, y / 2) | 0xFF00_0000).count();
     assert_eq!(wrong, 0, "stale N× copy shown");
 }
+
