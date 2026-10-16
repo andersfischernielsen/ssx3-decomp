@@ -183,6 +183,11 @@ More debug switches: `SSX3_GFX_SKIP=n,a-b` (drop draws), `SSX3_GFX_SKIPTEST=<tes
 **Still open (for later; none blocks the render cut):**
 - **A few highlights** differ by a few levels (sun glare edges, some additive sprites).
 - **CT16 render targets** keep only the 1-bit alpha; RGB is not quantised to 5 bits.
+- **Host clock mode stalls** (`SSX3_HOST_CLOCK=1`): with a host that stays slower than
+  60 Hz (headless `SSX3_SLOW_FRAME_MS=20`), the game makes no progress at all, even at the
+  title (every thread waits), on every rendering path. Briefly the window default
+  (2026-10-16), reverted. In the window it showed as a race that never started: a
+  priority-6 thread spinning in `THREAD_yieldticks(0)` while the main thread starved.
 - **Depth precision.** Depth comes from hardware interpolation, so it differs from the GS's
   by a few units at some pixels. Visually invisible, but anything that reads Z back (the
   light visibility queries) sees slightly different values, so RAM identity with the

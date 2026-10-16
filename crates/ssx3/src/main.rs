@@ -311,11 +311,6 @@ fn display_aspect(cpu: &Cpu) -> f32 {
 
 fn main() {
     env_logger::init();
-    // The window keeps game time real-time by default (SSX3_HOST_CLOCK=0:
-    // emulated time only, as the headless runner).
-    if std::env::var_os("SSX3_HOST_CLOCK").is_none() {
-        std::env::set_var("SSX3_HOST_CLOCK", "1");
-    }
     let cpu = game::boot(false);
     let gfx = game::install_renderer();
     let event_loop = EventLoop::new().expect("event loop");
