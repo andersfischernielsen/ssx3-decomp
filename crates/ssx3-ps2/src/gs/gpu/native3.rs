@@ -36,7 +36,7 @@ const VWORDS: usize = 17;
 /// Why a type-3 triangle went to the emulated GS.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fallback {
-    /// Not a triangle (lines of entry 0x3bf0).
+    /// A point (lines, sprites and triangles are drawn natively).
     NotTri = 0,
     /// Alpha test with AFAIL other than KEEP (FB_ONLY needs two pipelines).
     AlphaFail,
@@ -57,7 +57,9 @@ pub enum Fallback {
     /// Surfaces a native run refuses (aliasing, too large, past the
     /// buffer width).
     Surface,
-    /// The texture overlaps the frame/Z the run draws.
+    /// The texture overlaps the frame/Z the run draws (no longer a
+    /// fallback: such primitives read VRAM, ending the run first when they
+    /// sample what it drew).
     TexFeedback,
     /// Blend factor As from a source alpha that can exceed 0x80.
     AlphaOver,
@@ -95,10 +97,17 @@ pub struct N3Stats {
     /// Texels read to bound texture alpha.
     pub scanned_texels: u64,
     /// Why runs ended: an emulated primitive, a batch close (sync, display,
-    /// readback, ...), a transfer touching the run, other surfaces.
-    pub flush_why: [u64; 4],
-    /// Of `tris`: sprites (two triangles each), destination-read primitives.
+    /// readback, ...), a transfer touching the run, other surfaces, a
+    /// primitive sampling what the run drew.
+    pub flush_why: [u64; 5],
+    /// Of `tris`: sprites (two triangles each), lines, destination-read
+    /// primitives.
     pub sprites: u64,
+    pub lines: u64,
+    /// Of `tris`: primitives sampling the run's own surfaces (from VRAM,
+    /// as they were before the run), and runs ended for one.
+    pub feedback: u64,
+    pub feedback_flushes: u64,
     pub dr_prims: u64,
     /// Destination-read segment breaks (render pass + copy of the target).
     pub dr_copies: u64,
@@ -128,12 +137,12 @@ impl N3Stats {
             self.fb_only_modes[0], self.fb_only_modes[1], self.fb_only_modes[2], self.scanned_texels, self.alpha_cache_hits
         );
         s += &format!(
-            "\n    sprites {}, destination-read prims {}, segment copies {}",
-            self.sprites, self.dr_prims, self.dr_copies
+            "\n    sprites {}, lines {}, destination-read prims {}, segment copies {}, texture feedback prims {}",
+            self.sprites, self.lines, self.dr_prims, self.dr_copies, self.feedback
         );
         s += &format!(
-            "\n    runs ended by: emulated prim {}, close {}, transfer {}, surfaces {}",
-            self.flush_why[0], self.flush_why[1], self.flush_why[2], self.flush_why[3]
+            "\n    runs ended by: emulated prim {}, close {}, transfer {}, surfaces {}, texture feedback {}",
+            self.flush_why[0], self.flush_why[1], self.flush_why[2], self.flush_why[3], self.flush_why[4]
         );
         s += &format!(
             "\n    native runs (all) {}, refused {}, {:.1} Mpx round-tripped",
@@ -627,6 +636,9 @@ struct Tri {
     /// A sprite: its pixels (x0, y0, x1, y1) and the compute GS's prim
     /// record (kind 1), which the fragment shader evaluates.
     sprite: Option<Box<([i32; 4], [u32; 14])>>,
+    /// A line: the quad drawn around it (hardware coordinates, 4 corners)
+    /// and the compute GS's prim record (kind 2).
+    line: Option<Box<([f32; 8], [u32; 29])>>,
     /// FB_ONLY alpha test: 0 always passes (or no test), 1 always fails
     /// (colour only), 2 mixed (pass and fail draws).
     mode: u8,
@@ -647,7 +659,7 @@ impl Tri {
     }
 
     fn nverts(&self) -> u32 {
-        if self.sprite.is_some() {
+        if self.sprite.is_some() || self.line.is_some() {
             6
         } else {
             3
@@ -725,6 +737,9 @@ pub(crate) struct N3 {
     /// Pixels covered by the open FB_ONLY group, and its state.
     cov: Coverage,
     cov_key: Option<(u32, u32, [i32; 4])>,
+    /// Scratch block sets: texels a primitive samples, blocks the run drew.
+    tex_region: super::super::region::Region,
+    run_region: super::super::region::Region,
     /// Largest texel alpha of the last draw's texture (`tex_alpha_bound`).
     last_tex: Option<(Arc<Draw>, (u32, u32))>,
     gpu: Option<Box<Gpu>>,
@@ -977,14 +992,36 @@ impl GpuGs {
         mut s: NativeSurfaces,
         vram: &[u32],
     ) -> Result<(), Fallback> {
-        // Triangles, and sprites (two triangles evaluated with the GS's
-        // sprite rules); lines and points stay emulated.
+        // Triangles, sprites (two triangles evaluated with the GS's sprite
+        // rules) and lines (a quad around the line, its pixels those the
+        // compute GS's line walk hits); points stay emulated.
+        let line_box = match &p.shape {
+            Shape::Line { x0, y0, x1, y1, .. } => {
+                // `GpuGs::encode`: the scissor bounded by the endpoints.
+                let bx = [
+                    p.x0.max(x0.min(*x1).floor() as i32 - 1),
+                    p.y0.max(y0.min(*y1).floor() as i32 - 1),
+                    p.x1.min(x0.max(*x1).ceil() as i32 + 1),
+                    p.y1.min(y0.max(*y1).ceil() as i32 + 1),
+                ];
+                if bx[0] > bx[2] || bx[1] > bx[3] || bx[2] < 0 || bx[3] < 0 {
+                    // Outside the scissor: draws nothing.
+                    return Ok(());
+                }
+                Some([bx[0].max(0), bx[1].max(0), bx[2], bx[3]])
+            }
+            _ => None,
+        };
         let geo = match (&p.shape, prim) {
             (Shape::Tri(t), 3..=5) => Geo::Tri(t, p),
             (Shape::Sprite { .. }, 6) => Geo::Rect([p.x0, p.y0, p.x1, p.y1]),
+            (Shape::Line { .. }, 1 | 2) => Geo::Rect(line_box.expect("line")),
             _ => return Err(Fallback::NotTri),
         };
-        let is_sprite = matches!(geo, Geo::Rect(_));
+        let is_sprite = matches!(p.shape, Shape::Sprite { .. });
+        let is_line = line_box.is_some();
+        // Pixels the primitive may cover.
+        let bb = line_box.unwrap_or([p.x0, p.y0, p.x1, p.y1]);
         let mut st = match &self.n3.last {
             Some((ld, x, r)) if Arc::ptr_eq(ld, d) && *x == self.n3.exact => *r,
             _ => {
@@ -1012,12 +1049,13 @@ impl GpuGs {
                 }
             };
             // Sprites take their flat attributes from the second vertex.
+            let nv = if is_line { 2 } else { 3 };
             let vs = if is_sprite {
                 &verts[1..2]
             } else if d.iip {
-                &verts[..3]
+                &verts[..nv]
             } else {
-                &verts[2..3]
+                &verts[nv - 1..nv]
             };
             let vlo = vs.iter().map(|v| v.rgba[3] as u32).min().unwrap_or(0);
             let vhi = vs.iter().map(|v| v.rgba[3] as u32).max().unwrap_or(0);
@@ -1048,23 +1086,27 @@ impl GpuGs {
         if d.z_used && s.z.is_none() {
             return Err(Fallback::Z32);
         }
-        if d.tex_self {
-            return Err(Fallback::TexFeedback);
-        }
         // Pixels past the buffer width alias other rows.
-        if p.x1 >= d.fb_width || (d.z_used && p.x1 >= d.zb_width) {
+        if bb[2] >= d.fb_width || (d.z_used && bb[2] >= d.zb_width) {
             return Err(Fallback::Surface);
         }
         // Join the pending run, or start a new one.
-        let joins = self.n3.surf.is_some_and(|r| r.frame == s.frame && (s.z.is_none() || s.z == r.z));
+        let mut flushed = false;
+        let mut joins = self.n3.surf.is_some_and(|r| r.frame == s.frame && (s.z.is_none() || s.z == r.z));
+        if joins && d.tex.is_some() && d.tex_pages.hits(&self.n3.target_pages) && self.n3_tex_reads_run(d, p, prim, verts) {
+            // It samples texels the run has drawn: those are in the run's
+            // targets, not in VRAM. End the run (its pixels go back to
+            // VRAM) and start another.
+            self.n3.stats.feedback_flushes += 1;
+            self.n3_flush_why(vram, 4);
+            joins = false;
+            flushed = true;
+        }
         if joins {
             let r = self.n3.surf.expect("run");
             s.z = r.z;
             s.height = s.height.max(r.height);
             s.width = r.width;
-            if d.tex_pages.hits(&self.n3.target_pages) {
-                return Err(Fallback::TexFeedback);
-            }
             if s.height != r.height {
                 let pages = self.check_native(&s).map_err(|_| Fallback::Surface)?;
                 self.n3.target_pages = pages;
@@ -1072,19 +1114,31 @@ impl GpuGs {
             }
         } else {
             let pages = self.check_native(&s).map_err(|_| Fallback::Surface)?;
-            if d.tex_pages.hits(&pages) {
-                return Err(Fallback::TexFeedback);
-            }
             self.n3_flush_why(vram, 3);
             self.n3.surf = Some(s);
             self.n3.target_pages = pages;
             self.n3.tex_pages = Pages::default();
         }
         self.n3.tex_pages.union(&d.tex_pages);
+        let feedback = flushed || (d.tex.is_some() && (d.tex_self || d.tex_pages.hits(&self.n3.target_pages)));
+        if feedback {
+            // Blended filters over the frame (colour filter, depth fog)
+            // take the exact GS blend: the blend unit rounds the
+            // destination term differently, off by 1 over whole screens.
+            if st.key & K_DR == 0 && (st.key >> K_OP) & 3 != 0 {
+                st = dr_state(st.key, st.fb_only);
+            }
+            // Texture reads come from VRAM, which holds the run's surfaces
+            // as they were before the run: what earlier primitives drew
+            // (checked above) and nothing of this primitive's own pixels,
+            // as the compute GS reads a snapshot taken before its batch.
+            self.n3.stats.feedback += 1;
+        }
         let mut v = [Vertex::default(); 3];
-        let nv = if is_sprite { 2 } else { 3 };
+        let nv = if is_sprite || is_line { 2 } else { 3 };
         v[..nv].copy_from_slice(&verts[..nv]);
         use super::super::raster::Z;
+        let mut line = None;
         let (zp, sprite) = match &p.shape {
             Shape::Tri(t) => {
                 let cz = t.c[Z] + t.dady[Z] * (t.by0 as f64 - t.oy);
@@ -1117,16 +1171,57 @@ impl GpuGs {
                 w[13] = z_u32(base.z);
                 ([0; 5], Some(Box::new(([p.x0, p.y0, p.x1, p.y1], w))))
             }
+            Shape::Line { x0, y0, x1, y1, a0, a1 } => {
+                use super::super::raster::{A, B, F, G, NATTR, Q, R, S, T};
+                use super::{f, z_u32, PK_LINEAR};
+                // `GpuGs::encode`, kind 2.
+                let mut w = [0u32; 29];
+                w[1] = 2 | if p.linear { PK_LINEAR } else { 0 };
+                w[4] = f(*x0);
+                w[5] = f(*y0);
+                w[6] = f(*x1);
+                w[7] = f(*y1);
+                w[8] = (x1 - x0).abs().max((y1 - y0).abs()).round() as i32 as u32;
+                for (i, &k) in [R, G, B, A, S, T, Q, F].iter().enumerate() {
+                    w[9 + i] = f(a0[k]);
+                    w[17 + i] = f(a1[k]);
+                }
+                w[27] = z_u32(a0[Z]);
+                w[28] = f(a1[Z] - a0[Z]);
+                debug_assert_eq!(NATTR, 9);
+                // A quad over every pixel within 1.5 of the line (its
+                // pixels are within 0.71), in hardware coordinates (+0.5).
+                let (x0, y0, x1, y1) = (*x0 + 0.5, *y0 + 0.5, *x1 + 0.5, *y1 + 0.5);
+                let (dx, dy) = (x1 - x0, y1 - y0);
+                let len = (dx * dx + dy * dy).sqrt();
+                let (ux, uy) = if len > 1e-9 { (dx / len * 1.5, dy / len * 1.5) } else { (1.5, 0.0) };
+                let (nx, ny) = (-uy, ux);
+                let q = [
+                    (x0 - ux + nx) as f32,
+                    (y0 - uy + ny) as f32,
+                    (x1 + ux + nx) as f32,
+                    (y1 + uy + ny) as f32,
+                    (x1 + ux - nx) as f32,
+                    (y1 + uy - ny) as f32,
+                    (x0 - ux - nx) as f32,
+                    (y0 - uy - ny) as f32,
+                ];
+                line = Some(Box::new((q, w)));
+                ([0; 5], None)
+            }
             _ => unreachable!(),
         };
         let fresh = !self.n3.pending();
         let r = &mut self.n3.rect;
         if fresh {
-            *r = [p.x0, p.y0, p.x1, p.y1];
+            *r = bb;
         } else {
-            *r = [r[0].min(p.x0), r[1].min(p.y0), r[2].max(p.x1), r[3].max(p.y1)];
+            *r = [r[0].min(bb[0]), r[1].min(bb[1]), r[2].max(bb[2]), r[3].max(bb[3])];
         }
-        let planes = (planes_knob() && !is_sprite).then(|| {
+        // Triangles sampling their own surfaces (screen-space filters over
+        // what was drawn) take their attributes from the compute GS's planes,
+        // not hardware interpolation, so they sample the same texels.
+        let planes = ((planes_knob() || feedback) && !is_sprite && !is_line).then(|| {
             let Shape::Tri(t) = &p.shape else { unreachable!() };
             use super::super::raster::{A, B, F, G, Q, R, S, T};
             let mut w = [0u32; 25];
@@ -1143,6 +1238,9 @@ impl GpuGs {
         if is_sprite {
             self.n3.stats.sprites += 1;
         }
+        if is_line {
+            self.n3.stats.lines += 1;
+        }
         let mut tri = Tri {
             d: d.clone(),
             v,
@@ -1152,10 +1250,11 @@ impl GpuGs {
             zp,
             planes,
             sprite,
+            line,
             mode,
             brk: false,
             copy: None,
-            zp_bbox: [p.x0, p.y0, p.x1, p.y1],
+            zp_bbox: bb,
         };
         if dr {
             // Destination reads are deferred while later primitives cover
@@ -1222,6 +1321,32 @@ impl GpuGs {
         Ok(())
     }
 
+    /// Whether the texels `p` can sample include blocks the pending run has
+    /// drawn (its bounding box in its frame, and in its Z buffer).
+    fn n3_tex_reads_run(&mut self, d: &Draw, p: &Prim, prim: u32, verts: &[Vertex]) -> bool {
+        use super::super::swizzle::Surface;
+        let (Some(ts), Some(run)) = (d.tex_surface(), self.n3.surf) else { return false };
+        if !self.n3.pending() {
+            return false;
+        }
+        let [x0, y0, x1, y1] = self.n3.rect;
+        if x1 < 0 || y1 < 0 {
+            return false;
+        }
+        let (x0, y0, x1, y1) = (x0.max(0) as u32, y0.max(0) as u32, x1 as u32, y1 as u32);
+        let n3 = &mut self.n3;
+        n3.tex_region.clear();
+        match super::super::raster::prim_tex_rect(d, p, prim, verts) {
+            Some([u0, v0, u1, v1]) => n3.tex_region.add_rect(ts, u0, v0, u1, v1),
+            None => n3.tex_region.add_pages(&d.tex_pages),
+        }
+        n3.run_region.clear();
+        for f in [run.frame, run.z].into_iter().flatten() {
+            n3.run_region.add_rect(&Surface::new(f.psm, f.bp, f.bw), x0, y0, x1, y1);
+        }
+        n3.run_region.hits(&n3.tex_region)
+    }
+
     /// Queue the pending run if `pages` hits what it draws or samples.
     pub(crate) fn n3_touch(&mut self, pages: &Pages, vram: &[u32]) {
         if self.n3.pending() && (pages.hits(&self.n3.target_pages) || pages.hits(&self.n3.tex_pages)) {
@@ -1265,7 +1390,7 @@ impl GpuGs {
             self.n3.stats.refused_runs += 1;
             for t in &tris {
                 self.n3.stats.fallback[Fallback::Surface as usize] += 1;
-                let n = if t.sprite.is_some() { 2 } else { 3 };
+                let n = if t.sprite.is_some() || t.line.is_some() { 2 } else { 3 };
                 if let Some(p) = super::super::raster::setup(&t.d, 0, t.prim, &t.v[..n]) {
                     self.push(&t.d, &p, t.prim, &t.v[..n], vram);
                 }
@@ -1361,7 +1486,8 @@ impl GpuGs {
                 | ((op == 3) as u32) << 3
                 | ((dr && !segs.is_empty()) as u32) << 5
                 | (t.sprite.is_some() as u32) << 6
-                | ((fb_fmt16 && !dr && op == 0) as u32) << 7;
+                | ((fb_fmt16 && !dr && op == 0) as u32) << 7
+                | (t.line.is_some() as u32) << 8;
             if let Some(sp) = &t.sprite {
                 // Two triangles over the sprite's pixels (edges at pixel
                 // boundaries: the hardware samples pixel centres).
@@ -1371,6 +1497,18 @@ impl GpuGs {
                     let mut w = [0u32; VWORDS];
                     w[0] = x.to_bits();
                     w[1] = y.to_bits();
+                    w[10] = flags;
+                    w[16] = u32::MAX;
+                    recs.push(w);
+                }
+                continue;
+            }
+            if let Some(ln) = &t.line {
+                let q = &ln.0;
+                for i in [0, 1, 3, 1, 2, 3] {
+                    let mut w = [0u32; VWORDS];
+                    w[0] = q[2 * i].to_bits();
+                    w[1] = q[2 * i + 1].to_bits();
                     w[10] = flags;
                     w[16] = u32::MAX;
                     recs.push(w);
@@ -1405,6 +1543,7 @@ impl GpuGs {
         // Planes (diagnostics) and sprite prim records go after them.
         for (t, &(_, r0, nv)) in tris.iter().zip(&tri_rec) {
             let extra: Option<&[u32]> = match (&t.planes, &t.sprite) {
+                _ if t.line.is_some() => Some(&t.line.as_ref().expect("line").1[..]),
                 (_, Some(sp)) => Some(&sp.1[..]),
                 (Some(pl), None) => Some(&pl[..]),
                 _ => None,

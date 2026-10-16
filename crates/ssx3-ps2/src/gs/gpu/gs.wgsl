@@ -752,6 +752,52 @@ fn z_add(z0: u32, d: f32, zmax: u32) -> u32 {
     return min(z, zmax);
 }
 
+// The step of line `p` that lands on pixel (x, y) (the CPU rasterizer's
+// walk: step k is at round(p0 + (p1 - p0) * k / steps)), or -1. Shared with
+// the native path (`native3.wgsl`), which must cover exactly these pixels.
+fn line_hit(p: u32, x: i32, y: i32) -> i32 {
+    let x0 = fat(p + 4u);
+    let y0 = fat(p + 5u);
+    let x1 = fat(p + 6u);
+    let y1 = fat(p + 7u);
+    let steps = i32(data[p + 8u]);
+    let n = max(steps, 1);
+    var guess = 0;
+    if (steps > 0) {
+        if (abs(x1 - x0) >= abs(y1 - y0)) {
+            if (x1 != x0) {
+                guess = i32(round_away((f32(x) - x0) / (x1 - x0) * f32(steps)));
+            }
+        } else {
+            guess = i32(round_away((f32(y) - y0) / (y1 - y0) * f32(steps)));
+        }
+    }
+    var hit = -1;
+    for (var k = guess - 1; k <= guess + 1; k = k + 1) {
+        if (k < 0 || k >= n || hit >= 0) {
+            continue;
+        }
+        var t = 0.0;
+        if (steps > 0) {
+            t = f32(k) / f32(steps);
+        }
+        if (i32(round_away(x0 + (x1 - x0) * t)) == x && i32(round_away(y0 + (y1 - y0) * t)) == y) {
+            hit = k;
+        }
+    }
+    return hit;
+}
+
+// The interpolation parameter of step `k` of line `p`.
+fn line_step_t(p: u32, k: i32) -> f32 {
+    let steps = i32(data[p + 8u]);
+    var t = 0.0;
+    if (steps > 0) {
+        t = f32(k) / f32(steps);
+    }
+    return t;
+}
+
 fn in_scissor(st: u32, x: i32, y: i32) -> bool {
     if (x < i32(data[st + S_SCX] & 0xFFFFu) || x > i32(data[st + S_SCX] >> 16u) || y < i32(data[st + S_SCY] & 0xFFFFu) || y > i32(data[st + S_SCY] >> 16u)) {
         return false;
@@ -805,35 +851,7 @@ fn draw_prim(p: u32, x: i32, y: i32) {
             pixel(st, x, y, min(data[p + 13u], data[st + S_ZMAX]), p, linear);
         }
         case 2u: {
-            let x0 = fat(p + 4u);
-            let y0 = fat(p + 5u);
-            let x1 = fat(p + 6u);
-            let y1 = fat(p + 7u);
-            let steps = i32(data[p + 8u]);
-            let n = max(steps, 1);
-            var guess = 0;
-            if (steps > 0) {
-                if (abs(x1 - x0) >= abs(y1 - y0)) {
-                    if (x1 != x0) {
-                        guess = i32(round_away((f32(x) - x0) / (x1 - x0) * f32(steps)));
-                    }
-                } else {
-                    guess = i32(round_away((f32(y) - y0) / (y1 - y0) * f32(steps)));
-                }
-            }
-            var hit = -1;
-            for (var k = guess - 1; k <= guess + 1; k = k + 1) {
-                if (k < 0 || k >= n || hit >= 0) {
-                    continue;
-                }
-                var t = 0.0;
-                if (steps > 0) {
-                    t = f32(k) / f32(steps);
-                }
-                if (i32(round_away(x0 + (x1 - x0) * t)) == x && i32(round_away(y0 + (y1 - y0) * t)) == y) {
-                    hit = k;
-                }
-            }
+            let hit = line_hit(p, x, y);
             if (hit < 0) {
                 return;
             }
@@ -841,10 +859,7 @@ fn draw_prim(p: u32, x: i32, y: i32) {
             if (!in_scissor(st, x, y)) {
                 return;
             }
-            var t = 0.0;
-            if (steps > 0) {
-                t = f32(hit) / f32(steps);
-            }
+            let t = line_step_t(p, hit);
             line_t = t;
             let z = z_add(data[p + 27u], fat(p + 28u) * t, data[st + S_ZMAX]);
             pixel(st, x, y, z, p, linear);

@@ -688,3 +688,202 @@ fn n3_dst_read_ct16_sprites_vs_compute() {
         assert!(cbig <= 40 && c1 + cmid <= 2500, "{name}: {c1} {cmid} {cbig}");
     }
 }
+
+/// Frame (`fpsm`) and Z24 differences between two GSs over the test frame:
+/// pixels off by <= 1, 2..=8, more, and differing Z words.
+fn frame_diff(emu: &Gs, nat: &Gs, fpsm: u32) -> (u32, u32, u32, u32) {
+    let fb = Surface::new(fpsm, 0, 10);
+    let zb = Surface::new(PSMZ24, 140 * 32, 10);
+    let (mut c1, mut cmid, mut cbig, mut zd) = (0, 0, 0, 0);
+    for y in 0..448 {
+        for x in 0..640 {
+            let a = frame_rgba8(fpsm, fb.read(&emu.vram, x, y));
+            let b = frame_rgba8(fpsm, fb.read(&nat.vram, x, y));
+            if a != b {
+                let m = (0..4).map(|k| ((a >> (8 * k)) & 0xFF) as i32 - ((b >> (8 * k)) & 0xFF) as i32).map(i32::abs).max().unwrap();
+                match m {
+                    0..=1 => c1 += 1,
+                    2..=8 => cmid += 1,
+                    _ => cbig += 1,
+                }
+            }
+            if zb.read(&emu.vram, x, y) & 0xFF_FFFF != zb.read(&nat.vram, x, y) & 0xFF_FFFF {
+                zd += 1;
+            }
+        }
+    }
+    (c1, cmid, cbig, zd)
+}
+
+/// Lines and line strips through the native path against the compute GS:
+/// the fragment shader covers exactly the pixels of the compute GS's line
+/// walk and takes their attributes and Z from the same line record.
+#[test]
+fn n3_lines_vs_compute() {
+    // (name, PRIM attributes, ALPHA_1, TEST_1 extra bits, textured, blend unit rounding allowed)
+    let scenes: &[(&str, u64, u64, u64, bool, bool)] = &[
+        ("flat", 0, 0, 0, false, false),
+        ("gouraud", 1 << 3, 0, 0, false, false),
+        ("gouraud, FB_ONLY alpha test", 1 << 3, 0, 1 | 6 << 1 | 0x40 << 4 | 1 << 12, false, false),
+        ("flat, FB_ONLY alpha test", 0, 0, 1 | 6 << 1 | 0x40 << 4 | 1 << 12, false, false),
+        ("textured bilinear, modulate", 1 << 3 | 1 << 4, 0, 0, true, false),
+        ("gouraud, (Cs-Cd)As+Cd", 1 << 3 | 1 << 6, 0x44, 0, false, true),
+        ("gouraud, Cs*As+Cd, As > 0x80", 1 << 3 | 1 << 6, 2 << 2 | 1 << 6, 0, false, false),
+    ];
+    for (si, &(name, attr, alpha, test, tex, rounding)) in scenes.iter().enumerate() {
+        let Some((mut emu, _)) = gpu_random(31 + si as u64) else { return };
+        let Some((mut nat, _)) = gpu_random(31 + si as u64) else { return };
+        let mut r = Rng(0x11AE_0000 + si as u64);
+        for gs in [&mut emu, &mut nat] {
+            frame(gs);
+            upload(gs, 0x3000, 4, 256, 256, |x, y| (x.wrapping_mul(0x9E37_79B9) ^ y.wrapping_mul(0x85EB_CA6B)).rotate_left(13));
+            gs.write_reg(0x47, test | 1 << 16 | 2 << 17); // ZTE, GEQUAL
+            gs.write_reg(0x46, 1);
+            gs.write_reg(0x42, alpha);
+            if tex {
+                gs.write_reg(0x06, 0x3000 | 4 << 14 | 8 << 26 | 8 << 30 | 1 << 34);
+                gs.write_reg(0x14, 1 << 5 | 1 << 6);
+            }
+        }
+        let mut prev = Vertex::default();
+        for i in 0..1500 {
+            let mut v = [Vertex::default(); 2];
+            for k in 0..2 {
+                let q = r.f32_in(0.3, 2.0);
+                v[k] = Vertex {
+                    // Sub-pixel endpoints, some outside the frame.
+                    x: (r.below(700 * 16) as u32).wrapping_sub(30 * 16),
+                    y: (r.below(500 * 16) as u32).wrapping_sub(30 * 16),
+                    z: r.below(1 << 24) as u32,
+                    f: 0,
+                    rgba: [r.below(256) as u8, r.below(256) as u8, r.below(256) as u8, r.below(256) as u8],
+                    s: r.f32_in(0.0, 1.0) * q,
+                    t: r.f32_in(0.0, 1.0) * q,
+                    q,
+                    u: 0,
+                    v: 0,
+                };
+                // Short lines, axis-aligned and diagonal ones too.
+                if k == 1 && i % 3 != 0 {
+                    v[1].x = v[0].x.wrapping_add(r.below(80 * 16) as u32).wrapping_sub(40 * 16);
+                    v[1].y = v[0].y.wrapping_add(r.below(80 * 16) as u32).wrapping_sub(40 * 16);
+                    match i % 9 {
+                        1 => v[1].y = v[0].y,
+                        2 => v[1].x = v[0].x,
+                        4 => v[1].y = v[0].y.wrapping_add(v[1].x.wrapping_sub(v[0].x)),
+                        _ => {}
+                    }
+                }
+            }
+            // Every other one continues a strip (PRIM 2).
+            let prim = if i % 2 == 1 {
+                v[0] = prev;
+                2u32
+            } else {
+                1
+            };
+            prev = v[1];
+            for (j, gs) in [&mut emu, &mut nat].into_iter().enumerate() {
+                gs.write_reg(0x00, prim as u64 | attr);
+                gs.n3_capture = j == 1;
+                gs.draw_primitive(prim, &v);
+                gs.n3_capture = false;
+            }
+        }
+        emu.sync_vram();
+        nat.sync_vram();
+        let st = nat.gpu_stats().unwrap().n3;
+        let (c1, cmid, cbig, zd) = frame_diff(&emu, &nat, PSMCT32);
+        eprintln!(
+            "n3 lines scene {si} ({name}): native prims {} (lines {}), fallback {:?}; px differing <=1 {c1}, 2..8 {cmid}, >8 {cbig}; z differ {zd}",
+            st.tris, st.lines, st.fallback
+        );
+        assert_eq!(st.fallback.iter().sum::<u64>(), 0, "{name}: fallbacks");
+        assert!(st.lines > 1000, "{name}: native lines");
+        assert_eq!(zd, 0, "{name}: Z differs");
+        assert_eq!(cbig + cmid, 0, "{name}: pixels differ");
+        if !rounding {
+            assert_eq!(c1, 0, "{name}: pixels differ");
+        }
+    }
+}
+
+/// Primitives sampling the frame or Z buffer they draw to (frame copies,
+/// colour filters through PSMT8H, Z read as a texture), interleaved with
+/// ordinary drawing, through the native path against the compute GS: each
+/// samples what earlier primitives drew and nothing of its own pixels.
+#[test]
+fn n3_texture_feedback_vs_compute() {
+    // (name, texture TEX0 (frame at 0, Z24 at block 140 * 32), PRIM extra, ALPHA_1, bilinear)
+    let t8h_clut = 0x3800u64 << 37 | 1 << 61;
+    let scenes: &[(&str, u64, u64, u64, bool)] = &[
+        ("frame copy, decal", 10 << 14 | 10 << 26 | 9 << 30 | 1 << 34 | 1 << 35, 0, 0, false),
+        ("frame copy, bilinear, (Cs-Cd)As+Cd", 10 << 14 | 10 << 26 | 9 << 30 | 1 << 34, 1 << 6, 0x44, true),
+        ("frame alpha as PSMT8H index, decal, (Cd-Cs)As+Cs", 10 << 14 | 0x1B << 20 | 10 << 26 | 9 << 30 | 1 << 34 | 1 << 35 | t8h_clut, 1 << 6, 1 | 2 << 4, false),
+        ("Z24 as texture, Cs*As+Cd", 140 * 32 | 10 << 14 | 0x31 << 20 | 10 << 26 | 9 << 30 | 1 << 34 | 1 << 35, 1 << 6, 2 << 2 | 1 << 6, false),
+        ("Z high byte as PSMT8H index, decal", 140 * 32 | 10 << 14 | 0x1B << 20 | 10 << 26 | 9 << 30 | 1 << 34 | 1 << 35 | t8h_clut, 0, 0, false),
+    ];
+    for (si, &(name, tex0, pattr, alpha, bilinear)) in scenes.iter().enumerate() {
+        let Some((mut emu, _)) = gpu_random(51 + si as u64) else { return };
+        let Some((mut nat, _)) = gpu_random(51 + si as u64) else { return };
+        let mut r = Rng(0xFEED_0000 + si as u64);
+        for gs in [&mut emu, &mut nat] {
+            frame(gs);
+            // A 16x16 CT32 CLUT at block 0x3800.
+            upload(gs, 0x3800, 1, 16, 16, |x, y| (x * 0x0011_2233 + y * 0x0B0A_0908) | 0x4000_0000);
+            gs.write_reg(0x46, 1);
+            gs.write_reg(0x42, alpha);
+            gs.write_reg(0x14, if bilinear { 1 << 5 | 1 << 6 } else { 0 });
+        }
+        let mut n = 0;
+        for i in 0..240 {
+            let feedback = i % 2 == 1;
+            let x0 = r.below(600) as u32;
+            let y0 = r.below(420) as u32;
+            let (w, h) = (1 + r.below(200) as u32, 1 + r.below(150) as u32);
+            let mut v = [Vertex::default(); 2];
+            v[0].x = x0 * 16;
+            v[0].y = y0 * 16;
+            v[1].x = (x0 + w).min(640) * 16;
+            v[1].y = (y0 + h).min(448) * 16;
+            v[0].z = r.below(1 << 24) as u32;
+            v[1].z = r.below(1 << 24) as u32;
+            v[1].rgba = [r.below(256) as u8, r.below(256) as u8, r.below(256) as u8, r.below(256) as u8];
+            // Texel coordinates: the same rectangle (a pixel reads its own
+            // texel), or shifted (overlapping itself or not), sub-texel too.
+            let (du, dv) = match i % 6 {
+                1 => (0, 0),
+                3 => (r.below(64 * 16) as i32 - 32 * 16, r.below(64 * 16) as i32 - 32 * 16),
+                _ => (r.below(400 * 16) as i32 - 200 * 16, r.below(300 * 16) as i32 - 150 * 16),
+            };
+            v[0].u = (x0 as i32 * 16 + du).clamp(0, 1023 * 16) as u32;
+            v[0].v = (y0 as i32 * 16 + dv).clamp(0, 511 * 16) as u32;
+            v[1].u = (v[1].x as i32 + du).clamp(0, 1023 * 16) as u32;
+            v[1].v = (v[1].y as i32 + dv).clamp(0, 511 * 16) as u32;
+            for (j, gs) in [&mut emu, &mut nat].into_iter().enumerate() {
+                if feedback {
+                    gs.write_reg(0x06, tex0);
+                    gs.write_reg(0x00, 6 | 1 << 4 | 1 << 8 | pattr); // sprite, TME, FST
+                } else {
+                    gs.write_reg(0x00, 6);
+                }
+                gs.n3_capture = j == 1;
+                gs.draw_primitive(6, &v);
+                gs.n3_capture = false;
+            }
+            n += feedback as u32;
+        }
+        emu.sync_vram();
+        nat.sync_vram();
+        let st = nat.gpu_stats().unwrap().n3;
+        let (c1, cmid, cbig, zd) = frame_diff(&emu, &nat, PSMCT32);
+        eprintln!(
+            "n3 feedback scene {si} ({name}): native prims {} (feedback {}, runs ended for it {}), fallback {:?}; px differing <=1 {c1}, 2..8 {cmid}, >8 {cbig}; z differ {zd}",
+            st.tris, st.feedback, st.feedback_flushes, st.fallback
+        );
+        assert_eq!(st.fallback.iter().sum::<u64>(), 0, "{name}: fallbacks");
+        assert!(st.feedback >= n as u64, "{name}: feedback prims");
+        assert_eq!(zd, 0, "{name}: Z differs");
+        assert_eq!(c1 + cmid + cbig, 0, "{name}: pixels differ");
+    }
+}

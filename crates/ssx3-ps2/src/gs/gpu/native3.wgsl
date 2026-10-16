@@ -77,11 +77,11 @@ struct N3Px {
 // are the render pipeline's.
 fn n3_shade(vin: N3V) -> N3Px {
     var v = vin;
-    let n3_eps = bitcast<f32>(params.d.x);
+    var n3_eps = bitcast<f32>(params.d.x);
     // Flag 64: a sprite, its attributes from the GS's own prim record
     // (`frag`, kind 1) at the integer pixel.
     let sprite = (v.info.z & 64u) != 0u;
-    if (!sprite && v.pl != 0xFFFFFFFFu) {
+    if ((v.info.z & 320u) == 0u && v.pl != 0xFFFFFFFFu) {
         // gs.wgsl `frag` (triangles): planes at the integer pixel.
         let p = v.pl;
         let lo = data[p];
@@ -94,12 +94,15 @@ fn n3_shade(vin: N3V) -> N3Px {
         v.col = vec4<f32>(at[0], at[1], at[2], at[3]);
         v.stq = vec3<f32>(at[4], at[5], at[6]);
         v.fz.x = at[7];
+        // The GS's own plane values: truncated as the compute GS does.
+        n3_eps = 0.0;
     }
     let st = v.info.x;
     let flags = data[st + S_FLAGS];
     let modes = data[st + S_MODES];
     var o: N3Px;
     o.kill = false;
+    o.depth = 0.0;
     var z = 0u;
     var r: i32;
     var g: i32;
@@ -108,7 +111,20 @@ fn n3_shade(vin: N3V) -> N3Px {
     var fogv = 0;
     var uv = vec2<f32>(0.0);
     var q = 1.0;
-    if (sprite) {
+    // Flag 256: a line, covering exactly the pixels the compute GS's line
+    // record (kind 2) hits; the quad drawn around it is wider.
+    let line = (v.info.z & 256u) != 0u;
+    var lt = 0.0;
+    if (line) {
+        let hit = line_hit(v.pl, i32(v.pos.x), i32(v.pos.y));
+        if (hit < 0) {
+            o.kill = true;
+            return o;
+        }
+        lt = line_step_t(v.pl, hit);
+        line_t = lt;
+    }
+    if (sprite || line) {
         let f = frag(v.pl, st, i32(v.pos.x), i32(v.pos.y));
         r = f.r;
         g = f.g;
@@ -118,7 +134,11 @@ fn n3_shade(vin: N3V) -> N3Px {
         uv = vec2<f32>(f.u, f.v);
         q = f.q;
         if ((flags & F_ZTE) != 0u) {
-            z = min(data[v.pl + 13u], data[st + S_ZMAX]);
+            if (line) {
+                z = z_add(data[v.pl + 27u], fat(v.pl + 28u) * lt, data[st + S_ZMAX]);
+            } else {
+                z = min(data[v.pl + 13u], data[st + S_ZMAX]);
+            }
         }
     } else {
         if ((flags & F_ZTE) != 0u) {

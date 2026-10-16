@@ -723,3 +723,57 @@ Full race with `SSX3_RENDER_NATIVE=all`, against the emulated reference:
 What falls back now is mostly post-effect and 2D sprites that sample their own frame (bloom
 and colour-filter passes, which copy the frame to itself), plus line strips. Drawing these
 natively needs a copy of the target as a texture.
+
+### Lines and texture feedback through the native path (2026-10-16)
+
+With `SSX3_RENDER_NATIVE=all`, nothing falls back to the emulated GS any more (points would,
+but the race has none).
+
+- **Lines (prim 1/2):** each line is drawn as a quad reaching 1.5 px around it. The fragment
+  shader keeps only the pixels that the compute GS's line walk hits. It uses the
+  `line_hit`/`line_step_t` functions, now shared with `gs.wgsl`, on the compute GS's own
+  line record (kind 2). Attributes and Z come from that record at the same step, so
+  coverage, colour and Z match bit for bit. Coverage uses the record's endpoint bounding box.
+  A line outside the scissor draws nothing.
+- **Texture feedback** (a primitive sampling its own frame or Z: frame copies, PSMT8H colour
+  filter, depth fog reading Z as 8H, bloom). During a run, VRAM still holds the run's
+  surfaces as they were before the run, and textures are read from VRAM. That matches the
+  compute GS, whose texture reads come from a snapshot taken before the batch: a primitive
+  sees what earlier primitives drew, and none of its own pixels. So:
+  - If the texels a primitive can reach (`prim_tex_rect`, in blocks) overlap the blocks of
+    the run's bounding box (frame and Z), the run ends first and its pixels go back to VRAM.
+    This is `runs ended by: texture feedback`.
+  - Otherwise the primitive joins the run and reads VRAM directly.
+
+  Z read as a texture needs no conversion, because it is read from VRAM in GS format.
+- **Exact blends and planes for these filters:** blended feedback primitives use the
+  destination-read GS blend. The blend unit's rounding of the Cd term left 0.23% of a menu
+  screen off by 1. Feedback triangles take their attributes from the compute GS's planes,
+  truncated without the epsilon. Both together make them pixel-identical to the compute GS.
+- **Tests:** `n3_lines_vs_compute` covers 7 scenes: flat, Gouraud, FB_ONLY, bilinear
+  textured, blended, and As > 0x80, with strips, axis-aligned and diagonal lines.
+  `n3_texture_feedback_vs_compute` covers 5 scenes: frame copy, bilinear blended copy,
+  frame alpha as 8H, Z24 as texture, and Z as 8H, with own-texel and shifted reads
+  interleaved with drawing. Every scene matches the compute GS exactly, with 0 pixels and
+  0 Z words differing. With the run-end check disabled, the frame-copy scene breaks
+  (100k px differ).
+
+Full race with `SSX3_RENDER_NATIVE=all`, against the emulated reference:
+
+| | Before | Now |
+|---|---|---|
+| Fallback prims | 844,513 (0.84%) | **0** |
+| Native prims | 99.34M | 100.17M (371,626 lines, 467,922 feedback) |
+| Runs | 288k | 301k (9,851 ended for feedback) |
+| Mean pixels differing | 0.824% | 0.824% (identical per shot) |
+| Worst shot | 3.36% | 3.36% |
+| Max difference / pixels > 8 | 8 / 0 | 8 / 0 |
+| Wall time | 146-152 s | 149 s |
+
+- **Game state:** final RAM identical.
+- **Default path:** byte-identical (36 shots and RAM). The `gs.wgsl` line code was only
+  factored into functions.
+
+Remaining differences come from hardware interpolation and blend-unit residuals of ordinary
+native triangles, the same as before. Using the compute GS's planes, or the exact blend,
+more widely would reduce them, at some cost.
