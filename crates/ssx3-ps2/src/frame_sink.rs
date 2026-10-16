@@ -52,6 +52,17 @@ pub fn enabled() -> bool {
 // visibility queries read back is the sink's depth. Movies and loading
 // screens, which do not publish frames, draw on the emulated GS as before.
 
+/// Frames, ms in `frame::build`, ms in the sink.
+static TIMING: Mutex<(u64, f64, f64)> = Mutex::new((0, 0.0, 0.0));
+
+/// Mean time per published frame in building the typed frame and in the
+/// sink.
+pub fn timing_report() -> String {
+    let t = TIMING.lock().unwrap();
+    let n = t.0.max(1) as f64;
+    format!("frame sink: typed frame build {:.2} ms, sink {:.2} ms per frame ({} frames)", t.1 / n, t.2 / n, t.0)
+}
+
 static NATIVE: AtomicBool = AtomicBool::new(false);
 static ACTIVE: AtomicBool = AtomicBool::new(false);
 static LAST_PUBLISH: AtomicU64 = AtomicU64::new(0);
@@ -131,8 +142,17 @@ pub fn on_signal_sema(c: &mut Cpu, id: i32) {
         }
         ring.push_back(encode(&s.carry, &c.bus.ram, &c.bus.spr, &crate::mr!(c).hw.vu1.data));
     }
+    let t0 = std::time::Instant::now();
     let b = frame::build(&mem, g, &s.carry);
+    let t1 = std::time::Instant::now();
     s.sink.frame(&b, &mem);
+    let t2 = std::time::Instant::now();
+    {
+        let mut t = TIMING.lock().unwrap();
+        t.0 += 1;
+        t.1 += (t1 - t0).as_secs_f64() * 1e3;
+        t.2 += (t2 - t1).as_secs_f64() * 1e3;
+    }
     s.carry = Carry { regs: b.regs_end, matrix: b.emitter.matrix, material_param: b.emitter.material_param };
     if native() {
         let f = &b.frame;
