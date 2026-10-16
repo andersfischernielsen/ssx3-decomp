@@ -12,21 +12,46 @@ IOP drivers is translated to Rust ahead of time and runs on a native PS2 platfor
 (kernel, DMA/VIF/GIF, GS on wgpu, IPU, SPU2, memory card). No emulator interprets the
 game's code at runtime.
 
-**Status (2026-10-16):**
+**Status (2026-10-17):**
 - **The game is playable.** It boots and plays the intro movies. Menus, races, music and
-  sound work, and saves go to a file-backed memory card. A scripted race replay is
-  byte-identical run to run.
+  sound work, and saves go to a file-backed memory card.
+- **No emulated graphics hardware by default.** The native renderer (`crates/ssx3-gfx`,
+  wgpu) draws each frame from the game's own draw lists. The frame's VIF/VU1/GS work is
+  not emulated and the GS core is detached. Menus, movies, loading screens and races all
+  come through it.
+- **Modern displays.** The renderer works at any resolution and aspect ratio, widens the
+  game's 3D view to fit (16:9, ultrawide), keeps the HUD at its 4:3 shape, and has an
+  adjustable field of view.
+- **Native sound and files** (a native mixer; game files read through `std::fs`) are on
+  by default too. Each native path can be switched back to the emulated one for comparison.
 - **Every function has a name, and many are hand-written Rust.** All 13.3k functions are
   named. 1,368 are typed Rust rewrites that are checked against the generated code.
-- **Opt-in native host implementations** (phase 3) exist for:
-  - files (`std::fs`);
-  - sound (a native mixer);
-  - rasterizing GS primitives with wgpu render pipelines, with resolution scaling and
-    widescreen.
+- **Still emulated:** the EE kernel, DMA controller and timers the game code talks to, and
+  the IOP's controller and memory-card drivers (recompiled modules).
 
-  Each is checked byte-for-byte against the emulated path. The PS2 hardware models
-  (DMA, VIF, VU1, GS, timers, IOP) still sit underneath. Removing them from the frame
-  path, by rendering at the game's own draw layer, is the next step.
+## Screenshots
+
+All taken live from the native renderer (`target/game/ssx3-headless`, scripted input).
+
+**Ultrawide, 2560×1080.** The 3D view is widened to 21:9 through the game's own
+widescreen projection, so culling matches; the HUD keeps its 4:3 proportions in the
+centre (`SSX3_RENDER_SIZE=2560x1080`, or just a 21:9 window):
+
+![Snow Jam at 2560x1080](docs/images/ultrawide.jpg)
+
+**Field of view.** The same moment with `SSX3_FOV=1.35` (35% wider):
+
+![Snow Jam at 2560x1080 with a wider field of view](docs/images/ultrawide-fov.jpg)
+
+**16:9 at 1920×1080.** Rendered at full resolution rather than scaled up from 512×448:
+
+![Snow Jam at 1920x1080](docs/images/widescreen.jpg)
+
+**Metro City at night.** The game's glow, depth-of-field and colour passes are rendered
+natively, at the output resolution:
+
+![Metro City race start at 1920x1080](docs/images/metro-city-start.jpg)
+![Metro City at night at 1920x1080](docs/images/metro-city-night.jpg)
 
 See [`docs/plans/roadmap.md`](docs/plans/roadmap.md) for the plan and
 [`docs/investigation/limitations.md`](docs/investigation/limitations.md) for known
@@ -112,13 +137,13 @@ configuration. The plain command above is the recommended way to play.
 | `SSX3_ISO=<path>` | Disc image location (default `./SSX 3 (USA).iso`). |
 | `SSX3_MEMCARD=<path>` | Memory card file (default `saves/ssx3-mc0.ps2`). |
 | `SSX3_PAD2=1` | Plug in pad 2; a second controller drives it (Multi Play). |
-
 | `SSX3_AUDIO=0` | No audio output. |
 | `SSX3_REAL_CLOCK=1` | Give the PS2 the host's date and time (the default is a fixed time, so runs are reproducible). |
 
 **Rendering.** By default the game's frames are drawn by the native renderer
-(`crates/ssx3-gfx`, wgpu): during gameplay the frame's DMA chains are not run through the
-emulated VIF/VU1/GS at all. Movies and loading screens still go through the emulated GS.
+(`crates/ssx3-gfx`, wgpu). The frame's DMA chains are not run through the emulated
+VIF/VU1/GS at all, and the GS core is detached: menus, movies and loading screens come
+through the native renderer too.
 
 | Variable | Effect |
 | --- | --- |
