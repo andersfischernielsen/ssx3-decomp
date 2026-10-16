@@ -477,7 +477,8 @@ impl Inner {
         static SEQ: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         let seq = *SEQ.get_or_init(|| std::env::var_os("SSX3_GFX_SEQ_VU").is_some());
         let threads = if seq || calls.len() < 64 { 1 } else { std::thread::available_parallelism().map_or(4, |n| n.get()).clamp(1, 8) };
-        let per = calls.len().div_ceil(threads).max(1);
+        // About four chunks per thread, taken by whichever thread is free.
+        let per = calls.len().div_ceil(threads * 4).max(1);
         // Chunk boundaries: the first draw start at or after each multiple
         // of `per`; the start images have every earlier call's inputs applied.
         let mut bounds: Vec<usize> = Vec::new();
@@ -513,19 +514,21 @@ impl Inner {
         let results: Vec<(Vec<(usize, Vec<u128>)>, Box<[u8; 16384]>)> = if starts.len() <= 1 {
             vec![run(&calls, starts.pop().unwrap_or_else(|| self.vu.clone()))]
         } else {
+            let jobs: Vec<std::sync::Mutex<Option<Box<[u8; 16384]>>>> = starts.into_iter().map(|s| std::sync::Mutex::new(Some(s))).collect();
+            let done: Vec<std::sync::Mutex<Option<(Vec<(usize, Vec<u128>)>, Box<[u8; 16384]>)>>> = (0..jobs.len()).map(|_| std::sync::Mutex::new(None)).collect();
+            let next = std::sync::atomic::AtomicUsize::new(0);
             std::thread::scope(|sc| {
-                let calls = &calls;
-                let hs: Vec<_> = bounds
-                    .iter()
-                    .enumerate()
-                    .zip(starts)
-                    .map(|((j, &b), st)| {
+                for _ in 0..threads {
+                    sc.spawn(|| loop {
+                        let j = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let Some(job) = jobs.get(j) else { break };
+                        let st = job.lock().unwrap().take().expect("chunk");
                         let e = bounds.get(j + 1).copied().unwrap_or(calls.len());
-                        sc.spawn(move || run(&calls[b..e], st))
-                    })
-                    .collect();
-                hs.into_iter().map(|h| h.join().expect("VU thread")).collect()
-            })
+                        *done[j].lock().unwrap() = Some(run(&calls[bounds[j]..e], st));
+                    });
+                }
+            });
+            done.into_iter().map(|d| d.into_inner().unwrap().expect("chunk result")).collect()
         };
         let mut map = HashMap::with_capacity(calls.len());
         let vu0 = self.vu.clone();
