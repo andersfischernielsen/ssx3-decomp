@@ -234,3 +234,41 @@ More debug switches: `SSX3_GFX_SKIP=n,a-b` (drop draws), `SSX3_GFX_SKIPTEST=<tes
   110 s); the render stage, about 5 ms per frame, sets the unpaced pace.
 - **Resolution.** `SSX3_RENDER_SCALE=N` renders at N× (targets, render targets and
   scissors scaled; the light-query depth is sampled back at GS resolution).
+
+### 2026-10-17: no GS emulation, any size and aspect
+
+- **The GS is gone from the runtime path in native mode.** Everything the game shows comes
+  through published frames: menus, the memory-card check, the EA BIG / THX / intro movies
+  (drawn as textured sprites by the game's renderer) and loading screens. Outside them the
+  GS only ever received the flip packet, which `ssx3-gfx` replays from RAM. So the GS core
+  is detached (`Mtgs::detach`): commands are dropped, readbacks return nothing. The
+  guest-visible GS stays on the guest side of `Mtgs`: CSR and IMR, the privileged
+  registers, SIGNAL/FINISH/LABEL, PATH3 arbitration and GIF_STAT. Measured over boot
+  (frames 1-1800 with movies) and loading screens with the emulated GS still attached:
+  no GIF traffic other than the flip packet once every published frame's chains are
+  skipped. (Chains are skipped whenever their heads belong to a frame the sink drew, not
+  only while frames come every VBlank: loading screens publish now and then.)
+- **Any output size and aspect, and field of view.** `ssx3-gfx` renders to any size
+  (the window's by default, `SSX3_RENDER_SIZE=WxH`). GS pixels map to it with separate x
+  and y factors (render targets keep an integer scale; the display buffer follows the main
+  target). The game's view is widened through its own widescreen support:
+  - `PS2GraphicsMan_SetPerspective` scales its projection by gm+0x6ba0 (x) and gm+0x6ba4
+    (y) when gm+0x6b94 is 0..2;
+  - 0x377950 writes them when the option changes (mode 2, anamorphic: x 0.75);
+  - the frame sink writes mode 2, x = (4/3)/aspect/fov and y = 1/fov at every publish, so
+    the next frame's projection and its cull matrices match;
+  - `SSX3_FOV` is the field-of-view multiplier.
+
+  The HUD (draws in layers 9 and up) is squeezed horizontally around the centre so its 4:3
+  art keeps its shape; menus come out pillarboxed.
+- **Not done: frame rate independent of the 60 Hz logic.** The game already decouples
+  logic from rendering (several fixed updates per render when behind). Rendering faster
+  than 60 Hz needs interpolation between consecutive typed frames:
+  - match draws across frames (static geometry: by packet range, which is stable);
+  - interpolate their `MatrixRecord::world_view` (the VU1 header the programs read) and the
+    skinned meshes' bone palettes;
+  - re-run the VU programs with the interpolated inputs.
+
+  Interpolating the camera alone makes the riders judder at speed. This is the next design
+  task for "detach frame rate from logic"; the host clock mode (real-time catch-up) still
+  stalls with a host that stays behind and stays off.
