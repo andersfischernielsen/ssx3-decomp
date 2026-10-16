@@ -114,18 +114,30 @@ generated. Order:
    - **Frame loop: analysed** (`../investigation/phase3-frame-loop.md`). The
      game already decouples logic and rendering; there is an opt-in
      `SSX3_HOST_CLOCK=1`. The real change waits for native rendering.
-   - **Rendering: in progress** (`../investigation/phase3-render.md`). Done so
-     far:
-     - stage 0a: the EE-level frame reader, exact on 2.57M calls;
-     - all six VU1 rendering programs as bit-exact readable Rust
-       (`ssx3-render` mat1-6);
-     - `SSX3_VU1=native`: the full race is byte-identical with them.
-
-     Next:
-     - typed frame (DeferMan draws);
-     - the wgpu composition and draw stages;
-     - native post effects;
-     - resolution scaling and widescreen.
+   - **Rendering: done, opt-in** (`../investigation/phase3-render.md`).
+     - Stage 0a: the EE-level frame reader, exact on 2.57M calls.
+     - All six VU1 rendering programs as bit-exact readable Rust
+       (`ssx3-render` mat1-6). With `SSX3_VU1=native` the full race is
+       byte-identical.
+     - wgpu draws for every GS primitive class: 3D, 2D (PATH2), post effects
+       (PATH3), lines, texture feedback. `SSX3_RENDER_NATIVE=all` has 0
+       fallbacks in the full race, with game state identical.
+     - Persistent targets; a submit thread; targeted latent readbacks.
+     - Resolution scaling (`SSX3_RENDER_SCALE=N`), shown in the window at N×.
+     - Widescreen: the presenter follows the game's own anamorphic option
+       (16:9), with an `SSX3_ASPECT` override.
+     - Native mode is GPU-bound (about as costly as the compute rasterizer),
+       so a lower cost needs a design change (performance notes in
+       phase3-render.md).
+   - **Frame loop:** `SSX3_HOST_CLOCK=1` keeps game time real-time when
+     rendering falls behind (extra 60 Hz updates, fewer renders). It needs a
+     windowed check with native rendering.
+   - **Open, for the owner:**
+     - a windowed playtest with `SSX3_RENDER_NATIVE=all` (optionally
+       `SSX3_RENDER_SCALE=2`, `SSX3_HOST_CLOCK=1`) before any of these
+       become defaults;
+     - the flare rock case (Peak 3 freestyle) at the original spot
+       (`../investigation/flare-occlusion.md`).
 
 Bulk phase 2 rewriting (typed function bodies) continues later as capacity
 allows (OpenCode waves, `phase2-worker-guide.md`).
