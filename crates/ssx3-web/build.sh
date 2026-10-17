@@ -8,7 +8,7 @@ set -e
 cd "$(dirname "$0")/../.."
 # Deep guest call chains: a 32 MiB stack.
 CARGO_TARGET_DIR=target-web \
-CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS="-C link-arg=-zstack-size=33554432" \
+CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS="-C link-arg=-zstack-size=33554432 -C target-feature=+simd128" \
   cargo build --profile web --target wasm32-unknown-unknown -p ssx3-web -j "${JOBS:-4}"
 wasm-bindgen --target web --no-typescript --out-dir crates/ssx3-web/www/pkg \
   target-web/wasm32-unknown-unknown/web/ssx3_web.wasm

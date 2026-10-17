@@ -92,6 +92,10 @@ pub struct Game {
     pipeline: wgpu::RenderPipeline,
     sampler: wgpu::Sampler,
     started: f64,
+    /// ms in `run_frame` (game and, in it, the renderer) and in `present`
+    /// since the last report.
+    ms_frame: f64,
+    ms_present: f64,
 }
 
 fn now_ms() -> f64 {
@@ -165,6 +169,8 @@ pub async fn start(canvas: web_sys::OffscreenCanvas, iso: web_sys::Blob) -> Resu
         pipeline,
         sampler,
         started: now_ms(),
+        ms_frame: 0.0,
+        ms_present: 0.0,
     };
     game.follow_size();
     Ok(game)
@@ -194,10 +200,21 @@ impl Game {
     /// False when the game has stopped.
     pub fn frame(&mut self, buttons: u16) -> bool {
         ssx3_ps2::m!(self.cpu).sif.pad_buttons[0] = buttons;
+        let t0 = now_ms();
         let alive = ssx3_ps2::machine::run_frame(&mut self.cpu);
+        self.ms_frame += now_ms() - t0;
         let frames = ssx3_ps2::m!(self.cpu).sched.frames;
         if frames % 300 == 0 {
             log(&format!("[{:6.1}s] {}", (now_ms() - self.started) / 1e3, game::status(&self.cpu)));
+            log(&format!(
+                "  last 300 frames: {:.2} ms per frame in run_frame, {:.2} ms in present; {}; {}",
+                self.ms_frame / 300.0,
+                self.ms_present / 300.0,
+                ssx3_ps2::frame_sink::timing_report(),
+                self.gfx.0.lock().unwrap().timing_report()
+            ));
+            self.ms_frame = 0.0;
+            self.ms_present = 0.0;
         }
         if !alive {
             log(&format!("halted: {:?}", ssx3_ps2::m!(self.cpu).kernel.halted));
@@ -207,6 +224,12 @@ impl Game {
 
     /// Draw the latest image to the canvas.
     pub fn present(&mut self) {
+        let t0 = now_ms();
+        self.present_image();
+        self.ms_present += now_ms() - t0;
+    }
+
+    fn present_image(&mut self) {
         let Some((view, _, _)) = self.gfx.present_view_at(None) else { return };
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(f) | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
