@@ -133,6 +133,12 @@ pub fn dump(c: &Cpu) -> String {
 /// - `emu`: not installed (the emulated GS only).
 pub fn install_renderer(c: &mut Cpu) -> Option<ssx3_gfx::Renderer> {
     let mode = std::env::var("SSX3_RENDER").unwrap_or_else(|_| "native".into());
+    let mode = if mode != "native" && !ssx3_ps2::vu::VU1_MICROCODE {
+        eprintln!("SSX3_RENDER={mode}: the emulated GS needs the VU1 microcode (build with --features vu1-microcode); using native");
+        "native".to_string()
+    } else {
+        mode
+    };
     let native = match mode.as_str() {
         "native" => true,
         "shadow" => false,

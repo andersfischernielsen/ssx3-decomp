@@ -62,32 +62,16 @@ pub mod recomp;
 pub mod reference;
 #[cfg(target_arch = "aarch64")]
 pub mod simd;
+pub mod vu0lib;
 #[cfg(test)]
 mod tests;
 
 /// Statically recompiled microcode (written by `src/bin/vu_recomp.rs`).
 /// Behind the default `microcode` feature so tools that only need the
 /// translator or the op tables (e.g. `recomp-ee`) don't compile it.
-#[cfg(all(feature = "microcode", not(target_arch = "wasm32")))]
+#[cfg(feature = "microcode")]
 #[path = "../../../../generated/vu/mod.rs"]
 pub mod generated;
-
-/// The browser build: only the program that runs with the native renderer,
-/// VU0's (`vu_27649fa55223cbbf`). The VU1 programs draw the frames the host
-/// renderer draws instead, and their single huge functions take LLVM's wasm
-/// backend forever.
-#[cfg(all(feature = "microcode", target_arch = "wasm32"))]
-pub mod generated {
-    use super::web_vu0 as vu0;
-    use crate::vu::ProgramEntry;
-
-    pub static PROGRAMS: &[ProgramEntry] =
-        &[ProgramEntry { hash: vu0::HASH, start: vu0::START, len: vu0::LEN, leaders: vu0::LEADERS, func: vu0::run }];
-}
-
-#[cfg(all(feature = "microcode", target_arch = "wasm32"))]
-#[path = "../../../../generated/vu/vu_27649fa55223cbbf.rs"]
-mod web_vu0;
 
 use crate::Qword;
 use float::{Exc, ABS, MAX, ONE, SIGN};
@@ -111,6 +95,18 @@ pub enum VuExit {
 
 /// A translated program: `func(vu, start_pc, kick)`.
 pub type ProgramFn = fn(&mut Vu, u32, &mut dyn FnMut(&[Qword])) -> VuExit;
+
+/// Whether the translated VU1 microcode is compiled in (feature
+/// `microcode`): the emulated GS path needs it.
+pub const VU1_MICROCODE: bool = cfg!(feature = "microcode");
+
+static VU0_PROGRAMS: &[ProgramEntry] = &[ProgramEntry {
+    hash: vu0lib::HASH,
+    start: 0,
+    len: vu0lib::LEN,
+    leaders: &vu0lib::ENTRIES,
+    func: vu0lib::run,
+}];
 
 /// One translated microcode upload.
 pub struct ProgramEntry {
@@ -347,6 +343,11 @@ impl Vu {
         vu.vf[0] = [0, 0, 0, ONE];
         #[cfg(feature = "microcode")]
         vu.register_programs(generated::PROGRAMS);
+        // VU0's program, hand-written (replaces its translation;
+        // SSX3_VU0_TRANSLATED=1 keeps the translation, for A/B runs).
+        if index == 0 && !(VU1_MICROCODE && std::env::var_os("SSX3_VU0_TRANSLATED").is_some()) {
+            vu.register_programs(VU0_PROGRAMS);
+        }
         vu
     }
 

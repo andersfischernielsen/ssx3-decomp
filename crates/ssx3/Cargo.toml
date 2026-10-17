@@ -21,6 +21,8 @@ callprof = ["ssx3-ee-rt/callprof"]
 # (generated/ee-unwind; single-threaded, as the browser build needs).
 ee-threads = ["dep:ssx3-ee-threads", "ssx3-game/ee-threads"]
 ee-unwind = ["dep:ssx3-ee-unwind", "ssx3-game/ee-unwind"]
+# The translated VU1 microcode: the emulated GS path (SSX3_RENDER=emu/shadow).
+vu1-microcode = ["ssx3-ps2/vu1-microcode"]
 
 [dependencies]
 env_logger = "0.11.11"

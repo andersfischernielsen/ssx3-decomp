@@ -42,10 +42,6 @@ lto = false
 codegen-units = 64
 incremental = true
 
-# The browser build (crates/ssx3-web/build.sh). The translated VU microcode
-# (very large functions) takes LLVM's wasm backend forever at opt-level 3.
+# The browser build (crates/ssx3-web/build.sh).
 [profile.web]
 inherits = "game"
-
-[profile.web.package.ssx3-vu]
-opt-level = 1

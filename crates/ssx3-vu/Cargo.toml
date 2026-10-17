@@ -1,6 +1,6 @@
 [package]
 name = "ssx3-vu"
-description = "PS2 Vector Units for SSX 3: VU state, pipeline/timing model, per-op semantics, macro mode, and the statically translated VU microcode (generated/vu)."
+description = "PS2 Vector Units for SSX 3: VU state, pipeline/timing model, per-op semantics, macro mode, VU0's program by hand, and (feature `microcode`) the statically translated VU microcode (generated/vu)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,9 +9,11 @@ license.workspace = true
 # DMA, ...) do not recompile the ~5.5 MB of translated microcode
 # (docs/investigation/crate-split.md).
 [features]
-default = ["microcode"]
-# The translated microcode in generated/vu (the game needs it; the recompiler
-# and other tools build without it).
+default = []
+# The translated microcode in generated/vu. The game does not need it: VU0's
+# program is hand-written (vu/vu0lib.rs) and the VU1 programs only run on
+# the emulated GS path (SSX3_RENDER=emu/shadow; the native renderer draws
+# those frames itself). It is the reference for tests and that path.
 microcode = []
 
 [dependencies]
