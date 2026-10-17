@@ -36,6 +36,7 @@ pub mod mat4;
 pub mod mat5;
 pub mod mat6;
 pub mod vif;
+pub mod vujob;
 
 /// Run a VU1 microprogram call natively if its segment (`hash`) and entry
 /// are implemented: kicks go to `kick`, VU1 data memory is updated exactly

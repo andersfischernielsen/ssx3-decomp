@@ -193,7 +193,7 @@ pub fn do_global_dtors(c: &mut Cpu) {
                     break;
                 }
                 if crate::events::event_due(c) {
-                    crate::events::deliver_event(c, 0x0040_fbb0);
+                    crate::events::deliver_event_here(c, 0x0040_fbb0);
                 }
             }
         }
@@ -249,7 +249,7 @@ pub fn do_global_ctors(c: &mut Cpu) {
                     }
                     c.g[A1][0] = c.g[A2][0];
                     if crate::events::event_due(c) {
-                        crate::events::deliver_event(c, 0x0040_fc20);
+                        crate::events::deliver_event_here(c, 0x0040_fc20);
                     }
                 }
             }
@@ -277,7 +277,7 @@ pub fn do_global_ctors(c: &mut Cpu) {
                 }
                 c.g[V0][0] = Addr(c.g[S0][0] as u32).lw(c);
                 if crate::events::event_due(c) {
-                    crate::events::deliver_event(c, 0x0040_fc68);
+                    crate::events::deliver_event_here(c, 0x0040_fc68);
                 }
             }
         }

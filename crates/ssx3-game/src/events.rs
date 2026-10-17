@@ -46,6 +46,19 @@ pub fn deliver_event(c: &mut Cpu, head: u32) -> bool {
     c.event()
 }
 
+/// An event check whose caller carries on afterwards (structured loops,
+/// the syscall wrappers' final check): the result of `event()` is ignored.
+/// In the unwind form a thread switch there would leave the caller running
+/// on the next thread's registers, so the machine keeps it (and a finished
+/// frame) for the next check, which unwinds properly.
+#[inline]
+pub fn deliver_event_here(c: &mut Cpu, head: u32) {
+    c.pc = head;
+    c.no_unwind = cfg!(feature = "ee-unwind");
+    c.event();
+    c.no_unwind = false;
+}
+
 /// Deliver a due event at a back edge of a dispatcher-shaped loop (the
 /// caller has spilled its registers). True when the function must return
 /// now; it is re-entered at `head` later.

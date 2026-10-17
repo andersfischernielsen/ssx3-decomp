@@ -398,7 +398,7 @@ pub fn rider_metrix_is_hud_message_active(c: &mut Cpu) {
                     break;
                 }
                 if crate::events::event_due(c) {
-                    crate::events::deliver_event(c, 0x0011_7440);
+                    crate::events::deliver_event_here(c, 0x0011_7440);
                     // The generated loop reads its state from the registers.
                     i = c.g[A3][0];
                     rec = c.g[T0][0];
@@ -529,7 +529,7 @@ pub fn rider_model_find_bone(c: &mut Cpu) {
                     break None;
                 }
                 if crate::events::event_due(c) {
-                    crate::events::deliver_event(c, 0x0031_0c98);
+                    crate::events::deliver_event_here(c, 0x0031_0c98);
                 }
             }
         } else {

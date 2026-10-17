@@ -270,7 +270,7 @@ pub fn replay_seek_to_snapshot(c: &mut Cpu) {
                 cur = Addr(c.g[S1][0] as u32).lw(c);
                 c.g[V0][0] = cur;
                 if crate::events::event_due(c) {
-                    crate::events::deliver_event(c, 0x0027_0340);
+                    crate::events::deliver_event_here(c, 0x0027_0340);
                 }
                 continue;
             }

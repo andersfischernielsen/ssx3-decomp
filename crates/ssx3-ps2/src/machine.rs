@@ -42,7 +42,7 @@ pub struct Sched {
 /// `docs/investigation/phase3-frame-loop.md`).
 #[derive(Clone, Copy, Debug)]
 pub struct HostClock {
-    pub start: std::time::Instant,
+    pub start: web_time::Instant,
     /// EE cycle at `start`.
     pub base: u64,
     /// EE cycles skipped to catch up with the host.
@@ -73,7 +73,7 @@ fn follow_host_clock(c: &mut Cpu) {
     if !*ON.get_or_init(|| std::env::var("SSX3_HOST_CLOCK").is_ok_and(|v| v != "0")) {
         return;
     }
-    let now = std::time::Instant::now();
+    let now = web_time::Instant::now();
     let hc = m!(c).sched.host_clock.get_or_insert(HostClock { start: now, base: c.cycles, skipped: 0, jumps: 0 });
     let target = hc.base + (now.duration_since(hc.start).as_secs_f64() * EE_CLOCK as f64) as u64;
     if target > c.cycles + HOST_CLOCK_SLACK {
@@ -245,6 +245,11 @@ pub fn service_events(c: &mut Cpu) -> bool {
                 crate::threads::handoff(me, 0);
             }
         }
+        return false;
+    }
+    if c.no_unwind && (want_frame || m!(c).kernel.reschedule) {
+        // Deferred to the caller's next check (see `Cpu::no_unwind`).
+        c.next_event = c.cycles;
         return false;
     }
     if want_frame {

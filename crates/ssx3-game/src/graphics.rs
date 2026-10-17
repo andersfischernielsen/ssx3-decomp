@@ -10,6 +10,7 @@
 //! `SprStream_BeginBlock` with a `Dma_ToScratchpad`. `DeferMan_*` walk the
 //! per-state/pass bucket hash tables that queue deferred draw records.
 
+use crate::events::deliver_event_here;
 use crate::abi;
 use crate::call::{call_ptr, guest, Callee, Frame};
 use crate::guest::Addr;
@@ -421,7 +422,7 @@ pub fn defer_man_find_bucket(c: &mut Cpu) {
             if more {
                 if c.cycles >= c.next_event {
                     c.pc = 0x0039_5030;
-                    c.event();
+                    deliver_event_here(c, c.pc);
                 }
                 continue 'l_395030;
             }
@@ -497,7 +498,7 @@ pub fn defer_man_intern_state(c: &mut Cpu) {
                     if more {
                         if c.cycles >= c.next_event {
                             c.pc = 0x0039_4f18;
-                            c.event();
+                            deliver_event_here(c, c.pc);
                         }
                         continue 'compare;
                     }
@@ -515,7 +516,7 @@ pub fn defer_man_intern_state(c: &mut Cpu) {
                     if more {
                         if c.cycles >= c.next_event {
                             c.pc = 0x0039_4f08;
-                            c.event();
+                            deliver_event_here(c, c.pc);
                         }
                         continue 'l_394f08;
                     }

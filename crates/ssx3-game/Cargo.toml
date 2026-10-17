@@ -9,14 +9,21 @@ license.workspace = true
 # they never depend on this crate, so editing it only rebuilds it and relinks.
 [dependencies]
 ssx3-ee-rt = { path = "../ssx3-ee-rt" }
-ssx3-ee = { path = "../../generated/ee/game" }
+# The generated EE code: host-thread form (native) or unwind form
+# (generated/ee-unwind, single-threaded: the WebAssembly build). The crate
+# root aliases the chosen one as `ssx3_ee`.
+ssx3-ee-threads = { path = "../../generated/ee/game", package = "ssx3-ee", optional = true }
+ssx3-ee-unwind = { path = "../../generated/ee-unwind/game", package = "ssx3-ee-unwind", optional = true }
 ssx3-core = { path = "../ssx3-core" }
 
 # Work packages from docs/investigation/phase2-candidates.md. Each is its own
 # module behind a feature so packages can be developed in parallel without
 # breaking each other's builds; reviewed packages are added to `default`.
 [features]
-default = ["math", "anim", "camera", "state", "render", "sound", "util", "dispatch", "rider_states", "skeleton", "world", "ai", "ui", "audio", "containers", "chase", "oc1", "oc2", "oc3", "oc4", "oc5", "oc6", "oc7", "oc8", "oc9", "oc10", "oc11", "oc12", "oc13", "oc15", "oc16", "rider_logic", "world_cache", "world_painter", "graphics", "streaming", "replay_script", "oc14", "oc17", "oc18", "oc19", "oc20", "oc21", "oc22", "snd_lib", "audio_system", "oc23", "oc24", "oc25", "oc26", "oc27", "oc28"]
+default = ["packages", "ee-threads"]
+packages = ["math", "anim", "camera", "state", "render", "sound", "util", "dispatch", "rider_states", "skeleton", "world", "ai", "ui", "audio", "containers", "chase", "oc1", "oc2", "oc3", "oc4", "oc5", "oc6", "oc7", "oc8", "oc9", "oc10", "oc11", "oc12", "oc13", "oc15", "oc16", "rider_logic", "world_cache", "world_painter", "graphics", "streaming", "replay_script", "oc14", "oc17", "oc18", "oc19", "oc20", "oc21", "oc22", "snd_lib", "audio_system", "oc23", "oc24", "oc25", "oc26", "oc27", "oc28"]
+ee-threads = ["dep:ssx3-ee-threads"]
+ee-unwind = ["dep:ssx3-ee-unwind"]
 math = []
 anim = []
 camera = []

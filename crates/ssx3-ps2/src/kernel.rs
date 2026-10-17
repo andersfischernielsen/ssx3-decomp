@@ -448,6 +448,11 @@ pub fn service(c: &mut Cpu) {
         }
     }
     if m!(c).kernel.reschedule || (c.pc & !UNWIND) == IDLE {
+        if c.no_unwind && !m!(c).kernel.host_threads {
+            // At the caller's next check (see `Cpu::no_unwind`).
+            m!(c).kernel.reschedule = true;
+            return;
+        }
         reschedule(c);
     }
 }

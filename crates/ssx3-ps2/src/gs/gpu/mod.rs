@@ -116,15 +116,31 @@ pub struct GpuContext {
 
 /// The shared device, created on first use; `None` if no adapter is usable.
 pub fn context() -> Option<&'static GpuContext> {
-    static C: OnceLock<Option<GpuContext>> = OnceLock::new();
-    C.get_or_init(|| match pollster::block_on(create_context()) {
-        Ok(c) => Some(c),
-        Err(e) => {
-            eprintln!("[gs] GPU backend unavailable: {e}");
-            None
-        }
-    })
-    .as_ref()
+    CONTEXT
+        .get_or_init(|| {
+            // The browser cannot block on the device: `init_context` first.
+            if cfg!(target_arch = "wasm32") {
+                return None;
+            }
+            context_or_log(pollster::block_on(create_context()))
+        })
+        .as_ref()
+}
+
+static CONTEXT: OnceLock<Option<GpuContext>> = OnceLock::new();
+
+fn context_or_log(r: Result<GpuContext, String>) -> Option<GpuContext> {
+    r.map_err(|e| eprintln!("[gs] GPU backend unavailable: {e}")).ok()
+}
+
+/// Create the shared device without blocking (the browser's way; native
+/// code may call `context` directly).
+pub async fn init_context() -> Option<&'static GpuContext> {
+    if CONTEXT.get().is_none() {
+        let c = context_or_log(create_context().await);
+        let _ = CONTEXT.set(c);
+    }
+    CONTEXT.get().and_then(Option::as_ref)
 }
 
 /// `SSX3_GS_TRACE_READBACK`: log every VRAM readback and its cause.
@@ -1776,7 +1792,7 @@ impl GpuGs {
             // Wait for the previous frame's copy rather than skipping it:
             // what the game reads must not depend on GPU timing (determinism).
             // Only that submission: not the drawing queued since.
-            let t0 = std::time::Instant::now();
+            let t0 = web_time::Instant::now();
             let idx = loop {
                 if let Some(i) = self.latent.idx.lock().unwrap().clone() {
                     break i;
@@ -1818,9 +1834,9 @@ impl GpuGs {
 
     /// Map `staging[..bytes]`, hand it to `f`, unmap.
     fn read_staging(&mut self, bytes: u64, f: impl FnOnce(&[u8])) {
-        let t0 = std::time::Instant::now();
+        let t0 = web_time::Instant::now();
         self.drain_submits();
-        let t1 = std::time::Instant::now();
+        let t1 = web_time::Instant::now();
         let slice = self.staging.slice(0..bytes);
         slice.map_async(wgpu::MapMode::Read, |r| {
             if let Err(e) = r {

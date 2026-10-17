@@ -15,6 +15,8 @@ ssx3-snd = { path = "../ssx3-snd" }
 ssx3-render = { path = "../ssx3-render" }
 pollster = "1.0.1"
 wgpu = "30.0.1"
+# std::time on native; performance.now() in the browser.
+web-time = "1"
 
 [features]
 # The translated VU1 microcode, for the emulated GS path (SSX3_RENDER=emu or

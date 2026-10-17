@@ -6,7 +6,7 @@
 
 use crate::abi;
 use crate::call::{self, call_ptr, Callee, Frame};
-use crate::events::{deliver_event, event_due};
+use crate::events::{deliver_event_here, event_due};
 use crate::guest::Addr;
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
@@ -670,7 +670,7 @@ pub fn be_new_race_int_set_num_human_players(c: &mut Cpu) {
         c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(4));
         if more {
             if event_due(c) {
-                deliver_event(c, 0x0014_4ad0);
+                deliver_event_here(c, 0x0014_4ad0);
             }
         } else {
             c.cycles += 2;
@@ -881,7 +881,7 @@ pub fn be_reward_int_count_set_bits(c: &mut Cpu) {
                     c.g[V1][0] =
                         sx(((c.g[T1][0] as u32) as i32 >> (c.g[A0][0] as u32 & 31)) as u32);
                     if event_due(c) {
-                        deliver_event(c, 0x0015_73b8);
+                        deliver_event_here(c, 0x0015_73b8);
                     }
                     continue 'inner;
                 } else {
@@ -893,7 +893,7 @@ pub fn be_reward_int_count_set_bits(c: &mut Cpu) {
             if c.g[V0][0] != 0 {
                 c.g[T1][0] = c.lb(c.g[A2][0] as u32);
                 if event_due(c) {
-                    deliver_event(c, 0x0015_73a0);
+                    deliver_event_here(c, 0x0015_73a0);
                 }
                 continue 'outer;
             } else {
@@ -1099,7 +1099,7 @@ pub fn be_score_int_v02(c: &mut Cpu) {
             c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xb0));
             if t {
                 if event_due(c) {
-                    deliver_event(c, 0x0015_4a28);
+                    deliver_event_here(c, 0x0015_4a28);
                 }
                 continue;
             }
@@ -1511,7 +1511,7 @@ pub fn be_reward_int_count_new_rewards(c: &mut Cpu) {
             c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[V0][0] as u32));
             if more {
                 if event_due(c) {
-                    deliver_event(c, 0x0015_a718);
+                    deliver_event_here(c, 0x0015_a718);
                 }
                 continue 'inner;
             }
@@ -1522,7 +1522,7 @@ pub fn be_reward_int_count_new_rewards(c: &mut Cpu) {
             c.mult(0, V0, A0, A3);
             if more_types {
                 if event_due(c) {
-                    deliver_event(c, 0x0015_a708);
+                    deliver_event_here(c, 0x0015_a708);
                 }
                 continue 'outer;
             }
@@ -1593,7 +1593,7 @@ pub fn be_new_player_int_reset_slots(c: &mut Cpu) {
             c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x20));
             if more {
                 if event_due(c) {
-                    deliver_event(c, 0x0014_5b40);
+                    deliver_event_here(c, 0x0014_5b40);
                 }
             } else {
                 c.cycles += 2;
@@ -1618,7 +1618,7 @@ pub fn be_new_player_int_reset_slots(c: &mut Cpu) {
                 break;
             }
             if event_due(c) {
-                deliver_event(c, 0x0014_5b94);
+                deliver_event_here(c, 0x0014_5b94);
             }
         }
     }
@@ -1976,7 +1976,7 @@ pub fn be_option_int_reset_quick_messages(c: &mut Cpu) {
                 return Ok(());
             }
             if event_due(c) {
-                deliver_event(c, 0x0014_f778);
+                deliver_event_here(c, 0x0014_f778);
             }
         }
     })

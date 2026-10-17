@@ -5,7 +5,7 @@
 
 use crate::abi;
 use crate::call::{call_ptr, guest, Callee, Frame, VSlot};
-use crate::events::{deliver_event, event_due};
+use crate::events::{deliver_event_here, event_due};
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
 use ssx3_ee_rt::cpu::{reg::*, sx};
@@ -130,7 +130,7 @@ pub fn anim_sequence_fire_end_triggers(c: &mut Cpu) {
             count = Addr(trigger as u32).off(trigger::COUNT).lw(c);
             c.g[V0][0] = count;
             if event_due(c) {
-                deliver_event(c, HEAD);
+                deliver_event_here(c, HEAD);
             }
         }
     }
@@ -185,7 +185,7 @@ pub fn anim_sequence_fire_triggers_at_time(c: &mut Cpu) {
             count = Addr(trigger as u32).off(trigger::COUNT).lw(c);
             c.g[V0][0] = count;
             if event_due(c) {
-                deliver_event(c, HEAD);
+                deliver_event_here(c, HEAD);
             }
         }
     }
@@ -299,7 +299,7 @@ pub fn anim_sequence_fire_triggers_in_range(c: &mut Cpu) {
         count = Addr(trigger as u32).off(trigger::COUNT).lw(c);
         c.g[V0][0] = count;
         if event_due(c) {
-            deliver_event(c, HEAD);
+            deliver_event_here(c, HEAD);
         }
     }
     c.cycles += 2;
@@ -346,7 +346,7 @@ pub fn anim_seq_list_append(c: &mut Cpu) {
                     node = link;
                     c.g[V1][0] = link;
                     if event_due(c) {
-                        deliver_event(c, HEAD);
+                        deliver_event_here(c, HEAD);
                     }
                 } else {
                     c.cycles += 2;
@@ -393,7 +393,7 @@ pub fn anim_sequence_ctor(c: &mut Cpu) {
             break;
         }
         if event_due(c) {
-            deliver_event(c, HEAD);
+            deliver_event_here(c, HEAD);
         }
     }
     c.cycles += 26;
@@ -494,7 +494,7 @@ pub fn audio_eval_curve5(c: &mut Cpu) {
         c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(4));
         if more {
             if event_due(c) {
-                deliver_event(c, HEAD);
+                deliver_event_here(c, HEAD);
             }
             continue;
         }
@@ -705,7 +705,7 @@ pub fn avalanche_add_node_event(c: &mut Cpu) {
                         link = Addr(link as u32).off(LINK).lw(c);
                         c.g[V1][0] = link;
                         if event_due(c) {
-                            deliver_event(c, HEAD);
+                            deliver_event_here(c, HEAD);
                         }
                         continue;
                     }
@@ -986,7 +986,7 @@ pub fn attached_emitter_fx_init(c: &mut Cpu) {
                 break;
             }
             if event_due(c) {
-                deliver_event(c, HEAD);
+                deliver_event_here(c, HEAD);
             }
         }
         c.cycles += 4;
@@ -1062,7 +1062,7 @@ pub fn attached_emitter_fx_dtor(c: &mut Cpu) {
             c.g[S0][0] = sx(p);
             if more {
                 if event_due(c) {
-                    deliver_event(c, HEAD);
+                    deliver_event_here(c, HEAD);
                 }
                 continue;
             }
@@ -1124,7 +1124,7 @@ pub fn avalanche_build_active_node_array(c: &mut Cpu) {
                     break;
                 }
                 if event_due(c) {
-                    deliver_event(c, 0x002d_7e80);
+                    deliver_event_here(c, 0x002d_7e80);
                 }
             }
         }
@@ -1163,7 +1163,7 @@ pub fn avalanche_build_active_node_array(c: &mut Cpu) {
                     break;
                 }
                 if event_due(c) {
-                    deliver_event(c, 0x002d_7ec8);
+                    deliver_event_here(c, 0x002d_7ec8);
                 }
             }
         }

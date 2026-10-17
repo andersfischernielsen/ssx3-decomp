@@ -117,7 +117,8 @@ pub struct Inner {
     /// Keep the depth after phase 1 (`depth()`, native mode).
     pub want_depth: bool,
     /// This frame's depth readback in flight (buffer, size, ZMAX + 1).
-    pending_depth: Option<(wgpu::Buffer, wgpu::SubmissionIndex, u32, u32, f32, u32, u32)>,
+    /// (The flag: mapped; the browser cannot wait for it.)
+    pending_depth: Option<(wgpu::Buffer, wgpu::SubmissionIndex, u32, u32, f32, u32, u32, Arc<std::sync::atomic::AtomicBool>)>,
     /// ZMAX + 1 of the frame's Z buffer (depth is stored as Z / it).
     zscale: f32,
     /// Frames timed and the time (ms) in build, prepare, encode+submit,
@@ -167,7 +168,7 @@ pub struct Shared {
     depth: Mutex<Option<(u32, u32, Vec<u32>)>>,
     /// The latest frame's images (in-between ones first) and when they
     /// were ready.
-    present: Mutex<Option<(Vec<wgpu::Texture>, std::time::Instant)>>,
+    present: Mutex<Option<(Vec<wgpu::Texture>, web_time::Instant)>>,
     /// The frame thread's building time (ms) and frames.
     build_ms: Mutex<(f64, u64)>,
 }
@@ -655,7 +656,7 @@ impl Inner {
     /// N-1, see `interp`), each from the state frame N starts from, then
     /// the frame's own (exactly as without interpolation).
     pub fn render(&mut self, built: &Built, mem: &(dyn Mem + Sync)) {
-        let t_frame = std::time::Instant::now();
+        let t_frame = web_time::Instant::now();
         let cur = (self.subframes > 1).then(|| records(built));
         let k = if cur.is_some() && self.prev_records.is_some() { self.subframes as usize } else { 1 };
         self.nslots = k;
@@ -674,7 +675,7 @@ impl Inner {
             self.gs.verts.clear();
             self.gs.batches.clear();
             self.stats.frames += 1;
-            let t_start = std::time::Instant::now();
+            let t_start = web_time::Instant::now();
             let mut fin = self.take_build();
             let mut mids: Vec<Build> = subs
                 .into_iter()
@@ -687,7 +688,11 @@ impl Inner {
                 .collect();
             std::thread::scope(|sc| {
                 for b in mids.iter_mut() {
-                    sc.spawn(|| Build::run(b, built, mem));
+                    if cfg!(target_arch = "wasm32") {
+                        Build::run(b, built, mem);
+                    } else {
+                        sc.spawn(|| Build::run(b, built, mem));
+                    }
                 }
                 Build::run(&mut fin, built, mem);
             });
@@ -710,7 +715,7 @@ impl Inner {
             self.render_one(built, mem);
         }
         if !self.present.is_empty() {
-            *self.shared.present.lock().unwrap() = Some((self.present.clone(), std::time::Instant::now()));
+            *self.shared.present.lock().unwrap() = Some((self.present.clone(), web_time::Instant::now()));
         }
         self.prev_records = cur;
         // Interpolation must keep up with the game: after a second of
@@ -796,7 +801,7 @@ impl Inner {
         if self.slot.is_none() {
             self.stats.frames += 1;
         }
-        let t_start = std::time::Instant::now();
+        let t_start = web_time::Instant::now();
         let mut b = self.take_build();
         Build::run(&mut b, built, mem);
         self.put_build(b);
@@ -806,7 +811,7 @@ impl Inner {
 
     /// Draw the geometry built last (`Build::run`).
     fn draw_built(&mut self, mem: &dyn Mem) {
-        let t_built = std::time::Instant::now();
+        let t_built = web_time::Instant::now();
         self.timing.0 += 1;
         let p0 = (self.gs.prims, self.gs.dropped, self.gs.unknown_tex);
         let (w, h) = self.gs.size;
@@ -1002,7 +1007,7 @@ impl Inner {
         if items.is_empty() {
             return;
         }
-        let t_prepared = std::time::Instant::now();
+        let t_prepared = web_time::Instant::now();
         self.timing.1[1] += (t_prepared - t_built).as_secs_f64() * 1e3;
         let ubuf = grow_buffer(&self.dev, &mut self.ubuf, ubytes.len() as u64, wgpu::BufferUsages::UNIFORM, "ssx3-gfx uniforms");
         self.queue.write_buffer(&ubuf, 0, &ubytes);
@@ -1208,16 +1213,22 @@ impl Inner {
             buf
         });
         let sub_idx = self.queue.submit(std::iter::once(enc.finish()));
-        let t_sub = std::time::Instant::now();
+        let t_sub = web_time::Instant::now();
         self.timing.1[2] += (t_sub - t_prepared).as_secs_f64() * 1e3;
         if let Some(buf) = depth_buf {
             // The previous frame's depth (its readback has had a frame to
             // complete): the light queries see depth one frame late, and
             // the CPU does not wait for this frame's GPU work.
-            if let Some((prev, prev_idx, pw, ph, zs, lw, lh)) = self.pending_depth.take() {
+            if let Some((prev, prev_idx, pw, ph, zs, lw, lh, mapped)) = self.pending_depth.take() {
                 let slice = prev.slice(..);
-                let _ = self.dev.poll(wgpu::PollType::Wait { submission_index: Some(prev_idx), timeout: None });
-                if let Ok(v) = slice.get_mapped_range() {
+                if cfg!(target_arch = "wasm32") {
+                    let _ = self.dev.poll(wgpu::PollType::Poll);
+                } else {
+                    let _ = self.dev.poll(wgpu::PollType::Wait { submission_index: Some(prev_idx), timeout: None });
+                }
+                // (Not mapped yet in the browser: the queries keep the
+                // depth before.)
+                if let Some(v) = mapped.load(std::sync::atomic::Ordering::Acquire).then(|| slice.get_mapped_range()).and_then(|r| r.ok()) {
                     // In GS pixels: the sample at each pixel's centre.
                     let (lw, lh) = (lw as usize, lh as usize);
                     let row = (pw * 4).next_multiple_of(256) as usize;
@@ -1236,8 +1247,10 @@ impl Inner {
                     *self.shared.depth.lock().unwrap() = Some((lw as u32, lh as u32, z));
                 }
             }
-            buf.slice(..).map_async(wgpu::MapMode::Read, |_| {});
-            self.pending_depth = Some((buf, sub_idx, t.w, t.h, self.zscale, w, h));
+            let mapped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let m = mapped.clone();
+            buf.slice(..).map_async(wgpu::MapMode::Read, move |r| m.store(r.is_ok(), std::sync::atomic::Ordering::Release));
+            self.pending_depth = Some((buf, sub_idx, t.w, t.h, self.zscale, w, h, mapped));
             self.timing.1[3] += t_sub.elapsed().as_secs_f64() * 1e3;
         }
         if let Some(pb) = probe_buf {
@@ -1453,6 +1466,27 @@ impl VuPlan<'_> {
             *slot.lock().unwrap() = Some(r);
             cv.notify_all();
         }
+    }
+
+    /// Run every chunk through the installed [`VuOffload`] (the browser's
+    /// helper workers); false (nothing done) without one, or for an
+    /// in-between image (its substitutions stay here).
+    fn offload(&self) -> bool {
+        let Some((off, _)) = OFFLOAD.get() else { return false };
+        if self.subst.is_some() || self.model_subst.is_some() || self.bounds.len() < 2 {
+            return false;
+        }
+        let jobs = (0..self.bounds.len())
+            .map(|j| {
+                let start = self.starts[j].lock().unwrap().take().expect("chunk");
+                let e = self.bounds.get(j + 1).copied().unwrap_or(self.calls.len());
+                ssx3_render::vujob::encode(&start, &self.calls[self.bounds[j]..e])
+            })
+            .collect();
+        for (j, r) in off(jobs).into_iter().enumerate() {
+            *self.done[j].0.lock().unwrap() = Some(ssx3_render::vujob::decode(&r));
+        }
+        true
     }
 
     fn wait(&self, j: usize) -> VuChunk {
@@ -1700,8 +1734,15 @@ impl Build {
         let plan = Build::plan_vu_calls(b, built, &draws);
         let mut vu = VuReceiver::default();
         std::thread::scope(|sc| {
-        for _ in 0..plan.threads {
-            sc.spawn(|| plan.work());
+        // The helper workers (the browser) take every chunk up front;
+        // without threads, this thread does.
+        if plan.offload() {
+        } else if cfg!(target_arch = "wasm32") {
+            plan.work();
+        } else {
+            for _ in 0..plan.threads {
+                sc.spawn(|| plan.work());
+            }
         }
         for (i, (owner, ev)) in built.events.iter().enumerate() {
             if matches!(owner, Owner::Payload(n) if skip.contains(n)) {
@@ -1831,7 +1872,8 @@ impl Build {
         }
         static SEQ: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         let seq = *SEQ.get_or_init(|| std::env::var_os("SSX3_GFX_SEQ_VU").is_some());
-        let threads = if seq || calls.len() < 64 { 1 } else { std::thread::available_parallelism().map_or(4, |n| n.get()).clamp(1, 8) };
+        let parallel = OFFLOAD.get().map(|o| o.1).unwrap_or_else(|| std::thread::available_parallelism().map_or(4, |n| n.get()));
+        let threads = if seq || calls.len() < 64 { 1 } else { parallel.clamp(1, 8) };
         // About four chunks per thread, taken by whichever thread is free.
         let per = calls.len().div_ceil(threads * 4).max(1);
         // Chunk boundaries: the first draw start at or after each multiple
@@ -1859,6 +1901,23 @@ impl Build {
         let done = (0..bounds.len()).map(|_| (std::sync::Mutex::new(None), std::sync::Condvar::new())).collect();
         VuPlan { vu0: b.vu.clone(), calls, bounds, starts, done, chunk_of, next: std::sync::atomic::AtomicUsize::new(0), threads, subst: b.subst.clone(), model_subst: b.model_subst.clone() }
     }
+}
+
+/// Runs encoded chunks of VU1 calls ([`ssx3_render::vujob`]) elsewhere and
+/// returns their results in order: the browser build's helper workers.
+pub type VuOffload = Box<dyn Fn(Vec<Vec<u8>>) -> Vec<Vec<u8>> + Send + Sync>;
+
+static OFFLOAD: std::sync::OnceLock<(VuOffload, usize)> = std::sync::OnceLock::new();
+
+/// Run one encoded job (what an offload does with each).
+pub fn run_vu_job(job: &[u8]) -> Vec<u8> {
+    ssx3_render::vujob::run(job)
+}
+
+/// Install the VU offload, which runs `workers` jobs at a time (the frame's
+/// calls are split for that many).
+pub fn set_vu_offload(f: VuOffload, workers: usize) {
+    let _ = OFFLOAD.set((f, workers.max(1)));
 }
 
 /// A stable hash (interpolation keys).

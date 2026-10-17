@@ -5,7 +5,7 @@
 
 use crate::abi;
 use crate::call::{self, call_ptr, Callee, Flow, Frame};
-use crate::events::{back_edge_unwinds, deliver_event, event_due};
+use crate::events::{back_edge_unwinds, deliver_event_here, event_due};
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::{reg::*, sx};
@@ -160,7 +160,7 @@ fn syscall_wrapper(c: &mut Cpu, code: u32, at: u32, ret: u32) {
         return;
     }
     if event_due(c) {
-        c.event();
+        deliver_event_here(c, c.pc);
     }
     abi::ret(c);
 }
@@ -256,7 +256,7 @@ pub fn active_camera_trigger_list_clear(c: &mut Cpu) {
                     break;
                 }
                 if event_due(c) {
-                    deliver_event(c, 0x0016_c650);
+                    deliver_event_here(c, 0x0016_c650);
                 }
             }
         }
@@ -290,7 +290,7 @@ pub fn active_camera_trigger_list_clear_flags(c: &mut Cpu) {
         }
         c.sw((c.g[A0][0] as u32).wrapping_add(NODE_FLAG_B), 0);
         if event_due(c) {
-            deliver_event(c, 0x0016_c688);
+            deliver_event_here(c, 0x0016_c688);
         }
     }
     c.cycles += 2;
@@ -328,7 +328,7 @@ pub fn active_camera_trigger_list_find(c: &mut Cpu) {
         }
         c.g[V0][0] = Addr(c.g[A0][0] as u32).off(NODE_ID).lw(c);
         if event_due(c) {
-            deliver_event(c, 0x0016_c6c0);
+            deliver_event_here(c, 0x0016_c6c0);
         }
     }
 }
@@ -516,7 +516,7 @@ pub fn ai_anim_event_map_ctor(c: &mut Cpu) {
             break;
         }
         if event_due(c) {
-            deliver_event(c, COPY_HEAD);
+            deliver_event_here(c, COPY_HEAD);
         }
     }
     // Clear 437 halfwords ending at self + 0.
@@ -530,7 +530,7 @@ pub fn ai_anim_event_map_ctor(c: &mut Cpu) {
         c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(4));
         if count_down {
             if event_due(c) {
-                deliver_event(c, CLEAR_HEAD);
+                deliver_event_here(c, CLEAR_HEAD);
             }
             continue;
         }
@@ -570,7 +570,7 @@ pub fn ai_anim_event_map_ctor(c: &mut Cpu) {
                 return;
             }
             if event_due(c) {
-                deliver_event(c, BUILD_HEAD);
+                deliver_event_here(c, BUILD_HEAD);
             }
         }
     }
@@ -695,7 +695,7 @@ pub fn ai_fwd_diff_cache_hash_insert(c: &mut Cpu) {
         }
         c.g[A1][0] = sx((c.g[V1][0] as u32).wrapping_add(NEXT));
         if event_due(c) {
-            deliver_event(c, HEAD);
+            deliver_event_here(c, HEAD);
         }
     }
     c.cycles += 2;
@@ -1072,7 +1072,7 @@ pub fn anim_data_base_reset_chan_cache_table(c: &mut Cpu) {
             return;
         }
         if event_due(c) {
-            deliver_event(c, 0x0031_10e8);
+            deliver_event_here(c, 0x0031_10e8);
         }
     }
 }
@@ -1130,7 +1130,7 @@ pub fn av_skip_whitespace(c: &mut Cpu) {
         }
         c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(1));
         if event_due(c) {
-            deliver_event(c, 0x003a_f338);
+            deliver_event_here(c, 0x003a_f338);
         }
     }
     c.cycles += 6;
@@ -1223,7 +1223,7 @@ pub fn av_str_icmp(c: &mut Cpu) {
             break;
         }
         if event_due(c) {
-            deliver_event(c, 0x003a_f3a8);
+            deliver_event_here(c, 0x003a_f3a8);
         }
     }
     c.cycles += 6;
@@ -1557,7 +1557,7 @@ pub fn anim_controller_ctor(c: &mut Cpu) {
             }
             c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x50)).lw(c);
             if event_due(c) {
-                deliver_event(c, 0x0031_1918);
+                deliver_event_here(c, 0x0031_1918);
             }
         }
         c.cycles += 8;
@@ -1602,7 +1602,7 @@ pub fn anim_controller_dtor(c: &mut Cpu) {
             }
             c.g[V0][0] = Addr((c.g[S1][0] as u32).wrapping_add(0x50)).lw(c);
             if event_due(c) {
-                deliver_event(c, 0x0031_1988);
+                deliver_event_here(c, 0x0031_1988);
             }
         }
         c.cycles += 3;
@@ -2277,7 +2277,7 @@ pub fn anim_combo_v52(c: &mut Cpu) {
                     break;
                 }
                 if event_due(c) {
-                    deliver_event(c, 0x0035_91c0);
+                    deliver_event_here(c, 0x0035_91c0);
                 }
             }
         }
@@ -2365,7 +2365,7 @@ pub fn anim_combo_snapshot_matrices(c: &mut Cpu) {
             break;
         }
         if event_due(c) {
-            deliver_event(c, 0x0035_9060);
+            deliver_event_here(c, 0x0035_9060);
         }
     }
     c.cycles += 2;
@@ -2526,7 +2526,7 @@ pub fn algorithm_list_clear(c: &mut Cpu) {
                     break;
                 }
                 if event_due(c) {
-                    deliver_event(c, 0x0015_cb30);
+                    deliver_event_here(c, 0x0015_cb30);
                 }
             }
         }
@@ -2577,7 +2577,7 @@ pub fn av_free_subtitles(c: &mut Cpu) {
                         break;
                     }
                     if event_due(c) {
-                        deliver_event(c, 0x003a_f060);
+                        deliver_event_here(c, 0x003a_f060);
                     }
                 }
             }
@@ -2659,7 +2659,7 @@ pub fn av_find_subtitle_by_frame(c: &mut Cpu) {
         }
         c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A3][0] as u32));
         if event_due(c) {
-            deliver_event(c, 0x003a_f290);
+            deliver_event_here(c, 0x003a_f290);
         }
     }
     c.cycles += 11;

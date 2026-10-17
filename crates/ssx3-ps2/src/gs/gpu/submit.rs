@@ -94,9 +94,9 @@ impl Drop for Submitter {
 fn run(rx: Receiver<Job>, dev: wgpu::Device, q: wgpu::Queue, done: Arc<Done>) {
     let mut inflight: VecDeque<wgpu::SubmissionIndex> = VecDeque::new();
     // SSX3_GS_WAITS: (GPU busy time, last completion), reported at exit.
-    type Busy = Arc<Mutex<(std::time::Duration, Option<std::time::Instant>)>>;
+    type Busy = Arc<Mutex<(std::time::Duration, Option<web_time::Instant>)>>;
     let busy: Option<Busy> = std::env::var_os("SSX3_GS_WAITS").map(|_| Arc::new(Mutex::new((std::time::Duration::ZERO, None))));
-    let t0 = std::time::Instant::now();
+    let t0 = web_time::Instant::now();
     // Completion callbacks run in `poll`: poll often while measuring.
     let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
     if busy.is_some() {
@@ -121,12 +121,12 @@ fn run(rx: Receiver<Job>, dev: wgpu::Device, q: wgpu::Queue, done: Arc<Done>) {
         if let Some(b) = busy.as_ref() {
             // GPU busy time: each submission from when it was submitted (or
             // the previous one completed) to its completion.
-            let t = std::time::Instant::now();
+            let t = web_time::Instant::now();
             let b = b.clone();
             q.on_submitted_work_done(move || {
-                let done = std::time::Instant::now();
+                let done = web_time::Instant::now();
                 let mut g = b.lock().unwrap();
-                let start = g.1.map_or(t, |p: std::time::Instant| p.max(t));
+                let start = g.1.map_or(t, |p: web_time::Instant| p.max(t));
                 g.0 += done.saturating_duration_since(start);
                 g.1 = Some(done);
             });

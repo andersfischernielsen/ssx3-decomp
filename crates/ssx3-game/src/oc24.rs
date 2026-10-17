@@ -7,7 +7,7 @@
 
 use crate::abi;
 use crate::call::{self, Callee, Frame};
-use crate::events::event_due;
+use crate::events::{deliver_event_here, event_due};
 use crate::guest::Addr;
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
@@ -99,7 +99,7 @@ fn do_syscall(c: &mut Cpu, at: u32, ret: u32) -> bool {
 #[inline]
 fn event_if_due(c: &mut Cpu) {
     if event_due(c) {
-        c.event();
+        deliver_event_here(c, c.pc);
     }
 }
 
@@ -790,7 +790,7 @@ pub fn mcmp(c: &mut Cpu) {
             return;
         }
         if event_due(c) {
-            crate::events::deliver_event(c, 0x0042_0e68);
+            crate::events::deliver_event_here(c, 0x0042_0e68);
         }
     }
 }
@@ -899,7 +899,7 @@ pub fn mprec_log10(c: &mut Cpu) {
                         break;
                     }
                     if event_due(c) {
-                        crate::events::deliver_event(c, 0x0042_1500);
+                        crate::events::deliver_event_here(c, 0x0042_1500);
                     }
                 }
             }
@@ -1202,7 +1202,7 @@ fn cache_range(c: &mut Cpu, head: u32) {
             return;
         }
         if event_due(c) {
-            crate::events::deliver_event(c, head);
+            crate::events::deliver_event_here(c, head);
         }
     }
 }
@@ -1591,7 +1591,7 @@ fn ai_destroy_riders(
                 break;
             }
             if event_due(c) {
-                crate::events::deliver_event(c, head);
+                crate::events::deliver_event_here(c, head);
             }
         }
     }
@@ -1658,7 +1658,7 @@ pub fn ai_destroy_all_riders(c: &mut Cpu) {
                 }
                 c.g[V0][0] = Addr(c.g[S2][0] as u32).lw(c);
                 if event_due(c) {
-                    crate::events::deliver_event(c, 0x0012_b0c0);
+                    crate::events::deliver_event_here(c, 0x0012_b0c0);
                 }
             }
         }
@@ -1694,7 +1694,7 @@ pub fn ai_destroy_all_riders(c: &mut Cpu) {
                     break;
                 }
                 if event_due(c) {
-                    crate::events::deliver_event(c, 0x0012_b0f8);
+                    crate::events::deliver_event_here(c, 0x0012_b0f8);
                 }
             }
         }
@@ -1759,7 +1759,7 @@ pub fn ai_free_anim_sources(c: &mut Cpu) {
                 break;
             }
             if event_due(c) {
-                crate::events::deliver_event(c, 0x0012_b220);
+                crate::events::deliver_event_here(c, 0x0012_b220);
             }
         }
         c.cycles += 6;
@@ -1824,7 +1824,7 @@ pub fn ai_count_riders_on_path(c: &mut Cpu) {
                     break;
                 }
                 if event_due(c) {
-                    crate::events::deliver_event(c, 0x0010_fc68);
+                    crate::events::deliver_event_here(c, 0x0010_fc68);
                 }
             }
         }
@@ -1920,7 +1920,7 @@ pub fn ai_reset_riders(c: &mut Cpu) {
                     break;
                 }
                 if event_due(c) {
-                    crate::events::deliver_event(c, 0x0012_9818);
+                    crate::events::deliver_event_here(c, 0x0012_9818);
                 }
             }
         }
@@ -1945,7 +1945,7 @@ pub fn ai_reset_riders(c: &mut Cpu) {
                 }
                 c.g[V0][0] = Addr(c.g[S0][0] as u32).lw(c);
                 if event_due(c) {
-                    crate::events::deliver_event(c, 0x0012_9888);
+                    crate::events::deliver_event_here(c, 0x0012_9888);
                 }
             }
         }
@@ -2022,7 +2022,7 @@ pub fn ai_refresh_rider_overlaps(c: &mut Cpu) {
                 }
                 c.g[A0][0] = Addr(c.g[S0][0] as u32).lw(c);
                 if event_due(c) {
-                    crate::events::deliver_event(c, 0x0012_b7b8);
+                    crate::events::deliver_event_here(c, 0x0012_b7b8);
                 }
             }
         }

@@ -14,8 +14,13 @@ name = "ssx3-headless"
 path = "src/bin/ssx3_headless.rs"
 
 [features]
+default = ["ee-threads"]
 # Dynamic call graph of the EE code (SSX3_CALLPROF=<out>:<from>:<to>).
 callprof = ["ssx3-ee-rt/callprof"]
+# The generated EE code: host threads (native default) or unwind form
+# (generated/ee-unwind; single-threaded, as the browser build needs).
+ee-threads = ["dep:ssx3-ee-threads", "ssx3-game/ee-threads"]
+ee-unwind = ["dep:ssx3-ee-unwind", "ssx3-game/ee-unwind"]
 # The translated VU1 microcode: the emulated GS path (SSX3_RENDER=emu/shadow).
 vu1-microcode = ["ssx3-ps2/vu1-microcode"]
 
@@ -30,8 +35,9 @@ ssx3-gs.workspace = true
 ssx3-ps2 = { path = "../ssx3-ps2" }
 ssx3-gfx = { path = "../ssx3-gfx" }
 ssx3-ee-rt = { path = "../ssx3-ee-rt" }
-ssx3-ee = { path = "../../generated/ee/game" }
-ssx3-game = { path = "../ssx3-game" }
+ssx3-ee-threads = { path = "../../generated/ee/game", package = "ssx3-ee", optional = true }
+ssx3-ee-unwind = { path = "../../generated/ee-unwind/game", package = "ssx3-ee-unwind", optional = true }
+ssx3-game = { path = "../ssx3-game", default-features = false, features = ["packages"] }
 ssx3-iop = { path = "../ssx3-iop" }
 ssx3-iop-gen = { path = "../../generated/iop/modules" }
 wgpu = "30.0.1"

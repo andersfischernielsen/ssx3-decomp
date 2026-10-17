@@ -49,7 +49,7 @@ impl FrameBuilder {
     /// The typed frame published by the GraphicsMan at `gm`, and the carry
     /// it was built with (for [`dump_frame`]).
     pub fn build(&mut self, gm: u32, mem: &DumpMem) -> (Built, Carry) {
-        let t = std::time::Instant::now();
+        let t = web_time::Instant::now();
         let carry = self.carry.clone();
         let b = frame::build(mem, gm, &carry);
         self.carry = Carry { regs: b.regs_end, matrix: b.emitter.matrix, material_param: b.emitter.material_param };
@@ -221,17 +221,21 @@ pub fn on_signal_sema(c: &mut Cpu, id: i32) {
     }
     let mut guard = SINK.lock().unwrap();
     let Some(s) = guard.as_mut() else { return };
-    let t0 = std::time::Instant::now();
+    let t0 = web_time::Instant::now();
     let heads = [frame::gm::QUEUED_VIF1, frame::gm::QUEUED_VIF2, frame::gm::QUEUED_GIF1, frame::gm::QUEUED_GIF2].map(|o| frame::word(&mem, g + o));
     // The memory the sink reads: a copy (32 MiB, split over a few threads),
     // so the sink can build and render the frame while the game goes on.
     let mut snap = POOL.lock().unwrap().pop().unwrap_or_else(|| Box::new(DumpMem { ram: Vec::new(), spr: Vec::new(), vu1: Vec::new() }));
     snap.ram.resize(c.bus.ram.len(), 0);
-    let parts = 4;
+    let parts = if cfg!(target_arch = "wasm32") { 1 } else { 4 };
     let chunk = c.bus.ram.len().div_ceil(parts);
     std::thread::scope(|sc| {
         for (d, src) in snap.ram.chunks_mut(chunk).zip(c.bus.ram.chunks(chunk)) {
-            sc.spawn(move || d.copy_from_slice(src));
+            if parts == 1 {
+                d.copy_from_slice(src);
+            } else {
+                sc.spawn(move || d.copy_from_slice(src));
+            }
         }
     });
     snap.spr.clear();

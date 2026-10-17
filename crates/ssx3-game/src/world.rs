@@ -20,7 +20,7 @@
 
 use crate::abi::{addu, mult, r32, ret, set_word};
 use crate::call::{call_ptr, guest, Callee, Flow, Frame, VSlot};
-use crate::events::{deliver_event, event_due};
+use crate::events::{deliver_event_here, event_due};
 use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::{reg::*, sx};
@@ -276,7 +276,7 @@ fn call_on_each_process(c: &mut Cpu, slot: u32, at_: &PassAddrs) -> Flow {
             }
             c.g[V0][0] = lw(c, at(c, S0, game_process::VPTR));
             if event_due(c) {
-                deliver_event(c, at_.head);
+                deliver_event_here(c, at_.head);
             }
         }
     }
@@ -350,7 +350,7 @@ pub fn process_list_update_priority(c: &mut Cpu) {
                     break;
                 }
                 if event_due(c) {
-                    deliver_event(c, HEAD);
+                    deliver_event_here(c, HEAD);
                 }
             }
         }
@@ -481,7 +481,7 @@ pub fn process_list_merge_pending(c: &mut Cpu) {
                         }
                         c.g[V1][0] = lw(c, at(c, S1, VPTR));
                         if event_due(c) {
-                            deliver_event(c, INNER_HEAD);
+                            deliver_event_here(c, INNER_HEAD);
                         }
                     }
                     c.cycles += 2;
@@ -524,7 +524,7 @@ pub fn process_list_merge_pending(c: &mut Cpu) {
                 }
                 c.g[A2][0] = c.g[S3][0];
                 if event_due(c) {
-                    deliver_event(c, OUTER_HEAD);
+                    deliver_event_here(c, OUTER_HEAD);
                 }
             }
         }
@@ -577,7 +577,7 @@ pub fn game_module_render_process_lists(c: &mut Cpu) {
             }
             c.g[A1][0] = lw(c, r32(c, S1));
             if event_due(c) {
-                deliver_event(c, HEAD);
+                deliver_event_here(c, HEAD);
             }
         }
         c.cycles += 6;
@@ -682,7 +682,7 @@ pub fn section_man_find_logical_section(c: &mut Cpu) {
             break;
         }
         if event_due(c) {
-            deliver_event(c, HEAD);
+            deliver_event_here(c, HEAD);
         }
     }
     ret(c);
@@ -770,7 +770,7 @@ pub fn quad_tree_find_leaf(c: &mut Cpu) {
                 break;
             }
             if event_due(c) {
-                deliver_event(c, HEAD);
+                deliver_event_here(c, HEAD);
                 bits_x = r32(c, A3);
                 bits_z = r32(c, A1);
                 node = r32(c, A2);
@@ -829,7 +829,7 @@ pub fn noise_fractal_1d(c: &mut Cpu) {
                     break;
                 }
                 if event_due(c) {
-                    deliver_event(c, HEAD);
+                    deliver_event_here(c, HEAD);
                 }
             }
         }
@@ -884,7 +884,7 @@ pub fn nash_collect_instances(c: &mut Cpu) {
                     }
                     c.g[V0][0] = lw(c, at(c, T0, 8));
                     if event_due(c) {
-                        deliver_event(c, INSTANCE_HEAD);
+                        deliver_event_here(c, INSTANCE_HEAD);
                     }
                 }
             }
@@ -895,7 +895,7 @@ pub fn nash_collect_instances(c: &mut Cpu) {
                 break;
             }
             if event_due(c) {
-                deliver_event(c, NODE_HEAD);
+                deliver_event_here(c, NODE_HEAD);
             }
         }
     }
@@ -1010,7 +1010,7 @@ fn call_on_modifier_list(c: &mut Cpu, enter: u64, slot: u32, ret_addr: u32, head
         }
         c.g[V0][0] = lw(c, at(c, A1, modifier_block::NODE_VPTR));
         if event_due(c) {
-            deliver_event(c, head);
+            deliver_event_here(c, head);
         }
     }
 }
@@ -1401,7 +1401,7 @@ fn draw_models(c: &mut Cpu, extra_flags: u64, ret_addr: u32, head: u32) -> Flow 
             return Ok(());
         }
         if event_due(c) {
-            deliver_event(c, head);
+            deliver_event_here(c, head);
         }
     }
 }
@@ -1453,7 +1453,7 @@ pub fn game_module_render_bezier_patches(c: &mut Cpu) {
                 }
                 c.g[A1][0] = lw(c, r32(c, S1));
                 if event_due(c) {
-                    deliver_event(c, head);
+                    deliver_event_here(c, head);
                 }
             }
         }

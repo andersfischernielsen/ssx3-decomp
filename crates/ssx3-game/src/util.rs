@@ -20,7 +20,7 @@
 //! differential tests compare v0/v1 and the upper GPR halves as hard state.
 
 use crate::abi::{gpr128, r32, ret, set_gpr128, set_word};
-use crate::events::{back_edge_unwinds, deliver_event, event_due, Resume};
+use crate::events::{Resume, back_edge_unwinds, deliver_event_here, event_due};
 use crate::mmi::{lq, pand, pcpyld, pcpyud, pnot, psubb, psubw};
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
@@ -71,7 +71,7 @@ pub fn ustr_len(c: &mut Cpu) {
                 set_word(c, A0, p);
                 c.g[V0][0] = ch;
                 set_word(c, V1, len);
-                deliver_event(c, HEAD);
+                deliver_event_here(c, HEAD);
                 p = r32(c, A0);
                 len = r32(c, V1);
             }
@@ -110,7 +110,7 @@ pub fn ustr_copy(c: &mut Cpu) {
                 set_word(c, A0, dst);
                 set_word(c, A1, src);
                 c.g[V1][0] = ch;
-                deliver_event(c, HEAD);
+                deliver_event_here(c, HEAD);
                 dst = r32(c, A0);
                 src = r32(c, A1);
                 ch = c.g[V1][0];
@@ -184,7 +184,7 @@ pub fn memcpy(c: &mut Cpu) {
                     set_word(c, A1, src);
                     set_word(c, A2, n);
                     set_word(c, A3, dst);
-                    deliver_event(c, QUAD_HEAD);
+                    deliver_event_here(c, QUAD_HEAD);
                     (src, n, dst) = (r32(c, A1), r32(c, A2), r32(c, A3));
                 }
             }
@@ -211,7 +211,7 @@ pub fn memcpy(c: &mut Cpu) {
                         set_word(c, A1, src);
                         set_word(c, A2, n);
                         set_word(c, A3, dst);
-                        deliver_event(c, DOUBLE_HEAD);
+                        deliver_event_here(c, DOUBLE_HEAD);
                         (src, n, dst) = (r32(c, A1), r32(c, A2), r32(c, A3));
                     }
                 }
@@ -247,7 +247,7 @@ pub fn memcpy(c: &mut Cpu) {
                 set_word(c, A1, src);
                 set_word(c, A2, n);
                 set_word(c, V1, dst);
-                deliver_event(c, BYTE_HEAD);
+                deliver_event_here(c, BYTE_HEAD);
                 (src, n, dst) = (r32(c, A1), r32(c, A2), r32(c, V1));
             }
         }
@@ -308,7 +308,7 @@ pub fn ea_mem_copy(c: &mut Cpu) {
                 set_word(c, A0, dst);
                 set_word(c, A1, src);
                 if event_due(c) {
-                    deliver_event(c, ALIGN_HEAD);
+                    deliver_event_here(c, ALIGN_HEAD);
                     (dst, src, n) = (r32(c, A0), r32(c, A1), r32(c, A2));
                 }
             }
@@ -349,7 +349,7 @@ pub fn ea_mem_copy(c: &mut Cpu) {
                     set_word(c, A0, dst);
                     set_word(c, A1, src);
                     set_word(c, A2, n);
-                    deliver_event(c, BLOCK_HEAD);
+                    deliver_event_here(c, BLOCK_HEAD);
                     (dst, src, n) = (r32(c, A0), r32(c, A1), r32(c, A2));
                 }
             }
@@ -375,7 +375,7 @@ pub fn ea_mem_copy(c: &mut Cpu) {
                     set_word(c, A0, dst);
                     set_word(c, A1, src);
                     set_word(c, A2, n);
-                    deliver_event(c, DOUBLE_HEAD);
+                    deliver_event_here(c, DOUBLE_HEAD);
                     (dst, src, n) = (r32(c, A0), r32(c, A1), r32(c, A2));
                 }
             }
@@ -409,7 +409,7 @@ pub fn ea_mem_copy(c: &mut Cpu) {
                 set_word(c, A0, dst);
                 set_word(c, A1, src);
                 set_word(c, A2, n);
-                deliver_event(c, BYTE_HEAD);
+                deliver_event_here(c, BYTE_HEAD);
                 (dst, src, n) = (r32(c, A0), r32(c, A1), r32(c, A2));
             }
         }
@@ -876,7 +876,7 @@ fn spr_spin(c: &mut Cpu, ch: &SprChannel, head: u32) {
             return;
         }
         if event_due(c) {
-            deliver_event(c, head);
+            deliver_event_here(c, head);
         }
     }
 }
@@ -1025,7 +1025,7 @@ pub fn strlen(c: &mut Cpu) {
                 }
                 set_word(c, A1, r32(c, A1).wrapping_add(0x10));
                 if event_due(c) {
-                    deliver_event(c, QUAD_HEAD);
+                    deliver_event_here(c, QUAD_HEAD);
                 }
             }
             c.cycles += 2;
@@ -1056,7 +1056,7 @@ pub fn strlen(c: &mut Cpu) {
             }
             set_word(c, A1, r32(c, A1).wrapping_add(8));
             if event_due(c) {
-                deliver_event(c, DOUBLE_HEAD);
+                deliver_event_here(c, DOUBLE_HEAD);
             }
         }
         c.cycles += 1;
@@ -1071,7 +1071,7 @@ pub fn strlen(c: &mut Cpu) {
         }
         set_word(c, A0, r32(c, A0).wrapping_add(1));
         if event_due(c) {
-            deliver_event(c, BYTE_HEAD);
+            deliver_event_here(c, BYTE_HEAD);
         }
     }
     c.cycles += 2;
@@ -1136,7 +1136,7 @@ pub fn strcpy(c: &mut Cpu) {
                         break;
                     }
                     if event_due(c) {
-                        deliver_event(c, QUAD_HEAD);
+                        deliver_event_here(c, QUAD_HEAD);
                     }
                 }
                 c.cycles += 2;
@@ -1165,7 +1165,7 @@ pub fn strcpy(c: &mut Cpu) {
                         break;
                     }
                     if event_due(c) {
-                        deliver_event(c, DOUBLE_HEAD);
+                        deliver_event_here(c, DOUBLE_HEAD);
                     }
                 }
             }
@@ -1185,7 +1185,7 @@ pub fn strcpy(c: &mut Cpu) {
             break;
         }
         if event_due(c) {
-            deliver_event(c, BYTE_HEAD);
+            deliver_event_here(c, BYTE_HEAD);
         }
     }
     c.cycles += 2;
@@ -1312,7 +1312,7 @@ pub fn strncpy(c: &mut Cpu) {
                 }
                 c.g[V1][0] = c.ld(r32(c, A1));
                 if event_due(c) {
-                    deliver_event(c, DOUBLE_HEAD);
+                    deliver_event_here(c, DOUBLE_HEAD);
                 }
             }
         }
@@ -1335,7 +1335,7 @@ pub fn strncpy(c: &mut Cpu) {
         bump(c, A0, 1);
         if b != 0 {
             if event_due(c) {
-                deliver_event(c, BYTE_HEAD);
+                deliver_event_here(c, BYTE_HEAD);
             }
             continue;
         }
@@ -1353,7 +1353,7 @@ pub fn strncpy(c: &mut Cpu) {
                     break;
                 }
                 if event_due(c) {
-                    deliver_event(c, PAD_HEAD);
+                    deliver_event_here(c, PAD_HEAD);
                 }
             }
         }

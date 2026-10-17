@@ -445,7 +445,7 @@ fn native_roundtrip_cost() {
     gs.gpu_wait_idle();
     let gpu0 = gs.gpu_stats().unwrap().native.gpu_ns;
     let n = 1000;
-    let t0 = std::time::Instant::now();
+    let t0 = web_time::Instant::now();
     for i in 0..n {
         gs.native_run(Some(s), Vec::new()).unwrap();
         if i % 50 == 49 {

@@ -15,7 +15,10 @@ members = [
     "crates/ssx3-mc",
     "crates/ssx3",
     "crates/ssx3-game",
+    "crates/ssx3-web",
+    "crates/ssx3-vuworker",
     "generated/ee/*",
+    "generated/ee-unwind/*",
     "generated/iop/*",
 ]
 
@@ -39,3 +42,7 @@ inherits = "release"
 lto = false
 codegen-units = 64
 incremental = true
+
+# The browser build (crates/ssx3-web/build.sh).
+[profile.web]
+inherits = "game"

@@ -1,0 +1,13 @@
+[package]
+name = "ssx3-vuworker"
+description = "The browser build's VU helper: runs encoded chunks of VU1 calls (ssx3_render::vujob) in a Web Worker of its own."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+ssx3-render = { path = "../ssx3-render" }
+wasm-bindgen = "0.2.129"
