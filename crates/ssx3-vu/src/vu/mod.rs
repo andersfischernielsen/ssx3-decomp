@@ -67,8 +67,9 @@ pub mod vu0lib;
 mod tests;
 
 /// Statically recompiled microcode (written by `src/bin/vu_recomp.rs`).
-/// Behind the default `microcode` feature so tools that only need the
-/// translator or the op tables (e.g. `recomp-ee`) don't compile it.
+/// Behind the `microcode` feature (off by default): the game runs VU0's
+/// program by hand (`vu0lib`) and the VU1 programs only on the emulated GS
+/// path.
 #[cfg(feature = "microcode")]
 #[path = "../../../../generated/vu/mod.rs"]
 pub mod generated;
