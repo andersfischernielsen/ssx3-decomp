@@ -8,6 +8,9 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     def end_headers(self):
         self.send_header("Cache-Control", "no-store")
+        # Cross-origin isolation: SharedArrayBuffer for the VU helpers.
+        self.send_header("Cross-Origin-Opener-Policy", "same-origin")
+        self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
         super().end_headers()
 
 root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "www")

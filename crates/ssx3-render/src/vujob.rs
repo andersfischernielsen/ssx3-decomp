@@ -1,0 +1,171 @@
+//! A run of VU1 calls as bytes, for running it elsewhere (the browser
+//! build's helper workers, which share no memory with the renderer): the
+//! VU1 data memory it starts from and each call's program, TOP/ITOP and
+//! inputs; the result is each call's GIF output and the final memory.
+//!
+//! A job runs exactly as the renderer runs a chunk of calls itself: each
+//! call's inputs are written to memory, then the native program (if any)
+//! runs ([`crate::run_native`]).
+//!
+//! Layout (little-endian): job = memory (16384 bytes), call count (u32),
+//! per call: event index (u32), program hash (u64, 0 = none), entry (u32,
+//! `u32::MAX` = none), top (u32), itop (u32), input count (u32), inputs
+//! (u16 address, u128 value). Result = output count (u32), per output:
+//! event index (u32), qword count (u32), qwords; then the memory.
+
+use crate::vif::VuCall;
+
+pub const MEM: usize = 16384;
+
+/// The GIF output of each call that ran (event index, qwords) and the final
+/// VU1 memory.
+pub type Output = (Vec<(usize, Vec<u128>)>, Box<[u8; MEM]>);
+
+struct Reader<'a>(&'a [u8]);
+
+impl Reader<'_> {
+    fn take<const N: usize>(&mut self) -> [u8; N] {
+        let (a, b) = self.0.split_at(N);
+        self.0 = b;
+        a.try_into().unwrap()
+    }
+    fn u16(&mut self) -> u16 {
+        u16::from_le_bytes(self.take())
+    }
+    fn u32(&mut self) -> u32 {
+        u32::from_le_bytes(self.take())
+    }
+    fn u64(&mut self) -> u64 {
+        u64::from_le_bytes(self.take())
+    }
+    fn u128(&mut self) -> u128 {
+        u128::from_le_bytes(self.take())
+    }
+}
+
+/// Encode a job: `calls` are (event index, call, program hash).
+pub fn encode(mem: &[u8; MEM], calls: &[(usize, &VuCall, Option<u64>)]) -> Vec<u8> {
+    let n: usize = calls.iter().map(|(_, c, _)| 28 + 18 * c.input.len()).sum();
+    let mut w = Vec::with_capacity(MEM + 4 + n);
+    w.extend_from_slice(mem);
+    w.extend_from_slice(&(calls.len() as u32).to_le_bytes());
+    for &(i, c, h) in calls {
+        w.extend_from_slice(&(i as u32).to_le_bytes());
+        w.extend_from_slice(&h.unwrap_or(0).to_le_bytes());
+        w.extend_from_slice(&c.entry.unwrap_or(u32::MAX).to_le_bytes());
+        w.extend_from_slice(&c.top.to_le_bytes());
+        w.extend_from_slice(&c.itop.to_le_bytes());
+        w.extend_from_slice(&(c.input.len() as u32).to_le_bytes());
+        for &(a, v) in &c.input {
+            w.extend_from_slice(&a.to_le_bytes());
+            w.extend_from_slice(&v.to_le_bytes());
+        }
+    }
+    w
+}
+
+/// Run an encoded job; returns the encoded result.
+pub fn run(job: &[u8]) -> Vec<u8> {
+    let mut r = Reader(job);
+    let mut mem: Box<[u8; MEM]> = Box::new(r.take());
+    let n = r.u32();
+    let mut out = Vec::new();
+    out.extend_from_slice(&0u32.to_le_bytes());
+    let mut ran = 0u32;
+    for _ in 0..n {
+        let (i, hash, entry, top, itop) = (r.u32(), r.u64(), r.u32(), r.u32(), r.u32());
+        for _ in 0..r.u32() {
+            let (a, v) = (r.u16(), r.u128());
+            let a = (a as usize & 1023) * 16;
+            mem[a..a + 16].copy_from_slice(&v.to_le_bytes());
+        }
+        if hash == 0 || entry == u32::MAX {
+            continue;
+        }
+        let mark = out.len();
+        out.extend_from_slice(&i.to_le_bytes());
+        out.extend_from_slice(&0u32.to_le_bytes());
+        let mut qw = 0u32;
+        let ok = crate::run_native(hash, entry, top, itop, &mut mem, &mut |p: &[u128]| {
+            for q in p {
+                out.extend_from_slice(&q.to_le_bytes());
+            }
+            qw += p.len() as u32;
+        });
+        if ok {
+            out[mark + 4..mark + 8].copy_from_slice(&qw.to_le_bytes());
+            ran += 1;
+        } else {
+            out.truncate(mark);
+        }
+    }
+    out[0..4].copy_from_slice(&ran.to_le_bytes());
+    out.extend_from_slice(&mem[..]);
+    out
+}
+
+/// Decode a result.
+pub fn decode(result: &[u8]) -> Output {
+    let mut r = Reader(result);
+    let n = r.u32();
+    let outs = (0..n)
+        .map(|_| {
+            let i = r.u32() as usize;
+            let q = r.u32();
+            (i, (0..q).map(|_| r.u128()).collect())
+        })
+        .collect();
+    (outs, Box::new(r.take()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Encoding, running and decoding equals running the calls directly
+    /// (rider-program entries that run on any memory: 0x40 kicks the GIF
+    /// tag at qw 0x392, 0x1150 scales the lighting coefficients in place;
+    /// calls without a program or entry only write their inputs).
+    #[test]
+    fn round_trip_equals_direct_run() {
+        let mut seed = 0x1234_5678_9abc_def0u64;
+        let mut next = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        let mut mem = [0u8; MEM];
+        for b in mem.iter_mut() {
+            *b = next() as u8;
+        }
+        let calls: Vec<VuCall> = (0..6)
+            .map(|k| VuCall {
+                entry: (k != 2).then_some(if k % 2 == 0 { 0x40 } else { 0x1150 }),
+                top: (next() % 1024) as u32,
+                itop: (next() % 64) as u32,
+                input: (0..8).map(|_| ((next() % 1024) as u16, next() as u128 | (next() as u128) << 64)).collect(),
+            })
+            .collect();
+        let refs: Vec<(usize, &VuCall, Option<u64>)> =
+            calls.iter().enumerate().map(|(k, c)| (k * 3, c, (k != 4).then_some(crate::mat6::HASH))).collect();
+        let (outs, end) = decode(&run(&encode(&mem, &refs)));
+
+        let mut direct = Box::new(mem);
+        let mut want = Vec::new();
+        for &(i, c, h) in &refs {
+            for &(a, v) in &c.input {
+                let a = (a as usize & 1023) * 16;
+                direct[a..a + 16].copy_from_slice(&v.to_le_bytes());
+            }
+            let (Some(e), Some(h)) = (c.entry, h) else { continue };
+            let mut o = Vec::new();
+            if crate::run_native(h, e, c.top, c.itop, &mut direct, &mut |p: &[u128]| o.extend_from_slice(p)) {
+                want.push((i, o));
+            }
+        }
+        assert!(want.iter().any(|(_, o)| !o.is_empty()), "no program output to compare");
+        assert_eq!(outs, want);
+        assert_eq!(end, direct);
+    }
+}

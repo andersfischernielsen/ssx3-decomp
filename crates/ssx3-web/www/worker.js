@@ -12,7 +12,14 @@ onmessage = async (e) => {
   if (m.type === "start") {
     try {
       await init();
-      game = await start(m.canvas, m.iso);
+      // VU helpers: the renderer's VU1 work in parallel (needs a shared
+      // buffer, i.e. cross-origin isolation).
+      const helpers = self.crossOriginIsolated ? Math.max(1, Math.min(6, (navigator.hardwareConcurrency || 4) - 2)) : 0;
+      game = await start(m.canvas, m.iso, helpers);
+      const sab = game.vu_buffer();
+      for (let id = 0; sab && id < helpers; id++) {
+        new Worker("./vuworker.js", { type: "module" }).postMessage({ sab, id });
+      }
       postMessage({ type: "running" });
       loop();
     } catch (err) {

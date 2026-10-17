@@ -29,8 +29,37 @@ The recompiled game as WebAssembly, drawn with WebGPU. Experimental.
   - X: Cross, S: Circle, Z: Square, A: Triangle;
   - Q: L1, W: R1, 1: L2, 2: R2.
 
+- **VU helpers.** The renderer's VU1 calls, the native VU programs of
+  `ssx3-render`, run in chunks on helper workers (`www/vuworker.js`,
+  `crates/ssx3-vuworker`, a 180 KB module), as they run on threads natively.
+  - Jobs and results are bytes (`ssx3_render::vujob`), passed through a
+    SharedArrayBuffer job queue.
+  - The game worker takes jobs too, then waits with `Atomics.wait`.
+  - This needs cross-origin isolation, which `serve.py` sends the headers
+    for. Without it, everything runs in the game worker.
+  - `SSX3_VU_OFFLOAD_SELFTEST=1` on the native `ssx3-headless` runs every
+    chunk through the same encode/run/decode path; the screenshots are
+    identical.
+
 Not yet supported: sound, the memory card, gamepads, the settings overlay,
 interpolation and texture packs.
+
+## Performance (headless Chrome, M-series Mac)
+
+- **Menus and front end:** 60 fps.
+- **Races:** about 25-50 fps, depending on the scene. Per race frame:
+  - about 8 ms of game code;
+  - 2-5 ms building the typed frame;
+  - the VU1 work, at most as fast as its largest chunk. A run of draws of
+    one program that pass state through VU memory cannot be split, and at
+    the start of a race one such chunk takes 11-17 ms. The other chunks run
+    in parallel on the helpers.
+
+Next steps, roughly by payoff:
+- split that chunk (find out which VU state crosses those draws);
+- run the game and the renderer in different workers;
+- a wasm-SIMD version of the PS2 float helpers (the NEON path needs
+  per-lane shifts and count-leading-zeros, which wasm SIMD lacks).
 
 ## Building
 

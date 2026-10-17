@@ -1468,6 +1468,27 @@ impl VuPlan<'_> {
         }
     }
 
+    /// Run every chunk through the installed [`VuOffload`] (the browser's
+    /// helper workers); false (nothing done) without one, or for an
+    /// in-between image (its substitutions stay here).
+    fn offload(&self) -> bool {
+        let Some((off, _)) = OFFLOAD.get() else { return false };
+        if self.subst.is_some() || self.model_subst.is_some() || self.bounds.len() < 2 {
+            return false;
+        }
+        let jobs = (0..self.bounds.len())
+            .map(|j| {
+                let start = self.starts[j].lock().unwrap().take().expect("chunk");
+                let e = self.bounds.get(j + 1).copied().unwrap_or(self.calls.len());
+                ssx3_render::vujob::encode(&start, &self.calls[self.bounds[j]..e])
+            })
+            .collect();
+        for (j, r) in off(jobs).into_iter().enumerate() {
+            *self.done[j].0.lock().unwrap() = Some(ssx3_render::vujob::decode(&r));
+        }
+        true
+    }
+
     fn wait(&self, j: usize) -> VuChunk {
         let (slot, cv) = &self.done[j];
         let mut g = slot.lock().unwrap();
@@ -1713,8 +1734,10 @@ impl Build {
         let plan = Build::plan_vu_calls(b, built, &draws);
         let mut vu = VuReceiver::default();
         std::thread::scope(|sc| {
-        // No threads in the browser: every chunk up front.
-        if cfg!(target_arch = "wasm32") {
+        // The helper workers (the browser) take every chunk up front;
+        // without threads, this thread does.
+        if plan.offload() {
+        } else if cfg!(target_arch = "wasm32") {
             plan.work();
         } else {
             for _ in 0..plan.threads {
@@ -1849,7 +1872,8 @@ impl Build {
         }
         static SEQ: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         let seq = *SEQ.get_or_init(|| std::env::var_os("SSX3_GFX_SEQ_VU").is_some());
-        let threads = if seq || calls.len() < 64 { 1 } else { std::thread::available_parallelism().map_or(4, |n| n.get()).clamp(1, 8) };
+        let parallel = OFFLOAD.get().map(|o| o.1).unwrap_or_else(|| std::thread::available_parallelism().map_or(4, |n| n.get()));
+        let threads = if seq || calls.len() < 64 { 1 } else { parallel.clamp(1, 8) };
         // About four chunks per thread, taken by whichever thread is free.
         let per = calls.len().div_ceil(threads * 4).max(1);
         // Chunk boundaries: the first draw start at or after each multiple
@@ -1877,6 +1901,23 @@ impl Build {
         let done = (0..bounds.len()).map(|_| (std::sync::Mutex::new(None), std::sync::Condvar::new())).collect();
         VuPlan { vu0: b.vu.clone(), calls, bounds, starts, done, chunk_of, next: std::sync::atomic::AtomicUsize::new(0), threads, subst: b.subst.clone(), model_subst: b.model_subst.clone() }
     }
+}
+
+/// Runs encoded chunks of VU1 calls ([`ssx3_render::vujob`]) elsewhere and
+/// returns their results in order: the browser build's helper workers.
+pub type VuOffload = Box<dyn Fn(Vec<Vec<u8>>) -> Vec<Vec<u8>> + Send + Sync>;
+
+static OFFLOAD: std::sync::OnceLock<(VuOffload, usize)> = std::sync::OnceLock::new();
+
+/// Run one encoded job (what an offload does with each).
+pub fn run_vu_job(job: &[u8]) -> Vec<u8> {
+    ssx3_render::vujob::run(job)
+}
+
+/// Install the VU offload, which runs `workers` jobs at a time (the frame's
+/// calls are split for that many).
+pub fn set_vu_offload(f: VuOffload, workers: usize) {
+    let _ = OFFLOAD.set((f, workers.max(1)));
 }
 
 /// A stable hash (interpolation keys).

@@ -43,6 +43,11 @@ fn main() {
     }
     let mut c = game::boot(true);
     let gfx = game::install_renderer(&mut c);
+    // Check of the browser's VU offload path: every chunk of VU1 calls
+    // encoded, run from the bytes and decoded (`ssx3_render::vujob`).
+    if std::env::var_os("SSX3_VU_OFFLOAD_SELFTEST").is_some() {
+        ssx3_gfx::set_vu_offload(Box::new(|jobs| jobs.iter().map(|j| ssx3_gfx::run_vu_job(j)).collect()), 4);
+    }
     // SSX3_FPS=<Hz>: draw the in-between images too (interpolation; the
     // screenshots are the game's frames).
     if let (Some(g), Some(hz)) = (gfx.as_ref(), std::env::var("SSX3_FPS").ok().and_then(|v| v.parse::<f64>().ok())) {
