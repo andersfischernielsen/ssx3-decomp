@@ -68,9 +68,26 @@ mod tests;
 /// Statically recompiled microcode (written by `src/bin/vu_recomp.rs`).
 /// Behind the default `microcode` feature so tools that only need the
 /// translator or the op tables (e.g. `recomp-ee`) don't compile it.
-#[cfg(feature = "microcode")]
+#[cfg(all(feature = "microcode", not(target_arch = "wasm32")))]
 #[path = "../../../../generated/vu/mod.rs"]
 pub mod generated;
+
+/// The browser build: only the program that runs with the native renderer,
+/// VU0's (`vu_27649fa55223cbbf`). The VU1 programs draw the frames the host
+/// renderer draws instead, and their single huge functions take LLVM's wasm
+/// backend forever.
+#[cfg(all(feature = "microcode", target_arch = "wasm32"))]
+pub mod generated {
+    use super::web_vu0 as vu0;
+    use crate::vu::ProgramEntry;
+
+    pub static PROGRAMS: &[ProgramEntry] =
+        &[ProgramEntry { hash: vu0::HASH, start: vu0::START, len: vu0::LEN, leaders: vu0::LEADERS, func: vu0::run }];
+}
+
+#[cfg(all(feature = "microcode", target_arch = "wasm32"))]
+#[path = "../../../../generated/vu/vu_27649fa55223cbbf.rs"]
+mod web_vu0;
 
 use crate::Qword;
 use float::{Exc, ABS, MAX, ONE, SIGN};

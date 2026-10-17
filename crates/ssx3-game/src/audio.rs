@@ -21,7 +21,7 @@
 
 use crate::abi::{self, addu, mult, reg, set_reg};
 use crate::call::{call_ptr, guest, tail_wrapper, Callee, Flow, Frame, Target, Unwound, VSlot};
-use crate::events::{back_edge_unwinds, deliver_event, event_due, Resume};
+use crate::events::{Resume, back_edge_unwinds, deliver_event_here, event_due};
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
 use crate::sound::snd;
@@ -531,7 +531,7 @@ pub fn bank_monitor_find_instance(c: &mut Cpu) {
                 break 0;
             }
             if event_due(c) {
-                deliver_event(c, 0x002a_d580);
+                deliver_event_here(c, 0x002a_d580);
             }
         };
         set_reg(c, V0, found);
@@ -818,7 +818,7 @@ pub fn ssx_audio_update_bank_monitor(c: &mut Cpu) {
                 break;
             }
             if event_due(c) {
-                deliver_event(c, 0x002a_b7e0);
+                deliver_event_here(c, 0x002a_b7e0);
             }
         }
         c.cycles += 7;
@@ -983,7 +983,7 @@ pub fn ssx_audio_update_timers(c: &mut Cpu) {
                     break;
                 }
                 if event_due(c) {
-                    deliver_event(c, 0x002a_b920);
+                    deliver_event_here(c, 0x002a_b920);
                 }
             }
         }
@@ -1105,7 +1105,7 @@ pub fn snd_next_handle_channel(c: &mut Cpu) {
             let v = it.lw(c);
             set_reg(c, V1, v);
             if event_due(c) {
-                deliver_event(c, 0x003b_aa50);
+                deliver_event_here(c, 0x003b_aa50);
             }
         }
     };
@@ -1648,7 +1648,7 @@ pub fn snd_service(c: &mut Cpu) {
                         break;
                     }
                     if event_due(c) {
-                        deliver_event(c, 0x003b_55c0);
+                        deliver_event_here(c, 0x003b_55c0);
                     }
                 }
                 c.cycles += 1;

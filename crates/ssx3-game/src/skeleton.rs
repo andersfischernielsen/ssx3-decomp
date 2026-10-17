@@ -21,7 +21,7 @@
 
 use crate::abi::{self, r32, set_word};
 use crate::call::{guest, Callee, Frame};
-use crate::events::{deliver_event, event_due};
+use crate::events::{deliver_event_here, event_due};
 use crate::guest::Addr;
 use crate::ps2f::{vu0_scratch, FpuF32, Vec4, VuF32};
 use ssx3_ee as ee;
@@ -345,7 +345,7 @@ pub fn build_bone_matrices(c: &mut Cpu) {
                 }
                 c.g[V0][0] = model.bones().lw(c);
                 if event_due(c) {
-                    deliver_event(c, HEAD);
+                    deliver_event_here(c, HEAD);
                 }
             }
         }
@@ -409,7 +409,7 @@ pub fn rider_sphere_tree_update_from_bones(c: &mut Cpu) {
                 break;
             }
             if event_due(c) {
-                deliver_event(c, HEAD);
+                deliver_event_here(c, HEAD);
             }
         }
     }
@@ -496,7 +496,7 @@ pub fn path_get_length(c: &mut Cpu) {
                 break;
             }
             if event_due(c) {
-                deliver_event(c, HEAD);
+                deliver_event_here(c, HEAD);
             }
         }
     }
@@ -652,7 +652,7 @@ pub fn translate(c: &mut Cpu) {
                         break;
                     }
                     if event_due(c) {
-                        deliver_event(c, INNER);
+                        deliver_event_here(c, INNER);
                     }
                 }
             }
@@ -665,7 +665,7 @@ pub fn translate(c: &mut Cpu) {
                 break;
             }
             if event_due(c) {
-                deliver_event(c, OUTER);
+                deliver_event_here(c, OUTER);
             }
         }
     }
@@ -803,7 +803,7 @@ pub fn apply_pose(c: &mut Cpu) {
                     }
                     c.g[V0][0] = seg.first_bone().lw(c);
                     if event_due(c) {
-                        deliver_event(c, INNER);
+                        deliver_event_here(c, INNER);
                     }
                 }
             }
@@ -815,7 +815,7 @@ pub fn apply_pose(c: &mut Cpu) {
             }
             mult_reg(c, V1, A1, T7);
             if event_due(c) {
-                deliver_event(c, OUTER);
+                deliver_event_here(c, OUTER);
             }
         }
     }
@@ -1074,7 +1074,7 @@ pub fn anim_seq_list_remove(c: &mut Cpu) {
                     break;
                 }
                 if event_due(c) {
-                    deliver_event(c, HEAD);
+                    deliver_event_here(c, HEAD);
                 }
             }
         }
@@ -1139,7 +1139,7 @@ pub fn anim_controller_evaluate_pose(c: &mut Cpu) {
                 break;
             }
             if event_due(c) {
-                deliver_event(c, CTOR_HEAD);
+                deliver_event_here(c, CTOR_HEAD);
             }
         }
         c.cycles += 3;
@@ -1164,7 +1164,7 @@ pub fn anim_controller_evaluate_pose(c: &mut Cpu) {
                 break;
             }
             if event_due(c) {
-                deliver_event(c, LAYER_HEAD);
+                deliver_event_here(c, LAYER_HEAD);
             }
         }
         c.cycles += 14;
@@ -1254,7 +1254,7 @@ pub fn anim_controller_update(c: &mut Cpu) {
                     }
                     c.g[V0][0] = ac.handler_vtable().lw(c);
                     if event_due(c) {
-                        deliver_event(c, SEQ_HEAD);
+                        deliver_event_here(c, SEQ_HEAD);
                     }
                 }
             } else {
@@ -1268,7 +1268,7 @@ pub fn anim_controller_update(c: &mut Cpu) {
                 break;
             }
             if event_due(c) {
-                deliver_event(c, LAYER_HEAD);
+                deliver_event_here(c, LAYER_HEAD);
             }
         }
         c.cycles += 12;

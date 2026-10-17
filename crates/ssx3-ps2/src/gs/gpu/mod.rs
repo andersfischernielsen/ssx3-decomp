@@ -116,15 +116,31 @@ pub struct GpuContext {
 
 /// The shared device, created on first use; `None` if no adapter is usable.
 pub fn context() -> Option<&'static GpuContext> {
-    static C: OnceLock<Option<GpuContext>> = OnceLock::new();
-    C.get_or_init(|| match pollster::block_on(create_context()) {
-        Ok(c) => Some(c),
-        Err(e) => {
-            eprintln!("[gs] GPU backend unavailable: {e}");
-            None
-        }
-    })
-    .as_ref()
+    CONTEXT
+        .get_or_init(|| {
+            // The browser cannot block on the device: `init_context` first.
+            if cfg!(target_arch = "wasm32") {
+                return None;
+            }
+            context_or_log(pollster::block_on(create_context()))
+        })
+        .as_ref()
+}
+
+static CONTEXT: OnceLock<Option<GpuContext>> = OnceLock::new();
+
+fn context_or_log(r: Result<GpuContext, String>) -> Option<GpuContext> {
+    r.map_err(|e| eprintln!("[gs] GPU backend unavailable: {e}")).ok()
+}
+
+/// Create the shared device without blocking (the browser's way; native
+/// code may call `context` directly).
+pub async fn init_context() -> Option<&'static GpuContext> {
+    if CONTEXT.get().is_none() {
+        let c = context_or_log(create_context().await);
+        let _ = CONTEXT.set(c);
+    }
+    CONTEXT.get().and_then(Option::as_ref)
 }
 
 /// `SSX3_GS_TRACE_READBACK`: log every VRAM readback and its cause.

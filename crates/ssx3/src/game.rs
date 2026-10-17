@@ -24,12 +24,14 @@ pub fn boot(skip_movies_default: bool) -> Box<Cpu> {
         eprintln!("[ssx3-game] native files on");
     }
     // Recompiled IOP sound modules; used when SSX3_IOP=1 (see iop_bridge.rs).
+    #[cfg(not(target_arch = "wasm32"))]
     ssx3_iop::register_generated(&ssx3_iop_gen::GENERATED);
     let mut c = ssx3_ps2::new_cpu();
     ssx3_ps2::m!(c).kernel.host_threads = ssx3_ee::HOST_THREADS;
     // The GPU rasterizer is the default for the game (falls back to the CPU
     // when no adapter is usable); SSX3_GS=cpu forces the software path.
-    if std::env::var("SSX3_GS").is_err() {
+    // (The browser: no GS rasterizer at all, see `install_renderer`.)
+    if std::env::var("SSX3_GS").is_err() && !cfg!(target_arch = "wasm32") {
         ssx3_ps2::m!(c).hw.gs.core().set_backend(ssx3_ps2::gs::Backend::Gpu);
     }
     let iso = std::env::var("SSX3_ISO")
@@ -38,8 +40,7 @@ pub fn boot(skip_movies_default: bool) -> Box<Cpu> {
     if let Err(e) = ssx3_ps2::m!(c).sif.open_disc(iso.clone()) {
         eprintln!("warning: cannot open disc image {}: {e}", iso.display());
     }
-    let elf_path = repo_root().join("orig/SLUS_207.72");
-    let elf = std::fs::read(&elf_path).unwrap_or_else(|e| panic!("{}: {e}", elf_path.display()));
+    let elf = read_elf(&mut c);
     machine::boot(&mut c, &elf, "cdrom0:\\SLUS_207.72;1").expect("boot");
     // The boot movies are selected by a bitmask at gp-0x1724 (0x4a19cc;
     // initial value 7 = EA logo | THX | intro, read by ssx_BootMoviesUpdate
@@ -51,6 +52,19 @@ pub fn boot(skip_movies_default: bool) -> Box<Cpu> {
         c.bus.write32(0x004a_19cc, 0);
     }
     c
+}
+
+/// The executable: `orig/SLUS_207.72`, else the one on the disc.
+fn read_elf(c: &mut Cpu) -> Vec<u8> {
+    let path = repo_root().join("orig/SLUS_207.72");
+    if let Ok(v) = std::fs::read(&path) {
+        return v;
+    }
+    let d = ssx3_ps2::m!(c).sif.disc.as_mut().unwrap_or_else(|| panic!("{}: missing, and no disc", path.display()));
+    let e = d.find("SLUS_207.72").expect("SLUS_207.72 on the disc");
+    let mut v = d.read_vec(e.sector, e.size.div_ceil(2048));
+    v.truncate(e.size as usize);
+    v
 }
 
 /// One-line status summary.
@@ -152,8 +166,11 @@ pub fn install_renderer(c: &mut Cpu) -> Option<ssx3_gfx::Renderer> {
         assert!(ssx3_ee::set_override(LENSFX_QUERY, lensfx_query_native));
     }
     ssx3_ps2::frame_sink::set_native(native);
-    // Rendering runs on its own thread, next to the game.
-    r.start_worker();
+    // Rendering runs on its own thread, next to the game (in the browser,
+    // when the game publishes a frame).
+    if !cfg!(target_arch = "wasm32") {
+        r.start_worker();
+    }
     // Native: no GS emulation. The game's frames (menus, movies, loading
     // screens and races all come through them) are drawn by ssx3-gfx; the
     // GS keeps only what the game can observe (registers and events).

@@ -3,6 +3,7 @@
 //! Hand-written, typed replacements for small generated functions, each with a
 //! differential test against the generated body.
 
+use crate::events::deliver_event_here;
 use crate::call::{call_ptr, guest, Callee, Flow, Frame};
 use crate::guest::Addr;
 use ssx3_ee_rt::cpu::{reg::*, sx};
@@ -485,7 +486,7 @@ const FIND_MISSION: Callee = Callee { addr: 0x0015_4240, f: ssx3_ee::s01::f_0015
 fn event_check(c: &mut Cpu, head: u32) {
     if c.cycles >= c.next_event {
         c.pc = head;
-        c.event();
+        deliver_event_here(c, c.pc);
     }
 }
 

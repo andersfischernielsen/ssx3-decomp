@@ -247,6 +247,10 @@ fn roundtrip_every() -> u64 {
 }
 
 fn mtgs_enabled() -> bool {
+    // No threads in the browser.
+    if cfg!(target_arch = "wasm32") {
+        return false;
+    }
     static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *E.get_or_init(|| std::env::var("SSX3_MTGS").map_or(true, |v| v != "0"))
 }

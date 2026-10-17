@@ -23,7 +23,7 @@
 
 use crate::abi::{self, addu};
 use crate::call::{call_ptr, guest, Callee, Frame};
-use crate::events::{back_edge_unwinds, deliver_event, event_due, Resume};
+use crate::events::{Resume, back_edge_unwinds, deliver_event_here, event_due};
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::{reg::*, sx};
@@ -1090,7 +1090,7 @@ pub fn vram_heap_find_free_block(c: &mut Cpu) {
                         break;
                     }
                     if event_due(c) {
-                        deliver_event(c, NODE_LOOP);
+                        deliver_event_here(c, NODE_LOOP);
                     }
                 }
             }
@@ -1102,7 +1102,7 @@ pub fn vram_heap_find_free_block(c: &mut Cpu) {
                 break;
             }
             if event_due(c) {
-                deliver_event(c, CLASS_LOOP);
+                deliver_event_here(c, CLASS_LOOP);
             }
         }
     }
@@ -1377,7 +1377,7 @@ pub fn vram_heap_free_block(c: &mut Cpu) {
             vram_callee::LINK_FREE_BLOCK.call(c, 0x0036_6524)?;
             c.g[A1][0] = lw(c, r(c, S0) + VramNode::PREV);
             if event_due(c) {
-                deliver_event(c, MERGE_LOOP);
+                deliver_event_here(c, MERGE_LOOP);
             }
         }
         frame.restore(c, S0, 0x40);
@@ -1487,7 +1487,7 @@ pub fn vram_heap_evict_cheapest_block(c: &mut Cpu) {
                     break;
                 }
                 if event_due(c) {
-                    deliver_event(c, SCAN_LOOP);
+                    deliver_event_here(c, SCAN_LOOP);
                 }
             }
         }
@@ -1576,7 +1576,7 @@ pub fn vram_heap_alloc(c: &mut Cpu) {
                 c.g[A0][0] = h;
             }
             if event_due(c) {
-                deliver_event(c, RETRY);
+                deliver_event_here(c, RETRY);
             }
         };
         c.cycles += 18;

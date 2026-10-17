@@ -326,9 +326,11 @@ fn main() {
                 // computed jumps) keep those entries in the generated
                 // `__entries` twin; only entries at the start reach the slot.
                 // (The structured form keeps such entries in an `__entries`
-                // twin; the unwind form's body dispatches on `c.pc` itself.)
+                // twin; the unwind form's body dispatches on `c.pc` itself,
+                // and there every return address in the function is one: a
+                // thread switch in a callee resumes the caller there.)
                 let twin = if structured { format!("{name}__entries") } else { format!("{name}__generated") };
-                let mid = if external.range(f.start + 1..f.end).next().is_some() {
+                let mid = if !structured || external.range(f.start + 1..f.end).next().is_some() {
                     format!(
                         "    // Entries other than the start run the generated code.\n    if c.pc != {:#010x} {{\n        return {twin}(c);\n    }}\n",
                         f.start

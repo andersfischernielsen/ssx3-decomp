@@ -25,7 +25,7 @@
 
 use crate::abi::{self, addu, r32};
 use crate::call::{call_ptr, guest, Callee, Flow, Frame, VSlot};
-use crate::events::{deliver_event, event_due};
+use crate::events::{deliver_event_here, event_due};
 use crate::guest::Addr;
 use crate::ps2f::{vu0_scratch, FpuF32, Vec4, VuF32};
 use ssx3_ee as ee;
@@ -473,7 +473,7 @@ pub fn be_new_player_int_get_human_rider(c: &mut Cpu) {
                     break 'found;
                 }
                 if event_due(c) {
-                    deliver_event(c, HEAD);
+                    deliver_event_here(c, HEAD);
                 }
             }
         }
@@ -807,7 +807,7 @@ pub fn ai_all_players_finished(c: &mut Cpu) {
                 break;
             }
             if event_due(c) {
-                deliver_event(c, HEAD);
+                deliver_event_here(c, HEAD);
             }
         }
     }
@@ -852,7 +852,7 @@ pub fn ai_are_all_riders_loaded(c: &mut Cpu) {
                     break;
                 }
                 if event_due(c) {
-                    deliver_event(c, HEAD);
+                    deliver_event_here(c, HEAD);
                 }
             }
         }
@@ -1020,7 +1020,7 @@ pub fn ai_update_rivals(c: &mut Cpu) {
                             break;
                         }
                         if event_due(c) {
-                            deliver_event(c, INNER);
+                            deliver_event_here(c, INNER);
                         }
                     }
                 }
@@ -1034,7 +1034,7 @@ pub fn ai_update_rivals(c: &mut Cpu) {
                     break 'out;
                 }
                 if event_due(c) {
-                    deliver_event(c, OUTER);
+                    deliver_event_here(c, OUTER);
                 }
             }
         }

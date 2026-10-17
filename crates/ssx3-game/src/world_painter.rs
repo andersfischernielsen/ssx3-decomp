@@ -13,7 +13,7 @@
 
 use crate::abi::{self, r32};
 use crate::call::{call_ptr, guest, Callee, Frame};
-use crate::events::{deliver_event, event_due};
+use crate::events::{deliver_event_here, event_due};
 use crate::guest::Addr;
 use crate::ps2f::{vu0_scratch, FpuF32, Vec4, VuF32};
 use ssx3_ee as ee;
@@ -90,7 +90,7 @@ pub fn irradiance_clear(c: &mut Cpu) {
         c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x10));
         if more {
             if event_due(c) {
-                deliver_event(c, HEAD);
+                deliver_event_here(c, HEAD);
             }
         } else {
             c.cycles += 2;
@@ -129,7 +129,7 @@ pub fn irradiance_scale_in_place(c: &mut Cpu) {
         c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
         if more {
             if event_due(c) {
-                deliver_event(c, HEAD);
+                deliver_event_here(c, HEAD);
             }
         } else {
             c.cycles += 2;
@@ -175,7 +175,7 @@ pub fn irradiance_add(c: &mut Cpu) {
         c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
         if more {
             if event_due(c) {
-                deliver_event(c, HEAD1);
+                deliver_event_here(c, HEAD1);
             }
             continue;
         }
@@ -193,7 +193,7 @@ pub fn irradiance_add(c: &mut Cpu) {
             c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x20));
             if more {
                 if event_due(c) {
-                    deliver_event(c, HEAD2);
+                    deliver_event_here(c, HEAD2);
                 }
                 continue;
             }
@@ -274,7 +274,7 @@ pub fn irradiance_find_index(c: &mut Cpu) {
                 if c.g[V0][0] != 0 {
                     c.g[V0][0] = Addr(r32(c, S1)).off(0xc).lw(c);
                     if event_due(c) {
-                        deliver_event(c, HEAD);
+                        deliver_event_here(c, HEAD);
                     }
                 } else {
                     c.cycles += 1;

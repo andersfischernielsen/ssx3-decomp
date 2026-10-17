@@ -14,24 +14,55 @@ pub struct Entry {
     pub dir: bool,
 }
 
+/// Where the disc image's bytes come from: a file, or (in the browser) the
+/// image the user picked.
+pub trait Source: Send {
+    fn len(&self) -> u64;
+    /// Fill `buf` from byte offset `off`.
+    fn read_at(&mut self, off: u64, buf: &mut [u8]) -> std::io::Result<()>;
+}
+
+impl Source for File {
+    fn len(&self) -> u64 {
+        self.metadata().map_or(0, |m| m.len())
+    }
+    fn read_at(&mut self, off: u64, buf: &mut [u8]) -> std::io::Result<()> {
+        self.seek(SeekFrom::Start(off))?;
+        self.read_exact(buf)
+    }
+}
+
+type Opener = Box<dyn Fn() -> std::io::Result<Box<dyn Source>> + Send + Sync>;
+static OPENER: std::sync::OnceLock<Opener> = std::sync::OnceLock::new();
+
+/// Make [`Disc::open`] use `f` whatever path it is given (the browser build:
+/// the image comes from the page, not a path).
+pub fn set_opener(f: Opener) {
+    let _ = OPENER.set(f);
+}
+
 pub struct Disc {
-    file: File,
+    src: Box<dyn Source>,
     pub sectors: u64,
 }
 
 impl Disc {
     pub fn open(path: &Path) -> std::io::Result<Self> {
-        let file = File::open(path)?;
-        let len = file.metadata()?.len();
-        Ok(Self { file, sectors: len / SECTOR as u64 })
+        let src: Box<dyn Source> = match OPENER.get() {
+            Some(f) => f()?,
+            None => Box::new(File::open(path)?),
+        };
+        Ok(Self::from_source(src))
+    }
+
+    pub fn from_source(src: Box<dyn Source>) -> Self {
+        let sectors = src.len() / SECTOR as u64;
+        Self { src, sectors }
     }
 
     pub fn read(&mut self, sector: u32, count: u32, out: &mut [u8]) -> bool {
         let n = count as usize * SECTOR;
-        if out.len() < n || self.file.seek(SeekFrom::Start(sector as u64 * SECTOR as u64)).is_err() {
-            return false;
-        }
-        self.file.read_exact(&mut out[..n]).is_ok()
+        out.len() >= n && self.src.read_at(sector as u64 * SECTOR as u64, &mut out[..n]).is_ok()
     }
 
     pub fn read_vec(&mut self, sector: u32, count: u32) -> Vec<u8> {

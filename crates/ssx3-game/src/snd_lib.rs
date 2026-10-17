@@ -28,7 +28,7 @@
 
 use crate::abi::{self, addu, reg, set_reg};
 use crate::call::{call_ptr, guest, Callee, Flow, Frame};
-use crate::events::{back_edge_unwinds, deliver_event, event_due};
+use crate::events::{back_edge_unwinds, deliver_event_here, event_due};
 use crate::guest::Addr;
 use crate::sound::snd;
 use ssx3_ee as ee;
@@ -428,7 +428,7 @@ pub fn snd_dsp_insert_sorted(c: &mut Cpu) {
                 prev = next;
                 set_reg(c, A3, prev);
                 if event_due(c) {
-                    deliver_event(c, 0x003c_8f70);
+                    deliver_event_here(c, 0x003c_8f70);
                     prev = reg(c, A3);
                 }
             }
@@ -650,7 +650,7 @@ pub fn snd_mem_free(c: &mut Cpu) {
                 let v = heap_ptr(c);
                 set_reg(c, A1, v);
                 if event_due(c) {
-                    deliver_event(c, 0x003b_5ec0);
+                    deliver_event_here(c, 0x003b_5ec0);
                 }
                 continue;
             }
@@ -692,7 +692,7 @@ pub fn snd_mem_free(c: &mut Cpu) {
                         break;
                     }
                     if event_due(c) {
-                        deliver_event(c, 0x003b_5f10);
+                        deliver_event_here(c, 0x003b_5f10);
                     }
                 }
             }
@@ -839,7 +839,7 @@ pub fn snd_mem_alloc(c: &mut Cpu) {
                                 let v = lw_at(c, reg(c, A3), heap::PTR);
                                 set_reg(c, A0, v);
                                 if event_due(c) {
-                                    deliver_event(c, 0x003b_5d68);
+                                    deliver_event_here(c, 0x003b_5d68);
                                 }
                             }
                             return mem_alloc_insert(c, frame);
@@ -859,7 +859,7 @@ pub fn snd_mem_alloc(c: &mut Cpu) {
                         break;
                     }
                     if event_due(c) {
-                        deliver_event(c, 0x003b_5cf0);
+                        deliver_event_here(c, 0x003b_5cf0);
                     }
                 }
             }
@@ -969,7 +969,7 @@ pub fn snd_mem_copy(c: &mut Cpu) {
     /// The back-edge event check of a copy loop.
     fn back_edge(c: &mut Cpu, head: u32) {
         if event_due(c) {
-            deliver_event(c, head);
+            deliver_event_here(c, head);
         }
     }
     let step = |c: &mut Cpu, r: usize, d: i32| set_reg(c, r, addiu(reg(c, r), d));
@@ -1192,7 +1192,7 @@ pub fn snd_channel_release(c: &mut Cpu) {
                 break;
             }
             if event_due(c) {
-                deliver_event(c, 0x003b_a598);
+                deliver_event_here(c, 0x003b_a598);
             }
         }
     }
@@ -1338,7 +1338,7 @@ pub fn snd_utk_interpolate(c: &mut Cpu) {
             return;
         }
         if event_due(c) {
-            deliver_event(c, 0x003c_d540);
+            deliver_event_here(c, 0x003c_d540);
         }
     }
 }
@@ -1369,7 +1369,7 @@ pub fn snd_utk_rc_to_lpc(c: &mut Cpu) {
             break;
         }
         if event_due(c) {
-            deliver_event(c, 0x003c_d5a8);
+            deliver_event_here(c, 0x003c_d5a8);
         }
     }
     c.cycles += 5;
@@ -1409,7 +1409,7 @@ pub fn snd_utk_rc_to_lpc(c: &mut Cpu) {
                 break;
             }
             if event_due(c) {
-                deliver_event(c, 0x003c_d600);
+                deliver_event_here(c, 0x003c_d600);
             }
         }
         // Tail 0x3cd670: one more reflection step.
@@ -1439,7 +1439,7 @@ pub fn snd_utk_rc_to_lpc(c: &mut Cpu) {
                     break;
                 }
                 if event_due(c) {
-                    deliver_event(c, 0x003c_d650);
+                    deliver_event_here(c, 0x003c_d650);
                 }
             }
         }
@@ -1453,7 +1453,7 @@ pub fn snd_utk_rc_to_lpc(c: &mut Cpu) {
             break;
         }
         if event_due(c) {
-            deliver_event(c, 0x003c_d5d8);
+            deliver_event_here(c, 0x003c_d5d8);
         }
     }
     c.cycles += 2;

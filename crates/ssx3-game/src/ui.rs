@@ -20,7 +20,7 @@
 
 use crate::abi::{r32, ret, set_fcc, set_word};
 use crate::call::{call_ptr, guest, Flow, Frame, VSlot};
-use crate::events::{back_edge_unwinds, deliver_event, event_due};
+use crate::events::{back_edge_unwinds, deliver_event_here, event_due};
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
 use ssx3_ee_rt::cpu::{reg::*, sx};
@@ -208,7 +208,7 @@ pub fn c_hudfx_set_text(c: &mut Cpu) {
                     break;
                 }
                 if crate::events::event_due(c) {
-                    crate::events::deliver_event(c, HEAD);
+                    crate::events::deliver_event_here(c, HEAD);
                 }
             }
         }
@@ -286,7 +286,7 @@ pub fn rider_metrix_remove_hud_message(c: &mut Cpu) {
                     break;
                 }
                 if crate::events::event_due(c) {
-                    crate::events::deliver_event(c, HEAD);
+                    crate::events::deliver_event_here(c, HEAD);
                 }
             }
         }
@@ -355,7 +355,7 @@ pub fn ui_state_mgr_set_parent_chain_visible(c: &mut Cpu) {
                 }
                 c.g[A0][0] = lw(c, at(c, A1, FLAGS));
                 if crate::events::event_due(c) {
-                    crate::events::deliver_event(c, HEAD);
+                    crate::events::deliver_event_here(c, HEAD);
                 }
             }
         }
@@ -463,7 +463,7 @@ fn render_visible(c: &mut Cpu, p: &RenderPass) -> Flow {
         }
         c.g[V0][0] = lw(c, at(c, S0, ui_state::FLAGS));
         if event_due(c) {
-            deliver_event(c, p.head);
+            deliver_event_here(c, p.head);
         }
     }
 }
@@ -533,7 +533,7 @@ pub fn ui_state_update_screens(c: &mut Cpu) {
                     break;
                 }
                 if event_due(c) {
-                    deliver_event(c, HEAD);
+                    deliver_event_here(c, HEAD);
                 }
             }
         }
@@ -589,7 +589,7 @@ pub fn ui_state_mgr_update(c: &mut Cpu) {
                 }
                 c.g[V0][0] = lw(c, at(c, S0, ui_state::FLAGS));
                 if event_due(c) {
-                    deliver_event(c, HEAD);
+                    deliver_event_here(c, HEAD);
                 }
             }
         }
@@ -650,7 +650,7 @@ pub fn ui_state_mgr_has_state_in_phase(c: &mut Cpu) {
                 }
                 c.g[V1][0] = lw(c, at(c, S0, ui_state::FLAGS));
                 if event_due(c) {
-                    deliver_event(c, HEAD);
+                    deliver_event_here(c, HEAD);
                 }
             }
         }
@@ -710,7 +710,7 @@ pub fn ui_state_mgr_restart_state_in_phase(c: &mut Cpu) {
                 }
                 c.g[V1][0] = lw(c, at(c, S0, ui_state::FLAGS));
                 if event_due(c) {
-                    deliver_event(c, HEAD);
+                    deliver_event_here(c, HEAD);
                 }
             }
         }
@@ -1701,7 +1701,7 @@ pub fn hud_draw_sprite(c: &mut Cpu) {
                     break;
                 }
                 if event_due(c) {
-                    deliver_event(c, 0x001f_11c0);
+                    deliver_event_here(c, 0x001f_11c0);
                 }
             }
             // Colour as ints 0..128.
@@ -1742,7 +1742,7 @@ pub fn hud_draw_sprite(c: &mut Cpu) {
                 }
                 Addr(r32(c, V1) + 0x1c).sw(c, c.g[A2][0]);
                 if event_due(c) {
-                    deliver_event(c, 0x001f_1238);
+                    deliver_event_here(c, 0x001f_1238);
                 }
             }
             // Corners and UVs.
@@ -1945,7 +1945,7 @@ pub fn font_measure_text(c: &mut Cpu) {
                             break;
                         }
                         if event_due(c) {
-                            deliver_event(c, SEARCH_HEAD);
+                            deliver_event_here(c, SEARCH_HEAD);
                         }
                     }
                 }
@@ -2006,7 +2006,7 @@ pub fn font_measure_text(c: &mut Cpu) {
             }
             c.g[V1][0] = Addr(r32(c, A2)).lbu(c);
             if event_due(c) {
-                deliver_event(c, CHAR_HEAD);
+                deliver_event_here(c, CHAR_HEAD);
             }
         }
     }

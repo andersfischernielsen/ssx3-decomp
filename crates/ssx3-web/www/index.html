@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SSX 3 — browser build</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #000; color: #ddd; font: 14px system-ui, sans-serif; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  #panel { position: fixed; inset: 0; display: grid; place-content: center; gap: 12px; text-align: center; }
+  #panel[hidden] { display: none; }
+  #status { position: fixed; top: 8px; right: 12px; opacity: .6; font-variant-numeric: tabular-nums; }
+  kbd { border: 1px solid #555; border-radius: 3px; padding: 0 4px; }
+  .keys { opacity: .7; line-height: 1.8; }
+</style>
+</head>
+<body>
+<canvas id="screen"></canvas>
+<div id="panel">
+  <h1>SSX 3</h1>
+  <p>Choose your <b>SSX 3 (USA)</b> disc image (.iso). It stays on this computer.</p>
+  <p><input type="file" id="iso" accept=".iso"></p>
+  <p class="keys">
+    <kbd>Arrows</kbd> D-pad · <kbd>Enter</kbd> Start · <kbd>Right Shift</kbd> Select<br>
+    <kbd>X</kbd> Cross · <kbd>S</kbd> Circle · <kbd>Z</kbd> Square · <kbd>A</kbd> Triangle<br>
+    <kbd>Q</kbd> L1 · <kbd>W</kbd> R1 · <kbd>1</kbd> L2 · <kbd>2</kbd> R2
+  </p>
+  <p id="msg"></p>
+</div>
+<div id="status"></div>
+<script type="module">
+// libpad button bits, as in the native window (crates/ssx3/src/main.rs).
+const KEYS = {
+  ShiftRight: 1 << 0, Enter: 1 << 3,
+  ArrowUp: 1 << 4, ArrowRight: 1 << 5, ArrowDown: 1 << 6, ArrowLeft: 1 << 7,
+  Digit1: 1 << 8, Digit2: 1 << 9, KeyQ: 1 << 10, KeyW: 1 << 11,
+  KeyA: 1 << 12, KeyS: 1 << 13, KeyX: 1 << 14, KeyZ: 1 << 15,
+};
+const canvas = document.getElementById("screen");
+const msg = document.getElementById("msg");
+const status = document.getElementById("status");
+
+if (!navigator.gpu) msg.textContent = "This browser has no WebGPU.";
+
+const pixelSize = () => [
+  Math.max(64, Math.round(canvas.clientWidth * devicePixelRatio)),
+  Math.max(64, Math.round(canvas.clientHeight * devicePixelRatio)),
+];
+
+document.getElementById("iso").onchange = (e) => {
+  const iso = e.target.files[0];
+  if (!iso) return;
+  msg.textContent = "Starting…";
+  const [w, h] = pixelSize();
+  canvas.width = w;
+  canvas.height = h;
+  const off = canvas.transferControlToOffscreen();
+  const worker = new Worker("./worker.js", { type: "module" });
+  worker.onmessage = (e) => {
+    const m = e.data;
+    if (m.type === "running") document.getElementById("panel").hidden = true;
+    else if (m.type === "fps") status.textContent = `${m.fps.toFixed(0)} fps`;
+    else if (m.type === "error") {
+      document.getElementById("panel").hidden = false;
+      msg.textContent = m.message;
+    }
+  };
+  worker.onerror = (e) => { msg.textContent = e.message; };
+  worker.postMessage({ type: "start", canvas: off, iso }, [off]);
+
+  let buttons = 0;
+  const key = (down) => (e) => {
+    const bit = KEYS[e.code];
+    if (!bit) return;
+    e.preventDefault();
+    const b = down ? buttons | bit : buttons & ~bit;
+    if (b !== buttons) worker.postMessage({ type: "buttons", buttons: (buttons = b) });
+  };
+  addEventListener("keydown", key(true));
+  addEventListener("keyup", key(false));
+  addEventListener("blur", () => worker.postMessage({ type: "buttons", buttons: (buttons = 0) }));
+  addEventListener("resize", () => {
+    const [w, h] = pixelSize();
+    worker.postMessage({ type: "resize", width: w, height: h });
+  });
+};
+</script>
+</body>
+</html>

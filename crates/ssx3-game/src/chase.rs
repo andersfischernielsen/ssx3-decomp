@@ -736,7 +736,7 @@ pub fn game_view_man_all_views_ready(c: &mut Cpu) {
                 break;
             }
             if crate::events::event_due(c) {
-                crate::events::deliver_event(c, HEAD);
+                crate::events::deliver_event_here(c, HEAD);
             }
         }
     }
@@ -785,7 +785,7 @@ pub fn game_view_man_update_cameras(c: &mut Cpu) {
                 }
                 c.g[A1][0] = lw(c, Addr(c.g[S0][0] as u32));
                 if crate::events::event_due(c) {
-                    crate::events::deliver_event(c, HEAD);
+                    crate::events::deliver_event_here(c, HEAD);
                 }
             }
         }
@@ -3034,7 +3034,7 @@ fn fade_out_nodes(c: &mut Cpu, ctl: ChaseCamController, head: u32) -> Flow {
         }
         c.f[1] = Addr(c.g[S0][0] as u32).off(4).read_u32(c);
         if crate::events::event_due(c) {
-            crate::events::deliver_event(c, head);
+            crate::events::deliver_event_here(c, head);
         }
     }
 }

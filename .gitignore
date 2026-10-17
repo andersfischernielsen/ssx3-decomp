@@ -43,3 +43,4 @@
 /target-web
 # Texture packs: dumped game textures and replacements (SSX3_TEX_DUMP, textures/replace)
 /textures/
+/crates/ssx3-web/www/pkg/

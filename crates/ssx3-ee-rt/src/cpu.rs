@@ -128,6 +128,11 @@ pub struct Cpu {
     pub next_event: u64,
     /// Host call depth; capped so deep guest recursion unwinds to the trampoline.
     pub depth: u32,
+    /// The caller of [`Cpu::event`] cannot unwind (a hand-written loop that
+    /// continues after its event check): the machine delivers interrupts
+    /// but keeps a thread switch or a finished frame for the next check.
+    /// Only the unwind form needs it (host threads block instead).
+    pub no_unwind: bool,
     /// RAM, scratchpad, and the hardware model (`bus.plat`).
     pub bus: Bus,
     pub hooks: Hooks,
@@ -151,6 +156,7 @@ impl Cpu {
             cycles: 0,
             next_event: 0,
             depth: 0,
+            no_unwind: false,
             bus: Bus::new(plat),
             hooks,
         })

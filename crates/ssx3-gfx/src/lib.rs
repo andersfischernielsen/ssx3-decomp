@@ -117,7 +117,8 @@ pub struct Inner {
     /// Keep the depth after phase 1 (`depth()`, native mode).
     pub want_depth: bool,
     /// This frame's depth readback in flight (buffer, size, ZMAX + 1).
-    pending_depth: Option<(wgpu::Buffer, wgpu::SubmissionIndex, u32, u32, f32, u32, u32)>,
+    /// (The flag: mapped; the browser cannot wait for it.)
+    pending_depth: Option<(wgpu::Buffer, wgpu::SubmissionIndex, u32, u32, f32, u32, u32, Arc<std::sync::atomic::AtomicBool>)>,
     /// ZMAX + 1 of the frame's Z buffer (depth is stored as Z / it).
     zscale: f32,
     /// Frames timed and the time (ms) in build, prepare, encode+submit,
@@ -687,7 +688,11 @@ impl Inner {
                 .collect();
             std::thread::scope(|sc| {
                 for b in mids.iter_mut() {
-                    sc.spawn(|| Build::run(b, built, mem));
+                    if cfg!(target_arch = "wasm32") {
+                        Build::run(b, built, mem);
+                    } else {
+                        sc.spawn(|| Build::run(b, built, mem));
+                    }
                 }
                 Build::run(&mut fin, built, mem);
             });
@@ -1214,10 +1219,16 @@ impl Inner {
             // The previous frame's depth (its readback has had a frame to
             // complete): the light queries see depth one frame late, and
             // the CPU does not wait for this frame's GPU work.
-            if let Some((prev, prev_idx, pw, ph, zs, lw, lh)) = self.pending_depth.take() {
+            if let Some((prev, prev_idx, pw, ph, zs, lw, lh, mapped)) = self.pending_depth.take() {
                 let slice = prev.slice(..);
-                let _ = self.dev.poll(wgpu::PollType::Wait { submission_index: Some(prev_idx), timeout: None });
-                if let Ok(v) = slice.get_mapped_range() {
+                if cfg!(target_arch = "wasm32") {
+                    let _ = self.dev.poll(wgpu::PollType::Poll);
+                } else {
+                    let _ = self.dev.poll(wgpu::PollType::Wait { submission_index: Some(prev_idx), timeout: None });
+                }
+                // (Not mapped yet in the browser: the queries keep the
+                // depth before.)
+                if let Some(v) = mapped.load(std::sync::atomic::Ordering::Acquire).then(|| slice.get_mapped_range()).and_then(|r| r.ok()) {
                     // In GS pixels: the sample at each pixel's centre.
                     let (lw, lh) = (lw as usize, lh as usize);
                     let row = (pw * 4).next_multiple_of(256) as usize;
@@ -1236,8 +1247,10 @@ impl Inner {
                     *self.shared.depth.lock().unwrap() = Some((lw as u32, lh as u32, z));
                 }
             }
-            buf.slice(..).map_async(wgpu::MapMode::Read, |_| {});
-            self.pending_depth = Some((buf, sub_idx, t.w, t.h, self.zscale, w, h));
+            let mapped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let m = mapped.clone();
+            buf.slice(..).map_async(wgpu::MapMode::Read, move |r| m.store(r.is_ok(), std::sync::atomic::Ordering::Release));
+            self.pending_depth = Some((buf, sub_idx, t.w, t.h, self.zscale, w, h, mapped));
             self.timing.1[3] += t_sub.elapsed().as_secs_f64() * 1e3;
         }
         if let Some(pb) = probe_buf {
@@ -1700,8 +1713,13 @@ impl Build {
         let plan = Build::plan_vu_calls(b, built, &draws);
         let mut vu = VuReceiver::default();
         std::thread::scope(|sc| {
-        for _ in 0..plan.threads {
-            sc.spawn(|| plan.work());
+        // No threads in the browser: every chunk up front.
+        if cfg!(target_arch = "wasm32") {
+            plan.work();
+        } else {
+            for _ in 0..plan.threads {
+                sc.spawn(|| plan.work());
+            }
         }
         for (i, (owner, ev)) in built.events.iter().enumerate() {
             if matches!(owner, Owner::Payload(n) if skip.contains(n)) {

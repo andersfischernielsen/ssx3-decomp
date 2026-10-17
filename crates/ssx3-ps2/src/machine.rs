@@ -247,6 +247,11 @@ pub fn service_events(c: &mut Cpu) -> bool {
         }
         return false;
     }
+    if c.no_unwind && (want_frame || m!(c).kernel.reschedule) {
+        // Deferred to the caller's next check (see `Cpu::no_unwind`).
+        c.next_event = c.cycles;
+        return false;
+    }
     if want_frame {
         c.pc |= UNWIND;
     }

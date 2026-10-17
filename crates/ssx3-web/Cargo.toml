@@ -1,0 +1,25 @@
+[package]
+name = "ssx3-web"
+description = "SSX 3 in the browser: the unwind form of the generated EE code compiled to WebAssembly, drawn with WebGPU from a Web Worker (crates/ssx3-web/README.md)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+# Everything is for wasm32 only: natively this is an empty library.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+ssx3-core.workspace = true
+ssx3-ps2 = { path = "../ssx3-ps2" }
+ssx3-gfx = { path = "../ssx3-gfx" }
+ssx3-ee-rt = { path = "../ssx3-ee-rt" }
+ssx3-ee-unwind = { path = "../../generated/ee-unwind/game", package = "ssx3-ee-unwind" }
+ssx3-game = { path = "../ssx3-game", default-features = false, features = ["packages", "ee-unwind"] }
+# wgpu's types are Send + Sync in a single-threaded wasm build with this.
+wgpu = { version = "30.0.1", features = ["fragile-send-sync-non-atomic-wasm"] }
+wasm-bindgen = "0.2.129"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["Blob", "File", "FileReaderSync", "OffscreenCanvas", "console"] }
+console_error_panic_hook = "0.1"

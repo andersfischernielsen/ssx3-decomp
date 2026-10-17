@@ -28,7 +28,7 @@
 use crate::abi::{addu, c_lt_s, r32, ret, set_fpr};
 use crate::call::{call_ptr, guest, Callee, Flow, Frame, VSlot};
 use crate::guest::Addr;
-use crate::events::{deliver_event, event_due};
+use crate::events::{deliver_event_here, event_due};
 use crate::ps2f::{vu0_scratch, FpuF32, Vec4};
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::{reg::*, sx};
@@ -300,7 +300,7 @@ pub fn streamer_update_view(c: &mut Cpu) {
                     break;
                 }
                 if event_due(c) {
-                    deliver_event(c, 0x003a_9dc8);
+                    deliver_event_here(c, 0x003a_9dc8);
                 }
             }
         }
@@ -760,7 +760,7 @@ pub fn anim_object_v52(c: &mut Cpu) {
                     }
                     c.g[A1][0] = lw(c, at(c, S0, NODES));
                     if event_due(c) {
-                        deliver_event(c, 0x0034_e380);
+                        deliver_event_here(c, 0x0034_e380);
                     }
                 }
             }
@@ -981,7 +981,7 @@ pub fn multi_spline_modifier_v24(c: &mut Cpu) {
                     break;
                 }
                 if event_due(c) {
-                    deliver_event(c, 0x0035_a970);
+                    deliver_event_here(c, 0x0035_a970);
                 }
             }
         }
@@ -1148,7 +1148,7 @@ pub fn multi_spline_modifier_v11(c: &mut Cpu) {
                     break;
                 }
                 if event_due(c) {
-                    deliver_event(c, 0x0035_b488);
+                    deliver_event_here(c, 0x0035_b488);
                 }
             }
         }
@@ -1294,7 +1294,7 @@ pub fn anim_controller_dispatch_end_events(c: &mut Cpu) {
                         break;
                     }
                     if event_due(c) {
-                        deliver_event(c, 0x0031_24f0);
+                        deliver_event_here(c, 0x0031_24f0);
                     }
                 }
             }
@@ -1306,7 +1306,7 @@ pub fn anim_controller_dispatch_end_events(c: &mut Cpu) {
                 break;
             }
             if event_due(c) {
-                deliver_event(c, 0x0031_24c0);
+                deliver_event_here(c, 0x0031_24c0);
             }
         }
         c.cycles += 2;
@@ -1330,7 +1330,7 @@ pub fn anim_controller_dispatch_end_events(c: &mut Cpu) {
                 }
                 c.g[V0][0] = lw(c, at(c, S2, 0x58));
                 if event_due(c) {
-                    deliver_event(c, 0x0031_2548);
+                    deliver_event_here(c, 0x0031_2548);
                 }
             }
         }

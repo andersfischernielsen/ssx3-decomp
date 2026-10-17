@@ -227,11 +227,15 @@ pub fn on_signal_sema(c: &mut Cpu, id: i32) {
     // so the sink can build and render the frame while the game goes on.
     let mut snap = POOL.lock().unwrap().pop().unwrap_or_else(|| Box::new(DumpMem { ram: Vec::new(), spr: Vec::new(), vu1: Vec::new() }));
     snap.ram.resize(c.bus.ram.len(), 0);
-    let parts = 4;
+    let parts = if cfg!(target_arch = "wasm32") { 1 } else { 4 };
     let chunk = c.bus.ram.len().div_ceil(parts);
     std::thread::scope(|sc| {
         for (d, src) in snap.ram.chunks_mut(chunk).zip(c.bus.ram.chunks(chunk)) {
-            sc.spawn(move || d.copy_from_slice(src));
+            if parts == 1 {
+                d.copy_from_slice(src);
+            } else {
+                sc.spawn(move || d.copy_from_slice(src));
+            }
         }
     });
     snap.spr.clear();
