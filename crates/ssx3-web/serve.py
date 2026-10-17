@@ -6,7 +6,7 @@ On the LAN: `serve.py --lan --cert cert.pem --key key.pem` serves HTTPS on
 all interfaces. Browsers allow WebGPU and SharedArrayBuffer only on secure
 pages, and http:// on a LAN address is not one. The disc image is never
 served: each browser picks its own copy."""
-import argparse, functools, http.server, os, ssl
+import argparse, functools, http.server, os, socket, ssl, threading
 
 class H(http.server.SimpleHTTPRequestHandler):
     extensions_map = {**http.server.SimpleHTTPRequestHandler.extensions_map, ".wasm": "application/wasm", ".js": "text/javascript"}
@@ -26,10 +26,25 @@ ap.add_argument("--key", help="TLS private key (PEM)")
 a = ap.parse_args()
 
 root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "www")
-srv = http.server.ThreadingHTTPServer(("0.0.0.0" if a.lan else "127.0.0.1", a.port), functools.partial(H, directory=root))
+
+class V6(http.server.ThreadingHTTPServer):
+    address_family = socket.AF_INET6
+
+    def server_bind(self):
+        # --lan: one dual-stack socket for IPv4 and IPv6.
+        self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0 if a.lan else 1)
+        super().server_bind()
+
+# Browsers may resolve localhost to ::1 or to 127.0.0.1: listen on both.
+servers = [V6(("::" if a.lan else "::1", a.port), functools.partial(H, directory=root))]
+if not a.lan:
+    servers.append(http.server.ThreadingHTTPServer(("127.0.0.1", a.port), functools.partial(H, directory=root)))
 if a.cert:
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.load_cert_chain(a.cert, a.key)
-    srv.socket = ctx.wrap_socket(srv.socket, server_side=True)
-print(f"serving {root} on {'https' if a.cert else 'http'}://{srv.server_address[0]}:{a.port}")
-srv.serve_forever()
+    for srv in servers:
+        srv.socket = ctx.wrap_socket(srv.socket, server_side=True)
+print(f"serving {root} on {'https' if a.cert else 'http'}://{'0.0.0.0' if a.lan else 'localhost'}:{a.port}")
+for srv in servers[1:]:
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+servers[0].serve_forever()
