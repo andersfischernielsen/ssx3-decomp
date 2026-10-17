@@ -33,6 +33,11 @@ fn main() {
     }
     let mut c = game::boot(true);
     let gfx = game::install_renderer(&mut c);
+    // SSX3_FPS=<Hz>: draw the in-between images too (interpolation; the
+    // screenshots are the game's frames).
+    if let (Some(g), Some(hz)) = (gfx.as_ref(), std::env::var("SSX3_FPS").ok().and_then(|v| v.parse::<f64>().ok())) {
+        g.set_subframes(((hz / 59.94).round() as u32).clamp(1, 8));
+    }
     let t0 = Instant::now();
     let mut img = Vec::new();
     // Scripted input: SSX3_INPUT="300:4000:10,400:0008:10" presses Cross (0x4000)
