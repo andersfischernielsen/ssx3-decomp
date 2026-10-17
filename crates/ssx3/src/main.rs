@@ -15,7 +15,7 @@ use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
-use winit::window::{Window, WindowId};
+use winit::window::{Fullscreen, Window, WindowId};
 
 mod game;
 mod png;
@@ -174,6 +174,8 @@ impl ApplicationHandler for App {
         let attrs = Window::default_attributes()
             .with_title("SSX 3 (USA) — native recompilation")
             .with_inner_size(winit::dpi::LogicalSize::new(960.0, 672.0));
+        // SSX3_FULLSCREEN=1: start in borderless fullscreen (F11 toggles).
+        let attrs = if std::env::var("SSX3_FULLSCREEN").is_ok_and(|v| v != "0") { attrs.with_fullscreen(Some(Fullscreen::Borderless(None))) } else { attrs };
         let window = Arc::new(event_loop.create_window(attrs).expect("window"));
         let gs = ssx3_ps2::m!(self.cpu).hw.gs.core().gpu_context();
         self.gpu_ctx = gs;
@@ -208,6 +210,12 @@ impl ApplicationHandler for App {
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(code) = event.physical_key {
+                    // F11: borderless fullscreen on and off.
+                    if code == KeyCode::F11 && event.state == ElementState::Pressed && !event.repeat {
+                        if let Some(w) = self.window.as_ref() {
+                            w.set_fullscreen(if w.fullscreen().is_some() { None } else { Some(Fullscreen::Borderless(None)) });
+                        }
+                    }
                     if code == KeyCode::F12 && event.state == ElementState::Pressed {
                         // The image on screen: the native renderer's while it is active.
                         let native = self.gfx.as_ref().filter(|_| ssx3_ps2::frame_sink::native()).and_then(|g| g.read_image());

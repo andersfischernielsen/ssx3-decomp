@@ -122,6 +122,7 @@ together with the keyboard.
 | Q / W | L1 / R1 |
 | 1 / 2 | L2 / R2 |
 | Enter / Right Shift | Start / Select |
+| F11 | Fullscreen on/off (`SSX3_FULLSCREEN=1` starts in it) |
 | F12 | Screenshot |
 
 Saves go to `saves/ssx3-mc0.ps2`.
