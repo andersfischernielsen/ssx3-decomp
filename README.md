@@ -122,12 +122,19 @@ together with the keyboard.
 | Q / W | L1 / R1 |
 | 1 / 2 | L2 / R2 |
 | Enter / Right Shift | Start / Select |
+| F10 (or the controller's home button) | Settings overlay (pauses the game) |
 | F11 | Fullscreen on/off (`SSX3_FULLSCREEN=1` starts in it) |
 | F12 | Screenshot |
 
 Saves go to `saves/ssx3-mc0.ps2`.
 
 ## Options
+
+Most options can be changed in the game with the settings overlay (F10): display rate,
+field of view, aspect ratio, resolution and fullscreen apply at once; renderer, sound,
+pads and memory card, game files and intro movies after a restart. They are saved in
+`saves/ssx3-settings.cfg` as `SSX3_*` lines; an environment variable of the same name
+overrides the file.
 
 All options are environment variables. The defaults are the verified, exact
 configuration. The plain command above is the recommended way to play.

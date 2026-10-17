@@ -147,6 +147,10 @@ pub struct Presenter {
     /// The surface needs reconfiguring (a resize, or a configure that
     /// failed: retried at the next present).
     reconfigure: bool,
+    /// The settings overlay drawn over the image (alpha-blended, centred,
+    /// scaled by a whole factor), and its pipeline.
+    overlay: Option<(wgpu::Texture, wgpu::BindGroup)>,
+    overlay_pipeline: wgpu::RenderPipeline,
     // Keep the window handle alive for as long as the surface exists.
     _window: Arc<Window>,
 }
@@ -296,6 +300,22 @@ impl Presenter {
             cache: None,
         });
 
+        let overlay_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("overlay-pipeline"),
+            layout: Some(&layout),
+            vertex: wgpu::VertexState { module: &shader, entry_point: Some("vs_main"), compilation_options: Default::default(), buffers: &[] },
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState { format: config.format, blend: Some(wgpu::BlendState::ALPHA_BLENDING), write_mask: wgpu::ColorWrites::ALL })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
         let buffer_path = BufferPath::new(&device, config.format);
         Self {
             surface,
@@ -311,6 +331,8 @@ impl Presenter {
             buffer_path,
             aspect: 4.0 / 3.0,
             reconfigure: false,
+            overlay: None,
+            overlay_pipeline,
             _window: window,
         }
     }
@@ -381,6 +403,46 @@ impl Presenter {
         let err = pollster::block_on(scope.pop());
         self.reconfigure = err.is_some();
         !self.reconfigure
+    }
+
+    /// Show an RGBA8 overlay (`w`×`h`, alpha-blended) over the image, or
+    /// none.
+    pub fn set_overlay(&mut self, img: Option<(u32, u32, &[u32])>) {
+        let Some((w, h, px)) = img else {
+            self.overlay = None;
+            return;
+        };
+        let same = self.overlay.as_ref().is_some_and(|(t, _)| (t.width(), t.height()) == (w, h));
+        if !same {
+            let tex = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("overlay"),
+                size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            let view = tex.create_view(&Default::default());
+            let bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("overlay-bg"),
+                layout: &self.bgl,
+                entries: &[
+                    wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view) },
+                    wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+                ],
+            });
+            self.overlay = Some((tex, bg));
+        }
+        let (tex, _) = self.overlay.as_ref().unwrap();
+        let bytes: Vec<u8> = px.iter().flat_map(|p| p.to_le_bytes()).collect();
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo { texture: tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+            &bytes,
+            wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(w * 4), rows_per_image: Some(h) },
+            wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+        );
     }
 
     /// Fit the image to `aspect` (width / height; 0 = fill the window).
@@ -490,6 +552,16 @@ impl Presenter {
             pass.set_pipeline(pipeline);
             pass.set_bind_group(0, bind_group, &[]);
             pass.draw(0..3, 0..1);
+            if let Some((tex, bg)) = &self.overlay {
+                // Centred, the largest whole scale that fits 90% of the window.
+                let (ow, oh) = (tex.width() as f32, tex.height() as f32);
+                let k = ((w * 0.9 / ow).min(h * 0.9 / oh)).floor().max(1.0);
+                let (vw, vh) = ((ow * k).min(w), (oh * k).min(h));
+                pass.set_viewport(((w - vw) / 2.0).floor(), ((h - vh) / 2.0).floor(), vw, vh, 0.0, 1.0);
+                pass.set_pipeline(&self.overlay_pipeline);
+                pass.set_bind_group(0, bg, &[]);
+                pass.draw(0..3, 0..1);
+            }
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));

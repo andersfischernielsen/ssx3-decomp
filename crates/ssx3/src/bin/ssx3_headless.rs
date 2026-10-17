@@ -7,10 +7,14 @@
 
 use std::time::Instant;
 
+#[allow(dead_code)]
 #[path = "../game.rs"]
 mod game;
 #[path = "../png.rs"]
 mod png;
+#[allow(dead_code)]
+#[path = "../settings.rs"]
+mod settings;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

@@ -20,6 +20,7 @@ use winit::window::{Fullscreen, Window, WindowId};
 mod game;
 mod png;
 mod present;
+mod settings;
 
 use present::Presenter;
 use ssx3_ps2::Cpu;
@@ -50,6 +51,14 @@ struct App {
     /// When the next game frame is due (interpolation: the game runs on its
     /// own clock while the window presents at the display's rate).
     next_tick: Instant,
+    /// The settings overlay (F10): open with this row selected; the game
+    /// is paused meanwhile.
+    menu: Option<usize>,
+    /// A setting that applies after a restart was changed.
+    restart_pending: bool,
+    /// Game frames to run while the overlay is open: after a change that
+    /// applies at once, so the image behind shows it.
+    preview: u32,
 }
 
 /// The game's field time.
@@ -85,6 +94,7 @@ impl App {
     /// (plugged in with `SSX3_PAD2=1`).
     fn update_pad(&mut self) {
         let mut state = [(self.keys, [0x80u8; 4]), (0u16, [0x80u8; 4])];
+        let mut open_menu = false;
         if let Some(g) = self.gilrs.as_mut() {
             while let Some(ev) = g.next_event() {
                 match ev.event {
@@ -105,6 +115,8 @@ impl App {
                         eprintln!("[pad] axis {a:?} {v:.2} (code {code:?})");
                     }
                     gilrs::EventType::Disconnected => eprintln!("[pad] controller disconnected: {}", g.gamepad(ev.id).name()),
+                    // The controller's home/guide button opens the settings.
+                    gilrs::EventType::ButtonPressed(gilrs::Button::Mode, _) => open_menu = true,
                     _ => {}
                 }
             }
@@ -136,6 +148,9 @@ impl App {
                     axis(gilrs::Axis::LeftStickY, true),
                 ];
             }
+        }
+        if open_menu && self.menu.is_none() {
+            self.toggle_menu();
         }
         let sif = &mut ssx3_ps2::m!(self.cpu).sif;
         for (port, (buttons, sticks)) in state.into_iter().enumerate() {
@@ -175,27 +190,14 @@ impl ApplicationHandler for App {
             .with_title("SSX 3 (USA) — native recompilation")
             .with_inner_size(winit::dpi::LogicalSize::new(960.0, 672.0));
         // SSX3_FULLSCREEN=1: start in borderless fullscreen (F11 toggles).
-        let attrs = if std::env::var("SSX3_FULLSCREEN").is_ok_and(|v| v != "0") { attrs.with_fullscreen(Some(Fullscreen::Borderless(None))) } else { attrs };
+        let attrs = if settings::get("SSX3_FULLSCREEN").is_some_and(|v| v != "0") { attrs.with_fullscreen(Some(Fullscreen::Borderless(None))) } else { attrs };
         let window = Arc::new(event_loop.create_window(attrs).expect("window"));
         let gs = ssx3_ps2::m!(self.cpu).hw.gs.core().gpu_context();
         self.gpu_ctx = gs;
         self.presenter = Some(pollster::block_on(Presenter::new(window.clone(), gs)));
         let size = window.inner_size();
-        // Interpolate up to the display's refresh rate (SSX3_FPS=<Hz>
-        // overrides; 60 turns it off).
-        let hz = std::env::var("SSX3_FPS")
-            .ok()
-            .and_then(|v| v.parse::<f64>().ok())
-            .or_else(|| window.current_monitor().and_then(|m| m.refresh_rate_millihertz()).map(|m| m as f64 / 1000.0))
-            .unwrap_or(60.0);
-        if let Some(g) = self.gfx.as_ref().filter(|_| ssx3_ps2::frame_sink::native()) {
-            self.subframes = ((hz / 59.94).round() as u32).clamp(1, 8);
-            g.set_subframes(self.subframes);
-            if self.subframes > 1 {
-                eprintln!("[gfx] {hz:.0} Hz display: {} images per game frame ({} interpolated)", self.subframes, self.subframes - 1);
-            }
-        }
         self.window = Some(window);
+        self.apply_rate();
         self.follow_window_size(size.width, size.height);
     }
 
@@ -210,6 +212,25 @@ impl ApplicationHandler for App {
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(code) = event.physical_key {
+                    let pressed = event.state == ElementState::Pressed;
+                    if code == KeyCode::F10 && pressed && !event.repeat {
+                        self.toggle_menu();
+                        return;
+                    }
+                    if self.menu.is_some() {
+                        if pressed {
+                            match code {
+                                KeyCode::ArrowUp => self.menu_input(MenuKey::Up),
+                                KeyCode::ArrowDown => self.menu_input(MenuKey::Down),
+                                KeyCode::ArrowLeft => self.menu_input(MenuKey::Left),
+                                KeyCode::ArrowRight => self.menu_input(MenuKey::Right),
+                                KeyCode::Enter | KeyCode::Space | KeyCode::KeyX => self.menu_input(MenuKey::Select),
+                                KeyCode::Escape | KeyCode::Backspace => self.menu_input(MenuKey::Close),
+                                _ => {}
+                            }
+                        }
+                        return;
+                    }
                     // F11: borderless fullscreen on and off.
                     if code == KeyCode::F11 && event.state == ElementState::Pressed && !event.repeat {
                         if let Some(w) = self.window.as_ref() {
@@ -241,6 +262,19 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::RedrawRequested => {
+                // The settings overlay pauses the game.
+                if self.menu.is_some() {
+                    self.poll_menu_pad();
+                    self.next_tick = Instant::now();
+                    if self.preview > 0 {
+                        self.preview -= 1;
+                        if !self.step(event_loop) {
+                            return;
+                        }
+                    }
+                    self.show();
+                    return;
+                }
                 // With interpolation the window presents at the display's
                 // rate (vsync) and the game steps when its next field is due.
                 let interp = self.subframes > 1;
@@ -301,7 +335,14 @@ impl App {
         if let Some(p) = self.presenter.as_mut() {
             // Rendering at the window's size fills it exactly.
             let native_fill = self.gfx.is_some() && ssx3_ps2::frame_sink::native() && game::follows_window();
-            p.set_aspect(if native_fill { 0.0 } else { display_aspect(&self.cpu) });
+            p.set_aspect(if native_fill { game::aspect_box().unwrap_or(0.0) } else { display_aspect(&self.cpu) });
+            match self.menu {
+                Some(sel) => {
+                    let (w, h, img) = settings::draw(sel, self.restart_pending);
+                    p.set_overlay(Some((w, h, &img)));
+                }
+                None => p.set_overlay(None),
+            }
         }
         let gs = &mut ssx3_ps2::m!(self.cpu).hw.gs;
         let native = ssx3_ps2::frame_sink::native();
@@ -362,10 +403,117 @@ impl App {
             return;
         }
         if let Some(g) = self.gfx.as_ref() {
-            g.set_output_size(Some((w, h)));
-            ssx3_ps2::frame_sink::set_view(w as f32 / h as f32, game::fov());
+            // The aspect box (SSX3_ASPECT) inside the window, at the chosen
+            // resolution.
+            let (bw, bh) = match game::aspect_box() {
+                Some(a) if w as f32 / h as f32 > a => ((h as f32 * a).round() as u32, h),
+                Some(a) => (w, (w as f32 / a).round() as u32),
+                None => (w, h),
+            };
+            let k = game::resolution();
+            g.set_output_size(Some((((bw as f32 * k).round() as u32).max(64), ((bh as f32 * k).round() as u32).max(64))));
+            ssx3_ps2::frame_sink::set_view(bw as f32 / bh as f32, game::fov());
         }
     }
+
+    /// Images per game frame for the display rate: `SSX3_FPS`, or the
+    /// monitor's refresh rate (interpolation above 60 Hz).
+    fn apply_rate(&mut self) {
+        let Some(window) = self.window.as_ref() else { return };
+        let hz = settings::get("SSX3_FPS")
+            .and_then(|v| v.parse::<f64>().ok())
+            .or_else(|| window.current_monitor().and_then(|m| m.refresh_rate_millihertz()).map(|m| m as f64 / 1000.0))
+            .unwrap_or(60.0);
+        if let Some(g) = self.gfx.as_ref().filter(|_| ssx3_ps2::frame_sink::native()) {
+            self.subframes = ((hz / 59.94).round() as u32).clamp(1, 8);
+            g.set_subframes(self.subframes);
+            eprintln!("[gfx] {hz:.0} Hz: {} images per game frame ({} interpolated)", self.subframes, self.subframes - 1);
+        }
+    }
+
+    fn toggle_menu(&mut self) {
+        self.menu = match self.menu {
+            Some(_) => None,
+            None => {
+                // (No key stays held in the game.)
+                self.keys = 0;
+                Some(0)
+            }
+        };
+    }
+
+    fn menu_input(&mut self, k: MenuKey) {
+        let Some(sel) = self.menu else { return };
+        let n = settings::ITEMS.len();
+        match k {
+            MenuKey::Up => self.menu = Some((sel + n) % (n + 1)),
+            MenuKey::Down => self.menu = Some((sel + 1) % (n + 1)),
+            MenuKey::Close => self.menu = None,
+            MenuKey::Select if sel == n => self.menu = None,
+            MenuKey::Left | MenuKey::Right | MenuKey::Select if sel < n => {
+                let item = &settings::ITEMS[sel];
+                settings::step(item, if k == MenuKey::Left { -1 } else { 1 });
+                if item.live {
+                    self.apply_setting(item.key);
+                    self.preview = 3;
+                } else {
+                    self.restart_pending = true;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Apply a changed setting now.
+    fn apply_setting(&mut self, key: &str) {
+        match key {
+            "SSX3_FPS" => self.apply_rate(),
+            "SSX3_FULLSCREEN" => {
+                if let Some(w) = self.window.as_ref() {
+                    let on = settings::get("SSX3_FULLSCREEN").is_some_and(|v| v != "0");
+                    w.set_fullscreen(on.then_some(Fullscreen::Borderless(None)));
+                }
+            }
+            _ => {
+                if let Some(size) = self.window.as_ref().map(|w| w.inner_size()) {
+                    self.follow_window_size(size.width, size.height);
+                }
+            }
+        }
+    }
+
+    /// Controller navigation while the overlay is open.
+    fn poll_menu_pad(&mut self) {
+        let mut keys = Vec::new();
+        if let Some(g) = self.gilrs.as_mut() {
+            while let Some(ev) = g.next_event() {
+                if let gilrs::EventType::ButtonPressed(b, _) = ev.event {
+                    keys.push(match b {
+                        gilrs::Button::DPadUp => MenuKey::Up,
+                        gilrs::Button::DPadDown => MenuKey::Down,
+                        gilrs::Button::DPadLeft => MenuKey::Left,
+                        gilrs::Button::DPadRight => MenuKey::Right,
+                        gilrs::Button::South => MenuKey::Select,
+                        gilrs::Button::East | gilrs::Button::Mode | gilrs::Button::Start => MenuKey::Close,
+                        _ => continue,
+                    });
+                }
+            }
+        }
+        for k in keys {
+            self.menu_input(k);
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MenuKey {
+    Up,
+    Down,
+    Left,
+    Right,
+    Select,
+    Close,
 }
 
 /// The aspect ratio to show the game at. SSX3_ASPECT=4:3 / 16:9 / stretch
@@ -387,6 +535,8 @@ fn display_aspect(cpu: &Cpu) -> f32 {
 }
 
 fn main() {
+    // First: the settings file fills in the environment.
+    settings::load();
     env_logger::init();
     let mut cpu = game::boot(false);
     let gfx = game::install_renderer(&mut cpu);
@@ -408,6 +558,9 @@ fn main() {
         gpu_ctx: None,
         subframes: 1,
         next_tick: Instant::now(),
+        menu: None,
+        restart_pending: false,
+        preview: 0,
         gilrs: gilrs::Gilrs::new()
             .map(|g| {
                 let pads: Vec<String> = g.gamepads().map(|(_, p)| p.name().to_string()).collect();

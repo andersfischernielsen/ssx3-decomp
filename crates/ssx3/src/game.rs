@@ -292,12 +292,28 @@ pub fn render_size() -> Option<(u32, u32)> {
 /// `SSX3_FOV=<multiplier>`: field of view relative to the game's (1.2 =
 /// 20% wider, in the projection's tangent).
 pub fn fov() -> f32 {
-    std::env::var("SSX3_FOV").ok().and_then(|v| v.parse::<f32>().ok()).filter(|v| *v > 0.1 && *v < 4.0).unwrap_or(1.0)
+    crate::settings::get("SSX3_FOV").and_then(|v| v.parse::<f32>().ok()).filter(|v| *v > 0.1 && *v < 4.0).unwrap_or(1.0)
 }
 
-/// Native window: render at the window's pixel size and widen the view to
-/// its aspect, unless a fixed size (`SSX3_RENDER_SIZE`) or the classic
-/// fixed aspect (`SSX3_ASPECT`) is asked for.
+/// Native window: render at the window's pixel size (or the aspect box in
+/// it, `aspect_box`) and widen the view to its aspect, unless a fixed size
+/// (`SSX3_RENDER_SIZE`) is asked for.
 pub fn follows_window() -> bool {
-    render_size().is_none() && std::env::var_os("SSX3_ASPECT").is_none()
+    render_size().is_none()
+}
+
+/// `SSX3_ASPECT=4:3|16:9`: the image keeps that aspect inside the window
+/// (letterboxed or pillarboxed) instead of filling it.
+pub fn aspect_box() -> Option<f32> {
+    match crate::settings::get("SSX3_ASPECT").as_deref() {
+        Some("4:3") => Some(4.0 / 3.0),
+        Some("16:9") => Some(16.0 / 9.0),
+        _ => None,
+    }
+}
+
+/// `SSX3_RESOLUTION=<percent>`: render at that fraction of the window's
+/// pixels (scaled up to fill it).
+pub fn resolution() -> f32 {
+    crate::settings::get("SSX3_RESOLUTION").and_then(|v| v.parse::<f32>().ok()).map_or(1.0, |p| (p / 100.0).clamp(0.25, 2.0))
 }
