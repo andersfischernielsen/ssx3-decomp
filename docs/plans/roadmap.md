@@ -165,19 +165,28 @@ interfaces, one subsystem at a time:
   timer interrupts.
 - Kernel/threads: guest threads → plain Rust concurrency (or a single loop)
   where the game's use allows.
+- VU0 microcode → hand-written Rust (owner decision, 2026-10-17). With the
+  native renderer only one translated program still runs, VU0's
+  (`generated/vu/vu_27649fa55223cbbf.rs`, 3.9 KB of microcode; entries 0xdb8,
+  0xef0 = the sphere visibility test `world.rs` drives, 0x570, plus the
+  `vcallmsr` calls). Bit-exact (PS2 float rules, Q/P, MAC/status/clip flags
+  the game reads), with differential unit tests against the translated
+  program. Then the VU1 microcode and the VU translator leave the game build
+  (less generated code, closer to a full decompilation).
 
 Done when: the game runs without the PS2 hardware models (they stay available
 for verification).
 
-## Optional: browser (WebAssembly) ⬜
+## Optional: browser (WebAssembly) 🟡
 
-Not a goal now. wgpu targets WebGPU; winit/gilrs/cpal support the web.
-Blockers: host-thread runtime (use the single-threaded `--unwind` mode, as
-ps2-web-recomp does), synchronous GPU readbacks (WebGPU is async-only; extend
-latent readback / CPU fallback), wasm size and speed, NEON → simd128 or scalar,
-user-supplied ISO and browser-storage memory card. Phase 3 removes most of
-these. Cheap insurance meanwhile: keep `--unwind` mode working and avoid new
-blocking GPU readbacks.
+Branch `wasm`, `crates/ssx3-web` (README there). It plays: the unwind form of
+the EE code in a Web Worker, the disc image read with `FileReaderSync`,
+ssx3-gfx drawing with WebGPU into an `OffscreenCanvas`, keyboard input.
+Menus run at 60 fps; races are slower (about 22 game frames per second in
+headless Chrome). To do: race speed (profile the wasm), a browser-storage
+memory card, sound (Web Audio), gamepads, the settings overlay. Keep the
+unwind form working (`ssx3-headless` with `--features ee-unwind` checks it
+natively) and avoid new blocking GPU readbacks.
 
 ## Final task (required before the project is called done) ⬜
 
