@@ -403,7 +403,7 @@ impl Mtgs {
         if sh.done.load(Ordering::Acquire) >= target {
             return;
         }
-        let t0 = std::time::Instant::now();
+        let t0 = web_time::Instant::now();
         stats.waits += 1;
         for _ in 0..4000 {
             if sh.done.load(Ordering::Acquire) >= target {

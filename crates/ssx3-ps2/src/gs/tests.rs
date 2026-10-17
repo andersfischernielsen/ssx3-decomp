@@ -827,7 +827,7 @@ fn perf_fullscreen() {
             (0x42, 0 | 1 << 2 | 0 << 4 | 1 << 6),
         ],
     );
-    let t = std::time::Instant::now();
+    let t = web_time::Instant::now();
     for _ in 0..10 {
         ad(
             &mut gs,

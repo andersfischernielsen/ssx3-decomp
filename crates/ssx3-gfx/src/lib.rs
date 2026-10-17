@@ -167,7 +167,7 @@ pub struct Shared {
     depth: Mutex<Option<(u32, u32, Vec<u32>)>>,
     /// The latest frame's images (in-between ones first) and when they
     /// were ready.
-    present: Mutex<Option<(Vec<wgpu::Texture>, std::time::Instant)>>,
+    present: Mutex<Option<(Vec<wgpu::Texture>, web_time::Instant)>>,
     /// The frame thread's building time (ms) and frames.
     build_ms: Mutex<(f64, u64)>,
 }
@@ -655,7 +655,7 @@ impl Inner {
     /// N-1, see `interp`), each from the state frame N starts from, then
     /// the frame's own (exactly as without interpolation).
     pub fn render(&mut self, built: &Built, mem: &(dyn Mem + Sync)) {
-        let t_frame = std::time::Instant::now();
+        let t_frame = web_time::Instant::now();
         let cur = (self.subframes > 1).then(|| records(built));
         let k = if cur.is_some() && self.prev_records.is_some() { self.subframes as usize } else { 1 };
         self.nslots = k;
@@ -674,7 +674,7 @@ impl Inner {
             self.gs.verts.clear();
             self.gs.batches.clear();
             self.stats.frames += 1;
-            let t_start = std::time::Instant::now();
+            let t_start = web_time::Instant::now();
             let mut fin = self.take_build();
             let mut mids: Vec<Build> = subs
                 .into_iter()
@@ -710,7 +710,7 @@ impl Inner {
             self.render_one(built, mem);
         }
         if !self.present.is_empty() {
-            *self.shared.present.lock().unwrap() = Some((self.present.clone(), std::time::Instant::now()));
+            *self.shared.present.lock().unwrap() = Some((self.present.clone(), web_time::Instant::now()));
         }
         self.prev_records = cur;
         // Interpolation must keep up with the game: after a second of
@@ -796,7 +796,7 @@ impl Inner {
         if self.slot.is_none() {
             self.stats.frames += 1;
         }
-        let t_start = std::time::Instant::now();
+        let t_start = web_time::Instant::now();
         let mut b = self.take_build();
         Build::run(&mut b, built, mem);
         self.put_build(b);
@@ -806,7 +806,7 @@ impl Inner {
 
     /// Draw the geometry built last (`Build::run`).
     fn draw_built(&mut self, mem: &dyn Mem) {
-        let t_built = std::time::Instant::now();
+        let t_built = web_time::Instant::now();
         self.timing.0 += 1;
         let p0 = (self.gs.prims, self.gs.dropped, self.gs.unknown_tex);
         let (w, h) = self.gs.size;
@@ -1002,7 +1002,7 @@ impl Inner {
         if items.is_empty() {
             return;
         }
-        let t_prepared = std::time::Instant::now();
+        let t_prepared = web_time::Instant::now();
         self.timing.1[1] += (t_prepared - t_built).as_secs_f64() * 1e3;
         let ubuf = grow_buffer(&self.dev, &mut self.ubuf, ubytes.len() as u64, wgpu::BufferUsages::UNIFORM, "ssx3-gfx uniforms");
         self.queue.write_buffer(&ubuf, 0, &ubytes);
@@ -1208,7 +1208,7 @@ impl Inner {
             buf
         });
         let sub_idx = self.queue.submit(std::iter::once(enc.finish()));
-        let t_sub = std::time::Instant::now();
+        let t_sub = web_time::Instant::now();
         self.timing.1[2] += (t_sub - t_prepared).as_secs_f64() * 1e3;
         if let Some(buf) = depth_buf {
             // The previous frame's depth (its readback has had a frame to

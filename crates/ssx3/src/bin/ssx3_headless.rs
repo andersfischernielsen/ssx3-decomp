@@ -5,6 +5,12 @@
 //! cargo run --profile game -p ssx3 --bin ssx3-headless -- 600 --shot-every 60
 //! ```
 
+// The generated EE code in the chosen form (features `ee-threads` / `ee-unwind`).
+#[cfg(feature = "ee-unwind")]
+extern crate ssx3_ee_unwind as ssx3_ee;
+#[cfg(all(feature = "ee-threads", not(feature = "ee-unwind")))]
+extern crate ssx3_ee_threads as ssx3_ee;
+
 use std::time::Instant;
 
 #[allow(dead_code)]

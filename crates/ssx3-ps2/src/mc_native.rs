@@ -130,8 +130,8 @@ fn bcd_free_secs() -> u64 {
     if let Some(v) = std::env::var("SSX3_RTC").ok().and_then(|v| v.parse().ok()) {
         v
     } else if std::env::var_os("SSX3_REAL_CLOCK").is_some() {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
+        web_time::SystemTime::now()
+            .duration_since(web_time::UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0)
     } else {

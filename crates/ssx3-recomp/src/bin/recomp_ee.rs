@@ -38,6 +38,11 @@ fn main() {
     // on host threads.
     let mut threads = true;
     let mut structured = true;
+    // `--out DIR --package-prefix NAME`: a second copy of the generated code
+    // (e.g. the unwind form for the WebAssembly build, generated/ee-unwind,
+    // packages ssx3-ee-unwind[-sNN]) next to the default one.
+    let mut out: Option<PathBuf> = None;
+    let mut prefix = String::from("ssx3-ee");
     let args: Vec<String> = std::env::args().collect();
     let mut i = 1;
     while i < args.len() {
@@ -50,6 +55,12 @@ fn main() {
         } else if args[i] == "--structured" {
             threads = true;
             structured = true;
+        } else if args[i] == "--out" {
+            out = Some(PathBuf::from(&args[i + 1]));
+            i += 1;
+        } else if args[i] == "--package-prefix" {
+            prefix = args[i + 1].clone();
+            i += 1;
         } else if args[i] == "--shards" {
             shards = args[i + 1].parse().expect("--shards N");
             i += 1;
@@ -245,7 +256,11 @@ fn main() {
     for a in &overrides {
         assert!(funcs.iter().any(|f| f.start == *a), "override {a:#x}: no function starts there");
     }
-    let out_root = root.join("generated/ee");
+    let out_root = match &out {
+        Some(o) if o.is_absolute() => o.clone(),
+        Some(o) => root.join(o),
+        None => root.join("generated/ee"),
+    };
     // Keep existing shard crates (files are only rewritten when their
     // contents change, so unchanged shards are not recompiled); drop shard
     // directories beyond the current count.
@@ -267,7 +282,8 @@ fn main() {
         write_if_changed(
             dir.join("Cargo.toml"),
             format!(
-                "[package]\nname = \"ssx3-ee-s{s:02}\"\nversion = \"0.1.0\"\nedition = \"2021\"\npublish = false\n\n[lib]\npath = \"src/lib.rs\"\n\n[dependencies]\nssx3-ee-rt = {{ path = \"../../../crates/ssx3-ee-rt\" }}\n"
+                "[package]\nname = \"{prefix}-s{s:02}\"\nversion = \"0.1.0\"\nedition = \"2021\"\npublish = false\n\n[lib]\n{}path = \"src/lib.rs\"\n\n[dependencies]\nssx3-ee-rt = {{ path = \"../../../crates/ssx3-ee-rt\" }}\n",
+                if prefix == "ssx3-ee" { String::new() } else { format!("name = \"ssx3_ee_s{s:02}\"\n") }
             ),
         )
         .unwrap();
@@ -309,9 +325,12 @@ fn main() {
                 // Functions entered mid-way from outside (resume points,
                 // computed jumps) keep those entries in the generated
                 // `__entries` twin; only entries at the start reach the slot.
+                // (The structured form keeps such entries in an `__entries`
+                // twin; the unwind form's body dispatches on `c.pc` itself.)
+                let twin = if structured { format!("{name}__entries") } else { format!("{name}__generated") };
                 let mid = if external.range(f.start + 1..f.end).next().is_some() {
                     format!(
-                        "    // Entries other than the start run the generated code.\n    if c.pc != {:#010x} {{\n        return {name}__entries(c);\n    }}\n",
+                        "    // Entries other than the start run the generated code.\n    if c.pc != {:#010x} {{\n        return {twin}(c);\n    }}\n",
                         f.start
                     )
                 } else {
@@ -337,11 +356,17 @@ fn main() {
     // Game crate: dependencies + sorted function table.
     let game = out_root.join("game");
     fs::create_dir_all(game.join("src")).unwrap();
-    let mut toml = String::from(
-        "[package]\nname = \"ssx3-ee\"\nversion = \"0.1.0\"\nedition = \"2021\"\npublish = false\n\n[dependencies]\nssx3-ee-rt = { path = \"../../../crates/ssx3-ee-rt\" }\n",
+    let renamed = prefix != "ssx3-ee";
+    let mut toml = format!(
+        "[package]\nname = \"{prefix}\"\nversion = \"0.1.0\"\nedition = \"2021\"\npublish = false\n\n{}[dependencies]\nssx3-ee-rt = {{ path = \"../../../crates/ssx3-ee-rt\" }}\n",
+        if renamed { "[lib]\nname = \"ssx3_ee\"\n\n" } else { "" }
     );
     for s in 0..shards {
-        let _ = writeln!(toml, "ssx3-ee-s{s:02} = {{ path = \"../s{s:02}\" }}");
+        if renamed {
+            let _ = writeln!(toml, "ssx3-ee-s{s:02} = {{ path = \"../s{s:02}\", package = \"{prefix}-s{s:02}\" }}");
+        } else {
+            let _ = writeln!(toml, "ssx3-ee-s{s:02} = {{ path = \"../s{s:02}\" }}");
+        }
     }
     write_if_changed(game.join("Cargo.toml"), toml).unwrap();
     let mut lib = String::from(
@@ -389,6 +414,9 @@ fn main() {
     println!("rust bytes   : {bytes}");
 
     // The IOP sound modules (recomp-iop) are part of the same build.
+    if out.is_some() {
+        return;
+    }
     let iso = std::env::var("SSX3_ISO").map(PathBuf::from).unwrap_or_else(|_| root.join("SSX 3 (USA).iso"));
     match ssx3_recomp::iopgen::generate_from_disc(&iso, &root.join("generated/iop/modules")) {
         Ok(o) => println!("iop          : {} functions, {} instructions -> generated/iop/modules", o.functions, o.instructions),

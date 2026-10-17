@@ -11,6 +11,12 @@
 //! ([`call`]), event checks in loops ([`events`]), and the same EE cycle cost, so that runs stay
 //! byte-identical. [`install`] puts them into the generated crates' slots.
 
+// The generated EE code in the chosen form (features `ee-threads` / `ee-unwind`).
+#[cfg(feature = "ee-unwind")]
+extern crate ssx3_ee_unwind as ssx3_ee;
+#[cfg(all(feature = "ee-threads", not(feature = "ee-unwind")))]
+extern crate ssx3_ee_threads as ssx3_ee;
+
 use ssx3_ee_rt::funcs::GuestFn;
 
 pub mod abi;

@@ -11,5 +11,7 @@ ssx3-render = { path = "../ssx3-render" }
 # and the shared wgpu device.
 ssx3-ps2 = { path = "../ssx3-ps2" }
 wgpu = "30.0.1"
+# std::time on native; performance.now() in the browser.
+web-time = "1"
 # Texture packs (dump and replacement images).
 png = "0.18.1"

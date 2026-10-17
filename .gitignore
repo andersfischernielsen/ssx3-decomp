@@ -32,10 +32,14 @@
 /generated/ghidra_disasm/
 # Recompiled EE code (reproduce with: cargo run --release -p ssx3-recomp --bin recomp-ee)
 /generated/ee/
+# Its unwind form for the WebAssembly build (recomp-ee --unwind --out generated/ee-unwind --package-prefix ssx3-ee-unwind)
+/generated/ee-unwind/
 # Recompiled IOP modules (reproduce with: cargo run --release -p ssx3-recomp --bin recomp-iop)
 /generated/iop/
 # Memory card images written by the game (SSX3_MEMCARD)
 /saves/
 /target-prof
+/target-unwind
+/target-web
 # Texture packs: dumped game textures and replacements (SSX3_TEX_DUMP, textures/replace)
 /textures/

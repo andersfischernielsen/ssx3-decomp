@@ -1776,7 +1776,7 @@ impl GpuGs {
             // Wait for the previous frame's copy rather than skipping it:
             // what the game reads must not depend on GPU timing (determinism).
             // Only that submission: not the drawing queued since.
-            let t0 = std::time::Instant::now();
+            let t0 = web_time::Instant::now();
             let idx = loop {
                 if let Some(i) = self.latent.idx.lock().unwrap().clone() {
                     break i;
@@ -1818,9 +1818,9 @@ impl GpuGs {
 
     /// Map `staging[..bytes]`, hand it to `f`, unmap.
     fn read_staging(&mut self, bytes: u64, f: impl FnOnce(&[u8])) {
-        let t0 = std::time::Instant::now();
+        let t0 = web_time::Instant::now();
         self.drain_submits();
-        let t1 = std::time::Instant::now();
+        let t1 = web_time::Instant::now();
         let slice = self.staging.slice(0..bytes);
         slice.map_async(wgpu::MapMode::Read, |r| {
             if let Err(e) = r {
