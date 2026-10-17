@@ -371,7 +371,9 @@ pub fn samp_key(st: &DrawState) -> SampKey {
     SampKey { linear: (c.tex1 >> 5) & 1 != 0, wrap_s: c.clamp & 3 == 0, wrap_t: (c.clamp >> 2) & 3 == 0 }
 }
 
-pub fn sampler(dev: &wgpu::Device, k: SampKey) -> wgpu::Sampler {
+/// `aniso`: the anisotropic filtering level (1 = off, up to 16) for linear
+/// samplers.
+pub fn sampler(dev: &wgpu::Device, k: SampKey, aniso: u16) -> wgpu::Sampler {
     let mode = |w: bool| if w { wgpu::AddressMode::Repeat } else { wgpu::AddressMode::ClampToEdge };
     let f = if k.linear { wgpu::FilterMode::Linear } else { wgpu::FilterMode::Nearest };
     dev.create_sampler(&wgpu::SamplerDescriptor {
@@ -383,7 +385,7 @@ pub fn sampler(dev: &wgpu::Device, k: SampKey) -> wgpu::Sampler {
         // (Only replacement textures have mip levels; anisotropic filtering
         // keeps their detail on surfaces seen at a glancing angle.)
         mipmap_filter: if k.linear { wgpu::MipmapFilterMode::Linear } else { wgpu::MipmapFilterMode::Nearest },
-        anisotropy_clamp: if k.linear { 16 } else { 1 },
+        anisotropy_clamp: if k.linear { aniso.clamp(1, 16) } else { 1 },
         ..Default::default()
     })
 }

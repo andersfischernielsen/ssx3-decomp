@@ -134,6 +134,7 @@ pub fn install_renderer(c: &mut Cpu) -> Option<ssx3_gfx::Renderer> {
     };
     let r = ssx3_gfx::Renderer::new(ctx.device.clone(), ctx.queue.clone());
     r.set_want_depth(native);
+    r.set_anisotropy(anisotropy());
     // SSX3_RENDER_SIZE=WxH: render at that size, widened to its aspect.
     if let Some((w, h)) = render_size() {
         r.set_output_size(Some((w, h)));
@@ -310,6 +311,13 @@ pub fn aspect_box() -> Option<f32> {
         Some("16:9") => Some(16.0 / 9.0),
         _ => None,
     }
+}
+
+/// `SSX3_ANISO=1|2|4|8|16`: anisotropic filtering (16 by default; it
+/// sharpens textures with mipmaps, i.e. texture-pack replacements, seen at a
+/// glancing angle).
+pub fn anisotropy() -> u16 {
+    crate::settings::get("SSX3_ANISO").and_then(|v| v.parse::<u16>().ok()).map_or(16, |n| n.clamp(1, 16))
 }
 
 /// `SSX3_RESOLUTION=<percent>`: render at that fraction of the window's

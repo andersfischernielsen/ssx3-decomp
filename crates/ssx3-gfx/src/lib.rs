@@ -89,6 +89,9 @@ pub struct Inner {
     vu: Box<[u8; 16384]>,
     texcache: HashMap<tex::TexKey, CachedTex>,
     samplers: HashMap<draw::SampKey, wgpu::Sampler>,
+    /// Anisotropic filtering level for linear samplers (1 = off; affects
+    /// textures with mip levels: replacements).
+    aniso: u16,
     white: wgpu::TextureView,
     /// TexInfos that failed to decode (reported once).
     failed: std::collections::HashSet<u32>,
@@ -226,6 +229,7 @@ impl Renderer {
             vu: Box::new([0; 16384]),
             texcache: HashMap::new(),
             samplers: HashMap::new(),
+            aniso: 16,
             white,
             failed: Default::default(),
             stats: Stats::default(),
@@ -328,6 +332,13 @@ impl Renderer {
         let t = &ts[i];
         let view = t.create_view(&wgpu::TextureViewDescriptor { format: Some(wgpu::TextureFormat::Rgba8UnormSrgb), ..Default::default() });
         Some((view, t.width(), t.height()))
+    }
+
+    /// Anisotropic filtering: 1 (off) to 16 (the default).
+    pub fn set_anisotropy(&self, n: u16) {
+        let mut g = self.0.lock().unwrap();
+        g.aniso = n.clamp(1, 16);
+        g.samplers.clear();
     }
 
     /// Images per game frame: 1 (the default) shows the game's frames; `n`
@@ -1000,7 +1011,8 @@ impl Inner {
         let groups: Vec<wgpu::BindGroup> = binds
             .iter()
             .map(|(view, sk)| {
-                let samp = self.samplers.entry(*sk).or_insert_with(|| draw::sampler(&self.dev, *sk)).clone();
+                let aniso = self.aniso;
+                let samp = self.samplers.entry(*sk).or_insert_with(|| draw::sampler(&self.dev, *sk, aniso)).clone();
                 self.dev.create_bind_group(&wgpu::BindGroupDescriptor {
                     label: Some("ssx3-gfx batch"),
                     layout: &self.pipes.layout,

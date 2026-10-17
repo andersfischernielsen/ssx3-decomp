@@ -27,6 +27,7 @@ pub const ITEMS: &[Item] = &[
     Item { key: "SSX3_FOV", label: "Field of view", choices: &[("0.9", "-10%"), ("", "Standard"), ("1.1", "+10%"), ("1.2", "+20%"), ("1.3", "+30%"), ("1.4", "+40%"), ("1.5", "+50%")], live: true },
     Item { key: "SSX3_ASPECT", label: "Aspect ratio", choices: &[("", "Fill window"), ("16:9", "16:9"), ("4:3", "4:3 (original)")], live: true },
     Item { key: "SSX3_RESOLUTION", label: "Resolution", choices: &[("", "100%"), ("75", "75%"), ("50", "50%")], live: true },
+    Item { key: "SSX3_ANISO", label: "Anisotropic filter", choices: &[("1", "Off"), ("2", "2x"), ("4", "4x"), ("8", "8x"), ("", "16x")], live: true },
     Item { key: "SSX3_FULLSCREEN", label: "Fullscreen", choices: &[("", "Off"), ("1", "On")], live: true },
     Item { key: "SSX3_RENDER", label: "Renderer", choices: &[("", "Native (wgpu)"), ("emu", "Emulated GS")], live: false },
     Item { key: "SSX3_SND", label: "Sound", choices: &[("", "Native mixer"), ("iop", "Emulated IOP")], live: false },

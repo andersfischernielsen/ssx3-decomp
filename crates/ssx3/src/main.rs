@@ -468,6 +468,11 @@ impl App {
     fn apply_setting(&mut self, key: &str) {
         match key {
             "SSX3_FPS" => self.apply_rate(),
+            "SSX3_ANISO" => {
+                if let Some(g) = self.gfx.as_ref() {
+                    g.set_anisotropy(game::anisotropy());
+                }
+            }
             "SSX3_FULLSCREEN" => {
                 if let Some(w) = self.window.as_ref() {
                     let on = settings::get("SSX3_FULLSCREEN").is_some_and(|v| v != "0");
