@@ -174,6 +174,11 @@ through the native renderer too.
 | `SSX3_TEX_DUMP=1` | Write every texture the renderer decodes, once, as `textures/dump/<name>.png` (or `SSX3_TEX_DUMP=<dir>`). The name is a hash of what the texture decodes to, so it is the same in every run. |
 | `textures/replace/<name>.png` | Used instead of that texture, at any size (keep the aspect ratio: 256×128 → 1024×512), with mipmaps generated at load. `SSX3_TEX_REPLACE=<dir>` reads another folder, `0` turns replacements off. |
 
+`tools/upscale-textures.py` makes such a pack with AI upscaling (Real-ESRGAN with the
+UltraSharp model, 4×; `--setup` downloads them into `textures/.tools`): it keeps tiling
+textures seamless and upscales alpha separately. Replaced textures get mipmaps and
+anisotropic filtering.
+
 Alpha in the PNGs is the GS's doubled (255 = opaque). Render targets, the frame-feedback
 passes and movie frames are not textures and are not dumped. `textures/` is ignored by git
 (the dumps are game data).
