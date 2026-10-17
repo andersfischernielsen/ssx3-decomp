@@ -16,6 +16,8 @@ path = "src/bin/ssx3_headless.rs"
 [features]
 # Dynamic call graph of the EE code (SSX3_CALLPROF=<out>:<from>:<to>).
 callprof = ["ssx3-ee-rt/callprof"]
+# The translated VU1 microcode: the emulated GS path (SSX3_RENDER=emu/shadow).
+vu1-microcode = ["ssx3-ps2/vu1-microcode"]
 
 [dependencies]
 env_logger = "0.11.11"

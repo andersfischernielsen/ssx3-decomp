@@ -15,3 +15,13 @@ ssx3-snd = { path = "../ssx3-snd" }
 ssx3-render = { path = "../ssx3-render" }
 pollster = "1.0.1"
 wgpu = "30.0.1"
+
+[features]
+# The translated VU1 microcode, for the emulated GS path (SSX3_RENDER=emu or
+# shadow) and vu_diff; the game with the native renderer does not need it.
+vu1-microcode = ["ssx3-vu/microcode"]
+
+[[bin]]
+name = "vu_diff"
+path = "src/bin/vu_diff.rs"
+required-features = ["vu1-microcode"]

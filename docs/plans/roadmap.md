@@ -165,14 +165,16 @@ interfaces, one subsystem at a time:
   timer interrupts.
 - Kernel/threads: guest threads → plain Rust concurrency (or a single loop)
   where the game's use allows.
-- VU0 microcode → hand-written Rust (owner decision, 2026-10-17). With the
-  native renderer only one translated program still runs, VU0's
-  (`generated/vu/vu_27649fa55223cbbf.rs`, 3.9 KB of microcode; entries 0xdb8,
-  0xef0 = the sphere visibility test `world.rs` drives, 0x570, plus the
-  `vcallmsr` calls). Bit-exact (PS2 float rules, Q/P, MAC/status/clip flags
-  the game reads), with differential unit tests against the translated
-  program. Then the VU1 microcode and the VU translator leave the game build
-  (less generated code, closer to a full decompilation).
+- VU0 microcode → hand-written Rust ✅ (owner decision, 2026-10-17;
+  `crates/ssx3-vu/src/vu/vu0lib.rs`). With the native renderer the only
+  program that runs is VU0's visibility library (box/frustum clip tests,
+  sphere/plane groups, segment/triangle, matrix chains). It now runs as
+  readable Rust, equal to the translation in the full architectural state
+  and memory (random-state and captured-call differential tests; a 6000-frame
+  race ends with identical RAM, `SSX3_VU0_TRANSLATED=1` for such A/B runs).
+  The translated microcode (`generated/vu`) is no longer part of the game
+  build: feature `vu1-microcode` brings it back for the emulated GS path
+  (`SSX3_RENDER=emu/shadow`), `vu_diff` and the reference tests.
 
 Done when: the game runs without the PS2 hardware models (they stay available
 for verification).
