@@ -167,6 +167,17 @@ through the native renderer too.
 | `SSX3_RENDER_SCALE=2` (up to 8) | N× internal resolution (native renderer; with `SSX3_RENDER=emu SSX3_RENDER_NATIVE=all`, the emulated GS's). |
 | `SSX3_RENDER=shadow` | Both: the native renderer draws next to the emulated GS, which is shown (headless writes `frameNNNNN-gfx.png` too). |
 
+**Texture packs.** Textures can be dumped and replaced, e.g. with upscaled versions:
+
+| Variable / folder | Effect |
+| --- | --- |
+| `SSX3_TEX_DUMP=1` | Write every texture the renderer decodes, once, as `textures/dump/<name>.png` (or `SSX3_TEX_DUMP=<dir>`). The name is a hash of what the texture decodes to, so it is the same in every run. |
+| `textures/replace/<name>.png` | Used instead of that texture, at any size (keep the aspect ratio: 256×128 → 1024×512), with mipmaps generated at load. `SSX3_TEX_REPLACE=<dir>` reads another folder, `0` turns replacements off. |
+
+Alpha in the PNGs is the GS's doubled (255 = opaque). Render targets, the frame-feedback
+passes and movie frames are not textures and are not dumped. `textures/` is ignored by git
+(the dumps are game data).
+
 **Native host implementations (phase 3).** On by default; each has a switch back to the
 emulated PS2 path for comparison:
 

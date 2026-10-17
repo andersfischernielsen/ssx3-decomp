@@ -380,6 +380,8 @@ pub fn sampler(dev: &wgpu::Device, k: SampKey) -> wgpu::Sampler {
         address_mode_v: mode(k.wrap_t),
         mag_filter: f,
         min_filter: f,
+        // (Only replacement textures have mip levels.)
+        mipmap_filter: if k.linear { wgpu::MipmapFilterMode::Linear } else { wgpu::MipmapFilterMode::Nearest },
         ..Default::default()
     })
 }

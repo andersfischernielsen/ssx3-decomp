@@ -37,3 +37,5 @@
 # Memory card images written by the game (SSX3_MEMCARD)
 /saves/
 /target-prof
+# Texture packs: dumped game textures and replacements (SSX3_TEX_DUMP, textures/replace)
+/textures/

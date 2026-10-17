@@ -23,6 +23,7 @@ pub mod debug;
 mod draw;
 pub mod gs;
 pub mod interp;
+pub mod pack;
 pub mod tex;
 
 use std::collections::HashMap;
@@ -92,6 +93,8 @@ pub struct Inner {
     /// TexInfos that failed to decode (reported once).
     failed: std::collections::HashSet<u32>,
     pub stats: Stats,
+    /// Texture dumps and replacements (`pack`).
+    pack: pack::Pack,
     /// The display buffer, when the game blends frames into it.
     display_fbp: Option<u32>,
     /// Internal resolution: GPU targets are this many times the GS's.
@@ -226,6 +229,7 @@ impl Renderer {
             white,
             failed: Default::default(),
             stats: Stats::default(),
+            pack: pack::Pack::from_env(),
             display_fbp: None,
             scale: 1,
             out_size: None,
@@ -511,23 +515,36 @@ impl Inner {
             }
             return None;
         };
+        // Texture packs: dump it, or use its replacement (with mipmaps).
+        self.pack.dump(&key, &d);
+        let replaced = self.pack.load(&key);
+        if let Some(r) = &replaced {
+            let (a, b) = (r[0].width as f32 / r[0].height as f32, d.width as f32 / d.height as f32);
+            if (a / b - 1.0).abs() > 0.01 {
+                eprintln!("[gfx] replacement {} is {}x{}, the texture {}x{}: aspect ratio differs", pack::name(&key), r[0].width, r[0].height, d.width, d.height);
+            }
+        }
+        let levels: &[tex::Decoded] = replaced.as_deref().unwrap_or(std::slice::from_ref(&d));
         let t = self.dev.create_texture(&wgpu::TextureDescriptor {
             label: Some("ssx3-gfx tex"),
-            size: wgpu::Extent3d { width: d.width, height: d.height, depth_or_array_layers: 1 },
-            mip_level_count: 1,
+            size: wgpu::Extent3d { width: levels[0].width, height: levels[0].height, depth_or_array_layers: 1 },
+            mip_level_count: levels.len() as u32,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8Unorm,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
+        for (lv, l) in levels.iter().enumerate() {
+            let bytes: Vec<u8> = l.rgba.iter().flat_map(|v| v.to_le_bytes()).collect();
+            self.queue.write_texture(
+                wgpu::TexelCopyTextureInfo { texture: &t, mip_level: lv as u32, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+                &bytes,
+                wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(l.width * 4), rows_per_image: Some(l.height) },
+                wgpu::Extent3d { width: l.width, height: l.height, depth_or_array_layers: 1 },
+            );
+        }
         let bytes: Vec<u8> = d.rgba.iter().flat_map(|v| v.to_le_bytes()).collect();
-        self.queue.write_texture(
-            wgpu::TexelCopyTextureInfo { texture: &t, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
-            &bytes,
-            wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(d.width * 4), rows_per_image: Some(d.height) },
-            wgpu::Extent3d { width: d.width, height: d.height, depth_or_array_layers: 1 },
-        );
         self.stats.textures += 1;
         // Debug: SSX3_GFX_TEXDUMP=dir writes each decoded texture as raw RGBA.
         if let Some(dir) = &debug::get().texdump {
@@ -543,7 +560,7 @@ impl Inner {
             let _ = std::fs::write(name, &bytes);
         }
         let view = t.create_view(&Default::default());
-        let amax = d.rgba.iter().map(|p| (p >> 24) as u8).max().unwrap_or(0);
+        let amax = levels[0].rgba.iter().map(|p| (p >> 24) as u8).max().unwrap_or(0);
         self.texcache.insert(key, CachedTex { view: view.clone(), used: frame, amax });
         Some((view, amax))
     }
