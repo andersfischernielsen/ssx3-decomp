@@ -56,7 +56,17 @@ interpolation and texture packs.
     in parallel on the helpers.
 
 Next steps, roughly by payoff:
-- split that chunk (find out which VU state crosses those draws);
+- split that chunk. Measured, by running each call from the true memory and
+  from the inputs-only image a split would start from:
+  - the rider program's drawing calls all read the bone matrices its setup
+    call computes;
+  - the world-mesh program's second pass (0x22c8) reads the first pass's
+    output, which is fine since both are in one draw;
+  - but 1.6% of its first passes (0x2270) also read state an earlier call
+    wrote (probably the fan tag toggle at qw33.w).
+
+  So the world-mesh runs could be split if that state is identified and
+  seeded at each split;
 - run the game and the renderer in different workers;
 - a wasm-SIMD version of the PS2 float helpers (the NEON path needs
   per-lane shifts and count-leading-zeros, which wasm SIMD lacks).
