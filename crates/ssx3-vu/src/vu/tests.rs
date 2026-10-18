@@ -702,6 +702,7 @@ fn snapshot(vu: &Vu) -> String {
     )
 }
 
+#[cfg(feature = "microcode")]
 #[test]
 fn oracle_translated_matches_reference_on_vutext() {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../orig/SLUS_207.72");

@@ -26,6 +26,7 @@ use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
+use ssx3_vu::vu::vu0lib;
 
 /// Replacements in this package: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -54,6 +55,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x002c_1cd8, quad_tree_find_leaf, "QuadTree_FindLeaf"),
     (0x002d_1928, noise_fractal_1d, "Noise_Fractal1D"),
     (0x0022_a5a0, nash_collect_instances, "Nash_CollectInstances"),
+    (0x0022_a830, nash_cull_node, "Nash_CullNode"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -844,6 +846,377 @@ pub fn noise_fractal_1d(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     })
+}
+
+/// `Nash_CullNode(ctx, node, cell)` (0x22a830): the octree cull. `ctx`:
+/// world +0, occluder list +4 (count +0x10c, entries +8 every 8 bytes:
+/// five planes at +0x50), occluder mask +8, "inside the view" flag +0xc.
+/// `cell`: level +0, x, y, z +4..; the node spans (x, y, z) · 2^level ..
+/// +1 · 2^level, extended by the margins at 0x442130 / 0x442140. `node`:
+/// eight children (index bits x 4, y 2, z 1).
+///
+/// A node not yet known to be inside is boxed against the view (VU0 0x570
+/// on values, [`vu0lib::box_clip_typed`]): outside culls it, crossing
+/// marks it partial. Its bounding sphere (radius `2^level` times a
+/// constant) is then tested against every occluder still in the mask
+/// (0x948, [`vu0lib::sphere_against_planes_typed`]): inside one culls it,
+/// clear of one drops that occluder for the subtree. Visible nodes go to
+/// the world's list +0x98 (count +0x94), partial ones to +0x109c (count
+/// +0x1098), each with its mask; children are visited down to level 11
+/// (children of a visible node skip the view test).
+///
+/// Everything the microprograms leave in VF/ACC/VI is written back, as the
+/// original's VCALLMS leaves it.
+pub fn nash_cull_node(c: &mut Cpu) {
+    guest(c, cull_node);
+}
+
+/// The occluder loop's head (event check at its back edge).
+const OCCLUDER_HEAD: u32 = 0x0022_aa10;
+
+fn cull_node(c: &mut Cpu) -> Flow {
+    const CULL_NODE: Callee = Callee { addr: 0x0022_a830, f: ee::s05::Nash_CullNode };
+    c.cycles += 10;
+    c.g[SP][0] = sx(r32(c, SP).wrapping_sub(0x70));
+    c.g[T1][0] = c.g[A0][0];
+    c.sq(S0, at(c, SP, 0x60));
+    c.g[T0][0] = c.g[A2][0];
+    c.sd(at(c, SP, 0x50), c.g[RA][0]);
+    c.g[S0][0] = c.g[A1][0];
+    c.g[V1][0] = lw(c, at(c, T1, 8)); // occluder mask
+    c.g[V0][0] = lw(c, at(c, T1, 0xc)); // inside the view
+    c.sw(at(c, SP, 0x40), c.g[V1][0]);
+    // t4: 0 visible, 1 culled, 2 partial.
+    if c.g[V0][0] != 0 {
+        c.cycles += 2;
+        c.g[T4][0] = 0;
+        if c.g[V1][0] != 0 {
+            c.cycles += 27;
+            node_sphere(c, 0x51ec);
+        }
+    } else {
+        c.cycles += 30;
+        view_box_test(c);
+        c.g[V0][0] = lw(c, at(c, SP, 0x40));
+        if c.g[V0][0] != 0 {
+            c.cycles += 26;
+            node_sphere(c, 0x51e8);
+        }
+        c.cycles += 5;
+        c.cfc2(V1, 1);
+        c.cfc2(V0, 2);
+        c.g[T4][0] = if c.g[V0][0] != 0 {
+            1
+        } else if {
+            c.cycles += 2;
+            c.g[V1][0] != 0
+        } {
+            2
+        } else {
+            c.cycles += 1;
+            0
+        };
+    }
+    c.cycles += 3;
+    let culled = c.g[T4][0] == 1;
+    c.g[V0][0] = c.g[T4][0] ^ 1;
+    c.g[V0][0] = lw(c, at(c, SP, 0x40));
+    if culled {
+        return Ok(epilogue(c, 1));
+    }
+    c.cycles += 2;
+    c.g[T3][0] = 1;
+    if c.g[V0][0] != 0 && !occluders(c) {
+        c.cycles += 2;
+        return Ok(epilogue(c, 0));
+    }
+    if c.g[V0][0] != 0 {
+        c.cycles += 2;
+    }
+    // The node's list and its children.
+    c.cycles += 2;
+    c.g[V0][0] = 2;
+    let (count, list, inside, cycles, rets): (u32, u32, u64, u64, [u32; 8]) = if c.g[T4][0] == 0 {
+        (0x94, 0x98, 1, 26, [0x22ab50, 0x22ab70, 0x22ab90, 0x22abb0, 0x22abd0, 0x22abf0, 0x22ac10, 0x22ac30])
+    } else {
+        c.cycles += 2;
+        if c.g[T4][0] != c.g[V0][0] {
+            return Ok(epilogue(c, 0));
+        }
+        (0x1098, 0x109c, 0, 25, [0x22ace8, 0x22ad08, 0x22ad28, 0x22ad48, 0x22ad68, 0x22ad88, 0x22ada8, 0x22adc8])
+    };
+    c.cycles += cycles;
+    append(c, count, list, inside);
+    if c.g[A1][0] == c.g[if inside == 1 { A3 } else { A2 }][0] {
+        // Level 11: no children.
+        return Ok(epilogue(c, 1));
+    }
+    children(c, CULL_NODE, rets, inside == 1)
+}
+
+/// Append the node (s0) and the mask to the list at world + `list` (count
+/// at + `count`), and set up the children's context at sp+0x20 (world,
+/// occluders, mask, `inside`). Leaves the level in a1 for the level-11
+/// test (against a3 = 11 on the visible path, a2 on the partial one).
+fn append(c: &mut Cpu, count: u32, list: u32, inside: u64) {
+    let (base, idx_reg, lim_reg) = if inside == 1 { (A0, V1, A3) } else { (V1, A0, A2) };
+    if inside == 1 {
+        c.g[A0][0] = lw(c, r32(c, T1));
+        c.g[A2][0] = 1;
+        c.g[A3][0] = 0xb;
+    } else {
+        c.g[V1][0] = lw(c, r32(c, T1));
+        c.g[A2][0] = 0xb;
+    }
+    // world->list[n].node = node
+    c.g[V0][0] = lw(c, at(c, base, count));
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 3);
+    c.g[base][0] = sx(r32(c, base).wrapping_add(r32(c, V0)));
+    c.sw(at(c, base, list), c.g[S0][0]);
+    // world->list[n].mask = mask
+    c.g[idx_reg][0] = lw(c, r32(c, T1));
+    c.g[A1][0] = lw(c, at(c, SP, 0x40));
+    c.g[V0][0] = lw(c, at(c, idx_reg, count));
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 3);
+    c.g[idx_reg][0] = sx(r32(c, idx_reg).wrapping_add(r32(c, V0)));
+    c.sw(at(c, idx_reg, list + 4), c.g[A1][0]);
+    // n++
+    c.g[base][0] = lw(c, r32(c, T1));
+    c.g[V0][0] = lw(c, at(c, base, count));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+    c.sw(at(c, base, count), c.g[V0][0]);
+    // The children's context.
+    let _ = lim_reg;
+    if inside == 1 {
+        c.sw(at(c, SP, 0x2c), c.g[A2][0]);
+    } else {
+        c.sw(at(c, SP, 0x2c), 0);
+    }
+    c.g[V1][0] = lw(c, at(c, SP, 0x40));
+    c.g[A0][0] = lw(c, at(c, T1, 4));
+    c.g[V0][0] = lw(c, r32(c, T1));
+    c.g[A1][0] = lw(c, r32(c, T0));
+    c.sw(at(c, SP, 0x20), c.g[V0][0]);
+    c.sw(at(c, SP, 0x24), c.g[A0][0]);
+    c.sw(at(c, SP, 0x28), c.g[V1][0]);
+}
+
+/// Visit the eight children: cell (level - 1, 2x, 2y, 2z) at sp+0x30,
+/// stepped in a Gray-code order (children 0, 4, 6, 2, 3, 7, 5, 1); a null
+/// child is skipped. `rets`: the return addresses of the eight calls.
+fn children(c: &mut Cpu, callee: Callee, rets: [u32; 8], visible: bool) -> Flow {
+    c.cycles += 13;
+    c.g[A0][0] = lw(c, at(c, T0, 0xc));
+    c.g[A1][0] = sx(r32(c, A1).wrapping_sub(1));
+    c.g[V0][0] = lw(c, at(c, T0, 4));
+    c.g[V1][0] = lw(c, at(c, T0, 8));
+    c.g[A0][0] = sx(r32(c, A0) << 1);
+    c.g[A2][0] = lw(c, r32(c, S0));
+    c.g[V0][0] = sx(r32(c, V0) << 1);
+    c.g[V1][0] = sx(r32(c, V1) << 1);
+    c.sw(at(c, SP, 0x30), c.g[A1][0]);
+    c.sw(at(c, SP, 0x34), c.g[V0][0]);
+    c.sw(at(c, SP, 0x38), c.g[V1][0]);
+    c.sw(at(c, SP, 0x3c), c.g[A0][0]);
+    if c.g[A2][0] != 0 {
+        c.cycles += 4;
+        c.g[A1][0] = c.g[A2][0];
+        c.g[A0][0] = sx(at(c, SP, 0x20));
+        c.g[A2][0] = sx(at(c, SP, 0x30));
+        callee.call(c, rets[0])?;
+    }
+    // (cell word stepped, by, child slot)
+    const STEPS: [(u32, i32, u32); 7] =
+        [(0x34, 1, 0x10), (0x38, 1, 0x18), (0x34, -1, 0x08), (0x3c, 1, 0x0c), (0x34, 1, 0x1c), (0x38, -1, 0x14), (0x34, -1, 0x04)];
+    for (k, &(word, by, slot)) in STEPS.iter().enumerate() {
+        let last = k == 6;
+        c.cycles += 5;
+        c.g[V0][0] = lw(c, at(c, SP, word));
+        c.g[A1][0] = lw(c, at(c, S0, slot));
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(by as u32));
+        c.sw(at(c, SP, word), c.g[V0][0]);
+        if c.g[A1][0] == 0 {
+            if last {
+                return Ok(epilogue(c, 1));
+            }
+            continue;
+        }
+        c.cycles += if last && visible { 5 } else { 3 };
+        c.g[A0][0] = sx(at(c, SP, 0x20));
+        c.g[A2][0] = sx(at(c, SP, 0x30));
+        callee.call(c, rets[k + 1])?;
+    }
+    // After the last call: the visible path returns straight away, the
+    // partial one through 0x22adc8.
+    Ok(epilogue(c, if visible { 0 } else { 1 }))
+}
+
+/// Restore s0 and return; `extra` cycles first (1 through 0x22adc8).
+fn epilogue(c: &mut Cpu, extra: u64) {
+    c.cycles += extra;
+    c.lq(S0, at(c, SP, 0x60));
+    c.cycles += 3;
+    c.g[RA][0] = c.ld(at(c, SP, 0x50));
+    c.g[SP][0] = sx(r32(c, SP).wrapping_add(0x70));
+    ret(c);
+}
+
+/// The node's bounding sphere at sp+0x10 (via sp+0x20 and v0): centre
+/// ((x, y, z) + 0.5) · 2^level, radius 2^level times the constant at
+/// gp - `k`.
+fn node_sphere(c: &mut Cpu, k: u32) {
+    c.lwc1(4, at(c, T0, 4));
+    c.cvt_s_w(4, 4);
+    c.g[V0][0] = lw(c, r32(c, T0));
+    c.lwc1(5, at(c, T0, 8));
+    c.cvt_s_w(5, 5);
+    c.g[AT][0] = 0x3f00_0000;
+    c.mtc1(AT, 2);
+    c.lwc1(1, at(c, T0, 0xc));
+    c.cvt_s_w(1, 1);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x7f));
+    c.g[V0][0] = sx(r32(c, V0) << 23);
+    c.add_s(4, 4, 2);
+    c.add_s(5, 5, 2);
+    c.lwc1(3, r32(c, GP).wrapping_sub(k));
+    c.add_s(1, 1, 2);
+    c.mtc1(V0, 0);
+    c.mul_s(3, 0, 3);
+    c.mul_s(4, 4, 0);
+    c.mul_s(1, 1, 0);
+    c.mul_s(5, 5, 0);
+    c.swc1(3, at(c, SP, 0x2c));
+    c.swc1(4, at(c, SP, 0x20));
+    c.swc1(1, at(c, SP, 0x28));
+    c.swc1(5, at(c, SP, 0x24));
+    c.lq(V0, at(c, SP, 0x20));
+    c.sq(V0, at(c, SP, 0x10));
+}
+
+/// The node's box (cell × 2^level, plus the margins at 0x442130 /
+/// 0x442140) against the view matrix at world+0x10: VU0 0x570.
+fn view_box_test(c: &mut Cpu) {
+    use ssx3_ee_rt::vu0::{Src, W};
+    c.g[V0][0] = lw(c, r32(c, T0));
+    c.g[A0][0] = 0x44_0000;
+    c.g[V1][0] = lw(c, r32(c, T1));
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x2130));
+    c.g[A3][0] = lw(c, at(c, T0, 4));
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x7f));
+    c.g[A1][0] = lw(c, at(c, T0, 8));
+    c.g[V0][0] = sx(r32(c, V0) << 23);
+    c.g[A2][0] = lw(c, at(c, T0, 0xc));
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(0x10));
+    c.sw(r32(c, SP), c.g[A3][0]);
+    c.sw(at(c, SP, 4), c.g[A1][0]);
+    c.sw(at(c, SP, 8), c.g[A2][0]);
+    c.sw(at(c, SP, 0xc), c.g[V0][0]);
+    c.lqc2(1, r32(c, SP));
+    c.lqc2(2, r32(c, A0));
+    c.lqc2(3, at(c, A0, 0x10));
+    c.vu0().itof(0, 0b1110, 1, 1);
+    for k in 0..4 {
+        c.lqc2(10 + k, at(c, V1, 0x10 * k as u32));
+    }
+    c.vu0().mula(0b1110, 1, Src::Bc(1, W));
+    c.vu0().madd(0b1110, 15, 2, Src::Bc(1, W));
+    c.vu0().mula(0b1110, 1, Src::Bc(1, W));
+    c.vu0().madd(0b1110, 16, 3, Src::Bc(1, W));
+    // VCALLMS 0x570.
+    let v = c.vu0();
+    let clip = v.read_ctrl(18);
+    let r = vu0lib::box_clip_typed(v.vf(15), v.vf(16), [v.vf(10), v.vf(11), v.vf(12), v.vf(13)], v.vf(0), clip);
+    for (k, p) in r.corners.into_iter().enumerate() {
+        v.set_vf(1 + k, p);
+    }
+    v.set_acc(r.acc);
+    for (k, x) in r.vi.into_iter().enumerate() {
+        v.write_ctrl(1 + k as u32, x as u32);
+    }
+    v.write_ctrl(18, r.clip);
+}
+
+/// The occluder loop: the node's sphere (sp+0x10) against each occluder in
+/// the mask (sp+0x40), VU0 0x948 on values. Inside one: false (culled).
+/// Clear of one: its bit is dropped from the mask. Crossing one: t3 = 2.
+fn occluders(c: &mut Cpu) -> bool {
+    c.cycles += 5;
+    c.g[A3][0] = lw(c, at(c, T1, 4));
+    c.g[A2][0] = sx(at(c, SP, 0x40));
+    c.g[V0][0] = lw(c, at(c, A3, 0x10c));
+    c.g[A0][0] = 0;
+    if (c.g[V0][0] as i64) > 0 {
+        c.cycles += 7;
+        c.g[V0][0] = 0x948;
+        c.g[T6][0] = 1;
+        c.g[T5][0] = 2;
+        c.g[T2][0] = 0x948 >> 3;
+        c.g[A1][0] = sx(at(c, A3, 8));
+        loop {
+            c.cycles += 5;
+            c.g[V0][0] = lw(c, r32(c, A2));
+            c.g[V1][0] = sx(r32(c, T6) << (r32(c, A0) & 31));
+            c.g[V0][0] &= c.g[V1][0];
+            if c.g[V0][0] != 0 {
+                c.cycles += 15;
+                c.g[V0][0] = lw(c, r32(c, A1));
+                let planes = r32(c, V0).wrapping_add(0x50);
+                for k in 0..5 {
+                    c.lqc2(1 + k, planes + 0x10 * k as u32);
+                }
+                c.lqc2(6, at(c, SP, 0x10));
+                c.ctc2(T2, 27);
+                // VCALLMSR (vi27 = 0x948 >> 3).
+                let v = c.vu0();
+                let r = vu0lib::sphere_against_planes_typed(
+                    [v.vf(1), v.vf(2), v.vf(3), v.vf(4), v.vf(5)],
+                    v.vf(6),
+                    v.vf(7),
+                    v.acc(),
+                    v.vf(0),
+                );
+                for (k, p) in r.planes.into_iter().enumerate() {
+                    v.set_vf(1 + k, p);
+                }
+                v.set_vf(7, r.vf7);
+                v.set_acc(r.acc);
+                for (k, x) in r.vi.into_iter().enumerate() {
+                    v.write_ctrl(1 + k as u32, x as u32);
+                }
+                c.cfc2(V0, 1);
+                if c.g[V0][0] == 0 {
+                    c.g[V0][0] = 0;
+                    return false;
+                }
+                c.cycles += 2;
+                if c.g[V0][0] != c.g[T5][0] {
+                    c.g[V0][0] = lw(c, r32(c, A2));
+                    c.cycles += 3;
+                    c.g[V1][0] = !c.g[V1][0];
+                    c.g[V0][0] &= c.g[V1][0];
+                    c.sw(r32(c, A2), c.g[V0][0]);
+                } else {
+                    c.cycles += 2;
+                    c.g[T3][0] = 2;
+                }
+                c.cycles += 1;
+            }
+            c.g[V0][0] = lw(c, at(c, A3, 0x10c));
+            c.cycles += 4;
+            c.g[A0][0] = sx(r32(c, A0).wrapping_add(1));
+            c.g[V0][0] = ((c.g[A0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+            c.g[A1][0] = sx(r32(c, A1).wrapping_add(8));
+            if c.g[V0][0] == 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, OCCLUDER_HEAD);
+            }
+        }
+    }
+    c.cycles += 1;
+    c.g[V0][0] = c.g[T3][0];
+    true
 }
 
 /// `Nash_CollectInstances(this, nodes, count)` (0x22a5a0): for each of the
@@ -1986,6 +2359,107 @@ mod tests {
             seen.insert((c.cycles, c.bus.read32(this + 0x209c) - before));
         }
         assert!(seen.len() >= 10, "instance paths seen: {seen:?}");
+    }
+
+    /// A Nash octree for `Nash_CullNode`: a world (view matrix at +0x10,
+    /// visible / partial lists), the box margins at 0x442130 / 0x442140,
+    /// the sphere constants at gp-0x51ec / gp-0x51e8, 0..4 axis-aligned
+    /// occluders of five planes, and a tree below a root cell of level
+    /// 11..13 (each child present with probability 1/2). Generated code
+    /// runs the hand-written VU0 routines (`vu0lib`).
+    fn cull_setup(c: &mut Cpu, r: &mut Rng) -> u32 {
+        ssx3_ps2::platform::machine_of(&mut c.bus.plat).hw.vu0.fallback = Some(ssx3_vu::vu::vu0lib::run);
+        c.g[GP][0] = GAME_GP as u64;
+        let f = |x: f32| x.to_bits();
+        let unit = |r: &mut Rng| (r.next_u32() % 2001) as f32 / 1000.0 - 1.0;
+        let level = 11 + r.next_u32() % 3;
+        let size = (1u32 << level) as f32;
+        let world = DATA + 0x1000;
+        c.bus.write32(world + 0x94, r.next_u32() % 4);
+        c.bus.write32(world + 0x1098, r.next_u32() % 4);
+        // View: x' = X / (size · k) + t, w = 1.
+        for row in 0..3u32 {
+            for lane in 0..4u32 {
+                let v = if lane == row { 1.0 / (size * (1 + r.next_u32() % 4) as f32) } else { 0.0 };
+                c.bus.write32(world + 0x10 + 0x10 * row + 4 * lane, f(v));
+            }
+        }
+        for lane in 0..3u32 {
+            c.bus.write32(world + 0x40 + 4 * lane, f(2.0 * unit(r)));
+        }
+        c.bus.write32(world + 0x4c, f(1.0));
+        for lane in 0..4u32 {
+            c.bus.write32(0x0044_2130 + 4 * lane, f(-0.1 * (r.next_u32() % 3) as f32));
+            c.bus.write32(0x0044_2140 + 4 * lane, f(1.0 + 0.1 * (r.next_u32() % 3) as f32));
+        }
+        c.bus.write32(GAME_GP - 0x51ec, f(0.5 + unit(r).abs()));
+        c.bus.write32(GAME_GP - 0x51e8, f(0.5 + unit(r).abs()));
+        // Occluders: planes ±axis, offsets within a few cells.
+        let occ = DATA + 0x200;
+        let n = r.next_u32() % 5;
+        c.bus.write32(occ + 0x10c, n);
+        for i in 0..n {
+            let o = DATA + 0x8000 + 0x100 * i;
+            c.bus.write32(occ + 8 + 8 * i, o);
+            for k in 0..5u32 {
+                let axis = r.next_u32() % 3;
+                let sign = if r.next_u32() % 2 == 0 { 1.0 } else { -1.0 };
+                for lane in 0..3u32 {
+                    c.bus.write32(o + 0x50 + 0x10 * k + 4 * lane, f(if lane == axis { sign } else { 0.0 }));
+                }
+                c.bus.write32(o + 0x5c + 0x10 * k, f(size * 6.0 * unit(r)));
+            }
+        }
+        // The tree.
+        let mut next = DATA + 0x10000;
+        fn tree(c: &mut Cpu, r: &mut Rng, next: &mut u32, depth: u32) -> u32 {
+            let node = *next;
+            *next += 0x20;
+            for k in 0..8 {
+                let child = if depth > 0 && r.next_u32() % 2 == 0 { tree(c, r, next, depth - 1) } else { 0 };
+                c.bus.write32(node + 4 * k, child);
+            }
+            node
+        }
+        let root = tree(c, r, &mut next, level - 11);
+        let ctx = DATA + 0x100;
+        c.bus.write32(ctx, world);
+        c.bus.write32(ctx + 4, occ);
+        c.bus.write32(ctx + 8, r.next_u32() % 16);
+        c.bus.write32(ctx + 0xc, (r.next_u32() % 3 == 0) as u32);
+        let cell = DATA + 0x180;
+        c.bus.write32(cell, level);
+        for k in 1..4u32 {
+            c.bus.write32(cell + 4 * k, ((r.next_u32() % 9) as i32 - 4) as u32);
+        }
+        c.g[A0][0] = ctx as u64;
+        c.g[A1][0] = root as u64;
+        c.g[A2][0] = cell as u64;
+        world
+    }
+
+    #[test]
+    fn nash_cull_node() {
+        let gen = ssx3_ee::s05::f_0022a830__generated;
+        let hand = super::nash_cull_node;
+        check_events(gen, hand, 600, &|c, seed| {
+            let mut r = Rng(0x6375_6c6c ^ (seed as u64) << 20);
+            scramble(c, &mut r);
+            cull_setup(c, &mut r);
+            schedule(c, &mut r, seed, 0x0022_a830)
+        });
+        // The outcomes: (visible, partial) appended by the whole tree.
+        let mut seen = std::collections::BTreeSet::new();
+        for seed in 0..600 {
+            let mut c = fresh();
+            let mut r = Rng(0x6331 ^ (seed as u64) << 20);
+            scramble(&mut c, &mut r);
+            let world = cull_setup(&mut c, &mut r);
+            let before = (c.bus.read32(world + 0x94), c.bus.read32(world + 0x1098));
+            hand(&mut c);
+            seen.insert((c.bus.read32(world + 0x94) - before.0).min(3) * 4 + (c.bus.read32(world + 0x1098) - before.1).min(3));
+        }
+        assert!(seen.len() >= 8, "outcomes seen: {seen:?}");
     }
 
     // ---------------------------------------------------- modifier blocks

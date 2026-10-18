@@ -718,6 +718,220 @@ fn plane_groups_only(vu: &mut Vu0) -> u32 {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Typed entry points: the routines' arithmetic on plain values, for callers
+// whose EE side is hand-written too (no microprogram runs, no VU state is
+// touched). They return everything the routine leaves in VF, ACC and VI,
+// which such a caller writes back; `typed_tests` checks them against the
+// routines above. The flags are not modelled (VCALLMS callers read results
+// from VI).
+
+fn mul(s: V, t: V) -> (V, u32) {
+    fast::mul4::<XYZW, true, true>(&s, &t)
+}
+fn add(s: V, t: V) -> (V, u32) {
+    fast::add4::<XYZW, true, true>(&s, &t)
+}
+fn madd(a: V, s: V, t: V) -> (V, u32) {
+    fast::madd4::<XYZW, true, true, true>(&a, &s, &t)
+}
+fn msub(a: V, s: V, t: V) -> (V, u32) {
+    fast::msub4::<XYZW, true, true, true>(&a, &s, &t)
+}
+/// `to` with the lanes `d` of `v`.
+fn with(mut to: V, d: u8, v: V) -> V {
+    merge(&mut to, d, v);
+    to
+}
+
+/// What the box test (0x570) leaves: the corners in VF1-8, ACC, VI1-5 and
+/// the clip flags.
+#[derive(Debug, PartialEq)]
+pub struct BoxClip {
+    pub corners: [V; 8],
+    pub acc: V,
+    /// VI1 (OR of the corners' clip judgements), VI2 (AND), VI3/VI4 (the
+    /// last two FCGET reads), VI5 (63).
+    pub vi: [u16; 5],
+    pub clip: u32,
+}
+
+/// 0x570 on values: the box `lo`..`hi` through `m` (rows x, y, z,
+/// translation; VF10-13), `vf0` = VF0, `clip` = the clip flags before.
+pub fn box_clip_typed(lo: V, hi: V, m: [V; 4], vf0: V, clip: u32) -> BoxClip {
+    let [mx, my, mz, mt] = m;
+    let mut acc = [0; 4];
+    let mut corners = [[0; 4]; 8];
+    for (k, (z, y)) in [(lo, lo), (lo, hi), (hi, lo), (hi, hi)].into_iter().enumerate() {
+        acc = mul(mt, bc(vf0, 3)).0;
+        acc = madd(acc, mz, bc(z, 2)).0;
+        acc = madd(acc, my, bc(y, 1)).0;
+        corners[2 * k] = madd(acc, mx, bc(lo, 0)).0;
+        corners[2 * k + 1] = madd(acc, mx, bc(hi, 0)).0;
+    }
+    let (mut clip, mut any, mut all, mut reads) = (clip, 0u16, 63u16, [0u16; 8]);
+    for (k, p) in corners.iter().enumerate() {
+        clip = ((clip << 6) | fast::clip(*p, p[3])) & 0xff_ffff;
+        reads[k] = (clip & 0xfff) as u16;
+        any |= reads[k];
+        all &= reads[k];
+    }
+    BoxClip { corners, acc, vi: [any & 63, all, reads[6], reads[7], 63], clip }
+}
+
+/// What the plane-set test (0x948) leaves: VF1-5 (the planes, xyz scaled
+/// by the sphere's as far as the test got), VF7, ACC and VI1-3.
+#[derive(Debug, PartialEq)]
+pub struct SpherePlanes {
+    pub planes: [V; 5],
+    pub vf7: V,
+    pub acc: V,
+    /// VI1: 1 if the sphere is entirely in front of one of the planes, 2 if
+    /// it crosses one, 0 if it is behind all five (inside the volume).
+    pub vi: [u16; 3],
+}
+
+/// 0x948 on values: the sphere `s` (VF6: centre, w radius) against
+/// `planes` (VF1-5); `vf7`, `acc` the registers before, `vf0` = VF0.
+pub fn sphere_against_planes_typed(planes: [V; 5], s: V, vf7: V, acc: V, vf0: V) -> SpherePlanes {
+    let mut p = planes;
+    let mut acc = acc;
+    let scale = |p: &mut [V; 5], r: usize| p[r - 1] = with(p[r - 1], XYZ, mul(p[r - 1], s).0);
+    // Plane r's distance in ACC.x: x + y, + 1·z, + 1·w.
+    let dist = |acc: &mut V, p: &[V; 5], vf7: V, r: usize| {
+        let q = p[r - 1];
+        *acc = with(*acc, X, add(q, bc(q, 1)).0);
+        *acc = with(*acc, X, madd(*acc, vf7, bc(q, 2)).0);
+        *acc = with(*acc, X, madd(*acc, vf7, bc(q, 3)).0);
+    };
+    // ACC.x ± radius: the sign of x.
+    let plus_r = |acc: V, vf7: V| (madd(acc, vf7, bc(s, 3)).1 as u16) & SIGN_X;
+    let minus_r = |acc: V, vf7: V| (msub(acc, vf7, bc(s, 3)).1 as u16) & SIGN_X;
+    scale(&mut p, 1);
+    let vf7 = with(vf7, X, add(vf0, bc(vf0, 3)).0);
+    let mut vi = [0, SIGN_X, 0u16, 0u16];
+    scale(&mut p, 2);
+    scale(&mut p, 5);
+    dist(&mut acc, &p, vf7, 1);
+    let mut far = plus_r(acc, vf7);
+    scale(&mut p, 3);
+    let mut near = minus_r(acc, vf7);
+    let (mut t, mut o) = (3, 2);
+    let done = |p: [V; 5], acc: V, vi: [u16; 4]| SpherePlanes { planes: p, vf7, acc, vi: [vi[1], vi[2], vi[3]] };
+    for r in 2..=5 {
+        dist(&mut acc, &p, vf7, r);
+        vi[t] = far & vi[1];
+        let out = vi[t] == vi[1];
+        let f = plus_r(acc, vf7);
+        vi[t] = near & vi[1];
+        if out {
+            vi[1] = 1;
+            return done(p, acc, vi);
+        }
+        if r == 2 {
+            scale(&mut p, 4);
+        }
+        let n = minus_r(acc, vf7);
+        vi[t] |= vi[o];
+        far = f;
+        near = n;
+        std::mem::swap(&mut t, &mut o);
+    }
+    vi[3] = far & vi[1];
+    if vi[3] == vi[1] {
+        vi[1] = 1;
+        return done(p, acc, vi);
+    }
+    vi[1] &= near;
+    vi[2] |= vi[1];
+    vi[1] = if vi[2] == 0 { 0 } else { 2 };
+    done(p, acc, vi)
+}
+
+#[cfg(test)]
+mod typed_tests {
+    use super::*;
+
+    fn rng(seed: &mut u64) -> u64 {
+        *seed ^= *seed << 13;
+        *seed ^= *seed >> 7;
+        *seed ^= *seed << 17;
+        *seed
+    }
+    /// Mostly moderate floats, sometimes zero or PS2 specials.
+    fn float(seed: &mut u64) -> u32 {
+        match rng(seed) % 16 {
+            0 => 0,
+            1 => (rng(seed) as u32 & 0x807f_ffff) | 0x7f80_0000,
+            2 => rng(seed) as u32 & 0x807f_ffff,
+            _ => ((rng(seed) % 2001) as f32 - 1000.0).to_bits(),
+        }
+    }
+    fn vec(seed: &mut u64) -> V {
+        [float(seed), float(seed), float(seed), float(seed)]
+    }
+    fn state(seed: &mut u64) -> Vu {
+        let mut vu = Vu::new(0);
+        for k in 1..32 {
+            vu.vf[k] = vec(seed);
+        }
+        vu.acc = vec(seed);
+        for k in 1..16 {
+            vu.vi[k] = rng(seed) as u16;
+        }
+        vu.clip = rng(seed) as u32 & 0xff_ffff;
+        // Planes and spheres that get past the early exits.
+        if rng(seed) % 2 == 0 {
+            for p in 1..=5 {
+                vu.vf[p][3] = ((rng(seed) % 100) as f32 + 1.0).to_bits();
+            }
+            vu.vf[6][3] = ((rng(seed) % 4) as f32).to_bits();
+        }
+        vu
+    }
+    fn run_routine(vu: &mut Vu, pc: u32) {
+        vu.start(pc);
+        let VuExit::End = run(vu, pc, &mut |_| {}) else { panic!() };
+    }
+
+    #[test]
+    fn box_clip_typed_matches_routine() {
+        let mut seed = 0x0b0c_5eed_u64;
+        for _ in 0..20000 {
+            let mut vu = state(&mut seed);
+            let t = box_clip_typed(vu.vf[15], vu.vf[16], [vu.vf[10], vu.vf[11], vu.vf[12], vu.vf[13]], vu.vf[0], vu.clip);
+            run_routine(&mut vu, 0x570);
+            let want = BoxClip {
+                corners: std::array::from_fn(|k| vu.vf[1 + k]),
+                acc: vu.acc,
+                vi: [vu.vi[1], vu.vi[2], vu.vi[3], vu.vi[4], vu.vi[5]],
+                clip: vu.clip,
+            };
+            assert_eq!(t, want);
+        }
+    }
+
+    #[test]
+    fn sphere_against_planes_typed_matches_routine() {
+        let mut seed = 0x5fe7_e5ee_u64;
+        let mut results = [0u32; 3];
+        for _ in 0..20000 {
+            let mut vu = state(&mut seed);
+            let t = sphere_against_planes_typed(std::array::from_fn(|k| vu.vf[1 + k]), vu.vf[6], vu.vf[7], vu.acc, vu.vf[0]);
+            run_routine(&mut vu, 0x948);
+            let want = SpherePlanes {
+                planes: std::array::from_fn(|k| vu.vf[1 + k]),
+                vf7: vu.vf[7],
+                acc: vu.acc,
+                vi: [vu.vi[1], vu.vi[2], vu.vi[3]],
+            };
+            assert_eq!(t, want);
+            results[(t.vi[0] as usize).min(2)] += 1;
+        }
+        assert!(results.iter().all(|&n| n > 100), "outcomes: {results:?}");
+    }
+}
+
 #[cfg(all(test, feature = "microcode", not(target_arch = "wasm32")))]
 mod tests {
     use super::super::capture::{ArchState, Record};

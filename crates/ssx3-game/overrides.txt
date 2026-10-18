@@ -235,6 +235,7 @@
 0x002c1cd8    QuadTree_FindLeaf
 0x002d1928    Noise_Fractal1D
 0x0022a5a0    Nash_CollectInstances
+0x0022a830    Nash_CullNode
 # package ai
 0x001448d8    BENewRaceInt_GetInstance
 0x00145970    BENewPlayerInt_GetInstance
