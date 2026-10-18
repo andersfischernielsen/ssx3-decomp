@@ -59,6 +59,13 @@ pub enum Step {
     Mask(u32),
     /// MSCAL.
     Start(u32),
+    /// A CALL into a prebuilt chain (a model's mesh chain): played through
+    /// the frame build's chain cache.
+    Chain(u32),
+    /// GIF data sent with DIRECT / DIRECTHL.
+    Gif(Vec<u128>),
+    /// MSKPATH3.
+    MaskPath3(bool),
 }
 
 /// The vertex count of a strip batch.
@@ -224,11 +231,21 @@ pub fn encode_cmd(cmd: &Cmd, out: &mut Vec<u8>) {
                         }
                         continue;
                     }
+                    Step::Gif(data) => {
+                        out.push(7);
+                        out.extend_from_slice(&(data.len() as u32).to_le_bytes());
+                        for q in data {
+                            out.extend_from_slice(&q.to_le_bytes());
+                        }
+                        continue;
+                    }
+                    Step::MaskPath3(m) => (8, &(*m as u32)),
                     Step::Cycle(v) => (1, v),
                     Step::Itop(v) => (2, v),
                     Step::Mode(v) => (3, v),
                     Step::Mask(v) => (4, v),
                     Step::Start(v) => (5, v),
+                    Step::Chain(v) => (6, v),
                 };
                 out.push(k);
                 out.extend_from_slice(&v.to_le_bytes());
@@ -313,6 +330,16 @@ pub fn decode_cmd(r: &mut Bytes) -> Option<Cmd> {
                     3 => Step::Mode(r.u32()?),
                     4 => Step::Mask(r.u32()?),
                     5 => Step::Start(r.u32()?),
+                    6 => Step::Chain(r.u32()?),
+                    7 => {
+                        let k = r.u32()?;
+                        let mut data = Vec::with_capacity(k as usize);
+                        for _ in 0..k {
+                            data.push(r.u128()?);
+                        }
+                        Step::Gif(data)
+                    }
+                    8 => Step::MaskPath3(r.u32()? != 0),
                     _ => return None,
                 });
             }

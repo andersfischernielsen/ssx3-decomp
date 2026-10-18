@@ -75,10 +75,19 @@ impl PartialEq for VuCall {
 impl Eq for VuCall {}
 
 /// A GIF stream sent through DIRECT/DIRECTHL (PATH2).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct Direct {
     pub qwords: Vec<u128>,
+    /// From a captured command (`Vif1::native`). Not part of equality.
+    pub native: bool,
 }
+
+impl PartialEq for Direct {
+    fn eq(&self, o: &Self) -> bool {
+        self.qwords == o.qwords
+    }
+}
+impl Eq for Direct {}
 
 /// What the VIF did, in order.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -327,7 +336,7 @@ impl Vif1 {
                     .chunks_exact(4)
                     .map(|c| c[0] as u128 | (c[1] as u128) << 32 | (c[2] as u128) << 64 | (c[3] as u128) << 96)
                     .collect();
-                self.push_event(Event::Direct(Direct { qwords }));
+                self.push_event(Event::Direct(Direct { qwords, native: false }));
             }
             _ if op & 0x60 == 0x60 => self.unpack(cmd, data),
             _ => self.errors += 1,
@@ -358,6 +367,10 @@ impl Vif1 {
                         c.native = true;
                     }
                 }
+                // (The frame build plays chains: `frame::play_chain`.)
+                Step::Chain(_) => {}
+                Step::Gif(q) => self.push_event(Event::Direct(Direct { qwords: q.clone(), native: true })),
+                Step::MaskPath3(m) => self.push_event(Event::MaskPath3(*m)),
             }
         }
     }

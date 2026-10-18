@@ -1439,5 +1439,9 @@
 0x00381310    PS2GraphicsMan_DrawTrail
 0x003816f0    PS2GraphicsMan_DrawTrailB
 0x0038d690    PS2BezierMan_DrawPatchFX
+0x0037e238    PS2GraphicsMan_DrawModel
+0x0037a610    PS2GraphicsMan_DrawSkinnedModel
+0x0037b548    PS2GraphicsMan_DrawSkinnedModelShadow
+0x00385c10    cPS2GridMesh_Draw
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04

@@ -21,6 +21,10 @@ const DRAW_M_EMITTER: u32 = 0x0038_0ce0;
 const DRAW_TRAIL: u32 = 0x0038_1310;
 const DRAW_TRAIL_B: u32 = 0x0038_16f0;
 const DRAW_PATCH_FX: u32 = 0x0038_d690;
+const DRAW_MODEL: u32 = 0x0037_e238;
+const DRAW_SKINNED_MODEL: u32 = 0x0037_a610;
+const DRAW_SKINNED_MODEL_SHADOW: u32 = 0x0037_b548;
+const GRID_MESH_DRAW: u32 = 0x0038_5c10;
 const BEGIN_TRI_STRIP: u32 = 0x0037_a260;
 const END_TRI_STRIP: u32 = 0x0037_a430;
 
@@ -41,6 +45,10 @@ pub fn install() -> bool {
         (DRAW_TRAIL, draw_trail, "PS2GraphicsMan_DrawTrail"),
         (DRAW_TRAIL_B, draw_trail_b, "PS2GraphicsMan_DrawTrailB"),
         (DRAW_PATCH_FX, draw_patch_fx, "PS2BezierMan_DrawPatchFX"),
+        (DRAW_MODEL, draw_model, "PS2GraphicsMan_DrawModel"),
+        (DRAW_SKINNED_MODEL, draw_skinned_model, "PS2GraphicsMan_DrawSkinnedModel"),
+        (DRAW_SKINNED_MODEL_SHADOW, draw_skinned_model_shadow, "PS2GraphicsMan_DrawSkinnedModelShadow"),
+        (GRID_MESH_DRAW, grid_mesh_draw, "cPS2GridMesh_Draw"),
     ] {
         assert!(ssx3_ee::set_override(a, f), "no override slot for {name}: list it in overrides.txt");
     }
@@ -303,23 +311,119 @@ fn end_tri_strip(c: &mut Cpu) {
 // (the fromSPR DMA completes at once here). Each is read back as `Step`s;
 // stage C computes them from the function's inputs instead.
 
-/// The VU1 effects of the CNT block at `start` and its end, or `None` for a
-/// packet this reader does not take (other tags, masks, rows, DIRECT, MSCNT;
-/// it then stays on the decoding path). UNPACKs assume CL = WL, as the
-/// draw's state change leaves them for these types (the capture check
-/// compares).
-fn read_packet(c: &mut Cpu, start: u32) -> Option<(u32, Vec<Step>)> {
-    let tag = qword(c, start);
-    if (tag >> 28) & 7 != 1 {
-        return None;
-    }
-    let qwc = (tag & 0xffff) as u32;
-    let mut words = vec![(tag >> 64) as u32, (tag >> 96) as u32];
-    for i in 0..qwc {
-        let q = qword(c, start + 16 + 16 * i);
-        words.extend((0..4).map(|l| (q >> (32 * l)) as u32));
-    }
+/// Where a packet ends.
+#[derive(Clone, Copy, PartialEq)]
+enum Shape {
+    /// After its first CNT block.
+    OneCnt,
+    /// After the CALL into its mesh chain (models).
+    UntilCall,
+}
+
+/// The VU1 effects of the packet at `start` and its end, or `None` for a
+/// packet this reader does not take (other tags, masked UNPACKs, rows,
+/// MSCNT; it then stays on the decoding path). The VIFcodes run across its
+/// transfers (CNT data inline, REF data where it points), as the VIF sees
+/// them. UNPACKs assume CL = WL, as the draw's state change leaves them
+/// for these types (the capture check compares).
+fn read_packet(c: &mut Cpu, start: u32, shape: Shape) -> Option<(u32, Vec<Step>)> {
     let mut steps = Vec::new();
+    let mut words: Vec<u32> = Vec::new();
+    let mut t = start;
+    for _ in 0..256 {
+        let tag = qword(c, t);
+        let qwc = (tag & 0xffff) as u32;
+        let addr = ((tag >> 32) & 0x7fff_fff0) as u32;
+        let (data, next) = match (tag >> 28) & 7 {
+            1 => (t + 16, t + 16 + 16 * qwc),
+            3 if (tag >> 63) & 1 == 0 => (addr, t + 16),
+            5 if shape == Shape::UntilCall && qwc == 0 => {
+                parse_codes(&words, &mut steps)?;
+                steps.push(Step::Chain(addr));
+                return Some((t + 16, steps));
+            }
+            _ => return None,
+        };
+        for i in 0..qwc {
+            let q = qword(c, data + 16 * i);
+            words.extend((0..4).map(|l| (q >> (32 * l)) as u32));
+        }
+        t = next;
+        if shape == Shape::OneCnt {
+            parse_codes(&words, &mut steps)?;
+            return Some((t, steps));
+        }
+    }
+    None
+}
+
+/// The VU1 effects of the packet `start..end` (a DeferMan record's range):
+/// CNT and REF transfers, CALLs into chains (their own data first) as
+/// `Step::Chain`; `None` for anything else.
+fn read_range(c: &mut Cpu, start: u32, end: u32) -> Option<Vec<Step>> {
+    let mut steps = Vec::new();
+    let mut words: Vec<u32> = Vec::new();
+    let mut t = start;
+    for _ in 0..4096 {
+        if t == end {
+            parse_codes(&words, &mut steps)?;
+            return Some(steps);
+        }
+        let tag = qword(c, t);
+        let qwc = (tag & 0xffff) as u32;
+        let addr = ((tag >> 32) & 0x7fff_fff0) as u32;
+        let (data, next, call) = match (tag >> 28) & 7 {
+            1 => (t + 16, t + 16 + 16 * qwc, false),
+            3 if (tag >> 63) & 1 == 0 => (addr, t + 16, false),
+            5 => (t + 16, t + 16 + 16 * qwc, true),
+            _ => return None,
+        };
+        for i in 0..qwc {
+            let q = qword(c, data + 16 * i);
+            words.extend((0..4).map(|l| (q >> (32 * l)) as u32));
+        }
+        if call {
+            parse_codes(&words, &mut steps)?;
+            words.clear();
+            steps.push(Step::Chain(addr));
+        }
+        t = next;
+    }
+    None
+}
+
+/// Run a draw function's body and record the packets of the DeferMan
+/// records it wrote (one command per distinct packet), read back. Nothing
+/// when the body unwound or a packet is not one `read_range` takes.
+fn capture_records(c: &mut Cpu, body: fn(&mut Cpu), gm: u32) {
+    let ret = c.g[RA][0] as u32;
+    let on = direct::active();
+    let dm = c.bus.read32(gm + 0x18f0);
+    let n0 = c.bus.read32(dm);
+    body(c);
+    if !on || c.pc != ret {
+        return;
+    }
+    let n1 = c.bus.read32(dm).min(0xa28);
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for i in n0..n1 {
+        let rec = dm + 0x80 + 0x80 * i;
+        let (start, end) = (c.bus.read32(rec + 0x14), c.bus.read32(rec + 0x18));
+        if !seen.insert(start) {
+            continue;
+        }
+        let Some(steps) = read_range(c, start, end) else { return };
+        out.push(Recorded { start, end, first_tag: qword(c, start), cmd: Cmd::Vu(steps) });
+    }
+    for r in out {
+        direct::record(r);
+    }
+}
+
+/// VIFcodes as steps; `None` for a code this reader does not take or one
+/// left waiting for data.
+fn parse_codes(words: &[u32], steps: &mut Vec<Step>) -> Option<()> {
     let mut p = 0;
     while p < words.len() {
         let cmd = words[p];
@@ -330,10 +434,17 @@ fn read_packet(c: &mut Cpu, start: u32) -> Option<(u32, Vec<Step>)> {
             0x01 => steps.push(Step::Cycle(imm)),
             0x04 => steps.push(Step::Itop(imm & 0x3ff)),
             0x05 => steps.push(Step::Mode(imm & 3)),
+            0x06 => steps.push(Step::MaskPath3((imm >> 15) & 1 != 0)),
             0x14 => steps.push(Step::Start(imm * 8)),
             0x20 => {
                 steps.push(Step::Mask(*words.get(p)?));
                 p += 1;
+            }
+            0x50 | 0x51 => {
+                let n = if imm == 0 { 65536 } else { imm as usize };
+                let d = words.get(p..p + 4 * n)?;
+                p += 4 * n;
+                steps.push(Step::Gif(d.chunks_exact(4).map(|w| (0..4).fold(0u128, |q, l| q | (w[l] as u128) << (32 * l))).collect()));
             }
             _ if op & 0x60 == 0x60 && op & 0x10 == 0 => {
                 let (vn, vl, usn) = ((cmd >> 26) & 3, (cmd >> 24) & 3, (cmd >> 14) & 1 != 0);
@@ -341,39 +452,53 @@ fn read_packet(c: &mut Cpu, start: u32) -> Option<(u32, Vec<Step>)> {
                     0 => 256,
                     n => n,
                 } as usize;
-                // V4-32, V4-16, V4-8 only.
-                if vn != 3 || vl == 3 {
+                // (V4-5 is the only vl = 3 format.)
+                if vl == 3 && vn != 3 {
                     return None;
                 }
-                let bits = 32 >> vl;
-                let n_words = (num * 4 * bits).div_ceil(32);
+                let (elems, bits) = if vl == 3 { (1, 16) } else { (vn as usize + 1, 32 >> vl) };
+                let n_words = (num * elems * bits).div_ceil(32);
                 let d = words.get(p..p + n_words)?;
                 p += n_words;
-                let lane = |k: usize| -> u32 {
+                let elem = |k: usize| -> u32 {
                     let bit = k * bits;
                     let v = d[bit / 32] >> (bit % 32);
                     match bits {
                         32 => v,
-                        16 if usn => v & 0xffff,
+                        16 if usn || vl == 3 => v & 0xffff,
                         16 => v as u16 as i16 as i32 as u32,
                         _ if usn => v & 0xff,
                         _ => v as u8 as i8 as i32 as u32,
                     }
                 };
-                let data = (0..num).map(|i| (0..4).fold(0u128, |q, l| q | (lane(4 * i + l) as u128) << (32 * l))).collect();
+                // What an unmasked UNPACK stores (vif.rs `unpack`).
+                let vector = |i: usize| -> [u32; 4] {
+                    let e = |j: usize| elem(i * elems + j);
+                    match (vl, elems) {
+                        (3, _) => {
+                            let c = e(0);
+                            [(c & 0x1f) << 3, ((c >> 5) & 0x1f) << 3, ((c >> 10) & 0x1f) << 3, ((c >> 15) & 1) << 7]
+                        }
+                        (_, 1) => [e(0); 4],
+                        (_, 2) => [e(0), e(1), e(0), e(1)],
+                        (_, 3) => [e(0), e(1), e(2), 0],
+                        _ => [e(0), e(1), e(2), e(3)],
+                    }
+                };
+                let data = (0..num).map(|i| vector(i).iter().enumerate().fold(0u128, |q, (l, &x)| q | (x as u128) << (32 * l))).collect();
                 steps.push(Step::Write { addr: (cmd & 0x3ff) as u16, rel: (cmd >> 15) & 1 != 0, data });
             }
             _ => return None,
         }
     }
-    Some((start + 16 * (qwc + 1), steps))
+    Some(())
 }
 
 /// Run a body that writes packets at the cursor `*cursor`, one record each
 /// (the next one 0x10 after the end), and record them read back. Nothing
 /// when `kill` (a gp-relative debug flag) is set, the body unwound or a
 /// packet is not one `read_packet` takes.
-fn capture_packets(c: &mut Cpu, body: fn(&mut Cpu), cursor: u32, kill: Option<u32>) {
+fn capture_packets(c: &mut Cpu, body: fn(&mut Cpu), cursor: u32, kill: Option<u32>, shape: Shape) {
     let ret = c.g[RA][0] as u32;
     let on = direct::active() && kill.is_none_or(|k| c.bus.read32(c.g[GP][0] as u32 + k) == 0);
     let start = c.bus.read32(cursor);
@@ -385,7 +510,7 @@ fn capture_packets(c: &mut Cpu, body: fn(&mut Cpu), cursor: u32, kill: Option<u3
     let mut at = start;
     let mut out = Vec::new();
     while at + 0x10 < end {
-        let Some((e, steps)) = read_packet(c, at) else { return };
+        let Some((e, steps)) = read_packet(c, at, shape) else { return };
         out.push(Recorded { start: at, end: e, first_tag: qword(c, at), cmd: Cmd::Vu(steps) });
         at = e + 0x10;
     }
@@ -400,38 +525,66 @@ fn capture_packets(c: &mut Cpu, body: fn(&mut Cpu), cursor: u32, kill: Option<u3
 /// Slot 82 `DrawEmitter(gm, desc)` (0x380518): a type-4 emitter.
 fn draw_emitter(c: &mut Cpu) {
     let gm = c.g[A0][0] as u32;
-    capture_packets(c, ssx3_ee::s12::f_00380518__generated, gm + 0x5a00, Some(0x1408));
+    capture_packets(c, ssx3_ee::s12::f_00380518__generated, gm + 0x5a00, Some(0x1408), Shape::OneCnt);
 }
 
 /// Slot 83 `DrawDynamicEmitter(gm, e)` (0x3807a0): ring emitters, batches of
 /// 64.
 fn draw_dynamic_emitter(c: &mut Cpu) {
     let gm = c.g[A0][0] as u32;
-    capture_packets(c, ssx3_ee::s12::f_003807a0__generated, gm + 0x5a00, Some(0x140c));
+    capture_packets(c, ssx3_ee::s12::f_003807a0__generated, gm + 0x5a00, Some(0x140c), Shape::OneCnt);
 }
 
 /// Slot 84 `DrawMEmitter(gm, e)` (0x380ce0): ring emitters with colours,
 /// batches of 43.
 fn draw_m_emitter(c: &mut Cpu) {
     let gm = c.g[A0][0] as u32;
-    capture_packets(c, ssx3_ee::s12::f_00380ce0__generated, gm + 0x5a00, Some(0x140c));
+    capture_packets(c, ssx3_ee::s12::f_00380ce0__generated, gm + 0x5a00, Some(0x140c), Shape::OneCnt);
 }
 
 /// Slot 85 `DrawTrail(gm, d)` (0x381310): SnowBox flakes (type 5).
 fn draw_trail(c: &mut Cpu) {
     let gm = c.g[A0][0] as u32;
-    capture_packets(c, ssx3_ee::s12::f_00381310__generated, gm + 0x5a00, None);
+    capture_packets(c, ssx3_ee::s12::f_00381310__generated, gm + 0x5a00, None, Shape::OneCnt);
 }
 
 /// Slot 86 `DrawTrailB(gm, d)` (0x3816f0): the depth-faded variant.
 fn draw_trail_b(c: &mut Cpu) {
     let gm = c.g[A0][0] as u32;
-    capture_packets(c, ssx3_ee::s12::f_003816f0__generated, gm + 0x5a00, None);
+    capture_packets(c, ssx3_ee::s12::f_003816f0__generated, gm + 0x5a00, None, Shape::OneCnt);
 }
 
 /// `PS2BezierMan_DrawPatchFX(bm, patch, entry, cursor)` (0x38d690): patch
 /// glitter (type 4, entry 0x1460).
 fn draw_patch_fx(c: &mut Cpu) {
     let cursor = c.g[A3][0] as u32;
-    capture_packets(c, ssx3_ee::s12::f_0038d690__generated, cursor, None);
+    capture_packets(c, ssx3_ee::s12::f_0038d690__generated, cursor, None, Shape::OneCnt);
+}
+
+/// Slot 95 `DrawModel(f12 alpha, gm, inst, ...)` (0x37e238): per strip
+/// group a header packet and a CALL into the model's mesh chain.
+fn draw_model(c: &mut Cpu) {
+    let gm = c.g[A0][0] as u32;
+    capture_packets(c, ssx3_ee::s12::f_0037e238__generated, gm + 0x5a00, None, Shape::UntilCall);
+}
+
+/// `cPS2GridMesh_Draw(this, matrix, texId, mat2)` (0x385c10): one header
+/// packet and a CALL into the grid's (double-buffered) chain.
+fn grid_mesh_draw(c: &mut Cpu) {
+    let gm = c.bus.read32(c.g[A0][0] as u32 + 0x1c4);
+    capture_packets(c, ssx3_ee::s12::f_00385c10__generated, gm + 0x5a00, None, Shape::UntilCall);
+}
+
+/// Slot 99 `DrawSkinnedModel(gm, model, base, outline)` (0x37a610): per
+/// mesh group one record: bone batches, then CALLs of the mesh (and morph)
+/// chains.
+fn draw_skinned_model(c: &mut Cpu) {
+    let gm = c.g[A0][0] as u32;
+    capture_records(c, ssx3_ee::s12::f_0037a610__generated, gm);
+}
+
+/// Slot 100 `DrawSkinnedModelShadow` (0x37b548): one record per call.
+fn draw_skinned_model_shadow(c: &mut Cpu) {
+    let gm = c.g[A0][0] as u32;
+    capture_records(c, ssx3_ee::s12::f_0037b548__generated, gm);
 }

@@ -1110,6 +1110,50 @@ pub fn keep_payloads(on: bool) {
     KEEP_PAYLOADS.store(on, std::sync::atomic::Ordering::Relaxed);
 }
 
+/// A captured packet's CALL into the chain at `a`: replayed from the cache
+/// when it is unchanged, else decoded (and recorded when it can be), as a
+/// CALL from a payload is.
+fn play_chain(w: &mut Walker, cache: &mut ChainCache, a: u32) {
+    let key = (a, w.vif.regs);
+    let snap = w.m.snapshot();
+    let unchanged = snap != 0 && cache.map.get(&key).is_some_and(|e| e.seen != 0 && e.ranges.iter().all(|&(s, t)| w.m.unchanged(s, t, e.seen)));
+    let hashed = if unchanged { None } else { sub_chain_hash(w.m, a) };
+    let hit = match (&hashed, cache.map.get_mut(&key)) {
+        (None, Some(_)) => unchanged,
+        (Some((h, ranges)), Some(e)) if e.hash == *h => {
+            e.ranges = ranges.clone();
+            e.seen = snap;
+            true
+        }
+        _ => false,
+    };
+    if hit {
+        cache.stats.0 += 1;
+        let rec = &cache.map[&key].rec;
+        w.vif.replay(rec);
+        return;
+    }
+    let mut asr = [0u32; 2];
+    match hashed {
+        Some((hash, ranges)) if chain_cache_mode().0 && w.vif.idle() => {
+            cache.stats.1 += 1;
+            if cache.map.len() > 8192 {
+                cache.map.clear();
+            }
+            w.vif.record();
+            crate::chain::walk(w.m, a, false, false, 0, &mut asr, &mut |d| w.vif.write(d));
+            if let Some(mut rec) = w.vif.recorded() {
+                cache.next_id += 1;
+                rec.id = cache.next_id;
+                cache.map.insert(key, CachedChain { hash, rec, ranges, seen: snap });
+            }
+        }
+        _ => {
+            crate::chain::walk(w.m, a, false, false, 0, &mut asr, &mut |d| w.vif.write(d));
+        }
+    }
+}
+
 /// Debug (`SSX3_DIRECT_CHECK=1`): captured packets are decoded too and
 /// compared with their commands.
 fn direct_check() -> bool {
@@ -1151,7 +1195,13 @@ fn check_capture(m: &dyn Mem, vif: &Vif1, start: u32, r: &crate::direct::Recorde
     }
     if let crate::direct::Cmd::Vu(steps) = &r.cmd {
         let mut n = vif.clone_state();
-        n.native(steps);
+        for run in steps.split_inclusive(|s| matches!(s, crate::direct::Step::Chain(_))) {
+            n.native(run);
+            if let Some(&crate::direct::Step::Chain(a)) = run.last() {
+                let mut asr = [0u32; 2];
+                crate::chain::walk(m, a, false, false, 0, &mut asr, &mut |d| n.write(d));
+            }
+        }
         if v.events != n.events {
             let first = v.events.iter().zip(&n.events).position(|(a, b)| a != b).unwrap_or(v.events.len().min(n.events.len()));
             return Some(format!("{} events decoded, {} native; first difference at {first}: {:x?} / {:x?}", v.events.len(), n.events.len(), v.events.get(first), n.events.get(first)));
@@ -1266,7 +1316,21 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
                             issues.push(format!("capture at {tadr:#x}: {e}"));
                         }
                     }
-                    w.vif.native(steps);
+                    let first = w.vif.events.len();
+                    for run in steps.split_inclusive(|s| matches!(s, crate::direct::Step::Chain(_))) {
+                        w.vif.native(run);
+                        if let Some(&crate::direct::Step::Chain(a)) = run.last() {
+                            play_chain(&mut w, cache, a);
+                        }
+                    }
+                    // (Everything from it is native, chains included.)
+                    for e in &mut w.vif.events[first..] {
+                        match e {
+                            Event::Call(c) => c.native = true,
+                            Event::Direct(d) => d.native = true,
+                            _ => {}
+                        }
+                    }
                     w.take_events();
                     tadr = r.end;
                     continue;

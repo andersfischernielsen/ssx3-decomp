@@ -83,26 +83,20 @@ fn main() {
             // material and calls.
             if std::env::var_os("SSX3_VIF_STATS").is_some() {
                 let mut by: std::collections::BTreeMap<String, (usize, usize, usize)> = Default::default();
-                for d in built.frame.draws() {
-                    for p in &d.payload {
-                        match p {
-                            ssx3_render::frame::Payload::Vu(c) => {
-                                let e = by.entry(format!("{:?} L{} {:x?}{}", d.state.material, d.state.layer, c.entry, if c.native { " native" } else { "" })).or_default();
-                                e.0 += 1;
-                                e.1 += c.input.len();
-                                e.2 += c.shared.as_ref().map_or(0, |s| s.len());
-                            }
-                            ssx3_render::frame::Payload::Gif(q) => {
-                                let e = by.entry(format!("{:?} L{} gif", d.state.material, d.state.layer)).or_default();
-                                e.0 += 1;
-                                e.1 += q.len();
-                            }
-                            ssx3_render::frame::Payload::Native { .. } => {
-                                by.entry(format!("{:?} L{} native", d.state.material, d.state.layer)).or_default().0 += 1;
-                            }
-                            _ => {}
-                        }
-                    }
+                let draws: Vec<_> = built.frame.draws().collect();
+                for (o, e) in &built.events {
+                    let ssx3_render::frame::Owner::Payload(n) = o else { continue };
+                    let Some(d) = draws.get(*n) else { continue };
+                    let (key, inp, sh) = match e {
+                        ssx3_render::vif::Event::Call(c) => (format!("{:?} L{} {:x?}{}", d.state.material, d.state.layer, c.entry, if c.native { " native" } else { "" }), c.input.len(), c.shared.as_ref().map_or(0, |s| s.len())),
+                        ssx3_render::vif::Event::Direct(g) => (format!("{:?} L{} gif{}", d.state.material, d.state.layer, if g.native { " native" } else { "" }), g.qwords.len(), 0),
+                        ssx3_render::vif::Event::Native { .. } => (format!("{:?} L{} native", d.state.material, d.state.layer), 0, 0),
+                        _ => continue,
+                    };
+                    let e = by.entry(key).or_default();
+                    e.0 += 1;
+                    e.1 += inp;
+                    e.2 += sh;
                 }
                 eprintln!("[vif-stats] frame {i}: (material layer entry): calls, decoded input qwords, replayed qwords");
                 for (k, v) in &by {
