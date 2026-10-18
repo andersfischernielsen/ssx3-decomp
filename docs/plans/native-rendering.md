@@ -272,7 +272,7 @@ IPU emulation → a native MPEG-2 decoder feeding a texture.
 | Step | State | Notes |
 | --- | --- | --- |
 | N1 | ✅ | all seven programs: meshes, strips/ribbons, riders, Bézier terrain, particles, snow (type 3 0x2400 PRIM-only and 0x3bf0 line shape stay on the CPU); ~73% of VU calls on the GPU, merged into ~0.85M batches per 6000 frames; race replay frames match the CPU programs to rounding; native render 6.5 → 5.3 ms per frame |
-| N2 | 🟡 | direct rendering chosen (no render worker); models: mesh chains decoded once + vertex data resident on the GPU; next: the native draw list (game hooks), riders, Bézier |
+| N2 | 🟡 | D1 capture infrastructure (`ssx3_game::capture`, `ssx3_render::direct`): strips and ribbons drawn from native commands; model and rider vertex data resident on the GPU; uploads per race frame 3.2 -> ~1.5 MB; browser race 16-21 -> ~13-15 ms per frame, renderer 44% -> 29% of the worker. Next: D1 for riders / Bézier / particles, then D2 (the draw functions native, no packets: `DrawModel` first, ~3% of the browser worker) |
 | N3 | 🟡 | step 1: snapshots copy only the pages written since the buffer was last filled (frame sink 1.9 → 0.5 ms per frame natively; `SSX3_SNAPSHOT_CHECK`); the renderer still reads ~3.3 MiB of guest RAM per frame |
 | N4 | ⬜ | |
 | N5 | ⬜ | |
