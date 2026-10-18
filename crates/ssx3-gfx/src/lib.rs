@@ -970,6 +970,12 @@ impl Inner {
             if skip_test.iter().any(|&(t, m)| t == st.ctx.test && m != b'z' && (m == 0 || (m == b'a') == alpha_only)) {
                 continue;
             }
+            // A render target sampled while drawn into (a GS feedback
+            // loop; wgpu forbids it): dropped.
+            if st.tex.is_some_and(|t| t != gs::FRAME_TEX && t & gs::RT_TEX != 0 && t & !gs::RT_TEX == st.target) {
+                self.stats.dropped += 1;
+                continue;
+            }
             let sk = draw::samp_key(st);
             let bkey = (st.tex, st.texa, sk);
             let bind = match bind_ix.get(&bkey) {
