@@ -59,6 +59,8 @@ pub struct Vif1 {
     pub regs: VifRegs,
     pub mem: Box<[u8; VU1_QWORDS * 16]>,
     dirty: Box<[bool; VU1_QWORDS]>,
+    /// The qwords in `dirty`, in write order.
+    dirty_list: Vec<u16>,
     fifo: Vec<u32>,
     pub events: Vec<Event>,
     /// Unknown VIFcodes seen.
@@ -77,6 +79,7 @@ impl Vif1 {
             regs,
             mem: Box::new([0; VU1_QWORDS * 16]),
             dirty: Box::new([false; VU1_QWORDS]),
+            dirty_list: Vec::new(),
             fifo: Vec::new(),
             events: Vec::new(),
             errors: 0,
@@ -85,24 +88,24 @@ impl Vif1 {
 
     /// Feed quadwords (one DMA transfer).
     pub fn write(&mut self, data: &[u128]) {
+        let mut words = std::mem::take(&mut self.fifo);
+        words.reserve(data.len() * 4);
         for q in data {
-            for k in 0..4 {
-                self.fifo.push((*q >> (32 * k)) as u32);
-            }
+            words.extend_from_slice(&[*q as u32, (*q >> 32) as u32, (*q >> 64) as u32, (*q >> 96) as u32]);
         }
-        let fifo = std::mem::take(&mut self.fifo);
         let mut pos = 0;
-        while pos < fifo.len() {
-            let cmd = fifo[pos];
+        while pos < words.len() {
+            let cmd = words[pos];
             let need = self.data_words(cmd);
-            if pos + 1 + need > fifo.len() {
+            if pos + 1 + need > words.len() {
                 break;
             }
-            self.execute(cmd, &fifo[pos + 1..pos + 1 + need]);
+            self.execute(cmd, &words[pos + 1..pos + 1 + need]);
             pos += 1 + need;
         }
-        self.fifo = fifo;
-        self.fifo.drain(..pos);
+        // (What did not complete waits for the next transfer.)
+        words.drain(..pos);
+        self.fifo = words;
     }
 
     fn cl_wl(&self) -> (u32, u32) {
@@ -185,19 +188,24 @@ impl Vif1 {
             r.dbf = true;
         }
         let itop = r.itops;
-        let mut input = Vec::new();
-        for (a, d) in self.dirty.iter_mut().enumerate() {
-            if std::mem::take(d) {
-                input.push((a as u16, u128::from_le_bytes(self.mem[a * 16..a * 16 + 16].try_into().unwrap())));
-            }
+        self.dirty_list.sort_unstable();
+        let mut input = Vec::with_capacity(self.dirty_list.len());
+        for &a in &self.dirty_list {
+            let a = a as usize;
+            self.dirty[a] = false;
+            input.push((a as u16, u128::from_le_bytes(self.mem[a * 16..a * 16 + 16].try_into().unwrap())));
         }
+        self.dirty_list.clear();
         self.events.push(Event::Call(VuCall { entry, top, itop, input }));
     }
 
     fn put(&mut self, addr: u32, j: usize, v: u32) {
         let a = (addr as usize) & (VU1_QWORDS - 1);
         self.mem[a * 16 + j * 4..a * 16 + j * 4 + 4].copy_from_slice(&v.to_le_bytes());
-        self.dirty[a] = true;
+        if !self.dirty[a] {
+            self.dirty[a] = true;
+            self.dirty_list.push(a as u16);
+        }
     }
 
     fn unpack(&mut self, cmd: u32, data: &[u32]) {
