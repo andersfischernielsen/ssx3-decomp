@@ -124,6 +124,20 @@ meshes, post passes and the rest):
 - Then N3 is immediate: nothing reads guest RAM after the frame is
   recorded, so the snapshot and the render thread go.
 
+Progress (2026-10-18):
+
+- Models first, on the renderer side (no game hook yet): a model's prebuilt
+  mesh chain is decoded once and replayed (`frame::ChainCache`, ~99% hits in
+  races), and its vertex data stays on the GPU (`gs::MeshArena`): typed
+  frame 1.76 → 1.24 ms per frame natively, VIF decoding 14% → 4% of the
+  browser worker.
+- Measured in the browser race: the game's own render layer (packet
+  building) is only ~7% of the worker; the renderer is ~44% (typed frame
+  13%, `Build::run` 12%, `draw_built` 12% with uploads 5%), the game logic
+  the rest. What D2 still saves is the reconstruction (typed frame, the GS
+  state machine for state packets), worth roughly another 15-20% of the
+  browser frame; the snapshot is already cheap (incremental pages).
+
 Background (the earlier proposal, still the reference for the details):
 
 Override the game's draw entry points (boundaries §4.3: draw slots 95/96
@@ -201,7 +215,7 @@ IPU emulation → a native MPEG-2 decoder feeding a texture.
 | Step | State | Notes |
 | --- | --- | --- |
 | N1 | ✅ | all seven programs: meshes, strips/ribbons, riders, Bézier terrain, particles, snow (type 3 0x2400 PRIM-only and 0x3bf0 line shape stay on the CPU); ~73% of VU calls on the GPU, merged into ~0.85M batches per 6000 frames; race replay frames match the CPU programs to rounding; native render 6.5 → 5.3 ms per frame |
-| N2 | 🟡 | direct rendering chosen (no render worker); render layer mapped (`n2-render-layer.md`); D1 models next |
+| N2 | 🟡 | direct rendering chosen (no render worker); models: mesh chains decoded once + vertex data resident on the GPU; next: the native draw list (game hooks), riders, Bézier |
 | N3 | 🟡 | step 1: snapshots copy only the pages written since the buffer was last filled (frame sink 1.9 → 0.5 ms per frame natively; `SSX3_SNAPSHOT_CHECK`); the renderer still reads ~3.3 MiB of guest RAM per frame |
 | N4 | ⬜ | |
 | N5 | ⬜ | |
