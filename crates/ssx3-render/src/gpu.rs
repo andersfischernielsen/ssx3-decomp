@@ -19,6 +19,11 @@
 pub enum Program {
     /// Type 3 meshes (`mat3`, entries 0x2270 / 0x22c8 / 0x2320 / 0x2358).
     Mat3Mesh = 0,
+    /// Types 6/7 skinned strips and their env pass (`mat6`, entries 0x00 /
+    /// 0x50 / 0x30).
+    Mat6Skin = 1,
+    /// Type 7 shadow silhouettes (`mat6`, entry 0x20).
+    Mat6Shadow = 2,
 }
 
 impl Program {
@@ -26,12 +31,16 @@ impl Program {
     pub fn vs_entry(self) -> &'static str {
         match self {
             Program::Mat3Mesh => "vs_mat3_mesh",
+            Program::Mat6Skin => "vs_mat6_skin",
+            Program::Mat6Shadow => "vs_mat6_shadow",
         }
     }
 
     pub fn from_u8(v: u8) -> Option<Program> {
         match v {
             0 => Some(Program::Mat3Mesh),
+            1 => Some(Program::Mat6Skin),
+            2 => Some(Program::Mat6Shadow),
             _ => None,
         }
     }
@@ -105,6 +114,7 @@ pub fn enabled() -> bool {
 pub fn plan(hash: u64, entry: u32, top: u32, itop: u32, mem: &mut [u8; 16384]) -> Option<Vec<GpuCall>> {
     match hash {
         crate::mat3::HASH => crate::mat3::plan_gpu(entry, top, itop, mem).map(|c| vec![c]),
+        crate::mat6::HASH => crate::mat6::plan_gpu(entry, top, itop, mem),
         _ => None,
     }
 }
@@ -202,6 +212,7 @@ mod tests {
 pub fn check(hash: u64, calls: &[GpuCall], gif: &[u128]) -> Option<String> {
     match (hash, calls) {
         (crate::mat3::HASH, [call]) if call.program == Program::Mat3Mesh => check_mat3(call, gif),
+        (crate::mat6::HASH, [call]) => crate::mat6::check_gpu(call, gif),
         _ => None,
     }
 }

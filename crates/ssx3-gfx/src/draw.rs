@@ -233,7 +233,7 @@ fn plans_unsplit(st: &DrawState, size: (u32, u32), rt_psm: Option<u32>) -> Vec<P
 
 /// The GPU-vertex shader module: the GS stages (draw.wgsl), the shared
 /// vertex helpers (gpuvu.wgsl) and one file per program (`vs_<program>`).
-const GPUVU_SOURCES: &[&str] = &[include_str!("draw.wgsl"), include_str!("gpuvu.wgsl"), include_str!("gpuvu/mat3.wgsl")];
+const GPUVU_SOURCES: &[&str] = &[include_str!("draw.wgsl"), include_str!("gpuvu.wgsl"), include_str!("gpuvu/mat3.wgsl"), include_str!("gpuvu/mat6.wgsl")];
 
 pub struct Pipelines {
     module: wgpu::ShaderModule,
