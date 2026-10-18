@@ -84,16 +84,30 @@ fn main() {
             if std::env::var_os("SSX3_VIF_STATS").is_some() {
                 let mut by: std::collections::BTreeMap<String, (usize, usize, usize)> = Default::default();
                 for d in built.frame.draws() {
-                    for p in d.payload.iter().chain(&d.prelude) {
-                        if let ssx3_render::frame::Payload::Vu(c) = p {
-                            let e = by.entry(format!("{:?} {:x?}", d.state.material, c.entry)).or_default();
-                            e.0 += 1;
-                            e.1 += c.input.len();
-                            e.2 += c.shared.as_ref().map_or(0, |s| s.len());
+                    for p in &d.payload {
+                        match p {
+                            ssx3_render::frame::Payload::Vu(c) => {
+                                let e = by.entry(format!("{:?} L{} {:x?}", d.state.material, d.state.layer, c.entry)).or_default();
+                                e.0 += 1;
+                                e.1 += c.input.len();
+                                e.2 += c.shared.as_ref().map_or(0, |s| s.len());
+                            }
+                            ssx3_render::frame::Payload::Gif(q) => {
+                                let e = by.entry(format!("{:?} L{} gif", d.state.material, d.state.layer)).or_default();
+                                e.0 += 1;
+                                e.1 += q.len();
+                            }
+                            ssx3_render::frame::Payload::Native { .. } => {
+                                by.entry(format!("{:?} L{} native", d.state.material, d.state.layer)).or_default().0 += 1;
+                            }
+                            _ => {}
                         }
                     }
                 }
-                eprintln!("[vif-stats] frame {i}: material: calls, decoded input qwords, replayed qwords: {by:?}");
+                eprintln!("[vif-stats] frame {i}: (material layer entry): calls, decoded input qwords, replayed qwords");
+                for (k, v) in &by {
+                    eprintln!("[vif-stats]   {k}: {v:?}");
+                }
             }
             if std::env::var_os("SSX3_DIRECT_CHECK").is_some() {
                 for e in built.issues.iter().filter(|i| i.starts_with("capture")).take(8) {

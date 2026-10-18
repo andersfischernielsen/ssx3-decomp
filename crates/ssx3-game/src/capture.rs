@@ -15,6 +15,8 @@ use ssx3_render::direct::{self, Cmd, Recorded, STRIP_BATCH};
 const DRAW_TRI_STRIP: u32 = 0x0037_9860;
 const EMIT_BOARD_WAKE_STRIPS: u32 = 0x0038_85e0;
 const EMIT_SHADOW_STRIPS: u32 = 0x0038_7ec0;
+const BEGIN_TRI_STRIP: u32 = 0x0037_a260;
+const END_TRI_STRIP: u32 = 0x0037_a430;
 
 /// Install the wrappers; false when switched off.
 pub fn install() -> bool {
@@ -25,6 +27,8 @@ pub fn install() -> bool {
         (DRAW_TRI_STRIP, draw_tri_strip as fn(&mut Cpu), "PS2GraphicsMan_DrawTriStrip"),
         (EMIT_BOARD_WAKE_STRIPS, emit_board_wake_strips, "PS2GraphicsMan_EmitBoardWakeStrips"),
         (EMIT_SHADOW_STRIPS, emit_shadow_strips, "PS2GraphicsMan_EmitShadowStrips"),
+        (BEGIN_TRI_STRIP, begin_tri_strip, "PS2GraphicsMan_BeginTriStrip"),
+        (END_TRI_STRIP, end_tri_strip, "PS2GraphicsMan_EndTriStrip"),
     ] {
         assert!(ssx3_ee::set_override(a, f), "no override slot for {name}: list it in overrides.txt");
     }
@@ -236,4 +240,47 @@ fn shadow_input(c: &mut Cpu) -> Option<(u32, RibbonInput)> {
         }
     }
     Some((entry, r))
+}
+
+/// A strip begun with `BeginTriStrip`: entry, PRIM, packet start, vertex
+/// count, where the caller writes the vertices (scratchpad).
+static OPEN_STRIP: std::sync::Mutex<Option<(u32, u32, u32, u32, u32)>> = std::sync::Mutex::new(None);
+
+/// `PS2GraphicsMan_BeginTriStrip(gm, n)` (0x37a260): one strip of `n`
+/// vertices in a scratchpad block; the caller writes the vertices at
+/// block + 0x40 (`gm+0x5a2c` points past them), `EndTriStrip` sends it.
+fn begin_tri_strip(c: &mut Cpu) {
+    let ret = c.g[RA][0] as u32;
+    let (gm, n) = (c.g[A0][0] as u32, c.g[A1][0] as i64);
+    let pre = direct::active().then(|| {
+        let entry = if c.bus.read32(c.g[GP][0] as u32 + 0x1290) == 0 { 0x12b8 } else { 0x12b0 };
+        let state = c.bus.read32(gm + 0xe84);
+        let prim = if (c.bus.read32(state + 0x10) as u16 as i16) < 0 { 0x4c } else { 0x5c };
+        (entry, prim, c.bus.read32(gm + 0x5a00))
+    });
+    ssx3_ee::s12::f_0037a260__generated(c);
+    let mut open = OPEN_STRIP.lock().unwrap();
+    *open = None;
+    // (One batch: the strip program takes at most 72 vertices.)
+    if let Some((entry, prim, start)) = pre.filter(|_| c.pc == ret && (3..=STRIP_BATCH as i64).contains(&n)) {
+        let n = n as u32;
+        let verts = c.bus.read32(gm + 0x5a2c).wrapping_sub(0x10 + 0x30 * n);
+        *open = Some((entry, prim, start, n, verts));
+    }
+}
+
+/// `PS2GraphicsMan_EndTriStrip(gm)` (0x37a430).
+fn end_tri_strip(c: &mut Cpu) {
+    let ret = c.g[RA][0] as u32;
+    let gm = c.g[A0][0] as u32;
+    let open = OPEN_STRIP.lock().unwrap().take();
+    let pre = open.map(|(entry, prim, start, n, at)| {
+        let verts: Vec<[u128; 3]> = (0..n).map(|i| std::array::from_fn(|k| qword(c, at + 48 * i + 16 * k as u32))).collect();
+        (entry, prim, start, verts)
+    });
+    ssx3_ee::s12::f_0037a430__generated(c);
+    let Some((entry, prim, start, verts)) = pre.filter(|_| c.pc == ret) else { return };
+    let first_tag = (3 * verts.len() as u128 + 4) | 0x1000_0000;
+    let end = c.bus.read32(gm + 0x5a00).wrapping_sub(0x10);
+    direct::record(Recorded { start, end, first_tag, cmd: Cmd::Strip { entry, prim, verts } });
 }

@@ -1431,5 +1431,7 @@
 0x00379860    PS2GraphicsMan_DrawTriStrip
 0x003885e0    PS2GraphicsMan_EmitBoardWakeStrips
 0x00387ec0    PS2GraphicsMan_EmitShadowStrips
+0x0037a260    PS2GraphicsMan_BeginTriStrip
+0x0037a430    PS2GraphicsMan_EndTriStrip
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
