@@ -87,7 +87,7 @@ fn main() {
                     for p in &d.payload {
                         match p {
                             ssx3_render::frame::Payload::Vu(c) => {
-                                let e = by.entry(format!("{:?} L{} {:x?}", d.state.material, d.state.layer, c.entry)).or_default();
+                                let e = by.entry(format!("{:?} L{} {:x?}{}", d.state.material, d.state.layer, c.entry, if c.native { " native" } else { "" })).or_default();
                                 e.0 += 1;
                                 e.1 += c.input.len();
                                 e.2 += c.shared.as_ref().map_or(0, |s| s.len());

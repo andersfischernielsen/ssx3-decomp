@@ -44,6 +44,9 @@ pub struct VuCall {
     /// time (a replayed mesh chain: [`Recording::id`] and the start's
     /// index), so its vertex data can stay on the GPU. Not part of equality.
     pub src: Option<u64>,
+    /// Made from a captured command (`Vif1::native`), not decoded. Not part
+    /// of equality.
+    pub native: bool,
 }
 
 impl VuCall {
@@ -331,8 +334,34 @@ impl Vif1 {
         }
     }
 
-    /// MSCAL/MSCALF/MSCNT: TOP/ITOP latch and the TOPS double buffer, as the
-    /// VIF does when it starts the VU.
+    /// What a packet does, given natively (`crate::direct::Cmd::Vu`):
+    /// applied as its VIFcodes would be.
+    pub fn native(&mut self, steps: &[crate::direct::Step]) {
+        use crate::direct::Step;
+        for s in steps {
+            match s {
+                Step::Write { addr, rel, data } => {
+                    let base = *addr as u32 + if *rel { self.regs.tops } else { 0 };
+                    for (i, &q) in data.iter().enumerate() {
+                        for j in 0..4 {
+                            self.put(base + i as u32, j, (q >> (32 * j)) as u32);
+                        }
+                    }
+                }
+                Step::Cycle(v) => self.regs.cycle = *v,
+                Step::Itop(v) => self.regs.itops = *v & 0x3ff,
+                Step::Mode(v) => self.regs.mode = *v & 3,
+                Step::Mask(v) => self.regs.mask = *v,
+                Step::Start(e) => {
+                    self.call(Some(*e));
+                    if let Some(Event::Call(c)) = self.events.last_mut() {
+                        c.native = true;
+                    }
+                }
+            }
+        }
+    }
+
     /// `n` program starts made by a packet that is not decoded (a native
     /// draw): only the double buffering moves on. Pending input stays for
     /// the next decoded start.
@@ -344,6 +373,8 @@ impl Vif1 {
         }
     }
 
+    /// MSCAL/MSCALF/MSCNT: TOP/ITOP latch and the TOPS double buffer, as the
+    /// VIF does when it starts the VU.
     fn call(&mut self, entry: Option<u32>) {
         if let Some(rec) = self.rec.as_mut() {
             let w = rec.take(&self.mem);
@@ -367,7 +398,7 @@ impl Vif1 {
             input.push((a as u16, u128::from_le_bytes(self.mem[a * 16..a * 16 + 16].try_into().unwrap())));
         }
         self.dirty_list.clear();
-        self.events.push(Event::Call(VuCall { entry, top, itop, input, shared: None, src: None }));
+        self.events.push(Event::Call(VuCall { entry, top, itop, input, shared: None, src: None, native: false }));
     }
 
     fn put(&mut self, addr: u32, j: usize, v: u32) {

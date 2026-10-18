@@ -1123,8 +1123,9 @@ fn direct_check() -> bool {
 fn check_capture(m: &dyn Mem, vif: &Vif1, start: u32, r: &crate::direct::Recorded) -> Option<String> {
     let mut v = vif.clone_state();
     let mut t = start;
-    for _ in 0..4096 {
-        if t == r.end {
+    let mut stack: Vec<u32> = Vec::new();
+    for _ in 0..65536 {
+        if t == r.end && stack.is_empty() {
             break;
         }
         let tag = m.qword(t);
@@ -1132,12 +1133,37 @@ fn check_capture(m: &dyn Mem, vif: &Vif1, start: u32, r: &crate::direct::Recorde
         let a = ((tag >> 32) & 0x7fff_fff0) as u32;
         let (data, next) = match (tag >> 28) & 7 {
             1 => (t + 16, t + 16 + 16 * qwc),
+            2 => (t + 16, a),
             3 => (a, t + 16),
+            5 => {
+                stack.push(t + 16 + 16 * qwc);
+                (t + 16, a)
+            }
+            6 => match stack.pop() {
+                Some(back) => (t + 16, back),
+                None => return Some(format!("RET at {t:#x} outside a CALL")),
+            },
             id => return Some(format!("tag id {id} at {t:#x}")),
         };
         let q: Vec<u128> = (0..qwc).map(|i| m.qword(data + 16 * i)).collect();
         v.write(&q);
         t = next;
+    }
+    if let crate::direct::Cmd::Vu(steps) = &r.cmd {
+        let mut n = vif.clone_state();
+        n.native(steps);
+        if v.events != n.events {
+            let first = v.events.iter().zip(&n.events).position(|(a, b)| a != b).unwrap_or(v.events.len().min(n.events.len()));
+            return Some(format!("{} events decoded, {} native; first difference at {first}: {:x?} / {:x?}", v.events.len(), n.events.len(), v.events.get(first), n.events.get(first)));
+        }
+        if v.regs != n.regs {
+            return Some(format!("VIF registers {:x?} / {:x?}", v.regs, n.regs));
+        }
+        if v.mem[..] != n.mem[..] {
+            let q = (0..1024).find(|&i| v.mem[16 * i..16 * i + 16] != n.mem[16 * i..16 * i + 16]).unwrap_or(0);
+            return Some(format!("VU memory differs first at qw {q:#x}"));
+        }
+        return None;
     }
     let calls: Vec<_> = v.events.iter().filter_map(|e| if let Event::Call(c) = e { Some(c) } else { None }).collect();
     match &r.cmd {
@@ -1161,7 +1187,7 @@ fn check_capture(m: &dyn Mem, vif: &Vif1, start: u32, r: &crate::direct::Recorde
             }
             None
         }
-        crate::direct::Cmd::Strip { .. } => None,
+        crate::direct::Cmd::Strip { .. } | crate::direct::Cmd::Vu(_) => None,
     }
 }
 
@@ -1234,6 +1260,17 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
             // CALL or NEXT): its command instead of its decoding.
             if let Some(&k) = native.get(&tadr).filter(|_| w.in_payload.is_some() && recording.is_none() && w.vif.idle()) {
                 let r = &direct[k];
+                if let (true, crate::direct::Cmd::Vu(steps)) = (w.m.qword(tadr) == r.first_tag, &r.cmd) {
+                    if direct_check() {
+                        if let Some(e) = check_capture(w.m, &w.vif, tadr, r) {
+                            issues.push(format!("capture at {tadr:#x}: {e}"));
+                        }
+                    }
+                    w.vif.native(steps);
+                    w.take_events();
+                    tadr = r.end;
+                    continue;
+                }
                 if w.m.qword(tadr) == r.first_tag {
                     if direct_check() {
                         if let Some(e) = check_capture(w.m, &w.vif, tadr, r) {

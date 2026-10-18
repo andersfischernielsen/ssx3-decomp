@@ -10,11 +10,17 @@
 use crate::ps2f::FpuF32;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::Cpu;
-use ssx3_render::direct::{self, Cmd, Recorded, STRIP_BATCH};
+use ssx3_render::direct::{self, Cmd, Recorded, Step, STRIP_BATCH};
 
 const DRAW_TRI_STRIP: u32 = 0x0037_9860;
 const EMIT_BOARD_WAKE_STRIPS: u32 = 0x0038_85e0;
 const EMIT_SHADOW_STRIPS: u32 = 0x0038_7ec0;
+const DRAW_EMITTER: u32 = 0x0038_0518;
+const DRAW_DYNAMIC_EMITTER: u32 = 0x0038_07a0;
+const DRAW_M_EMITTER: u32 = 0x0038_0ce0;
+const DRAW_TRAIL: u32 = 0x0038_1310;
+const DRAW_TRAIL_B: u32 = 0x0038_16f0;
+const DRAW_PATCH_FX: u32 = 0x0038_d690;
 const BEGIN_TRI_STRIP: u32 = 0x0037_a260;
 const END_TRI_STRIP: u32 = 0x0037_a430;
 
@@ -29,6 +35,12 @@ pub fn install() -> bool {
         (EMIT_SHADOW_STRIPS, emit_shadow_strips, "PS2GraphicsMan_EmitShadowStrips"),
         (BEGIN_TRI_STRIP, begin_tri_strip, "PS2GraphicsMan_BeginTriStrip"),
         (END_TRI_STRIP, end_tri_strip, "PS2GraphicsMan_EndTriStrip"),
+        (DRAW_EMITTER, draw_emitter, "PS2GraphicsMan_DrawEmitter"),
+        (DRAW_DYNAMIC_EMITTER, draw_dynamic_emitter, "PS2GraphicsMan_DrawDynamicEmitter"),
+        (DRAW_M_EMITTER, draw_m_emitter, "PS2GraphicsMan_DrawMEmitter"),
+        (DRAW_TRAIL, draw_trail, "PS2GraphicsMan_DrawTrail"),
+        (DRAW_TRAIL_B, draw_trail_b, "PS2GraphicsMan_DrawTrailB"),
+        (DRAW_PATCH_FX, draw_patch_fx, "PS2BezierMan_DrawPatchFX"),
     ] {
         assert!(ssx3_ee::set_override(a, f), "no override slot for {name}: list it in overrides.txt");
     }
@@ -283,4 +295,143 @@ fn end_tri_strip(c: &mut Cpu) {
     let first_tag = (3 * verts.len() as u128 + 4) | 0x1000_0000;
     let end = c.bus.read32(gm + 0x5a00).wrapping_sub(0x10);
     direct::record(Recorded { start, end, first_tag, cmd: Cmd::Strip { entry, prim, verts } });
+}
+
+// ---------------------------------------------------------------------------
+// Packets read back (stage A): functions whose packets are one CNT block of
+// plain VIFcodes, built in the scratchpad and in RAM when the body returns
+// (the fromSPR DMA completes at once here). Each is read back as `Step`s;
+// stage C computes them from the function's inputs instead.
+
+/// The VU1 effects of the CNT block at `start` and its end, or `None` for a
+/// packet this reader does not take (other tags, masks, rows, DIRECT, MSCNT;
+/// it then stays on the decoding path). UNPACKs assume CL = WL, as the
+/// draw's state change leaves them for these types (the capture check
+/// compares).
+fn read_packet(c: &mut Cpu, start: u32) -> Option<(u32, Vec<Step>)> {
+    let tag = qword(c, start);
+    if (tag >> 28) & 7 != 1 {
+        return None;
+    }
+    let qwc = (tag & 0xffff) as u32;
+    let mut words = vec![(tag >> 64) as u32, (tag >> 96) as u32];
+    for i in 0..qwc {
+        let q = qword(c, start + 16 + 16 * i);
+        words.extend((0..4).map(|l| (q >> (32 * l)) as u32));
+    }
+    let mut steps = Vec::new();
+    let mut p = 0;
+    while p < words.len() {
+        let cmd = words[p];
+        p += 1;
+        let (op, imm) = ((cmd >> 24) & 0x7f, cmd & 0xffff);
+        match op {
+            0x00 | 0x10 | 0x11 | 0x13 => {}
+            0x01 => steps.push(Step::Cycle(imm)),
+            0x04 => steps.push(Step::Itop(imm & 0x3ff)),
+            0x05 => steps.push(Step::Mode(imm & 3)),
+            0x14 => steps.push(Step::Start(imm * 8)),
+            0x20 => {
+                steps.push(Step::Mask(*words.get(p)?));
+                p += 1;
+            }
+            _ if op & 0x60 == 0x60 && op & 0x10 == 0 => {
+                let (vn, vl, usn) = ((cmd >> 26) & 3, (cmd >> 24) & 3, (cmd >> 14) & 1 != 0);
+                let num = match (cmd >> 16) & 0xff {
+                    0 => 256,
+                    n => n,
+                } as usize;
+                // V4-32, V4-16, V4-8 only.
+                if vn != 3 || vl == 3 {
+                    return None;
+                }
+                let bits = 32 >> vl;
+                let n_words = (num * 4 * bits).div_ceil(32);
+                let d = words.get(p..p + n_words)?;
+                p += n_words;
+                let lane = |k: usize| -> u32 {
+                    let bit = k * bits;
+                    let v = d[bit / 32] >> (bit % 32);
+                    match bits {
+                        32 => v,
+                        16 if usn => v & 0xffff,
+                        16 => v as u16 as i16 as i32 as u32,
+                        _ if usn => v & 0xff,
+                        _ => v as u8 as i8 as i32 as u32,
+                    }
+                };
+                let data = (0..num).map(|i| (0..4).fold(0u128, |q, l| q | (lane(4 * i + l) as u128) << (32 * l))).collect();
+                steps.push(Step::Write { addr: (cmd & 0x3ff) as u16, rel: (cmd >> 15) & 1 != 0, data });
+            }
+            _ => return None,
+        }
+    }
+    Some((start + 16 * (qwc + 1), steps))
+}
+
+/// Run a body that writes packets at the cursor `*cursor`, one record each
+/// (the next one 0x10 after the end), and record them read back. Nothing
+/// when `kill` (a gp-relative debug flag) is set, the body unwound or a
+/// packet is not one `read_packet` takes.
+fn capture_packets(c: &mut Cpu, body: fn(&mut Cpu), cursor: u32, kill: Option<u32>) {
+    let ret = c.g[RA][0] as u32;
+    let on = direct::active() && kill.is_none_or(|k| c.bus.read32(c.g[GP][0] as u32 + k) == 0);
+    let start = c.bus.read32(cursor);
+    body(c);
+    if !on || c.pc != ret {
+        return;
+    }
+    let end = c.bus.read32(cursor);
+    let mut at = start;
+    let mut out = Vec::new();
+    while at + 0x10 < end {
+        let Some((e, steps)) = read_packet(c, at) else { return };
+        out.push(Recorded { start: at, end: e, first_tag: qword(c, at), cmd: Cmd::Vu(steps) });
+        at = e + 0x10;
+    }
+    if at != end {
+        return;
+    }
+    for r in out {
+        direct::record(r);
+    }
+}
+
+/// Slot 82 `DrawEmitter(gm, desc)` (0x380518): a type-4 emitter.
+fn draw_emitter(c: &mut Cpu) {
+    let gm = c.g[A0][0] as u32;
+    capture_packets(c, ssx3_ee::s12::f_00380518__generated, gm + 0x5a00, Some(0x1408));
+}
+
+/// Slot 83 `DrawDynamicEmitter(gm, e)` (0x3807a0): ring emitters, batches of
+/// 64.
+fn draw_dynamic_emitter(c: &mut Cpu) {
+    let gm = c.g[A0][0] as u32;
+    capture_packets(c, ssx3_ee::s12::f_003807a0__generated, gm + 0x5a00, Some(0x140c));
+}
+
+/// Slot 84 `DrawMEmitter(gm, e)` (0x380ce0): ring emitters with colours,
+/// batches of 43.
+fn draw_m_emitter(c: &mut Cpu) {
+    let gm = c.g[A0][0] as u32;
+    capture_packets(c, ssx3_ee::s12::f_00380ce0__generated, gm + 0x5a00, Some(0x140c));
+}
+
+/// Slot 85 `DrawTrail(gm, d)` (0x381310): SnowBox flakes (type 5).
+fn draw_trail(c: &mut Cpu) {
+    let gm = c.g[A0][0] as u32;
+    capture_packets(c, ssx3_ee::s12::f_00381310__generated, gm + 0x5a00, None);
+}
+
+/// Slot 86 `DrawTrailB(gm, d)` (0x3816f0): the depth-faded variant.
+fn draw_trail_b(c: &mut Cpu) {
+    let gm = c.g[A0][0] as u32;
+    capture_packets(c, ssx3_ee::s12::f_003816f0__generated, gm + 0x5a00, None);
+}
+
+/// `PS2BezierMan_DrawPatchFX(bm, patch, entry, cursor)` (0x38d690): patch
+/// glitter (type 4, entry 0x1460).
+fn draw_patch_fx(c: &mut Cpu) {
+    let cursor = c.g[A3][0] as u32;
+    capture_packets(c, ssx3_ee::s12::f_0038d690__generated, cursor, None);
 }

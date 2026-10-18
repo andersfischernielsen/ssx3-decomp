@@ -39,6 +39,26 @@ pub enum Cmd {
     /// program start, the qwords its input holds (offset from TOP, value):
     /// the strip tag, the counts and alpha ramp, edge A, edge B.
     Ribbon { entry: u32, calls: Vec<Vec<(u16, u128)>> },
+    /// What a packet does to VU1, in order, without its encoding: the frame
+    /// build applies it to its VIF state as the packet would have
+    /// (`crate::vif::Vif1::native`), so its program starts become ordinary
+    /// VU calls (and later packets see the memory and registers it left).
+    Vu(Vec<Step>),
+}
+
+/// One effect of a packet on VU1 (`Cmd::Vu`).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Step {
+    /// Quadwords stored from `addr` (relative to TOPS when `rel`, as UNPACK
+    /// with FLG), as VU memory holds them afterwards.
+    Write { addr: u16, rel: bool, data: Vec<u128> },
+    /// STCYCL, ITOP, STMOD, STMASK.
+    Cycle(u32),
+    Itop(u32),
+    Mode(u32),
+    Mask(u32),
+    /// MSCAL.
+    Start(u32),
 }
 
 /// The vertex count of a strip batch.
@@ -50,6 +70,7 @@ impl Cmd {
         match self {
             Cmd::Strip { verts, .. } => strip_batches(verts.len()).count() as u32,
             Cmd::Ribbon { calls, .. } => calls.len() as u32,
+            Cmd::Vu(steps) => steps.iter().filter(|s| matches!(s, Step::Start(_))).count() as u32,
         }
     }
 }
@@ -127,6 +148,8 @@ pub fn plan(cmd: &Cmd, regs: VifRegs, header: &[u128; 6], vu: &[u8; 16384]) -> V
             let tops = tops(regs, cmd.starts());
             crate::mat3::plan_ribbon_cmd(*entry, calls, &tops, header, [qw(0x3c8), qw(0x3e4)])
         }
+        // (Applied to the VIF state by the frame build: ordinary calls.)
+        Cmd::Vu(_) => Vec::new(),
     }
 }
 
@@ -183,6 +206,31 @@ pub fn encode_cmd(cmd: &Cmd, out: &mut Vec<u8>) {
             out.extend_from_slice(&prim.to_le_bytes());
             out.extend_from_slice(&(verts.len() as u32).to_le_bytes());
             for v in verts.iter().flatten() {
+                out.extend_from_slice(&v.to_le_bytes());
+            }
+        }
+        Cmd::Vu(steps) => {
+            out.push(2);
+            out.extend_from_slice(&(steps.len() as u32).to_le_bytes());
+            for s in steps {
+                let (k, v) = match s {
+                    Step::Write { addr, rel, data } => {
+                        out.push(0);
+                        out.extend_from_slice(&addr.to_le_bytes());
+                        out.push(*rel as u8);
+                        out.extend_from_slice(&(data.len() as u32).to_le_bytes());
+                        for q in data {
+                            out.extend_from_slice(&q.to_le_bytes());
+                        }
+                        continue;
+                    }
+                    Step::Cycle(v) => (1, v),
+                    Step::Itop(v) => (2, v),
+                    Step::Mode(v) => (3, v),
+                    Step::Mask(v) => (4, v),
+                    Step::Start(v) => (5, v),
+                };
+                out.push(k);
                 out.extend_from_slice(&v.to_le_bytes());
             }
         }
@@ -245,6 +293,31 @@ pub fn decode_cmd(r: &mut Bytes) -> Option<Cmd> {
             }
             Cmd::Ribbon { entry, calls }
         }
+        2 => {
+            let n = r.u32()?;
+            let mut steps = Vec::with_capacity(n as usize);
+            for _ in 0..n {
+                steps.push(match r.take(1)?[0] {
+                    0 => {
+                        let addr = r.u16()?;
+                        let rel = r.take(1)?[0] != 0;
+                        let k = r.u32()?;
+                        let mut data = Vec::with_capacity(k as usize);
+                        for _ in 0..k {
+                            data.push(r.u128()?);
+                        }
+                        Step::Write { addr, rel, data }
+                    }
+                    1 => Step::Cycle(r.u32()?),
+                    2 => Step::Itop(r.u32()?),
+                    3 => Step::Mode(r.u32()?),
+                    4 => Step::Mask(r.u32()?),
+                    5 => Step::Start(r.u32()?),
+                    _ => return None,
+                });
+            }
+            Cmd::Vu(steps)
+        }
         _ => return None,
     })
 }
@@ -269,6 +342,12 @@ mod tests {
             Recorded { start: 0x10_0000, end: 0x10_0400, first_tag: 7 << 100 | 3, cmd: Cmd::Strip { entry: 0x12b8, prim: 0x5c, verts: vec![[1, 2, 3], [4, 5, u128::MAX]] } },
             Recorded { start: 0x10_0410, end: 0x10_0500, first_tag: 9, cmd: Cmd::Strip { entry: 0x12b0, prim: 0x4c, verts: Vec::new() } },
             Recorded { start: 0x10_0500, end: 0x10_0600, first_tag: 3, cmd: Cmd::Ribbon { entry: 0x3a08, calls: vec![vec![(0, 5), (2, u128::MAX)], vec![]] } },
+            Recorded {
+                start: 0x10_0700,
+                end: 0x10_0800,
+                first_tag: 4,
+                cmd: Cmd::Vu(vec![Step::Cycle(0x101), Step::Write { addr: 0x11, rel: false, data: vec![1, 2] }, Step::Write { addr: 0, rel: true, data: vec![3] }, Step::Itop(1), Step::Mode(0), Step::Mask(7), Step::Start(0x80)]),
+            },
         ];
         let mut b = Vec::new();
         encode(&list, &mut b);

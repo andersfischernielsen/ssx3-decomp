@@ -1433,5 +1433,11 @@
 0x00387ec0    PS2GraphicsMan_EmitShadowStrips
 0x0037a260    PS2GraphicsMan_BeginTriStrip
 0x0037a430    PS2GraphicsMan_EndTriStrip
+0x00380518    PS2GraphicsMan_DrawEmitter
+0x003807a0    PS2GraphicsMan_DrawDynamicEmitter
+0x00380ce0    PS2GraphicsMan_DrawMEmitter
+0x00381310    PS2GraphicsMan_DrawTrail
+0x003816f0    PS2GraphicsMan_DrawTrailB
+0x0038d690    PS2BezierMan_DrawPatchFX
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04

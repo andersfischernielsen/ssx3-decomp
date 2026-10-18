@@ -386,6 +386,7 @@ mod tests {
                 input: (0..8).map(|_| ((next() % 1024) as u16, next() as u128 | (next() as u128) << 64)).collect(),
                 shared: (k == 1).then(|| vec![((next() % 1024) as u16, next() as u128)].into()),
                 src: (k == 3).then_some(42),
+                native: false,
             })
             .collect();
         let refs: Vec<JobCall> = calls.iter().enumerate().map(|(k, c)| (k * 3, c, (k != 4).then_some(crate::mat6::HASH), (k == 3).then_some(64.0))).collect();
@@ -448,7 +449,7 @@ mod tests {
         }
         let shared: std::sync::Arc<[(u16, u128)]> = (0..40u16).map(|k| (0x200 + k, (k as u128) << 90 | 0x3f80_0000)).collect::<Vec<_>>().into();
         let calls: Vec<VuCall> = (0..3)
-            .map(|k| VuCall { entry: Some(0x1150), top: 0, itop: 0, input: vec![(0x10 + k, 99)], shared: Some(shared.clone()), src: Some(5 << 16 | k as u64) })
+            .map(|k| VuCall { entry: Some(0x1150), top: 0, itop: 0, input: vec![(0x10 + k, 99)], shared: Some(shared.clone()), src: Some(5 << 16 | k as u64), native: false })
             .collect();
         let items: Vec<JobItem> = calls.iter().map(|c| JobItem::Call((1, c, Some(crate::mat6::HASH), None))).collect();
         let inline = run(&encode(&mem, &items), &[]);
