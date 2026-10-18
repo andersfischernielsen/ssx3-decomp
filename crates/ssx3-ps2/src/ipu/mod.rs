@@ -17,18 +17,16 @@
 //! 2026 Samir Nuri), with PCSX2's CSC/dither/VQ/threshold semantics. See
 //! `docs/investigation/ipu.md`.
 
-pub mod csc;
 pub mod dma;
-mod idct;
-pub mod tables;
+
+pub use ssx3_mpeg::{csc, idct, tables};
+use ssx3_mpeg::{dequantise, luts, DctLookup, Lookup, DEFAULT_INTRA, NON_LINEAR_SCALE};
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
-use std::sync::OnceLock;
 
 use crate::Qword;
-use tables::{Dct, Vlc};
 
 /// The IPU's view of its DMA channels.
 pub trait IpuDma {
@@ -90,88 +88,6 @@ pub mod ctrl {
 
 /// Input FIFO depth in bytes (8 quadwords).
 const FIFO_BYTES: usize = 128;
-
-/// MPEG default intra quantiser matrix, raster order.
-const DEFAULT_INTRA: [u8; 64] = [
-    8, 16, 19, 22, 26, 27, 29, 34, 16, 16, 22, 24, 27, 29, 34, 37, 19, 22, 26, 27, 29, 34, 34, 38,
-    22, 22, 26, 27, 29, 34, 37, 40, 22, 26, 27, 29, 32, 35, 40, 48, 26, 27, 29, 32, 35, 40, 48, 58,
-    26, 27, 29, 34, 38, 46, 56, 69, 27, 29, 35, 38, 46, 56, 69, 83,
-];
-
-/// MPEG-2 non-linear quantiser_scale (q_scale_type = 1).
-const NON_LINEAR_SCALE: [u8; 32] = [
-    0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 18, 20, 22, 24, 28, 32, 36, 40, 44, 48, 52, 56, 64,
-    72, 80, 88, 96, 104, 112,
-];
-
-// ------------------------------------------------------------------ lookups
-
-/// Flat lookup over `bits` bits: entries are `(length, value)`, length 0 =
-/// invalid code.
-struct Lookup {
-    bits: u32,
-    entries: Vec<(u8, u32)>,
-}
-
-struct DctLookup {
-    bits: u32,
-    entries: Vec<(u8, u8, i16)>,
-}
-
-fn build(table: &[Vlc]) -> Lookup {
-    let bits = table.iter().map(|e| e.length as u32).max().unwrap();
-    let mut entries = vec![(0u8, 0u32); 1 << bits];
-    for e in table {
-        let shift = bits - e.length as u32;
-        for i in 0..1u32 << shift {
-            entries[((e.code as u32) << shift | i) as usize] = (e.length, e.value);
-        }
-    }
-    Lookup { bits, entries }
-}
-
-fn build_dct(table: &[Dct]) -> DctLookup {
-    let bits = table.iter().map(|e| e.length as u32).max().unwrap();
-    let mut entries = vec![(0u8, 0u8, 0i16); 1 << bits];
-    for e in table {
-        let shift = bits - e.length as u32;
-        for i in 0..1u32 << shift {
-            entries[((e.code as u32) << shift | i) as usize] = (e.length, e.run, e.level);
-        }
-    }
-    DctLookup { bits, entries }
-}
-
-struct Luts {
-    mbai: Lookup,
-    mb_i: Lookup,
-    mb_p: Lookup,
-    mb_b: Lookup,
-    motion: Lookup,
-    dmv: Lookup,
-    dc_luma: Lookup,
-    dc_chroma: Lookup,
-    cbp: Lookup,
-    dct0: DctLookup,
-    dct1: DctLookup,
-}
-
-fn luts() -> &'static Luts {
-    static L: OnceLock<Luts> = OnceLock::new();
-    L.get_or_init(|| Luts {
-        mbai: build(&tables::MB_ADDRESS_INCREMENT),
-        mb_i: build(&tables::MB_TYPE_I),
-        mb_p: build(&tables::MB_TYPE_P),
-        mb_b: build(&tables::MB_TYPE_B),
-        motion: build(&tables::MOTION_CODE),
-        dmv: build(&tables::DM_VECTOR),
-        dc_luma: build(&tables::DC_SIZE_LUMA),
-        dc_chroma: build(&tables::DC_SIZE_CHROMA),
-        cbp: build(&tables::CODED_BLOCK_PATTERN),
-        dct0: build_dct(&tables::DCT_TABLE_0),
-        dct1: build_dct(&tables::DCT_TABLE_1),
-    })
-}
 
 // -------------------------------------------------------------------- state
 
@@ -684,35 +600,7 @@ impl Ctx<'_> {
         } else {
             NON_LINEAR_SCALE[(qsc & 31) as usize] as i32
         };
-        let mut f = [0i32; 64];
-        let mut sum = 0i32;
-        for (k, &v) in coef.iter().enumerate() {
-            let r = scan[k] as usize;
-            let mut x = if intra && k == 0 {
-                v * (8 >> ipu.dc_precision())
-            } else {
-                if v == 0 {
-                    continue;
-                }
-                let sign = v.signum();
-                let w = weights[r] as i32;
-                let mut x = if intra {
-                    (v * w * scale * 2) / 32
-                } else {
-                    ((2 * v + sign) * w * scale) / 32
-                };
-                if mpeg1 && x != 0 && x & 1 == 0 {
-                    x -= sign; // MPEG-1 oddification
-                }
-                x
-            };
-            x = x.clamp(-2048, 2047);
-            f[r] = x;
-            sum += x;
-        }
-        if !mpeg1 && sum & 1 == 0 {
-            f[63] ^= 1; // MPEG-2 mismatch control
-        }
+        let f = dequantise(&coef, scan, weights, intra, scale, 8 >> ipu.dc_precision(), mpeg1);
         idct::idct(&f, out);
         Ok(())
     }

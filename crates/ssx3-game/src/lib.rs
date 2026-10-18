@@ -23,6 +23,7 @@ pub mod abi;
 /// Debug-only overrides behind environment switches.
 pub mod capture;
 pub mod packetless;
+pub mod movie;
 pub mod debug;
 #[cfg(feature = "oc28")]
 pub mod oc28;
@@ -150,6 +151,7 @@ const CORE: &[(u32, GuestFn, &str)] = &[
 /// `overrides.txt`.
 pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     let mut v: Vec<(u32, GuestFn, &'static str)> = CORE.to_vec();
+    v.extend_from_slice(movie::overrides());
     #[cfg(feature = "math")]
     v.extend_from_slice(math::OVERRIDES);
     #[cfg(feature = "anim")]

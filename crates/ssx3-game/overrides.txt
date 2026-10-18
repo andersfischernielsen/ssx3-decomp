@@ -1466,5 +1466,15 @@
 0x00363490    PS2GraphicsMan_RenderFrame
 0x00377a10    PS2GraphicsMan_EndFrame
 0x00362de8    DeferMan_BuildBuckets
+# N5: libmpeg natively (crates/ssx3-ps2/src/mpeg.rs, crates/ssx3-game/src/movie.rs)
+0x00402708    sceMpegInit
+0x004027b8    sceMpegCreate
+0x004029d0    sceMpegAddBs
+0x00402a10    sceMpegGetPicture
+0x00402b38    sceMpegIsEnd
+0x00402b58    sceMpegReset
+0x00402c08    sceMpegAddCallback
+# N4: the flip natively
+0x00382af0    Renderer_SetDisplayRegs
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04

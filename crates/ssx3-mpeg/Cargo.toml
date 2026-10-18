@@ -1,0 +1,9 @@
+[package]
+name = "ssx3-mpeg"
+description = "MPEG-2 video decoding for the game's movies (native libmpeg, shared with the IPU model)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]

@@ -275,7 +275,7 @@ fn wm(c: &mut Cpu, a: u32, m: &vu0::M) {
 /// `ret` the return address the generated caller uses; its v0. A native
 /// caller cannot be resumed after an unwind, so the callee runs with
 /// `Cpu::no_unwind`.
-fn guest_call(c: &mut Cpu, target: u32, args: &[u32], ret: u32) -> u32 {
+pub(crate) fn guest_call(c: &mut Cpu, target: u32, args: &[u32], ret: u32) -> u32 {
     const R: [usize; 8] = [A0, A1, A2, A3, T0, T1, T2, T3];
     let ra = c.g[RA];
     for (i, &a) in args.iter().enumerate() {

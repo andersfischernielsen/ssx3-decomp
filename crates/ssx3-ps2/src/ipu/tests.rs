@@ -831,3 +831,123 @@ fn eabig_i_frames_decode() {
     assert!(decoded > 0);
     assert_eq!(drv.ipu.stats.bad_codes, 0);
 }
+
+/// Chunks fed the way the game's codec does (`FeedBitstream`): one per
+/// request, zero-padded to a quadword plus one more, then the sequence end.
+struct ChunkFeed<'a> {
+    chunks: Vec<&'a [u8]>,
+    next: usize,
+    ended: bool,
+}
+
+impl ssx3_mpeg::decoder::Feed for ChunkFeed<'_> {
+    fn more(&mut self, out: &mut Vec<u8>) -> bool {
+        if let Some(c) = self.chunks.get(self.next) {
+            self.next += 1;
+            let n = (c.len() + 15) / 16 * 16 + 16;
+            out.extend_from_slice(c);
+            out.resize(out.len() + n - c.len(), 0);
+            return true;
+        }
+        if !self.ended {
+            self.ended = true;
+            for _ in 0..4 {
+                out.extend_from_slice(&[0, 0, 1, 0xb7]);
+            }
+            return true;
+        }
+        false
+    }
+}
+
+#[test]
+fn eabig_native_decoder() {
+    let Some(mpc) = load_eabig() else {
+        eprintln!("EABIG.MPC not available (mount the disc or set SSX3_ISO); skipping");
+        return;
+    };
+    let chunks = mpc_video_chunks(&mpc);
+    let (width, height) = (512usize, 448usize);
+    // The first I-picture through the IPU.
+    let first_i = chunks
+        .iter()
+        .find_map(|c| {
+            let pic = c.windows(4).position(|w| w == [0, 0, 1, 0])?;
+            ((c[pic + 5] >> 3) & 7 == 1).then(|| &c[pic..])
+        })
+        .unwrap();
+    let mut drv = Driver { ipu: Ipu::new() };
+    drv.set_default_matrices();
+    let ipu = drv.decode_i_picture(first_i, width, height, false).expect("I-picture");
+    // The whole movie natively.
+    let mut feed = ChunkFeed { chunks, next: 0, ended: false };
+    let mut d = ssx3_mpeg::decoder::Decoder::new();
+    let mut out = vec![0u8; width * height * 4];
+    let mut pictures = 0;
+    let t = std::time::Instant::now();
+    while d.picture(&mut feed) == ssx3_mpeg::decoder::Got::Picture {
+        if pictures == 0 {
+            d.output_rgb32(&mut out);
+            // libmpeg's macroblock order (columns) -> raster.
+            let mbh = height / 16;
+            for (i, &p) in ipu.rgba.iter().enumerate() {
+                let (x, y) = (i % width, i / width);
+                let mb = (x / 16) * mbh + y / 16;
+                let o = mb * 1024 + ((y % 16) * 16 + x % 16) * 4;
+                let n = u32::from_le_bytes(out[o..o + 4].try_into().unwrap());
+                assert_eq!(n, p, "pixel ({x}, {y}) of the first picture");
+            }
+        }
+        pictures += 1;
+    }
+    eprintln!("EABIG natively: {pictures} pictures, {} errors, {:?}", d.errors, t.elapsed());
+    assert_eq!(d.errors, 0);
+    assert_eq!(pictures, 75);
+    assert!(d.ended);
+}
+
+/// Debugging aid: `SSX3_MPEG_REF_DIR=<dir>` with `pic<k>.rgba` dumps of the
+/// emulated path (`SSX3_MOVIE_DUMP`): report where the native pictures
+/// differ, with the macroblocks' predictions.
+#[test]
+fn eabig_native_vs_dumps() {
+    let (Some(dir), Some(mpc)) = (std::env::var_os("SSX3_MPEG_REF_DIR"), load_eabig()) else {
+        return;
+    };
+    let chunks = mpc_video_chunks(&mpc);
+    let mut feed = ChunkFeed { chunks, next: 0, ended: false };
+    let mut d = ssx3_mpeg::decoder::Decoder::new();
+    d.log_mbs = true;
+    let mut out = vec![0u8; 512 * 448 * 4];
+    for k in 0..8 {
+        assert_eq!(d.picture(&mut feed), ssx3_mpeg::decoder::Got::Picture);
+        let Ok(r) = std::fs::read(std::path::Path::new(&dir).join(format!("pic{k}.rgba"))) else { continue };
+        d.output_rgb32(&mut out);
+        let mut bad = std::collections::BTreeMap::new();
+        for (i, (a, b)) in out.iter().zip(&r).enumerate() {
+            if a != b {
+                *bad.entry(i / 1024).or_insert(0) += 1;
+            }
+        }
+        eprintln!("picture {k}: {} macroblocks differ", bad.len());
+        // Bidirectional macroblocks by half-pel kind of each vector
+        // (0 full, 1 x, 2 y, 3 xy): (count, differing).
+        let mut cat = std::collections::BTreeMap::new();
+        for &(mb, f, b, mv) in &d.mb_log {
+            let kind = |v: [i32; 2]| (v[0] & 1 | (v[1] & 1) << 1) as u8;
+            let key = (f, b, if f { kind(mv[0]) } else { 9 }, if b { kind(mv[1]) } else { 9 });
+            let (mx, my) = (mb % 32, mb / 32);
+            let e = cat.entry(key).or_insert((0, 0));
+            e.0 += 1;
+            if bad.contains_key(&(mx * 28 + my)) {
+                e.1 += 1;
+            }
+        }
+        eprintln!("  (fwd, bwd, fkind, bkind) -> (count, differing): {cat:?}");
+        for (&mb, &n) in bad.iter().take(6) {
+            let (mx, my) = (mb / 28, mb % 28);
+            let info = d.mb_log.iter().find(|x| x.0 == my * 32 + mx);
+            eprintln!("  mb ({mx}, {my}): {n} bytes; prediction {info:?}");
+        }
+    }
+}

@@ -13,6 +13,7 @@ members = [
     "crates/ssx3-render",
     "crates/ssx3-gfx",
     "crates/ssx3-mc",
+    "crates/ssx3-mpeg",
     "crates/ssx3",
     "crates/ssx3-game",
     "crates/ssx3-web",
