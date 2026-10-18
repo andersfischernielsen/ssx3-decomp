@@ -149,7 +149,15 @@ fn main() {
             if i == 0 && rep == 0 {
                 g.seed_vu(&mem.vu1);
             }
-            g.render(&built, mem);
+            // Over the memory the game hands a renderer (the frame's
+            // texture pages), as live; `SSX3_FULL_SNAPSHOT=1`: all of it.
+            if std::env::var("SSX3_FULL_SNAPSHOT").is_ok_and(|v| v == "1") {
+                g.render(&built, mem);
+            } else {
+                let mut ranges = Vec::new();
+                ssx3_render::frame::texture_ranges(mem, &built.frame, &mut ranges);
+                g.render(&built, &frame_sink::FrameMem::from_ram(&mem.ram, &ranges));
+            }
             if rep > 0 {
                 times.push(((t1 - t0).as_secs_f64() * 1e3, t1.elapsed().as_secs_f64() * 1e3));
             }
@@ -167,6 +175,9 @@ fn main() {
         for ((h, e, i, g), n) in ssx3_render::gpu::STATS.lock().unwrap().iter() {
             eprintln!("[gpu-stats] {h:016x} entry {e:#06x} itop {i} gpu {g}: {n}");
         }
+    }
+    if frame_sink::frame_mem_misses() > 0 {
+        eprintln!("[frame-mem] {} reads outside the frames' texture pages", frame_sink::frame_mem_misses());
     }
     let dumps = &dumps[..];
     let (w, h, px) = r.read_image().expect("image");

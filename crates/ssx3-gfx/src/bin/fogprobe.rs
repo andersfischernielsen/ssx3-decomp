@@ -50,7 +50,7 @@ fn main() {
     let (zbp, w, h) = (0x1c00u32, 512u32, 448u32);
     let zof = |x: u32, y: u32| -> u32 { (x.wrapping_mul(2654435761) ^ y.wrapping_mul(40503) ^ (x * 7 + y * 131) << 9) & 0xff_ffff };
     gs.draw_log = Some(Vec::new());
-    let fp = ssx3_gfx::flip_packet(&mem);
+    let fp = ssx3_render::frame::flip_packet(&mem);
     eprintln!("flip packet {} qwords, first tag {:#x}", fp.len(), fp[0]);
     gs.gif_write(1, &fp);
     gs.sync();

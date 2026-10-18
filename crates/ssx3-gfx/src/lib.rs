@@ -91,7 +91,6 @@ pub struct Inner {
     /// workers (`publish_staged`).
     staged: Option<Staged>,
     /// Typed frames from the published memory (in order).
-    builder: ssx3_ps2::frame_sink::FrameBuilder,
     dev: wgpu::Device,
     queue: wgpu::Queue,
     pipes: draw::Pipelines,
@@ -172,9 +171,8 @@ pub struct Inner {
 #[derive(Clone)]
 pub struct Renderer(pub Arc<Mutex<Inner>>, Arc<Shared>);
 
-/// A frame handed to the render thread: the GraphicsMan that published it
-/// and a snapshot of EE memory.
-type Job = (u32, Box<ssx3_ps2::frame_sink::DumpMem>);
+/// A frame handed to the render thread.
+type Job = ssx3_ps2::frame_sink::Published;
 
 /// What the render thread shares with the game and the window without
 /// holding the renderer: the latest depth for the light queries and the
@@ -189,8 +187,6 @@ pub struct Shared {
     /// The latest frame's images (in-between ones first) and when they
     /// were ready.
     present: Mutex<Option<(Vec<wgpu::Texture>, web_time::Instant)>>,
-    /// The frame thread's building time (ms) and frames.
-    build_ms: Mutex<(f64, u64)>,
 }
 
 fn program(m: Material) -> Option<u64> {
@@ -240,7 +236,6 @@ impl Renderer {
         let shared = Arc::new(Shared::default());
         Renderer(Arc::new(Mutex::new(Inner {
             shared: shared.clone(),
-            builder: Default::default(),
             dev,
             queue,
             pipes,
@@ -289,33 +284,15 @@ impl Renderer {
     /// the game goes on (at most one frame queued; the game waits if the
     /// renderer falls further behind).
     pub fn start_worker(&self) {
-        // Two stages: the typed frame is built from the snapshot on one
-        // thread while the previous frame renders on another.
         let (tx, rx) = std::sync::mpsc::sync_channel::<Job>(1);
-        let (btx, brx) = std::sync::mpsc::sync_channel::<(Built, ssx3_render::frame::Carry, Box<ssx3_ps2::frame_sink::DumpMem>)>(1);
         *self.1.tx.lock().unwrap() = Some(tx);
-        let mut builder = ssx3_ps2::frame_sink::FrameBuilder::default();
-        let stats = self.1.clone();
-        std::thread::Builder::new()
-            .name("ssx3-gfx-frame".into())
-            .spawn(move || {
-                while let Ok((gm, mem)) = rx.recv() {
-                    let (built, carry) = builder.build(gm, &mem);
-                    *stats.build_ms.lock().unwrap() = (builder.ms, builder.frames);
-                    if btx.send((built, carry, mem)).is_err() {
-                        break;
-                    }
-                }
-            })
-            .expect("frame thread");
         let (inner, shared) = (self.0.clone(), self.1.clone());
         std::thread::Builder::new()
             .name("ssx3-gfx".into())
             .spawn(move || {
-                while let Ok((built, carry, mem)) = brx.recv() {
-                    inner.lock().unwrap().render_built(&built, &carry, &mem);
-                    drop(built);
-                    ssx3_ps2::frame_sink::recycle(mem);
+                while let Ok(f) = rx.recv() {
+                    inner.lock().unwrap().render_built(&f.built, &f.carry, &f.mem);
+                    drop(f);
                     let mut p = shared.pending.lock().unwrap();
                     *p -= 1;
                     shared.idle.notify_all();
@@ -428,23 +405,22 @@ impl Renderer {
 }
 
 impl ssx3_ps2::frame_sink::FrameSink for Renderer {
-    fn frame(&mut self, gm: u32, mem: Box<ssx3_ps2::frame_sink::DumpMem>) {
+    fn frame(&mut self, f: ssx3_ps2::frame_sink::Published) {
         let tx = self.1.tx.lock().unwrap().clone();
         match tx {
             Some(tx) => {
                 *self.1.pending.lock().unwrap() += 1;
-                if tx.send((gm, mem)).is_err() {
+                if tx.send(f).is_err() {
                     *self.1.pending.lock().unwrap() -= 1;
                 }
             }
             None => {
                 let mut g = self.0.lock().unwrap();
                 if OFFLOAD.get().is_some() && g.subframes <= 1 {
-                    g.publish_staged(gm, mem);
+                    g.publish_staged(f);
                 } else {
                     g.finish_staged();
-                    g.publish(gm, &mem);
-                    ssx3_ps2::frame_sink::recycle(mem);
+                    g.render_built(&f.built, &f.carry, &f.mem);
                 }
             }
         }
@@ -659,56 +635,45 @@ impl Inner {
         let n = self.timing.0.max(1) as f64;
         let t = &self.timing.1;
         format!(
-            "gfx per frame: typed frame {:.2} ms, build {:.2} ms, prepare {:.2} ms, encode+submit {:.2} ms, depth readback {:.2} ms ({} frames)",
-            {
-                let (ms, n) = *self.shared.build_ms.lock().unwrap();
-                let (ms, n) = if n > 0 { (ms, n) } else { (self.builder.ms, self.builder.frames) };
-                ms / n.max(1) as f64
-            },
+            "gfx per frame: build {:.2} ms, prepare {:.2} ms, encode+submit {:.2} ms, depth readback {:.2} ms ({} frames)",
             t[0] / n, t[1] / n, t[2] / n, t[3] / n, self.timing.0
         )
-    }
-
-    /// A published frame: build the typed frame from the memory snapshot
-    /// and render it.
-    pub fn publish(&mut self, gm: u32, mem: &ssx3_ps2::frame_sink::DumpMem) {
-        let (built, carry) = self.builder.build(gm, mem);
-        self.render_built(&built, &carry, mem);
     }
 
     /// With a [`VuOffload`] and no render thread (the browser): start this
     /// frame's VU1 chunks on the helpers and draw it when the next frame
     /// comes, so the game's next frame runs while they work. One frame of
     /// latency, as with the native render thread.
-    fn publish_staged(&mut self, gm: u32, mem: Box<ssx3_ps2::frame_sink::DumpMem>) {
+    fn publish_staged(&mut self, f: ssx3_ps2::frame_sink::Published) {
         self.finish_staged();
-        let (built, carry) = self.builder.build(gm, &mem);
         let b = self.take_build();
         let collect = {
-            let draws: Vec<&frame::Draw> = built.frame.draws().collect();
-            let plan = Build::plan_vu_calls(&b, &built, &draws);
+            let draws: Vec<&frame::Draw> = f.built.frame.draws().collect();
+            let plan = Build::plan_vu_calls(&b, &f.built, &draws);
             plan.offloadable().then(|| (plan.bounds.len(), (OFFLOAD.get().unwrap().0)(plan.jobs())))
         };
         self.put_build(b);
-        self.staged = Some(Staged { mem, built, carry, collect });
+        self.staged = Some(Staged { f, collect });
     }
 
     /// Draw the staged frame, if any (`publish_staged`).
     pub fn finish_staged(&mut self) {
         let Some(s) = self.staged.take() else { return };
         *PREFETCH.lock().unwrap() = s.collect;
-        self.render_built(&s.built, &s.carry, &s.mem);
+        self.render_built(&s.f.built, &s.f.carry, &s.f.mem);
         // Not taken (the plan came out different): still wait, the helpers
         // must be idle before the next jobs.
         if let Some((_, c)) = PREFETCH.lock().unwrap().take() {
             c();
         }
-        ssx3_ps2::frame_sink::recycle(s.mem);
     }
 
-    /// Render a typed frame (built with `carry`) over its memory snapshot.
-    pub fn render_built(&mut self, built: &Built, carry: &ssx3_render::frame::Carry, mem: &ssx3_ps2::frame_sink::DumpMem) {
-        ssx3_ps2::frame_sink::dump_frame(carry, mem, &self.vu[..]);
+    /// Render a published frame (built with `carry`) over the memory it
+    /// reads; keep it in the frame-dump ring if it carries all of memory.
+    pub fn render_built(&mut self, built: &Built, carry: &ssx3_render::frame::Carry, mem: &ssx3_ps2::frame_sink::FrameMem) {
+        if let Some(full) = &mem.full {
+            ssx3_ps2::frame_sink::dump_frame(carry, full, &self.vu[..]);
+        }
         self.render(built, mem);
     }
 
@@ -1510,146 +1475,6 @@ impl Inner {
     }
 }
 
-/// Renderer_SetDisplayRegs (0x382af0) builds a GS state packet at
-/// 0x4ffcc0 on every flip and sends it by normal GIF DMA, outside every
-/// chain. Its last tag writes SCISSOR_1/2 (NLOOP 2, A+D, EOP).
-const FLIP_PACKET: u32 = 0x4ffcc0;
-
-pub fn flip_packet(mem: &dyn Mem) -> Vec<u128> {
-    let mut q = Vec::new();
-    let mut a = FLIP_PACKET;
-    while q.len() < 512 {
-        let tag = mem.qword(a);
-        let lo = tag as u64;
-        let nloop = (lo & 0x7fff) as usize;
-        let flg = (lo >> 58) & 3;
-        let nreg = match (lo >> 60) as usize { 0 => 16, n => n };
-        let n = match flg {
-            0 => nloop * nreg,
-            1 => (nloop * nreg).div_ceil(2),
-            _ => nloop,
-        };
-        for k in 0..=n as u32 {
-            q.push(mem.qword(a + 16 * k));
-        }
-        a += 16 * (n as u32 + 1);
-        if lo == 0x1000_0000_0000_8002 && (tag >> 64) as u64 == 0xe {
-            break;
-        }
-    }
-    q
-}
-
-/// The GIF packets of a PATH3 chain (texture uploads; [`gif_packets`]),
-/// read straight from its transfers. The data of IMAGE transfers longer
-/// than a CLUT is left out (their tags keep NLOOP = 0): the renderer takes
-/// textures from TexMan and keeps only small uploads (`gs::Gs::uploads`).
-fn path3_packets(mem: &dyn Mem, head: u32) -> Vec<Vec<u128>> {
-    use ssx3_render::chain::{walk_segments, Segment};
-    const KEPT_IMAGE: usize = 256;
-    let mut out = Vec::new();
-    if head == 0 {
-        return out;
-    }
-    let mut segs: Vec<(u32, u32)> = Vec::new();
-    let mut asr = [0u32; 2];
-    walk_segments(mem, head, false, false, 0, &mut asr, &mut |s| {
-        if let Segment::Data { addr, qwc } = s {
-            if qwc > 0 {
-                segs.push((addr, qwc));
-            }
-        }
-    });
-    // A cursor over the transfers: (segment, quadword in it).
-    let (mut si, mut qi) = (0usize, 0u32);
-    let mut next = |skip: usize| -> Option<u128> {
-        // (Past `skip` quadwords first.)
-        let mut skip = skip as u32;
-        loop {
-            let &(a, n) = segs.get(si)?;
-            if qi + skip < n {
-                qi += skip + 1;
-                return Some(mem.qword(a + 16 * (qi - 1)));
-            }
-            skip -= n - qi;
-            si += 1;
-            qi = 0;
-        }
-    };
-    let mut cur: Vec<u128> = Vec::new();
-    let mut pending = 0usize;
-    while let Some(tag) = next(std::mem::take(&mut pending)) {
-        let lo = tag as u64;
-        let nloop = (lo & 0x7fff) as usize;
-        let eop = (lo >> 15) & 1 != 0;
-        let nreg = match (lo >> 60) as usize {
-            0 => 16,
-            n => n,
-        };
-        let flg = (lo >> 58) & 3;
-        let n = match flg {
-            0 => nloop * nreg,
-            1 => (nloop * nreg).div_ceil(2),
-            _ => nloop,
-        };
-        if flg >= 2 && n > KEPT_IMAGE {
-            cur.push(tag & !0x7fff);
-            pending = n;
-        } else {
-            cur.push(tag);
-            for _ in 0..n {
-                match next(0) {
-                    Some(q) => cur.push(q),
-                    None => break,
-                }
-            }
-        }
-        if eop {
-            out.push(std::mem::take(&mut cur));
-        }
-    }
-    if !cur.is_empty() {
-        out.push(cur);
-    }
-    out
-}
-
-#[cfg(test)]
-mod tests {
-    use super::path3_packets;
-
-    struct Ram(Vec<u128>);
-    impl ssx3_render::chain::Mem for Ram {
-        fn qword(&self, a: u32) -> u128 {
-            self.0[(a / 16) as usize]
-        }
-    }
-
-    #[test]
-    fn path3_packets_end_at_eop_and_drop_large_images() {
-        // CNT with: A+D tag (2 regs, no EOP), its 2 qwords; IMAGE tag (3
-        // qwords, EOP), its data; then REF to: A+D tag with EOP and 1
-        // qword, IMAGE of 300 qwords (EOP); END.
-        let ad = |n: u128, eop: bool| n | (eop as u128) << 15 | 1 << 60 | 0xe << 64;
-        let image = |n: u128| n | 1 << 15 | 2 << 58;
-        let mut m = vec![0u128; 1024];
-        let cnt = [ad(2, false), 1, 2, image(3), 3, 4, 5];
-        // (Head at qword 0x10: a zero head is no chain.)
-        m[0x10] = 0x1000_0000 | cnt.len() as u128;
-        m[0x11..0x11 + cnt.len()].copy_from_slice(&cnt);
-        let at = 0x11 + cnt.len();
-        m[at] = 0x3000_0000 | 303 | (0x200u128 * 16) << 32;
-        m[at + 1] = 0x7000_0000;
-        m[0x200] = ad(1, true);
-        m[0x201] = 6;
-        m[0x202] = image(300);
-        let p = path3_packets(&Ram(m), 16 * 0x10);
-        assert_eq!(p.len(), 3);
-        assert_eq!(p[0], cnt.to_vec());
-        assert_eq!(p[1], vec![ad(1, true), 6]);
-        assert_eq!(p[2], vec![image(300) & !0x7fff]);
-    }
-}
 
 /// One chunk's result: (event index, GIF output) per call with a native
 /// program, and the VU memory after the chunk.
@@ -1979,7 +1804,7 @@ impl Build {
         // (A frame built without the chains carries its PATH3 packets.)
         let (p1, mut p2) = match &built.path3 {
             Some([a, b]) => (a.clone(), b.clone()),
-            None => (path3_packets(mem, fr.gif_heads[0]), path3_packets(mem, fr.gif_heads[1])),
+            None => Default::default(),
         };
         let dbg = debug::get();
         let tracing = dbg.trace == Some(b.frame);
@@ -1993,7 +1818,7 @@ impl Build {
         // With the frame blend on (gm+0x59e8 ≠ 0), the packet starts with a
         // block that blends the finished draw buffer into the display
         // buffer (the image on screen): that part runs at the end.
-        let flip = if !dbg.no_flip { flip_packet(mem) } else { Vec::new() };
+        let flip = if !dbg.no_flip { built.flip.clone() } else { Vec::new() };
         let split = flip.iter().position(|&q| q as u64 == 0x1000_0000_0000_8010).unwrap_or(0);
         label(&mut b.gs, "flip".into());
         b.gs.gif(&flip[split..]);
@@ -2253,9 +2078,7 @@ static PREFETCH: Mutex<Option<(usize, VuCollect)>> = Mutex::new(None);
 
 /// A frame published but not drawn yet (`Inner::publish_staged`).
 struct Staged {
-    mem: Box<ssx3_ps2::frame_sink::DumpMem>,
-    built: Built,
-    carry: ssx3_render::frame::Carry,
+    f: ssx3_ps2::frame_sink::Published,
     collect: Option<(usize, VuCollect)>,
 }
 

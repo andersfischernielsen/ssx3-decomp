@@ -286,6 +286,24 @@ the bus and the DMA path), and each snapshot buffer copies only the pages
 written since it was last filled. Measured on a race dump, the renderer
 reads ~845 pages (3.3 MiB) per frame: VifBuff, the model chains, textures.
 
+Step 2 (done 2026-10-18): the typed frame is built on the game's thread
+at the kick signal, from live memory (`frame_sink::on_signal_sema`;
+`FrameBuilder` lives in the sink). The renderer gets a `Published` frame:
+the typed frame, the flip packet and PATH3 packets taken at build time,
+and a `FrameMem` holding only the pages it still reads
+(`frame::texture_ranges`: TexMan's table, the TexInfos, pixels and CLUTs
+of the textures bound this frame or resident in VRAM). Pages are shared
+between frames until written (`PAGE_STORE`, by page generation), so a
+frame copies almost nothing; reads outside them are counted
+(`timing_report`, `SSX3_FRAME_MEM_LOG=1`). The 32 MiB snapshot buffers
+are gone except for frame dumps (`SSX3_FRAME_DUMP`,
+`SSX3_FULL_SNAPSHOT=1`). Gate: the 37 dumps render identically from
+`FrameMem` and from all of memory, no read misses; a live freestyle run
+gives the same screenshots. Native freestyle: 0.86 ms per frame on the
+game thread (typed frame 0.66 ms), the render thread no longer builds.
+Left for N3: the renderer still decodes textures from guest pages (stage
+C: TexMan registration hands them over).
+
 ### N4: strip the hardware models ⬜
 
 `Renderer_DmaKickThread` (0x382760), `Renderer_SetDisplayRegs` (0x382af0),
@@ -312,7 +330,7 @@ IPU emulation → a native MPEG-2 decoder feeding a texture.
 | Step | State | Notes |
 | --- | --- | --- |
 | N1 | ✅ | all seven programs: meshes, strips/ribbons, riders, Bézier terrain, particles, snow (type 3 0x2400 PRIM-only and 0x3bf0 line shape stay on the CPU); ~73% of VU calls on the GPU, merged into ~0.85M batches per 6000 frames; race replay frames match the CPU programs to rounding; native render 6.5 → 5.3 ms per frame |
-| N2 | 🟡 | D1 capture infrastructure (`ssx3_game::capture`, `ssx3_render::direct`): strips and ribbons drawn from native commands; model and rider vertex data resident on the GPU; uploads per race frame 3.2 -> ~1.5 MB; browser race 16-21 -> ~13-15 ms per frame, renderer 44% -> 29% of the worker. Next: D1 for riders / Bézier / particles, then D2 (the draw functions native, no packets: `DrawModel` first, ~3% of the browser worker) |
-| N3 | 🟡 | step 1: snapshots copy only the pages written since the buffer was last filled (frame sink 1.9 → 0.5 ms per frame natively; `SSX3_SNAPSHOT_CHECK`); page write generations let the renderer skip re-validating unchanged mesh chains and textures |
+| N2 | 🟡 | stages A (every draw captured) and B (frames from the buckets, no chain walk) done; stage C next. Earlier: D1 capture infrastructure (`ssx3_game::capture`, `ssx3_render::direct`): strips and ribbons drawn from native commands; model and rider vertex data resident on the GPU; uploads per race frame 3.2 -> ~1.5 MB; browser race 16-21 -> ~13-15 ms per frame, renderer 44% -> 29% of the worker. Next: D1 for riders / Bézier / particles, then D2 (the draw functions native, no packets: `DrawModel` first, ~3% of the browser worker) |
+| N3 | 🟡 | step 1: incremental snapshots and page write generations; step 2: the typed frame built on the game thread from live memory, the renderer gets only the texture pages it reads (no 32 MiB snapshot) |
 | N4 | ⬜ | |
 | N5 | ⬜ | |

@@ -841,9 +841,11 @@ pub struct Built {
     /// The draws captured at the game's draw functions (`crate::direct`),
     /// which `Event::Native` index.
     pub direct: std::sync::Arc<Vec<crate::direct::Recorded>>,
-    /// Built without the chains (`build_native`): the PATH3 packets per
-    /// phase (the post passes'); `None`: walk the published GIF chains.
+    /// The PATH3 packets per phase: the post passes' (`build_native`), or
+    /// read from the published GIF chains.
     pub path3: Option<[Vec<Vec<u128>>; 2]>,
+    /// The flip packet sent before the frame's drawing ([`flip_packet`]).
+    pub flip: Vec<u128>,
 }
 
 /// Inputs carried from frame to frame.
@@ -1674,12 +1676,15 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
         regs_end: w.vif.regs,
         emitter,
         direct,
-        path3: None,
+        path3: Some([path3_packets(m, gif_heads[0]), path3_packets(m, gif_heads[1])]),
+        flip: flip_packet(m),
     }
 }
 
 mod native;
 pub use native::compare as compare_native;
+mod pages;
+pub use pages::{flip_packet, path3_packets, texture_ranges};
 
 /// The frame built from the buckets and the captures, without walking the
 /// published chains (stage B; `native`).

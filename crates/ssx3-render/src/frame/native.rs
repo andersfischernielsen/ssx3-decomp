@@ -571,6 +571,7 @@ pub(super) fn build(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
         emitter,
         direct: direct.clone(),
         path3: Some(path3),
+        flip: super::flip_packet(m),
     }
 }
 

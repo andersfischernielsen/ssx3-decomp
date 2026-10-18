@@ -2,10 +2,10 @@
 //! layer: `docs/plans/phase3-draw-layer.md`).
 //!
 //! At the same point as `frame_verify` (the kick-semaphore signal at the end
-//! of `PS2GraphicsMan_EndFrame`), the typed frame is built from EE memory and
-//! passed, with that memory, to the installed [`FrameSink`]. The sink runs on
-//! the EE thread before the game continues, so the memory it reads is the
-//! frame's.
+//! of `PS2GraphicsMan_EndFrame`), the typed frame is built from EE memory on
+//! the game's thread and passed to the installed [`FrameSink`] with the
+//! little memory a renderer still reads ([`FrameMem`]: the textures), so
+//! the sink can render while the game goes on.
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
@@ -17,12 +17,8 @@ use crate::cpu::Cpu;
 
 /// A host renderer fed with the game's frames.
 pub trait FrameSink: Send {
-    /// One frame: the GraphicsMan at `gm` published it, `mem` is a
-    /// snapshot of EE memory as the game left it at that point. The sink
-    /// builds the typed frame from it with a [`FrameBuilder`] (in order:
-    /// the builder carries VIF state from frame to frame), may do that and
-    /// render later, and hands the snapshot back with [`recycle`].
-    fn frame(&mut self, gm: u32, mem: Box<DumpMem>);
+    /// One frame the game published; the sink may render it later.
+    fn frame(&mut self, frame: Published);
 
     /// The last frame's depth after its 3D phase (VIF phase 1), for the
     /// light visibility queries in native mode.
@@ -42,6 +38,16 @@ pub struct Depth {
 
 struct Sink {
     sink: Box<dyn FrameSink>,
+    builder: FrameBuilder,
+}
+
+/// A published frame: the typed frame, the carry it was built with, and
+/// the guest memory its renderer reads.
+pub struct Published {
+    pub gm: u32,
+    pub built: Built,
+    pub carry: Carry,
+    pub mem: FrameMem,
 }
 
 /// Builds a sink's typed frames, carrying the VIF state from one frame to
@@ -59,10 +65,10 @@ pub struct FrameBuilder {
 impl FrameBuilder {
     /// The typed frame published by the GraphicsMan at `gm`, and the carry
     /// it was built with (for [`dump_frame`]).
-    pub fn build(&mut self, gm: u32, mem: &DumpMem) -> (Built, Carry) {
+    pub fn build(&mut self, gm: u32, mem: &dyn Mem, direct: std::sync::Arc<Vec<ssx3_render::direct::Recorded>>) -> (Built, Carry) {
         let t = web_time::Instant::now();
         let carry = self.carry.clone();
-        let b = if native_frame(mem) { frame::build_native(mem, gm, &carry, &mut self.cache, mem.direct.clone()) } else { frame::build_cached(mem, gm, &carry, &mut self.cache, mem.direct.clone()) };
+        let b = if native_frame(&direct) { frame::build_native(mem, gm, &carry, &mut self.cache, direct) } else { frame::build_cached(mem, gm, &carry, &mut self.cache, direct) };
         static CHECK: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         if *CHECK.get_or_init(|| std::env::var_os("SSX3_CHAIN_CACHE_CHECK").is_some()) {
             let bad = b.issues.iter().filter(|i| i.starts_with("chain cache")).count();
@@ -82,7 +88,7 @@ static ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(fa
 
 /// Install the renderer that receives every frame from now on.
 pub fn install(sink: Box<dyn FrameSink>) {
-    *SINK.lock().unwrap() = Some(Sink { sink });
+    *SINK.lock().unwrap() = Some(Sink { sink, builder: FrameBuilder::default() });
     ON.store(true, std::sync::atomic::Ordering::Release);
     // The game's draw functions record their draws for the sink.
     ssx3_render::direct::set_active(true);
@@ -98,15 +104,23 @@ pub fn enabled() -> bool {
 // visibility queries read back is the sink's depth. Movies and loading
 // screens, which do not publish frames, draw on the emulated GS as before.
 
-/// Frames, ms in `frame::build`, ms in the sink.
+/// Frames, ms building the typed frame, ms in the sink.
 static TIMING: Mutex<(u64, f64, f64)> = Mutex::new((0, 0.0, 0.0));
 
-/// Mean time per published frame on the game's thread (memory snapshot and
-/// hand-over).
+/// Reads of [`FrameMem`] outside its pages (the renderer read memory
+/// [`frame::texture_ranges`] does not cover).
+static MISSES: AtomicU64 = AtomicU64::new(0);
+
+/// Mean time per published frame on the game's thread (building the typed
+/// frame, taking its memory, hand-over).
 pub fn timing_report() -> String {
     let t = TIMING.lock().unwrap();
     let n = t.0.max(1) as f64;
-    format!("frame sink: {:.2} ms per frame on the game thread ({} frames)", t.2 / n, t.0)
+    let miss = match MISSES.load(Ordering::Relaxed) {
+        0 => String::new(),
+        k => format!("; {k} reads outside the frame's memory"),
+    };
+    format!("frame sink: {:.2} ms per frame on the game thread, typed frame {:.2} ms ({} frames){miss}", t.2 / n, t.1 / n, t.0)
 }
 
 static NATIVE: AtomicBool = AtomicBool::new(false);
@@ -245,20 +259,32 @@ pub fn on_signal_sema(c: &mut Cpu, id: i32) {
     };
     let t0 = web_time::Instant::now();
     let heads = [frame::gm::QUEUED_VIF1, frame::gm::QUEUED_VIF2, frame::gm::QUEUED_GIF1, frame::gm::QUEUED_GIF2].map(|o| frame::word(&mem, g + o));
-    // The memory the sink reads: a copy, so the sink can build and render
-    // the frame while the game goes on. Each buffer gets only the pages
-    // written since it was last filled (`bus::take_written`).
-    let mut snap = POOL.lock().unwrap().pop().unwrap_or_else(|| Box::new(DumpMem { ram: Vec::new(), spr: Vec::new(), vu1: Vec::new(), id: usize::MAX, direct: Default::default(), snap: 0 }));
-    snapshot_ram(&mut snap, &c.bus.ram);
-    snap.direct = std::sync::Arc::new(ssx3_render::direct::take());
-    snap.spr.clear();
-    snap.spr.extend_from_slice(&c.bus.spr);
-    s.sink.frame(g, snap);
+    let snap_id = advance_pages(c.bus.ram.len());
+    let live = LiveMem { ram: &c.bus.ram, spr: &c.bus.spr, snap: snap_id };
+    let direct = std::sync::Arc::new(ssx3_render::direct::take());
+    let (built, carry) = s.builder.build(g, &live, direct.clone());
+    let t_built = t0.elapsed().as_secs_f64() * 1e3;
+    // What the renderer reads afterwards: the frame's textures (pages kept
+    // from frame to frame while unwritten), or all of memory for a frame
+    // dump (`SSX3_FRAME_DUMP`; `SSX3_FULL_SNAPSHOT=1` for every frame).
+    let mut ranges = Vec::new();
+    frame::texture_ranges(&live, &built.frame, &mut ranges);
+    let mut fm = FrameMem::from_store(&c.bus.ram, &ranges, snap_id);
+    if dump_keep().is_some() || full_snapshot() {
+        let mut snap = POOL.lock().unwrap().pop().unwrap_or_else(|| Box::new(DumpMem { ram: Vec::new(), spr: Vec::new(), vu1: Vec::new(), id: usize::MAX, direct: Default::default(), snap: 0 }));
+        snapshot_ram(&mut snap, &c.bus.ram, snap_id);
+        snap.direct = direct;
+        snap.spr.clear();
+        snap.spr.extend_from_slice(&c.bus.spr);
+        fm.full = Some(snap);
+    }
+    s.sink.frame(Published { gm: g, built, carry, mem: fm });
     // For the next frame (this one's projection is already built).
     apply_view(c, g);
     {
         let mut t = TIMING.lock().unwrap();
         t.0 += 1;
+        t.1 += t_built;
         t.2 += t0.elapsed().as_secs_f64() * 1e3;
     }
     if native() {
@@ -346,30 +372,10 @@ static STALE: Mutex<Vec<Vec<u64>>> = Mutex::new(Vec::new());
 /// fill (all of them for a new buffer). `SSX3_SNAPSHOT_CHECK=1` compares it
 /// with a full copy (a page written outside the bus or DMA paths would
 /// show here).
-fn snapshot_ram(snap: &mut DumpMem, ram: &[u8]) {
+fn snapshot_ram(snap: &mut DumpMem, ram: &[u8], snap_id: u64) {
     let pages = ram.len() / 4096;
     let mut stale = STALE.lock().unwrap();
-    let mut written = vec![0u64; pages.div_ceil(64)];
-    ssx3_ee_rt::bus::take_written(&mut written);
-    // This snapshot's id; the pages written since the last one get it.
-    let snap_id = SNAPSHOTS.fetch_add(1, Ordering::Relaxed) + 1;
-    let gens = PAGE_GEN.get_or_init(|| (0..pages).map(|_| AtomicU64::new(0)).collect());
-    for (w, &word) in written.iter().enumerate() {
-        let mut m = word;
-        while m != 0 {
-            let p = w * 64 + m.trailing_zeros() as usize;
-            m &= m - 1;
-            if let Some(g) = gens.get(p) {
-                g.store(snap_id, Ordering::Relaxed);
-            }
-        }
-    }
     snap.snap = snap_id;
-    for s in stale.iter_mut() {
-        for (a, b) in s.iter_mut().zip(&written) {
-            *a |= b;
-        }
-    }
     if snap.id == usize::MAX || snap.ram.len() != ram.len() {
         snap.id = stale.len();
         stale.push(vec![!0u64; pages.div_ceil(64)]);
@@ -397,6 +403,204 @@ fn snapshot_ram(snap: &mut DumpMem, ram: &[u8]) {
             }
         }
     }
+}
+
+/// A new snapshot id; the RAM pages written since the last one (bits per
+/// page, `bus::take_written`) get it as their generation (`Mem::unchanged`).
+/// Snapshot buffers are told which pages they miss.
+fn advance_pages(ram_len: usize) -> u64 {
+    let pages = ram_len / 4096;
+    let mut written = vec![0u64; pages.div_ceil(64)];
+    ssx3_ee_rt::bus::take_written(&mut written);
+    let snap_id = SNAPSHOTS.fetch_add(1, Ordering::Relaxed) + 1;
+    let gens = PAGE_GEN.get_or_init(|| (0..pages).map(|_| AtomicU64::new(0)).collect());
+    for (w, &word) in written.iter().enumerate() {
+        let mut m = word;
+        while m != 0 {
+            let p = w * 64 + m.trailing_zeros() as usize;
+            m &= m - 1;
+            if let Some(g) = gens.get(p) {
+                g.store(snap_id, Ordering::Relaxed);
+            }
+        }
+    }
+    for s in STALE.lock().unwrap().iter_mut() {
+        for (a, b) in s.iter_mut().zip(&written) {
+            *a |= b;
+        }
+    }
+    snap_id
+}
+
+/// `Mem::unchanged` over the page generations.
+fn pages_unchanged(a: u32, b: u32, since: u64) -> bool {
+    let Some(gens) = PAGE_GEN.get() else { return false };
+    if since == 0 || a & 0x8000_0000 != 0 || b <= a {
+        return false;
+    }
+    // (RAM mirrors: the low 32 MiB.)
+    let (pa, pb) = ((a & 0x01ff_ffff) as usize / 4096, ((b - 1) & 0x01ff_ffff) as usize / 4096);
+    pa <= pb && (pa..=pb).all(|p| gens.get(p).is_some_and(|g| g.load(Ordering::Relaxed) <= since))
+}
+
+fn full_snapshot() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("SSX3_FULL_SNAPSHOT").is_ok_and(|v| v == "1"))
+}
+
+/// EE memory as the game has it, with the page generations.
+struct LiveMem<'a> {
+    ram: &'a [u8],
+    spr: &'a [u8],
+    snap: u64,
+}
+
+impl Mem for LiveMem<'_> {
+    fn qword(&self, addr: u32) -> u128 {
+        crate::hw::mem_q(self.ram, self.spr, addr, addr & 0x8000_0000 != 0)
+    }
+
+    fn read_qwords(&self, addr: u32, n: u32, out: &mut Vec<u128>) {
+        read_ram_qwords(self, self.ram, addr, n, out)
+    }
+
+    fn snapshot(&self) -> u64 {
+        self.snap
+    }
+
+    fn unchanged(&self, a: u32, b: u32, since: u64) -> bool {
+        pages_unchanged(a, b, since)
+    }
+}
+
+fn read_ram_qwords(m: &dyn Mem, ram: &[u8], addr: u32, n: u32, out: &mut Vec<u128>) {
+    let o = (addr & 0x01ff_fff0) as usize;
+    let end = o + 16 * n as usize;
+    // (RAM in one piece: a straight copy; else qword by qword.)
+    if addr & 0x8000_0000 == 0 && addr >> 28 != 7 && end <= ram.len() {
+        out.extend(ram[o..end].chunks_exact(16).map(|b| u128::from_le_bytes(b.try_into().unwrap())));
+    } else {
+        out.extend((0..n).map(|i| m.qword(addr + 16 * i)));
+    }
+}
+
+type Page = [u8; 4096];
+
+/// Copies of RAM pages with the generation they were copied at, shared by
+/// the frames' [`FrameMem`]s until the page is written again.
+static PAGE_STORE: Mutex<Vec<Option<(std::sync::Arc<Page>, u64)>>> = Mutex::new(Vec::new());
+
+/// The guest memory a renderer reads once its frame is built: the pages of
+/// [`frame::texture_ranges`] (reads elsewhere give 0 and are counted), or
+/// a full snapshot (frame dumps).
+pub struct FrameMem {
+    pages: std::collections::HashMap<u32, std::sync::Arc<Page>>,
+    snap: u64,
+    /// A full snapshot of EE memory (frame dumps, `SSX3_FULL_SNAPSHOT=1`).
+    pub full: Option<Box<DumpMem>>,
+}
+
+impl FrameMem {
+    /// The pages covering `ranges` from `ram`, through the page store.
+    fn from_store(ram: &[u8], ranges: &[(u32, u32)], snap: u64) -> FrameMem {
+        let mut store = PAGE_STORE.lock().unwrap();
+        let npages = ram.len() / 4096;
+        if store.len() != npages {
+            store.clear();
+            store.resize(npages, None);
+        }
+        let gens = PAGE_GEN.get();
+        let mut pages = std::collections::HashMap::new();
+        for &(a, b) in ranges {
+            if a & 0x8000_0000 != 0 || b <= a {
+                continue;
+            }
+            let (pa, pb) = ((a & 0x01ff_ffff) as usize / 4096, ((b - 1) & 0x01ff_ffff) as usize / 4096);
+            for p in pa..=pb.min(npages - 1) {
+                if pages.contains_key(&(p as u32)) {
+                    continue;
+                }
+                let gen = gens.and_then(|g| g.get(p)).map_or(u64::MAX, |g| g.load(Ordering::Relaxed));
+                let page = match &store[p] {
+                    Some((pg, at)) if gen <= *at => pg.clone(),
+                    _ => {
+                        let pg: std::sync::Arc<Page> = std::sync::Arc::new(ram[p * 4096..(p + 1) * 4096].try_into().unwrap());
+                        store[p] = Some((pg.clone(), snap));
+                        pg
+                    }
+                };
+                pages.insert(p as u32, page);
+            }
+        }
+        FrameMem { pages, snap, full: None }
+    }
+
+    /// The pages covering `ranges`, copied from `ram` (no store; frame
+    /// dumps).
+    pub fn from_ram(ram: &[u8], ranges: &[(u32, u32)]) -> FrameMem {
+        let mut pages = std::collections::HashMap::new();
+        let npages = ram.len() / 4096;
+        for &(a, b) in ranges {
+            if a & 0x8000_0000 != 0 || b <= a {
+                continue;
+            }
+            let (pa, pb) = ((a & 0x01ff_ffff) as usize / 4096, ((b - 1) & 0x01ff_ffff) as usize / 4096);
+            for p in pa..=pb.min(npages - 1) {
+                pages.entry(p as u32).or_insert_with(|| std::sync::Arc::new(ram[p * 4096..(p + 1) * 4096].try_into().unwrap()));
+            }
+        }
+        FrameMem { pages, snap: 0, full: None }
+    }
+
+    /// Pages held.
+    pub fn pages(&self) -> usize {
+        self.pages.len()
+    }
+}
+
+impl Mem for FrameMem {
+    fn qword(&self, addr: u32) -> u128 {
+        if let Some(f) = &self.full {
+            return f.qword(addr);
+        }
+        if addr & 0x8000_0000 == 0 && addr >> 28 != 7 {
+            let a = addr & 0x01ff_fff0;
+            if let Some(p) = self.pages.get(&(a / 4096)) {
+                let o = (a % 4096) as usize;
+                return u128::from_le_bytes(p[o..o + 16].try_into().unwrap());
+            }
+        }
+        if MISSES.fetch_add(1, Ordering::Relaxed) < 3 && std::env::var_os("SSX3_FRAME_MEM_LOG").is_some() {
+            eprintln!("[frame-mem] read at {addr:#x} outside the frame's pages\n{}", std::backtrace::Backtrace::force_capture());
+        }
+        0
+    }
+
+    fn snapshot(&self) -> u64 {
+        match &self.full {
+            Some(f) => f.snap,
+            None => self.snap,
+        }
+    }
+
+    fn unchanged(&self, a: u32, b: u32, since: u64) -> bool {
+        pages_unchanged(a, b, since)
+    }
+}
+
+impl Drop for FrameMem {
+    /// A full snapshot goes back to the pool (its buffer is refreshed
+    /// incrementally, `snapshot_ram`).
+    fn drop(&mut self) {
+        if let Some(f) = self.full.take() {
+            recycle(f);
+        }
+    }
+}
+
+/// Reads of a [`FrameMem`] outside its pages so far.
+pub fn frame_mem_misses() -> u64 {
+    MISSES.load(Ordering::Relaxed)
 }
 
 /// Hand a memory snapshot back for reuse (it is 32 MiB).
@@ -427,14 +631,7 @@ impl Mem for DumpMem {
     }
 
     fn read_qwords(&self, addr: u32, n: u32, out: &mut Vec<u128>) {
-        let o = (addr & 0x01ff_fff0) as usize;
-        let end = o + 16 * n as usize;
-        // (RAM in one piece: a straight copy; else qword by qword.)
-        if addr & 0x8000_0000 == 0 && addr >> 28 != 7 && end <= self.ram.len() {
-            out.extend(self.ram[o..end].chunks_exact(16).map(|b| u128::from_le_bytes(b.try_into().unwrap())));
-        } else {
-            out.extend((0..n).map(|i| self.qword(addr + 16 * i)));
-        }
+        read_ram_qwords(self, &self.ram, addr, n, out)
     }
 
     fn snapshot(&self) -> u64 {
@@ -442,13 +639,7 @@ impl Mem for DumpMem {
     }
 
     fn unchanged(&self, a: u32, b: u32, since: u64) -> bool {
-        let Some(gens) = PAGE_GEN.get() else { return false };
-        if since == 0 || a & 0x8000_0000 != 0 || b <= a {
-            return false;
-        }
-        // (RAM mirrors: the low 32 MiB.)
-        let (pa, pb) = ((a & 0x01ff_ffff) as usize / 4096, ((b - 1) & 0x01ff_ffff) as usize / 4096);
-        pa <= pb && (pa..=pb).all(|p| gens.get(p).is_some_and(|g| g.load(Ordering::Relaxed) <= since))
+        pages_unchanged(a, b, since)
     }
 }
 
@@ -500,13 +691,13 @@ pub fn build_dump_cached(mem: &DumpMem, carry: &Carry, cache: &mut frame::ChainC
     if g == 0 {
         return None;
     }
-    Some(if native_frame(mem) { frame::build_native(mem, g, carry, cache, mem.direct.clone()) } else { frame::build_cached(mem, g, carry, cache, mem.direct.clone()) })
+    Some(if native_frame(&mem.direct) { frame::build_native(mem, g, carry, cache, mem.direct.clone()) } else { frame::build_cached(mem, g, carry, cache, mem.direct.clone()) })
 }
 
 /// Frames are built from the buckets and the captured draws without
 /// walking the chains, unless `SSX3_NATIVE_FRAME=0` or the frame has no
 /// captures (`SSX3_DIRECT=0`, older frame dumps).
-pub fn native_frame(mem: &DumpMem) -> bool {
+pub fn native_frame(direct: &[ssx3_render::direct::Recorded]) -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("SSX3_NATIVE_FRAME").map_or(true, |v| v != "0")) && !mem.direct.is_empty()
+    *ON.get_or_init(|| std::env::var("SSX3_NATIVE_FRAME").map_or(true, |v| v != "0")) && !direct.is_empty()
 }
