@@ -393,6 +393,9 @@ fn read_range(c: &mut Cpu, start: u32, end: u32) -> Option<Vec<Step>> {
         let (data, next, call) = match (tag >> 28) & 7 {
             1 => (t + 16, t + 16 + 16 * qwc, false),
             3 if (tag >> 63) & 1 == 0 => (addr, t + 16, false),
+            // (A REF into the scratchpad: the shine pass of a patch without
+            // normals reads whatever is there; taken as it is now.)
+            3 => (0x7000_0000 | (addr & 0x3ff0), t + 16, false),
             5 => (t + 16, t + 16 + 16 * qwc, true),
             _ => return None,
         };
@@ -433,7 +436,13 @@ fn capture_records(c: &mut Cpu, body: fn(&mut Cpu), gm: u32) {
             continue;
         }
         // (A packet the reader does not take stays on the decoding path.)
-        let Some(steps) = read_range(c, start, end) else { continue };
+        let Some(steps) = read_range(c, start, end) else {
+            if debug() {
+                let tags: Vec<String> = (0..6).map(|k| format!("{:x}", qword(c, start + 16 * k) as u64)).collect();
+                eprintln!("[capture] packet {start:#x}..{end:#x} not read: {}", tags.join(" "));
+            }
+            continue;
+        };
         out.push(Recorded { start, end, first_tag: qword(c, start), cmd: Cmd::Vu(steps) });
     }
     for r in out {
@@ -614,6 +623,12 @@ fn draw_skinned_model(c: &mut Cpu) {
 fn draw_skinned_model_shadow(c: &mut Cpu) {
     let gm = c.g[A0][0] as u32;
     capture_records(c, ssx3_ee::s12::f_0037b548__generated, gm);
+}
+
+/// `SSX3_CAPTURE_DEBUG=1`: packets that are not captured are reported.
+fn debug() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("SSX3_CAPTURE_DEBUG").is_some())
 }
 
 /// The PS2GraphicsMan (`gp+0x2a90`).

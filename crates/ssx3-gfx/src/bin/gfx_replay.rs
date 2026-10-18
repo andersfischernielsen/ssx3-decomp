@@ -103,6 +103,22 @@ fn main() {
                     eprintln!("[vif-stats]   {k}: {v:?}");
                 }
             }
+            // SSX3_EVENTS=FILE: the last dump's events, one per line.
+            if let (Ok(path), true) = (std::env::var("SSX3_EVENTS"), i + 1 == frames.len()) {
+                use std::fmt::Write;
+                let mut out = String::new();
+                for (k, (o, e)) in built.events.iter().enumerate() {
+                    let d = match e {
+                        ssx3_render::vif::Event::Call(c) => format!("call {:x?} top {:#x} itop {} in {} sh {} {}", c.entry, c.top, c.itop, c.input.len(), c.shared.as_ref().map_or(0, |s| s.len()), if c.native { "N" } else { "" }),
+                        ssx3_render::vif::Event::Direct(g) => format!("gif {} {:x?}{}", g.qwords.len(), &g.qwords[..g.qwords.len().min(4)], if g.native { " N" } else { "" }),
+                        ssx3_render::vif::Event::Microcode { addr, bytes } => format!("mpg {addr:#x} {bytes:#x}"),
+                        ssx3_render::vif::Event::MaskPath3(m) => format!("mskpath3 {m}"),
+                        ssx3_render::vif::Event::Native { index, .. } => format!("native {index}"),
+                    };
+                    let _ = writeln!(out, "{k} {o:?} {d}");
+                }
+                std::fs::write(path, out).unwrap();
+            }
             if std::env::var_os("SSX3_DIRECT_CHECK").is_some() {
                 for e in built.issues.iter().filter(|i| i.starts_with("capture")).take(8) {
                     eprintln!("[direct-check] frame {i}: {e}");
