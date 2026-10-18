@@ -63,7 +63,7 @@ pub fn install() -> bool {
         (0x0037_cc98, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "DrawTransition", crate::packetless::draw_transition, capture_drawtransition), "DrawTransition"),
         (0x0037_9bd0, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "DrawIndexedTriangles", crate::packetless::draw_indexed_triangles, capture_drawindexedtriangles), "DrawIndexedTriangles"),
         (0x0038_1ad0, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "DrawLineStrip", crate::packetless::draw_line_strip, capture_drawlinestrip), "DrawLineStrip"),
-        (0x0038_1f10, capture_drawlineshape, "DrawLineShape"),
+        (0x0038_1f10, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "DrawLineShape", crate::packetless::draw_line_shape, capture_drawlineshape), "DrawLineShape"),
         (0x0037_7cf0, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "DrawSprite3D", crate::packetless::draw_sprite_3d, capture_drawsprite3d), "DrawSprite3D"),
         (0x0037_81a0, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "DrawRotatedSprites", crate::packetless::draw_rotated_sprites, capture_drawrotatedsprites), "DrawRotatedSprites"),
         (0x0037_8808, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "DrawGlyphs", crate::packetless::draw_glyphs, capture_drawglyphs), "DrawGlyphs"),

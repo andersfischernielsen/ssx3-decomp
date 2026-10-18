@@ -439,3 +439,25 @@ pub fn draw_line_strip(c: &mut Cpu) {
     }
     ret(c, 80 + 90 * n.max(0) as u64);
 }
+
+/// Slot 75 `PS2GraphicsMan_DrawLineShape(gm, matrix, argb, n)` (0x381f10,
+/// debug paths): a line shape through the type 3 program at 0x3bf0: its
+/// GIF tags, colour (× 128), the matrix and the count to VU1 0.
+pub fn draw_line_shape(c: &mut Cpu) {
+    let (gm, matrix, argb, n) = (c.g[A0][0] as u32, c.g[A1][0] as u32, c.g[A2][0] as u32, c.g[A3][0]);
+    let st = r32(c, gm + gmf::CUR_STATE);
+    state_word(c, st, 0, !0x3c0, 0xc0);
+    state_word(c, st, 3, 0xc000_0000, 0);
+    ensure_view_matrices(c, gm, 0x0038_1f74);
+    let k = FpuF32(0x4300_0000);
+    let ch = |c: &mut Cpu, o: u32| (FpuF32(r32(c, argb + o)) * k).to_i32() as i64 as u64;
+    let (r, g, b, a) = (ch(c, 4), ch(c, 8), ch(c, 0xc), ch(c, 0));
+    let rgbaq = r | g << 8 | b << 16 | a << 24 | 0x3f80_0000_0000_0000;
+    let mut data = vec![0x1001_4000_0000_0001 | 0xe << 64, rgbaq as u128 | 1 << 64, (n | 0x1001_4000_0000_8000) as u128 | 4 << 64];
+    data.extend(qwords(c, matrix, 4));
+    data.push(n as u128);
+    let start = empty_packet(c, gm);
+    record(start, Cmd::Vu(vec![Step::Write { addr: 0, rel: true, data }, Step::Start(0x3bf0)]));
+    add_record(c, gm, start, start, false);
+    ret(c, 80);
+}

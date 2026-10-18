@@ -43,7 +43,7 @@ pub(crate) use frame::dispatch_render_frame;
 pub use model::{draw_model, grid_mesh_draw};
 pub use fog::render_depth_fog;
 pub use glyphs::{draw_glyphs, draw_glyphs_w};
-pub use lines::{draw_indexed_triangles, draw_line_strip};
+pub use lines::{draw_indexed_triangles, draw_line_shape, draw_line_strip};
 pub use misc2d::{draw_transition, fog_particles};
 pub use post::{render_bloom, render_color_filter};
 pub use ribbon::{draw_board_wake, draw_shadow_volume};
