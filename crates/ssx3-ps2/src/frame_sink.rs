@@ -62,7 +62,7 @@ impl FrameBuilder {
     pub fn build(&mut self, gm: u32, mem: &DumpMem) -> (Built, Carry) {
         let t = web_time::Instant::now();
         let carry = self.carry.clone();
-        let b = frame::build_cached(mem, gm, &carry, &mut self.cache);
+        let b = frame::build_cached(mem, gm, &carry, &mut self.cache, mem.direct.clone());
         self.carry = Carry { regs: b.regs_end, matrix: b.emitter.matrix, material_param: b.emitter.material_param };
         self.ms += t.elapsed().as_secs_f64() * 1e3;
         self.frames += 1;
@@ -77,6 +77,8 @@ static ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(fa
 pub fn install(sink: Box<dyn FrameSink>) {
     *SINK.lock().unwrap() = Some(Sink { sink });
     ON.store(true, std::sync::atomic::Ordering::Release);
+    // The game's draw functions record their draws for the sink.
+    ssx3_render::direct::set_active(true);
 }
 
 pub fn enabled() -> bool {
@@ -230,14 +232,18 @@ pub fn on_signal_sema(c: &mut Cpu, id: i32) {
         return;
     }
     let mut guard = SINK.lock().unwrap();
-    let Some(s) = guard.as_mut() else { return };
+    let Some(s) = guard.as_mut() else {
+        ssx3_render::direct::take();
+        return;
+    };
     let t0 = web_time::Instant::now();
     let heads = [frame::gm::QUEUED_VIF1, frame::gm::QUEUED_VIF2, frame::gm::QUEUED_GIF1, frame::gm::QUEUED_GIF2].map(|o| frame::word(&mem, g + o));
     // The memory the sink reads: a copy, so the sink can build and render
     // the frame while the game goes on. Each buffer gets only the pages
     // written since it was last filled (`bus::take_written`).
-    let mut snap = POOL.lock().unwrap().pop().unwrap_or_else(|| Box::new(DumpMem { ram: Vec::new(), spr: Vec::new(), vu1: Vec::new(), id: usize::MAX }));
+    let mut snap = POOL.lock().unwrap().pop().unwrap_or_else(|| Box::new(DumpMem { ram: Vec::new(), spr: Vec::new(), vu1: Vec::new(), id: usize::MAX, direct: Default::default() }));
     snapshot_ram(&mut snap, &c.bus.ram);
+    snap.direct = std::sync::Arc::new(ssx3_render::direct::take());
     snap.spr.clear();
     snap.spr.extend_from_slice(&c.bus.spr);
     s.sink.frame(g, snap);
@@ -276,7 +282,7 @@ fn dump_keep() -> Option<usize> {
     *K.get_or_init(|| std::env::var("SSX3_FRAME_DUMP").ok().and_then(|v| v.parse().ok()).filter(|&n| n > 0))
 }
 
-fn encode(carry: &Carry, ram: &[u8], spr: &[u8], vu1: &[u8]) -> Vec<u8> {
+fn encode(carry: &Carry, ram: &[u8], spr: &[u8], vu1: &[u8], direct: &[ssx3_render::direct::Recorded]) -> Vec<u8> {
     let r = &carry.regs;
     let mut words = vec![r.cycle, r.mode, r.mask];
     words.extend(r.row);
@@ -290,6 +296,10 @@ fn encode(carry: &Carry, ram: &[u8], spr: &[u8], vu1: &[u8]) -> Vec<u8> {
     out.extend_from_slice(ram);
     out.extend_from_slice(spr);
     out.extend_from_slice(vu1);
+    // (Optional: the captured draws, after a full VU1 memory.)
+    if vu1.len() == 0x4000 {
+        ssx3_render::direct::encode(direct, &mut out);
+    }
     out
 }
 
@@ -301,7 +311,7 @@ pub fn dump_frame(carry: &Carry, mem: &DumpMem, vu1: &[u8]) {
     while ring.len() >= keep {
         ring.pop_front();
     }
-    ring.push_back(encode(carry, &mem.ram, &mem.spr, vu1));
+    ring.push_back(encode(carry, &mem.ram, &mem.spr, vu1, &mem.direct));
 }
 
 /// Write the kept frames to `dir/frame-K.bin`, K = 0 for the newest.
@@ -379,6 +389,8 @@ pub struct DumpMem {
     pub vu1: Vec<u8>,
     /// The snapshot buffer's slot (`usize::MAX`: a dump, or not filled yet).
     pub id: usize,
+    /// The draws captured at the game's draw functions this frame.
+    pub direct: std::sync::Arc<Vec<ssx3_render::direct::Recorded>>,
 }
 
 impl Mem for DumpMem {
@@ -415,7 +427,11 @@ pub fn load_dump(bytes: &[u8]) -> Result<(DumpMem, Carry), String> {
     regs.dbf = w[15] != 0;
     let carry = Carry { regs, matrix: w[16] as i32, material_param: w[17] };
     let vu1 = bytes.get(o + nram + 0x4000..o + nram + 0x8000).map_or_else(Vec::new, |v| v.to_vec());
-    Ok((DumpMem { ram: bytes[o..o + nram].to_vec(), spr: bytes[o + nram..o + nram + 0x4000].to_vec(), vu1, id: usize::MAX }, carry))
+    let direct = match bytes.get(o + nram + 0x8000..) {
+        Some(b) if !b.is_empty() => ssx3_render::direct::decode(b).ok_or("malformed captured draws")?,
+        _ => Vec::new(),
+    };
+    Ok((DumpMem { ram: bytes[o..o + nram].to_vec(), spr: bytes[o + nram..o + nram + 0x4000].to_vec(), vu1, id: usize::MAX, direct: std::sync::Arc::new(direct) }, carry))
 }
 
 /// Build the typed frame from a dump's memory.
@@ -426,5 +442,5 @@ pub fn build_dump(mem: &DumpMem, carry: &Carry) -> Option<Built> {
 /// [`build_dump`] with a sub-chain cache carried across dumps.
 pub fn build_dump_cached(mem: &DumpMem, carry: &Carry, cache: &mut frame::ChainCache) -> Option<Built> {
     let g = frame::word(mem, frame::addr::GM_PTR);
-    (g != 0).then(|| frame::build_cached(mem, g, carry, cache))
+    (g != 0).then(|| frame::build_cached(mem, g, carry, cache, mem.direct.clone()))
 }

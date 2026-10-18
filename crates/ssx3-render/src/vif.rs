@@ -64,6 +64,11 @@ pub enum Event {
     Microcode { addr: u32, bytes: u32 },
     /// MSKPATH3.
     MaskPath3(bool),
+    /// A packet the game's draw function described natively
+    /// (`crate::direct`): the capture's index in the frame's list and the
+    /// VIF registers at the packet. Not decoded; its program starts only
+    /// advance the double buffering ([`Vif1::skip_starts`]).
+    Native { index: u32, regs: VifRegs },
 }
 
 pub struct Vif1 {
@@ -299,6 +304,17 @@ impl Vif1 {
 
     /// MSCAL/MSCALF/MSCNT: TOP/ITOP latch and the TOPS double buffer, as the
     /// VIF does when it starts the VU.
+    /// `n` program starts made by a packet that is not decoded (a native
+    /// draw): only the double buffering moves on. Pending input stays for
+    /// the next decoded start.
+    pub fn skip_starts(&mut self, n: u32) {
+        for _ in 0..n {
+            let r = &mut self.regs;
+            r.tops = if r.dbf { r.base } else { r.base + r.ofst };
+            r.dbf = !r.dbf;
+        }
+    }
+
     fn call(&mut self, entry: Option<u32>) {
         if let Some(rec) = self.rec.as_mut() {
             let w = rec.take(&self.mem);

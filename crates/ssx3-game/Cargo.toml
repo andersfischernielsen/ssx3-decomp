@@ -16,6 +16,8 @@ ssx3-ee-threads = { path = "../../generated/ee/game", package = "ssx3-ee", optio
 ssx3-ee-unwind = { path = "../../generated/ee-unwind/game", package = "ssx3-ee-unwind", optional = true }
 ssx3-core = { path = "../ssx3-core" }
 ssx3-vu = { path = "../ssx3-vu" }
+# Draw capture (capture.rs) records `ssx3_render::direct` commands.
+ssx3-render = { path = "../ssx3-render" }
 
 # Work packages from docs/investigation/phase2-candidates.md. Each is its own
 # module behind a feature so packages can be developed in parallel without

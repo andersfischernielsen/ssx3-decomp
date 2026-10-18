@@ -138,6 +138,32 @@ Progress (2026-10-18):
   state machine for state packets), worth roughly another 15-20% of the
   browser frame; the snapshot is already cheap (incremental pages).
 
+- Meshes the arena keeps are planned without their vertex data (the VU plan
+  learns per call whether the arena has it).
+
+**D1 mechanics (2026-10-18).**
+
+- `ssx3_game::capture`: a wrapper per draw function in an override slot
+  (`overrides.txt`, "draw capture"; installed at boot unless
+  `SSX3_DIRECT=0`). It runs `f_X__generated`, then records a
+  `ssx3_render::direct::Cmd` keyed by the packet start (`gm+0x5a00` before
+  the body), the packet end (where the bucket link goes) and the packet's
+  first DMA tag. Nothing is recorded when the body unwound (that packet
+  stays on the decoding path) or while no renderer is installed.
+- The frame sink takes the list at the kick-semaphore signal, so it travels
+  with the snapshot (`DumpMem::direct`) and with frame dumps (a section
+  after the VU1 memory).
+- `frame::build_cached`: inside a payload, a packet with a capture is not
+  decoded: `Event::Native { index, regs }`, its program starts advance the
+  VIF double buffering only, and the walk continues at the packet end.
+- `ssx3-gfx` `Build::run` draws `Event::Native` with
+  `direct::plan(cmd, regs, header, vu)`: the draw's header from its
+  MatrixRecord, the programs' static data (fan tags) from the frame-start
+  VU1 image.
+- Pilot: slot 71 strips (`Cmd::Strip`). The other families follow the
+  same pattern; D2 then stops building their packets (the record keeps an
+  empty packet, so the bucket order stays the game's).
+
 Background (the earlier proposal, still the reference for the details):
 
 Override the game's draw entry points (boundaries §4.3: draw slots 95/96

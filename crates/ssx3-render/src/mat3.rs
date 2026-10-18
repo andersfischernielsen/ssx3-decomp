@@ -1437,6 +1437,58 @@ pub fn plan_gpu_strip(entry: u32, top: u32, mem: &mut [u8; 16384]) -> Option<cra
     })
 }
 
+/// A strip captured at `PS2GraphicsMan_DrawTriStrip` (`crate::direct`):
+/// each batch as [`plan_gpu_strip`] (or [`float_strip`] where that keeps
+/// the CPU) would plan it from the packet the game built, on a memory with
+/// what the program reads: the header (qw0-5), the fan packets' tags (`fans`,
+/// static: the material setup's) and the batch's input at its TOP (`tops`).
+pub fn plan_strip_cmd(entry: u32, prim: u32, verts: &[[u128; 3]], tops: &[u32], header: &[u128; 6], fans: [u128; 2]) -> Vec<crate::direct::Out> {
+    use crate::direct::Out;
+    thread_local! {
+        static SCRATCH: std::cell::RefCell<Box<[u8; 16384]>> = std::cell::RefCell::new(Box::new([0; 16384]));
+    }
+    // (0x12b0, after gp+0x1290 was set: no native program, as for the
+    // packet's call.)
+    if entry != 0x12b8 {
+        return Vec::new();
+    }
+    let regs: u128 = if prim == 0x5c { 0x412 } else { 0x41f };
+    SCRATCH.with_borrow_mut(|mem| {
+        let mut outs = Vec::new();
+        for (r, &top) in crate::direct::strip_batches(verts.len()).zip(tops) {
+            let k = r.len() as u128;
+            let mut m = Mem(&mut **mem);
+            for (i, &q) in header.iter().enumerate() {
+                m.st(i as u16, q4(q));
+            }
+            m.st(FAN_TAG_A, q4(fans[0]));
+            m.st(FAN_TAG_B, q4(fans[1]));
+            let t = (top & 0x3ff) as u16;
+            m.st(t, q4(k | 0x8000 | (prim as u128) << 47 | 1 << 46 | 3 << 60 | regs << 64));
+            m.st(t.wrapping_add(1), q4(3 * k));
+            for (j, v) in verts[r].iter().enumerate() {
+                for (l, &q) in v.iter().enumerate() {
+                    m.st(t.wrapping_add(2 + 3 * j as u16 + l as u16), q4(q));
+                }
+            }
+            match plan_gpu_strip(0x12b8, top, mem) {
+                Some(c) => outs.push(Out::Gpu(c)),
+                None => {
+                    let mut gif = Vec::new();
+                    if float_strip(&mut Mem(&mut **mem), t, &mut |p| gif.extend_from_slice(p)) {
+                        outs.push(Out::Gif(gif));
+                    }
+                }
+            }
+        }
+        outs
+    })
+}
+
+fn q4(q: u128) -> V {
+    std::array::from_fn(|l| (q >> (32 * l)) as u32)
+}
+
 /// Debug (`crate::gpu::check`): the strip shader's formulas
 /// (`vs_mat3_strip`, IEEE) against the program's strip packet (the last
 /// packet of `gif`: clipped fans come first), and the fans (`pre`).

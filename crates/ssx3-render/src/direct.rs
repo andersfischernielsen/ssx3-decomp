@@ -1,0 +1,224 @@
+//! Draws captured at the game's draw functions (plan step N2, direct
+//! rendering, `docs/plans/native-rendering.md`).
+//!
+//! A captured draw function still runs its generated body (the packet is
+//! built, guest memory stays exactly as without the capture) and records
+//! what it drew as a typed [`Cmd`], keyed by the start of the packet it
+//! wrote. The frame build ([`crate::frame`]) meets that packet when the
+//! chain CALLs it and, instead of decoding it, emits
+//! [`crate::vif::Event::Native`]; the renderer draws the command
+//! ([`plan`]). Packets without a command (other draw functions, a capture
+//! the game unwound out of) take the decoding path.
+//!
+//! The game thread records ([`record`]) while the renderer is active
+//! ([`set_active`]); the frame sink takes the list when the frame is
+//! published ([`take`]).
+
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
+
+use crate::vif::VifRegs;
+
+/// What a captured draw function drew.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Cmd {
+    /// `PS2GraphicsMan_DrawTriStrip` (slot 71, 0x379860): a float triangle
+    /// strip through the type 3 program at `entry` (0x12b8, or 0x12b0 once
+    /// after gp+0x1290 was set), in batches of at most 72 vertices that
+    /// overlap by two.
+    Strip {
+        entry: u32,
+        /// PRIM: 0x5c textured, 0x4c untextured.
+        prim: u32,
+        /// Per vertex {STQ (f32), RGBA (i32), XYZW (f32)}.
+        verts: Vec<[u128; 3]>,
+    },
+}
+
+/// The vertex count of a strip batch.
+pub const STRIP_BATCH: usize = 0x48;
+
+impl Cmd {
+    /// The VU1 program starts (MSCALs) its packet makes.
+    pub fn starts(&self) -> u32 {
+        match self {
+            Cmd::Strip { verts, .. } => strip_batches(verts.len()).count() as u32,
+        }
+    }
+}
+
+/// The batches of a strip of `n` vertices, as the game splits it: ranges of
+/// at most [`STRIP_BATCH`] vertices, each starting two before the last end.
+pub fn strip_batches(n: usize) -> impl Iterator<Item = std::ops::Range<usize>> {
+    let mut at = 0usize;
+    let mut left = n;
+    std::iter::from_fn(move || {
+        if left <= 2 {
+            return None;
+        }
+        let k = left.min(STRIP_BATCH);
+        let r = at..at + k;
+        at += k - 2;
+        left = left - k + 2;
+        Some(r)
+    })
+}
+
+/// A captured draw: its packet in VifBuff (`start..end`, `end` = where the
+/// bucket's link tag goes), the packet's first DMA tag (to see it is the
+/// same packet) and the command.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Recorded {
+    pub start: u32,
+    pub end: u32,
+    pub first_tag: u128,
+    pub cmd: Cmd,
+}
+
+static ACTIVE: AtomicBool = AtomicBool::new(false);
+static LIST: Mutex<Vec<Recorded>> = Mutex::new(Vec::new());
+
+/// Captures are recorded (a renderer takes them); `SSX3_DIRECT=0` keeps
+/// them off.
+pub fn set_active(on: bool) {
+    let on = on && std::env::var("SSX3_DIRECT").map_or(true, |v| v != "0");
+    ACTIVE.store(on, Ordering::Relaxed);
+    if !on {
+        LIST.lock().unwrap().clear();
+    }
+}
+
+pub fn active() -> bool {
+    ACTIVE.load(Ordering::Relaxed)
+}
+
+/// Record a capture (game thread).
+pub fn record(r: Recorded) {
+    if active() {
+        LIST.lock().unwrap().push(r);
+    }
+}
+
+/// The captures since the last call (the frame being published).
+pub fn take() -> Vec<Recorded> {
+    std::mem::take(&mut *LIST.lock().unwrap())
+}
+
+/// Draw a captured command: its GPU draws, or the GIF output of the CPU
+/// program for what has no GPU port. `regs`: the VIF registers at the
+/// packet (the program's TOP for each start); `header`: VU1 qw0-5 as the
+/// draw's state change uploaded them (the matrix record's header); `vu`:
+/// VU1 memory with the programs' static data (any frame's).
+pub fn plan(cmd: &Cmd, regs: VifRegs, header: &[u128; 6], vu: &[u8; 16384]) -> Vec<Out> {
+    let qw = |a: usize| u128::from_le_bytes(vu[a * 16..a * 16 + 16].try_into().unwrap());
+    match cmd {
+        Cmd::Strip { entry, prim, verts } => {
+            let tops = tops(regs, cmd.starts());
+            crate::mat3::plan_strip_cmd(*entry, *prim, verts, &tops, header, [qw(0x3c8), qw(0x3e4)])
+        }
+    }
+}
+
+/// One output of [`plan`], in kick order.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Out {
+    Gpu(crate::gpu::GpuCall),
+    Gif(Vec<u128>),
+}
+
+/// The TOP of each program start from `regs` on (VIF1 double buffering).
+pub fn tops(mut regs: VifRegs, n: u32) -> Vec<u32> {
+    (0..n)
+        .map(|_| {
+            let top = regs.tops & 0x3ff;
+            regs.tops = if regs.dbf { regs.base } else { regs.base + regs.ofst };
+            regs.dbf = !regs.dbf;
+            top
+        })
+        .collect()
+}
+
+// Encoding (frame dumps).
+
+/// Append `list` to `out`.
+pub fn encode(list: &[Recorded], out: &mut Vec<u8>) {
+    out.extend_from_slice(&(list.len() as u32).to_le_bytes());
+    for r in list {
+        out.extend_from_slice(&r.start.to_le_bytes());
+        out.extend_from_slice(&r.end.to_le_bytes());
+        out.extend_from_slice(&r.first_tag.to_le_bytes());
+        match &r.cmd {
+            Cmd::Strip { entry, prim, verts } => {
+                out.push(0);
+                out.extend_from_slice(&entry.to_le_bytes());
+                out.extend_from_slice(&prim.to_le_bytes());
+                out.extend_from_slice(&(verts.len() as u32).to_le_bytes());
+                for v in verts.iter().flatten() {
+                    out.extend_from_slice(&v.to_le_bytes());
+                }
+            }
+        }
+    }
+}
+
+/// Read what [`encode`] wrote; `None` if malformed.
+pub fn decode(b: &[u8]) -> Option<Vec<Recorded>> {
+    let mut p = 0usize;
+    let mut take = |n: usize| -> Option<&[u8]> {
+        let s = b.get(p..p + n)?;
+        p += n;
+        Some(s)
+    };
+    let u32_ = |s: &[u8]| u32::from_le_bytes(s.try_into().unwrap());
+    let u128_ = |s: &[u8]| u128::from_le_bytes(s.try_into().unwrap());
+    let n = u32_(take(4)?);
+    let mut list = Vec::with_capacity(n as usize);
+    for _ in 0..n {
+        let (start, end, first_tag) = (u32_(take(4)?), u32_(take(4)?), u128_(take(16)?));
+        let cmd = match take(1)?[0] {
+            0 => {
+                let (entry, prim, nv) = (u32_(take(4)?), u32_(take(4)?), u32_(take(4)?));
+                let mut verts = Vec::with_capacity(nv as usize);
+                for _ in 0..nv {
+                    verts.push([u128_(take(16)?), u128_(take(16)?), u128_(take(16)?)]);
+                }
+                Cmd::Strip { entry, prim, verts }
+            }
+            _ => return None,
+        };
+        list.push(Recorded { start, end, first_tag, cmd });
+    }
+    Some(list)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strip_batches_overlap_by_two() {
+        assert_eq!(strip_batches(2).count(), 0);
+        assert_eq!(strip_batches(3).collect::<Vec<_>>(), vec![0..3]);
+        assert_eq!(strip_batches(72).collect::<Vec<_>>(), vec![0..72]);
+        assert_eq!(strip_batches(73).collect::<Vec<_>>(), vec![0..72, 70..73]);
+        assert_eq!(strip_batches(142).collect::<Vec<_>>(), vec![0..72, 70..142]);
+        assert_eq!(strip_batches(143).collect::<Vec<_>>(), vec![0..72, 70..142, 140..143]);
+    }
+
+    #[test]
+    fn encode_decode_round_trip() {
+        let list = vec![
+            Recorded { start: 0x10_0000, end: 0x10_0400, first_tag: 7 << 100 | 3, cmd: Cmd::Strip { entry: 0x12b8, prim: 0x5c, verts: vec![[1, 2, 3], [4, 5, u128::MAX]] } },
+            Recorded { start: 0x10_0410, end: 0x10_0500, first_tag: 9, cmd: Cmd::Strip { entry: 0x12b0, prim: 0x4c, verts: Vec::new() } },
+        ];
+        let mut b = Vec::new();
+        encode(&list, &mut b);
+        assert_eq!(decode(&b), Some(list));
+    }
+
+    #[test]
+    fn tops_alternate_like_mscal() {
+        let regs = VifRegs { base: 0x10, ofst: 0x200, tops: 0x210, dbf: true, ..Default::default() };
+        assert_eq!(tops(regs, 3), vec![0x210, 0x10, 0x210]);
+    }
+}

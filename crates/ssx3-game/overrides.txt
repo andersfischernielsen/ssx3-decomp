@@ -1426,5 +1426,8 @@
 0x003e34e8    EAFile_PlatformGetSize
 0x003e33b0    EAFile_HostReadService
 0x003de420    EAFile_CompleteRequest
+# phase 3: draw capture (capture.rs). Slots only: installed at boot unless
+# SSX3_DIRECT=0, not part of OVERRIDES.
+0x00379860    PS2GraphicsMan_DrawTriStrip
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04

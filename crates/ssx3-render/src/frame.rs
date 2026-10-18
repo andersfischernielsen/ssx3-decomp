@@ -658,6 +658,9 @@ pub enum Payload {
     Microcode { addr: u32, bytes: u32 },
     /// MSKPATH3.
     MaskPath3(bool),
+    /// A captured draw (`crate::direct`): its index in [`Built::direct`]
+    /// and the VIF registers at its packet.
+    Native { index: u32, regs: crate::vif::VifRegs },
 }
 
 impl From<Event> for Payload {
@@ -667,6 +670,7 @@ impl From<Event> for Payload {
             Event::Direct(d) => Self::Gif(d.qwords),
             Event::Microcode { addr, bytes } => Self::Microcode { addr, bytes },
             Event::MaskPath3(b) => Self::MaskPath3(b),
+            Event::Native { index, regs } => Self::Native { index, regs },
         }
     }
 }
@@ -820,6 +824,9 @@ pub struct Built {
     pub regs_end: VifRegs,
     /// The emitter after the frame (+0x69cbc/+0x69cc0 must match memory).
     pub emitter: Emitter,
+    /// The draws captured at the game's draw functions (`crate::direct`),
+    /// which `Event::Native` index.
+    pub direct: std::sync::Arc<Vec<crate::direct::Recorded>>,
 }
 
 /// Inputs carried from frame to frame.
@@ -1077,11 +1084,14 @@ fn chain_cache_mode() -> (bool, bool) {
 /// Build the frame. `g` = PS2GraphicsMan, called when EndFrame publishes the
 /// chains (after `RenderFrame`, before `DeferMan_ResetFrame`).
 pub fn build(m: &dyn Mem, g: u32, carry: &Carry) -> Built {
-    build_cached(m, g, carry, &mut ChainCache::default())
+    build_cached(m, g, carry, &mut ChainCache::default(), Default::default())
 }
 
 /// [`build`] with the sub-chain cache carried from frame to frame.
-pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache) -> Built {
+///
+/// `direct`: the frame's captured draws; a packet with a capture is not
+/// decoded (`Event::Native`).
+pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, direct: std::sync::Arc<Vec<crate::direct::Recorded>>) -> Built {
     let defer = word(m, g + gm::DEFER);
     let mut issues = Vec::new();
     let nm = word(m, defer + dm::NUM_MATRICES).min(dm::MAX_MATRICES);
@@ -1103,6 +1113,7 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache) 
     let starts: HashMap<u32, usize> = plan.draws.iter().enumerate().filter(|(_, d)| d.packets.start != 0).map(|(i, d)| (d.packets.start, i)).collect();
     let called: Vec<usize> = plan.draws.iter().enumerate().filter(|(_, d)| d.packets.start != 0).map(|(i, _)| i).collect();
     let mut next_called = 0usize;
+    let native: HashMap<u32, usize> = direct.iter().enumerate().map(|(i, r)| (r.start, i)).collect();
     let mut w = Walker {
         m,
         vif: Vif1::new(carry.regs),
@@ -1133,6 +1144,19 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache) 
         // returns to.
         let mut recording: Option<((u32, VifRegs), u64, u32)> = None;
         for _ in 0..1_000_000 {
+            // A captured draw's packet (a bucket's packets are reached by
+            // CALL or NEXT): its command instead of its decoding.
+            if let Some(&k) = native.get(&tadr).filter(|_| w.in_payload.is_some() && recording.is_none() && w.vif.idle()) {
+                let r = &direct[k];
+                if w.m.qword(tadr) == r.first_tag {
+                    w.vif.events.push(Event::Native { index: k as u32, regs: w.vif.regs });
+                    w.vif.skip_starts(r.cmd.starts());
+                    w.take_events();
+                    tadr = r.end;
+                    continue;
+                }
+                issues.push(format!("capture at {tadr:#x}: the packet differs"));
+            }
             let tag = w.m.qword(tadr);
             let qwc = (tag & 0xffff) as u32;
             let id = ((tag >> 28) & 7) as u32;
@@ -1415,6 +1439,7 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache) 
         phase2,
         regs_end: w.vif.regs,
         emitter,
+        direct,
     }
 }
 

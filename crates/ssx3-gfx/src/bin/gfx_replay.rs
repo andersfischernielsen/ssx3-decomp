@@ -47,7 +47,12 @@ fn main() {
         .iter()
         .map(|path| {
             let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("{path}: {e}"));
-            frame_sink::load_dump(&bytes).unwrap_or_else(|e| panic!("{path}: {e}"))
+            let (mut mem, carry) = frame_sink::load_dump(&bytes).unwrap_or_else(|e| panic!("{path}: {e}"));
+            // SSX3_DIRECT=0: decode every packet (the captured draws unused).
+            if std::env::var("SSX3_DIRECT").is_ok_and(|v| v == "0") {
+                mem.direct = Default::default();
+            }
+            (mem, carry)
         })
         .collect();
     if let Some((w, h)) = std::env::var("SSX3_RENDER_SIZE").ok().and_then(|v| v.split_once('x').and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?)))) {
@@ -93,6 +98,8 @@ fn main() {
         eprintln!("{}", r.0.lock().unwrap().timing_report());
     }
     if std::env::var_os("SSX3_GPU_STATS").is_some() {
+        let s = r.stats();
+        eprintln!("[gpu-stats] native draws {}, VU calls {} ({} without a program)", s.native_draws, s.vu_calls, s.vu_missing);
         for ((h, e, i, g), n) in ssx3_render::gpu::STATS.lock().unwrap().iter() {
             eprintln!("[gpu-stats] {h:016x} entry {e:#06x} itop {i} gpu {g}: {n}");
         }
