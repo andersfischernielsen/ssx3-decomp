@@ -390,12 +390,17 @@ profile of the game thread `ee-thread-1`, busy 81% of the time):
 | --- | --- | --- | --- |
 | frame build | the VIF1 model replays every captured `Cmd::Vu` and the models' VIF chains in RAM into VU1 memory images for the native VU programs (`frame::native`, `play_chain`) | ~10% of the game thread | typed geometry per draw (no VU memory images); chains converted once and cached |
 | VU0 macro mode | each COP2 op goes through `dyn Vu0` into the VU model (stage, commit, flush) | ~9% of the game thread | direct native vector ops, results bit-identical (unit tests against the model) |
-| flip | `Renderer_SetDisplayRegs` runs as guest code: GS privileged registers, the flip GIF packet, a GIF DMA, busy-wait loops on CSR | 1 call, ~120 CSR polls | native: registers and packet written directly, no DMA, no polling |
+| flip | `Renderer_SetDisplayRegs` runs as guest code: GS privileged registers, the flip GIF packet, a GIF DMA | 1 call | stays guest code for now (1,092 generated lines, soft-float conversions, little to gain: the GS is detached, the packet is what the renderer reads). The ~120 CSR polls per frame are the game's own vsync wait (`CSR` bit 3), not the flip |
 | scratchpad DMA | `SprStream` and others kick SPR to/from DMAs (ch 8/9) | ~25 | native copies at the stream's API |
 | timers, INTC, DMAC status | registers the game reads | a few | keep as plain state (no timing model) |
 | EE kernel | threads (host threads with a baton), semaphores, interrupt handlers | ~4 thread switches | keep; a native scheduler later |
 | sound | `ssx3-snd` drives the SPU2 voice model as its mixer | 1 tick / 512 samples | already native; the SPU2 model is the mixer |
 | memory | 32 MiB guest RAM, scratchpad, PS2 float semantics | everywhere | stays while game logic is recompiled |
+
+What is left is either small (scratchpad DMAs, a few status registers) or
+part of running recompiled game code (guest memory, the EE kernel's
+threads, PS2 float and VU0 semantics). Those go as the game logic becomes
+typed Rust (`plans/roadmap.md` phase 2), the next step.
 | movies | done (N5) | | |
 
 ## Rules
