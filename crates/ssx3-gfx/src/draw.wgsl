@@ -47,11 +47,16 @@ struct VIn {
     @location(3) stq: vec4<f32>,
 }
 
+// Attributes interpolate linearly in screen space, as on the GS (the CPU
+// vertices have w = 1; GPU-computed ones, gpuvu.wgsl, a real w).
 struct VOut {
     @builtin(position) pos: vec4<f32>,
-    @location(0) col: vec4<f32>,
-    @location(1) stq: vec3<f32>,
-    @location(2) fog: f32,
+    @location(0) @interpolate(linear) col: vec4<f32>,
+    @location(1) @interpolate(linear) stq: vec3<f32>,
+    @location(2) @interpolate(linear) fog: f32,
+    // GS depth (0..1), for pipelines whose position z is a clip value
+    // (gpuvu.wgsl `fs_gpu`).
+    @location(3) @interpolate(linear) gsz: f32,
 }
 
 @vertex
@@ -63,6 +68,7 @@ fn vs(v: VIn) -> VOut {
     o.col = v.col;
     o.stq = v.stq.xyz;
     o.fog = v.fog;
+    o.gsz = v.pos.z;
     return o;
 }
 
@@ -83,6 +89,11 @@ fn alpha_ok(a: f32) -> bool {
 
 @fragment
 fn fs(v: VOut) -> @location(0) vec4<f32> {
+    return shade(v);
+}
+
+// The GS fragment stage: texture function, alpha test, blending inputs.
+fn shade(v: VOut) -> vec4<f32> {
     if ((b.flags & 64u) != 0u) {
         // Destination alpha bit 7 (stored as a/128, so a >= 128 is 1.0).
         let da = textureLoad(dst, vec2<i32>(v.pos.xy), 0).a;

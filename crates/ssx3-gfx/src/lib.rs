@@ -32,6 +32,7 @@ use std::sync::{Arc, Mutex};
 use ssx3_render::chain::Mem;
 use ssx3_render::frame::{self, Built, Material, Owner};
 use ssx3_render::vif::Event;
+use ssx3_render::vujob::CallOut;
 
 /// Statistics of the last frame and totals.
 #[derive(Clone, Copy, Debug, Default)]
@@ -41,6 +42,8 @@ pub struct Stats {
     pub vu_native: u64,
     /// Calls with no native program (MSCNT, unimplemented entries).
     pub vu_missing: u64,
+    /// Calls drawn by the GPU (`ssx3_render::gpu`).
+    pub vu_gpu: u64,
     pub prims: u64,
     pub dropped: u64,
     pub unknown_tex: u64,
@@ -149,6 +152,8 @@ pub struct Inner {
     /// Vertex and uniform buffers, kept across frames (grown as needed).
     vbuf: Option<wgpu::Buffer>,
     ubuf: Option<wgpu::Buffer>,
+    /// GPU-computed draws: call uniforms, inputs, indices.
+    gbuf: [Option<wgpu::Buffer>; 3],
 }
 
 /// The renderer; clone the handle to read images from another thread.
@@ -260,6 +265,7 @@ impl Renderer {
             nslots: 1,
             backups: HashMap::new(),
             vbuf: None,
+            gbuf: [None, None, None],
             ubuf: None,
         })), shared)
     }
@@ -863,15 +869,46 @@ impl Inner {
         self.stats.prims += self.gs.prims - p0.0;
         self.stats.dropped += self.gs.dropped - p0.1;
         self.stats.unknown_tex += self.gs.unknown_tex - p0.2;
-        if self.gs.verts.is_empty() {
+        if self.gs.verts.is_empty() && self.gs.gpu.calls.is_empty() {
             return;
         }
         // Vertex buffer.
         // SAFETY: `Vtx` is `repr(C)`, twelve f32s with no padding, in the
         // vertex layout's order; the slice covers exactly the vertices.
         let vbytes: &[u8] = unsafe { std::slice::from_raw_parts(self.gs.verts.as_ptr() as *const u8, std::mem::size_of_val(&self.gs.verts[..])) };
-        let vbuf = grow_buffer(&self.dev, &mut self.vbuf, vbytes.len() as u64, wgpu::BufferUsages::VERTEX, "ssx3-gfx verts");
-        self.queue.write_buffer(&vbuf, 0, vbytes);
+        let vbuf = grow_buffer(&self.dev, &mut self.vbuf, (vbytes.len() as u64).max(256), wgpu::BufferUsages::VERTEX, "ssx3-gfx verts");
+        if !vbytes.is_empty() {
+            self.queue.write_buffer(&vbuf, 0, vbytes);
+        }
+        // GPU-computed draws (ssx3_render::gpu): their uniforms, inputs and
+        // triangle lists, bound as group 1.
+        let gpu_bind = (!self.gs.gpu.calls.is_empty()).then(|| {
+            let g = &self.gs.gpu;
+            let bytes = |w: &[u32]| -> Vec<u8> { w.iter().flat_map(|x| x.to_le_bytes()).collect() };
+            let calls = bytes(g.calls.as_flattened().as_flattened());
+            let data = bytes(g.data.as_flattened());
+            let idx = bytes(&g.indices);
+            let [cb, db, ib] = &mut self.gbuf;
+            let cb = grow_buffer(&self.dev, cb, (calls.len() as u64).max(256), wgpu::BufferUsages::STORAGE, "ssx3-gfx gpu calls");
+            let db = grow_buffer(&self.dev, db, (data.len() as u64).max(256), wgpu::BufferUsages::STORAGE, "ssx3-gfx gpu data");
+            let ib = grow_buffer(&self.dev, ib, (idx.len() as u64).max(256), wgpu::BufferUsages::INDEX, "ssx3-gfx gpu indices");
+            self.queue.write_buffer(&cb, 0, &calls);
+            if !data.is_empty() {
+                self.queue.write_buffer(&db, 0, &data);
+            }
+            if !idx.is_empty() {
+                self.queue.write_buffer(&ib, 0, &idx);
+            }
+            let bg = self.dev.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("ssx3-gfx gpuvu"),
+                layout: &self.pipes.gpu_layout,
+                entries: &[
+                    wgpu::BindGroupEntry { binding: 0, resource: cb.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 1, resource: db.as_entire_binding() },
+                ],
+            });
+            (bg, ib)
+        });
         // Plans per batch, uniforms, bind groups.
         let batches = std::mem::take(&mut self.gs.batches);
         self.stats.batches += batches.len() as u64;
@@ -896,6 +933,8 @@ impl Inner {
             desc: String,
             /// Its batch.
             batch: usize,
+            /// GPU-computed vertices.
+            gpu: Option<gs::GpuBatch>,
         }
         let mut items = Vec::new();
         let mut ubytes: Vec<u8> = Vec::new();
@@ -976,7 +1015,10 @@ impl Inner {
             let zfog = st.tex.is_some_and(|t| t != gs::FRAME_TEX && t & gs::RT_TEX == 0 && t & gs::ZFOG_TEX != 0);
             // The largest As the batch can produce (blends with As > 1
             // need care: see draw::plans).
-            let av = self.gs.verts[b.first as usize..(b.first + b.count) as usize].iter().fold(0f32, |m, v| m.max(v.col[3]));
+            let av = match b.gpu {
+                Some(g) => g.alpha_max,
+                None => self.gs.verts[b.first as usize..(b.first + b.count) as usize].iter().fold(0f32, |m, v| m.max(v.col[3])),
+            };
             let ta = bind_amax[bind] as f32;
             let tcc = (st.ctx.tex0 >> 34) & 1 != 0;
             let as_max = if st.prim & (1 << 4) == 0 || !tcc {
@@ -1041,7 +1083,7 @@ impl Inner {
                 } else {
                     String::new()
                 };
-                items.push(Item { batch: bi, desc, frame: st.tex == Some(gs::FRAME_TEX), date, zfog, target: st.target, key: p.key, ubo, constant: p.constant, bind, first: b.first, count: b.count, scissor });
+                items.push(Item { batch: bi, gpu: b.gpu, desc, frame: st.tex == Some(gs::FRAME_TEX), date, zfog, target: st.target, key: p.key, ubo, constant: p.constant, bind, first: b.first, count: b.count, scissor });
             }
         }
         if items.is_empty() {
@@ -1079,7 +1121,14 @@ impl Inner {
             })
             .collect();
         for it in &items {
-            self.pipes.get(&self.dev, it.key);
+            match it.gpu {
+                Some(g) => {
+                    self.pipes.get_gpu(&self.dev, it.key, g.program);
+                }
+                None => {
+                    self.pipes.get(&self.dev, it.key);
+                }
+            }
         }
         let t = self.targets.as_ref().expect("targets");
         let cv = t.color.create_view(&Default::default());
@@ -1182,11 +1231,25 @@ impl Inner {
                 pass.set_vertex_buffer(0, vbuf.slice(..));
             }
             prev_frame = it.frame;
-            pass.set_pipeline(self.pipes.cached(it.key));
-            pass.set_bind_group(0, &groups[it.bind], &[it.ubo * draw::UNIFORM_STRIDE as u32]);
-            pass.set_blend_constant(wgpu::Color { r: it.constant, g: it.constant, b: it.constant, a: it.constant });
-            pass.set_scissor_rect(x, y, sw, sh);
-            pass.draw(it.first..it.first + it.count, 0..1);
+            match (it.gpu, gpu_bind.as_ref()) {
+                (Some(g), Some((bg, ib))) => {
+                    pass.set_pipeline(self.pipes.cached_gpu(it.key, g.program));
+                    pass.set_bind_group(0, &groups[it.bind], &[it.ubo * draw::UNIFORM_STRIDE as u32]);
+                    pass.set_bind_group(1, bg, &[]);
+                    pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
+                    pass.set_blend_constant(wgpu::Color { r: it.constant, g: it.constant, b: it.constant, a: it.constant });
+                    pass.set_scissor_rect(x, y, sw, sh);
+                    pass.draw_indexed(g.first..g.first + g.count, 0, g.call..g.call + 1);
+                }
+                (Some(_), None) => {}
+                (None, _) => {
+                    pass.set_pipeline(self.pipes.cached(it.key));
+                    pass.set_bind_group(0, &groups[it.bind], &[it.ubo * draw::UNIFORM_STRIDE as u32]);
+                    pass.set_blend_constant(wgpu::Color { r: it.constant, g: it.constant, b: it.constant, a: it.constant });
+                    pass.set_scissor_rect(x, y, sw, sh);
+                    pass.draw(it.first..it.first + it.count, 0..1);
+                }
+            }
             if let (Some((px, py)), Some(pb)) = (probe, probe_buf.as_ref()) {
                 if it.target == main {
                     drop(pass);
@@ -1441,7 +1504,7 @@ mod tests {
 
 /// One chunk's result: (event index, GIF output) per call with a native
 /// program, and the VU memory after the chunk.
-type VuChunk = (Vec<(usize, Vec<u128>)>, Box<[u8; 16384]>);
+type VuChunk = (Vec<(usize, CallOut)>, Box<[u8; 16384]>);
 
 /// A frame's VU1 calls split into chunks run by worker threads. Chunks
 /// start only where a draw of a different program begins (programs pass
@@ -1483,9 +1546,8 @@ impl VuPlan<'_> {
                     interp::substitute(&mut mem[top..top + 64], s);
                 }
             }
-            let mut out: Vec<u128> = Vec::new();
-            if ssx3_render::run_native(hh, entry, c.top, c.itop, &mut mem, &mut |p: &[u128]| out.extend_from_slice(p)) {
-                outs.push((i, out));
+            if let Some(o) = ssx3_render::vujob::run_call(hh, entry, c.top, c.itop, &mut mem) {
+                outs.push((i, o));
             }
         }
         (outs, mem)
@@ -1558,10 +1620,10 @@ impl VuPlan<'_> {
 #[derive(Default)]
 struct VuReceiver {
     merged: usize,
-    outs: HashMap<usize, Vec<u128>>,
+    outs: HashMap<usize, CallOut>,
     last_mem: Option<Box<[u8; 16384]>>,
     /// `SSX3_GFX_VUCHECK`: every output, for the comparison in `finish`.
-    seen: Option<HashMap<usize, Vec<u128>>>,
+    seen: Option<HashMap<usize, CallOut>>,
 }
 
 impl VuReceiver {
@@ -1574,8 +1636,8 @@ impl VuReceiver {
         }
     }
 
-    /// The GIF output of the call at event `i` (None: no native program).
-    fn take(&mut self, plan: &VuPlan, i: usize) -> Option<Vec<u128>> {
+    /// The output of the call at event `i` (None: no native program).
+    fn take(&mut self, plan: &VuPlan, i: usize) -> Option<CallOut> {
         let j = *plan.chunk_of.get(&i)?;
         self.merge_to(plan, j);
         let out = self.outs.remove(&i);
@@ -1846,9 +1908,14 @@ impl Build {
                 Event::Call(_) => {
                     b.stats.vu_calls += 1;
                     match vu.take(&plan, i) {
-                        Some(out) => {
+                        Some(CallOut::Gif(out)) => {
                             b.stats.vu_native += 1;
                             b.gs.gif(&out);
+                        }
+                        Some(CallOut::Gpu(g)) => {
+                            b.stats.vu_native += 1;
+                            b.stats.vu_gpu += 1;
+                            b.gs.gpu_draw(g);
                         }
                         None => b.stats.vu_missing += 1,
                     }

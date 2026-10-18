@@ -1065,6 +1065,150 @@ fn line_shape(m: &mut Mem, top: u16, kick: &mut dyn FnMut(&[u128])) -> bool {
     true
 }
 
+// ---------------------------------------------------------------------------
+// GPU meshes (`crate::gpu`, `vs_mat3_mesh`)
+// ---------------------------------------------------------------------------
+
+/// What a GPU-planned pass 1 leaves at its output buffer (the CPU program
+/// writes its GIF tag there): pass 2 is planned for the GPU only after it,
+/// so a pass 2 on the CPU always finds a pass-1 output it can read.
+const GPU_PASS1_MARK: u32 = 0x4750_5531;
+
+/// Uniform qwords of a GPU mesh call (`vs_mat3_mesh`).
+pub mod gpu_mesh {
+    /// The screen matrix columns: `guardScale · M + guardOffset · M.w`.
+    pub const SCREEN: usize = 0;
+    /// x: lit, y: vertex count, z: pass (1 or 2).
+    pub const INFO: usize = 4;
+    /// The lighting basis (3 rows) and coefficients (10), as the program's.
+    pub const BASIS: usize = 5;
+    pub const COEFFS: usize = 8;
+    /// x, y: guardScale.z, guardOffset.z (the clip z of a screen z).
+    pub const GUARD_Z: usize = 18;
+}
+
+/// Plan a mesh call for the GPU (`crate::gpu::plan`): the memory effects of
+/// [`mesh_entry`] without the vertex loop (setup matrices, flags, lighting
+/// setup, in-place texgen); the vertices go to the shader. Data: per vertex
+/// {position, UV (after texgen), colour or normal}. `None` (memory
+/// untouched) for what the CPU program keeps: other entries, the pass-1
+/// sphere map, malformed meshes.
+pub fn plan_gpu(entry: u32, top: u32, itop: u32, mem: &mut [u8; 16384]) -> Option<crate::gpu::GpuCall> {
+    let top = (top & 0x3ff) as u16;
+    let mut m = Mem(mem);
+    let m = &mut m;
+    let after_header = top.wrapping_add(MESH_AFTER_HEADER);
+    let (pass1, setup, base, link) = match (entry, itop != 0) {
+        (0x2270, false) | (0x2320, _) => (true, true, after_header, 0x468),
+        (0x22c8, false) | (0x2358, _) => (true, false, top, 0x46e),
+        (0x2270, true) => (false, false, after_header, 0x476),
+        (0x22c8, true) => (false, false, top, 0x47c),
+        _ => return None,
+    };
+    let flags = if setup { m.ilw(base.wrapping_sub(23), 3) } else { m.ilw(MESH_FLAGS, 3) };
+    let mesh = Mesh::read(m, base);
+    if (pass1 && flags & flag::TEXGEN1 == 0x10) || !mesh.well_formed(m) {
+        return None;
+    }
+    let out = top.wrapping_add(OUT);
+    if !pass1 && m.ld(out)[..2] != [GPU_PASS1_MARK, mesh.n as u32] {
+        return None;
+    }
+    let lit = flags & flag::LIT != 0;
+    let tag = m.ld(base);
+    let tag = if pass1 { tag } else { [tag[0], m.ld(PASS2_TAG_Y)[1], tag[2], tag[3]] };
+    if pass1 {
+        if setup {
+            m.isw(MESH_FLAGS, 3, flags);
+            if lit {
+                lighting_setup(m, top);
+            }
+            let mat = [m.ld(MATRIX), m.ld(MATRIX + 1), m.ld(MATRIX + 2), m.ld(MATRIX + 3)];
+            let model: [V; 4] = std::array::from_fn(|i| m.ld(top.wrapping_add(i as u16)));
+            let tex: [V; 4] = std::array::from_fn(|i| m.ld(top.wrapping_add(5 + i as u16)));
+            for i in 0..4 {
+                m.st(MESH_MATRIX + i as u16, xform_xyzw(&mat, model[i]));
+                m.st(TEXGEN_MATRIX + i as u16, tex[i]);
+            }
+        }
+        m.isw(MESH_LINK, 0, link);
+        match flags & flag::TEXGEN1 {
+            2 => texgen_uv_matrix(m, mesh.uv(), mesh.uv(), mesh.n),
+            4 => texgen_uv_matrix(m, mesh.xyz(), mesh.uv(), mesh.n),
+            8 => texgen_normal(m, mesh.colour(), mesh.uv(), mesh.n),
+            _ => {}
+        }
+    } else {
+        m.isw(MESH_LINK, 0, link);
+        match flags & flag::TEXGEN2 {
+            0x40 => texgen_uv_matrix(m, mesh.uv(), mesh.uv(), mesh.n),
+            0x80 => texgen_uv_matrix(m, mesh.xyz(), mesh.uv(), mesh.n),
+            0x100 => texgen_normal(m, mesh.colour(), mesh.uv(), mesh.n),
+            0x200 => texgen_sphere(m, mesh.xyz(), mesh.colour(), mesh.uv(), mesh.n),
+            _ => {}
+        }
+    }
+    let mut u = [[0u32; 4]; crate::gpu::UNIFORM_QWORDS];
+    let mat = [m.ld(MESH_MATRIX), m.ld(MESH_MATRIX + 1), m.ld(MESH_MATRIX + 2), m.ld(MESH_MATRIX + 3)];
+    let (gs, mut go) = guard(m);
+    go[3] = ONE;
+    for i in 0..4 {
+        u[gpu_mesh::SCREEN + i] = madd(mul(gs, mat[i]), go, bc(mat[i][3]));
+    }
+    u[gpu_mesh::INFO] = [lit as u32, mesh.n as u32, if pass1 { 1 } else { 2 }, 0];
+    u[gpu_mesh::GUARD_Z] = [gs[2], go[2], 0, 0];
+    if lit {
+        for i in 0..3 {
+            u[gpu_mesh::BASIS + i] = m.ld(LIGHT_BASIS + i as u16);
+        }
+        for i in 0..10 {
+            u[gpu_mesh::COEFFS + i] = m.ld(LIGHT_COEFFS + i as u16);
+        }
+    }
+    // Pass 1: {position, UV, colour or normal, flags} per vertex (flags.x:
+    // ADC, the strip's first two vertices); pass 2: its UVs (positions,
+    // colours and flags are pass 1's, `Link::Reuse`).
+    let mut data = Vec::with_capacity(if pass1 { 4 } else { 1 } * mesh.n as usize);
+    let mut alpha_max = if lit { 128.0f32 } else { 0.0 };
+    let mut adc = Vec::with_capacity(mesh.n as usize);
+    for s in 0..mesh.strips {
+        let len = m.ilw(mesh.lengths().wrapping_add(s), 0);
+        adc.extend((0..len).map(|k| (k < 2) as u32));
+    }
+    for i in 0..mesh.n {
+        if pass1 {
+            let c = m.ld(mesh.colour().wrapping_add(i));
+            if !lit {
+                alpha_max = alpha_max.max(c[3] as i32 as f32);
+            }
+            data.push(m.ld(mesh.xyz().wrapping_add(i)));
+            data.push(m.ld(mesh.uv().wrapping_add(i)));
+            data.push(c);
+            data.push([adc.get(i as usize).copied().unwrap_or(0), 0, 0, 0]);
+        } else {
+            data.push(m.ld(mesh.uv().wrapping_add(i)));
+        }
+    }
+    if pass1 {
+        m.st(out, [GPU_PASS1_MARK, mesh.n as u32, 0, 0]);
+    } else {
+        // (Pass 2's alpha is pass 1's: `Gs::gpu_draw` takes it from there.)
+        alpha_max = 0.0;
+    }
+    let mut indices = Vec::new();
+    let mut first = 0u32;
+    for s in 0..mesh.strips {
+        let len = m.ilw(mesh.lengths().wrapping_add(s), 0) as u32;
+        for k in 2..len {
+            indices.extend_from_slice(&[first + k - 2, first + k - 1, first + k]);
+        }
+        first += len;
+    }
+    let tag = tag[0] as u128 | (tag[1] as u128) << 32 | (tag[2] as u128) << 64 | (tag[3] as u128) << 96;
+    let link = if pass1 { crate::gpu::Link::Source(out as u32) } else { crate::gpu::Link::Reuse(out as u32) };
+    Some(crate::gpu::GpuCall { program: crate::gpu::Program::Mat3Mesh, tag, uniforms: u, data, indices, alpha_max, link })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -236,6 +236,12 @@ pub struct Pipelines {
     pub layout: wgpu::BindGroupLayout,
     pl: wgpu::PipelineLayout,
     cache: HashMap<PipeKey, wgpu::RenderPipeline>,
+    /// GPU-computed vertices (gpuvu.wgsl after draw.wgsl): bind group 1
+    /// holds the calls' uniforms and inputs.
+    gpu_module: wgpu::ShaderModule,
+    pub gpu_layout: wgpu::BindGroupLayout,
+    gpu_pl: wgpu::PipelineLayout,
+    gpu_cache: HashMap<(PipeKey, ssx3_render::gpu::Program), wgpu::RenderPipeline>,
 }
 
 impl Pipelines {
@@ -303,7 +309,69 @@ impl Pipelines {
             bind_group_layouts: &[Some(&layout)],
             immediate_size: 0,
         });
-        Pipelines { module, layout, pl, cache: HashMap::new() }
+        let gpu_module = dev.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("ssx3-gfx gpuvu.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(format!("{}\n{}", include_str!("draw.wgsl"), include_str!("gpuvu.wgsl")).into()),
+        });
+        let storage = |binding| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::VERTEX,
+            ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None },
+            count: None,
+        };
+        let gpu_layout = dev.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("ssx3-gfx gpuvu"), entries: &[storage(0), storage(1)] });
+        let gpu_pl = dev.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("ssx3-gfx gpuvu"),
+            bind_group_layouts: &[Some(&layout), Some(&gpu_layout)],
+            immediate_size: 0,
+        });
+        Pipelines { module, layout, pl, cache: HashMap::new(), gpu_module, gpu_layout, gpu_pl, gpu_cache: HashMap::new() }
+    }
+
+    /// A GPU-vertex pipeline made earlier with [`Pipelines::get_gpu`].
+    pub fn cached_gpu(&self, k: PipeKey, p: ssx3_render::gpu::Program) -> &wgpu::RenderPipeline {
+        &self.gpu_cache[&(k, p)]
+    }
+
+    /// The pipeline for `k` with the vertices of program `p` computed on
+    /// the GPU (`vs_<program>`, no vertex buffer).
+    pub fn get_gpu(&mut self, dev: &wgpu::Device, k: PipeKey, p: ssx3_render::gpu::Program) -> &wgpu::RenderPipeline {
+        let (module, pl) = (&self.gpu_module, &self.gpu_pl);
+        self.gpu_cache.entry((k, p)).or_insert_with(|| {
+            let entry = match p {
+                ssx3_render::gpu::Program::Mat3Mesh => "vs_mat3_mesh",
+            };
+            let blend = k.blend.map(|(s, d, op)| wgpu::BlendState {
+                color: wgpu::BlendComponent { src_factor: s, dst_factor: d, operation: op },
+                alpha: wgpu::BlendComponent::REPLACE,
+            });
+            dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("ssx3-gfx gpuvu draw"),
+                layout: Some(pl),
+                vertex: wgpu::VertexState { module, entry_point: Some(entry), compilation_options: Default::default(), buffers: &[] },
+                primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: Some(k.depth_write),
+                    depth_compare: Some(k.depth),
+                    stencil: Default::default(),
+                    bias: Default::default(),
+                }),
+                multisample: Default::default(),
+                fragment: Some(wgpu::FragmentState {
+                    module,
+                    entry_point: Some("fs_gpu"),
+                    compilation_options: Default::default(),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: COLOR_FORMAT,
+                        blend,
+                        write_mask: wgpu::ColorWrites::from_bits_truncate(k.write as u32),
+                    })],
+                }),
+                multiview_mask: None,
+                cache: None,
+            })
+        })
     }
 
     /// A pipeline made earlier with [`Pipelines::get`].

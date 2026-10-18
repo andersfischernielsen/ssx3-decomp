@@ -14,4 +14,4 @@ ssx3-vu = { path = "../ssx3-vu", default-features = false }
 [dev-dependencies]
 # The translated microcode, as the reference the native programs are tested
 # against (mat3.rs tests replay captured inputs through both).
-ssx3-vu = { path = "../ssx3-vu" }
+ssx3-vu = { path = "../ssx3-vu", features = ["microcode"] }

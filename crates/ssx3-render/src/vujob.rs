@@ -11,15 +11,54 @@
 //! per call: event index (u32), program hash (u64, 0 = none), entry (u32,
 //! `u32::MAX` = none), top (u32), itop (u32), input count (u32), inputs
 //! (u16 address, u128 value). Result = output count (u32), per output:
-//! event index (u32), qword count (u32), qwords; then the memory.
+//! event index (u32), kind (u8: 0 GIF, 1 GPU), then for GIF the qword count
+//! (u32) and the qwords, for GPU the [`crate::gpu::GpuCall`]; then the
+//! memory.
+//!
+//! With `crate::gpu::enabled()`, calls with a GPU port are planned
+//! ([`crate::gpu::plan`]) instead of run.
 
 use crate::vif::VuCall;
 
 pub const MEM: usize = 16384;
 
-/// The GIF output of each call that ran (event index, qwords) and the final
+/// What a call produced: its GIF output (the program ran) or its GPU draw.
+#[derive(Clone, Debug, PartialEq)]
+pub enum CallOut {
+    Gif(Vec<u128>),
+    Gpu(crate::gpu::GpuCall),
+}
+
+/// The output of each call that ran (event index, output) and the final
 /// VU1 memory.
-pub type Output = (Vec<(usize, Vec<u128>)>, Box<[u8; MEM]>);
+pub type Output = (Vec<(usize, CallOut)>, Box<[u8; MEM]>);
+
+/// Debug: `SSX3_GPU_CHECK=1` compares planned GPU calls with the program.
+fn check_gpu() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("SSX3_GPU_CHECK").is_some())
+}
+
+/// Run one call natively: its GPU plan (when enabled and ported) or the
+/// program. None: no native program for it.
+pub fn run_call(hash: u64, entry: u32, top: u32, itop: u32, mem: &mut [u8; MEM]) -> Option<CallOut> {
+    if crate::gpu::enabled() {
+        let before = check_gpu().then(|| *mem);
+        if let Some(g) = crate::gpu::plan(hash, entry, top, itop, mem) {
+            if let Some(mut m) = before {
+                let mut gif = Vec::new();
+                if crate::run_native(hash, entry, top, itop, &mut m, &mut |p: &[u128]| gif.extend_from_slice(p)) {
+                    if let Some(d) = crate::gpu::check(&g, &gif) {
+                        eprintln!("[gpu-check] entry {entry:#x} top {top:#x} itop {itop:#x}: {d}");
+                    }
+                }
+            }
+            return Some(CallOut::Gpu(g));
+        }
+    }
+    let mut out = Vec::new();
+    crate::run_native(hash, entry, top, itop, mem, &mut |p: &[u128]| out.extend_from_slice(p)).then_some(CallOut::Gif(out))
+}
 
 struct Reader<'a>(&'a [u8]);
 
@@ -82,22 +121,22 @@ pub fn run(job: &[u8]) -> Vec<u8> {
         if hash == 0 || entry == u32::MAX {
             continue;
         }
-        let mark = out.len();
+        let Some(o) = run_call(hash, entry, top, itop, &mut mem) else { continue };
         out.extend_from_slice(&i.to_le_bytes());
-        out.extend_from_slice(&0u32.to_le_bytes());
-        let mut qw = 0u32;
-        let ok = crate::run_native(hash, entry, top, itop, &mut mem, &mut |p: &[u128]| {
-            for q in p {
-                out.extend_from_slice(&q.to_le_bytes());
+        match o {
+            CallOut::Gif(q) => {
+                out.push(0);
+                out.extend_from_slice(&(q.len() as u32).to_le_bytes());
+                for x in q {
+                    out.extend_from_slice(&x.to_le_bytes());
+                }
             }
-            qw += p.len() as u32;
-        });
-        if ok {
-            out[mark + 4..mark + 8].copy_from_slice(&qw.to_le_bytes());
-            ran += 1;
-        } else {
-            out.truncate(mark);
+            CallOut::Gpu(g) => {
+                out.push(1);
+                crate::gpu::encode(&g, &mut out);
+            }
         }
+        ran += 1;
     }
     out[0..4].copy_from_slice(&ran.to_le_bytes());
     out.extend_from_slice(&mem[..]);
@@ -111,8 +150,15 @@ pub fn decode(result: &[u8]) -> Output {
     let outs = (0..n)
         .map(|_| {
             let i = r.u32() as usize;
-            let q = r.u32();
-            (i, (0..q).map(|_| r.u128()).collect())
+            let kind = r.take::<1>()[0];
+            if kind == 1 {
+                let (g, used) = crate::gpu::decode(r.0);
+                r.0 = &r.0[used..];
+                (i, CallOut::Gpu(g))
+            } else {
+                let q = r.u32();
+                (i, CallOut::Gif((0..q).map(|_| r.u128()).collect()))
+            }
         })
         .collect();
     (outs, Box::new(r.take()))
@@ -159,12 +205,11 @@ mod tests {
                 direct[a..a + 16].copy_from_slice(&v.to_le_bytes());
             }
             let (Some(e), Some(h)) = (c.entry, h) else { continue };
-            let mut o = Vec::new();
-            if crate::run_native(h, e, c.top, c.itop, &mut direct, &mut |p: &[u128]| o.extend_from_slice(p)) {
+            if let Some(o) = run_call(h, e, c.top, c.itop, &mut direct) {
                 want.push((i, o));
             }
         }
-        assert!(want.iter().any(|(_, o)| !o.is_empty()), "no program output to compare");
+        assert!(want.iter().any(|(_, o)| matches!(o, CallOut::Gif(q) if !q.is_empty())), "no program output to compare");
         assert_eq!(outs, want);
         assert_eq!(end, direct);
     }

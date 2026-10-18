@@ -90,6 +90,47 @@ pub struct Batch {
     pub state: DrawState,
     pub first: u32,
     pub count: u32,
+    /// Vertices computed by the GPU (`ssx3_render::gpu`): `first`/`count`
+    /// are unused.
+    pub gpu: Option<GpuBatch>,
+}
+
+/// A batch of GPU-computed vertices: one call's triangle list.
+#[derive(Clone, Copy, Debug)]
+pub struct GpuBatch {
+    pub program: ssx3_render::gpu::Program,
+    /// The call's index in [`GpuFrame::calls`].
+    pub call: u32,
+    /// Its indices in [`GpuFrame::indices`].
+    pub first: u32,
+    pub count: u32,
+    /// The largest vertex alpha (GS units).
+    pub alpha_max: f32,
+}
+
+/// The GPU-computed draws of a frame: per-call uniforms, vertex inputs and
+/// triangle lists (indices relative to the call's data).
+#[derive(Clone, Default)]
+pub struct GpuFrame {
+    pub calls: Vec<[[u32; 4]; ssx3_render::gpu::UNIFORM_QWORDS]>,
+    pub data: Vec<[u32; 4]>,
+    pub indices: Vec<u32>,
+    /// `Link::Source` calls by key: their first data qword, alpha maximum.
+    pub sources: std::collections::HashMap<u32, (u32, f32)>,
+}
+
+/// GS-side uniform qwords of a GPU call (`gpuvu.wgsl` `Call`).
+pub mod gpu_params {
+    use ssx3_render::gpu::GS_PARAMS;
+    /// x, y: XYOFFSET / 16 (pixels); z: 1 / (ZMAX + 1); w: ZMAX.
+    pub const OFFSET: usize = GS_PARAMS;
+    /// x, y: texture coordinate scale (render-target textures); z: HUD
+    /// squeeze factor (1 = none); w: its centre x.
+    pub const TEX: usize = GS_PARAMS + 1;
+    /// x: FOG (0..255); y: the call's first data qword; z: the first data
+    /// qword of the call whose vertices it reuses (`Link::Reuse`); w: the
+    /// tag's vertex register (4 XYZF2: Z / 16 and per-vertex fog; 5 XYZ2).
+    pub const MISC: usize = GS_PARAMS + 2;
 }
 
 #[derive(Clone, Default)]
@@ -110,6 +151,8 @@ pub struct Gs {
     queue: Vec<QVtx>,
     pub verts: Vec<Vtx>,
     pub batches: Vec<Batch>,
+    /// GPU-computed draws (`gpu_draw`).
+    pub gpu: GpuFrame,
     /// Primitives dropped (unsupported target, unknown texture, ...).
     pub dropped: u64,
     pub prims: u64,
@@ -180,6 +223,10 @@ impl Gs {
     pub fn begin(&mut self, size: (u32, u32), fbp: u32, zbp: u32) {
         self.verts.clear();
         self.batches.clear();
+        self.gpu.calls.clear();
+        self.gpu.data.clear();
+        self.gpu.indices.clear();
+        self.gpu.sources.clear();
         self.queue.clear();
         self.size = size;
         self.main_fbp = fbp;
@@ -636,9 +683,85 @@ impl Gs {
         }
         let n = vs.len() as u32;
         match self.batches.last_mut() {
-            Some(b) if b.state == st && b.first + b.count == first => b.count += n,
-            _ => self.batches.push(Batch { state: st, first, count: n }),
+            Some(b) if b.gpu.is_none() && b.state == st && b.first + b.count == first => b.count += n,
+            _ => self.batches.push(Batch { state: st, first, count: n, gpu: None }),
         }
+    }
+
+    /// A VU1 call whose vertices the GPU computes (`ssx3_render::gpu`):
+    /// its GIF tag starts the primitive as in [`Gs::gif`] (PRE: PRIM), the
+    /// draw takes the GS state now, and the GS parameters its vertices
+    /// need go into the call's uniforms ([`gpu_params`]). Never merged with
+    /// other batches.
+    pub fn gpu_draw(&mut self, mut call: ssx3_render::gpu::GpuCall) {
+        use ssx3_render::gpu::Link;
+        let base = self.gpu.data.len() as u32;
+        let reuse = match call.link {
+            Link::Reuse(k) => match self.gpu.sources.get(&k) {
+                Some(&(b, a)) => {
+                    call.alpha_max = a;
+                    b
+                }
+                None => {
+                    self.dropped += 1;
+                    return;
+                }
+            },
+            Link::Source(k) => {
+                self.gpu.sources.insert(k, (base, call.alpha_max));
+                0
+            }
+            Link::None => 0,
+        };
+        let lo = call.tag as u64;
+        if bits(lo, 46, 1) != 0 {
+            self.prim = bits(lo, 47, 11);
+        }
+        let Some(st) = self.state() else {
+            self.dropped += 1;
+            return;
+        };
+        self.prims += call.indices.len() as u64 / 3;
+        let c = st.ctx;
+        let p = self.cur_prim();
+        let ci = bits(p, 9, 1) as usize;
+        let xy = if self.xyoffset_set[ci] { self.ctx[ci].xyoffset } else { self.ctx[0].xyoffset };
+        let zmax = Self::zmax(&c);
+        let (tw, th) = match st.tex {
+            Some(FRAME_TEX) => self.size,
+            Some(t) if t & RT_TEX != 0 => self.rts.get(&(t & !RT_TEX)).map_or((1, 1), |r| (r.w, r.h)),
+            _ => (1, 1),
+        };
+        let (ss, ts) = match st.tex {
+            Some(t) if t & RT_TEX != 0 && t != FRAME_TEX => {
+                ((1u32 << bits(c.tex0, 26, 4)) as f32 / tw as f32, (1u32 << bits(c.tex0, 30, 4)) as f32 / th as f32)
+            }
+            _ => (1.0, 1.0),
+        };
+        let (squeeze, cx) = if self.hud && self.hud_squeeze != 1.0 && st.target == self.main_fbp {
+            (self.hud_squeeze, self.size.0 as f32 / 2.0)
+        } else {
+            (1.0, 0.0)
+        };
+        let f = |v: f32| v.to_bits();
+        let mut u = call.uniforms;
+        u[gpu_params::OFFSET] = [f(bits(xy, 0, 16) as f32 / 16.0), f(bits(xy, 32, 16) as f32 / 16.0), f((1.0 / (zmax as f64 + 1.0)) as f32), f(zmax as f32)];
+        u[gpu_params::TEX] = [f(ss), f(ts), f(squeeze), f(cx)];
+        // The tag's last register is the vertex kick (XYZ2 / XYZF2).
+        let nreg = match bits(lo, 60, 4) { 0 => 16, n => n as u32 };
+        let vreg = ((call.tag >> 64) >> (4 * (nreg - 1))) as u32 & 0xf;
+        u[gpu_params::MISC] = [f(self.fog as f32), base, reuse, vreg];
+        let gb = GpuBatch {
+            program: call.program,
+            call: self.gpu.calls.len() as u32,
+            first: self.gpu.indices.len() as u32,
+            count: call.indices.len() as u32,
+            alpha_max: call.alpha_max,
+        };
+        self.gpu.calls.push(u);
+        self.gpu.data.extend_from_slice(&call.data);
+        self.gpu.indices.extend_from_slice(&call.indices);
+        self.batches.push(Batch { state: st, first: 0, count: 0, gpu: Some(gb) });
     }
 
     fn flat(&self, last: &QVtx) -> Option<[u8; 4]> {

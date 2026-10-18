@@ -29,6 +29,7 @@ pub mod bezier;
 pub mod chain;
 pub mod frame;
 pub mod gif;
+pub mod gpu;
 pub mod mat1;
 pub mod mat2;
 pub mod mat3;
