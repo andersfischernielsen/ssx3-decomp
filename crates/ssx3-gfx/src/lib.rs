@@ -902,7 +902,7 @@ impl Inner {
                 // SAFETY: any u32 slice is a valid byte slice of 4× its length.
                 unsafe { std::slice::from_raw_parts(w.as_ptr() as *const u8, std::mem::size_of_val(w)) }
             }
-            let calls = bytes(g.calls.as_flattened().as_flattened());
+            let calls = bytes(g.calls.as_flattened());
             let data = bytes(g.data.as_flattened());
             let idx = bytes(&g.indices);
             let of = bytes(&g.call_start);

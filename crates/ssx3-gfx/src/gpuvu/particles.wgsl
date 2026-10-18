@@ -45,16 +45,16 @@ fn ptc_sample(c: u32, ring: bool, spawn: vec4<f32>, gmv: vec4<f32>, tk: f32) -> 
 }
 
 fn mat4_particles_vertex(vi: u32, c: u32) -> VOut {
-    let slots = calls[c].q[10].x;
+    let slots = uq(c, 10).x;
     let slot = vi >> 2u;
     let k = slot % slots;
-    let base = calls[c].q[30].y + 4u * (slot / slots);
+    let base = uq(c, 30).y + 4u * (slot / slots);
     let spawn = bitcast<vec4<f32>>(data[base]);
     let gmv = bitcast<vec4<f32>>(data[base + 1u]);
     let col = bitcast<vec4<f32>>(data[base + 2u]);
     let misc = bitcast<vec4<f32>>(data[base + 3u]);
     let tr = fq(c, 6u);
-    let ring = calls[c].q[6].w != 0u;
+    let ring = uq(c, 6).w != 0u;
     // Rings fade every sample, the emitter only the drawn ones.
     var tk = misc.z;
     var fade = 1.0;
@@ -78,7 +78,7 @@ fn mat4_particles_vertex(vi: u32, c: u32) -> VOut {
 // q22 half size, q23 RGB (ints), q24 (half min, half max); data per point:
 // (u³, u², u, alpha (int)), (v³, v², v, -).
 fn mat4_glitter_vertex(vi: u32, c: u32) -> VOut {
-    let base = calls[c].q[30].y + 2u * (vi >> 2u);
+    let base = uq(c, 30).y + 2u * (vi >> 2u);
     let pa = bitcast<vec4<f32>>(data[base]);
     let pb = bitcast<vec4<f32>>(data[base + 1u]);
     var rows: array<vec4<f32>, 4>;
@@ -90,7 +90,7 @@ fn mat4_glitter_vertex(vi: u32, c: u32) -> VOut {
     let lim = fq(c, 24u);
     let h = vec3<f32>(min(max(abs(fq(c, 22u).xy * (1.0 / cl.w)), vec2<f32>(lim.x)), vec2<f32>(lim.y)), 0.0);
     let centre = ptc_centre(c, cl, 20u, 21u);
-    let rgba = vec4<i32>(bitcast<vec4<i32>>(calls[c].q[23]).xyz, bitcast<i32>(data[base].w));
+    let rgba = vec4<i32>(bitcast<vec4<i32>>(uq(c, 23)).xyz, bitcast<i32>(data[base].w));
     return ptc_corner(c, vi & 3u, centre + h, centre - h, vec4<f32>(0.0, 0.0, 1.0, 1.0), rgba, ptc_inside(cl));
 }
 
@@ -98,11 +98,11 @@ fn mat4_glitter_vertex(vi: u32, c: u32) -> VOut {
 // (alpha, depth scale, depth fade, 0.8), q9/q10 ST corners; data per
 // flake: (p.xyz, p₁.z − max.z).
 fn mat5_snow_vertex(vi: u32, c: u32) -> VOut {
-    let p = bitcast<vec4<f32>>(data[calls[c].q[30].y + (vi >> 2u)]);
+    let p = bitcast<vec4<f32>>(data[uq(c, 30).y + (vi >> 2u)]);
     let cl = fq(c, 0u) * p.x + fq(c, 1u) * p.y + fq(c, 2u) * p.z + fq(c, 3u);
     let fd = fq(c, 8u);
-    let fade = calls[c].q[8].z != 0u;
-    var rgba = bitcast<vec4<i32>>(calls[c].q[7]);
+    let fade = uq(c, 8).z != 0u;
+    var rgba = bitcast<vec4<i32>>(uq(c, 7));
     if (fade) {
         // Near (p₁.z − max.z >= d), far (d > 0.8) or neither.
         let d = cl.z * fd.y;

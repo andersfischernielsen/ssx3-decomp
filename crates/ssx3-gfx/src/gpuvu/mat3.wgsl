@@ -24,17 +24,17 @@ fn mat3_light(c: u32, n: vec3<f32>) -> vec4<f32> {
 // Pass 2 (q4.z = 2) redraws pass 1's vertices (positions and colours from
 // pass 1's data, q30.z) with its own UVs (one qword per vertex).
 fn mat3_mesh_vertex(vi: u32, c: u32) -> VOut {
-    let pass2 = calls[c].q[4].z == 2u;
-    let base = select(calls[c].q[30].y, calls[c].q[30].z, pass2) + 4u * vi;
+    let pass2 = uq(c, 4).z == 2u;
+    let base = select(uq(c, 30).y, uq(c, 30).z, pass2) + 4u * vi;
     let xyz = bitcast<vec4<i32>>(rd(base));
-    let uv = bitcast<vec4<i32>>(rd(select(base + 1u, calls[c].q[30].y + vi, pass2)));
+    let uv = bitcast<vec4<i32>>(rd(select(base + 1u, uq(c, 30).y + vi, pass2)));
     let cw = bitcast<vec4<i32>>(rd(base + 2u));
     let p = vec3<f32>(xyz.xyz) / 32768.0;
     let hc = fq(c, 0u) * p.x + fq(c, 1u) * p.y + fq(c, 2u) * p.z + fq(c, 3u);
     let q = 1.0 / hc.w;
     let t = vec2<f32>(uv.xy) / 4096.0;
     var col: vec4<f32>;
-    if (calls[c].q[4].x != 0u) {
+    if (uq(c, 4).x != 0u) {
         col = mat3_light(c, vec3<f32>(cw.xyz) / 32768.0);
     } else {
         col = vec4<f32>(cw);
@@ -42,7 +42,7 @@ fn mat3_mesh_vertex(vi: u32, c: u32) -> VOut {
     let g = fq(c, 18u);
     let cz = (hc.z - g.y * hc.w) / g.x;
     var o = gs_vertex(c, hc, cz, rd(base + 3u).x != 0u, col, vec3<f32>(t * q, q));
-    if (calls[c].q[4].w == 0u) {
+    if (uq(c, 4).w == 0u) {
         // A mesh without the clip flag: the program draws its projection
         // as is (a vertex behind the eye too, mirrored by the divide), and
         // the GS only scissors. So no clipping here: the screen position.

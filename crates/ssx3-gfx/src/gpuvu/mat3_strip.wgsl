@@ -6,7 +6,7 @@
 // CLIP test), flags (x: ADC).
 
 fn mat3_strip_vertex(vi: u32, c: u32) -> VOut {
-    let base = calls[c].q[30].y + 4u * vi;
+    let base = uq(c, 30).y + 4u * vi;
     let st = bitcast<vec4<f32>>(data[base]);
     let col = vec4<f32>(data[base + 1u] & vec4<u32>(255u));
     let clip = bitcast<vec4<f32>>(data[base + 2u]);
@@ -21,7 +21,7 @@ fn mat3_strip_vertex(vi: u32, c: u32) -> VOut {
     var o = gs_vertex(c, hc, clip.z, adc, col, st.xyz * q);
     // XYZF2: a drawing vertex's fog is FTOI4 of guardOffset.w (not the
     // meshes' 1).
-    if (calls[c].q[30].w == 4u && !adc) {
+    if (uq(c, 30).w == 4u && !adc) {
         o.fog = fq(c, 2u).x;
     }
     return o;

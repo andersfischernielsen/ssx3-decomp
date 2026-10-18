@@ -47,7 +47,7 @@ fn bz_out(c: u32, h: vec4<f32>, stq: vec3<f32>, fold: bool) -> VOut {
     let gs = fq(c, 4u);
     let go = fq(c, 5u);
     let hc = vec4<f32>(h.xyz * gs.xyz + go.xyz * h.w, h.w);
-    let col = vec4<f32>(bitcast<vec4<i32>>(calls[c].q[6]));
+    let col = vec4<f32>(bitcast<vec4<i32>>(uq(c, 6)));
     if (!fold) {
         return gs_vertex(c, hc, h.z, false, col, stq);
     }
@@ -123,11 +123,11 @@ fn bz_clipper() -> u32 {
 }
 
 fn bezier_vertex(vi: u32, c: u32) -> VOut {
-    let info = calls[c].q[7];
+    let info = uq(c, 7);
     let fans = info.x == 2u;
     let i = select(vi >> 2u, vi >> 5u, fans);
     let r = select(vi & 3u, vi & 31u, fans);
-    let src = select(calls[c].q[30].y, calls[c].q[30].z, info.w != 0u);
+    let src = select(uq(c, 30).y, uq(c, 30).z, info.w != 0u);
     let h0 = bz_clip(c, src, i - 2u);
     let h1 = bz_clip(c, src, i - 1u);
     let h2 = bz_clip(c, src, i);
@@ -146,7 +146,7 @@ fn bezier_vertex(vi: u32, c: u32) -> VOut {
         var stq = uv.xyz * q;
         if (info.y != 0u) {
             // Pass 2 "flag 0": ST := UV2 · STQ.w (Q stays).
-            let uv2 = bitcast<vec4<f32>>(data[calls[c].q[30].y + v]);
+            let uv2 = bitcast<vec4<f32>>(data[uq(c, 30).y + v]);
             stq = vec3<f32>(uv2.xy * (uv.w * q), uv.z * q);
         }
         return bz_out(c, h, stq, false);

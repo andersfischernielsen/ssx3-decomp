@@ -112,12 +112,15 @@ pub struct GpuBatch {
 /// triangle lists (indices relative to the call's data).
 #[derive(Clone, Default)]
 pub struct GpuFrame {
-    pub calls: Vec<[[u32; 4]; ssx3_render::gpu::UNIFORM_QWORDS]>,
+    /// Per call: its GS-side uniforms (`gpu_params`, 4 qwords), then its
+    /// program's up to the last non-zero one (`call_start` has where).
+    pub calls: Vec<[u32; 4]>,
     pub data: Vec<[u32; 4]>,
     pub indices: Vec<u32>,
     /// The number of calls, then per call {its first vertex in the draw,
-    /// its first entry in `indices`, its index mode} (draws merge runs of
-    /// calls; the shader finds a vertex's call and index from this).
+    /// its first entry in `indices`, its index mode, its first qword in
+    /// `calls`, its program uniform count} (draws merge runs of calls; the
+    /// shader finds a vertex's call, index and uniforms from this).
     pub call_start: Vec<u32>,
     /// The vertices drawn so far (`GpuBatch::first`).
     pub verts: u32,
@@ -837,17 +840,21 @@ impl Gs {
         u[gpu_params::RGBAQ] = [u32::from_le_bytes(self.rgbaq), f(self.q), f(self.s), f(self.t)];
         let gb = GpuBatch {
             program: call.program,
-            call: self.gpu.calls.len() as u32,
+            call: self.gpu.call_start.first().copied().unwrap_or(0),
             first: self.gpu.verts,
             count: call.draw_len() as u32,
             alpha_max: call.alpha_max,
         };
-        self.gpu.calls.push(u);
+        use ssx3_render::gpu::GS_PARAMS;
+        let n = u[..GS_PARAMS].iter().rposition(|q| *q != [0; 4]).map_or(0, |i| i + 1);
+        let ubase = self.gpu.calls.len() as u32;
+        self.gpu.calls.extend_from_slice(&u[GS_PARAMS..]);
+        self.gpu.calls.extend_from_slice(&u[..n]);
         self.gpu.data.extend_from_slice(&call.data);
         if self.gpu.call_start.is_empty() {
             self.gpu.call_start.push(0);
         }
-        self.gpu.call_start.extend_from_slice(&[gb.first, self.gpu.indices.len() as u32, call.index_mode]);
+        self.gpu.call_start.extend_from_slice(&[gb.first, self.gpu.indices.len() as u32, call.index_mode, ubase, n as u32]);
         self.gpu.call_start[0] += 1;
         self.gpu.indices.extend_from_slice(&call.indices);
         self.gpu.verts += gb.count;

@@ -2,15 +2,13 @@
 // entry per program, pulling the call's inputs. Appended to draw.wgsl (the
 // `Batch` uniforms, `VOut` and the GS fragment stage are shared).
 
-struct Call {
-    q: array<vec4<u32>, 32>,
-}
-
-@group(1) @binding(0) var<storage, read> calls: array<Call>;
+// Per call its uniforms, compacted (see `uq`).
+@group(1) @binding(0) var<storage, read> calls: array<vec4<u32>>;
 @group(1) @binding(1) var<storage, read> data: array<vec4<u32>>;
 // The calls' triangle lists (`ssx3_render::gpu::GpuCall::indices`);
 // gstart[0] = the number of calls, then per call {its first vertex in the
-// draw, its first entry in gidx, its index mode}. `vs_<program>` wrappers
+// draw, its first entry in gidx, its index mode, its first uniform qword in
+// `calls`, its program uniform count}. `vs_<program>` wrappers
 // find a vertex's call (the last one starting at or before it) and the
 // call's vertex index.
 @group(1) @binding(2) var<storage, read> gidx: array<u32>;
@@ -21,7 +19,7 @@ fn call_of(k: u32) -> u32 {
     var hi = gstart[0];
     while (hi - lo > 1u) {
         let mid = (lo + hi) / 2u;
-        if (gstart[1u + 3u * mid] <= k) {
+        if (gstart[1u + 5u * mid] <= k) {
             lo = mid;
         } else {
             hi = mid;
@@ -34,15 +32,29 @@ fn call_of(k: u32) -> u32 {
 // entry, or (index mode `per << 8 | shift`) entry `t` expanded to
 // `t << shift | corner`.
 fn call_index(k: u32, c: u32) -> u32 {
-    let local = k - gstart[1u + 3u * c];
-    let base = gstart[2u + 3u * c];
-    let mode = gstart[3u + 3u * c];
+    let local = k - gstart[1u + 5u * c];
+    let base = gstart[2u + 5u * c];
+    let mode = gstart[3u + 5u * c];
     if (mode == 0u) {
         return gidx[base + local];
     }
     let per = mode >> 8u;
     return (gidx[base + local / per] << (mode & 255u)) | (local % per);
 }
+// Uniform qword `i` of call `c` (`ssx3_render::gpu::GpuCall::uniforms`):
+// stored as the 4 GS-side qwords (from 28 on), then the program's up to
+// the last non-zero one (later ones read as 0).
+fn uq(c: u32, i: u32) -> vec4<u32> {
+    let base = gstart[4u + 5u * c];
+    if (i >= 28u) {
+        return calls[base + i - 28u];
+    }
+    if (i >= gstart[5u + 5u * c]) {
+        return vec4<u32>(0u);
+    }
+    return calls[base + 4u + i];
+}
+
 // Vertex data kept from frame to frame (gs::MeshArena).
 @group(1) @binding(4) var<storage, read> arena: array<vec4<u32>>;
 
@@ -55,7 +67,7 @@ fn rd(i: u32) -> vec4<u32> {
 }
 
 fn fq(c: u32, i: u32) -> vec4<f32> {
-    return bitcast<vec4<f32>>(calls[c].q[i]);
+    return bitcast<vec4<f32>>(uq(c, i));
 }
 
 // The vertex as the GS would draw it, from the program's homogeneous
@@ -76,7 +88,7 @@ fn gs_vertex(c: u32, hc: vec4<f32>, cz: f32, adc: bool, col: vec4<f32>, stq: vec
     let px = tx.z * (hc.x - off.x * w) + tx.w * (1.0 - tx.z) * w;
     let py = hc.y - off.y * w;
     // XYZF2: the fog from the w lane (1.0 there: FTOI4 → 16 → 1).
-    let xyzf = calls[c].q[30].w == 4u;
+    let xyzf = uq(c, 30).w == 4u;
     var fog = fq(c, 30u).x;
     if (xyzf) {
         fog = select(1.0, 255.0, adc);

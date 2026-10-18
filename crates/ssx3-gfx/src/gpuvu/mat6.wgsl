@@ -65,8 +65,8 @@ fn mat6_culled() -> VOut {
 }
 
 fn mat6_skin_vertex(vi: u32, c: u32) -> VOut {
-    let env = calls[c].q[0].x != 0u;
-    let b = select(calls[c].q[30].y, calls[c].q[30].z, env);
+    let env = uq(c, 0).x != 0u;
+    let b = select(uq(c, 30).y, uq(c, 30).z, env);
     let k = vi >> 2u;
     let corner = vi & 3u;
     let c0 = mat6_clip(b, k - 2u);
@@ -86,8 +86,8 @@ fn mat6_skin_vertex(vi: u32, c: u32) -> VOut {
     let q = 1.0 / clip.w;
     var st: vec2<f32>;
     if (env) {
-        let eb = calls[c].q[30].y;
-        let e = eb + data[eb + calls[c].q[0].y + v].x;
+        let eb = uq(c, 30).y;
+        let e = eb + data[eb + uq(c, 0).y + v].x;
         st = (m6(e) * nr.x + m6(e + 1u) * nr.y + m6(e + 2u) * nr.z).xy + 0.5;
     } else {
         st = vec2<f32>(bitcast<vec2<i32>>(uv.xy)) / 4096.0;
@@ -99,7 +99,7 @@ fn mat6_skin_vertex(vi: u32, c: u32) -> VOut {
     // XYZF2: the fog is the vertex's ADC word (0x7fff: 0xff; ADC
     // 0xffff8000: 0), ADC when it is one of its strip's first two or one of
     // it and the two before it fails CLIP (the triangle's own three pass).
-    if (calls[c].q[30].w == 4u) {
+    if (uq(c, 30).w == 4u) {
         var adc = data[a + 1u].w != 0u;
         if (!adc && corner < 2u) {
             adc = !mat6_inside(mat6_clip(b, k - 3u));
@@ -117,7 +117,7 @@ fn mat6_skin_vertex(vi: u32, c: u32) -> VOut {
 // bone (data offset; bit 31: the strip's first two vertices)}. No CLIP test in the program; the colour (and Q) are
 // the GS registers' (q31).
 fn mat6_shadow_vertex(vi: u32, c: u32) -> VOut {
-    let b = calls[c].q[30].y;
+    let b = uq(c, 30).y;
     let v = b + data[b].x + vi;
     let p = m6(v);
     let bo = b + (data[v].w & 0x7fffffffu);
@@ -125,7 +125,7 @@ fn mat6_shadow_vertex(vi: u32, c: u32) -> VOut {
     let scale = m6(b + 1u);
     let off = m6(b + 2u);
     let hc = mat6_snap(vec4<f32>(off.xyz * clip.w + scale.xyz * clip.xyz, clip.w));
-    let g = calls[c].q[31];
+    let g = uq(c, 31);
     let col = vec4<f32>(f32(g.x & 0xffu), f32((g.x >> 8u) & 0xffu), f32((g.x >> 16u) & 0xffu), f32(g.x >> 24u));
     let gq = bitcast<f32>(g.y);
     let stq = vec3<f32>(bitcast<f32>(g.z), bitcast<f32>(g.w), gq);
@@ -133,7 +133,7 @@ fn mat6_shadow_vertex(vi: u32, c: u32) -> VOut {
     var o = gs_vertex(c, hc, 0.0, false, col, stq);
     // XYZF2: the fog is the vertex's w word (the strip's first two: 0xffff,
     // fog 0xff; the others 0).
-    if (calls[c].q[30].w == 4u) {
+    if (uq(c, 30).w == 4u) {
         o.fog = select(0.0, 255.0, (data[v].w >> 31u) != 0u);
     }
     return o;
