@@ -125,6 +125,7 @@ pub fn mem_q_write(ram: &mut [u8], sprm: &mut [u8], addr: u32, spr: bool, v: Qwo
         sprm[o..o + 16].copy_from_slice(&v.to_le_bytes());
     } else {
         let o = (addr & 0x01FF_FFF0) as usize;
+        ssx3_ee_rt::bus::mark_written(o);
         ram[o..o + 16].copy_from_slice(&v.to_le_bytes());
     }
 }

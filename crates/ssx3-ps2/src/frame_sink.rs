@@ -231,21 +231,11 @@ pub fn on_signal_sema(c: &mut Cpu, id: i32) {
     let Some(s) = guard.as_mut() else { return };
     let t0 = web_time::Instant::now();
     let heads = [frame::gm::QUEUED_VIF1, frame::gm::QUEUED_VIF2, frame::gm::QUEUED_GIF1, frame::gm::QUEUED_GIF2].map(|o| frame::word(&mem, g + o));
-    // The memory the sink reads: a copy (32 MiB, split over a few threads),
-    // so the sink can build and render the frame while the game goes on.
-    let mut snap = POOL.lock().unwrap().pop().unwrap_or_else(|| Box::new(DumpMem { ram: Vec::new(), spr: Vec::new(), vu1: Vec::new() }));
-    snap.ram.resize(c.bus.ram.len(), 0);
-    let parts = if cfg!(target_arch = "wasm32") { 1 } else { 4 };
-    let chunk = c.bus.ram.len().div_ceil(parts);
-    std::thread::scope(|sc| {
-        for (d, src) in snap.ram.chunks_mut(chunk).zip(c.bus.ram.chunks(chunk)) {
-            if parts == 1 {
-                d.copy_from_slice(src);
-            } else {
-                sc.spawn(move || d.copy_from_slice(src));
-            }
-        }
-    });
+    // The memory the sink reads: a copy, so the sink can build and render
+    // the frame while the game goes on. Each buffer gets only the pages
+    // written since it was last filled (`bus::take_written`).
+    let mut snap = POOL.lock().unwrap().pop().unwrap_or_else(|| Box::new(DumpMem { ram: Vec::new(), spr: Vec::new(), vu1: Vec::new(), id: usize::MAX }));
+    snapshot_ram(&mut snap, &c.bus.ram);
     snap.spr.clear();
     snap.spr.extend_from_slice(&c.bus.spr);
     s.sink.frame(g, snap);
@@ -324,6 +314,53 @@ pub fn write_dumps(dir: &str) -> std::io::Result<usize> {
 /// Snapshot buffers handed back by sinks.
 static POOL: Mutex<Vec<Box<DumpMem>>> = Mutex::new(Vec::new());
 
+/// Per snapshot buffer (`DumpMem::id`): the RAM pages written since it was
+/// last filled.
+static STALE: Mutex<Vec<Vec<u64>>> = Mutex::new(Vec::new());
+
+/// Bring `snap` up to date with `ram`: the pages written since its last
+/// fill (all of them for a new buffer). `SSX3_SNAPSHOT_CHECK=1` compares it
+/// with a full copy (a page written outside the bus or DMA paths would
+/// show here).
+fn snapshot_ram(snap: &mut DumpMem, ram: &[u8]) {
+    let pages = ram.len() / 4096;
+    let mut stale = STALE.lock().unwrap();
+    let mut written = vec![0u64; pages.div_ceil(64)];
+    ssx3_ee_rt::bus::take_written(&mut written);
+    for s in stale.iter_mut() {
+        for (a, b) in s.iter_mut().zip(&written) {
+            *a |= b;
+        }
+    }
+    if snap.id == usize::MAX || snap.ram.len() != ram.len() {
+        snap.id = stale.len();
+        stale.push(vec![!0u64; pages.div_ceil(64)]);
+        snap.ram.resize(ram.len(), 0);
+    }
+    let bits = &mut stale[snap.id];
+    for (w, word) in bits.iter_mut().enumerate() {
+        let mut m = std::mem::take(word);
+        while m != 0 {
+            let p = w * 64 + m.trailing_zeros() as usize;
+            m &= m - 1;
+            let r = p * 4096..(p + 1) * 4096;
+            snap.ram[r.clone()].copy_from_slice(&ram[r]);
+        }
+    }
+    static CHECK: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if *CHECK.get_or_init(|| std::env::var_os("SSX3_SNAPSHOT_CHECK").is_some()) {
+        let bad: Vec<usize> = (0..pages).filter(|&p| snap.ram[p * 4096..(p + 1) * 4096] != ram[p * 4096..(p + 1) * 4096]).collect();
+        if !bad.is_empty() {
+            eprintln!("[snapshot-check] {} stale pages, first at {:#x}", bad.len(), bad[0] * 4096);
+            // (Copy them so the check reports each miss once.)
+            for p in bad {
+                let r = p * 4096..(p + 1) * 4096;
+                snap.ram[r.clone()].copy_from_slice(&ram[r]);
+            }
+        }
+    }
+}
+
 /// Hand a memory snapshot back for reuse (it is 32 MiB).
 pub fn recycle(m: Box<DumpMem>) {
     let mut p = POOL.lock().unwrap();
@@ -338,6 +375,8 @@ pub struct DumpMem {
     pub spr: Vec<u8>,
     /// The emulated VU1 data memory when the frame was published.
     pub vu1: Vec<u8>,
+    /// The snapshot buffer's slot (`usize::MAX`: a dump, or not filled yet).
+    pub id: usize,
 }
 
 impl Mem for DumpMem {
@@ -374,7 +413,7 @@ pub fn load_dump(bytes: &[u8]) -> Result<(DumpMem, Carry), String> {
     regs.dbf = w[15] != 0;
     let carry = Carry { regs, matrix: w[16] as i32, material_param: w[17] };
     let vu1 = bytes.get(o + nram + 0x4000..o + nram + 0x8000).map_or_else(Vec::new, |v| v.to_vec());
-    Ok((DumpMem { ram: bytes[o..o + nram].to_vec(), spr: bytes[o + nram..o + nram + 0x4000].to_vec(), vu1 }, carry))
+    Ok((DumpMem { ram: bytes[o..o + nram].to_vec(), spr: bytes[o + nram..o + nram + 0x4000].to_vec(), vu1, id: usize::MAX }, carry))
 }
 
 /// Build the typed frame from a dump's memory.

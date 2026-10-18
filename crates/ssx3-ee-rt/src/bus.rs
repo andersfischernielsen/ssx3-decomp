@@ -11,6 +11,29 @@ use crate::platform::{NullPlatform, Platform};
 pub const RAM_SIZE: usize = 32 * 1024 * 1024;
 pub const SPR_SIZE: usize = 16 * 1024;
 
+/// RAM pages (4 KiB) written since the last [`take_written`]: every store
+/// into RAM marks its page ([`mark_written`]; the bus and the DMA paths do),
+/// so the frame snapshots copy only what changed.
+static WRITTEN: [std::sync::atomic::AtomicBool; RAM_SIZE / 4096] = [const { std::sync::atomic::AtomicBool::new(false) }; RAM_SIZE / 4096];
+
+/// Mark the RAM page holding byte offset `o` written.
+#[inline(always)]
+pub fn mark_written(o: usize) {
+    if let Some(p) = WRITTEN.get(o >> 12) {
+        p.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// OR the pages written since the last call into `bits` (one bit per page)
+/// and clear them.
+pub fn take_written(bits: &mut [u64]) {
+    for (i, p) in WRITTEN.iter().enumerate() {
+        if p.load(std::sync::atomic::Ordering::Relaxed) && p.swap(false, std::sync::atomic::Ordering::Relaxed) {
+            bits[i >> 6] |= 1 << (i & 63);
+        }
+    }
+}
+
 pub struct Bus {
     pub ram: Vec<u8>,
     /// Test builds only (`dirty-pages`): one bit per 4 KiB RAM page written
@@ -159,16 +182,16 @@ impl Bus {
         }
     }
 
-    /// Record a RAM write at offset `o` (test builds; no-op otherwise).
+    /// Record a RAM write at offset `o` (the snapshot pages; test builds:
+    /// the touched pages too).
     #[inline(always)]
     pub fn mark(&mut self, o: usize) {
+        mark_written(o);
         #[cfg(feature = "dirty-pages")]
         {
             let page = o >> 12;
             self.dirty[page >> 6] |= 1 << (page & 63);
         }
-        #[cfg(not(feature = "dirty-pages"))]
-        let _ = o;
     }
 
     pub fn write8(&mut self, addr: u32, v: u8) {
