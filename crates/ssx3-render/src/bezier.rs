@@ -509,6 +509,472 @@ fn emit_fan(m: &mut Mem, buf: u16, qw: u16, r: &Raster, kick: &mut dyn FnMut(&[u
     kick(&m.gif_packet(tag));
 }
 
+// ---------------------------------------------------------------------------
+// The strip draws on the GPU (`crate::gpu`, plan step N1)
+// ---------------------------------------------------------------------------
+
+/// The strip emission of both programs as GPU draws (`vs_bezier` in
+/// `ssx3-gfx/src/gpuvu/bezier.wgsl`).
+///
+/// A draw's data is {position, UV} per strip vertex in emission order
+/// (packet A's strips, then packet B's). A triangle is named by its last
+/// vertex `i` (vertices `i-2 .. i`; no triangle ends at a strip's first two
+/// vertices, which have ADC). Every shader invocation computes the three
+/// clip-space positions of its triangle, so all agree on the program's
+/// per-triangle rules:
+///
+/// - a triangle with a vertex outside the guard band (CLIP, against |w|)
+///   gets ADC in the strip: the strip call ([`STRIPS`], index `(i << 2) |
+///   corner`) draws the others;
+/// - unless dropped (a vertex beyond the far plane, or all three outside
+///   one plane), such a triangle goes through the program's clipper and is
+///   kicked as a fan with the fan tag: the fan call ([`FANS`], index
+///   `(i << 5) | (3·k + corner)`, fan triangle `k` < 7) draws it. With
+///   all three vertices in front of the eye (w > 0) the program's planes
+///   are the true ones and the GPU clips the triangle itself (x/y at the
+///   viewport, inside the guard band; z at the near plane, the program's
+///   z- plane): numerically closer to the program than its clipper in IEEE
+///   floats. Otherwise the shader runs the program's clipper: its planes
+///   test against |w| and it divides by a signed w, so there its polygons
+///   are not the true ones, and the game shows that;
+/// - the pass-2 "flag 0" ST rewrite re-kicks the strip packets only (no
+///   fan call).
+///
+/// The fans go first (the program kicks them as it meets them, before the
+/// packet).
+pub mod gpu {
+    use super::*;
+    use crate::gpu::{GpuCall, Link, Program, UNIFORM_QWORDS};
+
+    /// Uniform qwords of a call.
+    pub mod uni {
+        /// M (columns).
+        pub const MATRIX: usize = 0;
+        pub const GUARD_SCALE: usize = 4;
+        pub const GUARD_OFFSET: usize = 5;
+        /// The RGBA every vertex gets (integers).
+        pub const COLOUR: usize = 6;
+        /// x: [`super::STRIPS`] / [`super::FANS`], y: 1 = pass-2 ST rewrite
+        /// (own data: UV2 per vertex), z: vertex count, w: 1 = positions and
+        /// UVs are the source call's (`Link::Reuse`).
+        pub const INFO: usize = 7;
+    }
+    /// The triangles inside the guard band (the strip packets').
+    pub const STRIPS: u32 = 1;
+    /// The clipped ones (the fans).
+    pub const FANS: u32 = 2;
+    /// Fan triangles per clipped triangle (the clipper's polygon has at
+    /// most 9 vertices).
+    pub const FAN_TRIS: u32 = 7;
+
+    /// `Link` key of the strip packets' vertex data (the latest draw).
+    pub const KEY: u32 = 0x8000_0000 | PACKET_A as u32;
+    /// What a GPU-planned draw leaves in the first vertex slot of packet A
+    /// (the CPU program's STQ there): {MARK, vertex count, grid n, program},
+    /// then its colour in the next slot. A later pass-2 ST rewrite on the
+    /// CPU's packets is planned for the GPU only with this mark.
+    const MARK: u32 = 0x315a_5042;
+
+    /// A strip draw: vertices in emission order and strip lengths, per
+    /// packet.
+    #[derive(Default)]
+    pub struct Strips {
+        pub verts: Vec<Vertex>,
+        /// (packet slot, first strip, strips end) into `lens`.
+        packets: Vec<(u16, usize, usize)>,
+        lens: Vec<u32>,
+    }
+
+    impl Strips {
+        pub fn packet(&mut self, slot: u16) {
+            let n = self.lens.len();
+            self.packets.push((slot, n, n));
+        }
+        pub fn strip(&mut self, s: &[Vertex]) {
+            self.verts.extend_from_slice(s);
+            self.lens.push(s.len() as u32);
+            self.packets.last_mut().expect("packet first").2 += 1;
+        }
+        /// The triangles (last vertex) of the strips of packets `ps`.
+        fn triangles(&self, ps: std::ops::Range<usize>) -> impl Iterator<Item = u32> + '_ {
+            ps.flat_map(move |p| {
+                let (_, a, b) = self.packets[p];
+                let first: u32 = self.lens[..a].iter().sum();
+                self.lens[a..b].iter().scan(first, |f, &len| {
+                    let s = *f;
+                    *f += len;
+                    Some((2..len).map(move |k| s + k))
+                })
+            })
+            .flatten()
+        }
+        /// Runs of packets with the same tag (one call each).
+        fn runs(&self, m: &Mem) -> Vec<(V, std::ops::Range<usize>)> {
+            let mut out: Vec<(V, std::ops::Range<usize>)> = Vec::new();
+            for (p, &(slot, ..)) in self.packets.iter().enumerate() {
+                let t = m.ld(slot);
+                match out.last_mut() {
+                    Some((lt, r)) if lt[1..] == t[1..] => r.end = p + 1,
+                    _ => out.push((t, p..p + 1)),
+                }
+            }
+            out
+        }
+    }
+
+    fn strip_indices(tris: impl Iterator<Item = u32>) -> Vec<u32> {
+        tris.flat_map(|i| [i << 2, i << 2 | 1, i << 2 | 2]).collect()
+    }
+
+    fn fan_indices(tris: impl Iterator<Item = u32>) -> Vec<u32> {
+        tris.flat_map(|i| (0..3 * FAN_TRIS).map(move |k| i << 5 | k)).collect()
+    }
+
+    fn tag(v: V) -> u128 {
+        v[0] as u128 | (v[1] as u128) << 32 | (v[2] as u128) << 64 | (v[3] as u128) << 96
+    }
+
+    /// Whether a fan tag draws the clipped triangles as such: a triangle
+    /// primitive (PRE) with the strip's register list.
+    fn fans_draw(strip: V, fan: V) -> bool {
+        let prim = (fan[1] >> 15) & 7;
+        fan[1] & (1 << 14) != 0 && (3..=5).contains(&prim) && fan[1] >> 26 == strip[1] >> 26 && fan[2..] == strip[2..]
+    }
+
+    fn uniforms(r: &Raster, colour: V, info: [u32; 4]) -> [[u32; 4]; UNIFORM_QWORDS] {
+        let mut u = [[0u32; 4]; UNIFORM_QWORDS];
+        u[uni::MATRIX..uni::MATRIX + 4].copy_from_slice(&r.mat);
+        u[uni::GUARD_SCALE] = r.gs;
+        u[uni::GUARD_OFFSET] = r.go;
+        u[uni::COLOUR] = colour;
+        u[uni::INFO] = info;
+        u
+    }
+
+    /// The draws of a strip emission (in place of [`emit_strip`] for every
+    /// strip and the packet kicks): the tags are read now, as kicked. Leaves
+    /// the mark in the packet (the tags keep their NLOOP: a type-1 re-draw
+    /// on the CPU kicks with them).
+    pub fn draw(m: &mut Mem, s: &Strips, colour: V, n: u16, program: u32, out: &mut Vec<GpuCall>) {
+        let r = Raster::load(m);
+        let nv = s.verts.len() as u32;
+        let mut data = Some(s.verts.iter().flat_map(|v| [m.ld(v.pos), m.ld(v.uv)]).collect::<Vec<_>>());
+        let alpha_max = colour[3] as i32 as f32;
+        let fan = m.ld(FAN_TAG_A);
+        let mut call = |mode: u32, t: V, indices: Vec<u32>, out: &mut Vec<GpuCall>| {
+            let (data, link, reuse) = match data.take() {
+                Some(d) => (d, Link::Source(KEY), 0),
+                None => (Vec::new(), Link::Reuse(KEY), 1),
+            };
+            out.push(GpuCall {
+                program: Program::Bezier,
+                pre: Vec::new(),
+                tag: tag(t),
+                uniforms: uniforms(&r, colour, [mode, 0, nv, reuse]),
+                data,
+                indices,
+                alpha_max,
+                link,
+            });
+        };
+        for (t, ps) in s.runs(m) {
+            // (A fan slot holding another program's data would make the
+            // GS read it as registers: `fan_tags_ok` keeps that on the CPU.)
+            if fans_draw(t, fan) {
+                call(FANS, fan, fan_indices(s.triangles(ps.clone())), out);
+            }
+            call(STRIPS, t, strip_indices(s.triangles(ps)), out);
+        }
+        m.st(PACKET_A + 1, [MARK, nv, n as u32, program]);
+        m.st(PACKET_A + 2, colour);
+    }
+
+    /// The mark of the last GPU-planned draw: (vertex count, n, program,
+    /// colour).
+    pub fn mark(m: &Mem) -> Option<(u32, u16, u32, V)> {
+        let v = m.ld(PACKET_A + 1);
+        (v[0] == MARK).then(|| (v[1], v[2] as u16, v[3], m.ld(PACKET_A + 2)))
+    }
+
+    /// The pass-2 ST rewrite of the last draw's packets (in place of
+    /// [`rewrite_st`] and the re-kicks): `s` gives the strips (as drawn)
+    /// and the UV2 address of each vertex in `.uv`.
+    pub fn rewrite_st(m: &Mem, s: &Strips, out: &mut Vec<GpuCall>) {
+        let r = Raster::load(m);
+        let (_, _, _, colour) = mark(m).expect("rewrite after a GPU draw");
+        let nv = s.verts.len() as u32;
+        let data: Vec<[u32; 4]> = s.verts.iter().map(|v| m.ld(v.uv)).collect();
+        for (t, ps) in s.runs(m) {
+            // (Each call carries the UV2s; positions are the source's.)
+            out.push(GpuCall {
+                program: Program::Bezier,
+                pre: Vec::new(),
+                tag: tag(t),
+                uniforms: uniforms(&r, colour, [STRIPS, 1, nv, 1]),
+                data: data.clone(),
+                indices: strip_indices(s.triangles(ps)),
+                alpha_max: 0.0,
+                link: Link::Reuse(KEY),
+            });
+        }
+    }
+
+    /// Whether the fan tags a draw finds in memory (when it does not write
+    /// them) are fan tags: other programs use the slots, and a clipped
+    /// triangle kicked with what they leave there makes the GS read their
+    /// data as registers (texture setup among them). Such calls stay on the
+    /// CPU, which kicks exactly that.
+    pub fn fan_tags_ok(m: &Mem) -> bool {
+        let (a, b) = (m.ld(FAN_TAG_A), m.ld(FAN_TAG_B));
+        a[1..] == b[1..] && fans_draw(m.ld(STRIP_TAG_CTX1), a)
+    }
+
+    /// The patch memory a GPU-planned call reads from `a` (positions, UVs,
+    /// UV2s, coefficients and LODs) must not overlap what the strip code
+    /// writes (clip buffers, packets) or the program's tables.
+    pub fn region_ok(a: u16) -> bool {
+        (0x22b..=0x3fe - 0xd1).contains(&a)
+    }
+
+    // -----------------------------------------------------------------------
+    // CPU mirror of the shader (`SSX3_GPU_CHECK`, tests)
+    // -----------------------------------------------------------------------
+
+    type F4 = [f32; 4];
+
+    /// CLIP judgement bits (+x -x +y -y +z -z) against |w|.
+    pub fn flags(c: F4) -> u32 {
+        let a = c[3].abs();
+        (0..3).map(|l| ((c[l] > a) as u32) << (2 * l) | ((c[l] < -a) as u32) << (2 * l + 1)).sum()
+    }
+
+    /// The program's clipper ([`clip_triangle`]) in IEEE floats, as the
+    /// shader runs it (for triangles reaching behind the eye): the polygon
+    /// (clip-space position, ST) of the triangle `(p, st)`; empty when
+    /// everything is clipped away.
+    pub fn clip_polygon(p: [F4; 3], st: [F4; 3]) -> Vec<(F4, F4)> {
+        let mut poly: Vec<(F4, F4)> = (0..3).map(|k| (p[k], st[k])).collect();
+        for plane in &PLANES {
+            let (l, minus) = (plane.lane, plane.minus);
+            let bit = 1u32 << (2 * l + minus as usize);
+            let out = |v: F4| flags(v) & bit != 0;
+            let num = |v: F4| if minus { v[l] + v[3] } else { v[l] - v[3] };
+            let den = |d: F4| if minus { d[3] + d[l] } else { d[3] - d[l] };
+            let lerp = |from: F4, d: F4, t: f32| -> F4 {
+                std::array::from_fn(|k| if minus { from[k] - d[k] * t } else { from[k] + d[k] * t })
+            };
+            let n = poly.len();
+            let mut next = Vec::with_capacity(9);
+            for k in 0..n {
+                let (a, a_st) = poly[(k + n - 1) % n];
+                let (b, b_st) = poly[k];
+                let (ao, bo) = (out(a), out(b));
+                if ao && bo {
+                    continue;
+                }
+                let b_st1 = [b_st[0], b_st[1], 1.0, 1.0];
+                if !ao && !bo {
+                    next.push((b, b_st1));
+                    continue;
+                }
+                let d: F4 = std::array::from_fn(|k| a[k] - b[k]);
+                let d_st = [a_st[0] - b_st1[0], a_st[1] - b_st1[1], 0.0, 0.0];
+                if ao {
+                    let t = num(b) / den(d);
+                    let s = lerp(b_st1, d_st, t);
+                    next.push((lerp(b, d, t), [s[0], s[1], 1.0, 1.0]));
+                    next.push((b, b_st1));
+                } else {
+                    let t = num(a) / den(d);
+                    let s = lerp(a_st, d_st, t);
+                    next.push((lerp(a, d, t), [s[0], s[1], a_st[2], a_st[3]]));
+                }
+            }
+            next.truncate(9);
+            poly = next;
+            if poly.is_empty() {
+                break;
+            }
+        }
+        poly
+    }
+
+    /// What a call draws, as the shader computes it: per strip vertex its
+    /// {STQ, RGBA, screen XYZ}; the strip triangles drawn (last vertex);
+    /// the fans (triangle, polygon vertices {STQ, screen XYZ}) as the
+    /// program's clipper makes them (in front of the eye the shader lets
+    /// the GPU clip instead: the same polygon, but for rounding).
+    pub struct Eval {
+        pub verts: Vec<[f32; 10]>,
+        pub strips: Vec<u32>,
+        pub fans: Vec<(u32, Vec<[f32; 6]>)>,
+    }
+
+    pub fn eval(call: &GpuCall, src: &[[u32; 4]]) -> Eval {
+        let u = &call.uniforms;
+        let f = |q: usize| -> F4 { u[q].map(f32::from_bits) };
+        let info = u[uni::INFO];
+        let m = [f(0), f(1), f(2), f(3)];
+        let (gs, go) = (f(uni::GUARD_SCALE), f(uni::GUARD_OFFSET));
+        let nv = info[2] as usize;
+        let h = |v: usize| -> F4 {
+            let p = src[2 * v].map(f32::from_bits);
+            std::array::from_fn(|l| m[0][l] * p[0] + m[1][l] * p[1] + m[2][l] * p[2] + m[3][l] * p[3])
+        };
+        let uv = |v: usize| -> F4 { src[2 * v + 1].map(f32::from_bits) };
+        let screen = |c: F4| -> [f32; 3] {
+            let q = 1.0 / c[3];
+            std::array::from_fn(|l| go[l] + c[l] * q * gs[l])
+        };
+        let col = u[uni::COLOUR].map(|x| x as i32 as f32);
+        let verts = (0..nv)
+            .map(|v| {
+                let c = h(v);
+                let q = 1.0 / c[3];
+                let uv = uv(v);
+                let stq = if info[1] != 0 {
+                    let uv2 = call.data[v].map(f32::from_bits);
+                    [uv2[0] * (uv[3] * q), uv2[1] * (uv[3] * q), uv[2] * q]
+                } else {
+                    [uv[0] * q, uv[1] * q, uv[2] * q]
+                };
+                let xyz = screen(c);
+                [stq[0], stq[1], stq[2], col[0], col[1], col[2], col[3], xyz[0], xyz[1], xyz[2]]
+            })
+            .collect();
+        let step = if info[0] == FANS { 3 * FAN_TRIS as usize } else { 3 };
+        let shift = if info[0] == FANS { 5 } else { 2 };
+        let (mut strips, mut fans) = (Vec::new(), Vec::new());
+        for t in call.indices.chunks(step) {
+            let i = (t[0] >> shift) as usize;
+            let c = [h(i - 2), h(i - 1), h(i)];
+            let fl = c.map(flags);
+            let any = fl[0] | fl[1] | fl[2];
+            let dropped = any & 0x10 != 0 || fl[0] & fl[1] & fl[2] != 0;
+            if info[0] == STRIPS {
+                if any == 0 {
+                    strips.push(i as u32);
+                }
+            } else if any != 0 && !dropped {
+                let poly = clip_polygon(c, [uv(i - 2), uv(i - 1), uv(i)]);
+                if !poly.is_empty() {
+                    let vs = poly
+                        .iter()
+                        .map(|&(p, st)| {
+                            let q = 1.0 / p[3];
+                            let xyz = screen(p);
+                            [st[0] * q, st[1] * q, st[2] * q, xyz[0], xyz[1], xyz[2]]
+                        })
+                        .collect();
+                    fans.push((i as u32, vs));
+                }
+            }
+        }
+        Eval { verts, strips, fans }
+    }
+
+    /// `crate::gpu::check` for both programs: the program's output (`gif`,
+    /// all its kicks) against [`eval`] of the planned calls, pass by pass
+    /// (a pass: the strip packets A and B and the fans kicked with them).
+    /// Per strip vertex STQ / RGBA / XYZ, the strip triangles drawn (no
+    /// ADC), and the fans one by one. Rewrites of an earlier call's
+    /// packets are not checked.
+    pub fn check(calls: &[GpuCall], gif: &[u128]) -> Option<String> {
+        let words = |v: &[u128]| -> Vec<[u32; 12]> {
+            v.chunks(3).map(|v| std::array::from_fn(|i| (v[i / 4] >> (32 * (i % 4))) as u32)).collect()
+        };
+        // The program's passes: (strip vertices, fans).
+        let mut passes: Vec<(Vec<[u32; 12]>, Vec<Vec<[u32; 12]>>)> = Vec::new();
+        let (mut verts, mut fans, mut strips) = (Vec::new(), Vec::new(), 0);
+        let mut p = 0;
+        while p < gif.len() {
+            let lo = gif[p] as u64;
+            let nloop = (lo & 0x7fff) as usize;
+            let body = &gif[p + 1..(p + 1 + 3 * nloop).min(gif.len())];
+            p += 1 + 3 * nloop;
+            // (Strip packets: PRE, triangle strip.)
+            if lo >> 46 & 1 == 0 || (lo >> 47) & 7 != 4 {
+                fans.push(words(body));
+                continue;
+            }
+            verts.extend(words(body));
+            strips += 1;
+            if strips == 2 {
+                passes.push((std::mem::take(&mut verts), std::mem::take(&mut fans)));
+                strips = 0;
+            }
+        }
+        // The planned passes: (draw source data, calls).
+        let mut planned: Vec<(Option<&[[u32; 4]]>, Vec<&GpuCall>)> = Vec::new();
+        let mut src: Option<&[[u32; 4]]> = None;
+        for c in calls {
+            let st = c.uniforms[uni::INFO][1] != 0;
+            let source = matches!(c.link, Link::Source(_));
+            if source {
+                src = Some(&c.data);
+            }
+            let new = planned.last().is_none_or(|(_, l)| source || st != (l[0].uniforms[uni::INFO][1] != 0));
+            if new {
+                planned.push((src, Vec::new()));
+            }
+            planned.last_mut().unwrap().1.push(c);
+        }
+        if planned.len() != passes.len() {
+            return Some(format!("bezier: {} planned passes, the program kicked {}", planned.len(), passes.len()));
+        }
+        let mut bad = Vec::new();
+        let close = |a: f32, b: f32, tol: f32| (a - b).abs() <= tol * (1.0 + b.abs());
+        // Screen XYZ against FTOI4 (z: gO.z + gS.z·z/w cancels, the PS2's
+        // rounding shows there).
+        let xyz_ok = |g: &[f32], w: &[u32]| {
+            let xy = (0..2).all(|l| (g[l] * 16.0 - w[l] as i32 as f32).abs() <= 2.0 + 1e-4 * (w[l] as i32 as f32).abs());
+            let z = w[2] as i32 as f32;
+            xy && (g[2] * 16.0 - z).abs() <= 16.0 * 256.0 + 1e-3 * z.abs()
+        };
+        for (k, ((src, cs), (want, want_fans))) in planned.iter().zip(&passes).enumerate() {
+            let Some(src) = src else { continue };
+            let evals: Vec<Eval> = cs.iter().map(|c| eval(c, src)).collect();
+            let v = &evals[0].verts;
+            if v.len() != want.len() {
+                bad.push(format!("pass {k}: {} vertices, the program {}", v.len(), want.len()));
+                continue;
+            }
+            let mut strip_tris: Vec<u32> = evals.iter().flat_map(|e| e.strips.iter().copied()).collect();
+            strip_tris.sort();
+            // The program's strip triangles: no ADC on the last vertex.
+            let prog: Vec<u32> = (0..want.len() as u32).filter(|&i| want[i as usize][11] >> 15 & 1 == 0).collect();
+            if prog != strip_tris {
+                let d: Vec<_> = prog.iter().filter(|i| !strip_tris.contains(i)).chain(strip_tris.iter().filter(|i| !prog.contains(i))).take(4).collect();
+                bad.push(format!("pass {k}: {} strip triangles, the program {} (differ at {d:?})", strip_tris.len(), prog.len()));
+            }
+            if cs.iter().any(|c| c.uniforms[uni::INFO][0] == FANS) {
+                let fans: Vec<&(u32, Vec<[f32; 6]>)> = evals.iter().flat_map(|e| e.fans.iter()).collect();
+                if fans.len() != want_fans.len() {
+                    bad.push(format!("pass {k}: {} fans, the program {}", fans.len(), want_fans.len()));
+                }
+                for ((i, g), w) in fans.iter().zip(want_fans) {
+                    let ok = g.len() == w.len()
+                        && g.iter().zip(w).all(|(g, w)| {
+                            (0..3).all(|l| close(g[l], f32::from_bits(w[l]), 1e-2)) && xyz_ok(&g[3..], &w[8..11])
+                        });
+                    if !ok && bad.len() < 4 {
+                        let ws: Vec<_> = w.iter().map(|w| (w[0..3].iter().map(|&x| f32::from_bits(x)).collect::<Vec<_>>(), &w[8..11])).collect();
+                        bad.push(format!("pass {k} fan of {i}: {g:?} want {ws:?}"));
+                    }
+                }
+            }
+            for (i, (g, w)) in v.iter().zip(want).enumerate() {
+                let ok_stq = (0..3).all(|l| close(g[l], f32::from_bits(w[l]), 1e-3));
+                let ok_col = (0..4).all(|l| (g[3 + l] - w[4 + l] as f32).abs() <= 0.5);
+                if !(ok_stq && ok_col && xyz_ok(&g[7..], &w[8..11])) && bad.len() < 4 {
+                    bad.push(format!("pass {k} v{i}: {g:?} want {:?}", &w[..11]));
+                }
+            }
+        }
+        (!bad.is_empty()).then(|| format!("bezier ({} calls): {}", calls.len(), bad.join("; ")))
+    }
+}
+
 /// Replay of `SSX3_VERIFY_BEZIER_DUMP` files (written by
 /// `crates/ssx3-ps2/src/bezier_verify.rs`): input memory, the translated
 /// program's kicks and output memory per sampled call.

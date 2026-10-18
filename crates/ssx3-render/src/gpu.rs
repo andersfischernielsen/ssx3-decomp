@@ -19,6 +19,8 @@
 pub enum Program {
     /// Type 3 meshes (`mat3`, entries 0x2270 / 0x22c8 / 0x2320 / 0x2358).
     Mat3Mesh = 0,
+    /// Types 1 and 2 Bezier terrain strips (`bezier::gpu`).
+    Bezier = 1,
 }
 
 impl Program {
@@ -26,12 +28,14 @@ impl Program {
     pub fn vs_entry(self) -> &'static str {
         match self {
             Program::Mat3Mesh => "vs_mat3_mesh",
+            Program::Bezier => "vs_bezier",
         }
     }
 
     pub fn from_u8(v: u8) -> Option<Program> {
         match v {
             0 => Some(Program::Mat3Mesh),
+            1 => Some(Program::Bezier),
             _ => None,
         }
     }
@@ -105,6 +109,8 @@ pub fn enabled() -> bool {
 pub fn plan(hash: u64, entry: u32, top: u32, itop: u32, mem: &mut [u8; 16384]) -> Option<Vec<GpuCall>> {
     match hash {
         crate::mat3::HASH => crate::mat3::plan_gpu(entry, top, itop, mem).map(|c| vec![c]),
+        crate::mat1::HASH => crate::mat1::plan_gpu(entry, top, itop, mem),
+        crate::mat2::HASH => crate::mat2::plan_gpu(entry, top, itop, mem),
         _ => None,
     }
 }
@@ -202,6 +208,7 @@ mod tests {
 pub fn check(hash: u64, calls: &[GpuCall], gif: &[u128]) -> Option<String> {
     match (hash, calls) {
         (crate::mat3::HASH, [call]) if call.program == Program::Mat3Mesh => check_mat3(call, gif),
+        (crate::mat1::HASH | crate::mat2::HASH, _) => crate::bezier::gpu::check(calls, gif),
         _ => None,
     }
 }

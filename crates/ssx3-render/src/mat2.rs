@@ -52,7 +52,7 @@
 //! would run pass 2 "flag 0"; anything else is not implemented.
 
 use crate::bezier::{
-    add, bc, emit_strip, msub, mul, project_xy, rewrite_st, sub, xform, ClipFlags, Mem, Raster, Rgba, Vertex, V,
+    add, bc, emit_strip, gpu, msub, mul, project_xy, rewrite_st, sub, xform, ClipFlags, Mem, Raster, Rgba, Vertex, V,
     COLOUR, EOP, FAN_TAG_A, FAN_TAG_B, FAN_TAG_CTX1, FAN_TAG_CTX2, FAN_TOGGLE, LAST_TOP, PACKET_A, PACKET_B,
     RETURN_SAVE, STRIP_TAG_CTX1, STRIP_TAG_CTX2,
 };
@@ -234,6 +234,24 @@ pub fn run(
     _regs: &mut VuState,
     kick: &mut dyn FnMut(&[u128]),
 ) -> bool {
+    exec(entry, top, mem, kick, None)
+}
+
+type Gpu<'a> = Option<&'a mut Vec<crate::gpu::GpuCall>>;
+
+/// Plan the call for the GPU (`crate::gpu::plan`): the memory effects of
+/// [`run`] but the strips' (tags, edge points and UVs, border normals,
+/// projector / shine UV2s, saved addresses), the strip draws and ST
+/// rewrites as [`crate::bezier::gpu`] draws. `None` (memory untouched) for
+/// what the CPU program keeps: what [`run`] does not implement and patches
+/// in the way of the packets.
+pub fn plan_gpu(entry: u32, top: u32, _itop: u32, mem: &mut [u8; 16384]) -> Option<Vec<crate::gpu::GpuCall>> {
+    let mut out = Vec::new();
+    exec(entry, top, mem, &mut |_| {}, Some(&mut out)).then_some(out)
+}
+
+/// [`run`], or with `gpu` [`plan_gpu`].
+fn exec(entry: u32, top: u32, mem: &mut [u8; 16384], kick: &mut dyn FnMut(&[u128]), mut gpu: Gpu) -> bool {
     let top = (top & 0x3ff) as u16;
     let mut m = Mem(mem);
     let tags = |m: &mut Mem, strip: u16, fan: Option<u16>| {
@@ -246,7 +264,9 @@ pub fn run(
     };
     match entry {
         0x09a0 | 0x0a38 => {
-            if !Lods::read(&m, top).valid() {
+            // (0x0a38 writes the fan tags before its draws.)
+            let fans_ok = entry == 0x0a38 || gpu::fan_tags_ok(&m);
+            if !Lods::read(&m, top).valid() || (gpu.is_some() && !(gpu::region_ok(top) && fans_ok)) {
                 return false;
             }
             let fans = (entry == 0x0a38).then_some(FAN_TAG_CTX1);
@@ -254,20 +274,23 @@ pub fn run(
             m.isw(LAST_TOP, 0, top);
             // The first draw's BAL: 0x09d0 / 0x0a80.
             let bal = if entry == 0x09a0 { 0x09d0 } else { 0x0a80 };
-            draw_patch(&mut m, top, top.wrapping_add(UV), ret(bal), kick);
+            draw_patch(&mut m, top, top.wrapping_add(UV), ret(bal), kick, gpu.as_deref_mut());
             if entry == 0x09a0 {
                 tags(&mut m, STRIP_TAG_CTX2, None);
-                pass2_st(&mut m, top, ret(0x0a10), kick);
+                pass2_st(&mut m, top, ret(0x0a10), kick, gpu.as_deref_mut());
             } else {
                 tags(&mut m, STRIP_TAG_CTX2, Some(FAN_TAG_CTX2));
                 m.isw(LAST_TOP, 0, top);
-                draw_patch(&mut m, top, top.wrapping_add(UV2), ret(0x0ad8), kick);
+                draw_patch(&mut m, top, top.wrapping_add(UV2), ret(0x0ad8), kick, gpu.as_deref_mut());
             }
         }
         0x0c48 | 0x0cf0 => {
             let last = m.ilw(LAST_TOP, 0);
             let back = m.ilw(RETURN_SAVE, 0);
             if !Lods::read(&m, last).valid() || !matches!(back, RET_09A0_PASS2 | RET_09A0_END | RET_0A38_END) {
+                return false;
+            }
+            if gpu.is_some() && !(gpu::region_ok(last) && gpu::region_ok(top) && gpu::fan_tags_ok(&m)) {
                 return false;
             }
             let uv2 = top.wrapping_add(UV2);
@@ -278,11 +301,11 @@ pub fn run(
             let mat = m.matrix(top.wrapping_add(0x80));
             let src = if entry == 0x0c48 { last } else { top.wrapping_add(NORMALS) };
             project_xy(&mut m, &mat, src, uv2, 0x40);
-            draw(&mut m, last, uv2, kick);
+            draw(&mut m, last, uv2, kick, gpu.as_deref_mut());
             // The draw returns through qw511.x (the previous call's).
             if back == RET_09A0_PASS2 {
                 tags(&mut m, STRIP_TAG_CTX2, None);
-                pass2_st(&mut m, top, ret(0x0a10), kick);
+                pass2_st(&mut m, top, ret(0x0a10), kick, gpu.as_deref_mut());
             }
         }
         _ => return false,
@@ -291,7 +314,7 @@ pub fn run(
 }
 
 /// 0x0d90: evaluate the edges, re-interpolate the edge UVs, draw.
-fn draw_patch(m: &mut Mem, patch: u16, uv: u16, ret: u16, kick: &mut dyn FnMut(&[u128])) {
+fn draw_patch(m: &mut Mem, patch: u16, uv: u16, ret: u16, kick: &mut dyn FnMut(&[u128]), gpu: Gpu) {
     m.isw(RETURN_SAVE, 0, ret);
     m.isw(DRAW_SOURCES, 0, patch);
     m.isw(DRAW_SOURCES, 1, uv);
@@ -308,7 +331,7 @@ fn draw_patch(m: &mut Mem, patch: u16, uv: u16, ret: u16, kick: &mut dyn FnMut(&
         }
     }
     border_uvs(m, uv, lods.uv_steps(m));
-    draw(m, patch, uv, kick);
+    draw(m, patch, uv, kick, gpu);
 }
 
 /// The basis-table indices (u, v) of the L-1 re-evaluated points of an
@@ -395,12 +418,27 @@ fn border_normals(m: &mut Mem, last: u16, top: u16) {
 /// 0x1060: the strip draw of a patch whose positions are at `pos` and UVs
 /// at `uv` (grid offsets): tags' NLOOP, the constant colour into every
 /// RGBA slot, then per packet the interior strips and the two zippers.
-fn draw(m: &mut Mem, pos: u16, uv: u16, kick: &mut dyn FnMut(&[u128])) {
+fn draw(m: &mut Mem, pos: u16, uv: u16, kick: &mut dyn FnMut(&[u128]), gpu: Gpu) {
     let lods = Lods::read(m, pos);
     let r = Raster::load(m);
     m.isw(FAN_TOGGLE, 0, FAN_TAG_B);
     let colour = m.ld(COLOUR);
     let packets = packets(lods);
+    if let Some(out) = gpu {
+        // (The RGBA slots are the packets': the draws take the colour.)
+        let mut strips = gpu::Strips::default();
+        for (slot, nloop, ss) in &packets {
+            m.isw(*slot, 0, nloop | EOP);
+            strips.packet(*slot);
+            for s in ss {
+                let verts: Vec<Vertex> =
+                    s.offsets.iter().map(|&o| Vertex { pos: pos.wrapping_add(o), uv: uv.wrapping_add(o) }).collect();
+                strips.strip(&verts);
+            }
+        }
+        gpu::draw(m, &strips, colour, 0, 2, out);
+        return;
+    }
     for (slot, nloop, _) in &packets {
         m.isw(*slot, 0, nloop | EOP);
         // 0x0bd8: two RGBA slots per step while the count stays > 0.
@@ -432,11 +470,23 @@ fn draw(m: &mut Mem, pos: u16, uv: u16, kick: &mut dyn FnMut(&[u128])) {
 /// 0x1368, pass 2 "flag 0": re-interpolate the edge UV2s, ST := UV2·q in
 /// the vertex order of the draw, re-kick both packets (ctx2 tags set by the
 /// caller; clipped fans are not redrawn).
-fn pass2_st(m: &mut Mem, top: u16, ret: u16, kick: &mut dyn FnMut(&[u128])) {
+fn pass2_st(m: &mut Mem, top: u16, ret: u16, kick: &mut dyn FnMut(&[u128]), gpu: Gpu) {
     m.isw(RETURN_SAVE, 0, ret);
     let lods = Lods::read(m, m.ilw(LAST_TOP, 0));
     let uv2 = top.wrapping_add(UV2);
     border_uvs(m, uv2, lods.uv_steps(m));
+    if let Some(out) = gpu {
+        let mut strips = gpu::Strips::default();
+        for (slot, _, ss) in packets(lods) {
+            strips.packet(slot);
+            for s in &ss {
+                let verts: Vec<Vertex> = s.offsets.iter().map(|&o| Vertex { pos: 0, uv: uv2.wrapping_add(o) }).collect();
+                strips.strip(&verts);
+            }
+        }
+        gpu::rewrite_st(m, &strips, out);
+        return;
+    }
     for (slot, _, strips) in packets(lods) {
         let addrs = strips.iter().flat_map(|s| s.offsets.iter().map(|&o| uv2.wrapping_add(o)).collect::<Vec<_>>());
         rewrite_st(m, slot + 1, addrs);
