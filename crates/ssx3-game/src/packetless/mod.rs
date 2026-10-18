@@ -24,10 +24,12 @@ use crate::ps2f::FpuF32;
 
 use crate::call::{call_ptr, guest};
 
+mod bezier;
 mod model;
 mod rider;
 mod vu0;
 
+pub use bezier::end_pass as bezier_end_pass;
 pub use model::{draw_model, grid_mesh_draw};
 pub use rider::{draw_skinned_model, draw_skinned_model_shadow, emit_lighting_packet, set_shadow_header};
 
@@ -248,19 +250,20 @@ fn wm(c: &mut Cpu, a: u32, m: &vu0::M) {
 }
 
 /// Call a guest function from a native draw function: `args` in a0..t3,
-/// `ret` the return address the generated caller uses. Events wait until
-/// it returns (a native caller cannot be resumed after an unwind, so the
-/// callee must not unwind); its v0.
+/// `ret` the return address the generated caller uses; its v0. A native
+/// caller cannot be resumed after an unwind, so the callee runs with
+/// `Cpu::no_unwind`.
 fn guest_call(c: &mut Cpu, target: u32, args: &[u32], ret: u32) -> u32 {
     const R: [usize; 8] = [A0, A1, A2, A3, T0, T1, T2, T3];
     let ra = c.g[RA];
     for (i, &a) in args.iter().enumerate() {
         c.g[R[i]][0] = a as i32 as i64 as u64;
     }
-    let next = c.next_event;
-    c.next_event = u64::MAX;
+    // (Host threads block in a thread switch and resume here; the unwind
+    // form keeps the switch for the generated caller's next check.)
+    let no_unwind = std::mem::replace(&mut c.no_unwind, true);
     guest(c, |c| call_ptr(c, target, ret));
-    c.next_event = if c.next_event == u64::MAX { next } else { c.next_event.min(next) };
+    c.no_unwind = no_unwind;
     c.g[RA] = ra;
     c.g[V0][0] as u32
 }
@@ -738,6 +741,9 @@ fn checked_ram(c: &mut Cpu, name: &'static str, native: fn(&mut Cpu), packets: f
     let uncovered: u64 = a.iter().zip(&b).map(|(x, y)| uncovered(x, y)).sum();
     if a.len() != b.len() || a.iter().zip(&b).any(|(x, y)| !same_draw(x, y)) {
         bad.push(format!("draws: native {:?} / packets {:?}", short(&rec_native), short(&rec_packets)));
+        if let Some((x, y)) = a.iter().zip(&b).find(|(x, y)| !same_draw(x, y)) {
+            bad.push(format!("first: native {:.1500} / packets {:.1500}", format!("{x:x?}"), format!("{y:x?}")));
+        }
     }
     let mut nat = rec_native.iter().filter(|x| !matches!(&x.cmd, Cmd::Vu(v) if v.is_empty()));
     for x in &rec_packets {

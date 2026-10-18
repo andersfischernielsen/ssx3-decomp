@@ -49,7 +49,7 @@ pub fn install() -> bool {
         (DRAW_PATCH_FX, |c: &mut Cpu| crate::packetless::dispatch_patch_fx(c, draw_patch_fx), "PS2BezierMan_DrawPatchFX"),
         (DRAW_MODEL, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "DrawModel", crate::packetless::draw_model, draw_model), "PS2GraphicsMan_DrawModel"),
         (DRAW_SKINNED_MODEL, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "DrawSkinnedModel", crate::packetless::draw_skinned_model, draw_skinned_model), "PS2GraphicsMan_DrawSkinnedModel"),
-        (BEZIER_END_PASS, bezier_end_pass, "PS2BezierMan_v18"),
+        (BEZIER_END_PASS, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "BezierEndPass", crate::packetless::bezier_end_pass, bezier_end_pass), "PS2BezierMan_v18"),
         (0x0036_ac00, render_depth_fog, "PS2GraphicsMan_RenderDepthFog"),
         (0x0036_c790, render_bloom, "PS2GraphicsMan_RenderBloom"),
         (0x0039_04a0, render_color_filter, "PS2GraphicsMan_RenderColorFilter"),
