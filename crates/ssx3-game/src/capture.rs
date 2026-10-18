@@ -138,6 +138,8 @@ impl RibbonInput {
         if !(0..=0x48).contains(&n) {
             return None;
         }
+        self.cur.reserve(3 * n as usize);
+        self.seg_cur.last_mut()?.1.reserve(3 * n as usize);
         for i in 0..3 * n as u32 {
             let q = qword(c, src.wrapping_add(16 * i));
             self.cur.push(((at + i) as u16, q));
@@ -160,11 +162,11 @@ impl RibbonInput {
     }
     /// The calls as the packet's VIFcodes leave them: per UNPACK its
     /// STCYCL and the write, then the program start.
-    pub(crate) fn steps(&self, entry: u32, out: &mut Vec<Step>) {
-        for call in &self.segs {
+    pub(crate) fn steps(self, entry: u32, out: &mut Vec<Step>) {
+        for call in self.segs {
             for (at, data) in call {
                 out.push(Step::Cycle(0x0101));
-                out.push(Step::Write { addr: *at, rel: true, data: data.clone() });
+                out.push(Step::Write { addr: at, rel: true, data });
             }
             out.push(Step::Start(entry));
         }
