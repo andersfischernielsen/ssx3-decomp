@@ -27,7 +27,7 @@ use crate::call::{call_ptr, guest};
 mod model;
 mod vu0;
 
-pub use model::draw_model;
+pub use model::{draw_model, grid_mesh_draw};
 
 /// PS2GraphicsMan fields (`structs/render.md`).
 mod gmf {
@@ -644,6 +644,12 @@ pub(crate) fn dispatch_ram(c: &mut Cpu, name: &'static str, native: fn(&mut Cpu)
 /// Is `a` a word that holds a packet address (or lies in render-private
 /// memory), so native and generated runs differ there by design?
 fn packet_word(c: &mut Cpu, gm: u32, a: u32) -> bool {
+    // (The SprStream at gp+0x1384: its block ring, which native forms
+    // leave alone.)
+    let spr = r32(c, c.g[GP][0] as u32 + 0x1384);
+    if (spr..spr + 0x40).contains(&a) {
+        return true;
+    }
     let vif = r32(c, gm + 0x5a0c);
     if (vif..vif + 2 * 0xccc80).contains(&a) || a == gm + gmf::VIF_CURSOR {
         return true;

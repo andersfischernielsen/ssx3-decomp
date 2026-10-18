@@ -71,7 +71,7 @@ pub fn install() -> bool {
         (0x0038_6e78, capture_drawshadowvolume, "DrawShadowVolume"),
         (0x0038_83b8, capture_drawboardwake, "DrawBoardWake"),
         (0x002d_c7b0, capture_fogparticleman_drawparticles, "FogParticleMan_DrawParticles"),
-        (GRID_MESH_DRAW, grid_mesh_draw, "cPS2GridMesh_Draw"),
+        (GRID_MESH_DRAW, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "GridMeshDraw", crate::packetless::grid_mesh_draw, grid_mesh_draw), "cPS2GridMesh_Draw"),
     ] {
         assert!(ssx3_ee::set_override(a, f), "no override slot for {name}: list it in overrides.txt");
     }

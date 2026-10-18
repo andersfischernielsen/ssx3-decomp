@@ -428,3 +428,38 @@ fn fast_bucket(c: &mut Cpu, gm: u32, base: u32, start: u32) {
     }
     guest_call(c, APPEND_PACKET, &[bucket, start, start], 0x0037_ff38);
 }
+
+/// `cPS2GridMesh_Draw(this, matrix, texId, matrix2)` (0x385c10): the grid
+/// (fence, flag, flexible bridge) through the model program: the header
+/// matrix (rows scaled by `this+0x194`), matrix 2 when given, then the
+/// active copy of its double-buffered chain.
+pub fn grid_mesh_draw(c: &mut Cpu) {
+    let (this, matrix, tex, mat2) = (c.g[A0][0] as u32, c.g[A1][0] as u32, c.g[A2][0] as u16, c.g[A3][0] as u32);
+    if r32(c, this + 0x1a4) != 0 {
+        w32(c, this + 0x1a4, 0);
+        let b = r32(c, this + 0x1a0).wrapping_add(1) & 1;
+        w32(c, this + 0x1a0, b);
+    }
+    let gm = r32(c, this + 0x1c4);
+    ensure_view_matrices(c, gm, 0x0038_5c70);
+    let st = r32(c, gm + gmf::CUR_STATE);
+    state_word(c, st, 0, !0x3c0, 0xc0);
+    state_word(c, st, 3, 0xc000_0000, 0);
+    c.bus.write16(st + 0x10, tex);
+    let s = r32(c, this + 0x194);
+    let m = vu0::scale_rows(&qm(c, matrix), &[s, s, s, vu0::ONE]);
+    let flags = if mat2 == 0 { 0x20 } else { 0x22 };
+    let mut header: Vec<u128> = m.iter().map(|r| q4(*r)).collect();
+    header.push(q4([0, 0, 0, flags]));
+    let mut steps = vec![Step::Mask(0), Step::Cycle(0x0101), Step::Write { addr: 0, rel: true, data: header }];
+    if mat2 != 0 {
+        steps.push(Step::Write { addr: 5, rel: true, data: qwords(c, mat2, 4) });
+    }
+    let active = r32(c, this + 0x1a0);
+    let chain = r32(c, this + 0x1ac + 4 * active);
+    steps.push(Step::Chain(chain));
+    let start = empty_packet(c, gm);
+    record(start, Cmd::Vu(steps));
+    add_record(c, gm, start, start, false);
+    ret(c, 150);
+}
