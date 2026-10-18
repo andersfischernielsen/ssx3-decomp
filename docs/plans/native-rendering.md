@@ -249,13 +249,29 @@ dumps (pixel identity with the decoding path) before the next:
    `SSX3_DRAW_CHECK_EVERY` calls (packet addresses, VifBuff, the SprStream
    ring and stack scratch masked). `SSX3_DRAW_CHECK=2` renders the native
    draws under generated behaviour.
-   Native so far (race + freestyle: no differences): strips (71, Begin /
-   EndTriStrip), particles (82-86, PatchFX), DrawModel (95, fast path,
-   alpha path, environment maps), grid meshes, riders (99, 100, 101, 124),
-   Bézier terrain (v18 with its emitters, passes and deferred groups).
-   Left: shadow volume / board wake (89 / 90 with the ribbons), the 2D /
-   DIRECT draws (72-81, 53-55, 61, fog sprites), the post passes, then
-   `RenderFrame` / `EndFrame` and the kick.
+   Native (menu, race, freestyle checked: no differences): strips (71,
+   Begin / EndTriStrip), particles (82-86, PatchFX), DrawModel (95, fast
+   path, alpha path, environment maps), grid meshes, riders (99, 100,
+   101, 124), Bézier terrain (v18 with its emitters, passes and deferred
+   groups), shadow volume and board wake (89, 90, with the ribbons as
+   their packets' steps), render-target switches (53, 54, 55),
+   transition (61), 2D: indexed triangles (72), line strips with their
+   clipping (73), sprites (78, 79), glyphs (80, 81), fog sprites, and the
+   post passes (depth fog with its CLUT, bloom, colour filter) as
+   `Cmd::Post`. `RenderFrame` is native (`frame.rs`): it keeps the bucket
+   build and sort, TexMan's per-frame state, the post passes and
+   DeferMan's emit state, and publishes bare `END` chains; no state
+   packets, texture binds or VRAM uploads, no CALL / RET (the frame build
+   ends a bucket's payload at its last packet). The ctm and two-player
+   modes run without frame issues and match the packet build until the
+   timing drift shows. Native race, 6000 frames: 22.98 s with packets ->
+   19.90 s.
+   Left in guest memory: `DeferMan_BuildBuckets`' link tags at packet ends
+   (the frame build follows them), slot 75 (`DrawLineShape`, debug only).
+   Guest callees from native draw functions run with `Cpu::no_unwind` and
+   at host depth 0 (`events::deliver_event_here` now restores the outer
+   `no_unwind`: a hand-written port's event check inside such a call
+   cleared it, and the browser build switched threads mid-call).
 4. **N3/N4/N5** as below.
 
 Background (the earlier proposal, still the reference for the details):
@@ -353,7 +369,7 @@ IPU emulation → a native MPEG-2 decoder feeding a texture.
 | Step | State | Notes |
 | --- | --- | --- |
 | N1 | ✅ | all seven programs: meshes, strips/ribbons, riders, Bézier terrain, particles, snow (type 3 0x2400 PRIM-only and 0x3bf0 line shape stay on the CPU); ~73% of VU calls on the GPU, merged into ~0.85M batches per 6000 frames; race replay frames match the CPU programs to rounding; native render 6.5 → 5.3 ms per frame |
-| N2 | 🟡 | stages A (every draw captured) and B (frames from the buckets, no chain walk) done; stage C next. Earlier: D1 capture infrastructure (`ssx3_game::capture`, `ssx3_render::direct`): strips and ribbons drawn from native commands; model and rider vertex data resident on the GPU; uploads per race frame 3.2 -> ~1.5 MB; browser race 16-21 -> ~13-15 ms per frame, renderer 44% -> 29% of the worker. Next: D1 for riders / Bézier / particles, then D2 (the draw functions native, no packets: `DrawModel` first, ~3% of the browser worker) |
+| N2 | 🟡 | stages A (every draw captured), B (frames from the buckets, no chain walk) and C (draw functions and RenderFrame without packets) done but for the bucket link tags and one debug draw. Earlier: D1 capture infrastructure (`ssx3_game::capture`, `ssx3_render::direct`): strips and ribbons drawn from native commands; model and rider vertex data resident on the GPU; uploads per race frame 3.2 -> ~1.5 MB; browser race 16-21 -> ~13-15 ms per frame, renderer 44% -> 29% of the worker. Next: D1 for riders / Bézier / particles, then D2 (the draw functions native, no packets: `DrawModel` first, ~3% of the browser worker) |
 | N3 | 🟡 | step 1: incremental snapshots and page write generations; step 2: the typed frame built on the game thread from live memory, the renderer gets only the texture pages it reads (no 32 MiB snapshot) |
 | N4 | ⬜ | |
 | N5 | ⬜ | |
