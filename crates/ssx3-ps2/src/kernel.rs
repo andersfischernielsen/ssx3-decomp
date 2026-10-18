@@ -447,6 +447,7 @@ pub fn service(c: &mut Cpu) {
             }
         }
     }
+    crate::kick::service(c);
     if m!(c).kernel.reschedule || (c.pc & !UNWIND) == IDLE {
         if c.no_unwind && !m!(c).kernel.host_threads {
             // At the caller's next check (see `Cpu::no_unwind`).
@@ -1105,9 +1106,17 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
             if crate::frame_sink::enabled() {
                 crate::frame_sink::on_signal_sema(c, arg(c, 0) as i32);
             }
+            if crate::kick::on_signal(c, arg(c, 0) as i32, false) {
+                return ret(c, arg(c, 0) as i64);
+            }
             signal_sema(c, arg(c, 0) as i32, false)
         }
-        0x43 => signal_sema(c, arg(c, 0) as i32, true),
+        0x43 => {
+            if crate::kick::on_signal(c, arg(c, 0) as i32, true) {
+                return ret(c, arg(c, 0) as i64);
+            }
+            signal_sema(c, arg(c, 0) as i32, true)
+        }
         0x44 => wait_sema(c, arg(c, 0) as i32),
         0x45 | 0x46 => {
             let id = arg(c, 0) as i32;

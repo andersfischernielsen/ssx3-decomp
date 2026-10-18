@@ -22,6 +22,7 @@ pub mod iop_bridge;
 pub mod ipu;
 pub use ssx3_core::iso;
 pub mod kernel;
+pub mod kick;
 pub mod machine;
 pub mod mc_native;
 pub mod pad;
