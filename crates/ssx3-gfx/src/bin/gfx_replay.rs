@@ -119,6 +119,22 @@ fn main() {
                 }
                 std::fs::write(path, out).unwrap();
             }
+            // SSX3_NATIVE_FRAME_CHECK=1: the walked frame against the native
+            // build.
+            if std::env::var_os("SSX3_NATIVE_FRAME_CHECK").is_some() {
+                let g = ssx3_render::frame::word(mem, ssx3_render::frame::addr::GM_PTR);
+                let t0 = std::time::Instant::now();
+                let walked = ssx3_render::frame::build_cached(mem, g, carry, &mut chains, mem.direct.clone());
+                let t1 = std::time::Instant::now();
+                let native = ssx3_render::frame::build_native(mem, g, carry, &mut chains, mem.direct.clone());
+                eprintln!("[native-frame] frame {i}: built walked {:.3} ms, native {:.3} ms", (t1 - t0).as_secs_f64() * 1e3, t1.elapsed().as_secs_f64() * 1e3);
+                for d in ssx3_render::frame::compare_native(&walked, &native, 8) {
+                    eprintln!("[native-frame] frame {i}: {d}");
+                }
+                for e in native.issues.iter().take(5) {
+                    eprintln!("[native-frame] frame {i} issue: {e}");
+                }
+            }
             if std::env::var_os("SSX3_DIRECT_CHECK").is_some() {
                 for e in built.issues.iter().filter(|i| i.starts_with("capture")).take(8) {
                     eprintln!("[direct-check] frame {i}: {e}");

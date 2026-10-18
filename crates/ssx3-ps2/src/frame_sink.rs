@@ -62,7 +62,7 @@ impl FrameBuilder {
     pub fn build(&mut self, gm: u32, mem: &DumpMem) -> (Built, Carry) {
         let t = web_time::Instant::now();
         let carry = self.carry.clone();
-        let b = frame::build_cached(mem, gm, &carry, &mut self.cache, mem.direct.clone());
+        let b = if native_frame(mem) { frame::build_native(mem, gm, &carry, &mut self.cache, mem.direct.clone()) } else { frame::build_cached(mem, gm, &carry, &mut self.cache, mem.direct.clone()) };
         static CHECK: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         if *CHECK.get_or_init(|| std::env::var_os("SSX3_CHAIN_CACHE_CHECK").is_some()) {
             let bad = b.issues.iter().filter(|i| i.starts_with("chain cache")).count();
@@ -493,7 +493,20 @@ pub fn build_dump(mem: &DumpMem, carry: &Carry) -> Option<Built> {
 }
 
 /// [`build_dump`] with a sub-chain cache carried across dumps.
+/// `SSX3_NATIVE_FRAME=1`: built from the buckets and captures, not the
+/// chains (`frame::build_native`).
 pub fn build_dump_cached(mem: &DumpMem, carry: &Carry, cache: &mut frame::ChainCache) -> Option<Built> {
     let g = frame::word(mem, frame::addr::GM_PTR);
-    (g != 0).then(|| frame::build_cached(mem, g, carry, cache, mem.direct.clone()))
+    if g == 0 {
+        return None;
+    }
+    Some(if native_frame(mem) { frame::build_native(mem, g, carry, cache, mem.direct.clone()) } else { frame::build_cached(mem, g, carry, cache, mem.direct.clone()) })
+}
+
+/// Frames are built from the buckets and the captured draws without
+/// walking the chains, unless `SSX3_NATIVE_FRAME=0` or the frame has no
+/// captures (`SSX3_DIRECT=0`, older frame dumps).
+pub fn native_frame(mem: &DumpMem) -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("SSX3_NATIVE_FRAME").map_or(true, |v| v != "0")) && !mem.direct.is_empty()
 }

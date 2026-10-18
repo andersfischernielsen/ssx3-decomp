@@ -44,6 +44,19 @@ pub enum Cmd {
     /// (`crate::vif::Vif1::native`), so its program starts become ordinary
     /// VU calls (and later packets see the memory and registers it left).
     Vu(Vec<Step>),
+    /// A post pass (`RenderDepthFog` / `RenderBloom` / `RenderColorFilter`,
+    /// one view): the GIF data it queued for PATH3 and the PATH3 windows it
+    /// put into the VIF chain (each runs the queued data up to the next
+    /// EOP). `start..end` is its stretch of the VIF chain.
+    Post { kind: PostKind, gif: Vec<u128>, windows: u32 },
+}
+
+/// Which post pass a `Cmd::Post` is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PostKind {
+    DepthFog = 0,
+    Bloom = 1,
+    ColorFilter = 2,
 }
 
 /// One effect of a packet on VU1 (`Cmd::Vu`).
@@ -81,6 +94,7 @@ impl Cmd {
             Cmd::Strip { verts, .. } => strip_batches(verts.len()).count() as u32,
             Cmd::Ribbon { calls, .. } => calls.len() as u32,
             Cmd::Vu(steps) => steps.iter().filter(|s| matches!(s, Step::Start(_))).count() as u32,
+            Cmd::Post { .. } => 0,
         }
     }
 }
@@ -159,7 +173,7 @@ pub fn plan(cmd: &Cmd, regs: VifRegs, header: &[u128; 6], vu: &[u8; 16384]) -> V
             crate::mat3::plan_ribbon_cmd(*entry, calls, &tops, header, [qw(0x3c8), qw(0x3e4)])
         }
         // (Applied to the VIF state by the frame build: ordinary calls.)
-        Cmd::Vu(_) => Vec::new(),
+        Cmd::Vu(_) | Cmd::Post { .. } => Vec::new(),
     }
 }
 
@@ -217,6 +231,15 @@ pub fn encode_cmd(cmd: &Cmd, out: &mut Vec<u8>) {
             out.extend_from_slice(&(verts.len() as u32).to_le_bytes());
             for v in verts.iter().flatten() {
                 out.extend_from_slice(&v.to_le_bytes());
+            }
+        }
+        Cmd::Post { kind, gif, windows } => {
+            out.push(3);
+            out.push(*kind as u8);
+            out.extend_from_slice(&windows.to_le_bytes());
+            out.extend_from_slice(&(gif.len() as u32).to_le_bytes());
+            for q in gif {
+                out.extend_from_slice(&q.to_le_bytes());
             }
         }
         Cmd::Vu(steps) => {
@@ -363,6 +386,19 @@ pub fn decode_cmd(r: &mut Bytes) -> Option<Cmd> {
                 });
             }
             Cmd::Vu(steps)
+        }
+        3 => {
+            let kind = match r.take(1)?[0] {
+                0 => PostKind::DepthFog,
+                1 => PostKind::Bloom,
+                _ => PostKind::ColorFilter,
+            };
+            let (windows, k) = (r.u32()?, r.u32()?);
+            let mut gif = Vec::with_capacity(k as usize);
+            for _ in 0..k {
+                gif.push(r.u128()?);
+            }
+            Cmd::Post { kind, gif, windows }
         }
         _ => return None,
     })

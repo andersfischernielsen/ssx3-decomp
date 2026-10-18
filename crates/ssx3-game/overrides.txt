@@ -1442,6 +1442,11 @@
 0x0037e238    PS2GraphicsMan_DrawModel
 0x0037a610    PS2GraphicsMan_DrawSkinnedModel
 0x0038b370    PS2BezierMan_v18
+0x0036ac00    PS2GraphicsMan_RenderDepthFog
+0x0036c790    PS2GraphicsMan_RenderBloom
+0x003904a0    PS2GraphicsMan_RenderColorFilter
+0x00396b40    PS2GraphicsMan_EmitLightingPacket
+0x0037ba50    PS2GraphicsMan_SetShadowHeader
 0x0037b548    PS2GraphicsMan_DrawSkinnedModelShadow
 0x0037d348    SetRenderTargetTexture
 0x0037d450    RestoreRenderTarget

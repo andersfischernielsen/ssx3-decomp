@@ -525,6 +525,9 @@ pub struct Emitter {
     pub regs: GsRegs,
     pub zbp: u32,
     pub zpsm: u32,
+    /// The A+D writes of the last `default_state` / `state_change`, in the
+    /// order the game emits them (`None`: a value the game leaves stale).
+    pub writes: Vec<(u8, Option<u64>)>,
 }
 
 impl Emitter {
@@ -532,21 +535,23 @@ impl Emitter {
     /// and TEST take their selectors from other bits (ZMSK bit 23, ZTST bits
     /// 25-26, ATST bits 22-23) than a state change does: a game quirk.
     pub fn default_state(&mut self, d: [u32; 5]) {
+        self.writes.clear();
         self.state = d;
         let (w0, w1) = (d[0], d[1]);
         let aref = (w1 >> 12) & 0xff;
-        self.regs.set(reg::CLAMP_1, Some(Wrap::from_bits(w0 >> 2).clamp_reg()));
-        self.regs.set(reg::ALPHA_1, blend_preset((w1 >> 2) & 0x1f, (w0 >> 12) as u8));
-        self.regs.set(reg::ZBUF_1, Some(zbuf_reg(self.zbp, self.zpsm, (w1 >> 22) & 1 == 1)));
-        self.regs.set(reg::TEST_1, Some(test_reg((w1 >> 23) & 3, (w1 >> 20) & 3, aref)));
-        self.regs.set(reg::CLAMP_2, Some(Wrap::from_bits(w0 >> 4).clamp_reg()));
-        self.regs.set(reg::ALPHA_2, blend_preset((w1 >> 7) & 0x1f, (w0 >> 20) as u8));
-        self.regs.set(reg::ZBUF_2, Some(zbuf_reg(self.zbp, self.zpsm, (w1 >> 23) & 1 == 1)));
-        self.regs.set(reg::TEST_2, Some(test_reg((w1 >> 25) & 3, (w1 >> 22) & 3, aref)));
+        self.set(reg::CLAMP_1, Some(Wrap::from_bits(w0 >> 2).clamp_reg()));
+        self.set(reg::ALPHA_1, blend_preset((w1 >> 2) & 0x1f, (w0 >> 12) as u8));
+        self.set(reg::ZBUF_1, Some(zbuf_reg(self.zbp, self.zpsm, (w1 >> 22) & 1 == 1)));
+        self.set(reg::TEST_1, Some(test_reg((w1 >> 23) & 3, (w1 >> 20) & 3, aref)));
+        self.set(reg::CLAMP_2, Some(Wrap::from_bits(w0 >> 4).clamp_reg()));
+        self.set(reg::ALPHA_2, blend_preset((w1 >> 7) & 0x1f, (w0 >> 20) as u8));
+        self.set(reg::ZBUF_2, Some(zbuf_reg(self.zbp, self.zpsm, (w1 >> 23) & 1 == 1)));
+        self.set(reg::TEST_2, Some(test_reg((w1 >> 25) & 3, (w1 >> 22) & 3, aref)));
     }
 
     /// `DeferMan_EmitStateChange` for state `s` (words) and matrix index.
     pub fn state_change(&mut self, s: [u32; 5], matrix: i32, scissors: &[[i16; 4]]) -> MaterialSetup {
+        self.writes.clear();
         let mut setup = MaterialSetup::default();
         let ty = (s[0] >> 6) & 0xf;
         if ty != 0 {
@@ -572,35 +577,41 @@ impl Emitter {
         if sc != self.scissor {
             self.scissor = sc;
             let v = scissors.get(sc as usize).map(|r| scissor_reg(*r));
-            self.regs.set(reg::SCISSOR_1, v);
-            self.regs.set(reg::SCISSOR_2, v);
+            self.set(reg::SCISSOR_1, v);
+            self.set(reg::SCISSOR_2, v);
         }
         let (e0, e1) = (self.state[0], self.state[1]);
         let (w0, w1) = (s[0], s[1]);
         if e1 & 0x40_0000 != w1 & 0x40_0000 {
             let z = zbuf_reg(self.zbp, self.zpsm, w1 & 0x40_0000 != 0);
-            self.regs.set(reg::ZBUF_1, Some(z));
-            self.regs.set(reg::ZBUF_2, Some(z));
+            self.set(reg::ZBUF_1, Some(z));
+            self.set(reg::ZBUF_2, Some(z));
         }
         if e1 & 0x1bf_f000 != w1 & 0x1bf_f000 {
             let t = test_reg((w1 >> 23) & 3, (w1 >> 20) & 3, (w1 >> 12) & 0xff);
-            self.regs.set(reg::TEST_1, Some(t));
-            self.regs.set(reg::TEST_2, Some(t));
+            self.set(reg::TEST_1, Some(t));
+            self.set(reg::TEST_2, Some(t));
         }
         if e0 & 0xc != w0 & 0xc {
-            self.regs.set(reg::CLAMP_1, Some(Wrap::from_bits(w0 >> 2).clamp_reg()));
+            self.set(reg::CLAMP_1, Some(Wrap::from_bits(w0 >> 2).clamp_reg()));
         }
         if e1 & 0x7c != w1 & 0x7c || (e0 >> 12) & 0xff != (w0 >> 12) & 0xff {
-            self.regs.set(reg::ALPHA_1, blend_preset((w1 >> 2) & 0x1f, (w0 >> 12) as u8));
+            self.set(reg::ALPHA_1, blend_preset((w1 >> 2) & 0x1f, (w0 >> 12) as u8));
         }
         if e0 & 0x30 != w0 & 0x30 {
-            self.regs.set(reg::CLAMP_2, Some(Wrap::from_bits(w0 >> 4).clamp_reg()));
+            self.set(reg::CLAMP_2, Some(Wrap::from_bits(w0 >> 4).clamp_reg()));
         }
         if e1 & 0xf80 != w1 & 0xf80 || (e0 >> 20) & 0xff != (w0 >> 20) & 0xff {
-            self.regs.set(reg::ALPHA_2, blend_preset((w1 >> 7) & 0x1f, (w0 >> 20) as u8));
+            self.set(reg::ALPHA_2, blend_preset((w1 >> 7) & 0x1f, (w0 >> 20) as u8));
         }
         self.state = s;
         setup
+    }
+
+    /// An A+D write: the register model and the write list.
+    fn set(&mut self, r: u8, v: Option<u64>) {
+        self.regs.set(r, v);
+        self.writes.push((r, v));
     }
 }
 
@@ -701,6 +712,8 @@ pub struct Draw {
     pub state_change: bool,
     /// Predicted GS state registers at the draw.
     pub gs: GsRegs,
+    /// The A+D writes of its state change, in order (empty without one).
+    pub ad: Vec<(u8, Option<u64>)>,
     /// Packet range: first start (CALL target) .. last end (RET position).
     pub packets: Range<u32>,
     /// Chain contents emitted for this draw before its CALL: state change
@@ -828,6 +841,9 @@ pub struct Built {
     /// The draws captured at the game's draw functions (`crate::direct`),
     /// which `Event::Native` index.
     pub direct: std::sync::Arc<Vec<crate::direct::Recorded>>,
+    /// Built without the chains (`build_native`): the PATH3 packets per
+    /// phase (the post passes'); `None`: walk the published GIF chains.
+    pub path3: Option<[Vec<Vec<u128>>; 2]>,
 }
 
 /// Inputs carried from frame to frame.
@@ -893,6 +909,7 @@ fn plan(m: &dyn Mem, g: u32, defer: u32, carry: &Carry, scissors: &[[i16; 4]], i
         regs: GsRegs::default(),
         zbp: word(m, g + gm::ZBP),
         zpsm: word(m, g + gm::ZPSM),
+        writes: Vec::new(),
     };
     em.default_state(default);
     em.scissor = -1;
@@ -937,6 +954,7 @@ fn plan(m: &dyn Mem, g: u32, defer: u32, carry: &Carry, scissors: &[[i16; 4]], i
                     setup,
                     state_change: changed,
                     gs: em.regs,
+                    ad: if changed { em.writes.clone() } else { Vec::new() },
                     packets: word(m, b + 0xc)..word(m, b + 0x10),
                     prelude: Vec::new(),
                     payload: Vec::new(),
@@ -1113,11 +1131,11 @@ pub fn keep_payloads(on: bool) {
 /// A captured packet's CALL into the chain at `a`: replayed from the cache
 /// when it is unchanged, else decoded (and recorded when it can be), as a
 /// CALL from a payload is.
-fn play_chain(w: &mut Walker, cache: &mut ChainCache, a: u32) {
-    let key = (a, w.vif.regs);
-    let snap = w.m.snapshot();
-    let unchanged = snap != 0 && cache.map.get(&key).is_some_and(|e| e.seen != 0 && e.ranges.iter().all(|&(s, t)| w.m.unchanged(s, t, e.seen)));
-    let hashed = if unchanged { None } else { sub_chain_hash(w.m, a) };
+fn play_chain(m: &dyn Mem, vif: &mut Vif1, cache: &mut ChainCache, a: u32) {
+    let key = (a, vif.regs);
+    let snap = m.snapshot();
+    let unchanged = snap != 0 && cache.map.get(&key).is_some_and(|e| e.seen != 0 && e.ranges.iter().all(|&(s, t)| m.unchanged(s, t, e.seen)));
+    let hashed = if unchanged { None } else { sub_chain_hash(m, a) };
     let hit = match (&hashed, cache.map.get_mut(&key)) {
         (None, Some(_)) => unchanged,
         (Some((h, ranges)), Some(e)) if e.hash == *h => {
@@ -1130,26 +1148,26 @@ fn play_chain(w: &mut Walker, cache: &mut ChainCache, a: u32) {
     if hit {
         cache.stats.0 += 1;
         let rec = &cache.map[&key].rec;
-        w.vif.replay(rec);
+        vif.replay(rec);
         return;
     }
     let mut asr = [0u32; 2];
     match hashed {
-        Some((hash, ranges)) if chain_cache_mode().0 && w.vif.idle() => {
+        Some((hash, ranges)) if chain_cache_mode().0 && vif.idle() => {
             cache.stats.1 += 1;
             if cache.map.len() > 8192 {
                 cache.map.clear();
             }
-            w.vif.record();
-            crate::chain::walk(w.m, a, false, false, 0, &mut asr, &mut |d| w.vif.write(d));
-            if let Some(mut rec) = w.vif.recorded() {
+            vif.record();
+            crate::chain::walk(m, a, false, false, 0, &mut asr, &mut |d| vif.write(d));
+            if let Some(mut rec) = vif.recorded() {
                 cache.next_id += 1;
                 rec.id = cache.next_id;
                 cache.map.insert(key, CachedChain { hash, rec, ranges, seen: snap });
             }
         }
         _ => {
-            crate::chain::walk(w.m, a, false, false, 0, &mut asr, &mut |d| w.vif.write(d));
+            crate::chain::walk(m, a, false, false, 0, &mut asr, &mut |d| vif.write(d));
         }
     }
 }
@@ -1237,7 +1255,7 @@ fn check_capture(m: &dyn Mem, vif: &Vif1, start: u32, r: &crate::direct::Recorde
             }
             None
         }
-        crate::direct::Cmd::Strip { .. } | crate::direct::Cmd::Vu(_) => None,
+        crate::direct::Cmd::Strip { .. } | crate::direct::Cmd::Vu(_) | crate::direct::Cmd::Post { .. } => None,
     }
 }
 
@@ -1320,7 +1338,7 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
                     for run in steps.split_inclusive(|s| matches!(s, crate::direct::Step::Chain(_))) {
                         w.vif.native(run);
                         if let Some(&crate::direct::Step::Chain(a)) = run.last() {
-                            play_chain(&mut w, cache, a);
+                            play_chain(w.m, &mut w.vif, cache, a);
                         }
                     }
                     // (Everything from it is native, chains included.)
@@ -1656,7 +1674,17 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
         regs_end: w.vif.regs,
         emitter,
         direct,
+        path3: None,
     }
+}
+
+mod native;
+pub use native::compare as compare_native;
+
+/// The frame built from the buckets and the captures, without walking the
+/// published chains (stage B; `native`).
+pub fn build_native(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, direct: std::sync::Arc<Vec<crate::direct::Recorded>>) -> Built {
+    native::build(m, g, carry, cache, direct)
 }
 
 #[cfg(test)]
@@ -1725,7 +1753,7 @@ mod tests {
 
     #[test]
     fn emitter_emits_only_differences_and_quirky_default() {
-        let mut e = Emitter { state: [0; 5], scissor: -1, matrix: -1, material_param: 0, regs: GsRegs::default(), zbp: 0xe0, zpsm: 0x31 };
+        let mut e = Emitter { state: [0; 5], scissor: -1, matrix: -1, material_param: 0, regs: GsRegs::default(), zbp: 0xe0, zpsm: 0x31, writes: Vec::new() };
         let d = [0, 0xb0_0294, 0x80, 0, 0xffff_ffff];
         e.default_state(d);
         // Context 2 takes ZMSK from bit 23 and ZTST/ATST from bits 25/22.

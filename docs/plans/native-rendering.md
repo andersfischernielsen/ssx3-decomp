@@ -205,20 +205,29 @@ dumps (pixel identity with the decoding path) before the next:
    an implementation detail). Gate: on race and menu dumps no payload
    packet is decoded (`SSX3_VIF_STATS`: decoded payload input 0), images
    identical with `SSX3_DIRECT=0`.
+   *Done 2026-10-18* (`ssx3_game::capture`): every producer is captured
+   (strips, ribbons, particles, models and grid meshes, riders and their
+   shadows, 2D/DIRECT draws, render-target switches, shadow volume, fog
+   sprites, Bézier patches and passes, AppendPacket's record-less packets,
+   the post passes, the rider lighting / shadow header packets). Most are
+   `Cmd::Vu`: the packet's effects read back (stage C computes them from
+   the inputs), CALLs as chain steps through the chain cache, rare masked
+   UNPACKs as raw codes. No decoded payload in race, freestyle, ctm and
+   multi runs.
 2. **B: the frame from the buckets.** The renderer builds the frame from
-   DeferMan's sorted buckets (`frame::plan`) and the commands, without
-   walking the chains: GS state from the emitter's prediction
-   (`Draw::gs`, checked by `frame_verify`), textures from TexMan, the post
-   passes (depth fog, bloom, colour filter) and the 2D/DIRECT draws as
-   native passes. Gate: identical images with the walk disabled.
-   *Done 2026-10-18 for the race/menu run* (`ssx3_game::capture`): every
-   producer in it is captured (strips, ribbons, particles, models and grid
-   meshes, riders and their shadows, 2D/DIRECT draws, render-target
-   switches, shadow volume, fog sprites, Bézier patches and passes,
-   AppendPacket's record-less packets). Most are `Cmd::Vu`: the packet's
-   effects read back (stage C computes them from the inputs), CALLs as
-   chain steps through the chain cache, rare masked UNPACKs as raw codes.
-   Other game modes still to be checked.
+   DeferMan's sorted buckets and the commands, without walking the chains:
+   GS state from the emitter's prediction (`Draw::gs`, checked by
+   `frame_verify`), textures from TexMan, the post passes (depth fog,
+   bloom, colour filter) and the 2D/DIRECT draws as native passes. Gate:
+   identical images with the walk disabled.
+   *Done 2026-10-18* (`ssx3_render::frame::native`, the default;
+   `SSX3_NATIVE_FRAME=0` walks the chains): material setups per type and
+   mode, TexMan_EmitTex0's binds (an evicted texture, TBP -1 when the frame
+   is built, gets a block of its own the renderer maps back to TexMan),
+   the post passes with their PATH3 windows, the phase split. On 37 dumps
+   (race, menu, freestyle, ctm, multi) the events equal the walked frame's
+   (`SSX3_NATIVE_FRAME_CHECK=1`; texture uploads and VRAM addresses aside)
+   and the images are identical; the build is 10-30% faster.
 3. **C: no packets (D2).** The draw functions and `RenderFrame` /
    `EndFrame` become native: they keep what the game reads (records,
    buckets, render-state stack, counters, cursors) and build no packet; the

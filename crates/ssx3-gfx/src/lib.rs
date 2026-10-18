@@ -1976,7 +1976,11 @@ impl Build {
         // uploads in the gaps between draws); what is left drains when the
         // phase's VIF stream ends unmasked (the post passes, before the
         // HUD of phase 2 is drawn).
-        let (p1, mut p2) = (path3_packets(mem, fr.gif_heads[0]), path3_packets(mem, fr.gif_heads[1]));
+        // (A frame built without the chains carries its PATH3 packets.)
+        let (p1, mut p2) = match &built.path3 {
+            Some([a, b]) => (a.clone(), b.clone()),
+            None => (path3_packets(mem, fr.gif_heads[0]), path3_packets(mem, fr.gif_heads[1])),
+        };
         let dbg = debug::get();
         let tracing = dbg.trace == Some(b.frame);
         let label = |gs: &mut gs::Gs, l: String| {

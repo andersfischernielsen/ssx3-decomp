@@ -10,7 +10,7 @@
 use crate::ps2f::FpuF32;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::Cpu;
-use ssx3_render::direct::{self, Cmd, Recorded, Step, STRIP_BATCH};
+use ssx3_render::direct::{self, Cmd, PostKind, Recorded, Step, STRIP_BATCH};
 
 const DRAW_TRI_STRIP: u32 = 0x0037_9860;
 const EMIT_BOARD_WAKE_STRIPS: u32 = 0x0038_85e0;
@@ -50,6 +50,11 @@ pub fn install() -> bool {
         (DRAW_MODEL, draw_model, "PS2GraphicsMan_DrawModel"),
         (DRAW_SKINNED_MODEL, draw_skinned_model, "PS2GraphicsMan_DrawSkinnedModel"),
         (BEZIER_END_PASS, bezier_end_pass, "PS2BezierMan_v18"),
+        (0x0036_ac00, render_depth_fog, "PS2GraphicsMan_RenderDepthFog"),
+        (0x0036_c790, render_bloom, "PS2GraphicsMan_RenderBloom"),
+        (0x0039_04a0, render_color_filter, "PS2GraphicsMan_RenderColorFilter"),
+        (0x0039_6b40, emit_lighting_packet, "PS2GraphicsMan_EmitLightingPacket"),
+        (0x0037_ba50, set_shadow_header, "PS2GraphicsMan_SetShadowHeader"),
         (DEFER_MAN_APPEND_PACKET, append_packet, "DeferMan_AppendPacket"),
         (DRAW_SKINNED_MODEL_SHADOW, draw_skinned_model_shadow, "PS2GraphicsMan_DrawSkinnedModelShadow"),
         (0x0037_d348, capture_setrendertargettexture, "SetRenderTargetTexture"),
@@ -699,4 +704,105 @@ fn append_packet(c: &mut Cpu) {
     if let Some(steps) = read_range(c, start, end) {
         direct::record(Recorded { start, end, first_tag: qword(c, start), cmd: Cmd::Vu(steps) });
     }
+}
+
+// ---------------------------------------------------------------------------
+// What RenderFrame emits besides the buckets' packets (stage B: the frame
+// built without walking the chain).
+
+/// A post pass for one view (`(gm, view, &vifCursor, &gifCursor)`): the
+/// GIF data it queued (CNT / REF transfers from the GIF cursor) and the
+/// PATH3 windows it put into the VIF chain.
+fn capture_post(c: &mut Cpu, body: fn(&mut Cpu), kind: PostKind) {
+    let ret = c.g[RA][0] as u32;
+    let (vif_at, gif_at) = (c.g[A2][0] as u32, c.g[A3][0] as u32);
+    let (vif0, gif0) = (c.bus.read32(vif_at), c.bus.read32(gif_at));
+    body(c);
+    if !direct::active() || c.pc != ret {
+        return;
+    }
+    let (vif1, gif1) = (c.bus.read32(vif_at), c.bus.read32(gif_at));
+    let mut gif = Vec::new();
+    let mut t = gif0;
+    while t != gif1 {
+        let tag = qword(c, t);
+        let qwc = (tag & 0xffff) as u32;
+        let (data, next) = match (tag >> 28) & 7 {
+            1 => (t + 16, t + 16 + 16 * qwc),
+            3 => (((tag >> 32) & 0x7fff_fff0) as u32, t + 16),
+            _ => return,
+        };
+        gif.extend((0..qwc).map(|i| qword(c, data + 16 * i)));
+        t = next;
+        if gif.len() > 1 << 20 {
+            return;
+        }
+    }
+    // (Each window is one REF to the static window code.)
+    let mut windows = 0;
+    let mut t = vif0;
+    while t != vif1 {
+        let tag = qword(c, t);
+        let qwc = (tag & 0xffff) as u32;
+        t = match (tag >> 28) & 7 {
+            1 => t + 16 + 16 * qwc,
+            3 => {
+                windows += 1;
+                t + 16
+            }
+            _ => return,
+        };
+    }
+    direct::record(Recorded { start: vif0, end: vif1, first_tag: qword(c, vif0), cmd: Cmd::Post { kind, gif, windows } });
+}
+
+fn render_depth_fog(c: &mut Cpu) {
+    capture_post(c, ssx3_ee::s12::f_0036ac00__generated, PostKind::DepthFog);
+}
+
+fn render_bloom(c: &mut Cpu) {
+    capture_post(c, ssx3_ee::s12::f_0036c790__generated, PostKind::Bloom);
+}
+
+fn render_color_filter(c: &mut Cpu) {
+    capture_post(c, ssx3_ee::s12::f_003904a0__generated, PostKind::ColorFilter);
+}
+
+/// A packet that is one RET transfer with its data (the w3 packets the
+/// state change CALLs), at the cursor `gm+0x5a00` before the body.
+fn capture_ret_packet(c: &mut Cpu, body: fn(&mut Cpu)) {
+    let ret = c.g[RA][0] as u32;
+    let gm = c.g[A0][0] as u32;
+    let start = c.bus.read32(gm + 0x5a00);
+    body(c);
+    if !direct::active() || c.pc != ret {
+        return;
+    }
+    let tag = qword(c, start);
+    if (tag >> 28) & 7 != 6 {
+        return;
+    }
+    let qwc = (tag & 0xffff) as u32;
+    let mut words = Vec::new();
+    for i in 0..qwc {
+        let q = qword(c, start + 16 + 16 * i);
+        words.extend((0..4).map(|l| (q >> (32 * l)) as u32));
+    }
+    let mut steps = Vec::new();
+    if parse_codes(&words, &mut steps).is_some() {
+        direct::record(Recorded { start, end: start + 16 * (qwc + 1), first_tag: tag, cmd: Cmd::Vu(steps) });
+    }
+}
+
+/// Slot 124 `EmitLightingPacket(gm)` (0x396b40): the type-6 lighting
+/// packet (10 lighting qwords at VU1 7, MSCAL 0x1150), CALLed by the state
+/// change through w3.
+fn emit_lighting_packet(c: &mut Cpu) {
+    capture_ret_packet(c, ssx3_ee::s13::f_00396b40__generated);
+}
+
+/// Slot 101 `SetShadowHeader(gm, matrix, scale, offset)` (0x37ba50): the
+/// type-7 header packet (VU1 qw0-5), CALLed through w3.
+fn set_shadow_header(c: &mut Cpu) {
+    capture_ret_packet(c, ssx3_ee::s12::f_0037ba50__generated);
 }
