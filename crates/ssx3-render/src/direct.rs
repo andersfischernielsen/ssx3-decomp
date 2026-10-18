@@ -149,7 +149,7 @@ pub fn tops(mut regs: VifRegs, n: u32) -> Vec<u32> {
         .collect()
 }
 
-// Encoding (frame dumps).
+// Encoding (frame dumps, VU jobs).
 
 /// Append `list` to `out`.
 pub fn encode(list: &[Recorded], out: &mut Vec<u8>) {
@@ -158,74 +158,95 @@ pub fn encode(list: &[Recorded], out: &mut Vec<u8>) {
         out.extend_from_slice(&r.start.to_le_bytes());
         out.extend_from_slice(&r.end.to_le_bytes());
         out.extend_from_slice(&r.first_tag.to_le_bytes());
-        match &r.cmd {
-            Cmd::Strip { entry, prim, verts } => {
-                out.push(0);
-                out.extend_from_slice(&entry.to_le_bytes());
-                out.extend_from_slice(&prim.to_le_bytes());
-                out.extend_from_slice(&(verts.len() as u32).to_le_bytes());
-                for v in verts.iter().flatten() {
-                    out.extend_from_slice(&v.to_le_bytes());
-                }
+        encode_cmd(&r.cmd, out);
+    }
+}
+
+/// Read what [`encode`] wrote; `None` if malformed.
+pub fn decode(b: &[u8]) -> Option<Vec<Recorded>> {
+    let mut r = Bytes(b);
+    let n = r.u32()?;
+    let mut list = Vec::with_capacity(n as usize);
+    for _ in 0..n {
+        let (start, end, first_tag) = (r.u32()?, r.u32()?, r.u128()?);
+        list.push(Recorded { start, end, first_tag, cmd: decode_cmd(&mut r)? });
+    }
+    Some(list)
+}
+
+/// Append one command to `out`.
+pub fn encode_cmd(cmd: &Cmd, out: &mut Vec<u8>) {
+    match cmd {
+        Cmd::Strip { entry, prim, verts } => {
+            out.push(0);
+            out.extend_from_slice(&entry.to_le_bytes());
+            out.extend_from_slice(&prim.to_le_bytes());
+            out.extend_from_slice(&(verts.len() as u32).to_le_bytes());
+            for v in verts.iter().flatten() {
+                out.extend_from_slice(&v.to_le_bytes());
             }
-            Cmd::Ribbon { entry, calls } => {
-                out.push(1);
-                out.extend_from_slice(&entry.to_le_bytes());
-                out.extend_from_slice(&(calls.len() as u32).to_le_bytes());
-                for c in calls {
-                    out.extend_from_slice(&(c.len() as u32).to_le_bytes());
-                    for (a, v) in c {
-                        out.extend_from_slice(&a.to_le_bytes());
-                        out.extend_from_slice(&v.to_le_bytes());
-                    }
+        }
+        Cmd::Ribbon { entry, calls } => {
+            out.push(1);
+            out.extend_from_slice(&entry.to_le_bytes());
+            out.extend_from_slice(&(calls.len() as u32).to_le_bytes());
+            for c in calls {
+                out.extend_from_slice(&(c.len() as u32).to_le_bytes());
+                for (a, v) in c {
+                    out.extend_from_slice(&a.to_le_bytes());
+                    out.extend_from_slice(&v.to_le_bytes());
                 }
             }
         }
     }
 }
 
-/// Read what [`encode`] wrote; `None` if malformed.
-pub fn decode(b: &[u8]) -> Option<Vec<Recorded>> {
-    let mut p = 0usize;
-    let mut take = |n: usize| -> Option<&[u8]> {
-        let s = b.get(p..p + n)?;
-        p += n;
-        Some(s)
-    };
-    let u32_ = |s: &[u8]| u32::from_le_bytes(s.try_into().unwrap());
-    let u128_ = |s: &[u8]| u128::from_le_bytes(s.try_into().unwrap());
-    let n = u32_(take(4)?);
-    let mut list = Vec::with_capacity(n as usize);
-    for _ in 0..n {
-        let (start, end, first_tag) = (u32_(take(4)?), u32_(take(4)?), u128_(take(16)?));
-        let cmd = match take(1)?[0] {
-            0 => {
-                let (entry, prim, nv) = (u32_(take(4)?), u32_(take(4)?), u32_(take(4)?));
-                let mut verts = Vec::with_capacity(nv as usize);
-                for _ in 0..nv {
-                    verts.push([u128_(take(16)?), u128_(take(16)?), u128_(take(16)?)]);
-                }
-                Cmd::Strip { entry, prim, verts }
-            }
-            1 => {
-                let (entry, n) = (u32_(take(4)?), u32_(take(4)?));
-                let mut calls = Vec::with_capacity(n as usize);
-                for _ in 0..n {
-                    let k = u32_(take(4)?);
-                    let mut c = Vec::with_capacity(k as usize);
-                    for _ in 0..k {
-                        let a = u16::from_le_bytes(take(2)?.try_into().unwrap());
-                        c.push((a, u128_(take(16)?)));
-                    }
-                    calls.push(c);
-                }
-                Cmd::Ribbon { entry, calls }
-            }
-            _ => return None,
-        };
-        list.push(Recorded { start, end, first_tag, cmd });
+/// A byte reader for the decoders.
+pub struct Bytes<'a>(pub &'a [u8]);
+
+impl Bytes<'_> {
+    pub fn take(&mut self, n: usize) -> Option<&[u8]> {
+        let (a, b) = (self.0.get(..n)?, self.0.get(n..)?);
+        self.0 = b;
+        Some(a)
     }
-    Some(list)
+    pub fn u16(&mut self) -> Option<u16> {
+        Some(u16::from_le_bytes(self.take(2)?.try_into().unwrap()))
+    }
+    pub fn u32(&mut self) -> Option<u32> {
+        Some(u32::from_le_bytes(self.take(4)?.try_into().unwrap()))
+    }
+    pub fn u128(&mut self) -> Option<u128> {
+        Some(u128::from_le_bytes(self.take(16)?.try_into().unwrap()))
+    }
+}
+
+/// Read what [`encode_cmd`] wrote.
+pub fn decode_cmd(r: &mut Bytes) -> Option<Cmd> {
+    Some(match r.take(1)?[0] {
+        0 => {
+            let (entry, prim, nv) = (r.u32()?, r.u32()?, r.u32()?);
+            let mut verts = Vec::with_capacity(nv as usize);
+            for _ in 0..nv {
+                verts.push([r.u128()?, r.u128()?, r.u128()?]);
+            }
+            Cmd::Strip { entry, prim, verts }
+        }
+        1 => {
+            let (entry, n) = (r.u32()?, r.u32()?);
+            let mut calls = Vec::with_capacity(n as usize);
+            for _ in 0..n {
+                let k = r.u32()?;
+                let mut c = Vec::with_capacity(k as usize);
+                for _ in 0..k {
+                    c.push((r.u16()?, r.u128()?));
+                }
+                calls.push(c);
+            }
+            Cmd::Ribbon { entry, calls }
+        }
+        _ => return None,
+    })
 }
 
 #[cfg(test)]

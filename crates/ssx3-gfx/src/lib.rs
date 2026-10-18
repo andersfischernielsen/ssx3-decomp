@@ -1558,17 +1558,23 @@ fn path3_packets(mem: &dyn Mem, head: u32) -> Vec<Vec<u128>> {
     });
     // A cursor over the transfers: (segment, quadword in it).
     let (mut si, mut qi) = (0usize, 0u32);
-    let mut next = |skip: bool| -> Option<u128> {
-        while si < segs.len() && qi >= segs[si].1 {
+    let mut next = |skip: usize| -> Option<u128> {
+        // (Past `skip` quadwords first.)
+        let mut skip = skip as u32;
+        loop {
+            let &(a, n) = segs.get(si)?;
+            if qi + skip < n {
+                qi += skip + 1;
+                return Some(mem.qword(a + 16 * (qi - 1)));
+            }
+            skip -= n - qi;
             si += 1;
             qi = 0;
         }
-        let &(a, _) = segs.get(si)?;
-        qi += 1;
-        Some(if skip { 0 } else { mem.qword(a + 16 * (qi - 1)) })
     };
     let mut cur: Vec<u128> = Vec::new();
-    while let Some(tag) = next(false) {
+    let mut pending = 0usize;
+    while let Some(tag) = next(std::mem::take(&mut pending)) {
         let lo = tag as u64;
         let nloop = (lo & 0x7fff) as usize;
         let eop = (lo >> 15) & 1 != 0;
@@ -1584,13 +1590,11 @@ fn path3_packets(mem: &dyn Mem, head: u32) -> Vec<Vec<u128>> {
         };
         if flg >= 2 && n > KEPT_IMAGE {
             cur.push(tag & !0x7fff);
-            for _ in 0..n {
-                next(true);
-            }
+            pending = n;
         } else {
             cur.push(tag);
             for _ in 0..n {
-                match next(false) {
+                match next(0) {
                     Some(q) => cur.push(q),
                     None => break,
                 }
@@ -1655,7 +1659,8 @@ type VuChunk = (Vec<(usize, CallOut)>, Box<[u8; 16384]>);
 /// chunk.
 struct VuPlan<'a> {
     vu0: Box<[u8; 16384]>,
-    calls: Vec<ssx3_render::vujob::JobCall<'a>>,
+    /// The frame's VU calls and captured draws, in order.
+    calls: Vec<ssx3_render::vujob::JobItem<'a>>,
     bounds: Vec<usize>,
     starts: Vec<std::sync::Mutex<Option<Box<[u8; 16384]>>>>,
     done: Vec<(std::sync::Mutex<Option<VuChunk>>, std::sync::Condvar)>,
@@ -1670,9 +1675,15 @@ struct VuPlan<'a> {
 }
 
 impl VuPlan<'_> {
-    fn run(chunk: &[ssx3_render::vujob::JobCall], mut mem: Box<[u8; 16384]>, subst: Option<&HashMap<[u32; 16], [u32; 16]>>, model_subst: Option<&HashMap<[u32; 16], [u32; 16]>>) -> VuChunk {
+    fn run(chunk: &[ssx3_render::vujob::JobItem], mut mem: Box<[u8; 16384]>, subst: Option<&HashMap<[u32; 16], [u32; 16]>>, model_subst: Option<&HashMap<[u32; 16], [u32; 16]>>) -> VuChunk {
         let mut outs = Vec::with_capacity(chunk.len());
-        for &(i, c, hash, kept) in chunk {
+        for it in chunk {
+            let &ssx3_render::vujob::JobItem::Call((i, c, hash, kept)) = it else {
+                if let Some(o) = it.run(&mut mem) {
+                    outs.push((it.event(), o));
+                }
+                continue;
+            };
             for &(a, v) in c.writes() {
                 let a = (a as usize & 1023) * 16;
                 mem[a..a + 16].copy_from_slice(&v.to_le_bytes());
@@ -1813,6 +1824,18 @@ impl VuReceiver {
             let (seq, _) = VuPlan::run(&plan.calls, plan.vu0.clone(), plan.subst.as_deref(), plan.model_subst.as_deref());
             let bad = seq.iter().filter(|(i, out)| all.get(i).is_some_and(|o| o != out)).count();
             eprintln!("[vucheck] {bad} of {} calls differ from a sequential run ({} chunks)", seq.len(), n);
+            for (i, out) in seq.iter().filter(|(i, out)| all.get(i).is_some_and(|o| o != out)).take(3) {
+                let kind = |o: &CallOut| match o {
+                    CallOut::Gif(q) => format!("gif {}", q.len()),
+                    CallOut::Gpu(g) => format!("gpu {}", g.len()),
+                    CallOut::Native(v) => format!("native {}", v.len()),
+                };
+                let item = plan.calls.iter().find(|c| c.event() == *i).map(|c| match c {
+                    ssx3_render::vujob::JobItem::Call((_, c, h, _)) => format!("call {:x?} {:x?} top {:#x}", h, c.entry, c.top),
+                    ssx3_render::vujob::JobItem::Native { .. } => "native".into(),
+                });
+                eprintln!("[vucheck]   event {i} {item:?}: sequential {}, chunked {}", kind(out), kind(&all[i]));
+            }
         }
     }
 }
@@ -2020,7 +2043,9 @@ impl Build {
                     cur = Some(n);
                     b.gs.hud = draws.get(n).is_some_and(|d| d.state.layer >= 9);
                     if let Some(d) = draws.get(n) {
-                        label(&mut b.gs, format!("draw{n} {:?} layer {} tex {:?}", d.state.material, d.state.layer, d.tex));
+                        if tracing {
+                            label(&mut b.gs, format!("draw{n} {:?} layer {} tex {:?}", d.state.material, d.state.layer, d.tex));
+                        }
                     }
                 }
                 // In a draw's payload its textures are bound to the TBPs its
@@ -2052,24 +2077,24 @@ impl Build {
                                 b.gs.gpu_draw(c);
                             }
                         }
-                        None => b.stats.vu_missing += 1,
+                        Some(CallOut::Native(_)) | None => b.stats.vu_missing += 1,
                     }
                 }
                 Event::Direct(dd) => b.gs.gif(&dd.qwords),
-                Event::Native { index, regs, header } => {
-                    // A draw captured at the game's draw function: drawn
-                    // from its command.
-                    match built.direct.get(*index as usize) {
-                        Some(r) => {
+                Event::Native { .. } => {
+                    // A draw captured at the game's draw function, planned
+                    // from its command with the VU calls.
+                    match vu.take(&plan, i) {
+                        Some(CallOut::Native(outs)) => {
                             b.stats.native_draws += 1;
-                            for o in ssx3_render::direct::plan(&r.cmd, *regs, header, &b.vu) {
+                            for o in outs {
                                 match o {
                                     ssx3_render::direct::Out::Gpu(c) => b.gs.gpu_draw(c),
                                     ssx3_render::direct::Out::Gif(g) => b.gs.gif(&g),
                                 }
                             }
                         }
-                        None => b.stats.vu_missing += 1,
+                        _ => b.stats.vu_missing += 1,
                     }
                 }
                 Event::MaskPath3(m) => {
@@ -2117,7 +2142,8 @@ impl Build {
 
     fn plan_vu_calls<'a>(b: &Build, built: &'a Built, draws: &[&frame::Draw]) -> VuPlan<'a> {
         // Each call's program: the material of the draw it belongs to.
-        let mut calls: Vec<ssx3_render::vujob::JobCall> = Vec::new();
+        let mut calls: Vec<ssx3_render::vujob::JobItem> = Vec::new();
+        let mut last_hash = None;
         // Mesh data the GPU keeps already: the plan leaves it out (the
         // arena only grows until the next frame's plan).
         let mut arena = b.gs.gpu.arena.lock().unwrap();
@@ -2139,10 +2165,19 @@ impl Build {
             if let Event::Call(c) = ev {
                 // (And not between two draws of the same program: terrain
                 // patches share state across draws.)
-                draw_start.push(cur != last_draw && calls.last().is_none_or(|l| l.2 != hash));
+                draw_start.push(cur != last_draw && (calls.is_empty() || last_hash != hash));
+                last_hash = hash;
                 last_draw = cur;
                 let kept = c.src.filter(|_| hash == Some(ssx3_render::mat3::HASH)).and_then(|s| arena.kept(ssx3_render::gpu::mesh_key(s, ssx3_render::gpu::Program::Mat3Mesh)));
-                calls.push((i, c, hash, kept));
+                calls.push(ssx3_render::vujob::JobItem::Call((i, c, hash, kept)));
+            } else if let Event::Native { index, regs, header } = ev {
+                // (Chunks start at them as at calls.)
+                if let Some(r) = built.direct.get(*index as usize) {
+                    draw_start.push(cur != last_draw && (calls.is_empty() || last_hash != hash));
+                    last_hash = hash;
+                    last_draw = cur;
+                    calls.push(ssx3_render::vujob::JobItem::Native { event: i, cmd: &r.cmd, regs: *regs, header });
+                }
             }
         }
         static SEQ: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -2157,12 +2192,12 @@ impl Build {
         let mut starts = Vec::new();
         let mut img = b.vu.clone();
         drop(arena);
-        for (k, (_, c, _, _)) in calls.iter().enumerate() {
+        for (k, it) in calls.iter().enumerate() {
             if k == 0 || (k >= bounds.last().unwrap() + per && draw_start[k] && threads > 1) {
                 bounds.push(k);
                 starts.push(std::sync::Mutex::new(Some(img.clone())));
             }
-            if threads > 1 {
+            if let (true, ssx3_render::vujob::JobItem::Call((_, c, _, _))) = (threads > 1, it) {
                 for &(a, v) in c.writes() {
                     let a = (a as usize & 1023) * 16;
                     img[a..a + 16].copy_from_slice(&v.to_le_bytes());
@@ -2173,7 +2208,7 @@ impl Build {
             bounds.push(0);
             starts.push(std::sync::Mutex::new(Some(b.vu.clone())));
         }
-        let chunk_of: HashMap<usize, usize> = calls.iter().enumerate().map(|(k, c)| (c.0, bounds.partition_point(|&b| b <= k) - 1)).collect();
+        let chunk_of: HashMap<usize, usize> = calls.iter().enumerate().map(|(k, c)| (c.event(), bounds.partition_point(|&b| b <= k) - 1)).collect();
         let done = (0..bounds.len()).map(|_| (std::sync::Mutex::new(None), std::sync::Condvar::new())).collect();
         VuPlan { vu0: b.vu.clone(), calls, bounds, starts, done, chunk_of, next: std::sync::atomic::AtomicUsize::new(0), threads, subst: b.subst.clone(), model_subst: b.model_subst.clone() }
     }
