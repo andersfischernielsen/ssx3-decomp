@@ -54,9 +54,11 @@ pub fn deliver_event(c: &mut Cpu, head: u32) -> bool {
 #[inline]
 pub fn deliver_event_here(c: &mut Cpu, head: u32) {
     c.pc = head;
-    c.no_unwind = cfg!(feature = "ee-unwind");
+    // (Restored after: an outer caller may hold it too, e.g. a native draw
+    // function's guest call.)
+    let outer = std::mem::replace(&mut c.no_unwind, cfg!(feature = "ee-unwind"));
     c.event();
-    c.no_unwind = false;
+    c.no_unwind = outer;
 }
 
 /// Deliver a due event at a back edge of a dispatcher-shaped loop (the

@@ -25,9 +25,13 @@ use crate::ps2f::FpuF32;
 use crate::call::{call_ptr, guest};
 
 mod bezier;
+mod fog;
 mod frame;
 mod glyphs;
+mod lines;
+mod misc2d;
 mod model;
+mod post;
 mod rider;
 mod ribbon;
 mod sprites;
@@ -37,7 +41,11 @@ mod vu0;
 pub use bezier::end_pass as bezier_end_pass;
 pub(crate) use frame::dispatch_render_frame;
 pub use model::{draw_model, grid_mesh_draw};
+pub use fog::render_depth_fog;
 pub use glyphs::{draw_glyphs, draw_glyphs_w};
+pub use lines::{draw_indexed_triangles, draw_line_strip};
+pub use misc2d::{draw_transition, fog_particles};
+pub use post::{render_bloom, render_color_filter};
 pub use ribbon::{draw_board_wake, draw_shadow_volume};
 pub use sprites::{draw_rotated_sprites, draw_sprite_3d};
 pub use target::{fill_render_target, restore_render_target, set_render_target_texture};
@@ -270,10 +278,19 @@ fn guest_call(c: &mut Cpu, target: u32, args: &[u32], ret: u32) -> u32 {
         c.g[R[i]][0] = a as i32 as i64 as u64;
     }
     // (Host threads block in a thread switch and resume here; the unwind
-    // form keeps the switch for the generated caller's next check.)
+    // form keeps the switch for the generated caller's next check. The
+    // host call depth starts over: a callee at the depth cap would unwind
+    // to the trampoline, which a native caller cannot follow; native draw
+    // functions are shallow, so the host stack has room.)
     let no_unwind = std::mem::replace(&mut c.no_unwind, true);
+    let depth = std::mem::replace(&mut c.depth, 0);
     guest(c, |c| call_ptr(c, target, ret));
+    c.depth = depth;
     c.no_unwind = no_unwind;
+    if c.pc != ret {
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        ONCE.call_once(|| eprintln!("[packetless] guest call {target:#x} came back at {:#x}, not {ret:#x}", c.pc));
+    }
     c.g[RA] = ra;
     c.g[V0][0] as u32
 }
@@ -674,6 +691,11 @@ fn packet_word(c: &mut Cpu, gm: u32, a: u32) -> bool {
     }
     let vif = r32(c, gm + 0x5a0c);
     if (vif..vif + 2 * 0xccc80).contains(&a) || a == gm + gmf::VIF_CURSOR {
+        return true;
+    }
+    // (GifBuff and its cursor: the post passes' GIF data.)
+    let gif = r32(c, gm + 0x5a20);
+    if (gif..gif + 2 * 0x26600).contains(&a) || a == gm + 0x5a14 {
         return true;
     }
     let dm = r32(c, gm + gmf::DEFER);
