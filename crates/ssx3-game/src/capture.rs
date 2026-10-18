@@ -68,7 +68,7 @@ pub fn install() -> bool {
         (0x0037_81a0, capture_drawrotatedsprites, "DrawRotatedSprites"),
         (0x0037_8808, capture_drawglyphs, "DrawGlyphs"),
         (0x0037_9028, capture_drawglyphsw, "DrawGlyphsW"),
-        (0x0038_6e78, capture_drawshadowvolume, "DrawShadowVolume"),
+        (0x0038_6e78, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "DrawShadowVolume", crate::packetless::draw_shadow_volume, capture_drawshadowvolume), "DrawShadowVolume"),
         (0x0038_83b8, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "DrawBoardWake", crate::packetless::draw_board_wake, capture_drawboardwake), "DrawBoardWake"),
         (0x002d_c7b0, capture_fogparticleman_drawparticles, "FogParticleMan_DrawParticles"),
         (0x0036_3490, |c: &mut Cpu| crate::packetless::dispatch_render_frame(c, ssx3_ee::s12::f_00363490__generated), "PS2GraphicsMan_RenderFrame"),

@@ -34,7 +34,7 @@ mod vu0;
 pub use bezier::end_pass as bezier_end_pass;
 pub(crate) use frame::dispatch_render_frame;
 pub use model::{draw_model, grid_mesh_draw};
-pub use ribbon::draw_board_wake;
+pub use ribbon::{draw_board_wake, draw_shadow_volume};
 pub use rider::{draw_skinned_model, draw_skinned_model_shadow, emit_lighting_packet, set_shadow_header};
 
 /// PS2GraphicsMan fields (`structs/render.md`).
@@ -727,7 +727,13 @@ fn checked_ram(c: &mut Cpu, name: &'static str, native: fn(&mut Cpu), packets: f
             }
         }
     }
+    // (The GsPkt helper's builder fields, render-private: native forms do
+    // not build with it.)
+    let helper = r32(c, 0x004a_5b84);
     for o in (0..0x800).step_by(4) {
+        if (helper..helper + 0x30).contains(&(0x7000_3800 + o as u32)) {
+            continue;
+        }
         let x = u32::from_le_bytes(native_s[o..o + 4].try_into().unwrap());
         let y = u32::from_le_bytes(c.bus.spr[0x3800 + o..0x3800 + o + 4].try_into().unwrap());
         if x != y {
