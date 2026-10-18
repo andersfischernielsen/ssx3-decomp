@@ -121,10 +121,91 @@ pub fn run(
     let depth_scale = add(bc(0), bc(depth_scale))[0];
     let far = mul1(ONE, FADE_FAR);
 
-    let mut r = [Lfsr::after(seeds[1]), Lfsr::after(seeds[2]), Lfsr::after(seeds[3])];
     let mut out = Packets::new(PACKET_A, PACKET_B);
-    let mut done = 0u16;
-    loop {
+    flakes(seeds, offset, box_min, box_max, count, &mut |p, e, last| {
+        let c = xform(&mat, [p[0], p[1], p[2], ONE]);
+        let visible = fade || ssx3_vu::vu::fast::clip(c, c[3]) & 0x3f == 0;
+        if visible {
+            let rgba = if fade {
+                let alpha = depth_fade(max(bc(colour[3]), bc(colour[3]))[0], c[2], depth_scale, e, far);
+                [rgba[0], rgba[1], rgba[2], ftoi0(bc(alpha))[0]]
+            } else {
+                rgba
+            };
+            let acc = mul(screen_offset, bc(ONE));
+            let q = div(ONE, c[3]);
+            let cq = with_xyz(c, mul(c, bc(q)));
+            let h = mul(half, bc(q));
+            let centre = madd(acc, cq, scale);
+            let hi = add(centre, h);
+            let lo = sub(centre, h);
+            out.push(&mut m, [st_a, rgba, ftoi4(hi), st_b, ftoi4(lo)]);
+            if !last && out.count == SPRITES_PER_KICK {
+                out.kick(&mut m, kick);
+            }
+        }
+    });
+    out.kick(&mut m, kick);
+    true
+}
+
+/// Plan a call for the GPU (`crate::gpu::plan`): no memory effects (the
+/// LFSR is reseeded from T8 per call; the packets are the program's own).
+/// The CPU draws the random points and wraps them into the box; the shader
+/// (`vs_mat5_snow`) transforms, culls, fades and makes the sprites.
+pub fn plan_gpu(entry: u32, top: u32, _itop: u32, mem: &mut [u8; 16384]) -> Option<Vec<crate::gpu::GpuCall>> {
+    use crate::mat4::gpu_particles::*;
+    let fade = match entry {
+        0x0000 => false,
+        0x0408 => true,
+        _ => return None,
+    };
+    let top = (top & 0x3ff) as u16;
+    let m = Mem(mem);
+    let t = |i: u16| m.ld(top.wrapping_add(i));
+    let count = t(8)[0] as u16;
+    if count == 0 {
+        return None;
+    }
+    let scale = m.ld(SCREEN_SCALE);
+    let screen_offset = m.ld(SCREEN_OFFSET);
+    let tag = crate::mat4::gpu_sprite_tag(&m, PACKET_A, PACKET_B, scale, screen_offset)?;
+    let colour = t(7);
+    let (box_min, box_max) = (t(9), t(10));
+    let mut u = [[0u32; 4]; crate::gpu::UNIFORM_QWORDS];
+    for i in 0..4 {
+        u[S_MATRIX + i] = t(i as u16);
+    }
+    u[S_SCALE] = scale;
+    u[S_OFFSET] = screen_offset;
+    u[S_HALF] = mul(mul(m.ld(PROJ), bc(box_min[3])), scale);
+    let rgba = ftoi0(colour);
+    u[S_RGBA] = rgba;
+    let alpha = max(bc(colour[3]), bc(colour[3]))[0];
+    let depth_scale = add(bc(0), bc(div(ONE, box_max[3])))[0];
+    u[S_FADE] = [alpha, depth_scale, fade as u32, mul1(ONE, FADE_FAR)];
+    u[S_ST_A] = [t(4)[0], t(4)[1], ONE, t(4)[3]];
+    u[S_ST_B] = [t(5)[0], t(5)[1], ONE, t(5)[3]];
+    // Faded alphas are alpha · [0, 1].
+    let amax = if !fade {
+        rgba[3] & 0xff
+    } else {
+        match ftoi0(bc(alpha))[0] as i32 {
+            a @ 0..=255 => a as u32,
+            _ => 255,
+        }
+    };
+    let mut data = Vec::with_capacity(count as usize);
+    flakes(t(8), t(6), box_min, box_max, count, &mut |p, e, _| data.push([p[0], p[1], p[2], e]));
+    // (Kicked even when empty: the tag still sets PRIM.)
+    Some(vec![crate::mat4::sprite_call(crate::gpu::Program::Mat5Snow, tag, u, data, 0..count as u32, amax)])
+}
+
+/// The flakes in order (`count` > 0): the wrapped point, `p₁.z − max.z`
+/// (the depth fade's e) and whether it is the last.
+fn flakes(seeds: V, offset: V, box_min: V, box_max: V, count: u16, each: &mut dyn FnMut(V, u32, bool)) {
+    let mut r = [Lfsr::after(seeds[1]), Lfsr::after(seeds[2]), Lfsr::after(seeds[3])];
+    for k in 0..count {
         // (The original steps y, x, z: the lanes are independent.)
         for x in r.iter_mut() {
             *x = Lfsr::after(*x);
@@ -145,39 +226,8 @@ pub fn run(
                 p[l] = down[l];
             }
         }
-        let c = xform(&mat, [p[0], p[1], p[2], ONE]);
-        let visible = fade || ssx3_vu::vu::fast::clip(c, c[3]) & 0x3f == 0;
-        if visible {
-            let rgba = if fade {
-                let alpha = depth_fade(max(bc(colour[3]), bc(colour[3]))[0], c[2], depth_scale, sub(p1, box_max)[2], far);
-                [rgba[0], rgba[1], rgba[2], ftoi0(bc(alpha))[0]]
-            } else {
-                rgba
-            };
-            let acc = mul(screen_offset, bc(ONE));
-            let q = div(ONE, c[3]);
-            let cq = with_xyz(c, mul(c, bc(q)));
-            let h = mul(half, bc(q));
-            let centre = madd(acc, cq, scale);
-            let hi = add(centre, h);
-            let lo = sub(centre, h);
-            out.push(&mut m, [st_a, rgba, ftoi4(hi), st_b, ftoi4(lo)]);
-            done = done.wrapping_add(1);
-            if done == count {
-                break;
-            }
-            if out.count == SPRITES_PER_KICK {
-                out.kick(&mut m, kick);
-            }
-        } else {
-            done = done.wrapping_add(1);
-            if done == count {
-                break;
-            }
-        }
+        each(p, sub(p1, box_max)[2], k + 1 == count);
     }
-    out.kick(&mut m, kick);
-    true
 }
 
 /// The 0x0408 alpha (see the module doc). `e` is `p₁.z − max.z`.
@@ -205,11 +255,12 @@ fn depth_fade(alpha: u32, cz: u32, depth_scale: u32, e: u32, far: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mat4::tests::{compare, put, tag, translated, Rng};
+    use crate::mat4::tests::{check_plan, compare, put, tag, translated, Rng};
 
     #[test]
     fn random_inputs_match_translated() {
         let mut r = Rng(0x0bad_cafe_f00d_1234);
+        let mut agree = std::collections::BTreeMap::new();
         let f = |x: f32| x.to_bits();
         for case in 0..300 {
             for entry in [0x0000u32, 0x0408] {
@@ -232,11 +283,19 @@ mod tests {
                 put(&mut mem, t(8), [(r.u() % 400 + 1) as u32, r.u() as u32, r.u() as u32, r.u() as u32]);
                 put(&mut mem, t(9), [f(-1.0), f(-1.0), f(-1.0), r.f(0.005, 0.05)]);
                 put(&mut mem, t(10), [f(0.0), f(0.0), f(0.0), r.f(0.5, 2.0)]);
+                let (s, n) = check_plan(entry, top, &mut mem, &mut |m, k| run(entry, top as u32, 0, m, &mut VuState::default(), k), plan_gpu);
+                let e = agree.entry(entry).or_insert((0, 0));
+                e.0 += s;
+                e.1 += n;
                 let want = translated("e72540c9e7c434ee", HASH, entry, top as u32, &mem);
                 let mut kicks = Vec::new();
                 let ok = run(entry, top as u32, 0, &mut mem, &mut VuState::default(), &mut |k| kicks.push(k.to_vec()));
                 compare(&format!("snow case {case} entry {entry:#06x}"), (ok, kicks, mem.to_vec()), want);
             }
+        }
+        for (entry, (same, total)) in agree {
+            eprintln!("snow entry {entry:#06x}: GPU plan, {same} of {total} sprites agree");
+            assert!(total > 100 && same as f64 >= 0.99 * total as f64, "entry {entry:#06x}: {same} of {total}");
         }
     }
 }

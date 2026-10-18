@@ -300,23 +300,83 @@ impl EmitterSeeds {
     }
 }
 
-fn emitter(m: &mut Mem, top: u16, kick: &mut dyn FnMut(&[u128])) {
-    let d = |i: u16| m.ld(top.wrapping_add(i));
-    let scr = Screen::load(m);
-    let to_clip = |i: u16| xform(&scr.m, d(i));
+/// One particle of an emitter (0x0) or a ring (0x510/0xa00/0xf10), as its
+/// trail loop reads it (the GPU plan hands the same to the shader).
+#[derive(Clone, Copy, Debug)]
+struct Particle {
+    /// The spawn point and G − V: clip space for 0x0, object space for the
+    /// rings (their samples go through M).
+    spawn: V,
+    g_minus_v: V,
+    /// RGB (clamped; .w unused) and the alpha before the trail fade.
+    rgb: V,
+    alpha: u32,
+    /// The sprite's half size before the divide (z = w = 0).
+    half: V,
+    /// The first trail sample's time (the particle's age).
+    t: u32,
+}
+
+/// The trail every particle of a call draws: samples at t, t − dt, ...
+/// (stops at a negative time or after D0.y samples).
+struct Trail {
+    gravity: V,
+    fade_step: u32,
+    dt: u32,
+    samples: i16,
+    st_a: V,
+    st_b: V,
+    half_max: u32,
+}
+
+impl Trail {
+    fn load(m: &Mem, top: u16, gravity: V, half_max: u32) -> Trail {
+        let d = |i: u16| m.ld(top.wrapping_add(i));
+        Trail {
+            gravity,
+            fade_step: d(3)[0],
+            dt: d(3)[1],
+            samples: d(0)[1] as u16 as i16,
+            st_a: st_corner(d(19)),
+            st_b: st_corner(d(20)),
+            half_max,
+        }
+    }
+    /// How many samples (drawn or culled) the trail of a particle born at
+    /// `t` visits; `None` past `cap`.
+    fn samples_from(&self, t: u32, cap: u32) -> Option<u32> {
+        let (mut n, mut tk, mut left) = (0u32, t, self.samples);
+        loop {
+            n += 1;
+            if n > cap {
+                return None;
+            }
+            tk = sub1(tk, self.dt);
+            if neg(tk) {
+                return Some(n);
+            }
+            left = left.wrapping_sub(1);
+            if left <= 0 {
+                return Some(n);
+            }
+        }
+    }
+}
+
+/// The emitter's particles that are alive, in order.
+fn emitter_particles(m: &mut Mem, top: u16, scr: &Screen, each: &mut dyn FnMut(&mut Mem, &Particle)) {
+    let d = |m: &Mem, i: u16| m.ld(top.wrapping_add(i));
+    let to_clip = |m: &Mem, i: u16| xform(&scr.m, d(m, i));
     // Directions and points in clip space (M·D, w included).
-    let spawn_base = to_clip(11);
-    let spawn_rand = [to_clip(12), to_clip(13)];
-    let spawn_step = to_clip(14);
-    let gravity = to_clip(6);
-    let vel_base = to_clip(7);
-    let vel_rand = [to_clip(8), to_clip(9), to_clip(10)];
-    let (d0, d1, d3, d4, d5) = (d(0), d(1), d(3), d(4), d(5));
-    let size_growth = d(2)[0];
-    let colour_d = [d(15), d(16), d(17), d(18)];
-    let (st_a, st_b) = (st_corner(d(19)), st_corner(d(20)));
-    let fade_step = d3[0];
-    let trail_dt = d3[1];
+    let spawn_base = to_clip(m, 11);
+    let spawn_rand = [to_clip(m, 12), to_clip(m, 13)];
+    let spawn_step = to_clip(m, 14);
+    let gravity = to_clip(m, 6);
+    let vel_base = to_clip(m, 7);
+    let vel_rand = [to_clip(m, 8), to_clip(m, 9), to_clip(m, 10)];
+    let (d0, d1, d3, d4, d5) = (d(m, 0), d(m, 1), d(m, 3), d(m, 4), d(m, 5));
+    let size_growth = d(m, 2)[0];
+    let colour_d = [d(m, 15), d(m, 16), d(m, 17), d(m, 18)];
     let mut seeds = EmitterSeeds {
         life: d5[3],
         vel: [d4[0], d4[1], d4[2]],
@@ -325,7 +385,6 @@ fn emitter(m: &mut Mem, top: u16, kick: &mut dyn FnMut(&[u128])) {
         spawn: [d3[2], d3[3]],
     };
 
-    let mut out = Packets::new(PACKET_A, PACKET_B);
     let mut left = d0[0] as u16 as i16;
     let mut t = d0[2];
     let dt = d0[3];
@@ -359,41 +418,7 @@ fn emitter(m: &mut Mem, top: u16, kick: &mut dyn FnMut(&[u128])) {
             let size = madd1(add1(growth, d1[2]), d1[0], seeds.size);
             let rgb = min(max(colour, bc(0)), bc(F255));
             let half = scr.half_size(size);
-            let mut fade = ONE;
-            let mut tk = t;
-            let mut trails = d0[1] as u16 as i16;
-            loop {
-                let base = add(mul(gravity, bc(tk)), spawn);
-                let pos = madd(mul(base, bc(ONE)), g_minus_v, bc(drag_poly(tk)));
-                if fast::clip(pos, pos[3]) & 0x3f == 0 {
-                    let rgba = ftoi0([rgb[0], rgb[1], rgb[2], mul1(colour[3], fade)]);
-                    let q = div(ONE, pos[3]);
-                    let h = mul(half, bc(q));
-                    let p = mul(pos, bc(q));
-                    let mut h = abs(h);
-                    let hc = min(h, bc(F64));
-                    h[0] = hc[0];
-                    h[1] = hc[1];
-                    let c = madd(mul(scr.offset, bc(ONE)), p, scr.scale);
-                    let a = add(c, h);
-                    let b = sub(c, h);
-                    out.push(m, [st_a, rgba, ftoi4(b), st_b, ftoi4(a)]);
-                    // Only drawn samples fade (the step is in the kick
-                    // branch's delay slot).
-                    fade = sub1(fade, fade_step);
-                    if out.count == SPRITES_PER_KICK {
-                        out.kick(m, kick);
-                    }
-                }
-                tk = sub1(tk, trail_dt);
-                if neg(tk) {
-                    break;
-                }
-                trails = trails.wrapping_sub(1);
-                if trails <= 0 {
-                    break;
-                }
-            }
+            each(m, &Particle { spawn, g_minus_v, rgb, alpha: colour[3], half, t });
         }
         t = sub1(t, dt);
         left = left.wrapping_sub(1);
@@ -402,6 +427,49 @@ fn emitter(m: &mut Mem, top: u16, kick: &mut dyn FnMut(&[u128])) {
             break;
         }
     }
+}
+
+fn emitter(m: &mut Mem, top: u16, kick: &mut dyn FnMut(&[u128])) {
+    let scr = Screen::load(m);
+    let trail = Trail::load(m, top, xform(&scr.m, m.ld(top.wrapping_add(6))), F64);
+    let mut out = Packets::new(PACKET_A, PACKET_B);
+    emitter_particles(m, top, &scr, &mut |m, p| {
+        let mut fade = ONE;
+        let mut tk = p.t;
+        let mut trails = trail.samples;
+        loop {
+            let base = add(mul(trail.gravity, bc(tk)), p.spawn);
+            let pos = madd(mul(base, bc(ONE)), p.g_minus_v, bc(drag_poly(tk)));
+            if fast::clip(pos, pos[3]) & 0x3f == 0 {
+                let rgba = ftoi0([p.rgb[0], p.rgb[1], p.rgb[2], mul1(p.alpha, fade)]);
+                let q = div(ONE, pos[3]);
+                let h = mul(p.half, bc(q));
+                let pq = mul(pos, bc(q));
+                let mut h = abs(h);
+                let hc = min(h, bc(trail.half_max));
+                h[0] = hc[0];
+                h[1] = hc[1];
+                let c = madd(mul(scr.offset, bc(ONE)), pq, scr.scale);
+                let a = add(c, h);
+                let b = sub(c, h);
+                out.push(m, [trail.st_a, rgba, ftoi4(b), trail.st_b, ftoi4(a)]);
+                // Only drawn samples fade (the step is in the kick
+                // branch's delay slot).
+                fade = sub1(fade, trail.fade_step);
+                if out.count == SPRITES_PER_KICK {
+                    out.kick(m, kick);
+                }
+            }
+            tk = sub1(tk, trail.dt);
+            if neg(tk) {
+                break;
+            }
+            trails = trails.wrapping_sub(1);
+            if trails <= 0 {
+                break;
+            }
+        }
+    });
     if out.count != 0 {
         out.kick(m, kick);
     }
@@ -424,6 +492,16 @@ enum Ring {
     Faded,
 }
 
+impl Ring {
+    fn half_max(self) -> u32 {
+        if self == Ring::Dynamic {
+            F64
+        } else {
+            F128
+        }
+    }
+}
+
 /// One segment of the ring: its lerp end points.
 struct Segment {
     /// E[k], E[k+1] (.w of `dir0` is the seed).
@@ -436,36 +514,36 @@ struct Segment {
     col1: V,
 }
 
-fn ring(m: &mut Mem, top: u16, kind: Ring, kick: &mut dyn FnMut(&[u128])) {
+/// The ring's particles that are alive, in order.
+fn ring_particles(m: &mut Mem, top: u16, kind: Ring, scr: &Screen, each: &mut dyn FnMut(&mut Mem, &Particle)) {
     let d = |m: &Mem, i: u16| m.ld(top.wrapping_add(i));
-    let scr = Screen::load(m);
-    let (d0, d3, d21) = (d(m, 0), d(m, 3), d(m, 21));
-    let vel_d = [d(m, 7), d(m, 8), d(m, 9), d(m, 10)];
-    let spawn_d = [d(m, 11), d(m, 12), d(m, 13), d(m, 14)];
-    let (st_a, st_b) = (st_corner(d(m, 19)), st_corner(d(m, 20)));
+    let (d0, d21) = (d(m, 0), d(m, 21));
+    let k = RingConsts {
+        vel_d: [d(m, 7), d(m, 8), d(m, 9), d(m, 10)],
+        spawn_d: [d(m, 11), d(m, 12), d(m, 13), d(m, 14)],
+        top,
+    };
     let age_step = d0[3];
-    let (fade_step, trail_dt) = (d3[0], d3[1]);
     let per_unit = d21[2];
     let s_step = add1(0, div(ONE, per_unit));
-    let (dir_at, half_max) = match kind {
-        Ring::Dynamic => (DIR_DYNAMIC, F64),
-        _ => (DIR_COLOURED, F128),
+    let dir_at = match kind {
+        Ring::Dynamic => DIR_DYNAMIC,
+        _ => DIR_COLOURED,
     };
 
-    let mut out = Packets::new(PACKET_A, PACKET_B);
     let mut segments = d21[0] as u16 as i16;
     let per_segment = d21[1] as u16 as i16;
     let mut age = d21[3];
     let mut base = top.wrapping_add(RING);
     loop {
-        let at = |i: u16| m.ld(base.wrapping_add(i));
+        let at = |m: &Mem, i: u16| m.ld(base.wrapping_add(i));
         let seg = Segment {
-            dir0: at(dir_at),
-            dir1: at(dir_at + 1),
-            pos0: at(0),
-            pos1: at(1),
-            col0: itof0(at(COLOUR_COLOURED)),
-            col1: itof0(at(COLOUR_COLOURED + 1)),
+            dir0: at(m, dir_at),
+            dir1: at(m, dir_at + 1),
+            pos0: at(m, 0),
+            pos1: at(m, 1),
+            col0: itof0(at(m, COLOUR_COLOURED)),
+            col1: itof0(at(m, COLOUR_COLOURED + 1)),
         };
         base = base.wrapping_add(1);
         if neg(sub1(seg.dir0[3], ONE)) {
@@ -476,16 +554,9 @@ fn ring(m: &mut Mem, top: u16, kind: Ring, kick: &mut dyn FnMut(&[u128])) {
             let mut s = 0u32;
             let mut left = per_segment;
             loop {
-                ring_particle(m, &scr, &mut out, kind, &seg, &mut rng, s, age, kick, &RingConsts {
-                    vel_d,
-                    spawn_d,
-                    st_a,
-                    st_b,
-                    fade_step,
-                    trail_dt,
-                    half_max,
-                    top,
-                });
+                if let Some(p) = ring_particle(m, scr, kind, &seg, &mut rng, s, age, &k) {
+                    each(m, &p);
+                }
                 age = add1(age, age_step);
                 left = left.wrapping_sub(1);
                 s = add1(s, s_step);
@@ -499,6 +570,54 @@ fn ring(m: &mut Mem, top: u16, kind: Ring, kick: &mut dyn FnMut(&[u128])) {
             break;
         }
     }
+}
+
+fn ring(m: &mut Mem, top: u16, kind: Ring, kick: &mut dyn FnMut(&[u128])) {
+    let scr = Screen::load(m);
+    let trail = Trail::load(m, top, m.ld(top.wrapping_add(6)), kind.half_max());
+    let mut out = Packets::new(PACKET_A, PACKET_B);
+    ring_particles(m, top, kind, &scr, &mut |m, p| {
+        let mut fade = ONE;
+        let mut tk = p.t;
+        let mut trails = trail.samples;
+        loop {
+            let g = mul(trail.gravity, bc(tk));
+            let poly = drag_poly(tk);
+            let g = add(g, p.spawn);
+            let pp = madd(mul(g, bc(ONE)), p.g_minus_v, bc(poly));
+            let c = xform(&scr.m, [pp[0], pp[1], pp[2], ONE]);
+            let visible = fast::clip(c, c[3]) & 0x3f == 0;
+            let a = mul1(p.alpha, fade);
+            // Here every sample fades, drawn or not (delay slot of the cull
+            // branch).
+            fade = sub1(fade, trail.fade_step);
+            if visible {
+                let q = div(ONE, c[3]);
+                let rgba = ftoi0([p.rgb[0], p.rgb[1], p.rgb[2], a]);
+                let h = mul(p.half, bc(q));
+                let cq = with_xyz(c, mul(c, bc(q)));
+                let mut h = abs(h);
+                let centre = madd(mul(scr.offset, bc(ONE)), cq, scr.scale);
+                let hc = min(h, bc(trail.half_max));
+                h[0] = hc[0];
+                h[1] = hc[1];
+                let lo = sub(centre, h);
+                let hi = add(centre, h);
+                out.push(m, [trail.st_a, rgba, ftoi4(hi), trail.st_b, ftoi4(lo)]);
+                if out.count == SPRITES_PER_KICK {
+                    out.kick(m, kick);
+                }
+            }
+            tk = sub1(tk, trail.dt);
+            if neg(tk) {
+                break;
+            }
+            trails = trails.wrapping_sub(1);
+            if trails <= 0 {
+                break;
+            }
+        }
+    });
     if out.count != 0 {
         out.kick(m, kick);
     }
@@ -507,11 +626,6 @@ fn ring(m: &mut Mem, top: u16, kind: Ring, kick: &mut dyn FnMut(&[u128])) {
 struct RingConsts {
     vel_d: [V; 4],
     spawn_d: [V; 4],
-    st_a: V,
-    st_b: V,
-    fade_step: u32,
-    trail_dt: u32,
-    half_max: u32,
     top: u16,
 }
 
@@ -520,20 +634,10 @@ fn lerp(a: V, b: V, w: u32, s: u32) -> V {
     madd(mul(a, bc(w)), b, bc(s))
 }
 
+/// One ring particle: its nine random values, then `None` when it is dead.
 #[allow(clippy::too_many_arguments)]
-fn ring_particle(
-    m: &mut Mem,
-    scr: &Screen,
-    out: &mut Packets,
-    kind: Ring,
-    seg: &Segment,
-    rng: &mut Lfsr,
-    s: u32,
-    age: u32,
-    kick: &mut dyn FnMut(&[u128]),
-    k: &RingConsts,
-) {
-    let d = |m: &Mem, i: u16| m.ld(k.top.wrapping_add(i));
+fn ring_particle(m: &Mem, scr: &Screen, kind: Ring, seg: &Segment, rng: &mut Lfsr, s: u32, age: u32, k: &RingConsts) -> Option<Particle> {
+    let d = |i: u16| m.ld(k.top.wrapping_add(i));
     // Nine values per particle, in this order whatever the variant
     // (0x0f10 draws and discards the two colour ones).
     let r_spawn = [rng.next(), rng.next()];
@@ -545,7 +649,7 @@ fn ring_particle(
     let w = sub1(ONE, s);
     let dir = lerp(seg.dir0, seg.dir1, w, s);
     let pos = lerp(seg.pos0, seg.pos1, w, s);
-    let d1 = d(m, 1);
+    let d1 = d(1);
     let life = madd1(add1(0, d1[3]), d1[1], r_life);
     let spawn = {
         let acc = add(pos, k.spawn_d[0]);
@@ -559,7 +663,7 @@ fn ring_particle(
         let acc = madd(acc, k.vel_d[2], bc(r_vel[1]));
         madd(acc, k.vel_d[3], bc(r_vel[2]))
     };
-    let colour_d = [d(m, 15), d(m, 16), d(m, 17), d(m, 18)];
+    let colour_d = [d(15), d(16), d(17), d(18)];
     // Colour before the life test (clamped later, per variant).
     let colour = match kind {
         Ring::Dynamic | Ring::Coloured => {
@@ -583,68 +687,25 @@ fn ring_particle(
         Ring::Faded => mul(lerp(seg.col0, seg.col1, w, s), bc(HALF)),
     };
     if !neg(sub1(age, life)) {
-        return;
+        return None;
     }
-    let gravity = d(m, 6);
-    let g_minus_v = sub(gravity, vel);
+    let g_minus_v = sub(d(6), vel);
     let q = div(ONE, life);
-    // (rgb, alpha before fade)
     let (rgb, alpha) = match kind {
-        Ring::Dynamic => (min(max(colour, bc(0)), bc(F255)), colour[3]),
-        Ring::Coloured => (min(max(colour, bc(0)), bc(F255)), colour[3]),
+        Ring::Dynamic | Ring::Coloured => (min(max(colour, bc(0)), bc(F255)), colour[3]),
         Ring::Faded => {
             let u = mul1(age, q);
             let u = mul1(u, u);
             let u = sub1(ONE, u);
-            let a = mul1(mul1(u, F128), d(m, 16)[3]);
+            let a = mul1(mul1(u, F128), d(16)[3]);
             let c = min([colour[0], colour[1], colour[2], a], bc(F128));
             let c = max(c, bc(0));
             (min(max(c, bc(0)), bc(F255)), c[3])
         }
     };
-    let growth = mul1(mul1(d(m, 2)[0], age), q);
+    let growth = mul1(mul1(d(2)[0], age), q);
     let size = madd1(add1(growth, d1[2]), d1[0], r_size);
-    let half = scr.half_size(size);
-    let mut fade = ONE;
-    let mut tk = age;
-    let mut trails = d(m, 0)[1] as u16 as i16;
-    loop {
-        let g = mul(d(m, 6), bc(tk));
-        let poly = drag_poly(tk);
-        let g = add(g, spawn);
-        let p = madd(mul(g, bc(ONE)), g_minus_v, bc(poly));
-        let c = xform(&scr.m, [p[0], p[1], p[2], ONE]);
-        let visible = fast::clip(c, c[3]) & 0x3f == 0;
-        let a = mul1(alpha, fade);
-        // Here every sample fades, drawn or not (delay slot of the cull
-        // branch).
-        fade = sub1(fade, k.fade_step);
-        if visible {
-            let q = div(ONE, c[3]);
-            let rgba = ftoi0([rgb[0], rgb[1], rgb[2], a]);
-            let h = mul(half, bc(q));
-            let cq = with_xyz(c, mul(c, bc(q)));
-            let mut h = abs(h);
-            let centre = madd(mul(scr.offset, bc(ONE)), cq, scr.scale);
-            let hc = min(h, bc(k.half_max));
-            h[0] = hc[0];
-            h[1] = hc[1];
-            let lo = sub(centre, h);
-            let hi = add(centre, h);
-            out.push(m, [k.st_a, rgba, ftoi4(hi), k.st_b, ftoi4(lo)]);
-            if out.count == SPRITES_PER_KICK {
-                out.kick(m, kick);
-            }
-        }
-        tk = sub1(tk, k.trail_dt);
-        if neg(tk) {
-            break;
-        }
-        trails = trails.wrapping_sub(1);
-        if trails <= 0 {
-            break;
-        }
-    }
+    Some(Particle { spawn, g_minus_v, rgb, alpha, half: scr.half_size(size), t: age })
 }
 
 // ---------------------------------------------------------------------------
@@ -664,27 +725,38 @@ fn ring_particle(
 /// u = (r1−1)³, (r1−1)², (r1−1) and likewise for r2. It is order dependent
 /// (point n's randoms depend on every earlier point), so a GPU version must
 /// run it serially per patch (or precompute it on the CPU).
-fn glitter(m: &mut Mem, top: u16, kick: &mut dyn FnMut(&[u128])) -> bool {
-    let d = |i: u16| m.ld(top.wrapping_add(i));
-    let d21 = d(21);
-    let count = d21[3] as u16;
-    if count == 0 {
-        return false;
-    }
-    let scr = Screen::load(m);
-    let coef: [V; 16] = std::array::from_fn(|i| d(i as u16));
+/// A glitter point whose direction faces the patch normal: its cubic terms
+/// (u = (w1³, w1², w1), v likewise), the facing dot product, and whether it
+/// is the call's last point.
+struct GlitterPoint {
+    u: [u32; 3],
+    v: [u32; 3],
+    dot: u32,
+    last: bool,
+}
+
+/// The glitter header values the sprite code reads.
+struct GlitterSetup {
+    coef: [V; 16],
+    colour: V,
+    d21: V,
+}
+
+/// The facing points of a glitter call, in order (the hash runs over every
+/// point). `count` must not be 0.
+fn glitter_points(m: &mut Mem, top: u16, scr: &Screen, each: &mut dyn FnMut(&mut Mem, &GlitterPoint)) {
+    let d = |m: &Mem, i: u16| m.ld(top.wrapping_add(i));
+    let count = d(m, 21)[3] as u16;
+    let coef: [V; 16] = std::array::from_fn(|i| d(m, i as u16));
     let (d0, d1, d2, d3) = (coef[0], coef[1], coef[2], coef[3]);
-    let colour = d(20);
-    let st_a = [0, 0, ONE, 0];
-    let st_b = [ONE, ONE, ONE, 0];
 
     // The patch normal direction: (D16 D17 D18 D18) · (M · (0,0,1,0)).
     let mz = xform(&scr.m, [0, 0, ONE, 0]);
     let normal = {
-        let acc = mul(d(16), bc(mz[0]));
-        let acc = madd(acc, d(17), bc(mz[1]));
-        let acc = madd(acc, d(18), bc(mz[2]));
-        madd(acc, d(18), bc(mz[3]))
+        let acc = mul(d(m, 16), bc(mz[0]));
+        let acc = madd(acc, d(m, 17), bc(mz[1]));
+        let acc = madd(acc, d(m, 18), bc(mz[2]));
+        madd(acc, d(m, 18), bc(mz[3]))
     };
 
     // Hash state.
@@ -693,7 +765,6 @@ fn glitter(m: &mut Mem, top: u16, kick: &mut dyn FnMut(&[u128])) -> bool {
     let p16 = add(a0, bc(HASH_K)); // vf16.xyz
     let p17 = add(b0, bc(HASH_K)); // vf17.xyz
     let half_unit = mul1(ONE, F1_5); // vf16.w
-    let lift = mul1(ONE, F12); // vf17.w
     let s19z = add1(p16[2], p16[1]);
     let s17z = add1(p17[2], p17[1]);
     let mut e = add1(s19z, p16[0]); // vf21.z
@@ -706,7 +777,6 @@ fn glitter(m: &mut Mem, top: u16, kick: &mut dyn FnMut(&[u128])) -> bool {
     let mut b = 0u32; // vf19.y
     let mut dd = 0u32; // vf20.x
 
-    let mut out = Packets::new(PACKET_A, PACKET_B);
     let mut done = 0u16;
     loop {
         h[2] = add1(h[2], a);
@@ -740,62 +810,485 @@ fn glitter(m: &mut Mem, top: u16, kick: &mut dyn FnMut(&[u128])) -> bool {
         c = w2;
         dd = u2;
         e = w1;
-        if facing {
-            let eval = |k: usize, u: u32, v: u32, w: u32| -> V {
-                let acc = mul(coef[k], bc(u));
-                let acc = madd(acc, coef[k + 1], bc(v));
-                let acc = madd(acc, coef[k + 2], bc(w));
-                madd(acc, coef[k + 3], bc(ONE))
-            };
-            let rows = [eval(0, u1, v1, w1), eval(4, u1, v1, w1), eval(8, u1, v1, w1), eval(12, u1, v1, w1)];
-            let p = {
-                let acc = mul(rows[0], bc(u2));
-                let acc = madd(acc, rows[1], bc(v2));
-                let acc = madd(acc, rows[2], bc(w2));
-                madd(acc, rows[3], bc(ONE))
-            };
-            let p = [p[0], p[1], add1(p[2], lift), 0];
-            let cl = xform(&scr.m, [p[0], p[1], p[2], ONE]);
-            if fast::clip(cl, cl[3]) & 0x3f == 0 {
-                let alpha = min1(dot, ONE);
-                let hp = mul(scr.proj, bc(d21[0]));
-                let hs = mul(hp, scr.scale);
-                let half = [hs[0], hs[1], zero_sub(), zero_sub()];
-                let q = div(ONE, cl[3]);
-                let mut half = mul(half, bc(q));
-                let ha = abs(half);
-                half[0] = ha[0];
-                half[1] = ha[1];
-                let rgba = ftoi0([colour[0], colour[1], colour[2], mul1(alpha, F128)]);
-                let cq = with_xyz(cl, mul(cl, bc(q)));
-                let hm = max(half, bc(d21[1]));
-                half[0] = hm[0];
-                half[1] = hm[1];
-                let centre = madd(mul(scr.offset, bc(ONE)), cq, scr.scale);
-                let hm = min(half, bc(d21[2]));
-                half[0] = hm[0];
-                half[1] = hm[1];
-                let hi = add(centre, half);
-                let lo = sub(centre, half);
-                out.push(m, [st_a, rgba, ftoi4(hi), st_b, ftoi4(lo)]);
-                done = done.wrapping_add(1);
-                if done == count {
-                    break;
-                }
-                if out.count == SPRITES_PER_KICK {
-                    out.kick(m, kick);
-                }
-                continue;
-            }
-        }
         done = done.wrapping_add(1);
-        if done == count {
+        let last = done == count;
+        if facing {
+            each(m, &GlitterPoint { u: [u1, v1, w1], v: [u2, v2, w2], dot, last });
+        }
+        if last {
             break;
         }
     }
+}
+
+impl GlitterSetup {
+    fn load(m: &Mem, top: u16) -> GlitterSetup {
+        let d = |i: u16| m.ld(top.wrapping_add(i));
+        GlitterSetup { coef: std::array::from_fn(|i| d(i as u16)), colour: d(20), d21: d(21) }
+    }
+    /// The point on the patch, lifted 12 units in z.
+    fn eval(&self, g: &GlitterPoint) -> V {
+        let [u1, v1, w1] = g.u;
+        let eval = |k: usize| -> V {
+            let acc = mul(self.coef[k], bc(u1));
+            let acc = madd(acc, self.coef[k + 1], bc(v1));
+            let acc = madd(acc, self.coef[k + 2], bc(w1));
+            madd(acc, self.coef[k + 3], bc(ONE))
+        };
+        let rows = [eval(0), eval(4), eval(8), eval(12)];
+        let [u2, v2, w2] = g.v;
+        let p = {
+            let acc = mul(rows[0], bc(u2));
+            let acc = madd(acc, rows[1], bc(v2));
+            let acc = madd(acc, rows[2], bc(w2));
+            madd(acc, rows[3], bc(ONE))
+        };
+        let lift = mul1(ONE, F12); // vf17.w
+        [p[0], p[1], add1(p[2], lift), 0]
+    }
+    /// The sprite's alpha (an integer, FTOI0).
+    fn alpha(g: &GlitterPoint) -> u32 {
+        ftoi0(bc(mul1(min1(g.dot, ONE), F128)))[0]
+    }
+    /// The half size before the divide.
+    fn half(&self, scr: &Screen) -> V {
+        let hp = mul(scr.proj, bc(self.d21[0]));
+        let hs = mul(hp, scr.scale);
+        [hs[0], hs[1], zero_sub(), zero_sub()]
+    }
+}
+
+fn glitter(m: &mut Mem, top: u16, kick: &mut dyn FnMut(&[u128])) -> bool {
+    if m.ld(top.wrapping_add(21))[3] as u16 == 0 {
+        return false;
+    }
+    let scr = Screen::load(m);
+    let g = GlitterSetup::load(m, top);
+    let st_a = [0, 0, ONE, 0];
+    let st_b = [ONE, ONE, ONE, 0];
+    let mut out = Packets::new(PACKET_A, PACKET_B);
+    glitter_points(m, top, &scr, &mut |m, pt| {
+        let p = g.eval(pt);
+        let cl = xform(&scr.m, [p[0], p[1], p[2], ONE]);
+        if fast::clip(cl, cl[3]) & 0x3f == 0 {
+            let q = div(ONE, cl[3]);
+            let mut half = mul(g.half(&scr), bc(q));
+            let ha = abs(half);
+            half[0] = ha[0];
+            half[1] = ha[1];
+            let rgba = [ftoi0(g.colour)[0], ftoi0(g.colour)[1], ftoi0(g.colour)[2], GlitterSetup::alpha(pt)];
+            let cq = with_xyz(cl, mul(cl, bc(q)));
+            let hm = max(half, bc(g.d21[1]));
+            half[0] = hm[0];
+            half[1] = hm[1];
+            let centre = madd(mul(scr.offset, bc(ONE)), cq, scr.scale);
+            let hm = min(half, bc(g.d21[2]));
+            half[0] = hm[0];
+            half[1] = hm[1];
+            let hi = add(centre, half);
+            let lo = sub(centre, half);
+            out.push(m, [st_a, rgba, ftoi4(hi), st_b, ftoi4(lo)]);
+            if !pt.last && out.count == SPRITES_PER_KICK {
+                out.kick(m, kick);
+            }
+        }
+    });
     // Kicked even when empty.
     out.kick(m, kick);
     true
+}
+
+// ---------------------------------------------------------------------------
+// GPU plans (`crate::gpu`, plan step N1), shared with mat5
+// ---------------------------------------------------------------------------
+
+/// Uniform and data layouts of the particle shaders
+/// (`ssx3-gfx/src/gpuvu/particles.wgsl`), shared by [`plan_gpu`],
+/// `mat5::plan_gpu` and the CPU mirror [`gpu_sprites`].
+///
+/// Every program draws sprites: call vertex `4·slot + corner` is corner
+/// `corner` of sprite slot `slot` (the indices list the slots that may draw,
+/// two triangles each; the shader culls the ones the program's CLIP test
+/// would).
+pub mod gpu_particles {
+    // `vs_mat4_particles` (0x0000 emitters, 0x0510/0x0a00/0x0f10 rings).
+    // Data per particle: spawn, G − V, (RGB, alpha), (half.xy, t, -);
+    // slot = particle · SLOTS.x + trail sample.
+    /// M columns (rings: samples are in object space).
+    pub const MATRIX: usize = 0;
+    pub const SCALE: usize = 4;
+    pub const OFFSET: usize = 5;
+    /// (fade step, trail dt, half size max, ring (u32)).
+    pub const TRAIL: usize = 6;
+    /// G (clip space for the emitter, object space for rings).
+    pub const GRAVITY: usize = 7;
+    /// The two STQ corners.
+    pub const ST_A: usize = 8;
+    pub const ST_B: usize = 9;
+    /// x: trail slots per particle.
+    pub const SLOTS: usize = 10;
+
+    // `vs_mat4_glitter` (0x1460). Data per facing point: (u³, u², u,
+    // alpha (int)), (v³, v², v, -).
+    /// The 16 patch coefficients.
+    pub const G_COEF: usize = 0;
+    pub const G_MATRIX: usize = 16;
+    pub const G_SCALE: usize = 20;
+    pub const G_OFFSET: usize = 21;
+    /// The half size before the divide.
+    pub const G_HALF: usize = 22;
+    /// RGB (ints).
+    pub const G_RGB: usize = 23;
+    /// (half size min, half size max).
+    pub const G_LIMITS: usize = 24;
+
+    // `vs_mat5_snow` (mat5). Data per flake: (p.xyz, p₁.z − max.z).
+    pub const S_MATRIX: usize = 0;
+    pub const S_SCALE: usize = 4;
+    pub const S_OFFSET: usize = 5;
+    /// The half size before the divide.
+    pub const S_HALF: usize = 6;
+    /// RGBA (ints).
+    pub const S_RGBA: usize = 7;
+    /// (alpha (float), depth scale, depth fade on (u32), 0.8).
+    pub const S_FADE: usize = 8;
+    pub const S_ST_A: usize = 9;
+    pub const S_ST_B: usize = 10;
+
+    /// The longest trail the GPU plan takes (the shader's fade loop walks
+    /// the earlier samples).
+    pub const MAX_SLOTS: u32 = 64;
+}
+
+/// The sprite tag the program kicks (EE-written, the same in both
+/// buffers) when the GPU draw takes it: PRE, SPRITE, STQ (not FST), packed
+/// {ST, RGBAQ, XYZ2, ST, XYZ2}. Also the screen's w lanes must not put ADC
+/// in the XYZ2 qwords (scale.w = 0, FTOI4(offset.w) without bit 15).
+pub(crate) fn gpu_sprite_tag(m: &Mem, a: u16, b: u16, scale: V, offset: V) -> Option<u128> {
+    let (ta, tb) = (m.ld(a), m.ld(b));
+    let ok = ta[1..] == tb[1..]
+        && ta[0] >> 16 == tb[0] >> 16
+        && ta[1] >> 26 == 5 << 2
+        && ta[1] & (1 << 14) != 0
+        && (ta[1] >> 15) & 7 == 6
+        && (ta[1] >> 15) & (1 << 8) == 0
+        && ta[2] == 0x52512
+        && ta[3] == 0
+        && scale[3] & 0x7fff_ffff == 0
+        && ftoi4(offset)[3] & 0x8000 == 0;
+    let w0 = (ta[0] & !0xffff) | 0x8000;
+    ok.then(|| w0 as u128 | (ta[1] as u128) << 32 | (ta[2] as u128) << 64 | (ta[3] as u128) << 96)
+}
+
+/// A sprite draw over `slots` (two triangles per slot).
+pub(crate) fn sprite_call(program: crate::gpu::Program, tag: u128, uniforms: [V; crate::gpu::UNIFORM_QWORDS], data: Vec<V>, slots: impl Iterator<Item = u32>, alpha_max: u32) -> crate::gpu::GpuCall {
+    let mut indices = Vec::new();
+    for s in slots {
+        let b = 4 * s;
+        indices.extend_from_slice(&[b, b + 1, b + 2, b, b + 2, b + 3]);
+    }
+    crate::gpu::GpuCall { program, pre: Vec::new(), tag, uniforms, data, indices, alpha_max: alpha_max as f32, link: crate::gpu::Link::None }
+}
+
+/// The alpha byte the GS takes from an alpha (FTOI0, low 8 bits).
+pub(crate) fn alpha_byte(a: u32) -> u32 {
+    ftoi0(bc(a))[0] & 0xff
+}
+
+/// Plan a call for the GPU (`crate::gpu::plan`). Nothing the program
+/// writes is read by a later call (its descriptor comes from the EE each
+/// time, its LFSR is reseeded per call, the output packets are its own), so
+/// there are no memory effects. Per particle the CPU does the random draws
+/// and everything up to the trail (life, spawn, G − V, colour, size); per
+/// trail sample the shader does the position, the CLIP cull, the fade and
+/// the sprite. Glitter: the CPU runs the serial hash and the facing test,
+/// the shader evaluates the patch.
+pub fn plan_gpu(entry: u32, top: u32, _itop: u32, mem: &mut [u8; 16384]) -> Option<Vec<crate::gpu::GpuCall>> {
+    use gpu_particles::*;
+    let top = (top & 0x3ff) as u16;
+    let mut m = Mem(mem);
+    let m = &mut m;
+    let scr = Screen::load(m);
+    let tag = gpu_sprite_tag(m, PACKET_A, PACKET_B, scr.scale, scr.offset)?;
+    let d = |m: &Mem, i: u16| m.ld(top.wrapping_add(i));
+    let mut u = [[0u32; 4]; crate::gpu::UNIFORM_QWORDS];
+    if entry == 0x1460 {
+        if d(m, 21)[3] as u16 == 0 {
+            return None;
+        }
+        let g = GlitterSetup::load(m, top);
+        let mut data = Vec::new();
+        let mut amax = 0;
+        glitter_points(m, top, &scr, &mut |_, pt| {
+            let a = GlitterSetup::alpha(pt);
+            amax = amax.max(a & 0xff);
+            data.push([pt.u[0], pt.u[1], pt.u[2], a]);
+            data.push([pt.v[0], pt.v[1], pt.v[2], 0]);
+        });
+        u[G_COEF..G_COEF + 16].copy_from_slice(&g.coef);
+        u[G_MATRIX..G_MATRIX + 4].copy_from_slice(&scr.m);
+        u[G_SCALE] = scr.scale;
+        u[G_OFFSET] = scr.offset;
+        u[G_HALF] = g.half(&scr);
+        u[G_RGB] = ftoi0(g.colour);
+        u[G_LIMITS] = [g.d21[1], g.d21[2], 0, 0];
+        // (Kicked even when empty: the tag still sets PRIM.)
+        let n = data.len() as u32 / 2;
+        return Some(vec![sprite_call(crate::gpu::Program::Mat4Glitter, tag, u, data, 0..n, amax)]);
+    }
+    let kind = match entry {
+        0x0000 => None,
+        0x0510 => Some(Ring::Dynamic),
+        0x0a00 => Some(Ring::Coloured),
+        0x0f10 => Some(Ring::Faded),
+        _ => return None,
+    };
+    let trail = match kind {
+        None => Trail::load(m, top, xform(&scr.m, d(m, 6)), F64),
+        Some(k) => Trail::load(m, top, d(m, 6), k.half_max()),
+    };
+    let mut data = Vec::new();
+    let mut samples = Vec::new();
+    let mut amax = 0;
+    let mut ok = true;
+    let mut each = |_: &mut Mem, p: &Particle| {
+        let Some(n) = trail.samples_from(p.t, MAX_SLOTS) else {
+            ok = false;
+            return;
+        };
+        data.extend_from_slice(&[p.spawn, p.g_minus_v, [p.rgb[0], p.rgb[1], p.rgb[2], p.alpha], [p.half[0], p.half[1], p.t, 0]]);
+        samples.push(n);
+        // (The alphas the samples can have: drawn emitter samples take
+        // the first fades of the same sequence.)
+        let mut fade = ONE;
+        for _ in 0..n {
+            amax = amax.max(alpha_byte(mul1(p.alpha, fade)));
+            fade = sub1(fade, trail.fade_step);
+        }
+    };
+    match kind {
+        None => emitter_particles(m, top, &scr, &mut each),
+        Some(k) => ring_particles(m, top, k, &scr, &mut each),
+    }
+    if !ok {
+        return None;
+    }
+    if samples.is_empty() {
+        // Nothing alive: the program kicks nothing.
+        return Some(Vec::new());
+    }
+    let slots = samples.iter().copied().max().unwrap_or(1);
+    u[MATRIX..MATRIX + 4].copy_from_slice(&scr.m);
+    u[SCALE] = scr.scale;
+    u[OFFSET] = scr.offset;
+    u[TRAIL] = [trail.fade_step, trail.dt, trail.half_max, kind.is_some() as u32];
+    u[GRAVITY] = trail.gravity;
+    u[ST_A] = trail.st_a;
+    u[ST_B] = trail.st_b;
+    u[SLOTS] = [slots, 0, 0, 0];
+    let order = samples.iter().enumerate().flat_map(|(i, &n)| (0..n).map(move |k| i as u32 * slots + k)).collect::<Vec<_>>();
+    Some(vec![sprite_call(crate::gpu::Program::Mat4Particles, tag, u, data, order.into_iter(), amax)])
+}
+
+/// One sprite as the program kicks it: the two XYZ2 positions (FTOI4
+/// x, y, z), RGBA (ints) and the two STQ corners (s, t).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Sprite {
+    pub a: [i32; 3],
+    pub b: [i32; 3],
+    pub rgba: [i32; 4],
+    pub st: [f32; 4],
+}
+
+/// The sprites of a planned call as the shaders compute them (IEEE, the
+/// WGSL's formulas and order), `None` for slots the shader culls.
+pub fn gpu_sprites(call: &crate::gpu::GpuCall) -> Vec<Option<Sprite>> {
+    use crate::gpu::Program;
+    use gpu_particles::*;
+    let f = |v: V| v.map(f32::from_bits);
+    let uq = |q: usize| f(call.uniforms[q]);
+    let inside = |v: [f32; 4]| (0..3).all(|l| v[l].abs() <= v[3].abs());
+    let xform = |c: usize, p: [f32; 3]| -> [f32; 4] {
+        std::array::from_fn(|l| uq(c)[l] * p[0] + uq(c + 1)[l] * p[1] + uq(c + 2)[l] * p[2] + uq(c + 3)[l])
+    };
+    let ftoi4 = |v: [f32; 3]| v.map(|x| (x * 16.0) as i32);
+    // The sprite's centre on screen.
+    let centre = |cl: [f32; 4], scale: usize, offset: usize| -> [f32; 3] {
+        let q = 1.0 / cl[3];
+        std::array::from_fn(|l| uq(offset)[l] + cl[l] * q * uq(scale)[l])
+    };
+    let slots: Vec<u32> = call.indices.chunks(6).map(|t| t[0] / 4).collect();
+    slots
+        .iter()
+        .map(|&s| match call.program {
+            Program::Mat4Particles => {
+                let per = call.uniforms[SLOTS][0];
+                let (p, k) = (s / per, s % per);
+                let rec = |i: u32| f(call.data[(4 * p + i) as usize]);
+                let (spawn, gmv, col, misc) = (rec(0), rec(1), rec(2), rec(3));
+                let [fade_step, dt, half_max, _] = uq(TRAIL);
+                let ring = call.uniforms[TRAIL][3] != 0;
+                let g = uq(GRAVITY);
+                let clip = |tk: f32| -> [f32; 4] {
+                    let tc = tk.min(2.7);
+                    let poly = tc * -0.73 + tc * tc * 0.113;
+                    let p: [f32; 4] = std::array::from_fn(|l| g[l] * tk + spawn[l] + gmv[l] * poly);
+                    if ring {
+                        xform(MATRIX, [p[0], p[1], p[2]])
+                    } else {
+                        p
+                    }
+                };
+                let mut tk = misc[2];
+                let mut fade = 1.0f32;
+                for _ in 0..k {
+                    if ring || inside(clip(tk)) {
+                        fade -= fade_step;
+                    }
+                    tk -= dt;
+                }
+                let cl = clip(tk);
+                if !inside(cl) {
+                    return None;
+                }
+                let q = 1.0 / cl[3];
+                let h = [(misc[0] * q).abs().min(half_max), (misc[1] * q).abs().min(half_max), 0.0];
+                let c = centre(cl, SCALE, OFFSET);
+                let lo: [f32; 3] = std::array::from_fn(|l| c[l] - h[l]);
+                let hi: [f32; 3] = std::array::from_fn(|l| c[l] + h[l]);
+                let (a, b) = if ring { (hi, lo) } else { (lo, hi) };
+                let rgba = [col[0] as i32, col[1] as i32, col[2] as i32, (col[3] * fade) as i32];
+                let (sa, sb) = (uq(ST_A), uq(ST_B));
+                Some(Sprite { a: ftoi4(a), b: ftoi4(b), rgba, st: [sa[0], sa[1], sb[0], sb[1]] })
+            }
+            Program::Mat4Glitter => {
+                let pa = f(call.data[2 * s as usize]);
+                let pb = f(call.data[2 * s as usize + 1]);
+                let row = |k: usize| -> [f32; 4] { std::array::from_fn(|l| uq(G_COEF + k)[l] * pa[0] + uq(G_COEF + k + 1)[l] * pa[1] + uq(G_COEF + k + 2)[l] * pa[2] + uq(G_COEF + k + 3)[l]) };
+                let (r0, r1, r2, r3) = (row(0), row(4), row(8), row(12));
+                let p: [f32; 4] = std::array::from_fn(|l| r0[l] * pb[0] + r1[l] * pb[1] + r2[l] * pb[2] + r3[l]);
+                let cl = xform(G_MATRIX, [p[0], p[1], p[2] + 12.0]);
+                if !inside(cl) {
+                    return None;
+                }
+                let q = 1.0 / cl[3];
+                let [lo_lim, hi_lim, _, _] = uq(G_LIMITS);
+                let hh = |l: usize| (uq(G_HALF)[l] * q).abs().max(lo_lim).min(hi_lim);
+                let h = [hh(0), hh(1), 0.0];
+                let c = centre(cl, G_SCALE, G_OFFSET);
+                let lo: [f32; 3] = std::array::from_fn(|l| c[l] - h[l]);
+                let hi: [f32; 3] = std::array::from_fn(|l| c[l] + h[l]);
+                let rgb = call.uniforms[G_RGB];
+                let rgba = [rgb[0] as i32, rgb[1] as i32, rgb[2] as i32, call.data[2 * s as usize][3] as i32];
+                Some(Sprite { a: ftoi4(hi), b: ftoi4(lo), rgba, st: [0.0, 0.0, 1.0, 1.0] })
+            }
+            Program::Mat5Snow => {
+                let p = f(call.data[s as usize]);
+                let cl = xform(S_MATRIX, [p[0], p[1], p[2]]);
+                let [alpha, ds, _, far] = uq(S_FADE);
+                let fade = call.uniforms[S_FADE][2] != 0;
+                if !fade && !inside(cl) {
+                    return None;
+                }
+                let r = call.uniforms[S_RGBA];
+                let mut rgba = [r[0] as i32, r[1] as i32, r[2] as i32, r[3] as i32];
+                if fade {
+                    let d = cl[2] * ds;
+                    let f = if p[3] - d >= 0.0 {
+                        (d * 3.33).clamp(0.0, 1.0)
+                    } else if d > far {
+                        (1.0 - (d - far) * 3.33).clamp(0.0, 1.0)
+                    } else {
+                        1.0
+                    };
+                    rgba[3] = (alpha * f) as i32;
+                }
+                let q = 1.0 / cl[3];
+                let h: [f32; 3] = std::array::from_fn(|l| uq(S_HALF)[l] * q);
+                let c = centre(cl, S_SCALE, S_OFFSET);
+                let lo: [f32; 3] = std::array::from_fn(|l| c[l] - h[l]);
+                let hi: [f32; 3] = std::array::from_fn(|l| c[l] + h[l]);
+                let (sa, sb) = (uq(S_ST_A), uq(S_ST_B));
+                Some(Sprite { a: ftoi4(hi), b: ftoi4(lo), rgba, st: [sa[0], sa[1], sb[0], sb[1]] })
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// The sprites in a program's GIF output (SPRITE packets of 5 qwords per
+/// sprite after each tag).
+pub fn kicked_sprites(gif: &[u128]) -> Vec<Sprite> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < gif.len() {
+        let n = (gif[i] as u32 & 0x7fff) as usize;
+        for k in 0..n {
+            let q = |j: usize| -> V {
+                let v = gif.get(i + 1 + 5 * k + j).copied().unwrap_or(0);
+                std::array::from_fn(|l| (v >> (32 * l)) as u32)
+            };
+            let xyz = |v: V| [v[0] as i32, v[1] as i32, v[2] as i32];
+            let (sa, c, a, sb, b) = (q(0), q(1), q(2), q(3), q(4));
+            out.push(Sprite {
+                a: xyz(a),
+                b: xyz(b),
+                rgba: [c[0] as i32, c[1] as i32, c[2] as i32, c[3] as i32],
+                st: [f32::from_bits(sa[0]), f32::from_bits(sa[1]), f32::from_bits(sb[0]), f32::from_bits(sb[1])],
+            });
+        }
+        i += 1 + 5 * n;
+    }
+    out
+}
+
+/// How a planned call's shader sprites compare with the program's: the
+/// number of sprites both draw and agree on (positions within 2/16 pixel
+/// and 1e-3 relative for z, colour bytes within 1), and a description of
+/// the first differences. (Z: the samples come from world-space sums that
+/// cancel in the transform, so the PS2's truncating rounding and IEEE's
+/// differ by a few 1e-4 of the depth on real frames.)
+pub fn compare_sprites(calls: &[crate::gpu::GpuCall], gif: &[u128]) -> (usize, usize, usize, Vec<String>) {
+    let want = kicked_sprites(gif);
+    let got: Vec<Sprite> = calls.iter().flat_map(gpu_sprites).flatten().collect();
+    let close = |a: &Sprite, b: &Sprite| {
+        let pos = |x: [i32; 3], y: [i32; 3]| (0..2).all(|l| (x[l] - y[l]).abs() <= 2) && (x[2] as f64 - y[2] as f64).abs() <= 2.0 + 1e-3 * (y[2] as f64).abs();
+        let col = (0..4).all(|l| {
+            let d = ((a.rgba[l] & 0xff) - (b.rgba[l] & 0xff)).abs();
+            d <= 1 || d == 255
+        });
+        pos(a.a, b.a) && pos(a.b, b.b) && col && a.st == b.st
+    };
+    // Align in order, letting either side skip a sprite (CLIP decisions at
+    // the boundary may differ).
+    let (mut i, mut j, mut same) = (0, 0, 0);
+    let mut bad = Vec::new();
+    while i < got.len() && j < want.len() {
+        if close(&got[i], &want[j]) {
+            same += 1;
+            i += 1;
+            j += 1;
+        } else if j + 1 < want.len() && close(&got[i], &want[j + 1]) {
+            j += 1;
+        } else if i + 1 < got.len() && close(&got[i + 1], &want[j]) {
+            i += 1;
+        } else {
+            if bad.len() < 3 {
+                bad.push(format!("sprite {j}: {:?} want {:?}", got[i], want[j]));
+            }
+            i += 1;
+            j += 1;
+        }
+    }
+    (same, got.len(), want.len(), bad)
+}
+
+/// `gpu::check` for types 4 and 5: a description when the shader sprites
+/// differ from the program's beyond rounding and CLIP-boundary decisions.
+pub fn gpu_check(calls: &[crate::gpu::GpuCall], gif: &[u128]) -> Option<String> {
+    let (same, got, want, bad) = compare_sprites(calls, gif);
+    let off = got.max(want) - same;
+    (off > want / 100 || !bad.is_empty()).then(|| format!("particles: {same} sprites agree, shader {got}, program {want}: {}", bad.join("; ")))
 }
 
 // ---------------------------------------------------------------------------
@@ -1035,6 +1528,48 @@ pub(crate) mod tests {
                 let ok = run(entry, top as u32, 0, &mut mem, &mut VuState::default(), &mut |k| kicks.push(k.to_vec()));
                 compare(&format!("case {case} entry {entry:#06x}"), (ok, kicks, mem.to_vec()), want);
             }
+        }
+    }
+
+    /// A GPU plan against the program: no memory written, the shader
+    /// mirror's sprites equal to the kicked ones but for CLIP-boundary
+    /// decisions. Returns (sprites agreeing, sprites).
+    pub fn check_plan(entry: u32, top: u16, mem: &mut [u8; 16384], native: &mut dyn FnMut(&mut [u8; 16384], &mut dyn FnMut(&[u128])) -> bool, plan: fn(u32, u32, u32, &mut [u8; 16384]) -> Option<Vec<crate::gpu::GpuCall>>) -> (usize, usize) {
+        let before = Box::new(*mem);
+        let mut copy = Box::new(*mem);
+        let mut gif = Vec::new();
+        assert!(native(&mut copy, &mut |k| gif.extend_from_slice(k)));
+        let calls = plan(entry, top as u32, 0, mem).expect("planned");
+        assert!(mem[..] == before[..], "the plan wrote memory");
+        if calls.is_empty() {
+            assert!(gif.is_empty(), "nothing planned, the program kicked");
+        } else if let Some(&t) = gif.first() {
+            // (Empty: every sample culled; the GPU draw still sets PRIM.)
+            assert_eq!(calls[0].tag >> 16, t >> 16, "tag");
+        }
+        let (same, got, want, _) = compare_sprites(&calls, &gif);
+        (same, got.max(want))
+    }
+
+    #[test]
+    fn gpu_plans_match_program() {
+        let mut r = Rng(0x0004_5eed_9abc_def1);
+        let mut n = std::collections::BTreeMap::new();
+        for case in 0..200 {
+            for entry in [0x0000u32, 0x0510, 0x0a00, 0x0f10, 0x1460] {
+                let top: u16 = if case % 2 == 0 { 7 } else { 0x9a };
+                let mut mem = Box::new([0u8; 16384]);
+                header(&mut r, &mut mem);
+                descriptor(&mut r, &mut mem, top, entry);
+                let (s, t) = check_plan(entry, top, &mut mem, &mut |m, k| run(entry, top as u32, 0, m, &mut VuState::default(), k), plan_gpu);
+                let e = n.entry(entry).or_insert((0, 0));
+                e.0 += s;
+                e.1 += t;
+            }
+        }
+        for (entry, (same, total)) in n {
+            eprintln!("entry {entry:#06x}: {same} of {total} sprites agree");
+            assert!(total > 100 && same as f64 >= 0.99 * total as f64, "entry {entry:#06x}: {same} of {total}");
         }
     }
 

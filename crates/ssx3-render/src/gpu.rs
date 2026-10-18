@@ -24,6 +24,13 @@ pub enum Program {
     Mat6Skin = 1,
     /// Type 7 shadow silhouettes (`mat6`, entry 0x20).
     Mat6Shadow = 2,
+    /// Type 4 emitters and ring emitters (`mat4`, entries 0x0000 / 0x0510 /
+    /// 0x0a00 / 0x0f10).
+    Mat4Particles = 40,
+    /// Type 4 patch glitter (`mat4`, entry 0x1460).
+    Mat4Glitter = 41,
+    /// Type 5 SnowBox snow (`mat5`).
+    Mat5Snow = 50,
 }
 
 impl Program {
@@ -33,6 +40,9 @@ impl Program {
             Program::Mat3Mesh => "vs_mat3_mesh",
             Program::Mat6Skin => "vs_mat6_skin",
             Program::Mat6Shadow => "vs_mat6_shadow",
+            Program::Mat4Particles => "vs_mat4_particles",
+            Program::Mat4Glitter => "vs_mat4_glitter",
+            Program::Mat5Snow => "vs_mat5_snow",
         }
     }
 
@@ -41,6 +51,9 @@ impl Program {
             0 => Some(Program::Mat3Mesh),
             1 => Some(Program::Mat6Skin),
             2 => Some(Program::Mat6Shadow),
+            40 => Some(Program::Mat4Particles),
+            41 => Some(Program::Mat4Glitter),
+            50 => Some(Program::Mat5Snow),
             _ => None,
         }
     }
@@ -115,6 +128,8 @@ pub fn plan(hash: u64, entry: u32, top: u32, itop: u32, mem: &mut [u8; 16384]) -
     match hash {
         crate::mat3::HASH => crate::mat3::plan_gpu(entry, top, itop, mem).map(|c| vec![c]),
         crate::mat6::HASH => crate::mat6::plan_gpu(entry, top, itop, mem),
+        crate::mat4::HASH => crate::mat4::plan_gpu(entry, top, itop, mem),
+        crate::mat5::HASH => crate::mat5::plan_gpu(entry, top, itop, mem),
         _ => None,
     }
 }
@@ -213,6 +228,7 @@ pub fn check(hash: u64, calls: &[GpuCall], gif: &[u128]) -> Option<String> {
     match (hash, calls) {
         (crate::mat3::HASH, [call]) if call.program == Program::Mat3Mesh => check_mat3(call, gif),
         (crate::mat6::HASH, [call]) => crate::mat6::check_gpu(call, gif),
+        (crate::mat4::HASH | crate::mat5::HASH, _) => crate::mat4::gpu_check(calls, gif),
         _ => None,
     }
 }
