@@ -662,21 +662,19 @@ fn tag_regs_are(t: V, nreg: u32, regs: u64) -> bool {
     n == nreg && (t[1] >> 26) & 3 == 0 && r & mask == regs && r >> (4 * nreg) == 0 && matches!(last, 4 | 5)
 }
 
-/// Triangles of the strips with `counts` vertices: index `(k << 2) |
-/// corner` is corner `corner` (vertex k-2+corner) of the triangle ending
-/// at vertex k; the shader drops a triangle with a vertex outside the guard
-/// band, as the program's CLIP history does.
-fn culled_strip_indices(counts: &[u16]) -> Vec<u32> {
-    let mut idx = Vec::new();
+/// Triangles of the strips with `counts` vertices, as a triangle list (the
+/// last vertex k of each) whose index `(k << 2) | corner` is corner
+/// `corner` (vertex k-2+corner) of the triangle ending at vertex k; the
+/// shader drops a triangle with a vertex outside the guard band, as the
+/// program's CLIP history does.
+fn culled_strip_indices(counts: &[u16]) -> (Vec<u32>, u32) {
+    let mut tris = Vec::new();
     let mut first = 0u32;
     for &n in counts {
-        for k in 2..n as u32 {
-            let v = first + k;
-            idx.extend_from_slice(&[v << 2, (v << 2) | 1, (v << 2) | 2]);
-        }
+        tris.extend((2..n as u32).map(|k| first + k));
         first += n as u32;
     }
-    idx
+    (tris, crate::gpu::tri_mode(3, 2))
 }
 
 /// Plan a call for the GPU (`crate::gpu::plan`): the lit strip draws (0x00,
@@ -697,8 +695,8 @@ pub fn plan_gpu(entry: u32, top: u32, _itop: u32, mem: &mut [u8; 16384]) -> Opti
     }
 }
 
-fn gpu_call(program: crate::gpu::Program, tag: u128, u: [[u32; 4]; crate::gpu::UNIFORM_QWORDS], data: Vec<[u32; 4]>, indices: Vec<u32>, alpha_max: f32, link: crate::gpu::Link) -> crate::gpu::GpuCall {
-    crate::gpu::GpuCall { program, pre: Vec::new(), tag, uniforms: u, data, indices, alpha_max, link, mesh_key: None }
+fn gpu_call(program: crate::gpu::Program, tag: u128, u: [[u32; 4]; crate::gpu::UNIFORM_QWORDS], data: Vec<[u32; 4]>, (indices, index_mode): (Vec<u32>, u32), alpha_max: f32, link: crate::gpu::Link) -> crate::gpu::GpuCall {
+    crate::gpu::GpuCall { program, pre: Vec::new(), tag, uniforms: u, data, indices, index_mode, alpha_max, link, mesh_key: None }
 }
 
 fn plan_draw(m: &mut Mem, top: u16, skin: Skin) -> Option<Vec<crate::gpu::GpuCall>> {
@@ -819,7 +817,7 @@ fn plan_shadow(m: &mut Mem, top: u16) -> Option<Vec<crate::gpu::GpuCall>> {
     m.st(top.wrapping_add(OUT), tag);
     let u = [[0u32; 4]; crate::gpu::UNIFORM_QWORDS];
     // (The colour is the GS's RGBAQ register: its alpha is not known here.)
-    Some(vec![gpu_call(crate::gpu::Program::Mat6Shadow, tag_u128(tag), u, data, indices, 255.0, crate::gpu::Link::None)])
+    Some(vec![gpu_call(crate::gpu::Program::Mat6Shadow, tag_u128(tag), u, data, (indices, 0), 255.0, crate::gpu::Link::None)])
 }
 
 /// Debug (`crate::gpu::check`): the shaders' formulas (`vs_mat6_skin`,
@@ -867,7 +865,7 @@ pub fn check_gpu(call: &crate::gpu::GpuCall, gif: &[u128]) -> Option<String> {
         }
     };
     let mut checked = vec![false; n];
-    for t in call.indices.chunks(3) {
+    for t in call.expanded_indices().chunks(3) {
         let (k, corners) = if shadow { (t[2], [t[0], t[1], t[2]]) } else { (t[0] >> 2, [(t[0] >> 2) - 2, (t[0] >> 2) - 1, t[0] >> 2]) };
         let kept = shadow || corners.iter().all(|&v| inside(clip(v)));
         let xyz_w = lane(gif[per * k as usize + per], 3);
@@ -1069,7 +1067,7 @@ mod tests {
                 assert_eq!(calls.len(), 1);
                 let total: usize = counts.iter().map(|&c| c as usize).sum();
                 let tris: usize = counts.iter().map(|&c| c as usize - 2).sum();
-                assert_eq!(calls[0].indices.len(), 3 * tris);
+                assert_eq!(calls[0].draw_len(), 3 * tris);
                 if !shadow {
                     culled += tris - (0..total).filter(|k| (gif[3 + 3 * k] >> 96) as u32 == 0x7fff).count();
                 }

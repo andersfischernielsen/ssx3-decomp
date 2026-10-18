@@ -8,10 +8,11 @@ struct Call {
 
 @group(1) @binding(0) var<storage, read> calls: array<Call>;
 @group(1) @binding(1) var<storage, read> data: array<vec4<u32>>;
-// Per vertex of a draw (a run of calls of one program merged into one
-// draw): the call's vertex index; gstart[0] = the number of calls, then per
-// call its first index (`vs_<program>` wrappers find the call: the last one
-// starting at or before the vertex).
+// The calls' triangle lists (`ssx3_render::gpu::GpuCall::indices`);
+// gstart[0] = the number of calls, then per call {its first vertex in the
+// draw, its first entry in gidx, its index mode}. `vs_<program>` wrappers
+// find a vertex's call (the last one starting at or before it) and the
+// call's vertex index.
 @group(1) @binding(2) var<storage, read> gidx: array<u32>;
 @group(1) @binding(3) var<storage, read> gstart: array<u32>;
 
@@ -20,13 +21,27 @@ fn call_of(k: u32) -> u32 {
     var hi = gstart[0];
     while (hi - lo > 1u) {
         let mid = (lo + hi) / 2u;
-        if (gstart[mid + 1u] <= k) {
+        if (gstart[1u + 3u * mid] <= k) {
             lo = mid;
         } else {
             hi = mid;
         }
     }
     return lo;
+}
+
+// Vertex `k` of the draw as call `c`'s vertex index: its triangle list
+// entry, or (index mode `per << 8 | shift`) entry `t` expanded to
+// `t << shift | corner`.
+fn call_index(k: u32, c: u32) -> u32 {
+    let local = k - gstart[1u + 3u * c];
+    let base = gstart[2u + 3u * c];
+    let mode = gstart[3u + 3u * c];
+    if (mode == 0u) {
+        return gidx[base + local];
+    }
+    let per = mode >> 8u;
+    return (gidx[base + local / per] << (mode & 255u)) | (local % per);
 }
 // Vertex data kept from frame to frame (gs::MeshArena).
 @group(1) @binding(4) var<storage, read> arena: array<vec4<u32>>;

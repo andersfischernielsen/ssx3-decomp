@@ -1285,7 +1285,7 @@ pub fn plan_gpu(entry: u32, top: u32, itop: u32, kept: Option<f32>, mem: &mut [u
     let tag = tag[0] as u128 | (tag[1] as u128) << 32 | (tag[2] as u128) << 64 | (tag[3] as u128) << 96;
     let link = if pass1 { crate::gpu::Link::Source(out as u32) } else { crate::gpu::Link::Reuse(out as u32) };
     let mesh_key = keyed.then_some(0);
-    Some(crate::gpu::GpuCall { program: crate::gpu::Program::Mat3Mesh, pre: Vec::new(), tag, uniforms: u, data, indices, alpha_max, link, mesh_key })
+    Some(crate::gpu::GpuCall { program: crate::gpu::Program::Mat3Mesh, pre: Vec::new(), tag, uniforms: u, data, indices, index_mode: 0, alpha_max, link, mesh_key })
 }
 
 // ---------------------------------------------------------------------------
@@ -1431,6 +1431,7 @@ pub fn plan_gpu_strip(entry: u32, top: u32, mem: &mut [u8; 16384]) -> Option<cra
         uniforms: u,
         data,
         indices,
+        index_mode: 0,
         alpha_max,
         link: crate::gpu::Link::None,
         mesh_key: None,

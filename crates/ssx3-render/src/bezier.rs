@@ -622,12 +622,14 @@ pub mod gpu {
         }
     }
 
-    fn strip_indices(tris: impl Iterator<Item = u32>) -> Vec<u32> {
-        tris.flat_map(|i| [i << 2, i << 2 | 1, i << 2 | 2]).collect()
+    /// Triangle lists: index `i << 2 | corner` per strip triangle,
+    /// `i << 5 | k` (k < 3 · FAN_TRIS) per fan of a clipped one.
+    fn strip_indices(tris: impl Iterator<Item = u32>) -> (Vec<u32>, u32) {
+        (tris.collect(), crate::gpu::tri_mode(3, 2))
     }
 
-    fn fan_indices(tris: impl Iterator<Item = u32>) -> Vec<u32> {
-        tris.flat_map(|i| (0..3 * FAN_TRIS).map(move |k| i << 5 | k)).collect()
+    fn fan_indices(tris: impl Iterator<Item = u32>) -> (Vec<u32>, u32) {
+        (tris.collect(), crate::gpu::tri_mode(3 * FAN_TRIS, 5))
     }
 
     fn tag(v: V) -> u128 {
@@ -661,7 +663,7 @@ pub mod gpu {
         let mut data = Some(s.verts.iter().flat_map(|v| [m.ld(v.pos), m.ld(v.uv)]).collect::<Vec<_>>());
         let alpha_max = colour[3] as i32 as f32;
         let fan = m.ld(FAN_TAG_A);
-        let mut call = |mode: u32, t: V, indices: Vec<u32>, out: &mut Vec<GpuCall>| {
+        let mut call = |mode: u32, t: V, (indices, index_mode): (Vec<u32>, u32), out: &mut Vec<GpuCall>| {
             let (data, link, reuse) = match data.take() {
                 Some(d) => (d, Link::Source(KEY), 0),
                 None => (Vec::new(), Link::Reuse(KEY), 1),
@@ -673,6 +675,7 @@ pub mod gpu {
                 uniforms: uniforms(&r, colour, [mode, 0, nv, reuse]),
                 data,
                 indices,
+                index_mode,
                 alpha_max,
                 link,
                 mesh_key: None,
@@ -707,13 +710,15 @@ pub mod gpu {
         let data: Vec<[u32; 4]> = s.verts.iter().map(|v| m.ld(v.uv)).collect();
         for (t, ps) in s.runs(m) {
             // (Each call carries the UV2s; positions are the source's.)
+            let (indices, index_mode) = strip_indices(s.triangles(ps));
             out.push(GpuCall {
                 program: Program::Bezier,
                 pre: Vec::new(),
                 tag: tag(t),
                 uniforms: uniforms(&r, colour, [STRIPS, 1, nv, 1]),
                 data: data.clone(),
-                indices: strip_indices(s.triangles(ps)),
+                indices,
+                index_mode,
                 alpha_max: 0.0,
                 link: Link::Reuse(KEY),
                 mesh_key: None,
@@ -847,7 +852,7 @@ pub mod gpu {
         let step = if info[0] == FANS { 3 * FAN_TRIS as usize } else { 3 };
         let shift = if info[0] == FANS { 5 } else { 2 };
         let (mut strips, mut fans) = (Vec::new(), Vec::new());
-        for t in call.indices.chunks(step) {
+        for t in call.expanded_indices().chunks(step) {
             let i = (t[0] >> shift) as usize;
             let c = [h(i - 2), h(i - 1), h(i)];
             let fl = c.map(flags);

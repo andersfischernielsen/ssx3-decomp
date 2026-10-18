@@ -29,5 +29,6 @@ fn mat3_strip_vertex(vi: u32, c: u32) -> VOut {
 
 @vertex
 fn vs_mat3_strip(@builtin(vertex_index) k: u32) -> VOut {
-    return mat3_strip_vertex(gidx[k], call_of(k));
+    let c = call_of(k);
+    return mat3_strip_vertex(call_index(k, c), c);
 }

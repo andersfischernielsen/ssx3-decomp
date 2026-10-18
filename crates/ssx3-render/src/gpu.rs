@@ -86,8 +86,13 @@ pub struct GpuCall {
     pub uniforms: [[u32; 4]; UNIFORM_QWORDS],
     /// Vertex inputs (program-specific layout, qwords).
     pub data: Vec<[u32; 4]>,
-    /// Triangle list over the call's vertices (0-based).
+    /// Triangle list over the call's vertices (0-based); with an
+    /// [`index_mode`](Self::index_mode), the triangles it expands.
     pub indices: Vec<u32>,
+    /// 0: `indices` as they are. Otherwise `per << 8 | shift`: each entry
+    /// `t` stands for the `per` indices `t << shift | corner`, corner =
+    /// 0..per (the shader expands them; [`GpuCall::expanded_indices`]).
+    pub index_mode: u32,
     /// The largest vertex alpha (GS units: 0x80 = 1.0).
     pub alpha_max: f32,
     /// Calls that redraw an earlier call's vertices (type 3 pass 2 redraws
@@ -98,6 +103,30 @@ pub struct GpuCall {
     /// (no in-place rewrite), and [`crate::vujob::run_call`] the input's
     /// source key (`VuCall::src`), or `None`.
     pub mesh_key: Option<u64>,
+}
+
+impl GpuCall {
+    /// The number of vertices the call draws (its indices, expanded).
+    pub fn draw_len(&self) -> usize {
+        match self.index_mode {
+            0 => self.indices.len(),
+            m => self.indices.len() * (m >> 8) as usize,
+        }
+    }
+
+    /// The indices with the index mode applied.
+    pub fn expanded_indices(&self) -> std::borrow::Cow<'_, [u32]> {
+        match self.index_mode {
+            0 => std::borrow::Cow::Borrowed(&self.indices),
+            m => std::borrow::Cow::Owned(self.indices.iter().flat_map(|&t| (0..m >> 8).map(move |c| t << (m & 0xff) | c)).collect()),
+        }
+    }
+}
+
+/// The index mode of triangle lists whose entries expand to `per` indices
+/// `t << shift | corner`.
+pub const fn tri_mode(per: u32, shift: u32) -> u32 {
+    per << 8 | shift
 }
 
 /// How a call's vertices relate to another call's (keyed by the VU address
@@ -242,6 +271,7 @@ pub fn encode(c: &GpuCall, w: &mut Vec<u8>) {
     put_words(w, &c.data);
     w.extend_from_slice(&(c.indices.len() as u32).to_le_bytes());
     put_words(w, &c.indices);
+    w.extend_from_slice(&c.index_mode.to_le_bytes());
     w.extend_from_slice(&c.alpha_max.to_le_bytes());
     let (t, k) = c.link.code();
     w.extend_from_slice(&t.to_le_bytes());
@@ -269,12 +299,13 @@ pub fn decode(b: &[u8]) -> (GpuCall, usize) {
     let data = words(take(16 * n), n);
     let n = u32_at(take(4)) as usize;
     let indices = words(take(4 * n), n);
+    let index_mode = u32_at(take(4));
     let alpha_max = f32::from_le_bytes(take(4).try_into().unwrap());
     let t = u32_at(take(4));
     let link = Link::from_code(t, u32_at(take(4)));
     let mk = u64::from_le_bytes(take(8).try_into().unwrap());
     let mesh_key = (mk != u64::MAX).then_some(mk);
-    (GpuCall { program, pre, tag, uniforms, data, indices, alpha_max, link, mesh_key }, p)
+    (GpuCall { program, pre, tag, uniforms, data, indices, index_mode, alpha_max, link, mesh_key }, p)
 }
 
 #[cfg(test)]
@@ -292,6 +323,7 @@ mod tests {
             uniforms,
             data: vec![[5, 6, 7, 8], [9, 10, 11, 12]],
             indices: vec![0, 1, 2, 1, 2, 3],
+            index_mode: tri_mode(21, 5),
             alpha_max: 128.0,
             link: Link::Reuse(0x1db),
             mesh_key: Some(77),

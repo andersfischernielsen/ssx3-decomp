@@ -101,7 +101,7 @@ pub struct GpuBatch {
     pub program: ssx3_render::gpu::Program,
     /// The call's index in [`GpuFrame::calls`].
     pub call: u32,
-    /// Its indices in [`GpuFrame::indices`].
+    /// Its vertices in the frame's GPU draw (expanded indices).
     pub first: u32,
     pub count: u32,
     /// The largest vertex alpha (GS units).
@@ -115,9 +115,12 @@ pub struct GpuFrame {
     pub calls: Vec<[[u32; 4]; ssx3_render::gpu::UNIFORM_QWORDS]>,
     pub data: Vec<[u32; 4]>,
     pub indices: Vec<u32>,
-    /// The number of calls, then per call its first index (draws merge runs
-    /// of calls; the shader finds a vertex's call from this).
+    /// The number of calls, then per call {its first vertex in the draw,
+    /// its first entry in `indices`, its index mode} (draws merge runs of
+    /// calls; the shader finds a vertex's call and index from this).
     pub call_start: Vec<u32>,
+    /// The vertices drawn so far (`GpuBatch::first`).
+    pub verts: u32,
     /// `Link::Source` calls by key: their first data qword, alpha maximum.
     pub sources: std::collections::HashMap<u32, (u32, f32)>,
     /// Data kept from frame to frame (shared by `Gs` copies).
@@ -273,6 +276,7 @@ impl Gs {
         self.gpu.indices.clear();
         self.gpu.call_start.clear();
         self.gpu.call_start.push(0);
+        self.gpu.verts = 0;
         self.gpu.sources.clear();
         self.queue.clear();
         self.size = size;
@@ -800,7 +804,7 @@ impl Gs {
             self.dropped += 1;
             return;
         };
-        self.prims += call.indices.len() as u64 / 3;
+        self.prims += call.draw_len() as u64 / 3;
         let c = st.ctx;
         let p = self.cur_prim();
         let ci = bits(p, 9, 1) as usize;
@@ -834,18 +838,19 @@ impl Gs {
         let gb = GpuBatch {
             program: call.program,
             call: self.gpu.calls.len() as u32,
-            first: self.gpu.indices.len() as u32,
-            count: call.indices.len() as u32,
+            first: self.gpu.verts,
+            count: call.draw_len() as u32,
             alpha_max: call.alpha_max,
         };
         self.gpu.calls.push(u);
         self.gpu.data.extend_from_slice(&call.data);
-        self.gpu.indices.extend_from_slice(&call.indices);
         if self.gpu.call_start.is_empty() {
             self.gpu.call_start.push(0);
         }
-        self.gpu.call_start.push(gb.first);
+        self.gpu.call_start.extend_from_slice(&[gb.first, self.gpu.indices.len() as u32, call.index_mode]);
         self.gpu.call_start[0] += 1;
+        self.gpu.indices.extend_from_slice(&call.indices);
+        self.gpu.verts += gb.count;
         // A call right after one of the same program and state joins its
         // draw.
         match self.batches.last_mut() {
