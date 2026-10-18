@@ -139,10 +139,11 @@ fn ensure_view_matrices(c: &mut Cpu, gm: u32, ret: u32) {
     if r32(c, gm + gmf::VIEW_VALID) != 0 {
         return;
     }
-    let (ra, a0) = (c.g[RA], c.g[A0]);
-    c.g[A0][0] = gm as u64;
-    guest(c, |c| call_ptr(c, UPDATE_VIEW_MATRICES, ret));
-    c.g[RA] = ra;
+    // (Through `guest_call`: the callee may switch threads, which the
+    // native caller cannot follow; the unwind form lost the game's thread
+    // here.)
+    let a0 = c.g[A0];
+    guest_call(c, UPDATE_VIEW_MATRICES, &[gm], ret);
     c.g[A0] = a0;
 }
 
