@@ -28,11 +28,13 @@ mod bezier;
 mod frame;
 mod model;
 mod rider;
+mod ribbon;
 mod vu0;
 
 pub use bezier::end_pass as bezier_end_pass;
 pub(crate) use frame::dispatch_render_frame;
 pub use model::{draw_model, grid_mesh_draw};
+pub use ribbon::draw_board_wake;
 pub use rider::{draw_skinned_model, draw_skinned_model_shadow, emit_lighting_packet, set_shadow_header};
 
 /// PS2GraphicsMan fields (`structs/render.md`).
@@ -739,12 +741,19 @@ fn checked_ram(c: &mut Cpu, name: &'static str, native: fn(&mut Cpu), packets: f
     }
     let rec_packets = direct::split_off(m);
     // (One draw per packet: a fast-path packet is also captured by
-    // AppendPacket's wrapper.)
+    // AppendPacket's wrapper, a record's ribbon calls by their emitters';
+    // the widest capture at a start stands, nested ones go.)
     let filt = |r: &[Recorded]| -> Vec<Cmd> {
-        let mut seen = std::collections::HashSet::new();
-        let mut r: Vec<&Recorded> = r.iter().filter(|x| seen.insert(x.start)).collect();
-        r.sort_by_key(|x| x.start);
-        r.into_iter().map(|x| x.cmd.clone()).filter(|c| !matches!(c, Cmd::Vu(v) if v.is_empty())).collect()
+        let mut r: Vec<&Recorded> = r.iter().collect();
+        r.sort_by_key(|x| (x.start, std::cmp::Reverse(x.end)));
+        let mut out: Vec<&Recorded> = Vec::new();
+        for x in r {
+            if out.last().is_some_and(|l| x.start == l.start || x.start < l.end) {
+                continue;
+            }
+            out.push(x);
+        }
+        out.into_iter().map(|x| x.cmd.clone()).filter(|c| !matches!(c, Cmd::Vu(v) if v.is_empty())).collect()
     };
     let (a, b) = (filt(&rec_native), filt(&rec_packets));
     let uncovered: u64 = a.iter().zip(&b).map(|(x, y)| uncovered(x, y)).sum();

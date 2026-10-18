@@ -69,7 +69,7 @@ pub fn install() -> bool {
         (0x0037_8808, capture_drawglyphs, "DrawGlyphs"),
         (0x0037_9028, capture_drawglyphsw, "DrawGlyphsW"),
         (0x0038_6e78, capture_drawshadowvolume, "DrawShadowVolume"),
-        (0x0038_83b8, capture_drawboardwake, "DrawBoardWake"),
+        (0x0038_83b8, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "DrawBoardWake", crate::packetless::draw_board_wake, capture_drawboardwake), "DrawBoardWake"),
         (0x002d_c7b0, capture_fogparticleman_drawparticles, "FogParticleMan_DrawParticles"),
         (0x0036_3490, |c: &mut Cpu| crate::packetless::dispatch_render_frame(c, ssx3_ee::s12::f_00363490__generated), "PS2GraphicsMan_RenderFrame"),
         (GRID_MESH_DRAW, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "GridMeshDraw", crate::packetless::grid_mesh_draw, grid_mesh_draw), "cPS2GridMesh_Draw"),
@@ -115,41 +115,65 @@ fn draw_tri_strip(c: &mut Cpu) {
 /// A ribbon emitter's packet as VU1 input, per program start: (offset from
 /// TOP, qword). Built from the emitter's arguments and the vertex rings
 /// exactly as its UNPACKs place them (literal ports below).
-struct RibbonInput {
-    calls: Vec<Vec<(u16, u128)>>,
+pub(crate) struct RibbonInput {
+    pub calls: Vec<Vec<(u16, u128)>>,
     cur: Vec<(u16, u128)>,
+    /// Per call, the UNPACKs as the packet has them (offset, data).
+    segs: Vec<Vec<(u16, Vec<u128>)>>,
+    seg_cur: Vec<(u16, Vec<u128>)>,
 }
 
 impl RibbonInput {
     fn new() -> Self {
-        Self { calls: Vec::new(), cur: Vec::new() }
+        Self { calls: Vec::new(), cur: Vec::new(), segs: Vec::new(), seg_cur: Vec::new() }
     }
     /// `n` vertices (3 qwords each) from guest memory at `src`, unpacked at
     /// offset `at`; `None` for a count the packet could not have.
     fn verts(&mut self, c: &mut Cpu, at: u32, src: u32, n: i32) -> Option<()> {
+        self.seg_cur.push((at as u16, Vec::new()));
+        self.verts_join(c, at, src, n)
+    }
+    /// [`Self::verts`] in the same UNPACK as the previous ones.
+    fn verts_join(&mut self, c: &mut Cpu, at: u32, src: u32, n: i32) -> Option<()> {
         if !(0..=0x48).contains(&n) {
             return None;
         }
         for i in 0..3 * n as u32 {
             let q = qword(c, src.wrapping_add(16 * i));
             self.cur.push(((at + i) as u16, q));
+            self.seg_cur.last_mut()?.1.push(q);
         }
         Some(())
     }
     /// The strip tag and the counts / alpha ramp (offsets 0, 1).
     fn head(&mut self, n: i32, tag_lo: u64, regs: u64, alpha: FpuF32, step: FpuF32) {
         let n = n as u128;
-        self.cur.push((0, (2 * n) | tag_lo as u128 | (regs as u128) << 64));
-        self.cur.push((1, 3 * n | n << 32 | (step.0 as u128) << 64 | (alpha.0 as u128) << 96));
+        let q0 = (2 * n) | tag_lo as u128 | (regs as u128) << 64;
+        let q1 = 3 * n | n << 32 | (step.0 as u128) << 64 | (alpha.0 as u128) << 96;
+        self.cur.push((0, q0));
+        self.cur.push((1, q1));
+        self.seg_cur.push((0, vec![q0, q1]));
     }
     fn start(&mut self) {
         self.calls.push(std::mem::take(&mut self.cur));
+        self.segs.push(std::mem::take(&mut self.seg_cur));
+    }
+    /// The calls as the packet's VIFcodes leave them: per UNPACK its
+    /// STCYCL and the write, then the program start.
+    pub(crate) fn steps(&self, entry: u32, out: &mut Vec<Step>) {
+        for call in &self.segs {
+            for (at, data) in call {
+                out.push(Step::Cycle(0x0101));
+                out.push(Step::Write { addr: *at, rel: true, data: data.clone() });
+            }
+            out.push(Step::Start(entry));
+        }
     }
 }
 
 /// The emitters' entry: 0x3a08, or 0x3a00 once after the flag at
 /// `gp + flag` was set (the body clears it).
-fn ribbon_entry(c: &mut Cpu, flag: u32) -> u32 {
+pub(crate) fn ribbon_entry(c: &mut Cpu, flag: u32) -> u32 {
     if c.bus.read32(c.g[GP][0] as u32 + flag) == 0 { 0x3a08 } else { 0x3a00 }
 }
 
@@ -167,17 +191,24 @@ fn capture_ribbon(c: &mut Cpu, body: fn(&mut Cpu), input: Option<(u32, RibbonInp
 /// `PS2GraphicsMan_EmitBoardWakeStrips(f12 alpha, f13 step, gm, rings,
 /// first, ring size, count, ring A, ring B)` (0x3885e0).
 fn emit_board_wake_strips(c: &mut Cpu) {
-    let input = direct::active().then(|| board_wake_input(c)).flatten();
+    let input = direct::active()
+        .then(|| {
+            let entry = ribbon_entry(c, 0x12c0);
+            let g = |r: usize| c.g[r][0] as u32;
+            let args = (g(A1), g(A2) as i32, g(A3) as i32, g(T0) as i32, g(T1), g(T2));
+            board_wake_input(c, entry, FpuF32(c.f[12]), FpuF32(c.f[13]), args)
+        })
+        .flatten();
     capture_ribbon(c, ssx3_ee::s12::f_003885e0__generated, input);
 }
 
-fn board_wake_input(c: &mut Cpu) -> Option<(u32, RibbonInput)> {
-    let entry = ribbon_entry(c, 0x12c0);
-    let (mut alpha, step) = (FpuF32(c.f[12]), FpuF32(c.f[13]));
-    let rings = c.g[A1][0] as u32;
-    let (mut p5, p6, mut p7) = (c.g[A2][0] as i32, c.g[A3][0] as i32, c.g[T0][0] as i32);
-    let ring_a = c.bus.read32(rings.wrapping_add(4 * c.g[T1][0] as u32));
-    let ring_b = c.bus.read32(rings.wrapping_add(4 * c.g[T2][0] as u32));
+/// EmitBoardWakeStrips' input: (rings, first, ring size, count, ring A,
+/// ring B) its arguments.
+pub(crate) fn board_wake_input(c: &mut Cpu, entry: u32, alpha: FpuF32, step: FpuF32, args: (u32, i32, i32, i32, u32, u32)) -> Option<(u32, RibbonInput)> {
+    let mut alpha = alpha;
+    let (rings, mut p5, p6, mut p7, ia, ib) = args;
+    let ring_a = c.bus.read32(rings.wrapping_add(4 * ia));
+    let ring_b = c.bus.read32(rings.wrapping_add(4 * ib));
     let mut r = RibbonInput::new();
     let mut first = true;
     while p7 != 0 {
@@ -225,18 +256,25 @@ fn board_wake_input(c: &mut Cpu) -> Option<(u32, RibbonInput)> {
 /// `PS2GraphicsMan_EmitShadowStrips(f12 alpha, f13 step, gm, rings, first,
 /// count, ring A, ring B, textured)` (0x387ec0): rings of 0x36 vertices.
 fn emit_shadow_strips(c: &mut Cpu) {
-    let input = direct::active().then(|| shadow_input(c)).flatten();
+    let input = direct::active()
+        .then(|| {
+            let entry = ribbon_entry(c, 0x12b0);
+            let g = |r: usize| c.g[r][0] as u32;
+            let args = (g(A1), g(A2) as i32, g(A3) as i32, g(T0), g(T1), g(T2) != 0);
+            shadow_input(c, entry, FpuF32(c.f[12]), FpuF32(c.f[13]), args)
+        })
+        .flatten();
     capture_ribbon(c, ssx3_ee::s12::f_00387ec0__generated, input);
 }
 
-fn shadow_input(c: &mut Cpu) -> Option<(u32, RibbonInput)> {
-    let entry = ribbon_entry(c, 0x12b0);
-    let (mut alpha, step) = (FpuF32(c.f[12]), FpuF32(c.f[13]));
-    let rings = c.g[A1][0] as u32;
-    let (mut p5, mut p6) = (c.g[A2][0] as i32, c.g[A3][0] as i32);
-    let ring_a = c.bus.read32(rings.wrapping_add(4 * c.g[T0][0] as u32));
-    let ring_b = c.bus.read32(rings.wrapping_add(4 * c.g[T1][0] as u32));
-    let (prim, regs) = if c.g[T2][0] == 0 { (4u64, 0x41f) } else { (0x5c, 0x412) };
+/// EmitShadowStrips' input: (rings, first, count, ring A, ring B,
+/// textured) its arguments.
+pub(crate) fn shadow_input(c: &mut Cpu, entry: u32, alpha: FpuF32, step: FpuF32, args: (u32, i32, i32, u32, u32, bool)) -> Option<(u32, RibbonInput)> {
+    let mut alpha = alpha;
+    let (rings, mut p5, mut p6, ia, ib, textured) = args;
+    let ring_a = c.bus.read32(rings.wrapping_add(4 * ia));
+    let ring_b = c.bus.read32(rings.wrapping_add(4 * ib));
+    let (prim, regs) = if !textured { (4u64, 0x41f) } else { (0x5c, 0x412) };
     let tag_lo = 0x8000 | prim << 47 | 1 << 46 | 3 << 60;
     // The closing pair's default (a game global, -1/-1 when unused).
     let default_pair = c.bus.read32(0x004a_43a8) as u64 | (c.bus.read32(0x004a_43ac) as u64) << 32;
@@ -271,7 +309,7 @@ fn shadow_input(c: &mut Cpu) -> Option<(u32, RibbonInput)> {
             }
             if pair as i32 >= 0 {
                 r.verts(c, at, ring.wrapping_add((pair as u32).wrapping_mul(0x30)), 1)?;
-                r.verts(c, at + 3, ring.wrapping_add(((pair >> 32) as u32).wrapping_mul(0x30)), 1)?;
+                r.verts_join(c, at + 3, ring.wrapping_add(((pair >> 32) as u32).wrapping_mul(0x30)), 1)?;
                 at += 6;
             }
         }
