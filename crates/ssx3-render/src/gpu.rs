@@ -19,6 +19,8 @@
 pub enum Program {
     /// Type 3 meshes (`mat3`, entries 0x2270 / 0x22c8 / 0x2320 / 0x2358).
     Mat3Mesh = 0,
+    /// Type 3 float strips and ribbons (`mat3`, entries 0x12b8 / 0x3a08).
+    Mat3Strip = 3,
     /// Types 6/7 skinned strips and their env pass (`mat6`, entries 0x00 /
     /// 0x50 / 0x30).
     Mat6Skin = 1,
@@ -38,6 +40,7 @@ impl Program {
     pub fn vs_entry(self) -> &'static str {
         match self {
             Program::Mat3Mesh => "vs_mat3_mesh",
+            Program::Mat3Strip => "vs_mat3_strip",
             Program::Mat6Skin => "vs_mat6_skin",
             Program::Mat6Shadow => "vs_mat6_shadow",
             Program::Mat4Particles => "vs_mat4_particles",
@@ -49,6 +52,7 @@ impl Program {
     pub fn from_u8(v: u8) -> Option<Program> {
         match v {
             0 => Some(Program::Mat3Mesh),
+            3 => Some(Program::Mat3Strip),
             1 => Some(Program::Mat6Skin),
             2 => Some(Program::Mat6Shadow),
             40 => Some(Program::Mat4Particles),
@@ -126,7 +130,10 @@ pub fn enabled() -> bool {
 /// leaves the memory untouched, for the CPU program.
 pub fn plan(hash: u64, entry: u32, top: u32, itop: u32, mem: &mut [u8; 16384]) -> Option<Vec<GpuCall>> {
     match hash {
-        crate::mat3::HASH => crate::mat3::plan_gpu(entry, top, itop, mem).map(|c| vec![c]),
+        crate::mat3::HASH => match entry {
+            0x12b8 | 0x3a08 => crate::mat3::plan_gpu_strip(entry, top, mem).map(|c| vec![c]),
+            _ => crate::mat3::plan_gpu(entry, top, itop, mem).map(|c| vec![c]),
+        },
         crate::mat6::HASH => crate::mat6::plan_gpu(entry, top, itop, mem),
         crate::mat4::HASH => crate::mat4::plan_gpu(entry, top, itop, mem),
         crate::mat5::HASH => crate::mat5::plan_gpu(entry, top, itop, mem),
@@ -227,6 +234,7 @@ mod tests {
 pub fn check(hash: u64, calls: &[GpuCall], gif: &[u128]) -> Option<String> {
     match (hash, calls) {
         (crate::mat3::HASH, [call]) if call.program == Program::Mat3Mesh => check_mat3(call, gif),
+        (crate::mat3::HASH, [call]) if call.program == Program::Mat3Strip => crate::mat3::check_gpu_strip(call, gif),
         (crate::mat6::HASH, [call]) => crate::mat6::check_gpu(call, gif),
         (crate::mat4::HASH | crate::mat5::HASH, _) => crate::mat4::gpu_check(calls, gif),
         _ => None,

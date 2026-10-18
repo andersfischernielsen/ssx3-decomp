@@ -397,6 +397,60 @@ fn float_strip(m: &mut Mem, top: u16, kick: &mut dyn FnMut(&[u128])) -> bool {
     true
 }
 
+/// [`float_strip`] without its output: the clip side only, for the GPU
+/// strips. The same transforms in the same order (the CLIP flags decide
+/// which triangles are culled, to the last bit), the same clipper calls
+/// with their memory effects (polygon buffers, fan packets, fan tag toggle,
+/// accumulator spill) and fan kicks; returns, per vertex, its clip-space
+/// position (as the program computes it) and whether the program gives it
+/// ADC (the first two, and the last vertex of a culled triangle). The
+/// clipper takes the triangle's colours from the program's output, which
+/// are the input's (`n` ≤ 72 vertices: the output never reaches unread
+/// input).
+fn float_strip_clip(m: &mut Mem, top: u16, n: u16, kick: &mut dyn FnMut(&[u128])) -> Vec<(V, bool)> {
+    let mat = [m.ld(MATRIX), m.ld(MATRIX + 1), m.ld(MATRIX + 2), m.ld(MATRIX + 3)];
+    let (gs, go) = guard(m);
+    let mut cur = xform_xyzw(&mat, m.ld(top.wrapping_add(4)));
+    let mut next = xform_xyzw(&mat, m.ld(top.wrapping_add(7)));
+    let mut clip = ClipFlags::default();
+    let mut src = top.wrapping_add(9);
+    let mut out = Vec::with_capacity(n as usize);
+    for k in 0..n {
+        let p2 = m.ld(src.wrapping_add(1));
+        src = src.wrapping_add(3);
+        clip.clip(cur);
+        out.push((cur, true));
+        cur = next;
+        let mut acc = mul(mat[3], bc(ONE));
+        acc = madd(acc, mat[2], bc(p2[2]));
+        if k >= 2 {
+            let culled = clip.fcand(0x3_ffff);
+            out[k as usize].1 = culled;
+            if culled && !clip.triangle_dropped() {
+                let spill = madd(acc, VF0, bc(VF0[0]));
+                m.st(ACC_SPILL, spill);
+                let pos = |d: u16| m.ld(src.wrapping_sub(d));
+                let (pa, pb, pc) = (pos(14), pos(11), pos(8));
+                let (sa, sb, sc) = (pos(16), pos(13), pos(10));
+                let (ca, cb, cc) = (itof0(pos(15)), itof0(pos(12)), itof0(pos(9)));
+                let a = xform_xyzw(&mat, pa);
+                let b = xform_xyzw(&mat, pb);
+                let c = xform_xyzw(&mat, pc);
+                for (i, v) in [a, sa, ca, b, sb, cb, c, sc, cc].into_iter().enumerate() {
+                    m.st(CLIP_BUF_A + i as u16, v);
+                }
+                clip_triangle(m, &mut clip, gs, go, kick);
+                clip.clip(b);
+                clip.clip(c);
+                acc = mul(m.ld(ACC_SPILL), bc(ONE));
+            }
+        }
+        acc = madd(acc, mat[1], bc(p2[1]));
+        next = madd(acc, mat[0], bc(p2[0]));
+    }
+    out
+}
+
 // ---------------------------------------------------------------------------
 // 0x1630: the near/guard-band clipper
 // ---------------------------------------------------------------------------
@@ -545,15 +599,31 @@ fn emit_fan(m: &mut Mem, buf: u16, qw: u16, gs: V, go: V, kick: &mut dyn FnMut(&
 /// A0 B0 A1 B1 ... with alpha_k = a · clamp(α0 + kΔα, 0, 1), patches the
 /// count to 6m and runs the float strip.
 fn ribbon(m: &mut Mem, top: u16, kick: &mut dyn FnMut(&[u128])) -> bool {
+    if ribbon_pairs(m, top).is_none() {
+        return false;
+    }
+    ribbon_rebuild(m, top);
+    float_strip(m, top, kick)
+}
+
+/// The ribbon's pair count m, when the input is one [`ribbon_rebuild`]
+/// handles: as the game uses it, count3 = 3m, 2 ≤ m ≤ 36 (the strip that
+/// follows needs ≥ 3 vertices; edge A's copy at TOP+0xdb must not reach
+/// edge B; with these, the in-place interleave never overwrites unread
+/// input).
+fn ribbon_pairs(m: &Mem, top: u16) -> Option<u16> {
+    let hdr = m.ld(top.wrapping_add(1));
+    let (count3, pairs) = (hdr[0] as u16, hdr[1] as u16);
+    ((2..=36).contains(&pairs) && count3 == 3 * pairs).then_some(pairs)
+}
+
+/// The ribbon's rebuild (0x3a08 up to the float strip): the interleave in
+/// place with the alpha ramp, the count patched to 6m (a valid input,
+/// [`ribbon_pairs`]).
+fn ribbon_rebuild(m: &mut Mem, top: u16) {
     let hdr = m.ld(top.wrapping_add(1));
     let count3 = hdr[0] as u16; // vi3 = 3m
     let pairs = hdr[1] as u16; // vi4 = m
-    // As the game uses it: count3 = 3m, 2 ≤ m ≤ 36 (the strip that follows
-    // needs ≥ 3 vertices; edge A's copy at TOP+0xdb must not reach edge B;
-    // with these, the in-place interleave never overwrites unread input).
-    if !(2..=36).contains(&pairs) || count3 != 3 * pairs {
-        return false;
-    }
     let (d_alpha, alpha0) = (hdr[2], hdr[3]);
     let scratch = top.wrapping_add(OUT);
 
@@ -593,7 +663,6 @@ fn ribbon(m: &mut Mem, top: u16, kick: &mut dyn FnMut(&[u128])) -> bool {
         o = o.wrapping_add(6);
     }
     m.isw(top.wrapping_add(1), 0, count3.wrapping_add(count3));
-    float_strip(m, top, kick)
 }
 
 // ---------------------------------------------------------------------------
@@ -1209,6 +1278,206 @@ pub fn plan_gpu(entry: u32, top: u32, itop: u32, mem: &mut [u8; 16384]) -> Optio
     Some(crate::gpu::GpuCall { program: crate::gpu::Program::Mat3Mesh, pre: Vec::new(), tag, uniforms: u, data, indices, alpha_max, link })
 }
 
+// ---------------------------------------------------------------------------
+// GPU float strips and ribbons (`crate::gpu`, `vs_mat3_strip`)
+// ---------------------------------------------------------------------------
+
+/// Uniform qwords of a GPU strip call (`vs_mat3_strip`).
+pub mod gpu_strip {
+    /// guardScale, guardOffset (qw4, qw5 of the program's memory).
+    pub const GUARD_SCALE: usize = 0;
+    pub const GUARD_OFFSET: usize = 1;
+    /// x: the XYZF2 fog of a drawing vertex (bits 4..11 of FTOI4 of the
+    /// screen w, i.e. of guardOffset.w), as f32.
+    pub const FOG: usize = 2;
+    /// Data qwords per vertex: ST (S, T, Q factor; f32), RGBA (ints), the
+    /// clip-space position (f32, as the program computes it), flags (x:
+    /// ADC, y: the vertex's index in the strip).
+    pub const VERTEX_QWORDS: usize = 4;
+}
+
+/// The strip tag a GPU strip draws: PACKED, PRE, NLOOP = the vertex count,
+/// REGS {ST (or NOP when untextured), RGBAQ, XYZ2/XYZF2}, a triangle strip
+/// with STQ coordinates. Returns whether it is flat shaded (`None`: the CPU
+/// program keeps it).
+fn gpu_strip_tag(tag: V, n: u16) -> Option<bool> {
+    let lo = tag[0] as u64 | (tag[1] as u64) << 32;
+    let bits = |at: u32, n: u32| (lo >> at) & ((1 << n) - 1);
+    let prim = bits(47, 11);
+    let tme = prim & 0x10 != 0;
+    let regs = tag[2];
+    let ok = bits(0, 15) == n as u64
+        && bits(46, 1) == 1
+        && bits(58, 2) == 0
+        && bits(60, 4) == 3
+        && prim & 7 == 4
+        && !(tme && prim & 0x100 != 0)
+        && (regs >> 4) & 0xf == 1
+        && matches!((regs >> 8) & 0xf, 4 | 5)
+        && (regs & 0xf == 2 || (regs & 0xf == 0xf && !tme));
+    ok.then_some(prim & 8 == 0)
+}
+
+
+/// Plan a float strip (0x12b8) or ribbon (0x3a08) for the GPU
+/// (`crate::gpu::plan`).
+///
+/// The CPU does the program's memory effects and its culling decisions,
+/// exactly: the ribbon's rebuild (in-place interleave with the alpha ramp,
+/// the count patched to 6m); the strip's tag at its output buffer (so no
+/// mesh pass 2 mistakes it for a GPU pass 1); the CLIP test of every vertex
+/// and, for the triangles that cross the guard band, the clipper with all
+/// its effects (polygon buffers, fan packets, the fan tag toggle at qw33.w,
+/// the accumulator spill at qw37) and its fans, kicked first (`pre`) as the
+/// program does ([`float_strip_clip`]). Not written: the per-vertex output
+/// (STQ, RGBA, XYZ from TOP+0xdc), which no call reads (the next call at
+/// this TOP uploads new input; a ribbon writes its scratch there before
+/// reading it).
+///
+/// The CLIP test needs the clip-space positions, which the CPU so computes
+/// exactly (the program's transform, PS2 floats, its op order); they go to
+/// the GPU as they are: the wakes and shadows lie on the snow at large world
+/// coordinates, where the transform's last bits move the depth by
+/// thousands of GS units (an IEEE transform makes them z-fight the snow
+/// differently). The GPU does the rest per vertex (`vs_mat3_strip`):
+/// perspective divide, STQ, the screen position. The triangle list holds the strip's triangles
+/// the program draws (not culled); a flat-shaded strip gets 3 vertices per
+/// triangle, each with the colour of the triangle's last vertex. Data: per
+/// vertex [`gpu_strip::VERTEX_QWORDS`] qwords.
+///
+/// `None` (memory untouched) for what the CPU program keeps: inputs it
+/// would not end on, tags other than [`gpu_strip_tag`]'s, a nonzero
+/// guardScale.w, more than 72 vertices or an output reaching the clipper's
+/// buffers.
+pub fn plan_gpu_strip(entry: u32, top: u32, mem: &mut [u8; 16384]) -> Option<crate::gpu::GpuCall> {
+    let top = (top & 0x3ff) as u16;
+    let mut m = Mem(mem);
+    let m = &mut m;
+    let n = match entry {
+        0x12b8 => {
+            let n3 = m.ilw(top.wrapping_add(1), 0);
+            if n3 < 9 || !n3.is_multiple_of(3) {
+                return None;
+            }
+            n3 / 3
+        }
+        0x3a08 => 2 * ribbon_pairs(m, top)?,
+        _ => return None,
+    };
+    if n > 72 || top as u32 + OUT as u32 + 1 + 3 * n as u32 > CLIP_BUF_A as u32 {
+        return None;
+    }
+    let tag = m.ld(top);
+    let flat = gpu_strip_tag(tag, n)?;
+    let (gs, go) = guard(m);
+    // (The screen w is guardOffset.w + q·w·guardScale.w: with a zero
+    // guardScale.w, a constant.)
+    if gs[3] & 0x7f80_0000 != 0 {
+        return None;
+    }
+    if entry == 0x3a08 {
+        ribbon_rebuild(m, top);
+    }
+    m.st(top.wrapping_add(OUT), tag);
+    let mut pre = Vec::new();
+    let clip = float_strip_clip(m, top, n, &mut |p| pre.extend_from_slice(p));
+
+    let mut u = [[0u32; 4]; crate::gpu::UNIFORM_QWORDS];
+    u[gpu_strip::GUARD_SCALE] = gs;
+    u[gpu_strip::GUARD_OFFSET] = go;
+    let w = madd(mul(go, bc(ONE)), bc(ONE), gs)[3];
+    let fog = (ftoi4(bc(w))[3] >> 4) & 0xff;
+    u[gpu_strip::FOG] = [(fog as f32).to_bits(), 0, 0, 0];
+
+    let vertex = |m: &Mem, k: u16| -> [V; 4] {
+        let a = top.wrapping_add(2 + 3 * k);
+        let (c, adc) = clip[k as usize];
+        [m.ld(a), m.ld(a.wrapping_add(1)), c, [adc as u32, k as u32, 0, 0]]
+    };
+    let verts: Vec<[V; 4]> = (0..n).map(|k| vertex(m, k)).collect();
+    let drawn = (2..n as usize).filter(|&k| !clip[k].1);
+    // (Over the drawn triangles' vertices, as the GS side takes it.)
+    let alpha_of = |k: usize| verts[k][1][3] & 0xff;
+    let alpha_max = drawn.clone().map(|k| if flat { alpha_of(k) } else { alpha_of(k - 2).max(alpha_of(k - 1)).max(alpha_of(k)) }).max().unwrap_or(0) as f32;
+    let (data, indices): (Vec<V>, Vec<u32>) = if flat {
+        let mut data = Vec::with_capacity(3 * n as usize * gpu_strip::VERTEX_QWORDS);
+        for k in drawn {
+            let col = verts[k][1];
+            for v in &verts[k - 2..=k] {
+                data.extend_from_slice(&[v[0], col, v[2], v[3]]);
+            }
+        }
+        let count = (data.len() / gpu_strip::VERTEX_QWORDS) as u32;
+        (data, (0..count).collect())
+    } else {
+        let data = verts.iter().flatten().copied().collect();
+        (data, drawn.flat_map(|k| [k as u32 - 2, k as u32 - 1, k as u32]).collect())
+    };
+    let tag = tag[0] as u128 | (tag[1] as u128) << 32 | (tag[2] as u128) << 64 | (tag[3] as u128) << 96;
+    Some(crate::gpu::GpuCall {
+        program: crate::gpu::Program::Mat3Strip,
+        pre,
+        tag,
+        uniforms: u,
+        data,
+        indices,
+        alpha_max,
+        link: crate::gpu::Link::None,
+    })
+}
+
+/// Debug (`crate::gpu::check`): the strip shader's formulas
+/// (`vs_mat3_strip`, IEEE) against the program's strip packet (the last
+/// packet of `gif`: clipped fans come first), and the fans (`pre`).
+pub fn check_gpu_strip(call: &crate::gpu::GpuCall, gif: &[u128]) -> Option<String> {
+    use gpu_strip as g;
+    let f = |q: usize| -> [f32; 4] { call.uniforms[q].map(f32::from_bits) };
+    let n = (call.tag & 0x7fff) as usize;
+    let Some(strip) = gif.len().checked_sub(1 + 3 * n).filter(|&s| gif[..s] == call.pre[..]) else {
+        return Some(format!("mat3 strip: {n} vertices, {} qwords of fans; the program kicked {} qwords", call.pre.len(), gif.len()));
+    };
+    let strip = strip + 1;
+    let (gs, go) = (f(g::GUARD_SCALE), f(g::GUARD_OFFSET));
+    let flat = (call.tag >> 47) & 8 == 0;
+    let mut bad = Vec::new();
+    // The triangles: the strip's whose last vertex has no ADC.
+    let want: Vec<u32> = (2..n).filter(|&k| (gif[strip + 3 * k + 2] >> 111) & 1 == 0).map(|k| k as u32).collect();
+    let got: Vec<u32> = call.indices.chunks(3).map(|t| call.data[g::VERTEX_QWORDS * t[2] as usize + 3][1]).collect();
+    if got != want {
+        bad.push(format!("triangles {got:?} want {want:?}"));
+    }
+    let mut used = vec![false; call.data.len() / g::VERTEX_QWORDS];
+    for &i in &call.indices {
+        used[i as usize] = true;
+    }
+    for (v, _) in call.data.chunks(g::VERTEX_QWORDS).zip(&used).filter(|(_, &u)| u) {
+        let k = v[3][1] as usize;
+        let w: [u32; 12] = std::array::from_fn(|i| (gif[strip + 3 * k + i / 4] >> (32 * (i % 4))) as u32);
+        if (w[11] >> 15) & 1 != v[3][0] {
+            bad.push(format!("v{k}: ADC {} want {}", v[3][0], (w[11] >> 15) & 1));
+        }
+        let st = v[0].map(f32::from_bits);
+        let hc = v[2].map(f32::from_bits);
+        let q = 1.0 / hc[3];
+        let sx: [f32; 3] = std::array::from_fn(|l| (go[l] + gs[l] * hc[l] * q) * 16.0);
+        let stq = [st[0] * q, st[1] * q, st[2] * q];
+        let got_xyz = [w[8] as f32, w[9] as f32, w[10] as i32 as f32];
+        let got_stq = [f32::from_bits(w[0]), f32::from_bits(w[1]), f32::from_bits(w[2])];
+        let col = v[1].map(|c| c & 0xff);
+        let got_col = [w[4] & 0xff, w[5] & 0xff, w[6] & 0xff, w[7] & 0xff];
+        let close = |a: f32, b: f32, tol: f32| (a - b).abs() <= tol * (1.0 + b.abs());
+        // (x, y within 1/8 pixel; Z within 2 GS units.)
+        let ok_xyz = (0..2).all(|l| (sx[l] - got_xyz[l]).abs() <= 2.0) && (sx[2] - got_xyz[2]).abs() <= 32.0;
+        let ok_stq = (0..3).all(|l| close(stq[l], got_stq[l], 1e-3));
+        // (Flat: a triangle's vertices carry its last vertex's colour.)
+        let ok_col = flat || col == got_col;
+        if !(ok_xyz && ok_stq && ok_col) && bad.len() < 3 {
+            bad.push(format!("v{k}: xyz {sx:?} want {got_xyz:?} | stq {stq:?} want {got_stq:?} | rgba {col:?} want {got_col:?}"));
+        }
+    }
+    (!bad.is_empty()).then(|| format!("mat3 strip ({n} vertices, flat {flat}): {}", bad.join("; ")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1262,6 +1531,87 @@ mod tests {
         assert_eq!((k[3] >> 32) as u32, 2160 * 16);
         // RGBA passes through.
         assert_eq!(k[2], 0x80 << 96 | 0x20 << 64 | 0x40 << 32 | 0x80);
+    }
+
+    /// Random float strips and ribbons (a perspective matrix, positions
+    /// crossing the guard band and the near plane, both tag kinds the game
+    /// uses): [`plan_gpu_strip`] must leave the memory the program leaves
+    /// (but its per-vertex output), kick the program's fans first, give the
+    /// program's ADC, draw the triangles it draws, and its shader formulas
+    /// must give the program's vertices ([`check_gpu_strip`]).
+    #[test]
+    fn gpu_strip_matches_program() {
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        let mut rnd = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        let (mut clipped, mut culled, mut flat_calls) = (0, 0, 0);
+        for case in 0..400 {
+            let ribbon = case % 2 == 1;
+            let flat = case % 4 >= 2;
+            let mut mem = Box::new([0u8; 16384]);
+            let mut m = Mem(&mut mem);
+            // Perspective: w = 2 + z (the eye at z = -2), small screen.
+            m.st(MATRIX, [f(1.0), 0, 0, 0]);
+            m.st(MATRIX + 1, [0, f(1.0), 0, 0]);
+            m.st(MATRIX + 2, [0, 0, f(1.0), f(1.0)]);
+            m.st(MATRIX + 3, [0, 0, 0, f(2.0)]);
+            m.st(GUARD_SCALE, [f(1024.0), f(-1024.0), f(-8388467.5), 0]);
+            m.st(GUARD_OFFSET, [f(2047.5), f(2047.5), f(8388467.5), 0]);
+            m.st(FAN_TOGGLE, [0, 0, 0, if case % 3 == 0 { FAN_TAG_B as u32 } else { 0 }]);
+            m.st(FAN_TAG_A, [0x8003, 0x302e_c000, 0x412, 0]);
+            m.st(FAN_TAG_B, [0x8004, 0x302e_c000, 0x412, 0]);
+            let top = if case % 5 == 0 { 0x1b6u16 } else { 0x26 };
+            let (prim, regs) = if flat { (0x04u64, 0x41fu32) } else { (0x5c, 0x412) };
+            let pairs = 2 + (rnd() % 20) as u16;
+            let n = if ribbon { 2 * pairs } else { 3 + (rnd() % 30) as u16 };
+            let lo = n as u64 | 1 << 15 | 1 << 46 | prim << 47 | 3 << 60;
+            m.st(top, [lo as u32, (lo >> 32) as u32, regs, 0]);
+            let scale = [0.5, 1.5, 3.0][case % 3];
+            if ribbon {
+                m.st(top + 1, [3 * pairs as u32, pairs as u32, f(-0.05), f(1.25)]);
+            } else {
+                m.st(top + 1, [3 * n as u32, 0, 0, 0]);
+            }
+            for i in 0..n {
+                let a = top + 2 + 3 * i;
+                let r: [u64; 7] = std::array::from_fn(|_| rnd());
+                let unit = |x: u64| (x % 20001) as f32 / 10000.0 - 1.0;
+                m.st(a, [f(unit(r[0])), f(unit(r[1])), f(1.0), 0]);
+                m.st(a + 1, [(r[2] % 256) as u32, 0x40, 0x20, (r[3] % 256) as u32]);
+                m.st(a + 2, [f(unit(r[4]) * scale), f(unit(r[5]) * scale), f(unit(r[6]) * scale), f(1.0)]);
+            }
+            drop(m);
+            let entry = if ribbon { 0x3a08 } else { 0x12b8 };
+
+            let mut want_mem = mem.clone();
+            let mut kicks: Vec<Vec<u128>> = Vec::new();
+            assert!(run(entry, top as u32, 0, &mut want_mem, &mut VuState::default(), &mut |p| kicks.push(p.to_vec())));
+            let call = plan_gpu_strip(entry, top as u32, &mut mem).expect("planned");
+            // Memory: all but the per-vertex output.
+            let out = (top + OUT + 1) as usize..(top + OUT + 1 + 3 * n) as usize;
+            for q in (0..1024).filter(|q| !out.contains(q)) {
+                assert_eq!(mem[q * 16..q * 16 + 16], want_mem[q * 16..q * 16 + 16], "case {case}: qw {q:#x}");
+            }
+            // The fans, then the strip.
+            let (strip, fans) = kicks.split_last().unwrap();
+            assert_eq!(call.pre, fans.concat(), "case {case}");
+            clipped += fans.len();
+            let adc = |k: usize| (strip[1 + 3 * k + 2] >> 111) & 1 == 1;
+            let mut want_tris: Vec<u32> = (2..n as usize).filter(|&k| !adc(k)).map(|k| k as u32).collect();
+            culled += n as usize - 2 - want_tris.len();
+            let mut got_tris: Vec<u32> = call.indices.chunks(3).map(|t| call.data[gpu_strip::VERTEX_QWORDS * t[2] as usize + 3][1]).collect();
+            want_tris.sort();
+            got_tris.sort();
+            assert_eq!(got_tris, want_tris, "case {case}");
+            flat_calls += flat as u32;
+            let gif: Vec<u128> = kicks.concat();
+            assert_eq!(check_gpu_strip(&call, &gif), None, "case {case}");
+        }
+        assert!(clipped > 50 && culled > 100 && flat_calls > 0, "clipped {clipped} culled {culled}");
     }
 
     #[test]

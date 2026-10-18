@@ -237,6 +237,7 @@ const GPUVU_SOURCES: &[&str] = &[
     include_str!("draw.wgsl"),
     include_str!("gpuvu.wgsl"),
     include_str!("gpuvu/mat3.wgsl"),
+    include_str!("gpuvu/mat3_strip.wgsl"),
     include_str!("gpuvu/mat6.wgsl"),
     include_str!("gpuvu/particles.wgsl"),
 ];
