@@ -36,11 +36,11 @@ pub fn install() -> bool {
         return false;
     }
     for (a, f, name) in [
-        (DRAW_TRI_STRIP, draw_tri_strip as fn(&mut Cpu), "PS2GraphicsMan_DrawTriStrip"),
+        (DRAW_TRI_STRIP, (|c: &mut Cpu| crate::packetless::dispatch(c, "DrawTriStrip", 1, crate::packetless::draw_tri_strip, draw_tri_strip)) as fn(&mut Cpu), "PS2GraphicsMan_DrawTriStrip"),
         (EMIT_BOARD_WAKE_STRIPS, emit_board_wake_strips, "PS2GraphicsMan_EmitBoardWakeStrips"),
         (EMIT_SHADOW_STRIPS, emit_shadow_strips, "PS2GraphicsMan_EmitShadowStrips"),
-        (BEGIN_TRI_STRIP, begin_tri_strip, "PS2GraphicsMan_BeginTriStrip"),
-        (END_TRI_STRIP, end_tri_strip, "PS2GraphicsMan_EndTriStrip"),
+        (BEGIN_TRI_STRIP, |c: &mut Cpu| crate::packetless::dispatch_with(c, "BeginTriStrip", 0, &[0x5a28, 0x5a2c], crate::packetless::begin_tri_strip, begin_tri_strip), "PS2GraphicsMan_BeginTriStrip"),
+        (END_TRI_STRIP, |c: &mut Cpu| crate::packetless::dispatch_with(c, "EndTriStrip", 1, &[0x5a28, 0x5a2c], crate::packetless::end_tri_strip, end_tri_strip), "PS2GraphicsMan_EndTriStrip"),
         (DRAW_EMITTER, draw_emitter, "PS2GraphicsMan_DrawEmitter"),
         (DRAW_DYNAMIC_EMITTER, draw_dynamic_emitter, "PS2GraphicsMan_DrawDynamicEmitter"),
         (DRAW_M_EMITTER, draw_m_emitter, "PS2GraphicsMan_DrawMEmitter"),

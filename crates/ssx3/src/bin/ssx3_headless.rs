@@ -181,6 +181,9 @@ fn main() {
         eprintln!("[gfx] {:?}", g.stats());
         eprintln!("[gfx] {}", g.0.lock().unwrap().timing_report());
         eprintln!("[gfx] {}", ssx3_ps2::frame_sink::timing_report());
+        for l in ssx3_game::packetless::check_report() {
+            eprintln!("[draw-check] total {l}");
+        }
         eprintln!("[gfx] other frame buffers (fbp, fbw, psm): {:?}", g.dropped_fbp());
     }
     // GPU GS backend: bring the CPU copy of VRAM up to date for the dumps.

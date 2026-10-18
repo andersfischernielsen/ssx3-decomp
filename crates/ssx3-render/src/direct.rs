@@ -156,6 +156,33 @@ pub fn take() -> Vec<Recorded> {
     std::mem::take(&mut *LIST.lock().unwrap())
 }
 
+/// Captures recorded so far this frame (a mark for [`split_off`]).
+pub fn mark() -> usize {
+    LIST.lock().unwrap().len()
+}
+
+/// The captures recorded after `mark`, taken out (checks).
+pub fn split_off(mark: usize) -> Vec<Recorded> {
+    let mut l = LIST.lock().unwrap();
+    let at = mark.min(l.len());
+    l.split_off(at)
+}
+
+static PACKETLESS: AtomicBool = AtomicBool::new(false);
+
+/// Stage C: the draw functions that have a native form run it instead of
+/// building packets (a native renderer takes the captures; the emulated
+/// GS would draw nothing of them). `SSX3_PACKETS=1` keeps the packets.
+pub fn set_packetless(on: bool) {
+    let on = on && std::env::var("SSX3_PACKETS").map_or(true, |v| v != "1");
+    PACKETLESS.store(on, Ordering::Relaxed);
+}
+
+/// Native draw functions on (and captures recorded).
+pub fn packetless() -> bool {
+    PACKETLESS.load(Ordering::Relaxed) && active()
+}
+
 /// Draw a captured command: its GPU draws, or the GIF output of the CPU
 /// program for what has no GPU port. `regs`: the VIF registers at the
 /// packet (the program's TOP for each start); `header`: VU1 qw0-5 as the

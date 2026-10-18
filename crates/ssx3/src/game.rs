@@ -188,6 +188,9 @@ pub fn install_renderer(c: &mut Cpu) -> Option<ssx3_gfx::Renderer> {
         ssx3_ps2::m!(c).hw.gs.detach();
     }
     ssx3_ps2::frame_sink::install(Box::new(r.clone()));
+    // Stage C: draw functions with a native form build no packets while
+    // the native renderer draws (the emulated GS is detached).
+    ssx3_game::packetless::set_on(native);
     eprintln!("[gfx] draw-layer renderer installed ({})", if native { "native" } else { "shadow" });
     Some(r)
 }
