@@ -20,7 +20,29 @@ pub struct WalkEnd {
 /// Walk the chain from `tadr`, handing each transfer's quadwords (and, with
 /// `tte`, the upper half of each tag) to `sink`. Stops at END/REFE, at a
 /// RET with an empty stack, or at a tag with the IRQ bit when `tie` is set.
-pub fn walk(mem: &dyn Mem, mut tadr: u32, tte: bool, tie: bool, mut asp: u32, asr: &mut [u32; 2], sink: &mut dyn FnMut(&[u128])) -> WalkEnd {
+pub fn walk(mem: &dyn Mem, tadr: u32, tte: bool, tie: bool, asp: u32, asr: &mut [u32; 2], sink: &mut dyn FnMut(&[u128])) -> WalkEnd {
+    let mut q = Vec::new();
+    walk_segments(mem, tadr, tte, tie, asp, asr, &mut |s| match s {
+        Segment::Tag(t) => sink(&[t]),
+        Segment::Data { addr, qwc } => {
+            q.clear();
+            q.extend((0..qwc).map(|i| mem.qword(addr + i * 16)));
+            sink(&q);
+        }
+    })
+}
+
+/// What a chain transfers, without reading the data.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Segment {
+    /// The upper half of a tag (with `tte`).
+    Tag(u128),
+    /// `qwc` quadwords at `addr`.
+    Data { addr: u32, qwc: u32 },
+}
+
+/// [`walk`], handing over where each transfer's data is instead of the data.
+pub fn walk_segments(mem: &dyn Mem, mut tadr: u32, tte: bool, tie: bool, mut asp: u32, asr: &mut [u32; 2], sink: &mut dyn FnMut(Segment)) -> WalkEnd {
     let mut tags = 0;
     for _ in 0..1_000_000 {
         tags += 1;
@@ -31,7 +53,7 @@ pub fn walk(mem: &dyn Mem, mut tadr: u32, tte: bool, tie: bool, mut asp: u32, as
         let addr = ((tag >> 32) & 0x7fff_fff0) as u32;
         let tag_spr = (tag >> 63) & 1 != 0;
         if tte {
-            sink(&[tag & !0xffff_ffff_ffff_ffffu128]);
+            sink(Segment::Tag(tag & !0xffff_ffff_ffff_ffffu128));
         }
         let spr = |a: u32, s: bool| if s { a | 0x8000_0000 } else { a };
         let (data, mut next, mut end) = match id {
@@ -56,8 +78,7 @@ pub fn walk(mem: &dyn Mem, mut tadr: u32, tte: bool, tie: bool, mut asp: u32, as
             }
             _ => (tadr + 16, tadr, true),
         };
-        let q: Vec<u128> = (0..qwc).map(|i| mem.qword(data + i * 16)).collect();
-        sink(&q);
+        sink(Segment::Data { addr: data, qwc });
         if irq && tie {
             end = true;
         }

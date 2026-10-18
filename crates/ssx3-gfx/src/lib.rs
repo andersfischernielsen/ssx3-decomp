@@ -1536,47 +1536,110 @@ pub fn flip_packet(mem: &dyn Mem) -> Vec<u128> {
     q
 }
 
-/// Split a GIF stream into packets: tags up to and including one with EOP,
-/// with their data.
-fn gif_packets(q: &[u128]) -> Vec<Vec<u128>> {
+/// The GIF packets of a PATH3 chain (texture uploads; [`gif_packets`]),
+/// read straight from its transfers. The data of IMAGE transfers longer
+/// than a CLUT is left out (their tags keep NLOOP = 0): the renderer takes
+/// textures from TexMan and keeps only small uploads (`gs::Gs::uploads`).
+fn path3_packets(mem: &dyn Mem, head: u32) -> Vec<Vec<u128>> {
+    use ssx3_render::chain::{walk_segments, Segment};
+    const KEPT_IMAGE: usize = 256;
     let mut out = Vec::new();
-    let (mut i, mut start) = (0, 0);
-    while i < q.len() {
-        let lo = q[i] as u64;
+    if head == 0 {
+        return out;
+    }
+    let mut segs: Vec<(u32, u32)> = Vec::new();
+    let mut asr = [0u32; 2];
+    walk_segments(mem, head, false, false, 0, &mut asr, &mut |s| {
+        if let Segment::Data { addr, qwc } = s {
+            if qwc > 0 {
+                segs.push((addr, qwc));
+            }
+        }
+    });
+    // A cursor over the transfers: (segment, quadword in it).
+    let (mut si, mut qi) = (0usize, 0u32);
+    let mut next = |skip: bool| -> Option<u128> {
+        while si < segs.len() && qi >= segs[si].1 {
+            si += 1;
+            qi = 0;
+        }
+        let &(a, _) = segs.get(si)?;
+        qi += 1;
+        Some(if skip { 0 } else { mem.qword(a + 16 * (qi - 1)) })
+    };
+    let mut cur: Vec<u128> = Vec::new();
+    while let Some(tag) = next(false) {
+        let lo = tag as u64;
         let nloop = (lo & 0x7fff) as usize;
         let eop = (lo >> 15) & 1 != 0;
         let nreg = match (lo >> 60) as usize {
             0 => 16,
             n => n,
         };
-        i += 1 + match (lo >> 58) & 3 {
+        let flg = (lo >> 58) & 3;
+        let n = match flg {
             0 => nloop * nreg,
             1 => (nloop * nreg).div_ceil(2),
             _ => nloop,
         };
-        if eop || i >= q.len() {
-            out.push(q[start..i.min(q.len())].to_vec());
-            start = i;
+        if flg >= 2 && n > KEPT_IMAGE {
+            cur.push(tag & !0x7fff);
+            for _ in 0..n {
+                next(true);
+            }
+        } else {
+            cur.push(tag);
+            for _ in 0..n {
+                match next(false) {
+                    Some(q) => cur.push(q),
+                    None => break,
+                }
+            }
         }
+        if eop {
+            out.push(std::mem::take(&mut cur));
+        }
+    }
+    if !cur.is_empty() {
+        out.push(cur);
     }
     out
 }
 
 #[cfg(test)]
 mod tests {
-    use super::gif_packets;
+    use super::path3_packets;
+
+    struct Ram(Vec<u128>);
+    impl ssx3_render::chain::Mem for Ram {
+        fn qword(&self, a: u32) -> u128 {
+            self.0[(a / 16) as usize]
+        }
+    }
 
     #[test]
-    fn gif_packets_end_at_eop() {
-        // A+D tag (2 regs, no EOP), its 2 qwords; IMAGE tag (3 qwords, EOP),
-        // its data; a second packet: A+D tag with EOP and 1 qword.
+    fn path3_packets_end_at_eop_and_drop_large_images() {
+        // CNT with: A+D tag (2 regs, no EOP), its 2 qwords; IMAGE tag (3
+        // qwords, EOP), its data; then REF to: A+D tag with EOP and 1
+        // qword, IMAGE of 300 qwords (EOP); END.
         let ad = |n: u128, eop: bool| n | (eop as u128) << 15 | 1 << 60 | 0xe << 64;
         let image = |n: u128| n | 1 << 15 | 2 << 58;
-        let q = vec![ad(2, false), 1, 2, image(3), 3, 4, 5, ad(1, true), 6];
-        let p = gif_packets(&q);
-        assert_eq!(p.len(), 2);
-        assert_eq!(p[0].len(), 7);
+        let mut m = vec![0u128; 1024];
+        let cnt = [ad(2, false), 1, 2, image(3), 3, 4, 5];
+        // (Head at qword 0x10: a zero head is no chain.)
+        m[0x10] = 0x1000_0000 | cnt.len() as u128;
+        m[0x11..0x11 + cnt.len()].copy_from_slice(&cnt);
+        let at = 0x11 + cnt.len();
+        m[at] = 0x3000_0000 | 303 | (0x200u128 * 16) << 32;
+        m[at + 1] = 0x7000_0000;
+        m[0x200] = ad(1, true);
+        m[0x201] = 6;
+        m[0x202] = image(300);
+        let p = path3_packets(&Ram(m), 16 * 0x10);
+        assert_eq!(p.len(), 3);
+        assert_eq!(p[0], cnt.to_vec());
         assert_eq!(p[1], vec![ad(1, true), 6]);
+        assert_eq!(p[2], vec![image(300) & !0x7fff]);
     }
 }
 
@@ -1884,15 +1947,7 @@ impl Build {
         // uploads in the gaps between draws); what is left drains when the
         // phase's VIF stream ends unmasked (the post passes, before the
         // HUD of phase 2 is drawn).
-        let path3 = |head: u32| -> Vec<u128> {
-            let mut q = Vec::new();
-            if head != 0 {
-                let mut asr = [0u32; 2];
-                ssx3_render::chain::walk(mem, head, false, false, 0, &mut asr, &mut |d: &[u128]| q.extend_from_slice(d));
-            }
-            q
-        };
-        let (p1, p2) = (path3(fr.gif_heads[0]), path3(fr.gif_heads[1]));
+        let (p1, mut p2) = (path3_packets(mem, fr.gif_heads[0]), path3_packets(mem, fr.gif_heads[1]));
         let dbg = debug::get();
         let tracing = dbg.trace == Some(b.frame);
         let label = |gs: &mut gs::Gs, l: String| {
@@ -1913,7 +1968,7 @@ impl Build {
         let mode = dbg.path3;
         let mut p3: std::collections::VecDeque<Vec<u128>> = std::collections::VecDeque::new();
         if mode & 1 != 0 {
-            p3.extend(gif_packets(&p1));
+            p3.extend(p1);
         }
         let mut p3_masked = true;
         let mut phase2_started = false;
@@ -1953,7 +2008,7 @@ impl Build {
                 b.phase1_end = b.gs.batches.len();
                 p3_masked = true;
                 if mode & 2 != 0 {
-                    p3.extend(gif_packets(&p2));
+                    p3.extend(std::mem::take(&mut p2));
                 }
             }
             let n = match owner {
@@ -2034,7 +2089,7 @@ impl Build {
         if !phase2_started {
             b.phase1_end = b.gs.batches.len();
             if mode & 2 != 0 {
-                p3.extend(gif_packets(&p2));
+                p3.extend(std::mem::take(&mut p2));
             }
         }
         vu.finish(&plan, &mut b.vu);
