@@ -141,10 +141,10 @@ fn mat6_shadow_vertex(vi: u32, c: u32) -> VOut {
 
 @vertex
 fn vs_mat6_skin(@builtin(vertex_index) k: u32) -> VOut {
-    return mat6_skin_vertex(gidx[k], gcall[k]);
+    return mat6_skin_vertex(gidx[k], call_of(k));
 }
 
 @vertex
 fn vs_mat6_shadow(@builtin(vertex_index) k: u32) -> VOut {
-    return mat6_shadow_vertex(gidx[k], gcall[k]);
+    return mat6_shadow_vertex(gidx[k], call_of(k));
 }

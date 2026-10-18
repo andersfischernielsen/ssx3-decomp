@@ -158,6 +158,10 @@ pub struct Inner {
     ubuf: Option<wgpu::Buffer>,
     /// GPU-computed draws: call uniforms, inputs, indices.
     gbuf: [Option<wgpu::Buffer>; 4],
+    /// The mesh arena on the GPU (`gs::MeshArena`) and the arena epoch it
+    /// holds.
+    arena_buf: Option<wgpu::Buffer>,
+    arena_epoch: u64,
 }
 
 /// The renderer; clone the handle to read images from another thread.
@@ -270,6 +274,8 @@ impl Renderer {
             backups: HashMap::new(),
             vbuf: None,
             gbuf: [None, None, None, None],
+            arena_buf: None,
+            arena_epoch: u64::MAX,
             ubuf: None,
         })), shared)
     }
@@ -897,20 +903,42 @@ impl Inner {
             let calls = bytes(g.calls.as_flattened().as_flattened());
             let data = bytes(g.data.as_flattened());
             let idx = bytes(&g.indices);
-            let of = bytes(&g.call_of);
+            let of = bytes(&g.call_start);
+            if std::env::var_os("DBG_UPLOAD").is_some() {
+                eprintln!("[upload] calls {} KiB, data {} KiB, indices {} KiB, call starts {} KiB, verts {} KiB", calls.len() >> 10, data.len() >> 10, idx.len() >> 10, of.len() >> 10, vbytes.len() >> 10);
+            }
             let [cb, db, ib, ob] = &mut self.gbuf;
             let cb = grow_buffer(&self.dev, cb, (calls.len() as u64).max(256), wgpu::BufferUsages::STORAGE, "ssx3-gfx gpu calls");
             let db = grow_buffer(&self.dev, db, (data.len() as u64).max(256), wgpu::BufferUsages::STORAGE, "ssx3-gfx gpu data");
             let ib = grow_buffer(&self.dev, ib, (idx.len() as u64).max(256), wgpu::BufferUsages::STORAGE, "ssx3-gfx gpu indices");
-            let ob = grow_buffer(&self.dev, ob, (of.len() as u64).max(256), wgpu::BufferUsages::STORAGE, "ssx3-gfx gpu index calls");
+            let ob = grow_buffer(&self.dev, ob, (of.len() as u64).max(256), wgpu::BufferUsages::STORAGE, "ssx3-gfx gpu call starts");
             self.queue.write_buffer(&cb, 0, calls);
             if !data.is_empty() {
                 self.queue.write_buffer(&db, 0, data);
             }
             if !idx.is_empty() {
                 self.queue.write_buffer(&ib, 0, idx);
-                self.queue.write_buffer(&ob, 0, of);
             }
+            self.queue.write_buffer(&ob, 0, of);
+            // The arena: what is new since the last upload (all of it when
+            // it was cleared or outgrew its buffer).
+            let ab = {
+                let mut a = g.arena.lock().unwrap();
+                let need = (a.data.len() as u64 * 16).max(256);
+                let fresh = self.arena_epoch != a.epoch || self.arena_buf.as_ref().is_none_or(|b| b.size() < need);
+                if fresh {
+                    self.arena_buf = None;
+                    a.uploaded = 0;
+                    self.arena_epoch = a.epoch;
+                }
+                let ab = grow_buffer(&self.dev, &mut self.arena_buf, need, wgpu::BufferUsages::STORAGE, "ssx3-gfx mesh arena");
+                if a.uploaded < a.data.len() {
+                    let new = bytes(a.data[a.uploaded..].as_flattened());
+                    self.queue.write_buffer(&ab, a.uploaded as u64 * 16, new);
+                    a.uploaded = a.data.len();
+                }
+                ab
+            };
             let bg = self.dev.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("ssx3-gfx gpuvu"),
                 layout: &self.pipes.gpu_layout,
@@ -919,6 +947,7 @@ impl Inner {
                     wgpu::BindGroupEntry { binding: 1, resource: db.as_entire_binding() },
                     wgpu::BindGroupEntry { binding: 2, resource: ib.as_entire_binding() },
                     wgpu::BindGroupEntry { binding: 3, resource: ob.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 4, resource: ab.as_entire_binding() },
                 ],
             });
             bg
@@ -1559,7 +1588,7 @@ impl VuPlan<'_> {
                     interp::substitute(&mut mem[top..top + 64], s);
                 }
             }
-            if let Some(o) = ssx3_render::vujob::run_call(hh, entry, c.top, c.itop, &mut mem) {
+            if let Some(o) = ssx3_render::vujob::run_call(hh, entry, c.top, c.itop, c.src, &mut mem) {
                 outs.push((i, o));
             }
         }

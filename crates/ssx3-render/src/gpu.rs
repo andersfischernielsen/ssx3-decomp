@@ -93,6 +93,11 @@ pub struct GpuCall {
     /// Calls that redraw an earlier call's vertices (type 3 pass 2 redraws
     /// pass 1's output with new texture coordinates).
     pub link: Link,
+    /// A key under which `data` is the same every time (the GPU keeps it):
+    /// the planner sets `Some(0)` when the data is the input's as it came
+    /// (no in-place rewrite), and [`crate::vujob::run_call`] the input's
+    /// source key (`VuCall::src`), or `None`.
+    pub mesh_key: Option<u64>,
 }
 
 /// How a call's vertices relate to another call's (keyed by the VU address
@@ -211,6 +216,7 @@ pub fn encode(c: &GpuCall, w: &mut Vec<u8>) {
     let (t, k) = c.link.code();
     w.extend_from_slice(&t.to_le_bytes());
     w.extend_from_slice(&k.to_le_bytes());
+    w.extend_from_slice(&c.mesh_key.map_or(u64::MAX, |k| k).to_le_bytes());
 }
 
 /// Decode what [`encode`] wrote; returns the call and the bytes used.
@@ -237,7 +243,9 @@ pub fn decode(b: &[u8]) -> (GpuCall, usize) {
     let alpha_max = f32::from_le_bytes(take(4).try_into().unwrap());
     let t = u32_at(take(4));
     let link = Link::from_code(t, u32_at(take(4)));
-    (GpuCall { program, pre, tag, uniforms, data, indices, alpha_max, link }, p)
+    let mk = u64::from_le_bytes(take(8).try_into().unwrap());
+    let mesh_key = (mk != u64::MAX).then_some(mk);
+    (GpuCall { program, pre, tag, uniforms, data, indices, alpha_max, link, mesh_key }, p)
 }
 
 #[cfg(test)]
@@ -257,6 +265,7 @@ mod tests {
             indices: vec![0, 1, 2, 1, 2, 3],
             alpha_max: 128.0,
             link: Link::Reuse(0x1db),
+            mesh_key: Some(77),
         };
         let mut w = Vec::new();
         encode(&c, &mut w);

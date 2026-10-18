@@ -1028,6 +1028,7 @@ pub struct ChainCache {
     map: HashMap<(u32, VifRegs), (u64, crate::vif::Recording)>,
     /// (Hits, misses) so far.
     pub stats: (u64, u64),
+    next_id: u64,
 }
 
 /// The sub-chain from `a` up to its RET: a hash of its tags and data, or
@@ -1220,7 +1221,9 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache) 
                 next = asr[asp as usize];
                 if let Some((key, h, _)) = recording.filter(|r| r.2 == asp) {
                     recording = None;
-                    if let Some(rec) = w.vif.recorded() {
+                    if let Some(mut rec) = w.vif.recorded() {
+                        cache.next_id += 1;
+                        rec.id = cache.next_id;
                         cache.map.insert(key, (h, rec));
                     }
                 } else if asp == 0 && recording.take().is_some() {

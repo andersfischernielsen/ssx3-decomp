@@ -26,9 +26,9 @@ fn mat3_light(c: u32, n: vec3<f32>) -> vec4<f32> {
 fn mat3_mesh_vertex(vi: u32, c: u32) -> VOut {
     let pass2 = calls[c].q[4].z == 2u;
     let base = select(calls[c].q[30].y, calls[c].q[30].z, pass2) + 4u * vi;
-    let xyz = bitcast<vec4<i32>>(data[base]);
-    let uv = bitcast<vec4<i32>>(data[select(base + 1u, calls[c].q[30].y + vi, pass2)]);
-    let cw = bitcast<vec4<i32>>(data[base + 2u]);
+    let xyz = bitcast<vec4<i32>>(rd(base));
+    let uv = bitcast<vec4<i32>>(rd(select(base + 1u, calls[c].q[30].y + vi, pass2)));
+    let cw = bitcast<vec4<i32>>(rd(base + 2u));
     let p = vec3<f32>(xyz.xyz) / 32768.0;
     let hc = fq(c, 0u) * p.x + fq(c, 1u) * p.y + fq(c, 2u) * p.z + fq(c, 3u);
     let q = 1.0 / hc.w;
@@ -41,7 +41,7 @@ fn mat3_mesh_vertex(vi: u32, c: u32) -> VOut {
     }
     let g = fq(c, 18u);
     let cz = (hc.z - g.y * hc.w) / g.x;
-    var o = gs_vertex(c, hc, cz, data[base + 3u].x != 0u, col, vec3<f32>(t * q, q));
+    var o = gs_vertex(c, hc, cz, rd(base + 3u).x != 0u, col, vec3<f32>(t * q, q));
     if (calls[c].q[4].w == 0u) {
         // A mesh without the clip flag: the program draws its projection
         // as is (a vertex behind the eye too, mirrored by the divide), and
@@ -54,5 +54,5 @@ fn mat3_mesh_vertex(vi: u32, c: u32) -> VOut {
 
 @vertex
 fn vs_mat3_mesh(@builtin(vertex_index) k: u32) -> VOut {
-    return mat3_mesh_vertex(gidx[k], gcall[k]);
+    return mat3_mesh_vertex(gidx[k], call_of(k));
 }

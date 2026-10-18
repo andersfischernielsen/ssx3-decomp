@@ -115,11 +115,30 @@ pub struct GpuFrame {
     pub calls: Vec<[[u32; 4]; ssx3_render::gpu::UNIFORM_QWORDS]>,
     pub data: Vec<[u32; 4]>,
     pub indices: Vec<u32>,
-    /// Per index: its call (draws merge runs of calls).
-    pub call_of: Vec<u32>,
+    /// The number of calls, then per call its first index (draws merge runs
+    /// of calls; the shader finds a vertex's call from this).
+    pub call_start: Vec<u32>,
     /// `Link::Source` calls by key: their first data qword, alpha maximum.
     pub sources: std::collections::HashMap<u32, (u32, f32)>,
+    /// Data kept from frame to frame (shared by `Gs` copies).
+    pub arena: std::sync::Arc<std::sync::Mutex<MeshArena>>,
 }
+
+/// Vertex data that is the same every frame (`GpuCall::mesh_key`), kept on
+/// the GPU: the host copy of the arena and where each key's data sits.
+/// Shared by the frame's `Gs` copies; the renderer uploads what is new.
+#[derive(Default)]
+pub struct MeshArena {
+    pub data: Vec<[u32; 4]>,
+    pub at: std::collections::HashMap<u64, u32>,
+    /// `data[uploaded..]` is not on the GPU yet.
+    pub uploaded: usize,
+    /// Bumped when the arena is cleared (its buffer is filled anew).
+    pub epoch: u64,
+}
+
+/// Arena reads in the shaders: a data index with this bit set.
+pub const ARENA_BIT: u32 = 0x8000_0000;
 
 /// GS-side uniform qwords of a GPU call (`gpuvu.wgsl` `Call`).
 pub mod gpu_params {
@@ -232,7 +251,8 @@ impl Gs {
         self.gpu.calls.clear();
         self.gpu.data.clear();
         self.gpu.indices.clear();
-        self.gpu.call_of.clear();
+        self.gpu.call_start.clear();
+        self.gpu.call_start.push(0);
         self.gpu.sources.clear();
         self.queue.clear();
         self.size = size;
@@ -705,7 +725,29 @@ impl Gs {
         if !call.pre.is_empty() {
             self.gif(&std::mem::take(&mut call.pre));
         }
-        let base = self.gpu.data.len() as u32;
+        // Data the GPU keeps (by key) is read from the arena.
+        let base = match call.mesh_key {
+            Some(k) => {
+                let mut a = self.gpu.arena.lock().unwrap();
+                if a.data.len() + call.data.len() > (64 << 20) / 16 {
+                    // (A cap: start over; everything is uploaded again.)
+                    *a = MeshArena { epoch: a.epoch + 1, ..Default::default() };
+                }
+                match a.at.get(&k) {
+                    Some(&at) => at | ARENA_BIT,
+                    None => {
+                        let at = a.data.len() as u32;
+                        a.data.extend_from_slice(&call.data);
+                        a.at.insert(k, at);
+                        at | ARENA_BIT
+                    }
+                }
+            }
+            None => self.gpu.data.len() as u32,
+        };
+        if call.mesh_key.is_some() {
+            call.data.clear();
+        }
         let reuse = match call.link {
             Link::Reuse(k) => match self.gpu.sources.get(&k) {
                 Some(&(b, a)) => {
@@ -777,7 +819,11 @@ impl Gs {
         self.gpu.calls.push(u);
         self.gpu.data.extend_from_slice(&call.data);
         self.gpu.indices.extend_from_slice(&call.indices);
-        self.gpu.call_of.extend(std::iter::repeat_n(gb.call, call.indices.len()));
+        if self.gpu.call_start.is_empty() {
+            self.gpu.call_start.push(0);
+        }
+        self.gpu.call_start.push(gb.first);
+        self.gpu.call_start[0] += 1;
         // A call right after one of the same program and state joins its
         // draw.
         match self.batches.last_mut() {

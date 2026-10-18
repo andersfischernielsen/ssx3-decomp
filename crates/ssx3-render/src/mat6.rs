@@ -698,7 +698,7 @@ pub fn plan_gpu(entry: u32, top: u32, _itop: u32, mem: &mut [u8; 16384]) -> Opti
 }
 
 fn gpu_call(program: crate::gpu::Program, tag: u128, u: [[u32; 4]; crate::gpu::UNIFORM_QWORDS], data: Vec<[u32; 4]>, indices: Vec<u32>, alpha_max: f32, link: crate::gpu::Link) -> crate::gpu::GpuCall {
-    crate::gpu::GpuCall { program, pre: Vec::new(), tag, uniforms: u, data, indices, alpha_max, link }
+    crate::gpu::GpuCall { program, pre: Vec::new(), tag, uniforms: u, data, indices, alpha_max, link, mesh_key: None }
 }
 
 fn plan_draw(m: &mut Mem, top: u16, skin: Skin) -> Option<Vec<crate::gpu::GpuCall>> {

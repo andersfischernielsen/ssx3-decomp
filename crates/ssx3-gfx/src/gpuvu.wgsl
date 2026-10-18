@@ -9,9 +9,35 @@ struct Call {
 @group(1) @binding(0) var<storage, read> calls: array<Call>;
 @group(1) @binding(1) var<storage, read> data: array<vec4<u32>>;
 // Per vertex of a draw (a run of calls of one program merged into one
-// draw): the call's vertex index and the call (`vs_<program>` wrappers).
+// draw): the call's vertex index; gstart[0] = the number of calls, then per
+// call its first index (`vs_<program>` wrappers find the call: the last one
+// starting at or before the vertex).
 @group(1) @binding(2) var<storage, read> gidx: array<u32>;
-@group(1) @binding(3) var<storage, read> gcall: array<u32>;
+@group(1) @binding(3) var<storage, read> gstart: array<u32>;
+
+fn call_of(k: u32) -> u32 {
+    var lo = 0u;
+    var hi = gstart[0];
+    while (hi - lo > 1u) {
+        let mid = (lo + hi) / 2u;
+        if (gstart[mid + 1u] <= k) {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    return lo;
+}
+// Vertex data kept from frame to frame (gs::MeshArena).
+@group(1) @binding(4) var<storage, read> arena: array<vec4<u32>>;
+
+// A call's data qword: from the arena when the index has gs::ARENA_BIT.
+fn rd(i: u32) -> vec4<u32> {
+    if ((i & 0x80000000u) != 0u) {
+        return arena[i & 0x7fffffffu];
+    }
+    return data[i];
+}
 
 fn fq(c: u32, i: u32) -> vec4<f32> {
     return bitcast<vec4<f32>>(calls[c].q[i]);

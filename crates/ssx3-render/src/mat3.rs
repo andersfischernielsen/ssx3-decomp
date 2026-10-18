@@ -1277,7 +1277,9 @@ pub fn plan_gpu(entry: u32, top: u32, itop: u32, mem: &mut [u8; 16384]) -> Optio
     }
     let tag = tag[0] as u128 | (tag[1] as u128) << 32 | (tag[2] as u128) << 64 | (tag[3] as u128) << 96;
     let link = if pass1 { crate::gpu::Link::Source(out as u32) } else { crate::gpu::Link::Reuse(out as u32) };
-    Some(crate::gpu::GpuCall { program: crate::gpu::Program::Mat3Mesh, pre: Vec::new(), tag, uniforms: u, data, indices, alpha_max, link })
+    // (Pass 1 without in-place texgen: the data is the input's as it came.)
+    let mesh_key = (pass1 && flags & flag::TEXGEN1 == 0).then_some(0);
+    Some(crate::gpu::GpuCall { program: crate::gpu::Program::Mat3Mesh, pre: Vec::new(), tag, uniforms: u, data, indices, alpha_max, link, mesh_key })
 }
 
 // ---------------------------------------------------------------------------
@@ -1425,6 +1427,7 @@ pub fn plan_gpu_strip(entry: u32, top: u32, mem: &mut [u8; 16384]) -> Option<cra
         indices,
         alpha_max,
         link: crate::gpu::Link::None,
+        mesh_key: None,
     })
 }
 

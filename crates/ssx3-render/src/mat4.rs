@@ -987,7 +987,7 @@ pub(crate) fn sprite_call(program: crate::gpu::Program, tag: u128, uniforms: [V;
         let b = 4 * s;
         indices.extend_from_slice(&[b, b + 1, b + 2, b, b + 2, b + 3]);
     }
-    crate::gpu::GpuCall { program, pre: Vec::new(), tag, uniforms, data, indices, alpha_max: alpha_max as f32, link: crate::gpu::Link::None }
+    crate::gpu::GpuCall { program, pre: Vec::new(), tag, uniforms, data, indices, alpha_max: alpha_max as f32, link: crate::gpu::Link::None, mesh_key: None }
 }
 
 /// The alpha byte the GS takes from an alpha (FTOI0, low 8 bits).

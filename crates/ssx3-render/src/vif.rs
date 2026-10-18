@@ -26,7 +26,7 @@ pub struct VifRegs {
 }
 
 /// One microprogram start.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct VuCall {
     /// Program address in bytes (MSCAL imm × 8); `None` for MSCNT (continue).
     pub entry: Option<u32>,
@@ -36,7 +36,18 @@ pub struct VuCall {
     /// Quadwords written by UNPACK since the previous start: (address, value),
     /// in address order; the call's input buffer plus any fixed-area uploads.
     pub input: Vec<(u16, u128)>,
+    /// A stable key of where the input came from, when it is the same every
+    /// time (a replayed mesh chain: [`Recording::id`] and the start's
+    /// index), so its vertex data can stay on the GPU. Not part of equality.
+    pub src: Option<u64>,
 }
+
+impl PartialEq for VuCall {
+    fn eq(&self, o: &Self) -> bool {
+        (self.entry, self.top, self.itop, &self.input) == (o.entry, o.top, o.itop, &o.input)
+    }
+}
+impl Eq for VuCall {}
 
 /// A GIF stream sent through DIRECT/DIRECTHL (PATH2).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -75,6 +86,8 @@ pub struct Vif1 {
 /// registers at the end.
 #[derive(Clone, Debug)]
 pub struct Recording {
+    /// Unique among recordings (set by whoever keeps it; 0: none).
+    pub id: u64,
     pub calls: Vec<(VifRegs, Option<u32>, Vec<(u16, u128)>)>,
     pub tail: Vec<(u16, u128)>,
     pub regs: VifRegs,
@@ -157,16 +170,21 @@ impl Vif1 {
     pub fn recorded(&mut self) -> Option<Recording> {
         let mut r = self.rec.take()?;
         let tail = r.take(&self.mem);
-        (!r.bad && self.fifo.is_empty()).then(|| Recording { calls: r.calls, tail, regs: self.regs })
+        (!r.bad && self.fifo.is_empty()).then(|| Recording { id: 0, calls: r.calls, tail, regs: self.regs })
     }
 
     /// Apply a recording as if its input were fed again (the registers must
     /// be the ones it was recorded from).
     pub fn replay(&mut self, r: &Recording) {
-        for (regs, entry, writes) in &r.calls {
+        for (k, (regs, entry, writes)) in r.calls.iter().enumerate() {
             self.put_qwords(writes);
             self.regs = *regs;
             self.call(*entry);
+            if r.id != 0 {
+                if let Some(Event::Call(c)) = self.events.last_mut() {
+                    c.src = Some(r.id << 16 | k as u64);
+                }
+            }
         }
         self.put_qwords(&r.tail);
         self.regs = r.regs;
@@ -304,7 +322,7 @@ impl Vif1 {
             input.push((a as u16, u128::from_le_bytes(self.mem[a * 16..a * 16 + 16].try_into().unwrap())));
         }
         self.dirty_list.clear();
-        self.events.push(Event::Call(VuCall { entry, top, itop, input }));
+        self.events.push(Event::Call(VuCall { entry, top, itop, input, src: None }));
     }
 
     fn put(&mut self, addr: u32, j: usize, v: u32) {

@@ -9,7 +9,8 @@
 //!
 //! Layout (little-endian): job = memory (16384 bytes), call count (u32),
 //! per call: event index (u32), program hash (u64, 0 = none), entry (u32,
-//! `u32::MAX` = none), top (u32), itop (u32), input count (u32), inputs
+//! `u32::MAX` = none), top (u32), itop (u32), source key (u64,
+//! `u64::MAX` = none; `VuCall::src`), input count (u32), inputs
 //! (u16 address, u128 value). Result = output count (u32), per output:
 //! event index (u32), kind (u8: 0 GIF, 1 GPU), then for GIF the qword count
 //! (u32) and the qwords, for GPU the [`crate::gpu::GpuCall`]; then the
@@ -42,10 +43,14 @@ fn check_gpu() -> bool {
 
 /// Run one call natively: its GPU plan (when enabled and ported) or the
 /// program. None: no native program for it.
-pub fn run_call(hash: u64, entry: u32, top: u32, itop: u32, mem: &mut [u8; MEM]) -> Option<CallOut> {
+pub fn run_call(hash: u64, entry: u32, top: u32, itop: u32, src: Option<u64>, mem: &mut [u8; MEM]) -> Option<CallOut> {
     if crate::gpu::enabled() {
         let before = check_gpu().then(|| *mem);
-        if let Some(g) = crate::gpu::plan(hash, entry, top, itop, mem) {
+        if let Some(mut g) = crate::gpu::plan(hash, entry, top, itop, mem) {
+            for c in g.iter_mut() {
+                // (Keyed by the input's source and the draw's place in the call.)
+                c.mesh_key = c.mesh_key.and(src).map(|s| s.wrapping_mul(0x9e37_79b9).wrapping_add(c.program as u64));
+            }
             if let Some(mut m) = before {
                 let mut gif = Vec::new();
                 if crate::run_native(hash, entry, top, itop, &mut m, &mut |p: &[u128]| gif.extend_from_slice(p)) {
@@ -85,7 +90,7 @@ impl Reader<'_> {
 
 /// Encode a job: `calls` are (event index, call, program hash).
 pub fn encode(mem: &[u8; MEM], calls: &[(usize, &VuCall, Option<u64>)]) -> Vec<u8> {
-    let n: usize = calls.iter().map(|(_, c, _)| 28 + 18 * c.input.len()).sum();
+    let n: usize = calls.iter().map(|(_, c, _)| 36 + 18 * c.input.len()).sum();
     let mut w = Vec::with_capacity(MEM + 4 + n);
     w.extend_from_slice(mem);
     w.extend_from_slice(&(calls.len() as u32).to_le_bytes());
@@ -95,6 +100,7 @@ pub fn encode(mem: &[u8; MEM], calls: &[(usize, &VuCall, Option<u64>)]) -> Vec<u
         w.extend_from_slice(&c.entry.unwrap_or(u32::MAX).to_le_bytes());
         w.extend_from_slice(&c.top.to_le_bytes());
         w.extend_from_slice(&c.itop.to_le_bytes());
+        w.extend_from_slice(&c.src.unwrap_or(u64::MAX).to_le_bytes());
         w.extend_from_slice(&(c.input.len() as u32).to_le_bytes());
         for &(a, v) in &c.input {
             w.extend_from_slice(&a.to_le_bytes());
@@ -114,6 +120,7 @@ pub fn run(job: &[u8]) -> Vec<u8> {
     let mut ran = 0u32;
     for _ in 0..n {
         let (i, hash, entry, top, itop) = (r.u32(), r.u64(), r.u32(), r.u32(), r.u32());
+        let src = Some(r.u64()).filter(|&s| s != u64::MAX);
         for _ in 0..r.u32() {
             let (a, v) = (r.u16(), r.u128());
             let a = (a as usize & 1023) * 16;
@@ -122,7 +129,7 @@ pub fn run(job: &[u8]) -> Vec<u8> {
         if hash == 0 || entry == u32::MAX {
             continue;
         }
-        let Some(o) = run_call(hash, entry, top, itop, &mut mem) else { continue };
+        let Some(o) = run_call(hash, entry, top, itop, src, &mut mem) else { continue };
         out.extend_from_slice(&i.to_le_bytes());
         match o {
             CallOut::Gif(q) => {
@@ -201,6 +208,7 @@ mod tests {
                 top: (next() % 1024) as u32,
                 itop: (next() % 64) as u32,
                 input: (0..8).map(|_| ((next() % 1024) as u16, next() as u128 | (next() as u128) << 64)).collect(),
+                src: (k == 3).then_some(42),
             })
             .collect();
         let refs: Vec<(usize, &VuCall, Option<u64>)> =
@@ -215,7 +223,7 @@ mod tests {
                 direct[a..a + 16].copy_from_slice(&v.to_le_bytes());
             }
             let (Some(e), Some(h)) = (c.entry, h) else { continue };
-            if let Some(o) = run_call(h, e, c.top, c.itop, &mut direct) {
+            if let Some(o) = run_call(h, e, c.top, c.itop, c.src, &mut direct) {
                 want.push((i, o));
             }
         }

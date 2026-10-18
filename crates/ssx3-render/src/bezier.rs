@@ -675,6 +675,7 @@ pub mod gpu {
                 indices,
                 alpha_max,
                 link,
+                mesh_key: None,
             });
         };
         for (t, ps) in s.runs(m) {
@@ -715,6 +716,7 @@ pub mod gpu {
                 indices: strip_indices(s.triangles(ps)),
                 alpha_max: 0.0,
                 link: Link::Reuse(KEY),
+                mesh_key: None,
             });
         }
     }

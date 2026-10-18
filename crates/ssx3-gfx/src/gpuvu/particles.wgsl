@@ -122,15 +122,15 @@ fn mat5_snow_vertex(vi: u32, c: u32) -> VOut {
 
 @vertex
 fn vs_mat4_particles(@builtin(vertex_index) k: u32) -> VOut {
-    return mat4_particles_vertex(gidx[k], gcall[k]);
+    return mat4_particles_vertex(gidx[k], call_of(k));
 }
 
 @vertex
 fn vs_mat4_glitter(@builtin(vertex_index) k: u32) -> VOut {
-    return mat4_glitter_vertex(gidx[k], gcall[k]);
+    return mat4_glitter_vertex(gidx[k], call_of(k));
 }
 
 @vertex
 fn vs_mat5_snow(@builtin(vertex_index) k: u32) -> VOut {
-    return mat5_snow_vertex(gidx[k], gcall[k]);
+    return mat5_snow_vertex(gidx[k], call_of(k));
 }
