@@ -98,7 +98,7 @@ pub type JobCall<'a> = (usize, &'a VuCall, Option<u64>, Option<f32>);
 
 /// Encode a job.
 pub fn encode(mem: &[u8; MEM], calls: &[JobCall]) -> Vec<u8> {
-    let n: usize = calls.iter().map(|(_, c, _, _)| 40 + 18 * c.input.len()).sum();
+    let n: usize = calls.iter().map(|(_, c, _, _)| 40 + 18 * c.writes().count()).sum();
     let mut w = Vec::with_capacity(MEM + 4 + n);
     w.extend_from_slice(mem);
     w.extend_from_slice(&(calls.len() as u32).to_le_bytes());
@@ -110,8 +110,8 @@ pub fn encode(mem: &[u8; MEM], calls: &[JobCall]) -> Vec<u8> {
         w.extend_from_slice(&c.itop.to_le_bytes());
         w.extend_from_slice(&c.src.unwrap_or(u64::MAX).to_le_bytes());
         w.extend_from_slice(&kept.unwrap_or(f32::NAN).to_le_bytes());
-        w.extend_from_slice(&(c.input.len() as u32).to_le_bytes());
-        for &(a, v) in &c.input {
+        w.extend_from_slice(&(c.writes().count() as u32).to_le_bytes());
+        for &(a, v) in c.writes() {
             w.extend_from_slice(&a.to_le_bytes());
             w.extend_from_slice(&v.to_le_bytes());
         }
@@ -218,6 +218,7 @@ mod tests {
                 top: (next() % 1024) as u32,
                 itop: (next() % 64) as u32,
                 input: (0..8).map(|_| ((next() % 1024) as u16, next() as u128 | (next() as u128) << 64)).collect(),
+                shared: (k == 1).then(|| vec![((next() % 1024) as u16, next() as u128)].into()),
                 src: (k == 3).then_some(42),
             })
             .collect();
@@ -227,7 +228,7 @@ mod tests {
         let mut direct = Box::new(mem);
         let mut want = Vec::new();
         for &(i, c, h, kept) in &refs {
-            for &(a, v) in &c.input {
+            for &(a, v) in c.writes() {
                 let a = (a as usize & 1023) * 16;
                 direct[a..a + 16].copy_from_slice(&v.to_le_bytes());
             }

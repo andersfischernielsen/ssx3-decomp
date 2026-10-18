@@ -265,7 +265,7 @@ fn check(s: &mut State, m: &EeMem, g: u32) {
     let mut shadow = vec![0u128; 1024];
     for (o, e) in &b.events {
         let Event::Call(c) = e else { continue };
-        for (a, q) in &c.input {
+        for (a, q) in c.writes() {
             shadow[*a as usize & 1023] = *q;
         }
         let Owner::Payload(i) = o else { continue };

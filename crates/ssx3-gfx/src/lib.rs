@@ -1577,7 +1577,7 @@ impl VuPlan<'_> {
     fn run(chunk: &[ssx3_render::vujob::JobCall], mut mem: Box<[u8; 16384]>, subst: Option<&HashMap<[u32; 16], [u32; 16]>>, model_subst: Option<&HashMap<[u32; 16], [u32; 16]>>) -> VuChunk {
         let mut outs = Vec::with_capacity(chunk.len());
         for &(i, c, hash, kept) in chunk {
-            for &(a, v) in &c.input {
+            for &(a, v) in c.writes() {
                 let a = (a as usize & 1023) * 16;
                 mem[a..a + 16].copy_from_slice(&v.to_le_bytes());
             }
@@ -1777,7 +1777,7 @@ fn records(built: &Built) -> interp::Records {
         let top = c.top as u16 & 1023;
         let mut w = [0u32; 16];
         let mut got = 0;
-        for &(a, v) in &c.input {
+        for &(a, v) in c.writes() {
             let k = (a & 1023).wrapping_sub(top);
             if k < 4 {
                 for l in 0..4 {
@@ -2076,7 +2076,7 @@ impl Build {
                 starts.push(std::sync::Mutex::new(Some(img.clone())));
             }
             if threads > 1 {
-                for &(a, v) in &c.input {
+                for &(a, v) in c.writes() {
                     let a = (a as usize & 1023) * 16;
                     img[a..a + 16].copy_from_slice(&v.to_le_bytes());
                 }

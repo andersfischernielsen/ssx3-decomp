@@ -36,15 +36,37 @@ pub struct VuCall {
     /// Quadwords written by UNPACK since the previous start: (address, value),
     /// in address order; the call's input buffer plus any fixed-area uploads.
     pub input: Vec<(u16, u128)>,
+    /// More input, shared with the chain recording it was replayed from
+    /// ([`Recording`]): applied after `input` (where both write a qword,
+    /// they hold the same value). See [`VuCall::writes`].
+    pub shared: Option<std::sync::Arc<[(u16, u128)]>>,
     /// A stable key of where the input came from, when it is the same every
     /// time (a replayed mesh chain: [`Recording::id`] and the start's
     /// index), so its vertex data can stay on the GPU. Not part of equality.
     pub src: Option<u64>,
 }
 
+impl VuCall {
+    /// Every input qword, in the order to apply them.
+    pub fn writes(&self) -> impl Iterator<Item = &(u16, u128)> {
+        self.input.iter().chain(self.shared.as_deref().unwrap_or(&[]))
+    }
+
+    /// The input as one list in address order.
+    pub fn merged_input(&self) -> std::borrow::Cow<'_, [(u16, u128)]> {
+        match &self.shared {
+            None => std::borrow::Cow::Borrowed(&self.input),
+            Some(_) => {
+                let m: std::collections::BTreeMap<u16, u128> = self.writes().copied().collect();
+                std::borrow::Cow::Owned(m.into_iter().collect())
+            }
+        }
+    }
+}
+
 impl PartialEq for VuCall {
     fn eq(&self, o: &Self) -> bool {
-        (self.entry, self.top, self.itop, &self.input) == (o.entry, o.top, o.itop, &o.input)
+        (self.entry, self.top, self.itop) == (o.entry, o.top, o.itop) && self.merged_input() == o.merged_input()
     }
 }
 impl Eq for VuCall {}
@@ -93,7 +115,7 @@ pub struct Vif1 {
 pub struct Recording {
     /// Unique among recordings (set by whoever keeps it; 0: none).
     pub id: u64,
-    pub calls: Vec<(VifRegs, Option<u32>, Vec<(u16, u128)>)>,
+    pub calls: Vec<(VifRegs, Option<u32>, std::sync::Arc<[(u16, u128)]>)>,
     pub tail: Vec<(u16, u128)>,
     pub regs: VifRegs,
 }
@@ -102,7 +124,7 @@ struct Rec {
     /// Lanes written per qword since the last start (bit j: lane j).
     lanes: Box<[u8; VU1_QWORDS]>,
     order: Vec<u16>,
-    calls: Vec<(VifRegs, Option<u32>, Vec<(u16, u128)>)>,
+    calls: Vec<(VifRegs, Option<u32>, std::sync::Arc<[(u16, u128)]>)>,
     /// A qword written in part, or an event other than a start: not
     /// replayable.
     bad: bool,
@@ -182,11 +204,17 @@ impl Vif1 {
     /// be the ones it was recorded from).
     pub fn replay(&mut self, r: &Recording) {
         for (k, (regs, entry, writes)) in r.calls.iter().enumerate() {
-            self.put_qwords(writes);
+            // (The call's input: what was pending before, plus the
+            // recorded writes, shared.)
+            for &(a, v) in writes.iter() {
+                let a = a as usize & (VU1_QWORDS - 1);
+                self.mem[a * 16..a * 16 + 16].copy_from_slice(&v.to_le_bytes());
+            }
             self.regs = *regs;
             self.call(*entry);
-            if r.id != 0 {
-                if let Some(Event::Call(c)) = self.events.last_mut() {
+            if let Some(Event::Call(c)) = self.events.last_mut() {
+                c.shared = Some(writes.clone());
+                if r.id != 0 {
                     c.src = Some(r.id << 16 | k as u64);
                 }
             }
@@ -318,7 +346,7 @@ impl Vif1 {
     fn call(&mut self, entry: Option<u32>) {
         if let Some(rec) = self.rec.as_mut() {
             let w = rec.take(&self.mem);
-            rec.calls.push((self.regs, entry, w));
+            rec.calls.push((self.regs, entry, w.into()));
         }
         let r = &mut self.regs;
         let top = r.tops & 0x3ff;
@@ -338,7 +366,7 @@ impl Vif1 {
             input.push((a as u16, u128::from_le_bytes(self.mem[a * 16..a * 16 + 16].try_into().unwrap())));
         }
         self.dirty_list.clear();
-        self.events.push(Event::Call(VuCall { entry, top, itop, input, src: None }));
+        self.events.push(Event::Call(VuCall { entry, top, itop, input, shared: None, src: None }));
     }
 
     fn put(&mut self, addr: u32, j: usize, v: u32) {

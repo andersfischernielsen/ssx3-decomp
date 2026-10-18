@@ -100,7 +100,7 @@ pub fn program_start(pc: Option<u32>, top: u32, itop: u32, mem: &[u8]) {
         bad.push(format!("top/itop {:#x}/{:#x} vs {top:#x}/{itop:#x}", exp.top, exp.itop));
     }
     let mut wrong = 0;
-    for (a, v) in &exp.input {
+    for (a, v) in exp.writes() {
         let o = *a as usize * 16;
         let got = u128::from_le_bytes(mem[o..o + 16].try_into().unwrap());
         if got != *v {
@@ -111,7 +111,7 @@ pub fn program_start(pc: Option<u32>, top: u32, itop: u32, mem: &[u8]) {
         }
     }
     if wrong > 0 {
-        bad.push(format!("{wrong}/{} input qwords differ", exp.input.len()));
+        bad.push(format!("{wrong}/{} input qwords differ", exp.writes().count()));
     }
     if bad.is_empty() {
         s.calls_ok += 1;
