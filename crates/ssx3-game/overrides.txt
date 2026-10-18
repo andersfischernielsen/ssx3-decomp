@@ -1442,6 +1442,20 @@
 0x0037e238    PS2GraphicsMan_DrawModel
 0x0037a610    PS2GraphicsMan_DrawSkinnedModel
 0x0037b548    PS2GraphicsMan_DrawSkinnedModelShadow
+0x0037d348    SetRenderTargetTexture
+0x0037d450    RestoreRenderTarget
+0x0037d800    FillRenderTarget
+0x0037cc98    DrawTransition
+0x00379bd0    DrawIndexedTriangles
+0x00381ad0    DrawLineStrip
+0x00381f10    DrawLineShape
+0x00377cf0    DrawSprite3D
+0x003781a0    DrawRotatedSprites
+0x00378808    DrawGlyphs
+0x00379028    DrawGlyphsW
+0x00386e78    DrawShadowVolume
+0x003883b8    DrawBoardWake
+0x002dc7b0    FogParticleMan_DrawParticles
 0x00385c10    cPS2GridMesh_Draw
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04

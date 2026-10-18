@@ -48,6 +48,20 @@ pub fn install() -> bool {
         (DRAW_MODEL, draw_model, "PS2GraphicsMan_DrawModel"),
         (DRAW_SKINNED_MODEL, draw_skinned_model, "PS2GraphicsMan_DrawSkinnedModel"),
         (DRAW_SKINNED_MODEL_SHADOW, draw_skinned_model_shadow, "PS2GraphicsMan_DrawSkinnedModelShadow"),
+        (0x0037_d348, capture_setrendertargettexture, "SetRenderTargetTexture"),
+        (0x0037_d450, capture_restorerendertarget, "RestoreRenderTarget"),
+        (0x0037_d800, capture_fillrendertarget, "FillRenderTarget"),
+        (0x0037_cc98, capture_drawtransition, "DrawTransition"),
+        (0x0037_9bd0, capture_drawindexedtriangles, "DrawIndexedTriangles"),
+        (0x0038_1ad0, capture_drawlinestrip, "DrawLineStrip"),
+        (0x0038_1f10, capture_drawlineshape, "DrawLineShape"),
+        (0x0037_7cf0, capture_drawsprite3d, "DrawSprite3D"),
+        (0x0037_81a0, capture_drawrotatedsprites, "DrawRotatedSprites"),
+        (0x0037_8808, capture_drawglyphs, "DrawGlyphs"),
+        (0x0037_9028, capture_drawglyphsw, "DrawGlyphsW"),
+        (0x0038_6e78, capture_drawshadowvolume, "DrawShadowVolume"),
+        (0x0038_83b8, capture_drawboardwake, "DrawBoardWake"),
+        (0x002d_c7b0, capture_fogparticleman_drawparticles, "FogParticleMan_DrawParticles"),
         (GRID_MESH_DRAW, grid_mesh_draw, "cPS2GridMesh_Draw"),
     ] {
         assert!(ssx3_ee::set_override(a, f), "no override slot for {name}: list it in overrides.txt");
@@ -410,7 +424,8 @@ fn capture_records(c: &mut Cpu, body: fn(&mut Cpu), gm: u32) {
     for i in n0..n1 {
         let rec = dm + 0x80 + 0x80 * i;
         let (start, end) = (c.bus.read32(rec + 0x14), c.bus.read32(rec + 0x18));
-        if !seen.insert(start) {
+        // (An empty packet: the chain CALLs a bare link; nothing to draw.)
+        if !seen.insert(start) || start == end {
             continue;
         }
         let Some(steps) = read_range(c, start, end) else { return };
@@ -587,4 +602,40 @@ fn draw_skinned_model(c: &mut Cpu) {
 fn draw_skinned_model_shadow(c: &mut Cpu) {
     let gm = c.g[A0][0] as u32;
     capture_records(c, ssx3_ee::s12::f_0037b548__generated, gm);
+}
+
+/// The PS2GraphicsMan (`gp+0x2a90`).
+fn gm_of(c: &mut Cpu) -> u32 {
+    c.bus.read32(c.g[GP][0] as u32 + 0x2a90)
+}
+
+/// Draw functions whose packets are captured through the records they
+/// write (`capture_records`; specs in `docs/investigation/n2-capture/`).
+macro_rules! record_captures {
+    ($($name:ident = $shard:ident :: $f:ident; $doc:literal)*) => {
+        $(
+            #[doc = $doc]
+            fn $name(c: &mut Cpu) {
+                let gm = gm_of(c);
+                capture_records(c, ssx3_ee::$shard::$f, gm);
+            }
+        )*
+    };
+}
+
+record_captures! {
+    capture_setrendertargettexture = s12::f_0037d348__generated; "slot 53: render into a texture"
+    capture_restorerendertarget = s12::f_0037d450__generated; "slot 54: back to the frame buffer"
+    capture_fillrendertarget = s12::f_0037d800__generated; "slot 55: fill the target, inset the scissor"
+    capture_drawtransition = s12::f_0037cc98__generated; "slot 61: screen copy into the transition texture"
+    capture_drawindexedtriangles = s12::f_00379bd0__generated; "slot 72"
+    capture_drawlinestrip = s12::f_00381ad0__generated; "slot 73"
+    capture_drawlineshape = s12::f_00381f10__generated; "slot 75 (VU1 entry 0x3bf0)"
+    capture_drawsprite3d = s12::f_00377cf0__generated; "slot 78"
+    capture_drawrotatedsprites = s12::f_003781a0__generated; "slot 79"
+    capture_drawglyphs = s12::f_00378808__generated; "slot 80"
+    capture_drawglyphsw = s12::f_00379028__generated; "slot 81"
+    capture_drawshadowvolume = s12::f_00386e78__generated; "slot 89: DIRECT segments and shadow ribbons, one record"
+    capture_drawboardwake = s12::f_003883b8__generated; "slot 90: wake ribbons, one record"
+    capture_fogparticleman_drawparticles = s09::f_002dc7b0__generated; "cPS2FogParticleMan_DrawParticles: GIF sprites"
 }
