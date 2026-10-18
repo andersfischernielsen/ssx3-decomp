@@ -362,9 +362,22 @@ the DMA-end interrupts and the flip packet `Renderer_SetDisplayRegs`
 builds, which the renderer reads for the frame blend and clear) and the
 register models' code for the emulated paths (`SSX3_RENDER=emu`).
 
-### N5: movies (optional) ⬜
+### N5: movies ✅
 
-IPU emulation → a native MPEG-2 decoder feeding a texture.
+Done 2026-10-18: Sony libmpeg's API is native (`crates/ssx3-game/src/movie.rs`:
+`sceMpegInit/Create/AddBs/AddCallback/GetPicture/IsEnd/Reset`) over a native
+MPEG-2 decoder (`crates/ssx3-mpeg`), which shares the IPU model's VLC
+tables, dequantisation, IDCT and CSC (moved into that crate). EA's player
+is unchanged: its "no data" callback still feeds `MPCh` chunks through
+`sceMpegAddBs`; neither libmpeg's EE code nor the IPU runs. The 14 movies
+use only progressive frame pictures with frame prediction/DCT (512x448,
+zigzag, linear quantiser), which is what is implemented. Output: RGB32
+macroblocks in libmpeg's column order. Gate: per-picture hashes against
+the emulated path (`SSX3_MOVIE_HASH=1`, both paths) match except +-1-2 in
+a few bidirectional macroblocks with a diagonal backward vector (the
+native result is the standard's); unit test `eabig_native_decoder`.
+Boot with movies, 3000 frames: 13.8 s -> 8.0 s. `SSX3_NATIVE_MPEG=0`
+keeps libmpeg + IPU.
 
 ## Rules
 
@@ -385,4 +398,4 @@ IPU emulation → a native MPEG-2 decoder feeding a texture.
 | N2 | ✅ | stages A (every draw captured), B (frames from the buckets, no chain walk) and C (draw functions and RenderFrame without packets) done: every draw producer, the bucket links and RenderFrame are native in packetless mode. Earlier: D1 capture infrastructure (`ssx3_game::capture`, `ssx3_render::direct`): strips and ribbons drawn from native commands; model and rider vertex data resident on the GPU; uploads per race frame 3.2 -> ~1.5 MB; browser race 16-21 -> ~13-15 ms per frame, renderer 44% -> 29% of the worker. Next: D1 for riders / Bézier / particles, then D2 (the draw functions native, no packets: `DrawModel` first, ~3% of the browser worker) |
 | N3 | 🟡 | step 1: incremental snapshots and page write generations; step 2: the typed frame built on the game thread from live memory, the renderer gets only the texture pages it reads (no 32 MiB snapshot) |
 | N4 | 🟡 | functionally reached in native mode: GS detached, kicks complete without running, chains are bare `END`s; the kick thread is still guest code |
-| N5 | ⬜ | |
+| N5 | ✅ | movies: native libmpeg API over `ssx3-mpeg` |
