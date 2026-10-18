@@ -24,6 +24,11 @@ use crate::ps2f::FpuF32;
 
 use crate::call::{call_ptr, guest};
 
+mod model;
+mod vu0;
+
+pub use model::draw_model;
+
 /// PS2GraphicsMan fields (`structs/render.md`).
 mod gmf {
     /// `RenderState **curState` (top of the render-state stack).
@@ -220,6 +225,42 @@ pub fn end_tri_strip(c: &mut Cpu) {
 
 fn q(c: &mut Cpu, a: u32) -> u128 {
     c.bus.read128(a)
+}
+
+fn qv(c: &mut Cpu, a: u32) -> vu0::V {
+    v4(q(c, a))
+}
+
+fn wv(c: &mut Cpu, a: u32, v: &vu0::V) {
+    c.bus.write128(a, q4(*v))
+}
+
+fn qm(c: &mut Cpu, a: u32) -> vu0::M {
+    std::array::from_fn(|i| qv(c, a + 16 * i as u32))
+}
+
+fn wm(c: &mut Cpu, a: u32, m: &vu0::M) {
+    for (i, r) in m.iter().enumerate() {
+        wv(c, a + 16 * i as u32, r);
+    }
+}
+
+/// Call a guest function from a native draw function: `args` in a0..t3,
+/// `ret` the return address the generated caller uses. Events wait until
+/// it returns (a native caller cannot be resumed after an unwind, so the
+/// callee must not unwind); its v0.
+fn guest_call(c: &mut Cpu, target: u32, args: &[u32], ret: u32) -> u32 {
+    const R: [usize; 8] = [A0, A1, A2, A3, T0, T1, T2, T3];
+    let ra = c.g[RA];
+    for (i, &a) in args.iter().enumerate() {
+        c.g[R[i]][0] = a as i32 as i64 as u64;
+    }
+    let next = c.next_event;
+    c.next_event = u64::MAX;
+    guest(c, |c| call_ptr(c, target, ret));
+    c.next_event = if c.next_event == u64::MAX { next } else { c.next_event.min(next) };
+    c.g[RA] = ra;
+    c.g[V0][0] as u32
 }
 
 fn q4(v: [u32; 4]) -> u128 {
@@ -570,6 +611,162 @@ pub(crate) fn dispatch_with(c: &mut Cpu, name: &'static str, records: u32, gm_fi
     }
 }
 
+/// A draw function's override checked against all of guest memory
+/// (functions that write beyond their records: buckets, hash chains,
+/// link tags): every `SSX3_DRAW_CHECK_EVERY`-th call (default 8) runs
+/// both from a copy of memory and compares the pages either wrote.
+pub(crate) fn dispatch_ram(c: &mut Cpu, name: &'static str, native: fn(&mut Cpu), packets: fn(&mut Cpu)) {
+    if !direct::packetless() {
+        packets(c);
+    } else if check_on() {
+        static EVERY: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+        let every = *EVERY.get_or_init(|| std::env::var("SSX3_DRAW_CHECK_EVERY").ok().and_then(|v| v.parse().ok()).unwrap_or(8).max(1));
+        static CALLS: std::sync::Mutex<Vec<(&'static str, u64)>> = std::sync::Mutex::new(Vec::new());
+        let n = {
+            let mut calls = CALLS.lock().unwrap();
+            let i = calls.iter().position(|x| x.0 == name).unwrap_or_else(|| {
+                calls.push((name, 0));
+                calls.len() - 1
+            });
+            calls[i].1 += 1;
+            calls[i].1
+        };
+        if n % every == 0 {
+            checked_ram(c, name, native, packets);
+        } else {
+            packets(c);
+        }
+    } else {
+        native(c);
+    }
+}
+
+/// Is `a` a word that holds a packet address (or lies in render-private
+/// memory), so native and generated runs differ there by design?
+fn packet_word(c: &mut Cpu, gm: u32, a: u32) -> bool {
+    let vif = r32(c, gm + 0x5a0c);
+    if (vif..vif + 2 * 0xccc80).contains(&a) || a == gm + gmf::VIF_CURSOR {
+        return true;
+    }
+    let dm = r32(c, gm + gmf::DEFER);
+    let recs = dm + dmf::RECORDS;
+    if (recs..recs + 0x80 * dmf::MAX as u32).contains(&a) && matches!((a - recs) % 0x80, 0x14 | 0x18) {
+        return true;
+    }
+    let buckets = dm + 0x57498;
+    (buckets..buckets + 0x20 * 0x400).contains(&a) && matches!((a - buckets) % 0x20, 0xc | 0x10)
+}
+
+fn checked_ram(c: &mut Cpu, name: &'static str, native: fn(&mut Cpu), packets: fn(&mut Cpu)) {
+    let gm = r32(c, c.g[GP][0] as u32 + 0x2a90);
+    let sp = c.g[SP][0] as u32;
+    let pages = c.bus.ram.len() / 4096;
+    let mut pending = vec![0u64; pages.div_ceil(64)];
+    ssx3_ee_rt::bus::take_written(&mut pending);
+    let pre = c.bus.ram.clone();
+    let pre_spr = c.bus.spr.clone();
+    let (g, f, pc, cycles) = (c.g, c.f, c.pc, c.cycles);
+    // (Interrupts wait until both ran: their handlers would write memory
+    // in one run only.)
+    let next = c.next_event;
+    c.next_event = u64::MAX;
+    let m = direct::mark();
+    native(c);
+    let mut wn = vec![0u64; pending.len()];
+    ssx3_ee_rt::bus::take_written(&mut wn);
+    let bits = |b: &[u64]| -> Vec<usize> { (0..pages).filter(|&p| b[p >> 6] >> (p & 63) & 1 != 0).collect() };
+    let native_pages: Vec<(usize, Vec<u8>)> = bits(&wn).into_iter().map(|p| (p, c.bus.ram[p * 4096..(p + 1) * 4096].to_vec())).collect();
+    let native_s = c.bus.spr[0x3800..0x4000].to_vec();
+    let rec_native = direct::split_off(m);
+    for (p, _) in &native_pages {
+        c.bus.ram[p * 4096..(p + 1) * 4096].copy_from_slice(&pre[p * 4096..(p + 1) * 4096]);
+    }
+    c.bus.spr.copy_from_slice(&pre_spr);
+    (c.g, c.f, c.pc, c.cycles) = (g, f, pc, cycles);
+    c.next_event = u64::MAX;
+    packets(c);
+    c.next_event = if c.next_event == u64::MAX { next } else { c.next_event.min(next) };
+    let mut wp = vec![0u64; pending.len()];
+    ssx3_ee_rt::bus::take_written(&mut wp);
+    let mut bad = Vec::new();
+    let mut all: Vec<usize> = bits(&wn);
+    all.extend(bits(&wp));
+    all.sort_unstable();
+    all.dedup();
+    for p in all {
+        let nat = native_pages.iter().find(|x| x.0 == p).map_or(&pre[p * 4096..(p + 1) * 4096], |x| &x.1[..]);
+        for o in (0..4096).step_by(4) {
+            let a = (p * 4096 + o) as u32;
+            let x = u32::from_le_bytes(nat[o..o + 4].try_into().unwrap());
+            let y = u32::from_le_bytes(c.bus.ram[p * 4096 + o..p * 4096 + o + 4].try_into().unwrap());
+            // (Stack scratch below `sp` differs: the frames differ.)
+            if x != y && !(sp.wrapping_sub(0x1000)..sp).contains(&a) && !packet_word(c, gm, a) {
+                bad.push(format!("{a:#x}: native {x:#x}, packets {y:#x}"));
+            }
+        }
+    }
+    for o in (0..0x800).step_by(4) {
+        let x = u32::from_le_bytes(native_s[o..o + 4].try_into().unwrap());
+        let y = u32::from_le_bytes(c.bus.spr[0x3800 + o..0x3800 + o + 4].try_into().unwrap());
+        if x != y {
+            bad.push(format!("spr {:#x}: native {x:#x}, packets {y:#x}", 0x7000_3800 + o));
+        }
+    }
+    for b in [&pending, &wn, &wp] {
+        for p in bits(b) {
+            ssx3_ee_rt::bus::mark_written(p * 4096);
+        }
+    }
+    let rec_packets = direct::split_off(m);
+    // (One draw per packet: a fast-path packet is also captured by
+    // AppendPacket's wrapper.)
+    let filt = |r: &[Recorded]| -> Vec<Cmd> {
+        let mut seen = std::collections::HashSet::new();
+        let mut r: Vec<&Recorded> = r.iter().filter(|x| seen.insert(x.start)).collect();
+        r.sort_by_key(|x| x.start);
+        r.into_iter().map(|x| x.cmd.clone()).filter(|c| !matches!(c, Cmd::Vu(v) if v.is_empty())).collect()
+    };
+    let (a, b) = (filt(&rec_native), filt(&rec_packets));
+    let uncovered: u64 = a.iter().zip(&b).map(|(x, y)| uncovered(x, y)).sum();
+    if a.len() != b.len() || a.iter().zip(&b).any(|(x, y)| !same_draw(x, y)) {
+        bad.push(format!("draws: native {:?} / packets {:?}", short(&rec_native), short(&rec_packets)));
+    }
+    let mut nat = rec_native.iter().filter(|x| !matches!(&x.cmd, Cmd::Vu(v) if v.is_empty()));
+    for x in &rec_packets {
+        let mut x = x.clone();
+        if keep_native() {
+            if let Some(n) = nat.next() {
+                x.cmd = n.cmd.clone();
+            }
+        }
+        direct::record(x);
+    }
+    report(name, bad, uncovered);
+}
+
+fn report(name: &'static str, bad: Vec<String>, uncovered: u64) {
+    let mut stats = STATS.lock().unwrap();
+    let i = match stats.iter().position(|s| s.0 == name) {
+        Some(i) => i,
+        None => {
+            stats.push((name, 0, 0, 0));
+            stats.len() - 1
+        }
+    };
+    let s = &mut stats[i];
+    s.1 += 1;
+    s.3 += uncovered;
+    if !bad.is_empty() {
+        s.2 += 1;
+        if s.2 <= 10 {
+            let n = bad.len();
+            let mut bad = bad;
+            bad.truncate(12);
+            eprintln!("[draw-check] {name} call {}: {n} differences: {}", s.1, bad.join("; "));
+        }
+    }
+}
+
 /// Run `native` and `packets` from the same registers and watched memory;
 /// report differences in the watched words and the recorded draws. The
 /// generated run's state and captures stay.
@@ -695,5 +892,21 @@ fn uncovered(native: &Cmd, packets: &Cmd) -> u64 {
 }
 
 fn short(r: &[Recorded]) -> Vec<String> {
-    r.iter().map(|x| format!("{:.120}", format!("{:?}", x.cmd))).collect()
+    r.iter()
+        .map(|x| match &x.cmd {
+            Cmd::Vu(steps) => {
+                let s: Vec<String> = steps
+                    .iter()
+                    .map(|s| match s {
+                        Step::Write { addr, data, .. } => format!("W{addr:#x}x{}", data.len()),
+                        Step::Chain(a) => format!("C{a:#x}"),
+                        Step::Start(e) => format!("S{e:#x}"),
+                        s => format!("{s:?}"),
+                    })
+                    .collect();
+                format!("{:#x}..{:#x} {}", x.start, x.end, s.join(" "))
+            }
+            c => format!("{:#x} {:.100}", x.start, format!("{c:?}")),
+        })
+        .collect()
 }

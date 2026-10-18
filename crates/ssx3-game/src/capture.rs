@@ -47,7 +47,7 @@ pub fn install() -> bool {
         (DRAW_TRAIL, |c: &mut Cpu| crate::packetless::dispatch(c, "DrawTrail", 8, crate::packetless::draw_trail, draw_trail), "PS2GraphicsMan_DrawTrail"),
         (DRAW_TRAIL_B, |c: &mut Cpu| crate::packetless::dispatch(c, "DrawTrailB", 8, crate::packetless::draw_trail_b, draw_trail_b), "PS2GraphicsMan_DrawTrailB"),
         (DRAW_PATCH_FX, |c: &mut Cpu| crate::packetless::dispatch_patch_fx(c, draw_patch_fx), "PS2BezierMan_DrawPatchFX"),
-        (DRAW_MODEL, draw_model, "PS2GraphicsMan_DrawModel"),
+        (DRAW_MODEL, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "DrawModel", crate::packetless::draw_model, draw_model), "PS2GraphicsMan_DrawModel"),
         (DRAW_SKINNED_MODEL, draw_skinned_model, "PS2GraphicsMan_DrawSkinnedModel"),
         (BEZIER_END_PASS, bezier_end_pass, "PS2BezierMan_v18"),
         (0x0036_ac00, render_depth_fog, "PS2GraphicsMan_RenderDepthFog"),
