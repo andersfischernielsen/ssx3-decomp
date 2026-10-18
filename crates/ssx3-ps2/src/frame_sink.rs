@@ -49,6 +49,8 @@ struct Sink {
 #[derive(Default)]
 pub struct FrameBuilder {
     carry: Carry,
+    /// Mesh chains decoded once (`frame::ChainCache`).
+    cache: frame::ChainCache,
     /// Time spent building, frames built.
     pub ms: f64,
     pub frames: u64,
@@ -60,7 +62,7 @@ impl FrameBuilder {
     pub fn build(&mut self, gm: u32, mem: &DumpMem) -> (Built, Carry) {
         let t = web_time::Instant::now();
         let carry = self.carry.clone();
-        let b = frame::build(mem, gm, &carry);
+        let b = frame::build_cached(mem, gm, &carry, &mut self.cache);
         self.carry = Carry { regs: b.regs_end, matrix: b.emitter.matrix, material_param: b.emitter.material_param };
         self.ms += t.elapsed().as_secs_f64() * 1e3;
         self.frames += 1;
@@ -418,6 +420,11 @@ pub fn load_dump(bytes: &[u8]) -> Result<(DumpMem, Carry), String> {
 
 /// Build the typed frame from a dump's memory.
 pub fn build_dump(mem: &DumpMem, carry: &Carry) -> Option<Built> {
+    build_dump_cached(mem, carry, &mut frame::ChainCache::default())
+}
+
+/// [`build_dump`] with a sub-chain cache carried across dumps.
+pub fn build_dump_cached(mem: &DumpMem, carry: &Carry, cache: &mut frame::ChainCache) -> Option<Built> {
     let g = frame::word(mem, frame::addr::GM_PTR);
-    (g != 0).then(|| frame::build(mem, g, carry))
+    (g != 0).then(|| frame::build_cached(mem, g, carry, cache))
 }

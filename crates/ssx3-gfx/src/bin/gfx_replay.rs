@@ -66,9 +66,14 @@ fn main() {
         if rep == 1 {
             t = std::time::Instant::now();
         }
+        let mut chains = ssx3_render::frame::ChainCache::default();
         for (i, (mem, carry)) in frames.iter().enumerate() {
             let t0 = std::time::Instant::now();
-            let built = frame_sink::build_dump(mem, carry).expect("no frame");
+            let built = frame_sink::build_dump_cached(mem, carry, &mut chains).expect("no frame");
+            if std::env::var_os("SSX3_CHAIN_CACHE_CHECK").is_some() {
+                let bad = built.issues.iter().filter(|i| i.starts_with("chain cache")).count();
+                eprintln!("[chain-cache] frame {i}: hits/misses so far {:?}, {bad} replay mismatches", chains.stats);
+            }
             let t1 = std::time::Instant::now();
             let mut g = r.0.lock().unwrap();
             if i == 0 && rep == 0 {

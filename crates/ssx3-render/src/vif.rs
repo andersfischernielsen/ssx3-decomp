@@ -11,7 +11,7 @@
 pub const VU1_QWORDS: usize = 1024;
 
 /// VIF1 registers that persist between transfers.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct VifRegs {
     pub cycle: u32,
     pub mode: u32,
@@ -65,6 +65,46 @@ pub struct Vif1 {
     pub events: Vec<Event>,
     /// Unknown VIFcodes seen.
     pub errors: u32,
+    /// Recording a stretch of input ([`Vif1::record`]).
+    rec: Option<Rec>,
+}
+
+/// A stretch of VIF input as replayable effects: per microprogram start,
+/// the registers just before it and the qwords the stretch wrote since the
+/// previous one; then the qwords written after the last start and the
+/// registers at the end.
+#[derive(Clone, Debug)]
+pub struct Recording {
+    pub calls: Vec<(VifRegs, Option<u32>, Vec<(u16, u128)>)>,
+    pub tail: Vec<(u16, u128)>,
+    pub regs: VifRegs,
+}
+
+struct Rec {
+    /// Lanes written per qword since the last start (bit j: lane j).
+    lanes: Box<[u8; VU1_QWORDS]>,
+    order: Vec<u16>,
+    calls: Vec<(VifRegs, Option<u32>, Vec<(u16, u128)>)>,
+    /// A qword written in part, or an event other than a start: not
+    /// replayable.
+    bad: bool,
+}
+
+impl Rec {
+    fn take(&mut self, mem: &[u8; VU1_QWORDS * 16]) -> Vec<(u16, u128)> {
+        let mut v = Vec::with_capacity(self.order.len());
+        self.order.sort_unstable();
+        for &a in &self.order {
+            let a = a as usize;
+            if self.lanes[a] != 0xf {
+                self.bad = true;
+            }
+            self.lanes[a] = 0;
+            v.push((a as u16, u128::from_le_bytes(mem[a * 16..a * 16 + 16].try_into().unwrap())));
+        }
+        self.order.clear();
+        v
+    }
 }
 
 impl Default for Vif1 {
@@ -83,7 +123,71 @@ impl Vif1 {
             fifo: Vec::new(),
             events: Vec::new(),
             errors: 0,
+            rec: None,
         }
+    }
+
+    /// A copy of the state (memory, registers; no events), for checks.
+    pub fn clone_state(&self) -> Vif1 {
+        Vif1 {
+            regs: self.regs,
+            mem: self.mem.clone(),
+            dirty: self.dirty.clone(),
+            dirty_list: self.dirty_list.clone(),
+            fifo: self.fifo.clone(),
+            events: Vec::new(),
+            errors: 0,
+            rec: None,
+        }
+    }
+
+    /// No VIFcode is waiting for data (a recording can start or replay).
+    pub fn idle(&self) -> bool {
+        self.fifo.is_empty()
+    }
+
+    /// Start recording the effects of the input that follows.
+    pub fn record(&mut self) {
+        self.rec = Some(Rec { lanes: Box::new([0; VU1_QWORDS]), order: Vec::new(), calls: Vec::new(), bad: false });
+    }
+
+    /// Stop recording: the effects since [`Vif1::record`], or `None` when
+    /// they cannot be replayed (a VIFcode still waiting for data, a qword
+    /// written in part, events other than microprogram starts).
+    pub fn recorded(&mut self) -> Option<Recording> {
+        let mut r = self.rec.take()?;
+        let tail = r.take(&self.mem);
+        (!r.bad && self.fifo.is_empty()).then(|| Recording { calls: r.calls, tail, regs: self.regs })
+    }
+
+    /// Apply a recording as if its input were fed again (the registers must
+    /// be the ones it was recorded from).
+    pub fn replay(&mut self, r: &Recording) {
+        for (regs, entry, writes) in &r.calls {
+            self.put_qwords(writes);
+            self.regs = *regs;
+            self.call(*entry);
+        }
+        self.put_qwords(&r.tail);
+        self.regs = r.regs;
+    }
+
+    fn put_qwords(&mut self, w: &[(u16, u128)]) {
+        for &(a, v) in w {
+            let a = a as usize & (VU1_QWORDS - 1);
+            self.mem[a * 16..a * 16 + 16].copy_from_slice(&v.to_le_bytes());
+            if !self.dirty[a] {
+                self.dirty[a] = true;
+                self.dirty_list.push(a as u16);
+            }
+        }
+    }
+
+    fn push_event(&mut self, e: Event) {
+        if let Some(r) = self.rec.as_mut() {
+            r.bad = true;
+        }
+        self.events.push(e);
     }
 
     /// Feed quadwords (one DMA transfer).
@@ -156,19 +260,19 @@ impl Vif1 {
             0x03 => r.base = imm & 0x3ff,
             0x04 => r.itops = imm & 0x3ff,
             0x05 => r.mode = imm & 3,
-            0x06 => self.events.push(Event::MaskPath3((imm >> 15) & 1 != 0)),
+            0x06 => self.push_event(Event::MaskPath3((imm >> 15) & 1 != 0)),
             0x14 | 0x15 => self.call(Some(imm * 8)),
             0x17 => self.call(None),
             0x20 => r.mask = data[0],
             0x30 => r.row.copy_from_slice(&data[..4]),
             0x31 => r.col.copy_from_slice(&data[..4]),
-            0x4a => self.events.push(Event::Microcode { addr: imm * 8, bytes: data.len() as u32 * 4 }),
+            0x4a => self.push_event(Event::Microcode { addr: imm * 8, bytes: data.len() as u32 * 4 }),
             0x50 | 0x51 => {
                 let qwords = data
                     .chunks_exact(4)
                     .map(|c| c[0] as u128 | (c[1] as u128) << 32 | (c[2] as u128) << 64 | (c[3] as u128) << 96)
                     .collect();
-                self.events.push(Event::Direct(Direct { qwords }));
+                self.push_event(Event::Direct(Direct { qwords }));
             }
             _ if op & 0x60 == 0x60 => self.unpack(cmd, data),
             _ => self.errors += 1,
@@ -178,6 +282,10 @@ impl Vif1 {
     /// MSCAL/MSCALF/MSCNT: TOP/ITOP latch and the TOPS double buffer, as the
     /// VIF does when it starts the VU.
     fn call(&mut self, entry: Option<u32>) {
+        if let Some(rec) = self.rec.as_mut() {
+            let w = rec.take(&self.mem);
+            rec.calls.push((self.regs, entry, w));
+        }
         let r = &mut self.regs;
         let top = r.tops & 0x3ff;
         if r.dbf {
@@ -205,6 +313,12 @@ impl Vif1 {
         if !self.dirty[a] {
             self.dirty[a] = true;
             self.dirty_list.push(a as u16);
+        }
+        if let Some(r) = self.rec.as_mut() {
+            if r.lanes[a] == 0 {
+                r.order.push(a as u16);
+            }
+            r.lanes[a] |= 1 << j;
         }
     }
 

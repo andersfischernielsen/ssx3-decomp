@@ -976,6 +976,10 @@ impl Walker<'_> {
             return;
         }
         self.vif.write(data);
+        self.take_events();
+    }
+
+    fn take_events(&mut self) {
         let owner = match self.in_payload {
             Some(d) => Owner::Payload(d),
             None => Owner::Unattributed,
@@ -1013,9 +1017,70 @@ struct Region {
     flushe: Vec<usize>,
 }
 
+/// Sub-chains CALLed from inside a payload (the models' prebuilt mesh
+/// chains), decoded once: what the VIF does with each
+/// ([`crate::vif::Recording`]), keyed by its address and the VIF registers
+/// it starts from, with a hash of its tags and data to see it unchanged. A
+/// hit replays the effects instead of decoding (`SSX3_CHAIN_CACHE=0`:
+/// always decode; `SSX3_CHAIN_CACHE_CHECK=1`: decode too and compare).
+#[derive(Default)]
+pub struct ChainCache {
+    map: HashMap<(u32, VifRegs), (u64, crate::vif::Recording)>,
+    /// (Hits, misses) so far.
+    pub stats: (u64, u64),
+}
+
+/// The sub-chain from `a` up to its RET: a hash of its tags and data, or
+/// `None` when it does not return plainly (END, nested CALLs, too long).
+fn sub_chain_hash(m: &dyn Mem, mut a: u32) -> Option<u64> {
+    let mut h = 0xcbf2_9ce4_8422_2325u64;
+    let mut mix = |x: u128| {
+        h = (h ^ x as u64).wrapping_mul(0x0000_0100_0000_01b3);
+        h = (h ^ (x >> 64) as u64).wrapping_mul(0x0000_0100_0000_01b3);
+    };
+    for _ in 0..4096 {
+        let tag = m.qword(a);
+        mix(tag);
+        let qwc = (tag & 0xffff) as u32;
+        let addr = ((tag >> 32) & 0x7fff_fff0) as u32;
+        let (data, next) = match (tag >> 28) & 7 {
+            1 => (a + 16, a + 16 + qwc * 16),
+            2 => (a + 16, addr),
+            3 | 4 if (tag >> 63) & 1 == 0 => (addr, a + 16),
+            6 => {
+                for i in 0..qwc {
+                    mix(m.qword(a + 16 + i * 16));
+                }
+                return Some(h);
+            }
+            _ => return None,
+        };
+        for i in 0..qwc {
+            mix(m.qword(data + i * 16));
+        }
+        a = next;
+    }
+    None
+}
+
+fn chain_cache_mode() -> (bool, bool) {
+    static M: std::sync::OnceLock<(bool, bool)> = std::sync::OnceLock::new();
+    *M.get_or_init(|| {
+        (
+            std::env::var("SSX3_CHAIN_CACHE").map_or(true, |v| v != "0"),
+            std::env::var_os("SSX3_CHAIN_CACHE_CHECK").is_some(),
+        )
+    })
+}
+
 /// Build the frame. `g` = PS2GraphicsMan, called when EndFrame publishes the
 /// chains (after `RenderFrame`, before `DeferMan_ResetFrame`).
 pub fn build(m: &dyn Mem, g: u32, carry: &Carry) -> Built {
+    build_cached(m, g, carry, &mut ChainCache::default())
+}
+
+/// [`build`] with the sub-chain cache carried from frame to frame.
+pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache) -> Built {
     let defer = word(m, g + gm::DEFER);
     let mut issues = Vec::new();
     let nm = word(m, defer + dm::NUM_MATRICES).min(dm::MAX_MATRICES);
@@ -1063,6 +1128,9 @@ pub fn build(m: &dyn Mem, g: u32, carry: &Carry) -> Built {
         let mut asr = [0u32; 2];
         let mut payload_start = 0usize;
         let mut ended = false;
+        // A sub-chain being recorded: its key, hash and the CALL depth it
+        // returns to.
+        let mut recording: Option<((u32, VifRegs), u64, u32)> = None;
         for _ in 0..1_000_000 {
             let tag = w.m.qword(tadr);
             let qwc = (tag & 0xffff) as u32;
@@ -1104,6 +1172,42 @@ pub fn build(m: &dyn Mem, g: u32, carry: &Carry) -> Built {
                 w.in_payload = Some(d);
                 payload_start = w.events.len();
             }
+            // A CALL from inside a payload (a model's mesh chain): replay it
+            // from the cache, or record it.
+            let (use_cache, check) = chain_cache_mode();
+            if id == 5 && !top && w.in_payload.is_some() && recording.is_none() && use_cache && w.vif.idle() {
+                if let Some(h) = sub_chain_hash(w.m, a) {
+                    let key = (a, w.vif.regs);
+                    match cache.map.get(&key) {
+                        Some((hh, rec)) if *hh == h => {
+                            cache.stats.0 += 1;
+                            if check {
+                                let mut v = w.vif.clone_state();
+                                let mut asr2 = [0u32; 2];
+                                crate::chain::walk(w.m, a, false, false, 0, &mut asr2, &mut |d| v.write(d));
+                                let mut r = w.vif.clone_state();
+                                r.replay(rec);
+                                if v.events != r.events || v.regs != r.regs || v.mem[..] != r.mem[..] {
+                                    issues.push(format!("chain cache: {a:#x} replays differently"));
+                                }
+                            }
+                            w.vif.replay(rec);
+                            w.take_events();
+                            // Back after the CALL, as its RET would.
+                            tadr = tadr + 16 + qwc * 16;
+                            continue;
+                        }
+                        _ => {
+                            cache.stats.1 += 1;
+                            if cache.map.len() > 8192 {
+                                cache.map.clear();
+                            }
+                            w.vif.record();
+                            recording = Some((key, h, asp));
+                        }
+                    }
+                }
+            }
             // Other top-level CALLs (material setup: .vutext program chains,
             // w3 packets) stay in the current region.
             if id == 5 {
@@ -1114,6 +1218,15 @@ pub fn build(m: &dyn Mem, g: u32, carry: &Carry) -> Built {
             } else if id == 6 && asp > 0 {
                 asp -= 1;
                 next = asr[asp as usize];
+                if let Some((key, h, _)) = recording.filter(|r| r.2 == asp) {
+                    recording = None;
+                    if let Some(rec) = w.vif.recorded() {
+                        cache.map.insert(key, (h, rec));
+                    }
+                } else if asp == 0 && recording.take().is_some() {
+                    // (A recording that did not end at its RET: dropped.)
+                    let _ = w.vif.recorded();
+                }
                 if asp == 0 {
                     if let Some(d) = w.in_payload.take() {
                         // Flush VIF codes still pending in the payload.
