@@ -76,9 +76,12 @@ unsafe impl Sync for SendBlob {}
 
 /// The VU helper workers' shared buffer (`www/vuworker.js`). Int32 header:
 /// [0] generation, [1] job count, [2] next job (generation << 16 | index),
-/// [3] jobs done, [4] output base, [5] arena bytes per helper; from int 16,
-/// per job: input offset, length, output offset (-1: did not fit), length.
-/// Inputs follow the header; each helper writes its outputs to its arena.
+/// [3] jobs done, [4] output base, [5] arena bytes per helper, [6] store
+/// generation, [7] store bytes used, [8] store base; from int 16, per job:
+/// input offset, length, output offset (-1: did not fit), length. Inputs
+/// follow the header, then the store (`ssx3_render::vujob::SharedStore`:
+/// replayed calls' input, written once; helpers mirror it), then each
+/// helper's output arena.
 mod vu_pool {
     use js_sys::{Atomics, Int32Array, SharedArrayBuffer, Uint8Array};
 
@@ -86,12 +89,22 @@ mod vu_pool {
     const TABLE: u32 = 16;
     const MAX_JOBS: usize = ((HEADER / 4 - TABLE) / 4) as usize;
     const INPUTS: u32 = 32 << 20;
+    const STORE: u32 = 24 << 20;
     const ARENA: u32 = 8 << 20;
 
     pub struct Pool {
         pub sab: SharedArrayBuffer,
         i32: Int32Array,
         u8: Uint8Array,
+        /// The store's contents here too (jobs run on this thread).
+        store: std::sync::Mutex<Store>,
+    }
+
+    #[derive(Default)]
+    struct Store {
+        at: std::collections::HashMap<u64, u32>,
+        bytes: Vec<u8>,
+        generation: i32,
     }
 
     // SAFETY: a wasm32 build without atomics has one thread; the helpers
@@ -101,11 +114,38 @@ mod vu_pool {
 
     impl Pool {
         pub fn new(helpers: u32) -> Option<Pool> {
-            let sab = SharedArrayBuffer::new(HEADER + INPUTS + helpers * ARENA);
+            let sab = SharedArrayBuffer::new(HEADER + INPUTS + STORE + helpers * ARENA);
             let (i32, u8) = (Int32Array::new(&sab), Uint8Array::new(&sab));
-            i32.set_index(4, (HEADER + INPUTS) as i32);
+            i32.set_index(4, (HEADER + INPUTS + STORE) as i32);
             i32.set_index(5, ARENA as i32);
-            Some(Pool { sab, i32, u8 })
+            i32.set_index(8, (HEADER + INPUTS) as i32);
+            Some(Pool { sab, i32, u8, store: Default::default() })
+        }
+
+        /// [`ssx3_render::vujob::SharedStore`]: data under `key`, appended
+        /// once (the store starts over, a new generation, when full).
+        fn store_offset(&self, key: u64, bytes: &mut dyn FnMut() -> Vec<u8>) -> Option<u32> {
+            let mut s = self.store.lock().unwrap();
+            if let Some(&o) = s.at.get(&key) {
+                return Some(o);
+            }
+            let b = bytes();
+            if b.len() > STORE as usize / 4 {
+                return None;
+            }
+            if s.bytes.len() + b.len() > STORE as usize {
+                s.at.clear();
+                s.bytes.clear();
+                s.generation += 1;
+                self.i32.set_index(7, 0);
+                self.i32.set_index(6, s.generation);
+            }
+            let o = s.bytes.len() as u32;
+            self.u8.subarray(HEADER + INPUTS + o, HEADER + INPUTS + o + b.len() as u32).copy_from(&b);
+            s.bytes.extend_from_slice(&b);
+            s.at.insert(key, o);
+            self.i32.set_index(7, s.bytes.len() as i32);
+            Some(o)
         }
 
         fn claim(&self, tag: i32, n: i32) -> Option<usize> {
@@ -124,7 +164,7 @@ mod vu_pool {
         /// them (taking any not started yet itself) and gives the results
         /// in order.
         pub fn start(self: &std::sync::Arc<Self>, jobs: Vec<Vec<u8>>) -> ssx3_gfx::VuCollect {
-            let local = |j: &[u8]| ssx3_gfx::run_vu_job(j);
+            let local = |j: &[u8]| ssx3_gfx::run_vu_job(j, &self.store.lock().unwrap().bytes);
             let size: usize = jobs.iter().map(|j| j.len()).sum();
             if jobs.len() > MAX_JOBS || size > INPUTS as usize {
                 let r: Vec<Vec<u8>> = jobs.iter().map(|j| local(j)).collect();
@@ -152,7 +192,7 @@ mod vu_pool {
         }
 
         fn collect(&self, jobs: Vec<Vec<u8>>, tag: i32, n: i32) -> Vec<Vec<u8>> {
-            let local = |j: &[u8]| ssx3_gfx::run_vu_job(j);
+            let local = |j: &[u8]| ssx3_gfx::run_vu_job(j, &self.store.lock().unwrap().bytes);
             let mut out: Vec<Option<Vec<u8>>> = vec![None; jobs.len()];
             while let Some(j) = self.claim(tag, n) {
                 out[j] = Some(local(&jobs[j]));
@@ -180,6 +220,15 @@ mod vu_pool {
                     })
                 })
                 .collect()
+        }
+    }
+
+    /// The pool as the renderer's store of shared input.
+    pub struct PoolStore(pub std::sync::Arc<Pool>);
+
+    impl ssx3_render::vujob::SharedStore for PoolStore {
+        fn offset(&mut self, key: u64, bytes: &mut dyn FnMut() -> Vec<u8>) -> Option<u32> {
+            self.0.store_offset(key, bytes)
         }
     }
 }
@@ -293,6 +342,7 @@ pub async fn start(canvas: web_sys::OffscreenCanvas, iso: web_sys::Blob, helpers
     if let Some(p) = pool {
         log(&format!("[ssx3] {helpers} VU helper workers"));
         let p = std::sync::Arc::new(p);
+        ssx3_gfx::set_vu_store(Box::new(vu_pool::PoolStore(p.clone())));
         ssx3_gfx::set_vu_offload(Box::new(move |jobs| p.start(jobs)), helpers as usize);
     }
     let game = Game {

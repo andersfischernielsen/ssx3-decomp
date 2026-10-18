@@ -48,7 +48,7 @@ fn main() {
     if std::env::var_os("SSX3_VU_OFFLOAD_SELFTEST").is_some() {
         ssx3_gfx::set_vu_offload(
             Box::new(|jobs| {
-                let r: Vec<Vec<u8>> = jobs.iter().map(|j| ssx3_gfx::run_vu_job(j)).collect();
+                let r: Vec<Vec<u8>> = jobs.iter().map(|j| ssx3_gfx::run_vu_job(j, &[])).collect();
                 Box::new(move || r)
             }),
             4,

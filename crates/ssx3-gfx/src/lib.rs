@@ -1732,11 +1732,13 @@ impl VuPlan<'_> {
 
     /// Every chunk, encoded (takes the start images).
     fn jobs(&self) -> Vec<Vec<u8>> {
+        let mut store = STORE.get().map(|s| s.lock().unwrap());
         (0..self.bounds.len())
             .map(|j| {
                 let start = self.starts[j].lock().unwrap().take().expect("chunk");
                 let e = self.bounds.get(j + 1).copied().unwrap_or(self.calls.len());
-                ssx3_render::vujob::encode(&start, &self.calls[self.bounds[j]..e])
+                let st = store.as_mut().map(|s| &mut ***s as &mut dyn ssx3_render::vujob::SharedStore);
+                ssx3_render::vujob::encode_with(&start, &self.calls[self.bounds[j]..e], st)
             })
             .collect()
     }
@@ -2232,6 +2234,15 @@ pub type VuOffload = Box<dyn Fn(Vec<Vec<u8>>) -> VuCollect + Send + Sync>;
 
 static OFFLOAD: std::sync::OnceLock<(VuOffload, usize)> = std::sync::OnceLock::new();
 
+/// Where the offload keeps replayed calls' shared input
+/// (`ssx3_render::vujob::SharedStore`), if anywhere.
+static STORE: std::sync::OnceLock<Mutex<Box<dyn ssx3_render::vujob::SharedStore + Send>>> = std::sync::OnceLock::new();
+
+/// Install the offload's store of shared input (once).
+pub fn set_vu_store(store: Box<dyn ssx3_render::vujob::SharedStore + Send>) {
+    let _ = STORE.set(Mutex::new(store));
+}
+
 /// The staged frame's started chunks (chunk count, results), for its
 /// `VuPlan::offload` when it is drawn.
 static PREFETCH: Mutex<Option<(usize, VuCollect)>> = Mutex::new(None);
@@ -2245,8 +2256,8 @@ struct Staged {
 }
 
 /// Run one encoded job (what an offload does with each).
-pub fn run_vu_job(job: &[u8]) -> Vec<u8> {
-    ssx3_render::vujob::run(job)
+pub fn run_vu_job(job: &[u8], store: &[u8]) -> Vec<u8> {
+    ssx3_render::vujob::run(job, store)
 }
 
 /// Install the VU offload, which runs `workers` jobs at a time (the frame's

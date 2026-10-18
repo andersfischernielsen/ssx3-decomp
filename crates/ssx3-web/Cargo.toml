@@ -14,6 +14,7 @@ ssx3-core.workspace = true
 ssx3-ps2 = { path = "../ssx3-ps2" }
 ssx3-iop = { path = "../ssx3-iop" }
 ssx3-gfx = { path = "../ssx3-gfx" }
+ssx3-render = { path = "../ssx3-render" }
 ssx3-ee-rt = { path = "../ssx3-ee-rt" }
 ssx3-ee-unwind = { path = "../../generated/ee-unwind/game", package = "ssx3-ee-unwind" }
 ssx3-game = { path = "../ssx3-game", default-features = false, features = ["packages", "ee-unwind"] }

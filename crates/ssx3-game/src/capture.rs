@@ -32,6 +32,9 @@ pub fn install() -> bool {
 }
 
 fn qword(c: &mut Cpu, a: u32) -> u128 {
+    if a & 15 == 0 {
+        return c.bus.read128(a);
+    }
     (0..4).fold(0u128, |q, l| q | (c.bus.read32(a + 4 * l) as u128) << (32 * l))
 }
 
@@ -80,7 +83,8 @@ impl RibbonInput {
             return None;
         }
         for i in 0..3 * n as u32 {
-            self.cur.push(((at + i) as u16, qword(c, src.wrapping_add(16 * i))));
+            let q = qword(c, src.wrapping_add(16 * i));
+            self.cur.push(((at + i) as u16, q));
         }
         Some(())
     }

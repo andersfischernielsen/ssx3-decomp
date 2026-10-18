@@ -12,8 +12,9 @@
 //! `u32::MAX` = none), top (u32), itop (u32), source key (u64,
 //! `u64::MAX` = none; `VuCall::src`), the alpha maximum of its mesh data
 //! when the renderer keeps that data already (f32, NaN = not kept; see
-//! [`run_call`]), input count (u32), inputs
-//! (u16 address, u128 value). Result = output count (u32), per output:
+//! [`run_call`]), input count (u32), inputs (u16 address, u128 value),
+//! then the input kept in a [`SharedStore`] (u32 store offset, `u32::MAX`
+//! = none; u32 count; the store holds the same pairs). Result = output count (u32), per output:
 //! event index (u32), kind (u8: 0 GIF, 1 GPU), then for GIF the qword count
 //! (u32) and the qwords, for GPU the [`crate::gpu::GpuCall`]; then the
 //! memory.
@@ -145,8 +146,29 @@ fn get_regs(r: &mut Reader) -> crate::vif::VifRegs {
     crate::vif::VifRegs { cycle: x[0], mode: x[1], mask: x[2], row: [x[3], x[4], x[5], x[6]], col: [x[7], x[8], x[9], x[10]], base: x[11], ofst: x[12], tops: x[13], itops: x[14], dbf: x[15] != 0 }
 }
 
+/// Where the shared input of replayed calls (`VuCall::shared`, the same
+/// every frame) is kept for the jobs: stored once, then referenced.
+pub trait SharedStore {
+    /// The store offset of the data under `key` (`VuCall::src`), storing
+    /// `bytes()` (input pairs as a job holds them) when it is new; `None`:
+    /// not kept (the job carries it).
+    fn offset(&mut self, key: u64, bytes: &mut dyn FnMut() -> Vec<u8>) -> Option<u32>;
+}
+
+fn put_pairs<'a>(w: &mut Vec<u8>, pairs: impl Iterator<Item = &'a (u16, u128)>) {
+    for &(a, v) in pairs {
+        w.extend_from_slice(&a.to_le_bytes());
+        w.extend_from_slice(&v.to_le_bytes());
+    }
+}
+
 /// Encode a job.
 pub fn encode(mem: &[u8; MEM], items: &[JobItem]) -> Vec<u8> {
+    encode_with(mem, items, None)
+}
+
+/// [`encode`], keeping shared input in `store`.
+pub fn encode_with(mem: &[u8; MEM], items: &[JobItem], mut store: Option<&mut dyn SharedStore>) -> Vec<u8> {
     let n: usize = items.iter().map(|it| if let JobItem::Call((_, c, _, _)) = it { 41 + 18 * c.writes().count() } else { 256 }).sum();
     let mut w = Vec::with_capacity(MEM + 4 + n);
     w.extend_from_slice(mem);
@@ -173,17 +195,37 @@ pub fn encode(mem: &[u8; MEM], items: &[JobItem]) -> Vec<u8> {
         w.extend_from_slice(&c.itop.to_le_bytes());
         w.extend_from_slice(&c.src.unwrap_or(u64::MAX).to_le_bytes());
         w.extend_from_slice(&kept.unwrap_or(f32::NAN).to_le_bytes());
-        w.extend_from_slice(&(c.writes().count() as u32).to_le_bytes());
-        for &(a, v) in c.writes() {
-            w.extend_from_slice(&a.to_le_bytes());
-            w.extend_from_slice(&v.to_le_bytes());
+        let stored = match (&c.shared, c.src, store.as_deref_mut()) {
+            (Some(sh), Some(key), Some(st)) => st
+                .offset(key, &mut || {
+                    let mut b = Vec::with_capacity(18 * sh.len());
+                    put_pairs(&mut b, sh.iter());
+                    b
+                })
+                .map(|o| (o, sh.len() as u32)),
+            _ => None,
+        };
+        match stored {
+            Some((off, n)) => {
+                w.extend_from_slice(&(c.input.len() as u32).to_le_bytes());
+                put_pairs(&mut w, c.input.iter());
+                w.extend_from_slice(&off.to_le_bytes());
+                w.extend_from_slice(&n.to_le_bytes());
+            }
+            None => {
+                w.extend_from_slice(&(c.writes().count() as u32).to_le_bytes());
+                put_pairs(&mut w, c.writes());
+                w.extend_from_slice(&u32::MAX.to_le_bytes());
+                w.extend_from_slice(&0u32.to_le_bytes());
+            }
         }
     }
     w
 }
 
-/// Run an encoded job; returns the encoded result.
-pub fn run(job: &[u8]) -> Vec<u8> {
+/// Run an encoded job; returns the encoded result. `store`: what the
+/// [`SharedStore`] the job was encoded with holds.
+pub fn run(job: &[u8], store: &[u8]) -> Vec<u8> {
     let mut r = Reader(job);
     let mut mem: Box<[u8; MEM]> = Box::new(r.take());
     let n = r.u32();
@@ -210,6 +252,15 @@ pub fn run(job: &[u8]) -> Vec<u8> {
             let (a, v) = (r.u16(), r.u128());
             let a = (a as usize & 1023) * 16;
             mem[a..a + 16].copy_from_slice(&v.to_le_bytes());
+        }
+        let (off, n) = (r.u32(), r.u32());
+        if off != u32::MAX {
+            let mut s = Reader(&store[off as usize..off as usize + 18 * n as usize]);
+            for _ in 0..n {
+                let (a, v) = (s.u16(), s.u128());
+                let a = (a as usize & 1023) * 16;
+                mem[a..a + 16].copy_from_slice(&v.to_le_bytes());
+            }
         }
         if hash == 0 || entry == u32::MAX {
             continue;
@@ -339,7 +390,7 @@ mod tests {
             .collect();
         let refs: Vec<JobCall> = calls.iter().enumerate().map(|(k, c)| (k * 3, c, (k != 4).then_some(crate::mat6::HASH), (k == 3).then_some(64.0))).collect();
         let items: Vec<JobItem> = refs.iter().map(|&c| JobItem::Call(c)).collect();
-        let (outs, end) = decode(&run(&encode(&mem, &items)));
+        let (outs, end) = decode(&run(&encode(&mem, &items), &[]));
 
         let mut direct = Box::new(mem);
         let mut want = Vec::new();
@@ -370,9 +421,40 @@ mod tests {
         let regs = crate::vif::VifRegs { base: 0x10, ofst: 0x1f0, tops: 0x10, ..Default::default() };
         let mem = [0u8; MEM];
         let items = [JobItem::Native { event: 7, cmd: &cmd, regs, header: &header }];
-        let (outs, _) = decode(&run(&encode(&mem, &items)));
+        let (outs, _) = decode(&run(&encode(&mem, &items), &[]));
         let want = crate::direct::plan(&cmd, regs, &header, &mem);
         assert!(!want.is_empty());
         assert_eq!(outs, vec![(7, CallOut::Native(want))]);
+    }
+
+    /// Shared input kept in a store: the same results as carried inline.
+    #[test]
+    fn shared_store_round_trip() {
+        struct Store(Vec<u8>, std::collections::HashMap<u64, u32>);
+        impl SharedStore for Store {
+            fn offset(&mut self, key: u64, bytes: &mut dyn FnMut() -> Vec<u8>) -> Option<u32> {
+                if let Some(&o) = self.1.get(&key) {
+                    return Some(o);
+                }
+                let o = self.0.len() as u32;
+                self.0.extend(bytes());
+                self.1.insert(key, o);
+                Some(o)
+            }
+        }
+        let mut mem = [0u8; MEM];
+        for (i, b) in mem.iter_mut().enumerate() {
+            *b = (i * 7) as u8;
+        }
+        let shared: std::sync::Arc<[(u16, u128)]> = (0..40u16).map(|k| (0x200 + k, (k as u128) << 90 | 0x3f80_0000)).collect::<Vec<_>>().into();
+        let calls: Vec<VuCall> = (0..3)
+            .map(|k| VuCall { entry: Some(0x1150), top: 0, itop: 0, input: vec![(0x10 + k, 99)], shared: Some(shared.clone()), src: Some(5 << 16 | k as u64) })
+            .collect();
+        let items: Vec<JobItem> = calls.iter().map(|c| JobItem::Call((1, c, Some(crate::mat6::HASH), None))).collect();
+        let inline = run(&encode(&mem, &items), &[]);
+        let mut st = Store(Vec::new(), Default::default());
+        let job = encode_with(&mem, &items, Some(&mut st));
+        assert!(job.len() < encode(&mem, &items).len());
+        assert_eq!(run(&job, &st.0), inline);
     }
 }
