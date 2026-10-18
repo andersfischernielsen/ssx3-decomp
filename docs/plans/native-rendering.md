@@ -195,6 +195,29 @@ Progress (2026-10-18):
   12.6-14.8 ms (were 16-21 ms at the start of N2), renderer 31% of the
   worker (was 44%), the worker idle ~21% of the time.
 
+**The way to the end (owner, 2026-10-18: "go ahead with the
+pre-requisites, then. Work autonomously").** Stages, each verified on frame
+dumps (pixel identity with the decoding path) before the next:
+
+1. **A: every packet captured.** Each producer gets a capture and its
+   command a native planner (what it draws from the command alone: header,
+   lights, bones, mesh, descriptor; a scratch VU image inside a planner is
+   an implementation detail). Gate: on race and menu dumps no payload
+   packet is decoded (`SSX3_VIF_STATS`: decoded payload input 0), images
+   identical with `SSX3_DIRECT=0`.
+2. **B: the frame from the buckets.** The renderer builds the frame from
+   DeferMan's sorted buckets (`frame::plan`) and the commands, without
+   walking the chains: GS state from the emitter's prediction
+   (`Draw::gs`, checked by `frame_verify`), textures from TexMan, the post
+   passes (depth fog, bloom, colour filter) and the 2D/DIRECT draws as
+   native passes. Gate: identical images with the walk disabled.
+3. **C: no packets (D2).** The draw functions and `RenderFrame` /
+   `EndFrame` become native: they keep what the game reads (records,
+   buckets, render-state stack, counters, cursors) and build no packet; the
+   kick thread and chain publication go. Gate: RAM identity with the
+   render-private regions masked; behaviour.
+4. **N3/N4/N5** as below.
+
 Background (the earlier proposal, still the reference for the details):
 
 Override the game's draw entry points (boundaries §4.3: draw slots 95/96
