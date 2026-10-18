@@ -233,6 +233,29 @@ dumps (pixel identity with the decoding path) before the next:
    buckets, render-state stack, counters, cursors) and build no packet; the
    kick thread and chain publication go. Gate: RAM identity with the
    render-private regions masked; behaviour.
+   *In progress* (`ssx3_game::packetless`, on while the native renderer
+   draws; `SSX3_PACKETS=1` keeps the packets). A native draw function
+   writes the game-visible state (render state, records, buckets, hash
+   chains, cursors, flags) and records its draw at an empty packet (the
+   0x10 link-tag room), which the native frame build resolves through the
+   capture. Guest callees run with `Cpu::no_unwind`. Cycle charges are
+   estimates, so whole runs drift slightly from the generated timing
+   (interrupt order); screenshots match until the drift shows.
+   Check: `SSX3_DRAW_CHECK=1` (`scripts/draw-check.sh`) runs native and
+   generated from the same state and compares the game-visible words and
+   the draws (VU writes as maps; a packet's stale words past a batch count
+   are reported as uncovered, not as differences); functions that write
+   beyond their records are checked against all of memory, sampled every
+   `SSX3_DRAW_CHECK_EVERY` calls (packet addresses, VifBuff, the SprStream
+   ring and stack scratch masked). `SSX3_DRAW_CHECK=2` renders the native
+   draws under generated behaviour.
+   Native so far (race + freestyle: no differences): strips (71, Begin /
+   EndTriStrip), particles (82-86, PatchFX), DrawModel (95, fast path,
+   alpha path, environment maps), grid meshes, riders (99, 100, 101, 124),
+   Bézier terrain (v18 with its emitters, passes and deferred groups).
+   Left: shadow volume / board wake (89 / 90 with the ribbons), the 2D /
+   DIRECT draws (72-81, 53-55, 61, fog sprites), the post passes, then
+   `RenderFrame` / `EndFrame` and the kick.
 4. **N3/N4/N5** as below.
 
 Background (the earlier proposal, still the reference for the details):
