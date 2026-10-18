@@ -163,6 +163,26 @@ Progress (2026-10-18):
 - Pilot: slot 71 strips (`Cmd::Strip`). The other families follow the
   same pattern; D2 then stops building their packets (the record keeps an
   empty packet, so the bucket order stays the game's).
+- Captured so far: strips (slot 71), board wake and shadow ribbons
+  (`EmitBoardWakeStrips` / `EmitShadowStrips`, `Cmd::Ribbon`: literal ports
+  of their batching over the vertex rings). The native event carries VU1
+  qw0-5 as the VIF holds them (the MatrixRecord header differs in the guard
+  z lanes for some draws). Captured draws are planned with the VU calls
+  (`vujob::JobItem::Native`), so the browser's helpers run them.
+  `SSX3_DIRECT_CHECK=1` decodes captured packets too and compares.
+- Measured (2026-10-18, race): decoded VU input 41.5k -> 26.6k qwords per
+  frame; browser worker: renderer 42.7% -> 39.9%, typed frame 11.5% ->
+  8.8%. Left in the decoder: rider bones and morph targets (morph chains
+  write partial qwords, so they are not cached), Bézier patch packets,
+  particles.
+- Other renderer work on the way: replayed mesh calls share their input
+  (`VuCall::shared`); PATH3 texture uploads are read without their image
+  data (1.4 MiB per race frame); render-pass state set only on change; VU
+  job data copied in bulk.
+- Per race frame the renderer still uploads ~3.2 MB (vertex data 1.45 MB,
+  indices 0.9 MB, call uniforms 0.7 MB): mesh indices and rider vertices
+  are candidates for the GPU arena (rider vertices hold per-frame bone
+  table offsets: the tables need their own base first).
 
 Background (the earlier proposal, still the reference for the details):
 
