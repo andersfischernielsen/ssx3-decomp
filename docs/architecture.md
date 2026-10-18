@@ -1,44 +1,44 @@
 # Architecture overview
 
-_As of 2026-10-14._ SSX 3 (`SLUS_207.72`) runs as a **static recompilation**.
-Every instruction of game code (EE, VU microcode, and the IOP sound modules) is
-translated to Rust at build time. Only hardware and firmware are provided
-natively.
+_As of 2026-10-18._ SSX 3 (`SLUS_207.72`) runs as a **static recompilation**
+with a native runtime around it. The game's own code (EE) is translated to
+Rust at build time; everything around it (rendering, movies, sound, files,
+pads, memory card) is native Rust. The PS2 hardware models are still in the
+tree, for verification and the emulated paths (`SSX3_RENDER=emu`), but the
+default native mode does not use them on the frame path.
 
 ```
-                     build time                                      run time
- ┌───────────────────────────────────────────┐   ┌──────────────────────────────────────────────┐
- │ Ghidra (functions, boundaries, names)     │   │ crates/ssx3  (window: winit+wgpu; headless)  │
- │   generated/functions.tsv, boundaries.tsv │   │   game.rs: boot, register function tables    │
- │                                           │   └──────────────┬───────────────────────────────┘
- │ ssx3-recomp                               │                  │ run_frame (one field)
- │   recomp-ee  ──► generated/ee/sNN (Rust)  │──────────┐       ▼
- │   recomp-iop ──► generated/iop/modules    │──────┐   │  ┌──────────────────────────────────────┐
- │ ssx3-ps2 vu_recomp ─► generated/vu/*.rs   │──┐   │   └─►│ EE game code (structured Rust)       │
- └───────────────────────────────────────────┘  │   │      │   built against ssx3-ee-rt only:     │
-                                                │   │      │   Cpu, cpu/mmi/fpu/cop2 semantics,   │
-                                                │   │      │   RAM fast paths, call_indirect      │
-                                                │   │      └──────┬───────────────────────────────┘
-                                                │   │             │ MMIO, COP2/VU0, syscalls, events
-                                                │   │             │ (dyn Platform + Hooks)
-                                                │   │             ▼
-                                                │   │      ┌──────────────────────────────────────┐
-                                                │   │      │ ssx3-ps2 (platform layer, Machine)   │
-                                                │   │      │  kernel: threads (host threads +     │
-                                                │   │      │          baton), semas, handlers,    │
-                                                │   │      │          alarms, syscalls            │
-                                                │   │      │  hw: DMAC, INTC, timers, SIF regs    │
-                                                │   │      │  vif ─► vu (translated microcode) ───┼─► XGKICK
-                                                │   └──────┼► sif: SIF protocol; IOP services     │
-                                                │          │   (fileio, cdvdfsv←ISO, loadfile,    │
-                                                │          │    padman, mcserv HLE)               │
-                                                │          │  iop_bridge ─► ssx3-iop (recompiled  │
-                                                │          │   SNDDRV/LIBSD on native IOP kernel, │
-                                                │          │   SPU2 → cpal audio)                 │
-                                                │          │  ipu: MPEG-2 macroblocks (movies)    │
-                                                └──────────┼► gs: GIF paths, swizzled VRAM,       │
-                                                           │   tile-parallel rasterizer, display  │
-                                                           └──────────────────────────────────────┘
+ build time                                   run time (native mode, the default)
+ ┌──────────────────────────────────────┐     ┌──────────────────────────────────────────────┐
+ │ Ghidra: functions, names, boundaries │     │ crates/ssx3: window (winit + wgpu), headless │
+ │ ssx3-recomp: recomp-ee ─► generated/ │     └───────────────┬──────────────────────────────┘
+ │   ee (host threads), ee-unwind       │                     │ one VBlank per frame
+ │   (single thread, WebAssembly)       │                     ▼
+ └──────────────────────────────────────┘     ┌──────────────────────────────────────────────┐
+                                              │ EE game code (generated Rust, ssx3-ee-rt):   │
+                                              │   guest RAM, PS2 float/VU0 semantics         │
+                                              │ + ~1,400 typed Rust replacements (ssx3-game) │
+                                              └──┬───────────┬───────────┬───────────┬───────┘
+                                                 │ draw slots│ libmpeg   │ SND API   │ files, pads,
+                                                 ▼           ▼           ▼           ▼ memory card
+ ┌──────────────────────────────────────┐  ┌──────────────┐ ┌─────────┐ ┌──────────────────────┐
+ │ ssx3-game::packetless: native draw   │  │ ssx3-mpeg:   │ │ssx3-snd │ │ native HLE in        │
+ │ functions + RenderFrame: game-visible│  │ MPEG-2 movies│ │ driver  │ │ ssx3-ps2 (sif, files,│
+ │ state + typed draw commands          │  │ (N5)         │ │ + SPU2  │ │ pad, ssx3-mc)        │
+ │ (ssx3_render::direct), no packets    │  └──────────────┘ │ mixer   │ └──────────────────────┘
+ └──────────────┬───────────────────────┘                   └─────────┘
+                │ at the kick signal (frame_sink, native kick)
+                ▼
+ ┌──────────────────────────────────────┐   ┌──────────────────────────────────────────────┐
+ │ ssx3-render::frame::native: the typed│──►│ ssx3-gfx (render thread): native VU programs │
+ │ frame from DeferMan's buckets + the  │   │ (CPU or GPU), wgpu draws, post passes,       │
+ │ captures; texture pages (FrameMem)   │   │ interpolation, any resolution / aspect       │
+ └──────────────────────────────────────┘   └──────────────────────────────────────────────┘
+
+ Still modelled for the game: the EE kernel (threads on host threads with a baton,
+ semaphores, interrupt handlers), DMAC/INTC/timer registers, the GS register state
+ (detached: it draws nothing), VU0 (macro ops; its microprogram is hand-written Rust).
+ What remains and the plan: plans/native-rendering.md (N6).
 ```
 
 ## Crates
@@ -47,7 +47,14 @@ natively.
 | --- | --- |
 | `ssx3-ee-rt` | EE core: `Cpu`, instruction semantics, guest RAM, function table, the `Platform`/`Vu0`/`Hooks` interfaces. The only dependency of generated EE code. |
 | `ssx3-vu` | VU0/VU1: state, timing model, fast path, microcode translator, translated microcode (`generated/vu`). Re-exported as `ssx3_ps2::vu`. |
-| `ssx3-ps2` | The machine (`platform::Machine`): DMAC/INTC/timers, VIF, GS + MTGS, IPU, kernel HLE, threads, SIF/IOP bridge. Implements `Platform`. |
+| `ssx3-ps2` | The machine (`platform::Machine`): DMAC/INTC/timers, VIF, GS + MTGS, IPU, kernel HLE, threads, SIF/IOP bridge, the frame sink and the native kick (`kick.rs`). Implements `Platform`. |
+| `ssx3-game` | Typed Rust replacements of game functions (phase 2), the native draw functions and RenderFrame (`packetless`), native libmpeg (`movie.rs`). |
+| `ssx3-render` | The typed frame: captures (`direct`), the frame build, the native VU1 programs. |
+| `ssx3-gfx` | The wgpu renderer (window, headless, browser). |
+| `ssx3-mpeg` | MPEG-2 video: the native movie decoder and the pieces it shares with the IPU model. |
+| `ssx3-snd` | The native sound driver (EA's IOP SNDDRV in Rust). |
+| `ssx3-mc` | The native memory card. |
+| `ssx3-web` | The browser build (unwind form in a Web Worker, WebGPU). |
 | `ssx3-iop` | IOP runtime for the recompiled IRX modules, SPU2, SIO2/pad/memory card. |
 | `ssx3-recomp` | `recomp-ee`, `recomp-iop` (generators). |
 | `ssx3` | Front ends (window, headless). |
