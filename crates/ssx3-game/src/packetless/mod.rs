@@ -29,12 +29,14 @@ mod frame;
 mod model;
 mod rider;
 mod ribbon;
+mod target;
 mod vu0;
 
 pub use bezier::end_pass as bezier_end_pass;
 pub(crate) use frame::dispatch_render_frame;
 pub use model::{draw_model, grid_mesh_draw};
 pub use ribbon::{draw_board_wake, draw_shadow_volume};
+pub use target::{fill_render_target, restore_render_target, set_render_target_texture};
 pub use rider::{draw_skinned_model, draw_skinned_model_shadow, emit_lighting_packet, set_shadow_header};
 
 /// PS2GraphicsMan fields (`structs/render.md`).
