@@ -5,9 +5,9 @@
 //! code is the unwind form (`generated/ee-unwind`): one host thread, so a
 //! game frame (`Game::frame`) returns to the browser like any other call.
 //!
-//! The image is the original one: the GS resolution (1×), the game's own
-//! 4:3 view (boxed in the canvas), no anisotropic filtering, no
-//! interpolation, no texture packs.
+//! The image: rendered at the canvas's pixel size, the game's own 4:3 view
+//! (boxed in the canvas), no anisotropic filtering, no interpolation, no
+//! texture packs.
 //!
 //! Sound: the mixer's samples go to the page ([`Game::audio`]), which plays
 //! them with an AudioWorklet (`www/audio.js`).
@@ -184,6 +184,13 @@ mod vu_pool {
     }
 }
 
+/// The largest 4:3 box in a `w`×`h` canvas (whole pixels).
+fn box43(w: u32, h: u32) -> (f32, f32) {
+    let (w, h) = (w as f32, h as f32);
+    let (bw, bh) = if w / h > 4.0 / 3.0 { (h * 4.0 / 3.0, h) } else { (w, w * 3.0 / 4.0) };
+    (bw.floor().max(64.0), bh.floor().max(64.0))
+}
+
 /// Draws the renderer's image (an sRGB view) to the canvas.
 const BLIT: &str = r#"
 @group(0) @binding(0) var tex: texture_2d<f32>;
@@ -314,11 +321,11 @@ impl Game {
         self.vu_buffer.clone()
     }
 
-    /// Render at the GS resolution (1×) with the game's own view, whatever
-    /// the canvas size; `present` scales it into a 4:3 box.
+    /// Render the game's own 4:3 view at the pixel size of the 4:3 box it
+    /// fills in the canvas (`present`).
     fn follow_size(&self) {
-        self.gfx.set_output_size(None);
-        self.gfx.set_scale(1);
+        let (w, h) = box43(self.config.width, self.config.height);
+        self.gfx.set_output_size(Some((w as u32, h as u32)));
         ssx3_ps2::frame_sink::set_view(0.0, 1.0);
     }
 
@@ -408,8 +415,8 @@ impl Game {
             });
             // The 4:3 image, as large as fits, centred.
             let (cw, ch) = (self.config.width as f32, self.config.height as f32);
-            let (w, h) = if cw / ch > 4.0 / 3.0 { (ch * 4.0 / 3.0, ch) } else { (cw, cw * 3.0 / 4.0) };
-            pass.set_viewport(((cw - w) / 2.0).floor(), ((ch - h) / 2.0).floor(), w.floor(), h.floor(), 0.0, 1.0);
+            let (w, h) = box43(self.config.width, self.config.height);
+            pass.set_viewport(((cw - w) / 2.0).floor(), ((ch - h) / 2.0).floor(), w, h, 0.0, 1.0);
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &bg, &[]);
             pass.draw(0..3, 0..1);

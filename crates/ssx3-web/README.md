@@ -44,8 +44,9 @@ The recompiled game as WebAssembly, drawn with WebGPU. Experimental.
 - **Sound.** The native mixer's 48 kHz stereo goes from the worker to the
   page each frame and plays through an AudioWorklet (`www/audio.js`), which
   buffers at most ~200 ms.
-- **Image.** The original one: 1× GS resolution, the game's 4:3 view boxed
-  in the canvas, no anisotropic filtering.
+- **Image.** The game's 4:3 view boxed in the canvas, rendered at the box's
+  pixel size (the render scale costs little: the time goes to the CPU
+  side), no anisotropic filtering.
 
 Not yet supported: the memory card, gamepads, the settings overlay,
 interpolation and texture packs.
