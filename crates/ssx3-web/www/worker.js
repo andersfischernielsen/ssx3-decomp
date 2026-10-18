@@ -14,7 +14,9 @@ onmessage = async (e) => {
       await init();
       // VU helpers: the renderer's VU1 work in parallel (needs a shared
       // buffer, i.e. cross-origin isolation).
-      const helpers = self.crossOriginIsolated ? Math.max(1, Math.min(6, (navigator.hardwareConcurrency || 4) - 2)) : 0;
+      // (`?helpers=N` on the page overrides the count.)
+      const auto = self.crossOriginIsolated ? Math.max(1, Math.min(6, (navigator.hardwareConcurrency || 4) - 2)) : 0;
+      const helpers = self.crossOriginIsolated && m.helpers != null ? m.helpers : auto;
       game = await start(m.canvas, m.iso, helpers);
       const sab = game.vu_buffer();
       for (let id = 0; sab && id < helpers; id++) {

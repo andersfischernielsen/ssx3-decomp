@@ -1147,7 +1147,9 @@ const GPU_PASS1_MARK: u32 = 0x4750_5531;
 pub mod gpu_mesh {
     /// The screen matrix columns: `guardScale · M + guardOffset · M.w`.
     pub const SCREEN: usize = 0;
-    /// x: lit, y: vertex count, z: pass (1 or 2).
+    /// x: lit, y: vertex count, z: pass (1 or 2), w: the mesh may cross
+    /// the guard band (the program clips; otherwise it draws what it
+    /// projects, even behind the eye).
     pub const INFO: usize = 4;
     /// The lighting basis (3 rows) and coefficients (10), as the program's.
     pub const BASIS: usize = 5;
@@ -1224,7 +1226,7 @@ pub fn plan_gpu(entry: u32, top: u32, itop: u32, mem: &mut [u8; 16384]) -> Optio
     for i in 0..4 {
         u[gpu_mesh::SCREEN + i] = madd(mul(gs, mat[i]), go, bc(mat[i][3]));
     }
-    u[gpu_mesh::INFO] = [lit as u32, mesh.n as u32, if pass1 { 1 } else { 2 }, 0];
+    u[gpu_mesh::INFO] = [lit as u32, mesh.n as u32, if pass1 { 1 } else { 2 }, (flags & flag::CLIP != 0) as u32];
     u[gpu_mesh::GUARD_Z] = [gs[2], go[2], 0, 0];
     if lit {
         for i in 0..3 {

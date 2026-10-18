@@ -76,7 +76,8 @@ document.getElementById("iso").onchange = (e) => {
     }
   };
   worker.onerror = (e) => { msg.textContent = e.message; };
-  worker.postMessage({ type: "start", canvas: off, iso }, [off]);
+  const hp = new URLSearchParams(location.search).get("helpers");
+  worker.postMessage({ type: "start", canvas: off, iso, helpers: hp == null ? null : Number(hp) }, [off]);
 
   let buttons = 0;
   const key = (down) => (e) => {

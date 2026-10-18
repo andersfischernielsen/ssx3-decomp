@@ -54,9 +54,12 @@ struct VOut {
     @location(0) @interpolate(linear) col: vec4<f32>,
     @location(1) @interpolate(linear) stq: vec3<f32>,
     @location(2) @interpolate(linear) fog: f32,
-    // GS depth (0..1), for pipelines whose position z is a clip value
-    // (gpuvu.wgsl `fs_gpu`).
-    @location(3) @interpolate(linear) gsz: f32,
+    // GPU-computed vertices (gpuvu.wgsl `fs_gpu`): the screen z times the
+    // position's w, and w, perspective-correct: their ratio is the GS's
+    // screen-linear z inside a triangle and right where the GPU clips; and
+    // (XYZF2, ZMAX) for the GS depth rules.
+    @location(3) @interpolate(perspective) zw: vec2<f32>,
+    @location(4) @interpolate(flat) zm: vec2<f32>,
 }
 
 @vertex
@@ -68,7 +71,8 @@ fn vs(v: VIn) -> VOut {
     o.col = v.col;
     o.stq = v.stq.xyz;
     o.fog = v.fog;
-    o.gsz = v.pos.z;
+    o.zw = vec2<f32>(0.0, 1.0);
+    o.zm = vec2<f32>(0.0);
     return o;
 }
 

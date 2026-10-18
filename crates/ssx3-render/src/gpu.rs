@@ -129,13 +129,42 @@ pub fn enabled() -> bool {
     *ON.get_or_init(|| std::env::var("SSX3_GPU_VU").map_or(true, |v| v != "0"))
 }
 
+/// `SSX3_GPU_VU_SKIP` key of the type 3 strips (entries 0x12b8 / 0x3a08).
+const STRIPS: u64 = 1;
+
+/// Debug: `SSX3_GPU_VU_SKIP=mat1,mat3,mat3strip,...` keeps those programs
+/// (or the type 3 strips) on the CPU.
+fn skipped(hash: u64) -> bool {
+    static SKIP: std::sync::OnceLock<Vec<u64>> = std::sync::OnceLock::new();
+    SKIP.get_or_init(|| {
+        let v = std::env::var("SSX3_GPU_VU_SKIP").unwrap_or_default();
+        v.split(',')
+            .filter_map(|n| match n.trim() {
+                "mat1" => Some(crate::mat1::HASH),
+                "mat2" => Some(crate::mat2::HASH),
+                "mat3" => Some(crate::mat3::HASH),
+                "mat4" => Some(crate::mat4::HASH),
+                "mat5" => Some(crate::mat5::HASH),
+                "mat6" => Some(crate::mat6::HASH),
+                "mat3strip" => Some(STRIPS),
+                _ => None,
+            })
+            .collect()
+    })
+    .contains(&hash)
+}
+
 /// Plan the call for the GPU when its program and variant have a GPU port
 /// (and do its memory side effects): its draws in kick order. `None`
 /// leaves the memory untouched, for the CPU program.
 pub fn plan(hash: u64, entry: u32, top: u32, itop: u32, mem: &mut [u8; 16384]) -> Option<Vec<GpuCall>> {
+    if skipped(hash) {
+        return None;
+    }
     match hash {
         crate::mat3::HASH => match entry {
-            0x12b8 | 0x3a08 => crate::mat3::plan_gpu_strip(entry, top, mem).map(|c| vec![c]),
+            0x12b8 | 0x3a08 if !skipped(STRIPS) => crate::mat3::plan_gpu_strip(entry, top, mem).map(|c| vec![c]),
+            0x12b8 | 0x3a08 => None,
             _ => crate::mat3::plan_gpu(entry, top, itop, mem).map(|c| vec![c]),
         },
         crate::mat6::HASH => crate::mat6::plan_gpu(entry, top, itop, mem),
@@ -147,6 +176,24 @@ pub fn plan(hash: u64, entry: u32, top: u32, itop: u32, mem: &mut [u8; 16384]) -
     }
 }
 
+/// `n` little-endian u32 words from `b` (a bulk copy: the targets are
+/// little-endian).
+fn words(b: &[u8], n: usize) -> Vec<u32> {
+    let mut v = vec![0u32; n];
+    for (d, s) in v.iter_mut().zip(b[..4 * n].chunks_exact(4)) {
+        *d = u32::from_le_bytes(s.try_into().unwrap());
+    }
+    v
+}
+
+/// Append `w` as little-endian bytes.
+fn put_words(out: &mut Vec<u8>, w: &[u32]) {
+    out.reserve(4 * w.len());
+    for x in w {
+        out.extend_from_slice(&x.to_le_bytes());
+    }
+}
+
 /// Encode for the browser's VU helper workers (`vujob`).
 pub fn encode(c: &GpuCall, w: &mut Vec<u8>) {
     w.push(c.program as u8);
@@ -155,21 +202,11 @@ pub fn encode(c: &GpuCall, w: &mut Vec<u8>) {
         w.extend_from_slice(&q.to_le_bytes());
     }
     w.extend_from_slice(&c.tag.to_le_bytes());
-    for q in &c.uniforms {
-        for x in q {
-            w.extend_from_slice(&x.to_le_bytes());
-        }
-    }
+    put_words(w, c.uniforms.as_flattened());
     w.extend_from_slice(&(c.data.len() as u32).to_le_bytes());
-    for q in &c.data {
-        for x in q {
-            w.extend_from_slice(&x.to_le_bytes());
-        }
-    }
+    put_words(w, c.data.as_flattened());
     w.extend_from_slice(&(c.indices.len() as u32).to_le_bytes());
-    for i in &c.indices {
-        w.extend_from_slice(&i.to_le_bytes());
-    }
+    put_words(w, &c.indices);
     w.extend_from_slice(&c.alpha_max.to_le_bytes());
     let (t, k) = c.link.code();
     w.extend_from_slice(&t.to_le_bytes());
@@ -190,15 +227,13 @@ pub fn decode(b: &[u8]) -> (GpuCall, usize) {
     let pre = (0..n).map(|_| u128::from_le_bytes(take(16).try_into().unwrap())).collect();
     let tag = u128::from_le_bytes(take(16).try_into().unwrap());
     let mut uniforms = [[0u32; 4]; UNIFORM_QWORDS];
-    for q in uniforms.iter_mut() {
-        for x in q.iter_mut() {
-            *x = u32_at(take(4));
-        }
-    }
+    let u = words(take(16 * UNIFORM_QWORDS), 4 * UNIFORM_QWORDS);
+    uniforms.as_flattened_mut().copy_from_slice(&u);
     let n = u32_at(take(4)) as usize;
-    let data = (0..n).map(|_| std::array::from_fn(|_| u32_at(take(4)))).collect();
+    let flat = words(take(16 * n), 4 * n);
+    let data = flat.chunks_exact(4).map(|q| [q[0], q[1], q[2], q[3]]).collect();
     let n = u32_at(take(4)) as usize;
-    let indices = (0..n).map(|_| u32_at(take(4))).collect();
+    let indices = words(take(4 * n), n);
     let alpha_max = f32::from_le_bytes(take(4).try_into().unwrap());
     let t = u32_at(take(4));
     let link = Link::from_code(t, u32_at(take(4)));

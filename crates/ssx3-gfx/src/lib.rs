@@ -34,6 +34,10 @@ use ssx3_render::frame::{self, Built, Material, Owner};
 use ssx3_render::vif::Event;
 use ssx3_render::vujob::CallOut;
 
+// GPU buffers are uploaded as the host's bytes (little-endian words).
+#[cfg(target_endian = "big")]
+compile_error!("ssx3-gfx uploads u32 data as host bytes: little-endian targets only");
+
 /// Statistics of the last frame and totals.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Stats {
@@ -884,7 +888,12 @@ impl Inner {
         // triangle lists, bound as group 1.
         let gpu_bind = (!self.gs.gpu.calls.is_empty()).then(|| {
             let g = &self.gs.gpu;
-            let bytes = |w: &[u32]| -> Vec<u8> { w.iter().flat_map(|x| x.to_le_bytes()).collect() };
+            // (u32 slices as their bytes, no copy: the GPU reads little-endian
+            // words, as the targets store them.)
+            fn bytes(w: &[u32]) -> &[u8] {
+                // SAFETY: any u32 slice is a valid byte slice of 4× its length.
+                unsafe { std::slice::from_raw_parts(w.as_ptr() as *const u8, std::mem::size_of_val(w)) }
+            }
             let calls = bytes(g.calls.as_flattened().as_flattened());
             let data = bytes(g.data.as_flattened());
             let idx = bytes(&g.indices);
@@ -894,13 +903,13 @@ impl Inner {
             let db = grow_buffer(&self.dev, db, (data.len() as u64).max(256), wgpu::BufferUsages::STORAGE, "ssx3-gfx gpu data");
             let ib = grow_buffer(&self.dev, ib, (idx.len() as u64).max(256), wgpu::BufferUsages::STORAGE, "ssx3-gfx gpu indices");
             let ob = grow_buffer(&self.dev, ob, (of.len() as u64).max(256), wgpu::BufferUsages::STORAGE, "ssx3-gfx gpu index calls");
-            self.queue.write_buffer(&cb, 0, &calls);
+            self.queue.write_buffer(&cb, 0, calls);
             if !data.is_empty() {
-                self.queue.write_buffer(&db, 0, &data);
+                self.queue.write_buffer(&db, 0, data);
             }
             if !idx.is_empty() {
-                self.queue.write_buffer(&ib, 0, &idx);
-                self.queue.write_buffer(&ob, 0, &of);
+                self.queue.write_buffer(&ib, 0, idx);
+                self.queue.write_buffer(&ob, 0, of);
             }
             let bg = self.dev.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("ssx3-gfx gpuvu"),
