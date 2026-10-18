@@ -1476,5 +1476,33 @@
 0x00402c08    sceMpegAddCallback
 # N4: the flip natively
 0x00382af0    Renderer_SetDisplayRegs
+# Phase 2 wave (2026-10-18 night): oc29-oc32
+0x00395000    DeferMan_FindBucket
+0x00394ed0    DeferMan_InternState
+0x003645b8    DeferMan_InternMatrixRecord
+0x00345638    SplineModifier_IsNodeVisible
+0x003568b0    ModObj_v50
+0x00356298    ModObj_Render
+0x003c25e0    SND_ChannelApplyPitch
+0x003c2a50    SND_ChannelApplyVolume
+0x003ce410    SND_UtkLpcFilter
+0x003cd2b0    SND_UtkDecodeExcitation
+0x003cca08    SND_EaxaDecodeBlocks
+0x00285930    SSXAudioSystem_Compute3DPan
+0x00312c20    AnimDataBase_EvalChanCurves
+0x00311318    AnimDataBase_SampleChannel
+0x003135b0    AnimSequence_AdvanceTrack
+0x00314418    AnimSeqList_CollectTracks
+0x0035f7d0    UVScrollModifier_Update
+0x002f5d30    WorldLightMan_LightContribution
+0x00411538    __udivdi3
+0x0042dad8    __umoddi3
+0x003309d8    Cell_GatherObjects
+0x00335960    Cell_CollideInstance
+0x00335b90    Cell_CollideObject
+0x00328f28    SpatialKey_FromAABB
+0x00333ef8    OverlapList_CollideVolume
+0x002c0778    WorldPainterQuery_UpdateAtPos
+0x002b83f8    cWorldSound_QueryTreeNode
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04

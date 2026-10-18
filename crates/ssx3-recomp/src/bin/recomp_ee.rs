@@ -329,7 +329,11 @@ fn main() {
                 // twin; the unwind form's body dispatches on `c.pc` itself,
                 // and there every return address in the function is one: a
                 // thread switch in a callee resumes the caller there.)
-                let twin = if structured { format!("{name}__entries") } else { format!("{name}__generated") };
+                // (A function the structured emitter could not structure is
+                // emitted as a `c.pc` dispatcher with no twin: its body
+                // takes the other entries itself.)
+                let has_twin = body.contains(&format!("pub fn {name}__entries("));
+                let twin = if structured && has_twin { format!("{name}__entries") } else { format!("{name}__generated") };
                 let mid = if !structured || external.range(f.start + 1..f.end).next().is_some() {
                     format!(
                         "    // Entries other than the start run the generated code.\n    if c.pc != {:#010x} {{\n        return {twin}(c);\n    }}\n",

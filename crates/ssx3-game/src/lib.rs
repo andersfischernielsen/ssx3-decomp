@@ -27,6 +27,14 @@ pub mod movie;
 pub mod debug;
 #[cfg(feature = "oc28")]
 pub mod oc28;
+#[cfg(feature = "oc29")]
+pub mod oc29;
+#[cfg(feature = "oc30")]
+pub mod oc30;
+#[cfg(feature = "oc31")]
+pub mod oc31;
+#[cfg(feature = "oc32")]
+pub mod oc32;
 #[cfg(feature = "oc27")]
 pub mod oc27;
 #[cfg(feature = "oc26")]
@@ -256,12 +264,21 @@ pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     v.extend_from_slice(oc27::OVERRIDES);
     #[cfg(feature = "oc28")]
     v.extend_from_slice(oc28::OVERRIDES);
+    #[cfg(feature = "oc29")]
+    v.extend_from_slice(oc29::OVERRIDES);
+    #[cfg(feature = "oc30")]
+    v.extend_from_slice(oc30::OVERRIDES);
+    #[cfg(feature = "oc31")]
+    v.extend_from_slice(oc31::OVERRIDES);
+    #[cfg(feature = "oc32")]
+    v.extend_from_slice(oc32::OVERRIDES);
     v
 }
 
 /// Install the replacements (call once at boot, before guest code runs).
 /// `SSX3_NO_OVERRIDES=1` keeps the generated bodies everywhere (A/B checks);
-/// `SSX3_OVERRIDES=addr,addr` installs only the listed ones.
+/// `SSX3_OVERRIDES=addr,addr` installs only the listed ones,
+/// `SSX3_SKIP_OVERRIDES=addr,addr` all but the listed ones.
 /// Returns how many were installed.
 pub fn install() -> usize {
     if std::env::var_os("SSX3_NO_OVERRIDES").is_some() {
@@ -272,9 +289,13 @@ pub fn install() -> usize {
             .filter_map(|a| u32::from_str_radix(a.trim().trim_start_matches("0x"), 16).ok())
             .collect()
     });
+    // `SSX3_SKIP_OVERRIDES=addr,addr`: all but these (bisecting a wave).
+    let skip: Vec<u32> = std::env::var("SSX3_SKIP_OVERRIDES")
+        .map(|s| s.split(',').filter_map(|a| u32::from_str_radix(a.trim().trim_start_matches("0x"), 16).ok()).collect())
+        .unwrap_or_default();
     let mut n = 0;
     for (addr, f, name) in overrides() {
-        if only.as_ref().is_some_and(|o| !o.contains(&addr)) {
+        if only.as_ref().is_some_and(|o| !o.contains(&addr)) || skip.contains(&addr) {
             continue;
         }
         assert!(
