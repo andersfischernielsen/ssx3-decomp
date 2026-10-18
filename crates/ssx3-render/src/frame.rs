@@ -1227,6 +1227,8 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
         // A sub-chain being recorded: its key, hash, memory ranges, the
         // snapshot and the CALL depth it returns to.
         let mut recording: Option<((u32, VifRegs), u64, Vec<(u32, u32)>, u64, u32)> = None;
+        // (Each transfer's data, read into one buffer.)
+        let mut qbuf: Vec<u128> = Vec::new();
         for _ in 0..1_000_000 {
             // A captured draw's packet (a bucket's packets are reached by
             // CALL or NEXT): its command instead of its decoding.
@@ -1262,7 +1264,9 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
                 6 => (tadr + 16, tadr, asp == 0),
                 _ => (tadr + 16, tadr, true),
             };
-            let q: Vec<u128> = (0..qwc).map(|i| w.m.qword(data + i * 16)).collect();
+            qbuf.clear();
+            w.m.read_qwords(data, qwc, &mut qbuf);
+            let q = &qbuf;
             if top && w.in_payload.is_none() && qwc == 1 && is_flushe_cnt(tag, q[0]) {
                 w.flushe.push(w.events.len());
             }

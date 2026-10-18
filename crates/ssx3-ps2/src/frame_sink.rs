@@ -426,6 +426,17 @@ impl Mem for DumpMem {
         crate::hw::mem_q(&self.ram, &self.spr, addr, addr & 0x8000_0000 != 0)
     }
 
+    fn read_qwords(&self, addr: u32, n: u32, out: &mut Vec<u128>) {
+        let o = (addr & 0x01ff_fff0) as usize;
+        let end = o + 16 * n as usize;
+        // (RAM in one piece: a straight copy; else qword by qword.)
+        if addr & 0x8000_0000 == 0 && addr >> 28 != 7 && end <= self.ram.len() {
+            out.extend(self.ram[o..end].chunks_exact(16).map(|b| u128::from_le_bytes(b.try_into().unwrap())));
+        } else {
+            out.extend((0..n).map(|i| self.qword(addr + 16 * i)));
+        }
+    }
+
     fn snapshot(&self) -> u64 {
         self.snap
     }

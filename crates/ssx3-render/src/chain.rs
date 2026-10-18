@@ -6,6 +6,11 @@ pub trait Mem {
     /// The quadword at `addr` (bit 31 set: scratchpad).
     fn qword(&self, addr: u32) -> u128;
 
+    /// `n` quadwords from `addr` appended to `out`.
+    fn read_qwords(&self, addr: u32, n: u32, out: &mut Vec<u128>) {
+        out.extend((0..n).map(|i| self.qword(addr + 16 * i)));
+    }
+
     /// An id of this memory's state, growing with each snapshot (0: none).
     fn snapshot(&self) -> u64 {
         0
