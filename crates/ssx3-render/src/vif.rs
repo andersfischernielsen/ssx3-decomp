@@ -371,6 +371,7 @@ impl Vif1 {
                 Step::Chain(_) => {}
                 Step::Gif(q) => self.push_event(Event::Direct(Direct { qwords: q.clone(), native: true })),
                 Step::MaskPath3(m) => self.push_event(Event::MaskPath3(*m)),
+                Step::Raw(q) => self.write(q),
             }
         }
     }

@@ -211,6 +211,14 @@ dumps (pixel identity with the decoding path) before the next:
    (`Draw::gs`, checked by `frame_verify`), textures from TexMan, the post
    passes (depth fog, bloom, colour filter) and the 2D/DIRECT draws as
    native passes. Gate: identical images with the walk disabled.
+   *Done 2026-10-18 for the race/menu run* (`ssx3_game::capture`): every
+   producer in it is captured (strips, ribbons, particles, models and grid
+   meshes, riders and their shadows, 2D/DIRECT draws, render-target
+   switches, shadow volume, fog sprites, Bézier patches and passes,
+   AppendPacket's record-less packets). Most are `Cmd::Vu`: the packet's
+   effects read back (stage C computes them from the inputs), CALLs as
+   chain steps through the chain cache, rare masked UNPACKs as raw codes.
+   Other game modes still to be checked.
 3. **C: no packets (D2).** The draw functions and `RenderFrame` /
    `EndFrame` become native: they keep what the game reads (records,
    buckets, render-state stack, counters, cursors) and build no packet; the

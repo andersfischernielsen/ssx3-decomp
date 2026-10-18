@@ -1441,6 +1441,7 @@
 0x0038d690    PS2BezierMan_DrawPatchFX
 0x0037e238    PS2GraphicsMan_DrawModel
 0x0037a610    PS2GraphicsMan_DrawSkinnedModel
+0x0038b370    PS2BezierMan_v18
 0x0037b548    PS2GraphicsMan_DrawSkinnedModelShadow
 0x0037d348    SetRenderTargetTexture
 0x0037d450    RestoreRenderTarget

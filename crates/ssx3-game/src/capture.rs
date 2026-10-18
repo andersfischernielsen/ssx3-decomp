@@ -23,6 +23,8 @@ const DRAW_TRAIL_B: u32 = 0x0038_16f0;
 const DRAW_PATCH_FX: u32 = 0x0038_d690;
 const DRAW_MODEL: u32 = 0x0037_e238;
 const DRAW_SKINNED_MODEL: u32 = 0x0037_a610;
+const BEZIER_END_PASS: u32 = 0x0038_b370;
+const DEFER_MAN_APPEND_PACKET: u32 = 0x0036_2978;
 const DRAW_SKINNED_MODEL_SHADOW: u32 = 0x0037_b548;
 const GRID_MESH_DRAW: u32 = 0x0038_5c10;
 const BEGIN_TRI_STRIP: u32 = 0x0037_a260;
@@ -47,6 +49,8 @@ pub fn install() -> bool {
         (DRAW_PATCH_FX, draw_patch_fx, "PS2BezierMan_DrawPatchFX"),
         (DRAW_MODEL, draw_model, "PS2GraphicsMan_DrawModel"),
         (DRAW_SKINNED_MODEL, draw_skinned_model, "PS2GraphicsMan_DrawSkinnedModel"),
+        (BEZIER_END_PASS, bezier_end_pass, "PS2BezierMan_v18"),
+        (DEFER_MAN_APPEND_PACKET, append_packet, "DeferMan_AppendPacket"),
         (DRAW_SKINNED_MODEL_SHADOW, draw_skinned_model_shadow, "PS2GraphicsMan_DrawSkinnedModelShadow"),
         (0x0037_d348, capture_setrendertargettexture, "SetRenderTargetTexture"),
         (0x0037_d450, capture_restorerendertarget, "RestoreRenderTarget"),
@@ -408,7 +412,7 @@ fn read_range(c: &mut Cpu, start: u32, end: u32) -> Option<Vec<Step>> {
 
 /// Run a draw function's body and record the packets of the DeferMan
 /// records it wrote (one command per distinct packet), read back. Nothing
-/// when the body unwound or a packet is not one `read_range` takes.
+/// when the body unwound; a packet `read_range` does not take is left out.
 fn capture_records(c: &mut Cpu, body: fn(&mut Cpu), gm: u32) {
     let ret = c.g[RA][0] as u32;
     let on = direct::active();
@@ -428,7 +432,8 @@ fn capture_records(c: &mut Cpu, body: fn(&mut Cpu), gm: u32) {
         if !seen.insert(start) || start == end {
             continue;
         }
-        let Some(steps) = read_range(c, start, end) else { return };
+        // (A packet the reader does not take stays on the decoding path.)
+        let Some(steps) = read_range(c, start, end) else { continue };
         out.push(Recorded { start, end, first_tag: qword(c, start), cmd: Cmd::Vu(steps) });
     }
     for r in out {
@@ -503,7 +508,14 @@ fn parse_codes(words: &[u32], steps: &mut Vec<Step>) -> Option<()> {
                 let data = (0..num).map(|i| vector(i).iter().enumerate().fold(0u128, |q, (l, &x)| q | (x as u128) << (32 * l))).collect();
                 steps.push(Step::Write { addr: (cmd & 0x3ff) as u16, rel: (cmd >> 15) & 1 != 0, data });
             }
-            _ => return None,
+            // (Anything else: the rest as VIFcodes for the VIF to run,
+            // padded with NOPs to whole quadwords.)
+            _ => {
+                let mut rest = words[p - 1..].to_vec();
+                rest.resize(rest.len().next_multiple_of(4), 0);
+                steps.push(Step::Raw(rest.chunks_exact(4).map(|w| (0..4).fold(0u128, |q, l| q | (w[l] as u128) << (32 * l))).collect()));
+                return Some(());
+            }
         }
     }
     Some(())
@@ -638,4 +650,38 @@ record_captures! {
     capture_drawshadowvolume = s12::f_00386e78__generated; "slot 89: DIRECT segments and shadow ribbons, one record"
     capture_drawboardwake = s12::f_003883b8__generated; "slot 90: wake ribbons, one record"
     capture_fogparticleman_drawparticles = s09::f_002dc7b0__generated; "cPS2FogParticleMan_DrawParticles: GIF sprites"
+}
+
+/// `PS2BezierMan_v18(bm)` (0x38b370): the terrain patches drawn this frame
+/// (immediate patches, their shine / projector passes, the glitter), by
+/// their records; the deferred groups go through `DeferMan_AppendPacket`.
+fn bezier_end_pass(c: &mut Cpu) {
+    let gm = gm_of(c);
+    capture_records(c, ssx3_ee::s12::f_0038b370__generated, gm);
+}
+
+/// `DeferMan_AppendPacket(bucket, start, end)` (0x362978): a packet added
+/// to a bucket without a record (the opaque model fast path, the deferred
+/// terrain groups), read back.
+fn append_packet(c: &mut Cpu) {
+    let ret = c.g[RA][0] as u32;
+    let (start, end) = (c.g[A1][0] as u32, c.g[A2][0] as u32);
+    // (The hand-written replacement unless every function runs generated.)
+    static GENERATED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    #[cfg(feature = "render")]
+    let native = !*GENERATED.get_or_init(|| std::env::var_os("SSX3_NO_OVERRIDES").is_some());
+    #[cfg(not(feature = "render"))]
+    let native = { let _ = &GENERATED; false };
+    if native {
+        #[cfg(feature = "render")]
+        crate::render::defer_man_append_packet(c);
+    } else {
+        ssx3_ee::s12::f_00362978__generated(c);
+    }
+    if !direct::active() || c.pc != ret || start == end {
+        return;
+    }
+    if let Some(steps) = read_range(c, start, end) {
+        direct::record(Recorded { start, end, first_tag: qword(c, start), cmd: Cmd::Vu(steps) });
+    }
 }

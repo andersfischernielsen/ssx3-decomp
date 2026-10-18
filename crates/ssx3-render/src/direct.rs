@@ -66,6 +66,9 @@ pub enum Step {
     Gif(Vec<u128>),
     /// MSKPATH3.
     MaskPath3(bool),
+    /// VIFcodes a capture does not turn into effects (masked UNPACKs whose
+    /// fill depends on registers set elsewhere): run by the VIF as they are.
+    Raw(Vec<u128>),
 }
 
 /// The vertex count of a strip batch.
@@ -231,6 +234,14 @@ pub fn encode_cmd(cmd: &Cmd, out: &mut Vec<u8>) {
                         }
                         continue;
                     }
+                    Step::Raw(data) => {
+                        out.push(9);
+                        out.extend_from_slice(&(data.len() as u32).to_le_bytes());
+                        for q in data {
+                            out.extend_from_slice(&q.to_le_bytes());
+                        }
+                        continue;
+                    }
                     Step::Gif(data) => {
                         out.push(7);
                         out.extend_from_slice(&(data.len() as u32).to_le_bytes());
@@ -340,6 +351,14 @@ pub fn decode_cmd(r: &mut Bytes) -> Option<Cmd> {
                         Step::Gif(data)
                     }
                     8 => Step::MaskPath3(r.u32()? != 0),
+                    9 => {
+                        let k = r.u32()?;
+                        let mut data = Vec::with_capacity(k as usize);
+                        for _ in 0..k {
+                            data.push(r.u128()?);
+                        }
+                        Step::Raw(data)
+                    }
                     _ => return None,
                 });
             }
