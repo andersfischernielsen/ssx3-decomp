@@ -91,7 +91,8 @@ pub fn buddy_man_map_presence_state(c: &mut Cpu) {
         abi::ret(c);
         return;
     }
-    c.cycles += 2;
+    // (The original branches once more, to the shared -1 return.)
+    c.cycles += 4;
     abi::ret(c);
 }
 
@@ -375,10 +376,10 @@ pub fn world_state_stream_reset(c: &mut Cpu) {
     sp.off(3).sb(c, 0);
     stream.off(0x30).sw(c, 0);
     stream.off(0x34).sw(c, c.g[V0][0]);
-    c.lwl(AT, sp.off(3).0);
-    c.lwr(AT, sp.0);
-    c.swl(AT, stream.off(0x1f).0);
-    c.swr(AT, stream.off(0x1c).0);
+    c.lwl(V1, sp.off(3).0);
+    c.lwr(V1, sp.0);
+    c.swl(V1, stream.off(0x1f).0);
+    c.swr(V1, stream.off(0x1c).0);
     stream.off(0x2c).sw(c, c.g[V0][0]);
     stream.off(0x10).sw(c, 0);
     stream.off(0x20).sw(c, c.g[V0][0]);

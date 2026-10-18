@@ -199,6 +199,7 @@ pub fn streamer_get_view_clearance(c: &mut Cpu) {
             c.cycles += 1;
             c.g[V0][0] = c.g[V1][0];
         }
+        c.cycles += 6;
         frame.restore(c, S0, 0x30);
         frame.restore(c, S1, 0x20);
         frame.restore(c, S2, 0x10);
@@ -1796,6 +1797,9 @@ mod tests {
             &[0x0035_a958],
             &|c, r, seed| {
                 spline_modifier(c, r, seed);
+                // SpatialKey_FromAABB's constants (gp-0x2df8 / -0x2df4): with
+                // zeroes its grow-until-contained loop need not end.
+                crate::difftest::put_words(c, crate::difftest::GAME_GP - 0x2df8, &[0x3f36_db6e, 0x3e4c_cccd]);
                 // Node bounds already at pos -/+ half (1 ulp off for some
                 // seeds), so the real SpatialHash_Update sees the same key.
                 use crate::ps2f::VuF32;

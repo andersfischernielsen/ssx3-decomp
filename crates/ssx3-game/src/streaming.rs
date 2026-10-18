@@ -336,6 +336,17 @@ mod tests {
             c.g[A2][0] = file as u64;
             c.bus.write32(file + 0x174, if seed % 3 == 0 { 0 } else { ptr(&mut r) });
             c.bus.write32(file + 0x40, r.next_u32());
+            // EAFile's request and file-handle pools (counts 0x519ab0 /
+            // 0x519ab4, tables 0x519ad8 / 0x519adc, entries 0x30 / 0x110
+            // bytes): with no free entry the allocators spin forever.
+            for (count, table, at, size) in [(0x0051_9ab0, 0x0051_9ad8, 0xf_0000, 0x30), (0x0051_9ab4, 0x0051_9adc, 0xf_1000, 0x110)] {
+                let base = crate::difftest::DATA + at;
+                c.bus.write32(count, 4);
+                c.bus.write32(table, base);
+                for i in 0..size {
+                    c.bus.write32(base + 4 * i, 0);
+                }
+            }
         });
     }
 

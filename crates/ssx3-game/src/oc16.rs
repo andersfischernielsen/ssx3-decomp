@@ -282,10 +282,6 @@ pub fn snd_bank_unlink(c: &mut Cpu) {
         self_.off(0x8).sw(c, 0);
         if prev != next {
             c.cycles += 4;
-            Addr(prev as u32).off(0x18).sw(c, 0);
-            c.g[V0][0] = self_.off(0x18).lw(c);
-            Addr(c.g[V0][0] as u32).off(0x1c).sw(c, 0);
-            c.cycles += 4;
             Addr(prev as u32).off(0x1c).sw(c, next);
             c.g[V1][0] = self_.off(0x1c).lw(c);
             c.g[V0][0] = self_.off(0x18).lw(c);

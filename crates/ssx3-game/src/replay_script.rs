@@ -508,6 +508,7 @@ pub fn wscript_man_process_command(c: &mut Cpu) {
         } else {
             c.cycles += 3;
             if (cmd as i64) < 2 {
+                c.g[V0][0] = 1;
                 c.cycles += 2;
                 if cmd == 0 {
                     Kind::Terminate
@@ -517,6 +518,7 @@ pub fn wscript_man_process_command(c: &mut Cpu) {
                 }
             } else {
                 c.cycles += 2;
+                c.g[V0][0] = 0x12;
                 if cmd == 2 {
                     Kind::Stop
                 } else {
@@ -541,6 +543,7 @@ pub fn wscript_man_process_command(c: &mut Cpu) {
         };
         if !matches!(kind, Kind::Return) {
             c.cycles += 4;
+            c.g[V0][0] = u64::MAX;
             if id != u64::MAX {
                 c.cycles += 4;
                 c.g[A1][0] = id;
