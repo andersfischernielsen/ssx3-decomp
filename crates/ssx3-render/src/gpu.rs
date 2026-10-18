@@ -33,6 +33,8 @@ pub enum Program {
     Mat4Glitter = 41,
     /// Type 5 SnowBox snow (`mat5`).
     Mat5Snow = 50,
+    /// Types 1 and 2 Bezier terrain strips (`bezier::gpu`).
+    Bezier = 10,
 }
 
 impl Program {
@@ -46,6 +48,7 @@ impl Program {
             Program::Mat4Particles => "vs_mat4_particles",
             Program::Mat4Glitter => "vs_mat4_glitter",
             Program::Mat5Snow => "vs_mat5_snow",
+            Program::Bezier => "vs_bezier",
         }
     }
 
@@ -58,6 +61,7 @@ impl Program {
             40 => Some(Program::Mat4Particles),
             41 => Some(Program::Mat4Glitter),
             50 => Some(Program::Mat5Snow),
+            10 => Some(Program::Bezier),
             _ => None,
         }
     }
@@ -137,6 +141,8 @@ pub fn plan(hash: u64, entry: u32, top: u32, itop: u32, mem: &mut [u8; 16384]) -
         crate::mat6::HASH => crate::mat6::plan_gpu(entry, top, itop, mem),
         crate::mat4::HASH => crate::mat4::plan_gpu(entry, top, itop, mem),
         crate::mat5::HASH => crate::mat5::plan_gpu(entry, top, itop, mem),
+        crate::mat1::HASH => crate::mat1::plan_gpu(entry, top, itop, mem),
+        crate::mat2::HASH => crate::mat2::plan_gpu(entry, top, itop, mem),
         _ => None,
     }
 }
@@ -237,6 +243,7 @@ pub fn check(hash: u64, calls: &[GpuCall], gif: &[u128]) -> Option<String> {
         (crate::mat3::HASH, [call]) if call.program == Program::Mat3Strip => crate::mat3::check_gpu_strip(call, gif),
         (crate::mat6::HASH, [call]) => crate::mat6::check_gpu(call, gif),
         (crate::mat4::HASH | crate::mat5::HASH, _) => crate::mat4::gpu_check(calls, gif),
+        (crate::mat1::HASH | crate::mat2::HASH, _) => crate::bezier::gpu::check(calls, gif),
         _ => None,
     }
 }

@@ -34,7 +34,7 @@
 //! qwords A, B}.
 
 use crate::bezier::{
-    emit_strip, project_xy, rewrite_st, ClipFlags, Mem, Raster, Rgba, Vertex, COLOUR, EOP, FAN_TAG_A, FAN_TAG_B,
+    emit_strip, gpu, project_xy, rewrite_st, ClipFlags, Mem, Raster, Rgba, Vertex, COLOUR, EOP, FAN_TAG_A, FAN_TAG_B,
     FAN_TAG_CTX1, FAN_TAG_CTX2, FAN_TOGGLE, LAST_TOP, PACKET_A, PACKET_B, RETURN_SAVE, STRIP_TAG_CTX1,
     STRIP_TAG_CTX2,
 };
@@ -175,6 +175,22 @@ pub fn run(
     _regs: &mut VuState,
     kick: &mut dyn FnMut(&[u128]),
 ) -> bool {
+    exec(entry, top, mem, kick, None)
+}
+
+/// Plan the call for the GPU (`crate::gpu::plan`): the memory effects of
+/// [`run`] but the strips' (grid setup, tags, projector / shine UV2s), the
+/// strip draws and ST rewrites as [`crate::bezier::gpu`] draws. `None`
+/// (memory untouched) for what the CPU program keeps: what [`run`] does
+/// not implement, strip tables that do not match the grid, patches in the
+/// way of the packets, and a pass-2 ST rewrite of packets the CPU drew.
+pub fn plan_gpu(entry: u32, top: u32, _itop: u32, mem: &mut [u8; 16384]) -> Option<Vec<crate::gpu::GpuCall>> {
+    let mut out = Vec::new();
+    exec(entry, top, mem, &mut |_| {}, Some(&mut out)).then_some(out)
+}
+
+/// [`run`], or with `gpu` [`plan_gpu`].
+fn exec(entry: u32, top: u32, mem: &mut [u8; 16384], kick: &mut dyn FnMut(&[u128]), mut gpu: Option<&mut Vec<crate::gpu::GpuCall>>) -> bool {
     let Some((first, pass2)) = entry_kind(entry) else {
         return false;
     };
@@ -199,12 +215,15 @@ pub fn run(
     if matches!(first, First::Projector | First::Shine) && (pk[0] < 4 || pk[0] % 4 != 0) {
         return false;
     }
+    if gpu.is_some() && !gpu_ok(&m, first, pass2, grid, top) {
+        return false;
+    }
 
     match first {
         First::Draw(n) => {
             let g = Grid::setup(&mut m, n, top);
             m.isw(RETURN_SAVE, 0, ret(entry + 0x10));
-            draw(&mut m, g, top, top.wrapping_add(UV), true, kick);
+            draw(&mut m, g, top, top.wrapping_add(UV), true, kick, gpu.as_deref_mut());
         }
         First::Projector | First::Shine => {
             // 0x0b60 / 0x0bc8 (BAL vi14: nothing saved).
@@ -224,7 +243,7 @@ pub fn run(
         Pass2::None => {}
         Pass2::St => {
             m.isw(RETURN_SAVE, 0, ret(pass2_bal));
-            pass2_st(&mut m, grid, top, kick);
+            pass2_st(&mut m, grid, top, kick, gpu.as_deref_mut());
         }
         Pass2::Full => {
             m.isw(RETURN_SAVE, 0, ret(pass2_bal));
@@ -232,17 +251,42 @@ pub fn run(
                 m.st_mask(slot, m.ld(tag), 0b0111);
             }
             let pos = m.ilw(LAST_TOP, 0);
-            draw(&mut m, grid, pos, top.wrapping_add(UV2), false, kick);
+            draw(&mut m, grid, pos, top.wrapping_add(UV2), false, kick, gpu.as_deref_mut());
         }
     }
     true
+}
+
+/// What a GPU plan needs beyond [`run`]'s checks: the strip tables match
+/// the grid (NLOOP = the strips' vertices, the ST rewrite covers them),
+/// the patches are out of the packets' way, and a pass-2 ST rewrite of an
+/// earlier call's packets finds them drawn by the GPU (its mark).
+fn gpu_ok(m: &Mem, first: First, pass2: Pass2, g: Grid, top: u16) -> bool {
+    let s = g.strips(m);
+    let pk = g.packets(m);
+    let row = 2 * g.n;
+    let tables = pk[0] == row * s.a && pk[1] == row * s.b && pk[2] == 3 * pk[0] && pk[3] == 3 * pk[1];
+    let rows = s.b_offset % g.n == 0 && s.b_offset / g.n + s.b < g.n && s.a < g.n;
+    let pos = match first {
+        First::Draw(_) => top,
+        _ => m.ilw(LAST_TOP, 0),
+    };
+    if !tables || !rows || !gpu::region_ok(top) || !gpu::region_ok(pos) {
+        return false;
+    }
+    match (first, pass2) {
+        (First::Projector | First::Shine, Pass2::St) => {
+            matches!(gpu::mark(m), Some((nv, n, 1, _)) if nv == (pk[0] + pk[1]) as u32 && n == g.n)
+        }
+        _ => true,
+    }
 }
 
 /// The strip draw (0x09b0 ctx1 / 0x0d40 ctx2 re-draw): packet A from the
 /// first row, packet B from row `b_offset`, both kicked from fixed slots.
 /// `ctx1` also writes the tags (NLOOP from the table, ctx1 PRIM) and resets
 /// the fan toggle.
-fn draw(m: &mut Mem, g: Grid, pos: u16, uv: u16, ctx1: bool, kick: &mut dyn FnMut(&[u128])) {
+fn draw(m: &mut Mem, g: Grid, pos: u16, uv: u16, ctx1: bool, kick: &mut dyn FnMut(&[u128]), gpu: Option<&mut Vec<crate::gpu::GpuCall>>) {
     let s = g.strips(m);
     if ctx1 {
         let pk = g.packets(m);
@@ -253,6 +297,18 @@ fn draw(m: &mut Mem, g: Grid, pos: u16, uv: u16, ctx1: bool, kick: &mut dyn FnMu
         m.st_mask(PACKET_A, m.ld(STRIP_TAG_CTX1), 0b0111);
         m.isw(PACKET_B, 0, pk[1] | EOP);
         m.st_mask(PACKET_B, m.ld(STRIP_TAG_CTX1), 0b0111);
+    }
+    if let Some(out) = gpu {
+        let mut strips = gpu::Strips::default();
+        for (packet, count, off) in [(PACKET_A, s.a, 0), (PACKET_B, s.b, s.b_offset)] {
+            strips.packet(packet);
+            for strip in grid_strips(g.n, count, pos.wrapping_add(off), uv.wrapping_add(off)) {
+                strips.strip(&strip);
+            }
+        }
+        let colour = m.ld(COLOUR);
+        gpu::draw(m, &strips, colour, g.n, 1, out);
+        return;
     }
     let r = Raster::load(m);
     let colour = Rgba::Store(m.ld(COLOUR));
@@ -268,12 +324,26 @@ fn draw(m: &mut Mem, g: Grid, pos: u16, uv: u16, ctx1: bool, kick: &mut dyn FnMu
 
 /// Pass 2 "flag 0" (0x0c30): ctx2 strip tags, ST := UV2·q in both packets
 /// (the vertex order of the strips: rows k, k+1 alternating), re-kick.
-fn pass2_st(m: &mut Mem, g: Grid, top: u16, kick: &mut dyn FnMut(&[u128])) {
+fn pass2_st(m: &mut Mem, g: Grid, top: u16, kick: &mut dyn FnMut(&[u128]), gpu: Option<&mut Vec<crate::gpu::GpuCall>>) {
     m.st_mask(PACKET_A, m.ld(STRIP_TAG_CTX2), 0b0111);
     m.st_mask(PACKET_B, m.ld(STRIP_TAG_CTX2), 0b0111);
     let s = g.strips(m);
     let pk = g.packets(m);
     let n = g.n;
+    if let Some(out) = gpu {
+        // The draw's strips with the UV2 of each vertex (as the rewrite
+        // walks them: `gpu_ok` checked it covers the strips).
+        let mut strips = gpu::Strips::default();
+        for (packet, count, off) in [(PACKET_A, s.a, 0), (PACKET_B, s.b, s.b_offset)] {
+            strips.packet(packet);
+            let a = top.wrapping_add(off).wrapping_add(UV2);
+            for strip in grid_strips(n, count, 0, a) {
+                strips.strip(&strip);
+            }
+        }
+        gpu::rewrite_st(m, &strips, out);
+        return;
+    }
     for (packet, qwords, off) in [(PACKET_A, pk[2], 0), (PACKET_B, pk[3], s.b_offset)] {
         let a = top.wrapping_add(off).wrapping_add(UV2);
         let uv2 = (0..qwords / 3).map(|i| a.wrapping_add(i / 2 + (i % 2) * n));
@@ -290,5 +360,66 @@ mod tests {
     #[test]
     fn dumped_calls() {
         crate::bezier::dump::replay(0, &|e, t, i, m, k| run(e, t, i, m, &mut VuState::default(), k));
+    }
+
+    /// A 4×4 grid in a simple perspective (w = z), some of it outside the
+    /// guard band, and the tables for n = 4 (2 strips in packet A, 1 in B).
+    fn grid_input(seed: u32) -> Box<[u8; 16384]> {
+        let f = |x: f32| x.to_bits();
+        let mut mem = Box::new([0u8; 16384]);
+        let mut m = Mem(&mut mem);
+        m.st(0, [f(1.0), 0, 0, 0]);
+        m.st(1, [0, f(1.0), 0, 0]);
+        m.st(2, [0, 0, f(0.5), f(1.0)]);
+        m.st(3, [0, 0, 0, 0]);
+        m.st(4, [f(1024.0), f(-1024.0), f(-8388467.5), 0]);
+        m.st(5, [f(2047.5), f(2047.5), f(8388467.5), 0]);
+        m.st(COLOUR, [128, 128, 128, 128]);
+        m.st(STRIP_TAG_CTX1, [0, 0x302e_4000, 0x412, 0]);
+        m.st(STRIP_TAG_CTX2, [0, 0x312e_4000, 0x412, 0]);
+        m.st(FAN_TAG_CTX1, [0, 0x302e_c000, 0x412, 0]);
+        m.st(FAN_TAG_CTX2, [0, 0x312e_c000, 0x412, 0]);
+        m.st(STRIP_TABLE, [2, 1, 0, 8]);
+        m.st(PACKET_TABLE, [16, 8, 48, 24]);
+        let top = 0x250u16;
+        let mut r = seed;
+        let mut rnd = move || {
+            r = r.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            (r >> 8) as f32 / (1 << 24) as f32
+        };
+        for k in 0..16u16 {
+            let (x, y) = ((k % 4) as f32 - 1.5, (k / 4) as f32 - 1.5);
+            let z = 0.3 + 2.0 * rnd();
+            m.st(top + k, [f(x * (0.5 + rnd())), f(y * (0.5 + rnd())), f(z), f(1.0)]);
+            m.st(top + UV + k, [f(x), f(y), f(1.0), f(1.0)]);
+            m.st(top + UV2 + k, [f(rnd()), f(rnd()), f(1.0), f(1.0)]);
+        }
+        mem
+    }
+
+    /// The GPU plan leaves the memory the program leaves (but the strip
+    /// code's buffers: clip buffers, packets, fans, the fan toggle), and
+    /// its draws are the program's (`bezier::gpu::check`).
+    #[test]
+    fn gpu_plan_matches_the_program() {
+        let mut clipped = 0;
+        for seed in 0..64 {
+            for entry in [0x0610, 0x06b8, 0x0790] {
+                let mut cpu = grid_input(seed);
+                let mut gif = Vec::new();
+                assert!(run(entry, 0x250, 0, &mut cpu, &mut VuState::default(), &mut |p| gif.extend_from_slice(p)));
+                let mut gpu_mem = grid_input(seed);
+                let calls = plan_gpu(entry, 0x250, 0, &mut gpu_mem).expect("planned");
+                assert_eq!(crate::gpu::check(HASH, &calls, &gif), None, "seed {seed} entry {entry:#x}");
+                // (Strip packets alone: 1 + 48 and 1 + 24 qwords.)
+                clipped += (entry == 0x0610 && gif.len() > 74) as u32;
+                let strip_code = 0x2a..0x1fd;
+                for q in (0..1024).filter(|q| !strip_code.contains(q) && *q != FAN_TOGGLE as usize) {
+                    let lanes = if q == RETURN_SAVE as usize { 3 } else { 4 };
+                    assert_eq!(cpu[16 * q..16 * q + 4 * lanes], gpu_mem[16 * q..16 * q + 4 * lanes], "qw {q:#x}");
+                }
+            }
+        }
+        assert!(clipped > 8, "{clipped} grids with clipped triangles");
     }
 }
