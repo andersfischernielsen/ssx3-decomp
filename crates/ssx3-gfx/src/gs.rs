@@ -124,8 +124,12 @@ pub struct GpuFrame {
     pub call_start: Vec<u32>,
     /// The vertices drawn so far (`GpuBatch::first`).
     pub verts: u32,
-    /// `Link::Source` calls by key: their first data qword, alpha maximum.
-    pub sources: std::collections::HashMap<u32, (u32, f32)>,
+    /// `Link::Source` calls by key: their first data qword, alpha maximum,
+    /// uniform `SPLIT_BASE` (a reusing call of a split program takes it).
+    pub sources: std::collections::HashMap<u32, (u32, f32, [u32; 4])>,
+    /// The per-frame part of the last split call kept (data index,
+    /// length), for the next one to share.
+    pub last_split: Option<(usize, usize)>,
     /// Data kept from frame to frame (shared by `Gs` copies).
     pub arena: std::sync::Arc<std::sync::Mutex<MeshArena>>,
 }
@@ -281,6 +285,7 @@ impl Gs {
         self.gpu.call_start.push(0);
         self.gpu.verts = 0;
         self.gpu.sources.clear();
+        self.gpu.last_split = None;
         self.queue.clear();
         self.size = size;
         self.main_fbp = fbp;
@@ -752,35 +757,67 @@ impl Gs {
         if !call.pre.is_empty() {
             self.gif(&std::mem::take(&mut call.pre));
         }
-        // Data the GPU keeps (by key) is read from the arena.
-        let base = match call.mesh_key {
+        // Data the GPU keeps (by key) is read from the arena: all of it,
+        // or the static part of a split call (whose uniform SPLIT_BASE.x
+        // then says where that part is).
+        let split = call.split.map(|s| (s as usize).min(call.data.len()));
+        let kept = match call.mesh_key {
             Some(k) => {
                 let mut a = self.gpu.arena.lock().unwrap();
+                let part = &call.data[split.unwrap_or(0)..];
                 match a.at.get(&k) {
-                    Some(&(at, _)) => at | ARENA_BIT,
+                    Some(&(at, _)) => Some(at | ARENA_BIT),
                     // (Planned as kept but gone: the arena started over
                     // between the plan and now.)
-                    None if call.data.is_empty() => {
+                    None if part.is_empty() => {
                         self.dropped += 1;
                         return;
                     }
                     None => {
                         let at = a.data.len() as u32;
-                        a.data.extend_from_slice(&call.data);
+                        a.data.extend_from_slice(part);
                         a.at.insert(k, (at, call.alpha_max));
-                        at | ARENA_BIT
+                        Some(at | ARENA_BIT)
                     }
                 }
             }
-            None => self.gpu.data.len() as u32,
+            None => None,
         };
-        if call.mesh_key.is_some() {
-            call.data.clear();
-        }
+        let base = match (kept, split) {
+            (Some(at), None) => {
+                call.data.clear();
+                at
+            }
+            (Some(at), Some(s)) => {
+                call.data.truncate(s);
+                call.uniforms[ssx3_render::gpu::SPLIT_BASE][0] = at;
+                // (The draws after one bone setup have the same tables:
+                // the previous call's are used again.)
+                let n = self.gpu.data.len();
+                match self.gpu.last_split {
+                    Some((b, l)) if l == s && b + l == n && self.gpu.data[b..] == call.data[..] => {
+                        call.data.clear();
+                        b as u32
+                    }
+                    _ => {
+                        self.gpu.last_split = Some((n, s));
+                        n as u32
+                    }
+                }
+            }
+            (None, Some(s)) => {
+                call.uniforms[ssx3_render::gpu::SPLIT_BASE][0] = self.gpu.data.len() as u32 + s as u32;
+                self.gpu.data.len() as u32
+            }
+            (None, None) => self.gpu.data.len() as u32,
+        };
         let reuse = match call.link {
             Link::Reuse(k) => match self.gpu.sources.get(&k) {
-                Some(&(b, a)) => {
+                Some(&(b, a, sb)) => {
                     call.alpha_max = a;
+                    if call.program == ssx3_render::gpu::Program::Mat6Skin {
+                        call.uniforms[ssx3_render::gpu::SPLIT_BASE] = sb;
+                    }
                     b
                 }
                 None => {
@@ -789,7 +826,7 @@ impl Gs {
                 }
             },
             Link::Source(k) => {
-                self.gpu.sources.insert(k, (base, call.alpha_max));
+                self.gpu.sources.insert(k, (base, call.alpha_max, call.uniforms[ssx3_render::gpu::SPLIT_BASE]));
                 0
             }
             Link::None => 0,

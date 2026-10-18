@@ -2168,7 +2168,12 @@ impl Build {
                 draw_start.push(cur != last_draw && (calls.is_empty() || last_hash != hash));
                 last_hash = hash;
                 last_draw = cur;
-                let kept = c.src.filter(|_| hash == Some(ssx3_render::mat3::HASH)).and_then(|s| arena.kept(ssx3_render::gpu::mesh_key(s, ssx3_render::gpu::Program::Mat3Mesh)));
+                let program = match hash {
+                    Some(ssx3_render::mat3::HASH) => Some(ssx3_render::gpu::Program::Mat3Mesh),
+                    Some(ssx3_render::mat6::HASH) => Some(ssx3_render::gpu::Program::Mat6Skin),
+                    _ => None,
+                };
+                let kept = c.src.zip(program).and_then(|(s, p)| arena.kept(ssx3_render::gpu::mesh_key(s, p)));
                 calls.push(ssx3_render::vujob::JobItem::Call((i, c, hash, kept)));
             } else if let Event::Native { index, regs, header } = ev {
                 // (Chunks start at them as at calls.)

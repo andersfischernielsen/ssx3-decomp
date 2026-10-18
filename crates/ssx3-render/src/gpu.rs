@@ -73,6 +73,10 @@ pub const UNIFORM_QWORDS: usize = 32;
 /// coordinate offset, depth scale, texture scale, fog.
 pub const GS_PARAMS: usize = 28;
 
+/// The uniform qword whose x a split call's static data index goes to
+/// (`GpuCall::split`).
+pub const SPLIT_BASE: usize = 1;
+
 /// One draw of a call computed by the GPU (a call may make several).
 #[derive(Clone, Debug, PartialEq)]
 pub struct GpuCall {
@@ -98,6 +102,11 @@ pub struct GpuCall {
     /// Calls that redraw an earlier call's vertices (type 3 pass 2 redraws
     /// pass 1's output with new texture coordinates).
     pub link: Link,
+    /// `Some(s)`: `data[s..]` is the static part (vertex records) and
+    /// `data[..s]` changes every frame; the GS side writes the static
+    /// part's absolute data index into uniform [`SPLIT_BASE`]`.x`. With a
+    /// `mesh_key`, only the static part is kept by the GPU.
+    pub split: Option<u32>,
     /// A key under which `data` is the same every time (the GPU keeps it):
     /// the planner sets `Some(0)` when the data is the input's as it came
     /// (no in-place rewrite), and [`crate::vujob::run_call`] the input's
@@ -219,7 +228,7 @@ fn plan_inner(hash: u64, entry: u32, top: u32, itop: u32, kept: Option<f32>, mem
             0x12b8 | 0x3a08 => None,
             _ => crate::mat3::plan_gpu(entry, top, itop, kept, mem).map(|c| vec![c]),
         },
-        crate::mat6::HASH => crate::mat6::plan_gpu(entry, top, itop, mem),
+        crate::mat6::HASH => crate::mat6::plan_gpu(entry, top, itop, kept.is_some(), mem),
         crate::mat4::HASH => crate::mat4::plan_gpu(entry, top, itop, mem),
         crate::mat5::HASH => crate::mat5::plan_gpu(entry, top, itop, mem),
         crate::mat1::HASH => crate::mat1::plan_gpu(entry, top, itop, mem),
@@ -272,6 +281,7 @@ pub fn encode(c: &GpuCall, w: &mut Vec<u8>) {
     w.extend_from_slice(&(c.indices.len() as u32).to_le_bytes());
     put_words(w, &c.indices);
     w.extend_from_slice(&c.index_mode.to_le_bytes());
+    w.extend_from_slice(&c.split.unwrap_or(u32::MAX).to_le_bytes());
     w.extend_from_slice(&c.alpha_max.to_le_bytes());
     let (t, k) = c.link.code();
     w.extend_from_slice(&t.to_le_bytes());
@@ -300,12 +310,13 @@ pub fn decode(b: &[u8]) -> (GpuCall, usize) {
     let n = u32_at(take(4)) as usize;
     let indices = words(take(4 * n), n);
     let index_mode = u32_at(take(4));
+    let split = Some(u32_at(take(4))).filter(|&s| s != u32::MAX);
     let alpha_max = f32::from_le_bytes(take(4).try_into().unwrap());
     let t = u32_at(take(4));
     let link = Link::from_code(t, u32_at(take(4)));
     let mk = u64::from_le_bytes(take(8).try_into().unwrap());
     let mesh_key = (mk != u64::MAX).then_some(mk);
-    (GpuCall { program, pre, tag, uniforms, data, indices, index_mode, alpha_max, link, mesh_key }, p)
+    (GpuCall { program, pre, tag, uniforms, data, indices, index_mode, alpha_max, link, split, mesh_key }, p)
 }
 
 #[cfg(test)]
@@ -326,6 +337,7 @@ mod tests {
             index_mode: tri_mode(21, 5),
             alpha_max: 128.0,
             link: Link::Reuse(0x1db),
+            split: Some(1),
             mesh_key: Some(77),
         };
         let mut w = Vec::new();

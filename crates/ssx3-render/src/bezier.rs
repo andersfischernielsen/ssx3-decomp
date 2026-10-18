@@ -678,6 +678,7 @@ pub mod gpu {
                 index_mode,
                 alpha_max,
                 link,
+                split: None,
                 mesh_key: None,
             });
         };
@@ -721,6 +722,7 @@ pub mod gpu {
                 index_mode,
                 alpha_max: 0.0,
                 link: Link::Reuse(KEY),
+                split: None,
                 mesh_key: None,
             });
         }

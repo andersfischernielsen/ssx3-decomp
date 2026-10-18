@@ -611,12 +611,18 @@ pub mod gpu_skin {
     /// Uniform q0: x = 1 for an env pass; y = its per-vertex E·R offsets
     /// (from the call's data base).
     pub const INFO: usize = 0;
-    /// Data of a draw (skinned) or shadow call, from its base: [0] = {first
-    /// vertex, vertex count}; skinned: [1..11) the SH coefficients ×255,
-    /// [11] guard scale, [12] guard offset; shadow: [1] guard scale, [2]
-    /// guard offset; then the bone tables the vertices use (M·B: 4 qwords,
-    /// rotations and E·R: 3), then the vertices. Bone and rotation
-    /// references are qword offsets from the base.
+    /// Uniform: see the skinned draw data.
+    pub const VERTS: usize = crate::gpu::SPLIT_BASE;
+    /// Data of a skinned draw, from its base: [0] unused, [1..11) the SH
+    /// coefficients ×255, [11] guard scale, [12] guard offset, [13..) the
+    /// bone window (M·B, 4 qwords per bone: VU 0x11..), the rotation window
+    /// (3 per bone: VU 0x75..): the same for the draws after one bone
+    /// setup. Then (`GpuCall::split`) per vertex {u, v, bone, rotation (VU
+    /// addresses)}, normal, position. Uniform [`VERTS`] = {the vertices'
+    /// absolute data index (the GS side sets it), count, rotation window
+    /// offset}. Shadow: [0] = {first vertex, count}, [1] guard
+    /// scale, [2] guard offset, the bone tables it uses, then the vertices;
+    /// its bone references are qword offsets from the base.
     pub const D_INFO: usize = 0;
     pub const D_LIGHTS: usize = 1;
     pub const D_SCALE: usize = 11;
@@ -683,12 +689,14 @@ fn culled_strip_indices(counts: &[u16]) -> (Vec<u32>, u32) {
 /// or cheap kicks the CPU program does: `None`. `None` too (memory
 /// untouched) for inputs the program declines or that the GPU port does
 /// not handle (XYZF2 tags).
-pub fn plan_gpu(entry: u32, top: u32, _itop: u32, mem: &mut [u8; 16384]) -> Option<Vec<crate::gpu::GpuCall>> {
+/// `kept`: the renderer keeps a draw's vertex records (`GpuCall::split`):
+/// they are left out.
+pub fn plan_gpu(entry: u32, top: u32, _itop: u32, kept: bool, mem: &mut [u8; 16384]) -> Option<Vec<crate::gpu::GpuCall>> {
     let top = (top & 0x3ff) as u16;
     let mut m = Mem(mem);
     match entry {
-        0x00 | 0x398 => plan_draw(&mut m, top, Skin::PerVertex),
-        0x50 | 0x7f8 => plan_draw(&mut m, top, Skin::PerBatch),
+        0x00 | 0x398 => plan_draw(&mut m, top, Skin::PerVertex, kept),
+        0x50 | 0x7f8 => plan_draw(&mut m, top, Skin::PerBatch, kept),
         0x30 | 0xb58 => plan_env(&mut m, top),
         0x20 | 0xcb8 => plan_shadow(&mut m, top),
         _ => None,
@@ -696,10 +704,10 @@ pub fn plan_gpu(entry: u32, top: u32, _itop: u32, mem: &mut [u8; 16384]) -> Opti
 }
 
 fn gpu_call(program: crate::gpu::Program, tag: u128, u: [[u32; 4]; crate::gpu::UNIFORM_QWORDS], data: Vec<[u32; 4]>, (indices, index_mode): (Vec<u32>, u32), alpha_max: f32, link: crate::gpu::Link) -> crate::gpu::GpuCall {
-    crate::gpu::GpuCall { program, pre: Vec::new(), tag, uniforms: u, data, indices, index_mode, alpha_max, link, mesh_key: None }
+    crate::gpu::GpuCall { program, pre: Vec::new(), tag, uniforms: u, data, indices, index_mode, alpha_max, link, split: None, mesh_key: None }
 }
 
-fn plan_draw(m: &mut Mem, top: u16, skin: Skin) -> Option<Vec<crate::gpu::GpuCall>> {
+fn plan_draw(m: &mut Mem, top: u16, skin: Skin, kept: bool) -> Option<Vec<crate::gpu::GpuCall>> {
     let batch = Batch::read(m, top);
     let min = if skin == Skin::PerVertex { 3 } else { 2 };
     let counts = batch.counts(m, min, 3, 3)?;
@@ -710,40 +718,53 @@ fn plan_draw(m: &mut Mem, top: u16, skin: Skin) -> Option<Vec<crate::gpu::GpuCal
     let total: u32 = counts.iter().map(|&c| c as u32).sum();
     let header = m.ld(top.wrapping_add(1));
     let (batch_bone, batch_rot) = (header[1] as u16, header[2] as u16);
-    let mut data = Vec::with_capacity(gpu_skin::D_TABLES + 8 + 3 * total as usize);
+    // The bone windows: the bone count the setup (0x80) used, bounded by
+    // the tables' room.
+    let nb = (m.ilw(BONE_COUNT, 0) as u16).min((RAW_ROT - BONES) / 4);
+    let rot_off = (gpu_skin::D_TABLES + 4 * nb as usize) as u32;
+    let first = rot_off + 3 * nb as u32;
+    let mut data = Vec::with_capacity(first as usize + if kept { 0 } else { 3 * total as usize });
     data.push([0; 4]);
     data.extend((0..10).map(|i| m.ld(LIGHTS + i)));
     data.push(m.ld(GUARD_SCALE));
     data.push(m.ld(GUARD_OFFSET));
-    let (mut bones, mut rots) = (Tables { seen: Vec::new() }, Tables { seen: Vec::new() });
-    let mut verts = Vec::with_capacity(3 * total as usize);
-    let mut src = batch.verts;
-    for j in counts.iter().flat_map(|&n| 0..n) {
-        let uv = m.ld(src);
-        let (bone, rot) = match skin {
-            Skin::PerVertex => (uv[2] as u16, uv[3] as u16),
-            Skin::PerBatch => (batch_bone, batch_rot),
-        };
-        let b = bones.get(m, &mut data, bone, 4);
-        let r = rots.get(m, &mut data, rot, 3);
-        let nrm = m.ld(src.wrapping_add(1));
-        verts.push([uv[0], uv[1], b, r]);
-        // (.w, unused by the program: the strip's first two vertices.)
-        verts.push([nrm[0], nrm[1], nrm[2], (j < 2) as u32]);
-        verts.push(m.ld(src.wrapping_add(2)));
-        src = src.wrapping_add(3);
+    data.extend((0..4 * nb).map(|i| m.ld(BONES + i)));
+    data.extend((0..3 * nb).map(|i| m.ld(RAW_ROT + i)));
+    if !kept {
+        let in_window = |bone: u16, rot: u16| bone.wrapping_sub(BONES) < 4 * nb && rot.wrapping_sub(RAW_ROT) < 3 * nb;
+        let mut src = batch.verts;
+        for j in counts.iter().flat_map(|&n| 0..n) {
+            let uv = m.ld(src);
+            let (bone, rot) = match skin {
+                Skin::PerVertex => (uv[2] as u16, uv[3] as u16),
+                Skin::PerBatch => (batch_bone, batch_rot),
+            };
+            // (A table outside the bones the setup made: the CPU program.)
+            if !in_window(bone, rot) {
+                return None;
+            }
+            let nrm = m.ld(src.wrapping_add(1));
+            data.push([uv[0], uv[1], bone as u32, rot as u32]);
+            // (.w, unused by the program: the strip's first two vertices.)
+            data.push([nrm[0], nrm[1], nrm[2], (j < 2) as u32]);
+            data.push(m.ld(src.wrapping_add(2)));
+            src = src.wrapping_add(3);
+        }
     }
-    data[gpu_skin::D_INFO] = [data.len() as u32, total, 0, 0];
-    data.extend_from_slice(&verts);
     // Alpha: the SH sum's .w, clamped (|n| ≈ 1: each term at most |L|).
     let l = |i: u16| f32::from_bits(m.ld(LIGHTS + i)[3]);
     let bound = l(0) + (1..10).map(|i| l(i).abs()).sum::<f32>() * 1.25;
     let alpha_max = if bound.is_finite() { bound.clamp(0.0, 255.0).floor() } else { 255.0 };
     let out = top.wrapping_add(OUT);
     m.st(out, [GPU_DRAW_MARK, total, tag[0], 0]);
-    let u = [[0u32; 4]; crate::gpu::UNIFORM_QWORDS];
+    let mut u = [[0u32; 4]; crate::gpu::UNIFORM_QWORDS];
+    u[gpu_skin::VERTS] = [first, total, rot_off, 0];
     let link = crate::gpu::Link::Source(out as u32);
-    Some(vec![gpu_call(crate::gpu::Program::Mat6Skin, tag_u128(tag), u, data, culled_strip_indices(&counts), alpha_max, link)])
+    let mut call = gpu_call(crate::gpu::Program::Mat6Skin, tag_u128(tag), u, data, culled_strip_indices(&counts), alpha_max, link);
+    // (The vertex records are the input's as it came.)
+    call.split = Some(first);
+    call.mesh_key = Some(0);
+    Some(vec![call])
 }
 
 fn plan_env(m: &mut Mem, top: u16) -> Option<Vec<crate::gpu::GpuCall>> {
@@ -832,10 +853,11 @@ pub fn check_gpu(call: &crate::gpu::GpuCall, gif: &[u128]) -> Option<String> {
     }
     let d = &call.data;
     let fv = |i: u32| -> [f32; 4] { d[i as usize].map(f32::from_bits) };
-    let first = d[0][0];
     let shadow = call.program == Program::Mat6Shadow;
+    let info = if shadow { d[0] } else { call.uniforms[gpu_skin::VERTS] };
+    let first = info[0];
     let per = if shadow { 1 } else { 3 };
-    let n = d[0][1] as usize;
+    let n = info[1] as usize;
     if gif.len() != 1 + per * n {
         return Some(format!("mat6: kick of {} qwords for {n} vertices", gif.len()));
     }
@@ -850,7 +872,7 @@ pub fn check_gpu(call: &crate::gpu::GpuCall, gif: &[u128]) -> Option<String> {
             xform(d[v as usize][3] & 0x7fff_ffff, [p[0], p[1], p[2], 1.0])
         } else {
             let v = first + 3 * k;
-            xform(d[v as usize][2], fv(v + 2))
+            xform(gpu_skin::D_TABLES as u32 + d[v as usize][2] - BONES as u32, fv(v + 2))
         }
     };
     let inside = |c: [f32; 4]| {
@@ -898,7 +920,7 @@ pub fn check_gpu(call: &crate::gpu::GpuCall, gif: &[u128]) -> Option<String> {
             let a = first + 3 * v;
             let uv = d[a as usize];
             let nr: [f32; 3] = std::array::from_fn(|l| d[a as usize + 1][l] as i32 as f32 / 32768.0);
-            let r = uv[3];
+            let r = info[2] + uv[3] - RAW_ROT as u32;
             let nn: [f32; 3] = std::array::from_fn(|l| fv(r)[l] * nr[0] + fv(r + 1)[l] * nr[1] + fv(r + 2)[l] * nr[2]);
             let terms = [1.0, nn[0] * nn[0], nn[1] * nn[1], nn[2] * nn[2], nn[0] * nn[1], nn[2] * nn[0], nn[1] * nn[2], nn[0], nn[1], nn[2]];
             let col: [f32; 4] = std::array::from_fn(|l| (0..10).map(|i| fv(1 + i)[l] * terms[i as usize]).sum::<f32>().clamp(0.0, 255.0).floor());
@@ -1020,6 +1042,8 @@ mod tests {
         }
         m.st(GUARD_SCALE, [f(1024.0), f(-1024.0), f(-8388467.5), 0]);
         m.st(GUARD_OFFSET, [f(2048.0), f(2048.0), f(8388467.5), 0]);
+        // (The bone count the setup left, as the packet uploads it.)
+        m.st(BONE_COUNT, [bones as u32, 0, 0, 0]);
         for i in 0..10 {
             m.st(LIGHTS + i, std::array::from_fn(|_| f(if i == 0 { 60.0 + 80.0 * rnd() } else { (rnd() - 0.5) * 120.0 })));
         }
@@ -1063,7 +1087,7 @@ mod tests {
                 let mut gif = Vec::new();
                 assert!(run(entry, top as u32, 0, &mut cpu, &mut VuState::default(), &mut |p| gif.extend_from_slice(p)));
                 let mut gpu = mem.clone();
-                let calls = plan_gpu(entry, top as u32, 0, &mut gpu).expect("planned");
+                let calls = plan_gpu(entry, top as u32, 0, false, &mut gpu).expect("planned");
                 assert_eq!(calls.len(), 1);
                 let total: usize = counts.iter().map(|&c| c as usize).sum();
                 let tris: usize = counts.iter().map(|&c| c as usize - 2).sum();
@@ -1082,7 +1106,7 @@ mod tests {
                 assert_eq!(gpu[out + 16 * n..], cpu[out + 16 * n..]);
                 if !shadow {
                     // The env pass after it: the GPU redraw of this draw.
-                    let env = plan_gpu(0x30, top as u32, 0, &mut gpu).expect("env planned");
+                    let env = plan_gpu(0x30, top as u32, 0, false, &mut gpu).expect("env planned");
                     assert_eq!(env.len(), 1);
                     assert_eq!(env[0].link, crate::gpu::Link::Reuse((top + OUT) as u32));
                     assert_eq!(env[0].indices, calls[0].indices);
@@ -1102,8 +1126,8 @@ mod tests {
         let mut gif = Vec::new();
         assert!(run(0x398, top as u32, 0, &mut cpu, &mut VuState::default(), &mut |p| gif.extend_from_slice(p)));
         let mut gpu = mem.clone();
-        let mut calls = plan_gpu(0x398, top as u32, 0, &mut gpu).unwrap();
-        let v = calls[0].data[0][0] as usize;
+        let mut calls = plan_gpu(0x398, top as u32, 0, false, &mut gpu).unwrap();
+        let v = calls[0].uniforms[gpu_skin::VERTS][0] as usize;
         for k in 0..3 {
             calls[0].data[v + 3 * k + 2][0] ^= 0x0040_0000;
         }
@@ -1116,7 +1140,7 @@ mod tests {
         let (mut mem, top, _) = random_batch(9, false);
         assert!(run(0x398, top as u32, 0, &mut mem, &mut VuState::default(), &mut |_| {}));
         let before = mem.clone();
-        assert!(plan_gpu(0x30, top as u32, 0, &mut mem).is_none());
+        assert!(plan_gpu(0x30, top as u32, 0, false, &mut mem).is_none());
         assert_eq!(mem[..], before[..]);
     }
 

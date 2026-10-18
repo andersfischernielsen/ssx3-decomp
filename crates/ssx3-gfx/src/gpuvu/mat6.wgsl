@@ -1,11 +1,13 @@
 // ---------------------------------------------------------------------------
 // Types 6/7 riders (`mat6::plan_gpu`, layout in `mat6::gpu_skin`).
 //
-// Skinned draw data, from its base: [0] = (first vertex, count), [1..11)
-// the SH coefficients x255, [11] guard scale, [12] guard offset, the bone
-// tables, then per vertex {u, v (4.12), bone, rotation (data offsets)},
-// normal (1.15; .w: the strip's first two vertices), position (w from
-// STROW). Indices are (k << 2) | corner:
+// Skinned draw data, from its base: [1..11) the SH coefficients x255, [11]
+// guard scale, [12] guard offset, [13..) the bone window (M·B per bone from
+// VU 0x11), the rotation window (from VU 0x75). q1 = (the vertices'
+// absolute data index, in the arena when kept; count; rotation window
+// offset): per vertex {u, v (4.12), bone, rotation (VU addresses)}, normal
+// (1.15; .w: the strip's first two vertices), position (w from STROW).
+// Indices are (k << 2) | corner:
 // corner 0..2 (vertex k-2+corner) of the strip triangle ending at vertex k.
 // The program draws a triangle only when its three vertices pass the CLIP
 // test (guard band, z planes): a triangle with one outside is dropped
@@ -20,10 +22,10 @@ fn m6(i: u32) -> vec4<f32> {
 }
 
 // The vertex's guard-clip position: M·B · position.
-fn mat6_clip(b: u32, k: u32) -> vec4<f32> {
-    let v = b + data[b].x + 3u * k;
-    let bo = b + data[v].z;
-    let p = m6(v + 2u);
+fn mat6_clip(c: u32, b: u32, k: u32) -> vec4<f32> {
+    let v = uq(c, 1).x + 3u * k;
+    let bo = b + 13u + rd(v).z - 0x11u;
+    let p = bitcast<vec4<f32>>(rd(v + 2u));
     return m6(bo) * p.x + m6(bo + 1u) * p.y + m6(bo + 2u) * p.z + m6(bo + 3u) * p.w;
 }
 
@@ -69,18 +71,19 @@ fn mat6_skin_vertex(vi: u32, c: u32) -> VOut {
     let b = select(uq(c, 30).y, uq(c, 30).z, env);
     let k = vi >> 2u;
     let corner = vi & 3u;
-    let c0 = mat6_clip(b, k - 2u);
-    let c1 = mat6_clip(b, k - 1u);
-    let c2 = mat6_clip(b, k);
+    let c0 = mat6_clip(c, b, k - 2u);
+    let c1 = mat6_clip(c, b, k - 1u);
+    let c2 = mat6_clip(c, b, k);
     if (!(mat6_inside(c0) && mat6_inside(c1) && mat6_inside(c2))) {
         return mat6_culled();
     }
     let v = k - 2u + corner;
     let clip = select(select(c2, c1, corner == 1u), c0, corner == 0u);
-    let a = b + data[b].x + 3u * v;
-    let uv = data[a];
-    let nr = vec3<f32>(bitcast<vec4<i32>>(data[a + 1u]).xyz) / 32768.0;
-    let r = b + uv.w;
+    let a = uq(c, 1).x + 3u * v;
+    let uv = rd(a);
+    let nrm = rd(a + 1u);
+    let nr = vec3<f32>(bitcast<vec4<i32>>(nrm).xyz) / 32768.0;
+    let r = b + uq(c, 1).z + uv.w - 0x75u;
     let n = m6(r) * nr.x + m6(r + 1u) * nr.y + m6(r + 2u) * nr.z;
     let col = mat6_light(b, n.xyz);
     let q = 1.0 / clip.w;
@@ -100,11 +103,11 @@ fn mat6_skin_vertex(vi: u32, c: u32) -> VOut {
     // 0xffff8000: 0), ADC when it is one of its strip's first two or one of
     // it and the two before it fails CLIP (the triangle's own three pass).
     if (uq(c, 30).w == 4u) {
-        var adc = data[a + 1u].w != 0u;
+        var adc = nrm.w != 0u;
         if (!adc && corner < 2u) {
-            adc = !mat6_inside(mat6_clip(b, k - 3u));
+            adc = !mat6_inside(mat6_clip(c, b, k - 3u));
             if (!adc && corner == 0u) {
-                adc = !mat6_inside(mat6_clip(b, k - 4u));
+                adc = !mat6_inside(mat6_clip(c, b, k - 4u));
             }
         }
         o.fog = select(255.0, 0.0, adc);
