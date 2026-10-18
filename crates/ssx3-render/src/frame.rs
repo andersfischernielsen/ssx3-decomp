@@ -705,9 +705,10 @@ pub struct Draw {
     pub packets: Range<u32>,
     /// Chain contents emitted for this draw before its CALL: state change
     /// (A+D, material setup, lighting/shadow packet) and texture bind
-    /// (TEX0/TEX1/MIPTBP, PATH3 unmask).
+    /// (TEX0/TEX1/MIPTBP, PATH3 unmask). Only with [`keep_payloads`].
     pub prelude: Vec<Payload>,
-    /// The bucket's packets: VU calls and GIF streams.
+    /// The bucket's packets: VU calls and GIF streams. Only with
+    /// [`keep_payloads`].
     pub payload: Vec<Payload>,
 }
 
@@ -1032,15 +1033,32 @@ struct Region {
 /// always decode; `SSX3_CHAIN_CACHE_CHECK=1`: decode too and compare).
 #[derive(Default)]
 pub struct ChainCache {
-    map: HashMap<(u32, VifRegs), (u64, crate::vif::Recording)>,
+    map: HashMap<(u32, VifRegs), CachedChain>,
     /// (Hits, misses) so far.
     pub stats: (u64, u64),
     next_id: u64,
 }
 
-/// The sub-chain from `a` up to its RET: a hash of its tags and data, or
-/// `None` when it does not return plainly (END, nested CALLs, too long).
-fn sub_chain_hash(m: &dyn Mem, mut a: u32) -> Option<u64> {
+struct CachedChain {
+    /// [`sub_chain_hash`] when recorded.
+    hash: u64,
+    rec: crate::vif::Recording,
+    /// The memory it was read from (byte ranges) and the snapshot it was
+    /// last seen unchanged in: while none of it is written after that, no
+    /// hash is needed (`Mem::unchanged`).
+    ranges: Vec<(u32, u32)>,
+    seen: u64,
+}
+
+/// The sub-chain from `a` up to its RET: a hash of its tags and data and
+/// the byte ranges it covers, or `None` when it does not return plainly
+/// (END, nested CALLs, too long).
+fn sub_chain_hash(m: &dyn Mem, mut a: u32) -> Option<(u64, Vec<(u32, u32)>)> {
+    let mut ranges: Vec<(u32, u32)> = Vec::new();
+    let mut cover = |s: u32, e: u32| match ranges.last_mut() {
+        Some(r) if r.1 == s => r.1 = e,
+        _ => ranges.push((s, e)),
+    };
     let mut h = 0xcbf2_9ce4_8422_2325u64;
     let mut mix = |x: u128| {
         h = (h ^ x as u64).wrapping_mul(0x0000_0100_0000_01b3);
@@ -1049,6 +1067,7 @@ fn sub_chain_hash(m: &dyn Mem, mut a: u32) -> Option<u64> {
     for _ in 0..4096 {
         let tag = m.qword(a);
         mix(tag);
+        cover(a, a + 16);
         let qwc = (tag & 0xffff) as u32;
         let addr = ((tag >> 32) & 0x7fff_fff0) as u32;
         let (data, next) = match (tag >> 28) & 7 {
@@ -1059,13 +1078,15 @@ fn sub_chain_hash(m: &dyn Mem, mut a: u32) -> Option<u64> {
                 for i in 0..qwc {
                     mix(m.qword(a + 16 + i * 16));
                 }
-                return Some(h);
+                cover(a + 16, a + 16 + qwc * 16);
+                return Some((h, ranges));
             }
             _ => return None,
         };
         for i in 0..qwc {
             mix(m.qword(data + i * 16));
         }
+        cover(data, data + qwc * 16);
         a = next;
     }
     None
@@ -1079,6 +1100,14 @@ fn chain_cache_mode() -> (bool, bool) {
             std::env::var_os("SSX3_CHAIN_CACHE_CHECK").is_some(),
         )
     })
+}
+
+static KEEP_PAYLOADS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Fill [`Draw::payload`] / [`Draw::prelude`] and the passes' event lists
+/// (copies of [`Built::events`]; off by default, for checks and tools).
+pub fn keep_payloads(on: bool) {
+    KEEP_PAYLOADS.store(on, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// Debug (`SSX3_DIRECT_CHECK=1`): captured packets are decoded too and
@@ -1195,9 +1224,9 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
         let mut asr = [0u32; 2];
         let mut payload_start = 0usize;
         let mut ended = false;
-        // A sub-chain being recorded: its key, hash and the CALL depth it
-        // returns to.
-        let mut recording: Option<((u32, VifRegs), u64, u32)> = None;
+        // A sub-chain being recorded: its key, hash, memory ranges, the
+        // snapshot and the CALL depth it returns to.
+        let mut recording: Option<((u32, VifRegs), u64, Vec<(u32, u32)>, u64, u32)> = None;
         for _ in 0..1_000_000 {
             // A captured draw's packet (a bucket's packets are reached by
             // CALL or NEXT): its command instead of its decoding.
@@ -1262,10 +1291,23 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
             // from the cache, or record it.
             let (use_cache, check) = chain_cache_mode();
             if id == 5 && !top && w.in_payload.is_some() && recording.is_none() && use_cache && w.vif.idle() {
-                if let Some(h) = sub_chain_hash(w.m, a) {
-                    let key = (a, w.vif.regs);
-                    match cache.map.get(&key) {
-                        Some((hh, rec)) if *hh == h => {
+                let key = (a, w.vif.regs);
+                let snap = w.m.snapshot();
+                // Unchanged since it was last seen: no hash needed.
+                let unchanged = snap != 0 && cache.map.get(&key).is_some_and(|e| e.seen != 0 && e.ranges.iter().all(|&(s, t)| w.m.unchanged(s, t, e.seen)));
+                let looked = if unchanged { Some(None) } else { sub_chain_hash(w.m, a).map(Some) };
+                if let Some(hashed) = looked {
+                    let hit = match (&hashed, cache.map.get_mut(&key)) {
+                        (None, Some(_)) => true,
+                        (Some((h, ranges)), Some(e)) if e.hash == *h => {
+                            e.ranges = ranges.clone();
+                            e.seen = snap;
+                            true
+                        }
+                        _ => false,
+                    };
+                    match cache.map.get(&key).filter(|_| hit).map(|e| &e.rec) {
+                        Some(rec) => {
                             cache.stats.0 += 1;
                             if check {
                                 let mut v = w.vif.clone_state();
@@ -1283,13 +1325,14 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
                             tadr = tadr + 16 + qwc * 16;
                             continue;
                         }
-                        _ => {
+                        None => {
                             cache.stats.1 += 1;
                             if cache.map.len() > 8192 {
                                 cache.map.clear();
                             }
                             w.vif.record();
-                            recording = Some((key, h, asp));
+                            let (h, ranges) = hashed.expect("hashed on a miss");
+                            recording = Some((key, h, ranges, snap, asp));
                         }
                     }
                 }
@@ -1304,12 +1347,11 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
             } else if id == 6 && asp > 0 {
                 asp -= 1;
                 next = asr[asp as usize];
-                if let Some((key, h, _)) = recording.filter(|r| r.2 == asp) {
-                    recording = None;
+                if let Some((key, hash, ranges, seen, _)) = recording.take_if(|r| r.4 == asp) {
                     if let Some(mut rec) = w.vif.recorded() {
                         cache.next_id += 1;
                         rec.id = cache.next_id;
-                        cache.map.insert(key, (h, rec));
+                        cache.map.insert(key, CachedChain { hash, rec, ranges, seen });
                     }
                 } else if asp == 0 && recording.take().is_some() {
                     // (A recording that did not end at its RET: dropped.)
@@ -1356,12 +1398,20 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
         }
     };
     let mut draws = plan.draws;
+    // (Copies of the events per draw and pass, for the checks; the renderer
+    // reads `events`.)
+    let keep = KEEP_PAYLOADS.load(std::sync::atomic::Ordering::Relaxed);
     for (d, r) in payload_ranges.iter().enumerate() {
-        if let Some(r) = r {
+        if let Some(r) = r.as_ref().filter(|_| keep) {
             draws[d].payload = events[r.clone()].iter().map(|(_, e)| e.clone().into()).collect();
         }
     }
-    let to_payload = |events: &[(Owner, Event)], r: Range<usize>| -> Vec<Payload> { events[r].iter().map(|(_, e)| e.clone().into()).collect() };
+    let to_payload = |events: &[(Owner, Event)], r: Range<usize>| -> Vec<Payload> {
+        if !keep {
+            return Vec::new();
+        }
+        events[r].iter().map(|(_, e)| e.clone().into()).collect()
+    };
     let last_r0 = plan.ranges[0].end.checked_sub(1).filter(|_| !plan.ranges[0].is_empty());
     let after_draw_of_region = {
         // The draw whose payload precedes each region (None for a phase head).

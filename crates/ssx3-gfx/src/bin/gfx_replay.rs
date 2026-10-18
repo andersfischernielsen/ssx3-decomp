@@ -41,6 +41,9 @@ fn main() {
         eprintln!("usage: gfx_replay OUT.png DUMP...");
         std::process::exit(2);
     };
+    if std::env::var_os("SSX3_VIF_STATS").is_some() {
+        ssx3_render::frame::keep_payloads(true);
+    }
     let ctx = ssx3_ps2::gs::gpu::context().expect("GPU");
     let r = ssx3_gfx::Renderer::new(ctx.device.clone(), ctx.queue.clone());
     let frames: Vec<_> = dumps

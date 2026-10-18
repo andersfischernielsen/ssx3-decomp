@@ -63,6 +63,13 @@ impl FrameBuilder {
         let t = web_time::Instant::now();
         let carry = self.carry.clone();
         let b = frame::build_cached(mem, gm, &carry, &mut self.cache, mem.direct.clone());
+        static CHECK: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        if *CHECK.get_or_init(|| std::env::var_os("SSX3_CHAIN_CACHE_CHECK").is_some()) {
+            let bad = b.issues.iter().filter(|i| i.starts_with("chain cache")).count();
+            if bad > 0 || self.frames % 600 == 0 {
+                eprintln!("[chain-cache] frame {}: hits/misses {:?}, {bad} replay mismatches", self.frames, self.cache.stats);
+            }
+        }
         self.carry = Carry { regs: b.regs_end, matrix: b.emitter.matrix, material_param: b.emitter.material_param };
         self.ms += t.elapsed().as_secs_f64() * 1e3;
         self.frames += 1;
@@ -241,7 +248,7 @@ pub fn on_signal_sema(c: &mut Cpu, id: i32) {
     // The memory the sink reads: a copy, so the sink can build and render
     // the frame while the game goes on. Each buffer gets only the pages
     // written since it was last filled (`bus::take_written`).
-    let mut snap = POOL.lock().unwrap().pop().unwrap_or_else(|| Box::new(DumpMem { ram: Vec::new(), spr: Vec::new(), vu1: Vec::new(), id: usize::MAX, direct: Default::default() }));
+    let mut snap = POOL.lock().unwrap().pop().unwrap_or_else(|| Box::new(DumpMem { ram: Vec::new(), spr: Vec::new(), vu1: Vec::new(), id: usize::MAX, direct: Default::default(), snap: 0 }));
     snapshot_ram(&mut snap, &c.bus.ram);
     snap.direct = std::sync::Arc::new(ssx3_render::direct::take());
     snap.spr.clear();
@@ -323,6 +330,11 @@ pub fn write_dumps(dir: &str) -> std::io::Result<usize> {
     Ok(ring.len())
 }
 
+/// Snapshots taken; per RAM page, the snapshot whose copy first had its
+/// current contents (`DumpMem::unchanged`).
+static SNAPSHOTS: AtomicU64 = AtomicU64::new(0);
+static PAGE_GEN: std::sync::OnceLock<Vec<AtomicU64>> = std::sync::OnceLock::new();
+
 /// Snapshot buffers handed back by sinks.
 static POOL: Mutex<Vec<Box<DumpMem>>> = Mutex::new(Vec::new());
 
@@ -339,6 +351,20 @@ fn snapshot_ram(snap: &mut DumpMem, ram: &[u8]) {
     let mut stale = STALE.lock().unwrap();
     let mut written = vec![0u64; pages.div_ceil(64)];
     ssx3_ee_rt::bus::take_written(&mut written);
+    // This snapshot's id; the pages written since the last one get it.
+    let snap_id = SNAPSHOTS.fetch_add(1, Ordering::Relaxed) + 1;
+    let gens = PAGE_GEN.get_or_init(|| (0..pages).map(|_| AtomicU64::new(0)).collect());
+    for (w, &word) in written.iter().enumerate() {
+        let mut m = word;
+        while m != 0 {
+            let p = w * 64 + m.trailing_zeros() as usize;
+            m &= m - 1;
+            if let Some(g) = gens.get(p) {
+                g.store(snap_id, Ordering::Relaxed);
+            }
+        }
+    }
+    snap.snap = snap_id;
     for s in stale.iter_mut() {
         for (a, b) in s.iter_mut().zip(&written) {
             *a |= b;
@@ -391,11 +417,27 @@ pub struct DumpMem {
     pub id: usize,
     /// The draws captured at the game's draw functions this frame.
     pub direct: std::sync::Arc<Vec<ssx3_render::direct::Recorded>>,
+    /// The snapshot's id (`Mem::snapshot`; 0: a dump).
+    pub snap: u64,
 }
 
 impl Mem for DumpMem {
     fn qword(&self, addr: u32) -> u128 {
         crate::hw::mem_q(&self.ram, &self.spr, addr, addr & 0x8000_0000 != 0)
+    }
+
+    fn snapshot(&self) -> u64 {
+        self.snap
+    }
+
+    fn unchanged(&self, a: u32, b: u32, since: u64) -> bool {
+        let Some(gens) = PAGE_GEN.get() else { return false };
+        if since == 0 || a & 0x8000_0000 != 0 || b <= a {
+            return false;
+        }
+        // (RAM mirrors: the low 32 MiB.)
+        let (pa, pb) = ((a & 0x01ff_ffff) as usize / 4096, ((b - 1) & 0x01ff_ffff) as usize / 4096);
+        pa <= pb && (pa..=pb).all(|p| gens.get(p).is_some_and(|g| g.load(Ordering::Relaxed) <= since))
     }
 }
 
@@ -431,7 +473,7 @@ pub fn load_dump(bytes: &[u8]) -> Result<(DumpMem, Carry), String> {
         Some(b) if !b.is_empty() => ssx3_render::direct::decode(b).ok_or("malformed captured draws")?,
         _ => Vec::new(),
     };
-    Ok((DumpMem { ram: bytes[o..o + nram].to_vec(), spr: bytes[o + nram..o + nram + 0x4000].to_vec(), vu1, id: usize::MAX, direct: std::sync::Arc::new(direct) }, carry))
+    Ok((DumpMem { ram: bytes[o..o + nram].to_vec(), spr: bytes[o + nram..o + nram + 0x4000].to_vec(), vu1, id: usize::MAX, direct: std::sync::Arc::new(direct), snap: 0 }, carry))
 }
 
 /// Build the typed frame from a dump's memory.

@@ -5,6 +5,17 @@
 pub trait Mem {
     /// The quadword at `addr` (bit 31 set: scratchpad).
     fn qword(&self, addr: u32) -> u128;
+
+    /// An id of this memory's state, growing with each snapshot (0: none).
+    fn snapshot(&self) -> u64 {
+        0
+    }
+
+    /// No byte in `a..b` was written after snapshot `since` (false when
+    /// not known).
+    fn unchanged(&self, _a: u32, _b: u32, _since: u64) -> bool {
+        false
+    }
 }
 
 /// Where a walk stopped.

@@ -79,7 +79,13 @@ static STATE: Mutex<Option<State>> = Mutex::new(None);
 
 pub fn enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("SSX3_VERIFY_FRAME").is_some())
+    *ON.get_or_init(|| {
+        let on = std::env::var_os("SSX3_VERIFY_FRAME").is_some();
+        if on {
+            frame::keep_payloads(true);
+        }
+        on
+    })
 }
 
 struct EeMem<'a> {
