@@ -1257,7 +1257,7 @@ fn check_capture(m: &dyn Mem, vif: &Vif1, start: u32, r: &crate::direct::Recorde
             }
             None
         }
-        crate::direct::Cmd::Strip { .. } | crate::direct::Cmd::Vu(_) | crate::direct::Cmd::Post { .. } => None,
+        crate::direct::Cmd::Strip { .. } | crate::direct::Cmd::Vu(_) | crate::direct::Cmd::Post { .. } | crate::direct::Cmd::Link(_) => None,
     }
 }
 

@@ -531,8 +531,18 @@ pub fn defer_man_append_packet(c: &mut Cpu) {
         let prev_end = bucket.last_end().lw(c) | UNCACHED_ACCEL;
         let tag = (start << 32) | DMA_NEXT;
         let at = Addr(prev_end as u32);
-        at.sd(c, tag);
-        at.off(8).sd(c, 0);
+        if ssx3_render::direct::packetless() {
+            // No tag: the link goes to the renderer with the frame's draws.
+            ssx3_render::direct::record(ssx3_render::direct::Recorded {
+                start: prev_end as u32 & 0x0fff_ffff,
+                end: prev_end as u32 & 0x0fff_ffff,
+                first_tag: 0,
+                cmd: ssx3_render::direct::Cmd::Link(start as u32),
+            });
+        } else {
+            at.sd(c, tag);
+            at.off(8).sd(c, 0);
+        }
         bucket.last_end().sw(c, end);
         c.g[V0][0] = tag;
         c.g[V1][0] = prev_end;

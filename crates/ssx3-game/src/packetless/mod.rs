@@ -778,7 +778,8 @@ fn checked_ram(c: &mut Cpu, name: &'static str, native: fn(&mut Cpu), packets: f
     // AppendPacket's wrapper, a record's ribbon calls by their emitters';
     // the widest capture at a start stands, nested ones go.)
     let filt = |r: &[Recorded]| -> Vec<Cmd> {
-        let mut r: Vec<&Recorded> = r.iter().collect();
+        // (Bucket links hold packet addresses, which differ by design.)
+        let mut r: Vec<&Recorded> = r.iter().filter(|x| !matches!(x.cmd, Cmd::Link(_))).collect();
         r.sort_by_key(|x| (x.start, std::cmp::Reverse(x.end)));
         let mut out: Vec<&Recorded> = Vec::new();
         for x in r {

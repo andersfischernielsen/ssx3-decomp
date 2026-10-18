@@ -71,6 +71,9 @@ struct Native<'a> {
     events: Vec<(Owner, Event)>,
     direct: &'a [Recorded],
     at: HashMap<u32, usize>,
+    /// Bucket links recorded instead of NEXT tags (`Cmd::Link`), by the
+    /// packet end they follow.
+    links: HashMap<u32, u32>,
     /// Post passes in call order, per kind.
     posts: [Vec<usize>; 3],
     next_post: [usize; 3],
@@ -365,6 +368,10 @@ impl Native<'_> {
             if end == last {
                 return;
             }
+            if let Some(&next) = self.links.get(&end) {
+                t = next;
+                continue;
+            }
             let tag = self.m.qword(end);
             match (tag >> 28) & 7 {
                 2 => t = ((tag >> 32) & 0x7fff_fff0) as u32,
@@ -451,10 +458,14 @@ pub(super) fn build(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
     let vif_heads = [word(m, g + gm::QUEUED_VIF1), word(m, g + gm::QUEUED_VIF2)];
     let gif_heads = [word(m, g + gm::QUEUED_GIF1), word(m, g + gm::QUEUED_GIF2)];
     let mut at = HashMap::new();
+    let mut links = HashMap::new();
     let mut posts: [Vec<usize>; 3] = Default::default();
     for (k, r) in direct.iter().enumerate() {
         match &r.cmd {
             Cmd::Post { kind, .. } => posts[*kind as usize].push(k),
+            Cmd::Link(next) => {
+                links.insert(r.start, *next);
+            }
             _ => {
                 at.insert(r.start, k);
             }
@@ -468,6 +479,7 @@ pub(super) fn build(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
         events: Vec::new(),
         direct: &direct,
         at,
+        links,
         posts,
         next_post: [0; 3],
         path3: Default::default(),

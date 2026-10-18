@@ -49,6 +49,10 @@ pub enum Cmd {
     /// put into the VIF chain (each runs the queued data up to the next
     /// EOP). `start..end` is its stretch of the VIF chain.
     Post { kind: PostKind, gif: Vec<u128>, windows: u32 },
+    /// A bucket's link, recorded at a packet's end: the bucket's next packet
+    /// starts at this address (what `DeferMan_AppendPacket`'s NEXT tag there
+    /// would hold; packetless, no tag is written).
+    Link(u32),
 }
 
 /// Which post pass a `Cmd::Post` is.
@@ -94,7 +98,7 @@ impl Cmd {
             Cmd::Strip { verts, .. } => strip_batches(verts.len()).count() as u32,
             Cmd::Ribbon { calls, .. } => calls.len() as u32,
             Cmd::Vu(steps) => steps.iter().filter(|s| matches!(s, Step::Start(_))).count() as u32,
-            Cmd::Post { .. } => 0,
+            Cmd::Post { .. } | Cmd::Link(_) => 0,
         }
     }
 }
@@ -200,7 +204,7 @@ pub fn plan(cmd: &Cmd, regs: VifRegs, header: &[u128; 6], vu: &[u8; 16384]) -> V
             crate::mat3::plan_ribbon_cmd(*entry, calls, &tops, header, [qw(0x3c8), qw(0x3e4)])
         }
         // (Applied to the VIF state by the frame build: ordinary calls.)
-        Cmd::Vu(_) | Cmd::Post { .. } => Vec::new(),
+        Cmd::Vu(_) | Cmd::Post { .. } | Cmd::Link(_) => Vec::new(),
     }
 }
 
@@ -259,6 +263,10 @@ pub fn encode_cmd(cmd: &Cmd, out: &mut Vec<u8>) {
             for v in verts.iter().flatten() {
                 out.extend_from_slice(&v.to_le_bytes());
             }
+        }
+        Cmd::Link(next) => {
+            out.push(4);
+            out.extend_from_slice(&next.to_le_bytes());
         }
         Cmd::Post { kind, gif, windows } => {
             out.push(3);
@@ -427,6 +435,7 @@ pub fn decode_cmd(r: &mut Bytes) -> Option<Cmd> {
             }
             Cmd::Post { kind, gif, windows }
         }
+        4 => Cmd::Link(r.u32()?),
         _ => return None,
     })
 }
