@@ -1,7 +1,7 @@
 #!/bin/sh
 # Stage C check (docs/plans/native-rendering.md): headless runs with every
 # native draw function checked against its generated body
-# (SSX3_DRAW_CHECK=1), screenshots into <out>/<run>. Prints the check
+# (SSX3_DRAW_CHECK=1; SSX3_DRAW_CHECK=0 for a plain native run), screenshots into <out>/<run>. Prints the check
 # lines. Usage: scripts/draw-check.sh <out dir> [race|freestyle|menu ...]
 set -e
 cd "$(dirname "$0")/.."
