@@ -153,7 +153,7 @@ pub struct Inner {
     vbuf: Option<wgpu::Buffer>,
     ubuf: Option<wgpu::Buffer>,
     /// GPU-computed draws: call uniforms, inputs, indices.
-    gbuf: [Option<wgpu::Buffer>; 3],
+    gbuf: [Option<wgpu::Buffer>; 4],
 }
 
 /// The renderer; clone the handle to read images from another thread.
@@ -265,7 +265,7 @@ impl Renderer {
             nslots: 1,
             backups: HashMap::new(),
             vbuf: None,
-            gbuf: [None, None, None],
+            gbuf: [None, None, None, None],
             ubuf: None,
         })), shared)
     }
@@ -888,16 +888,19 @@ impl Inner {
             let calls = bytes(g.calls.as_flattened().as_flattened());
             let data = bytes(g.data.as_flattened());
             let idx = bytes(&g.indices);
-            let [cb, db, ib] = &mut self.gbuf;
+            let of = bytes(&g.call_of);
+            let [cb, db, ib, ob] = &mut self.gbuf;
             let cb = grow_buffer(&self.dev, cb, (calls.len() as u64).max(256), wgpu::BufferUsages::STORAGE, "ssx3-gfx gpu calls");
             let db = grow_buffer(&self.dev, db, (data.len() as u64).max(256), wgpu::BufferUsages::STORAGE, "ssx3-gfx gpu data");
-            let ib = grow_buffer(&self.dev, ib, (idx.len() as u64).max(256), wgpu::BufferUsages::INDEX, "ssx3-gfx gpu indices");
+            let ib = grow_buffer(&self.dev, ib, (idx.len() as u64).max(256), wgpu::BufferUsages::STORAGE, "ssx3-gfx gpu indices");
+            let ob = grow_buffer(&self.dev, ob, (of.len() as u64).max(256), wgpu::BufferUsages::STORAGE, "ssx3-gfx gpu index calls");
             self.queue.write_buffer(&cb, 0, &calls);
             if !data.is_empty() {
                 self.queue.write_buffer(&db, 0, &data);
             }
             if !idx.is_empty() {
                 self.queue.write_buffer(&ib, 0, &idx);
+                self.queue.write_buffer(&ob, 0, &of);
             }
             let bg = self.dev.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("ssx3-gfx gpuvu"),
@@ -905,9 +908,11 @@ impl Inner {
                 entries: &[
                     wgpu::BindGroupEntry { binding: 0, resource: cb.as_entire_binding() },
                     wgpu::BindGroupEntry { binding: 1, resource: db.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 2, resource: ib.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 3, resource: ob.as_entire_binding() },
                 ],
             });
-            (bg, ib)
+            bg
         });
         // Plans per batch, uniforms, bind groups.
         let batches = std::mem::take(&mut self.gs.batches);
@@ -1232,14 +1237,13 @@ impl Inner {
             }
             prev_frame = it.frame;
             match (it.gpu, gpu_bind.as_ref()) {
-                (Some(g), Some((bg, ib))) => {
+                (Some(g), Some(bg)) => {
                     pass.set_pipeline(self.pipes.cached_gpu(it.key, g.program));
                     pass.set_bind_group(0, &groups[it.bind], &[it.ubo * draw::UNIFORM_STRIDE as u32]);
                     pass.set_bind_group(1, bg, &[]);
-                    pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
                     pass.set_blend_constant(wgpu::Color { r: it.constant, g: it.constant, b: it.constant, a: it.constant });
                     pass.set_scissor_rect(x, y, sw, sh);
-                    pass.draw_indexed(g.first..g.first + g.count, 0, g.call..g.call + 1);
+                    pass.draw(g.first..g.first + g.count, 0..1);
                 }
                 (Some(_), None) => {}
                 (None, _) => {

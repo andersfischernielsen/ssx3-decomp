@@ -44,8 +44,7 @@ fn ptc_sample(c: u32, ring: bool, spawn: vec4<f32>, gmv: vec4<f32>, tk: f32) -> 
     return p;
 }
 
-@vertex
-fn vs_mat4_particles(@builtin(vertex_index) vi: u32, @builtin(instance_index) c: u32) -> VOut {
+fn mat4_particles_vertex(vi: u32, c: u32) -> VOut {
     let slots = calls[c].q[10].x;
     let slot = vi >> 2u;
     let k = slot % slots;
@@ -78,8 +77,7 @@ fn vs_mat4_particles(@builtin(vertex_index) vi: u32, @builtin(instance_index) c:
 // Glitter: q0-15 the patch coefficients, q16-19 M, q20 scale, q21 offset,
 // q22 half size, q23 RGB (ints), q24 (half min, half max); data per point:
 // (u³, u², u, alpha (int)), (v³, v², v, -).
-@vertex
-fn vs_mat4_glitter(@builtin(vertex_index) vi: u32, @builtin(instance_index) c: u32) -> VOut {
+fn mat4_glitter_vertex(vi: u32, c: u32) -> VOut {
     let base = calls[c].q[30].y + 2u * (vi >> 2u);
     let pa = bitcast<vec4<f32>>(data[base]);
     let pb = bitcast<vec4<f32>>(data[base + 1u]);
@@ -99,8 +97,7 @@ fn vs_mat4_glitter(@builtin(vertex_index) vi: u32, @builtin(instance_index) c: u
 // Snow: q0-3 M, q4 scale, q5 offset, q6 half size, q7 RGBA (ints), q8
 // (alpha, depth scale, depth fade, 0.8), q9/q10 ST corners; data per
 // flake: (p.xyz, p₁.z − max.z).
-@vertex
-fn vs_mat5_snow(@builtin(vertex_index) vi: u32, @builtin(instance_index) c: u32) -> VOut {
+fn mat5_snow_vertex(vi: u32, c: u32) -> VOut {
     let p = bitcast<vec4<f32>>(data[calls[c].q[30].y + (vi >> 2u)]);
     let cl = fq(c, 0u) * p.x + fq(c, 1u) * p.y + fq(c, 2u) * p.z + fq(c, 3u);
     let fd = fq(c, 8u);
@@ -121,4 +118,19 @@ fn vs_mat5_snow(@builtin(vertex_index) vi: u32, @builtin(instance_index) c: u32)
     let centre = ptc_centre(c, cl, 4u, 5u);
     let st = vec4<f32>(fq(c, 9u).xy, fq(c, 10u).xy);
     return ptc_corner(c, vi & 3u, centre + h, centre - h, st, rgba, fade || ptc_inside(cl));
+}
+
+@vertex
+fn vs_mat4_particles(@builtin(vertex_index) k: u32) -> VOut {
+    return mat4_particles_vertex(gidx[k], gcall[k]);
+}
+
+@vertex
+fn vs_mat4_glitter(@builtin(vertex_index) k: u32) -> VOut {
+    return mat4_glitter_vertex(gidx[k], gcall[k]);
+}
+
+@vertex
+fn vs_mat5_snow(@builtin(vertex_index) k: u32) -> VOut {
+    return mat5_snow_vertex(gidx[k], gcall[k]);
 }

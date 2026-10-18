@@ -23,8 +23,7 @@ fn mat3_light(c: u32, n: vec3<f32>) -> vec4<f32> {
 
 // Pass 2 (q4.z = 2) redraws pass 1's vertices (positions and colours from
 // pass 1's data, q30.z) with its own UVs (one qword per vertex).
-@vertex
-fn vs_mat3_mesh(@builtin(vertex_index) vi: u32, @builtin(instance_index) c: u32) -> VOut {
+fn mat3_mesh_vertex(vi: u32, c: u32) -> VOut {
     let pass2 = calls[c].q[4].z == 2u;
     let base = select(calls[c].q[30].y, calls[c].q[30].z, pass2) + 4u * vi;
     let xyz = bitcast<vec4<i32>>(data[base]);
@@ -43,4 +42,9 @@ fn vs_mat3_mesh(@builtin(vertex_index) vi: u32, @builtin(instance_index) c: u32)
     let g = fq(c, 18u);
     let cz = (hc.z - g.y * hc.w) / g.x;
     return gs_vertex(c, hc, cz, data[base + 3u].x != 0u, col, vec3<f32>(t * q, q));
+}
+
+@vertex
+fn vs_mat3_mesh(@builtin(vertex_index) k: u32) -> VOut {
+    return mat3_mesh_vertex(gidx[k], gcall[k]);
 }

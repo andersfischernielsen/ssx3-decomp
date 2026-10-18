@@ -331,7 +331,7 @@ impl Pipelines {
             ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None },
             count: None,
         };
-        let gpu_layout = dev.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("ssx3-gfx gpuvu"), entries: &[storage(0), storage(1)] });
+        let gpu_layout = dev.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("ssx3-gfx gpuvu"), entries: &[storage(0), storage(1), storage(2), storage(3)] });
         let gpu_pl = dev.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("ssx3-gfx gpuvu"),
             bind_group_layouts: &[Some(&layout), Some(&gpu_layout)],

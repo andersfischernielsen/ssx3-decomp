@@ -122,8 +122,7 @@ fn bz_clipper() -> u32 {
     return n;
 }
 
-@vertex
-fn vs_bezier(@builtin(vertex_index) vi: u32, @builtin(instance_index) c: u32) -> VOut {
+fn bezier_vertex(vi: u32, c: u32) -> VOut {
     let info = calls[c].q[7];
     let fans = info.x == 2u;
     let i = select(vi >> 2u, vi >> 5u, fans);
@@ -181,4 +180,9 @@ fn vs_bezier(@builtin(vertex_index) vi: u32, @builtin(instance_index) c: u32) ->
     let p = bz_poly[select(k + j, 0u, j == 0u)];
     let q = 1.0 / p.p.w;
     return bz_out(c, p.p, p.st.xyz * q, true);
+}
+
+@vertex
+fn vs_bezier(@builtin(vertex_index) k: u32) -> VOut {
+    return bezier_vertex(gidx[k], gcall[k]);
 }

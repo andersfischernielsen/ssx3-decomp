@@ -64,8 +64,7 @@ fn mat6_culled() -> VOut {
     return o;
 }
 
-@vertex
-fn vs_mat6_skin(@builtin(vertex_index) vi: u32, @builtin(instance_index) c: u32) -> VOut {
+fn mat6_skin_vertex(vi: u32, c: u32) -> VOut {
     let env = calls[c].q[0].x != 0u;
     let b = select(calls[c].q[30].y, calls[c].q[30].z, env);
     let k = vi >> 2u;
@@ -117,8 +116,7 @@ fn vs_mat6_skin(@builtin(vertex_index) vi: u32, @builtin(instance_index) c: u32)
 // scale, [2] guard offset, the bone tables, then per vertex {x, y, z (f32),
 // bone (data offset; bit 31: the strip's first two vertices)}. No CLIP test in the program; the colour (and Q) are
 // the GS registers' (q31).
-@vertex
-fn vs_mat6_shadow(@builtin(vertex_index) vi: u32, @builtin(instance_index) c: u32) -> VOut {
+fn mat6_shadow_vertex(vi: u32, c: u32) -> VOut {
     let b = calls[c].q[30].y;
     let v = b + data[b].x + vi;
     let p = m6(v);
@@ -139,4 +137,14 @@ fn vs_mat6_shadow(@builtin(vertex_index) vi: u32, @builtin(instance_index) c: u3
         o.fog = select(0.0, 255.0, (data[v].w >> 31u) != 0u);
     }
     return o;
+}
+
+@vertex
+fn vs_mat6_skin(@builtin(vertex_index) k: u32) -> VOut {
+    return mat6_skin_vertex(gidx[k], gcall[k]);
+}
+
+@vertex
+fn vs_mat6_shadow(@builtin(vertex_index) k: u32) -> VOut {
+    return mat6_shadow_vertex(gidx[k], gcall[k]);
 }

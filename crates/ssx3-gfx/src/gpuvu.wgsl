@@ -8,6 +8,10 @@ struct Call {
 
 @group(1) @binding(0) var<storage, read> calls: array<Call>;
 @group(1) @binding(1) var<storage, read> data: array<vec4<u32>>;
+// Per vertex of a draw (a run of calls of one program merged into one
+// draw): the call's vertex index and the call (`vs_<program>` wrappers).
+@group(1) @binding(2) var<storage, read> gidx: array<u32>;
+@group(1) @binding(3) var<storage, read> gcall: array<u32>;
 
 fn fq(c: u32, i: u32) -> vec4<f32> {
     return bitcast<vec4<f32>>(calls[c].q[i]);

@@ -5,8 +5,7 @@
 // clip-space position (f32, the program's own: the CPU computes it for the
 // CLIP test), flags (x: ADC).
 
-@vertex
-fn vs_mat3_strip(@builtin(vertex_index) vi: u32, @builtin(instance_index) c: u32) -> VOut {
+fn mat3_strip_vertex(vi: u32, c: u32) -> VOut {
     let base = calls[c].q[30].y + 4u * vi;
     let st = bitcast<vec4<f32>>(data[base]);
     let col = vec4<f32>(data[base + 1u] & vec4<u32>(255u));
@@ -26,4 +25,9 @@ fn vs_mat3_strip(@builtin(vertex_index) vi: u32, @builtin(instance_index) c: u32
         o.fog = fq(c, 2u).x;
     }
     return o;
+}
+
+@vertex
+fn vs_mat3_strip(@builtin(vertex_index) k: u32) -> VOut {
+    return mat3_strip_vertex(gidx[k], gcall[k]);
 }

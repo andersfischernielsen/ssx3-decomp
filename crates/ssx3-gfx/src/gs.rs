@@ -115,6 +115,8 @@ pub struct GpuFrame {
     pub calls: Vec<[[u32; 4]; ssx3_render::gpu::UNIFORM_QWORDS]>,
     pub data: Vec<[u32; 4]>,
     pub indices: Vec<u32>,
+    /// Per index: its call (draws merge runs of calls).
+    pub call_of: Vec<u32>,
     /// `Link::Source` calls by key: their first data qword, alpha maximum.
     pub sources: std::collections::HashMap<u32, (u32, f32)>,
 }
@@ -230,6 +232,7 @@ impl Gs {
         self.gpu.calls.clear();
         self.gpu.data.clear();
         self.gpu.indices.clear();
+        self.gpu.call_of.clear();
         self.gpu.sources.clear();
         self.queue.clear();
         self.size = size;
@@ -774,7 +777,16 @@ impl Gs {
         self.gpu.calls.push(u);
         self.gpu.data.extend_from_slice(&call.data);
         self.gpu.indices.extend_from_slice(&call.indices);
-        self.batches.push(Batch { state: st, first: 0, count: 0, gpu: Some(gb) });
+        self.gpu.call_of.extend(std::iter::repeat_n(gb.call, call.indices.len()));
+        // A call right after one of the same program and state joins its
+        // draw.
+        match self.batches.last_mut() {
+            Some(Batch { state, gpu: Some(g), .. }) if *state == st && g.program == gb.program && g.first + g.count == gb.first => {
+                g.count += gb.count;
+                g.alpha_max = g.alpha_max.max(gb.alpha_max);
+            }
+            _ => self.batches.push(Batch { state: st, first: 0, count: 0, gpu: Some(gb) }),
+        }
     }
 
     fn flat(&self, last: &QVtx) -> Option<[u8; 4]> {
