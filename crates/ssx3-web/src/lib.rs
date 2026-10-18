@@ -5,9 +5,13 @@
 //! code is the unwind form (`generated/ee-unwind`): one host thread, so a
 //! game frame (`Game::frame`) returns to the browser like any other call.
 //!
+//! The image is the original one: the GS resolution (1×), the game's own
+//! 4:3 view (boxed in the canvas), no anisotropic filtering, no
+//! interpolation, no texture packs.
+//!
 //! What the native window has and this has not (yet): sound (the mixer
-//! runs, nothing plays it), the memory card, gamepads, the settings overlay
-//! and interpolation.
+//! runs, nothing plays it), the memory card, gamepads and the settings
+//! overlay.
 #![cfg(target_arch = "wasm32")]
 
 extern crate ssx3_ee_unwind as ssx3_ee;
@@ -21,11 +25,14 @@ use wasm_bindgen::prelude::*;
 #[path = "../../ssx3/src/game.rs"]
 mod game;
 
-/// The settings file of the native front end: none here, every setting is
-/// its default.
+/// The settings file of the native front end: none here. Every setting is
+/// its default, except the ones that would change the original image.
 mod settings {
-    pub fn get(_key: &str) -> Option<String> {
-        None
+    pub fn get(key: &str) -> Option<String> {
+        match key {
+            "SSX3_ANISO" => Some("1".into()),
+            _ => None,
+        }
     }
 }
 
@@ -295,11 +302,12 @@ impl Game {
         self.vu_buffer.clone()
     }
 
-    /// Render at the canvas size, the view widened to its aspect.
+    /// Render at the GS resolution (1×) with the game's own view, whatever
+    /// the canvas size; `present` scales it into a 4:3 box.
     fn follow_size(&self) {
-        let (w, h) = (self.config.width, self.config.height);
-        self.gfx.set_output_size(Some((w, h)));
-        ssx3_ps2::frame_sink::set_view(w as f32 / h as f32, 1.0);
+        self.gfx.set_output_size(None);
+        self.gfx.set_scale(1);
+        ssx3_ps2::frame_sink::set_view(0.0, 1.0);
     }
 
     /// The canvas was resized (device pixels).
@@ -379,6 +387,10 @@ impl Game {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
+            // The 4:3 image, as large as fits, centred.
+            let (cw, ch) = (self.config.width as f32, self.config.height as f32);
+            let (w, h) = if cw / ch > 4.0 / 3.0 { (ch * 4.0 / 3.0, ch) } else { (cw, cw * 3.0 / 4.0) };
+            pass.set_viewport(((cw - w) / 2.0).floor(), ((ch - h) / 2.0).floor(), w.floor(), h.floor(), 0.0, 1.0);
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &bg, &[]);
             pass.draw(0..3, 0..1);
