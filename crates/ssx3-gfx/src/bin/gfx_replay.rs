@@ -76,6 +76,27 @@ fn main() {
         for (i, (mem, carry)) in frames.iter().enumerate() {
             let t0 = std::time::Instant::now();
             let built = frame_sink::build_dump_cached(mem, carry, &mut chains).expect("no frame");
+            // SSX3_VIF_STATS: decoded (not replayed) VU input qwords per
+            // material and calls.
+            if std::env::var_os("SSX3_VIF_STATS").is_some() {
+                let mut by: std::collections::BTreeMap<String, (usize, usize, usize)> = Default::default();
+                for d in built.frame.draws() {
+                    for p in d.payload.iter().chain(&d.prelude) {
+                        if let ssx3_render::frame::Payload::Vu(c) = p {
+                            let e = by.entry(format!("{:?} {:x?}", d.state.material, c.entry)).or_default();
+                            e.0 += 1;
+                            e.1 += c.input.len();
+                            e.2 += c.shared.as_ref().map_or(0, |s| s.len());
+                        }
+                    }
+                }
+                eprintln!("[vif-stats] frame {i}: material: calls, decoded input qwords, replayed qwords: {by:?}");
+            }
+            if std::env::var_os("SSX3_DIRECT_CHECK").is_some() {
+                for e in built.issues.iter().filter(|i| i.starts_with("capture")).take(8) {
+                    eprintln!("[direct-check] frame {i}: {e}");
+                }
+            }
             if std::env::var_os("SSX3_CHAIN_CACHE_CHECK").is_some() {
                 let bad = built.issues.iter().filter(|i| i.starts_with("chain cache")).count();
                 eprintln!("[chain-cache] frame {i}: hits/misses so far {:?}, {bad} replay mismatches", chains.stats);

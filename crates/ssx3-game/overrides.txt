@@ -1429,5 +1429,7 @@
 # phase 3: draw capture (capture.rs). Slots only: installed at boot unless
 # SSX3_DIRECT=0, not part of OVERRIDES.
 0x00379860    PS2GraphicsMan_DrawTriStrip
+0x003885e0    PS2GraphicsMan_EmitBoardWakeStrips
+0x00387ec0    PS2GraphicsMan_EmitShadowStrips
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04

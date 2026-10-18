@@ -87,10 +87,11 @@ pub enum Event {
     /// MSKPATH3.
     MaskPath3(bool),
     /// A packet the game's draw function described natively
-    /// (`crate::direct`): the capture's index in the frame's list and the
-    /// VIF registers at the packet. Not decoded; its program starts only
-    /// advance the double buffering ([`Vif1::skip_starts`]).
-    Native { index: u32, regs: VifRegs },
+    /// (`crate::direct`): the capture's index in the frame's list, the VIF
+    /// registers and VU1 qw0-5 (the header the state change uploaded) at
+    /// the packet. Not decoded; its program starts only advance the double
+    /// buffering ([`Vif1::skip_starts`]).
+    Native { index: u32, regs: VifRegs, header: [u128; 6] },
 }
 
 pub struct Vif1 {

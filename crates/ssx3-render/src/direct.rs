@@ -33,6 +33,12 @@ pub enum Cmd {
         /// Per vertex {STQ (f32), RGBA (i32), XYZW (f32)}.
         verts: Vec<[u128; 3]>,
     },
+    /// `PS2GraphicsMan_EmitBoardWakeStrips` (0x3885e0) and
+    /// `EmitShadowStrips` (0x387ec0): ribbons through the type 3 program at
+    /// `entry` (0x3a08, or 0x3a00 once after their flag was set). Per
+    /// program start, the qwords its input holds (offset from TOP, value):
+    /// the strip tag, the counts and alpha ramp, edge A, edge B.
+    Ribbon { entry: u32, calls: Vec<Vec<(u16, u128)>> },
 }
 
 /// The vertex count of a strip batch.
@@ -43,6 +49,7 @@ impl Cmd {
     pub fn starts(&self) -> u32 {
         match self {
             Cmd::Strip { verts, .. } => strip_batches(verts.len()).count() as u32,
+            Cmd::Ribbon { calls, .. } => calls.len() as u32,
         }
     }
 }
@@ -107,7 +114,7 @@ pub fn take() -> Vec<Recorded> {
 /// Draw a captured command: its GPU draws, or the GIF output of the CPU
 /// program for what has no GPU port. `regs`: the VIF registers at the
 /// packet (the program's TOP for each start); `header`: VU1 qw0-5 as the
-/// draw's state change uploaded them (the matrix record's header); `vu`:
+/// draw's state change uploaded them; `vu`:
 /// VU1 memory with the programs' static data (any frame's).
 pub fn plan(cmd: &Cmd, regs: VifRegs, header: &[u128; 6], vu: &[u8; 16384]) -> Vec<Out> {
     let qw = |a: usize| u128::from_le_bytes(vu[a * 16..a * 16 + 16].try_into().unwrap());
@@ -115,6 +122,10 @@ pub fn plan(cmd: &Cmd, regs: VifRegs, header: &[u128; 6], vu: &[u8; 16384]) -> V
         Cmd::Strip { entry, prim, verts } => {
             let tops = tops(regs, cmd.starts());
             crate::mat3::plan_strip_cmd(*entry, *prim, verts, &tops, header, [qw(0x3c8), qw(0x3e4)])
+        }
+        Cmd::Ribbon { entry, calls } => {
+            let tops = tops(regs, cmd.starts());
+            crate::mat3::plan_ribbon_cmd(*entry, calls, &tops, header, [qw(0x3c8), qw(0x3e4)])
         }
     }
 }
@@ -157,6 +168,18 @@ pub fn encode(list: &[Recorded], out: &mut Vec<u8>) {
                     out.extend_from_slice(&v.to_le_bytes());
                 }
             }
+            Cmd::Ribbon { entry, calls } => {
+                out.push(1);
+                out.extend_from_slice(&entry.to_le_bytes());
+                out.extend_from_slice(&(calls.len() as u32).to_le_bytes());
+                for c in calls {
+                    out.extend_from_slice(&(c.len() as u32).to_le_bytes());
+                    for (a, v) in c {
+                        out.extend_from_slice(&a.to_le_bytes());
+                        out.extend_from_slice(&v.to_le_bytes());
+                    }
+                }
+            }
         }
     }
 }
@@ -184,6 +207,20 @@ pub fn decode(b: &[u8]) -> Option<Vec<Recorded>> {
                 }
                 Cmd::Strip { entry, prim, verts }
             }
+            1 => {
+                let (entry, n) = (u32_(take(4)?), u32_(take(4)?));
+                let mut calls = Vec::with_capacity(n as usize);
+                for _ in 0..n {
+                    let k = u32_(take(4)?);
+                    let mut c = Vec::with_capacity(k as usize);
+                    for _ in 0..k {
+                        let a = u16::from_le_bytes(take(2)?.try_into().unwrap());
+                        c.push((a, u128_(take(16)?)));
+                    }
+                    calls.push(c);
+                }
+                Cmd::Ribbon { entry, calls }
+            }
             _ => return None,
         };
         list.push(Recorded { start, end, first_tag, cmd });
@@ -210,6 +247,7 @@ mod tests {
         let list = vec![
             Recorded { start: 0x10_0000, end: 0x10_0400, first_tag: 7 << 100 | 3, cmd: Cmd::Strip { entry: 0x12b8, prim: 0x5c, verts: vec![[1, 2, 3], [4, 5, u128::MAX]] } },
             Recorded { start: 0x10_0410, end: 0x10_0500, first_tag: 9, cmd: Cmd::Strip { entry: 0x12b0, prim: 0x4c, verts: Vec::new() } },
+            Recorded { start: 0x10_0500, end: 0x10_0600, first_tag: 3, cmd: Cmd::Ribbon { entry: 0x3a08, calls: vec![vec![(0, 5), (2, u128::MAX)], vec![]] } },
         ];
         let mut b = Vec::new();
         encode(&list, &mut b);

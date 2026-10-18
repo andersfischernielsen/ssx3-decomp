@@ -658,9 +658,9 @@ pub enum Payload {
     Microcode { addr: u32, bytes: u32 },
     /// MSKPATH3.
     MaskPath3(bool),
-    /// A captured draw (`crate::direct`): its index in [`Built::direct`]
-    /// and the VIF registers at its packet.
-    Native { index: u32, regs: crate::vif::VifRegs },
+    /// A captured draw (`crate::direct`): its index in [`Built::direct`],
+    /// the VIF registers and VU1 qw0-5 at its packet.
+    Native { index: u32, regs: crate::vif::VifRegs, header: [u128; 6] },
 }
 
 impl From<Event> for Payload {
@@ -670,7 +670,7 @@ impl From<Event> for Payload {
             Event::Direct(d) => Self::Gif(d.qwords),
             Event::Microcode { addr, bytes } => Self::Microcode { addr, bytes },
             Event::MaskPath3(b) => Self::MaskPath3(b),
-            Event::Native { index, regs } => Self::Native { index, regs },
+            Event::Native { index, regs, header } => Self::Native { index, regs, header },
         }
     }
 }
@@ -1081,6 +1081,61 @@ fn chain_cache_mode() -> (bool, bool) {
     })
 }
 
+/// Debug (`SSX3_DIRECT_CHECK=1`): captured packets are decoded too and
+/// compared with their commands.
+fn direct_check() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("SSX3_DIRECT_CHECK").is_some())
+}
+
+/// Decode a captured packet (CNT / REF tags from `start` to its end) and
+/// compare the program starts' input with the command's; the first
+/// difference.
+fn check_capture(m: &dyn Mem, vif: &Vif1, start: u32, r: &crate::direct::Recorded) -> Option<String> {
+    let mut v = vif.clone_state();
+    let mut t = start;
+    for _ in 0..4096 {
+        if t == r.end {
+            break;
+        }
+        let tag = m.qword(t);
+        let qwc = (tag & 0xffff) as u32;
+        let a = ((tag >> 32) & 0x7fff_fff0) as u32;
+        let (data, next) = match (tag >> 28) & 7 {
+            1 => (t + 16, t + 16 + 16 * qwc),
+            3 => (a, t + 16),
+            id => return Some(format!("tag id {id} at {t:#x}")),
+        };
+        let q: Vec<u128> = (0..qwc).map(|i| m.qword(data + 16 * i)).collect();
+        v.write(&q);
+        t = next;
+    }
+    let calls: Vec<_> = v.events.iter().filter_map(|e| if let Event::Call(c) = e { Some(c) } else { None }).collect();
+    match &r.cmd {
+        crate::direct::Cmd::Ribbon { entry, calls: want } => {
+            if calls.len() != want.len() {
+                return Some(format!("{} starts decoded, {} captured", calls.len(), want.len()));
+            }
+            for (k, (c, w)) in calls.iter().zip(want).enumerate() {
+                if c.entry != Some(*entry) {
+                    return Some(format!("start {k}: entry {:x?}", c.entry));
+                }
+                let got: HashMap<u16, u128> = c.writes().map(|&(a, q)| ((a.wrapping_sub(c.top as u16)) & 0x3ff, q)).collect();
+                for &(a, q) in w {
+                    if got.get(&a) != Some(&q) {
+                        return Some(format!("start {k} qword {a}: decoded {:x?} captured {q:#x}", got.get(&a)));
+                    }
+                }
+                if got.len() < w.len() {
+                    return Some(format!("start {k}: {} decoded qwords, {} captured", got.len(), w.len()));
+                }
+            }
+            None
+        }
+        crate::direct::Cmd::Strip { .. } => None,
+    }
+}
+
 /// Build the frame. `g` = PS2GraphicsMan, called when EndFrame publishes the
 /// chains (after `RenderFrame`, before `DeferMan_ResetFrame`).
 pub fn build(m: &dyn Mem, g: u32, carry: &Carry) -> Built {
@@ -1149,7 +1204,13 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
             if let Some(&k) = native.get(&tadr).filter(|_| w.in_payload.is_some() && recording.is_none() && w.vif.idle()) {
                 let r = &direct[k];
                 if w.m.qword(tadr) == r.first_tag {
-                    w.vif.events.push(Event::Native { index: k as u32, regs: w.vif.regs });
+                    if direct_check() {
+                        if let Some(e) = check_capture(w.m, &w.vif, tadr, r) {
+                            issues.push(format!("capture at {tadr:#x}: {e}"));
+                        }
+                    }
+                    let header = std::array::from_fn(|i| u128::from_le_bytes(w.vif.mem[16 * i..16 * i + 16].try_into().unwrap()));
+                    w.vif.events.push(Event::Native { index: k as u32, regs: w.vif.regs, header });
                     w.vif.skip_starts(r.cmd.starts());
                     w.take_events();
                     tadr = r.end;

@@ -1485,6 +1485,46 @@ pub fn plan_strip_cmd(entry: u32, prim: u32, verts: &[[u128; 3]], tops: &[u32], 
     })
 }
 
+/// Ribbons captured at the game's emitters (`crate::direct::Cmd::Ribbon`):
+/// each program start as [`plan_gpu_strip`] (or [`ribbon`] where that keeps
+/// the CPU) plans it, on a memory holding the header, the fan tags and the
+/// start's input at its TOP.
+pub fn plan_ribbon_cmd(entry: u32, calls: &[Vec<(u16, u128)>], tops: &[u32], header: &[u128; 6], fans: [u128; 2]) -> Vec<crate::direct::Out> {
+    use crate::direct::Out;
+    thread_local! {
+        static SCRATCH: std::cell::RefCell<Box<[u8; 16384]>> = std::cell::RefCell::new(Box::new([0; 16384]));
+    }
+    // (0x3a00: no native program, as for the packet's call.)
+    if entry != 0x3a08 {
+        return Vec::new();
+    }
+    SCRATCH.with_borrow_mut(|mem| {
+        let mut outs = Vec::new();
+        for (writes, &top) in calls.iter().zip(tops) {
+            let mut m = Mem(&mut **mem);
+            for (i, &q) in header.iter().enumerate() {
+                m.st(i as u16, q4(q));
+            }
+            m.st(FAN_TAG_A, q4(fans[0]));
+            m.st(FAN_TAG_B, q4(fans[1]));
+            let t = (top & 0x3ff) as u16;
+            for &(a, q) in writes {
+                m.st(t.wrapping_add(a), q4(q));
+            }
+            match plan_gpu_strip(0x3a08, top, mem) {
+                Some(c) => outs.push(Out::Gpu(c)),
+                None => {
+                    let mut gif = Vec::new();
+                    if ribbon(&mut Mem(&mut **mem), t, &mut |p| gif.extend_from_slice(p)) {
+                        outs.push(Out::Gif(gif));
+                    }
+                }
+            }
+        }
+        outs
+    })
+}
+
 fn q4(q: u128) -> V {
     std::array::from_fn(|l| (q >> (32 * l)) as u32)
 }

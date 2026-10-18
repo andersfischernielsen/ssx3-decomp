@@ -2001,21 +2001,20 @@ impl Build {
                     }
                 }
                 Event::Direct(dd) => b.gs.gif(&dd.qwords),
-                Event::Native { index, regs } => {
+                Event::Native { index, regs, header } => {
                     // A draw captured at the game's draw function: drawn
-                    // from its command with the draw's header.
-                    let header = n.and_then(|n| draws.get(n)).and_then(|d| usize::try_from(d.header_matrix).ok()).and_then(|m| fr.matrices.get(m)).map(|m| m.header_qwords());
-                    match (built.direct.get(*index as usize), header) {
-                        (Some(r), Some(h)) => {
+                    // from its command.
+                    match built.direct.get(*index as usize) {
+                        Some(r) => {
                             b.stats.native_draws += 1;
-                            for o in ssx3_render::direct::plan(&r.cmd, *regs, &h, &b.vu) {
+                            for o in ssx3_render::direct::plan(&r.cmd, *regs, header, &b.vu) {
                                 match o {
                                     ssx3_render::direct::Out::Gpu(c) => b.gs.gpu_draw(c),
                                     ssx3_render::direct::Out::Gif(g) => b.gs.gif(&g),
                                 }
                             }
                         }
-                        _ => b.stats.vu_missing += 1,
+                        None => b.stats.vu_missing += 1,
                     }
                 }
                 Event::MaskPath3(m) => {
