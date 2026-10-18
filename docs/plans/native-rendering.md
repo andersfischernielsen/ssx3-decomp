@@ -402,7 +402,7 @@ part of running recompiled game code (guest memory, the EE kernel's
 threads, PS2 float and VU0 semantics). Those go as the game logic becomes
 typed Rust (`plans/roadmap.md` phase 2), the next step.
 | movies | done (N5) | | |
-| light queries | the native flare visibility query (`lensfx_query_native`) reads the renderer's latest depth, which the render thread produces asynchronously, so two runs of a race can end with a few flag bytes different (light visibility) | 4 bytes after 6000 frames | depth tagged with its frame and read at a fixed lag (waiting for it), with a rule for frames the renderer drops. Until then replay A/B checks use `SSX3_DEBUG_LENSFX_VIS=1` (the generated query, deterministic) |
+| light queries | done: the native flare visibility query reads the depth of the frame two before, tagged with its frame number, waiting for the render thread when it is late (`depth_of`, 100 ms cap; `SSX3_DEPTH_SYNC=0` for the latest). Two race runs end with identical RAM; the browser (no render thread) keeps the latest depth | | |
 
 ## Rules
 

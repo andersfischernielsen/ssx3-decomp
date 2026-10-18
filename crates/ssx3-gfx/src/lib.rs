@@ -131,7 +131,9 @@ pub struct Inner {
     pub want_depth: bool,
     /// This frame's depth readback in flight (buffer, size, ZMAX + 1).
     /// (The flag: mapped; the browser cannot wait for it.)
-    pending_depth: Option<(wgpu::Buffer, wgpu::SubmissionIndex, u32, u32, f32, u32, u32, Arc<std::sync::atomic::AtomicBool>)>,
+    pending_depth: Option<(wgpu::Buffer, wgpu::SubmissionIndex, u32, u32, f32, u32, u32, Arc<std::sync::atomic::AtomicBool>, u64)>,
+    /// Frames received by `render_built` (the next frame's number).
+    frames_in: u64,
     /// ZMAX + 1 of the frame's Z buffer (depth is stored as Z / it).
     zscale: f32,
     /// Frames timed and the time (ms) in build, prepare, encode+submit,
@@ -183,7 +185,10 @@ pub struct Shared {
     /// Frames sent and not yet rendered.
     pending: Mutex<usize>,
     idle: std::sync::Condvar,
-    depth: Mutex<Option<ssx3_ps2::frame_sink::Depth>>,
+    /// The latest depth readback and the number of the frame it is from
+    /// (frames counted as `render_built` receives them).
+    depth: Mutex<Option<(u64, ssx3_ps2::frame_sink::Depth)>>,
+    depth_ready: std::sync::Condvar,
     /// The latest frame's images (in-between ones first) and when they
     /// were ready.
     present: Mutex<Option<(Vec<wgpu::Texture>, web_time::Instant)>>,
@@ -260,6 +265,7 @@ impl Renderer {
             phase1_end: usize::MAX,
             want_depth: false,
             pending_depth: None,
+            frames_in: 0,
             zscale: 16777216.0,
             timing: (0, [0.0; 4]),
             present: Vec::new(),
@@ -427,7 +433,31 @@ impl ssx3_ps2::frame_sink::FrameSink for Renderer {
     }
 
     fn depth(&mut self) -> Option<ssx3_ps2::frame_sink::Depth> {
-        self.1.depth.lock().unwrap().take()
+        self.1.depth.lock().unwrap().take().map(|d| d.1)
+    }
+
+    /// Frame `frame`'s depth, waiting for the render thread to read it back
+    /// (it does while rendering the frame after it): the light queries then
+    /// see the same depth whatever the threads' timing. Without a render
+    /// thread (the browser), or after 100 ms, the latest depth instead.
+    fn depth_of(&mut self, frame: u64) -> Option<ssx3_ps2::frame_sink::Depth> {
+        if self.1.tx.lock().unwrap().is_none() {
+            return self.depth();
+        }
+        let deadline = web_time::Instant::now() + std::time::Duration::from_millis(100);
+        let mut g = self.1.depth.lock().unwrap();
+        loop {
+            match &*g {
+                Some((f, _)) if *f == frame => return g.take().map(|d| d.1),
+                Some((f, _)) if *f > frame => return g.take().map(|d| d.1),
+                _ => {}
+            }
+            let now = web_time::Instant::now();
+            if now >= deadline {
+                return g.take().map(|d| d.1);
+            }
+            g = self.1.depth_ready.wait_timeout(g, deadline - now).unwrap().0;
+        }
     }
 }
 
@@ -671,6 +701,7 @@ impl Inner {
     /// Render a published frame (built with `carry`) over the memory it
     /// reads; keep it in the frame-dump ring if it carries all of memory.
     pub fn render_built(&mut self, built: &Built, carry: &ssx3_render::frame::Carry, mem: &ssx3_ps2::frame_sink::FrameMem) {
+        self.frames_in += 1;
         if let Some(full) = &mem.full {
             ssx3_ps2::frame_sink::dump_frame(carry, full, &self.vu[..]);
         }
@@ -1375,7 +1406,7 @@ impl Inner {
             // The previous frame's depth (its readback has had a frame to
             // complete): the light queries see depth one frame late, and
             // the CPU does not wait for this frame's GPU work.
-            if let Some((prev, prev_idx, pw, ph, zs, lw, lh, mapped)) = self.pending_depth.take() {
+            if let Some((prev, prev_idx, pw, ph, zs, lw, lh, mapped, prev_frame)) = self.pending_depth.take() {
                 let slice = prev.slice(..);
                 if cfg!(target_arch = "wasm32") {
                     let _ = self.dev.poll(wgpu::PollType::Poll);
@@ -1397,13 +1428,14 @@ impl Inner {
                         let d = f32::from_le_bytes([raw[o], raw[o + 1], raw[o + 2], raw[o + 3]]);
                         (d as f64 * zs).round().min(zs - 1.0) as u32
                     };
-                    *self.shared.depth.lock().unwrap() = Some(ssx3_ps2::frame_sink::Depth { w: lw, h: lh, z: Box::new(z) });
+                    *self.shared.depth.lock().unwrap() = Some((prev_frame, ssx3_ps2::frame_sink::Depth { w: lw, h: lh, z: Box::new(z) }));
+                    self.shared.depth_ready.notify_all();
                 }
             }
             let mapped = Arc::new(std::sync::atomic::AtomicBool::new(false));
             let m = mapped.clone();
             buf.slice(..).map_async(wgpu::MapMode::Read, move |r| m.store(r.is_ok(), std::sync::atomic::Ordering::Release));
-            self.pending_depth = Some((buf, sub_idx, t.w, t.h, self.zscale, w, h, mapped));
+            self.pending_depth = Some((buf, sub_idx, t.w, t.h, self.zscale, w, h, mapped, self.frames_in - 1));
             self.timing.1[3] += t_sub.elapsed().as_secs_f64() * 1e3;
         }
         if let Some(pb) = probe_buf {

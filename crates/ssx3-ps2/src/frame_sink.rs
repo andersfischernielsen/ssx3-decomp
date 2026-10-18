@@ -25,6 +25,12 @@ pub trait FrameSink: Send {
     fn depth(&mut self) -> Option<Depth> {
         None
     }
+
+    /// Frame `frame`'s depth (frames numbered from 0 as published), when
+    /// the sink can wait for it; by default the latest.
+    fn depth_of(&mut self, _frame: u64) -> Option<Depth> {
+        self.depth()
+    }
 }
 
 /// A frame's depth as GS Z values, `w`×`h`; `z(x, y)` converts one pixel
@@ -132,6 +138,8 @@ pub fn timing_report() -> String {
 static NATIVE: AtomicBool = AtomicBool::new(false);
 static ACTIVE: AtomicBool = AtomicBool::new(false);
 static LAST_PUBLISH: AtomicU64 = AtomicU64::new(0);
+/// Frames published to the sink so far (native mode).
+static PUBLISHED: AtomicU64 = AtomicU64::new(0);
 
 /// The published frame's chain heads: VIF1 phase 1/2, GIF phase 1/2.
 static HEADS: [AtomicU64; 4] = [const { AtomicU64::new(0) }; 4];
@@ -297,7 +305,17 @@ pub fn on_signal_sema(c: &mut Cpu, id: i32) {
         for (h, v) in HEADS.iter().zip(heads) {
             h.store(v as u64, Ordering::Release);
         }
-        let depth = s.sink.depth();
+        // (The light queries this frame's kick runs read the depth of the
+        // frame two before, the newest the render thread has surely read
+        // back: the same depth whatever the threads' timing.
+        // SSX3_DEPTH_SYNC=0: the latest instead.)
+        static SYNC: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        let n = PUBLISHED.fetch_add(1, Ordering::Relaxed);
+        let depth = if *SYNC.get_or_init(|| std::env::var("SSX3_DEPTH_SYNC").map_or(true, |v| v != "0")) {
+            n.checked_sub(2).and_then(|f| s.sink.depth_of(f))
+        } else {
+            s.sink.depth()
+        };
         drop(guard);
         LAST_PUBLISH.store(crate::mr!(c).sched.frames.max(1), Ordering::Release);
         if let Some(d) = depth {
