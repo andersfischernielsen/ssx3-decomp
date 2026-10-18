@@ -19,6 +19,8 @@
 pub enum Program {
     /// Type 3 meshes (`mat3`, entries 0x2270 / 0x22c8 / 0x2320 / 0x2358).
     Mat3Mesh = 0,
+    /// Type 3 float strips and ribbons (`mat3`, entries 0x12b8 / 0x3a08).
+    Mat3Strip = 1,
 }
 
 impl Program {
@@ -26,12 +28,14 @@ impl Program {
     pub fn vs_entry(self) -> &'static str {
         match self {
             Program::Mat3Mesh => "vs_mat3_mesh",
+            Program::Mat3Strip => "vs_mat3_strip",
         }
     }
 
     pub fn from_u8(v: u8) -> Option<Program> {
         match v {
             0 => Some(Program::Mat3Mesh),
+            1 => Some(Program::Mat3Strip),
             _ => None,
         }
     }
@@ -104,7 +108,10 @@ pub fn enabled() -> bool {
 /// leaves the memory untouched, for the CPU program.
 pub fn plan(hash: u64, entry: u32, top: u32, itop: u32, mem: &mut [u8; 16384]) -> Option<Vec<GpuCall>> {
     match hash {
-        crate::mat3::HASH => crate::mat3::plan_gpu(entry, top, itop, mem).map(|c| vec![c]),
+        crate::mat3::HASH => match entry {
+            0x12b8 | 0x3a08 => crate::mat3::plan_gpu_strip(entry, top, mem).map(|c| vec![c]),
+            _ => crate::mat3::plan_gpu(entry, top, itop, mem).map(|c| vec![c]),
+        },
         _ => None,
     }
 }
@@ -202,6 +209,7 @@ mod tests {
 pub fn check(hash: u64, calls: &[GpuCall], gif: &[u128]) -> Option<String> {
     match (hash, calls) {
         (crate::mat3::HASH, [call]) if call.program == Program::Mat3Mesh => check_mat3(call, gif),
+        (crate::mat3::HASH, [call]) if call.program == Program::Mat3Strip => crate::mat3::check_gpu_strip(call, gif),
         _ => None,
     }
 }

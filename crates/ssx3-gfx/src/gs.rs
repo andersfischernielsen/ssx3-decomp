@@ -720,6 +720,11 @@ impl Gs {
         if bits(lo, 46, 1) != 0 {
             self.prim = bits(lo, 47, 11);
         }
+        // Nothing drawn (every triangle culled): no batch, as the GS side
+        // would make none for a kick of ADC vertices only.
+        if call.indices.is_empty() {
+            return;
+        }
         let Some(st) = self.state() else {
             self.dropped += 1;
             return;
