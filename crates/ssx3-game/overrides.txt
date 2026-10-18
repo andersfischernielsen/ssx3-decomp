@@ -1504,5 +1504,37 @@
 0x00333ef8    OverlapList_CollideVolume
 0x002c0778    WorldPainterQuery_UpdateAtPos
 0x002b83f8    cWorldSound_QueryTreeNode
+# Phase 2 wave: oc33, oc34, oc35, oc36
+0x0011e150    Rider_UpdateBounds
+0x0011fa10    Rider_UpdateBoardLean
+0x0011f3d8    Rider_SolveLegIK
+0x0011eb98    Rider_UpdateSkeleton
+0x00120378    Rider_UpdateSpeedAnims
+0x001211f8    Rider_UpdateSlewedParams
+0x00117c28    RiderMetrix_Update
+0x00329f98    RiderSphereTree_Intersect
+0x0013d1b8    RiderGroundState_ProbeGround
+0x00104e70    Rider_FindWallContact
+0x00105398    Rider_HandleWallCollision
+0x00107888    Rider_CheckRiderCollisions
+0x0032b6e0    AIFwdDiffCache_CollideEntry
+0x002eb198    RiderBase_RenderPowerUpTrail
+0x002ef950    cAirStreamerFX_Render
+0x002e3af8    cPlayerPulseFX_Render
+0x002e7a10    cSpeedBoostStreamerFX_Render
+0x002f1a08    AttachedEmitterFX_Update
+0x002dabc8    cBoardSparkFX_Update
+0x002f6168    WorldLightMan_LightDistance
+0x003717c0    DynamicEmitter_SpawnAt
+0x003710d0    DynamicEmitter_Spawn
+0x00328360    SpatialKey_ClassifyAABB
+0x0026a638    Path_GetClosestPointFrom
+0x0022c410    GameModule_DrawBezierPatch
+0x003889f0    PS2GraphicsMan_v58
+0x003aa028    cWorldCache_StreamerUpdateViewNode
+0x0021ed48    HUD_DrawPositionPanel
+0x003291e0    SpatialHash_Update
+0x0038a6a8    Irradiance_AddDynamicLight
+0x002ed490    WorldPainter_UpdateView
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
