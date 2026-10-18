@@ -41,11 +41,20 @@ material state, textures); meshes and textures live on the GPU; vertex work
 (transform, skinning, lighting, particles, Bézier patches) runs in shaders.
 No guest-RAM snapshot, no DMA/VIF/GIF parsing, no VU1 programs on the CPU.
 
+**Render directly (owner decision, 2026-10-18).** The renderer must not sit
+behind the PS2 hardware interface and reconstruct the frame from packets and
+a RAM copy: the game's draw functions themselves become native and record
+GPU draws where the game says "draw this". No render worker or other extra
+data passing is added on the way (a render-worker split for the browser was
+considered and dropped). The GPU runs asynchronously, so recording draws on
+the game thread is cheap; the render thread and the snapshot go once every
+draw family is direct.
+
 ## Steps
 
 Each step keeps the game playable and is verified before the next.
 
-### N1: VU1 vertex programs on the GPU 🟡
+### N1: VU1 vertex programs on the GPU ✅
 
 Replace "run the VU1 program on the CPU, decode its GIF output" with GPU
 vertex generation per material type, fed by the VU input the typed frame
@@ -93,7 +102,29 @@ against the CPU path on menu and race frames.
   Sutherland–Hodgman clipper.
 - `SSX3_GPU_VU=0` keeps the CPU programs (reference, A/B).
 
-### N2: typed draws at the game's render layer ⬜
+### N2: direct rendering at the game's draw functions 🟡
+
+Family by family (order: models slot 95/96, riders 99-101/124, Bézier
+terrain, particles/trails 82-86, HUD strips 71 + 2D DIRECT slots 72-81, grid
+meshes, post passes and the rest):
+
+- **D1 (capture):** the family's draw function is wrapped: the generated
+  body still runs (guest-visible state, cycles and event points identical,
+  so RAM identity holds by construction), and a native draw command is
+  recorded from the function's own inputs (mesh, matrices, textures,
+  render state), keyed by the packet it wrote. The renderer draws the
+  command (meshes cached on the GPU, the N1 vertex shaders) and skips that
+  packet: no VIF decoding, no per-frame mesh upload for the family.
+- **D2 (replace):** once every family is captured, the render layer stops
+  building packets: the draw functions, `PS2GraphicsMan_EndFrame` /
+  `RenderFrame`, the kick thread and texture uploads become native, keeping
+  only what the rest of the game reads (the render-state stack, matrix
+  records, buffer states, counters). The gate becomes RAM identity with the
+  render-private regions masked, plus behaviour (cycle charges move).
+- Then N3 is immediate: nothing reads guest RAM after the frame is
+  recorded, so the snapshot and the render thread go.
+
+Background (the earlier proposal, still the reference for the details):
 
 Override the game's draw entry points (boundaries §4.3: draw slots 95/96
 models, 99-101/124 riders, 71 strips, 72-81 2D, 82-86 particles/trails,
@@ -134,10 +165,15 @@ hash or hook load/unload), VifBuff double buffering (copy at record time),
 scratchpad-resident bones/matrices (capture during the call), the layer
 split the lens-flare queries need.
 
-### N3: no guest-RAM snapshot ⬜
+### N3: no guest-RAM snapshot 🟡
 
 With N2 the renderer consumes the command list; the 32 MiB copy per frame
 goes (the commands carry what they reference).
+
+Step 1 (done): every store into EE RAM marks its page (`bus::mark_written`,
+the bus and the DMA path), and each snapshot buffer copies only the pages
+written since it was last filled. Measured on a race dump, the renderer
+reads ~845 pages (3.3 MiB) per frame: VifBuff, the model chains, textures.
 
 ### N4: strip the hardware models ⬜
 
@@ -164,8 +200,8 @@ IPU emulation → a native MPEG-2 decoder feeding a texture.
 
 | Step | State | Notes |
 | --- | --- | --- |
-| N1 | 🟡 | framework + type 3 meshes on `main` (race frames match the CPU programs to rounding); strips, riders, Bézier, particles/snow in progress |
-| N2 | ⬜ | render layer mapped (`n2-render-layer.md`) |
-| N3 | ⬜ | |
+| N1 | ✅ | all seven programs: meshes, strips/ribbons, riders, Bézier terrain, particles, snow (type 3 0x2400 PRIM-only and 0x3bf0 line shape stay on the CPU); ~73% of VU calls on the GPU, merged into ~0.85M batches per 6000 frames; race replay frames match the CPU programs to rounding; native render 6.5 → 5.3 ms per frame |
+| N2 | 🟡 | direct rendering chosen (no render worker); render layer mapped (`n2-render-layer.md`); D1 models next |
+| N3 | 🟡 | step 1: snapshots copy only the pages written since the buffer was last filled (frame sink 1.9 → 0.5 ms per frame natively; `SSX3_SNAPSHOT_CHECK`); the renderer still reads ~3.3 MiB of guest RAM per frame |
 | N4 | ⬜ | |
 | N5 | ⬜ | |
