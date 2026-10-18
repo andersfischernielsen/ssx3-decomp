@@ -130,11 +130,31 @@ pub struct GpuFrame {
 #[derive(Default)]
 pub struct MeshArena {
     pub data: Vec<[u32; 4]>,
-    pub at: std::collections::HashMap<u64, u32>,
+    /// Per key: where its data starts, its alpha maximum.
+    pub at: std::collections::HashMap<u64, (u32, f32)>,
     /// `data[uploaded..]` is not on the GPU yet.
     pub uploaded: usize,
     /// Bumped when the arena is cleared (its buffer is filled anew).
     pub epoch: u64,
+}
+
+impl MeshArena {
+    /// The arena's size cap (qwords).
+    const CAP: usize = (64 << 20) / 16;
+
+    /// Start over once the arena is past its cap (everything is uploaded
+    /// again). Only between frames: a frame's plan relies on what the arena
+    /// keeps ([`Self::kept`]).
+    pub fn limit(&mut self) {
+        if self.data.len() > Self::CAP {
+            *self = MeshArena { epoch: self.epoch + 1, ..Default::default() };
+        }
+    }
+
+    /// The alpha maximum of the data kept under `key`, if any.
+    pub fn kept(&self, key: u64) -> Option<f32> {
+        self.at.get(&key).map(|&(_, a)| a)
+    }
 }
 
 /// Arena reads in the shaders: a data index with this bit set.
@@ -729,16 +749,18 @@ impl Gs {
         let base = match call.mesh_key {
             Some(k) => {
                 let mut a = self.gpu.arena.lock().unwrap();
-                if a.data.len() + call.data.len() > (64 << 20) / 16 {
-                    // (A cap: start over; everything is uploaded again.)
-                    *a = MeshArena { epoch: a.epoch + 1, ..Default::default() };
-                }
                 match a.at.get(&k) {
-                    Some(&at) => at | ARENA_BIT,
+                    Some(&(at, _)) => at | ARENA_BIT,
+                    // (Planned as kept but gone: the arena started over
+                    // between the plan and now.)
+                    None if call.data.is_empty() => {
+                        self.dropped += 1;
+                        return;
+                    }
                     None => {
                         let at = a.data.len() as u32;
                         a.data.extend_from_slice(&call.data);
-                        a.at.insert(k, at);
+                        a.at.insert(k, (at, call.alpha_max));
                         at | ARENA_BIT
                     }
                 }

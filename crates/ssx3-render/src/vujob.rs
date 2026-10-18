@@ -10,7 +10,9 @@
 //! Layout (little-endian): job = memory (16384 bytes), call count (u32),
 //! per call: event index (u32), program hash (u64, 0 = none), entry (u32,
 //! `u32::MAX` = none), top (u32), itop (u32), source key (u64,
-//! `u64::MAX` = none; `VuCall::src`), input count (u32), inputs
+//! `u64::MAX` = none; `VuCall::src`), the alpha maximum of its mesh data
+//! when the renderer keeps that data already (f32, NaN = not kept; see
+//! [`run_call`]), input count (u32), inputs
 //! (u16 address, u128 value). Result = output count (u32), per output:
 //! event index (u32), kind (u8: 0 GIF, 1 GPU), then for GIF the qword count
 //! (u32) and the qwords, for GPU the [`crate::gpu::GpuCall`]; then the
@@ -42,14 +44,16 @@ fn check_gpu() -> bool {
 }
 
 /// Run one call natively: its GPU plan (when enabled and ported) or the
-/// program. None: no native program for it.
-pub fn run_call(hash: u64, entry: u32, top: u32, itop: u32, src: Option<u64>, mem: &mut [u8; MEM]) -> Option<CallOut> {
+/// program. None: no native program for it. `kept`: the renderer keeps the
+/// call's mesh data (`crate::gpu::mesh_key` of `src`), with this alpha
+/// maximum: the plan leaves the data out.
+pub fn run_call(hash: u64, entry: u32, top: u32, itop: u32, src: Option<u64>, kept: Option<f32>, mem: &mut [u8; MEM]) -> Option<CallOut> {
     if crate::gpu::enabled() {
         let before = check_gpu().then(|| *mem);
-        if let Some(mut g) = crate::gpu::plan(hash, entry, top, itop, mem) {
+        let kept = kept.filter(|_| src.is_some() && before.is_none());
+        if let Some(mut g) = crate::gpu::plan(hash, entry, top, itop, kept, mem) {
             for c in g.iter_mut() {
-                // (Keyed by the input's source and the draw's place in the call.)
-                c.mesh_key = c.mesh_key.and(src).map(|s| s.wrapping_mul(0x9e37_79b9).wrapping_add(c.program as u64));
+                c.mesh_key = c.mesh_key.and(src).map(|s| crate::gpu::mesh_key(s, c.program));
             }
             if let Some(mut m) = before {
                 let mut gif = Vec::new();
@@ -88,19 +92,24 @@ impl Reader<'_> {
     }
 }
 
-/// Encode a job: `calls` are (event index, call, program hash).
-pub fn encode(mem: &[u8; MEM], calls: &[(usize, &VuCall, Option<u64>)]) -> Vec<u8> {
-    let n: usize = calls.iter().map(|(_, c, _)| 36 + 18 * c.input.len()).sum();
+/// A call of a job: event index, call, program hash, kept mesh data
+/// ([`run_call`]).
+pub type JobCall<'a> = (usize, &'a VuCall, Option<u64>, Option<f32>);
+
+/// Encode a job.
+pub fn encode(mem: &[u8; MEM], calls: &[JobCall]) -> Vec<u8> {
+    let n: usize = calls.iter().map(|(_, c, _, _)| 40 + 18 * c.input.len()).sum();
     let mut w = Vec::with_capacity(MEM + 4 + n);
     w.extend_from_slice(mem);
     w.extend_from_slice(&(calls.len() as u32).to_le_bytes());
-    for &(i, c, h) in calls {
+    for &(i, c, h, kept) in calls {
         w.extend_from_slice(&(i as u32).to_le_bytes());
         w.extend_from_slice(&h.unwrap_or(0).to_le_bytes());
         w.extend_from_slice(&c.entry.unwrap_or(u32::MAX).to_le_bytes());
         w.extend_from_slice(&c.top.to_le_bytes());
         w.extend_from_slice(&c.itop.to_le_bytes());
         w.extend_from_slice(&c.src.unwrap_or(u64::MAX).to_le_bytes());
+        w.extend_from_slice(&kept.unwrap_or(f32::NAN).to_le_bytes());
         w.extend_from_slice(&(c.input.len() as u32).to_le_bytes());
         for &(a, v) in &c.input {
             w.extend_from_slice(&a.to_le_bytes());
@@ -121,6 +130,7 @@ pub fn run(job: &[u8]) -> Vec<u8> {
     for _ in 0..n {
         let (i, hash, entry, top, itop) = (r.u32(), r.u64(), r.u32(), r.u32(), r.u32());
         let src = Some(r.u64()).filter(|&s| s != u64::MAX);
+        let kept = Some(f32::from_bits(r.u32())).filter(|a| !a.is_nan());
         for _ in 0..r.u32() {
             let (a, v) = (r.u16(), r.u128());
             let a = (a as usize & 1023) * 16;
@@ -129,7 +139,7 @@ pub fn run(job: &[u8]) -> Vec<u8> {
         if hash == 0 || entry == u32::MAX {
             continue;
         }
-        let Some(o) = run_call(hash, entry, top, itop, src, &mut mem) else { continue };
+        let Some(o) = run_call(hash, entry, top, itop, src, kept, &mut mem) else { continue };
         out.extend_from_slice(&i.to_le_bytes());
         match o {
             CallOut::Gif(q) => {
@@ -211,19 +221,18 @@ mod tests {
                 src: (k == 3).then_some(42),
             })
             .collect();
-        let refs: Vec<(usize, &VuCall, Option<u64>)> =
-            calls.iter().enumerate().map(|(k, c)| (k * 3, c, (k != 4).then_some(crate::mat6::HASH))).collect();
+        let refs: Vec<JobCall> = calls.iter().enumerate().map(|(k, c)| (k * 3, c, (k != 4).then_some(crate::mat6::HASH), (k == 3).then_some(64.0))).collect();
         let (outs, end) = decode(&run(&encode(&mem, &refs)));
 
         let mut direct = Box::new(mem);
         let mut want = Vec::new();
-        for &(i, c, h) in &refs {
+        for &(i, c, h, kept) in &refs {
             for &(a, v) in &c.input {
                 let a = (a as usize & 1023) * 16;
                 direct[a..a + 16].copy_from_slice(&v.to_le_bytes());
             }
             let (Some(e), Some(h)) = (c.entry, h) else { continue };
-            if let Some(o) = run_call(h, e, c.top, c.itop, c.src, &mut direct) {
+            if let Some(o) = run_call(h, e, c.top, c.itop, c.src, kept, &mut direct) {
                 want.push((i, o));
             }
         }

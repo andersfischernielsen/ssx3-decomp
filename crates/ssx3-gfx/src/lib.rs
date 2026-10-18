@@ -904,7 +904,8 @@ impl Inner {
             let data = bytes(g.data.as_flattened());
             let idx = bytes(&g.indices);
             let of = bytes(&g.call_start);
-            if std::env::var_os("DBG_UPLOAD").is_some() {
+            static DBG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+            if *DBG.get_or_init(|| std::env::var_os("DBG_UPLOAD").is_some()) {
                 eprintln!("[upload] calls {} KiB, data {} KiB, indices {} KiB, call starts {} KiB, verts {} KiB", calls.len() >> 10, data.len() >> 10, idx.len() >> 10, of.len() >> 10, vbytes.len() >> 10);
             }
             let [cb, db, ib, ob] = &mut self.gbuf;
@@ -1556,7 +1557,7 @@ type VuChunk = (Vec<(usize, CallOut)>, Box<[u8; 16384]>);
 /// chunk.
 struct VuPlan<'a> {
     vu0: Box<[u8; 16384]>,
-    calls: Vec<(usize, &'a ssx3_render::vif::VuCall, Option<u64>)>,
+    calls: Vec<ssx3_render::vujob::JobCall<'a>>,
     bounds: Vec<usize>,
     starts: Vec<std::sync::Mutex<Option<Box<[u8; 16384]>>>>,
     done: Vec<(std::sync::Mutex<Option<VuChunk>>, std::sync::Condvar)>,
@@ -1571,9 +1572,9 @@ struct VuPlan<'a> {
 }
 
 impl VuPlan<'_> {
-    fn run(chunk: &[(usize, &ssx3_render::vif::VuCall, Option<u64>)], mut mem: Box<[u8; 16384]>, subst: Option<&HashMap<[u32; 16], [u32; 16]>>, model_subst: Option<&HashMap<[u32; 16], [u32; 16]>>) -> VuChunk {
+    fn run(chunk: &[ssx3_render::vujob::JobCall], mut mem: Box<[u8; 16384]>, subst: Option<&HashMap<[u32; 16], [u32; 16]>>, model_subst: Option<&HashMap<[u32; 16], [u32; 16]>>) -> VuChunk {
         let mut outs = Vec::with_capacity(chunk.len());
-        for &(i, c, hash) in chunk {
+        for &(i, c, hash, kept) in chunk {
             for &(a, v) in &c.input {
                 let a = (a as usize & 1023) * 16;
                 mem[a..a + 16].copy_from_slice(&v.to_le_bytes());
@@ -1588,7 +1589,7 @@ impl VuPlan<'_> {
                     interp::substitute(&mut mem[top..top + 64], s);
                 }
             }
-            if let Some(o) = ssx3_render::vujob::run_call(hh, entry, c.top, c.itop, c.src, &mut mem) {
+            if let Some(o) = ssx3_render::vujob::run_call(hh, entry, c.top, c.itop, c.src, kept, &mut mem) {
                 outs.push((i, o));
             }
         }
@@ -2010,7 +2011,11 @@ impl Build {
 
     fn plan_vu_calls<'a>(b: &Build, built: &'a Built, draws: &[&frame::Draw]) -> VuPlan<'a> {
         // Each call's program: the material of the draw it belongs to.
-        let mut calls: Vec<(usize, &ssx3_render::vif::VuCall, Option<u64>)> = Vec::new();
+        let mut calls: Vec<ssx3_render::vujob::JobCall> = Vec::new();
+        // Mesh data the GPU keeps already: the plan leaves it out (the
+        // arena only grows until the next frame's plan).
+        let mut arena = b.gs.gpu.arena.lock().unwrap();
+        arena.limit();
         // Calls that start a draw (chunks may only begin there: within a
         // draw, programs pass state from call to call).
         let mut draw_start: Vec<bool> = Vec::new();
@@ -2030,7 +2035,8 @@ impl Build {
                 // patches share state across draws.)
                 draw_start.push(cur != last_draw && calls.last().is_none_or(|l| l.2 != hash));
                 last_draw = cur;
-                calls.push((i, c, hash));
+                let kept = c.src.filter(|_| hash == Some(ssx3_render::mat3::HASH)).and_then(|s| arena.kept(ssx3_render::gpu::mesh_key(s, ssx3_render::gpu::Program::Mat3Mesh)));
+                calls.push((i, c, hash, kept));
             }
         }
         static SEQ: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -2044,7 +2050,8 @@ impl Build {
         let mut bounds: Vec<usize> = Vec::new();
         let mut starts = Vec::new();
         let mut img = b.vu.clone();
-        for (k, (_, c, _)) in calls.iter().enumerate() {
+        drop(arena);
+        for (k, (_, c, _, _)) in calls.iter().enumerate() {
             if k == 0 || (k >= bounds.last().unwrap() + per && draw_start[k] && threads > 1) {
                 bounds.push(k);
                 starts.push(std::sync::Mutex::new(Some(img.clone())));

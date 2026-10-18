@@ -159,10 +159,28 @@ fn skipped(hash: u64) -> bool {
     .contains(&hash)
 }
 
+/// The key of a draw's mesh data (`GpuCall::mesh_key`): the source of the
+/// call's input (`VuCall::src`) and the program.
+pub fn mesh_key(src: u64, program: Program) -> u64 {
+    src.wrapping_mul(0x9e37_79b9).wrapping_add(program as u64)
+}
+
 /// Plan the call for the GPU when its program and variant have a GPU port
 /// (and do its memory side effects): its draws in kick order. `None`
 /// leaves the memory untouched, for the CPU program.
-pub fn plan(hash: u64, entry: u32, top: u32, itop: u32, mem: &mut [u8; 16384]) -> Option<Vec<GpuCall>> {
+pub fn plan(hash: u64, entry: u32, top: u32, itop: u32, kept: Option<f32>, mem: &mut [u8; 16384]) -> Option<Vec<GpuCall>> {
+    let r = plan_inner(hash, entry, top, itop, kept, mem);
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if *ON.get_or_init(|| std::env::var_os("SSX3_GPU_STATS").is_some()) {
+        *STATS.lock().unwrap().entry((hash, entry, itop != 0, r.is_some())).or_default() += 1;
+    }
+    r
+}
+
+/// Debug (`SSX3_GPU_STATS`): calls per (program, entry, ITOP set, on the GPU).
+pub static STATS: std::sync::Mutex<std::collections::BTreeMap<(u64, u32, bool, bool), u64>> = std::sync::Mutex::new(std::collections::BTreeMap::new());
+
+fn plan_inner(hash: u64, entry: u32, top: u32, itop: u32, kept: Option<f32>, mem: &mut [u8; 16384]) -> Option<Vec<GpuCall>> {
     if skipped(hash) {
         return None;
     }
@@ -170,7 +188,7 @@ pub fn plan(hash: u64, entry: u32, top: u32, itop: u32, mem: &mut [u8; 16384]) -
         crate::mat3::HASH => match entry {
             0x12b8 | 0x3a08 if !skipped(STRIPS) => crate::mat3::plan_gpu_strip(entry, top, mem).map(|c| vec![c]),
             0x12b8 | 0x3a08 => None,
-            _ => crate::mat3::plan_gpu(entry, top, itop, mem).map(|c| vec![c]),
+            _ => crate::mat3::plan_gpu(entry, top, itop, kept, mem).map(|c| vec![c]),
         },
         crate::mat6::HASH => crate::mat6::plan_gpu(entry, top, itop, mem),
         crate::mat4::HASH => crate::mat4::plan_gpu(entry, top, itop, mem),

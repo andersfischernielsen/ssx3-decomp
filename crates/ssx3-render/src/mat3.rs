@@ -1163,8 +1163,9 @@ pub mod gpu_mesh {
 /// setup, in-place texgen); the vertices go to the shader. Data: per vertex
 /// {position, UV (after texgen), colour or normal}. `None` (memory
 /// untouched) for what the CPU program keeps: other entries, the pass-1
-/// sphere map, malformed meshes.
-pub fn plan_gpu(entry: u32, top: u32, itop: u32, mem: &mut [u8; 16384]) -> Option<crate::gpu::GpuCall> {
+/// sphere map, malformed meshes. `kept`: the renderer keeps this mesh's data
+/// (`GpuCall::mesh_key`), whose alpha maximum is this; the data is left out.
+pub fn plan_gpu(entry: u32, top: u32, itop: u32, kept: Option<f32>, mem: &mut [u8; 16384]) -> Option<crate::gpu::GpuCall> {
     let top = (top & 0x3ff) as u16;
     let mut m = Mem(mem);
     let m = &mut m;
@@ -1236,17 +1237,23 @@ pub fn plan_gpu(entry: u32, top: u32, itop: u32, mem: &mut [u8; 16384]) -> Optio
             u[gpu_mesh::COEFFS + i] = m.ld(LIGHT_COEFFS + i as u16);
         }
     }
+    // (Pass 1 without in-place texgen: the data is the input's as it came.)
+    let keyed = pass1 && flags & flag::TEXGEN1 == 0;
+    let kept = kept.filter(|_| keyed);
     // Pass 1: {position, UV, colour or normal, flags} per vertex (flags.x:
     // ADC, the strip's first two vertices); pass 2: its UVs (positions,
     // colours and flags are pass 1's, `Link::Reuse`).
-    let mut data = Vec::with_capacity(if pass1 { 4 } else { 1 } * mesh.n as usize);
-    let mut alpha_max = if lit { 128.0f32 } else { 0.0 };
-    let mut adc = Vec::with_capacity(mesh.n as usize);
-    for s in 0..mesh.strips {
-        let len = m.ilw(mesh.lengths().wrapping_add(s), 0);
-        adc.extend((0..len).map(|k| (k < 2) as u32));
+    let n = if kept.is_some() { 0 } else { mesh.n };
+    let mut data = Vec::with_capacity(if pass1 { 4 } else { 1 } * n as usize);
+    let mut alpha_max = kept.unwrap_or(if lit { 128.0f32 } else { 0.0 });
+    let mut adc = Vec::with_capacity(n as usize);
+    if n > 0 {
+        for s in 0..mesh.strips {
+            let len = m.ilw(mesh.lengths().wrapping_add(s), 0);
+            adc.extend((0..len).map(|k| (k < 2) as u32));
+        }
     }
-    for i in 0..mesh.n {
+    for i in 0..n {
         if pass1 {
             let c = m.ld(mesh.colour().wrapping_add(i));
             if !lit {
@@ -1277,8 +1284,7 @@ pub fn plan_gpu(entry: u32, top: u32, itop: u32, mem: &mut [u8; 16384]) -> Optio
     }
     let tag = tag[0] as u128 | (tag[1] as u128) << 32 | (tag[2] as u128) << 64 | (tag[3] as u128) << 96;
     let link = if pass1 { crate::gpu::Link::Source(out as u32) } else { crate::gpu::Link::Reuse(out as u32) };
-    // (Pass 1 without in-place texgen: the data is the input's as it came.)
-    let mesh_key = (pass1 && flags & flag::TEXGEN1 == 0).then_some(0);
+    let mesh_key = keyed.then_some(0);
     Some(crate::gpu::GpuCall { program: crate::gpu::Program::Mat3Mesh, pre: Vec::new(), tag, uniforms: u, data, indices, alpha_max, link, mesh_key })
 }
 

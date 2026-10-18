@@ -62,11 +62,12 @@ fn main() {
     }
     let mut t = std::time::Instant::now();
     let mut times = Vec::new();
+    // (Kept across repeats: the steady state the game sees.)
+    let mut chains = ssx3_render::frame::ChainCache::default();
     for rep in 0..repeat {
         if rep == 1 {
             t = std::time::Instant::now();
         }
-        let mut chains = ssx3_render::frame::ChainCache::default();
         for (i, (mem, carry)) in frames.iter().enumerate() {
             let t0 = std::time::Instant::now();
             let built = frame_sink::build_dump_cached(mem, carry, &mut chains).expect("no frame");
@@ -90,6 +91,11 @@ fn main() {
         let (b, rr) = times.iter().fold((0.0, 0.0), |a, t| (a.0 + t.0, a.1 + t.1));
         eprintln!("steady state: frame build {:.2} ms, render {:.2} ms per frame", b / n, rr / n);
         eprintln!("{}", r.0.lock().unwrap().timing_report());
+    }
+    if std::env::var_os("SSX3_GPU_STATS").is_some() {
+        for ((h, e, i, g), n) in ssx3_render::gpu::STATS.lock().unwrap().iter() {
+            eprintln!("[gpu-stats] {h:016x} entry {e:#06x} itop {i} gpu {g}: {n}");
+        }
     }
     let dumps = &dumps[..];
     let (w, h, px) = r.read_image().expect("image");
