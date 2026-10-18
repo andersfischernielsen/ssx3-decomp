@@ -22,6 +22,9 @@ const INVALIDATE_BOUND: u32 = 0x0039_6128;
 const RENDER_DEPTH_FOG: u32 = 0x0036_ac00;
 const RENDER_BLOOM: u32 = 0x0036_c790;
 const RENDER_COLOR_FILTER: u32 = 0x0039_04a0;
+const SPR_STREAM_SET_MODE: u32 = 0x0038_f300;
+const VRAM_NODES_TO_SPR: u32 = 0x0036_5f68;
+const VRAM_NODES_FROM_SPR: u32 = 0x0036_5fa8;
 /// The layer thresholds {6, 9}: after the buckets below 6 the depth fog,
 /// at 9 the phase split, bloom and colour filter.
 const LAYER_THRESHOLDS: u32 = 0x004a_4058;
@@ -67,8 +70,14 @@ pub fn render_frame(c: &mut Cpu) {
     }
     guest_call(c, SORT_BUCKETS, &[dm], 0x0036_3548);
     guest_call(c, RESET_USAGE_TABLE, &[], 0x0036_3550);
+    // (The post passes build in the scratchpad stream's mode 5 and take
+    // VRAM from the heap with its nodes in the scratchpad.)
+    let spr = r32(c, gp + 0x1384);
+    let mode = r32(c, spr);
+    guest_call(c, SPR_STREAM_SET_MODE, &[spr, 5], 0x0036_356c);
     let tm = r32(c, gm + 0x18f4);
     guest_call(c, INVALIDATE_BOUND, &[tm], 0x0036_3580);
+    guest_call(c, VRAM_NODES_TO_SPR, &[tm + 0x1f60], 0x0036_358c);
     let views = r32(c, gm + 0x59c0) as i32;
     if r32(c, dm + 0x67ca4) != 0 {
         w32(c, dm + dmf::SCISSOR, 0xffff_ffff);
@@ -110,6 +119,8 @@ pub fn render_frame(c: &mut Cpu) {
     }
     end_tag(c, gif, 0x2000_0000);
     end_tag(c, vif, 0x3000_0000);
+    guest_call(c, VRAM_NODES_FROM_SPR, &[tm + 0x1f60], 0x0036_3be0);
+    guest_call(c, SPR_STREAM_SET_MODE, &[spr, mode], 0x0036_3bec);
     ret(c, 3000);
 }
 

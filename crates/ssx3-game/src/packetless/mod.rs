@@ -540,7 +540,7 @@ pub fn draw_patch_fx(c: &mut Cpu) {
 /// [`draw_patch_fx`]'s override (its graphics manager and cursor are not
 /// its arguments).
 pub(crate) fn dispatch_patch_fx(c: &mut Cpu, packets: fn(&mut Cpu)) {
-    if !direct::packetless() {
+    if !direct::packetless() || skipped("DrawPatchFX") {
         packets(c);
     } else if check_on() {
         let gm = r32(c, c.g[GP][0] as u32 + 0x2a90);
@@ -597,6 +597,13 @@ pub(crate) fn record_watch(c: &mut Cpu, gm: u32, records: u32) -> Watch {
     w
 }
 
+/// `SSX3_PACKETLESS_SKIP=Name,...`: these keep their generated bodies
+/// (bisecting).
+fn skipped(name: &str) -> bool {
+    static SKIP: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    SKIP.get_or_init(|| std::env::var("SSX3_PACKETLESS_SKIP").map(|v| v.split(',').map(str::to_string).collect()).unwrap_or_default()).iter().any(|s| s == name)
+}
+
 /// A draw function's override: its native form while packetless (checked
 /// against the generated one with `SSX3_DRAW_CHECK=1`), else `packets`
 /// (the generated body with its capture).
@@ -606,7 +613,7 @@ pub(crate) fn dispatch(c: &mut Cpu, name: &'static str, records: u32, native: fn
 
 /// [`dispatch`] with more `gm` fields watched (offsets).
 pub(crate) fn dispatch_with(c: &mut Cpu, name: &'static str, records: u32, gm_fields: &[u32], native: fn(&mut Cpu), packets: fn(&mut Cpu)) {
-    if !direct::packetless() {
+    if !direct::packetless() || skipped(name) {
         packets(c);
     } else if check_on() {
         let gm = c.g[A0][0] as u32;
@@ -623,7 +630,7 @@ pub(crate) fn dispatch_with(c: &mut Cpu, name: &'static str, records: u32, gm_fi
 /// link tags): every `SSX3_DRAW_CHECK_EVERY`-th call (default 8) runs
 /// both from a copy of memory and compares the pages either wrote.
 pub(crate) fn dispatch_ram(c: &mut Cpu, name: &'static str, native: fn(&mut Cpu), packets: fn(&mut Cpu)) {
-    if !direct::packetless() {
+    if !direct::packetless() || skipped(name) {
         packets(c);
     } else if check_on() {
         static EVERY: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
