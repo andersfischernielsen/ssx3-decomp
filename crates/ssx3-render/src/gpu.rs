@@ -199,22 +199,34 @@ fn plan_inner(hash: u64, entry: u32, top: u32, itop: u32, kept: Option<f32>, mem
     }
 }
 
-/// `n` little-endian u32 words from `b` (a bulk copy: the targets are
+#[cfg(target_endian = "big")]
+compile_error!("the VU job encoding copies u32 data as host bytes: little-endian targets only");
+
+/// Words (u32 or [u32; 4]: every bit pattern is a value) stored as
+/// little-endian bytes.
+trait Words: Copy {}
+impl Words for u32 {}
+impl Words for [u32; 4] {}
+
+/// `n` items from the bytes `b` (a plain copy: the targets are
 /// little-endian).
-fn words(b: &[u8], n: usize) -> Vec<u32> {
-    let mut v = vec![0u32; n];
-    for (d, s) in v.iter_mut().zip(b[..4 * n].chunks_exact(4)) {
-        *d = u32::from_le_bytes(s.try_into().unwrap());
+fn words<T: Words>(b: &[u8], n: usize) -> Vec<T> {
+    let bytes = n * std::mem::size_of::<T>();
+    let b = &b[..bytes];
+    let mut v: Vec<T> = Vec::with_capacity(n);
+    // SAFETY: `b` holds `bytes` bytes, the capacity is `n` items of size
+    // `bytes / n`, and any bytes are a valid `T` (`Words`).
+    unsafe {
+        std::ptr::copy_nonoverlapping(b.as_ptr(), v.as_mut_ptr() as *mut u8, bytes);
+        v.set_len(n);
     }
     v
 }
 
 /// Append `w` as little-endian bytes.
-fn put_words(out: &mut Vec<u8>, w: &[u32]) {
-    out.reserve(4 * w.len());
-    for x in w {
-        out.extend_from_slice(&x.to_le_bytes());
-    }
+fn put_words<T: Words>(out: &mut Vec<u8>, w: &[T]) {
+    // SAFETY: any initialized `T` (`Words`: no padding) is valid bytes.
+    out.extend_from_slice(unsafe { std::slice::from_raw_parts(w.as_ptr() as *const u8, std::mem::size_of_val(w)) });
 }
 
 /// Encode for the browser's VU helper workers (`vujob`).
@@ -225,9 +237,9 @@ pub fn encode(c: &GpuCall, w: &mut Vec<u8>) {
         w.extend_from_slice(&q.to_le_bytes());
     }
     w.extend_from_slice(&c.tag.to_le_bytes());
-    put_words(w, c.uniforms.as_flattened());
+    put_words(w, &c.uniforms[..]);
     w.extend_from_slice(&(c.data.len() as u32).to_le_bytes());
-    put_words(w, c.data.as_flattened());
+    put_words(w, &c.data);
     w.extend_from_slice(&(c.indices.len() as u32).to_le_bytes());
     put_words(w, &c.indices);
     w.extend_from_slice(&c.alpha_max.to_le_bytes());
@@ -251,11 +263,10 @@ pub fn decode(b: &[u8]) -> (GpuCall, usize) {
     let pre = (0..n).map(|_| u128::from_le_bytes(take(16).try_into().unwrap())).collect();
     let tag = u128::from_le_bytes(take(16).try_into().unwrap());
     let mut uniforms = [[0u32; 4]; UNIFORM_QWORDS];
-    let u = words(take(16 * UNIFORM_QWORDS), 4 * UNIFORM_QWORDS);
-    uniforms.as_flattened_mut().copy_from_slice(&u);
+    let u: Vec<[u32; 4]> = words(take(16 * UNIFORM_QWORDS), UNIFORM_QWORDS);
+    uniforms.copy_from_slice(&u);
     let n = u32_at(take(4)) as usize;
-    let flat = words(take(16 * n), 4 * n);
-    let data = flat.chunks_exact(4).map(|q| [q[0], q[1], q[2], q[3]]).collect();
+    let data = words(take(16 * n), n);
     let n = u32_at(take(4)) as usize;
     let indices = words(take(4 * n), n);
     let alpha_max = f32::from_le_bytes(take(4).try_into().unwrap());
