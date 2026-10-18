@@ -76,6 +76,12 @@ impl FrameBuilder {
                 eprintln!("[chain-cache] frame {}: hits/misses {:?}, {bad} replay mismatches", self.frames, self.cache.stats);
             }
         }
+        // `SSX3_FRAME_ISSUES=1`: what the build could not match (packets
+        // without a capture, chain shapes it did not expect).
+        static ISSUES: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        if *ISSUES.get_or_init(|| std::env::var_os("SSX3_FRAME_ISSUES").is_some()) && !b.issues.is_empty() {
+            eprintln!("[frame-issues] frame {}: {} issues: {}", self.frames, b.issues.len(), b.issues.iter().take(4).cloned().collect::<Vec<_>>().join("; "));
+        }
         self.carry = Carry { regs: b.regs_end, matrix: b.emitter.matrix, material_param: b.emitter.material_param };
         self.ms += t.elapsed().as_secs_f64() * 1e3;
         self.frames += 1;

@@ -1463,5 +1463,8 @@
 0x003883b8    DrawBoardWake
 0x002dc7b0    FogParticleMan_DrawParticles
 0x00385c10    cPS2GridMesh_Draw
+0x00363490    PS2GraphicsMan_RenderFrame
+0x00377a10    PS2GraphicsMan_EndFrame
+0x00362de8    DeferMan_BuildBuckets
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04

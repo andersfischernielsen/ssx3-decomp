@@ -25,11 +25,13 @@ use crate::ps2f::FpuF32;
 use crate::call::{call_ptr, guest};
 
 mod bezier;
+mod frame;
 mod model;
 mod rider;
 mod vu0;
 
 pub use bezier::end_pass as bezier_end_pass;
+pub(crate) use frame::dispatch_render_frame;
 pub use model::{draw_model, grid_mesh_draw};
 pub use rider::{draw_skinned_model, draw_skinned_model_shadow, emit_lighting_packet, set_shadow_header};
 

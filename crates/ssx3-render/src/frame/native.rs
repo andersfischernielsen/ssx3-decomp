@@ -344,8 +344,10 @@ impl Native<'_> {
         Some(r.end)
     }
 
-    /// A bucket's packets from `start`, linked by NEXT, up to the RET.
-    fn payload(&mut self, start: u32, owner: Owner, cache: &mut ChainCache) {
+    /// A bucket's packets `start..last` (its first packet's start, its
+    /// last packet's end), linked by NEXT. (RenderFrame's RET at `last` is
+    /// not needed: a native RenderFrame writes none.)
+    fn payload(&mut self, start: u32, last: u32, owner: Owner, cache: &mut ChainCache) {
         let mut t = start;
         for _ in 0..4096 {
             let end = match self.packet(t, owner, cache) {
@@ -360,6 +362,9 @@ impl Native<'_> {
                     return;
                 }
             };
+            if end == last {
+                return;
+            }
             let tag = self.m.qword(end);
             match (tag >> 28) & 7 {
                 2 => t = ((tag >> 32) & 0x7fff_fff0) as u32,
@@ -526,7 +531,7 @@ pub(super) fn build(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
                 }
                 n.bind(&d, Owner::Prelude(i));
                 if d.packets.start != 0 {
-                    n.payload(d.packets.start, Owner::Payload(i), cache);
+                    n.payload(d.packets.start, d.packets.end, Owner::Payload(i), cache);
                 }
                 cur.push(d);
             }
