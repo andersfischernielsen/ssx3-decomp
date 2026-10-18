@@ -113,9 +113,11 @@ fn fingerprint(m: &dyn Mem, pixels: u32, bytes: u32, clut: u32, clut_bytes: u32)
     h
 }
 
-/// [`key`], reused while the memory it reads is not written
-/// (`Mem::unchanged`; live snapshots only): per (TexInfo, TEXA), the key,
-/// the bytes of pixels and CLUT it covers, the snapshot it was made in.
+/// [`key`], reused while the TexInfo fields it reads are the same and the
+/// pixels and CLUT are not written (`Mem::unchanged`; live snapshots only;
+/// TexMan rewrites the TexInfo's VRAM placement every frame): per
+/// (TexInfo, TEXA), the key, the bytes of pixels and CLUT it covers, the
+/// snapshot it was made in.
 #[derive(Default)]
 pub struct KeyCache(std::collections::HashMap<(u32, u64), (TexKey, u32, u32, u64)>);
 
@@ -124,7 +126,9 @@ impl KeyCache {
         let snap = m.snapshot();
         if snap != 0 {
             if let Some(&(k, bytes, clut_bytes, seen)) = self.0.get(&(info, texa)) {
-                let same = m.unchanged(info, info + ti::TEX1, seen)
+                let same = (word(m, info + ti::PIXELS), word(m, info + ti::CLUT), word(m, info + ti::FORMAT)) == (k.pixels, k.clut, k.format)
+                    && tex0(m, info) & !((0x3fff) | (0x3fffu64 << 37)) == k.tex0
+                    && sizes(m, info) == (bytes, clut_bytes)
                     && m.unchanged(k.pixels, k.pixels + bytes.max(4), seen)
                     && (clut_bytes == 0 || m.unchanged(k.clut, k.clut + clut_bytes, seen));
                 if same {

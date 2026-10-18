@@ -179,10 +179,21 @@ Progress (2026-10-18):
   (`VuCall::shared`); PATH3 texture uploads are read without their image
   data (1.4 MiB per race frame); render-pass state set only on change; VU
   job data copied in bulk.
-- Per race frame the renderer still uploads ~3.2 MB (vertex data 1.45 MB,
-  indices 0.9 MB, call uniforms 0.7 MB): mesh indices and rider vertices
-  are candidates for the GPU arena (rider vertices hold per-frame bone
-  table offsets: the tables need their own base first).
+- Uploads per race frame 3.2 MB -> ~1.5 MB: triangle lists the shader
+  expands (`GpuCall::index_mode`: Bézier strip/fan and rider strip indices
+  `t << shift | corner`), compacted per-call uniforms (`uq()`), rider
+  vertex records in the mesh arena (`GpuCall::split`: they hold VU table
+  addresses; the call carries the bone setup's windows, shared by the
+  draws after one setup).
+- Typed frame: cached chains are validated by page writes instead of a
+  hash of their data (the frame sink stamps each RAM page with the
+  snapshot that first copied it: `Mem::snapshot` / `Mem::unchanged`);
+  texture keys likewise (`tex::KeyCache`); per-draw payload copies only
+  for checks (`frame::keep_payloads`). Native race: typed frame 0.84 ->
+  0.49 ms per frame.
+- Browser race (Chrome, after the above but the last two items): frames
+  12.6-14.8 ms (were 16-21 ms at the start of N2), renderer 31% of the
+  worker (was 44%), the worker idle ~21% of the time.
 
 Background (the earlier proposal, still the reference for the details):
 
