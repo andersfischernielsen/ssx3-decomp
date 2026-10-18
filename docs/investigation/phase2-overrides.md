@@ -119,6 +119,7 @@ Lessons from the first packages:
 
 | 2026-10-15 | OpenCode wave 4 (oc17-oc22, 6 x 50) + repaired oc14/snd_lib/audio_system | 359/359 passed the gate; 1,015 replacements installed; race replay byte-identical |
 | 2026-10-15 | OpenCode wave 5 (oc23-oc28, last bulk wave) | 353/353 passed the gate (10 tests timed out at 8 threads but passed in ~1.5 s each when rerun at 2 threads); 1,368 replacements installed; race replay byte-identical |
+| 2026-10-18 | Night waves 1-2 (oc29-oc36): candidates from a fresh race call graph in native mode (`callprof`, frames 5001-5300; 2,115 functions run, 39.6% of calls x size already hand-written) | written by Claude subagents (code only, no cargo), tested and integrated by the lead; 58 replacements, 1,434 installed. Gate: module tests, `recomp-ee`, then the race replay RAM equal to the pre-wave build in native mode (deterministic since the light queries read a fixed depth lag). The gate caught a port that left VU0 status flags different (the difftest only reports VU0 flags): ports now issue the original's VU0 ops. `SSX3_SKIP_OVERRIDES` bisects a wave |
 
 Patterns established in round 2 (now shared, see below):
 - **Loops with event checks**: structured loops make the same back-edge
@@ -152,4 +153,3 @@ Still module-private: `quat_rows` (camera; rider inlines the same order).
 Next: Tier B leftovers (VU0 ACC / `cfc2 vi22` camera
 functions, the ChaseCameraAlgorithm_Apply* family, loops with calls); a new
 candidate catalogue from the pass-3 names.
-| 2026-10-18 | Night waves 1-2 (oc29-oc36): candidates from a fresh race call graph in native mode (`callprof`, frames 5001-5300; 2,115 functions run, 39.6% of calls x size already hand-written) | written by Claude subagents (code only, no cargo), tested and integrated by the lead; 58 replacements, 1,434 installed. Gate: module tests, `recomp-ee`, then the race replay RAM equal to the pre-wave build in native mode (deterministic since the light queries read a fixed depth lag). The gate caught a port that left VU0 status flags different (the difftest only reports VU0 flags): ports now issue the original's VU0 ops. `SSX3_SKIP_OVERRIDES` bisects a wave |
