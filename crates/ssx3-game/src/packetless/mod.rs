@@ -198,6 +198,7 @@ static OPEN_STRIP: std::sync::Mutex<Option<(u32, u32, u32, u32)>> = std::sync::M
 /// vertices (as slot 71's) into a scratchpad block and calls
 /// `EndTriStrip`; `gm+0x5a2c` points past them. The block is the one the
 /// SprStream at `gp+0x1384` would hand out next (its state stays as it is).
+/// Returns where the first vertex goes (block + 0x40).
 pub fn begin_tri_strip(c: &mut Cpu) {
     let (gm, n) = (c.g[A0][0] as u32, c.g[A1][0] as u32);
     let gp = c.g[GP][0] as u32;
@@ -218,6 +219,8 @@ pub fn begin_tri_strip(c: &mut Cpu) {
     let block = r32(c, spr + 0x14 + 4 * next);
     w32(c, gm + gmf::STRIP_AT, block.wrapping_add(0x50 + 0x30 * n));
     *OPEN_STRIP.lock().unwrap() = Some((entry, prim, n, block + 0x40));
+    // The caller writes the vertices from here on.
+    c.g[V0][0] = (block + 0x40) as i32 as i64 as u64;
     ret(c, 70);
 }
 
@@ -598,6 +601,26 @@ pub(crate) fn check_on() -> bool {
 /// does not write (stale words past a batch's count).
 static STATS: std::sync::Mutex<Vec<(&'static str, u64, u64, u64)>> = std::sync::Mutex::new(Vec::new());
 
+/// Calls whose `v0` differs between the native and generated runs, per
+/// function (void functions leave scratch there; a function that returns
+/// something must match).
+/// With the return addresses of those calls (for a scan of what the
+/// callers do with `v0`).
+static V0_DIFF: std::sync::Mutex<Vec<(&'static str, u64, std::collections::BTreeSet<u32>)>> = std::sync::Mutex::new(Vec::new());
+
+fn note_v0(name: &'static str, ra: u32, native: u64, packets: u64) {
+    if native as u32 == packets as u32 {
+        return;
+    }
+    let mut v = V0_DIFF.lock().unwrap();
+    let i = v.iter().position(|x| x.0 == name).unwrap_or_else(|| {
+        v.push((name, 0, Default::default()));
+        v.len() - 1
+    });
+    v[i].1 += 1;
+    v[i].2.insert(ra);
+}
+
 /// What a check compares: guest ranges `[a, b)` (words) and, inside them,
 /// words that may differ (packet addresses).
 pub(crate) struct Watch {
@@ -722,7 +745,9 @@ fn checked_ram(c: &mut Cpu, name: &'static str, native: fn(&mut Cpu), packets: f
     let next = c.next_event;
     c.next_event = u64::MAX;
     let m = direct::mark();
+    let ra = c.g[RA][0] as u32;
     native(c);
+    let v0 = c.g[V0][0];
     let mut wn = vec![0u64; pending.len()];
     ssx3_ee_rt::bus::take_written(&mut wn);
     let bits = |b: &[u64]| -> Vec<usize> { (0..pages).filter(|&p| b[p >> 6] >> (p & 63) & 1 != 0).collect() };
@@ -736,6 +761,7 @@ fn checked_ram(c: &mut Cpu, name: &'static str, native: fn(&mut Cpu), packets: f
     (c.g, c.f, c.pc, c.cycles) = (g, f, pc, cycles);
     c.next_event = u64::MAX;
     packets(c);
+    note_v0(name, ra, v0, c.g[V0][0]);
     c.next_event = if c.next_event == u64::MAX { next } else { c.next_event.min(next) };
     let mut wp = vec![0u64; pending.len()];
     ssx3_ee_rt::bus::take_written(&mut wp);
@@ -847,7 +873,9 @@ pub(crate) fn checked(c: &mut Cpu, name: &'static str, mut watch: Watch, native:
     let (g, f, pc, cycles) = (c.g, c.f, c.pc, c.cycles);
     let before = words(c, &watch);
     let m = direct::mark();
+    let ra = c.g[RA][0] as u32;
     native(c);
+    let v0 = c.g[V0][0];
     let after_native = words(c, &watch);
     let rec_native = direct::split_off(m);
     for &(a, v) in &before {
@@ -855,6 +883,7 @@ pub(crate) fn checked(c: &mut Cpu, name: &'static str, mut watch: Watch, native:
     }
     (c.g, c.f, c.pc, c.cycles) = (g, f, pc, cycles);
     packets(c);
+    note_v0(name, ra, v0, c.g[V0][0]);
     let after = words(c, &watch);
     // (`SSX3_DRAW_CHECK=2`: the renderer gets the native commands, at the
     // packets' places: images show what the native forms draw while the
@@ -911,7 +940,16 @@ pub(crate) fn checked(c: &mut Cpu, name: &'static str, mut watch: Watch, native:
 
 /// Check results per function (`SSX3_DRAW_CHECK=1`; empty otherwise).
 pub fn check_report() -> Vec<String> {
-    STATS.lock().unwrap().iter().map(|(n, k, bad, u)| format!("{n}: {k} calls, {bad} differ, {u} packet qwords not written natively")).collect()
+    let v0 = V0_DIFF.lock().unwrap();
+    STATS
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(n, k, bad, u)| {
+            let (r, ras) = v0.iter().find(|x| x.0 == *n).map_or((0, String::new()), |x| (x.1, x.2.iter().map(|a| format!("{a:#x}")).collect::<Vec<_>>().join(",")));
+            format!("{n}: {k} calls, {bad} differ, {u} packet qwords not written natively, v0 differs in {r} (returns to {ras})")
+        })
+        .collect()
 }
 
 /// Two commands draw the same: equal, or for VU input, between the same
