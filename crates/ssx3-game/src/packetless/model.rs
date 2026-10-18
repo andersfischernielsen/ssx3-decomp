@@ -50,7 +50,7 @@ fn clip_test_box(c: &mut Cpu, gm: u32, min: u32, max: u32, matrix: Option<M>, ma
 }
 
 /// A graphics-manager virtual method: (`this` adjusted, function).
-fn vmethod(c: &mut Cpu, gm: u32, slot: u32) -> (u32, u32) {
+pub(super) fn vmethod(c: &mut Cpu, gm: u32, slot: u32) -> (u32, u32) {
     let vt = r32(c, gm + 0x10d8);
     let f = r32(c, vt + slot);
     let adj = c.bus.read16(vt + slot - 4) as i16 as i32;
@@ -60,7 +60,12 @@ fn vmethod(c: &mut Cpu, gm: u32, slot: u32) -> (u32, u32) {
 /// The depth sort value of the model's origin (`S[3]`): its clip w scaled
 /// by `gm+0x5920` (w lane), clamped to 0..`.x`, as an integer.
 fn sort_value(c: &mut Cpu, gm: u32, s: u32, ret: u32) -> u32 {
-    let origin = qv(c, s + 0x30);
+    sort_value_at(c, gm, s + 0x30, ret)
+}
+
+/// [`sort_value`] of the point at `at`.
+pub(super) fn sort_value_at(c: &mut Cpu, gm: u32, at: u32, ret: u32) -> u32 {
+    let origin = qv(c, at);
     ensure_view_matrices(c, gm, ret);
     let k = qv(c, gm + 0x5920);
     let wc = qm(c, gm + 0x58a0);

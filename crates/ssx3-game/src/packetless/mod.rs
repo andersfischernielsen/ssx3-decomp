@@ -25,9 +25,11 @@ use crate::ps2f::FpuF32;
 use crate::call::{call_ptr, guest};
 
 mod model;
+mod rider;
 mod vu0;
 
 pub use model::{draw_model, grid_mesh_draw};
+pub use rider::{draw_skinned_model, draw_skinned_model_shadow, emit_lighting_packet, set_shadow_header};
 
 /// PS2GraphicsMan fields (`structs/render.md`).
 mod gmf {
