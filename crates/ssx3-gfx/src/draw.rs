@@ -231,6 +231,10 @@ fn plans_unsplit(st: &DrawState, size: (u32, u32), rt_psm: Option<u32>) -> Vec<P
     out
 }
 
+/// The GPU-vertex shader module: the GS stages (draw.wgsl), the shared
+/// vertex helpers (gpuvu.wgsl) and one file per program (`vs_<program>`).
+const GPUVU_SOURCES: &[&str] = &[include_str!("draw.wgsl"), include_str!("gpuvu.wgsl"), include_str!("gpuvu/mat3.wgsl")];
+
 pub struct Pipelines {
     module: wgpu::ShaderModule,
     pub layout: wgpu::BindGroupLayout,
@@ -311,7 +315,7 @@ impl Pipelines {
         });
         let gpu_module = dev.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("ssx3-gfx gpuvu.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(format!("{}\n{}", include_str!("draw.wgsl"), include_str!("gpuvu.wgsl")).into()),
+            source: wgpu::ShaderSource::Wgsl(GPUVU_SOURCES.join("\n").into()),
         });
         let storage = |binding| wgpu::BindGroupLayoutEntry {
             binding,
@@ -338,9 +342,7 @@ impl Pipelines {
     pub fn get_gpu(&mut self, dev: &wgpu::Device, k: PipeKey, p: ssx3_render::gpu::Program) -> &wgpu::RenderPipeline {
         let (module, pl) = (&self.gpu_module, &self.gpu_pl);
         self.gpu_cache.entry((k, p)).or_insert_with(|| {
-            let entry = match p {
-                ssx3_render::gpu::Program::Mat3Mesh => "vs_mat3_mesh",
-            };
+            let entry = p.vs_entry();
             let blend = k.blend.map(|(s, d, op)| wgpu::BlendState {
                 color: wgpu::BlendComponent { src_factor: s, dst_factor: d, operation: op },
                 alpha: wgpu::BlendComponent::REPLACE,

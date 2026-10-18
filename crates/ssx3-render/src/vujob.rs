@@ -26,7 +26,8 @@ pub const MEM: usize = 16384;
 #[derive(Clone, Debug, PartialEq)]
 pub enum CallOut {
     Gif(Vec<u128>),
-    Gpu(crate::gpu::GpuCall),
+    /// Its draws (in kick order).
+    Gpu(Vec<crate::gpu::GpuCall>),
 }
 
 /// The output of each call that ran (event index, output) and the final
@@ -48,7 +49,7 @@ pub fn run_call(hash: u64, entry: u32, top: u32, itop: u32, mem: &mut [u8; MEM])
             if let Some(mut m) = before {
                 let mut gif = Vec::new();
                 if crate::run_native(hash, entry, top, itop, &mut m, &mut |p: &[u128]| gif.extend_from_slice(p)) {
-                    if let Some(d) = crate::gpu::check(&g, &gif) {
+                    if let Some(d) = crate::gpu::check(hash, &g, &gif) {
                         eprintln!("[gpu-check] entry {entry:#x} top {top:#x} itop {itop:#x}: {d}");
                     }
                 }
@@ -133,7 +134,10 @@ pub fn run(job: &[u8]) -> Vec<u8> {
             }
             CallOut::Gpu(g) => {
                 out.push(1);
-                crate::gpu::encode(&g, &mut out);
+                out.extend_from_slice(&(g.len() as u32).to_le_bytes());
+                for c in &g {
+                    crate::gpu::encode(c, &mut out);
+                }
             }
         }
         ran += 1;
@@ -152,8 +156,14 @@ pub fn decode(result: &[u8]) -> Output {
             let i = r.u32() as usize;
             let kind = r.take::<1>()[0];
             if kind == 1 {
-                let (g, used) = crate::gpu::decode(r.0);
-                r.0 = &r.0[used..];
+                let n = r.u32();
+                let g = (0..n)
+                    .map(|_| {
+                        let (g, used) = crate::gpu::decode(r.0);
+                        r.0 = &r.0[used..];
+                        g
+                    })
+                    .collect();
                 (i, CallOut::Gpu(g))
             } else {
                 let q = r.u32();

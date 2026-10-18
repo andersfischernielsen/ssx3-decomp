@@ -22,6 +22,13 @@ pub enum Program {
 }
 
 impl Program {
+    /// Its vertex entry in `ssx3-gfx` (`src/gpuvu/<program>.wgsl`).
+    pub fn vs_entry(self) -> &'static str {
+        match self {
+            Program::Mat3Mesh => "vs_mat3_mesh",
+        }
+    }
+
     pub fn from_u8(v: u8) -> Option<Program> {
         match v {
             0 => Some(Program::Mat3Mesh),
@@ -36,10 +43,13 @@ pub const UNIFORM_QWORDS: usize = 32;
 /// coordinate offset, depth scale, texture scale, fog.
 pub const GS_PARAMS: usize = 28;
 
-/// One call drawn by the GPU.
+/// One draw of a call computed by the GPU (a call may make several).
 #[derive(Clone, Debug, PartialEq)]
 pub struct GpuCall {
     pub program: Program,
+    /// GIF data the program kicks before this draw's vertices (register
+    /// setup, other primitives), processed by the GS side first.
+    pub pre: Vec<u128>,
     /// The GIF tag the program kicks (PRE / PRIM select the primitive).
     pub tag: u128,
     /// Per-call uniforms; qwords from [`GS_PARAMS`] on are the GS side's.
@@ -90,11 +100,11 @@ pub fn enabled() -> bool {
 }
 
 /// Plan the call for the GPU when its program and variant have a GPU port
-/// (and do its memory side effects); `None` leaves the memory untouched,
-/// for the CPU program.
-pub fn plan(hash: u64, entry: u32, top: u32, itop: u32, mem: &mut [u8; 16384]) -> Option<GpuCall> {
+/// (and do its memory side effects): its draws in kick order. `None`
+/// leaves the memory untouched, for the CPU program.
+pub fn plan(hash: u64, entry: u32, top: u32, itop: u32, mem: &mut [u8; 16384]) -> Option<Vec<GpuCall>> {
     match hash {
-        crate::mat3::HASH => crate::mat3::plan_gpu(entry, top, itop, mem),
+        crate::mat3::HASH => crate::mat3::plan_gpu(entry, top, itop, mem).map(|c| vec![c]),
         _ => None,
     }
 }
@@ -102,6 +112,10 @@ pub fn plan(hash: u64, entry: u32, top: u32, itop: u32, mem: &mut [u8; 16384]) -
 /// Encode for the browser's VU helper workers (`vujob`).
 pub fn encode(c: &GpuCall, w: &mut Vec<u8>) {
     w.push(c.program as u8);
+    w.extend_from_slice(&(c.pre.len() as u32).to_le_bytes());
+    for q in &c.pre {
+        w.extend_from_slice(&q.to_le_bytes());
+    }
     w.extend_from_slice(&c.tag.to_le_bytes());
     for q in &c.uniforms {
         for x in q {
@@ -134,6 +148,8 @@ pub fn decode(b: &[u8]) -> (GpuCall, usize) {
     };
     let u32_at = |s: &[u8]| u32::from_le_bytes(s.try_into().unwrap());
     let program = Program::from_u8(take(1)[0]).expect("gpu program");
+    let n = u32_at(take(4)) as usize;
+    let pre = (0..n).map(|_| u128::from_le_bytes(take(16).try_into().unwrap())).collect();
     let tag = u128::from_le_bytes(take(16).try_into().unwrap());
     let mut uniforms = [[0u32; 4]; UNIFORM_QWORDS];
     for q in uniforms.iter_mut() {
@@ -148,7 +164,7 @@ pub fn decode(b: &[u8]) -> (GpuCall, usize) {
     let alpha_max = f32::from_le_bytes(take(4).try_into().unwrap());
     let t = u32_at(take(4));
     let link = Link::from_code(t, u32_at(take(4)));
-    (GpuCall { program, tag, uniforms, data, indices, alpha_max, link }, p)
+    (GpuCall { program, pre, tag, uniforms, data, indices, alpha_max, link }, p)
 }
 
 #[cfg(test)]
@@ -161,6 +177,7 @@ mod tests {
         uniforms[3] = [1, 2, 3, 4];
         let c = GpuCall {
             program: Program::Mat3Mesh,
+            pre: vec![7, 8],
             tag: 0x1234_5678_9abc_def0_0fed_cba9_8765_4321,
             uniforms,
             data: vec![[5, 6, 7, 8], [9, 10, 11, 12]],
@@ -180,10 +197,12 @@ mod tests {
 /// Debug (`SSX3_GPU_CHECK=1`): the shader's formulas for a planned call,
 /// evaluated on the CPU (IEEE), against the program's own output for the
 /// same call (`gif`, run on a copy of the memory before planning). Returns
-/// a description of the first vertices that differ beyond rounding.
-pub fn check(call: &GpuCall, gif: &[u128]) -> Option<String> {
-    match call.program {
-        Program::Mat3Mesh => check_mat3(call, gif),
+/// a description of the first vertices that differ beyond rounding (each
+/// program adds its arm; none: not checked).
+pub fn check(hash: u64, calls: &[GpuCall], gif: &[u128]) -> Option<String> {
+    match (hash, calls) {
+        (crate::mat3::HASH, [call]) if call.program == Program::Mat3Mesh => check_mat3(call, gif),
+        _ => None,
     }
 }
 

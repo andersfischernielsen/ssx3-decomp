@@ -1206,7 +1206,7 @@ pub fn plan_gpu(entry: u32, top: u32, itop: u32, mem: &mut [u8; 16384]) -> Optio
     }
     let tag = tag[0] as u128 | (tag[1] as u128) << 32 | (tag[2] as u128) << 64 | (tag[3] as u128) << 96;
     let link = if pass1 { crate::gpu::Link::Source(out as u32) } else { crate::gpu::Link::Reuse(out as u32) };
-    Some(crate::gpu::GpuCall { program: crate::gpu::Program::Mat3Mesh, tag, uniforms: u, data, indices, alpha_max, link })
+    Some(crate::gpu::GpuCall { program: crate::gpu::Program::Mat3Mesh, pre: Vec::new(), tag, uniforms: u, data, indices, alpha_max, link })
 }
 
 #[cfg(test)]

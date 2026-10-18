@@ -695,6 +695,9 @@ impl Gs {
     /// other batches.
     pub fn gpu_draw(&mut self, mut call: ssx3_render::gpu::GpuCall) {
         use ssx3_render::gpu::Link;
+        if !call.pre.is_empty() {
+            self.gif(&std::mem::take(&mut call.pre));
+        }
         let base = self.gpu.data.len() as u32;
         let reuse = match call.link {
             Link::Reuse(k) => match self.gpu.sources.get(&k) {

@@ -1915,7 +1915,9 @@ impl Build {
                         Some(CallOut::Gpu(g)) => {
                             b.stats.vu_native += 1;
                             b.stats.vu_gpu += 1;
-                            b.gs.gpu_draw(g);
+                            for c in g {
+                                b.gs.gpu_draw(c);
+                            }
                         }
                         None => b.stats.vu_missing += 1,
                     }
