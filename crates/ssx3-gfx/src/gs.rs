@@ -131,6 +131,10 @@ pub mod gpu_params {
     /// qword of the call whose vertices it reuses (`Link::Reuse`); w: the
     /// tag's vertex register (4 XYZF2: Z / 16 and per-vertex fog; 5 XYZ2).
     pub const MISC: usize = GS_PARAMS + 2;
+    /// The GS's vertex registers when the draw starts (for programs whose
+    /// tag kicks no colour / texture coordinates): x: RGBA (bytes), y: Q,
+    /// z: S, w: T (f32 bits).
+    pub const RGBAQ: usize = GS_PARAMS + 3;
 }
 
 #[derive(Clone, Default)]
@@ -754,6 +758,7 @@ impl Gs {
         let nreg = match bits(lo, 60, 4) { 0 => 16, n => n as u32 };
         let vreg = ((call.tag >> 64) >> (4 * (nreg - 1))) as u32 & 0xf;
         u[gpu_params::MISC] = [f(self.fog as f32), base, reuse, vreg];
+        u[gpu_params::RGBAQ] = [u32::from_le_bytes(self.rgbaq), f(self.q), f(self.s), f(self.t)];
         let gb = GpuBatch {
             program: call.program,
             call: self.gpu.calls.len() as u32,

@@ -65,6 +65,16 @@
 //!   (boneAddr - 0x11) / 4 and (nrmAddr - 0x75) / 3;
 //! - every vertex is independent except the ADC bit (strip triangle test,
 //!   the vertex and the two before it).
+//!
+//! GPU port ([`plan_gpu`], `ssx3-gfx/src/gpuvu/mat6.wgsl`): the draws
+//! (0x00, 0x50), the env pass (0x30) and the shadow (0x20) go to the GPU;
+//! bone setup, morph, the coefficient scale and the ctx2 kick stay with
+//! [`run`] (memory effects / a plain kick). A GPU draw copies its lights,
+//! guard and the bone tables it uses into the call's data; the shader drops
+//! a triangle whose vertices fail CLIP (as the ADC history does), snaps x, y
+//! to FTOI4's 1/16 pixel and gives XYZF2 vertices the fog their ADC word
+//! makes. The env pass redraws its draw's data (`Link::Reuse`) with the
+//! sphere-map ST.
 
 use ssx3_vu::vu::{fast, float};
 
@@ -585,6 +595,327 @@ fn light_scale(m: &mut Mem) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// GPU draws (`crate::gpu`, `vs_mat6_skin` / `vs_mat6_shadow`)
+// ---------------------------------------------------------------------------
+
+/// What a GPU-planned draw leaves at its output buffer (the CPU program
+/// writes its GIF tag and vertices there): `{mark, vertex count, the tag's
+/// .x, 0}`. An env pass that finds it is planned for the GPU (it redraws the
+/// draw's vertices, `Link::Reuse`), so a CPU env pass never reads a GPU
+/// draw's output.
+const GPU_DRAW_MARK: u32 = 0x4750_5536;
+
+/// Layout of a GPU call's data and uniforms (qword offsets).
+pub mod gpu_skin {
+    /// Uniform q0: x = 1 for an env pass; y = its per-vertex E·R offsets
+    /// (from the call's data base).
+    pub const INFO: usize = 0;
+    /// Data of a draw (skinned) or shadow call, from its base: [0] = {first
+    /// vertex, vertex count}; skinned: [1..11) the SH coefficients ×255,
+    /// [11] guard scale, [12] guard offset; shadow: [1] guard scale, [2]
+    /// guard offset; then the bone tables the vertices use (M·B: 4 qwords,
+    /// rotations and E·R: 3), then the vertices. Bone and rotation
+    /// references are qword offsets from the base.
+    pub const D_INFO: usize = 0;
+    pub const D_LIGHTS: usize = 1;
+    pub const D_SCALE: usize = 11;
+    pub const D_OFFSET: usize = 12;
+    pub const D_TABLES: usize = 13;
+    pub const D_SHADOW_SCALE: usize = 1;
+    pub const D_SHADOW_OFFSET: usize = 2;
+    pub const D_SHADOW_TABLES: usize = 3;
+}
+
+/// Bone tables copied into a call's data, deduplicated by VU address.
+struct Tables {
+    seen: Vec<(u16, u32)>,
+}
+
+impl Tables {
+    /// The data offset of the `n`-qword table at VU address `a` (copied on
+    /// first use).
+    fn get(&mut self, m: &Mem, data: &mut Vec<[u32; 4]>, a: u16, n: u16) -> u32 {
+        // (Addresses of different table kinds never collide: separate
+        // `Tables` per kind.)
+        if let Some(&(_, o)) = self.seen.iter().find(|(x, _)| *x == a) {
+            return o;
+        }
+        let o = data.len() as u32;
+        data.extend((0..n).map(|i| m.ld(a.wrapping_add(i))));
+        self.seen.push((a, o));
+        o
+    }
+}
+
+fn tag_u128(t: V) -> u128 {
+    t[0] as u128 | (t[1] as u128) << 32 | (t[2] as u128) << 64 | (t[3] as u128) << 96
+}
+
+/// The tag's registers are what the program writes per vertex: `regs`
+/// (packed, NREG = `nreg`) then XYZF2 or XYZ2.
+fn tag_regs_are(t: V, nreg: u32, regs: u64) -> bool {
+    let n = (t[1] >> 28) & 0xf;
+    let r = t[2] as u64 | (t[3] as u64) << 32;
+    let mask = (1u64 << (4 * (nreg - 1))) - 1;
+    let last = (r >> (4 * (nreg - 1))) & 0xf;
+    n == nreg && (t[1] >> 26) & 3 == 0 && r & mask == regs && r >> (4 * nreg) == 0 && matches!(last, 4 | 5)
+}
+
+/// Triangles of the strips with `counts` vertices: index `(k << 2) |
+/// corner` is corner `corner` (vertex k-2+corner) of the triangle ending
+/// at vertex k; the shader drops a triangle with a vertex outside the guard
+/// band, as the program's CLIP history does.
+fn culled_strip_indices(counts: &[u16]) -> Vec<u32> {
+    let mut idx = Vec::new();
+    let mut first = 0u32;
+    for &n in counts {
+        for k in 2..n as u32 {
+            let v = first + k;
+            idx.extend_from_slice(&[v << 2, (v << 2) | 1, (v << 2) | 2]);
+        }
+        first += n as u32;
+    }
+    idx
+}
+
+/// Plan a call for the GPU (`crate::gpu::plan`): the lit strip draws (0x00,
+/// 0x50), the env pass (0x30) and the shadow (0x20). The other entries
+/// (bone setup, morph, coefficient scale, the ctx2 kick) are memory effects
+/// or cheap kicks the CPU program does: `None`. `None` too (memory
+/// untouched) for inputs the program declines or that the GPU port does
+/// not handle (XYZF2 tags).
+pub fn plan_gpu(entry: u32, top: u32, _itop: u32, mem: &mut [u8; 16384]) -> Option<Vec<crate::gpu::GpuCall>> {
+    let top = (top & 0x3ff) as u16;
+    let mut m = Mem(mem);
+    match entry {
+        0x00 | 0x398 => plan_draw(&mut m, top, Skin::PerVertex),
+        0x50 | 0x7f8 => plan_draw(&mut m, top, Skin::PerBatch),
+        0x30 | 0xb58 => plan_env(&mut m, top),
+        0x20 | 0xcb8 => plan_shadow(&mut m, top),
+        _ => None,
+    }
+}
+
+fn gpu_call(program: crate::gpu::Program, tag: u128, u: [[u32; 4]; crate::gpu::UNIFORM_QWORDS], data: Vec<[u32; 4]>, indices: Vec<u32>, alpha_max: f32, link: crate::gpu::Link) -> crate::gpu::GpuCall {
+    crate::gpu::GpuCall { program, pre: Vec::new(), tag, uniforms: u, data, indices, alpha_max, link }
+}
+
+fn plan_draw(m: &mut Mem, top: u16, skin: Skin) -> Option<Vec<crate::gpu::GpuCall>> {
+    let batch = Batch::read(m, top);
+    let min = if skin == Skin::PerVertex { 3 } else { 2 };
+    let counts = batch.counts(m, min, 3, 3)?;
+    let tag = m.ld(top);
+    if !tag_regs_are(tag, 3, 0x12) {
+        return None;
+    }
+    let total: u32 = counts.iter().map(|&c| c as u32).sum();
+    let header = m.ld(top.wrapping_add(1));
+    let (batch_bone, batch_rot) = (header[1] as u16, header[2] as u16);
+    let mut data = Vec::with_capacity(gpu_skin::D_TABLES + 8 + 3 * total as usize);
+    data.push([0; 4]);
+    data.extend((0..10).map(|i| m.ld(LIGHTS + i)));
+    data.push(m.ld(GUARD_SCALE));
+    data.push(m.ld(GUARD_OFFSET));
+    let (mut bones, mut rots) = (Tables { seen: Vec::new() }, Tables { seen: Vec::new() });
+    let mut verts = Vec::with_capacity(3 * total as usize);
+    let mut src = batch.verts;
+    for j in counts.iter().flat_map(|&n| 0..n) {
+        let uv = m.ld(src);
+        let (bone, rot) = match skin {
+            Skin::PerVertex => (uv[2] as u16, uv[3] as u16),
+            Skin::PerBatch => (batch_bone, batch_rot),
+        };
+        let b = bones.get(m, &mut data, bone, 4);
+        let r = rots.get(m, &mut data, rot, 3);
+        let nrm = m.ld(src.wrapping_add(1));
+        verts.push([uv[0], uv[1], b, r]);
+        // (.w, unused by the program: the strip's first two vertices.)
+        verts.push([nrm[0], nrm[1], nrm[2], (j < 2) as u32]);
+        verts.push(m.ld(src.wrapping_add(2)));
+        src = src.wrapping_add(3);
+    }
+    data[gpu_skin::D_INFO] = [data.len() as u32, total, 0, 0];
+    data.extend_from_slice(&verts);
+    // Alpha: the SH sum's .w, clamped (|n| ≈ 1: each term at most |L|).
+    let l = |i: u16| f32::from_bits(m.ld(LIGHTS + i)[3]);
+    let bound = l(0) + (1..10).map(|i| l(i).abs()).sum::<f32>() * 1.25;
+    let alpha_max = if bound.is_finite() { bound.clamp(0.0, 255.0).floor() } else { 255.0 };
+    let out = top.wrapping_add(OUT);
+    m.st(out, [GPU_DRAW_MARK, total, tag[0], 0]);
+    let u = [[0u32; 4]; crate::gpu::UNIFORM_QWORDS];
+    let link = crate::gpu::Link::Source(out as u32);
+    Some(vec![gpu_call(crate::gpu::Program::Mat6Skin, tag_u128(tag), u, data, culled_strip_indices(&counts), alpha_max, link)])
+}
+
+fn plan_env(m: &mut Mem, top: u16) -> Option<Vec<crate::gpu::GpuCall>> {
+    let out = top.wrapping_add(OUT);
+    let mark = m.ld(out);
+    if mark[0] != GPU_DRAW_MARK {
+        return None;
+    }
+    let header = m.ld(top.wrapping_add(1));
+    let (n_sub, total) = (header[0] as u16, header[3] as u16);
+    let batch = Batch::read(m, top);
+    // (The draw's strips: still the input at TOP.)
+    let counts: Option<Vec<u16>> = (n_sub <= OUT).then(|| (0..n_sub).map(|i| m.ilw(batch.subs.wrapping_add(i), 0)).collect());
+    let ok = counts.as_ref().is_some_and(|c| c.iter().map(|&c| c as u32).sum::<u32>() == total as u32) && mark[1] == total as u32;
+    let Some(counts) = counts.filter(|_| ok && total >= 3) else {
+        // Not the draw this mark is from (never seen): draw nothing rather
+        // than let the CPU pass read a GPU draw's missing output.
+        return Some(Vec::new());
+    };
+    let ctx2 = m.ld(CTX2_TAG);
+    let tag = [mark[2], ctx2[1], ctx2[2], ctx2[3]];
+    if !tag_regs_are(tag, 3, 0x12) {
+        return Some(Vec::new());
+    }
+    let mut data = Vec::new();
+    let mut ers = Tables { seen: Vec::new() };
+    let mut offs = Vec::with_capacity(total as usize);
+    for k in 0..total {
+        let rot = m.ilw(batch.verts.wrapping_add(3 * k), 3);
+        let er = rot.wrapping_add(ENV_ROT.wrapping_sub(RAW_ROT));
+        offs.push([ers.get(m, &mut data, er, 3), 0, 0, 0]);
+    }
+    let mut u = [[0u32; 4]; crate::gpu::UNIFORM_QWORDS];
+    u[gpu_skin::INFO] = [1, data.len() as u32, 0, 0];
+    data.extend_from_slice(&offs);
+    let link = crate::gpu::Link::Reuse(out as u32);
+    Some(vec![gpu_call(crate::gpu::Program::Mat6Skin, tag_u128(tag), u, data, culled_strip_indices(&counts), 0.0, link)])
+}
+
+fn plan_shadow(m: &mut Mem, top: u16) -> Option<Vec<crate::gpu::GpuCall>> {
+    let batch = Batch::read(m, top);
+    let counts = batch.counts(m, 3, 1, 1)?;
+    let tag = m.ld(top);
+    if !tag_regs_are(tag, 1, 0) {
+        return None;
+    }
+    let total: u32 = counts.iter().map(|&c| c as u32).sum();
+    let mut data = vec![[0; 4], m.ld(GUARD_SCALE), m.ld(GUARD_OFFSET)];
+    let mut bones = Tables { seen: Vec::new() };
+    let mut verts = Vec::with_capacity(total as usize);
+    let mut src = batch.verts;
+    for j in counts.iter().flat_map(|&n| 0..n) {
+        let p = m.ld(src);
+        let b = bones.get(m, &mut data, p[3] as u16, 4);
+        // (Bit 31: the strip's first two vertices.)
+        verts.push([p[0], p[1], p[2], b | ((j < 2) as u32) << 31]);
+        src = src.wrapping_add(1);
+    }
+    data[gpu_skin::D_INFO] = [data.len() as u32, total, 0, 0];
+    data.extend_from_slice(&verts);
+    let mut indices = Vec::new();
+    let mut first = 0u32;
+    for &n in &counts {
+        for k in 2..n as u32 {
+            indices.extend_from_slice(&[first + k - 2, first + k - 1, first + k]);
+        }
+        first += n as u32;
+    }
+    // The output's tag (the CPU program's first output qword; no env pass
+    // follows a shadow).
+    m.st(top.wrapping_add(OUT), tag);
+    let u = [[0u32; 4]; crate::gpu::UNIFORM_QWORDS];
+    // (The colour is the GS's RGBAQ register: its alpha is not known here.)
+    Some(vec![gpu_call(crate::gpu::Program::Mat6Shadow, tag_u128(tag), u, data, indices, 255.0, crate::gpu::Link::None)])
+}
+
+/// Debug (`crate::gpu::check`): the shaders' formulas (`vs_mat6_skin`,
+/// `vs_mat6_shadow`) evaluated on the CPU (IEEE) for a planned draw or
+/// shadow, against the program's kick `gif`: which triangles draw, and
+/// each drawn vertex's XYZ, STQ, RGBA and XYZF2 fog. (The env pass redraws
+/// another call's data: not checked.)
+pub fn check_gpu(call: &crate::gpu::GpuCall, gif: &[u128]) -> Option<String> {
+    use crate::gpu::{Link, Program};
+    if matches!(call.link, Link::Reuse(_)) {
+        return None;
+    }
+    let d = &call.data;
+    let fv = |i: u32| -> [f32; 4] { d[i as usize].map(f32::from_bits) };
+    let first = d[0][0];
+    let shadow = call.program == Program::Mat6Shadow;
+    let per = if shadow { 1 } else { 3 };
+    let n = d[0][1] as usize;
+    if gif.len() != 1 + per * n {
+        return Some(format!("mat6: kick of {} qwords for {n} vertices", gif.len()));
+    }
+    let lane = |q: u128, l: u32| (q >> (32 * l)) as u32;
+    let xform = |cols: u32, p: [f32; 4]| -> [f32; 4] {
+        std::array::from_fn(|l| fv(cols)[l] * p[0] + fv(cols + 1)[l] * p[1] + fv(cols + 2)[l] * p[2] + fv(cols + 3)[l] * p[3])
+    };
+    let clip = |k: u32| -> [f32; 4] {
+        if shadow {
+            let v = first + k;
+            let p = fv(v);
+            xform(d[v as usize][3] & 0x7fff_ffff, [p[0], p[1], p[2], 1.0])
+        } else {
+            let v = first + 3 * k;
+            xform(d[v as usize][2], fv(v + 2))
+        }
+    };
+    let inside = |c: [f32; 4]| {
+        let q = 1.0 / c[3];
+        (0..3).all(|l| (c[l] * q).abs() <= (c[3] * q).abs())
+    };
+    let (scale, off) = if shadow { (fv(1), fv(2)) } else { (fv(11), fv(12)) };
+    let mut bad = Vec::new();
+    let mut note = |s: String| {
+        if bad.len() < 3 {
+            bad.push(s);
+        }
+    };
+    let mut checked = vec![false; n];
+    for t in call.indices.chunks(3) {
+        let (k, corners) = if shadow { (t[2], [t[0], t[1], t[2]]) } else { (t[0] >> 2, [(t[0] >> 2) - 2, (t[0] >> 2) - 1, t[0] >> 2]) };
+        let kept = shadow || corners.iter().all(|&v| inside(clip(v)));
+        let xyz_w = lane(gif[per * k as usize + per], 3);
+        let adc = if shadow { xyz_w != 0 } else { xyz_w == 0xffff_8000 };
+        if kept == adc {
+            note(format!("triangle at v{k}: shader draws {kept}, program ADC {adc}"));
+        }
+        if !kept {
+            continue;
+        }
+        for v in corners {
+            if std::mem::replace(&mut checked[v as usize], true) {
+                continue;
+            }
+            let c = clip(v);
+            let q = 1.0 / c[3];
+            // (FTOI4 saturates.)
+            let sx: [f32; 3] = std::array::from_fn(|l| ((off[l] * c[3] + scale[l] * c[l]) * q * 16.0).clamp(-2147483648.0, 2147483647.0));
+            let o = 1 + per * v as usize;
+            let xyz = gif[o + per - 1];
+            let want = [lane(xyz, 0) as i32 as f32, lane(xyz, 1) as i32 as f32, lane(xyz, 2) as i32 as f32];
+            // (z = offset·w + scale·z cancels: rounding at the offset's scale.)
+            let ok_xy = (0..3).all(|l| (sx[l] - want[l]).abs() <= 2.0 + 1e-4 * want[l].abs() + if l == 2 { 16.0 * off[2].abs() * 2.5e-7 } else { 0.0 });
+            if !ok_xy {
+                note(format!("v{v}: xyz {sx:?} want {want:?}"));
+            }
+            if shadow {
+                continue;
+            }
+            let a = first + 3 * v;
+            let uv = d[a as usize];
+            let nr: [f32; 3] = std::array::from_fn(|l| d[a as usize + 1][l] as i32 as f32 / 32768.0);
+            let r = uv[3];
+            let nn: [f32; 3] = std::array::from_fn(|l| fv(r)[l] * nr[0] + fv(r + 1)[l] * nr[1] + fv(r + 2)[l] * nr[2]);
+            let terms = [1.0, nn[0] * nn[0], nn[1] * nn[1], nn[2] * nn[2], nn[0] * nn[1], nn[2] * nn[0], nn[1] * nn[2], nn[0], nn[1], nn[2]];
+            let col: [f32; 4] = std::array::from_fn(|l| (0..10).map(|i| fv(1 + i)[l] * terms[i as usize]).sum::<f32>().clamp(0.0, 255.0).floor());
+            let st = [uv[0] as i32 as f32 / 4096.0 * q, uv[1] as i32 as f32 / 4096.0 * q, q];
+            let got_st = [f32::from_bits(lane(gif[o], 0)), f32::from_bits(lane(gif[o], 1)), f32::from_bits(lane(gif[o], 3))];
+            let got_col: [f32; 4] = std::array::from_fn(|l| lane(gif[o + 1], l as u32) as f32);
+            let close = |a: f32, b: f32| (a - b).abs() <= 1e-3 * (1.0 + b.abs());
+            if !(0..3).all(|l| close(st[l], got_st[l])) || !(0..4).all(|l| (col[l] - got_col[l]).abs() <= 2.0) {
+                note(format!("v{v}: stq {st:?} want {got_st:?} | rgba {col:?} want {got_col:?}"));
+            }
+        }
+    }
+    (!bad.is_empty()).then(|| format!("mat6 {:?} ({n} vertices): {}", call.program, bad.join("; ")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -659,6 +990,136 @@ mod tests {
         let mut kicks2 = Vec::new();
         assert!(run(0x50, top as u32, 0, &mut mem2, &mut VuState::default(), &mut |p| kicks2.push(p.to_vec())));
         assert_eq!(kicks2[0][1..], kicks[0][1..]);
+    }
+
+    /// Random skinned batches (a few bones, strips of 3..9 vertices, some
+    /// vertices outside the guard band) at `top`; `shadow`: the shadow's
+    /// input (1 qword per vertex) instead.
+    fn random_batch(seed: u64, shadow: bool) -> (Box<[u8; 16384]>, u16, Vec<u16>) {
+        let mut s = seed | 1;
+        let mut rnd = move || {
+            s ^= s << 13;
+            s ^= s >> 7;
+            s ^= s << 17;
+            (s >> 11) as f32 / (1u64 << 53) as f32
+        };
+        let mut mem = Box::new([0u8; 16384]);
+        let mut m = Mem(&mut mem);
+        let bones = 4u16;
+        for i in 0..bones {
+            for j in 0..4u16 {
+                let mut c: [u32; 4] = std::array::from_fn(|_| f((rnd() - 0.5) * 0.4));
+                if j < 3 {
+                    c[j as usize] = f(0.8 + 0.4 * rnd());
+                }
+                c[3] = f(if j == 3 { 1.0 + rnd() } else { (rnd() - 0.5) * 0.2 });
+                m.st(BONES + 4 * i + j, c);
+                if j < 3 {
+                    m.st(RAW_ROT + 3 * i + j, c);
+                    m.st(ENV_ROT + 3 * i + j, std::array::from_fn(|l| if l < 3 { f((rnd() - 0.5) * 0.8) } else { 0 }));
+                }
+            }
+        }
+        m.st(GUARD_SCALE, [f(1024.0), f(-1024.0), f(-8388467.5), 0]);
+        m.st(GUARD_OFFSET, [f(2048.0), f(2048.0), f(8388467.5), 0]);
+        for i in 0..10 {
+            m.st(LIGHTS + i, std::array::from_fn(|_| f(if i == 0 { 60.0 + 80.0 * rnd() } else { (rnd() - 0.5) * 120.0 })));
+        }
+        m.st(CTX2_TAG, [3 | 0x8000, 0x302e_4000, 0x412, 0]);
+        let top = 0x100u16;
+        let counts: Vec<u16> = (0..1 + (rnd() * 4.0) as u16).map(|_| 3 + (rnd() * 7.0) as u16).collect();
+        let total: u16 = counts.iter().sum();
+        let tag = if shadow { [total as u32 | 0x8000, 0x1022_4000, 4, 0] } else { [total as u32 | 0x8000, 0x302e_4000, 0x412, 0] };
+        m.st(top, tag);
+        m.st(top + 1, [counts.len() as u32, (BONES + 4) as u32, (RAW_ROT + 3) as u32, total as u32]);
+        for (i, &c) in counts.iter().enumerate() {
+            m.st(top + 2 + i as u16, [c as u32, 0, 0, 0]);
+        }
+        let verts = top + 2 + counts.len() as u16;
+        for k in 0..total {
+            let b = (rnd() * bones as f32) as u16;
+            let p: [u32; 4] = std::array::from_fn(|l| f(if l == 3 { 1.0 } else { (rnd() - 0.5) * 2.6 }));
+            if shadow {
+                m.st(verts + k, [p[0], p[1], p[2], (BONES + 4 * b) as u32]);
+            } else {
+                let a = verts + 3 * k;
+                let uv = |x: f32| ((x * 4096.0) as i32) as u32;
+                m.st(a, [uv(rnd() * 2.0), uv(rnd() * 2.0 - 1.0), (BONES + 4 * b) as u32, (RAW_ROT + 3 * b) as u32]);
+                let n: [u32; 4] = std::array::from_fn(|_| ((rnd() - 0.5) * 60000.0) as i32 as u32);
+                m.st(a + 1, n);
+                m.st(a + 2, p);
+            }
+        }
+        (mem, top, counts)
+    }
+
+    /// The GPU plans: their memory effects, and the shaders' formulas (a CPU
+    /// mirror, `check_gpu`) against the program's kicks, on random batches.
+    #[test]
+    fn gpu_plans_match_the_program() {
+        let mut culled = 0;
+        for seed in 1..200u64 {
+            for (entry, shadow) in [(0x398u32, false), (0x7f8, false), (0xcb8, true)] {
+                let (mem, top, counts) = random_batch(seed * 7919, shadow);
+                let mut cpu = mem.clone();
+                let mut gif = Vec::new();
+                assert!(run(entry, top as u32, 0, &mut cpu, &mut VuState::default(), &mut |p| gif.extend_from_slice(p)));
+                let mut gpu = mem.clone();
+                let calls = plan_gpu(entry, top as u32, 0, &mut gpu).expect("planned");
+                assert_eq!(calls.len(), 1);
+                let total: usize = counts.iter().map(|&c| c as usize).sum();
+                let tris: usize = counts.iter().map(|&c| c as usize - 2).sum();
+                assert_eq!(calls[0].indices.len(), 3 * tris);
+                if !shadow {
+                    culled += tris - (0..total).filter(|k| (gif[3 + 3 * k] >> 96) as u32 == 0x7fff).count();
+                }
+                if let Some(e) = check_gpu(&calls[0], &gif) {
+                    panic!("seed {seed} entry {entry:#x}: {e}");
+                }
+                // Memory: the CPU program's except its output (the GPU
+                // draw leaves its mark there instead).
+                let out = (top + OUT) as usize * 16;
+                let n = if shadow { 1 + total } else { 1 + 3 * total };
+                assert_eq!(gpu[..out], cpu[..out]);
+                assert_eq!(gpu[out + 16 * n..], cpu[out + 16 * n..]);
+                if !shadow {
+                    // The env pass after it: the GPU redraw of this draw.
+                    let env = plan_gpu(0x30, top as u32, 0, &mut gpu).expect("env planned");
+                    assert_eq!(env.len(), 1);
+                    assert_eq!(env[0].link, crate::gpu::Link::Reuse((top + OUT) as u32));
+                    assert_eq!(env[0].indices, calls[0].indices);
+                    assert_eq!(env[0].tag as u32, gif[0] as u32);
+                }
+            }
+        }
+        // (Enough triangles failed CLIP to exercise the culling.)
+        assert!(culled > 500, "{culled}");
+    }
+
+    /// The mirror does catch differences (moved vertices).
+    #[test]
+    fn gpu_check_reports_differences() {
+        let (mem, top, _) = random_batch(5, false);
+        let mut cpu = mem.clone();
+        let mut gif = Vec::new();
+        assert!(run(0x398, top as u32, 0, &mut cpu, &mut VuState::default(), &mut |p| gif.extend_from_slice(p)));
+        let mut gpu = mem.clone();
+        let mut calls = plan_gpu(0x398, top as u32, 0, &mut gpu).unwrap();
+        let v = calls[0].data[0][0] as usize;
+        for k in 0..3 {
+            calls[0].data[v + 3 * k + 2][0] ^= 0x0040_0000;
+        }
+        assert!(check_gpu(&calls[0], &gif).is_some());
+    }
+
+    /// An env pass after a CPU draw stays on the CPU.
+    #[test]
+    fn env_pass_without_gpu_draw_is_not_planned() {
+        let (mut mem, top, _) = random_batch(9, false);
+        assert!(run(0x398, top as u32, 0, &mut mem, &mut VuState::default(), &mut |_| {}));
+        let before = mem.clone();
+        assert!(plan_gpu(0x30, top as u32, 0, &mut mem).is_none());
+        assert_eq!(mem[..], before[..]);
     }
 
     #[test]
