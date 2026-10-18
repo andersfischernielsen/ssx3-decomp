@@ -379,6 +379,25 @@ native result is the standard's); unit test `eabig_native_decoder`.
 Boot with movies, 3000 frames: 13.8 s -> 8.0 s. `SSX3_NATIVE_MPEG=0`
 keeps libmpeg + IPU.
 
+### N6: the rest of the PS2 (PC port) 🟡
+
+Owner, 2026-10-18 night: after the movies, port what is still emulated;
+"we essentially want a PC port"; game logic stays recompiled for now.
+Inventory (native race, 6000 frames, `SSX3_MMIO_PROFILE=1` and a sampled
+profile of the game thread `ee-thread-1`, busy 81% of the time):
+
+| what | still emulated | per frame / cost | plan |
+| --- | --- | --- | --- |
+| frame build | the VIF1 model replays every captured `Cmd::Vu` and the models' VIF chains in RAM into VU1 memory images for the native VU programs (`frame::native`, `play_chain`) | ~10% of the game thread | typed geometry per draw (no VU memory images); chains converted once and cached |
+| VU0 macro mode | each COP2 op goes through `dyn Vu0` into the VU model (stage, commit, flush) | ~9% of the game thread | direct native vector ops, results bit-identical (unit tests against the model) |
+| flip | `Renderer_SetDisplayRegs` runs as guest code: GS privileged registers, the flip GIF packet, a GIF DMA, busy-wait loops on CSR | 1 call, ~120 CSR polls | native: registers and packet written directly, no DMA, no polling |
+| scratchpad DMA | `SprStream` and others kick SPR to/from DMAs (ch 8/9) | ~25 | native copies at the stream's API |
+| timers, INTC, DMAC status | registers the game reads | a few | keep as plain state (no timing model) |
+| EE kernel | threads (host threads with a baton), semaphores, interrupt handlers | ~4 thread switches | keep; a native scheduler later |
+| sound | `ssx3-snd` drives the SPU2 voice model as its mixer | 1 tick / 512 samples | already native; the SPU2 model is the mixer |
+| memory | 32 MiB guest RAM, scratchpad, PS2 float semantics | everywhere | stays while game logic is recompiled |
+| movies | done (N5) | | |
+
 ## Rules
 
 - `AGENTS.md`: native, fast, unit tests over heavy runs.
@@ -399,3 +418,4 @@ keeps libmpeg + IPU.
 | N3 | 🟡 | step 1: incremental snapshots and page write generations; step 2: the typed frame built on the game thread from live memory, the renderer gets only the texture pages it reads (no 32 MiB snapshot) |
 | N4 | 🟡 | functionally reached in native mode: GS detached, kicks complete without running, chains are bare `END`s; the kick thread is still guest code |
 | N5 | ✅ | movies: native libmpeg API over `ssx3-mpeg` |
+| N6 | 🟡 | PC port: the inventory above |

@@ -87,29 +87,58 @@ macro_rules! mr {
     };
 }
 
+// `SSX3_MMIO_PROFILE=1`: counts of the game's hardware register accesses
+// (register address, write), for the exit report ([`mmio_profile`]): what
+// of the PS2 the game still talks to.
+static MMIO_PROFILE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+static MMIO_COUNTS: std::sync::Mutex<Option<std::collections::HashMap<(u32, bool), u64>>> = std::sync::Mutex::new(None);
+
+#[inline]
+fn profile(p: u32, write: bool) {
+    if *MMIO_PROFILE.get_or_init(|| std::env::var_os("SSX3_MMIO_PROFILE").is_some()) {
+        *MMIO_COUNTS.lock().unwrap().get_or_insert_with(Default::default).entry((p & !0xf, write)).or_default() += 1;
+    }
+}
+
+/// The MMIO profile, most accessed first: (register, write, count).
+pub fn mmio_profile() -> Vec<(u32, bool, u64)> {
+    let g = MMIO_COUNTS.lock().unwrap();
+    let mut v: Vec<_> = g.iter().flat_map(|m| m.iter()).map(|(&(a, w), &n)| (a, w, n)).collect();
+    v.sort_by(|a, b| b.2.cmp(&a.2));
+    v
+}
+
 impl Platform for Machine {
     fn read32(&mut self, p: u32) -> u32 {
+        profile(p, false);
         self.hw.read32(p)
     }
     fn read64(&mut self, p: u32) -> u64 {
+        profile(p, false);
         self.hw.read64(p)
     }
     fn read128(&mut self, p: u32) -> u128 {
+        profile(p, false);
         self.hw.read128(p)
     }
     fn write8(&mut self, p: u32, v: u8, ram: &mut [u8], spr: &mut [u8]) {
+        profile(p, true);
         self.hw.write8(p, v, ram, spr)
     }
     fn write16(&mut self, p: u32, v: u16, ram: &mut [u8], spr: &mut [u8]) {
+        profile(p, true);
         self.hw.write16(p, v, ram, spr)
     }
     fn write32(&mut self, p: u32, v: u32, ram: &mut [u8], spr: &mut [u8]) {
+        profile(p, true);
         self.hw.write32(p, v, ram, spr)
     }
     fn write64(&mut self, p: u32, v: u64, ram: &mut [u8], spr: &mut [u8]) {
+        profile(p, true);
         self.hw.write64(p, v, ram, spr)
     }
     fn write128(&mut self, p: u32, v: u128, ram: &mut [u8], spr: &mut [u8]) {
+        profile(p, true);
         self.hw.write128(p, v, ram, spr)
     }
     fn set_now(&mut self, now: u64) {

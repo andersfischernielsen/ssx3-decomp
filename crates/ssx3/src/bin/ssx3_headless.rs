@@ -335,6 +335,10 @@ fn main() {
     }
     eprintln!("halted: {:?}", ssx3_ps2::m!(c).kernel.halted);
     eprint!("{}", game::dump(&c));
+    let mmio = ssx3_ps2::platform::mmio_profile();
+    if !mmio.is_empty() {
+        eprintln!("mmio (register, r/w, count): {:?}", mmio.iter().take(60).map(|(a, w, n)| format!("{a:#010x}{}={n}", if *w { "w" } else { "r" })).collect::<Vec<_>>());
+    }
     eprintln!("syscalls: {:?}", ssx3_ps2::m!(c).kernel.syscall_counts.iter().map(|(k, v)| format!("{}={v}", ssx3_ps2::kernel::syscall_name(*k))).collect::<Vec<_>>());
     eprintln!("modules: {:?}", ssx3_ps2::m!(c).sif.loaded_modules);
     eprintln!("unknown sif servers: {:x?}", ssx3_ps2::m!(c).sif.unknown_servers);
