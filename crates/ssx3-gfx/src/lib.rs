@@ -100,6 +100,8 @@ pub struct Inner {
     gs: gs::Gs,
     vu: Box<[u8; 16384]>,
     texcache: HashMap<tex::TexKey, CachedTex>,
+    /// Texture keys reused while their memory is not written.
+    texkeys: tex::KeyCache,
     samplers: HashMap<draw::SampKey, wgpu::Sampler>,
     /// Anisotropic filtering level for linear samplers (1 = off; affects
     /// textures with mip levels: replacements).
@@ -247,6 +249,7 @@ impl Renderer {
             gs: gs::Gs::new(),
             vu: Box::new([0; 16384]),
             texcache: HashMap::new(),
+            texkeys: Default::default(),
             samplers: HashMap::new(),
             aniso: 16,
             white,
@@ -538,7 +541,7 @@ impl Inner {
     /// with the VU memory it starts from.
 
     fn texture(&mut self, info: u32, texa: u64, mem: &dyn Mem) -> Option<(wgpu::TextureView, u8)> {
-        let key = tex::key(mem, info, texa);
+        let key = self.texkeys.key(mem, info, texa);
         let frame = self.stats.frames;
         if let Some(t) = self.texcache.get_mut(&key) {
             t.used = frame;
@@ -1119,7 +1122,8 @@ impl Inner {
                     u.pad[0].to_bits(),
                     0,
                 ];
-                ubytes.extend(words.iter().flat_map(|w| w.to_le_bytes()));
+                // SAFETY: u32 words as their (little-endian) bytes.
+                ubytes.extend_from_slice(unsafe { std::slice::from_raw_parts(words.as_ptr() as *const u8, std::mem::size_of_val(&words)) });
                 ubytes.resize(ubytes.len().next_multiple_of(draw::UNIFORM_STRIDE as usize), 0);
                 let desc = if probe.is_some() {
                     format!(

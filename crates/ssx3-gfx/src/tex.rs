@@ -113,6 +113,50 @@ fn fingerprint(m: &dyn Mem, pixels: u32, bytes: u32, clut: u32, clut_bytes: u32)
     h
 }
 
+/// [`key`], reused while the memory it reads is not written
+/// (`Mem::unchanged`; live snapshots only): per (TexInfo, TEXA), the key,
+/// the bytes of pixels and CLUT it covers, the snapshot it was made in.
+#[derive(Default)]
+pub struct KeyCache(std::collections::HashMap<(u32, u64), (TexKey, u32, u32, u64)>);
+
+impl KeyCache {
+    pub fn key(&mut self, m: &dyn Mem, info: u32, texa: u64) -> TexKey {
+        let snap = m.snapshot();
+        if snap != 0 {
+            if let Some(&(k, bytes, clut_bytes, seen)) = self.0.get(&(info, texa)) {
+                let same = m.unchanged(info, info + ti::TEX1, seen)
+                    && m.unchanged(k.pixels, k.pixels + bytes.max(4), seen)
+                    && (clut_bytes == 0 || m.unchanged(k.clut, k.clut + clut_bytes, seen));
+                if same {
+                    return k;
+                }
+            }
+        }
+        let k = key(m, info, texa);
+        if snap != 0 {
+            if self.0.len() > 8192 {
+                self.0.clear();
+            }
+            let (bytes, clut_bytes) = sizes(m, info);
+            self.0.insert((info, texa), (k, bytes, clut_bytes, snap));
+        }
+        k
+    }
+}
+
+/// The bytes of a texture's level-0 pixels and of its CLUT.
+fn sizes(m: &dyn Mem, info: u32) -> (u32, u32) {
+    let t0 = tex0(m, info);
+    let (w, h) = (1u32 << ((t0 >> 26) & 15), 1u32 << ((t0 >> 30) & 15));
+    let bpp = word(m, info + ti::BPP).clamp(4, 32);
+    let clut_bytes = match word(m, info + ti::FORMAT) {
+        0xb | 0xc => 0x40,
+        9 | 10 => 0x400,
+        _ => 0,
+    };
+    (w * h * bpp / 8, clut_bytes)
+}
+
 pub fn key(m: &dyn Mem, info: u32, texa: u64) -> TexKey {
     let t0 = tex0(m, info);
     let format = word(m, info + ti::FORMAT);
