@@ -269,8 +269,8 @@ dumps (pixel identity with the decoding path) before the next:
    Bucket links: packetless, `DeferMan_AppendPacket` records them
    (`Cmd::Link`, at the packet end the NEXT tag would be) instead of
    writing the tag; the frame build follows them. Left in guest memory:
-   the four bare `END` chain heads and slot 75 (`DrawLineShape`, debug
-   only).
+   the four bare `END` chain heads. Slot 75 (`DrawLineShape`, debug
+   paths only) is native too, ported from the decompile; no run calls it.
    Guest callees from native draw functions run with `Cpu::no_unwind` and
    at host depth 0 (`events::deliver_event_here` now restores the outer
    `no_unwind`: a hand-written port's event check inside such a call
@@ -382,7 +382,7 @@ IPU emulation → a native MPEG-2 decoder feeding a texture.
 | Step | State | Notes |
 | --- | --- | --- |
 | N1 | ✅ | all seven programs: meshes, strips/ribbons, riders, Bézier terrain, particles, snow (type 3 0x2400 PRIM-only and 0x3bf0 line shape stay on the CPU); ~73% of VU calls on the GPU, merged into ~0.85M batches per 6000 frames; race replay frames match the CPU programs to rounding; native render 6.5 → 5.3 ms per frame |
-| N2 | 🟡 | stages A (every draw captured), B (frames from the buckets, no chain walk) and C (draw functions and RenderFrame without packets) done but for the bucket link tags and one debug draw. Earlier: D1 capture infrastructure (`ssx3_game::capture`, `ssx3_render::direct`): strips and ribbons drawn from native commands; model and rider vertex data resident on the GPU; uploads per race frame 3.2 -> ~1.5 MB; browser race 16-21 -> ~13-15 ms per frame, renderer 44% -> 29% of the worker. Next: D1 for riders / Bézier / particles, then D2 (the draw functions native, no packets: `DrawModel` first, ~3% of the browser worker) |
+| N2 | ✅ | stages A (every draw captured), B (frames from the buckets, no chain walk) and C (draw functions and RenderFrame without packets) done: every draw producer, the bucket links and RenderFrame are native in packetless mode. Earlier: D1 capture infrastructure (`ssx3_game::capture`, `ssx3_render::direct`): strips and ribbons drawn from native commands; model and rider vertex data resident on the GPU; uploads per race frame 3.2 -> ~1.5 MB; browser race 16-21 -> ~13-15 ms per frame, renderer 44% -> 29% of the worker. Next: D1 for riders / Bézier / particles, then D2 (the draw functions native, no packets: `DrawModel` first, ~3% of the browser worker) |
 | N3 | 🟡 | step 1: incremental snapshots and page write generations; step 2: the typed frame built on the game thread from live memory, the renderer gets only the texture pages it reads (no 32 MiB snapshot) |
-| N4 | ⬜ | |
+| N4 | 🟡 | functionally reached in native mode: GS detached, kicks complete without running, chains are bare `END`s; the kick thread is still guest code |
 | N5 | ⬜ | |
