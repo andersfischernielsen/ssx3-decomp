@@ -45,7 +45,7 @@ No guest-RAM snapshot, no DMA/VIF/GIF parsing, no VU1 programs on the CPU.
 
 Each step keeps the game playable and is verified before the next.
 
-### N1: VU1 vertex programs on the GPU ⬜
+### N1: VU1 vertex programs on the GPU 🟡
 
 Replace "run the VU1 program on the CPU, decode its GIF output" with GPU
 vertex generation per material type, fed by the VU input the typed frame
@@ -109,6 +109,31 @@ so that draws become native commands instead of packets:
   counters, `DeferMan` state the game reads), so RAM-identity A/B runs
   (`SSX3_NO_OVERRIDES` / `SSX3_OVERRIDES`) keep proving the game logic.
 
+Findings ([`../investigation/n2-render-layer.md`](../investigation/n2-render-layer.md)):
+30 functions write `DeferMan` records, plus two producers that append to
+buckets without a record (slot 95 opaque models, `PS2BezierMan_v18`'s
+deferred type-2 patches), so reading records at `RenderFrame` would miss
+draws; only `cPS2FogParticleMan_DrawParticles` sits outside the render layer;
+nothing outside it reads `DeferMan`/VifBuff/GifBuff, but ~90 game functions
+use the render-state stack (`gm+0xe84`) and the draw slots leave changes in
+it. Approach:
+
+- **Phase A (observe):** wrap each producer: run the generated body (RAM,
+  cycles and event points stay identical) and record a typed command keyed
+  by its VifBuff packet start, with its data copied now (vertices,
+  descriptors, bones from the scratchpad, lighting, render state, matrix
+  index). At EndFrame, join commands to the sorted bucket list; packets with
+  no command take today's path. Order: slot 71 strips → 95 models + grid
+  meshes → riders → Bézier → particles/trails → 2D DIRECT slots → the rest.
+- **Phase B (replace):** family by family, stop building the packets; the
+  gate becomes behavioural or RAM identity with the render-private regions
+  (VifBuff, GifBuff, DeferMan, scratchpad, SprStream) masked.
+
+Risks: model memory reused by streaming (key meshes by address + content
+hash or hook load/unload), VifBuff double buffering (copy at record time),
+scratchpad-resident bones/matrices (capture during the call), the layer
+split the lens-flare queries need.
+
 ### N3: no guest-RAM snapshot ⬜
 
 With N2 the renderer consumes the command list; the 32 MiB copy per frame
@@ -139,8 +164,8 @@ IPU emulation → a native MPEG-2 decoder feeding a texture.
 
 | Step | State | Notes |
 | --- | --- | --- |
-| N1 | ⬜ | |
-| N2 | ⬜ | |
+| N1 | 🟡 | framework + type 3 meshes on `main` (race frames match the CPU programs to rounding); strips, riders, Bézier, particles/snow in progress |
+| N2 | ⬜ | render layer mapped (`n2-render-layer.md`) |
 | N3 | ⬜ | |
 | N4 | ⬜ | |
 | N5 | ⬜ | |
