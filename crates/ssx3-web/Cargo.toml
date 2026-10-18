@@ -12,6 +12,7 @@ crate-type = ["cdylib"]
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 ssx3-core.workspace = true
 ssx3-ps2 = { path = "../ssx3-ps2" }
+ssx3-iop = { path = "../ssx3-iop" }
 ssx3-gfx = { path = "../ssx3-gfx" }
 ssx3-ee-rt = { path = "../ssx3-ee-rt" }
 ssx3-ee-unwind = { path = "../../generated/ee-unwind/game", package = "ssx3-ee-unwind" }

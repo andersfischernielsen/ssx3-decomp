@@ -24,11 +24,20 @@ pub trait FrameSink: Send {
     /// render later, and hands the snapshot back with [`recycle`].
     fn frame(&mut self, gm: u32, mem: Box<DumpMem>);
 
-    /// The last frame's depth after its 3D phase (VIF phase 1), as GS Z
-    /// values (`w`×`h`), for the light visibility queries in native mode.
-    fn depth(&mut self) -> Option<(u32, u32, Vec<u32>)> {
+    /// The last frame's depth after its 3D phase (VIF phase 1), for the
+    /// light visibility queries in native mode.
+    fn depth(&mut self) -> Option<Depth> {
         None
     }
+}
+
+/// A frame's depth as GS Z values, `w`×`h`; `z(x, y)` converts one pixel
+/// from the renderer's depth when it is read (the light queries read a few
+/// small rectangles of it).
+pub struct Depth {
+    pub w: u32,
+    pub h: u32,
+    pub z: Box<dyn Fn(u32, u32) -> u32 + Send>,
 }
 
 struct Sink {
@@ -111,15 +120,14 @@ pub fn skip_chain(vif: bool, tadr: u32) -> bool {
     HEADS[k..k + 2].iter().any(|h| h.load(Ordering::Acquire) == tadr as u64)
 }
 
-/// The sink's latest depth (after the 3D phase), as GS Z values.
-static DEPTH: Mutex<Option<(u32, u32, Vec<u32>)>> = Mutex::new(None);
+/// The sink's latest depth (after the 3D phase).
+static DEPTH: Mutex<Option<Depth>> = Mutex::new(None);
 
-/// Native mode: run `f` on the sink's latest depth (`w`, `h`, Z values,
-/// row-major), for the light visibility queries.
-pub fn with_depth<R>(f: impl FnOnce(u32, u32, &[u32]) -> R) -> Option<R> {
+/// Native mode: run `f` on the sink's latest depth, for the light
+/// visibility queries.
+pub fn with_depth<R>(f: impl FnOnce(&Depth) -> R) -> Option<R> {
     let g = DEPTH.lock().unwrap();
-    let (w, h, z) = g.as_ref()?;
-    Some(f(*w, *h, z))
+    Some(f(g.as_ref()?))
 }
 
 // View settings: the aspect ratio the game renders for and a field-of-view

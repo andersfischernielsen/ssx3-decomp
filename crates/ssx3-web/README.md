@@ -41,19 +41,31 @@ The recompiled game as WebAssembly, drawn with WebGPU. Experimental.
     chunk through the same encode/run/decode path; the screenshots are
     identical.
 
-Not yet supported: sound, the memory card, gamepads, the settings overlay,
+- **Sound.** The native mixer's 48 kHz stereo goes from the worker to the
+  page each frame and plays through an AudioWorklet (`www/audio.js`), which
+  buffers at most ~200 ms.
+- **Image.** The original one: 1× GS resolution, the game's 4:3 view boxed
+  in the canvas, no anisotropic filtering.
+
+Not yet supported: the memory card, gamepads, the settings overlay,
 interpolation and texture packs.
 
 ## Performance (headless Chrome, M-series Mac)
 
 - **Menus and front end:** 60 fps.
-- **Races:** about 25-50 fps, depending on the scene. Per race frame:
-  - about 8 ms of game code;
-  - 2-5 ms building the typed frame;
-  - the VU1 work, at most as fast as its largest chunk. A run of draws of
-    one program that pass state through VU memory cannot be split, and at
-    the start of a race one such chunk takes 11-17 ms. The other chunks run
-    in parallel on the helpers.
+- **Races:** about 55-60 fps once under way (17 ms per frame), about 33 fps
+  in the heaviest stretch at the start. Per race frame, on the game worker:
+  - about half is game code;
+  - the renderer: building the typed frame, the GS draws from the VU1
+    output and the WebGPU calls, a few ms each.
+- **Frame staging.** A frame's VU1 chunks start on the helper workers when
+  the game publishes it, and the frame is drawn when the next one is
+  published (`Inner::publish_staged`). The game's next frame runs while the
+  helpers work, which hides the largest chunk (11-17 ms; a run of draws of
+  one program that pass state through VU memory cannot be split). One frame
+  of latency, as with the native render thread.
+- **Light queries.** The depth read back for the lens-flare queries is
+  converted per pixel when a query reads it, not as a whole every frame.
 
 Next steps, roughly by payoff:
 - split that chunk. Measured, by running each call from the true memory and

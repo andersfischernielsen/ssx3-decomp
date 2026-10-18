@@ -218,7 +218,7 @@ fn lensfx_query_native(c: &mut Cpu) {
         ssx3_ee::s09::f_002ec478__generated(c);
         return;
     }
-    let Some(v) = ssx3_ps2::frame_sink::with_depth(|w, h, z| lensfx_visibility(&f, w, h, z)) else {
+    let Some(v) = ssx3_ps2::frame_sink::with_depth(|d| lensfx_visibility(&f, d.w, d.h, &d.z)) else {
         ssx3_ee::s09::f_002ec478__generated(c);
         return;
     };
@@ -233,7 +233,7 @@ fn lensfx_query_native(c: &mut Cpu) {
 /// visible. With the whole rectangle on screen the result is visible /
 /// total; otherwise max(0, (visible − half) / half) truncated to an
 /// integer, as the game computes it.
-fn lensfx_visibility(f: &[f32], w: u32, h: u32, z: &[u32]) -> f32 {
+fn lensfx_visibility(f: &[f32], w: u32, h: u32, z: &dyn Fn(u32, u32) -> u32) -> f32 {
     let (lx, ly, lw, lh) = (f[0] as i32, f[1] as i32, f[2] as i32, f[3] as i32);
     let (sx, sy, rw, rh) = (f[4] as i32, f[5] as i32, f[6] as i32, f[7] as i32);
     // __fixunssfsi.
@@ -247,7 +247,7 @@ fn lensfx_visibility(f: &[f32], w: u32, h: u32, z: &[u32]) -> f32 {
                 continue;
             }
             total += 1.0;
-            let zv = if px >= 0 && py >= 0 && (px as u32) < w && (py as u32) < h { z[(py as u32 * w + px as u32) as usize] } else { 0 };
+            let zv = if px >= 0 && py >= 0 && (px as u32) < w && (py as u32) < h { z(px as u32, py as u32) } else { 0 };
             if zv <= depth {
                 visible += 1.0;
             }
@@ -275,7 +275,7 @@ mod tests {
     #[test]
     fn unoccluded_light_is_fully_visible() {
         let z = vec![500u32; 64 * 64];
-        assert_eq!(lensfx_visibility(&query(8.0, 8.0), 64, 64, &z), 1.0);
+        assert_eq!(lensfx_visibility(&query(8.0, 8.0), 64, 64, &|x, y| z[(y * 64 + x) as usize]), 1.0);
     }
 
     #[test]
@@ -288,7 +288,7 @@ mod tests {
                 z[y * 64 + x] = 5000;
             }
         }
-        assert_eq!(lensfx_visibility(&query(8.0, 8.0), 64, 64, &z), 0.5);
+        assert_eq!(lensfx_visibility(&query(8.0, 8.0), 64, 64, &|x, y| z[(y * 64 + x) as usize]), 0.5);
     }
 
     #[test]
@@ -299,10 +299,10 @@ mod tests {
         let mut f = query(-8.0, 8.0);
         f[4] = 0.0;
         f[6] = 8.0;
-        assert_eq!(lensfx_visibility(&f, 64, 64, &z), 0.0);
+        assert_eq!(lensfx_visibility(&f, 64, 64, &|x, y| z[(y * 64 + x) as usize]), 0.0);
         // Fully on screen again but every pixel occluded: 0.
         let z = vec![5000u32; 64 * 64];
-        assert_eq!(lensfx_visibility(&query(8.0, 8.0), 64, 64, &z), 0.0);
+        assert_eq!(lensfx_visibility(&query(8.0, 8.0), 64, 64, &|x, y| z[(y * 64 + x) as usize]), 0.0);
     }
 }
 

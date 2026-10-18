@@ -121,8 +121,30 @@ impl Sink {
     }
 }
 
+/// The browser: no device here. The ring is drained by the page ([`take`]),
+/// which plays it with Web Audio.
+#[cfg(target_arch = "wasm32")]
+fn start_device() -> Option<Ring> {
+    let ring: Ring = Arc::new(Mutex::new(VecDeque::with_capacity(RING_FRAMES * 2)));
+    *PAGE.lock().unwrap() = Some(ring.clone());
+    Some(ring)
+}
+
+#[cfg(target_arch = "wasm32")]
+static PAGE: Mutex<Option<Ring>> = Mutex::new(None);
+
+/// The browser: the samples produced since the last call (interleaved
+/// stereo, 48 kHz).
+#[cfg(target_arch = "wasm32")]
+pub fn take(out: &mut Vec<i16>) {
+    if let Some(r) = PAGE.lock().unwrap().as_ref() {
+        out.extend(r.lock().unwrap().drain(..));
+    }
+}
+
 /// Open the default output device on its own thread (cpal streams are not
 /// `Send` on every platform). Returns the ring it drains.
+#[cfg(not(target_arch = "wasm32"))]
 fn start_device() -> Option<Ring> {
     let ring: Ring = Arc::new(Mutex::new(VecDeque::with_capacity(RING_FRAMES * 2)));
     let (tx, rx) = std::sync::mpsc::channel::<bool>();
@@ -152,6 +174,7 @@ fn start_device() -> Option<Ring> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn open_stream(ring: Ring) -> Result<cpal::Stream, String> {
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     let host = cpal::default_host();

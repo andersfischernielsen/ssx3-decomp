@@ -9,9 +9,11 @@
 //! 4:3 view (boxed in the canvas), no anisotropic filtering, no
 //! interpolation, no texture packs.
 //!
-//! What the native window has and this has not (yet): sound (the mixer
-//! runs, nothing plays it), the memory card, gamepads and the settings
-//! overlay.
+//! Sound: the mixer's samples go to the page ([`Game::audio`]), which plays
+//! them with an AudioWorklet (`www/audio.js`).
+//!
+//! What the native window has and this has not (yet): the memory card,
+//! gamepads and the settings overlay.
 #![cfg(target_arch = "wasm32")]
 
 extern crate ssx3_ee_unwind as ssx3_ee;
@@ -118,12 +120,15 @@ mod vu_pool {
             }
         }
 
-        /// Run `jobs` on the helpers and on this thread; results in order.
-        pub fn run(&self, jobs: Vec<Vec<u8>>) -> Vec<Vec<u8>> {
+        /// Start `jobs` on the helpers; the returned function waits for
+        /// them (taking any not started yet itself) and gives the results
+        /// in order.
+        pub fn start(self: &std::sync::Arc<Self>, jobs: Vec<Vec<u8>>) -> ssx3_gfx::VuCollect {
             let local = |j: &[u8]| ssx3_gfx::run_vu_job(j);
             let size: usize = jobs.iter().map(|j| j.len()).sum();
             if jobs.len() > MAX_JOBS || size > INPUTS as usize {
-                return jobs.iter().map(|j| local(j)).collect();
+                let r: Vec<Vec<u8>> = jobs.iter().map(|j| local(j)).collect();
+                return Box::new(move || r);
             }
             let n = jobs.len() as i32;
             let mut off = HEADER;
@@ -142,6 +147,12 @@ mod vu_pool {
             let _ = Atomics::store(&self.i32, 2, tag);
             let _ = Atomics::store(&self.i32, 0, gen);
             let _ = Atomics::notify(&self.i32, 0);
+            let pool = self.clone();
+            Box::new(move || pool.collect(jobs, tag, n))
+        }
+
+        fn collect(&self, jobs: Vec<Vec<u8>>, tag: i32, n: i32) -> Vec<Vec<u8>> {
+            let local = |j: &[u8]| ssx3_gfx::run_vu_job(j);
             let mut out: Vec<Option<Vec<u8>>> = vec![None; jobs.len()];
             while let Some(j) = self.claim(tag, n) {
                 out[j] = Some(local(&jobs[j]));
@@ -274,7 +285,8 @@ pub async fn start(canvas: web_sys::OffscreenCanvas, iso: web_sys::Blob, helpers
     let vu_buffer = pool.as_ref().map(|p| p.sab.clone());
     if let Some(p) = pool {
         log(&format!("[ssx3] {helpers} VU helper workers"));
-        ssx3_gfx::set_vu_offload(Box::new(move |jobs| p.run(jobs)), helpers as usize + 1);
+        let p = std::sync::Arc::new(p);
+        ssx3_gfx::set_vu_offload(Box::new(move |jobs| p.start(jobs)), helpers as usize);
     }
     let game = Game {
         cpu,
@@ -345,6 +357,13 @@ impl Game {
             log(&format!("halted: {:?}", ssx3_ps2::m!(self.cpu).kernel.halted));
         }
         alive
+    }
+
+    /// The sound since the last call: interleaved stereo, 48 kHz.
+    pub fn audio(&mut self) -> Vec<i16> {
+        let mut v = Vec::new();
+        ssx3_iop::audio::take(&mut v);
+        v
     }
 
     /// Draw the latest image to the canvas.

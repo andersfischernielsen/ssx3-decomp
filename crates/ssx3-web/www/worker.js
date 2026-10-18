@@ -54,7 +54,11 @@ function loop() {
       frames++;
     }
     if (now - next > 100) next = now;
-    if (ran > 0) game.present();
+    if (ran > 0) {
+      game.present();
+      const a = game.audio();
+      if (a.length) postMessage({ type: "audio", samples: a }, [a.buffer]);
+    }
     if (now - mark >= 1000) {
       postMessage({ type: "fps", fps: (frames * 1000) / (now - mark) });
       frames = 0;

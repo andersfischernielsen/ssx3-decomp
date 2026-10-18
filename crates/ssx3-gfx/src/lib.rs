@@ -78,6 +78,9 @@ struct CachedTex {
 
 pub struct Inner {
     shared: Arc<Shared>,
+    /// The browser: the frame whose VU1 work is running on the helper
+    /// workers (`publish_staged`).
+    staged: Option<Staged>,
     /// Typed frames from the published memory (in order).
     builder: ssx3_ps2::frame_sink::FrameBuilder,
     dev: wgpu::Device,
@@ -165,7 +168,7 @@ pub struct Shared {
     /// Frames sent and not yet rendered.
     pending: Mutex<usize>,
     idle: std::sync::Condvar,
-    depth: Mutex<Option<(u32, u32, Vec<u32>)>>,
+    depth: Mutex<Option<ssx3_ps2::frame_sink::Depth>>,
     /// The latest frame's images (in-between ones first) and when they
     /// were ready.
     present: Mutex<Option<(Vec<wgpu::Texture>, web_time::Instant)>>,
@@ -248,6 +251,7 @@ impl Renderer {
             timing: (0, [0.0; 4]),
             present: Vec::new(),
             subframes: 1,
+            staged: None,
             over_budget: 0,
             prev_records: None,
             subst: None,
@@ -413,13 +417,19 @@ impl ssx3_ps2::frame_sink::FrameSink for Renderer {
                 }
             }
             None => {
-                self.0.lock().unwrap().publish(gm, &mem);
-                ssx3_ps2::frame_sink::recycle(mem);
+                let mut g = self.0.lock().unwrap();
+                if OFFLOAD.get().is_some() && g.subframes <= 1 {
+                    g.publish_staged(gm, mem);
+                } else {
+                    g.finish_staged();
+                    g.publish(gm, &mem);
+                    ssx3_ps2::frame_sink::recycle(mem);
+                }
             }
         }
     }
 
-    fn depth(&mut self) -> Option<(u32, u32, Vec<u32>)> {
+    fn depth(&mut self) -> Option<ssx3_ps2::frame_sink::Depth> {
         self.1.depth.lock().unwrap().take()
     }
 }
@@ -643,6 +653,36 @@ impl Inner {
     pub fn publish(&mut self, gm: u32, mem: &ssx3_ps2::frame_sink::DumpMem) {
         let (built, carry) = self.builder.build(gm, mem);
         self.render_built(&built, &carry, mem);
+    }
+
+    /// With a [`VuOffload`] and no render thread (the browser): start this
+    /// frame's VU1 chunks on the helpers and draw it when the next frame
+    /// comes, so the game's next frame runs while they work. One frame of
+    /// latency, as with the native render thread.
+    fn publish_staged(&mut self, gm: u32, mem: Box<ssx3_ps2::frame_sink::DumpMem>) {
+        self.finish_staged();
+        let (built, carry) = self.builder.build(gm, &mem);
+        let b = self.take_build();
+        let collect = {
+            let draws: Vec<&frame::Draw> = built.frame.draws().collect();
+            let plan = Build::plan_vu_calls(&b, &built, &draws);
+            plan.offloadable().then(|| (plan.bounds.len(), (OFFLOAD.get().unwrap().0)(plan.jobs())))
+        };
+        self.put_build(b);
+        self.staged = Some(Staged { mem, built, carry, collect });
+    }
+
+    /// Draw the staged frame, if any (`publish_staged`).
+    pub fn finish_staged(&mut self) {
+        let Some(s) = self.staged.take() else { return };
+        *PREFETCH.lock().unwrap() = s.collect;
+        self.render_built(&s.built, &s.carry, &s.mem);
+        // Not taken (the plan came out different): still wait, the helpers
+        // must be idle before the next jobs.
+        if let Some((_, c)) = PREFETCH.lock().unwrap().take() {
+            c();
+        }
+        ssx3_ps2::frame_sink::recycle(s.mem);
     }
 
     /// Render a typed frame (built with `carry`) over its memory snapshot.
@@ -1229,22 +1269,19 @@ impl Inner {
                 // (Not mapped yet in the browser: the queries keep the
                 // depth before.)
                 if let Some(v) = mapped.load(std::sync::atomic::Ordering::Acquire).then(|| slice.get_mapped_range()).and_then(|r| r.ok()) {
-                    // In GS pixels: the sample at each pixel's centre.
-                    let (lw, lh) = (lw as usize, lh as usize);
+                    // In GS pixels: the sample at each pixel's centre,
+                    // converted when a query reads it.
+                    let raw = v.to_vec();
                     let row = (pw * 4).next_multiple_of(256) as usize;
                     let zs = zs as f64;
-                    let mut z = Vec::with_capacity(lw * lh);
-                    for y in 0..lh {
+                    let z = move |x: u32, y: u32| {
                         let py = (((y as f32 + 0.5) * ph as f32 / lh as f32) as usize).min(ph as usize - 1);
-                        let r = py * row;
-                        for x in 0..lw {
-                            let pxl = (((x as f32 + 0.5) * pw as f32 / lw as f32) as usize).min(pw as usize - 1);
-                            let o = r + 4 * pxl;
-                            let d = f32::from_le_bytes([v[o], v[o + 1], v[o + 2], v[o + 3]]);
-                            z.push((d as f64 * zs).round().min(zs - 1.0) as u32);
-                        }
-                    }
-                    *self.shared.depth.lock().unwrap() = Some((lw as u32, lh as u32, z));
+                        let pxl = (((x as f32 + 0.5) * pw as f32 / lw as f32) as usize).min(pw as usize - 1);
+                        let o = py * row + 4 * pxl;
+                        let d = f32::from_le_bytes([raw[o], raw[o + 1], raw[o + 2], raw[o + 3]]);
+                        (d as f64 * zs).round().min(zs - 1.0) as u32
+                    };
+                    *self.shared.depth.lock().unwrap() = Some(ssx3_ps2::frame_sink::Depth { w: lw, h: lh, z: Box::new(z) });
                 }
             }
             let mapped = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -1468,22 +1505,37 @@ impl VuPlan<'_> {
         }
     }
 
-    /// Run every chunk through the installed [`VuOffload`] (the browser's
-    /// helper workers); false (nothing done) without one, or for an
-    /// in-between image (its substitutions stay here).
-    fn offload(&self) -> bool {
-        let Some((off, _)) = OFFLOAD.get() else { return false };
-        if self.subst.is_some() || self.model_subst.is_some() || self.bounds.len() < 2 {
-            return false;
-        }
-        let jobs = (0..self.bounds.len())
+    /// Whether the chunks go to the installed [`VuOffload`] (the browser's
+    /// helper workers): not without one, nor for an in-between image (its
+    /// substitutions stay here).
+    fn offloadable(&self) -> bool {
+        OFFLOAD.get().is_some() && self.subst.is_none() && self.model_subst.is_none() && self.bounds.len() >= 2
+    }
+
+    /// Every chunk, encoded (takes the start images).
+    fn jobs(&self) -> Vec<Vec<u8>> {
+        (0..self.bounds.len())
             .map(|j| {
                 let start = self.starts[j].lock().unwrap().take().expect("chunk");
                 let e = self.bounds.get(j + 1).copied().unwrap_or(self.calls.len());
                 ssx3_render::vujob::encode(&start, &self.calls[self.bounds[j]..e])
             })
-            .collect();
-        for (j, r) in off(jobs).into_iter().enumerate() {
+            .collect()
+    }
+
+    /// Run every chunk through the offload, or take the results of the
+    /// same plan started earlier (`PREFETCH`); false (nothing done) when
+    /// not offloadable.
+    fn offload(&self) -> bool {
+        if !self.offloadable() {
+            return false;
+        }
+        let pre = PREFETCH.lock().unwrap().take_if(|(n, _)| *n == self.bounds.len());
+        let results = match pre {
+            Some((_, collect)) => collect(),
+            None => (OFFLOAD.get().unwrap().0)(self.jobs())(),
+        };
+        for (j, r) in results.into_iter().enumerate() {
             *self.done[j].0.lock().unwrap() = Some(ssx3_render::vujob::decode(&r));
         }
         true
@@ -1903,11 +1955,26 @@ impl Build {
     }
 }
 
-/// Runs encoded chunks of VU1 calls ([`ssx3_render::vujob`]) elsewhere and
-/// returns their results in order: the browser build's helper workers.
-pub type VuOffload = Box<dyn Fn(Vec<Vec<u8>>) -> Vec<Vec<u8>> + Send + Sync>;
+/// Waits for the results of started VU1 chunks, in order.
+pub type VuCollect = Box<dyn FnOnce() -> Vec<Vec<u8>> + Send>;
+
+/// Starts encoded chunks of VU1 calls ([`ssx3_render::vujob`]) elsewhere
+/// (the browser build's helper workers) and returns how to wait for them.
+pub type VuOffload = Box<dyn Fn(Vec<Vec<u8>>) -> VuCollect + Send + Sync>;
 
 static OFFLOAD: std::sync::OnceLock<(VuOffload, usize)> = std::sync::OnceLock::new();
+
+/// The staged frame's started chunks (chunk count, results), for its
+/// `VuPlan::offload` when it is drawn.
+static PREFETCH: Mutex<Option<(usize, VuCollect)>> = Mutex::new(None);
+
+/// A frame published but not drawn yet (`Inner::publish_staged`).
+struct Staged {
+    mem: Box<ssx3_ps2::frame_sink::DumpMem>,
+    built: Built,
+    carry: ssx3_render::frame::Carry,
+    collect: Option<(usize, VuCollect)>,
+}
 
 /// Run one encoded job (what an offload does with each).
 pub fn run_vu_job(job: &[u8]) -> Vec<u8> {
