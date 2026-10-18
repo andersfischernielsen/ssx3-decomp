@@ -99,7 +99,7 @@ fn main() {
     }
     if std::env::var_os("SSX3_GPU_STATS").is_some() {
         let s = r.stats();
-        eprintln!("[gpu-stats] native draws {}, VU calls {} ({} without a program)", s.native_draws, s.vu_calls, s.vu_missing);
+        eprintln!("[gpu-stats] native draws {}, VU calls {} ({} without a program), batches {}, frames {}", s.native_draws, s.vu_calls, s.vu_missing, s.batches, s.frames);
         for ((h, e, i, g), n) in ssx3_render::gpu::STATS.lock().unwrap().iter() {
             eprintln!("[gpu-stats] {h:016x} entry {e:#06x} itop {i} gpu {g}: {n}");
         }

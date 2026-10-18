@@ -1220,6 +1220,17 @@ impl Inner {
         started.insert(main);
         let mut pass = begin(&mut enc, main, true);
         pass.set_vertex_buffer(0, vbuf.slice(..));
+        // The pass state last set (each command only when it changes; a new
+        // pass starts with none).
+        #[derive(Default, PartialEq)]
+        struct Last {
+            pipe: Option<(draw::PipeKey, Option<ssx3_render::gpu::Program>)>,
+            group0: Option<(usize, u32)>,
+            group1: bool,
+            constant: Option<u64>,
+            scissor: Option<[u32; 4]>,
+        }
+        let mut last = Last::default();
         let mut prev_frame = false;
         let mut probed: Vec<String> = Vec::new();
         let probe_buf = probe.map(|_| {
@@ -1246,6 +1257,7 @@ impl Inner {
                 take_depth(&mut enc);
                 pass = begin(&mut enc, cur_target, false);
                 pass.set_vertex_buffer(0, vbuf.slice(..));
+                last = Last::default();
             }
             let Some([x, y, sw, sh]) = it.scissor else { continue };
             // (Frame-sampling items may draw into another target: the
@@ -1275,25 +1287,45 @@ impl Inner {
                 let first = started.insert(cur_target);
                 pass = begin(&mut enc, cur_target, first);
                 pass.set_vertex_buffer(0, vbuf.slice(..));
+                last = Last::default();
             }
             prev_frame = it.frame;
-            match (it.gpu, gpu_bind.as_ref()) {
-                (Some(g), Some(bg)) => {
-                    pass.set_pipeline(self.pipes.cached_gpu(it.key, g.program));
-                    pass.set_bind_group(0, &groups[it.bind], &[it.ubo * draw::UNIFORM_STRIDE as u32]);
-                    pass.set_bind_group(1, bg, &[]);
-                    pass.set_blend_constant(wgpu::Color { r: it.constant, g: it.constant, b: it.constant, a: it.constant });
-                    pass.set_scissor_rect(x, y, sw, sh);
-                    pass.draw(g.first..g.first + g.count, 0..1);
+            let program = it.gpu.map(|g| g.program);
+            if program.is_some() && gpu_bind.is_none() {
+                continue;
+            }
+            if last.pipe != Some((it.key, program)) {
+                // (The GPU programs' pipelines have another layout: their
+                // bind groups are set again.)
+                if last.pipe.is_some_and(|(_, p)| p.is_some() != program.is_some()) {
+                    last.group0 = None;
+                    last.group1 = false;
                 }
-                (Some(_), None) => {}
-                (None, _) => {
-                    pass.set_pipeline(self.pipes.cached(it.key));
-                    pass.set_bind_group(0, &groups[it.bind], &[it.ubo * draw::UNIFORM_STRIDE as u32]);
-                    pass.set_blend_constant(wgpu::Color { r: it.constant, g: it.constant, b: it.constant, a: it.constant });
-                    pass.set_scissor_rect(x, y, sw, sh);
-                    pass.draw(it.first..it.first + it.count, 0..1);
-                }
+                last.pipe = Some((it.key, program));
+                pass.set_pipeline(match program {
+                    Some(p) => self.pipes.cached_gpu(it.key, p),
+                    None => self.pipes.cached(it.key),
+                });
+            }
+            if last.group0 != Some((it.bind, it.ubo)) {
+                last.group0 = Some((it.bind, it.ubo));
+                pass.set_bind_group(0, &groups[it.bind], &[it.ubo * draw::UNIFORM_STRIDE as u32]);
+            }
+            if let (Some(bg), false) = (gpu_bind.as_ref().filter(|_| program.is_some()), last.group1) {
+                last.group1 = true;
+                pass.set_bind_group(1, bg, &[]);
+            }
+            if last.constant != Some(it.constant.to_bits()) {
+                last.constant = Some(it.constant.to_bits());
+                pass.set_blend_constant(wgpu::Color { r: it.constant, g: it.constant, b: it.constant, a: it.constant });
+            }
+            if last.scissor != Some([x, y, sw, sh]) {
+                last.scissor = Some([x, y, sw, sh]);
+                pass.set_scissor_rect(x, y, sw, sh);
+            }
+            match it.gpu {
+                Some(g) => pass.draw(g.first..g.first + g.count, 0..1),
+                None => pass.draw(it.first..it.first + it.count, 0..1),
             }
             if let (Some((px, py)), Some(pb)) = (probe, probe_buf.as_ref()) {
                 if it.target == main {
@@ -1306,6 +1338,7 @@ impl Inner {
                     probed.push(it.desc.clone());
                     pass = begin(&mut enc, cur_target, false);
                     pass.set_vertex_buffer(0, vbuf.slice(..));
+                    last = Last::default();
                 }
             }
         }
