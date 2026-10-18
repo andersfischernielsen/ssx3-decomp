@@ -266,8 +266,11 @@ dumps (pixel identity with the decoding path) before the next:
    modes run without frame issues and match the packet build until the
    timing drift shows. Native race, 6000 frames: 22.98 s with packets ->
    19.90 s.
-   Left in guest memory: `DeferMan_BuildBuckets`' link tags at packet ends
-   (the frame build follows them), slot 75 (`DrawLineShape`, debug only).
+   Bucket links: packetless, `DeferMan_AppendPacket` records them
+   (`Cmd::Link`, at the packet end the NEXT tag would be) instead of
+   writing the tag; the frame build follows them. Left in guest memory:
+   the four bare `END` chain heads and slot 75 (`DrawLineShape`, debug
+   only).
    Guest callees from native draw functions run with `Cpu::no_unwind` and
    at host depth 0 (`events::deliver_event_here` now restores the outer
    `no_unwind`: a hand-written port's event check inside such a call
@@ -343,11 +346,21 @@ game thread (typed frame 0.66 ms), the render thread no longer builds.
 Left for N3: the renderer still decodes textures from guest pages (stage
 C: TexMan registration hands them over).
 
-### N4: strip the hardware models ⬜
+### N4: strip the hardware models 🟡
 
 `Renderer_DmaKickThread` (0x382760), `Renderer_SetDisplayRegs` (0x382af0),
 the DMA/VIF/GS register models: reduced to the statuses and events the game
 waits on (VBlank, render idle, buffer states).
+
+State (2026-10-18), native mode: the GS model is detached (registers and
+events only; it rasterizes nothing: every frame, menus, loading screens
+and movies included, is drawn by `ssx3-gfx`), the kick thread's DMA
+kicks of a drawn frame complete at once without VIF / VU1 / GS work
+(`frame_sink::skip_chain`), and the chains it kicks are bare `END`s.
+What remains is the guest kick thread itself (its semaphore handshake,
+the DMA-end interrupts and the flip packet `Renderer_SetDisplayRegs`
+builds, which the renderer reads for the frame blend and clear) and the
+register models' code for the emulated paths (`SSX3_RENDER=emu`).
 
 ### N5: movies (optional) ⬜
 
