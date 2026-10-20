@@ -26,6 +26,7 @@
 
 use crate::abi::{self, r32};
 use crate::call::{call_ptr, guest, Callee, Frame};
+use crate::events::{deliver_event_here, event_due};
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
@@ -769,9 +770,8 @@ pub fn anim_controller_dispatch_end_events(c: &mut Cpu) {
                     let more = c.g[S0][0] != 0;
                     c.g[A0][0] = sx(p(r32(c, S0), 0xb0));
                     if more {
-                        if c.cycles >= c.next_event {
-                            c.pc = 0x0031_24f0;
-                            c.event();
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0031_24f0);
                         }
                         continue 'node_loop;
                     }
@@ -784,9 +784,8 @@ pub fn anim_controller_dispatch_end_events(c: &mut Cpu) {
             let more = c.g[V0][0] != 0;
             c.g[A0][0] = sx(r32(c, S0) << 3);
             if more {
-                if c.cycles >= c.next_event {
-                    c.pc = 0x0031_24c0;
-                    c.event();
+                if event_due(c) {
+                    deliver_event_here(c, 0x0031_24c0);
                 }
                 continue 'seq_loop;
             }
@@ -822,9 +821,8 @@ pub fn anim_controller_dispatch_end_events(c: &mut Cpu) {
                 }
                 let vt = lw(c, p(anim, 0x58));
                 c.g[V0][0] = vt;
-                if c.cycles >= c.next_event {
-                    c.pc = 0x0031_2548;
-                    c.event();
+                if event_due(c) {
+                    deliver_event_here(c, 0x0031_2548);
                 }
             }
         }
@@ -1109,9 +1107,8 @@ pub fn flag_manager_group_render(c: &mut Cpu) {
                 let more = c.g[V0][0] != 0;
                 c.g[V0][0] = sx(r32(c, S5) << 2);
                 if more {
-                    if c.cycles >= c.next_event {
-                        c.pc = 0x0034_bae8;
-                        c.event();
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0034_bae8);
                     }
                     continue;
                 }
@@ -1818,9 +1815,8 @@ pub fn rider_model_render(c: &mut Cpu) {
                 let more = c.g[V0][0] != 0;
                 c.g[T0][0] = sx(r32(c, T0).wrapping_add(0x40));
                 if more {
-                    if c.cycles >= c.next_event {
-                        c.pc = 0x0031_06b8;
-                        c.event();
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0031_06b8);
                     }
                     continue;
                 }
@@ -1915,9 +1911,8 @@ pub fn rider_model_render(c: &mut Cpu) {
                 let more = c.g[V0][0] != 0;
                 c.g[S3][0] = sx(r32(c, S3).wrapping_add(0x58));
                 if more {
-                    if c.cycles >= c.next_event {
-                        c.pc = 0x0031_07b8;
-                        c.event();
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0031_07b8);
                     }
                     continue;
                 }
@@ -1997,9 +1992,8 @@ pub fn rider_model_render(c: &mut Cpu) {
             let more = c.g[V0][0] != 0;
             c.g[S3][0] = sx(r32(c, S3).wrapping_add(0x58));
             if more {
-                if c.cycles >= c.next_event {
-                    c.pc = 0x0031_08b0;
-                    c.event();
+                if event_due(c) {
+                    deliver_event_here(c, 0x0031_08b0);
                 }
                 continue;
             }
@@ -2095,9 +2089,8 @@ pub fn rider_model_render_shadow(c: &mut Cpu) {
                 let more = c.g[V0][0] != 0;
                 c.g[T0][0] = sx(r32(c, T0).wrapping_add(0x40));
                 if more {
-                    if c.cycles >= c.next_event {
-                        c.pc = 0x0031_09b8;
-                        c.event();
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0031_09b8);
                     }
                     continue;
                 }
@@ -2189,9 +2182,8 @@ pub fn rider_model_render_shadow(c: &mut Cpu) {
                 let more = c.g[V0][0] != 0;
                 c.g[S3][0] = sx(r32(c, S3).wrapping_add(0x58));
                 if more {
-                    if c.cycles >= c.next_event {
-                        c.pc = 0x0031_0ab8;
-                        c.event();
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0031_0ab8);
                     }
                     continue;
                 }
@@ -2275,9 +2267,8 @@ pub fn rider_model_render_shadow(c: &mut Cpu) {
             let more = c.g[V0][0] != 0;
             c.g[S3][0] = sx(r32(c, S3).wrapping_add(0x58));
             if more {
-                if c.cycles >= c.next_event {
-                    c.pc = 0x0031_0bb0;
-                    c.event();
+                if event_due(c) {
+                    deliver_event_here(c, 0x0031_0bb0);
                 }
                 continue;
             }

@@ -1670,5 +1670,35 @@
 0x00111728    func_00111728
 0x002e87e8    cBoardTrailFX_IsActive
 0x002ef6d0    cAirStreamerFX_Update
+# Phase 2 wave: oc47, oc49
+0x0014edd8    BE_GetCharDBInterface
+0x002eeff0    WorldPainter_GetLighting28
+0x00392d18    FXTrail_Reset
+0x002ee340    WorldPainter_GetIrradiance1
+0x002ee318    WorldPainter_GetIrradiance0
+0x002ecf78    cBoltOnFXInterface_Update
+0x0026a090    Path_QueryEventsReversed
+0x00288ce8    SSXAudioSystem_GetListenerCount
+0x0028b1f8    SSXAudioSystem_GetViewCount
+0x0010d8f8    ComputerActorRider_FindHumanRiderIndex
+0x00122c98    Rider_IsSpinningFast
+0x0013c878    RiderGroundState_ComputeFrictionAccel
+0x00321108    InputMap_EvalBool
+0x00320fa8    InputMap_EvalFloat
+0x00320bf0    InputBinding_EvalFloat
+0x0026ed28    ReplayStream_WriteNodeRef
+0x00354948    TypedProcess_Save
+0x00354980    SyncProcess_Save
+0x0034fe90    WorldObj_Save
+0x00361b90    SplineModifier_v18
+0x00225b90    LunoVMRegister_dtor
+0x0034b818    cFlagManager_GroupUpdate
+0x00351800    IntersectInfo_EvaluateMatrix
+0x0034e348    AnimObject_v52
+0x002f5b68    WorldLightMan_FindStrongestLights
+0x0035a918    MultiSplineModifier_v24
+0x00321298    InputPad_Update
+0x0035b418    MultiSplineModifier_v11
+0x0038f300    SprStream_SetMode
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
