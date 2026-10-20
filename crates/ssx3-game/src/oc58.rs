@@ -809,121 +809,168 @@ mod tests {
         c.bus.write16(entry, (r.next_u32() & 0xff8) as u16);
     }
 
+    /// The engine's size-class pool allocator (`MEM_PoolAlloc`): blocks up to
+    /// 0x400 bytes are popped from per-size free lists hanging off the seven
+    /// pool globals `gp + 0x2a60..0x2a84`, but only when the "pools ready" flag
+    /// at `gp + 0xdd8` is set. On a fresh test machine that flag is clear, so an
+    /// allocation falls back to growing the `DLHeap` from a zeroed header; the
+    /// reply handlers that allocate a list node then walk a corrupt bucket
+    /// chain in `DLHeap_Consolidate` and never terminate. Give every pool a
+    /// short free list of zeroed nodes instead: the handlers' allocations then
+    /// just pop one, exactly as they do in the game (each `MEM_Pool*Alloc` is
+    /// two loads and two stores off `pool + head`).
+    fn pool_allocator(c: &mut Cpu) {
+        let gp = crate::difftest::GAME_GP;
+        c.bus.write32(gp + 0xdd8, 1); // pools ready
+        // (pool pointer global, free-list head offset in the pool object) for
+        // the 8, 16, 32, 64, 128, 256 and 512-byte size classes.
+        const POOLS: [(u32, u32); 7] = [
+            (0x2a70, 0x800),
+            (0x2a60, 0x2000),
+            (0x2a6c, 0x6000),
+            (0x2a7c, 0x32000),
+            (0x2a84, 0x25800),
+            (0x2a78, 0x20000),
+            (0x2a68, 0x20000),
+        ];
+        for (i, (slot, head)) in POOLS.into_iter().enumerate() {
+            let i = i as u32;
+            let pool = 0x008c_0000 + 0x1000 * i;
+            let base = 0x008b_0000 + 0x100 * i;
+            // Four free nodes per class, spaced wider than the largest block
+            // of that class (the head is updated on pop, so only the next
+            // pointer of a node that is still queued is ever read).
+            for n in 0..4u32 {
+                let node = base + 0x40 * n;
+                c.bus.write32(node, if n == 3 { 0 } else { node + 0x40 });
+            }
+            c.bus.write32(pool + head, base);
+            c.bus.write32(gp + slot, pool);
+        }
+    }
+
+    /// [`thunk_setup`] plus the pool allocator: for the reply handlers that
+    /// allocate on every call.
+    fn thunk_setup_alloc(c: &mut Cpu, seed: u32, salt: u64, entry: u32) {
+        thunk_setup(c, seed, salt, entry);
+        pool_allocator(c);
+    }
+
     #[test]
     fn lobby_man_on_move_to_room_reply_thunk_matches() {
-        check(ee::s07::f_00268d38, lobby_man_on_move_to_room_reply_thunk, 48, &|c, seed| {
+        check(ee::s07::f_00268d38__generated, lobby_man_on_move_to_room_reply_thunk, 48, &|c, seed| {
             thunk_setup(c, seed, 0x268d38, 0x004a_3148);
         });
     }
 
     #[test]
     fn lobby_man_on_create_room_reply_thunk_matches() {
-        check(ee::s07::f_00268d60, lobby_man_on_create_room_reply_thunk, 48, &|c, seed| {
+        check(ee::s07::f_00268d60__generated, lobby_man_on_create_room_reply_thunk, 48, &|c, seed| {
             thunk_setup(c, seed, 0x268d60, 0x004a_3158);
         });
     }
 
     #[test]
     fn lobby_man_on_ping_reply_thunk_matches() {
-        check(ee::s07::f_00268d88, lobby_man_on_ping_reply_thunk, 48, &|c, seed| {
+        check(ee::s07::f_00268d88__generated, lobby_man_on_ping_reply_thunk, 48, &|c, seed| {
             thunk_setup(c, seed, 0x268d88, 0x004a_3160);
         });
     }
 
     #[test]
     fn lobby_man_on_report_user_reply_thunk_matches() {
-        check(ee::s07::f_00268db0, lobby_man_on_report_user_reply_thunk, 48, &|c, seed| {
+        check(ee::s07::f_00268db0__generated, lobby_man_on_report_user_reply_thunk, 48, &|c, seed| {
             thunk_setup(c, seed, 0x268db0, 0x004a_3170);
         });
     }
 
     #[test]
     fn lobby_man_on_news_reply_thunk_matches() {
-        check(ee::s07::f_00268dd8, lobby_man_on_news_reply_thunk, 48, &|c, seed| {
+        check(ee::s07::f_00268dd8__generated, lobby_man_on_news_reply_thunk, 48, &|c, seed| {
             thunk_setup(c, seed, 0x268dd8, 0x004a_3178);
         });
     }
 
     #[test]
     fn lobby_man_on_snapshot_reply_thunk_matches() {
-        check(ee::s07::f_00268e00, lobby_man_on_snapshot_reply_thunk, 48, &|c, seed| {
+        check(ee::s07::f_00268e00__generated, lobby_man_on_snapshot_reply_thunk, 48, &|c, seed| {
             thunk_setup(c, seed, 0x268e00, 0x004a_31b0);
         });
     }
 
     #[test]
     fn lobby_man_on_lookup_user_reply_thunk_matches() {
-        check(ee::s07::f_00268e28, lobby_man_on_lookup_user_reply_thunk, 48, &|c, seed| {
-            thunk_setup(c, seed, 0x268e28, 0x004a_31b8);
+        check(ee::s07::f_00268e28__generated, lobby_man_on_lookup_user_reply_thunk, 48, &|c, seed| {
+            thunk_setup_alloc(c, seed, 0x268e28, 0x004a_31b8);
         });
     }
 
     #[test]
     fn lobby_man_on_quick_play_reply_thunk_matches() {
-        check(ee::s07::f_00268e78, lobby_man_on_quick_play_reply_thunk, 48, &|c, seed| {
+        check(ee::s07::f_00268e78__generated, lobby_man_on_quick_play_reply_thunk, 48, &|c, seed| {
             thunk_setup(c, seed, 0x268e78, 0x004a_3210);
         });
     }
 
     #[test]
     fn lobby_man_on_chal_reply_thunk_matches() {
-        check(ee::s07::f_00268ea0, lobby_man_on_chal_reply_thunk, 48, &|c, seed| {
+        check(ee::s07::f_00268ea0__generated, lobby_man_on_chal_reply_thunk, 48, &|c, seed| {
             thunk_setup(c, seed, 0x268ea0, 0x004a_3248);
         });
     }
 
     #[test]
     fn lobby_man_on_mesg_reply_thunk_matches() {
-        check(ee::s07::f_00268ec8, lobby_man_on_mesg_reply_thunk, 48, &|c, seed| {
+        check(ee::s07::f_00268ec8__generated, lobby_man_on_mesg_reply_thunk, 48, &|c, seed| {
             thunk_setup(c, seed, 0x268ec8, 0x004a_3268);
         });
     }
 
     #[test]
     fn lobby_man_on_rank_reply_thunk_matches() {
-        check(ee::s07::f_00268ef0, lobby_man_on_rank_reply_thunk, 48, &|c, seed| {
+        check(ee::s07::f_00268ef0__generated, lobby_man_on_rank_reply_thunk, 48, &|c, seed| {
             thunk_setup(c, seed, 0x268ef0, 0x004a_3318);
         });
     }
 
     #[test]
     fn buddy_man_on_connect_event_thunk_matches() {
-        check(ee::s07::f_00268f18, buddy_man_on_connect_event_thunk, 48, &|c, seed| {
+        check(ee::s07::f_00268f18__generated, buddy_man_on_connect_event_thunk, 48, &|c, seed| {
             thunk_setup(c, seed, 0x268f18, 0x004a_3340);
         });
     }
 
     #[test]
     fn buddy_man_on_message_received_thunk_matches() {
-        check(ee::s07::f_00268f40, buddy_man_on_message_received_thunk, 48, &|c, seed| {
+        check(ee::s07::f_00268f40__generated, buddy_man_on_message_received_thunk, 48, &|c, seed| {
             thunk_setup(c, seed, 0x268f40, 0x004a_3348);
         });
     }
 
     #[test]
     fn buddy_man_on_roster_event_thunk_matches() {
-        check(ee::s07::f_00268f68, buddy_man_on_roster_event_thunk, 48, &|c, seed| {
-            thunk_setup(c, seed, 0x268f68, 0x004a_3350);
+        check(ee::s07::f_00268f68__generated, buddy_man_on_roster_event_thunk, 48, &|c, seed| {
+            thunk_setup_alloc(c, seed, 0x268f68, 0x004a_3350);
         });
     }
 
     #[test]
     fn buddy_man_on_roster_remove_reply_thunk_matches() {
-        check(ee::s07::f_00268f90, buddy_man_on_roster_remove_reply_thunk, 48, &|c, seed| {
-            thunk_setup(c, seed, 0x268f90, 0x004a_3380);
+        check(ee::s07::f_00268f90__generated, buddy_man_on_roster_remove_reply_thunk, 48, &|c, seed| {
+            thunk_setup_alloc(c, seed, 0x268f90, 0x004a_3380);
         });
     }
 
     #[test]
     fn buddy_man_on_roster_add_reply_thunk_matches() {
-        check(ee::s07::f_00268fb8, buddy_man_on_roster_add_reply_thunk, 48, &|c, seed| {
-            thunk_setup(c, seed, 0x268fb8, 0x004a_3388);
+        check(ee::s07::f_00268fb8__generated, buddy_man_on_roster_add_reply_thunk, 48, &|c, seed| {
+            thunk_setup_alloc(c, seed, 0x268fb8, 0x004a_3388);
         });
     }
 
     #[test]
     fn buddy_man_on_send_message_reply_thunk_matches() {
-        check(ee::s07::f_00268fe0, buddy_man_on_send_message_reply_thunk, 48, &|c, seed| {
+        check(ee::s07::f_00268fe0__generated, buddy_man_on_send_message_reply_thunk, 48, &|c, seed| {
             thunk_setup(c, seed, 0x268fe0, 0x004a_33a0);
         });
     }
@@ -952,14 +999,14 @@ mod tests {
 
     #[test]
     fn replay_find_next_snapshot_matches() {
-        check(ee::s07::f_0026e468, replay_find_next_snapshot, 100, &|c, seed| {
+        check(ee::s07::f_0026e468__generated, replay_find_next_snapshot, 100, &|c, seed| {
             snapshot_setup(c, seed, 0x26e468);
         });
     }
 
     #[test]
     fn replay_find_prev_snapshot_matches() {
-        check(ee::s07::f_0026e490, replay_find_prev_snapshot, 100, &|c, seed| {
+        check(ee::s07::f_0026e490__generated, replay_find_prev_snapshot, 100, &|c, seed| {
             snapshot_setup(c, seed, 0x26e490);
         });
     }
@@ -976,52 +1023,52 @@ mod tests {
 
     #[test]
     fn in_seq_dtor_matches() {
-        check(ee::s07::f_002728d0, in_seq_dtor, 60, &|c, seed| dtor_setup(c, seed, 0x2728d0));
+        check(ee::s07::f_002728d0__generated, in_seq_dtor, 60, &|c, seed| dtor_setup(c, seed, 0x2728d0));
     }
 
     #[test]
     fn bank_monitor_instance_dtor_matches() {
-        check(ee::s08::f_002aba18, bank_monitor_instance_dtor, 60, &|c, seed| {
+        check(ee::s08::f_002aba18__generated, bank_monitor_instance_dtor, 60, &|c, seed| {
             dtor_setup(c, seed, 0x2aba18)
         });
     }
 
     #[test]
     fn bank_monitor_timer_dtor_matches() {
-        check(ee::s08::f_002ad860, bank_monitor_timer_dtor, 60, &|c, seed| {
+        check(ee::s08::f_002ad860__generated, bank_monitor_timer_dtor, 60, &|c, seed| {
             dtor_setup(c, seed, 0x2ad860)
         });
     }
 
     #[test]
     fn world_trigger_instance_dtor_matches() {
-        check(ee::s08::f_002b4be0, world_trigger_instance_dtor, 60, &|c, seed| {
+        check(ee::s08::f_002b4be0__generated, world_trigger_instance_dtor, 60, &|c, seed| {
             dtor_setup(c, seed, 0x2b4be0)
         });
     }
 
     #[test]
     fn c_world_sound_dtor_matches() {
-        check(ee::s08::f_002b6ae0, c_world_sound_dtor, 60, &|c, seed| {
+        check(ee::s08::f_002b6ae0__generated, c_world_sound_dtor, 60, &|c, seed| {
             dtor_setup(c, seed, 0x2b6ae0)
         });
     }
 
     #[test]
     fn menu_sys_dtor_matches() {
-        check(ee::s09::f_002cc048, menu_sys_dtor, 60, &|c, seed| dtor_setup(c, seed, 0x2cc048));
+        check(ee::s09::f_002cc048__generated, menu_sys_dtor, 60, &|c, seed| dtor_setup(c, seed, 0x2cc048));
     }
 
     #[test]
     fn snow_box_dtor_matches() {
-        check(ee::s09::f_002e4f28, snow_box_dtor, 60, &|c, seed| dtor_setup(c, seed, 0x2e4f28));
+        check(ee::s09::f_002e4f28__generated, snow_box_dtor, 60, &|c, seed| dtor_setup(c, seed, 0x2e4f28));
     }
 
     // ----------------------------------------------- sequence / audio helpers
 
     #[test]
     fn in_seq_stop_matches() {
-        check(ee::s07::f_00272b58, in_seq_stop, 100, &|c, seed| {
+        check(ee::s07::f_00272b58__generated, in_seq_stop, 100, &|c, seed| {
             let _r = game(c, seed, 0x272b58, 2);
             let array = SCRATCH + 0x1000;
             c.g[A0][0] = SCRATCH as u64;
@@ -1038,7 +1085,7 @@ mod tests {
 
     #[test]
     fn script_engine_seq_listener_on_destroy_matches() {
-        check(ee::s07::f_00282b88, script_engine_seq_listener_on_destroy, 100, &|c, seed| {
+        check(ee::s07::f_00282b88__generated, script_engine_seq_listener_on_destroy, 100, &|c, seed| {
             let mut r = game(c, seed, 0x282b88, 1);
             c.g[A0][0] = SCRATCH as u64;
             c.g[A1][0] = (SCRATCH + 0x2000) as u64;
@@ -1049,7 +1096,7 @@ mod tests {
 
     #[test]
     fn speech_instance_stop_stream_matches() {
-        check(ee::s08::f_002b0320, speech_instance_stop_stream, 100, &|c, seed| {
+        check(ee::s08::f_002b0320__generated, speech_instance_stop_stream, 100, &|c, seed| {
             let _r = game(c, seed, 0x2b0320, 1);
             let instance = SCRATCH + 0x3000;
             let owner = SCRATCH + 0x4000;
@@ -1069,7 +1116,7 @@ mod tests {
 
     #[test]
     fn c_world_sound_on_section_loaded_matches() {
-        check(ee::s08::f_002b6b08, c_world_sound_on_section_loaded, 80, &|c, seed| {
+        check(ee::s08::f_002b6b08__generated, c_world_sound_on_section_loaded, 80, &|c, seed| {
             let mut r = game(c, seed, 0x2b6b08, 1);
             c.g[A0][0] = SCRATCH as u64;
             // A null section skips the relocate call; a section whose name is
@@ -1084,7 +1131,7 @@ mod tests {
 
     #[test]
     fn c_ps2_mem_card_clear_dir_entry_matches() {
-        check(ee::s08::f_002c52d8, c_ps2_mem_card_clear_dir_entry, 60, &|c, seed| {
+        check(ee::s08::f_002c52d8__generated, c_ps2_mem_card_clear_dir_entry, 60, &|c, seed| {
             let _r = game(c, seed, 0x2c52d8, 1);
             c.g[A0][0] = SCRATCH as u64;
         });
@@ -1092,7 +1139,7 @@ mod tests {
 
     #[test]
     fn c_ps2_mem_card_v15_matches() {
-        check(ee::s08::f_002c64a8, c_ps2_mem_card_v15, 80, &|c, seed| {
+        check(ee::s08::f_002c64a8__generated, c_ps2_mem_card_v15, 80, &|c, seed| {
             let mut r = game(c, seed, 0x2c64a8, 1);
             c.g[A2][0] = (SCRATCH + 0x900) as u64;
             c.g[A0][0] = ptr(&mut r) as u64;
@@ -1106,7 +1153,7 @@ mod tests {
 
     #[test]
     fn c_ps2_mem_card_v16_matches() {
-        check(ee::s08::f_002c64d0, c_ps2_mem_card_v16, 80, &|c, seed| {
+        check(ee::s08::f_002c64d0__generated, c_ps2_mem_card_v16, 80, &|c, seed| {
             let mut r = game(c, seed, 0x2c64d0, 1);
             c.g[A2][0] = (SCRATCH + 0x900) as u64;
             c.g[A0][0] = ptr(&mut r) as u64;
@@ -1119,7 +1166,7 @@ mod tests {
 
     #[test]
     fn c_anger_fx_reset_matches() {
-        check(ee::s09::f_002d4be0, c_anger_fx_reset, 60, &|c, seed| {
+        check(ee::s09::f_002d4be0__generated, c_anger_fx_reset, 60, &|c, seed| {
             let _r = game(c, seed, 0x2d4be0, 1);
             c.g[A0][0] = SCRATCH as u64;
             c.bus.write32(SCRATCH + 4, SCRATCH + 0xb00 + 0x80 * (seed % 4));
@@ -1128,7 +1175,7 @@ mod tests {
 
     #[test]
     fn world_painter_get_irradiance2_matches() {
-        check(ee::s09::f_002ee368, world_painter_get_irradiance2, 80, &|c, seed| {
+        check(ee::s09::f_002ee368__generated, world_painter_get_irradiance2, 80, &|c, seed| {
             let _r = game(c, seed, 0x2ee368, 2);
             // A non-null painter singleton makes the name lookup return the
             // static name at `gp + 0x24c0`; the reference lookup then resolves
@@ -1140,7 +1187,7 @@ mod tests {
 
     #[test]
     fn dead_fade_kill_matches() {
-        check(ee::s11::f_00350c90, dead_fade_kill, 60, &|c, seed| {
+        check(ee::s11::f_00350c90__generated, dead_fade_kill, 60, &|c, seed| {
             let mut r = game(c, seed, 0x350c90, 1);
             c.g[A0][0] = SCRATCH as u64;
             let world = SCRATCH + 0x2000;
@@ -1156,7 +1203,7 @@ mod tests {
 
     #[test]
     fn emitter_set_desc_curve_a_matches() {
-        check(ee::s12::f_0036ce00, emitter_set_desc_curve_a, 200, &|c, seed| {
+        check(ee::s12::f_0036ce00__generated, emitter_set_desc_curve_a, 200, &|c, seed| {
             let mut r = Rng(0x36ce_0000 ^ seed as u64);
             crate::difftest::scramble(c, &mut r);
             c.g[A0][0] = SCRATCH as u64;
@@ -1168,7 +1215,7 @@ mod tests {
 
     #[test]
     fn ui_text_get_owned_string_matches() {
-        check(ee::s13::f_003a0c00, ui_text_get_owned_string, 120, &|c, seed| {
+        check(ee::s13::f_003a0c00__generated, ui_text_get_owned_string, 120, &|c, seed| {
             let mut r = Rng(0x3a0c_0000 ^ seed as u64);
             crate::difftest::scramble(c, &mut r);
             c.g[A0][0] = SCRATCH as u64;
@@ -1179,7 +1226,7 @@ mod tests {
 
     #[test]
     fn ui_text_get_id_string_matches() {
-        check(ee::s13::f_003a0c28, ui_text_get_id_string, 120, &|c, seed| {
+        check(ee::s13::f_003a0c28__generated, ui_text_get_id_string, 120, &|c, seed| {
             let mut r = Rng(0x3a0c_0028 ^ seed as u64);
             crate::difftest::scramble(c, &mut r);
             c.g[A0][0] = SCRATCH as u64;
@@ -1192,7 +1239,7 @@ mod tests {
 
     #[test]
     fn be_option_int_get_max_handicap_matches() {
-        check(ee::s01::f_0014f870, be_option_int_get_max_handicap, 200, &|c, seed| {
+        check(ee::s01::f_0014f870__generated, be_option_int_get_max_handicap, 200, &|c, seed| {
             let mut r = Rng(0x14f8_7000 ^ seed as u64);
             crate::difftest::scramble(c, &mut r);
             // Three signed limits; keep the ordering varied so both `max`
@@ -1210,7 +1257,7 @@ mod tests {
 
     #[test]
     fn be_option_int_get_computer_handicap_matches() {
-        check(ee::s01::f_0014f7e8, be_option_int_get_computer_handicap, 120, &|c, seed| {
+        check(ee::s01::f_0014f7e8__generated, be_option_int_get_computer_handicap, 120, &|c, seed| {
             let mut r = Rng(0x14f7_e800 ^ seed as u64);
             crate::difftest::scramble(c, &mut r);
             for (i, off) in [0x1c, 0x8, 0x14, 0x1c].into_iter().enumerate() {
@@ -1222,7 +1269,7 @@ mod tests {
 
     #[test]
     fn be_bagt_int_get_trick_table_entry_matches() {
-        check(ee::s01::f_0014ff90, be_bagt_int_get_trick_table_entry, 200, &|c, seed| {
+        check(ee::s01::f_0014ff90__generated, be_bagt_int_get_trick_table_entry, 200, &|c, seed| {
             let mut r = Rng(0x14ff_9000 ^ seed as u64);
             crate::difftest::scramble(c, &mut r);
             let index = seed % 8;
@@ -1254,49 +1301,49 @@ mod tests {
 
     #[test]
     fn be_reward_int_get_audio_setting_matches() {
-        check(ee::s01::f_00158700, be_reward_int_get_audio_setting, 120, &|c, seed| {
+        check(ee::s01::f_00158700__generated, be_reward_int_get_audio_setting, 120, &|c, seed| {
             reward_setup(c, seed, 0x1587_0000)
         });
     }
 
     #[test]
     fn be_reward_int_get_unlocked_songs_matches() {
-        check(ee::s01::f_00158728, be_reward_int_get_unlocked_songs, 120, &|c, seed| {
+        check(ee::s01::f_00158728__generated, be_reward_int_get_unlocked_songs, 120, &|c, seed| {
             reward_setup(c, seed, 0x1587_0028)
         });
     }
 
     #[test]
     fn be_reward_int_get_enabled_songs_matches() {
-        check(ee::s01::f_00158750, be_reward_int_get_enabled_songs, 120, &|c, seed| {
+        check(ee::s01::f_00158750__generated, be_reward_int_get_enabled_songs, 120, &|c, seed| {
             reward_setup(c, seed, 0x1587_0050)
         });
     }
 
     #[test]
     fn be_reward_int_set_audio_setting_matches() {
-        check(ee::s01::f_001587f8, be_reward_int_set_audio_setting, 120, &|c, seed| {
+        check(ee::s01::f_001587f8__generated, be_reward_int_set_audio_setting, 120, &|c, seed| {
             reward_setup(c, seed, 0x1587_00f8)
         });
     }
 
     #[test]
     fn be_reward_int_set_unlocked_songs_matches() {
-        check(ee::s01::f_00158820, be_reward_int_set_unlocked_songs, 120, &|c, seed| {
+        check(ee::s01::f_00158820__generated, be_reward_int_set_unlocked_songs, 120, &|c, seed| {
             reward_setup(c, seed, 0x1587_0120)
         });
     }
 
     #[test]
     fn be_reward_int_set_enabled_songs_matches() {
-        check(ee::s01::f_00158848, be_reward_int_set_enabled_songs, 120, &|c, seed| {
+        check(ee::s01::f_00158848__generated, be_reward_int_set_enabled_songs, 120, &|c, seed| {
             reward_setup(c, seed, 0x1587_0148)
         });
     }
 
     #[test]
     fn be_clear_option_state_5308b8_matches() {
-        check(ee::s01::f_0015c228, be_clear_option_state_5308b8, 60, &|c, seed| {
+        check(ee::s01::f_0015c228__generated, be_clear_option_state_5308b8, 60, &|c, seed| {
             let mut r = game(c, seed, 0x15c228, 1);
             for i in 0..8u32 {
                 c.bus.write32(0x0053_08b8 + 4 * i, r.next_u32());
@@ -1308,7 +1355,7 @@ mod tests {
 
     #[test]
     fn camera_algorithm_tick_matches() {
-        check(ee::s02::f_00167e68, camera_algorithm_tick, 100, &|c, seed| {
+        check(ee::s02::f_00167e68__generated, camera_algorithm_tick, 100, &|c, seed| {
             let mut r = game(c, seed, 0x167e68, 1);
             let this = SCRATCH + 0x3000;
             c.g[A0][0] = this as u64;

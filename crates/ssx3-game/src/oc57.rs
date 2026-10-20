@@ -37,7 +37,6 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0011_3170, rider_dtor_free, "Rider_dtorFree"),
     (0x0015_4278, be_mission_int_count_missions_on_current_track, "BEMissionInt_CountMissionsOnCurrentTrack"),
     (0x0015_4588, be_mission_int_get_nth_mission_on_current_track, "BEMissionInt_GetNthMissionOnCurrentTrack"),
-    (0x0015_6a10, be_reward_int_load_rewards_file, "BERewardInt_LoadRewardsFile"),
     (0x0015_d050, chase_cam_controller_set_algorithm_immediate, "ChaseCamController_SetAlgorithmImmediate"),
     (0x0016_9340, script_cam_controller_push_algorithm, "ScriptCamController_PushAlgorithm"),
     (0x0016_bef8, camera_trigger_list_dtor, "CameraTriggerList_dtor"),
@@ -363,6 +362,13 @@ pub fn be_mission_int_get_nth_mission_on_current_track(c: &mut Cpu) {
 
 /// `void BERewardInt_LoadRewardsFile(BERewardInt* r)` (0x156a10): (re)load the
 /// rewards database (`D_004C3E98`) through `RewardsFile_Load(db, 1)`.
+///
+/// Kept out of `OVERRIDES`: `RewardsFile_Load(db, 1)` always takes the
+/// bolt-file branch (the `a1 == 0` branch is unreachable from this wrapper),
+/// which scans the 256-slot equip table and then calls `BoltFile_LoadSlot` →
+/// `BoltFile_EvictBytes`; on a zeroed test machine that eviction walk reads a
+/// garbage byte count and loops past the cycle budget, so there is no
+/// fixture that both covers the wrapper and terminates.
 pub fn be_reward_int_load_rewards_file(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 9;
@@ -675,8 +681,10 @@ pub fn tib_ext_mem_free(c: &mut Cpu) {
 // ---------------------------------------------------------------------------
 // LobbyMan_On*_Thunk.
 
-/// `gp`-relative base of the lobby callback table (`D_004A2FB0`).
-const LOBBY_CALLBACKS: u32 = 0x004a_2fb0;
+/// Base of the lobby callback table (`li v0, 0x4a0000` in every thunk): the
+/// per-thunk `slot` is the offset the original adds (`0x2fb0`, `0x2fb8`, ...),
+/// so the entry lives at `0x4a0000 + slot` (`D_004A2FB0`-ish).
+const LOBBY_CALLBACKS: u32 = 0x004a_0000;
 
 /// The shared shape of the seventeen lobby callbacks: add the (16-bit) lobby
 /// object offset published in the callback table to the handler's third
@@ -810,7 +818,7 @@ mod tests {
 
     #[test]
     fn ssx_app_set_main_thread_priority_matches() {
-        crate::difftest::check(ee::s10::f_0031a6b8, ssx_app_set_main_thread_priority, 40, &|c, seed| {
+        crate::difftest::check(ee::s10::f_0031a6b8__generated, ssx_app_set_main_thread_priority, 40, &|c, seed| {
             let mut r = machine(c, seed, 0x31a6_b8, 2);
             // The app singleton's main thread handle (null covers the
             // "not created yet" path through ChangeThreadPriority).
@@ -820,7 +828,7 @@ mod tests {
 
     #[test]
     fn ps2_exec_man_v14_matches() {
-        crate::difftest::check(ee::s10::f_0031ab10, ps2_exec_man_v14, 40, &|c, seed| {
+        crate::difftest::check(ee::s10::f_0031ab10__generated, ps2_exec_man_v14, 40, &|c, seed| {
             let mut r = machine(c, seed, 0x31ab_10, 1);
             // The body sleeps forever; the fake syscall unwinds after a few
             // iterations, which is how the original leaves the loop too.
@@ -832,7 +840,7 @@ mod tests {
 
     #[test]
     fn anim_object_kill_restorable_matches() {
-        crate::difftest::check(ee::s11::f_00341fc8, anim_object_kill_restorable, SEEDS, &|c, seed| {
+        crate::difftest::check(ee::s11::f_00341fc8__generated, anim_object_kill_restorable, SEEDS, &|c, seed| {
             let mut r = machine(c, seed, 0x341f_c8, 2);
             c.g[A0][0] = sx(DATA);
             c.g[A1][0] = if seed % 2 == 0 { 0 } else { 1 + (r.next_u32() & 0x10) as u64 };
@@ -844,7 +852,7 @@ mod tests {
 
     #[test]
     fn multi_particle_update_matches() {
-        crate::difftest::check(ee::s11::f_00358120, multi_particle_update, 50, &|c, seed| {
+        crate::difftest::check(ee::s11::f_00358120__generated, multi_particle_update, 50, &|c, seed| {
             let mut r = machine(c, seed, 0x3581_20, 2);
             be_library(c);
             c.g[A0][0] = sx(DATA);
@@ -858,7 +866,7 @@ mod tests {
 
     #[test]
     fn emitter_set_desc_curve_b_matches() {
-        crate::difftest::check(ee::s12::f_0036ce28, emitter_set_desc_curve_b, 200, &|c, seed| {
+        crate::difftest::check(ee::s12::f_0036ce28__generated, emitter_set_desc_curve_b, 200, &|c, seed| {
             let mut r = Rng(0x36ce_2801 ^ seed as u64);
             scramble(c, &mut r);
             c.g[A0][0] = sx(DATA);
@@ -870,14 +878,14 @@ mod tests {
 
     #[test]
     fn ui_text_set_wide_string_matches() {
-        crate::difftest::check(ee::s13::f_003a0e90, ui_text_set_wide_string, 40, &|c, seed| {
+        crate::difftest::check(ee::s13::f_003a0e90__generated, ui_text_set_wide_string, 40, &|c, seed| {
             let mut r = machine(c, seed, 0x3a0e_90, 2);
             be_library(c);
             c.g[A0][0] = sx(DATA);
             // The wide string: a zeroed run so the length/copy loops stop at
             // the first unit.
             c.g[A1][0] = sx(DATA + 0x1000);
-            for k in 0..8 {
+            for k in 0..8u32 {
                 c.bus.write32(DATA + 0x1000 + 4 * k, 0);
             }
             c.bus.write32(DATA + 8, if seed % 3 == 0 { 0 } else { DATA + 0x200 });
@@ -886,7 +894,7 @@ mod tests {
 
     #[test]
     fn ui_pair_flags_ctor_matches() {
-        crate::difftest::check(ee::s13::f_003a5508, ui_pair_flags_ctor, 200, &|c, seed| {
+        crate::difftest::check(ee::s13::f_003a5508__generated, ui_pair_flags_ctor, 200, &|c, seed| {
             let mut r = Rng(0x3a55_0801 ^ seed as u64);
             scramble(c, &mut r);
             c.g[A0][0] = sx(DATA);
@@ -896,14 +904,14 @@ mod tests {
 
     #[test]
     fn mpeg2_picture_temporal_scalable_extension_matches() {
-        crate::difftest::check(ee::s13::f_003b22f8, mpeg2_picture_temporal_scalable_extension, 30, &|c, seed| {
+        crate::difftest::check(ee::s13::f_003b22f8__generated, mpeg2_picture_temporal_scalable_extension, 30, &|c, seed| {
             machine(c, seed, 0x3b22_f8, 1);
         });
     }
 
     #[test]
     fn rider_dtor_free_matches() {
-        crate::difftest::check(ee::s00::f_00113170, rider_dtor_free, 60, &|c, seed| {
+        crate::difftest::check(ee::s00::f_00113170__generated, rider_dtor_free, 60, &|c, seed| {
             let mut r = machine(c, seed, 0x11_3170, 2);
             be_library(c);
             // A null object keeps `operator delete` on its "nothing to free"
@@ -921,7 +929,7 @@ mod tests {
     #[test]
     fn be_mission_int_count_missions_on_current_track_matches() {
         crate::difftest::check(
-            ee::s01::f_00154278,
+            ee::s01::f_00154278__generated,
             be_mission_int_count_missions_on_current_track,
             SEEDS,
             &|c, seed| {
@@ -937,7 +945,7 @@ mod tests {
     #[test]
     fn be_mission_int_get_nth_mission_on_current_track_matches() {
         crate::difftest::check(
-            ee::s01::f_00154588,
+            ee::s01::f_00154588__generated,
             be_mission_int_get_nth_mission_on_current_track,
             SEEDS,
             &|c, seed| {
@@ -950,24 +958,9 @@ mod tests {
     }
 
     #[test]
-    fn be_reward_int_load_rewards_file_matches() {
-        crate::difftest::check(ee::s01::f_00156a10, be_reward_int_load_rewards_file, 30, &|c, seed| {
-            let mut r = machine(c, seed, 0x156a_10, 2);
-            be_library(c);
-            // `RewardsFile_Load` reads the world's file slot (`world + 0x7c`)
-            // and the path table (`gp - 0x1e80`); a dummy world keeps the
-            // bolt-file lookup on its "no such slot" exit.
-            c.bus.write32(GAME_GP.wrapping_sub(0x848), DATA + 0x2000);
-            c.bus.write32(DATA + 0x207c, 0);
-            c.bus.write32(GAME_GP.wrapping_sub(0x1e80), 0);
-            c.bus.write32(DATA, r.next_u32());
-        });
-    }
-
-    #[test]
     fn chase_cam_controller_set_algorithm_immediate_matches() {
         crate::difftest::check(
-            ee::s01::f_0015d050,
+            ee::s01::f_0015d050__generated,
             chase_cam_controller_set_algorithm_immediate,
             SEEDS,
             &|c, seed| {
@@ -983,7 +976,7 @@ mod tests {
 
     #[test]
     fn script_cam_controller_push_algorithm_matches() {
-        crate::difftest::check(ee::s02::f_00169340, script_cam_controller_push_algorithm, SEEDS, &|c, seed| {
+        crate::difftest::check(ee::s02::f_00169340__generated, script_cam_controller_push_algorithm, SEEDS, &|c, seed| {
             let mut r = machine(c, seed, 0x1693_40, 2);
             be_library(c);
             c.g[A0][0] = sx(DATA);
@@ -999,7 +992,7 @@ mod tests {
 
     #[test]
     fn camera_trigger_list_dtor_matches() {
-        crate::difftest::check(ee::s02::f_0016bef8, camera_trigger_list_dtor, 60, &|c, seed| {
+        crate::difftest::check(ee::s02::f_0016bef8__generated, camera_trigger_list_dtor, 60, &|c, seed| {
             let mut r = machine(c, seed, 0x16be_f8, 2);
             be_library(c);
             if seed % 2 == 1 {
@@ -1014,7 +1007,7 @@ mod tests {
 
     #[test]
     fn camera_trigger_man_empty_global_call_matches() {
-        crate::difftest::check(ee::s02::f_0016cf18, camera_trigger_man_empty_global_call, 40, &|c, seed| {
+        crate::difftest::check(ee::s02::f_0016cf18__generated, camera_trigger_man_empty_global_call, 40, &|c, seed| {
             let mut r = machine(c, seed, 0x16cf_18, 1);
             c.g[A0][0] = if seed % 3 == 0 { 0 } else { sx(DATA + (r.next_u32() & 0xfff0)) };
         });
@@ -1022,7 +1015,7 @@ mod tests {
 
     #[test]
     fn fe_state_uber_trick_transition_in_matches() {
-        crate::difftest::check(ee::s02::f_00184bb8, fe_state_uber_trick_transition_in, 40, &|c, seed| {
+        crate::difftest::check(ee::s02::f_00184bb8__generated, fe_state_uber_trick_transition_in, 40, &|c, seed| {
             machine(c, seed, 0x184b_b8, 2);
             be_library(c);
             // A zeroed state object: its trick lists are empty, so the
@@ -1034,7 +1027,7 @@ mod tests {
 
     #[test]
     fn fe_state_memcard_update_card_scan_matches() {
-        crate::difftest::check(ee::s02::f_00187180, fe_state_memcard_update_card_scan, 40, &|c, seed| {
+        crate::difftest::check(ee::s02::f_00187180__generated, fe_state_memcard_update_card_scan, 40, &|c, seed| {
             let mut r = machine(c, seed, 0x1871_80, 2);
             be_library(c);
             // `D_004A14B8`, the card scan state the second call advances.
@@ -1046,7 +1039,7 @@ mod tests {
 
     #[test]
     fn net_config_auth_popup_on_widget_action_matches() {
-        crate::difftest::check(ee::s03::f_001b6770, net_config_auth_popup_on_widget_action, SEEDS, &|c, seed| {
+        crate::difftest::check(ee::s03::f_001b6770__generated, net_config_auth_popup_on_widget_action, SEEDS, &|c, seed| {
             let mut r = machine(c, seed, 0x1b67_70, 2);
             c.g[A0][0] = sx(DATA);
             c.g[A1][0] = sx(DATA + 0x300);
@@ -1057,7 +1050,7 @@ mod tests {
 
     #[test]
     fn fe_locale_set_flag27_matches() {
-        crate::difftest::check(ee::s04::f_001e1090, fe_locale_set_flag27, 200, &|c, seed| {
+        crate::difftest::check(ee::s04::f_001e1090__generated, fe_locale_set_flag27, 200, &|c, seed| {
             let mut r = Rng(0x1e10_9001 ^ seed as u64);
             scramble(c, &mut r);
             c.g[A0][0] = sx(DATA);
@@ -1068,40 +1061,37 @@ mod tests {
 
     #[test]
     fn ov_state_view_popup_transition_in_matches() {
-        crate::difftest::check(ee::s04::f_001e52d0, ov_state_view_popup_transition_in, 40, &|c, seed| {
-            let mut r = machine(c, seed, 0x1e52_d0, 2);
+        crate::difftest::check(ee::s04::f_001e52d0__generated, ov_state_view_popup_transition_in, 40, &|c, seed| {
+            machine(c, seed, 0x1e52_d0, 2);
             be_library(c);
             c.g[A0][0] = sx(DATA);
             c.g[A1][0] = (seed % 2) as u64;
-            c.bus.write32(DATA, r.next_u32());
         });
     }
 
     #[test]
     fn fe_state_buy_attrib_transition_in_matches() {
-        crate::difftest::check(ee::s04::f_001f49d0, fe_state_buy_attrib_transition_in, 40, &|c, seed| {
-            let mut r = machine(c, seed, 0x1f49_d0, 2);
+        crate::difftest::check(ee::s04::f_001f49d0__generated, fe_state_buy_attrib_transition_in, 40, &|c, seed| {
+            machine(c, seed, 0x1f49_d0, 2);
             be_library(c);
             c.g[A0][0] = sx(DATA);
             c.g[A1][0] = (seed % 2) as u64;
-            c.bus.write32(DATA, r.next_u32());
         });
     }
 
     #[test]
     fn fe_state_career_stats_transition_in_matches() {
-        crate::difftest::check(ee::s04::f_001f55c0, fe_state_career_stats_transition_in, 40, &|c, seed| {
-            let mut r = machine(c, seed, 0x1f55_c0, 2);
+        crate::difftest::check(ee::s04::f_001f55c0__generated, fe_state_career_stats_transition_in, 40, &|c, seed| {
+            machine(c, seed, 0x1f55_c0, 2);
             be_library(c);
             c.g[A0][0] = sx(DATA);
             c.g[A1][0] = (seed % 2) as u64;
-            c.bus.write32(DATA, r.next_u32());
         });
     }
 
     #[test]
     fn section_man_dtor_matches() {
-        crate::difftest::check(ee::s05::f_0022cd18, section_man_dtor, 60, &|c, seed| {
+        crate::difftest::check(ee::s05::f_0022cd18__generated, section_man_dtor, 60, &|c, seed| {
             let mut r = machine(c, seed, 0x22cd_18, 2);
             be_library(c);
             if seed % 2 == 1 {
@@ -1116,7 +1106,7 @@ mod tests {
 
     #[test]
     fn game_module_invalidate_focus_matches() {
-        crate::difftest::check(ee::s06::f_00230338, game_module_invalidate_focus, 200, &|c, seed| {
+        crate::difftest::check(ee::s06::f_00230338__generated, game_module_invalidate_focus, 200, &|c, seed| {
             let mut r = Rng(0x2303_3801 ^ seed as u64);
             scramble(c, &mut r);
             c.g[A0][0] = sx(DATA);
@@ -1137,7 +1127,7 @@ mod tests {
 
     #[test]
     fn game_state_results_exit_matches() {
-        crate::difftest::check(ee::s06::f_00236ea0, game_state_results_exit, 40, &|c, seed| {
+        crate::difftest::check(ee::s06::f_00236ea0__generated, game_state_results_exit, 40, &|c, seed| {
             machine(c, seed, 0x236e_a0, 2);
             be_library(c);
             // `D_004A2C68` (the game state manager): a dummy whose `+0x48`
@@ -1150,7 +1140,7 @@ mod tests {
 
     #[test]
     fn game_rand_seed_matches() {
-        crate::difftest::check(ee::s06::f_00237cb0, game_rand_seed, 40, &|c, seed| {
+        crate::difftest::check(ee::s06::f_00237cb0__generated, game_rand_seed, 40, &|c, seed| {
             let mut r = machine(c, seed, 0x237c_b0, 1);
             c.g[A0][0] = if seed % 3 == 0 { 0 } else { r.next_u32() as u64 };
         });
@@ -1158,7 +1148,7 @@ mod tests {
 
     #[test]
     fn occlusion_man_dtor_matches() {
-        crate::difftest::check(ee::s06::f_00242518, occlusion_man_dtor, 60, &|c, seed| {
+        crate::difftest::check(ee::s06::f_00242518__generated, occlusion_man_dtor, 60, &|c, seed| {
             let mut r = machine(c, seed, 0x2425_18, 2);
             be_library(c);
             if seed % 2 == 1 {
@@ -1173,7 +1163,7 @@ mod tests {
 
     #[test]
     fn shared_login_man_shutdown_matches() {
-        crate::difftest::check(ee::s07::f_002659c0, shared_login_man_shutdown, 40, &|c, seed| {
+        crate::difftest::check(ee::s07::f_002659c0__generated, shared_login_man_shutdown, 40, &|c, seed| {
             let mut r = machine(c, seed, 0x2659_c0, 2);
             be_library(c);
             c.g[A0][0] = sx(DATA);
@@ -1185,7 +1175,7 @@ mod tests {
 
     #[test]
     fn shared_login_man_mc_cb_state09_matches() {
-        crate::difftest::check(ee::s07::f_00266010, shared_login_man_mc_cb_state09, 40, &|c, seed| {
+        crate::difftest::check(ee::s07::f_00266010__generated, shared_login_man_mc_cb_state09, 40, &|c, seed| {
             let mut r = machine(c, seed, 0x2660_10, 2);
             c.g[A0][0] = (seed % 10) as u64;
             c.bus.write32(GAME_GP + 0x1aec, if seed % 2 == 0 { 0 } else { 1 });
@@ -1195,7 +1185,7 @@ mod tests {
 
     #[test]
     fn shared_login_man_mc_cb_state0a_matches() {
-        crate::difftest::check(ee::s07::f_00266038, shared_login_man_mc_cb_state0a, 40, &|c, seed| {
+        crate::difftest::check(ee::s07::f_00266038__generated, shared_login_man_mc_cb_state0a, 40, &|c, seed| {
             let mut r = machine(c, seed, 0x2660_38, 2);
             c.g[A0][0] = (seed % 10) as u64;
             c.bus.write32(GAME_GP + 0x1aec, if seed % 2 == 0 { 0 } else { 1 });
@@ -1205,7 +1195,7 @@ mod tests {
 
     #[test]
     fn shared_login_man_mc_cb_state03_matches() {
-        crate::difftest::check(ee::s07::f_002660a0, shared_login_man_mc_cb_state03, 40, &|c, seed| {
+        crate::difftest::check(ee::s07::f_002660a0__generated, shared_login_man_mc_cb_state03, 40, &|c, seed| {
             let mut r = machine(c, seed, 0x2660_a0, 2);
             c.g[A0][0] = (seed % 10) as u64;
             c.bus.write32(GAME_GP + 0x1aec, if seed % 2 == 0 { 0 } else { 1 });
@@ -1215,7 +1205,7 @@ mod tests {
 
     #[test]
     fn tib_ext_mem_free_matches() {
-        crate::difftest::check(ee::s07::f_00266760, tib_ext_mem_free, 60, &|c, seed| {
+        crate::difftest::check(ee::s07::f_00266760__generated, tib_ext_mem_free, 60, &|c, seed| {
             let mut r = machine(c, seed, 0x2667_60, 2);
             be_library(c);
             c.g[A0][0] = sx(r.next_u32());
@@ -1233,126 +1223,169 @@ mod tests {
         c.g[A2][0] = sx(DATA + 0x10);
         c.bus.write16(LOBBY_CALLBACKS.wrapping_add(slot), if seed % 3 == 0 { 0 } else { (4 * (r.next_u32() % 8)) as u16 });
         // The packet `LobbyApi_DebugPacket`/`TagField*` read: zeroed fields.
-        for k in 0..8 {
+        for k in 0..8u32 {
             c.bus.write32(DATA + 0x400 + 4 * k, 0);
         }
     }
 
+    /// The engine's size-class pool allocator (`MEM_PoolAlloc`): blocks up to
+    /// 0x400 bytes are popped from per-size free lists hanging off
+    /// `gp + 0x2a60..0x2a84`, but only when the "pools ready" flag at
+    /// `gp + 0xdd8` is set. On a fresh test machine that flag is clear, so an
+    /// allocation grows the `DLHeap` from a zeroed header and the reply
+    /// handlers — which allocate a message node on every call — then walk a
+    /// corrupt bucket chain and never terminate. A short free list per size
+    /// class makes each allocation pop a node instead, as it does in the game.
+    fn pool_allocator(c: &mut Cpu) {
+        c.bus.write32(GAME_GP + 0xdd8, 1); // pools ready
+        // (pool pointer global, free-list head offset within the pool object)
+        const POOLS: [(u32, u32); 7] = [
+            (0x2a70, 0x800),   // 8-byte blocks
+            (0x2a60, 0x2000),  // 16
+            (0x2a6c, 0x32000), // 32
+            (0x2a7c, 0x25800), // 64
+            (0x2a84, 0x25800), // 128
+            (0x2a78, 0x20000), // 256
+            (0x2a68, 0x20000), // 512
+        ];
+        let nodes = DATA + 0x28_000;
+        for (i, (slot, head)) in POOLS.into_iter().enumerate() {
+            let pool = DATA + 0x20_000 + 0x100 * i as u32;
+            let base = nodes + 0x100 * i as u32;
+            // Four free nodes per size, spaced wider than the largest block of
+            // that size class (the head is updated on pop, so only the next
+            // pointer of an unpopped node matters).
+            for n in 0..4u32 {
+                let node = base + 0x40 * n;
+                c.bus.write32(node, if n == 3 { 0 } else { node + 0x40 });
+            }
+            c.bus.write32(pool + head, base);
+            c.bus.write32(GAME_GP + slot, pool);
+        }
+    }
+
+    /// [`lobby_setup`] plus the pool allocator: for the reply handlers that
+    /// allocate a message node on every call.
+    fn lobby_alloc_setup(c: &mut Cpu, seed: u32, salt: u64, slot: u32) {
+        lobby_setup(c, seed, salt, slot);
+        pool_allocator(c);
+    }
+
     #[test]
     fn lobby_man_on_user_list_changed_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268a90, lobby_man_on_user_list_changed_thunk, 30, &|c, seed| {
-            lobby_setup(c, seed, 0x268a_90, 0x2fb0);
+        crate::difftest::check(ee::s07::f_00268a90__generated, lobby_man_on_user_list_changed_thunk, 30, &|c, seed| {
+            lobby_alloc_setup(c, seed, 0x268a_90, 0x2fb0);
         });
     }
 
     #[test]
     fn lobby_man_on_room_list_changed_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268ab8, lobby_man_on_room_list_changed_thunk, 30, &|c, seed| {
+        crate::difftest::check(ee::s07::f_00268ab8__generated, lobby_man_on_room_list_changed_thunk, 30, &|c, seed| {
             lobby_setup(c, seed, 0x268a_b8, 0x2fb8);
         });
     }
 
     #[test]
     fn lobby_man_on_rank_list_changed_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268ae0, lobby_man_on_rank_list_changed_thunk, 30, &|c, seed| {
+        crate::difftest::check(ee::s07::f_00268ae0__generated, lobby_man_on_rank_list_changed_thunk, 30, &|c, seed| {
             lobby_setup(c, seed, 0x268a_e0, 0x2fc0);
         });
     }
 
     #[test]
     fn lobby_man_on_recv_debug_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268b08, lobby_man_on_recv_debug_thunk, 30, &|c, seed| {
+        crate::difftest::check(ee::s07::f_00268b08__generated, lobby_man_on_recv_debug_thunk, 30, &|c, seed| {
             lobby_setup(c, seed, 0x268b_08, 0x2ff0);
         });
     }
 
     #[test]
     fn lobby_man_on_message_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268b30, lobby_man_on_message_thunk, 24, &|c, seed| {
+        crate::difftest::check(ee::s07::f_00268b30__generated, lobby_man_on_message_thunk, 24, &|c, seed| {
             lobby_setup(c, seed, 0x268b_30, 0x2ff8);
         });
     }
 
     #[test]
     fn lobby_man_on_disconnect_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268b58, lobby_man_on_disconnect_thunk, 30, &|c, seed| {
+        crate::difftest::check(ee::s07::f_00268b58__generated, lobby_man_on_disconnect_thunk, 30, &|c, seed| {
             lobby_setup(c, seed, 0x268b_58, 0x3000);
         });
     }
 
     #[test]
     fn lobby_man_on_game_start_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268b80, lobby_man_on_game_start_thunk, 24, &|c, seed| {
-            lobby_setup(c, seed, 0x268b_80, 0x3008);
+        crate::difftest::check(ee::s07::f_00268b80__generated, lobby_man_on_game_start_thunk, 24, &|c, seed| {
+            lobby_alloc_setup(c, seed, 0x268b_80, 0x3008);
         });
     }
 
     #[test]
     fn lobby_man_on_connect_reply_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268ba8, lobby_man_on_connect_reply_thunk, 30, &|c, seed| {
+        crate::difftest::check(ee::s07::f_00268ba8__generated, lobby_man_on_connect_reply_thunk, 30, &|c, seed| {
             lobby_setup(c, seed, 0x268b_a8, 0x3020);
         });
     }
 
     #[test]
     fn lobby_man_on_create_account_reply_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268bd0, lobby_man_on_create_account_reply_thunk, 30, &|c, seed| {
-            lobby_setup(c, seed, 0x268b_d0, 0x3088);
+        crate::difftest::check(ee::s07::f_00268bd0__generated, lobby_man_on_create_account_reply_thunk, 30, &|c, seed| {
+            lobby_alloc_setup(c, seed, 0x268b_d0, 0x3088);
         });
     }
 
     #[test]
     fn lobby_man_on_edit_account_reply_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268bf8, lobby_man_on_edit_account_reply_thunk, 30, &|c, seed| {
-            lobby_setup(c, seed, 0x268b_f8, 0x30a8);
+        crate::difftest::check(ee::s07::f_00268bf8__generated, lobby_man_on_edit_account_reply_thunk, 30, &|c, seed| {
+            lobby_alloc_setup(c, seed, 0x268b_f8, 0x30a8);
         });
     }
 
     #[test]
     fn lobby_man_on_lost_by_email_reply_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268c20, lobby_man_on_lost_by_email_reply_thunk, 30, &|c, seed| {
-            lobby_setup(c, seed, 0x268c_20, 0x30b0);
+        crate::difftest::check(ee::s07::f_00268c20__generated, lobby_man_on_lost_by_email_reply_thunk, 30, &|c, seed| {
+            lobby_alloc_setup(c, seed, 0x268c_20, 0x30b0);
         });
     }
 
     #[test]
     fn lobby_man_on_lost_by_name_reply_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268c48, lobby_man_on_lost_by_name_reply_thunk, 30, &|c, seed| {
-            lobby_setup(c, seed, 0x268c_48, 0x30b8);
+        crate::difftest::check(ee::s07::f_00268c48__generated, lobby_man_on_lost_by_name_reply_thunk, 30, &|c, seed| {
+            lobby_alloc_setup(c, seed, 0x268c_48, 0x30b8);
         });
     }
 
     #[test]
     fn lobby_man_on_login_reply_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268c70, lobby_man_on_login_reply_thunk, 24, &|c, seed| {
+        crate::difftest::check(ee::s07::f_00268c70__generated, lobby_man_on_login_reply_thunk, 24, &|c, seed| {
             lobby_setup(c, seed, 0x268c_70, 0x30e8);
         });
     }
 
     #[test]
     fn lobby_man_on_select_persona_reply_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268c98, lobby_man_on_select_persona_reply_thunk, 30, &|c, seed| {
-            lobby_setup(c, seed, 0x268c_98, 0x3118);
+        crate::difftest::check(ee::s07::f_00268c98__generated, lobby_man_on_select_persona_reply_thunk, 30, &|c, seed| {
+            lobby_alloc_setup(c, seed, 0x268c_98, 0x3118);
         });
     }
 
     #[test]
     fn lobby_man_on_own_stats_reply_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268cc0, lobby_man_on_own_stats_reply_thunk, 30, &|c, seed| {
+        crate::difftest::check(ee::s07::f_00268cc0__generated, lobby_man_on_own_stats_reply_thunk, 30, &|c, seed| {
             lobby_setup(c, seed, 0x268c_c0, 0x3120);
         });
     }
 
     #[test]
     fn lobby_man_on_create_persona_reply_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268ce8, lobby_man_on_create_persona_reply_thunk, 30, &|c, seed| {
-            lobby_setup(c, seed, 0x268c_e8, 0x3138);
+        crate::difftest::check(ee::s07::f_00268ce8__generated, lobby_man_on_create_persona_reply_thunk, 30, &|c, seed| {
+            lobby_alloc_setup(c, seed, 0x268c_e8, 0x3138);
         });
     }
 
     #[test]
     fn lobby_man_on_delete_persona_reply_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268d10, lobby_man_on_delete_persona_reply_thunk, 30, &|c, seed| {
+        crate::difftest::check(ee::s07::f_00268d10__generated, lobby_man_on_delete_persona_reply_thunk, 30, &|c, seed| {
             lobby_setup(c, seed, 0x268d_10, 0x3140);
         });
     }
