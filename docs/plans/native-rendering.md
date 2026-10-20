@@ -422,6 +422,13 @@ phase 2.
 The reference is a readability aid: `generated/ee` stays the authority for
 registers, cycles, memory and call order, and its names/signatures differ.
 
+As of 2026-10-21: 1,639 of the 11,844 functions are installed as typed Rust
+(1,500 at the start of the session); 5,052 remaining functions are <=800 bytes
+with a readable C++ body and no `__entries` dispatcher fragment, and 4,876 of
+those are <=600 bytes. The small-function waves (50 per writer) are the best
+yield; the 400-function dispatcher-heavy waves at the start of the session
+yielded only 5-7 per writer.
+
 | movies | done (N5) | | |
 | light queries | done: the native flare visibility query reads the depth of the frame two before, tagged with its frame number, waiting for the render thread when it is late (`depth_of`, 100 ms cap; `SSX3_DEPTH_SYNC=0` for the latest). Two race runs end with identical RAM; the browser (no render thread) keeps the latest depth | | |
 
