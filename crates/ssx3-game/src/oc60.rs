@@ -1230,6 +1230,9 @@ mod tests {
     use super::*;
     use crate::difftest::fakes::{covered, machine, FAKE};
     use crate::difftest::{check, check_lohi, scramble, Rng, DATA, GAME_GP};
+    use ssx3_ee::s01;
+    use ssx3_ee::s03;
+    use ssx3_ee::s00;
     use ssx3_ee::s02;
     use ssx3_ee::s08;
     use ssx3_ee::s09;
@@ -1280,7 +1283,7 @@ mod tests {
 
     #[test]
     fn music_player_pause_matches() {
-        check(s08::f_002b3a70, music_player_pause, 150, &|c, seed| {
+        check(s08::f_002b3a70__generated, music_player_pause, 150, &|c, seed| {
             machine(c, seed, 0x2b3a70, 1);
             c.g[A1][0] = 0;
             c.g[A2][0] = 0;
@@ -1295,7 +1298,7 @@ mod tests {
 
     #[test]
     fn music_player_resume_matches() {
-        check(s08::f_002b3a98, music_player_resume, 150, &|c, seed| {
+        check(s08::f_002b3a98__generated, music_player_resume, 150, &|c, seed| {
             machine(c, seed, 0x2b3a98, 1);
             c.g[A1][0] = 0;
             c.g[A2][0] = 0;
@@ -1309,7 +1312,7 @@ mod tests {
 
     #[test]
     fn music_player_get_song_tag_matches() {
-        check(s08::f_002b49e0, music_player_get_song_tag, 200, &|c, seed| {
+        check(s08::f_002b49e0__generated, music_player_get_song_tag, 200, &|c, seed| {
             let mut r = Rng(0x49e0_1234 ^ seed as u64);
             scramble(c, &mut r);
             c.g[A0][0] = sx(OBJ);
@@ -1328,7 +1331,7 @@ mod tests {
     #[test]
     fn world_trigger_manager_destroy_instance_matches() {
         check(
-            s08::f_002b4b48,
+            s08::f_002b4b48__generated,
             world_trigger_manager_destroy_instance,
             120,
             &|c, seed| {
@@ -1348,7 +1351,7 @@ mod tests {
 
     #[test]
     fn cps2_memcard_get_dir_entry_name_matches() {
-        check(s08::f_002c68c8, cps2_memcard_get_dir_entry_name, 150, &|c, seed| {
+        check(s08::f_002c68c8__generated, cps2_memcard_get_dir_entry_name, 150, &|c, seed| {
             machine(c, seed, 0x2c68c8, 1);
             c.g[A0][0] = sx(OBJ);
             c.g[A1][0] = sx(seed % 8);
@@ -1370,7 +1373,7 @@ mod tests {
 
     #[test]
     fn menu_sys_page_get_selected_index_matches() {
-        check(s09::f_002cbf08, menu_sys_page_get_selected_index, 150, &|c, seed| {
+        check(s09::f_002cbf08__generated, menu_sys_page_get_selected_index, 150, &|c, seed| {
             machine(c, seed, 0x2cbf08, 1);
             c.g[A0][0] = sx(OBJ);
             clear(c, OBJ, 0x40);
@@ -1385,7 +1388,7 @@ mod tests {
 
     #[test]
     fn menu_sys_point2d_item_on_focus_matches() {
-        check(s09::f_002d08e0, menu_sys_point2d_item_on_focus, 150, &|c, seed| {
+        check(s09::f_002d08e0__generated, menu_sys_point2d_item_on_focus, 150, &|c, seed| {
             machine(c, seed, 0x2d08e0, 1);
             c.g[A0][0] = sx(OBJ);
             clear(c, OBJ, 0x40);
@@ -1398,7 +1401,7 @@ mod tests {
 
     #[test]
     fn mod_obj_call_slot7_matches() {
-        covered(s09::f_002d1b30, mod_obj_call_slot7, 120, &|c, seed| {
+        covered(s09::f_002d1b30__generated, mod_obj_call_slot7, 120, &|c, seed| {
             machine(c, seed, 0x2d1b30, 1);
             clear(c, OBJ, 0x20);
             clear(c, VT, 0x40);
@@ -1414,7 +1417,7 @@ mod tests {
 
     #[test]
     fn wscript_man_has_kill_script_matches() {
-        check(s10::f_0030a598, wscript_man_has_kill_script, 120, &|c, seed| {
+        check(s10::f_0030a598__generated, wscript_man_has_kill_script, 120, &|c, seed| {
             machine(c, seed, 0x30a598, 1);
             globals(c);
             c.g[A0][0] = sx(OBJ);
@@ -1430,7 +1433,7 @@ mod tests {
 
     #[test]
     fn wscript_man_jump_to_task_matches() {
-        check(s10::f_0030a6d8, wscript_man_jump_to_task, 120, &|c, seed| {
+        check(s10::f_0030a6d8__generated, wscript_man_jump_to_task, 120, &|c, seed| {
             machine(c, seed, 0x30a6d8, 1);
             c.g[A1][0] = 0;
             clear(c, OBJ, 0x40);
@@ -1445,7 +1448,7 @@ mod tests {
 
     #[test]
     fn wscript_man_goto_task_matches() {
-        check(s10::f_0030a700, wscript_man_goto_task, 120, &|c, seed| {
+        check(s10::f_0030a700__generated, wscript_man_goto_task, 120, &|c, seed| {
             machine(c, seed, 0x30a700, 1);
             c.g[A1][0] = 0;
             clear(c, OBJ, 0x40);
@@ -1458,7 +1461,7 @@ mod tests {
 
     #[test]
     fn wscript_man_cmd_queue_ctor_matches() {
-        check(s10::f_0030c738, wscript_man_cmd_queue_ctor, 120, &|c, seed| {
+        check(s10::f_0030c738__generated, wscript_man_cmd_queue_ctor, 120, &|c, seed| {
             machine(c, seed, 0x30c738, 1);
             clear(c, OBJ, 0x40);
             c.g[A0][0] = sx(OBJ);
@@ -1468,7 +1471,7 @@ mod tests {
 
     #[test]
     fn ps2_exec_man_v05_matches() {
-        check(s10::f_0031aac8, ps2_exec_man_v05, 120, &|c, seed| {
+        check(s10::f_0031aac8__generated, ps2_exec_man_v05, 120, &|c, seed| {
             machine(c, seed, 0x31aac8, 1);
             clear(c, OBJ, 0x40);
             c.g[A0][0] = sx(OBJ);
@@ -1480,9 +1483,9 @@ mod tests {
 
     #[test]
     fn ps2_exec_man_v09_matches() {
-        check(s10::f_0031acd8, ps2_exec_man_v09, 120, &|c, seed| {
+        check(s10::f_0031acd8__generated, ps2_exec_man_v09, 120, &|c, seed| {
             machine(c, seed, 0x31acd8, 1);
-            clear(c, OBJ + 0x1_0000, 0x4020);
+            clear(c, OBJ + 0x1_4000, 0x20);
             c.g[A0][0] = sx(OBJ);
             c.g[A1][0] = sx(seed as u32 & 0xff);
             c.bus.write32(OBJ + 0x1_4044, seed as u32 & 3);
@@ -1491,7 +1494,7 @@ mod tests {
 
     #[test]
     fn mod_obj_v43_matches() {
-        check(s11::f_00356ab8, mod_obj_v43, 120, &|c, seed| {
+        check(s11::f_00356ab8__generated, mod_obj_v43, 120, &|c, seed| {
             machine(c, seed, 0x356ab8, 1);
             clear(c, OBJ, 0x40);
             clear(c, CHILD, 0x100);
@@ -1503,7 +1506,7 @@ mod tests {
 
     #[test]
     fn mod_obj_v42_matches() {
-        check(s11::f_00356ae0, mod_obj_v42, 120, &|c, seed| {
+        check(s11::f_00356ae0__generated, mod_obj_v42, 120, &|c, seed| {
             machine(c, seed, 0x356ae0, 1);
             clear(c, OBJ, 0x40);
             clear(c, CHILD, 0x100);
@@ -1515,7 +1518,7 @@ mod tests {
 
     #[test]
     fn mod_obj_v36_matches() {
-        check(s11::f_00356b08, mod_obj_v36, 120, &|c, seed| {
+        check(s11::f_00356b08__generated, mod_obj_v36, 120, &|c, seed| {
             machine(c, seed, 0x356b08, 1);
             c.g[A1][0] = 0;
             clear(c, OBJ, 0x40);
@@ -1528,7 +1531,7 @@ mod tests {
 
     #[test]
     fn graphics_man_snapshot_texture_table_matches() {
-        covered(s12::f_00369ff8, graphics_man_snapshot_texture_table, 120, &|c, seed| {
+        covered(s12::f_00369ff8__generated, graphics_man_snapshot_texture_table, 120, &|c, seed| {
             machine(c, seed, 0x369ff8, 1);
             clear(c, OBJ, 0x40);
             clear(c, VT, 0x40);
@@ -1541,7 +1544,7 @@ mod tests {
 
     #[test]
     fn graphics_man_free_all_textures_matches() {
-        covered(s12::f_0036a020, graphics_man_free_all_textures, 120, &|c, seed| {
+        covered(s12::f_0036a020__generated, graphics_man_free_all_textures, 120, &|c, seed| {
             machine(c, seed, 0x36a020, 1);
             clear(c, OBJ, 0x40);
             clear(c, VT, 0x40);
@@ -1554,7 +1557,7 @@ mod tests {
 
     #[test]
     fn ps2_bezier_man_call_v17_matches() {
-        covered(s12::f_0038d638, ps2_bezier_man_call_v17, 120, &|c, seed| {
+        covered(s12::f_0038d638__generated, ps2_bezier_man_call_v17, 120, &|c, seed| {
             machine(c, seed, 0x38d638, 1);
             clear(c, OBJ, 0x40);
             clear(c, VT, 0x200);
@@ -1567,7 +1570,7 @@ mod tests {
 
     #[test]
     fn grid_mesh_base_call_v22_matches() {
-        covered(s13::f_00394b98, grid_mesh_base_call_v22, 120, &|c, seed| {
+        covered(s13::f_00394b98__generated, grid_mesh_base_call_v22, 120, &|c, seed| {
             machine(c, seed, 0x394b98, 1);
             clear(c, OBJ, 0x40);
             clear(c, VT, 0x200);
@@ -1582,7 +1585,7 @@ mod tests {
 
     #[test]
     fn light_man_free_instances_matches() {
-        check(s13::f_00394ce8, light_man_free_instances, 120, &|c, seed| {
+        check(s13::f_00394ce8__generated, light_man_free_instances, 120, &|c, seed| {
             machine(c, seed, 0x394ce8, 1);
             clear(c, OBJ, 0x40);
             c.g[A0][0] = sx(OBJ);
@@ -1593,7 +1596,7 @@ mod tests {
 
     #[test]
     fn cwscript_cache_set_data_matches() {
-        check_lohi(s13::f_003aca10, cwscript_cache_set_data, 150, &|c, seed| {
+        check_lohi(s13::f_003aca10__generated, cwscript_cache_set_data, 150, &|c, seed| {
             machine(c, seed, 0x3aca10, 1);
             clear(c, OBJ, 0x40);
             clear(c, CHILD, 0x80);
@@ -1606,7 +1609,7 @@ mod tests {
 
     #[test]
     fn shp_free_matches() {
-        check(s13::f_003b2b68, shp_free, 120, &|c, seed| {
+        check(s13::f_003b2b68__generated, shp_free, 120, &|c, seed| {
             machine(c, seed, 0x3b2b68, 1);
             clear(c, OBJ, 0x80);
             // `D_0044C458` is newlib's `free` hook; the null slot is faked.
@@ -1621,7 +1624,7 @@ mod tests {
     #[test]
     fn computer_actor_rider_reset_trick_counts_matches() {
         check(
-            s00::f_0010d170,
+            s00::f_0010d170__generated,
             computer_actor_rider_reset_trick_counts,
             200,
             &|c, seed| {
@@ -1642,7 +1645,7 @@ mod tests {
 
     #[test]
     fn rider_metrix_set_press_spin_matches() {
-        check(s00::f_00119ad8, rider_metrix_set_press_spin, 150, &|c, seed| {
+        check(s00::f_00119ad8__generated, rider_metrix_set_press_spin, 150, &|c, seed| {
             machine(c, seed, 0x119ad8, 1);
             clear(c, OBJ, 0x80);
             c.g[A0][0] = sx(OBJ);
@@ -1657,7 +1660,7 @@ mod tests {
 
     #[test]
     fn ai_set_sync_words_matches() {
-        check(s00::f_0012bac0, ai_set_sync_words, 200, &|c, seed| {
+        check(s00::f_0012bac0__generated, ai_set_sync_words, 200, &|c, seed| {
             let mut r = Rng(0x12ba_c0aa ^ seed as u64);
             scramble(c, &mut r);
             c.g[A0][0] = sx(OBJ);
@@ -1670,7 +1673,7 @@ mod tests {
 
     #[test]
     fn ai_get_sync_words_matches() {
-        check(s00::f_0012baf0, ai_get_sync_words, 200, &|c, seed| {
+        check(s00::f_0012baf0__generated, ai_get_sync_words, 200, &|c, seed| {
             let mut r = Rng(0x12ba_f0aa ^ seed as u64);
             scramble(c, &mut r);
             c.g[A0][0] = sx(OBJ);
@@ -1684,7 +1687,7 @@ mod tests {
 
     #[test]
     fn flags64_move_to_second_matches() {
-        check(s01::f_00144670, flags64_move_to_second, 200, &|c, seed| {
+        check(s01::f_00144670__generated, flags64_move_to_second, 200, &|c, seed| {
             let mut r = Rng(0x1446_70aa ^ seed as u64);
             scramble(c, &mut r);
             c.g[A0][0] = sx(OBJ);
@@ -1696,7 +1699,7 @@ mod tests {
 
     #[test]
     fn benew_race_int_get_special_event_field4_matches() {
-        check_lohi(s01::f_001455d0, benew_race_int_get_special_event_field4, 200, &|c, seed| {
+        check_lohi(s01::f_001455d0__generated, benew_race_int_get_special_event_field4, 200, &|c, seed| {
             let mut r = Rng(0x1455_d0aa ^ seed as u64);
             scramble(c, &mut r);
             let event = 6 + (seed % 4) as i32;
@@ -1715,7 +1718,7 @@ mod tests {
 
     #[test]
     fn benew_race_int_get_special_event_field6_matches() {
-        check_lohi(s01::f_00145600, benew_race_int_get_special_event_field6, 200, &|c, seed| {
+        check_lohi(s01::f_00145600__generated, benew_race_int_get_special_event_field6, 200, &|c, seed| {
             let mut r = Rng(0x1456_00aa ^ seed as u64);
             scramble(c, &mut r);
             let event = 6 + (seed % 4) as i32;
@@ -1733,7 +1736,7 @@ mod tests {
 
     #[test]
     fn beoption_int_reset_singleton_matches() {
-        covered(s01::f_0014f648, beoption_int_reset_singleton, 120, &|c, seed| {
+        covered(s01::f_0014f648__generated, beoption_int_reset_singleton, 120, &|c, seed| {
             machine(c, seed, 0x14f648, 1);
             clear(c, OBJ, 0x40);
             clear(c, VT, 0x40);
@@ -1749,8 +1752,8 @@ mod tests {
 
     #[test]
     fn besave_int_get_save_buffer_end_matches() {
-        check(s01::f_001526d0, besave_int_get_save_buffer_end, 120, &|c, seed| {
-            machine(c, seed, 0x1526d0, 1);
+        check(s01::f_001526d0__generated, besave_int_get_save_buffer_end, 120, &|c, seed| {
+            machine(c, seed, 0x1526d0, 2);
             globals(c);
             clear(c, DATA + 0x6_c000, 0x40);
             c.bus.write32(GAME_GP.wrapping_sub(0x1ecc), 0x0080_2000u32 + 0x40 * (seed & 7));
@@ -1760,7 +1763,7 @@ mod tests {
 
     #[test]
     fn besave_int_release_save_buffer_matches() {
-        check(s01::f_00152728, besave_int_release_save_buffer, 120, &|c, seed| {
+        check(s01::f_00152728__generated, besave_int_release_save_buffer, 120, &|c, seed| {
             machine(c, seed, 0x152728, 1);
             clear(c, OBJ, 0x40);
             // A buffer to free, or none.
@@ -1776,7 +1779,7 @@ mod tests {
     #[test]
     fn chase_camera_algorithm_clear_heading_ring_matches() {
         check(
-            s02::f_00167db8,
+            s02::f_00167db8__generated,
             chase_camera_algorithm_clear_heading_ring,
             200,
             &|c, seed| {
@@ -1797,7 +1800,7 @@ mod tests {
 
     #[test]
     fn manual_script_camera_algo_reset_matches() {
-        covered(s02::f_00169540, manual_script_camera_algo_reset, 120, &|c, seed| {
+        covered(s02::f_00169540__generated, manual_script_camera_algo_reset, 120, &|c, seed| {
             machine(c, seed, 0x169540, 1);
             clear(c, OBJ, 0x40);
             clear(c, VT, 0x40);
@@ -1810,7 +1813,7 @@ mod tests {
 
     #[test]
     fn target_script_camera_algo_reset_matches() {
-        covered(s02::f_00169d80, target_script_camera_algo_reset, 120, &|c, seed| {
+        covered(s02::f_00169d80__generated, target_script_camera_algo_reset, 120, &|c, seed| {
             machine(c, seed, 0x169d80, 1);
             clear(c, OBJ, 0x40);
             clear(c, VT, 0x40);
@@ -1823,7 +1826,7 @@ mod tests {
 
     #[test]
     fn subject_script_camera_algo_reset_matches() {
-        covered(s02::f_0016a4e0, subject_script_camera_algo_reset, 120, &|c, seed| {
+        covered(s02::f_0016a4e0__generated, subject_script_camera_algo_reset, 120, &|c, seed| {
             machine(c, seed, 0x16a4e0, 1);
             clear(c, OBJ, 0x40);
             clear(c, VT, 0x40);
@@ -1839,8 +1842,8 @@ mod tests {
 
     #[test]
     fn cfe_state_char_select_update_matches() {
-        check(s02::f_00181420, cfe_state_char_select_update, 120, &|c, seed| {
-            machine(c, seed, 0x181420, 1);
+        check(s02::f_00181420__generated, cfe_state_char_select_update, 120, &|c, seed| {
+            machine(c, seed, 0x181420, 2);
             globals(c);
             clear(c, OBJ, 0x100);
             c.g[A0][0] = sx(OBJ);
@@ -1850,8 +1853,8 @@ mod tests {
 
     #[test]
     fn cfe_state_char_setup_update_matches() {
-        check(s02::f_00182c38, cfe_state_char_setup_update, 120, &|c, seed| {
-            machine(c, seed, 0x182c38, 1);
+        check(s02::f_00182c38__generated, cfe_state_char_setup_update, 120, &|c, seed| {
+            machine(c, seed, 0x182c38, 2);
             globals(c);
             clear(c, OBJ, 0x100);
             c.g[A0][0] = sx(OBJ);
@@ -1861,8 +1864,8 @@ mod tests {
 
     #[test]
     fn cfe_state_rider_detail_update_matches() {
-        check(s02::f_001835c8, cfe_state_rider_detail_update, 120, &|c, seed| {
-            machine(c, seed, 0x1835c8, 1);
+        check(s02::f_001835c8__generated, cfe_state_rider_detail_update, 120, &|c, seed| {
+            machine(c, seed, 0x1835c8, 2);
             globals(c);
             clear(c, OBJ, 0x100);
             c.g[A0][0] = sx(OBJ);
@@ -1872,7 +1875,7 @@ mod tests {
 
     #[test]
     fn cfe_options_credits_update_matches() {
-        check(s02::f_001863b8, cfe_options_credits_update, 120, &|c, seed| {
+        check(s02::f_001863b8__generated, cfe_options_credits_update, 120, &|c, seed| {
             machine(c, seed, 0x1863b8, 1);
             globals(c);
             clear(c, OBJ, 0x100);
@@ -1884,8 +1887,8 @@ mod tests {
 
     #[test]
     fn cfe_state_event_select_on_activate_matches() {
-        check(s02::f_00186748, cfe_state_event_select_on_activate, 120, &|c, seed| {
-            machine(c, seed, 0x186748, 1);
+        check(s02::f_00186748__generated, cfe_state_event_select_on_activate, 120, &|c, seed| {
+            machine(c, seed, 0x186748, 2);
             globals(c);
             clear(c, OBJ, 0x120);
             c.g[A0][0] = sx(OBJ);
@@ -1895,8 +1898,8 @@ mod tests {
 
     #[test]
     fn cfe_state_event_select_shutdown_matches() {
-        check(s02::f_00186778, cfe_state_event_select_shutdown, 120, &|c, seed| {
-            machine(c, seed, 0x186778, 1);
+        check(s02::f_00186778__generated, cfe_state_event_select_shutdown, 120, &|c, seed| {
+            machine(c, seed, 0x186778, 2);
             globals(c);
             clear(c, OBJ, 0x120);
             c.g[A0][0] = sx(OBJ);
@@ -1906,8 +1909,8 @@ mod tests {
 
     #[test]
     fn cfe_state_event_select_update_matches() {
-        check(s02::f_001869d8, cfe_state_event_select_update, 120, &|c, seed| {
-            machine(c, seed, 0x1869d8, 1);
+        check(s02::f_001869d8__generated, cfe_state_event_select_update, 120, &|c, seed| {
+            machine(c, seed, 0x1869d8, 2);
             globals(c);
             clear(c, OBJ, 0x120);
             c.g[A0][0] = sx(OBJ);
@@ -1917,7 +1920,7 @@ mod tests {
 
     #[test]
     fn cfe_state_mem_card_dtor_matches() {
-        check(s02::f_00186b18, cfe_state_mem_card_dtor, 120, &|c, seed| {
+        check(s02::f_00186b18__generated, cfe_state_mem_card_dtor, 120, &|c, seed| {
             machine(c, seed, 0x186b18, 1);
             globals(c);
             clear(c, OBJ, 0x100);
@@ -1932,7 +1935,7 @@ mod tests {
 
     #[test]
     fn bolt_file_cache_ctor_matches() {
-        check(s03::f_0019cdf0, bolt_file_cache_ctor, 100, &|c, seed| {
+        check(s03::f_0019cdf0__generated, bolt_file_cache_ctor, 100, &|c, seed| {
             machine(c, seed, 0x19cdf0, 1);
             globals(c);
             clear(c, OBJ, 0x100);
@@ -1947,7 +1950,7 @@ mod tests {
     #[test]
     fn femodule_rider_preview_set_transform_matches() {
         check(
-            s03::f_0019f3e8,
+            s03::f_0019f3e8__generated,
             femodule_rider_preview_set_transform,
             120,
             &|c, seed| {
@@ -1966,7 +1969,7 @@ mod tests {
     #[test]
     fn femodule_rider_preview_set_transform2_matches() {
         check(
-            s03::f_0019f548,
+            s03::f_0019f548__generated,
             femodule_rider_preview_set_transform2,
             120,
             &|c, seed| {
@@ -1984,7 +1987,7 @@ mod tests {
 
     #[test]
     fn femodule_set_rider_preview_indices_matches() {
-        check(s03::f_001a0498, femodule_set_rider_preview_indices, 200, &|c, seed| {
+        check(s03::f_001a0498__generated, femodule_set_rider_preview_indices, 200, &|c, seed| {
             let mut r = Rng(0x1a04_98aa ^ seed as u64);
             scramble(c, &mut r);
             c.g[A0][0] = sx(OBJ);
