@@ -59,6 +59,22 @@ pub mod oc42;
 pub mod oc43;
 #[cfg(feature = "oc44")]
 pub mod oc44;
+#[cfg(feature = "oc45")]
+pub mod oc45;
+#[cfg(feature = "oc46")]
+pub mod oc46;
+#[cfg(feature = "oc47")]
+pub mod oc47;
+#[cfg(feature = "oc48")]
+pub mod oc48;
+#[cfg(feature = "oc49")]
+pub mod oc49;
+#[cfg(feature = "oc50")]
+pub mod oc50;
+#[cfg(feature = "oc51")]
+pub mod oc51;
+#[cfg(feature = "oc52")]
+pub mod oc52;
 #[cfg(feature = "oc27")]
 pub mod oc27;
 #[cfg(feature = "oc26")]
@@ -320,6 +336,22 @@ pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     v.extend_from_slice(oc43::OVERRIDES);
     #[cfg(feature = "oc44")]
     v.extend_from_slice(oc44::OVERRIDES);
+    #[cfg(feature = "oc45")]
+    v.extend_from_slice(oc45::OVERRIDES);
+    #[cfg(feature = "oc46")]
+    v.extend_from_slice(oc46::OVERRIDES);
+    #[cfg(feature = "oc47")]
+    v.extend_from_slice(oc47::OVERRIDES);
+    #[cfg(feature = "oc48")]
+    v.extend_from_slice(oc48::OVERRIDES);
+    #[cfg(feature = "oc49")]
+    v.extend_from_slice(oc49::OVERRIDES);
+    #[cfg(feature = "oc50")]
+    v.extend_from_slice(oc50::OVERRIDES);
+    #[cfg(feature = "oc51")]
+    v.extend_from_slice(oc51::OVERRIDES);
+    #[cfg(feature = "oc52")]
+    v.extend_from_slice(oc52::OVERRIDES);
     v
 }
 

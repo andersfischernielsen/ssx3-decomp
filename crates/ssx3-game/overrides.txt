@@ -1536,5 +1536,44 @@
 0x003291e0    SpatialHash_Update
 0x0038a6a8    Irradiance_AddDynamicLight
 0x002ed490    WorldPainter_UpdateView
+# Phase 2 wave: oc39
+0x00356bf0    ModObj_v20
+0x00360da0    ModObj_v03
+0x00377278    PS2GraphicsMan_v27
+# Phase 2 wave: oc39
+# Phase 2 wave: oc39
+0x0037d968    PS2GraphicsMan_UpdateViewMatrices
+0x00352e50    ModifierBlock_HasTransformChanged
+0x00352ed0    ModifierBlock_IsTransformFinished
+0x00376768    PS2GraphicsMan_PopView
+0x003765b8    PS2GraphicsMan_PushView
+0x00376a70    PS2GraphicsMan_SetViewport
+0x003950c0    PS2GraphicsMan_CopyViewState
+# Phase 2 wave: oc42, oc48
+0x003608e8    WorldObj_Update
+0x0030a310    WScriptMan_IsScriptedInstance
+0x003a6b78    World_GetObjectScriptFunc
+0x002d2058    World_IsOccluded
+0x00145750    BENewRaceInt_GetPeakRivalCharacter
+0x003569d0    ModObj_v44
+0x00356078    ModObj_v24
+0x00345048    SplineModifier_EvalSegment
+0x00345248    SplineModifier_EvalPathAtDistance
+0x00364b88    DeferMan_SetScissor
+0x001448a8    Rider_IsControlMode3
+0x00121f30    Rider_ComputeLOD
+0x00227e98    SSXApp_NextTick
+0x0026ecd8    ReplayStream_WriteObjectRef
+0x002e24d0    cDynamicSprayFX_Render
+0x002ee268    WorldPainter_GetSunFlareIntensity
+0x002eefa8    WorldPainter_GetLighting30
+0x0031a9d8    PS2ExecMan_v11
+0x0031aa18    PS2ExecMan_v12
+0x00352bf8    ModifierBlock_GetTransformRadius
+0x00356a00    ModObj_v45
+0x00370788    Emitter_Update
+0x00374a88    BezierPatchCache_MarkUsed
+0x00375890    BoaderShadow_Submit
+0x00389620    Irradiance_AddScaledW
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04

@@ -45,7 +45,7 @@ def module_overrides(m):
     i = text.index("pub const OVERRIDES")
     block = text[i: text.index("];", i)]
     out = []
-    for a, fn, name in re.findall(r'\(0x([0-9a-f_]+),\s*([\w:]+),\s*"([^"]+)"\)', block):
+    for a, fn, name in re.findall(r'\(\s*0x([0-9a-f_]+)\s*,\s*([\w:]+)\s*,\s*"([^"]+)"\s*,?\s*\)', block):
         out.append((int(a.replace("_", ""), 16), fn, name, m))
     return out
 
