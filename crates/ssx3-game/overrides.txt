@@ -1575,5 +1575,17 @@
 0x00374a88    BezierPatchCache_MarkUsed
 0x00375890    BoaderShadow_Submit
 0x00389620    Irradiance_AddScaledW
+# Phase 2 wave: oc51
+0x0038f768    Dma_WaitFromScratchpad
+0x00229f88    Vu0_UploadOccluder
+0x002ed338    WorldPainter_LerpViewColours
+0x00319f68    MEM_PoolFree
+0x00119210    RiderMetrix_CheckScoreMilestone
+0x0010e098    Rider_AddBoost
+0x0031b310    Mat4_Adjoint
+0x003852e8    cPS2GridMesh_v03
+0x002425c0    OcclusionMan_BuildVisible
+0x00139a20    RiderAirState_Update
+0x0013a7b0    RiderAirState_CastBoardRay
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
