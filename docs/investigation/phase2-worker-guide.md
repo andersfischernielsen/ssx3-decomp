@@ -42,6 +42,28 @@ same cycle count. A differential test proves it.
    to `OVERRIDES` when its test passes with no differences. If you cannot
    make one match, leave it out and say why in your final message.
 
+
+## Reference C++ decompilation (readability aid)
+
+`~/Desktop/devvydont-ssx3` is a matching C++ decompilation of the *same*
+executable (same SHA1). For many functions it has a readable C++
+implementation (inside `#ifdef SKIP_ASM`) with real struct fields and names.
+Use it to understand what the function does and what its fields mean. The
+generated Rust stays the authority for registers, cycles, memory and call
+order: the reference's own callee names and signatures differ from ours, and
+some of its code is still an unmatched attempt.
+
+Look an address up with:
+
+```sh
+python3 tools/refsrc.py 0x00395000     # name and source location
+python3 tools/refbody.py 0x00395000   # prints the reference C++ body
+```
+
+Your assignment may point at a dossier directory with `<addr>.md` and
+`<addr>.cpp` per function. Find callees by address in `generated/ee` and call
+them exactly as the generated body does.
+
 ## Helpers (crate::...)
 
 - `abi::arg(c, i) -> u32` argument i (a0..a3,t0..t3); `abi::arg64(c, i)`;
