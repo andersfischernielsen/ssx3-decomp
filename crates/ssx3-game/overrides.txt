@@ -1700,5 +1700,13 @@
 0x00321298    InputPad_Update
 0x0035b418    MultiSplineModifier_v11
 0x0038f300    SprStream_SetMode
+# Phase 2 wave: oc54
+0x00169828    ManualScriptCameraAlgo_GetView
+0x00169f88    TargetScriptCameraAlgo_GetView
+0x0016a868    SubjectScriptCameraAlgo_GetView
+0x0016b7b8    AlgorithmicScriptCameraAlgo_GetView
+0x00170240    CameraLineBoundObj_GetWorldStart
+0x001707b0    CameraLineBoundObj_GetWorldEnd
+0x003b2e78    SHP_DecodeDXTColorBlock
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
