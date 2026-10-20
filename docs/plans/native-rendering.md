@@ -401,6 +401,27 @@ What is left is either small (scratchpad DMAs, a few status registers) or
 part of running recompiled game code (guest memory, the EE kernel's
 threads, PS2 float and VU0 semantics). Those go as the game logic becomes
 typed Rust (`plans/roadmap.md` phase 2), the next step.
+
+### Using the matching C++ decompilation (2026-10-20)
+
+`~/Desktop/devvydont-ssx3` is a matching C++ decompilation of the same
+executable (`SLUS_207.72`, same SHA1). 11,614 of its 16,535 names have a
+readable C++ body (inside `#ifdef SKIP_ASM` even where the assembly is still
+included). By address that covers 750 of the 1,342 remaining per-frame
+candidates: 53% of their calls x size, so it is now the main accelerator for
+phase 2.
+
+| tool | what it does |
+| --- | --- |
+| `tools/refindex.py` | indexes the reference tree once (`tools/.refindex.json`): name -> C++/asm, file:line |
+| `tools/refsrc.py ADDR` | our name, the reference name and the source location |
+| `tools/refbody.py ADDR` | prints the reference C++ body |
+| `tools/refdossier2.py OUT ADDR...` | per-function dossier: body, declaration, callee name -> address -> generated Rust, globals |
+| `tools/integrate_wave.py prep\|regen\|repoint\|test\|build\|gate` | one wave's whole gate, including both generated forms |
+
+The reference is a readability aid: `generated/ee` stays the authority for
+registers, cycles, memory and call order, and its names/signatures differ.
+
 | movies | done (N5) | | |
 | light queries | done: the native flare visibility query reads the depth of the frame two before, tagged with its frame number, waiting for the render thread when it is late (`depth_of`, 100 ms cap; `SSX3_DEPTH_SYNC=0` for the latest). Two race runs end with identical RAM; the browser (no render thread) keeps the latest depth | | |
 
