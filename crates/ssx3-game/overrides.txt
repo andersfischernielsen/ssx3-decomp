@@ -3727,5 +3727,33 @@
 0x001ce408    cKeyboardPopup_SetDigitKeysDisabled
 0x001ce468    cKeyboardPopup_SetFunctionKeysEnabled
 0x0030b6f8    WScriptMan_RequestMissionRestart
+# Phase 2 wave: oc101, oc102
+0x0036d500    Emitter_ComputeDescBounds
+0x00146008    BENewPlayerInt_GetRiderStateFlag
+0x00153390    BEMissionInt_GetPeakCollectibleTotal
+0x001557e0    BEScoreInt_CanSubmitScore
+0x00157b08    BERewardInt_IsRivalRewardPending
+0x001692d8    ScriptCamController_StopScriptCamera
+0x00182808    cFEStateCheatCharSelect_OnWidgetNotify
+0x001828c0    cFEStateCharSetup_ctor
+0x001831d0    cFEStateCharSetup_SetRiderPreviewActive
+0x001864b0    cFEOptionsCredits_OnWidgetAction
+0x001865a8    cFEState_OnDeactivate
+0x001a07c8    FEUICustom_v03
+0x001a2128    FEModule_TryExit
+0x0020eaa0    HUDMeter_ctor
+0x00234120    GameStateFinish_LoadState
+0x0024ff28    FlagsMenu_dtor
+0x00252248    MEM_IsValidBlockLink
+0x0026ca90    PlaybackMan_Reset
+0x00318d28    cBXString_MakeUpper
+0x00320ca0    InputMap_Init
+0x00345828    ParticleModifier_BaseDtor
+0x003461c0    HaloModifier_ctor_2
+0x0034cb80    Fence_dtor
+0x0035a3f0    MultiSplineModifier_AllocNodeInstances
+0x00397b08    UIEngine_ctor
+0x0039be70    UIPair_FreeChildren
+0x003a9558    cWorldCache_StreamerReleaseNodeHulls
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
