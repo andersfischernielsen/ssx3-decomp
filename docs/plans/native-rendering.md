@@ -422,7 +422,7 @@ phase 2.
 The reference is a readability aid: `generated/ee` stays the authority for
 registers, cycles, memory and call order, and its names/signatures differ.
 
-As of 2026-10-21: 2,586 of the 11,844 functions are installed as typed Rust
+As of 2026-10-21: 2,677 of the 11,844 functions are installed as typed Rust
 (1,500 at the start of the session); 5,052 remaining functions are <=800 bytes
 with a readable C++ body and no `__entries` dispatcher fragment, and 4,876 of
 those are <=600 bytes. The small-function waves (50 per writer) are the best
