@@ -1,8 +1,12 @@
+# Goals:
+- Get the entire game ported to native Rust with no PS2 machine emulation in the codebase.
+
 # General rules:
 Keep the decompilation work:
   - as native as possible
   - as good performance as possible
-  - avoid too many heavy validation runs, prefer unit tests to compare GS vs. native behavior
+  - avoid too many heavy validation runs
+  - prefer unit tests to compare GS vs. native behavior
 
 ---
 
