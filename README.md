@@ -77,10 +77,13 @@ issues.
 - **Rust**, current stable, via [rustup](https://rustup.rs).
 - **bsdtar** (libarchive) to read the image. macOS has it built in. On Debian/Ubuntu
   install `libarchive-tools`.
+- **On Linux:** `pkg-config` and the ALSA and udev headers for sound and controllers
+  (`libasound2-dev libudev-dev` on Debian/Ubuntu).
 - **A GPU with Metal, Vulkan or DX12.** The GS runs on wgpu.
 - **Disk:** about 7 GB free: the 3 GB image, 64 MB of generated code and about 3 GB of build output.
-- **OS:** developed and tested on macOS (Apple Silicon). Linux should work but is
-  untested. Windows needs a POSIX shell for the two setup scripts.
+- **OS:** developed and tested on macOS (Apple Silicon). On Linux (Ubuntu 24.04,
+  x86_64) the setup, the tests and the build work; playing is untested. Windows needs
+  a POSIX shell for the two setup scripts.
 
 ### 2. Set up (once)
 
@@ -213,14 +216,16 @@ own.
 1. **Read the plan.** [`docs/plans/roadmap.md`](docs/plans/roadmap.md) has the phases
    and current status. Findings live in [`docs/investigation/`](docs/investigation/), one
    file per subsystem.
-2. **Run the tests.** They need no game data except where noted:
+2. **Run the tests.** They need no game data except where noted, but the workspace
+   only loads after `tools/bootstrap.sh` has run:
 
    ```sh
    cargo test -p ssx3-ee-rt -p ssx3-vu -p ssx3-ps2 -p ssx3-recomp -p ssx3-iop -p ssx3-core
    ```
 
    The GS tests (`ssx3-ps2`, `gs::`) compare the wgpu paths against the reference
-   rasterizer in about 10 s. Run them for any rendering change.
+   rasterizer in about 10 s. Run them for any rendering change. Without a GPU adapter
+   they skip (`no GPU adapter: skipping GPU GS test`) and still pass.
 3. **Check game behaviour headless.** `ssx3-headless` runs without a window and takes
    scripted input, screenshots and a RAM dump. This replays the reference race and dumps
    36 screenshots:
