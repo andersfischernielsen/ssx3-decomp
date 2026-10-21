@@ -33,7 +33,13 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0042_3c90, get_thread_id, "GetThreadId"),
     (0x0042_3dc0, signal_sema, "SignalSema"),
     (0x0042_3dd0, i_signal_sema, "iSignalSema"),
-    (0x0042_3de0, wait_sema, "WaitSema"),];
+    (0x0042_3de0, wait_sema, "WaitSema"),
+    (0x0027_0280, replay_is_paused, "Replay_IsPaused"),
+    (0x0029_1710, ssx_audio_get_surface_sound_type, "SSXAudioSystem_GetSurfaceSoundType"),
+    (0x0029_34d0, ssx_audio_get_surface_group, "SSXAudioSystem_GetSurfaceGroup"),
+    (0x0022_a128, nash_classify_patch, "Nash_ClassifyPatch"),
+    (0x0022_9fc8, nash_classify_instance, "Nash_ClassifyInstance"),
+];
 
 // ---------------------------------------------------------------------------
 // Callees and fixed addresses.
@@ -208,14 +214,15 @@ pub fn replay_is_paused(c: &mut Cpu) {
 }
 
 /// `void Nash_ClassifyPatch(Cell *cell, Node *node, int frustum)` (0x22a128):
-/// classify one octree node under the cell's heap. A null node leaves `v0` =
-/// `heap < 5` (the tail is then skipped); otherwise the node's signed word at
-/// `+0x156` is checked for a handle and its byte at `+0x155` indexes the
-/// cell's heap (`heap + byte*8 + 0x24`, the slot word must be 6), and the
-/// handle selects `heap + handle*0x18 + 0x3f0` whose word must be 3. A hit
-/// runs the VU0 bounding-box/frustum classification and then, when the heap
-/// handle is below five, inserts the node into one of the cell's two lists
-/// (head at `+0x78b0`, array at `+0x50ac`/`+0x70ac`).
+/// classify one octree node under the cell's heap. A null node takes its
+/// handle from VU0 `VI1`; otherwise the node's signed word at `+0x156` is
+/// checked for a handle and its byte at `+0x155` indexes the cell's heap
+/// (`heap + byte*8 + 0x24`, the slot word must be 6), and the handle selects
+/// `heap + handle*0x18 + 0x3f0` whose word must be 3. A hit runs the VU0
+/// bounding-box/frustum classification, which leaves the handle in `VI1`
+/// (`cfc2`); a handle of five or more stores the node at the cell's list
+/// head (`+0x78b0`), a smaller one picks a handler from the cell's table
+/// (which appends the old head at `+0x50ac`/`+0x70ac` and then stores too).
 ///
 /// The function makes no calls and checks no events, so the only entry the
 /// trampoline can ever use is the top (the generated `__entries` twin's table
@@ -227,12 +234,11 @@ pub fn nash_classify_patch(c: &mut Cpu) {
     c.g[A3][0] = c.g[A0][0];
     let node = r32(c, A1);
     let heap;
-    let mut classified;
     if node == 0 {
         c.cycles += 2;
         c.cfc2(4, 1);
         heap = r32(c, A0);
-        classified = (c.g[A0][0] < 0x5) as u64;
+        c.g[V0][0] = (c.g[A0][0] < 0x5) as u64;
     } else {
         // 0x22a134: the node's handle and slot.
         c.cycles += 5;
@@ -241,7 +247,6 @@ pub fn nash_classify_patch(c: &mut Cpu) {
         c.g[A0][0] = Addr(c.g[V0][0] as u32).lw(c);
         heap = r32(c, A0);
         c.g[V0][0] = 0;
-        classified = 0;
         if (c.g[T0][0] as i64) >= 0 {
             c.cycles += 7;
             c.g[V0][0] = Addr(node).off(0x155).lbu(c);
@@ -261,50 +266,55 @@ pub fn nash_classify_patch(c: &mut Cpu) {
             } else {
                 c.g[V0][0] = 0;
             }
-            classified = c.g[V0][0];
         }
+        // 0x22a17c: a node that did not classify jumps straight to the
+        // epilogue, skipping the insert block and its two cycles.
         c.cycles += 2;
-        if classified != 0 {
-            // 0x22a184: build the node's box on the stack, classify it with
-            // the cell's VU0 routine and keep the handle test for the tail.
-            c.cycles += 26;
-            for i in 0..6u32 {
-                c.lwc1(i as usize, node.wrapping_add(0x158 + 4 * i));
-            }
-            c.g[AT][0] = 0x3f80_0000;
-            c.mtc1(1, 6);
-            c.swc1(0, sp(c));
-            c.swc1(1, sp(c).wrapping_add(0x4));
-            c.swc1(2, sp(c).wrapping_add(0x8));
-            c.swc1(3, sp(c).wrapping_add(0x10));
-            c.swc1(4, sp(c).wrapping_add(0x14));
-            c.swc1(5, sp(c).wrapping_add(0x18));
-            c.swc1(6, sp(c).wrapping_add(0x1c));
-            c.swc1(6, sp(c).wrapping_add(0xc));
-            c.cfc2(4, 1);
-            c.g[V1][0] = sx(sp(c).wrapping_add(0x10));
-            c.g[V0][0] = sx(node.wrapping_add(0x140));
-            c.lqc2(20, sp(c));
-            c.lqc2(21, r32(c, V1));
-            c.lqc2(22, r32(c, V0));
-            c.ctc2(6, 14);
-            c.vcallms(0xdb8);
-            c.g[V0][0] = (heap < 0x5) as u64;
-            classified = c.g[V0][0];
+        if c.g[V0][0] == 0 {
+            c.cycles += 2;
+            c.g[SP][0] = sx(sp(c).wrapping_add(0x20));
+            abi::ret(c);
+            return;
         }
-        let _ = classified;
+        // 0x22a184: build the node's box on the stack, classify it with the
+        // cell's VU0 routine and keep the handle test for the tail.
+        c.cycles += 26;
+        for i in 0..6u32 {
+            c.lwc1(i as usize, node.wrapping_add(0x158 + 4 * i));
+        }
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(1, 6);
+        c.swc1(0, sp(c));
+        c.swc1(1, sp(c).wrapping_add(0x4));
+        c.swc1(2, sp(c).wrapping_add(0x8));
+        c.swc1(3, sp(c).wrapping_add(0x10));
+        c.swc1(4, sp(c).wrapping_add(0x14));
+        c.swc1(5, sp(c).wrapping_add(0x18));
+        c.swc1(6, sp(c).wrapping_add(0x1c));
+        c.swc1(6, sp(c).wrapping_add(0xc));
+        c.cfc2(4, 1);
+        c.g[V1][0] = sx(sp(c).wrapping_add(0x10));
+        c.g[V0][0] = sx(node.wrapping_add(0x140));
+        c.lqc2(20, sp(c));
+        c.lqc2(21, r32(c, V1));
+        c.lqc2(22, r32(c, V0));
+        c.ctc2(6, 14);
+        c.vcallms(0xdb8);
+        c.g[V0][0] = (c.g[A0][0] < 0x5) as u64;
     }
-    // 0x22a1f4: only a heap handle below five gets a list insert.
+    // 0x22a1f4/0x22a260: `cfc2` left the VU0 handle in a0. Five or more
+    // stores the node at the cell's list head; a smaller handle indexes the
+    // cell's table, whose handlers also end in that store.
     c.cycles += 2;
-    let skip = c.g[V0][0] == 0;
+    let high = c.g[V0][0] == 0;
     c.g[V0][0] = 0x0048_0000;
-    if !skip {
+    let mut insert = true;
+    if !high {
         c.cycles += 6;
         c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
         c.g[V0][0] = sx(NASH_PATCH_TABLE);
         c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
         c.g[A0][0] = Addr(c.g[V1][0] as u32).lw(c);
-        let mut insert = true;
         match c.g[A0][0] as u32 {
             0x0022_a214 => {
                 c.cycles += 3;
@@ -344,10 +354,10 @@ pub fn nash_classify_patch(c: &mut Cpu) {
                 return;
             }
         }
-        if insert {
-            c.cycles += 1;
-            Addr(cell).off(0x78b0).sw(c, c.g[A1][0]);
-        }
+    }
+    if insert {
+        c.cycles += 1;
+        Addr(cell).off(0x78b0).sw(c, c.g[A1][0]);
     }
     c.cycles += 2;
     c.g[SP][0] = sx(sp(c).wrapping_add(0x20));
@@ -359,8 +369,10 @@ pub fn nash_classify_patch(c: &mut Cpu) {
 /// is skipped unless its `+0x8` word ends in 3; its byte at `+0x7d` (0xff
 /// means "no slot") indexes `heap + byte*8 + 0x24` (slot word must be 6) and
 /// its signed halfword at `+0x7e` selects `heap + handle*0x18 + 0x3f0` (word
-/// must be 3). A hit classifies the box at `+0x60` and inserts into
-/// `+0x50a4`/`+0x20a0` or `+0x40a0`.
+/// must be 3). A hit classifies the box at `+0x60`; the `VI1` handle that
+/// leaves the VU0 routine then either stores the node at `+0x50a4` (five or
+/// more) or dispatches through the same table (appending at `+0x20a0` or
+/// `+0x40a0` before that store).
 ///
 /// Like `Nash_ClassifyPatch` it makes no calls and checks no events, so the
 /// top is its only entry.
@@ -414,45 +426,52 @@ pub fn nash_classify_instance(c: &mut Cpu) {
                 }
             }
         }
-        // 0x22a038: a classified node is tested again with the VU0 routine.
+        // 0x22a038: a classified node is tested again with the VU0 routine;
+        // a miss jumps to the epilogue, skipping the insert block's cycles.
         c.cycles += 2;
-        if c.g[V0][0] != 0 {
-            c.cycles += 26;
-            for i in 0..6u32 {
-                c.lwc1(i as usize, node.wrapping_add(0x60 + 4 * i));
-            }
-            c.g[AT][0] = 0x3f80_0000;
-            c.mtc1(1, 6);
-            c.swc1(0, sp(c));
-            c.swc1(1, sp(c).wrapping_add(0x4));
-            c.swc1(2, sp(c).wrapping_add(0x8));
-            c.swc1(3, sp(c).wrapping_add(0x10));
-            c.swc1(4, sp(c).wrapping_add(0x14));
-            c.swc1(5, sp(c).wrapping_add(0x18));
-            c.swc1(6, sp(c).wrapping_add(0x1c));
-            c.swc1(6, sp(c).wrapping_add(0xc));
-            c.cfc2(4, 1);
-            c.g[V1][0] = sx(sp(c).wrapping_add(0x10));
-            c.g[V0][0] = sx(node.wrapping_add(0x50));
-            c.lqc2(20, sp(c));
-            c.lqc2(21, r32(c, V1));
-            c.lqc2(22, r32(c, V0));
-            c.ctc2(6, 14);
-            c.vcallms(0xdb8);
-            c.g[V0][0] = (heap < 0x5) as u64;
+        if c.g[V0][0] == 0 {
+            c.cycles += 2;
+            c.g[SP][0] = sx(sp(c).wrapping_add(0x20));
+            abi::ret(c);
+            return;
         }
+        c.cycles += 26;
+        for i in 0..6u32 {
+            c.lwc1(i as usize, node.wrapping_add(0x60 + 4 * i));
+        }
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(1, 6);
+        c.swc1(0, sp(c));
+        c.swc1(1, sp(c).wrapping_add(0x4));
+        c.swc1(2, sp(c).wrapping_add(0x8));
+        c.swc1(3, sp(c).wrapping_add(0x10));
+        c.swc1(4, sp(c).wrapping_add(0x14));
+        c.swc1(5, sp(c).wrapping_add(0x18));
+        c.swc1(6, sp(c).wrapping_add(0x1c));
+        c.swc1(6, sp(c).wrapping_add(0xc));
+        c.cfc2(4, 1);
+        c.g[V1][0] = sx(sp(c).wrapping_add(0x10));
+        c.g[V0][0] = sx(node.wrapping_add(0x50));
+        c.lqc2(20, sp(c));
+        c.lqc2(21, r32(c, V1));
+        c.lqc2(22, r32(c, V0));
+        c.ctc2(6, 14);
+        c.vcallms(0xdb8);
+        c.g[V0][0] = (c.g[A0][0] < 0x5) as u64;
     }
-    // 0x22a0b0: heap handles below five get a list insert.
+    // 0x22a0b0/0x22a11c: `cfc2` left the VU0 handle in a0. Five or more
+    // stores the node at the cell's list head; a smaller handle indexes the
+    // cell's table, whose handlers also end in that store.
     c.cycles += 2;
-    let skip = c.g[V0][0] == 0;
+    let high = c.g[V0][0] == 0;
     c.g[V0][0] = 0x0048_0000;
-    if !skip {
+    let mut insert = true;
+    if !high {
         c.cycles += 6;
         c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
         c.g[V0][0] = sx(NASH_INSTANCE_TABLE);
         c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
         c.g[A0][0] = Addr(c.g[V1][0] as u32).lw(c);
-        let mut insert = true;
         match c.g[A0][0] as u32 {
             0x0022_a0d0 => {
                 c.cycles += 3;
@@ -492,10 +511,10 @@ pub fn nash_classify_instance(c: &mut Cpu) {
                 return;
             }
         }
-        if insert {
-            c.cycles += 1;
-            Addr(cell).off(0x50a4).sw(c, c.g[A1][0]);
-        }
+    }
+    if insert {
+        c.cycles += 1;
+        Addr(cell).off(0x50a4).sw(c, c.g[A1][0]);
     }
     c.cycles += 2;
     c.g[SP][0] = sx(sp(c).wrapping_add(0x20));
@@ -793,4 +812,213 @@ mod tests {
         0x0029_351c,
     ];
 
+    // ------------------------------------------- replay / audio jump tables
+
+    /// [`check`] plus soft state and LO/HI: these ports reproduce every
+    /// register write of the generated body, so caller-saved temporaries and
+    /// the multiply pipeline must match too.
+    fn strict_check(gen: GuestFn, hand: GuestFn, seeds: u32, setup: &dyn Fn(&mut Cpu, u32)) {
+        for seed in 0..crate::difftest::seed_count(seeds) {
+            let r = crate::difftest::compare(gen, hand, &|c| setup(c, seed));
+            assert!(
+                r.hard.is_empty() && r.soft.is_empty() && r.lohi.is_empty(),
+                "seed {seed}: hard {:#?} soft {:#?} lohi {:#?}",
+                r.hard,
+                r.soft,
+                r.lohi
+            );
+        }
     }
+
+    #[test]
+    fn replay_is_paused_matches() {
+        strict_check(ssx3_ee::s07::f_00270280__generated, replay_is_paused, 64, &|c, seed| {
+            let mut r = machine(c, seed, 0x2702_80, 0);
+            c.pc = 0x0027_0280;
+            let replay = DATA + 0x1000;
+            c.g[A0][0] = sx(replay);
+            put_words(c, REPLAY_TABLE, &REPLAY_HANDLERS);
+            // States 0..15 reach every handler kind; 0x10 skips the lookup.
+            c.bus.write32(replay, (seed % 17) as u32);
+            c.bus.write32(replay + 0x3cc, r.next_u32() % 4);
+            c.bus.write32(replay + 0x484, r.next_u32() % 4);
+            c.bus.write32(replay + 0x604, if seed % 3 == 0 { 0 } else { r.next_u32() });
+        });
+    }
+
+    #[test]
+    fn ssx_audio_get_surface_group_matches() {
+        strict_check(ssx3_ee::s07::f_002934d0__generated, ssx_audio_get_surface_group, 48, &|c, seed| {
+            machine(c, seed, 0x2934_d0, 0);
+            c.pc = 0x0029_34d0;
+            put_words(c, SURFACE_GROUP_TABLE, &SURFACE_GROUP_HANDLERS);
+            let sys = DATA + 0x100;
+            let rider = DATA + 0x800;
+            c.g[A0][0] = sx(sys);
+            c.g[A2][0] = sx(rider);
+            // Group ids below nine dispatch; nine and above return 0.
+            c.g[A1][0] = sx(match seed % 11 {
+                9 => 9,
+                10 => 0x100 + seed % 8,
+                _ => seed % 9,
+            });
+            // Rider_GetMainState(rider) = *(*(rider + 0x77c) + 0xde0).
+            c.bus.write32(rider + 0x77c, DATA + 0x900);
+            c.bus.write32(DATA + 0x900 + 0xde0, (seed / 11) % 6);
+        });
+    }
+
+    #[test]
+    fn ssx_audio_get_surface_sound_type_matches() {
+        strict_check(ssx3_ee::s07::f_00291710__generated, ssx_audio_get_surface_sound_type, 64, &|c, seed| {
+            let mut r = machine(c, seed, 0x2917_10, 0);
+            c.pc = 0x0029_1710;
+            put_words(c, SURFACE_SOUND_TABLE, &SURFACE_SOUND_HANDLERS);
+            let sys = DATA + 0x100;
+            let rider = DATA + 0x800;
+            c.g[A0][0] = sx(sys);
+            c.g[A1][0] = sx(rider);
+            c.bus.write32(rider + 0x77c, DATA + 0x900);
+            c.bus.write32(DATA + 0x900 + 0xde0, if seed % 3 == 0 { 4 } else { (seed / 3) % 6 });
+            // The surface id (+1 indexes the table): in range for 0..0x13,
+            // past the end for 0x14 and above.
+            let id = match seed % 5 {
+                4 => 0x14 + (seed / 5) % 8,
+                _ => (seed / 5) % 0x14,
+            };
+            c.bus.write32(rider + 0x438, id);
+            c.bus.write32(sys + 0x598c, r.next_u32() % 0x14);
+        });
+    }
+
+    // ------------------------------------------------ Nash octree classifiers
+
+    /// Wire a cell's heap word to a heap block: `*(cell+0x90)` = `block` and
+    /// `*block` = `heap`, then make a node's slot/handle words classify
+    /// (`heap + slot*8 + 0x24` = 6 and `heap + handle*0x18 + 0x3f0` = 3).
+    fn nash_link(c: &mut Cpu, cell: u32, block: u32, heap: u32, node: u32, slot: u8, handle: u16, handle_word: u32) {
+        c.bus.write32(cell + 0x90, block);
+        c.bus.write32(block, heap);
+        c.bus.write8(node + 0x7d, slot);
+        c.bus.write16(node + 0x7e, handle);
+        c.bus.write32(heap.wrapping_add((slot as u32) << 3).wrapping_add(0x24), 6);
+        c.bus.write32(heap.wrapping_add((handle as u32) * 0x18).wrapping_add(0x3f0), handle_word);
+    }
+
+    #[test]
+    fn nash_classify_patch_matches() {
+        strict_check(ssx3_ee::s05::f_0022a128__generated, nash_classify_patch, 96, &|c, seed| {
+            let mut r = machine(c, seed, 0x22a1_28, 0);
+            c.pc = 0x0022_a128;
+            // A null node takes its "heap" from VU0 VI1 (`cfc2`), which the
+            // tail also uses as the table index.
+            c.bus.plat.write_ctrl(1, seed % 8);
+            put_words(c, NASH_PATCH_TABLE, &NASH_PATCH_HANDLERS);
+            let cell = DATA + 0x1000;
+            let block = DATA + 0x2800;
+            let node = DATA + 0x2000;
+            let heap = DATA + 0x3000;
+            c.g[A0][0] = sx(cell);
+            // The insert heads/counts (both branches of every handler).
+            c.bus.write32(cell + 0x78b0, if seed % 2 == 0 { 0 } else { node });
+            c.bus.write32(cell + 0x50a8, r.next_u32() & 3);
+            c.bus.write32(cell + 0x70ac, r.next_u32() & 3);
+            // A classifying node by default; the cases below break one link.
+            nash_link(c, cell, block, heap, node, 2, 1, 3);
+            c.bus.write16(node + 0x156, 1);
+            c.bus.write8(node + 0x155, 2);
+            match seed % 6 {
+                // Null node with the real cell as the list owner.
+                0 => c.g[A1][0] = 0,
+                // Null node whose "cell" is a small handle: the tail stores
+                // the node there and indexes the table by VI1.
+                1 => {
+                    let k = (seed / 6) % 5;
+                    c.g[A0][0] = sx(k);
+                    c.bus.write32(0x78b0 + k, if seed % 2 == 0 { 0 } else { node });
+                    c.g[A1][0] = 0;
+                }
+                // A negative handle word: an early miss.
+                2 => {
+                    c.bus.write16(node + 0x156, 0xffff);
+                    c.g[A1][0] = sx(node);
+                }
+                // Slot word is not 6.
+                3 => {
+                    c.bus.write32(heap + (2 * 8) + 0x24, 0);
+                    c.g[A1][0] = sx(node);
+                }
+                // Handle word is not 3.
+                4 => {
+                    c.bus.write32(heap + (1 * 0x18) + 0x3f0, 0);
+                    c.g[A1][0] = sx(node);
+                }
+                // Fully classified: the heap block lives at `h`, and the tail
+                // dispatches on the VI1 handle (small: table, else: head).
+                _ => {
+                    let h = if (seed / 6) % 2 == 0 { heap } else { (seed / 12) % 5 };
+                    nash_link(c, cell, block, h, node, 2, 1, 3);
+                    c.bus.write16(node + 0x156, 1);
+                    c.bus.write8(node + 0x155, 2);
+                    c.g[A1][0] = sx(node);
+                }
+            }
+        });
+    }
+
+    #[test]
+    fn nash_classify_instance_matches() {
+        strict_check(ssx3_ee::s05::f_00229fc8__generated, nash_classify_instance, 96, &|c, seed| {
+            let mut r = machine(c, seed, 0x229f_c8, 0);
+            c.pc = 0x0022_9fc8;
+            // A null node takes its "heap" from VU0 VI1 (`cfc2`), which the
+            // tail also uses as the table index.
+            c.bus.plat.write_ctrl(1, seed % 8);
+            put_words(c, NASH_INSTANCE_TABLE, &NASH_INSTANCE_HANDLERS);
+            let cell = DATA + 0x1000;
+            let block = DATA + 0x2800;
+            let node = DATA + 0x2000;
+            let heap = DATA + 0x3000;
+            c.g[A0][0] = sx(cell);
+            c.bus.write32(cell + 0x50a4, if seed % 2 == 0 { 0 } else { node });
+            c.bus.write32(cell + 0x209c, r.next_u32() & 3);
+            c.bus.write32(cell + 0x40a0, r.next_u32() & 3);
+            c.bus.write32(node + 0x8, 3);
+            nash_link(c, cell, block, heap, node, 2, 1, 3);
+            match seed % 6 {
+                // Null node with the real cell as the list owner.
+                0 => c.g[A1][0] = 0,
+                // Null node whose "cell" is a small handle: inserts there.
+                1 => {
+                    let k = (seed / 6) % 5;
+                    c.g[A0][0] = sx(k);
+                    c.bus.write32(0x50a4 + k, if seed % 2 == 0 { 0 } else { node });
+                    c.g[A1][0] = 0;
+                }
+                // Type word does not end in 3.
+                2 => {
+                    c.bus.write32(node + 0x8, 4);
+                    c.g[A1][0] = sx(node);
+                }
+                // Byte 0xff ("no slot"): classified, then the VI1 tail test.
+                3 => {
+                    let h = if (seed / 6) % 2 == 0 { heap } else { (seed / 12) % 5 };
+                    nash_link(c, cell, block, h, node, 2, 1, 3);
+                    c.bus.write8(node + 0x7d, 0xff);
+                    c.g[A1][0] = sx(node);
+                }
+                // Slot word is not 6.
+                4 => {
+                    c.bus.write32(heap + (2 * 8) + 0x24, 0);
+                    c.g[A1][0] = sx(node);
+                }
+                // Fully classified: dispatches on the VI1 handle in the tail.
+                _ => {
+                    let h = if (seed / 6) % 2 == 0 { heap } else { (seed / 12) % 5 };
+                    nash_link(c, cell, block, h, node, 2, 1, 3);
+                    c.g[A1][0] = sx(node);
+                }
+            }
+        });
+    }
+}

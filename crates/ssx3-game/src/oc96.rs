@@ -70,6 +70,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0010_3918, rider_anim_v03, "RiderAnim_v03"),
     (0x0011_1380, rider_base_enter_main_state, "RiderBase_EnterMainState"),
     (0x0011_12f8, rider_base_exit_main_state, "RiderBase_ExitMainState"),
+    (
+        0x0012_dd98,
+        rider_wipeout_sub_switch_to_anim_set_a,
+        "RiderWipeoutSub_SwitchToAnimSetA",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1376,6 +1381,8 @@ pub fn rider_wipeout_sub_switch_to_anim_set_a(c: &mut Cpu) {
                             c.g[A1][0] = e.1;
                             0x0012_de4c
                         }
+                        // The table's 0x17f entry keeps the id unchanged.
+                        None if target == 0x0012_de4c => 0x0012_de4c,
                         None => {
                             c.jump_out(target, 0x0012_dd98, 0x0012_de80);
                             return Ok(());
@@ -1950,7 +1957,7 @@ pub fn spch_notify_part_callback(c: &mut Cpu) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::difftest::fakes::{covered, machine};
+    use crate::difftest::fakes::{covered, machine, vtable, LOG_UNWIND_AT};
     use crate::difftest::{check, elf_image, put_words, scramble, Rng, DATA, GAME_GP, SP as STACK};
 
     const SEEDS: u32 = 200;
@@ -1983,6 +1990,22 @@ mod tests {
             let mut r = machine(c, seed, salt, 1);
             setup(c, seed, &mut r);
         });
+    }
+
+    /// [`check`] plus soft state and LO/HI: the replacement reproduces every
+    /// register write of the generated body, so the caller-saved temporaries
+    /// and the multiply pipeline must match too.
+    fn strict_check(gen: GuestFn, hand: GuestFn, seeds: u32, setup: &dyn Fn(&mut Cpu, u32)) {
+        for seed in 0..crate::difftest::seed_count(seeds) {
+            let r = crate::difftest::compare(gen, hand, &|c| setup(c, seed));
+            assert!(
+                r.hard.is_empty() && r.soft.is_empty() && r.lohi.is_empty(),
+                "seed {seed}: hard {:#?} soft {:#?} lohi {:#?}",
+                r.hard,
+                r.soft,
+                r.lohi
+            );
+        }
     }
 
     fn syscall_test(gen: GuestFn, hand: GuestFn, salt: u64) {
@@ -2530,6 +2553,44 @@ mod tests {
                     c.g[A2][0] = a1[k];
                 }
             }
+        });
+    }
+
+    #[test]
+    fn rider_wipeout_sub_switch_to_anim_set_a_matches() {
+        strict_check(ssx3_ee::s00::f_0012dd98__generated, rider_wipeout_sub_switch_to_anim_set_a, 100, &|c, seed| {
+            let mut r = machine(c, seed, 51, 1);
+            c.pc = 0x0012_dd98;
+            // `w + 0x80` -> anim player, its `+0x784` the layer controller and
+            // its `+0x150` the "this animation is already playing" flag.
+            c.bus.write32(DATA + 0x350, if seed % 3 == 0 { 1 } else { 0 });
+            let id = match seed % 4 {
+                0 => 0x174,
+                1 => 0x175 + (seed as u32 % 0xf),
+                2 => 0x148,
+                _ => r.next_u32() % 0x200,
+            };
+            anim_object(c, id);
+            c.g[A0][0] = sx(DATA);
+            // The animation-id table the dispatch reads (`.rodata 0x4580a0`):
+            // ten id blocks, then the "keep the id" entry for 0x17f and the
+            // duplicate blocks for 0x180..0x183.
+            put_words(
+                c,
+                0x0045_80a0,
+                &[
+                    0x0012_ddf8, 0x0012_de00, 0x0012_de08, 0x0012_de10, 0x0012_de18,
+                    0x0012_de20, 0x0012_de28, 0x0012_de30, 0x0012_de38, 0x0012_de40,
+                    0x0012_de4c, 0x0012_de28, 0x0012_de30, 0x0012_de38, 0x0012_de40,
+                ],
+            );
+            // A restart calls AnimController_PlayAnim, whose first act is the
+            // layer getter through the controller's vtable (a fake). Unwinding
+            // there keeps the animation cache and the DLHeap out of the test,
+            // so a free/consolidate can never run on fixture data.
+            let vt = vtable(c, &mut r, &[0x20]);
+            c.bus.write32(DATA + 0x300 + 0x58, vt);
+            c.bus.write32(LOG_UNWIND_AT, 0);
         });
     }
 }

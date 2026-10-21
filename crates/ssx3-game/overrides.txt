@@ -4073,5 +4073,12 @@
 0x0029ed18    SSXAudioSystem_StopRiderLoops
 0x002a7a90    IniParser_SkipToEol
 0x002a7ff8    IniParser_GetString
+# Phase 2 wave: oc95, oc96
+0x00270280    Replay_IsPaused
+0x00291710    SSXAudioSystem_GetSurfaceSoundType
+0x002934d0    SSXAudioSystem_GetSurfaceGroup
+0x0022a128    Nash_ClassifyPatch
+0x00229fc8    Nash_ClassifyInstance
+0x0012dd98    RiderWipeoutSub_SwitchToAnimSetA
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
