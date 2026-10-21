@@ -490,7 +490,7 @@ fixtures cannot reproduce real data: `RiderAirState_PostUpdate` (oc108; both
 differential tests pass, but the race replay diverges on the board-contact arm)
 and `ChaseCameraAlgorithm_ApplyAirSwing` (oc109; the spline evaluate spins
 without a live spline). Re-audit those before re-adding their `OVERRIDES`.
-As of 2026-10-21: 4,781 of the 11,844 functions are installed as typed Rust
+As of 2026-10-22: 4,905 of the 11,844 functions are installed as typed Rust
 (1,500 at the start of the session); 5,052 remaining functions are <=800 bytes
 with a readable C++ body and no `__entries` dispatcher fragment, and 4,876 of
 those are <=600 bytes. The small-function waves (50 per writer) are the best
