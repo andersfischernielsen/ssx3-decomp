@@ -3755,5 +3755,7 @@
 0x00397b08    UIEngine_ctor
 0x0039be70    UIPair_FreeChildren
 0x003a9558    cWorldCache_StreamerReleaseNodeHulls
+# Phase 2 wave: oc104
+0x002a4e88    CrowdAudio_UpdateInstance
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
