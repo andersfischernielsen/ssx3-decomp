@@ -3677,5 +3677,7 @@
 0x001ba110    cFEStateCreateStep1_ValidateFields
 0x001bb9b0    cFEStateCreateStep2_GetDaysInMonth
 0x00265700    cSetupMan_SendBragMsg12
+# Phase 2 wave: oc100
+0x00374d00    BoaderShadow_ComputeProjection
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
