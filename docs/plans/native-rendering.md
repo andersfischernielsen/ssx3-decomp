@@ -430,15 +430,31 @@ so the hot queue is now mostly functions with no readable C++. Waves are
 selected hot-first with `tools/pick_wave.py`; the remaining hot asm bodies are
 ported directly from `generated/ee` (a literal translation).
 
-Measured on 2026-10-21 at 18:45 (3,905 installed): a 6000-frame headless race
-replay takes 25.1 s with the hand-written replacements and 25.7 s with
-`SSX3_NO_OVERRIDES=1` (3 runs each, minima) -- no measurable wall-clock
-speedup yet. The replay is ~4.2 ms/frame and dominated by the native renderer
-and IOP; the replacements swap already-compiled generated Rust for hand-written
-Rust, and the remaining asm-only bodies still run generated code. The 70.2%
-weighted-work figure comes from the 13:11 profile at 3,414 installed and is
-stale; re-profile and split frame time into EE/render/IOP before quoting a
-speed number.
+Frame-phase timing, 2026-10-21 (6000-frame race replay, no screenshots):
+
+| build | wall / frame | EE thread incl. frame sink | frame sink (game thread) | gfx thread (build/prepare/submit/readback) |
+|---|---|---|---|---|
+| desktop (`ee-threads`, 3,911 installed) | 4.18 ms | ~3.5 ms | 0.65 ms | 1.79 ms (0.79/0.25/0.59/0.16) |
+| browser config (`ee-unwind`, 3,705 installed) | 2.88 ms | ~2.2 ms | 0.66 ms | 1.79 ms |
+
+The gfx thread is not the critical path on desktop (2.4 ms of slack); the
+frame is EE-thread-bound. But the EE *function bodies* are cheap to improve:
+`SSX3_NO_OVERRIDES=1` A/B (3 runs each) gives 25.14 vs 25.65 s on desktop
+(2.0%) and 17.28 vs 18.61 s on the browser config (7.7%) for the 82% of
+weighted EE work already hand-written. Extrapolated, replacing *all* EE bodies
+would save at most ~0.27 ms/frame (~9%) on the browser build, and the remaining
+18% is worth ~0.05 ms/frame (~1.7%) at the same rate. The rest of the EE phase
+is per-instruction overhead that both forms pay (bus accesses, cycle and event
+bookkeeping), plus the frame sink (0.65 ms) and the renderer (1.8 ms).
+
+So further hand-porting is completeness work, not a frame-time lever. If frame
+time is the goal: the renderer (1.8 ms/frame, 62% of the browser-config frame)
+and, on desktop, the emulated-thread synchronization (4.18 vs 2.88 ms/frame
+between the two builds) are the levers; a faster memory/bus path or eliding
+cycle/event bookkeeping in the transliteration would be the interpreter-side
+one. The 70.2% weighted-work figure is from the 13:11 profile (3,414 installed)
+and is stale; a fresh profile is needed before quoting it (the current set is
+82.0% by the same method).
 
 Two exact ports are kept in their modules but not installed, because their
 fixtures cannot reproduce real data: `RiderAirState_PostUpdate` (oc108; both
