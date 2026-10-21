@@ -150,6 +150,8 @@ oc93 = []
 oc94 = []
 oc95 = []
 oc96 = []
+oc97 = []
+oc98 = []
 [dev-dependencies]
 ssx3-ee-rt = { path = "../ssx3-ee-rt", features = ["dirty-pages"] }
 # A real machine (VU0 included) for the differential tests in src/difftest.rs.
