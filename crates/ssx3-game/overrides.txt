@@ -3616,5 +3616,9 @@
 0x00275498    ScriptAnimBankMan_dtor
 0x00314e88    GameAnimMap_FindHash
 0x002d56b0    VisualEffectsMan_EmitterHolderDtor
+# Phase 2 wave: oc97
+0x001036a0    RiderAnim_UpdateSequence
+0x00335128    Rail_FindNearestPoint
+0x003cb540    SND_DspResample_Process
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
