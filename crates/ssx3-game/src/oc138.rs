@@ -39,9 +39,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x001e_5800, c_ov_state_view_popup_on_widget_action, "cOVState_ViewPopup_OnWidgetAction"),
     (0x001e_5aa0, c_ov_state_view_popup_get_group_variant, "cOVState_ViewPopup_GetGroupVariant"),
     (0x0025_fc70, lobby_man_send_lock_chal, "LobbyMan_SendLockChal"),
-    (0x002a_23d0, ssx_audio_system_dj_say_20e9, "SSXAudioSystem_DJSay20E9"),
-    (0x002a_8cb0, ps2_sound_manager_init, "PS2SoundManager_Init"),
-    (0x0027_cea8, script_engine_add_script_obj, "ScriptEngine_AddScriptObj"),
+    (0x002a_23d0, ssx_audio_system_dj_say_20e9, "SSXAudioSystem_DJSay20E9"),(0x0027_cea8, script_engine_add_script_obj, "ScriptEngine_AddScriptObj"),
     (0x002a_d650, bank_monitor_stop_by_bank, "BankMonitor_StopByBank"),
     (0x0027_23a8, in_seq_heap_free, "InSeq_HeapFree"),
     (0x0012_b340, ai_force_finish_riders, "AI_ForceFinishRiders"),
@@ -5897,18 +5895,7 @@ mod tests {
         });
     }
 
-    #[test]
-    fn ps2_sound_manager_init_matches() {
-        diff(ee::s08::f_002a8cb0__generated, ps2_sound_manager_init, 30, &|c, seed| {
-            let mut r = fe_base(c, seed, 0x2a_8cb0);
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = (seed % 3) as u64;
-            w(c, DATA, 0); // no vtable: the slot call is a fake
-            w(c, DATA + 4, 0);
-        });
-    }
-
-    #[test]
+        #[test]
     fn script_engine_add_script_obj_matches() {
         diff(ee::s07::f_0027cea8__generated, script_engine_add_script_obj, 40, &|c, seed| {
             let _r = fe_base(c, seed, 0x27_cea8);
