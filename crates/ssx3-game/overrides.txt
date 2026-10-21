@@ -3761,5 +3761,7 @@
 0x0010a768    ComputerActorRider_GetControlInput
 0x00100680    ComputerActorRider_CruiseFollowPath
 0x0041b658    vfprintf
+# Phase 2 wave: oc103
+0x00325450    InputVM_Execute
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
