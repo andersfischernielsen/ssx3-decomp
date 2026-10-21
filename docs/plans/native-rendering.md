@@ -447,6 +447,31 @@ would save at most ~0.27 ms/frame (~9%) on the browser build, and the remaining
 is per-instruction overhead that both forms pay (bus accesses, cycle and event
 bookkeeping), plus the frame sink (0.65 ms) and the renderer (1.8 ms).
 
+A 6-second process sample mid-replay (16 host threads, 1,604 samples each)
+shows the pipeline is latency-bound, not CPU-bound: ~87% of all thread-samples
+are blocked in `__psynch_cvwait`/semaphore/workqueue waits. The only busy
+threads are `ee-thread-1` (the game thread, 76% busy) and `ssx3-gfx` (55%);
+the main thread is 93% waiting and the gs/submit threads are idle. Of the
+actual non-wait work (3,423 samples):
+
+| area | share of work |
+|---|---|
+| renderer (VIF replay/chain, VU-call planning, GPU draw) | 29% |
+| malloc/free | 12% |
+| libc/kernel misc | 10% |
+| VU core | 9% |
+| audio (SPU2 render/decode, snd_utk) | 6% |
+| EE runtime (call_indirect, bus) | 6% |
+| hash/HashMap | 5% |
+| guest generated code | 4.5% |
+| guest hand-written code | 2.7% |
+| other (Metal/AGX, mmap, dispatch) | 16% |
+
+So on the critical thread the biggest single item is the frame sink's VIF
+chain replay + hashing (part of the 0.65 ms/frame sink), then the renderer's
+VU planning on the gfx thread and per-frame allocation/hashing. Guest code in
+both forms is ~7% of the real work.
+
 So further hand-porting is completeness work, not a frame-time lever. If frame
 time is the goal: the renderer (1.8 ms/frame, 62% of the browser-config frame)
 and, on desktop, the emulated-thread synchronization (4.18 vs 2.88 ms/frame
