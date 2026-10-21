@@ -3620,5 +3620,11 @@
 0x001036a0    RiderAnim_UpdateSequence
 0x00335128    Rail_FindNearestPoint
 0x003cb540    SND_DspResample_Process
+# Phase 2 wave: oc98
+0x002bfeb0    tWPIGD_Weather_SaveState
+0x00100348    ComputerActorRider_ComputeSteer
+0x00115b58    Rider_UpdateTimedEventAnim
+0x002dfe88    cDynamicSprayFX_UpdateEmitter3
+0x002e1120    cDynamicSprayFX_UpdateEmitter4
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
