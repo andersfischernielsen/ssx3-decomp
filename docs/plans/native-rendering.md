@@ -430,6 +430,16 @@ so the hot queue is now mostly functions with no readable C++. Waves are
 selected hot-first with `tools/pick_wave.py`; the remaining hot asm bodies are
 ported directly from `generated/ee` (a literal translation).
 
+Measured on 2026-10-21 at 18:45 (3,905 installed): a 6000-frame headless race
+replay takes 25.1 s with the hand-written replacements and 25.7 s with
+`SSX3_NO_OVERRIDES=1` (3 runs each, minima) -- no measurable wall-clock
+speedup yet. The replay is ~4.2 ms/frame and dominated by the native renderer
+and IOP; the replacements swap already-compiled generated Rust for hand-written
+Rust, and the remaining asm-only bodies still run generated code. The 70.2%
+weighted-work figure comes from the 13:11 profile at 3,414 installed and is
+stale; re-profile and split frame time into EE/render/IOP before quoting a
+speed number.
+
 Two exact ports are kept in their modules but not installed, because their
 fixtures cannot reproduce real data: `RiderAirState_PostUpdate` (oc108; both
 differential tests pass, but the race replay diverges on the board-contact arm)
