@@ -91,8 +91,10 @@ pub fn get_thread_id(c: &mut Cpu) {
     if c.pc != 0x0042_3c98 {
         return;
     }
-    if event_due(c) {
-        deliver_event_here(c, 0x0042_3c98);
+    // Single post-syscall check (no loop back edge): the generated body
+    // runs the handler inline, it does not reschedule.
+    if c.cycles >= c.next_event {
+        c.event();
     }
     abi::ret(c);
 }
@@ -106,8 +108,10 @@ pub fn signal_sema(c: &mut Cpu) {
     if c.pc != 0x0042_3dc8 {
         return;
     }
-    if event_due(c) {
-        deliver_event_here(c, 0x0042_3dc8);
+    // Single post-syscall check (no loop back edge): the generated body
+    // runs the handler inline, it does not reschedule.
+    if c.cycles >= c.next_event {
+        c.event();
     }
     abi::ret(c);
 }
@@ -123,8 +127,10 @@ pub fn i_signal_sema(c: &mut Cpu) {
     if c.pc != 0x0042_3dd8 {
         return;
     }
-    if event_due(c) {
-        deliver_event_here(c, 0x0042_3dd8);
+    // Single post-syscall check (no loop back edge): the generated body
+    // runs the handler inline, it does not reschedule.
+    if c.cycles >= c.next_event {
+        c.event();
     }
     abi::ret(c);
 }
@@ -138,8 +144,10 @@ pub fn wait_sema(c: &mut Cpu) {
     if c.pc != 0x0042_3de8 {
         return;
     }
-    if event_due(c) {
-        deliver_event_here(c, 0x0042_3de8);
+    // Single post-syscall check (no loop back edge): the generated body
+    // runs the handler inline, it does not reschedule.
+    if c.cycles >= c.next_event {
+        c.event();
     }
     abi::ret(c);
 }
