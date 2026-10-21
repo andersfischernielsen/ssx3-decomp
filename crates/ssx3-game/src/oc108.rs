@@ -31,9 +31,14 @@ use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::{Src, W, X, Y, Z};
 use ssx3_ee_rt::Cpu;
 
-// `RiderAirState_PostUpdate` is not installed: its differential tests pass, but
-// the 6000-frame race replay diverges as soon as it is installed (an arm the
-// tests do not reproduce). The port is kept for a later re-audit.
+// `RiderAirState_PostUpdate` is not installed: the port matches the generated
+// body instruction-for-instruction (47/47 call targets and return addresses,
+// 78/78 cycle charges, 63/63 conditions, 51/51 break targets, identical store
+// destinations) and both differential tests pass, but the race replay still
+// diverges as soon as it is installed. The first differing bytes on the race
+// are 0x44b03c (01 vs 03), 0x44c479 (a float), then a zeroed block from
+// 0x45005c onward -- i.e. the hand leaves a whole set of stores unwritten on
+// the live data. Keep the port and its tests for the next audit.
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[];
 
 // ---------------------------------------------------------------------------
@@ -158,9 +163,12 @@ fn g(c: &Cpu, r: usize) -> u32 {
     c.g[r][0] as u32
 }
 
-/// `*motion->rider` as the original loads it.
+/// `*motion->rider`, read from `s0` exactly as the original does (the
+/// pointer is not cached in a local: a callee that perturbs `s0` must move
+/// the port the same way it moves the generated body).
 #[inline(always)]
-fn rider(c: &mut Cpu, motion: u32) -> u64 {
+fn rider(c: &mut Cpu) -> u64 {
+    let motion = r32(c, S0);
     Addr(p(motion, RIDER)).lw(c)
 }
 
@@ -267,7 +275,6 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
         frame.save_fpr(c, 22, 0x140);
         frame.save_fpr(c, 20, 0x130);
         callee::CAST_BOARD_RAY.call(c, 0x0013_9cb4)?;
-        let motion = r32(c, S0);
         // The frame is fixed from here on: keep its addresses as plain locals
         // so they can be used next to `&mut Cpu` arguments.
         let sp = frame.at(c, 0);
@@ -280,13 +287,13 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
         'func: {
             'body: {
                 if !c.fcc() {
-                    c.g[A0][0] = rider(c, motion);
+                    c.g[A0][0] = rider(c);
                     break 'body;
                 }
                 c.cycles += 20;
                 // `d = rider.pos - ray hit`; `f21 = d · hit.velocity`, negative
                 // while the rider still moves onto the board.
-                c.g[V0][0] = rider(c, motion);
+                c.g[V0][0] = rider(c);
                 c.lqc2(3, p(g(c, V0), rider::VEL));
                 c.lqc2(4, p(sp, 0x20));
                 c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
@@ -297,7 +304,7 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                 c.mtc1(2, 21);
                 c.c_le_s(1, 0);
                 let t = !c.fcc();
-                c.g[A0][0] = rider(c, motion);
+                c.g[A0][0] = rider(c);
                 if t {
                     break 'body;
                 }
@@ -315,13 +322,13 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                 call_ptr(c, target::GET_SUB_STATE, 0x0013_9d60)?;
                 c.g[V1][0] = 0x5;
                 if c.g[V0][0] != c.g[V1][0] {
-                    c.g[A1][0] = rider(c, motion);
+                    c.g[A1][0] = rider(c);
                 } else {
                     c.cycles += 4;
-                    c.g[A0][0] = rider(c, motion);
+                    c.g[A0][0] = rider(c);
                     c.g[A1][0] = 0xd;
                     call_ptr(c, target::SET_SUB_STATE, 0x0013_9d78)?;
-                    c.g[A1][0] = rider(c, motion);
+                    c.g[A1][0] = rider(c);
                 }
 
                 // ---- 0x139de8: the trigger object under the board -----------
@@ -345,24 +352,24 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                         c.g[S1][0] = sx(p(g(c, V1), g(c, V0)));
                         c.g[A0][0] = Addr(p(g(c, S1), 0x44)).lw(c);
                         if c.g[A0][0] != 0 {
-                            c.g[A0][0] = rider(c, motion);
+                            c.g[A0][0] = rider(c);
                             break 'join;
                         }
                         c.cycles += 3;
                         c.g[V0][0] = Addr(p(sp, 0x54)).lw(c);
                         if c.g[V0][0] == 0 {
-                            c.g[V0][0] = rider(c, motion);
+                            c.g[V0][0] = rider(c);
                             break 'object;
                         }
                         c.cycles += 4;
                         c.g[V0][0] = Addr(p(g(c, V0), 0xa)).lh(c);
                         c.g[V0][0] = c.g[V0][0] & 0x2;
                         if c.g[V0][0] == 0 {
-                            c.g[V0][0] = rider(c, motion);
+                            c.g[V0][0] = rider(c);
                             break 'object;
                         }
                         c.cycles += 1;
-                        c.g[A0][0] = rider(c, motion);
+                        c.g[A0][0] = rider(c);
                         break 'join;
                     }
                     // The trigger was taken: reset the path and leave.
@@ -388,7 +395,7 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                 c.sub_s(1, 1, 0);
                 c.c_lt_s(2, 1);
                 if !c.fcc() {
-                    c.g[V1][0] = rider(c, motion);
+                    c.g[V1][0] = rider(c);
                 } else {
                     c.cycles += 11;
                     // `frame+0x10 *= f1` (the blend distance), then move.
@@ -399,10 +406,10 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                     c.sqc2(5, p(sp, 0x90));
                     c.g[A1][0] = sx(p(sp, 0x80));
                     c.lq(2, p(sp, 0x90));
-                    c.g[A0][0] = rider(c, motion);
+                    c.g[A0][0] = rider(c);
                     c.sq(2, p(sp, 0x80));
                     call_ptr(c, target::TRANSLATE, 0x0013_9e68)?;
-                    c.g[V1][0] = rider(c, motion);
+                    c.g[V1][0] = rider(c);
                 }
 
                 // ---- 0x139edc: landing on the board -------------------------
@@ -412,12 +419,12 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                         c.neg_s(0, 21);
                         c.lq(2, p(sp, 0x10));
                         c.sq(2, p(g(c, V1), rider::TRANSFORM));
-                        c.g[A0][0] = rider(c, motion);
+                        c.g[A0][0] = rider(c);
                         c.lq(2, p(sp, 0x20));
                         c.sq(2, p(g(c, A0), rider::LAND_ANIM));
-                        c.g[V1][0] = rider(c, motion);
+                        c.g[V1][0] = rider(c);
                         c.swc1(0, p(g(c, V1), 0x770));
-                        c.g[A0][0] = rider(c, motion);
+                        c.g[A0][0] = rider(c);
                         c.lq(2, p(g(c, A0), rider::TRANSFORM));
                         c.sq(2, p(g(c, A0), 0x380));
                         c.g[V0][0] = Addr(p(sp, 0x54)).lw(c);
@@ -428,19 +435,19 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                         }
                         c.cycles += 10;
                         c.g[V1][0] = Addr(p(g(c, V0), 0x150)).lw(c);
-                        c.g[V0][0] = rider(c, motion);
+                        c.g[V0][0] = rider(c);
                         let at = p(g(c, V0), rider::TRIGGER);
                         st(c, at, V1);
                         c.lwc1(0, p(sp, 0x6c));
-                        c.g[A0][0] = rider(c, motion);
+                        c.g[A0][0] = rider(c);
                         c.swc1(0, p(g(c, A0), rider::BLEND_A));
-                        c.g[V0][0] = rider(c, motion);
+                        c.g[V0][0] = rider(c);
                         c.lwc1(0, p(sp, 0x70));
                         c.swc1(0, p(g(c, V0), rider::BLEND_B));
                         break 'bounce;
                     }
                     c.cycles += 4;
-                    c.g[V1][0] = rider(c, motion);
+                    c.g[V1][0] = rider(c);
                     c.g[V0][0] = 0xffff_ffff_ffff_0000;
                     c.g[V0][0] = c.g[V0][0] | 0xffff;
                     let at = p(g(c, V1), rider::TRIGGER);
@@ -449,7 +456,7 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
 
                 // ---- 0x139fa0: bounce the velocity off the board ------------
                 c.cycles += 35;
-                c.g[V1][0] = rider(c, motion);
+                c.g[V1][0] = rider(c);
                 c.mfc1(4, 1);
                 c.lqc2(4, p(g(c, V1), rider::TRANSFORM));
                 c.qmtc2(4, 3);
@@ -463,10 +470,10 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                 c.qmtc2(3, 3);
                 c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
                 c.sqc2(5, p(sp, 0x80));
-                c.g[V0][0] = rider(c, motion);
+                c.g[V0][0] = rider(c);
                 let vel = p(g(c, V0), rider::VEL);
                 v_add(c, vel, p(sp, 0x80), vel);
-                c.g[V1][0] = rider(c, motion);
+                c.g[V1][0] = rider(c);
                 let vel1 = p(g(c, V1), rider::VEL);
                 let xf = p(g(c, V1), rider::TRANSFORM);
                 dot_ab(c, vel1, xf);
@@ -486,7 +493,7 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                     c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
                     c.sqc2(5, p(sp, 0xa0));
                     c.lq(2, p(sp, 0xa0));
-                    c.g[V1][0] = rider(c, motion);
+                    c.g[V1][0] = rider(c);
                     c.sq(2, p(sp, 0x90));
                     let vel2 = p(g(c, V1), rider::VEL);
                     v_add(c, vel2, p(sp, 0x90), vel2);
@@ -534,10 +541,10 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                             call_ptr(c, target, 0x0013_a01c)?;
                         }
                         c.cycles += 1;
-                        c.g[A0][0] = rider(c, motion);
+                        c.g[A0][0] = rider(c);
                         break 'trigger;
                     }
-                    c.g[A0][0] = rider(c, motion);
+                    c.g[A0][0] = rider(c);
                     break 'trigger;
                 }
 
@@ -574,7 +581,7 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                                 c.lq(2, p(sp, 0xe0));
                                 c.sq(2, p(sp, 0x90));
                                 c.sq(2, p(g(c, A0), rider::UP));
-                                c.g[V1][0] = rider(c, motion);
+                                c.g[V1][0] = rider(c);
                                 c.lqc2(4, p(g(c, V1), rider::TRANSFORM));
                                 c.lqc2(5, p(g(c, V1), rider::UP));
                                 c.vu0().opmula(4, 5);
@@ -584,32 +591,32 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                                 c.lq(2, p(sp, 0xa0));
                                 c.sq(2, p(sp, 0x90));
                                 c.sq(2, p(g(c, V1), rider::SIDE));
-                                c.g[A0][0] = rider(c, motion);
+                                c.g[A0][0] = rider(c);
                                 c.g[V0][0] = Addr(p(sp, 0x4c)).lw(c);
                                 let at = p(g(c, A0), rider::CONTACT);
                                 st(c, at, V0);
-                                c.g[A2][0] = rider(c, motion);
+                                c.g[A2][0] = rider(c);
                                 c.lq(2, p(sp, 0));
                                 c.sq(2, p(g(c, A2), rider::XFORM));
-                                c.g[V1][0] = rider(c, motion);
+                                c.g[V1][0] = rider(c);
                                 c.lqc2(3, p(g(c, V1), rider::POS));
                                 c.lqc2(4, p(sp, 0));
                                 c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
                                 c.sqc2(5, p(sp, 0xa0));
                                 c.lq(4, p(sp, 0xa0));
-                                c.g[V0][0] = rider(c, motion);
+                                c.g[V0][0] = rider(c);
                                 c.sq(4, p(sp, 0x90));
                                 let xf = p(g(c, V0), rider::TRANSFORM);
                                 dot_ab(c, p(sp, 0x90), xf);
                                 c.qmfc2(3, 4);
                                 c.mtc1(3, 0);
                                 c.swc1(0, p(g(c, V0), rider::NORMAL));
-                                c.g[V1][0] = rider(c, motion);
+                                c.g[V1][0] = rider(c);
                                 c.g[A0][0] = Addr(p(g(c, V1), rider::ANIM)).lw(c);
                                 call_ptr(c, target::ANIM_LAYER, 0x0013_a158)?;
                                 c.g[V1][0] = 0x14;
                                 let t = c.g[V0][0] != c.g[V1][0];
-                                c.g[V0][0] = rider(c, motion);
+                                c.g[V0][0] = rider(c);
                                 if !t {
                                     c.cycles += 6;
                                     c.g[A1][0] = 0x2;
@@ -626,7 +633,7 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                                 call_ptr(c, target::ANIM_LAYER, 0x0013_a188)?;
                                 c.g[V1][0] = 0x15;
                                 let t = c.g[V0][0] != c.g[V1][0];
-                                c.g[V0][0] = rider(c, motion);
+                                c.g[V0][0] = rider(c);
                                 if t {
                                     break 'anim;
                                 }
@@ -660,7 +667,7 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                                     call_ptr(c, target::ANIM_LAYER, 0x0013_a1cc)?;
                                     c.g[V1][0] = 0x13;
                                     let t = c.g[V0][0] != c.g[V1][0];
-                                    c.g[V0][0] = rider(c, motion);
+                                    c.g[V0][0] = rider(c);
                                     if t {
                                         break 'first;
                                     }
@@ -681,11 +688,11 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                                 call_ptr(c, target::ANIM_LAYER, 0x0013_a204)?;
                                 c.g[V1][0] = 0x12;
                                 if c.g[V0][0] != c.g[V1][0] {
-                                    c.g[A0][0] = rider(c, motion);
+                                    c.g[A0][0] = rider(c);
                                     break 'wall;
                                 }
                                 c.cycles += 9;
-                                c.g[V0][0] = rider(c, motion);
+                                c.g[V0][0] = rider(c);
                                 c.g[A1][0] = 0x2;
                                 c.g[A0][0] = Addr(p(g(c, V0), rider::ANIM)).lw(c);
                                 call_ptr(c, target::ANIM_LAYER_SEQUENCE, 0x0013_a220)?;
@@ -693,11 +700,11 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                                 c.g[A1][0] = 0x2;
                                 callee::FLAGS64_TEST.call(c, 0x0013_a22c)?;
                                 if c.g[V0][0] != 0 {
-                                    c.g[A0][0] = rider(c, motion);
+                                    c.g[A0][0] = rider(c);
                                     break 'wall;
                                 }
                                 c.cycles += 8;
-                                c.g[V0][0] = rider(c, motion);
+                                c.g[V0][0] = rider(c);
                                 c.g[A1][0] = 0x2;
                                 c.g[A0][0] = Addr(p(g(c, V0), rider::ANIM)).lw(c);
                                 call_ptr(c, target::ANIM_LAYER_SEQUENCE, 0x0013_a244)?;
@@ -709,7 +716,7 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                             }
                             // 0x13a258
                             c.cycles += 1;
-                            c.g[A0][0] = rider(c, motion);
+                            c.g[A0][0] = rider(c);
                             break 'wall;
                         }
 
@@ -802,7 +809,7 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                                         // 0x13a3e4
                                         'rand_odd: {
                                             c.cycles += 15;
-                                            c.g[V0][0] = rider(c, motion);
+                                            c.g[V0][0] = rider(c);
                                             c.lwc1(1, gp(c, -0x71bc));
                                             let vel = p(g(c, V0), rider::VEL);
                                             v_length(c, vel, 3, 0);
@@ -867,7 +874,7 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                             c.g[A0][0] = sx(g(c, V0));
                             c.g[A1][0] = 0x3;
                             callee::BE_INTERFACE.call(c, 0x0013_a46c)?;
-                            c.g[V1][0] = rider(c, motion);
+                            c.g[V1][0] = rider(c);
                             c.g[A0][0] = sx(g(c, V0));
                             c.g[A2][0] = Addr(p(g(c, V1), 0xb34)).lw(c);
                             c.g[A1][0] = Addr(p(g(c, V1), 0x86c)).lw(c);
@@ -909,7 +916,7 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                 if !t {
                     c.cycles += 27;
                     c.abs_s(0, 21);
-                    c.g[V1][0] = rider(c, motion);
+                    c.g[V1][0] = rider(c);
                     c.g[A1][0] = c.g[S1][0];
                     c.sq(2, p(sp, 0x90));
                     c.g[A2][0] = 0;
@@ -918,20 +925,20 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                     c.g[T0][0] = sx(p(sp, 0x90));
                     c.lq(3, p(sp, 0xe0));
                     c.lq(2, p(sp, 0x10));
-                    c.g[A0][0] = rider(c, motion);
+                    c.g[A0][0] = rider(c);
                     c.sq(3, p(sp, 0xa0));
                     c.sq(2, p(sp, 0xb0));
                     c.swc1(0, p(sp, 0xc0));
                     c.sq(3, p(sp, 0xd0));
                     c.g[A3][0] = Addr(p(g(c, A0), rider::CONTACT)).lw(c);
                     call_ptr(c, target::START_WIPEOUT, 0x0013_a538)?;
-                    c.g[A0][0] = rider(c, motion);
+                    c.g[A0][0] = rider(c);
                     break 'body;
                 }
 
                 // ---- 0x13a560: the "on the ground" flag --------------------
                 c.cycles += 7;
-                c.g[A0][0] = rider(c, motion);
+                c.g[A0][0] = rider(c);
                 c.lwc1(1, gp(c, -0x71ac));
                 c.lwc1(0, p(g(c, A0), 0x378));
                 c.c_lt_s(0, 1);
@@ -950,28 +957,28 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                     c.g[A2][0] = 0;
                     c.g[T0][0] = c.g[SP][0];
                     call_ptr(c, target::BANK_TRICK_BOOST, 0x0013_a574)?;
-                    c.g[A0][0] = rider(c, motion);
+                    c.g[A0][0] = rider(c);
                     c.g[A1][0] = 0;
                     call_ptr(c, target::SET_MAIN_STATE, 0x0013_a580)?;
-                    c.g[A0][0] = rider(c, motion);
+                    c.g[A0][0] = rider(c);
                     call_ptr(c, target::GET_SUB_STATE, 0x0013_a588)?;
                     c.g[V1][0] = 0xc;
                     if c.g[V0][0] == c.g[V1][0] {
-                        c.g[V1][0] = rider(c, motion);
+                        c.g[V1][0] = rider(c);
                         break 'land_anim;
                     }
                     'land2: {
                         'sub: {
                             c.cycles += 5;
-                            c.g[A0][0] = rider(c, motion);
+                            c.g[A0][0] = rider(c);
                             call_ptr(c, target::GET_SUB_STATE, 0x0013_a59c)?;
                             c.g[V1][0] = 0x2;
                             if c.g[V0][0] != c.g[V1][0] {
-                                c.g[A0][0] = rider(c, motion);
+                                c.g[A0][0] = rider(c);
                                 break 'sub;
                             }
                             c.cycles += 7;
-                            c.g[A0][0] = rider(c, motion);
+                            c.g[A0][0] = rider(c);
                             call_ptr(c, target::RESET_GRIND, 0x0013_a5b0)?;
                             c.lwc1(0, gp(c, -0x71a8));
                             c.c_lt_s(21, 0);
@@ -983,7 +990,7 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                             c.cycles += 4;
                             c.g[A0][0] = c.g[S0][0];
                             callee::PLAY_LAND_ANIM2.call(c, 0x0013_a5cc)?;
-                            c.g[V1][0] = rider(c, motion);
+                            c.g[V1][0] = rider(c);
                             break 'land_anim;
                         }
                         // 0x13a644
@@ -992,11 +999,10 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                         let t = c.g[V0][0] == 0;
                         if !t {
                             c.cycles += 5;
-                            c.g[A0][0] = rider(c, motion);
                             call_ptr(c, target::GET_SUB_STATE, 0x0013_a5e8)?;
                             c.g[A0][0] = 0x1;
                             let t = c.g[V0][0] == c.g[A0][0];
-                            c.g[V1][0] = rider(c, motion);
+                            c.g[V1][0] = rider(c);
                             if t {
                                 break 'land_anim;
                             }
@@ -1015,7 +1021,7 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                                     c.mtc1(1, 12);
                                     c.g[A2][0] = 0;
                                     call_ptr(c, target::PLAY_ANIM, 0x0013_a614)?;
-                                    c.g[A0][0] = rider(c, motion);
+                                    c.g[A0][0] = rider(c);
                                     break 'land;
                                 }
                                 // 0x13a624
@@ -1025,22 +1031,22 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                                 c.mtc1(1, 12);
                                 c.g[A2][0] = 0;
                                 call_ptr(c, target::PLAY_ANIM, 0x0013_a630)?;
-                                c.g[A0][0] = rider(c, motion);
+                                c.g[A0][0] = rider(c);
                             }
                             // 0x13a63c
                             c.cycles += 4;
                             c.g[A1][0] = 0x1;
                             call_ptr(c, target::SET_SUB_STATE, 0x0013_a63c)?;
-                            c.g[V1][0] = rider(c, motion);
+                            c.g[V1][0] = rider(c);
                             break 'land_anim;
                         }
                         // 0x13a678
                         c.cycles += 9;
                         call_ptr(c, target::RESET_GRIND, 0x0013_a64c)?;
-                        c.g[A0][0] = rider(c, motion);
+                        c.g[A0][0] = rider(c);
                         c.g[A1][0] = 0;
                         call_ptr(c, target::SET_SUB_STATE, 0x0013_a658)?;
-                        c.g[A0][0] = rider(c, motion);
+                        c.g[A0][0] = rider(c);
                         call_ptr(c, target::TURN_AROUND, 0x0013_a660)?;
                         let t = c.g[V0][0] == 0;
                         c.mov_s(12, 21);
@@ -1048,7 +1054,7 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                             c.cycles += 4;
                             c.g[A0][0] = c.g[S0][0];
                             callee::PLAY_LAND_ANIM.call(c, 0x0013_a670)?;
-                            c.g[V1][0] = rider(c, motion);
+                            c.g[V1][0] = rider(c);
                             break 'land_anim;
                         }
                         // 0x13a680
@@ -1059,7 +1065,7 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                     }
                     // 0x13a680 exit
                     c.cycles += 1;
-                    c.g[V1][0] = rider(c, motion);
+                    c.g[V1][0] = rider(c);
                 }
 
                 // ---- 0x13a700: cap the downward speed -----------------------
@@ -1083,7 +1089,7 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                 }
                 // 0x13a710
                 c.cycles += 9;
-                c.g[V0][0] = rider(c, motion);
+                c.g[V0][0] = rider(c);
                 c.mfc1(3, 2);
                 c.lqc2(4, p(g(c, V0), rider::VEL));
                 c.qmtc2(3, 3);
@@ -1091,7 +1097,7 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                 c.sqc2(5, p(g(c, V0), rider::VEL));
                 c.g[A0][0] = Addr(gp(c, 0xce8)).lw(c);
                 call_ptr(c, target::WSCRIPT, 0x0013_a720)?;
-                c.g[A0][0] = rider(c, motion);
+                c.g[A0][0] = rider(c);
                 break 'body;
             }
 
@@ -1101,7 +1107,7 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                     c.cycles += 16;
                     c.g[A1][0] = 0;
                     callee::RIDER_UPDATE_BOUNDS.call(c, 0x0013_a72c)?;
-                    c.g[V1][0] = rider(c, motion);
+                    c.g[V1][0] = rider(c);
                     c.g[S1][0] = sx(p(sp, 0x80));
                     c.g[A2][0] = Addr(gp(c, -0x1fd0)).lw(c);
                     c.g[A0][0] = c.g[S0][0];
@@ -1110,7 +1116,7 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                     let at = p(g(c, V0), 0x28);
                     st(c, at, A2);
                     callee::COLLIDE_WALLS.call(c, 0x0013_a74c)?;
-                    c.g[A1][0] = rider(c, motion);
+                    c.g[A1][0] = rider(c);
                     c.g[V1][0] = 0xffff_ffff_ffff_0000;
                     c.g[V1][0] = c.g[V1][0] | 0xffff;
                     c.g[A0][0] = Addr(p(g(c, A1), rider::WALLS)).lw(c);
@@ -1121,20 +1127,20 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                         break 'collide;
                     }
                     c.cycles += 5;
-                    c.g[A0][0] = rider(c, motion);
+                    c.g[A0][0] = rider(c);
                     c.g[A1][0] = c.g[S1][0];
                     call_ptr(c, target::AIR_WALLS, 0x0013_a770)?;
                     break 'walls;
                 }
                 // 0x13a784
                 c.cycles += 3;
-                c.g[A0][0] = rider(c, motion);
+                c.g[A0][0] = rider(c);
                 c.g[A1][0] = 0;
                 call_ptr(c, target::AIR_WALLS, 0x0013_a784)?;
             }
             // 0x13a78c: the camera trigger manager sees the final position.
             c.cycles += 3;
-            c.g[A0][0] = rider(c, motion);
+            c.g[A0][0] = rider(c);
             call_ptr(c, target::AIR_CAMERA, 0x0013_a78c)?;
             break 'func;
         }
@@ -1160,17 +1166,21 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
 mod tests {
     use super::*;
     use crate::abi;
-    use crate::difftest::fakes::machine;
-    use crate::difftest::{check, put_vec, Rng, DATA, GAME_GP};
+    use crate::difftest::fakes::{machine, FAKE};
+    use crate::difftest::{compare, put_vec, seed_count, Rng, DATA, GAME_GP};
 
-    /// The air state.
-    const MOTION: u32 = DATA;
-    /// Its rider.
+    /// The rider.
     const RIDER: u32 = DATA + 0x1000;
-    /// The rider's model (CastBoardRay reads its transform base).
+    /// The air state: `rider + 0x20`, the way `RiderBase_PostUpdateMainState`
+    /// passes it (`off: 0x20`, see `rider_logic.rs`), with the rider back at
+    /// `+0x4`.
+    const MOTION: u32 = RIDER + 0x20;
+    /// The rider's model (`CastBoardRay` reads its transform base).
     const MODEL: u32 = DATA + 0x2000;
     /// The board transform the ray starts from.
     const BOARD: u32 = DATA + 0x4000;
+    /// The per-seed control word the fake board ray reads.
+    const SEEDWORD: u32 = DATA + 0x5000;
     /// The rider's wall-collision object.
     const WALLS: u32 = DATA + 0x6000;
     /// The rider state object (`rider->+0x77c`).
@@ -1179,9 +1189,16 @@ mod tests {
     const TRIGGERS: u32 = DATA + 0x9000;
     /// The animation controller dummy (`rider->+0x784`).
     const ANIM_OBJ: u32 = DATA + 0xa000;
-    /// A zeroed collision object (`rider->+0x860`): no geometry, so the board
-    /// ray misses and `RiderAirState_CastBoardRay` returns -1.
+    /// A zeroed collision object (`rider + 0x860`): no level geometry, so the
+    /// real board ray misses and returns -1.
     const COLL: u32 = DATA + 0xb000;
+    /// The trigger object the ray reports at `frame + 0x50`, its descriptor
+    /// (`+0xc`) and the callback object (`descriptor + 0xc`).
+    const TRIG: u32 = DATA + 0xc000;
+    const TRIG_DESC: u32 = DATA + 0xc100;
+    const TRIG_SUB: u32 = DATA + 0xc200;
+    /// The animation object the ray reports at `frame + 0x54`.
+    const ANIM: u32 = DATA + 0xd000;
     /// The zeroed BELibrary dummy.
     const BE: u32 = DATA + 0x3_0000;
     /// The dummy world (no geometry, no riders).
@@ -1189,6 +1206,23 @@ mod tests {
 
     fn w(c: &mut Cpu, a: u32, v: u32) {
         c.bus.write32(a, v);
+    }
+
+    /// `difftest::check`, but requiring the caller-saved scratch state and
+    /// LO/HI to match as well (`check` only fails on the ABI-preserved half).
+    /// The game's hand-written callees may read registers the ABI lets them
+    /// ignore, and a fake callee logs every register.
+    fn check_strict(generated: GuestFn, hand: GuestFn, seeds: u32, setup: &dyn Fn(&mut Cpu, u32)) {
+        for seed in 0..seed_count(seeds) {
+            let r = compare(generated, hand, &|c| setup(c, seed));
+            assert!(r.hard.is_empty(), "seed {seed}: {:#?}", r.hard);
+            assert!(
+                r.soft.is_empty(),
+                "seed {seed} (scratch state): {:#?}",
+                r.soft
+            );
+            assert!(r.lohi.is_empty(), "seed {seed} (LO/HI): {:#?}", r.lohi);
+        }
     }
 
     /// The BE singleton, the world with its module and race manager (no
@@ -1202,64 +1236,86 @@ mod tests {
         w(c, GAME_GP.wrapping_sub(0x1fd0), 0x10);
     }
 
-    /// A rider with a board transform, a trigger entry and a zeroed world;
-    /// the board ray has nothing to hit, so the body runs its air path.
+    /// The rider with its air state, model and board, and the objects the arm
+    /// dereferences (all zeroed dummies, never raw addresses).
+    fn rider_fixture(c: &mut Cpu, r: &mut Rng) {
+        c.g[A0][0] = MOTION as u64;
+        w(c, MOTION + 4, RIDER);
+        w(c, RIDER + 0x780, MODEL);
+        w(c, MODEL + 0x2c, BOARD);
+        w(c, RIDER + 0x8a0, 0);
+        w(c, RIDER + 0x784, ANIM_OBJ);
+        w(c, RIDER + 0x788, 0);
+        w(c, RIDER + 0xaa0, WALLS);
+        w(c, RIDER + 0x77c, STATE);
+        w(c, RIDER + 0x330, (r.next_u32() % 3) as u32);
+        w(c, RIDER + 0x378, r.f32(100.0));
+        w(c, RIDER + 0x86c, r.next_u32());
+        w(c, RIDER + 0xb34, r.next_u32());
+        // The board contact's trigger lookup: `module->+0x44` is the array and
+        // `frame->+0x4c` the index the fake writes.
+        w(c, WORLD + 0x1000 + 0x44, TRIGGERS);
+        w(c, WORLD + 0x10, r.edge_f32());
+        // The trigger object chain (only used when the fake reports one).
+        w(c, TRIG + 0xc, TRIG_DESC);
+        w(c, TRIG_DESC + 0xc, TRIG_SUB);
+        c.bus.write16(TRIG_SUB + 0x158, 0x20);
+        w(c, TRIG_SUB + 0x15c, FAKE);
+        // The animation object's flag word (`lh(+0xa)`).
+        c.bus.write16(ANIM + 0xa, (r.next_u32() % 2) as u16 * 2);
+        w(c, TRIGGERS + 0x18, r.edge_f32());
+        w(c, TRIGGERS + 0x3c, r.edge_f32());
+        w(c, TRIGGERS + 0x40, r.edge_f32());
+        let q = |r: &mut Rng| [r.f32(100.0), r.f32(100.0), r.f32(100.0), 0x3f80_0000];
+        put_vec(c, RIDER + 0x110, q(r));
+        put_vec(c, RIDER + 0x1a0, q(r));
+        put_vec(c, RIDER + 0x1b0, q(r));
+        put_vec(c, RIDER + 0x1c0, q(r));
+        put_vec(c, RIDER + 0x1e0, q(r));
+        put_vec(c, RIDER + 0x370, q(r));
+        put_vec(c, BOARD, q(r));
+    }
+
+    /// The air path: `RiderAirState_CastBoardRay` runs for real against a
+    /// zeroed collision object, finds no geometry, returns -1, and the body
+    /// goes straight to the bounds/wall/camera tail.
     fn setup_air(c: &mut Cpu, seed: u32) {
         let mut r = machine(c, seed, 0x139c_88, 6);
         globals(c);
-        c.g[A0][0] = MOTION as u64;
-        w(c, MOTION + RIDER, RIDER);
-        // CastBoardRay: `model->+0x2c + (rider->+0x8a0 << 5)` is the board
-        // transform; `+0x860` is a zeroed collision object (no level geometry,
-        // so the ray test finds nothing and the arm is skipped) and `+0x864`
-        // its flags.
-        w(c, RIDER + 0x780, MODEL);
-        w(c, MODEL + 0x2c, BOARD);
-        w(c, RIDER + 0x8a0, (seed % 4) as u32);
+        rider_fixture(c, &mut r);
+        // The real ray: `model->+0x2c + (rider->+0x8a0 << 5)` is the board
+        // transform, `+0x860` the collision object, `+0x864` the flags.
         w(c, RIDER + 0x860, COLL);
         w(c, RIDER + 0x864, 0);
-        // The trigger entry / animation object: null, so the animation helpers
-        // take their "nothing to do" path.
-        w(c, RIDER + 0x788, 0);
-        w(c, RIDER + 0x784, 0);
-        w(c, RIDER + 0x330, if seed % 3 == 0 { 0 } else { 1 });
-        w(c, RIDER + 0x378, r.f32(100.0));
-        w(c, RIDER + 0xaa0, WALLS);
-        // `Rider_GetSubState(rider)` is `*(*(rider+0x77c) + 0xde4)`: the air
-        // sub-state 9 makes `RiderAirState_CollideWalls` return at once (the
-        // whole wall-collision body needs real level geometry).
-        w(c, RIDER + 0x77c, STATE);
+        // Sub-state 9 makes `RiderAirState_CollideWalls` return at once (its
+        // real body needs level geometry).
         w(c, STATE + 0xde4, 9);
-        // The board plane, the rider's position/velocity and its transform.
-        let q = |r: &mut Rng| [r.f32(100.0), r.f32(100.0), r.f32(100.0), 0x3f80_0000];
-        put_vec(c, BOARD, q(&mut r));
-        put_vec(c, RIDER + 0x1a0, q(&mut r));
-        put_vec(c, RIDER + 0x1b0, q(&mut r));
-        put_vec(c, RIDER + 0x1c0, q(&mut r));
-        put_vec(c, RIDER + 0x110, q(&mut r));
-        put_vec(c, RIDER + 0x1e0, q(&mut r));
-        put_vec(c, RIDER + 0x370, q(&mut r));
+        // No trigger/animation object in the ray's out struct.
+        w(c, SEEDWORD, 0x1);
     }
 
-    /// A stand-in for `RiderAirState_CastBoardRay` (0x13a7b0).
-    ///
-    /// With no level collision geometry in the test world the real function
-    /// returns -1 (`func_00333EF8` finds nothing to hit, see
-    /// `worldsphtree.cpp`) and the board-contact arm never runs. This reports a
-    /// hit 10 units away and writes the quadwords the arm reads back into the
-    /// caller's out struct (`a1`, the frame the caller passed): the ray
-    /// `(0, 0, -1)` at `+0x10`, the hit point `(0, 0, -100)` at `+0x20`, and no
-    /// trigger object at `+0x50`/`+0x54`.
+    /// A stand-in for `RiderAirState_CastBoardRay` (0x13a7b0), driven by the
+    /// fixture's [`SEEDWORD`]: bit 0 picks a miss (`f0 = -1`, the real
+    /// function's answer without geometry) or a hit at 10 units, bit 1 the
+    /// side of the ray the hit lies on (so the arm's `(velocity - hit) .
+    /// direction` test takes both sides), bit 2 the trigger object at
+    /// `frame+0x50` and bit 3 the animation object at `frame+0x54`; bits 8-9
+    /// are the trigger-entry index.
     fn fake_cast_board_ray(c: &mut Cpu) {
+        let v = Addr(SEEDWORD).lw(c) as u32;
         let out = abi::arg(c, 1);
         put_vec(c, out, [0, 0, 0, 0x3f80_0000]);
-        put_vec(c, p(out, 0x10), [0, 0, 0xbf80_0000, 0]);
+        put_vec(
+            c,
+            p(out, 0x10),
+            [0, 0, if v & 2 == 0 { 0xbf80_0000 } else { 0x3f80_0000 }, 0],
+        );
         put_vec(c, p(out, 0x20), [0, 0, 0xc2c8_0000, 0]);
-        w(c, p(out, 0x4c), 0);
-        w(c, p(out, 0x50), 0);
-        w(c, p(out, 0x54), 0);
-        // The hit distance in f0: 10.0, so `0.5 <= f0` holds.
-        c.f[0] = 0x4120_0000;
+        w(c, p(out, 0x4c), (v >> 8) & 3);
+        w(c, p(out, 0x50), if v & 4 == 0 { 0 } else { TRIG });
+        w(c, p(out, 0x54), if v & 8 == 0 { 0 } else { ANIM });
+        // The distance: 10.0 for a hit, -1.0 for a miss.
+        c.f[0] = if v & 1 == 0 { 0x4120_0000 } else { 0xbf80_0000 };
         c.g[V0][0] = 0;
         abi::ret(c);
     }
@@ -1277,70 +1333,100 @@ mod tests {
         }
     }
 
-    /// A rider over a board plane, with the ray hit supplied by
-    /// [`fake_cast_board_ray`], so the board-contact arm runs; the sub-state,
-    /// the trigger entry and the `+0x330` word pick a different branch per
-    /// seed.
+    /// The board-contact arm, which the real function cannot reach in a test
+    /// machine (no level geometry): the fake reports a hit and the objects the
+    /// arm reads. The sub-state picks the landing chain's branch, and the
+    /// control word the arm's side, trigger and animation objects.
     fn setup_board_contact(c: &mut Cpu, seed: u32) {
         let mut r = machine(c, seed, 0x139c_88, 12);
         globals(c);
-        c.g[A0][0] = MOTION as u64;
-        w(c, MOTION + RIDER, RIDER);
-        w(c, RIDER + 0x780, MODEL);
-        w(c, MODEL + 0x2c, BOARD);
-        w(c, RIDER + 0x8a0, 0);
-        w(c, RIDER + 0x784, ANIM_OBJ);
-        w(c, RIDER + 0x788, 0);
-        w(c, RIDER + 0xaa0, WALLS);
+        rider_fixture(c, &mut r);
+        // Bit 0 clear: a hit. Bit 1 varies the arm's side test, bits 2/3 the
+        // trigger and animation objects, bits 8-9 the trigger entry.
+        w(c, SEEDWORD, (seed % 8) * 2 | ((seed % 4) << 8));
         // The air sub-state: 0xc skips the landing chain, 2 takes the
         // `Rider_ResetGrindOrientation` (0x115640) branch, 9 the 0x13a644 one.
-        w(c, RIDER + 0x77c, STATE);
         w(c, STATE + 0xde4, [9, 9, 9, 2][(seed % 4) as usize]);
-        w(c, RIDER + 0x330, (seed / 4) % 2);
-        w(c, RIDER + 0x378, r.f32(100.0));
-        // The trigger entry the board contact looks up: `module->+0x44` is the
-        // array and `frame->+0x4c` the index the fake writes (0). A non-zero
-        // `entry->+0x44` takes the `Rider_CheckResetPath` early return.
-        w(c, WORLD + 0x1000 + 0x44, TRIGGERS);
-        w(c, TRIGGERS + 0x44, if seed % 7 == 0 { 1 } else { 0 });
-        w(c, TRIGGERS + 0x18, r.edge_f32());
-        w(c, TRIGGERS + 0x3c, r.f32(2.0));
-        w(c, TRIGGERS + 0x40, r.f32(2.0));
-        // The rider stands still and the hit is 100 units down the ray, so
-        // `(velocity - hit) . direction` is -100: the contact arm's test holds.
-        put_vec(c, RIDER + 0x1e0, [0, 0, 0, 0]);
-        let q = |r: &mut Rng| [r.f32(100.0), r.f32(100.0), r.f32(100.0), 0x3f80_0000];
+        // A non-zero `entry->+0x44` takes the `Rider_CheckResetPath` early
+        // return (the arm's only `break 'func`).
+        w(
+            c,
+            TRIGGERS + 0xb0 * (seed % 4) + 0x44,
+            if seed % 7 == 0 { 1 } else { 0 },
+        );
+        w(c, RIDER + 0x864, 0);
+    }
+
+    /// The same arm with every field it reads randomized (pointers stay on
+    /// zeroed dummies), and the fake's hit/miss and object selection random:
+    /// a sweep of the data-dependent branches.
+    fn setup_fuzz(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x139c_f8, 10);
+        globals(c);
+        rider_fixture(c, &mut r);
+        w(c, SEEDWORD, r.next_u32());
+        w(
+            c,
+            STATE + 0xde4,
+            [0, 1, 2, 5, 9, 0xc][(r.next_u32() % 6) as usize],
+        );
+        w(c, RIDER + 0x8a0, r.next_u32() % 4);
+        w(c, RIDER + 0x860, COLL);
+        w(c, RIDER + 0x864, r.next_u32() & 3);
+        for k in 0..4u32 {
+            w(c, TRIGGERS + 0xb0 * k + 0x44, r.next_u32() % 2);
+        }
+        // The quadwords the arm consumes (random edge-case floats).
+        let q = |r: &mut Rng| [r.edge_f32(), r.edge_f32(), r.edge_f32(), r.edge_f32()];
         put_vec(c, RIDER + 0x110, q(&mut r));
         put_vec(c, RIDER + 0x1a0, q(&mut r));
         put_vec(c, RIDER + 0x1b0, q(&mut r));
         put_vec(c, RIDER + 0x1c0, q(&mut r));
+        put_vec(c, RIDER + 0x1e0, q(&mut r));
         put_vec(c, RIDER + 0x370, q(&mut r));
+        put_vec(c, RIDER + 0x400, q(&mut r));
         put_vec(c, BOARD, q(&mut r));
+        w(c, RIDER + 0x378, r.edge_f32());
     }
 
     #[test]
     fn rider_air_state_post_update_matches() {
-        check(
-            ssx3_ee::s01::f_00139c88,
+        check_strict(
+            ssx3_ee::s01::f_00139c88__generated,
             rider_air_state_post_update,
-            32,
+            24,
             &|c, seed| setup_air(c, seed),
         );
     }
 
-    /// The board-contact arm, which the plain fixture cannot reach: with no
-    /// level geometry the board ray misses and the body takes the air path.
+    /// The board-contact arm: the ray hit, the trigger callback, the
+    /// animation-object and landing-chain branches, all driven by the fake.
     #[test]
     fn rider_air_state_post_update_board_contact_matches() {
         let _slot = RaySlot;
         unsafe {
             ssx3_ee::s01::OVERRIDE_0013A7B0 = fake_cast_board_ray;
         }
-        check(
-            ssx3_ee::s01::f_00139c88,
+        check_strict(
+            ssx3_ee::s01::f_00139c88__generated,
             rider_air_state_post_update,
             32,
             &|c, seed| setup_board_contact(c, seed),
+        );
+    }
+
+    /// A randomized sweep over everything the function reads.
+    #[test]
+    fn rider_air_state_post_update_fuzz_matches() {
+        let _slot = RaySlot;
+        unsafe {
+            ssx3_ee::s01::OVERRIDE_0013A7B0 = fake_cast_board_ray;
+        }
+        check_strict(
+            ssx3_ee::s01::f_00139c88__generated,
+            rider_air_state_post_update,
+            40,
+            &|c, seed| setup_fuzz(c, seed),
         );
     }
 }
