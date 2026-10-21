@@ -31,6 +31,9 @@ use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::{Src, W, X, Y, Z};
 use ssx3_ee_rt::Cpu;
 
+// `RiderAirState_PostUpdate` is not installed: its differential tests pass, but
+// the 6000-frame race replay diverges as soon as it is installed (an arm the
+// tests do not reproduce). The port is kept for a later re-audit.
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[];
 
 // ---------------------------------------------------------------------------
@@ -87,6 +90,8 @@ mod target {
     pub const SET_MAIN_STATE: u32 = 0x0011_fe78;
     /// `Rider_CheckResetPath(rider, out, flag)`.
     pub const CHECK_RESET_PATH: u32 = 0x0011_6120;
+    /// `Rider_ResetGrindOrientation(rider)`.
+    pub const RESET_GRIND: u32 = 0x0011_5640;
     /// `Rider_TurnAroundIfBackward(rider)`.
     pub const TURN_AROUND: u32 = 0x0011_4cc0;
     /// `Rider_Translate(rider, ...)`.
@@ -967,7 +972,7 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                             }
                             c.cycles += 7;
                             c.g[A0][0] = rider(c, motion);
-                            call_ptr(c, target::TURN_AROUND, 0x0013_a5b0)?;
+                            call_ptr(c, target::RESET_GRIND, 0x0013_a5b0)?;
                             c.lwc1(0, gp(c, -0x71a8));
                             c.c_lt_s(21, 0);
                             let t = !c.fcc();
@@ -1031,7 +1036,7 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
                         }
                         // 0x13a678
                         c.cycles += 9;
-                        call_ptr(c, target::TURN_AROUND, 0x0013_a64c)?;
+                        call_ptr(c, target::RESET_GRIND, 0x0013_a64c)?;
                         c.g[A0][0] = rider(c, motion);
                         c.g[A1][0] = 0;
                         call_ptr(c, target::SET_SUB_STATE, 0x0013_a658)?;
@@ -1154,6 +1159,7 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::abi;
     use crate::difftest::fakes::machine;
     use crate::difftest::{check, put_vec, Rng, DATA, GAME_GP};
 
@@ -1169,6 +1175,13 @@ mod tests {
     const WALLS: u32 = DATA + 0x6000;
     /// The rider state object (`rider->+0x77c`).
     const STATE: u32 = DATA + 0x7000;
+    /// The trigger-entry array (`module->+0x44`, 0xb0 bytes per entry).
+    const TRIGGERS: u32 = DATA + 0x9000;
+    /// The animation controller dummy (`rider->+0x784`).
+    const ANIM_OBJ: u32 = DATA + 0xa000;
+    /// A zeroed collision object (`rider->+0x860`): no geometry, so the board
+    /// ray misses and `RiderAirState_CastBoardRay` returns -1.
+    const COLL: u32 = DATA + 0xb000;
     /// The zeroed BELibrary dummy.
     const BE: u32 = DATA + 0x3_0000;
     /// The dummy world (no geometry, no riders).
@@ -1178,27 +1191,32 @@ mod tests {
         c.bus.write32(a, v);
     }
 
-    /// A rider with a board transform, a trigger entry and a zeroed world;
-    /// both the board-contact path and the air path are reachable.
-    fn setup(c: &mut Cpu, seed: u32) {
-        let mut r = machine(c, seed, 0x139c_88, 6);
-        // The BE singleton (else it reads the disc), the world and its module
-        // (`+0x84`), the module's race manager (`+0xc`) with no riders.
+    /// The BE singleton, the world with its module and race manager (no
+    /// riders), and the wall flag `RiderAirState_CollideWalls` writes.
+    fn globals(c: &mut Cpu) {
         w(c, GAME_GP.wrapping_sub(0x1f04), BE);
         w(c, GAME_GP.wrapping_sub(0x848), WORLD);
         w(c, WORLD + 0x84, WORLD + 0x1000);
         w(c, WORLD + 0x1000 + 0xc, WORLD + 0x2000);
         w(c, WORLD + 0x2000 + 0x7c, 0);
-        // The "wall flag" CollideWalls leaves at `rider->+0xaa0 + 0x28`.
         w(c, GAME_GP.wrapping_sub(0x1fd0), 0x10);
+    }
+
+    /// A rider with a board transform, a trigger entry and a zeroed world;
+    /// the board ray has nothing to hit, so the body runs its air path.
+    fn setup_air(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x139c_88, 6);
+        globals(c);
         c.g[A0][0] = MOTION as u64;
         w(c, MOTION + RIDER, RIDER);
         // CastBoardRay: `model->+0x2c + (rider->+0x8a0 << 5)` is the board
-        // transform; `+0x860`/`+0x864` are its line-test arguments.
+        // transform; `+0x860` is a zeroed collision object (no level geometry,
+        // so the ray test finds nothing and the arm is skipped) and `+0x864`
+        // its flags.
         w(c, RIDER + 0x780, MODEL);
         w(c, MODEL + 0x2c, BOARD);
         w(c, RIDER + 0x8a0, (seed % 4) as u32);
-        w(c, RIDER + 0x860, BOARD);
+        w(c, RIDER + 0x860, COLL);
         w(c, RIDER + 0x864, 0);
         // The trigger entry / animation object: null, so the animation helpers
         // take their "nothing to do" path.
@@ -1223,5 +1241,106 @@ mod tests {
         put_vec(c, RIDER + 0x370, q(&mut r));
     }
 
-    
+    /// A stand-in for `RiderAirState_CastBoardRay` (0x13a7b0).
+    ///
+    /// With no level collision geometry in the test world the real function
+    /// returns -1 (`func_00333EF8` finds nothing to hit, see
+    /// `worldsphtree.cpp`) and the board-contact arm never runs. This reports a
+    /// hit 10 units away and writes the quadwords the arm reads back into the
+    /// caller's out struct (`a1`, the frame the caller passed): the ray
+    /// `(0, 0, -1)` at `+0x10`, the hit point `(0, 0, -100)` at `+0x20`, and no
+    /// trigger object at `+0x50`/`+0x54`.
+    fn fake_cast_board_ray(c: &mut Cpu) {
+        let out = abi::arg(c, 1);
+        put_vec(c, out, [0, 0, 0, 0x3f80_0000]);
+        put_vec(c, p(out, 0x10), [0, 0, 0xbf80_0000, 0]);
+        put_vec(c, p(out, 0x20), [0, 0, 0xc2c8_0000, 0]);
+        w(c, p(out, 0x4c), 0);
+        w(c, p(out, 0x50), 0);
+        w(c, p(out, 0x54), 0);
+        // The hit distance in f0: 10.0, so `0.5 <= f0` holds.
+        c.f[0] = 0x4120_0000;
+        c.g[V0][0] = 0;
+        abi::ret(c);
+    }
+
+    /// Puts the `CastBoardRay` override slot back (the generated body is its
+    /// default: the game's own replacement is installed by
+    /// `ssx3_game::install`, which the tests do not run).
+    struct RaySlot;
+
+    impl Drop for RaySlot {
+        fn drop(&mut self) {
+            unsafe {
+                ssx3_ee::s01::OVERRIDE_0013A7B0 = ssx3_ee::s01::f_0013a7b0__generated;
+            }
+        }
+    }
+
+    /// A rider over a board plane, with the ray hit supplied by
+    /// [`fake_cast_board_ray`], so the board-contact arm runs; the sub-state,
+    /// the trigger entry and the `+0x330` word pick a different branch per
+    /// seed.
+    fn setup_board_contact(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x139c_88, 12);
+        globals(c);
+        c.g[A0][0] = MOTION as u64;
+        w(c, MOTION + RIDER, RIDER);
+        w(c, RIDER + 0x780, MODEL);
+        w(c, MODEL + 0x2c, BOARD);
+        w(c, RIDER + 0x8a0, 0);
+        w(c, RIDER + 0x784, ANIM_OBJ);
+        w(c, RIDER + 0x788, 0);
+        w(c, RIDER + 0xaa0, WALLS);
+        // The air sub-state: 0xc skips the landing chain, 2 takes the
+        // `Rider_ResetGrindOrientation` (0x115640) branch, 9 the 0x13a644 one.
+        w(c, RIDER + 0x77c, STATE);
+        w(c, STATE + 0xde4, [9, 9, 9, 2][(seed % 4) as usize]);
+        w(c, RIDER + 0x330, (seed / 4) % 2);
+        w(c, RIDER + 0x378, r.f32(100.0));
+        // The trigger entry the board contact looks up: `module->+0x44` is the
+        // array and `frame->+0x4c` the index the fake writes (0). A non-zero
+        // `entry->+0x44` takes the `Rider_CheckResetPath` early return.
+        w(c, WORLD + 0x1000 + 0x44, TRIGGERS);
+        w(c, TRIGGERS + 0x44, if seed % 7 == 0 { 1 } else { 0 });
+        w(c, TRIGGERS + 0x18, r.edge_f32());
+        w(c, TRIGGERS + 0x3c, r.f32(2.0));
+        w(c, TRIGGERS + 0x40, r.f32(2.0));
+        // The rider stands still and the hit is 100 units down the ray, so
+        // `(velocity - hit) . direction` is -100: the contact arm's test holds.
+        put_vec(c, RIDER + 0x1e0, [0, 0, 0, 0]);
+        let q = |r: &mut Rng| [r.f32(100.0), r.f32(100.0), r.f32(100.0), 0x3f80_0000];
+        put_vec(c, RIDER + 0x110, q(&mut r));
+        put_vec(c, RIDER + 0x1a0, q(&mut r));
+        put_vec(c, RIDER + 0x1b0, q(&mut r));
+        put_vec(c, RIDER + 0x1c0, q(&mut r));
+        put_vec(c, RIDER + 0x370, q(&mut r));
+        put_vec(c, BOARD, q(&mut r));
+    }
+
+    #[test]
+    fn rider_air_state_post_update_matches() {
+        check(
+            ssx3_ee::s01::f_00139c88,
+            rider_air_state_post_update,
+            32,
+            &|c, seed| setup_air(c, seed),
+        );
+    }
+
+    /// The board-contact arm, which the plain fixture cannot reach: with no
+    /// level geometry the board ray misses and the body takes the air path.
+    #[test]
+    fn rider_air_state_post_update_board_contact_matches() {
+        let _slot = RaySlot;
+        unsafe {
+            ssx3_ee::s01::OVERRIDE_0013A7B0 = fake_cast_board_ray;
+        }
+        check(
+            ssx3_ee::s01::f_00139c88,
+            rider_air_state_post_update,
+            32,
+            &|c, seed| setup_board_contact(c, seed),
+        );
+    }
 }
