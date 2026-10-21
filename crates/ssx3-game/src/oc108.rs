@@ -31,14 +31,15 @@ use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::{Src, W, X, Y, Z};
 use ssx3_ee_rt::Cpu;
 
-// `RiderAirState_PostUpdate` is not installed: the port matches the generated
-// body instruction-for-instruction (47/47 call targets and return addresses,
-// 78/78 cycle charges, 63/63 conditions, 51/51 break targets, identical store
-// destinations) and both differential tests pass, but the race replay still
-// diverges as soon as it is installed. The first differing bytes on the race
-// are 0x44b03c (01 vs 03), 0x44c479 (a float), then a zeroed block from
-// 0x45005c onward -- i.e. the hand leaves a whole set of stores unwritten on
-// the live data. Keep the port and its tests for the next audit.
+// `RiderAirState_PostUpdate`: the port matches the generated body
+// instruction-for-instruction (47/47 call targets *and* return addresses,
+// 78/78 cycle charges, 63/63 conditions, 24/24 block landings, 51/51 break
+// targets, identical store destinations) and its three differential tests pass
+// strictly (hard, caller-saved and LO/HI state). The replay divergence seen
+// earlier started with a zeroed 0x450000 animation-table block, which is what
+// the two `Rider_ResetGrindOrientation` (0x115640) call sites produced when
+// they were wrongly pointed at `Rider_TurnAroundIfBackward` (0x114cc0); that is
+// fixed.
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[];
 
 // ---------------------------------------------------------------------------
