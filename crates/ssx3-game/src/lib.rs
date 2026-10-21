@@ -235,6 +235,14 @@ pub mod oc130;
 pub mod oc131;
 #[cfg(feature = "oc132")]
 pub mod oc132;
+#[cfg(feature = "oc133")]
+pub mod oc133;
+#[cfg(feature = "oc134")]
+pub mod oc134;
+#[cfg(feature = "oc135")]
+pub mod oc135;
+#[cfg(feature = "oc136")]
+pub mod oc136;
 #[cfg(feature = "oc27")]
 pub mod oc27;
 #[cfg(feature = "oc26")]
@@ -672,6 +680,14 @@ pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     v.extend_from_slice(oc131::OVERRIDES);
     #[cfg(feature = "oc132")]
     v.extend_from_slice(oc132::OVERRIDES);
+    #[cfg(feature = "oc133")]
+    v.extend_from_slice(oc133::OVERRIDES);
+    #[cfg(feature = "oc134")]
+    v.extend_from_slice(oc134::OVERRIDES);
+    #[cfg(feature = "oc135")]
+    v.extend_from_slice(oc135::OVERRIDES);
+    #[cfg(feature = "oc136")]
+    v.extend_from_slice(oc136::OVERRIDES);
     v
 }
 
