@@ -1,0 +1,5 @@
+# The generated EE crates are huge; incremental artifacts grow to many GB and
+# filled the disk on 2026-10-21. Builds here are dominated by full-crate
+# recompiles anyway, so keep incremental off everywhere.
+[build]
+incremental = false
