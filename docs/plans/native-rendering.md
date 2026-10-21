@@ -429,6 +429,12 @@ remaining 29.8%, 20.7% is asm-only, 6.1% no-symbol (libc/SDK) and 3.1% C++-backe
 so the hot queue is now mostly functions with no readable C++. Waves are
 selected hot-first with `tools/pick_wave.py`; the remaining hot asm bodies are
 ported directly from `generated/ee` (a literal translation).
+
+Two exact ports are kept in their modules but not installed, because their
+fixtures cannot reproduce real data: `RiderAirState_PostUpdate` (oc108; both
+differential tests pass, but the race replay diverges on the board-contact arm)
+and `ChaseCameraAlgorithm_ApplyAirSwing` (oc109; the spline evaluate spins
+without a live spline). Re-audit those before re-adding their `OVERRIDES`.
 As of 2026-10-21: 3,705 of the 11,844 functions are installed as typed Rust
 (1,500 at the start of the session); 5,052 remaining functions are <=800 bytes
 with a readable C++ body and no `__entries` dispatcher fragment, and 4,876 of
