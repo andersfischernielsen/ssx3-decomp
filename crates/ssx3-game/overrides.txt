@@ -5125,5 +5125,37 @@
 0x00275dd8    ScriptList_Add
 0x00160130    CameraWobble_UpdateRoll
 0x00199148    cFEStateCharEquip_dtor
+# Phase 2 wave: oc141, oc142, oc143, oc144
+0x00147d20    BENewPlayerInt_RaiseDifficulty
+0x00147e18    BENewPlayerInt_LowerDifficulty
+0x002821a0    ScriptEngine_StartScript
+0x0032da40    ShellSortDesc_KeyVal
+0x00346d38    FlexBridge_InitSegmentMidpoints
+0x00385aa0    cPS2GridMesh_PackColor
+0x00399820    UIListBox_Load
+0x003a03f0    UIText_Load
+0x003a7c88    SectionTable_ctor
+0x001bcd18    cFEStateLobbyMenu_TransitionIn
+0x0027d688    ScriptObjCam_SetBinding
+0x0012c130    RiderGateSub_UpdatePush
+0x0024dc68    DepthFogMenu_dtor
+0x002b3ee8    MusicPlayer_EnableSongByName
+0x00240860    MCManager_State1A_Delete
+0x0014c6a0    Bolts_LoadDB
+0x001979d8    cFEStateRequestLine_OnChildEvent
+0x00198988    cFEStateRequestLine_OpenBuyPopup
+0x002a6f38    CrowdAudio_Unload
+0x003ed578    TagFieldDecodeHex
+0x00183b08    cFEStateUberTrick_SelectLeftPanel
+0x00183c08    cFEStateUberTrick_SelectRightPanel
+0x00349110    FloatRail_v50
+0x00349f18    SpringRail_v50
+0x0032e288    CollSegment_OverlapsAABB
+0x003b26b8    SHP_CalcAllocSize
+0x002b5c68    WorldTriggerManager_AddTrigger
+0x00330250    CollSphere_HitsTriangleEdges
+0x001ba500    cFEStateCreateStep2_OnWidgetCreated
+0x001d8c50    MemCardStateBase_HandleInput
+0x002547b8    VD_TextureSink_dtor
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
