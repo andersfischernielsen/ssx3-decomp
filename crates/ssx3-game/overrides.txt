@@ -3814,5 +3814,8 @@
 0x00286ca8    SSXAudioSystem_LoadMemoryBank
 0x0028ef90    SSXAudioSystem_RestartPeakMusic
 0x0018c128    cFEStateOptionsHUD_Init
+# Phase 2 wave: oc108, oc110
+0x00139c88    RiderAirState_PostUpdate
+0x0030f2b0    RiderModel_BlendAnimPose
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
