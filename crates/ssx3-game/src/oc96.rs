@@ -67,6 +67,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003c_6ce0, sndstrm_stop_slot_unsupported, "SNDSTRM_StopSlotUnsupported"),
     (0x0027_05a8, replay_empty_rider_hook, "Replay_EmptyRiderHook"),
     (0x0013_6f28, rider_wipeout_state_exit, "RiderWipeoutState_Exit"),
+    (0x0010_3918, rider_anim_v03, "RiderAnim_v03"),
+    (0x0011_1380, rider_base_enter_main_state, "RiderBase_EnterMainState"),
+    (0x0011_12f8, rider_base_exit_main_state, "RiderBase_ExitMainState"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -814,7 +817,11 @@ pub fn rider_base_enter_main_state(c: &mut Cpu) {
                     frame.save_ra(c, 0);
                     c.g[V1][0] = Addr(c.g[A2][0] as u32).off(0xde0).lw(c);
                     c.g[V0][0] = (c.g[V1][0] < 0x6u64) as u64;
-                    pc = if c.g[V0][0] == 0 { 0x0011_13fc } else { 0x0011_139c };
+                    let out_of_range = c.g[V0][0] == 0;
+                    // The generated code reloads the table base into v0
+                    // before branching; 0x11139c adds 0x6b30 to it.
+                    c.g[V0][0] = 0x45_0000;
+                    pc = if out_of_range { 0x0011_13fc } else { 0x0011_139c };
                 }
                 0x0011_139c => {
                     c.cycles += 6;
@@ -911,7 +918,11 @@ pub fn rider_base_exit_main_state(c: &mut Cpu) {
                     frame.save_ra(c, 0);
                     c.g[V1][0] = Addr(c.g[A2][0] as u32).off(0xde0).lw(c);
                     c.g[V0][0] = (c.g[V1][0] < 0x6u64) as u64;
-                    pc = if c.g[V0][0] == 0 { 0x0011_1374 } else { 0x0011_1314 };
+                    let out_of_range = c.g[V0][0] == 0;
+                    // The generated code reloads the table base into v0
+                    // before branching; 0x111314 adds 0x6b10 to it.
+                    c.g[V0][0] = 0x45_0000;
+                    pc = if out_of_range { 0x0011_1374 } else { 0x0011_1314 };
                 }
                 0x0011_1314 => {
                     c.cycles += 6;
@@ -1214,7 +1225,11 @@ pub fn rider_anim_v03(c: &mut Cpu) {
                     call_ptr(c, ANIM_TABLE_GET_ENTRY_ADDR, 0x0010_3950)?;
                     c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0x8).lw(c);
                     c.g[V0][0] = (c.g[V1][0] < 0xbu64) as u64;
-                    pc = if c.g[V0][0] == 0 { 0x0010_3a84 } else { 0x0010_3960 };
+                    let out_of_range = c.g[V0][0] == 0;
+                    // The generated code loads the table base into v0 before
+                    // branching (the dispatch block below adds 0x6990 to it).
+                    c.g[V0][0] = 0x45_0000;
+                    pc = if out_of_range { 0x0010_3a84 } else { 0x0010_3960 };
                 }
                 0x0010_3960 => {
                     c.cycles += 6;
@@ -1936,7 +1951,7 @@ pub fn spch_notify_part_callback(c: &mut Cpu) {
 mod tests {
     use super::*;
     use crate::difftest::fakes::{covered, machine};
-    use crate::difftest::{check, put_words, scramble, Rng, DATA, GAME_GP, SP as STACK};
+    use crate::difftest::{check, elf_image, put_words, scramble, Rng, DATA, GAME_GP, SP as STACK};
 
     const SEEDS: u32 = 200;
 
@@ -2290,7 +2305,61 @@ mod tests {
 
     // ------------------------------------------- RiderBase enter/exit methods
 
-            // -------------------------------------------------- EAFile_ReleaseRequest
+    /// `RiderBase_EnterMainState`/`ExitMainState` fixture: the real dispatch
+    /// tables (`.rodata 0x456b30`/`0x456b10`, loaded from the ELF image) pick
+    /// the arm from the state word at `owner + 0xde0`; a zeroed owner plus a
+    /// zeroed world and back-end singleton keep the real state methods on
+    /// their short paths. States 0..5 are all six table entries (in the real
+    /// order 0 ground, 1 air, 2 wipeout, 3 base, 4 railslide, 5 handplant);
+    /// the others are the `state >= 6` fall-through to the base arm.
+    fn state_fixture(c: &mut Cpu, seed: u32, salt: u64, table: u32) {
+        machine(c, seed, salt, 1);
+        elf_image(c);
+        c.g[SP][0] = (STACK - 0x200) as u64;
+        for i in 0..0x400 {
+            c.bus.write32(DATA + i * 4, 0);
+        }
+        c.bus.write32(GAME_GP - 0x848, DATA + 0x800); // world
+        c.bus.write32(GAME_GP - 0x1f04, DATA + 0x900); // BELibrary singleton
+        c.bus.write32(GAME_GP - 0x1f28, DATA + 0xa00);
+        c.bus.write32(GAME_GP - 0x1efc, 0);
+        let state = match seed % 10 {
+            0..=5 => seed % 10,
+            6 => 6,
+            7 => 0x10,
+            8 => 0xffff_ffff,
+            _ => 0x100,
+        };
+        c.g[A0][0] = DATA as u64;
+        c.bus.write32(DATA + 0xde0, state);
+        // The fixture really selects an arm from the game's table, not zero
+        // RAM: every in-range state has a non-zero case label there.
+        if state < 6 {
+            assert_ne!(c.bus.read32(table + state * 4), 0, "state table {table:#x} not loaded");
+        }
+    }
+
+    #[test]
+    fn rider_base_enter_main_state_matches() {
+        check(
+            ssx3_ee::s00::f_00111380__generated,
+            rider_base_enter_main_state,
+            30,
+            &|c, seed| state_fixture(c, seed, 45, 0x0045_6b30),
+        );
+    }
+
+    #[test]
+    fn rider_base_exit_main_state_matches() {
+        check(
+            ssx3_ee::s00::f_001112f8__generated,
+            rider_base_exit_main_state,
+            30,
+            &|c, seed| state_fixture(c, seed, 46, 0x0045_6b10),
+        );
+    }
+
+    // -------------------------------------------------- EAFile_ReleaseRequest
 
     #[test]
     fn ea_file_release_request_matches() {
@@ -2310,7 +2379,48 @@ mod tests {
 
     // -------------------------------------------------------------- RiderAnim
 
-        // --------------------------------------------------------- SPCH callback
+    /// `RiderAnim_v03` fixture. The real descriptor table at `.rodata
+    /// 0x446990` (28-byte entries, loaded from the ELF image) supplies the
+    /// sequence-end kind at `entry + 8`; `*out` is the entry index. These
+    /// indices have kinds 0..10 and one whose kind is >= 0xb (the epilogue
+    /// fall-through). The kind indexes the real handler table at 0x456990.
+    const ANIM_ENTRY_FOR_KIND: [u32; 12] = [0, 27, 269, 21, 2, 71, 49, 4, 220, 23, 435, 437];
+
+    fn anim_fixture(c: &mut Cpu, seed: u32, salt: u64) {
+        machine(c, seed, salt, 1);
+        elf_image(c);
+        c.g[SP][0] = (STACK - 0x200) as u64;
+        for i in 0..0x100 {
+            c.bus.write32(DATA + i * 4, 0);
+        }
+        c.g[A0][0] = DATA as u64; // RiderAnim
+        c.g[A2][0] = (DATA + 0x100) as u64; // out: *out = descriptor index
+        c.bus.write32(DATA + 0x50, 0x1000); // first sequence-end address
+        let k = (seed % 12) as usize;
+        let idx = ANIM_ENTRY_FOR_KIND[k];
+        c.bus.write32(DATA + 0x100, idx);
+        // The real descriptor really has the kind that selects this arm (and
+        // the last one is out of the handler table's range).
+        let kind = c.bus.read32(0x0044_6990 + idx * 0x1c + 8);
+        assert!(
+            if k < 11 { kind == k as u32 } else { kind >= 0xb },
+            "descriptor {idx} has kind {kind}, wanted {k}"
+        );
+        // Sequence-end address: the slot written is (seqEnd - 0x1000) >> 3.
+        c.g[A1][0] = (0x1000 + (seed % 4) * 8) as u64;
+    }
+
+    #[test]
+    fn rider_anim_v03_matches() {
+        check(
+            ssx3_ee::s00::f_00103918__generated,
+            rider_anim_v03,
+            36,
+            &|c, seed| anim_fixture(c, seed, 47),
+        );
+    }
+
+    // --------------------------------------------------------- SPCH callback
 
     #[test]
     fn spch_notify_part_callback_matches() {

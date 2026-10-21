@@ -4023,5 +4023,6 @@
 0x003c6ce0    SNDSTRM_StopSlotUnsupported
 0x002705a8    Replay_EmptyRiderHook
 0x00136f28    RiderWipeoutState_Exit
+# Phase 2 wave: oc96
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
