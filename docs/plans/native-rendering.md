@@ -422,6 +422,13 @@ phase 2.
 The reference is a readability aid: `generated/ee` stays the authority for
 registers, cycles, memory and call order, and its names/signatures differ.
 
+
+Race call profile at 3,414 installed (frames 5002-5300, `callprof`): 70.2% of
+the weighted work (`calls/frame * bytes`) is already hand-written. Of the
+remaining 29.8%, 20.7% is asm-only, 6.1% no-symbol (libc/SDK) and 3.1% C++-backed,
+so the hot queue is now mostly functions with no readable C++. Waves are
+selected hot-first with `tools/pick_wave.py`; the remaining hot asm bodies are
+ported directly from `generated/ee` (a literal translation).
 As of 2026-10-21: 3,414 of the 11,844 functions are installed as typed Rust
 (1,500 at the start of the session); 5,052 remaining functions are <=800 bytes
 with a readable C++ body and no `__entries` dispatcher fragment, and 4,876 of
