@@ -452,9 +452,13 @@ time is the goal: the renderer (1.8 ms/frame, 62% of the browser-config frame)
 and, on desktop, the emulated-thread synchronization (4.18 vs 2.88 ms/frame
 between the two builds) are the levers; a faster memory/bus path or eliding
 cycle/event bookkeeping in the transliteration would be the interpreter-side
-one. The 70.2% weighted-work figure is from the 13:11 profile (3,414 installed)
-and is stale; a fresh profile is needed before quoting it (the current set is
-82.0% by the same method).
+one. The weighted-work figure at 4,007 installed is 82.0% (frames 5001-5300). A
+re-profile at 19:35 produced an *identical* call graph (2,115 functions, 3,709
+edges) because the replay is deterministic and the replacements are
+behaviour-identical, so re-profiling is not needed to refresh the hot list; a
+profile is only stale with respect to the *installed set*. Of the remaining
+18.0%: 9.8% asm-only, 5.2% no-symbol, 3.0% C++-backed; the top 10 functions are
+7.2% and the top 50 are 11.9% of race work.
 
 Two exact ports are kept in their modules but not installed, because their
 fixtures cannot reproduce real data: `RiderAirState_PostUpdate` (oc108; both
