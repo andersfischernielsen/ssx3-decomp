@@ -3916,5 +3916,8 @@
 0x00183a98    cFEStateUberTrick_ctor
 0x0037c830    PS2GraphicsMan_FreeAllTextures
 0x001d1128    cFEStateRewardGalleryPosters_ctor
+# Phase 2 wave: oc113
+0x0033ccf8    Cell_CollideVolumeRecursive
+0x0033b748    Cell_GatherAllRecursive
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
