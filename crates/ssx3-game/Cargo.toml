@@ -178,6 +178,10 @@ oc121 = []
 oc122 = []
 oc123 = []
 oc124 = []
+oc125 = []
+oc126 = []
+oc127 = []
+oc128 = []
 [dev-dependencies]
 ssx3-ee-rt = { path = "../ssx3-ee-rt", features = ["dirty-pages"] }
 # A real machine (VU0 included) for the differential tests in src/difftest.rs.
