@@ -5237,5 +5237,7 @@
 0x0014dc80    cBE_getBE
 0x00106848    Rider_TryStartRailslide
 0x00106f78    Rider_HandleWallRailContact
+# Phase 2 wave: oc156
+0x0041ca70    _vfiprintf_r
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
