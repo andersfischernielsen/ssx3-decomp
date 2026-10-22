@@ -283,11 +283,7 @@ pub fn belibrary_reset_player_profile(c: &mut Cpu) {
         c.g[A0][0] = sx(o);
         let f = c.g[V1][0] as u32;
         c.g[A1][0] = c.g[V0][0];
-        c.pc = f;
-        ssx3_ee_rt::funcs::call_indirect(c, f);
-        if c.pc != 0x0014_9b10 {
-            return Err(crate::call::Unwound);
-        }
+        crate::call::call_ptr(c, f, 0x0014_9b10)?;
         let buf = c.g[SP][0] as u32;
         c.g[A0][0] = sx(buf);
         c.g[A1][0] = c.g[V0][0];
@@ -336,11 +332,7 @@ fn reset_interface(c: &mut Cpu, get: Callee, get_ret: u32, vt_ret: u32) -> crate
     c.g[A1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14));
     let f = c.g[A1][0] as u32;
     c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
-    c.pc = f;
-    ssx3_ee_rt::funcs::call_indirect(c, f);
-    if c.pc != vt_ret {
-        return Err(crate::call::Unwound);
-    }
+    crate::call::call_ptr(c, f, vt_ret)?;
     Ok(())
 }
 
@@ -541,11 +533,7 @@ pub fn gmhandler8_reset(c: &mut Cpu) {
         c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x2c));
         let f = c.g[V0][0] as u32;
         c.g[A0][0] = sx(this.wrapping_add(c.g[A0][0] as u32));
-        c.pc = f;
-        ssx3_ee_rt::funcs::call_indirect(c, f);
-        if c.pc != 0x0023_ad7c {
-            return Err(crate::call::Unwound);
-        }
+        crate::call::call_ptr(c, f, 0x0023_ad7c)?;
 
         let player = c.g[S0][0];
         for (alt, ret, slot) in [(0u64, 0x0023_ad88u32, 0x18u32), (1, 0x0023_ad9c, 0x1c)] {
@@ -1349,11 +1337,7 @@ pub fn ssx_audio_system_pa_say20c5(c: &mut Cpu) {
             c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
             let f = c.g[V0][0] as u32;
             c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x1d8));
-            c.pc = f;
-            ssx3_ee_rt::funcs::call_indirect(c, f);
-            if c.pc != 0x002a_378c {
-                return Err(crate::call::Unwound);
-            }
+            crate::call::call_ptr(c, f, 0x002a_378c)?;
             c.ldl(6, (c.g[S1][0] as u32).wrapping_add(7));
             c.ldr(6, (c.g[S1][0] as u32));
             c.g[A0][0] = c.g[S0][0];
@@ -1399,11 +1383,7 @@ pub fn ssx_audio_system_pa_say20c5(c: &mut Cpu) {
                 c.g[T0][0] = c.g[S0][0];
                 let f = c.g[V1][0] as u32;
                 c.g[A1][0] = 3;
-                c.pc = f;
-                ssx3_ee_rt::funcs::call_indirect(c, f);
-                if c.pc != 0x002a_3840 {
-                    return Err(crate::call::Unwound);
-                }
+                crate::call::call_ptr(c, f, 0x002a_3840)?;
                 frame.restore(c, 16, 0x40);
             }
         }
@@ -1525,11 +1505,7 @@ pub fn cfepopupconfirm_measure_desc(c: &mut Cpu) {
                 c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x24));
                 let f = c.g[V0][0] as u32;
                 c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
-                c.pc = f;
-                ssx3_ee_rt::funcs::call_indirect(c, f);
-                if c.pc != 0x001c_840c {
-                    return Err(crate::call::Unwound);
-                }
+                crate::call::call_ptr(c, f, 0x001c_840c)?;
                 c.g[S0][0] = c.g[V0][0];
                 if c.g[S0][0] == 0 {
                     c.g[S0][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
@@ -1703,11 +1679,7 @@ fn movie_finish_step(c: &mut Cpu, ret: u32) -> crate::call::Flow {
     c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x9c));
     let f = c.g[V1][0] as u32;
     c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
-    c.pc = f;
-    ssx3_ee_rt::funcs::call_indirect(c, f);
-    if c.pc != ret {
-        return Err(crate::call::Unwound);
-    }
+    crate::call::call_ptr(c, f, ret)?;
     Ok(())
 }
 
