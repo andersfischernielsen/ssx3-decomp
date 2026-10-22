@@ -322,7 +322,13 @@ impl App {
         if ssx3_ps2::m!(self.cpu).sched.frames % 60 == 0 {
             eprintln!("[{:6.1}s] {}", self.started.elapsed().as_secs_f64(), game::status(&self.cpu));
             if self.catch_up.is_some() {
-                eprintln!("          audio gaps {:.2}s total, lead {} ms", ssx3_iop::audio::underrun_frames() as f64 / 48000.0, ssx3_ps2::machine::audio_lead_frames() / 48);
+                let app = self.cpu.bus.read32(ssx3_game::tick::APPMAN_PTR);
+                let updates = if app != 0 { self.cpu.bus.read32(app + 0x1c) } else { 0 };
+                eprintln!(
+                    "          game updates {updates}, audio gaps {:.2}s total, lead {} ms",
+                    ssx3_iop::audio::underrun_frames() as f64 / 48000.0,
+                    ssx3_ps2::machine::audio_lead_frames() / 48
+                );
             }
             let now = Instant::now();
             let fps = 60.0 / now.duration_since(self.fps_mark).as_secs_f64().max(1e-6);
