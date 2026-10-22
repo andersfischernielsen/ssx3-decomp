@@ -147,6 +147,26 @@ different arcs), wall collisions. If one of them changes behaviour at N Hz,
 the fix is local to that check (scale the threshold), not a sub-stepped
 physics loop.
 
+## Fast at 240 Hz (baseline, before T1/T2/T3)
+
+`python3 tools/tick_ab.py 240` on the 2026-10-23 baseline (two headless runs
+of the same race input, 60 Hz left and 240 Hz right at matched real time;
+sheets in `/tmp/ssx3-tick-ab-240/sheet*.png`). The 240 Hz run is still in the
+front end when the 60 Hz run reaches the race, so each row also tells where
+the two runs are in the sequence.
+
+| System | What is wrong at 240 Hz | Evidence (sheet row) |
+| --- | --- | --- |
+| Front end, attract loop | ~4× fast: the title/attract cycle reaches the attract-mode demo (rider, LIVE overlay) at 16.7 s of real time while 60 Hz is still on the first "Press START" image | `sheet0` rows 1-3 (60 Hz frames 1000/1250/1500 vs 240 Hz 4000/5000/6000) |
+| Front end, screen transitions | ~4× slow: title→main menu and every menu step take 4× the real time, so at the same instant the 240 Hz run is one screen behind; the race starts ~2 s later and that offset then stays constant | `sheet1` rows 2-4, `sheet2`, `sheet3` row 3 (clock 00:00:03 vs 00:00:01) |
+| Race clock, course % | right: agree with 60 Hz up to the start offset (22 % both at the last row, 55 MPH both) | `sheet3`-`sheet6` |
+| Rider physics, speed | right: speeds and progress match (55 MPH both; drag/friction follow the step) | `sheet4`-`sheet5` |
+| HUD and effects | not separable yet: the front-end offset puts the two runs at different points of the course; re-check after the front end is fixed | — |
+
+So the first T3 target is the front end (menus, HUD, attract loop): its
+timers are counted in updates or frames, and its transitions/fades are
+per-update increments. The race screen proper already follows the rate.
+
 ## Inventory
 
 `python3 tools/scan_framerate.py --tsv docs/plans/tick-rate-functions.tsv`
