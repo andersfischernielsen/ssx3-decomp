@@ -22,12 +22,17 @@
 //! See `docs/investigation/gs-mtgs.md`.
 
 use std::collections::VecDeque;
+#[cfg(feature = "emu-gs")]
 use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(feature = "emu-gs")]
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 
 use super::gif::GifPath;
+#[cfg(feature = "emu-gs")]
 use super::gpu::{NativeRecord, NativeSurfaces};
-use super::{Gs, Priv, CSR_FINISH, CSR_SIGNAL, CSR_VSINT};
+use super::{Priv, CSR_FINISH, CSR_SIGNAL, CSR_VSINT};
+#[cfg(feature = "emu-gs")]
+use super::Gs;
 use crate::Qword;
 
 const CSR_RESET: u64 = 1 << 9;
@@ -61,6 +66,7 @@ enum Cmd {
 /// A native run queued at a point of the GS command stream
 /// ([`Mtgs::native_run`]): host wgpu passes composed with the emulated GS
 /// output there (`gs::gpu::native`).
+#[cfg(feature = "emu-gs")]
 pub struct NativeJob {
     /// The frame/Z surfaces to borrow; `None` takes context 1's FRAME,
     /// ZBUF and SCISSOR as they are at that point of the stream.
@@ -71,8 +77,10 @@ pub struct NativeJob {
 
 /// The latest `Cmd::Display` result: `Some(frame)` once one has run
 /// (`frame` is `None` when nothing is displayed or the GS draws on the CPU).
+#[cfg(feature = "emu-gs")]
 type DisplaySlot = Mutex<Option<Option<super::gpu::GpuFrame>>>;
 
+#[cfg(feature = "emu-gs")]
 #[derive(Default)]
 struct Packet {
     cmds: Vec<Cmd>,
@@ -81,6 +89,7 @@ struct Packet {
     natives: VecDeque<NativeJob>,
 }
 
+#[cfg(feature = "emu-gs")]
 impl Packet {
     fn is_empty(&self) -> bool {
         self.cmds.is_empty()
@@ -94,6 +103,7 @@ impl Packet {
 }
 
 /// Run one command (`data`: its GIF payload; `job`: a `Cmd::Native`'s).
+#[cfg(feature = "emu-gs")]
 #[inline]
 fn apply(gs: &mut Gs, c: Cmd, data: &[Qword], slot: &DisplaySlot, job: Option<NativeJob>) {
     match c {
@@ -119,6 +129,7 @@ fn apply(gs: &mut Gs, c: Cmd, data: &[Qword], slot: &DisplaySlot, job: Option<Na
 }
 
 /// Replay a packet into the GS.
+#[cfg(feature = "emu-gs")]
 fn run(gs: &mut Gs, p: &mut Packet, slot: &DisplaySlot) {
     let mut pos = 0usize;
     let Packet { cmds, data, natives } = p;
@@ -133,11 +144,13 @@ fn run(gs: &mut Gs, p: &mut Packet, slot: &DisplaySlot) {
     }
 }
 
+#[cfg(feature = "emu-gs")]
 struct Queue {
     packets: VecDeque<Packet>,
     shutdown: bool,
 }
 
+#[cfg(feature = "emu-gs")]
 struct Shared {
     core: Mutex<Gs>,
     queue: Mutex<Queue>,
@@ -154,6 +167,7 @@ struct Shared {
     display: DisplaySlot,
 }
 
+#[cfg(feature = "emu-gs")]
 fn worker(sh: Arc<Shared>) {
     loop {
         let mut pkt = {
@@ -194,6 +208,7 @@ pub struct MtgsStats {
     pub wait_ns: u64,
 }
 
+#[cfg(feature = "emu-gs")]
 struct Threaded {
     shared: Arc<Shared>,
     thread: Option<std::thread::JoinHandle<()>>,
@@ -202,6 +217,7 @@ struct Threaded {
     cur: Packet,
 }
 
+#[cfg(feature = "emu-gs")]
 enum Mode {
     /// Every call runs on the calling thread (`SSX3_MTGS=0`).
     Direct(Arc<Mutex<Gs>>, DisplaySlot),
@@ -211,6 +227,7 @@ enum Mode {
 /// The GS as the machine sees it: GS work goes to a GS host thread; PATH3
 /// arbitration and the guest-visible register shadows stay here.
 pub struct Mtgs {
+    #[cfg(feature = "emu-gs")]
     mode: Mode,
     /// Shadow of the privileged registers the guest side writes.
     pr: Priv,
@@ -264,10 +281,12 @@ fn mtgs_check() -> bool {
 
 impl Mtgs {
     /// Wrap `gs`; threaded unless `SSX3_MTGS=0`.
+    #[cfg(feature = "emu-gs")]
     pub fn new(gs: Gs) -> Self {
         Self::with_thread(gs, mtgs_enabled())
     }
 
+    #[cfg(feature = "emu-gs")]
     pub fn with_thread(gs: Gs, threaded: bool) -> Self {
         let pr = gs.pr;
         let csr = gs.pr.csr & (0x1F | CSR_FIELD);
@@ -313,11 +332,40 @@ impl Mtgs {
         }
     }
 
+    #[cfg(feature = "emu-gs")]
     pub fn threaded(&self) -> bool {
         matches!(self.mode, Mode::Threaded(_))
     }
 
     // ------------------------------------------------------------ plumbing
+
+    /// (No GS core: nothing to submit or wait for.)
+    #[cfg(not(feature = "emu-gs"))]
+    fn kick(&mut self) {}
+    #[cfg(not(feature = "emu-gs"))]
+    fn drain(&mut self) {}
+
+    /// The guest-visible GS without a core (builds without `emu-gs`).
+    #[cfg(not(feature = "emu-gs"))]
+    pub fn new() -> Self {
+        let pr = Priv { csr: super::CSR_FIXED, imr: 0x7F00, ..Priv::default() };
+        Mtgs {
+            pr,
+            csr: 0,
+            siglblid: 0,
+            p3_queue: VecDeque::new(),
+            p3_mask_vif: false,
+            p3_mask_reg: false,
+            p3_mid: false,
+            tags: [GifPath::default(); 4],
+            scratch: Vec::new(),
+            stats: MtgsStats::default(),
+            roundtrip_every: 0,
+            detached: true,
+            gif_writes: 0,
+            vblanks: 0,
+        }
+    }
 
     /// Queue (or, in direct mode, run) one command; `data` is the GIF payload.
     #[inline]
@@ -325,6 +373,9 @@ impl Mtgs {
         if self.detached {
             return;
         }
+        #[cfg(not(feature = "emu-gs"))]
+        let _ = (cmd, data);
+        #[cfg(feature = "emu-gs")]
         match &mut self.mode {
             Mode::Direct(core, slot) => {
                 apply(&mut core.lock().unwrap(), cmd, data, slot, None);
@@ -342,6 +393,7 @@ impl Mtgs {
     /// Queue a native run at this point of the GS command stream (after
     /// everything queued so far, before everything queued later). It runs
     /// on the GS thread; see `Gs::native_run`.
+    #[cfg(feature = "emu-gs")]
     pub fn native_run(&mut self, job: NativeJob) {
         if self.detached {
             return;
@@ -361,6 +413,7 @@ impl Mtgs {
     }
 
     /// Debug `SSX3_RENDER_ROUNDTRIP`: native-run statistics so far.
+    #[cfg(feature = "emu-gs")]
     fn roundtrip_report(&self) {
         if let Some(st) = self.lock().gpu_stats() {
             let n = st.native;
@@ -380,6 +433,7 @@ impl Mtgs {
     }
 
     /// Hand the current packet to the GS thread.
+    #[cfg(feature = "emu-gs")]
     fn kick(&mut self) {
         let Mode::Threaded(t) = &mut self.mode else { return };
         if t.cur.is_empty() {
@@ -403,6 +457,7 @@ impl Mtgs {
         }
     }
 
+    #[cfg(feature = "emu-gs")]
     fn wait_done(sh: &Shared, target: u64, stats: &mut MtgsStats) {
         if sh.done.load(Ordering::Acquire) >= target {
             return;
@@ -427,6 +482,7 @@ impl Mtgs {
     }
 
     /// Wait until the GS thread has run every queued command.
+    #[cfg(feature = "emu-gs")]
     fn drain(&mut self) {
         self.kick();
         if let Mode::Threaded(t) = &self.mode {
@@ -435,6 +491,7 @@ impl Mtgs {
         }
     }
 
+    #[cfg(feature = "emu-gs")]
     fn lock(&self) -> MutexGuard<'_, Gs> {
         match &self.mode {
             Mode::Direct(core, _) => core.lock().unwrap(),
@@ -443,6 +500,7 @@ impl Mtgs {
     }
 
     /// Drain the queue and lock the GS for direct access.
+    #[cfg(feature = "emu-gs")]
     fn synced(&mut self) -> MutexGuard<'_, Gs> {
         self.drain();
         let gs = self.lock();
@@ -468,6 +526,7 @@ impl Mtgs {
         self.detached = true;
         // No GS work follows: stop the GS thread and keep the core here
         // (debug readbacks only).
+        #[cfg(feature = "emu-gs")]
         if let Mode::Threaded(t) = &mut self.mode {
             t.shared.queue.lock().unwrap().shutdown = true;
             t.shared.work.notify_all();
@@ -483,6 +542,7 @@ impl Mtgs {
         self.detached
     }
 
+    #[cfg(feature = "emu-gs")]
     pub fn core(&mut self) -> MutexGuard<'_, Gs> {
         self.stats.sync_core += 1;
         self.synced()
@@ -491,17 +551,22 @@ impl Mtgs {
     /// Primitives drawn up to the last sync point (`run_frame` ends with
     /// one), without forcing a new one.
     pub fn prims_drawn(&self) -> u64 {
+        #[cfg(not(feature = "emu-gs"))]
+        return 0;
+        #[cfg(feature = "emu-gs")]
         if let Mode::Threaded(t) = &self.mode {
             let mut st = MtgsStats::default();
             let sent = t.sent;
             Self::wait_done(&t.shared, sent, &mut st);
         }
+        #[cfg(feature = "emu-gs")]
         self.lock().prims_drawn
     }
 
     /// Queue `Gs::display_gpu` at this point of the command stream (the
     /// windowed front end, after `run_frame`). Returns a ticket for
     /// [`Mtgs::take_display`].
+    #[cfg(feature = "emu-gs")]
     pub fn request_display(&mut self) -> u64 {
         if self.detached {
             return 0;
@@ -519,6 +584,7 @@ impl Mtgs {
     /// `None`: no request has run since the last take; `Some(None)`: the GS
     /// has no GPU frame (nothing displayed, or the CPU backend), so use
     /// `core().display()`.
+    #[cfg(feature = "emu-gs")]
     pub fn take_display(&mut self, ticket: u64) -> Option<Option<super::gpu::GpuFrame>> {
         if self.detached {
             return None;
@@ -617,6 +683,7 @@ impl Mtgs {
         }
         self.exec(Cmd::Vblank(field), &[]);
         self.kick();
+        #[cfg(feature = "emu-gs")]
         if self.roundtrip_every != 0 {
             self.vblanks += 1;
             if self.vblanks % 1200 == 0 {
@@ -643,6 +710,7 @@ impl Mtgs {
         let path = path.min(3);
         let (csr, sig) = (&mut self.csr, &mut self.siglblid);
         self.tags[path].scan(data, |addr, value| ad_side_effects(csr, sig, addr, value));
+        #[cfg(feature = "emu-gs")]
         if self.roundtrip_every != 0 {
             self.gif_writes += 1;
             if self.gif_writes % self.roundtrip_every == 0 {
@@ -683,13 +751,21 @@ impl Mtgs {
 
     /// Pop up to `max` quadwords of a pending local->host transfer.
     pub fn read_local(&mut self, max: usize) -> Vec<Qword> {
-        if self.detached {
+        if self.detached || cfg!(not(feature = "emu-gs")) {
             // No GS behind: nothing to read back (the game tolerates short
             // reads; its one readback, the light query, is native).
             return Vec::new();
         }
-        self.stats.sync_read_local += 1;
-        self.synced().read_local(max)
+        #[cfg(not(feature = "emu-gs"))]
+        {
+            let _ = max;
+            return Vec::new();
+        }
+        #[cfg(feature = "emu-gs")]
+        {
+            self.stats.sync_read_local += 1;
+            self.synced().read_local(max)
+        }
     }
 
     // ------------------------------------------------------------ PATH3
@@ -815,6 +891,8 @@ impl Drop for Mtgs {
         if std::env::var_os("SSX3_MTGS_STATS").is_some() {
             eprintln!("[mtgs] {:?}", self.stats);
         }
+        #[cfg(feature = "emu-gs")]
+        {
         if super::render_native_type3() {
             self.drain();
             if let Some(st) = self.lock().gpu_stats() {
@@ -857,6 +935,7 @@ impl Drop for Mtgs {
             if let Some(h) = t.thread.take() {
                 let _ = h.join();
             }
+        }
         }
     }
 }

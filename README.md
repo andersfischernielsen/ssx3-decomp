@@ -160,7 +160,7 @@ through the native renderer too.
 | Variable | Effect |
 | --- | --- |
 | `SSX3_RENDER=native` | The default, as above. |
-| `SSX3_RENDER=emu` | The emulated GS only: the exact reference path (RAM-identical to the PS2 model). |
+| `SSX3_RENDER=emu` | The emulated GS only: the exact reference path (RAM-identical to the PS2 model). Needs a build with `--features vu1-microcode` (the VU1 programs and the emulated GS, feature `emu-gs`); the default build has no GS emulation. |
 | (window size) | The native renderer draws at the window's pixel size and the game's 3D view is widened to the window's aspect (ultrawide included); the HUD keeps its 4:3 shape in the centre. |
 | `SSX3_RENDER_SIZE=2560x1080` | A fixed output size instead (any size and aspect; headless too). |
 | `SSX3_FOV=1.2` | Field of view relative to the game's (here 20% wider). |

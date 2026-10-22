@@ -105,43 +105,7 @@ const F_LCM: u32 = 524288;
 const PK_LINEAR: u32 = 256;
 const PK_BIG: u32 = 512;
 
-/// The process-wide wgpu device used by the GPU GS. The windowed front end
-/// presents with the same device, so GS frames never leave the GPU.
-pub struct GpuContext {
-    pub instance: wgpu::Instance,
-    pub adapter: wgpu::Adapter,
-    pub device: wgpu::Device,
-    pub queue: wgpu::Queue,
-}
-
-/// The shared device, created on first use; `None` if no adapter is usable.
-pub fn context() -> Option<&'static GpuContext> {
-    CONTEXT
-        .get_or_init(|| {
-            // The browser cannot block on the device: `init_context` first.
-            if cfg!(target_arch = "wasm32") {
-                return None;
-            }
-            context_or_log(pollster::block_on(create_context()))
-        })
-        .as_ref()
-}
-
-static CONTEXT: OnceLock<Option<GpuContext>> = OnceLock::new();
-
-fn context_or_log(r: Result<GpuContext, String>) -> Option<GpuContext> {
-    r.map_err(|e| eprintln!("[gs] GPU backend unavailable: {e}")).ok()
-}
-
-/// Create the shared device without blocking (the browser's way; native
-/// code may call `context` directly).
-pub async fn init_context() -> Option<&'static GpuContext> {
-    if CONTEXT.get().is_none() {
-        let c = context_or_log(create_context().await);
-        let _ = CONTEXT.set(c);
-    }
-    CONTEXT.get().and_then(Option::as_ref)
-}
+pub use crate::gpu::{context, init_context, GpuContext};
 
 /// `SSX3_GS_TRACE_READBACK`: log every VRAM readback and its cause.
 fn trace_readback() -> bool {
@@ -164,44 +128,6 @@ struct Prof {
 }
 
 const PROF_PASSES: u32 = 2048;
-
-async fn create_context() -> Result<GpuContext, String> {
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-    let adapter = instance
-        .request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            compatible_surface: None,
-            ..Default::default()
-        })
-        .await
-        .map_err(|e| format!("request_adapter: {e}"))?;
-    let (device, queue) = adapter
-        .request_device(&wgpu::DeviceDescriptor {
-            label: Some("ssx3-gs"),
-            required_limits: adapter.limits(),
-            required_features: (if profiling() {
-                adapter.features() & wgpu::Features::TIMESTAMP_QUERY
-            } else {
-                wgpu::Features::empty()
-            }) | if super::render_native_type3() {
-                adapter.features() & wgpu::Features::DUAL_SOURCE_BLENDING
-            } else {
-                wgpu::Features::empty()
-            },
-            ..Default::default()
-        })
-        .await
-        .map_err(|e| format!("request_device: {e}"))?;
-    device.set_device_lost_callback(|reason, msg| {
-        eprintln!("[gs] GPU device lost ({reason:?}): {msg}");
-    });
-    Ok(GpuContext {
-        instance,
-        adapter,
-        device,
-        queue,
-    })
-}
 
 /// A displayed frame on the GPU: `width * height` RGBA8 words (`0xAABBGGRR`)
 /// at the start of `buffer` (a storage buffer of the shared device).

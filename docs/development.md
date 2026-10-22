@@ -74,6 +74,14 @@ then `SSX3_CALLPROF=edges.tsv:5000:5300`.
 `scripts/explore.sh OUT "INPUT" FRAMES [FIRST [EVERY]]` takes screenshots
 and a contact sheet (`OUT.png`) to map menus and timings.
 
+## Verification builds
+
+The default build has no GS emulation. The emulated GS (`SSX3_RENDER=emu` /
+`shadow`, GS captures, VRAM dumps, `gs_replay`, the GS and VIF unit tests)
+needs `--features vu1-microcode` (which brings `emu-gs`):
+`cargo build --profile game -p ssx3 --features vu1-microcode`,
+`cargo test -p ssx3-ps2 --features emu-gs`.
+
 ## Native-path switches
 
 | Variable | Effect |

@@ -1,5 +1,6 @@
 //! GIF tag parsing for PATH1..3 (PACKED / REGLIST / IMAGE).
 
+#[cfg(feature = "emu-gs")]
 use super::Gs;
 use crate::Qword;
 
@@ -156,6 +157,7 @@ impl GifPath {
     }
 }
 
+#[cfg(feature = "emu-gs")]
 impl Gs {
     pub(super) fn gif_qword(&mut self, path: usize, q: Qword) {
         let lo = q as u64;

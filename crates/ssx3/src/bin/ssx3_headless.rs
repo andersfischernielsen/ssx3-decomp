@@ -60,7 +60,7 @@ fn main() {
         g.set_subframes(((hz / 59.94).round() as u32).clamp(1, 8));
     }
     let t0 = Instant::now();
-    let mut img = Vec::new();
+    let mut img: Vec<u32> = Vec::new();
     // Scripted input: SSX3_INPUT="300:4000:10,400:0008:10" presses Cross (0x4000)
     // at frame 300 for 10 frames, then Start (0x0008) at frame 400. An optional
     // fourth field picks the pad (1 or 2; default 1): "500:0008:8:2".
@@ -89,6 +89,7 @@ fn main() {
         })
         .collect();
     for f in 1..=frames {
+        #[cfg(feature = "emu-gs")]
         for (start, _, _) in &captures {
             if f == *start {
                 ssx3_ps2::m!(c).hw.gs.core().start_capture();
@@ -112,6 +113,7 @@ fn main() {
             let (pk, v, adc, far) = ssx3_ps2::gifstats::take();
             eprintln!("[gif] frames {}..{f}: path1 packets {pk} verts {v} adc {adc} far {far}", f - 50);
         }
+        #[cfg(feature = "emu-gs")]
         for (start, n, path) in &captures {
             if f + 1 == start + n || (!alive && f >= *start && f < start + n) {
                 let trace = ssx3_ps2::m!(c).hw.gs.core().finish_capture();
@@ -135,10 +137,13 @@ fn main() {
                     let img: Vec<u32> = px.iter().map(|p| p | 0xFF00_0000).collect();
                     let _ = std::fs::write(&path, png::encode(w, h, &img));
                 }
+                #[cfg(feature = "emu-gs")]
                 None => {
                     let (w, h) = ssx3_ps2::m!(c).hw.gs.core().display(&mut img);
                     let _ = std::fs::write(&path, png::encode(w, h, &img));
                 }
+                #[cfg(not(feature = "emu-gs"))]
+                None => {}
             }
             // SSX3_RENDER=shadow: the draw-layer renderer's image too.
             if let Some((w, h, px)) = gfx.as_ref().filter(|_| !ssx3_ps2::frame_sink::native()).and_then(|g| g.read_image()) {
@@ -160,6 +165,7 @@ fn main() {
                 }
             }
             // SSX3_HIRES_SHOTS=dir: also the N× copies (SSX3_RENDER_SCALE).
+            #[cfg(feature = "emu-gs")]
             if let Ok(dir) = std::env::var("SSX3_HIRES_SHOTS") {
                 for (label, w, h, px) in ssx3_ps2::m!(c).hw.gs.core().hires_snapshots() {
                     let img: Vec<u32> = px.iter().map(|p| p | 0xFF00_0000).collect();
@@ -177,6 +183,7 @@ fn main() {
         }
     }
     if let Some(g) = &gfx {
+        #[cfg(feature = "emu-gs")]
         eprintln!("[gfx] emulated GS persistent regs: {:x?}", ssx3_ps2::m!(c).hw.gs.core().persistent_regs());
         eprintln!("[gfx] {:?}", g.stats());
         eprintln!("[gfx] {}", g.0.lock().unwrap().timing_report());
@@ -187,9 +194,11 @@ fn main() {
         eprintln!("[gfx] other frame buffers (fbp, fbw, psm): {:?}", g.dropped_fbp());
     }
     // GPU GS backend: bring the CPU copy of VRAM up to date for the dumps.
+    #[cfg(feature = "emu-gs")]
     ssx3_ps2::m!(c).hw.gs.core().sync_vram();
     // Debug: SSX3_DUMP_TEX=tbp:tbw:psm:w:h:path writes that VRAM texture as
     // raw RGBA (CT32/CT24) at exit.
+    #[cfg(feature = "emu-gs")]
     if let Ok(spec) = std::env::var("SSX3_DUMP_TEX") {
         let p: Vec<&str> = spec.split(':').collect();
         let n = |i: usize| u32::from_str_radix(p[i].trim_start_matches("0x"), 16).unwrap_or(0);
@@ -203,6 +212,7 @@ fn main() {
         }
         let _ = std::fs::write(p[5], out);
     }
+    #[cfg(feature = "emu-gs")]
     if std::env::var("SSX3_VRAM_DUMP").is_ok() {
         use ssx3_ps2::gs::swizzle::{read_pixel, PSMCT32};
         let mut v = vec![0u32; 1024 * 1024];
@@ -307,6 +317,7 @@ fn main() {
     }
     // SSX3_TEXDUMP="tbp:tbw:psm:w:h:cbp" (hex tbp/psm/cbp) writes the texture
     // (palettised via a CT32 CSM1 CLUT at cbp) to <shots>/tex.png.
+    #[cfg(feature = "emu-gs")]
     if let Ok(spec) = std::env::var("SSX3_TEXDUMP") {
         use ssx3_ps2::gs::swizzle::{read_pixel, PSMCT32};
         let p: Vec<u32> = spec.split(':').map(|x| u32::from_str_radix(x, 16).unwrap_or(0)).collect();

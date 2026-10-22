@@ -48,7 +48,7 @@ struct App {
     /// shows frame N-1 (or newer) while the GS thread finishes frame N.
     pending_display: Option<u64>,
     /// The GS's wgpu device (GPU backend).
-    gpu_ctx: Option<&'static ssx3_ps2::gs::gpu::GpuContext>,
+    gpu_ctx: Option<&'static ssx3_ps2::gpu::GpuContext>,
     /// The draw-layer renderer (`SSX3_RENDER`, native by default).
     gfx: Option<ssx3_gfx::Renderer>,
     /// Images shown per game frame (interpolation, native renderer): the
@@ -198,7 +198,7 @@ impl ApplicationHandler for App {
         // SSX3_FULLSCREEN=1: start in borderless fullscreen (F11 toggles).
         let attrs = if settings::get("SSX3_FULLSCREEN").is_some_and(|v| v != "0") { attrs.with_fullscreen(Some(Fullscreen::Borderless(None))) } else { attrs };
         let window = Arc::new(event_loop.create_window(attrs).expect("window"));
-        let gs = ssx3_ps2::m!(self.cpu).hw.gs.core().gpu_context();
+        let gs = ssx3_ps2::gpu::context();
         self.gpu_ctx = gs;
         self.presenter = Some(pollster::block_on(Presenter::new(window.clone(), gs)));
         let size = window.inner_size();
@@ -251,7 +251,10 @@ impl ApplicationHandler for App {
                                 self.frame = px.iter().map(|p| p | 0xFF00_0000).collect();
                                 (w, h)
                             }
+                            #[cfg(feature = "emu-gs")]
                             None => ssx3_ps2::m!(self.cpu).hw.gs.core().display(&mut self.frame),
+                            #[cfg(not(feature = "emu-gs"))]
+                            None => (0, 0),
                         };
                         let path = format!("/tmp/ssx3-shot-{}.png", self.shots);
                         self.shots += 1;
@@ -350,6 +353,7 @@ impl App {
                 None => p.set_overlay(None),
             }
         }
+        #[cfg(feature = "emu-gs")]
         let gs = &mut ssx3_ps2::m!(self.cpu).hw.gs;
         let native = ssx3_ps2::frame_sink::native();
         match self.presenter.as_mut() {
@@ -371,6 +375,7 @@ impl App {
             // drawing; the previous request's frame (or a newer
             // one) is presented, so the guest never waits for the
             // GS thread to finish the frame it just produced.
+            #[cfg(feature = "emu-gs")]
             Some(p) if p.same_device(self.gpu_ctx) => {
                 let ticket = gs.request_display();
                 let prev = self.pending_display.replace(ticket).unwrap_or(ticket);
@@ -385,11 +390,12 @@ impl App {
                     None => {} // nothing new: keep the last image
                 }
             }
+            #[cfg(feature = "emu-gs")]
             Some(p) => {
                 let (w, h) = gs.core().display(&mut self.frame);
                 let _ = p.render(w, h, &self.frame);
             }
-            None => {}
+            _ => {}
         }
         // Pace to ~59.94 fields per second (with interpolation the
         // display's vsync paces the window).

@@ -35,6 +35,7 @@ pub fn boot(skip_movies_default: bool) -> Box<Cpu> {
     // The GPU rasterizer is the default for the game (falls back to the CPU
     // when no adapter is usable); SSX3_GS=cpu forces the software path.
     // (The browser: no GS rasterizer at all, see `install_renderer`.)
+    #[cfg(feature = "emu-gs")]
     if std::env::var("SSX3_GS").is_err() && !cfg!(target_arch = "wasm32") {
         ssx3_ps2::m!(c).hw.gs.core().set_backend(ssx3_ps2::gs::Backend::Gpu);
     }
@@ -152,7 +153,7 @@ pub fn install_renderer(c: &mut Cpu) -> Option<ssx3_gfx::Renderer> {
             true
         }
     };
-    let Some(ctx) = ssx3_ps2::gs::gpu::context() else {
+    let Some(ctx) = ssx3_ps2::gpu::context() else {
         eprintln!("[gfx] no GPU: using the emulated GS");
         return None;
     };

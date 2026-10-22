@@ -290,7 +290,7 @@ pub async fn start(canvas: web_sys::OffscreenCanvas, iso: web_sys::Blob, helpers
         let reader = web_sys::FileReaderSync::new().map_err(|e| std::io::Error::other(format!("FileReaderSync: {e:?}")))?;
         Ok(Box::new(BlobSource { blob: blob.0.clone(), reader }) as Box<dyn Source>)
     }));
-    let ctx = ssx3_ps2::gs::gpu::init_context().await.ok_or("WebGPU is not available")?;
+    let ctx = ssx3_ps2::gpu::init_context().await.ok_or("WebGPU is not available")?;
     let (w, h) = (canvas.width().max(64), canvas.height().max(64));
     let surface = ctx
         .instance

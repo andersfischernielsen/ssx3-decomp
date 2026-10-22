@@ -15,3 +15,12 @@ wgpu = "30.0.1"
 web-time = "1"
 # Texture packs (dump and replacement images).
 png = "0.18.1"
+
+[features]
+# The emulated GS (ssx3-ps2), for tools comparing against it.
+emu-gs = ["ssx3-ps2/emu-gs"]
+
+[[bin]]
+name = "fogprobe"
+path = "src/bin/fogprobe.rs"
+required-features = ["emu-gs"]

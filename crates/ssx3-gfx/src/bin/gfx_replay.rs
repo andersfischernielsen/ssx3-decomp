@@ -44,7 +44,7 @@ fn main() {
     if std::env::var_os("SSX3_VIF_STATS").is_some() {
         ssx3_render::frame::keep_payloads(true);
     }
-    let ctx = ssx3_ps2::gs::gpu::context().expect("GPU");
+    let ctx = ssx3_ps2::gpu::context().expect("GPU");
     let r = ssx3_gfx::Renderer::new(ctx.device.clone(), ctx.queue.clone());
     let frames: Vec<_> = dumps
         .iter()

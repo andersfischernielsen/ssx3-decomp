@@ -5,6 +5,7 @@
 //! `docs/ps2-bible.md`); DMA transfers complete instantly when started, like
 //! ps2-web-recomp's `dmac.cpp`.
 
+#[cfg(feature = "emu-gs")]
 use crate::gs::Gs;
 use crate::ipu::{self, Ipu};
 use crate::vif::Vif;
@@ -151,6 +152,7 @@ impl Hw {
             sif_msflg: 0,
             sif_smflg: 0,
             sif_ctrl: 0,
+            #[cfg(feature = "emu-gs")]
             gs: {
                 // Batches may span GIF transfers; `run_frame` syncs before
                 // the host looks at VRAM.
@@ -158,6 +160,8 @@ impl Hw {
                 gs.set_deferred(true);
                 crate::gs::Mtgs::new(gs)
             },
+            #[cfg(not(feature = "emu-gs"))]
+            gs: crate::gs::Mtgs::new(),
             vif0: Vif::new(0),
             vif1: Vif::new(1),
             vu0: Vu::new(0),

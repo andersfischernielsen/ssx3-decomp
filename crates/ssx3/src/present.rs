@@ -159,7 +159,7 @@ impl Presenter {
     /// Create the device and render pipeline for `window`. With `gs`
     /// (the GPU GS backend's device), present with that device so GS frames
     /// can be shown without leaving the GPU.
-    pub async fn new(window: Arc<Window>, gs: Option<&'static ssx3_ps2::gs::gpu::GpuContext>) -> Self {
+    pub async fn new(window: Arc<Window>, gs: Option<&'static ssx3_ps2::gpu::GpuContext>) -> Self {
         let shared = gs.and_then(|ctx| {
             let surface = ctx.instance.create_surface(window.clone()).ok()?;
             if !ctx.adapter.is_surface_supported(&surface) {
@@ -338,11 +338,12 @@ impl Presenter {
     }
 
     /// Whether `frame` (from `Gs::display_gpu`) lives on this presenter's device.
-    pub fn same_device(&self, gs: Option<&'static ssx3_ps2::gs::gpu::GpuContext>) -> bool {
+    pub fn same_device(&self, gs: Option<&'static ssx3_ps2::gpu::GpuContext>) -> bool {
         gs.is_some_and(|c| c.device == self.device)
     }
 
     /// Draw a GPU GS frame (on this presenter's device) to the window.
+    #[cfg(feature = "emu-gs")]
     pub fn render_gpu(&mut self, frame: &ssx3_ps2::gs::gpu::GpuFrame) -> Result<(), PresentError> {
         let srgb = self.config.format.is_srgb() as u32;
         let dims = [frame.width, frame.height, srgb, 0u32];

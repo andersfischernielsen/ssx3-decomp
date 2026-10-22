@@ -16,6 +16,7 @@ pub use ssx3_ee_rt::{bus, cpu, fpu, mmi};
 pub mod platform;
 pub mod elf;
 pub mod gifstats;
+pub mod gpu;
 pub mod gs;
 pub mod hw;
 pub mod iop_bridge;

@@ -26,7 +26,7 @@
 //! UNPACK ported in spirit from ps2-web-recomp `runtime/src/vif.cpp` (MIT,
 //! https://github.com/snuri00/ps2-web-recomp) with PCSX2 semantics.
 
-#[cfg(test)]
+#[cfg(all(test, feature = "emu-gs"))]
 mod tests;
 
 use crate::gs::Mtgs as Gs;
