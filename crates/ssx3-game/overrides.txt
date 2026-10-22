@@ -5227,5 +5227,8 @@
 0x00174848    CameraTriggerMan_CollectOctreeTriggersInBox
 # Phase 2 wave: oc150
 0x0016d320    CameraTriggerMan_UpdateForRider
+# Phase 2 wave: oc153, oc154
+0x002e8938    cBoardTrailFX_Update
+0x0013d818    RiderGroundState_Update
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
