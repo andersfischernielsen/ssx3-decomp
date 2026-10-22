@@ -5220,5 +5220,12 @@
 0x0018e178    cFEStateOptionsDeviceSelect_v37
 0x0018ef70    cFEStateProfileLoad_v37
 0x001f7f08    OVScreenTopTimes_OnActivate
+# Phase 2 wave: oc151, oc152
+0x002dd0b8    cBoardWakeFX_Update
+0x00418958    _mbtowc_r
+# Phase 2 wave: oc149
+0x00174848    CameraTriggerMan_CollectOctreeTriggersInBox
+# Phase 2 wave: oc150
+0x0016d320    CameraTriggerMan_UpdateForRider
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
