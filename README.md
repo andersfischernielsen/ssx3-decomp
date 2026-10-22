@@ -19,7 +19,7 @@ the PS2's graphics, video and audio hardware are not emulated on the default pat
   `RenderFrame` and the post passes run as native Rust that records typed draws; the
   renderer (`crates/ssx3-gfx`, wgpu) draws them. No DMA packets, VIF, VU1 or GS work
   is emulated. Any resolution and aspect ratio, a widened 3D view (16:9, ultrawide),
-  an adjustable field of view, interpolation on high-refresh displays.
+  an adjustable field of view, a configurable game rate (120/144/240 Hz) and real-time catch-up when the host is slow.
 - **Native movies, sound, files, controllers and memory card**: a native MPEG-2
   decoder behind libmpeg's API, a native sound driver, `std::fs` for game files,
   libpad/libmc answered natively. The IOP does not run.
@@ -166,7 +166,7 @@ through the native renderer too.
 | `SSX3_RENDER_SIZE=2560x1080` | A fixed output size instead (any size and aspect; headless too). |
 | `SSX3_FOV=1.2` | Field of view relative to the game's (here 20% wider). |
 | `SSX3_ANISO=16` | Anisotropic filtering, 1 (off) to 16 (default), for textures with mipmaps (texture-pack replacements). |
-| `SSX3_FPS=120` | Display rate to interpolate to. By default the monitor's refresh rate: on a 120 Hz display the native renderer draws an in-between image for every game frame (the game's matrices blended towards the next frame, VU programs re-run), so motion is smooth beyond the game's 60 Hz logic. One frame of extra latency; `SSX3_FPS=60` turns it off. Headless: off unless set (the screenshots are the game's frames). |
+| `SSX3_CATCHUP=0` | Turn off real-time catch-up (window; on by default, settings "Keep speed when slow"). When the host is slower than the game rate, the game queues extra updates per image (at most 4) so game time stays real time, and the native mixer keeps the audio device fed from the wall clock. Replays and headless runs never use it. |
 | `SSX3_ASPECT=4:3\|16:9\|stretch` | The classic fixed-aspect image (512×448 scaled, letterboxed) instead of following the window. |
 | `SSX3_RENDER_SCALE=2` (up to 8) | N× internal resolution (native renderer; with `SSX3_RENDER=emu SSX3_RENDER_NATIVE=all`, the emulated GS's). |
 | `SSX3_RENDER=shadow` | Both: the native renderer draws next to the emulated GS, which is shown (headless writes `frameNNNNN-gfx.png` too). |
@@ -274,7 +274,7 @@ boundaries) is committed. To explore the binary yourself, see
 | `ssx3-game` | Hand-written typed Rust replacements for game functions (phase 2), checked against the generated ones, in `src/game/<dir>/<unit>.rs` after the C++ source tree; the native draw functions (`packetless`), native libmpeg (`movie.rs`), the native file layer. |
 | `ssx3-vu` | VU0/VU1: registers, pipeline timing, and the translated microcode (`generated/vu/`). |
 | `ssx3-ps2` | The platform (`Machine`): an HLE EE kernel (threads, semaphores, alarms), the hardware registers the game touches, SIF and the native IOP services, the frame sink and native DMA kick; the emulated GS, VIF and IPU for the reference path (`SSX3_RENDER=emu`). |
-| `ssx3-gfx` | The native renderer (wgpu): typed frames from the game's draws, the VU1 programs on CPU/GPU, post passes, interpolation. |
+| `ssx3-gfx` | The native renderer (wgpu): typed frames from the game's draws, the VU1 programs on CPU/GPU, post passes. |
 | `ssx3-mpeg` | The native MPEG-2 movie decoder (shared tables and arithmetic with the IPU model). |
 | `ssx3-iop` | The IOP runtime for the recompiled IRX modules: IOP kernel, SPU2 audio, SIO2 with pad and memory card. |
 | `ssx3-mc` | The memory card natively: the PS2 card filesystem (FAT, directories, ECC) on the raw `.ps2` image, answering libmc the way MCMAN/MCSERV do (saves are byte-identical to theirs). |

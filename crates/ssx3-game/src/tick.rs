@@ -26,6 +26,10 @@ pub const APPMAN_PTR: u32 = 0x004A_5B64;
 /// `cAppMan` fields: tick rate (int, Hz), step (f32, s).
 pub const APPMAN_RATE: u32 = 0x10;
 pub const APPMAN_STEP: u32 = 0x14;
+/// `cAppMan +0x24`: game updates queued per VSync (f32, 1.0). `App_VSyncTick`
+/// adds it to an accumulator and queues one update per whole unit; the main
+/// loop runs the queued updates (at most `+0x20` = 12), then renders once.
+pub const APPMAN_UPDATES_PER_VSYNC: u32 = 0x24;
 /// The `.lit4` section (gp-relative float constants).
 pub const LIT4: (u32, u32) = (0x0049_b100, 0x0049_b100 + 0x5d58);
 /// `1/60` as the game stores it.
@@ -39,6 +43,8 @@ pub const NOT_A_STEP: &[u32] = &[];
 static RATE: AtomicU32 = AtomicU32::new(60);
 /// The rate last written into guest memory (0: none yet).
 static APPLIED: AtomicU32 = AtomicU32::new(0);
+/// Updates to queue at the next VSync (catch-up; 1 = the original).
+static UPDATES: AtomicU32 = AtomicU32::new(1);
 /// The `.lit4` entries that held `1/60` in the executable.
 static POOL: Mutex<Vec<u32>> = Mutex::new(Vec::new());
 
@@ -103,8 +109,15 @@ pub fn ticks_from_frames60(c: &mut Cpu, frames: u32) -> u32 {
     }
 }
 
+/// Queue `n` game updates at the next VSync instead of one (the front end's
+/// catch-up when the host falls behind real time, see [`CatchUp`]).
+pub fn set_updates_per_vsync(n: u32) {
+    UPDATES.store(n.clamp(1, 12), Ordering::Relaxed);
+}
+
 /// At every VSync: bring the guest's step values to the configured rate.
 pub fn on_vblank(c: &mut Cpu) {
+    sync_updates(c);
     let want = configured();
     if APPLIED.load(Ordering::Relaxed) == 0 && want == 60 {
         // The original rate and nothing written yet: leave memory alone.
@@ -122,6 +135,70 @@ pub fn on_vblank(c: &mut Cpu) {
     if APPLIED.load(Ordering::Relaxed) != want {
         patch_pool(c, want);
         APPLIED.store(want, Ordering::Relaxed);
+    }
+}
+
+/// Write the catch-up count into `cAppMan +0x24` when it changes (1.0, the
+/// game's own value, unless the host fell behind).
+fn sync_updates(c: &mut Cpu) {
+    let app = c.bus.read32(APPMAN_PTR);
+    if app == 0 {
+        return;
+    }
+    let want = (UPDATES.load(Ordering::Relaxed) as f32).to_bits();
+    if c.bus.read32(app + APPMAN_UPDATES_PER_VSYNC) != want {
+        c.bus.write32(app + APPMAN_UPDATES_PER_VSYNC, want);
+    }
+}
+
+/// Real-time catch-up for a front end that runs one VSync per presented
+/// frame: game time follows the wall clock when the host is slower than the
+/// game rate, by queueing extra updates (the game's own frame-drop path:
+/// several updates, one render). Bounded, so a host that is far too slow
+/// slows the game down instead of spiralling.
+#[derive(Debug, Default)]
+pub struct CatchUp {
+    /// Wall time (s) the count started at, and updates queued since.
+    base: Option<f64>,
+    queued: f64,
+}
+
+impl CatchUp {
+    /// At most this many updates per VSync (4: a 15 fps host keeps a 60 Hz
+    /// game at full speed).
+    pub const MAX_UPDATES: u32 = 4;
+    /// A debt or lead of more than this (s) is forgotten, not repaid: a
+    /// pause, the settings overlay, a window drag, a long load.
+    pub const FORGET: f64 = 0.25;
+
+    /// Updates to queue at the VSync about to run, at wall time `now` (s)
+    /// with one update per `period` (s).
+    pub fn next(&mut self, now: f64, period: f64) -> u32 {
+        let base = *self.base.get_or_insert(now);
+        // Updates real time asks for by the end of this VSync.
+        let due = (now - base) / period + 1.0;
+        let owed = due - self.queued;
+        if !(-Self::FORGET / period..=Self::FORGET / period).contains(&(owed - 1.0)) {
+            self.base = Some(now);
+            self.queued = 1.0;
+            return 1;
+        }
+        // Half an update of hysteresis: a late frame within jitter does not
+        // double the next one.
+        let max = Self::MAX_UPDATES as f64;
+        let n = (owed - 0.5).floor().clamp(1.0, max);
+        if owed - 0.5 > max + 1.0 {
+            // More than the cap can repay: let the game slow down instead of
+            // carrying the debt.
+            self.queued = due - n;
+        }
+        self.queued += n;
+        n as u32
+    }
+
+    /// Start over (e.g. after a pause).
+    pub fn reset(&mut self) {
+        *self = Self::default();
     }
 }
 
@@ -164,6 +241,38 @@ mod tests {
     fn step_60_is_the_games_constant() {
         assert_eq!(step_bits(60), (1.0f32 / 60.0).to_bits());
         assert_eq!(f32::from_bits(step_bits(120)), 1.0 / 120.0);
+    }
+
+    #[test]
+    fn catch_up_follows_the_wall_clock() {
+        let p = 1.0 / 60.0;
+        // A host that keeps up: one update per VSync, also with jitter.
+        let mut k = CatchUp::default();
+        let mut t = 0.0;
+        for i in 0..600 {
+            t += p * if i % 2 == 0 { 0.9 } else { 1.1 };
+            assert_eq!(k.next(t, p), 1, "vsync {i}");
+        }
+        // A host at 40 fps: 1.5 updates per VSync on average, game time real.
+        let mut k = CatchUp::default();
+        let (mut t, mut sum) = (0.0, 0u32);
+        for _ in 0..400 {
+            t += 1.0 / 40.0;
+            sum += k.next(t, p);
+        }
+        assert!((sum as f64 - t / p).abs() <= 2.0, "{sum} updates in {t} s");
+        // A host at 10 fps: capped at 4 per VSync (the game slows down).
+        let mut k = CatchUp::default();
+        let mut t = 0.0;
+        for _ in 0..100 {
+            t += 0.1;
+            assert!(k.next(t, p) <= CatchUp::MAX_UPDATES);
+        }
+        // A one-second pause is forgotten, not repaid.
+        let mut k = CatchUp::default();
+        k.next(0.0, p);
+        assert_eq!(k.next(1.0, p), 1);
+        assert_eq!(k.next(1.0 + p, p), 1);
     }
 
     #[test]

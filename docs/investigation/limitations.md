@@ -7,7 +7,9 @@
   before the project is called done.
 - **Online** reaches the network configuration screen; there is no network.
 - **`SSX3_HOST_CLOCK=1`** (game time follows the host when it falls behind)
-  can stall the game on a host that stays behind; off by default.
+  can stall the game on a host that stays behind; off by default and
+  superseded by the window's catch-up (`SSX3_CATCHUP`,
+  `docs/plans/configurable-tick-rate.md`).
 - Paths never scripted are covered only by the hand-written functions'
   differential tests and random menu input
   ([`coverage.md`](coverage.md), `tools/scenarios.py`).

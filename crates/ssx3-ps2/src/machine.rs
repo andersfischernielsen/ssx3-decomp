@@ -46,6 +46,19 @@ pub fn frame_cycles() -> u64 {
     }
 }
 
+/// Real-time mode (the window, not replays): the front end keeps game time on
+/// the wall clock (`ssx3_game::tick::CatchUp`) and the native mixer keeps the
+/// audio device fed even when the guest runs slower than real time.
+static REALTIME: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn set_realtime(on: bool) {
+    REALTIME.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn realtime() -> bool {
+    REALTIME.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Called at every VSync start (game-side bookkeeping, `ssx3_game::tick`).
 static VBLANK_HOOK: std::sync::OnceLock<fn(&mut Cpu)> = std::sync::OnceLock::new();
 

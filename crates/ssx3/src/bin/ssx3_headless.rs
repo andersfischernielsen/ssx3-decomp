@@ -26,6 +26,12 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let frames: u64 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(300);
     let slow_ms: Option<f64> = std::env::var("SSX3_SLOW_FRAME_MS").ok().and_then(|v| v.parse().ok());
+    // Test knob: SSX3_CATCHUP=1 runs the window's real-time catch-up here
+    // too (with SSX3_SLOW_FRAME_MS: a slow host). Not deterministic.
+    let mut catch_up = std::env::var("SSX3_CATCHUP").is_ok_and(|v| v == "1").then(|| {
+        ssx3_ps2::machine::set_realtime(true);
+        ssx3_game::tick::CatchUp::default()
+    });
     let started = std::time::Instant::now();
     let shot_every: u64 = args
         .iter()
@@ -53,11 +59,6 @@ fn main() {
             }),
             4,
         );
-    }
-    // SSX3_FPS=<Hz>: draw the in-between images too (interpolation; the
-    // screenshots are the game's frames).
-    if let (Some(g), Some(hz)) = (gfx.as_ref(), std::env::var("SSX3_FPS").ok().and_then(|v| v.parse::<f64>().ok())) {
-        g.set_subframes(((hz / 59.94).round() as u32).clamp(1, 8));
     }
     let t0 = Instant::now();
     let mut img: Vec<u32> = Vec::new();
@@ -88,6 +89,7 @@ fn main() {
             Some((p.next()?.parse().ok()?, p.next()?.parse().ok()?, p.next()?.to_string()))
         })
         .collect();
+    let mut catch_sum = 0u64;
     for f in 1..=frames {
         #[cfg(feature = "emu-gs")]
         for (start, _, _) in &captures {
@@ -103,6 +105,16 @@ fn main() {
         }
         ssx3_ps2::m!(c).sif.pad_buttons = held;
         ssx3_ps2::vu::capture::set_frame(f);
+        if let Some(k) = catch_up.as_mut() {
+            let n = k.next(started.elapsed().as_secs_f64(), 1.001 / ssx3_ps2::machine::vsync_hz() as f64);
+            ssx3_game::tick::set_updates_per_vsync(n);
+            catch_sum += n as u64;
+            if f % 300 == 0 {
+                let app = c.bus.read32(ssx3_game::tick::APPMAN_PTR);
+                let upd = if app != 0 { c.bus.read32(app + 0x1c) } else { 0 };
+                eprintln!("[catch-up] {:.1}s wall, {catch_sum} queued, {upd} game updates", started.elapsed().as_secs_f64());
+            }
+        }
         let alive = ssx3_ps2::machine::run_frame(&mut c);
         ssx3_ee_rt::prof::frame(f);
         // Test knob for host clock mode: a host this many ms slower per frame.

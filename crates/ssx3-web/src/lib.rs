@@ -431,7 +431,7 @@ impl Game {
     }
 
     fn present_image(&mut self) {
-        let Some((view, _, _)) = self.gfx.present_view_at(None) else { return };
+        let Some((view, _, _)) = self.gfx.present_view() else { return };
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(f) | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
             _ => {

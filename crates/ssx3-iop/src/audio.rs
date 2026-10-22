@@ -114,6 +114,15 @@ impl Sink {
         }
     }
 
+    /// Stereo frames waiting for the output device (`None` without one, and
+    /// in the browser, where the page drains the ring every frame).
+    pub fn queued_frames(&self) -> Option<usize> {
+        if cfg!(target_arch = "wasm32") {
+            return None;
+        }
+        self.ring.as_ref().map(|r| r.lock().map_or(0, |q| q.len() / 2))
+    }
+
     pub fn flush(&mut self) {
         if let Some(w) = self.wav.as_mut() {
             w.flush();

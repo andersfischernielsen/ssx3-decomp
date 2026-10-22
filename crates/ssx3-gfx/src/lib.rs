@@ -22,7 +22,6 @@
 pub mod debug;
 mod draw;
 pub mod gs;
-pub mod interp;
 pub mod pack;
 pub mod tex;
 
@@ -139,25 +138,8 @@ pub struct Inner {
     /// Frames timed and the time (ms) in build, prepare, encode+submit,
     /// depth readback.
     timing: (u64, [f64; 4]),
-    /// The images on screen, for presenting (sRGB view allowed): with
-    /// interpolation the in-between images first, the frame's own last.
+    /// The image on screen, for presenting (sRGB view allowed).
     present: Vec<wgpu::Texture>,
-    /// Images per game frame (1: no interpolation; see `interp`), and how
-    /// many frames in a row took longer than the game's frame time.
-    subframes: u32,
-    over_budget: u32,
-    /// The last frame's matrix records (interpolation).
-    prev_records: Option<interp::Records>,
-    /// While an in-between image is drawn: its VU header substitutions and
-    /// its slot in `present`.
-    subst: Option<Arc<HashMap<[u32; 16], [u32; 16]>>>,
-    model_subst: Option<Arc<HashMap<[u32; 16], [u32; 16]>>>,
-    slot: Option<usize>,
-    /// Images per frame this frame (1, or `subframes` once there is a
-    /// previous frame to interpolate from).
-    nslots: usize,
-    /// Render target contents saved while in-between images are drawn.
-    backups: HashMap<u32, wgpu::Texture>,
     /// Vertex and uniform buffers, kept across frames (grown as needed).
     vbuf: Option<wgpu::Buffer>,
     ubuf: Option<wgpu::Buffer>,
@@ -269,15 +251,7 @@ impl Renderer {
             zscale: 16777216.0,
             timing: (0, [0.0; 4]),
             present: Vec::new(),
-            subframes: 1,
             staged: None,
-            over_budget: 0,
-            prev_records: None,
-            subst: None,
-            model_subst: None,
-            slot: None,
-            nslots: 1,
-            backups: HashMap::new(),
             vbuf: None,
             gbuf: [None, None, None, None],
             arena_buf: None,
@@ -325,20 +299,8 @@ impl Renderer {
     /// The last frame's image on screen as an sRGB view (same device as
     /// the GS), with its size.
     pub fn present_view(&self) -> Option<(wgpu::TextureView, u32, u32)> {
-        self.present_view_at(None)
-    }
-
-    /// The image to show now: with interpolation, the in-between images of
-    /// the latest frame one after another over `frame` (the game's frame
-    /// time) from when they were ready, then the frame's own.
-    pub fn present_view_at(&self, frame: Option<std::time::Duration>) -> Option<(wgpu::TextureView, u32, u32)> {
         let g = self.1.present.lock().unwrap();
-        let (ts, at) = g.as_ref()?;
-        let i = match frame {
-            Some(f) if ts.len() > 1 => ((at.elapsed().as_secs_f64() / f.as_secs_f64() * ts.len() as f64) as usize).min(ts.len() - 1),
-            _ => ts.len() - 1,
-        };
-        let t = &ts[i];
+        let t = g.as_ref()?.0.last()?;
         let view = t.create_view(&wgpu::TextureViewDescriptor { format: Some(wgpu::TextureFormat::Rgba8UnormSrgb), ..Default::default() });
         Some((view, t.width(), t.height()))
     }
@@ -348,13 +310,6 @@ impl Renderer {
         let mut g = self.0.lock().unwrap();
         g.aniso = n.clamp(1, 16);
         g.samplers.clear();
-    }
-
-    /// Images per game frame: 1 (the default) shows the game's frames; `n`
-    /// adds `n - 1` interpolated ones before each (see `interp`), for a
-    /// display at `n` × 60 Hz. One frame of extra latency.
-    pub fn set_subframes(&self, n: u32) {
-        self.0.lock().unwrap().subframes = n.clamp(1, 8);
     }
 
     /// The last frame's images on screen, read back (in-between ones
@@ -422,7 +377,7 @@ impl ssx3_ps2::frame_sink::FrameSink for Renderer {
             }
             None => {
                 let mut g = self.0.lock().unwrap();
-                if OFFLOAD.get().is_some() && g.subframes <= 1 {
+                if OFFLOAD.get().is_some() {
                     g.publish_staged(f);
                 } else {
                     g.finish_staged();
@@ -708,126 +663,14 @@ impl Inner {
         self.render(built, mem);
     }
 
-    /// Render a frame. With interpolation (`set_subframes`), first the
-    /// in-between images (frame N with its matrices moved back towards
-    /// N-1, see `interp`), each from the state frame N starts from, then
-    /// the frame's own (exactly as without interpolation).
+    /// Render a frame.
     pub fn render(&mut self, built: &Built, mem: &(dyn Mem + Sync)) {
-        let t_frame = web_time::Instant::now();
-        let cur = (self.subframes > 1).then(|| records(built));
-        let k = if cur.is_some() && self.prev_records.is_some() { self.subframes as usize } else { 1 };
-        self.nslots = k;
-        if k > 1 {
-            let (prev, now) = (self.prev_records.as_ref().unwrap(), cur.as_ref().unwrap());
-            let pairs = interp::pair(prev, now);
-            let subs: Vec<_> = (1..k)
-                .map(|s| {
-                    let t = debug_t().unwrap_or(s as f32 / k as f32);
-                    (interp::substitutions(prev, now, &pairs, t), interp::model_substitutions(prev, now, t))
-                })
-                .collect();
-            // Build every image's geometry at once: the in-between ones from
-            // copies of the state the frame starts from, the frame's own
-            // from the renderer's.
-            self.gs.verts.clear();
-            self.gs.batches.clear();
-            self.stats.frames += 1;
-            let t_start = web_time::Instant::now();
-            let mut fin = self.take_build();
-            let mut mids: Vec<Build> = subs
-                .into_iter()
-                .map(|(m, mm)| {
-                    let mut b = fin.clone();
-                    b.subst = Some(Arc::new(m));
-                    b.model_subst = Some(Arc::new(mm));
-                    b
-                })
-                .collect();
-            std::thread::scope(|sc| {
-                for b in mids.iter_mut() {
-                    if cfg!(target_arch = "wasm32") {
-                        Build::run(b, built, mem);
-                    } else {
-                        sc.spawn(|| Build::run(b, built, mem));
-                    }
-                }
-                Build::run(&mut fin, built, mem);
-            });
-            self.timing.1[0] += t_start.elapsed().as_secs_f64() * 1e3;
-            // Draw them in order; what the in-between ones leave in the
-            // render targets is undone before the frame's own.
-            let final_stats = fin.stats;
-            self.save_targets();
-            for (s, b) in mids.into_iter().enumerate() {
-                self.put_build(b);
-                self.slot = Some(s);
-                self.draw_built(mem);
-            }
-            self.slot = None;
-            self.restore_targets();
-            self.put_build(fin);
-            self.stats = final_stats;
-            self.draw_built(mem);
-        } else {
-            self.render_one(built, mem);
-        }
+        self.render_one(built, mem);
         if !self.present.is_empty() {
             *self.shared.present.lock().unwrap() = Some((self.present.clone(), web_time::Instant::now()));
         }
-        self.prev_records = cur;
-        // Interpolation must keep up with the game: after a second of
-        // frames over budget, one image per frame fewer.
-        if k > 1 {
-            let over = t_frame.elapsed().as_secs_f64() > 0.016;
-            self.over_budget = if over { self.over_budget + 1 } else { 0 };
-            if self.over_budget >= 60 {
-                self.over_budget = 0;
-                self.subframes -= 1;
-                eprintln!("[gfx] interpolation too slow here: {} images per game frame from now on", self.subframes);
-            }
-        }
     }
 
-    /// The colour of every target (main, render targets) into `backups`.
-    fn save_targets(&mut self) {
-        let mut srcs: Vec<(u32, &wgpu::Texture)> = self.rts.iter().map(|(&f, r)| (f, &r.color)).collect();
-        if let Some(t) = self.targets.as_ref() {
-            srcs.push((u32::MAX, &t.color));
-        }
-        let mut enc = self.dev.create_command_encoder(&Default::default());
-        for (f, tex) in srcs {
-            if !self.backups.get(&f).is_some_and(|b| (b.width(), b.height()) == (tex.width(), tex.height())) {
-                let b = self.dev.create_texture(&wgpu::TextureDescriptor {
-                    label: Some("ssx3-gfx target backup"),
-                    size: wgpu::Extent3d { width: tex.width(), height: tex.height(), depth_or_array_layers: 1 },
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: wgpu::TextureDimension::D2,
-                    format: tex.format(),
-                    usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::COPY_SRC,
-                    view_formats: &[],
-                });
-                self.backups.insert(f, b);
-            }
-            copy_whole(&mut enc, tex, &self.backups[&f]);
-        }
-        self.queue.submit(std::iter::once(enc.finish()));
-    }
-
-    /// Put back what `save_targets` saved (targets of the same size).
-    fn restore_targets(&mut self) {
-        let mut enc = self.dev.create_command_encoder(&Default::default());
-        let mut dsts: Vec<(u32, &wgpu::Texture)> = self.rts.iter().map(|(&f, r)| (f, &r.color)).collect();
-        if let Some(t) = self.targets.as_ref() {
-            dsts.push((u32::MAX, &t.color));
-        }
-        for (f, tex) in dsts {
-            if let Some(b) = self.backups.get(&f).filter(|b| (b.width(), b.height()) == (tex.width(), tex.height())) {
-                copy_whole(&mut enc, b, tex);
-            }
-        }
-        self.queue.submit(std::iter::once(enc.finish()));
-    }
 
     /// The build state, moved out of the renderer (see `Build`).
     fn take_build(&mut self) -> Build {
@@ -840,8 +683,6 @@ impl Inner {
             zscale: self.zscale,
             hud_squeeze: self.hud_squeeze,
             frame: self.stats.frames,
-            subst: self.subst.clone(),
-            model_subst: self.model_subst.clone(),
         }
     }
 
@@ -855,9 +696,7 @@ impl Inner {
     }
 
     fn render_one(&mut self, built: &Built, mem: &(dyn Mem + Sync)) {
-        if self.slot.is_none() {
-            self.stats.frames += 1;
-        }
+        self.stats.frames += 1;
         let t_start = web_time::Instant::now();
         let mut b = self.take_build();
         Build::run(&mut b, built, mem);
@@ -1357,9 +1196,7 @@ impl Inner {
             Some(r) => &r.color,
             None => &t.color,
         };
-        // One image per sub-frame (see `render`); this one's slot.
-        let slots = self.nslots.max(1);
-        let slot = self.slot.unwrap_or(slots - 1);
+        let (slots, slot) = (1, 0);
         if self.present.len() != slots || self.present.first().is_some_and(|p| (p.width(), p.height()) != (t.w, t.h)) {
             self.present = (0..slots)
                 .map(|_| {
@@ -1382,7 +1219,7 @@ impl Inner {
             wgpu::Extent3d { width: t.w, height: t.h, depth_or_array_layers: 1 },
         );
         // Depth after phase 1, read back for the light queries.
-        let depth_buf = (self.want_depth && self.slot.is_none()).then(|| {
+        let depth_buf = self.want_depth.then(|| {
             let buf = self.dev.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("ssx3-gfx depth readback"),
                 size: (t.w * 4).next_multiple_of(256) as u64 * t.h as u64,
@@ -1535,14 +1372,10 @@ struct VuPlan<'a> {
     chunk_of: HashMap<usize, usize>,
     next: std::sync::atomic::AtomicUsize,
     threads: usize,
-    /// VU header substitutions (an in-between image, see `interp`), and
-    /// mesh model matrix ones.
-    subst: Option<Arc<HashMap<[u32; 16], [u32; 16]>>>,
-    model_subst: Option<Arc<HashMap<[u32; 16], [u32; 16]>>>,
 }
 
 impl VuPlan<'_> {
-    fn run(chunk: &[ssx3_render::vujob::JobItem], mut mem: Box<[u8; 16384]>, subst: Option<&HashMap<[u32; 16], [u32; 16]>>, model_subst: Option<&HashMap<[u32; 16], [u32; 16]>>) -> VuChunk {
+    fn run(chunk: &[ssx3_render::vujob::JobItem], mut mem: Box<[u8; 16384]>) -> VuChunk {
         let mut outs = Vec::with_capacity(chunk.len());
         for it in chunk {
             let &ssx3_render::vujob::JobItem::Call((i, c, hash, kept)) = it else {
@@ -1556,15 +1389,6 @@ impl VuPlan<'_> {
                 mem[a..a + 16].copy_from_slice(&v.to_le_bytes());
             }
             let (Some(entry), Some(hh)) = (c.entry, hash) else { continue };
-            if let Some(s) = subst {
-                interp::substitute(&mut mem[..64], s);
-            }
-            if let Some(s) = model_subst.filter(|_| hh == ssx3_render::mat3::HASH && ssx3_render::mat3::mesh_matrix_use(entry, c.itop) == Some(true)) {
-                let top = (c.top as usize & 1023) * 16;
-                if top + 64 <= mem.len() {
-                    interp::substitute(&mut mem[top..top + 64], s);
-                }
-            }
             if let Some(o) = ssx3_render::vujob::run_call(hh, entry, c.top, c.itop, c.src, kept, &mut mem) {
                 outs.push((i, o));
             }
@@ -1579,7 +1403,7 @@ impl VuPlan<'_> {
             let Some(start) = self.starts.get(j) else { break };
             let st = start.lock().unwrap().take().expect("chunk");
             let e = self.bounds.get(j + 1).copied().unwrap_or(self.calls.len());
-            let r = Self::run(&self.calls[self.bounds[j]..e], st, self.subst.as_deref(), self.model_subst.as_deref());
+            let r = Self::run(&self.calls[self.bounds[j]..e], st);
             let (slot, cv) = &self.done[j];
             *slot.lock().unwrap() = Some(r);
             cv.notify_all();
@@ -1587,10 +1411,9 @@ impl VuPlan<'_> {
     }
 
     /// Whether the chunks go to the installed [`VuOffload`] (the browser's
-    /// helper workers): not without one, nor for an in-between image (its
-    /// substitutions stay here).
+    /// helper workers): not without one.
     fn offloadable(&self) -> bool {
-        OFFLOAD.get().is_some() && self.subst.is_none() && self.model_subst.is_none() && self.bounds.len() >= 2
+        OFFLOAD.get().is_some() && self.bounds.len() >= 2
     }
 
     /// Every chunk, encoded (takes the start images).
@@ -1690,7 +1513,7 @@ impl VuReceiver {
         if let Some(all) = all {
             // Debug: which calls differ from a sequential run (only the calls
             // not yet consumed are compared).
-            let (seq, _) = VuPlan::run(&plan.calls, plan.vu0.clone(), plan.subst.as_deref(), plan.model_subst.as_deref());
+            let (seq, _) = VuPlan::run(&plan.calls, plan.vu0.clone());
             let bad = seq.iter().filter(|(i, out)| all.get(i).is_some_and(|o| o != out)).count();
             eprintln!("[vucheck] {bad} of {} calls differ from a sequential run ({} chunks)", seq.len(), n);
             for (i, out) in seq.iter().filter(|(i, out)| all.get(i).is_some_and(|o| o != out)).take(3) {
@@ -1709,85 +1532,9 @@ impl VuReceiver {
     }
 }
 
-/// Debug: `SSX3_INTERP_T` forces the in-between images' t.
-fn debug_t() -> Option<f32> {
-    static T: std::sync::OnceLock<Option<f32>> = std::sync::OnceLock::new();
-    *T.get_or_init(|| std::env::var("SSX3_INTERP_T").ok().and_then(|v| v.parse().ok()))
-}
-
-/// Copy a whole texture (same size and format).
-fn copy_whole(enc: &mut wgpu::CommandEncoder, from: &wgpu::Texture, to: &wgpu::Texture) {
-    enc.copy_texture_to_texture(
-        wgpu::TexelCopyTextureInfo { texture: from, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
-        wgpu::TexelCopyTextureInfo { texture: to, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
-        wgpu::Extent3d { width: from.width(), height: from.height(), depth_or_array_layers: 1 },
-    );
-}
-
-/// A frame's matrix records with the draws' state keys (interpolation).
-fn records(built: &Built) -> interp::Records {
-    let fr = &built.frame;
-    let draws: Vec<&frame::Draw> = fr.draws().collect();
-    // Each draw as (state and textures, n-th such draw).
-    let mut nth: HashMap<u64, u32> = HashMap::new();
-    let keys: Vec<(u64, u32)> = draws
-        .iter()
-        .map(|d| {
-            let alt = hash(&(d.state.raw, d.tex, d.state.layer));
-            let n = nth.entry(alt).or_insert(0);
-            *n += 1;
-            (alt, *n - 1)
-        })
-        .collect();
-    let mut users: Vec<Vec<(u64, u32)>> = vec![Vec::new(); fr.matrices.len()];
-    for (d, key) in draws.iter().zip(&keys) {
-        for m in [d.matrix as i32, d.header_matrix] {
-            if let Some(a) = usize::try_from(m).ok().and_then(|m| users.get_mut(m)) {
-                if !a.contains(key) {
-                    a.push(*key);
-                }
-            }
-        }
-    }
-    // Mesh setups' model matrices: TOP qw0-3 of their input.
-    let mut models = HashMap::new();
-    let mut setups: HashMap<usize, u32> = HashMap::new();
-    let mut cur = None;
-    for (owner, ev) in &built.events {
-        if let Owner::Prelude(n) | Owner::Payload(n) = owner {
-            cur = Some(*n);
-        }
-        let (Event::Call(c), Some(n)) = (ev, cur) else { continue };
-        let (Some(e), Some(d)) = (c.entry, draws.get(n)) else { continue };
-        if program(d.state.material) != Some(ssx3_render::mat3::HASH) || ssx3_render::mat3::mesh_matrix_use(e, c.itop) != Some(true) {
-            continue;
-        }
-        let top = c.top as u16 & 1023;
-        let mut w = [0u32; 16];
-        let mut got = 0;
-        for &(a, v) in c.writes() {
-            let k = (a & 1023).wrapping_sub(top);
-            if k < 4 {
-                for l in 0..4 {
-                    w[k as usize * 4 + l] = (v >> (32 * l)) as u32;
-                }
-                got += 1;
-            }
-        }
-        let s = setups.entry(n).or_insert(0);
-        if got == 4 {
-            models.insert((keys[n], *s), w);
-        }
-        *s += 1;
-    }
-    interp::Records { records: fr.matrices.iter().copied().zip(users).collect(), models }
-}
-
-
 /// What building one image's geometry from a frame uses and changes: the
 /// GS state the frame starts from, VU memory, counters, and the frame's
-/// facts the drawing needs. In-between images (interpolation) each build
-/// from a copy, on their own threads, while the frame's own builds.
+/// facts the drawing needs.
 #[derive(Clone)]
 struct Build {
     gs: gs::Gs,
@@ -1799,8 +1546,6 @@ struct Build {
     hud_squeeze: f32,
     /// The frame number (debug switches).
     frame: u64,
-    subst: Option<Arc<HashMap<[u32; 16], [u32; 16]>>>,
-    model_subst: Option<Arc<HashMap<[u32; 16], [u32; 16]>>>,
 }
 
 impl Build {
@@ -2088,7 +1833,7 @@ impl Build {
         }
         let chunk_of: HashMap<usize, usize> = calls.iter().enumerate().map(|(k, c)| (c.event(), bounds.partition_point(|&b| b <= k) - 1)).collect();
         let done = (0..bounds.len()).map(|_| (std::sync::Mutex::new(None), std::sync::Condvar::new())).collect();
-        VuPlan { vu0: b.vu.clone(), calls, bounds, starts, done, chunk_of, next: std::sync::atomic::AtomicUsize::new(0), threads, subst: b.subst.clone(), model_subst: b.model_subst.clone() }
+        VuPlan { vu0: b.vu.clone(), calls, bounds, starts, done, chunk_of, next: std::sync::atomic::AtomicUsize::new(0), threads }
     }
 }
 
@@ -2129,14 +1874,6 @@ pub fn run_vu_job(job: &[u8], store: &[u8]) -> Vec<u8> {
 /// calls are split for that many).
 pub fn set_vu_offload(f: VuOffload, workers: usize) {
     let _ = OFFLOAD.set((f, workers.max(1)));
-}
-
-/// A stable hash (interpolation keys).
-fn hash<T: std::hash::Hash>(v: &T) -> u64 {
-    use std::hash::Hasher;
-    let mut h = std::hash::DefaultHasher::new();
-    v.hash(&mut h);
-    h.finish()
 }
 
 /// `slot`'s buffer if it holds `size` bytes, else a new one (twice as big as

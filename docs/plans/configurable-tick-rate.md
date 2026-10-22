@@ -12,6 +12,8 @@ Status (2026-10-22):
   overlay's "Game rate" (F10, applies after a restart).
 - ✅ Every `1/60` the game loads, and the app manager's rate and step, follow
   the rate: at 120 Hz the race clock and course progress match 60 Hz.
+- ✅ A slow host keeps game time real time (catch-up, below); interpolation
+  is removed (the game rate replaces it).
 - ⏳ Worker pass (AGENTS.md "Tick-rate pass"): classify the `1/60` entries,
   convert the other rate constants and the per-tick code the scan cannot see.
 
@@ -55,6 +57,44 @@ in a register anywhere). Generated code and the hand-written ports both load
 the entry from memory (ports keep the `lwc1` from `gp-N`), so rewriting the
 entries changes every such use at once. One port had inlined the constant
 (`math.rs`, the loading indicator); it now reads its entry.
+
+## When the host is slower than the game rate
+
+The game already has a frame-drop path: `App_VSyncTick` queues `+0x24`
+updates per VSync (1.0) and the main loop runs the queued updates, then
+renders once. In the window (`SSX3_CATCHUP`, settings "Keep speed when
+slow", on by default):
+
+- `tick::CatchUp` counts the updates real time asks for since the last
+  reset; before each VSync the window sets `tick::set_updates_per_vsync(n)`
+  to what is owed (half an update of hysteresis, at most 4: a 15 fps host
+  keeps a 60 Hz game at full speed; a slower one slows down instead of
+  spiralling). A debt or lead over 0.25 s (pause, overlay, window drag) is
+  forgotten. `tick::on_vblank` writes `n` into `+0x24`.
+- Audio (`snd_native::service`, `machine::set_realtime`): the mixer ticks on
+  the EE clock as before, and when the device's queue falls under 40 ms it
+  runs extra ticks up to 60 ms and moves the EE-clock schedule along. As on
+  the console, where the IOP keeps its own time, sound no longer depends on
+  how fast the guest runs.
+- Replays, headless runs and the gate never use it (`SSX3_CATCHUP=1` turns it
+  on in `ssx3-headless` for tests; with `SSX3_SLOW_FRAME_MS` it simulates a
+  slow host). This replaces the old `SSX3_HOST_CLOCK`, which skipped EE
+  cycles and starved loading.
+
+Measured, race replay with 20 ms added per frame (a ~35 fps host), 60 Hz:
+
+| | catch-up off | catch-up on |
+| --- | --- | --- |
+| Game updates after 169 s of wall time | (one per VSync: ~5900) | 10084 (real time: 10148) |
+| Race clock over 2000 frames (~60 s of wall time) | 0:01 → 0:34 (slow motion) | 0:04 → 1:05 (real time) |
+
+Not covered: the browser (its page drains audio every frame; its frame loop
+is the worker's `requestAnimationFrame`, catch-up to be wired there).
+
+Interpolation (in-between images from blended matrices, `SSX3_FPS`) is
+removed: the game rate gives one real image per update, and a display faster
+than the game rate shows each image until the next. The 60 Hz screenshots
+are byte-identical to before.
 
 ## Rider physics: scale, no sub-stepping
 

@@ -32,7 +32,7 @@ default native mode does not use them on the frame path.
  ┌──────────────────────────────────────┐   ┌──────────────────────────────────────────────┐
  │ ssx3-render::frame::native: the typed│──►│ ssx3-gfx (render thread): native VU programs │
  │ frame from DeferMan's buckets + the  │   │ (CPU or GPU), wgpu draws, post passes,       │
- │ captures; texture pages (FrameMem)   │   │ interpolation, any resolution / aspect       │
+ │ captures; texture pages (FrameMem)   │   │ any resolution / aspect                      │
  └──────────────────────────────────────┘   └──────────────────────────────────────────────┘
 
  Still modelled for the game: the EE kernel (threads as coroutines on one host thread,

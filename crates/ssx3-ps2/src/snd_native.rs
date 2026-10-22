@@ -75,7 +75,19 @@ pub fn user_cmd0(c: &mut Cpu, packet: &[u8]) -> Option<u32> {
     Some(cmd.token)
 }
 
+/// Real-time mode: top the device's queue up to this many frames (60 ms)
+/// when it falls under [`RT_LOW`] (40 ms), and look again this often.
+const RT_TARGET: usize = 2880;
+const RT_LOW: usize = 1920;
+const RT_POLL_CYCLES: u64 = crate::machine::EE_CLOCK / 1000;
+
 /// Run the ticks that are due. Returns the EE cycle of the next one.
+///
+/// Ticks follow the EE clock (replays are exact). In real-time mode
+/// ([`crate::machine::realtime`]) a guest slower than real time would starve
+/// the device, so extra ticks run when its queue runs low, as the IOP runs
+/// on its own clock on the console; they move the EE-clock schedule along
+/// so the total stays at real time.
 pub fn service(c: &mut Cpu) -> Option<u64> {
     if !enabled() {
         return None;
@@ -83,22 +95,39 @@ pub fn service(c: &mut Cpu) -> Option<u64> {
     let s = m!(c).sif.native_snd.as_mut()?;
     let mut due = s.next_tick?;
     while c.cycles >= due {
-        let iop = std::mem::take(&mut m!(c).iop);
-        let tag = &iop[TAG_RX as usize..TAG_RX as usize + TAG_MAX];
-        let s = m!(c).sif.native_snd.as_mut().unwrap();
-        let out = s.drv.tick(tag, &iop);
-        s.sink.push(&out.audio);
-        s.ticks += 1;
-        let status_ee = s.drv.cfg.map_or(0, |p| p.status_ee);
+        run_tick(c);
         due += TICK_EE_CYCLES;
-        s.next_tick = Some(due);
-        m!(c).iop = iop;
-        if status_ee != 0 {
-            c.bus.write_bytes(status_ee & 0x01FF_FFFF, &out.status.to_bytes());
-        }
-        crate::sif::send_user_cmd1(c, TAG_RX, 0);
+        m!(c).sif.native_snd.as_mut().unwrap().next_tick = Some(due);
     }
-    Some(due)
+    if !crate::machine::realtime() {
+        return Some(due);
+    }
+    let queued = |c: &mut Cpu| m!(c).sif.native_snd.as_ref().and_then(|s| s.sink.queued_frames());
+    if queued(c).is_some_and(|q| q < RT_LOW) {
+        while queued(c).is_some_and(|q| q < RT_TARGET) {
+            run_tick(c);
+            due += TICK_EE_CYCLES;
+        }
+        m!(c).sif.native_snd.as_mut().unwrap().next_tick = Some(due);
+    }
+    Some(due.min(c.cycles + RT_POLL_CYCLES))
+}
+
+/// One sound driver tick: mix 512 frames from the tag buffer the EE last
+/// sent, write the status back, signal the EE.
+fn run_tick(c: &mut Cpu) {
+    let iop = std::mem::take(&mut m!(c).iop);
+    let tag = &iop[TAG_RX as usize..TAG_RX as usize + TAG_MAX];
+    let s = m!(c).sif.native_snd.as_mut().unwrap();
+    let out = s.drv.tick(tag, &iop);
+    s.sink.push(&out.audio);
+    s.ticks += 1;
+    let status_ee = s.drv.cfg.map_or(0, |p| p.status_ee);
+    m!(c).iop = iop;
+    if status_ee != 0 {
+        c.bus.write_bytes(status_ee & 0x01FF_FFFF, &out.status.to_bytes());
+    }
+    crate::sif::send_user_cmd1(c, TAG_RX, 0);
 }
 
 /// Flush the WAV capture.

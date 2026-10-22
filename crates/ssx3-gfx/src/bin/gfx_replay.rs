@@ -27,16 +27,6 @@ fn main() {
         }
         None => 1usize,
     };
-    // --interp K: K images per frame (K - 1 interpolated); all of the last
-    // frame's are written as OUT-0.png .. OUT-{K-1}.png too.
-    let interp = match args.iter().position(|a| a == "--interp") {
-        Some(i) => {
-            let n = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(1);
-            args.drain(i..(i + 2).min(args.len()));
-            n
-        }
-        None => 1u32,
-    };
     let [out, dumps @ ..] = args.as_slice() else {
         eprintln!("usage: gfx_replay OUT.png DUMP...");
         std::process::exit(2);
@@ -64,7 +54,6 @@ fn main() {
     if let Some(n) = std::env::var("SSX3_RENDER_SCALE").ok().and_then(|v| v.parse::<u32>().ok()) {
         r.set_scale(n);
     }
-    r.set_subframes(interp);
     if std::env::var_os("SSX3_REPLAY_DEPTH").is_some() {
         r.set_want_depth(true);
     }
@@ -183,13 +172,6 @@ fn main() {
     let (w, h, px) = r.read_image().expect("image");
     let img: Vec<u32> = px.iter().map(|p| p | 0xFF00_0000).collect();
     std::fs::write(out, png::encode(w, h, &img)).unwrap();
-    if interp > 1 {
-        for (i, (w, h, px)) in r.read_presents().into_iter().enumerate() {
-            let img: Vec<u32> = px.iter().map(|p| p | 0xFF00_0000).collect();
-            let name = format!("{}-{i}.png", out.trim_end_matches(".png"));
-            std::fs::write(&name, png::encode(w, h, &img)).unwrap();
-        }
-    }
     // SSX3_DUMP_RTS=DIR: the render targets too, as DIR/rt<fbp>.png (RGB)
     // and DIR/rt<fbp>-a.png (alpha, stored as a/128).
     if let Ok(dir) = std::env::var("SSX3_DUMP_RTS") {

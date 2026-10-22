@@ -51,12 +51,9 @@ struct App {
     gpu_ctx: Option<&'static ssx3_ps2::gpu::GpuContext>,
     /// The draw-layer renderer (`SSX3_RENDER`, native by default).
     gfx: Option<ssx3_gfx::Renderer>,
-    /// Images shown per game frame (interpolation, native renderer): the
-    /// display's refresh rate over the game's 59.94 Hz, or `SSX3_FPS`.
-    subframes: u32,
-    /// When the next game frame is due (interpolation: the game runs on its
-    /// own clock while the window presents at the display's rate).
-    next_tick: Instant,
+    /// Real-time catch-up (`SSX3_CATCHUP`, on by default): extra game
+    /// updates when the host falls behind the game rate.
+    catch_up: Option<ssx3_game::tick::CatchUp>,
     /// The settings overlay (F10): open with this row selected; the game
     /// is paused meanwhile.
     menu: Option<usize>,
@@ -209,7 +206,6 @@ impl ApplicationHandler for App {
         self.presenter = Some(pollster::block_on(Presenter::new(window.clone(), gs)));
         let size = window.inner_size();
         self.window = Some(window);
-        self.apply_rate();
         self.follow_window_size(size.width, size.height);
     }
 
@@ -280,7 +276,6 @@ impl ApplicationHandler for App {
                 // The settings overlay pauses the game.
                 if self.menu.is_some() {
                     self.poll_menu_pad();
-                    self.next_tick = Instant::now();
                     if self.preview > 0 {
                         self.preview -= 1;
                         if !self.step(event_loop) {
@@ -290,20 +285,10 @@ impl ApplicationHandler for App {
                     self.show();
                     return;
                 }
-                // With interpolation the window presents at the display's
-                // rate (vsync) and the game steps when its next field is due.
-                let interp = self.subframes > 1;
-                let due = !interp || Instant::now() >= self.next_tick;
-                if due {
-                    if interp {
-                        self.next_tick += field();
-                        if self.next_tick + field() * 4 < Instant::now() {
-                            self.next_tick = Instant::now() + field();
-                        }
-                    }
-                    if !self.step(event_loop) {
-                        return;
-                    }
+                // One game frame (VSync) per image; `show` paces to the game
+                // rate.
+                if !self.step(event_loop) {
+                    return;
                 }
                 self.show();
             }
@@ -322,6 +307,13 @@ impl App {
     /// Run one game frame; false when the game halted.
     fn step(&mut self, event_loop: &ActiveEventLoop) -> bool {
         self.update_pad();
+        // Behind real time: queue extra game updates at this VSync (the
+        // game's own frame-drop path), so game time stays real time.
+        let n = match self.catch_up.as_mut() {
+            Some(k) => k.next(self.started.elapsed().as_secs_f64(), field().as_secs_f64()),
+            None => 1,
+        };
+        ssx3_game::tick::set_updates_per_vsync(n);
         let alive = ssx3_ps2::machine::run_frame(&mut self.cpu);
         if ssx3_ps2::m!(self.cpu).sched.frames % 60 == 0 {
             eprintln!("[{:6.1}s] {}", self.started.elapsed().as_secs_f64(), game::status(&self.cpu));
@@ -368,7 +360,7 @@ impl App {
             Some(p) if native && self.gfx.is_some() => {
                 let g = self.gfx.as_ref().unwrap();
                 if p.same_device(self.gpu_ctx) {
-                    if let Some((view, _, _)) = g.present_view_at((self.subframes > 1).then_some(field())) {
+                    if let Some((view, _, _)) = g.present_view() {
                         let _ = p.render_view(&view);
                     }
                 } else if let Some((w, h, px)) = g.read_image() {
@@ -403,13 +395,10 @@ impl App {
             }
             _ => {}
         }
-        // Pace to ~59.94 fields per second (with interpolation the
-        // display's vsync paces the window).
-        if self.subframes <= 1 {
-            let el = self.last.elapsed();
-            if el < field() {
-                std::thread::sleep(field() - el);
-            }
+        // Pace to the game rate (59.94 Hz unless `SSX3_TICK_HZ`).
+        let el = self.last.elapsed();
+        if el < field() {
+            std::thread::sleep(field() - el);
         }
         self.last = Instant::now();
     }
@@ -434,21 +423,13 @@ impl App {
         }
     }
 
-    /// Images per game frame for the display rate: `SSX3_FPS`, or the
-    /// monitor's refresh rate (interpolation above 60 Hz).
-    fn apply_rate(&mut self) {
-        let Some(window) = self.window.as_ref() else { return };
-        let hz = settings::get("SSX3_FPS")
-            .and_then(|v| v.parse::<f64>().ok())
-            .or_else(|| window.current_monitor().and_then(|m| m.refresh_rate_millihertz()).map(|m| m as f64 / 1000.0))
-            .unwrap_or(60.0);
-        if let Some(g) = self.gfx.as_ref().filter(|_| ssx3_ps2::frame_sink::native()) {
-            // Images per tick: 1 when the game rate reaches the display's.
-            let tick_hz = ssx3_ps2::machine::vsync_hz() as f64 / 1.001;
-            self.subframes = ((hz / tick_hz).round() as u32).clamp(1, 8);
-            g.set_subframes(self.subframes);
-            eprintln!("[gfx] {hz:.0} Hz: {} images per game frame ({} interpolated)", self.subframes, self.subframes - 1);
-        }
+    /// `SSX3_CATCHUP` (default on): game time and audio follow the wall
+    /// clock when the host is slower than the game rate.
+    fn apply_catch_up(&mut self) {
+        let on = settings::get("SSX3_CATCHUP").is_none_or(|v| v != "0");
+        self.catch_up = on.then(ssx3_game::tick::CatchUp::default);
+        ssx3_game::tick::set_updates_per_vsync(1);
+        ssx3_ps2::machine::set_realtime(on);
     }
 
     fn toggle_menu(&mut self) {
@@ -487,7 +468,7 @@ impl App {
     /// Apply a changed setting now.
     fn apply_setting(&mut self, key: &str) {
         match key {
-            "SSX3_FPS" => self.apply_rate(),
+            "SSX3_CATCHUP" => self.apply_catch_up(),
             "SSX3_ANISO" => {
                 if let Some(g) = self.gfx.as_ref() {
                     g.set_anisotropy(game::anisotropy());
@@ -581,8 +562,7 @@ fn main() {
         keys: 0,
         pending_display: None,
         gpu_ctx: None,
-        subframes: 1,
-        next_tick: Instant::now(),
+        catch_up: None,
         menu: None,
         restart_pending: false,
         preview: 0,
@@ -599,6 +579,7 @@ fn main() {
             .map_err(|e| eprintln!("no game controller support: {e}"))
             .ok(),
     };
+    app.apply_catch_up();
     if let Err(e) = event_loop.run_app(&mut app) {
         eprintln!("event loop error: {e}");
         std::process::exit(1);

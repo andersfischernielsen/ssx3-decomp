@@ -6,7 +6,7 @@
 //! At startup it is read into the process environment for every key the
 //! environment does not set itself, so each part of the program keeps
 //! reading its variable. Settings the window applies while running (field
-//! of view, aspect, resolution, interpolation, fullscreen) are read through
+//! of view, aspect, resolution, catch-up, fullscreen) are read through
 //! [`get`], which sees changes made in the overlay.
 
 use std::collections::BTreeMap;
@@ -24,7 +24,7 @@ pub struct Item {
 
 pub const ITEMS: &[Item] = &[
     Item { key: "SSX3_TICK_HZ", label: "Game rate", choices: &[("", "60 Hz"), ("120", "120 Hz (exp.)"), ("144", "144 Hz (exp.)"), ("240", "240 Hz (exp.)")], live: false },
-    Item { key: "SSX3_FPS", label: "Display rate", choices: &[("", "Auto (display)"), ("60", "60 Hz"), ("120", "120 Hz"), ("180", "180 Hz"), ("240", "240 Hz")], live: true },
+    Item { key: "SSX3_CATCHUP", label: "Keep speed when slow", choices: &[("", "On"), ("0", "Off")], live: true },
     Item { key: "SSX3_FOV", label: "Field of view", choices: &[("0.9", "-10%"), ("", "Standard"), ("1.1", "+10%"), ("1.2", "+20%"), ("1.3", "+30%"), ("1.4", "+40%"), ("1.5", "+50%")], live: true },
     Item { key: "SSX3_ASPECT", label: "Aspect ratio", choices: &[("", "Fill window"), ("16:9", "16:9"), ("4:3", "4:3 (original)")], live: true },
     Item { key: "SSX3_RESOLUTION", label: "Resolution", choices: &[("", "100%"), ("75", "75%"), ("50", "50%")], live: true },
@@ -221,9 +221,9 @@ mod tests {
 
     #[test]
     fn file_lines() {
-        let m = parse("# c\nSSX3_FOV = 1.2\nSSX3_BOGUS=1\n SSX3_FPS=120 \n");
+        let m = parse("# c\nSSX3_FOV = 1.2\nSSX3_BOGUS=1\n SSX3_TICK_HZ=120 \n");
         assert_eq!(m.get("SSX3_FOV").map(String::as_str), Some("1.2"));
-        assert_eq!(m.get("SSX3_FPS").map(String::as_str), Some("120"));
+        assert_eq!(m.get("SSX3_TICK_HZ").map(String::as_str), Some("120"));
         assert!(!m.contains_key("SSX3_BOGUS"));
     }
 
