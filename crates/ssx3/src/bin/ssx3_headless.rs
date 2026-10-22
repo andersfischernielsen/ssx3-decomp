@@ -108,11 +108,17 @@ fn main() {
         if let Some(k) = catch_up.as_mut() {
             let n = k.next(started.elapsed().as_secs_f64(), 1.001 / ssx3_ps2::machine::vsync_hz() as f64);
             ssx3_game::tick::set_updates_per_vsync(n);
+            ssx3_ps2::machine::set_audio_lead_frames((k.audio_lead() * 48000.0) as u32);
             catch_sum += n as u64;
             if f % 300 == 0 {
                 let app = c.bus.read32(ssx3_game::tick::APPMAN_PTR);
                 let upd = if app != 0 { c.bus.read32(app + 0x1c) } else { 0 };
-                eprintln!("[catch-up] {:.1}s wall, {catch_sum} queued, {upd} game updates", started.elapsed().as_secs_f64());
+                eprintln!(
+                    "[catch-up] {:.1}s wall, {catch_sum} queued, {upd} game updates, audio gaps {:.2}s, lead {} ms",
+                    started.elapsed().as_secs_f64(),
+                    ssx3_iop::audio::underrun_frames() as f64 / 48000.0,
+                    ssx3_ps2::machine::audio_lead_frames() / 48
+                );
             }
         }
         let alive = ssx3_ps2::machine::run_frame(&mut c);

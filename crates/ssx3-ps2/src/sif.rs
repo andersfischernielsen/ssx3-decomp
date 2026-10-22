@@ -213,6 +213,7 @@ pub fn set_dma(c: &mut Cpu, transfers: u32, count: u32) -> u32 {
             let end = (o + data.len()).min(m!(c).iop.len());
             let n = end.saturating_sub(o);
             m!(c).iop[o..end].copy_from_slice(&data[..n]);
+            crate::snd_native::note_dma(c, dst, size);
         }
     }
     m!(c).sif.ee_dma_done = m!(c).sif.ee_dma_done.max(c.cycles) + 256 + bytes * 2;

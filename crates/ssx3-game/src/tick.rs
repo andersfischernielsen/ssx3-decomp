@@ -161,6 +161,9 @@ pub struct CatchUp {
     /// Wall time (s) the count started at, and updates queued since.
     base: Option<f64>,
     queued: f64,
+    /// The previous call's time and the longest recent frame (s, decaying).
+    last: Option<f64>,
+    worst: f64,
 }
 
 impl CatchUp {
@@ -174,6 +177,11 @@ impl CatchUp {
     /// Updates to queue at the VSync about to run, at wall time `now` (s)
     /// with one update per `period` (s).
     pub fn next(&mut self, now: f64, period: f64) -> u32 {
+        if let Some(l) = self.last {
+            let dt = (now - l).clamp(0.0, 1.0);
+            self.worst = dt.max(self.worst * 0.99);
+        }
+        self.last = Some(now);
         let base = *self.base.get_or_insert(now);
         // Updates real time asks for by the end of this VSync.
         let due = (now - base) / period + 1.0;
@@ -194,6 +202,12 @@ impl CatchUp {
         }
         self.queued += n;
         n as u32
+    }
+
+    /// Audio to keep queued (s): the device must not run dry while the host
+    /// is busy with one frame. 2.5 × the longest recent frame, 60..180 ms.
+    pub fn audio_lead(&self) -> f64 {
+        (self.worst * 2.5).clamp(0.06, 0.18)
     }
 
     /// Start over (e.g. after a pause).

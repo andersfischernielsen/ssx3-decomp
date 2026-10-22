@@ -310,13 +310,20 @@ impl App {
         // Behind real time: queue extra game updates at this VSync (the
         // game's own frame-drop path), so game time stays real time.
         let n = match self.catch_up.as_mut() {
-            Some(k) => k.next(self.started.elapsed().as_secs_f64(), field().as_secs_f64()),
+            Some(k) => {
+                let n = k.next(self.started.elapsed().as_secs_f64(), field().as_secs_f64());
+                ssx3_ps2::machine::set_audio_lead_frames((k.audio_lead() * 48000.0) as u32);
+                n
+            }
             None => 1,
         };
         ssx3_game::tick::set_updates_per_vsync(n);
         let alive = ssx3_ps2::machine::run_frame(&mut self.cpu);
         if ssx3_ps2::m!(self.cpu).sched.frames % 60 == 0 {
             eprintln!("[{:6.1}s] {}", self.started.elapsed().as_secs_f64(), game::status(&self.cpu));
+            if self.catch_up.is_some() {
+                eprintln!("          audio gaps {:.2}s total, lead {} ms", ssx3_iop::audio::underrun_frames() as f64 / 48000.0, ssx3_ps2::machine::audio_lead_frames() / 48);
+            }
             let now = Instant::now();
             let fps = 60.0 / now.duration_since(self.fps_mark).as_secs_f64().max(1e-6);
             self.fps_mark = now;

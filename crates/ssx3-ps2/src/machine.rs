@@ -59,6 +59,19 @@ pub fn realtime() -> bool {
     REALTIME.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// Real-time mode: audio to keep queued for the device (48 kHz frames). The
+/// front end raises it when frames take long (the guest, which mixes, does
+/// not run while the host draws or presents).
+static AUDIO_LEAD: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(2880);
+
+pub fn set_audio_lead_frames(n: u32) {
+    AUDIO_LEAD.store(n, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn audio_lead_frames() -> u32 {
+    AUDIO_LEAD.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Called at every VSync start (game-side bookkeeping, `ssx3_game::tick`).
 static VBLANK_HOOK: std::sync::OnceLock<fn(&mut Cpu)> = std::sync::OnceLock::new();
 

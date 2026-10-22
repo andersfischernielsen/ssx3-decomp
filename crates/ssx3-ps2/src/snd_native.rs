@@ -33,6 +33,9 @@ pub struct NativeSnd {
     next_tick: Option<u64>,
     sink: ssx3_iop::audio::Sink,
     pub ticks: u64,
+    /// The EE sent a tag buffer since the last tick (it answers each tick's
+    /// command 1 with the next one: voice commands and the PCM it mixed).
+    tag_fresh: bool,
 }
 
 pub fn enabled() -> bool {
@@ -44,7 +47,7 @@ pub fn enabled() -> bool {
 fn state(c: &mut Cpu) -> &mut NativeSnd {
     m!(c).sif.native_snd.get_or_insert_with(|| {
         eprintln!("[snd] native sound driver (ssx3-snd) instead of SNDDRV on the IOP");
-        Box::new(NativeSnd { drv: SndDriver::new(), next_tick: None, sink: ssx3_iop::audio::Sink::from_env(), ticks: 0 })
+        Box::new(NativeSnd { drv: SndDriver::new(), next_tick: None, sink: ssx3_iop::audio::Sink::from_env(), ticks: 0, tag_fresh: false })
     })
 }
 
@@ -75,11 +78,21 @@ pub fn user_cmd0(c: &mut Cpu, packet: &[u8]) -> Option<u32> {
     Some(cmd.token)
 }
 
-/// Real-time mode: top the device's queue up to this many frames (60 ms)
-/// when it falls under [`RT_LOW`] (40 ms), and look again this often.
-const RT_TARGET: usize = 2880;
-const RT_LOW: usize = 1920;
-const RT_POLL_CYCLES: u64 = crate::machine::EE_CLOCK / 1000;
+/// Real-time mode: keep the device's queue at
+/// [`crate::machine::audio_lead_frames`] (at least 60 ms), and look again
+/// this often.
+const RT_POLL_CYCLES: u64 = crate::machine::EE_CLOCK / 4000;
+
+/// An EE → IOP DMA to `[dst, dst + size)` (`SifSetDma`): note a new tag
+/// buffer.
+pub fn note_dma(c: &mut Cpu, dst: u32, size: u32) {
+    let o = dst & 0x1F_FFFF;
+    if o <= TAG_RX && TAG_RX < o + size.max(1) {
+        if let Some(s) = m!(c).sif.native_snd.as_mut() {
+            s.tag_fresh = true;
+        }
+    }
+}
 
 /// Run the ticks that are due. Returns the EE cycle of the next one.
 ///
@@ -87,7 +100,9 @@ const RT_POLL_CYCLES: u64 = crate::machine::EE_CLOCK / 1000;
 /// ([`crate::machine::realtime`]) a guest slower than real time would starve
 /// the device, so extra ticks run when its queue runs low, as the IOP runs
 /// on its own clock on the console; they move the EE-clock schedule along
-/// so the total stays at real time.
+/// so the total stays at real time. An extra tick waits for the EE's next
+/// tag buffer: running one on the last buffer again would replay its PCM
+/// (the music the EE mixes) and repeat its voice commands.
 pub fn service(c: &mut Cpu) -> Option<u64> {
     if !enabled() {
         return None;
@@ -103,11 +118,13 @@ pub fn service(c: &mut Cpu) -> Option<u64> {
         return Some(due);
     }
     let queued = |c: &mut Cpu| m!(c).sif.native_snd.as_ref().and_then(|s| s.sink.queued_frames());
-    if queued(c).is_some_and(|q| q < RT_LOW) {
-        while queued(c).is_some_and(|q| q < RT_TARGET) {
-            run_tick(c);
-            due += TICK_EE_CYCLES;
-        }
+    let fresh = |c: &mut Cpu| m!(c).sif.native_snd.as_ref().is_some_and(|s| s.tag_fresh);
+    let lead = (crate::machine::audio_lead_frames() as usize).max(2880);
+    if queued(c).is_some_and(|q| q < lead) && fresh(c) {
+        // One tick per fresh buffer; the EE answers within its own time and
+        // the next service call (every RT_POLL_CYCLES) can run another.
+        run_tick(c);
+        due += TICK_EE_CYCLES;
         m!(c).sif.native_snd.as_mut().unwrap().next_tick = Some(due);
     }
     Some(due.min(c.cycles + RT_POLL_CYCLES))
@@ -122,6 +139,7 @@ fn run_tick(c: &mut Cpu) {
     let out = s.drv.tick(tag, &iop);
     s.sink.push(&out.audio);
     s.ticks += 1;
+    s.tag_fresh = false;
     let status_ee = s.drv.cfg.map_or(0, |p| p.status_ee);
     m!(c).iop = iop;
     if status_ee != 0 {

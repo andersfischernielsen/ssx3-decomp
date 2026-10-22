@@ -72,10 +72,21 @@ slow", on by default):
   spiralling). A debt or lead over 0.25 s (pause, overlay, window drag) is
   forgotten. `tick::on_vblank` writes `n` into `+0x24`.
 - Audio (`snd_native::service`, `machine::set_realtime`): the mixer ticks on
-  the EE clock as before, and when the device's queue falls under 40 ms it
-  runs extra ticks up to 60 ms and moves the EE-clock schedule along. As on
-  the console, where the IOP keeps its own time, sound no longer depends on
-  how fast the guest runs.
+  the EE clock as before, and when the device's queue is under the lead it
+  runs an extra tick and moves the EE-clock schedule along. As on the
+  console, where the IOP keeps its own time, sound no longer depends on how
+  fast the guest runs. Two details matter:
+  - An extra tick waits for the EE's next tag buffer (`note_dma` marks it
+    fresh). Each buffer carries the next 10.7 ms of the music the EE mixes;
+    ticking twice on one buffer replays it (measured: 67% of 10.7 ms blocks
+    repeated their predecessor, heard as a metallic sound; with the check
+    0.2%, as at normal speed).
+  - The lead adapts (`CatchUp::audio_lead`: 2.5 × the longest recent frame,
+    60-180 ms), because the guest, which mixes, does not run while the host
+    draws or presents a frame. With a fixed 60 ms a slow frame (2×
+    resolution) emptied the device: choppy sound. The window logs the gaps
+    (`audio gaps ... lead ... ms`); `SSX3_AUDIO=null` is a silent device
+    drained in real time for headless tests.
 - Replays, headless runs and the gate never use it (`SSX3_CATCHUP=1` turns it
   on in `ssx3-headless` for tests; with `SSX3_SLOW_FRAME_MS` it simulates a
   slow host). This replaces the old `SSX3_HOST_CLOCK`, which skipped EE
@@ -87,6 +98,7 @@ Measured, race replay with 20 ms added per frame (a ~35 fps host), 60 Hz:
 | --- | --- | --- |
 | Game updates after 169 s of wall time | (one per VSync: ~5900) | 10084 (real time: 10148) |
 | Race clock over 2000 frames (~60 s of wall time) | 0:01 → 0:34 (slow motion) | 0:04 → 1:05 (real time) |
+| Audio, a 19 fps host (50 ms added per frame), 178 s | (follows the game: slow) | 177 s of audio, no gaps, lead ~150 ms |
 
 Not covered: the browser (its page drains audio every frame; its frame loop
 is the worker's `requestAnimationFrame`, catch-up to be wired there).

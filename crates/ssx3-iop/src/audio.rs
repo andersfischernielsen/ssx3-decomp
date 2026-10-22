@@ -20,6 +20,15 @@ const RING_FRAMES: usize = RATE as usize / 5;
 
 type Ring = Arc<Mutex<VecDeque<i16>>>;
 
+/// Frames the output device wanted while the ring was empty (it repeats
+/// the last sample then: an audible gap).
+static UNDERRUN_FRAMES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Frames the device has played as gaps so far.
+pub fn underrun_frames() -> u64 {
+    UNDERRUN_FRAMES.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 pub struct Sink {
     ring: Option<Ring>,
     wav: Option<Wav>,
@@ -95,8 +104,13 @@ impl Sink {
                 None
             }
         });
-        let want_device = std::env::var("SSX3_AUDIO").map(|v| v != "0").unwrap_or(true);
-        let ring = if want_device { start_device() } else { None };
+        let mode = std::env::var("SSX3_AUDIO").unwrap_or_default();
+        let ring = match mode.as_str() {
+            "0" => None,
+            // Test device: drained in real time, plays nothing.
+            "null" => start_null_device(),
+            _ => start_device(),
+        };
         Self { ring, wav }
     }
 
@@ -128,6 +142,37 @@ impl Sink {
             w.flush();
         }
     }
+}
+
+/// `SSX3_AUDIO=null`: a ring a thread drains at 48 kHz in real time, as a
+/// device would (tests of real-time audio without sound).
+#[cfg(not(target_arch = "wasm32"))]
+fn start_null_device() -> Option<Ring> {
+    let ring: Ring = Arc::new(Mutex::new(VecDeque::with_capacity(RING_FRAMES * 2)));
+    let r = ring.clone();
+    std::thread::Builder::new()
+        .name("ssx3-audio-null".into())
+        .spawn(move || {
+            let t0 = std::time::Instant::now();
+            let mut taken = 0u64;
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+                let due = (t0.elapsed().as_secs_f64() * RATE as f64) as u64;
+                let n = ((due - taken) * 2) as usize;
+                let mut q = r.lock().unwrap();
+                let k = n.min(q.len());
+                q.drain(..k);
+                UNDERRUN_FRAMES.fetch_add(((n - k) / 2) as u64, std::sync::atomic::Ordering::Relaxed);
+                taken = due;
+            }
+        })
+        .ok()?;
+    Some(ring)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn start_null_device() -> Option<Ring> {
+    None
 }
 
 /// The browser: no device here. The ring is drained by the page ([`take`]),
@@ -217,6 +262,8 @@ fn open_stream(ring: Ring) -> Result<cpal::Stream, String> {
                 cur = next;
                 if q.len() >= 2 {
                     next = [q.pop_front().unwrap(), q.pop_front().unwrap()];
+                } else {
+                    UNDERRUN_FRAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 }
             }
             let t = frac as f32;
