@@ -1929,6 +1929,29 @@ pub(crate) fn gpf(c: &Cpu, off: u32) -> u32 {
 }
 
 
+/// The trick HUD's number animation steps toward its target by at most one
+/// `1/30` entry per tick (two 60 Hz frames of progress). At another rate that
+/// is `dt * 2` (exactly 1/30 at 60, where the entry is still loaded).
+#[inline]
+pub(crate) fn hud_step_30(c: &mut Cpu) -> FpuF32 {
+    FpuF32::from_f32(crate::tick::dt(c) * 2.0)
+}
+
+
+/// The trick-name banner's alpha oscillates with `sin(frameCounter * 6°)`:
+/// 6° per 60 Hz frame. At another rate the phase per tick is `6° * 60 / rate`
+/// (exact at 60, where nothing is written; the 120/240 factors are 1/2, 1/4).
+#[inline]
+pub(crate) fn hud_wave_step(c: &mut Cpu, six_degrees: FpuF32) -> FpuF32 {
+    let hz = crate::tick::rate(c);
+    if hz == 60 {
+        six_degrees
+    } else {
+        six_degrees * FpuF32::from_f32(60.0f32 / hz as f32)
+    }
+}
+
+
 /// A HUD record address: slot `n` of the table at_3 `+0x1b0`.
 #[inline(always)]
 pub(crate) fn slot(n: u32) -> u32 {
@@ -1946,6 +1969,12 @@ pub(crate) fn remove_message(c: &mut Cpu, id: u64, ret: u32) -> Flow {
 
 
 /// `RiderMetrix_UpdateTrickHUD(RiderMetrix* m)` (0x117fe0).
+///
+/// The numbers it shows move toward their targets by at most one step per
+/// tick: seven `1/60` `.lit4` entries (which follow the rate) and three `1/30`
+/// ones (the trick-name banner's tracking step, [`hud_step_30`]). The banner's
+/// alpha oscillates `sin(frameCounter * 6°)`, a phase per tick
+/// ([`hud_wave_step`]).
 pub fn rider_metrix_update_trick_hud(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 22;
@@ -2159,6 +2188,10 @@ pub fn rider_metrix_update_trick_hud(c: &mut Cpu) {
                                     c.mtc1(2, 0);
                                     c.cvt_s_w(0, 0);
                                     c.lwc1(12, gpf(c, 0x7ae0));
+                                    // 6° per 60 Hz frame: the phase per tick
+                                    // follows the rate.
+                                    let six_degrees = FpuF32(c.f[12]);
+                                    c.f[12] = hud_wave_step(c, six_degrees).0;
                                     c.mul_s(12, 0, 12);
                                     call_ptr(c, table::SIN, 0x0011_820c)?;
                                     c.lwc1(1, gpf(c, 0x7adc));
@@ -2205,6 +2238,12 @@ pub fn rider_metrix_update_trick_hud(c: &mut Cpu) {
                                                             c.cycles += 9;
                                                             fc(c, 1, 0x3f80_0000);
                                                             c.lwc1(2, gpf(c, 0x7ad4));
+                                                            // The 1/30 entry is a
+                                                            // per-tick step.
+                                                            if crate::tick::rate(c) != 60 {
+                                                                let step = hud_step_30(c);
+                                                                c.f[2] = step.0;
+                                                            }
                                                             c.sub_s(1, 3, 1);
                                                             c.add_s(0, 12, 2);
                                                             c.c_lt_s(0, 1);
@@ -2253,6 +2292,10 @@ pub fn rider_metrix_update_trick_hud(c: &mut Cpu) {
                                                             c.cycles += 9;
                                                             fc(c, 1, 0x3f80_0000);
                                                             c.lwc1(2, gpf(c, 0x7ad0));
+                                                            if crate::tick::rate(c) != 60 {
+                                                                let step = hud_step_30(c);
+                                                                c.f[2] = step.0;
+                                                            }
                                                             c.add_s(1, 3, 1);
                                                             c.add_s(0, 12, 2);
                                                             c.c_lt_s(0, 1);
@@ -2290,6 +2333,10 @@ pub fn rider_metrix_update_trick_hud(c: &mut Cpu) {
                                             'b_118364: {
                                                 c.cycles += 6;
                                                 c.lwc1(1, gpf(c, 0x7acc));
+                                                if crate::tick::rate(c) != 60 {
+                                                    let step = hud_step_30(c);
+                                                    c.f[1] = step.0;
+                                                }
                                                 c.add_s(0, 12, 1);
                                                 c.c_lt_s(0, 3);
                                                 if !c.fcc() {
@@ -4280,5 +4327,38 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(M);
             },
         );
+    }
+
+    /// The trick HUD's two hand-converted per-tick quantities: the banner's
+    /// tracking step (a `1/30` `.lit4` entry: two 60 Hz frames of progress per
+    /// tick) and its oscillation phase (`6°` per 60 Hz frame). A tick at `r` Hz
+    /// must carry `60 / r` of the 60 Hz amount, so a second of ticks covers as
+    /// much of the animation as a second at 60. At 60 both keep the game's
+    /// values (the entries are loaded unchanged).
+    #[test]
+    fn rider_metrix_update_trick_hud_follows_the_rate() {
+        use crate::tick;
+        // The game's `6°` in radians (the entry at gp-0x7ae0).
+        const SIX_DEGREES: FpuF32 = FpuF32(0x3dd6_7751);
+        let mut c = crate::difftest::fresh();
+        tick::set_for_test(&mut c, 60);
+        assert_eq!(hud_wave_step(&mut c, SIX_DEGREES), SIX_DEGREES, "60 Hz phase");
+        assert_eq!(hud_step_30(&mut c).to_f32(), 1.0f32 / 30.0, "60 Hz step");
+        for hz in [120u32, 240] {
+            tick::set_for_test(&mut c, hz);
+            // The same progress per tick, measured in 60 Hz frames.
+            let frames = hz / 60;
+            let step = hud_step_30(&mut c).to_f32() * frames as f32;
+            assert!(
+                (step - 1.0f32 / 30.0).abs() < 1e-9,
+                "{hz} Hz: {frames} ticks of the step cover {step}, not 1/30"
+            );
+            // ... and the same phase per tick, so the wave keeps its period.
+            let phase = hud_wave_step(&mut c, SIX_DEGREES).to_f32() * frames as f32;
+            assert!(
+                (phase - SIX_DEGREES.to_f32()).abs() < 1e-7,
+                "{hz} Hz: {frames} ticks of the wave cover {phase} rad, not 6°"
+            );
+        }
     }
 }

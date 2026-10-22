@@ -3837,6 +3837,11 @@ pub(crate) fn jump_desc_copy(c: &mut Cpu, reg: usize, src: u32, lo: u32, hi: u32
 /// `void Rider_SetTimedEvent(Rider* self, int mode, float seconds)`
 /// (0x10e028): boost timer; `mode == 0` clears it to -1, otherwise the frame
 /// counter plus `seconds * 60` truncated.
+///
+/// `+0x354`/`+0x358` are compared against `AI_GetFrameCounter` (one count per
+/// tick, `docs/investigation/structs/world.md` 0x08), so `seconds * 60` is a
+/// tick count: at another rate the deadline (`ticks_from_frames60`) is
+/// further away. At 60 the truncated frame count is the tick count, unchanged.
 pub fn rider_set_timed_event(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 8;
@@ -3859,6 +3864,11 @@ pub fn rider_set_timed_event(c: &mut Cpu) {
             c.mul_s(0, 12, 0);
             c.cvt_w_s(1, 0);
             c.mfc1(16, 1);
+            // `s0` = the seconds at the 60 Hz authoring rate; the counter it
+            // is added to counts ticks.
+            if crate::tick::rate(c) != 60 && (c.g[S0][0] as i64) > 0 {
+                c.g[S0][0] = crate::tick::ticks_from_frames60(c, c.g[S0][0] as u32) as u64;
+            }
             call_ptr(c, 0x0012_98c8, 0x0010_e070)?;
             Addr(at_3(c, S1, 0x358)).sw(c, c.g[S2][0]);
             c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S0][0] as u32));
@@ -5698,6 +5708,42 @@ pub(crate) mod tests {
                 };
             },
         );
+    }
+
+    /// The timed-event deadline (`+0x354`/`+0x358`) is a count of ticks of
+    /// `AI_GetFrameCounter`: `Rider_SetTimedEvent(..., 2.0 s)` must land the
+    /// same wall-clock time ahead at every rate (the 60 Hz path is unchanged).
+    #[test]
+    fn rider_set_timed_event_follows_the_rate() {
+        use crate::tick;
+        const WORLD: u32 = 0x0081_0000;
+        const AI: u32 = 0x0081_1000;
+        const RACE: u32 = 0x0081_2000;
+        const COUNTER: u32 = 1000;
+        let ahead = |hz: u32| -> f64 {
+            let mut c = crate::difftest::fresh();
+            c.g[GP][0] = GAME_GP as u64;
+            // `world -> +0x84 -> +0xc -> +0x8`: the AI frame counter.
+            c.bus.write32(GAME_GP - 0x848, WORLD);
+            c.bus.write32(WORLD + 0x84, AI);
+            c.bus.write32(AI + 0xc, RACE);
+            c.bus.write32(RACE + 0x8, COUNTER);
+            c.g[A0][0] = sx(DATA);
+            c.g[A1][0] = 1; // mode != 0: set a timed event
+            c.f[12] = 2.0f32.to_bits(); // seconds
+            tick::set_for_test(&mut c, hz);
+            rider_set_timed_event(&mut c);
+            let deadline = c.bus.read32(DATA + 0x354) as i32 as i64;
+            let mode = c.bus.read32(DATA + 0x358) as i32 as i64;
+            assert_eq!(mode, 1);
+            (deadline - COUNTER as i64) as f64 / hz as f64
+        };
+        let at_60 = ahead(60);
+        assert!((at_60 - 2.0).abs() < 1e-9, "{at_60} s at 60 Hz");
+        for hz in [120u32, 240] {
+            let at = ahead(hz);
+            assert!((at - at_60).abs() < 1e-9, "{hz} Hz: {at} s ahead, 60 Hz: {at_60} s");
+        }
     }
 
     pub(crate) fn wb(c: &mut Cpu, a: u32, v: u8) {

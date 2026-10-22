@@ -1,0 +1,9 @@
+addr	name	unit	labels	sites	pool
+0x0015e2a8	GameCamera_InitShakePresets	camera/camera	1/50	0x15e2d0	0x15e2d0=0x49c444
+0x0015e460	GameCamera_UpdateShake	camera/camera	60.0 (imm)	0x15e508	
+0x00168150	ChaseCameraAlgorithm_CheckDistanceReset	camera/camera	50.0 (imm)	0x168214	
+0x002dd0b8	cBoardWakeFX_Update	visualfx/boardwakefx	1/60,50.0 (imm)	0x2dd10c 0x2dd930	0x2dd10c=0x49f4bc
+0x002e1120	cDynamicSprayFX_UpdateEmitter4	visualfx/boardwakefx	1/50,1/60	0x2e1240 0x2e1334 0x2e1384 0x2e1534 0x2e155c	0x2e1240=0x49f610 0x2e1334=0x49f624 0x2e1384=0x49f628 0x2e1534=0x49f62c 0x2e155c=0x49f630
+0x002e1598	cDynamicSprayFX_UpdateEmitter5	visualfx/boardwakefx	1/60,60.0 (imm)	0x2e17c4 0x2e198c 0x2e1a14	0x2e198c=0x49f650 0x2e1a14=0x49f65c
+0x002d7c00	Avalanche_ComputeInstanceFade	visualfx/avalanche	30.0 (imm)	0x2d7c00	
+0x002ed490	WorldPainter_UpdateView	visualfx/lensfx	1/50	0x2ed6c0	0x2ed6c0=0x49f784

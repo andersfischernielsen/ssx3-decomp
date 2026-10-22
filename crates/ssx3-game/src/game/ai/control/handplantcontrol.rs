@@ -1542,6 +1542,21 @@ pub(crate) const WORLD: i32 = -0x848;
 pub(crate) const SECTIONS: u32 = 0x44;
 
 
+/// The fraction of the remaining air-turn angle a *last partial* tick applies
+/// (`RiderAirState_Update`, 0x139a30): the original `dt * 59.999996` (the
+/// reciprocal of `1/60`, ~1.0 at 60 Hz), and the whole remaining angle at any
+/// other rate — the constant would halve the turn at 120 Hz and quarter it at
+/// 240.
+#[inline]
+pub(crate) fn air_last_turn_fraction(c: &mut Cpu, dt: FpuF32, fallback: FpuF32) -> FpuF32 {
+    if crate::tick::rate(c) == 60 {
+        dt * fallback
+    } else {
+        FpuF32::ONE
+    }
+}
+
+
 /// `void RiderAirState_Update(RiderAirState* self)` (0x139a20): the rider's
 /// air-state tick: wind force, one air-prediction step, then (in the air)
 /// choose the target orientation and the turn rate and hand them to
@@ -1647,7 +1662,12 @@ pub fn rider_air_state_update(c: &mut Cpu) {
                             }
                             c.cycles += 3;
                             c.lwc1(0, gp_5(c, -0x71cc));
-                            c.mul_s(20, 12, 0);
+                            // `dt * 59.999996` is "the whole remaining turn"
+                            // at 60 Hz; in a shorter last partial tick at
+                            // another rate it is the whole of it.
+                            let fraction =
+                                air_last_turn_fraction(c, FpuF32(c.f[12]), FpuF32(c.f[0]));
+                            c.f[20] = fraction.0;
                             c.g[A0][0] = c.lw(p(this, air::RIDER));
                         }
                         // Turn amount for the frame.
@@ -6273,6 +6293,33 @@ pub(crate) mod tests {
             c.bus.write32((GAME_GP as i32 - 0x7c6c) as u32, 1.0f32.to_bits());
             c.bus.write32((GAME_GP as i32 - 0x7c60) as u32, 0.0f32.to_bits());
         });
+    }
+
+    /// `RiderAirState_Update`'s last-partial-tick turn: the original
+    /// `dt * 59.999996` (~1.0) at 60 Hz, the whole remaining angle at 120/240.
+    /// Without the conversion the fraction would halve per doubling of the
+    /// rate and the rider would stop short of its target orientation.
+    #[test]
+    fn rider_air_state_last_turn_follows_the_rate() {
+        use crate::tick;
+        let mut c = crate::difftest::fresh();
+        // The game's value at gp-0x71cc: 59.999996 (0x426fffff), the
+        // reciprocal of the 1/60 bits.
+        let fallback = FpuF32(0x426f_ffff);
+        assert!((fallback.to_f32() - 59.999_996f32).abs() < 1e-4);
+        for hz in [60u32, 120, 240] {
+            tick::set_for_test(&mut c, hz);
+            let dt = FpuF32::from_f32(1.0f32 / hz as f32);
+            let f = air_last_turn_fraction(&mut c, dt, fallback);
+            if hz == 60 {
+                // The same FPU multiply the guest does (rounding included).
+                let original = FpuF32::from_f32(1.0f32 / 60.0f32) * fallback;
+                assert_eq!(f, original, "60 Hz keeps the product");
+                assert!((f.to_f32() - 1.0).abs() < 1e-5);
+            } else {
+                assert_eq!(f, FpuF32::ONE, "{hz} Hz: the whole remaining turn");
+            }
+        }
     }
 
     #[test]

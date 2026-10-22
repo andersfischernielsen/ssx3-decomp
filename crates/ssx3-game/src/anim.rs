@@ -663,6 +663,9 @@ const MINUS_QUARTER: u32 = 0xbe80_0000;
 /// `RiderRailslideState_Exit(RailslideState*)` (0x13c5a0): leaving a rail
 /// resets slew #9 (rail-state value) to -0.25 moving toward 1.0 at the step
 /// stored at gp-0x70f8 (1/30), and clears the rail flag.
+///
+/// A slew's `maxStep` is a maximum per tick, so at another rate the 1/30 entry
+/// is `dt * 2` (exactly 1/30 at 60; the 60 Hz path still loads the entry).
 pub fn rider_railslide_state_exit(c: &mut Cpu) {
     c.cycles += 15;
     let state = RiderStateObj(Addr(abi::arg(c, 0)));
@@ -671,7 +674,12 @@ pub fn rider_railslide_state_exit(c: &mut Cpu) {
     slew.max_step().write_u32(c, 0);
     slew.cur().write_u32(c, MINUS_QUARTER);
     slew.target().write_u32(c, MINUS_QUARTER);
-    let step = Addr(c.g[GP][0] as u32).off(0u32.wrapping_sub(0x70f8)).read_fpu(c);
+    let base = Addr(c.g[GP][0] as u32);
+    let step = if crate::tick::rate(c) == 60 {
+        base.off(0u32.wrapping_sub(0x70f8)).read_fpu(c)
+    } else {
+        FpuF32::from_f32(crate::tick::dt(c) * 2.0)
+    };
     slew.target().write_fpu(c, FpuF32::ONE);
     slew.max_step().write_fpu(c, step);
     rider.rail_flag().write_u32(c, 0);
@@ -705,7 +713,9 @@ pub fn rider_railslide_sub_enter(c: &mut Cpu) {
 
 /// `RiderBoardPressSub_Exit(BoardPressSub*)` (0x12fe98): clear the board
 /// press and let slews #11 (pivot, step 1/60) and #10 (press amount, step
-/// 1/30) relax to 0. The steps are the words at gp-0x76d4 / gp-0x76d0.
+/// 1/30) relax to 0. The steps are the words at gp-0x76d4 / gp-0x76d0; the
+/// 1/60 entry follows the rate, the 1/30 one is `dt * 2` at another rate (a
+/// per-tick maximum, exactly 1/30 at 60).
 pub fn rider_board_press_sub_exit(c: &mut Cpu) {
     c.cycles += 11;
     let state = RiderStateObj(Addr(abi::arg(c, 0)));
@@ -713,7 +723,11 @@ pub fn rider_board_press_sub_exit(c: &mut Cpu) {
     let gp = Addr(c.g[GP][0] as u32);
     let pivot_step = gp.off(0u32.wrapping_sub(0x76d4)).read_fpu(c);
     rider.press_type().write_u32(c, 0);
-    let press_step = gp.off(0u32.wrapping_sub(0x76d0)).read_fpu(c);
+    let press_step = if crate::tick::rate(c) == 60 {
+        gp.off(0u32.wrapping_sub(0x76d0)).read_fpu(c)
+    } else {
+        FpuF32::from_f32(crate::tick::dt(c) * 2.0)
+    };
     let pivot = rider.slew(11);
     pivot.max_step().write_fpu(c, pivot_step);
     pivot.target().write_u32(c, 0);
@@ -1056,6 +1070,55 @@ mod tests {
                     c.bus.write32(gp - off, float(&mut r));
                 }
             });
+        }
+    }
+
+    /// The two 1/30 slew steps (`RiderRailslideState_Exit`'s rail value,
+    /// `RiderBoardPressSub_Exit`'s press amount) are maximum moves per tick: at
+    /// 120/240 Hz they are one 60 Hz frame's worth (`1/60`, `1/120`), so a slew
+    /// covers the same amount per second. The 1/60 pivot step follows the
+    /// `.lit4` entry. At 60 the entries are loaded unchanged.
+    #[test]
+    fn rider_state_slew_steps_follow_the_rate() {
+        use crate::tick;
+        let gp = crate::difftest::GAME_GP;
+        let steps = |hz: u32| -> (u32, u32, u32) {
+            let mut c = crate::difftest::fresh();
+            c.g[GP][0] = gp as u64;
+            // The game's values: 1/30 for the rail and the press, 1/60 (the
+            // pool entry the rate patches) for the pivot.
+            c.bus.write32(gp.wrapping_sub(0x70f8), (1.0f32 / 30.0).to_bits());
+            c.bus.write32(gp.wrapping_sub(0x76d0), (1.0f32 / 30.0).to_bits());
+            c.bus.write32(gp.wrapping_sub(0x76d4), tick::step_bits(hz));
+            tick::set_for_test(&mut c, hz);
+            // Railslide: state +0x50 -> rider, slew #9 (rail value).
+            let state = 0x0080_0000u32;
+            let rider = 0x0080_1000u32;
+            c.bus.write32(state + 0x50, rider);
+            c.g[A0][0] = state as u64;
+            rider_railslide_state_exit(&mut c);
+            let rail = c.bus.read32(rider + 0x1f0 + 9 * 12 + 4);
+            // Board press: state +0x14 -> rider, slews #11 (pivot) and #10.
+            let state = 0x0080_2000u32;
+            let rider = 0x0080_3000u32;
+            c.bus.write32(state + 0x14, rider);
+            c.g[A0][0] = state as u64;
+            rider_board_press_sub_exit(&mut c);
+            let pivot = c.bus.read32(rider + 0x1f0 + 11 * 12 + 4);
+            let press = c.bus.read32(rider + 0x1f0 + 10 * 12 + 4);
+            (rail, pivot, press)
+        };
+        let (rail, pivot, press) = steps(60);
+        assert_eq!(rail, (1.0f32 / 30.0).to_bits(), "60 Hz rail step");
+        assert_eq!(press, (1.0f32 / 30.0).to_bits(), "60 Hz press step");
+        assert_eq!(pivot, tick::step_bits(60), "60 Hz pivot step");
+        for hz in [120u32, 240] {
+            // A 1/30 step is two 60 Hz frames per tick, i.e. `2 / hz` per tick.
+            let expected = (2.0f32 / hz as f32).to_bits();
+            let (rail, pivot, press) = steps(hz);
+            assert_eq!(rail, expected, "{hz} Hz rail step");
+            assert_eq!(press, expected, "{hz} Hz press step");
+            assert_eq!(pivot, tick::step_bits(hz), "{hz} Hz pivot step");
         }
     }
 }

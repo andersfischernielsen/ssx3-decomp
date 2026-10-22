@@ -8017,6 +8017,12 @@ pub fn rider_reset_motion(c: &mut Cpu) {
 /// `int Rider_EstimateFinishTime(Rider* self)` (0x122d78): estimate the
 /// remaining time as `n + dist / rate`, where `rate` is the recent distance
 /// rate clamped to at least `30 - aiIndex`.
+///
+/// `n` (`+0xc` of the AI module) counts ticks, so `(startDist - dist) / n` is
+/// units travelled per *tick*, and so is the `30 - aiIndex` floor. At another
+/// rate the same speed is fewer units per tick: [`per_tick_60`] scales the
+/// floor, the estimate (`dist / rate` ticks) then follows on its own. At 60
+/// the code is the original.
 pub fn rider_estimate_finish_time(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 33;
@@ -8050,6 +8056,8 @@ pub fn rider_estimate_finish_time(c: &mut Cpu) {
         c.mtc1(2, 0);
         c.cvt_s_w(0, 0);
         c.sub_s(0, 21, 0);
+        // The `30 - index` floor is a speed per 60 Hz tick.
+        per_tick_60(c, 0);
         c.c_lt_s(20, 0);
         if c.fcc() {
             c.cycles += 9;
@@ -8062,6 +8070,8 @@ pub fn rider_estimate_finish_time(c: &mut Cpu) {
             c.mtc1(2, 0);
             c.cvt_s_w(0, 0);
             c.sub_s(20, 21, 0);
+            // `f20` = the floor again (the second virtual call's index).
+            per_tick_60(c, 20);
             c.lwc1(0, p(r32(c, S0), 0x4d0));
         } else {
             c.lwc1(0, p(r32(c, S0), 0x4d0));
@@ -8082,6 +8092,18 @@ pub fn rider_estimate_finish_time(c: &mut Cpu) {
         c.pc = ra;
         Ok(())
     })
+}
+
+
+/// An `f{r}` holding a speed in units per 60 Hz tick, as a speed per tick at
+/// the game's rate (units/tick × 60 / rate). At 60 nothing changes, so the
+/// differential test still sees the original bits.
+#[inline]
+pub(crate) fn per_tick_60(c: &mut Cpu, r: usize) {
+    let hz = crate::tick::rate(c);
+    if hz != 60 {
+        setf_2(c, r, fr_2(c, r) * FpuF32::from_f32(60.0f32 / hz as f32));
+    }
 }
 
 
@@ -10052,6 +10074,59 @@ pub(crate) mod tests {
                 wf_2(c, this + 0x520, 30.0);
             },
         );
+    }
+
+
+    /// The `30 - aiIndex` speed floor is per tick: a rider whose recent speed
+    /// is under it gets the same estimated *time* to the finish at 60, 120 and
+    /// 240 Hz (the 60 Hz path is the original).
+    #[test]
+    fn rider_estimate_finish_time_follows_the_rate() {
+        use crate::tick;
+        const R: u32 = 0x0080_0000;
+        const WORLD: u32 = 0x0081_0000;
+        const AI: u32 = 0x0081_1000;
+        const RACE: u32 = 0x0081_2000;
+        const VT: u32 = 0x0082_0000;
+        const START: f32 = 3500.0; // start distance
+        const DIST: f32 = 1000.0; // remaining
+        let seconds = |hz: u32| -> (f64, f64) {
+            let mut c = crate::difftest::fresh();
+            c.g[GP][0] = GAME_GP as u64;
+            c.g[A0][0] = R as u64;
+            // `world -> +0x84 -> +0xc`: the race clock in ticks.
+            c.bus.write32(GAME_GP - 0x848, WORLD);
+            c.bus.write32(WORLD + 0x84, AI);
+            c.bus.write32(AI + 0xc, RACE);
+            let frames = 2 * hz; // two seconds elapsed
+            c.bus.write32(RACE + 0xc, frames);
+            c.bus.write32(R + 0x4d8, START.to_bits());
+            c.bus.write32(R + 0x4d0, DIST.to_bits());
+            // The AI-index virtual at `r+0x6c0`: slot +0x3c indexed by +0x38
+            // (`lh`), here zero, answered by a fake returning index 3.
+            c.bus.write32(R + 0x6c0, VT);
+            c.bus.write16(VT + 0x38, 0);
+            c.bus.write32(VT + 0x3c, crate::difftest::fakes::FAKE);
+            c.hooks.miss = crate::difftest::fakes::fake_call;
+            c.bus.write32(crate::difftest::fakes::LOG_UNWIND_AT, u32::MAX);
+            for i in 0..2u32 {
+                c.bus.write32(crate::difftest::fakes::LOG_RESULTS + 4 * i, 3);
+            }
+            tick::set_for_test(&mut c, hz);
+            rider_estimate_finish_time(&mut c);
+            let estimate = c.g[V0][0] as u32 as i32 as i64;
+            ((estimate - frames as i64) as f64 / hz as f64, frames as f64 / hz as f64)
+        };
+        let (at_60, t_60) = seconds(60);
+        assert_eq!(t_60, 2.0);
+        for hz in [120u32, 240] {
+            let (at, t) = seconds(hz);
+            assert_eq!(t, 2.0);
+            assert!(
+                (at - at_60).abs() < 1e-9,
+                "{hz} Hz: {at} s left of the race, 60 Hz: {at_60} s"
+            );
+        }
     }
 
 

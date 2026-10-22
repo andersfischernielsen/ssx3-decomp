@@ -1,0 +1,9 @@
+addr	name	unit	labels	sites	pool
+0x00311318	AnimDataBase_SampleChannel	animation/animmodel	30.0 (imm)	0x311350	
+0x00312790	AnimController_GetCurrentAnimLength	animation/rideranimbase	1/30	0x3127cc	0x3127cc=0x49fec0
+0x00312820	AnimController_GetCurrentAnimTriggerTime	animation/rideranimbase	1/30	0x3128b0	0x3128b0=0x49fec4
+0x00313c50	AnimSequence_SetTrackAnim	animation/animsequencer	1/30	0x313c7c	0x313c7c=0x49fecc
+0x00341fe8	AnimObject_v36	intersect/worldsphtree	1/30,AppMan rate	0x341ffc 0x342024 0x34205c 0x342060 0x342084 0x3420d4	0x342024=0x4a0574 0x34205c=0x4a0578 0x342084=0x4a057c 0x3420d4=0x4a0580
+0x003573f8	MagnetModifier_Update	object/movenode	50.0 (imm)	0x357440	
+0x003593d0	AnimDelta_v36	object/multiparticle	1/30	0x3593e0	0x3593e0=0x4a0688
+0x0035fb30	UVScrollModifier_SetParam	object/railmodifier	60.0 (imm)	0x35fba0	

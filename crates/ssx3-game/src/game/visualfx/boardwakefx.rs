@@ -28,6 +28,7 @@ use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use ssx3_ee_rt::funcs::call_indirect;
 use crate::events::deliver_event;
+use crate::tick;
 pub(crate) use crate::game::render::particle::at as at_2;
 pub(crate) use crate::game::render::particle::addi;
 pub(crate) use crate::game::object::debouncenode::BOARD_WAKE_WORLD;
@@ -3430,6 +3431,9 @@ pub fn dynamic_spray_fx_update_emitter5(c: &mut Cpu) {
                                 c.cycles += 7;
                                 c.add_s(0, 4, 4);
                                 c.mul_s(0, 0, 5);
+                                // A per-tick rise of the level: keep the rise
+                                // per unit of wall-clock time.
+                                per_tick_step(c, 0);
                                 c.add_s(0, 3, 0);
                                 c.c_le_s(0, 1);
                                 let t = !c.fcc();
@@ -3464,6 +3468,8 @@ pub fn dynamic_spray_fx_update_emitter5(c: &mut Cpu) {
                                 c.g[AT][0] = 0x4000_0000;
                                 c.mtc1(1, 1);
                                 c.mul_s(0, 4, 0);
+                                // Per-tick level rise -> per wall-clock time.
+                                per_tick_step(c, 0);
                                 break 'i114;
                             }
                             c.cycles += 4;
@@ -3474,6 +3480,8 @@ pub fn dynamic_spray_fx_update_emitter5(c: &mut Cpu) {
                             }
                             c.cycles += 3;
                             c.mul_s(0, 4, 5);
+                            // Per-tick level rise -> per wall-clock time.
+                            per_tick_step(c, 0);
                             c.g[AT][0] = 0x4000_0000;
                             c.mtc1(1, 1);
                             break 'i114;
@@ -3627,6 +3635,14 @@ pub fn dynamic_spray_fx_update_emitter5(c: &mut Cpu) {
                     c.cycles += 6;
                     c.lwc1(1, gp(c, -0x3aa8)); // 0.8
                     c.lwc1(0, gp(c, -0x3aa4)); // 0.2
+                    if tick::rate(c) != 60 {
+                        // The same first-order lag per unit of wall-clock time:
+                        // keep = 0.8^(60/rate), weight = 1 - keep. At 60 the
+                        // two loaded constants are used as they are.
+                        let keep = 0.8f32.powf(60.0 / tick::rate(c) as f32);
+                        c.f[1] = keep.to_bits();
+                        c.f[0] = (1.0 - keep).to_bits();
+                    }
                     c.mul_s(1, 2, 1);
                     c.mul_s(0, 3, 0);
                     c.add_s(1, 1, 0);
@@ -3677,6 +3693,9 @@ pub fn dynamic_spray_fx_update_emitter5(c: &mut Cpu) {
                     c.lwc1(0, gp(c, -0x3a98)); // 0.4
                     c.mul_s(1, 1, 0);
                 }
+                // The factor applies once per tick at 60 Hz: at another rate
+                // keep the same decay per unit of wall-clock time.
+                per_tick_factor(c, 1);
                 c.cycles += 3;
                 c.mul_s(0, 2, 1);
                 c.swc1(0, p(self_at, spray5::SPEED));
@@ -5284,6 +5303,29 @@ pub fn dynamic_spray_update_emitter3(c: &mut Cpu) {
 }
 
 
+/// A per-tick step or rise as it becomes at the current rate: `x * 60/rate`
+/// (the same amount per unit of wall-clock time). At 60 the caller keeps the
+/// original constant, so the 60 Hz path stays bit-exact.
+#[inline]
+fn per_tick_step(c: &mut Cpu, f: usize) {
+    if tick::rate(c) != 60 {
+        let k = FpuF32((60.0 / tick::rate(c) as f32).to_bits());
+        c.f[f] = (fr_2(c, f) * k).0;
+    }
+}
+
+
+/// A per-tick factor as it becomes at the current rate: `k^(60/rate)` (a
+/// first-order decay applied once per tick at 60 Hz). At 60 the caller keeps
+/// the original constant.
+#[inline]
+fn per_tick_factor(c: &mut Cpu, f: usize) {
+    if tick::rate(c) != 60 {
+        c.f[f] = f32::from_bits(c.f[f]).powf(60.0 / tick::rate(c) as f32).to_bits();
+    }
+}
+
+
 /// `cDynamicSprayFX_UpdateEmitter4`'s epilogue.
 pub(crate) fn emitter4_epilogue(c: &mut Cpu, frame: Frame) {
     c.cycles += 8;
@@ -5409,7 +5451,10 @@ pub fn dynamic_spray_update_emitter4(c: &mut Cpu) {
         if c.g[V0][0] == c.g[V1][0] {
             c.mov_s(20, 21);
         }
-        // Blend the animation's current time towards the target.
+        // Blend the animation's current time towards the target. The step is
+        // 1/600 per tick at 60 Hz, so at another rate it is stretched to the
+        // same wall-clock slew (the value stays in f0, where the original
+        // keeps it; the 60 Hz path loads and subtracts it unchanged).
         c.cycles += 4;
         c.lwc1(1, p(r32_2(c, S0), 0x1c));
         c.c_le_s(1, 20);
@@ -5417,6 +5462,7 @@ pub fn dynamic_spray_update_emitter4(c: &mut Cpu) {
         if above {
             c.cycles += 3;
             c.lwc1(0, gp(c, -0x3ae4));
+            per_tick_step(c, 0);
             c.sub_s(0, 1, 0);
             c.swc1(0, p(r32_2(c, S0), 0x1c));
         } else {
@@ -9341,6 +9387,92 @@ pub(crate) mod tests {
     }
 
 
+    /// The spray's per-tick quantities all follow the rate: the level rise
+    /// (`+0x4`), the alpha blend (`+0x120`) and the strength decay (`+0xe0`)
+    /// reach the same values after the same wall-clock time, so 5 updates at
+    /// 60 Hz and 10 at 120 Hz agree.
+    #[test]
+    fn emitter5_fades_follow_the_rate() {
+        /// `(level, alpha, speed)` after `ticks` updates at rate `hz`.
+        fn fades_after(hz: u32, ticks: u32, decay: f32) -> (f32, f32, f32) {
+            let mut c = crate::difftest::fresh();
+            elf_image(&mut c);
+            let mut r = machine(&mut c, 5, 0x2e15, 0);
+            crate::tick::set_for_test(&mut c, hz);
+            // The `1/60` entries this update loads.
+            for off in [-0x3aa0, -0x3a94] {
+                c.bus.write32(gp_at(off), crate::tick::step_bits(hz));
+            }
+            for (off, v) in [
+                (-0x3abc, 27.777778f32), (-0x3ab8, 277.77777), (-0x3ab4, 3333.3335),
+                (-0x3ab0, 0.3), (-0x3aac, 0.4), (-0x3aa8, 0.8), (-0x3aa4, 0.2),
+                (-0x3a9c, 83.333336), (-0x3a98, 0.4),
+            ] {
+                c.bus.write32(gp_at(off), f(v));
+            }
+            let (fx, obj, cfg, em, vt) =
+                (DATA, DATA + 0x5000, DATA + 0x5200, DATA + 0x3000, DATA + 0x5400);
+            c.bus.write32(fx + spray5::OBJ, obj);
+            c.bus.write32(fx + spray5::LEVEL, f(0.5));
+            c.bus.write32(fx + spray5::P28, em);
+            c.bus.write32(fx + spray5::P2C, DATA + 0x5600);
+            for k in 0..3u32 {
+                c.bus.write32(DATA + 0x5600 + 0xd8 + 4 * k, f(1.0));
+            }
+            for off in [spray5::DIR, spray5::COL, spray5::POS, spray5::FRAME_POS, spray5::THROW] {
+                put_f32s(&mut c, fx + off, [0.0, 0.0, 0.0, 0.0]);
+            }
+            put_f32s(&mut c, obj + 0x370, [0.0, 0.0, 1.0, 0.0]);
+            c.bus.write32(fx + spray5::CFG, cfg);
+            c.bus.write32(cfg + spray_cfg::ENABLED, 1);
+            c.bus.write32(cfg + spray_cfg::FLAG, 1); // short range: slot 5
+            c.bus.write32(cfg + spray_cfg::DECAY, f(decay));
+            c.bus.write32(fx + spray5::ID4, 2); // the 2.0 level-rate branch
+            c.bus.write32(fx + spray5::SPEED, f(333.3333)); // r = 0.1, > 277.78
+            c.bus.write32(fx + spray5::I114, 1); // alpha target 0.5
+            c.bus.write32(fx + spray5::ALPHA, f(0.9));
+            c.bus.write32(fx + spray5::I124, 1); // no extra 0.4 on the decay
+            c.bus.write32(obj + 0xac4, 1); // no splash spawn
+            c.bus.write32(obj + 0x6c0, vt);
+            c.bus.write16(vt + 0x10, 0);
+            c.bus.write32(vt + 0x14, FAKE);
+            put_spray_slot(&mut c, &mut r, em + 5 * 0x210, DATA + 0x8000);
+            put_spray_slot(&mut c, &mut r, em + 6 * 0x210, DATA + 0x8100);
+            c.bus.write32(gp_at(0xa0c), 0x3f80_0000);
+            for _ in 0..ticks {
+                c.g[A0][0] = fx as u64;
+                dynamic_spray_fx_update_emitter5(&mut c);
+            }
+            (
+                f32::from_bits(c.bus.read32(fx + spray5::LEVEL)),
+                f32::from_bits(c.bus.read32(fx + spray5::ALPHA)),
+                f32::from_bits(c.bus.read32(fx + spray5::SPEED)),
+            )
+        }
+
+        // A steady strength (decay 1.0) isolates the level rise and the alpha
+        // blend: 0.5 + 5 * 0.2 = 1.5, and 0.5 + 0.4 * 0.8^5 = 0.631072.
+        let (l60, a60, _) = fades_after(60, 5, 1.0);
+        let (l120, a120, _) = fades_after(120, 10, 1.0);
+        assert!((l60 - 1.5).abs() < 1e-4, "level at 60: {l60}");
+        assert!((l120 - l60).abs() < 1e-4, "level at 120: {l120}, 60 Hz: {l60}");
+        assert!((a60 - 0.631_072).abs() < 1e-4, "alpha at 60: {a60}");
+        assert!((a120 - a60).abs() < 1e-4, "alpha at 120: {a120}, 60 Hz: {a60}");
+        // Unconverted, the level would have reached 2.0 and the alpha 0.543.
+        assert!(l120 < 1.8, "level at 120: {l120}");
+        assert!(a120 > 0.6, "alpha at 120: {a120}");
+
+        // The strength decays by `decay` once per tick at 60 Hz.
+        let (_, _, s60) = fades_after(60, 5, 0.9);
+        let (_, _, s120) = fades_after(120, 10, 0.9);
+        let want = 333.3333 * 0.9f32.powi(5);
+        assert!((s60 - want).abs() < 0.05, "speed at 60: {s60}, want {want}");
+        assert!((s120 - s60).abs() < 0.05, "speed at 120: {s120}, 60 Hz: {s60}");
+        // Unconverted, 10 ticks would leave 116.2.
+        assert!(s120 > 150.0, "speed at 120: {s120}");
+    }
+
+
     pub(crate) const SEEDS_3: u32 = 160;
 
 
@@ -9885,6 +10017,65 @@ pub(crate) mod tests {
                 }
             },
         );
+    }
+
+
+    /// The animation blend `cDynamicSprayFX_UpdateEmitter4` applies to `+0x1c`
+    /// is 1/600 per tick at 60 Hz: 60 updates at 60 Hz and 120 at 120 Hz drop
+    /// it from 0.5 to the same 0.4.
+    #[test]
+    fn emitter4_anim_blend_follows_the_rate() {
+        /// The blend value after `ticks` updates at rate `hz`, from 0.5.
+        fn blend_after(hz: u32, ticks: u32) -> f32 {
+            let mut c = crate::difftest::fresh();
+            elf_image(&mut c);
+            let mut r = machine(&mut c, 3, 0x2e11, 0);
+            crate::tick::set_for_test(&mut c, hz);
+            // The `1/60` entries this update loads (its 1/600 blend step at
+            // gp-0x3ae4 is not one of them: the port stretches that one).
+            for off in [-0x3ae0, -0x3ac8, -0x3ac4, -0x3ac0] {
+                c.bus.write32(gp_at(off), crate::tick::step_bits(hz));
+            }
+            let (fx, owner, ctrl, ctrl2) =
+                (DATA, DATA + 0x2000, DATA + 0x6000, DATA + 0x6400);
+            let vt = fakes::vtable(&mut c, &mut r, &[0x10, 0x38]);
+            c.bus.write32(fx, owner);
+            c.bus.write32(fx + 0x28, DATA + 0x3000);
+            c.bus.write32(fx + 0x2c, DATA + 0x4000);
+            c.bus.write32(owner + 0x780, ctrl);
+            c.bus.write32(ctrl + 0x30, DATA + 0x6200);
+            c.bus.write32(owner + 0x8a8, 0);
+            c.bus.write32(owner + 0x784, ctrl2);
+            c.bus.write32(ctrl2 + 8, 0x1b6); // GetLayerAnimEntry -> 0 (target 0)
+            c.bus.write32(owner + 0x6c0, vt);
+            for off in [0x370, 0x3b0] {
+                put_f32s(&mut c, owner + off, [4.0, 4.0, 4.0, 0.0]);
+            }
+            for off in [0x478, 0x47c, 0x480] {
+                c.bus.write32(DATA + 0x4000 + off, f(5.0));
+            }
+            c.bus.write32(fx + 0xbc, 0); // below the 1111.11 gate: the blend runs
+            c.bus.write32(fx + 0x1c, f(0.5)); // the blended animation time
+            c.bus.write32(fx + 0x14, 0);
+            c.bus.write32(fx + 0x18, 1);
+            c.bus.write32(fx + 0x20, 0);
+            c.bus.write32(fx + 0x24, f(0.4));
+            for _ in 0..ticks {
+                c.g[A0][0] = fx as u64;
+                dynamic_spray_update_emitter4(&mut c);
+            }
+            f32::from_bits(c.bus.read32(fx + 0x1c))
+        }
+
+        let one_second_60 = blend_after(60, 60);
+        let one_second_120 = blend_after(120, 120);
+        assert!((one_second_60 - 0.4).abs() < 1e-5, "at 60: {one_second_60}");
+        assert!(
+            (one_second_120 - one_second_60).abs() < 1e-5,
+            "at 120: {one_second_120}, at 60: {one_second_60}"
+        );
+        // An unconverted step would leave 0.3 after the same wall-clock time.
+        assert!(one_second_120 > 0.35, "at 120: {one_second_120}");
     }
 
 

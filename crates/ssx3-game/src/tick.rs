@@ -65,6 +65,16 @@ pub const NOT_A_STEP: &[u32] = &[
     0x0049_e8f8,
 ];
 
+/// 60 Hz frame counts in the game's *data* (not `.lit4`), rewritten to the
+/// same wall-clock duration in ticks once, when the rate is applied. They may
+/// be live countdowns afterwards, so they are written only on a rate change.
+pub const FRAME_COUNTS: &[(u32, u32)] = &[
+    // `D_004A17C0`: the title screen's pre-fade wait, 300 frames (5 s). Read
+    // and decremented only by cFEStateTitle_TransitionIn (0x1947f8), so the
+    // countdown runs 300 ticks at 60 Hz, 600 at 120, 1200 at 240.
+    (0x004a_17c0, 300),
+];
+
 /// The configured rate (Hz).
 static RATE: AtomicU32 = AtomicU32::new(60);
 /// The rate last written into guest memory (0: none yet).
@@ -160,6 +170,7 @@ pub fn on_vblank(c: &mut Cpu) {
     }
     if APPLIED.load(Ordering::Relaxed) != want {
         patch_pool(c, want);
+        patch_frame_counts(c, want);
         APPLIED.store(want, Ordering::Relaxed);
     }
 }
@@ -302,6 +313,18 @@ fn patch_pool(c: &mut Cpu, hz: u32) {
     eprintln!("[tick] {hz} Hz: step 1/{hz} in the app manager and {} .lit4 entries", pool.len());
 }
 
+/// Write the tick count for each 60 Hz frame count in [`FRAME_COUNTS`].
+fn patch_frame_counts(c: &mut Cpu, hz: u32) {
+    for &(a, frames) in FRAME_COUNTS {
+        let n = if hz == 60 {
+            frames
+        } else {
+            ((frames as u64 * hz as u64 + 30) / 60) as u32
+        };
+        c.bus.write32(a, n);
+    }
+}
+
 /// The `.lit4` entries holding `1/60` that follow the rate.
 fn collect_pool(c: &mut Cpu) -> Vec<u32> {
     let mut out = Vec::new();
@@ -429,5 +452,21 @@ mod tests {
         for &e in NOT_A_STEP {
             assert!(!pool.contains(&e), "{e:#x}");
         }
+    }
+
+    /// A 60 Hz frame count in the game's data becomes the same wall-clock
+    /// duration in ticks: 300 frames stay 300 at 60 Hz, 600 at 120, 1200 at
+    /// 240. It is written only on a rate change, so a live countdown is not
+    /// restarted.
+    #[test]
+    fn frame_count_data_follows_the_rate() {
+        let mut c = ssx3_ps2::new_cpu();
+        assert_eq!(FRAME_COUNTS, &[(0x004a_17c0, 300)]);
+        patch_frame_counts(&mut c, 60);
+        assert_eq!(c.bus.read32(0x004a_17c0), 300);
+        patch_frame_counts(&mut c, 120);
+        assert_eq!(c.bus.read32(0x004a_17c0), 600);
+        patch_frame_counts(&mut c, 240);
+        assert_eq!(c.bus.read32(0x004a_17c0), 1200);
     }
 }

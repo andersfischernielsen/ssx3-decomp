@@ -9,6 +9,7 @@ use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 use crate::guest::Addr;
+use crate::tick;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -454,6 +455,13 @@ pub fn c_fe_state_title_init(c: &mut Cpu) {
 }
 
 
+/// The pre-fade wait of the title screen: `D_004A17C0` (`gp-0x1930`) starts at
+/// 300 (5 s at 60 Hz) in the game's data and is decremented once per update by
+/// `cFEStateTitle_TransitionIn` only (Ghidra: the only references to
+/// `0x4a17c0` are the load and the store in that function).
+const TRANSIENT_WAIT_FRAMES: u32 = 300;
+
+
 /// `bool cFEStateTitle_TransitionIn(self)` (0x1947f8): count the transition
 /// in over a few frames, then fade in the title's two text widgets.
 pub fn cfe_state_title_transition_in(c: &mut Cpu) {
@@ -468,6 +476,10 @@ pub fn cfe_state_title_transition_in(c: &mut Cpu) {
         let mut fade = c.g[V0][0] == 0;
         if !fade {
             c.cycles += 3;
+            // The countdown is a wall-clock wait (5 s at 60 Hz). The data
+            // initializer is 300 frames; `tick::on_vblank` rewrites it to
+            // 300 * rate / 60 ticks once, when it applies the rate (see
+            // `tick::FRAME_COUNTS`), so the countdown is the original one.
             c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x1));
             let still = c.g[V0][0] != 0;
             c.sw(p_4(r32(c, GP), 0xffff_e6d0), c.g[V0][0]);
@@ -639,8 +651,19 @@ pub fn cfe_state_main_menu_on_widget_created(c: &mut Cpu) {
 // ---------------------------------------------------------------------------
 // Front end: title / main menu.
 
+/// The title screen's idle timeout before the attract mode: 30 s, the
+/// original's `self->timer > 0x708` in frames.
+const TITLE_IDLE_FRAMES: u32 = 1800;
+
+
 /// `void cFEStateTitle_Update(self)` (0x1948a8): tick the idle timer and drop
 /// back to the attract mode after 30 seconds; any active list item resets it.
+///
+/// The idle timeout is a wall-clock 30 s (`self->timer > 0x708` in the C++,
+/// i.e. 1800 frames at 60 Hz), not a fixed number of updates: the limit is
+/// `ticks_from_frames60(1800)`, so the counter `timer + 1` continuing means
+/// `timer + 1 <= 1800` (the original `timer + 1 < 1801`; the two forms agree
+/// for every int32, and at 60 the limit is exactly 1800).
 pub fn cfestatetitle_update(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 10;
@@ -651,7 +674,8 @@ pub fn cfestatetitle_update(c: &mut Cpu) {
         call_ptr(c, 0x0039_e510, 0x0019_48bc)?;
         c.g[V0][0] = Addr(p_5(r32(c, S0), 0x48)).lw(c);
         c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
-        c.g[V1][0] = ((c.g[V0][0] as i64) < 1801i64) as u64;
+        let idle = tick::ticks_from_frames60(c, TITLE_IDLE_FRAMES) as i64;
+        c.g[V1][0] = ((c.g[V0][0] as i64) <= idle) as u64;
         let ticking = c.g[V1][0] != 0;
         Addr(p_5(r32(c, S0), 0x48)).sw(c, c.g[V0][0]);
         if !ticking {
@@ -1172,5 +1196,104 @@ pub(crate) mod tests {
                 w(c, this + 0x40, 0);
             },
         );
+    }
+
+
+    // ------------------------------------------------------- title screen timers
+
+    /// A callee outside the translated code: answer null and return at once.
+    /// The rate tests below only count updates (the widgets they look up are
+    /// absent anyway), so the callee's results do not matter.
+    fn no_callee(c: &mut Cpu, _target: u32) {
+        c.g[V0][0] = 0;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+
+    /// `cFEStateTitle_Update` at rate `hz` from a zero idle counter: true when
+    /// the attract mode is entered within `n` updates.
+    fn title_attracts_after(hz: u32, n: u32) -> bool {
+        let mut c = crate::difftest::fresh();
+        c.hooks.miss = no_callee;
+        crate::tick::set_for_test(&mut c, hz);
+        c.g[GP][0] = GAME_GP as u64;
+        let this = DATA;
+        clear_2(&mut c, this, 0x200);
+        w(&mut c, this + 0x48, 0);
+        let flag = GAME_GP.wrapping_sub(0x1724);
+        w(&mut c, flag, 0);
+        // the two (empty) world lists the idle check walks
+        let l0 = DATA + 0x1000;
+        let l1 = DATA + 0x2000;
+        clear_2(&mut c, l0, 0x40);
+        clear_2(&mut c, l1, 0x40);
+        w(&mut c, WORLD + 0xb0, l0);
+        w(&mut c, WORLD + 0xb4, l1);
+        for i in 1..=n {
+            c.g[A0][0] = this as u64;
+            cfestatetitle_update(&mut c);
+            assert_eq!(c.pc, RET, "update {i} did not return");
+            if c.bus.read32(flag) & 4 != 0 {
+                return true;
+            }
+        }
+        false
+    }
+
+
+    /// `cFEStateTitle_TransitionIn` at rate `hz`, starting from the game's
+    /// data initializer of `D_004A17C0` (300): true when the fade starts
+    /// within `n` updates.
+    fn title_fades_after(hz: u32, n: u32) -> bool {
+        let mut c = crate::difftest::fresh();
+        c.hooks.miss = no_callee;
+        crate::tick::set_for_test(&mut c, hz);
+        c.g[GP][0] = GAME_GP as u64;
+        let this = DATA;
+        clear_2(&mut c, this, 0x100);
+        // no screen at +0x40: both widget lookups return null and are skipped
+        w(&mut c, this + 0x40, 0);
+        // The data initializer as `tick::on_vblank` writes it for this rate.
+        let init = crate::tick::ticks_from_frames60(&mut c, TRANSIENT_WAIT_FRAMES);
+        w(&mut c, GAME_GP.wrapping_sub(0x1930), init);
+        for i in 1..=n {
+            c.g[A0][0] = this as u64;
+            cfe_state_title_transition_in(&mut c);
+            assert_eq!(c.pc, RET, "transition {i} did not return");
+            if c.g[V0][0] == 1 {
+                return true;
+            }
+        }
+        false
+    }
+
+
+    /// The title's 30 s idle timeout is a wall clock duration, not a count of
+    /// updates: 1801 updates at 60 Hz (the original), 3601 at 120 Hz, 7201 at
+    /// 240 Hz.
+    #[test]
+    fn cfestatetitle_idle_timeout_follows_the_rate() {
+        assert!(!title_attracts_after(60, 1800));
+        assert!(title_attracts_after(60, 1801));
+        assert!(!title_attracts_after(120, 3600));
+        assert!(title_attracts_after(120, 3601));
+        assert!(!title_attracts_after(240, 7200));
+        assert!(title_attracts_after(240, 7201));
+    }
+
+
+    /// The title's pre-fade wait (`D_004A17C0` = 300 frames = 5 s) is a wall
+    /// clock duration too: `tick::on_vblank` rewrites its data initializer to
+    /// 300 ticks at 60 Hz, 600 at 120 Hz, 1200 at 240 Hz (see
+    /// `tick::FRAME_COUNTS`), and the countdown consumes exactly that many
+    /// updates.
+    #[test]
+    fn cfe_state_title_transition_wait_is_the_patched_tick_count() {
+        assert!(!title_fades_after(60, 299));
+        assert!(title_fades_after(60, 300));
+        assert!(!title_fades_after(120, 599));
+        assert!(title_fades_after(120, 600));
+        assert!(!title_fades_after(240, 1199));
+        assert!(title_fades_after(240, 1200));
     }
 }
