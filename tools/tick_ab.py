@@ -7,7 +7,7 @@ Runs ./target/game/ssx3-headless twice (one heavy process at a time): the
 gate's race input at 60 Hz, then with SSX3_TICK_HZ=HZ and the input's frame
 numbers and durations scaled by HZ/60. Writes OUT/sheet*.png: each row is
 60 Hz frame F (left) next to N Hz frame F*HZ/60 (right). Compare the HUD's
-race clock and course % (they must agree up to a constant start offset),
+race clock and course % (they must agree up to a constant start offset), menu animations (rows before the race),
 the speed, and anything that visibly runs fast or slow (camera, animation,
 effects, AI riders). Build first: cargo build --profile game -p ssx3 --bins.
 """
@@ -49,7 +49,7 @@ def run(hz):
 
 a, b = run(60), run(HZ)
 rows = []
-for f in range(4500, FRAMES + 1, EVERY):
+for f in range(1000, FRAMES + 1, EVERY):
     pa, pb = os.path.join(a, f"frame{f:05d}.png"), os.path.join(b, f"frame{round(f * HZ / 60):05d}.png")
     if not (os.path.exists(pa) and os.path.exists(pb)):
         continue
