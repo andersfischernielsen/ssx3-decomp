@@ -4,7 +4,7 @@ Owner request (2026-10-22): finish reviewing the hand-written ports with a
 broad scenario harness, then reorganise the `ocN.rs` modules, then move the
 runtime away from the PS2 machine model. Executed in this order.
 
-## Task 1: scenario harness and review ✅/🟡
+## Task 1: scenario harness and review ✅
 
 Scripted headless scenarios that reach as much game code as possible, each
 compared with and without the hand-written ports (and checked with the
@@ -40,6 +40,20 @@ Tools: `SSX3_SHADOW=addr,...|all` (+ `SSX3_SHADOW_FIRST`,
 | `Rider_UpdateVisibility` 0x122278 | monkey | frustum list end skipped one cycle | leave through the list block |
 | `Rider_UpdateLegIKBlend` 0x120d90 | monkey | the "towards 0" path also set `f1 = 1.0` / `at` | removed |
 | `FXTrail_Reset` 0x392d18 | monkey | missed the store to `+0xc` | added |
+| `SSXAudioSystem_PASay20C5` 0x2a3708 (+5 more in oc162) | Big Air / Super Pipe events | indirect calls without `ra = return address`: the callee came back to the old `ra`, the port left without its epilogue | `call_ptr` |
+| `BENewPlayerInt_IsMessageFlagSet` 0x147980 (+4 constants in oc131) | fresh career | `li -1` as `0xffff_ffff` (no sign extension): wrong message-flag word | sign-extended |
+| `SplineModifier_LoadPath` 0x345570 | The Junction, Schizophrenia, Perpendiculous | `a0 = self` missing before `GetPathLength`: spline length 0 | added |
+| `BEMissionInt_IsCollected` 0x1538e8 | CTM Much-2-Much | the two multiplies (profile × 0x9b50, slot × 0xc) swapped | swapped back |
+| `GameCamera_ResetAll` 0x15db58 | CTM Peak 3 runs, monkey | `a0 = camera manager` missing before the first call; vtable targets not left in `v0`/`a1` | added |
+
+The full run (2026-10-22, 33 scenarios, every hand-written function on vs
+off): 23 identical, 10 different; after the fixes all 33 identical except
+the new career's opening movie, where the native libmpeg (`movie.rs`)
+differs by design (identical with it skipped). Most of these ports passed
+their differential tests because the wrong value only reached a scratch
+register or a zeroed fixture; `SSX3_DIFF_STRICT=1` makes the tests compare
+the scratch registers too. Further decomp checks use the unit tests (this
+harness run is expensive and was done once).
 
 ## Task 2: module layout (branch `reorg-modules`)
 

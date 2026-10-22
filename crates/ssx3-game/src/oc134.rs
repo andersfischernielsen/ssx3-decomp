@@ -4740,6 +4740,7 @@ pub fn game_camera_reset_all(c: &mut Cpu) {
         frame.save(c, 17, 0x10);
         c.g[S0][0] = sx(0x4c0000u32.wrapping_add(0x5830));
         frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[S0][0];
         call_ptr(c, 0x0016_c968, 0x0015_db78)?;
         c.g[A0][0] = c.g[S0][0];
         call_ptr(c, 0x0016_d1b8, 0x0015_db80)?;
@@ -4755,8 +4756,8 @@ pub fn game_camera_reset_all(c: &mut Cpu) {
         c.g[A1][0] = lw(c, c.g[V0][0] as u32, 0xa8);
         c.g[V1][0] = lw(c, c.g[A1][0] as u32, 0x14);
         c.g[A0][0] = lh(c, c.g[V1][0] as u32, 0x20);
-        let target = lw(c, c.g[V1][0] as u32, 0x24);
-        let t = target as u32;
+        c.g[V0][0] = lw(c, c.g[V1][0] as u32, 0x24);
+        let t = c.g[V0][0] as u32;
         c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
         call_ptr(c, t, 0x0015_dbb8)?;
         c.g[V1][0] = lw(c, s1, 4);
@@ -4781,8 +4782,8 @@ pub fn game_camera_reset_all(c: &mut Cpu) {
         c.g[A2][0] = lw(c, c.g[V0][0] as u32, 0xa8);
         c.g[V1][0] = lw(c, c.g[A2][0] as u32, 0x14);
         c.g[A0][0] = lh(c, c.g[V1][0] as u32, 0x20);
-        let target = lw(c, c.g[V1][0] as u32, 0x24);
-        let t = target as u32;
+        c.g[A1][0] = lw(c, c.g[V1][0] as u32, 0x24);
+        let t = c.g[A1][0] as u32;
         c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
         call_ptr(c, t, 0x0015_dbfc)?;
         c.g[V0][0] = lw(c, s1, 8);
