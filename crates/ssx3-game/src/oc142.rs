@@ -21,8 +21,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0027_d688, script_obj_cam_set_binding, "ScriptObjCam_SetBinding"),
     (0x0012_c130, rider_gate_sub_update_push, "RiderGateSub_UpdatePush"),
     (0x0024_dc68, depth_fog_menu_dtor, "DepthFogMenu_dtor"),(0x002b_3ee8, music_player_enable_song_by_name, "MusicPlayer_EnableSongByName"),
-    (0x0024_0860, mcmanager_state1a_delete, "MCManager_State1A_Delete"),(0x0014_c6a0, bolts_load_db, "Bolts_LoadDB"),
-    (0x0019_79d8, cfestate_request_line_on_child_event, "cFEStateRequestLine_OnChildEvent"),
+    (0x0024_0860, mcmanager_state1a_delete, "MCManager_State1A_Delete"),(0x0019_79d8, cfestate_request_line_on_child_event, "cFEStateRequestLine_OnChildEvent"),
     (0x0019_8988, cfestate_request_line_open_buy_popup, "cFEStateRequestLine_OpenBuyPopup"),(0x002a_6f38, crowd_audio_unload, "CrowdAudio_Unload"),
     (0x003e_d578, tag_field_decode_hex, "TagFieldDecodeHex"),
     (0x0018_3b08, cfestate_uber_trick_select_left_panel, "cFEStateUberTrick_SelectLeftPanel"),
@@ -1833,20 +1832,7 @@ mod tests {
         );
     }
 
-        #[test]
-    fn bolts_load_db_matches() {
-        strict(ssx3_ee::s01::f_0014c6a0__generated, bolts_load_db, SEEDS, &|c, seed| {
-            let mut r = base(c, seed, 0xc6a0);
-            let this = DATA + 0x1000;
-            // A loaded database returns at once; the load path reads files
-            // (a disc-load runaway in a test machine).
-            w(c, this + 0x10, 1 + (r.next_u32() % 2));
-            w(c, this + 4, r.next_u32());
-            c.g[A0][0] = sx(this);
-        });
-    }
-
-    #[test]
+            #[test]
     fn cfestate_request_line_on_child_event_matches() {
         strict(
             ssx3_ee::s02::f_001979d8__generated,
