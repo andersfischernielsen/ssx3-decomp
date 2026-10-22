@@ -11,17 +11,22 @@ compared with and without the hand-written ports (and checked with the
 runtime shadow mode, `SSX3_SHADOW`), so a port that differs from the
 generated body shows up even where the race replay never goes.
 
-Scenarios (`scripts/scenarios/*.txt`, run by `scripts/scenarios.sh`):
-- every race course, every freestyle (slopestyle / superpipe / big air)
-  course, freeride, and the whole mountain (all three peaks);
-- boost during races, tricks (grabs, spins, flips, Ubers);
-- the lodge: change clothes, buy tricks;
+Scenarios (`tools/scenarios.py`, run by `scripts/scenarios.sh`; each run
+starts from its own copy of the memory card):
+- Single Event: every race and freestyle (slopestyle / superpipe / big air)
+  event of the three peaks, ridden with boost, grabs, spins and trick
+  buttons;
+- Conquer The Mountain: the Transport gate to Peak 3's freeride drop points
+  (the top of the mountain down), a Peak 2 race and freestyle event and a
+  Peak 1 run; the Lodge (equip another hat, bind another Uber trick, save,
+  save progress on leaving); a collectible; a new career on a fresh card
+  (top of Peak 1);
 - random input through the menus ("monkey").
 
 Gate per scenario: RAM at the end identical with `SSX3_SKIP_OVERRIDES` set
 to the ports under review vs installed (deterministic: the generated light
 query, `SSX3_DEBUG_LENSFX_VIS=1`); a difference is bisected
-(`bisect.py`) and the culprit shadowed (`SSX3_SHADOW=addr`) to see the
+(`tools/bisect_overrides.py`) and the culprit shadowed (`SSX3_SHADOW=addr`) to see the
 first differing call. Findings and fixes are logged below.
 
 Tools: `SSX3_SHADOW=addr,...|all` (+ `SSX3_SHADOW_FIRST`,
@@ -46,7 +51,7 @@ a common module; the per-batch cargo features collapse. Gate: all
 differential tests pass, the race replay RAM and the scenario RAMs are
 unchanged. Merged into `main` when green.
 
-## Task 3: modern runtime
+## Task 3: modern runtime (branch `modern-runtime`)
 
 1. **One host thread for all guest threads.** The host-thread form runs each
    guest thread on an OS thread with a baton (condvar handoffs, ~1.3 ms per
