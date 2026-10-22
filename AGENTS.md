@@ -8,6 +8,8 @@ Keep the decompilation work:
   - avoid too many heavy validation runs
   - prefer unit tests to compare GS vs. native behavior
 
+Never co-author commits.
+
 ---
 
 ## Porting loop (typed Rust replacements)
