@@ -201,11 +201,19 @@ pub fn seed_count(seeds: u32) -> u32 {
     }
 }
 
+/// `SSX3_DIFF_STRICT=1`: the scratch registers must match too (ports keep
+/// every register the generated body leaves; a sweep finds the ones that
+/// do not, e.g. a constant without its sign extension).
+pub fn strict() -> bool {
+    std::env::var_os("SSX3_DIFF_STRICT").is_some()
+}
+
 /// Assert no hard differences over many `setup(seed)` states.
 pub fn check(generated: GuestFn, hand: GuestFn, seeds: u32, setup: &dyn Fn(&mut Cpu, u32)) {
     for seed in 0..seed_count(seeds) {
         let r = compare(generated, hand, &|c| setup(c, seed));
         assert!(r.hard.is_empty(), "seed {seed}: {:#?}", r.hard);
+        assert!(!strict() || r.soft.is_empty(), "seed {seed} (scratch): {:#?}", r.soft);
     }
 }
 
@@ -216,6 +224,7 @@ pub fn check_lohi(generated: GuestFn, hand: GuestFn, seeds: u32, setup: &dyn Fn(
         let r = compare(generated, hand, &|c| setup(c, seed));
         assert!(r.hard.is_empty(), "seed {seed}: {:#?}", r.hard);
         assert!(r.lohi.is_empty(), "seed {seed} (LO/HI): {:#?}", r.lohi);
+        assert!(!strict() || r.soft.is_empty(), "seed {seed} (scratch): {:#?}", r.soft);
     }
 }
 

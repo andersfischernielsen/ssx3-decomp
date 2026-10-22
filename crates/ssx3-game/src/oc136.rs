@@ -687,6 +687,7 @@ pub fn spline_modifier_load_path(c: &mut Cpu) {
             }
         }
         c.cycles += 7;
+        c.g[A0][0] = c.g[S0][0];
         callee::SPLINE_GET_PATH_LENGTH.call(c, 0x0034_5624)?;
         Addr(p(c.g[S0][0], 0xc)).write_fpu(c, crate::ps2f::FpuF32(c.f[0]));
         frame.restore(c, S0, 0x10);

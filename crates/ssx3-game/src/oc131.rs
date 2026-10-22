@@ -1294,7 +1294,7 @@ pub fn buddy_man_count_messages_from_at(c: &mut Cpu) {
         call_ptr(c, 0x0026_25c8, 0x0026_2970)?;
         c.g[S3][0] = c.g[V0][0];
         let no_entry = c.g[S3][0] == 0;
-        c.g[V0][0] = 0xffff_ffff;
+        c.g[V0][0] = 0xffff_ffff_ffff_ffff;
         if no_entry {
             c.cycles += 1;
             c.g[V0][0] = c.g[S0][0];
@@ -1603,7 +1603,7 @@ pub fn ui_list_box_ctor(c: &mut Cpu) {
         c.g[V0][0] = Addr(p(this as u32, 0x74)).lbu(c);
         c.g[V1][0] = 0x490000;
         c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x4798));
-        c.g[A1][0] = 0xffff_ffff;
+        c.g[A1][0] = 0xffff_ffff_ffff_ffff;
         c.g[V0][0] = c.g[V0][0] | 0x4;
         c.sw(p(this as u32, 8), c.g[V1][0]);
         c.g[V0][0] = c.g[V0][0] & 0xc4;
@@ -1820,7 +1820,7 @@ pub fn benew_player_int_is_message_flag_set(c: &mut Cpu) {
         c.g[A0][0] = 0x9b50;
         c.g[A2][0] = 0xf88;
         c.mult(0, 16, 16, 4);
-        c.g[V1][0] = 0xffff_ffff;
+        c.g[V1][0] = 0xffff_ffff_ffff_ffff;
         c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[S2][0] as i64)) as u64;
         c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1f));
         c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[A1][0] as u32)));
@@ -2975,7 +2975,7 @@ pub fn ssx_audio_system_dj_say_20cc(c: &mut Cpu) {
                 c.g[A0][0] = c.g[S0][0];
                 c.g[S1][0] = c.g[V0][0];
                 c.g[A1][0] = c.g[S2][0];
-                c.g[A2][0] = 0xffff_ffff;
+                c.g[A2][0] = 0xffff_ffff_ffff_ffff;
                 call_ptr(c, 0x002a_1bd8, 0x002a_251c)?;
                 c.g[S0][0] = c.g[V0][0];
                 c.g[A0][0] = 0x1;
@@ -3096,7 +3096,7 @@ pub fn flex_rail_register_space_node(c: &mut Cpu) {
         c.g[A0][0] = c.g[SP][0];
         call_ptr(c, 0x0032_8f28, 0x0034_8be8)?;
         c.g[V0][0] = Addr(p(c.g[SP][0] as u32, 4)).lw(c);
-        c.g[A3][0] = 0xffff_ffff;
+        c.g[A3][0] = 0xffff_ffff_ffff_ffff;
         c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x50));
         c.g[A1][0] = Addr(p(c.g[SP][0] as u32, 8)).lw(c);
         c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[V0][0] as i64)) as u64;
@@ -3970,20 +3970,25 @@ mod tests {
 
     #[test]
     fn benew_player_int_is_message_flag_set_matches() {
-        check(
-            ee::s01::f_00147980__generated,
-            benew_player_int_is_message_flag_set,
-            8,
-            &|c, seed| {
-                let _ = base(c, seed, 0x0014_7980, 2);
-                c.g[A0][0] = OBJ as u64;
-                c.g[A1][0] = (seed % 4) as u64;
-                c.g[A2][0] = (seed % 40) as u64;
-                for i in 0..8u32 {
-                    w(c, 0x004a_6ca8 + i * 4, seed.wrapping_mul(0x0101_0101).wrapping_add(i));
-                }
-            },
-        );
+        // The word index (a0 = bit / 32 * 4) is a scratch register to
+        // `check`, and the bitmap word is rarely seeded: compare the scratch
+        // registers too (a `li -1` without sign extension went unnoticed).
+        for seed in 0..80 {
+            let r = crate::difftest::compare(
+                ee::s01::f_00147980__generated,
+                benew_player_int_is_message_flag_set,
+                &|c| {
+                    let _ = base(c, seed, 0x0014_7980, 2);
+                    c.g[A0][0] = OBJ as u64;
+                    c.g[A1][0] = (seed % 4) as u64;
+                    c.g[A2][0] = (seed % 40) as u64;
+                    for i in 0..8u32 {
+                        w(c, 0x004a_6ca8 + i * 4, seed.wrapping_mul(0x0101_0101).wrapping_add(i));
+                    }
+                },
+            );
+            assert!(r.hard.is_empty() && r.soft.is_empty(), "seed {seed}: {:#?} {:#?}", r.hard, r.soft);
+        }
     }
 
     /// A node for the (bit, a2) key in the index manager's hash bucket.
