@@ -110,7 +110,7 @@ pub fn ticks_from_frames60(c: &mut Cpu, frames: u32) -> u32 {
 }
 
 /// Queue `n` game updates at the next VSync instead of one (the front end's
-/// catch-up when the host falls behind real time, see [`CatchUp`]).
+/// catch-up when the host falls behind real time, see [`Pacer`]).
 pub fn set_updates_per_vsync(n: u32) {
     UPDATES.store(n.clamp(1, 12), Ordering::Relaxed);
 }
@@ -151,57 +151,103 @@ fn sync_updates(c: &mut Cpu) {
     }
 }
 
-/// Real-time catch-up for a front end that runs one VSync per presented
-/// frame: game time follows the wall clock when the host is slower than the
-/// game rate, by queueing extra updates (the game's own frame-drop path:
-/// several updates, one render). Bounded, so a host that is far too slow
-/// slows the game down instead of spiralling.
+/// What a front end runs before it presents its next image ([`Pacer`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Plan {
+    /// VSyncs to run (0: nothing is due yet, wait).
+    pub vsyncs: u32,
+    /// Game updates each of them queues ([`set_updates_per_vsync`]).
+    pub updates_per_vsync: u32,
+}
+
+/// The frame pacer: game time runs on the wall clock at the game rate,
+/// whatever the display or the host can do (a fixed-timestep loop).
+///
+/// - The game advances one VSync per update period of wall time, so the
+///   emulated clock (loading, streaming, timers, audio) stays real time.
+/// - A display slower than the game rate gets several VSyncs per image
+///   (`max_vsyncs` = game rate / display rate, rounded up); a faster one waits
+///   ([`Pacer::wait`]) and shows each game frame until the next.
+/// - A host too slow to run that many VSyncs (catch-up on) queues extra game
+///   updates per VSync instead: the game's own frame-drop path (several
+///   updates, one render), at most [`Pacer::MAX_UPDATES_PER_VSYNC`]. Beyond
+///   that the game slows down rather than spiralling.
 #[derive(Debug, Default)]
-pub struct CatchUp {
-    /// Wall time (s) the count started at, and updates queued since.
+pub struct Pacer {
+    /// Wall time (s) of update 0 and updates delivered since.
     base: Option<f64>,
-    queued: f64,
-    /// The previous call's time and the longest recent frame (s, decaying).
+    done: f64,
+    /// The previous run's time and the longest recent frame (s, decaying).
     last: Option<f64>,
     worst: f64,
 }
 
-impl CatchUp {
-    /// At most this many updates per VSync (4: a 15 fps host keeps a 60 Hz
-    /// game at full speed).
-    pub const MAX_UPDATES: u32 = 4;
+impl Pacer {
+    pub const MAX_UPDATES_PER_VSYNC: u32 = 4;
     /// A debt or lead of more than this (s) is forgotten, not repaid: a
-    /// pause, the settings overlay, a window drag, a long load.
+    /// pause, the settings overlay, a window drag, a long stall.
     pub const FORGET: f64 = 0.25;
 
-    /// Updates to queue at the VSync about to run, at wall time `now` (s)
-    /// with one update per `period` (s).
-    pub fn next(&mut self, now: f64, period: f64) -> u32 {
+    /// Updates the wall clock asks for that are not delivered yet.
+    fn owed(&mut self, now: f64, period: f64) -> f64 {
+        let base = *self.base.get_or_insert(now - period);
+        let owed = (now - base) / period - self.done;
+        if owed.abs() > Self::FORGET / period {
+            self.base = Some(now - period);
+            self.done = 0.0;
+            return 1.0;
+        }
+        owed
+    }
+
+    /// The plan at wall time `now` (s), one update per `period` (s).
+    pub fn plan(&mut self, now: f64, period: f64, max_vsyncs: u32, catch_up: bool) -> Plan {
+        let owed = self.owed(now, period);
+        // Nearest whole update: half an update of slack either way absorbs
+        // jitter without dropping or doubling frames.
+        let n = (owed + 0.5).floor().max(0.0) as u32;
+        if n == 0 {
+            return Plan { vsyncs: 0, updates_per_vsync: 0 };
+        }
+        self.note_frame(now);
+        let vsyncs = n.min(max_vsyncs.max(1));
+        let per = if catch_up { n.div_ceil(vsyncs).min(Self::MAX_UPDATES_PER_VSYNC) } else { 1 };
+        let delivered = (vsyncs * per) as f64;
+        self.done += delivered;
+        if owed - delivered > 1.5 {
+            // More than the caps can repay: slow down instead of carrying it.
+            self.done += owed - delivered;
+        }
+        Plan { vsyncs, updates_per_vsync: per }
+    }
+
+    /// For a front end that runs exactly one VSync per frame (headless):
+    /// the updates that VSync queues (1 when ahead or on time).
+    pub fn per_vsync(&mut self, now: f64, period: f64) -> u32 {
+        let owed = self.owed(now, period);
+        self.note_frame(now);
+        let n = ((owed + 0.5).floor().max(1.0) as u32).min(Self::MAX_UPDATES_PER_VSYNC);
+        self.done += n as f64;
+        if owed - n as f64 > 1.5 {
+            self.done += owed - n as f64;
+        }
+        n
+    }
+
+    /// Seconds until the next update is due (after a plan with no VSyncs).
+    pub fn wait(&self, now: f64, period: f64) -> f64 {
+        match self.base {
+            Some(base) => (base + (self.done + 0.5) * period - now).max(0.0),
+            None => 0.0,
+        }
+    }
+
+    fn note_frame(&mut self, now: f64) {
         if let Some(l) = self.last {
             let dt = (now - l).clamp(0.0, 1.0);
             self.worst = dt.max(self.worst * 0.99);
         }
         self.last = Some(now);
-        let base = *self.base.get_or_insert(now);
-        // Updates real time asks for by the end of this VSync.
-        let due = (now - base) / period + 1.0;
-        let owed = due - self.queued;
-        if !(-Self::FORGET / period..=Self::FORGET / period).contains(&(owed - 1.0)) {
-            self.base = Some(now);
-            self.queued = 1.0;
-            return 1;
-        }
-        // Half an update of hysteresis: a late frame within jitter does not
-        // double the next one.
-        let max = Self::MAX_UPDATES as f64;
-        let n = (owed - 0.5).floor().clamp(1.0, max);
-        if owed - 0.5 > max + 1.0 {
-            // More than the cap can repay: let the game slow down instead of
-            // carrying the debt.
-            self.queued = due - n;
-        }
-        self.queued += n;
-        n as u32
     }
 
     /// Audio to keep queued (s): the device must not run dry while the host
@@ -257,36 +303,72 @@ mod tests {
         assert_eq!(f32::from_bits(step_bits(120)), 1.0 / 120.0);
     }
 
+    /// Runs a front end for `secs`: images every `image` s (the display or
+    /// the host), returns (updates delivered, VSyncs run).
+    fn simulate(game_hz: f64, image: f64, max_vsyncs: u32, catch_up: bool, secs: f64) -> (u32, u32) {
+        let p = 1.0 / game_hz;
+        let mut k = Pacer::default();
+        let (mut t, mut updates, mut vsyncs) = (0.0, 0, 0);
+        while t < secs {
+            let plan = k.plan(t, p, max_vsyncs, catch_up);
+            if plan.vsyncs == 0 {
+                t += k.wait(t, p).max(1e-4);
+                continue;
+            }
+            updates += plan.vsyncs * plan.updates_per_vsync;
+            vsyncs += plan.vsyncs;
+            t += image;
+        }
+        (updates, vsyncs)
+    }
+
     #[test]
-    fn catch_up_follows_the_wall_clock() {
+    fn pacer_runs_the_game_at_its_rate_whatever_the_display() {
+        // 60 Hz game, 60 Hz display; 120 Hz game on 60 Hz (2 VSyncs per
+        // image); 60 Hz game on 144 Hz (waits); 240 Hz game on 60 Hz.
+        for (game, display) in [(60.0, 60.0), (120.0, 60.0), (60.0, 144.0), (240.0, 60.0), (144.0, 60.0)] {
+            let maxv = (game / display as f64).ceil() as u32;
+            let (u, v) = simulate(game, 1.0 / display, maxv, true, 10.0);
+            assert!((u as f64 - 10.0 * game).abs() <= 3.0, "{game} on {display}: {u} updates");
+            // The emulated clock is real time too: one VSync per update.
+            assert_eq!(u, v, "{game} on {display}");
+        }
+    }
+
+    #[test]
+    fn pacer_catches_up_on_a_slow_host() {
+        // A 40 fps host at 60 Hz: extra updates, game time real.
+        let (u, _) = simulate(60.0, 1.0 / 40.0, 1, true, 10.0);
+        assert!((u as f64 - 600.0).abs() <= 3.0, "{u}");
+        // Without catch-up it slows down (one update per image).
+        let (u, _) = simulate(60.0, 1.0 / 40.0, 1, false, 10.0);
+        assert!((u as f64 - 400.0).abs() <= 3.0, "{u}");
+        // A 10 fps host: capped (the game slows down, no spiral).
+        let (u, _) = simulate(60.0, 0.1, 1, true, 10.0);
+        assert!(u <= 101 * Pacer::MAX_UPDATES_PER_VSYNC && u < 600, "{u}");
+    }
+
+    #[test]
+    fn pacer_jitter_and_pauses() {
+        // A host that keeps up with jitter: one update per image.
         let p = 1.0 / 60.0;
-        // A host that keeps up: one update per VSync, also with jitter.
-        let mut k = CatchUp::default();
+        let mut k = Pacer::default();
         let mut t = 0.0;
         for i in 0..600 {
+            let plan = k.plan(t, p, 1, true);
+            assert_eq!(plan, Plan { vsyncs: 1, updates_per_vsync: 1 }, "image {i}");
             t += p * if i % 2 == 0 { 0.9 } else { 1.1 };
-            assert_eq!(k.next(t, p), 1, "vsync {i}");
-        }
-        // A host at 40 fps: 1.5 updates per VSync on average, game time real.
-        let mut k = CatchUp::default();
-        let (mut t, mut sum) = (0.0, 0u32);
-        for _ in 0..400 {
-            t += 1.0 / 40.0;
-            sum += k.next(t, p);
-        }
-        assert!((sum as f64 - t / p).abs() <= 2.0, "{sum} updates in {t} s");
-        // A host at 10 fps: capped at 4 per VSync (the game slows down).
-        let mut k = CatchUp::default();
-        let mut t = 0.0;
-        for _ in 0..100 {
-            t += 0.1;
-            assert!(k.next(t, p) <= CatchUp::MAX_UPDATES);
         }
         // A one-second pause is forgotten, not repaid.
-        let mut k = CatchUp::default();
-        k.next(0.0, p);
-        assert_eq!(k.next(1.0, p), 1);
-        assert_eq!(k.next(1.0 + p, p), 1);
+        let plan = k.plan(t + 1.0, p, 1, true);
+        assert_eq!(plan.updates_per_vsync, 1);
+        // One VSync per frame (headless): extra updates when behind.
+        let mut k = Pacer::default();
+        let mut sum = 0;
+        for i in 0..400 {
+            sum += k.per_vsync(i as f64 / 40.0, p);
+        }
+        assert!((sum as f64 - 600.0).abs() <= 3.0, "{sum}");
     }
 
     #[test]

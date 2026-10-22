@@ -30,7 +30,7 @@ fn main() {
     // too (with SSX3_SLOW_FRAME_MS: a slow host). Not deterministic.
     let mut catch_up = std::env::var("SSX3_CATCHUP").is_ok_and(|v| v == "1").then(|| {
         ssx3_ps2::machine::set_realtime(true);
-        ssx3_game::tick::CatchUp::default()
+        ssx3_game::tick::Pacer::default()
     });
     let started = std::time::Instant::now();
     let shot_every: u64 = args
@@ -106,7 +106,7 @@ fn main() {
         ssx3_ps2::m!(c).sif.pad_buttons = held;
         ssx3_ps2::vu::capture::set_frame(f);
         if let Some(k) = catch_up.as_mut() {
-            let n = k.next(started.elapsed().as_secs_f64(), 1.001 / ssx3_ps2::machine::vsync_hz() as f64);
+            let n = k.per_vsync(started.elapsed().as_secs_f64(), 1.001 / ssx3_ps2::machine::vsync_hz() as f64);
             ssx3_game::tick::set_updates_per_vsync(n);
             ssx3_ps2::machine::set_audio_lead_frames((k.audio_lead() * 48000.0) as u32);
             catch_sum += n as u64;

@@ -58,19 +58,29 @@ the entry from memory (ports keep the `lwc1` from `gp-N`), so rewriting the
 entries changes every such use at once. One port had inlined the constant
 (`math.rs`, the loading indicator); it now reads its entry.
 
-## When the host is slower than the game rate
+## Frame pacing: the game runs at its rate, whatever the display or host
 
-The game already has a frame-drop path: `App_VSyncTick` queues `+0x24`
-updates per VSync (1.0) and the main loop runs the queued updates, then
-renders once. In the window (`SSX3_CATCHUP`, settings "Keep speed when
-slow", on by default):
+The window is a fixed-timestep loop (`ssx3_game::tick::Pacer`), as modern
+games are:
 
-- `tick::CatchUp` counts the updates real time asks for since the last
-  reset; before each VSync the window sets `tick::set_updates_per_vsync(n)`
-  to what is owed (half an update of hysteresis, at most 4: a 15 fps host
-  keeps a 60 Hz game at full speed; a slower one slows down instead of
-  spiralling). A debt or lead over 0.25 s (pause, overlay, window drag) is
-  forgotten. `tick::on_vblank` writes `n` into `+0x24`.
+- The game advances one VSync per update period of wall time (1.001 / rate
+  s). Each VSync runs the game's update and render, so game time and the
+  emulated clock (loading, streaming, timers) stay real time.
+- A display slower than the game rate gets several VSyncs per image (at most
+  game rate / display rate, rounded up); a faster display waits for the next
+  update and shows each game image until then. The display rate never
+  changes the game's speed. Measured on a 60 Hz display at a 120 Hz game
+  rate: 119 updates, 118 VSyncs and 290 M EE cycles (294.9 M nominal) per
+  second.
+- A host too slow to run that many VSyncs: with catch-up (`SSX3_CATCHUP`,
+  settings "Keep speed when slow", on by default) the extra updates are
+  queued per VSync instead, through the game's own frame-drop path
+  (`App_VSyncTick` queues `+0x24` updates per VSync, 1.0; the main loop runs
+  them, then renders once), at most 4 per VSync; beyond that, or with
+  catch-up off, the game slows down rather than spiralling. A debt or lead
+  over 0.25 s (pause, overlay, window drag) is forgotten.
+- There are no in-between images: the game rate is the frame rate.
+  Rendering faster than the game rate would only repeat images.
 - Audio (`snd_native::service`, `machine::set_realtime`): the mixer ticks on
   the EE clock as before, and when the device's queue is under the lead it
   runs an extra tick and moves the EE-clock schedule along. As on the
@@ -87,8 +97,8 @@ slow", on by default):
     resolution) emptied the device: choppy sound. The window logs the gaps
     (`audio gaps ... lead ... ms`); `SSX3_AUDIO=null` is a silent device
     drained in real time for headless tests.
-- Replays, headless runs and the gate never use it (`SSX3_CATCHUP=1` turns it
-  on in `ssx3-headless` for tests; with `SSX3_SLOW_FRAME_MS` it simulates a
+- Replays, headless runs and the gate never use it (`SSX3_CATCHUP=1` turns
+  catch-up on in `ssx3-headless` for tests, one VSync per frame; with `SSX3_SLOW_FRAME_MS` it simulates a
   slow host). This replaces the old `SSX3_HOST_CLOCK`, which skipped EE
   cycles and starved loading.
 

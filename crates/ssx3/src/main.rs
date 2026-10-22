@@ -51,9 +51,14 @@ struct App {
     gpu_ctx: Option<&'static ssx3_ps2::gpu::GpuContext>,
     /// The draw-layer renderer (`SSX3_RENDER`, native by default).
     gfx: Option<ssx3_gfx::Renderer>,
-    /// Real-time catch-up (`SSX3_CATCHUP`, on by default): extra game
-    /// updates when the host falls behind the game rate.
-    catch_up: Option<ssx3_game::tick::CatchUp>,
+    /// The frame pacer: the game runs on the wall clock at the game rate,
+    /// whatever the display or the host does.
+    pacer: ssx3_game::tick::Pacer,
+    /// `SSX3_CATCHUP` (on by default): extra updates per VSync when the host
+    /// is too slow for the game rate.
+    catch_up: bool,
+    /// The display's refresh rate (Hz).
+    display_hz: f64,
     /// The settings overlay (F10): open with this row selected; the game
     /// is paused meanwhile.
     menu: Option<usize>,
@@ -205,6 +210,11 @@ impl ApplicationHandler for App {
         self.gpu_ctx = gs;
         self.presenter = Some(pollster::block_on(Presenter::new(window.clone(), gs)));
         let size = window.inner_size();
+        self.display_hz = window
+            .current_monitor()
+            .and_then(|m| m.refresh_rate_millihertz())
+            .map_or(60.0, |m| (m as f64 / 1000.0).clamp(24.0, 500.0));
+        eprintln!("[window] display {:.0} Hz, game {} Hz", self.display_hz, ssx3_ps2::machine::vsync_hz());
         self.window = Some(window);
         self.follow_window_size(size.width, size.height);
     }
@@ -276,6 +286,9 @@ impl ApplicationHandler for App {
                 // The settings overlay pauses the game.
                 if self.menu.is_some() {
                     self.poll_menu_pad();
+                    // (Paused: the pacer starts over when the game resumes.)
+                    self.pacer.reset();
+                    ssx3_game::tick::set_updates_per_vsync(1);
                     if self.preview > 0 {
                         self.preview -= 1;
                         if !self.step(event_loop) {
@@ -285,10 +298,26 @@ impl ApplicationHandler for App {
                     self.show();
                     return;
                 }
-                // One game frame (VSync) per image; `show` paces to the game
-                // rate.
-                if !self.step(event_loop) {
+                // Fixed-timestep loop: the VSyncs (game updates) the wall
+                // clock asks for, then the newest image. A display slower
+                // than the game rate gets several VSyncs per image, a faster
+                // one waits for the next update.
+                let period = field().as_secs_f64();
+                let now = self.started.elapsed().as_secs_f64();
+                let game_hz = ssx3_ps2::machine::vsync_hz() as f64 / 1.001;
+                let max_vsyncs = (game_hz / self.display_hz - 0.01).ceil().max(1.0) as u32;
+                let plan = self.pacer.plan(now, period, max_vsyncs, self.catch_up);
+                if plan.vsyncs == 0 {
+                    let w = self.pacer.wait(now, period);
+                    std::thread::sleep(Duration::from_secs_f64(w.min(0.002)));
                     return;
+                }
+                ssx3_ps2::machine::set_audio_lead_frames((self.pacer.audio_lead() * 48000.0) as u32);
+                ssx3_game::tick::set_updates_per_vsync(plan.updates_per_vsync);
+                for _ in 0..plan.vsyncs {
+                    if !self.step(event_loop) {
+                        return;
+                    }
                 }
                 self.show();
             }
@@ -307,21 +336,10 @@ impl App {
     /// Run one game frame; false when the game halted.
     fn step(&mut self, event_loop: &ActiveEventLoop) -> bool {
         self.update_pad();
-        // Behind real time: queue extra game updates at this VSync (the
-        // game's own frame-drop path), so game time stays real time.
-        let n = match self.catch_up.as_mut() {
-            Some(k) => {
-                let n = k.next(self.started.elapsed().as_secs_f64(), field().as_secs_f64());
-                ssx3_ps2::machine::set_audio_lead_frames((k.audio_lead() * 48000.0) as u32);
-                n
-            }
-            None => 1,
-        };
-        ssx3_game::tick::set_updates_per_vsync(n);
         let alive = ssx3_ps2::machine::run_frame(&mut self.cpu);
         if ssx3_ps2::m!(self.cpu).sched.frames % 60 == 0 {
             eprintln!("[{:6.1}s] {}", self.started.elapsed().as_secs_f64(), game::status(&self.cpu));
-            if self.catch_up.is_some() {
+            {
                 let app = self.cpu.bus.read32(ssx3_game::tick::APPMAN_PTR);
                 let updates = if app != 0 { self.cpu.bus.read32(app + 0x1c) } else { 0 };
                 eprintln!(
@@ -408,11 +426,6 @@ impl App {
             }
             _ => {}
         }
-        // Pace to the game rate (59.94 Hz unless `SSX3_TICK_HZ`).
-        let el = self.last.elapsed();
-        if el < field() {
-            std::thread::sleep(field() - el);
-        }
         self.last = Instant::now();
     }
 
@@ -440,7 +453,8 @@ impl App {
     /// clock when the host is slower than the game rate.
     fn apply_catch_up(&mut self) {
         let on = settings::get("SSX3_CATCHUP").is_none_or(|v| v != "0");
-        self.catch_up = on.then(ssx3_game::tick::CatchUp::default);
+        self.catch_up = on;
+        self.pacer.reset();
         ssx3_game::tick::set_updates_per_vsync(1);
         ssx3_ps2::machine::set_realtime(on);
     }
@@ -575,7 +589,9 @@ fn main() {
         keys: 0,
         pending_display: None,
         gpu_ctx: None,
-        catch_up: None,
+        pacer: ssx3_game::tick::Pacer::default(),
+        catch_up: true,
+        display_hz: 60.0,
         menu: None,
         restart_pending: false,
         preview: 0,
