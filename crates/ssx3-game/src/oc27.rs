@@ -1756,8 +1756,8 @@ pub fn be_mission_int_is_collected(c: &mut Cpu) {
         c.g[A1][0] = lw(c, (c.g[A0][0] as u32).wrapping_add(0x5f0));
         c.g[A2][0] = 0x9b50;
         c.g[V1][0] = 0xc;
-        c.mult(0, S0, S0, V1);
-        c.mult(0, A1, A1, A2);
+        c.mult(0, S0, S0, A2);
+        c.mult(0, A1, A1, V1);
         c.g[A0][0] = 0xffff_ffff_ffff_ffff;
         frame.restore(c, S2, 0x20);
         c.mult(0, S1, S1, V1);
