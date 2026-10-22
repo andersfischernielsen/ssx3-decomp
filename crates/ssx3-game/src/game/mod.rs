@@ -1,6 +1,9 @@
 //! The hand-written replacements, laid out like the matching C++
 //! decompilation's `src/` tree (one module per `.cpp` unit;
 //! `tools/reorg_modules.py`).
+// Each unit imports the union of what its functions' batch modules used
+// (`tools/reorg_modules.py`); unused ones are expected.
+#![allow(unused_imports)]
 
 use ssx3_ee_rt::funcs::GuestFn;
 
