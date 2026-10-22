@@ -23,6 +23,7 @@ pub struct Item {
 }
 
 pub const ITEMS: &[Item] = &[
+    Item { key: "SSX3_TICK_HZ", label: "Game rate", choices: &[("", "60 Hz"), ("120", "120 Hz (exp.)"), ("144", "144 Hz (exp.)"), ("240", "240 Hz (exp.)")], live: false },
     Item { key: "SSX3_FPS", label: "Display rate", choices: &[("", "Auto (display)"), ("60", "60 Hz"), ("120", "120 Hz"), ("180", "180 Hz"), ("240", "240 Hz")], live: true },
     Item { key: "SSX3_FOV", label: "Field of view", choices: &[("0.9", "-10%"), ("", "Standard"), ("1.1", "+10%"), ("1.2", "+20%"), ("1.3", "+30%"), ("1.4", "+40%"), ("1.5", "+50%")], live: true },
     Item { key: "SSX3_ASPECT", label: "Aspect ratio", choices: &[("", "Fill window"), ("16:9", "16:9"), ("4:3", "4:3 (original)")], live: true },

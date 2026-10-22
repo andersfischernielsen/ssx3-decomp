@@ -18,6 +18,9 @@ pub fn boot(skip_movies_default: bool) -> Box<Cpu> {
     if n > 0 {
         eprintln!("[ssx3-game] {n} hand-written function(s) installed");
     }
+    // The tick rate (SSX3_TICK_HZ, settings "Game rate").
+    machine::set_vsync_hz(ssx3_game::tick::install());
+    machine::set_vblank_hook(ssx3_game::tick::on_vblank);
     ssx3_game::debug::install();
     // Phase 3: the draw functions record their draws for the renderer.
     if !ssx3_game::capture::install() {

@@ -99,6 +99,7 @@ def main():
         return units[i][1] if i >= 0 else "?"
 
     hits = []  # (insn addr, label)
+    pool_of = {}  # insn addr -> constant-pool address it loads
     ta, toff, tsize = sec[".text"]
     lui = {}  # reg -> (hi value, addr), reset at function starts
     app = set()  # registers holding the cAppMan pointer (D_004A5B64)
@@ -148,6 +149,7 @@ def main():
                 tgt = None
             if tgt in pool:
                 hits.append((a, pool[tgt]))
+                pool_of[a] = tgt
             continue
         if op in (0x09, 0x0D) and rs == 0 and imm in INTS:  # li
             hits.append((a, INTS[imm]))
@@ -166,7 +168,7 @@ def main():
     out = None
     if "--tsv" in sys.argv:
         out = open(sys.argv[sys.argv.index("--tsv") + 1], "w")
-        out.write("func\tname\tunit\tported\tlabels\tsites\n")
+        out.write("func\tname\tunit\tported\tlabels\tsites\tpool\n")
     per_label = collections.Counter(l.replace(" (imm)", "") for _, l in hits)
     per_unit = collections.Counter()
     nport = 0
@@ -178,7 +180,8 @@ def main():
         labels = ",".join(sorted(set(l for _, l in hs)))
         if out:
             out.write(f"0x{f[0]:08x}\t{f[2]}\t{u}\t{'yes' if p else 'no'}\t{labels}\t"
-                      + " ".join(f"0x{a:x}" for a, _ in hs) + "\n")
+                      + " ".join(f"0x{a:x}" for a, _ in hs) + "\t"
+                      + " ".join(f"0x{a:x}=0x{pool_of[a]:x}" for a, _ in hs if a in pool_of) + "\n")
     print(f"{len(hits)} sites in {len(by_func)} functions ({nport} already hand-written)")
     print("by constant:", ", ".join(f"{k}={v}" for k, v in per_label.most_common()))
     print("by unit (functions):")

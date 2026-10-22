@@ -20,38 +20,38 @@ pub const HSYNC_CYCLES: u64 = FRAME_CYCLES / 263;
 /// VBlank lasts ~22 lines on NTSC.
 pub const VBLANK_CYCLES: u64 = HSYNC_CYCLES * 22;
 
-/// Experimental base-rate knob: `SSX3_TICK_HZ=N` runs VSync at N Hz and sets
-/// the game's own tick rate and step (`cAppMan` +0x10 = N, +0x14 = 1/N, set
-/// to 60 and 1/60 by `cAppMan_run`). Unset: 59.94 Hz and the game's values.
-/// Code that hard-codes 1/60 or counts frames still assumes 60 Hz; see
-/// docs/plans/configurable-tick-rate.md.
-pub fn tick_hz() -> Option<u32> {
-    static HZ: std::sync::OnceLock<Option<u32>> = std::sync::OnceLock::new();
-    *HZ.get_or_init(|| std::env::var("SSX3_TICK_HZ").ok().and_then(|v| v.parse().ok()).filter(|&n| n > 0))
+/// The VSync rate in Hz (0: the original 59.94 Hz). The game's tick follows
+/// VSync; `ssx3_game::tick` sets this and the game's own rate.
+static VSYNC_HZ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// Fire VSync at `hz` × 1000/1001 Hz (60: the original 59.94 Hz; 0 too).
+/// Applies from the next VSync.
+pub fn set_vsync_hz(hz: u32) {
+    VSYNC_HZ.store(if hz == 60 { 0 } else { hz }, std::sync::atomic::Ordering::Relaxed);
 }
 
-fn frame_cycles() -> u64 {
-    tick_hz().map_or(FRAME_CYCLES, |n| EE_CLOCK / n as u64)
+/// The nominal VSync rate: 60 for the original 59.94 Hz.
+pub fn vsync_hz() -> u32 {
+    match VSYNC_HZ.load(std::sync::atomic::Ordering::Relaxed) {
+        0 => 60,
+        n => n,
+    }
 }
 
-/// The global `cAppMan*` (D_004A5B64).
-const APPMAN_PTR: u32 = 0x004A_5B64;
+/// EE cycles per VSync.
+pub fn frame_cycles() -> u64 {
+    match VSYNC_HZ.load(std::sync::atomic::Ordering::Relaxed) {
+        0 => FRAME_CYCLES,
+        n => EE_CLOCK * 1001 / (1000 * n as u64),
+    }
+}
 
-/// With `SSX3_TICK_HZ`, overwrite the game's 60 Hz rate and step once
-/// `cAppMan_run` has written them.
-fn apply_tick_rate(c: &mut Cpu) {
-    let Some(n) = tick_hz() else { return };
-    let app = c.bus.read32(APPMAN_PTR);
-    if app != 0 && c.bus.read32(app + 0x10) == 60 && n != 60 {
-        c.bus.write32(app + 0x10, n);
-        c.bus.write32(app + 0x14, (1.0f32 / n as f32).to_bits());
-        eprintln!("[tick] cAppMan {app:#x}: rate 60 -> {n}, step 1/{n}");
-    }
-    let vsyncs = m!(c).sched.frames;
-    if app != 0 && vsyncs % (10 * n as u64) == 0 {
-        // Game updates run so far (cAppMan +0x1C), every 10 seconds.
-        eprintln!("[tick] vsync {vsyncs}: {} game updates", c.bus.read32(app + 0x1C));
-    }
+/// Called at every VSync start (game-side bookkeeping, `ssx3_game::tick`).
+static VBLANK_HOOK: std::sync::OnceLock<fn(&mut Cpu)> = std::sync::OnceLock::new();
+
+/// Install the VSync hook (once).
+pub fn set_vblank_hook(f: fn(&mut Cpu)) {
+    let _ = VBLANK_HOOK.set(f);
 }
 
 /// Per-machine scheduling state that lives outside `Cpu`'s architectural part.
@@ -239,7 +239,9 @@ pub fn service_events(c: &mut Cpu) -> bool {
         crate::pad::refresh(c);
         crate::sif::vblank(c);
         m!(c).sched.frame_ready = true;
-        apply_tick_rate(c);
+        if let Some(f) = VBLANK_HOOK.get() {
+            f(c);
+        }
     }
     if m!(c).sched.in_vblank && c.cycles >= m!(c).sched.next_vblank_end {
         m!(c).sched.in_vblank = false;

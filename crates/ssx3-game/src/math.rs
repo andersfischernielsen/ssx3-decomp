@@ -71,7 +71,10 @@ const TWO_PI: FpuF32 = FpuF32(0x40c9_0fdb);
 /// The 1-D value-noise table: 160 samples plus one wrap-around entry (`.data`).
 const NOISE_TABLE: Addr = Addr(0x0044_5ab0);
 const NOISE_PERIOD: i32 = 160;
-/// Per-frame phase step of the loading indicator, ~1/60 (0x49df48).
+/// Per-frame phase step of the loading indicator, 1/60 in the executable:
+/// read from its `.lit4` entry, which the tick rate rewrites (`crate::tick`).
+const LOAD_INDICATOR_STEP_AT: Addr = Addr(0x0049_df48);
+#[cfg(test)]
 const LOAD_INDICATOR_STEP: FpuF32 = FpuF32(0x3c88_8889);
 /// The "raise inexact" probe of fdlibm's floorf.
 const HUGE: FpuF32 = FpuF32(0x7149_f2ca);
@@ -342,7 +345,7 @@ pub fn wrap_angle_pi(c: &mut Cpu) {
 pub fn load_indicator_advance(c: &mut Cpu) {
     let phase = Addr(abi::arg(c, 0));
     c.cycles += 9;
-    let s = phase.read_fpu(c) + LOAD_INDICATOR_STEP;
+    let s = phase.read_fpu(c) + LOAD_INDICATOR_STEP_AT.read_fpu(c);
     let whole = fpu_floor(c, s, 3);
     phase.write_fpu(c, s);
     c.cycles += 3;

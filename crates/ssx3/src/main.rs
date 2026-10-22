@@ -67,8 +67,14 @@ struct App {
     preview: u32,
 }
 
-/// The game's field time.
-const FIELD: Duration = Duration::from_micros(16_683);
+/// The game's field time: one tick at the game rate (59.94 Hz originally,
+/// `SSX3_TICK_HZ`).
+fn field() -> Duration {
+    match ssx3_ps2::machine::vsync_hz() {
+        60 => Duration::from_micros(16_683),
+        hz => Duration::from_secs_f64(1.001 / hz as f64),
+    }
+}
 
 /// libpad button bit for a controller button.
 fn gamepad_bit(b: gilrs::Button) -> Option<u16> {
@@ -290,9 +296,9 @@ impl ApplicationHandler for App {
                 let due = !interp || Instant::now() >= self.next_tick;
                 if due {
                     if interp {
-                        self.next_tick += FIELD;
-                        if self.next_tick + FIELD * 4 < Instant::now() {
-                            self.next_tick = Instant::now() + FIELD;
+                        self.next_tick += field();
+                        if self.next_tick + field() * 4 < Instant::now() {
+                            self.next_tick = Instant::now() + field();
                         }
                     }
                     if !self.step(event_loop) {
@@ -362,7 +368,7 @@ impl App {
             Some(p) if native && self.gfx.is_some() => {
                 let g = self.gfx.as_ref().unwrap();
                 if p.same_device(self.gpu_ctx) {
-                    if let Some((view, _, _)) = g.present_view_at((self.subframes > 1).then_some(FIELD)) {
+                    if let Some((view, _, _)) = g.present_view_at((self.subframes > 1).then_some(field())) {
                         let _ = p.render_view(&view);
                     }
                 } else if let Some((w, h, px)) = g.read_image() {
@@ -401,8 +407,8 @@ impl App {
         // display's vsync paces the window).
         if self.subframes <= 1 {
             let el = self.last.elapsed();
-            if el < FIELD {
-                std::thread::sleep(FIELD - el);
+            if el < field() {
+                std::thread::sleep(field() - el);
             }
         }
         self.last = Instant::now();
@@ -437,7 +443,9 @@ impl App {
             .or_else(|| window.current_monitor().and_then(|m| m.refresh_rate_millihertz()).map(|m| m as f64 / 1000.0))
             .unwrap_or(60.0);
         if let Some(g) = self.gfx.as_ref().filter(|_| ssx3_ps2::frame_sink::native()) {
-            self.subframes = ((hz / 59.94).round() as u32).clamp(1, 8);
+            // Images per tick: 1 when the game rate reaches the display's.
+            let tick_hz = ssx3_ps2::machine::vsync_hz() as f64 / 1.001;
+            self.subframes = ((hz / tick_hz).round() as u32).clamp(1, 8);
             g.set_subframes(self.subframes);
             eprintln!("[gfx] {hz:.0} Hz: {} images per game frame ({} interpolated)", self.subframes, self.subframes - 1);
         }

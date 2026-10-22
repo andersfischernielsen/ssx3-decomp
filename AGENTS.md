@@ -32,3 +32,27 @@ Goal: replace generated EE functions with hand-written Rust, one verified functi
 - VU0: issue the original's `c.vu0()`/`lqc2`/`sqc2` macro ops; do not recompute with `VuF32`.
 - Fixtures (most "failures" are fixtures, not ports): set the BELibrary dummy at `gp-0x1f04` and the world at `gp-0x848`; use the pool allocator (`gp+0xdd8` + pool heads) and/or `DLHeap_InitArena` for allocation; keep real callees on short paths. Known runaway PCs: `0x3de768` lazy disc load, `0x31ef40` zeroed-heap consolidate. A 1-cycle diff is usually a missed block charge; a wrong `pc`/`ra` is a missing return restore.
 - Add one `#[test]` per function comparing against the generated body (`f_XXXXXXXX__generated` if a slot exists, else `f_XXXXXXXX`), with a fixture that reaches every branch. Report functions written, skipped and why, and anything uncertain.
+
+---
+
+## Tick-rate pass (configurable game rate)
+
+Goal: the game runs correctly at any tick rate (`SSX3_TICK_HZ`, settings "Game rate"), and stays bit-exact at 60. Read `docs/plans/configurable-tick-rate.md` first: the rate switch, the conversion rules, the work order. The inventory is `docs/plans/tick-rate-functions.tsv` (`tools/scan_framerate.py`; the `pool` column maps each load site to its `.lit4` entry). The rate lives in `crates/ssx3-game/src/tick.rs` only.
+
+### Orchestrator
+
+1. **Waves follow the plan's work order** (T1, T2, then T3 by system). One writer per output file; at most four writers; the same machine limits and "one heavy process at a time" as the porting loop.
+2. **T1 (classification, no code).** Give each writer up to 50 `.lit4` entries (rows of the inventory, grouped by unit) and one output file `docs/plans/tick/t1-<writer>.tsv` with the columns `entry  site  function  class  reason`. `class` is `STEP` (seconds per tick: follows the rate, the default), `NOT_A_STEP` (1/60 meaning something else, e.g. seconds to minutes for a clock display) or `UNSURE`. Check every `NOT_A_STEP` and `UNSURE` yourself against the code; add confirmed `NOT_A_STEP` entries to `tick::NOT_A_STEP` with the reason as a comment.
+3. **T2/T3 (conversion).** Give each writer one unit file (`crates/ssx3-game/src/game/<dir>/<unit>.rs`) and the functions of that unit to convert; never two writers in one file. A function that is still generated is ported first with the normal porting loop (staging `ocM.rs`), installed, then converted in a later wave.
+4. **Verify each report yourself:** `SSX3_DIFF_STRICT=args cargo test --profile game -p ssx3-game --lib game::<dir>::<unit>::` (the 60 Hz differential tests must pass unchanged, and the new rate tests), then `cargo build --profile game -p ssx3 --bins`, `python3 tools/integrate_wave.py gate` (must print `GATE: race replay RAM identical to the baseline`), commit.
+5. **End of each wave:** `python3 tools/tick_ab.py 120` (two headless runs) and look at the sheets: race clock and course % must agree up to a constant offset; note anything that runs fast or slow in the plan's "Measured" table and turn it into T3 work. Update the plan's status, commit and push.
+
+### Subagent (tick-rate writer)
+
+- You are a subagent. Edit only the file you were given. Never edit `overrides.txt`, `Cargo.toml`, `lib.rs`, `tick.rs` or generated code, and never run cargo.
+- Read `docs/plans/configurable-tick-rate.md` ("Conversion rules") and `crates/ssx3-game/src/tick.rs`.
+- T1: for each entry, read the function at the site (the hand-written port if `ported` is `yes`, else `generated/ee` and `python3 tools/refsrc.py <name>`) and decide what the loaded `1/60` means there. Write one row per entry. Give a concrete reason for anything that is not `STEP`.
+- T2/T3: use only `tick::rate(c)`, `tick::dt(c)`, `tick::ticks_from_frames60(c, n)`. At 60 the code must do exactly what it did: same values, same registers, same cycles, same calls. When the converted expression is not bit-exact at 60, write `if tick::rate(c) == 60 { original } else { converted }`, and put the converted value where the original put its value (same register or memory). Loads from `.lit4` already follow the rate: leave them alone.
+- Look for what the scan cannot see in your functions: frame counters and thresholds in frames, `v *= k` decay, `x += (t - x) * a` smoothing, `+= c` per tick, random chances per tick. Leave `n % 3`-style load spreading in ticks.
+- Keep each function's differential test unchanged. Add one rate test per converted function: `tick::set_for_test(c, 120)`, write `tick::step_bits(120)` into the `.lit4` entries the function loads, run it twice, and compare the timing quantity with one run at 60 (exact for counters, a small tolerance for floats).
+- Report: per function the class or conversion, the tests added, anything left unconverted and why, and anything uncertain.
