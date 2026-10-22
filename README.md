@@ -27,7 +27,8 @@ the PS2's graphics, video and audio hardware are not emulated on the default pat
   per-frame work), each checked against the generated code. Every function is named.
 - **Still PS2-shaped:** guest memory, the EE kernel and its threads, a few hardware
   status registers, VU0 macro ops. The game's threads run as coroutines on one host
-  thread. Next: a smaller machine model
+  thread; the GS is reduced to its registers (the emulated GS only in verification
+  builds)
   ([`docs/plans/port-architecture.md`](docs/plans/port-architecture.md)).
 
 ## Screenshots
