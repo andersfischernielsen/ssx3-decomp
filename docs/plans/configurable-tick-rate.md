@@ -16,10 +16,17 @@ Status (2026-10-22):
   is removed (the game rate replaces it).
 - ✅ T1: the 193 `1/60` entries classified (187 STEP, 6 NOT_A_STEP, 2 UNSURE);
   the script/animation frame-time entries no longer follow the rate.
-- ⏳ T2: the other rate constants (`60.0`, `3600`, `1/30`, `30.0`, `1/50`,
-  `50.0`).
-- ⏳ T3: the per-tick code the scan cannot see (front end first, see "Fast at
-  240 Hz").
+- ✅ T2 (hand-written functions): every `60.0`/`3600`/`1/30`/`30.0`/`1/50`/
+  `50.0` site of the 36 ported functions classified — most are authored
+  30 fps data, distances or seconds-per-hour constants; the tick counts
+  (`Rider_SetTimedEvent`, `Rider_EstimateFinishTime`, the trick-HUD and
+  state slews, the air state's last partial tick) now scale. The 98
+  still-generated functions with such constants are porting work first.
+- ✅ T3 first wave: the title idle timeout and pre-fade wait (the attract loop
+  and menu drift) follow the rate; board-wake/spray per-tick blends follow.
+  The front end is in lockstep at 240 Hz (see "Fast at 240 Hz").
+- ⏳ T3 next: race start (load/intro), trick score and boost-meter count-up,
+  UI animation frames, title particles, scripted timelines.
 
 ## How the game keeps time
 
@@ -167,9 +174,26 @@ the two runs are in the sequence.
 | Rider physics, speed | right: speeds and progress match (55 MPH both; drag/friction follow the step) | `sheet4`-`sheet5` |
 | HUD and effects | not separable yet: the front-end offset puts the two runs at different points of the course; re-check after the front end is fixed | — |
 
-So the first T3 target is the front end (menus, HUD, attract loop): its
-timers are counted in updates or frames, and its transitions/fades are
-per-update increments. The race screen proper already follows the rate.
+**Fixed by the first T1/T2/T3 waves** (`tools/tick_ab.py 240`,
+`/tmp/ssx3-tick-ab-240-t2/sheet*.png`):
+
+| System | Before | Now |
+| --- | --- | --- |
+| Title idle timeout (`cFEStateTitle_Update`, 1801 update) and pre-fade wait (`D_004A17C0`, 300 update) | attract loop 4× fast, menus out of sync | both are wall-clock durations (`tick::ticks_from_frames60`, `tick::FRAME_COUNTS`): title and every menu screen are in lockstep at matched real time (`sheet0`-`sheet2`) |
+| Race clock, course %, speed | agree up to the start offset | still agree; course % now tracks the clock at both rates (13/14, 15/16, 18/18, 21/21 % at clocks 25/23, 30/32, 34/35, 38/40 s, `sheet5`) |
+| Timed events (`Rider_SetTimedEvent`), finish-time estimate, trick-HUD slews, board-press/rail slews, last-partial-tick air turn | `seconds * 60` and `1/30` steps per tick | scaled to the rate; 60 Hz unchanged |
+| Board-wake and spray effects: anim blend, alpha smoothing, level rise, strength decay | per-tick factors | `60/rate` / `k^(60/rate)`; 60 Hz unchanged |
+
+**Still wrong at 240 Hz** (next T3 work, in this order):
+
+| System | What is wrong | Evidence |
+| --- | --- | --- |
+| Race start (load/intro) | starts ~2 s earlier in real time at 240 Hz, so the race clock carries a constant offset | `sheet3` row 3 (00:00:03 vs 00:00:01), `sheet4` |
+| Trick score / HUD count-up | the 240 Hz run banks more score (730 vs 230/280) and the "SUPER UBER" gauge fills faster: the trick-history and boost-meter ramps are per-tick (`1/1200`, `1/600` with ±1/60 thresholds) | `sheet5` rows 1-3, `sheet6` |
+| UI animations (menus, screens) | `UIAnim_Advance` advances one animation frame per update, so every menu/screen animation and thread frame runs at the tick rate (4× fast at 240); the screen flow looks right because it is input/state driven | `sheet0`-`sheet2` in-between frames |
+| Front-end title/attract particles | the title snow flurry runs at the tick rate | `sheet0` rows 1-3 |
+| Scripted timelines (attract demo, camera scripts, transitions) | the script engine advances one script frame per tick (`Avalanche_UpdateInstance` and the script VM); script durations are already correct (they are wall-clock seconds) | `sheet0` before the fix |
+
 
 ## Inventory
 
