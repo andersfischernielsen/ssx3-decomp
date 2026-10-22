@@ -68,7 +68,7 @@ A hardware change rebuilds only its crate and relinks (GS/kernel ~3 s, VU
 | topic | doc |
 | --- | --- |
 | long-term phases (recomp → typed Rust → native port) | `plans/roadmap.md` |
-| progress log, how to resume, debug switches | `plans/playable-push.md` |
+| building, headless runs, verification, debug switches | `development.md` |
 | boot path, syscalls, IOP modules, threads | `investigation/boot-path.md` |
 | EE generator, threading modes, structured output | `investigation/recompiler-v2.md` |
 | function names (Ghidra passes) | `investigation/naming.md` |

@@ -230,6 +230,6 @@ VCALLMS and VCALLMSR.
   synchronous. Invalid commands set ER1 and are skipped, and the VIF does
   not stall on them. VIF0 DIRECT is rejected.
 - **Differential testing** against ps2-web-recomp's interpreter on captured
-  game invocations: [`vu-differential.md`](vu-differential.md).
+  game invocations: `vu-differential.md`.
 - **Tests skip without the ELF:** the decode-coverage and oracle tests are
   skipped when `orig/SLUS_207.72` is absent.

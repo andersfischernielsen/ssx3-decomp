@@ -9,26 +9,23 @@ the safety net for the next one (see "Verification" below).
 
 Status legend: ✅ done · 🟡 in progress · ⬜ not started
 
-## Where we are (2026-10-14)
-
-The game code runs as native code, but against a model of the PS2:
+## Where we are (2026-10-22)
 
 | Layer | Today |
 | --- | --- |
-| Game logic (EE, VU microcode, IOP drivers) | Statically compiled to Rust, no interpretation. Still PS2-shaped: register file (`c.g[...]`), 32 MiB guest RAM behind address checks, bit-exact PS2 float rules. |
-| PS2 kernel/BIOS | Re-implemented natively (HLE): guest threads on `std::thread`, semaphores on mutex/condvar, alarms, interrupts. No BIOS code runs. |
-| Hardware (DMA, VIF, VU state/pipeline, GS, SPU2, IPU, SIO2, timers, memory card) | **Emulated** models; the game programs them exactly as on a PS2. |
-| Host edges | `std::fs` (ISO, memory card), wgpu (GS output), cpal (audio), winit (window), gilrs (controllers). |
+| Game logic (EE) | Statically compiled to Rust; 5,092 of 11,844 functions hand-written typed Rust (~90% of a race's per-frame work), the rest generated. Still PS2-shaped: register file, guest RAM, PS2 float rules. |
+| Kernel | Native HLE: guest threads on host threads with a baton, semaphores, alarms, interrupts. |
+| Graphics | Native: the draw functions record typed draws, `ssx3-gfx` (wgpu) renders them. The emulated DMA/VIF/VU1/GS remain only for the reference path. |
+| Movies, sound, files, pads, memory card | Native (`ssx3-mpeg`, `ssx3-snd`, `std::fs`, native libpad/libmc). The IOP does not run. |
 
-Example paths: file load = game CD library → SIF RPC → IOP-side stand-in →
-ISO sectors via `std::fs`. Frame = EE DMA packets → VIF model → VU1 memory →
-translated microcode → GIF → GS model → wgpu.
+Detailed status: `native-rendering.md` (N1-N6); next steps:
+`port-architecture.md`.
 
-## Phase 1: full static recompilation, playable natively 🟡
+## Phase 1: full static recompilation, playable natively ✅
 
 Everything the game executes is statically translated; the game is playable on
-the owner's machine at full speed. Progress log and resume instructions:
-[`playable-push.md`](playable-push.md).
+the owner's machine at full speed. Development and verification:
+`../development.md`.
 
 - ✅ EE: 13,306 functions translated, ~97% structured Rust; no runtime decode
   (VU0 macro ops included). Runtime misses are recorded in
@@ -148,7 +145,7 @@ generated. Order:
 Bulk phase 2 rewriting (typed function bodies) continues later as capacity
 allows (OpenCode waves, `phase2-worker-guide.md`).
 
-## Phase 3: native port: move the boundary upward ⬜
+## Phase 3: native port: move the boundary upward 🟡
 
 Replace hardware models with host implementations at the game's own
 interfaces, one subsystem at a time:
@@ -204,7 +201,7 @@ natively) and avoid new blocking GPU readbacks.
 
 Runs are deterministic (fixed RTC), so any change can be checked by replaying
 the scripted race and comparing screenshots byte for byte against the
-previous build (`playable-push.md` → How to resume). Further oracles:
+previous build (`../development.md`). Further oracles:
 `vu_diff` captures, `gs_replay` traces, and PCSX2 via PINE
 (`tools/pine.py`, `../investigation/pcsx2-pine.md`). Phase 2 rewrites must
 keep phase 1 output identical; phase 3 replacements are compared against the

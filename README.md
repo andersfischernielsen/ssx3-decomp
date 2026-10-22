@@ -7,29 +7,28 @@
 <sub>The recompiled game running headless at 2× internal resolution (`SSX3_RENDER_NATIVE=all SSX3_RENDER_SCALE=2`): title, mode select, and the first 75 seconds of a Snow Jam race.</sub>
 
 A native **Rust** static recompilation of **SSX 3 (USA)** (`SLUS_207.72`) for the
-PlayStation 2. Every instruction of the game's Emotion Engine code, VU microcode and
-IOP drivers is translated to Rust ahead of time and runs on a native PS2 platform layer
-(kernel, DMA/VIF/GIF, GS on wgpu, IPU, SPU2, memory card). No emulator interprets the
-game's code at runtime.
+PlayStation 2, on its way to a native port. The game's Emotion Engine code is translated
+to Rust ahead of time; everything around it (rendering, movies, sound, files,
+controllers, memory card) is native Rust. No emulator interprets the game's code, and
+the PS2's graphics, video and audio hardware are not emulated on the default path.
 
-**Status (2026-10-17):**
-- **The game is playable.** It boots and plays the intro movies. Menus, races, music and
-  sound work, and saves go to a file-backed memory card.
-- **No emulated graphics hardware by default.** The native renderer (`crates/ssx3-gfx`,
-  wgpu) draws each frame from the game's own draw lists. The frame's VIF/VU1/GS work is
-  not emulated and the GS core is detached. Menus, movies, loading screens and races all
-  come through it.
-- **Modern displays.** The renderer works at any resolution and aspect ratio, widens the
-  game's 3D view to fit (16:9, ultrawide), keeps the HUD at its 4:3 shape, and has an
-  adjustable field of view. On high-refresh displays it interpolates between the game's
-  60 Hz frames.
-- **Native sound, files, controllers and memory card** (a native mixer; game files read
-  through `std::fs`; libpad and libmc answered natively, saves on the same `.ps2` card
-  image) are on by default too, so the IOP doesn't run at all. Each native path can be
-  switched back to the emulated one for comparison.
-- **Every function has a name, and many are hand-written Rust.** All 13.3k functions are
-  named. 1,368 are typed Rust rewrites that are checked against the generated code.
-- **Still emulated:** the EE kernel, DMA controller and timers the game code talks to.
+**Status (2026-10-22):**
+- **The game is playable**: boot, movies, menus, every race and freestyle event,
+  Conquer the Mountain, music and sound, saves on a file-backed memory card.
+- **Native rendering at the game's draw functions.** The game's draw functions,
+  `RenderFrame` and the post passes run as native Rust that records typed draws; the
+  renderer (`crates/ssx3-gfx`, wgpu) draws them. No DMA packets, VIF, VU1 or GS work
+  is emulated. Any resolution and aspect ratio, a widened 3D view (16:9, ultrawide),
+  an adjustable field of view, interpolation on high-refresh displays.
+- **Native movies, sound, files, controllers and memory card**: a native MPEG-2
+  decoder behind libmpeg's API, a native sound driver, `std::fs` for game files,
+  libpad/libmc answered natively. The IOP does not run.
+- **5,092 of 11,844 functions are hand-written typed Rust** (about 90% of a race's
+  per-frame work), each checked against the generated code. Every function is named.
+- **Still PS2-shaped:** guest memory, the EE kernel and its threads, a few hardware
+  status registers, VU0 macro ops. Next: one host thread for the game's threads, a
+  native frame loop, a smaller machine model
+  ([`docs/plans/port-architecture.md`](docs/plans/port-architecture.md)).
 
 ## Screenshots
 
@@ -239,13 +238,18 @@ own.
 
    - **Exactness is the rule.** The same run before and after your change must give
      identical screenshots and RAM, unless the change is meant to alter behaviour.
-   - **Rewrites are checked against the generated code.** Hand-written functions are
-     compared by running with `SSX3_NO_OVERRIDES=1` (generated code only) and comparing.
-   - More switches for headless runs and debugging:
-     [`docs/plans/playable-push.md`](docs/plans/playable-push.md#how-to-resume).
+   - **Rewrites are checked against the generated code**: differential tests, the
+     scenario harness (`scripts/scenarios.sh`: every event with boost and tricks, random
+     menu input, compared with and without the hand-written code) and runtime shadow
+     checks (`SSX3_SHADOW`).
+   - All switches for headless runs, verification and debugging:
+     [`docs/development.md`](docs/development.md).
 4. **Rewrite functions as typed Rust (phase 2).** The guide is
    [`docs/investigation/phase2-worker-guide.md`](docs/investigation/phase2-worker-guide.md).
-   Rewrites live in `crates/ssx3-game` and are registered in its `overrides.txt`.
+   Rewrites live in `crates/ssx3-game` and are registered in its `overrides.txt`. The
+   matching C++ decompilation [DevvyDont/ssx3](https://github.com/DevvyDont/ssx3) is
+   used as a readable reference (`tools/refbody.py`); the generated code stays the
+   authority for exact behaviour.
 5. **Don't commit game material:**
    - the disc image or files from it;
    - translated code (`generated/ee`, `generated/iop`, `generated/vu`);
@@ -265,16 +269,19 @@ boundaries) is committed. To explore the binary yourself, see
 | --- | --- |
 | `ssx3-recomp` | The function inventory, the R5900 decoder, and **`recomp-ee`**. It lowers ~808k instructions in 13.3k functions to structured Rust (97% of functions without a `pc` variable), sharded into 16 crates under `generated/ee/`. `recomp-iop` does the same for the game's IOP modules. See [`docs/investigation/recompiler-v2.md`](docs/investigation/recompiler-v2.md). |
 | `ssx3-ee-rt` | The EE core the generated code compiles against: `Cpu` (128-bit GPRs, FPU, COP0), instruction semantics (MMI, bit-exact PS2 float), guest memory, the function table, and the `Platform` trait. Kept small so hardware changes never recompile generated code. |
-| `ssx3-game` | Hand-written typed Rust replacements for game functions (phase 2), checked against the generated ones. Also the native file layer. |
+| `ssx3-game` | Hand-written typed Rust replacements for game functions (phase 2), checked against the generated ones; the native draw functions (`packetless`), native libmpeg (`movie.rs`), the native file layer. |
 | `ssx3-vu` | VU0/VU1: registers, pipeline timing, and the translated microcode (`generated/vu/`). |
-| `ssx3-ps2` | The platform (`Machine`): MMIO, DMAC, timers, INTC, an HLE EE kernel (threads, semaphores, alarms), SIF and IOP services, VIF, the GS (wgpu compute rasterizer, native wgpu render paths, software fallback; on its own thread), and the IPU (MPEG). |
+| `ssx3-ps2` | The platform (`Machine`): an HLE EE kernel (threads, semaphores, alarms), the hardware registers the game touches, SIF and the native IOP services, the frame sink and native DMA kick; the emulated GS, VIF and IPU for the reference path (`SSX3_RENDER=emu`). |
+| `ssx3-gfx` | The native renderer (wgpu): typed frames from the game's draws, the VU1 programs on CPU/GPU, post passes, interpolation. |
+| `ssx3-mpeg` | The native MPEG-2 movie decoder (shared tables and arithmetic with the IPU model). |
 | `ssx3-iop` | The IOP runtime for the recompiled IRX modules: IOP kernel, SPU2 audio, SIO2 with pad and memory card. |
 | `ssx3-mc` | The memory card natively: the PS2 card filesystem (FAT, directories, ECC) on the raw `.ps2` image, answering libmc the way MCMAN/MCSERV do (saves are byte-identical to theirs). |
-| `ssx3-render` | The VU1 rendering programs as readable Rust (`SSX3_VU1=native`). |
-| `ssx3-snd` | The native sound mixer (`SSX3_SND=native`). |
+| `ssx3-render` | The typed frame (captured draws, the frame build) and the VU1 rendering programs as readable Rust. |
+| `ssx3-snd` | The native sound driver (EA's IOP SNDDRV in Rust). |
 | `ssx3` | Front ends: the windowed `ssx3` (winit + wgpu + gilrs + cpal) and `ssx3-headless`. |
 
-Each guest thread runs on its own host thread, and a baton lets only one run at a time.
+Each guest thread currently runs on its own host thread, and a baton lets only one run
+at a time (to be replaced by one host thread, `docs/plans/port-architecture.md`).
 A guest call is a plain Rust call. `recomp-ee --unwind` generates the original
 resumable form, which uses the unwind/trampoline model from
 [ps2-web-recomp](https://github.com/snuri00/ps2-web-recomp) (MIT).

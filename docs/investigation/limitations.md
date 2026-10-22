@@ -1,54 +1,35 @@
-# Known limitations and open questions
+# Known limitations (2026-10-22)
 
-## Linear sweep vs. real instruction boundaries
+## Game
 
-`Program::decode` is a **linear sweep**: it steps 4 bytes at a time across a
-function body. Two real problems were observed:
+- **Light glows and flares draw through geometry** in places (sun glare,
+  point-light glows): [`flare-occlusion.md`](flare-occlusion.md). Required
+  before the project is called done.
+- **Online** reaches the network configuration screen; there is no network.
+- **`SSX3_HOST_CLOCK=1`** (game time follows the host when it falls behind)
+  can stall the game on a host that stays behind; off by default.
+- Paths never scripted are covered only by the hand-written functions'
+  differential tests and random menu input
+  ([`coverage.md`](coverage.md), `tools/scenarios.py`).
 
-1. **Embedded data inside a function.** `FUN_0042d470`'s body is 1,640 bytes but
-   Ghidra disassembles only 407 instructions; the trailing 12 bytes are non-zero
-   data (a jump table), which the sweep decodes as bogus instructions.
-2. **Ghidra's listing has holes.** Within `FUN_0042d470` the disassembly jumps
-   `0x42d580` → `0x42d588`, `0x42d5e8` → `0x42d5f0`, `0x42d860` → `0x42d868`.
-   Ghidra did not disassemble those 4-byte slots at all (undefined/unreachable
-   bytes); a sweep fills them in.
+## Runtime
 
-Consequence: for translation we need **authoritative per-instruction
-boundaries**, obtained by either
+- **Still a PS2-shaped runtime around the game code:** guest RAM, the EE
+  kernel (guest threads on host threads with a baton), DMAC/INTC/timer and
+  GS register state, VU0 macro ops, PS2 float semantics. Plan to reduce it:
+  [`../plans/port-architecture.md`](../plans/port-architecture.md).
+- **The frame build replays the captured draws through a VIF model** into
+  VU memory images for the native VU programs (~10% of the game thread).
+- **Movies** match the emulated path byte for byte except +-1-2 in a few
+  bidirectional macroblocks with a diagonal backward vector (the native
+  decoder follows the MPEG-2 standard there).
+- **The browser build** reads the latest depth for the light queries (no
+  render thread to wait for), so it is not replay-deterministic there.
 
-- recursive-descent disassembly from entries and branch/jump targets, or
-- exporting Ghidra's per-instruction addresses (the "export disassembly"
-  option), or
-- exporting the function's instruction-set from Ghidra.
+## Hand-written code
 
-Until then the golden test bounds the tail and compares by address, not index.
-
-## Decoder gaps
-
-2,123 of 801,242 instructions are unrecognised (opcode `0x11` COP1 formats:
-2,089; REGIMM: 34). See [`r5900-decoder.md`](r5900-decoder.md).
-
-## Symbol recovery
-
-The ELF is stripped, but `-ffunction-sections` left mangled C++ names in section
-names (`RCMP5CODEC`, `RCMP7DECODER`, SONY PS2 codec classes, ...). These have not
-been applied to functions yet — a cheap, high-value naming pass.
-
-## Execution and code generation
-
-- **Control flow is scaffolding.** Generated functions use a per-function
-  basic-block dispatch (`match pc`). It is correct but not the target: structured
-  Rust (`loop`/`if`, no labels) must replace it.
-- **FPU not modelled.** COP1 arithmetic/compares lower to no-ops.
-- **`lq`/`sq`** use only the low 64 bits; **HI/LO** is `u64`, not the R5900's
-  128-bit pair, so `madd`/`pmfhl` and friends are approximated.
-- **`clear fsa`/`clear fs`/`clear fcsr`** (Ghidra pseudo-ops) are no-ops.
-- **Indirect `jr`/`jalr`** stop execution rather than resolve a target.
-- **Syscalls** that are not a compile-time constant fall back to a logging stub.
-
-## Not yet modelled
-
-- DMA, timers, INTC, and the GIF/GS packet path (VRAM is presented, not produced).
-- VU0/VU1 microcode (`.vutext` exists; no VU model).
-- The game beyond the entry call graph: only the functions `recomp-gen` has
-  translated can run; everything else stops at `untranslated_call`.
+- 5,092 of 11,844 functions are installed as typed Rust; about 200 more are
+  written but not installed (fixtures could not reach their real paths, or
+  a replay showed a difference). Installed ports keep the generated code's
+  registers and cycles exactly; most are not yet "modern" Rust (they still
+  operate on guest memory and registers).
