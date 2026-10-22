@@ -5239,5 +5239,7 @@
 0x00106f78    Rider_HandleWallRailContact
 # Phase 2 wave: oc156
 0x0041ca70    _vfiprintf_r
+# Phase 2 wave: oc157
+0x001ec3f8    cOVStateHUD1P_Render
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
