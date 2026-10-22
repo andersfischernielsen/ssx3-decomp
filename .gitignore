@@ -47,3 +47,4 @@
 /crates/ssx3-web/www/pkg-vu/
 /target-agents
 tools/.refindex.json
+tools/.reorg-units.json

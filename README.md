@@ -269,7 +269,7 @@ boundaries) is committed. To explore the binary yourself, see
 | --- | --- |
 | `ssx3-recomp` | The function inventory, the R5900 decoder, and **`recomp-ee`**. It lowers ~808k instructions in 13.3k functions to structured Rust (97% of functions without a `pc` variable), sharded into 16 crates under `generated/ee/`. `recomp-iop` does the same for the game's IOP modules. See [`docs/investigation/recompiler-v2.md`](docs/investigation/recompiler-v2.md). |
 | `ssx3-ee-rt` | The EE core the generated code compiles against: `Cpu` (128-bit GPRs, FPU, COP0), instruction semantics (MMI, bit-exact PS2 float), guest memory, the function table, and the `Platform` trait. Kept small so hardware changes never recompile generated code. |
-| `ssx3-game` | Hand-written typed Rust replacements for game functions (phase 2), checked against the generated ones; the native draw functions (`packetless`), native libmpeg (`movie.rs`), the native file layer. |
+| `ssx3-game` | Hand-written typed Rust replacements for game functions (phase 2), checked against the generated ones, in `src/game/<dir>/<unit>.rs` after the C++ source tree; the native draw functions (`packetless`), native libmpeg (`movie.rs`), the native file layer. |
 | `ssx3-vu` | VU0/VU1: registers, pipeline timing, and the translated microcode (`generated/vu/`). |
 | `ssx3-ps2` | The platform (`Machine`): an HLE EE kernel (threads, semaphores, alarms), the hardware registers the game touches, SIF and the native IOP services, the frame sink and native DMA kick; the emulated GS, VIF and IPU for the reference path (`SSX3_RENDER=emu`). |
 | `ssx3-gfx` | The native renderer (wgpu): typed frames from the game's draws, the VU1 programs on CPU/GPU, post passes, interpolation. |

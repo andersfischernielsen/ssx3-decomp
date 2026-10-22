@@ -77,15 +77,20 @@ register or a zeroed fixture; `SSX3_DIFF_STRICT=1` makes the tests compare
 the scratch registers too. Further decomp checks use the unit tests (this
 harness run is expensive and was done once).
 
-## Task 2: module layout (branch `reorg-modules`)
+## Task 2: module layout ✅ (2026-10-22)
 
-The ~130 `ocN.rs` batch modules become subsystem modules
-(`crates/ssx3-game/src/<subsystem>/<unit>.rs`), keyed by the matching C++
-decompilation's source path (`tools/refsrc.py`), else by name prefix.
-Functions move with their tests and `OVERRIDES` entries; shared helpers go to
-a common module; the per-batch cargo features collapse. Gate: all
-differential tests pass, the race replay RAM and the scenario RAMs are
-unchanged. Merged into `main` when green.
+The 162 `ocN.rs` batch modules are gone: the 4,614 replacements they held
+are in `crates/ssx3-game/src/game/<dir>/<unit>.rs` (248 modules), laid out
+like the matching C++ decompilation's `src/` tree (`tools/refsrc.py`);
+functions the reference has no unit for are placed by name prefix
+(`game/lib/` for the EA sound library, libc, the gcc runtime, the kernel).
+`tools/reorg_modules.py` did the move: each replacement and its tests to its
+unit, helpers to the units that use them (one copy, in the module's main
+unit, `pub(crate)`, imported by the others; name clashes renamed), the
+per-batch cargo features removed. New waves are still written as staging
+`ocN.rs` modules and merged in with the same tool (AGENTS.md). Gate: all
+4,979 differential tests pass, 5,092 replacements installed (as before), the
+race replay RAM identical.
 
 ## Task 3: modern runtime (branch `modern-runtime`)
 

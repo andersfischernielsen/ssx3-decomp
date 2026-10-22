@@ -10,7 +10,9 @@ The game's code was translated mechanically into Rust in
 `generated/ee/sNN/src/lib.rs` (one `pub fn f_XXXXXXXX(c: &mut Cpu)` per game
 function, where XXXXXXXX is its address; named ones have a doc comment
 `/// \`Name\``). You rewrite a function as readable Rust in the module file you
-are given (e.g. `crates/ssx3-game/src/oc1.rs`). Your version must behave
+are given (a staging module, e.g. `crates/ssx3-game/src/oc163.rs`; once
+installed, its functions move into `crates/ssx3-game/src/game/<dir>/<unit>.rs`
+after their C++ unit). Your version must behave
 **exactly** like the generated one: same memory writes, same register results,
 same cycle count. A differential test proves it.
 
