@@ -20,6 +20,40 @@ pub const HSYNC_CYCLES: u64 = FRAME_CYCLES / 263;
 /// VBlank lasts ~22 lines on NTSC.
 pub const VBLANK_CYCLES: u64 = HSYNC_CYCLES * 22;
 
+/// Experimental base-rate knob: `SSX3_TICK_HZ=N` runs VSync at N Hz and sets
+/// the game's own tick rate and step (`cAppMan` +0x10 = N, +0x14 = 1/N, set
+/// to 60 and 1/60 by `cAppMan_run`). Unset: 59.94 Hz and the game's values.
+/// Code that hard-codes 1/60 or counts frames still assumes 60 Hz; see
+/// docs/plans/configurable-tick-rate.md.
+pub fn tick_hz() -> Option<u32> {
+    static HZ: std::sync::OnceLock<Option<u32>> = std::sync::OnceLock::new();
+    *HZ.get_or_init(|| std::env::var("SSX3_TICK_HZ").ok().and_then(|v| v.parse().ok()).filter(|&n| n > 0))
+}
+
+fn frame_cycles() -> u64 {
+    tick_hz().map_or(FRAME_CYCLES, |n| EE_CLOCK / n as u64)
+}
+
+/// The global `cAppMan*` (D_004A5B64).
+const APPMAN_PTR: u32 = 0x004A_5B64;
+
+/// With `SSX3_TICK_HZ`, overwrite the game's 60 Hz rate and step once
+/// `cAppMan_run` has written them.
+fn apply_tick_rate(c: &mut Cpu) {
+    let Some(n) = tick_hz() else { return };
+    let app = c.bus.read32(APPMAN_PTR);
+    if app != 0 && c.bus.read32(app + 0x10) == 60 && n != 60 {
+        c.bus.write32(app + 0x10, n);
+        c.bus.write32(app + 0x14, (1.0f32 / n as f32).to_bits());
+        eprintln!("[tick] cAppMan {app:#x}: rate 60 -> {n}, step 1/{n}");
+    }
+    let vsyncs = m!(c).sched.frames;
+    if app != 0 && vsyncs % (10 * n as u64) == 0 {
+        // Game updates run so far (cAppMan +0x1C), every 10 seconds.
+        eprintln!("[tick] vsync {vsyncs}: {} game updates", c.bus.read32(app + 0x1C));
+    }
+}
+
 /// Per-machine scheduling state that lives outside `Cpu`'s architectural part.
 #[derive(Default)]
 pub struct Sched {
@@ -192,7 +226,7 @@ pub fn service_events(c: &mut Cpu) -> bool {
     m!(c).hw.now = c.cycles;
     // VBlank start/end.
     if c.cycles >= m!(c).sched.next_vblank {
-        m!(c).sched.next_vblank += FRAME_CYCLES;
+        m!(c).sched.next_vblank += frame_cycles();
         m!(c).sched.next_vblank_end = c.cycles + VBLANK_CYCLES;
         m!(c).sched.in_vblank = true;
         m!(c).sched.frames += 1;
@@ -205,6 +239,7 @@ pub fn service_events(c: &mut Cpu) -> bool {
         crate::pad::refresh(c);
         crate::sif::vblank(c);
         m!(c).sched.frame_ready = true;
+        apply_tick_rate(c);
     }
     if m!(c).sched.in_vblank && c.cycles >= m!(c).sched.next_vblank_end {
         m!(c).sched.in_vblank = false;
@@ -328,7 +363,7 @@ pub fn boot(c: &mut Cpu, elf: &[u8], argv0: &str) -> Result<u32, String> {
     c.bus.write_bytes(s, &bytes);
     c.bus.write32(argv, s);
     kernel::start_main_thread(c, entry, 1, argv);
-    m!(c).sched.next_vblank = FRAME_CYCLES;
+    m!(c).sched.next_vblank = frame_cycles();
     c.next_event = 0;
     Ok(entry)
 }

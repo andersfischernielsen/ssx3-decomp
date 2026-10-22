@@ -1,0 +1,258 @@
+func	name	unit	ported	labels	sites
+0x00100348	ComputerActorRider_ComputeSteer	seg/seg_1218	yes	1/50	0x10059c
+0x00100680	ComputerActorRider_CruiseFollowPath	seg/seg_1218	yes	50.0 (imm)	0x1008b0
+0x001013a8	DangerMan_Update	seg/seg_1218	no	1/60	0x101538
+0x00103be0	RiderAnim_ScrubSeq	seg/seg_1218	no	1/60	0x103c80
+0x00103cc8	RiderAnim_BlendSeq2	seg/seg_1218	no	1/60	0x103da4
+0x00103e28	RiderAnim_BlendSeq4	seg/seg_1218	no	1/60	0x103f74
+0x00103ff8	RiderAnim_PlaySeqThenLoop	seg/seg_1218	no	1/60	0x104048 0x1040b4 0x1040c8
+0x00104358	RiderAnim_UpdateSeqType07	seg/seg_1218	no	1/60	0x1043b4
+0x001043f8	RiderAnim_UpdateSeqType0B	seg/seg_1218	no	1/60	0x104554
+0x001045d8	RiderAnim_UpdateSeqType08	seg/seg_1218	no	1/60	0x104618
+0x00104728	RiderAnim_UpdateSeqType0E	seg/seg_1218	no	1/60	0x1047ac
+0x001047f0	RiderAnim_UpdateSeqType0D	seg/seg_1218	no	1/60	0x10487c
+0x001048c0	RiderAnim_UpdateSeqType00	seg/seg_1218	no	1/60	0x1048c4
+0x00104940	RiderAnim_UpdateSeqType01	seg/seg_1218	no	1/60	0x104944
+0x001049c0	RiderAnim_UpdateSeqType02	seg/seg_1218	no	1/60	0x1049c4
+0x00105d98	Rider_HandleImpact	seg/seg_1218	no	60.0 (imm)	0x106190 0x106398
+0x00106f78	Rider_HandleWallRailContact	seg/seg_1218	yes	50.0 (imm)	0x1070ec 0x1073c0
+0x001086b8	Rider_ProbeRail	seg/seg_1218	no	30.0 (imm),50.0 (imm)	0x1086e0 0x1086ec
+0x0010aa70	ComputerActorRider_ThinkPrewind	seg/seg_1218	no	50.0 (imm)	0x10aa9c
+0x0010bbf8	ComputerActorRider_FindBoardPressMarker	seg/seg_1218	no	50.0 (imm)	0x10bbfc
+0x0010c320	ComputerActorRider_RollFittedTrick	seg/seg_1218	no	30.0 (imm)	0x10c348
+0x0010c3b8	ComputerActorRider_RollRandomTrick	seg/seg_1218	no	60.0 (imm)	0x10c3e0
+0x0010d1a0	ComputerActorRider_ShouldResetPath	ai/computer	yes	30.0 (imm)	0x10d374
+0x0010da10	ComputerActorRider_ShouldAttackBack	ai/computer	no	1/60	0x10da58
+0x0010e028	Rider_SetTimedEvent	ai/computer	yes	60.0 (imm)	0x10e054
+0x0010e910	Rider_BankTrickBoost	ai/computer	no	60.0 (imm)	0x10e9ec
+0x00113200	AirPredictor_Simulate	ai/airpredictor	no	1/50,1/60	0x113298 0x113384 0x113464
+0x00113648	AirPredictor_Update	ai/airpredictor	no	1/60,60.0 (imm)	0x11364c 0x113808
+0x001139a0	AirPredictor_Step	ai/airpredictor	no	1/60	0x1139a4
+0x00113e80	Rider_SetSlew0Target	seg/seg_14B10	no	1/60	0x113f20
+0x00113f38	Rider_SetSlew5Target	seg/seg_14B10	yes	1/60	0x113f70
+0x00114298	Rider_LaunchIntoAir	seg/seg_14B10	no	1/50,1/60	0x1147ec 0x114b08
+0x00115d48	Rider_UpdateIdleLookAnim	seg/seg_14B10	no	1/60	0x115d98
+0x00116fb8	cHUDFX_Update	seg/seg_14B10	yes	1/60	0x116fe4
+0x00117c28	RiderMetrix_Update	ai/ridermetrix	yes	1/60	0x117c2c
+0x00117fe0	RiderMetrix_UpdateTrickHUD	ai/ridermetrix	yes	1/30,1/60	0x11827c 0x1182f0 0x118344 0x118950 0x1189b4 0x118ba8 0x118cfc 0x118db8 0x118e7c 0x118f60
+0x0011a8c8	RiderMetrix_BuildTrickDesc	ai/ridermetrix	no	50.0 (imm)	0x11ac2c
+0x0011e150	Rider_UpdateBounds	ai/rider	yes	50.0 (imm)	0x11e2e0 0x11e550 0x11e7b8 0x11ea20
+0x001200d0	Rider_UpdateBoostTimers	ai/rider	yes	1/60	0x1200d4 0x120124 0x1201d8
+0x00120f20	Rider_BeginFrame	ai/rider	no	1/60	0x121044
+0x00121aa0	Rider_UpdateOrientation	ai/rider	no	1/60	0x121e64
+0x00122d78	Rider_EstimateFinishTime	ai/rider	yes	30.0 (imm)	0x122da0
+0x00124788	Rider_ApplyScriptTrack	ai/rider	no	1/60	0x1247f4 0x124cd0
+0x00125228	Rider_CheckRaceFinish	ai/rider	yes	1/60	0x12531c
+0x0012a768	AI_PlaceRidersStaggered	ai/ai	no	int 3600	0x12a884
+0x0012c028	RiderGateSub_IsStartTimeReached	ai/ai	yes	1/60	0x12c050
+0x0012c230	RiderGateSub_UpdateCharge	ai/ai	no	1/60	0x12c2dc 0x12c320
+0x0012c678	RiderFinishLineSub_HandleInput	ai/ai	no	1/30	0x12c6b0
+0x0012cb68	RiderWipeoutSub_HandleInput	ai/ai	no	1/60	0x12cc3c
+0x0012e778	RiderBumpSub_HandleInput	ai/ai	no	1/30	0x12e8d8
+0x0012e980	RiderPrewindSub_Enter	ai/ai	no	1/30	0x12e988
+0x0012e9b8	RiderPrewindSub_HandleInput	ai/ai	no	1/60	0x12ed94
+0x0012f620	RiderNaturalAirSub_Enter	ai/ai	no	1/30	0x12f6e8
+0x0012fe98	RiderBoardPressSub_Exit	ai/ai	yes	1/30,1/60	0x12fe9c 0x12fea4
+0x00130228	RiderBoardPressSub_UpdateStart	ai/ai	no	1/60	0x13029c 0x1302f4
+0x001303e0	RiderBoardPressSub_UpdatePress	ai/ai	no	1/60	0x130458
+0x001304e0	RiderBoardPressSub_UpdateEnd	ai/ai	no	1/60	0x1305f8
+0x001308d8	RiderBoardPressSub_CheckSpin	ai/ai	no	1/60	0x130b8c 0x130d04
+0x00130dd0	RiderBoardPressSub_UpdateBalance	ai/ai	no	1/60	0x130dd4
+0x00131200	RiderBoardPressSub_CheckRelease	ai/ai	yes	1/60	0x131260 0x1312e4
+0x00131620	RiderCruiseSub_HandleInput	ai/ai	no	1/30	0x13189c 0x131900 0x131934 0x131960 0x1319c8 0x131b6c
+0x00132a30	RiderHandplantSub_HandleInput	ai/ai	no	1/60	0x132b34
+0x00133308	RiderSpinSub_HandleInput	ai/ai	no	1/60	0x133878 0x133974 0x1339a0 0x134138 0x1342b4
+0x00134cb0	RiderSpinSub_Exit	ai/ai	no	1/60	0x134cdc
+0x00134dd0	RiderSpinSub_ApplyPoseRotation	ai/ai	no	1/30	0x134f7c
+0x00136508	RiderUberGrindSub_HandleInput	ai/ai	no	60.0 (imm)	0x1368c0
+0x00136f30	RiderWipeoutState_UpdateRootPose	ai/motion/wipeoutmotion	no	1/60	0x136f48
+0x00137550	RiderWipeoutState_BuildBoardSpheres	ai/motion/wipeoutmotion	no	30.0 (imm)	0x1375ec
+0x00137750	RiderWipeoutState_UpdateAir	ai/motion/wipeoutmotion	no	1/60	0x137754 0x1377bc
+0x00137d18	RiderWipeoutState_UpdateGround	ai/motion/wipeoutmotion	no	1/60	0x137d68
+0x00138640	RiderWipeoutState_PostUpdateGround	ai/motion/wipeoutmotion	no	50.0 (imm)	0x1388ec
+0x001391a8	RiderHandplantState_Update	ai/control/handplantcontrol	no	1/60	0x1391ac 0x13940c 0x1394f4
+0x00139a20	RiderAirState_Update	ai/control/handplantcontrol	yes	1/60	0x139a48 0x139b1c
+0x0013af28	RiderRailslideState_Update	ai/control/handplantcontrol	no	1/30,1/60,30.0 (imm)	0x13afc8 0x13b278 0x13b87c
+0x0013bfa8	RiderRailslideState_PostUpdate	ai/control/handplantcontrol	no	1/30	0x13bfd4
+0x0013c140	RiderRailslideState_CollideWalls	ai/control/handplantcontrol	no	1/60	0x13c344
+0x0013c5a0	RiderRailslideState_Exit	ai/control/handplantcontrol	yes	1/30	0x13c5c4
+0x0013d818	RiderGroundState_Update	ai/control/handplantcontrol	yes	1/60	0x13d8e4 0x13ee80
+0x0013f488	RiderGroundState_CollideWalls	ai/control/handplantcontrol	no	50.0 (imm)	0x13f4e8
+0x0013fb20	RiderTuning_StaticInit	ai/control/handplantcontrol	no	50.0 (imm)	0x1405a0
+0x00144140	?	ai/control/handplantcontrol	no	1/60	0x144140
+0x00154ab8	BEScoreInt_SubmitRaceResult	be/beintscore	no	1/60	0x154d00
+0x0015e2a8	GameCamera_InitShakePresets	camera/camera	yes	1/50	0x15e2d0
+0x0015e460	GameCamera_UpdateShake	camera/camera	yes	60.0 (imm)	0x15e508
+0x0015ee00	GameCamera_AvoidCollision	camera/camera	no	50.0 (imm)	0x15ee9c 0x15f3d4
+0x0015fd50	ManualCamAlgo_Update	camera/camera	no	1/60	0x15fdf8
+0x00160028	CameraWobble_UpdateTarget	camera/camera	no	1/60	0x1600e4
+0x00160130	CameraWobble_UpdateRoll	camera/camera	yes	1/60	0x1601e8
+0x001613f0	SplineCameraAlgorithm_Update	camera/camera	no	1/60	0x1613f4
+0x00161bb8	ChaseCamController_Update	camera/camera	yes	1/60	0x161df0
+0x001621a8	ChaseCamController_EnterSpokeMode	camera/camera	yes	1/60	0x1621ec
+0x00163450	ChaseCameraAlgorithm_ApplyHandplantHold	camera/camera	yes	1/60	0x1634a0
+0x001635f8	ChaseCameraAlgorithm_ApplyJumpCurves	camera/camera	no	1/60,50.0 (imm)	0x1636e8 0x163710 0x163d94 0x163dfc 0x164100
+0x001643a8	ChaseCameraAlgorithm_ApplyLowSpeedHold	camera/camera	yes	1/60	0x164480 0x1644bc
+0x00164878	ChaseCameraAlgorithm_ApplyAirSwing	camera/camera	no	1/60	0x1648dc 0x164fb0 0x1651a4 0x165348
+0x00165938	ChaseCameraAlgorithm_ApplyShake	camera/camera	no	1/60	0x1659c0 0x165a18
+0x00168150	ChaseCameraAlgorithm_CheckDistanceReset	camera/camera	yes	50.0 (imm)	0x168214
+0x0016b180	AlgorithmicScriptCameraAlgo_Update	camera/script/scriptcontroller	no	1/60	0x16b5d8
+0x0016be98	?	camera/script/scriptcontroller	no	30.0 (imm)	0x16be98
+0x0016e1d8	CameraTrigger_ApplyAction	camera/trigger/cameratriggerman	no	1/60	0x16e250 0x16e298 0x16e2f4
+0x001736e0	BoundedCameraAlgorithmBase_Update	camera/trigger/cameratriggerfactory	no	1/60	0x17398c 0x173bcc 0x173d48 0x173e00
+0x00177fc0	SpokeChaseCameraAlgorithm_ComputeDesiredEye	camera/trigger/cameratriggerfactory	no	1/50,30.0 (imm)	0x1780bc 0x17816c
+0x0017b1b0	DebugMenu_ctor	main/loadscreens	no	1/60	0x17b3c4
+0x0017c5f8	DebugMenu_Render	fe/debugfe	no	60.0 (imm)	0x17c660 0x17c964 0x17cc94 0x17ce04
+0x001a1ec0	FEModule_Load	fe/fereal	no	50.0 (imm)	0x1a1f34
+0x001a2208	FEModule_Render	fe/fereal	no	1/50	0x1a276c
+0x001aad50	NetFE_SetQualityIcons	fe/feasyncfile	no	1/50	0x1aaeb0
+0x001c4f58	cFEStateStats_FormatTime	fe/feasyncfile	yes	1/60	0x1c4f60
+0x001c9b98	cFEPopupConfirm_OpenConfirmPopup	fe/fepopup	no	30.0 (imm)	0x1c9c2c
+0x001e6718	OVScreenFinalStandings_TransitionIn	fe/fepopupmisc	no	1/60	0x1e6d58
+0x001e7bb0	OVScreenFinishOv_Init	fe/fepopupmisc	no	1/60	0x1e7d70
+0x001e8098	OVScreenFinishOv_Update	fe/fepopupmisc	yes	1/60	0x1e8108
+0x001e87b8	OVScreenFinishOv2_Update	fe/fepopupmisc	yes	1/60	0x1e8828
+0x001e8920	OVScreenPeakChallengeResults_Init	fe/fepopupmisc	no	1/60	0x1e8b74 0x1e8bd8
+0x001ea930	cOVStateHUD1P_Update	fe/ovstatehud	no	1/30,1/60,int 3600	0x1eb02c 0x1eb420 0x1eb568 0x1eb5bc 0x1eb618 0x1eb62c 0x1eb684 0x1eb710 0x1eb780 0x1ebe1c 0x1ebffc
+0x001ec3f8	cOVStateHUD1P_Render	fe/ovstatehud	yes	1/60,int 3600	0x1edbb8 0x1edbcc 0x1f0a50 0x1f0be4 0x1f0d90
+0x001f3188	LoadIndicator_Update	fe/ovstatehud	no	1/60	0x1f3198
+0x001fd320	OVScreenRivalPre_TransitionIn	fe/ovstatepause	no	1/60	0x1fd910
+0x0020a778	OVScreenPDATemplate_Init	fe/ovtemplatedialog	no	int 3600	0x20a854
+0x0020ca10	GameUI_OpenPauseMenu	fe/ovtemplatedialog	no	int 3600	0x20ca84
+0x0020ec18	HUDMeter_SetRect	fe/ovstatetrophy	no	30.0 (imm)	0x20ec44
+0x0020fb40	cOVStateHUD1P_DrawProgressMeterMP	fe/ovstatetrophy	no	1/60,60.0 (imm)	0x20ff7c 0x20ff90 0x2102b0
+0x002127e8	cOVStateOverlay_StaticInitDestroy	fe/all_in_one_fe	no	30.0 (imm)	0x21c340
+0x0021f660	cOVStateHUD1P_DrawRaceTime	fe/all_in_one_fe	no	1/60,int 3600	0x21f81c 0x21f820 0x21f824
+0x002204a0	HUD_DrawFadingText	fe/all_in_one_fe	no	30.0 (imm)	0x2205ac
+0x00220ad0	HUD_DrawOptionIconText	fe/all_in_one_fe	no	60.0 (imm)	0x220c30
+0x0022c008	?	main/ssxapp	no	1/60	0x22c008
+0x0022c830	GameModule_RenderUI	main/game	no	1/60	0x22cc84
+0x0022e3b8	GameViewMan_ctor	main/gamerender	no	30.0 (imm)	0x22e440
+0x00231d18	AppModule_UpdateFade	main/gameload	yes	1/60	0x231d24 0x231d34
+0x00231f80	LoadIndicator_Advance	main/gameload	yes	1/60	0x231f80
+0x00232348	PreStartScreen_Update	main/loadscreens_prestart	yes	1/60	0x2323e8
+0x0023b5f8	GMHandler4_v06	main/gamemode	yes	1/60	0x23b664
+0x002472c0	cFELoadState_ShowMPPlayerStats	fe/festateloadhint	no	1/60	0x247724
+0x0024b7d0	PowerUpFXTogglesMenu_ctor	main/debugmenu	no	60.0 (imm)	0x24b850
+0x0024ceb0	PathArrowMenu_ctor	main/debugmenu	no	50.0 (imm)	0x24d130
+0x00257038	cGameComm_SetState	seg/seg_156860	no	int 3600	0x257084
+0x002577c8	cGameComm_CheckConnection	seg/seg_156860	no	3600.0 (imm)	0x257890
+0x002586b0	cGameComm_WaitForPeerReady	seg/seg_156860	no	int 3600	0x258708
+0x0025ac50	LobbyMan_Update	dirtysock/tagsunk	no	30.0 (imm)	0x25ad08
+0x0025b6d8	LobbyMan_Connect	dirtysock/tagsunk	no	30.0 (imm)	0x25b714
+0x00261248	BuddyMan_Connect	dirtysock/tagsunk	no	30.0 (imm)	0x2612e4
+0x002636a8	Net_StartConnect	dirtysock/tagsunk	yes	60.0	0x2636cc
+0x002639e0	Net_StartGameSetup	dirtysock/tagsunk	no	1/60,60.0	0x263aa8 0x263b5c 0x263b74
+0x00267dd8	?	dirtysock/tagsunk	yes	1/60	0x267dd8
+0x00269f18	Path_FindMarkerBoundary	bx/bxstringctor	yes	50.0 (imm)	0x269f1c
+0x00276388	ScriptList_Start	scripter/datamanager	no	1/60	0x276538 0x2765a0
+0x00277980	ScriptList_StartTransition	scripter/datamanager	no	1/60	0x277ab0 0x277b04
+0x00282d30	cTransitionMan_ScriptAdvanceTimer	scripter/bxscriptengine	yes	1/60	0x282d4c
+0x00282dd0	cTransitionMan_StartTransition	scripter/bxscriptengine	no	1/60	0x282e7c
+0x00287a10	SSXAudioSystem_SetFadeGain	sound/ssxAudio	yes	1/60	0x287c0c
+0x002887a8	SSXAudioSystem_SetGainTarget	sound/ssxAudio	yes	1/60	0x2887dc
+0x002948d0	SSXAudioSystem_PlayLandingSound	sound/soundsys	no	30.0 (imm)	0x294e60
+0x0029cca8	SSXAudioSystem_UpdateCountdownBeeps	sound/soundsys	yes	1/60,int 3600	0x29cd18 0x29cd58 0x29cd64
+0x0029fcc8	SSXAudioSystem_RiderSay2083	sound/soundsys	no	30.0	0x29fe04
+0x0029ff80	SSXAudioSystem_RiderSay2082	sound/soundsys	no	30.0	0x2a0058
+0x002a02d8	SSXAudioSystem_SpeechWipeoutRecover	sound/soundsys	no	30.0	0x2a03e8
+0x002a0560	SSXAudioSystem_RiderSay207D	sound/soundsys	no	30.0	0x2a0714 0x2a0744
+0x002a0a30	SSXAudioSystem_SpeechRiderCollision	sound/soundsys	no	30.0	0x2a0be0 0x2a0c0c
+0x002a0e70	SSXAudioSystem_RiderSay2077	sound/soundsys	no	30.0	0x2a0f54
+0x002a1138	SSXAudioSystem_RiderSay20D3	sound/soundsys	no	30.0	0x2a11cc
+0x002a1280	SSXAudioSystem_RiderSay20D4	sound/soundsys	no	30.0	0x2a12d8
+0x002a1400	SSXAudioSystem_RiderSay20B9	sound/soundsys	no	30.0	0x2a1454
+0x002a1560	SSXAudioSystem_RiderSay20B8	sound/soundsys	no	30.0	0x2a1614
+0x002ac868	BankMonitorInstance_Update3D	sound/streamsys	yes	30.0 (imm)	0x2ac9c8
+0x002b2690	SongInstance_GetBeatMs	sound/bankmonitor	yes	60.0 (imm)	0x2b2694
+0x002c2f18	SurfPropCache_InitDefaults	worldpainter/quadtree	no	30.0 (imm)	0x2c3014 0x2c33a8 0x2c3468 0x2c36dc 0x2c371c 0x2c37b8 0x2c37f8
+0x002c64f8	cPS2MemCard_v17	worldpainter/quadtree	no	int 3600	0x2c6554
+0x002c7328	Time_AddSeconds	util/statemachine	yes	int 3600	0x2c7334 0x2c736c
+0x002cd5a0	MenuSysInt8Item_HandleInput	util/menu	no	50.0 (imm)	0x2cd6b8
+0x002cd9d8	MenuSysIntItem_HandleInput	util/menu	no	50.0 (imm)	0x2cdaf0
+0x002cdd78	MenuSysFloatItem_HandleInput	util/menu	no	50.0 (imm)	0x2cde58 0x2cdea0
+0x002d5778	Avalanche_SampleHistory	visualfx/avalanche	no	1/30,1/60,30.0 (imm)	0x2d57d4 0x2d5914 0x2d5990 0x2d5b20 0x2d5b34
+0x002d66a0	Avalanche_BakeNodeHistory	visualfx/avalanche	no	1/30,60.0 (imm)	0x2d68b8 0x2d6a28
+0x002d7c00	Avalanche_ComputeInstanceFade	visualfx/avalanche	yes	30.0 (imm)	0x2d7c00
+0x002d7ca8	Avalanche_UpdateInstance	visualfx/avalanche	no	1/60,30.0 (imm)	0x2d7ce8 0x2d7d8c
+0x002d7ef8	Avalanche_UpdateActive	visualfx/avalanche	no	30.0 (imm)	0x2d7fc0 0x2d80e4
+0x002d92d0	Avalanche_AddNode	visualfx/avalanche	no	30.0 (imm)	0x2d9394
+0x002dabc8	cBoardSparkFX_Update	visualfx/boardsparkfx	yes	1/60,AppMan rate	0x2dac14 0x2dafb4 0x2dafd4
+0x002dd0b8	cBoardWakeFX_Update	visualfx/boardwakefx	yes	1/60,50.0 (imm)	0x2dd10c 0x2dd930
+0x002de058	cBoardWakeFX_AdvanceRing	visualfx/boardwakefx	no	1/30	0x2de05c
+0x002de4a8	cDynamicSprayFX_ctor	visualfx/boardwakefx	no	1/50,30.0 (imm),50.0 (imm),60.0 (imm)	0x2de5fc 0x2de68c 0x2de840 0x2de8d4 0x2debe8
+0x002dfe88	cDynamicSprayFX_UpdateEmitter3	visualfx/boardwakefx	yes	1/60	0x2e0044 0x2e0280
+0x002e02b8	cDynamicSprayFX_UpdateEmitter1	visualfx/boardwakefx	no	1/60	0x2e0508 0x2e0df8 0x2e0e68
+0x002e0ee8	cDynamicSprayFX_UpdateEmitter0	visualfx/boardwakefx	yes	1/60	0x2e0fa8 0x2e1088
+0x002e1120	cDynamicSprayFX_UpdateEmitter4	visualfx/boardwakefx	yes	1/50,1/60	0x2e1240 0x2e1334 0x2e1384 0x2e1534 0x2e155c
+0x002e1598	cDynamicSprayFX_UpdateEmitter5	visualfx/boardwakefx	yes	1/60,60.0 (imm)	0x2e17c4 0x2e198c 0x2e1a14
+0x002e1a80	cDynamicSprayFX_UpdateEmitter7	visualfx/boardwakefx	no	1/60	0x2e1bc8 0x2e1e10 0x2e1f3c
+0x002e1f70	cDynamicSprayFX_UpdateEmitter8	visualfx/boardwakefx	no	1/60	0x2e1fc8 0x2e21fc 0x2e2220
+0x002e2260	cDynamicSprayFX_UpdateEmitter9	visualfx/boardwakefx	no	1/60	0x2e22f4 0x2e2394
+0x002e26b8	cDynamicSprayFX_ConfigureForRider	visualfx/boardwakefx	no	30.0 (imm),60.0 (imm)	0x2e2704 0x2e2718
+0x002e39d8	cPlayerPulseFX_Update	visualfx/boardwakefx	yes	1/60	0x2e3a10
+0x002e46c8	cTransitionMan_Update	visualfx/boardwakefx	yes	AppMan rate	0x2e4788
+0x002e4f50	SnowBox_Update	visualfx/boardwakefx	no	AppMan rate	0x2e5020
+0x002e66b8	cSpeedBoostStreamerFX_Update	visualfx/boardwakefx	no	1/60,50.0 (imm)	0x2e6868 0x2e6b98
+0x002e86f0	cBoardTrailFX_ShouldEmit	visualfx/boardtrailfx	no	30.0 (imm)	0x2e878c
+0x002ea900	cCutSceneTransitionMan_Update	visualfx/boardtrailfx	no	AppMan rate	0x2ea930
+0x002ed490	WorldPainter_UpdateView	visualfx/lensfx	yes	1/50	0x2ed6c0
+0x002f1a08	AttachedEmitterFX_Update	seg/seg_1F1548	yes	1/60	0x2f1bd4 0x2f2000 0x2f201c
+0x002f2810	cSplashManager_UpdateDrop	seg/seg_1F1548	no	1/50,1/60,50.0	0x2f2828 0x2f292c 0x2f29a8
+0x002f3030	cSplashManager_UpdateCrystal	seg/seg_1F1548	no	1/50,1/60,50.0	0x2f3034 0x2f31a8 0x2f3224 0x2f3230
+0x002f6518	RiderBase_UpdateCheatCode	visualfx/worldlightman	no	60.0 (imm)	0x2f65bc
+0x002f83b0	AttachedEmitterTypeData_InitPart1	visualfx/worldlightman	no	30.0 (imm),50.0 (imm)	0x2f8520 0x2f8660
+0x002fb060	WorldObjFactory_AnimDelta	seg/seg_1FBE38	no	30.0 (imm)	0x2fb0b0
+0x002fb270	WorldObjFactory_AnimCombo	seg/seg_1FBE38	no	30.0 (imm)	0x2fb2c0
+0x002fb498	WorldObjFactory_AnimTeeter	seg/seg_1FBE38	no	1/50,60.0 (imm)	0x2fb4ec 0x2fb4f4
+0x002fbcb8	WorldObjFactory_AnimObject	seg/seg_1FBE38	no	30.0 (imm)	0x2fbd08
+0x003019c8	WScriptFn_GetObjectSlot32	seg/seg_1FBE38	no	1/30	0x301b1c
+0x00305478	WScriptFn_AddMagnetModifier	seg/seg_1FBE38	no	30.0 (imm)	0x3054c4
+0x00311318	AnimDataBase_SampleChannel	animation/animmodel	yes	30.0 (imm)	0x311350
+0x00311f00	AnimController_PlayAnimImpl	animation/rideranimbase	no	1/30	0x312058
+0x00312790	AnimController_GetCurrentAnimLength	animation/rideranimbase	yes	1/30	0x3127cc
+0x00312820	AnimController_GetCurrentAnimTriggerTime	animation/rideranimbase	yes	1/30	0x3128b0
+0x00313c50	AnimSequence_SetTrackAnim	animation/animsequencer	yes	1/30	0x313c7c
+0x00315a20	AnimTables_StaticInitDestroy	animation/gameanimmap	no	30.0 (imm),50.0 (imm)	0x315fec 0x3161e8
+0x00316d60	App_Run_MainLoop	bx/appman	no	1/60	0x316d64
+0x003175a0	App_LoadProgressUpdate	bx/appman	no	AppMan dt	0x3175bc
+0x00327784	?	input/inputparse	no	50.0 (imm)	0x327784
+0x00341388	Boost_ctor	intersect/worldsphtree	no	AppMan rate	0x3413c0
+0x00341aa0	AnimObject_ctor	intersect/worldsphtree	no	1/30,AppMan rate	0x341b18 0x341b4c 0x341b7c 0x341bdc 0x341bf4 0x341c0c 0x341c10
+0x00341fe8	AnimObject_v36	intersect/worldsphtree	yes	1/30,AppMan rate	0x341ffc 0x342024 0x34205c 0x342060 0x342084 0x3420d4
+0x003421a0	AnimTeeter_ctor	intersect/worldsphtree	no	1/30,AppMan rate	0x342214 0x342248 0x342268 0x34228c
+0x00342768	BoostModifier_ctor	intersect/worldsphtree	yes	AppMan rate	0x3427a0
+0x00342c08	Debounce_ctor_2	intersect/worldsphtree	no	AppMan rate	0x342c4c
+0x00344368	CrowdMan3d_GroupInit	object/debouncenode	yes	AppMan rate	0x344388
+0x00345b40	ParticleModifier_Update	object/effectlink	yes	1/60	0x345b78 0x345b8c
+0x00345d80	DynamicParticleModifier_ctor_2	object/effectlink	no	1/60	0x345e3c
+0x00345f90	DynamicParticleModifier_Update	object/effectlink	no	1/60	0x345fd0 0x346000 0x34601c
+0x0034ac88	Flag_ReadParams	object/flexrailnode	yes	AppMan rate	0x34ad00 0x34ad18 0x34ad30 0x34ad58 0x34ad80 0x34ada8
+0x0034c668	cFlagManager_Update	object/flagset	no	AppMan rate	0x34c6d8
+0x0034e798	AnimObject_ComputeNodeVelocities	object/animnode	no	AppMan rate	0x34e8d8 0x34e8fc
+0x0034f988	?	object/floatingnode	no	AppMan rate	0x34f988
+0x00352230	MeshAnim_RandomizeNodes	object/instanceman	no	AppMan dt,AppMan rate	0x3523cc 0x35240c 0x352450 0x352458
+0x00352500	MeshAnim_Update	object/instanceman	no	AppMan dt	0x35253c 0x3526a8
+0x00353fc0	FlexBridge_SpringsStep	object/spring	yes	AppMan rate	0x353ffc
+0x00355770	ModObj_v40	object/movenode	yes	AppMan rate	0x355818
+0x0035585c	?	object/movenode	no	AppMan rate	0x35585c
+0x003573f8	MagnetModifier_Update	object/movenode	yes	50.0 (imm)	0x357440
+0x00358120	MultiParticle_Update	object/multiparticle	yes	1/60	0x358124
+0x00358c80	AnimCombo_ctor	object/multiparticle	no	1/30,AppMan rate	0x358ce4 0x358d10 0x358d30 0x358d34
+0x003593d0	AnimDelta_v36	object/multiparticle	yes	1/30	0x3593e0
+0x0035e850	RollerModifier_Update	object/railmodifier	no	1/60	0x35e854 0x35eb8c
+0x0035edc8	RollerModifier_CollideWorld	object/railmodifier	no	1/60	0x35f054
+0x0035f0b8	TexFlipModifier_ctor	object/railmodifier	yes	AppMan rate	0x35f0f0
+0x0035f410	TexFlipModifier_Update	object/railmodifier	yes	AppMan rate	0x35f4d0
+0x0035f6e8	UVScrollModifier_ctor	object/railmodifier	yes	AppMan rate	0x35f734
+0x0035f7d0	UVScrollModifier_Update	object/railmodifier	yes	AppMan rate	0x35f804
+0x0035fb30	UVScrollModifier_SetParam	object/railmodifier	yes	60.0 (imm)	0x35fba0
+0x0036106c	?	object/railmodifier	no	30.0 (imm)	0x36106c
+0x00370788	Emitter_Update	render/graphicsman	yes	AppMan rate	0x3707d4 0x3707f8 0x370814
+0x00370dc8	DynamicEmitter_Setup	render/particle	no	60.0 (imm)	0x370ec8
+0x00382af0	Renderer_SetDisplayRegs	render/particle	yes	50.0 (imm)	0x382e00
+0x0038f2a8	VfxPlants_GetSwayMatrix	render/lightman	yes	50.0	0x38f2b8
+0x00390c60	VfxScreenTint_Update	render/lightman	yes	1/50	0x390cec
+0x003a7058	cStreamMan_SetRate	world/streamman	yes	AppMan rate	0x3a7084
+0x003a7dd0	cWorldCache_ctor	world/worldcache	no	AppMan rate	0x3a7e14
+0x003ef090	ds_timezone	dirtysock/tags	no	int 3600	0x3ef0ec
