@@ -1389,7 +1389,7 @@ mod tests {
         for seed in 0..seeds {
             let mut c = fresh();
             setup(&mut c, seed);
-            gen(&mut c);
+            crate::difftest::run_generated(&mut c, gen);
             let n = c.bus.read32(LOG_COUNT);
             for i in 0..n {
                 let p = LOG_START + 0x220 * i;

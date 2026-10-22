@@ -90,6 +90,34 @@ pub fn schedule(c: &mut Cpu, r: &mut Rng, seed: u32, entry: u32) -> Events {
     }
 }
 
+thread_local! {
+    static DRIVEN: std::cell::Cell<Option<GuestFn>> = const { std::cell::Cell::new(None) };
+}
+
+/// [`drive`] the function [`check_events`] is checking.
+fn drive_generated(c: &mut Cpu) {
+    let f = DRIVEN.with(|d| d.get()).expect("check_events target");
+    crate::difftest::run_generated_at(c, f);
+    drive_rest(c, f);
+}
+
+/// The re-entry part of [`drive`] (after the first call).
+fn drive_rest(c: &mut Cpu, f: GuestFn) {
+    for _ in 0..10_000 {
+        if c.pc == RA {
+            return;
+        }
+        if c.pc & UNWIND == 0 {
+            return;
+        }
+        c.pc &= !UNWIND;
+        if event_due(c) && c.event() {
+            continue;
+        }
+        f(c);
+    }
+}
+
 /// Like `difftest::check` (and also requiring equal temporaries), and
 /// asserts that the event seeds really delivered an event inside the
 /// function often enough to mean something.
@@ -100,8 +128,12 @@ pub fn check_events(
     setup: &dyn Fn(&mut Cpu, u32) -> Events,
 ) {
     let (mut evented, mut event_seeds) = (0, 0);
+    // The generated side runs as the trampoline runs it (an unwind at a
+    // loop head is re-entered there); `drive` is a no-op without unwinds.
+    DRIVEN.with(|d| d.set(Some(generated)));
+    let gen_fn: GuestFn = if cfg!(feature = "ee-unwind") { drive_generated } else { generated };
     for seed in 0..super::seed_count(seeds) {
-        let r = compare(generated, hand, &|c| {
+        let r = compare(gen_fn, hand, &|c| {
             setup(c, seed);
         });
         assert!(r.hard.is_empty(), "seed {seed}: {:#?}", r.hard);
@@ -113,7 +145,7 @@ pub fn check_events(
         let mut c = fresh();
         let mode = setup(&mut c, seed);
         let first = c.next_event;
-        generated(&mut c);
+        crate::difftest::run_generated(&mut c, generated);
         if mode != Events::Off {
             event_seeds += 1;
             // Delivering an event reschedules the next one.

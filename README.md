@@ -26,8 +26,8 @@ the PS2's graphics, video and audio hardware are not emulated on the default pat
 - **5,092 of 11,844 functions are hand-written typed Rust** (about 90% of a race's
   per-frame work), each checked against the generated code. Every function is named.
 - **Still PS2-shaped:** guest memory, the EE kernel and its threads, a few hardware
-  status registers, VU0 macro ops. Next: one host thread for the game's threads, a
-  native frame loop, a smaller machine model
+  status registers, VU0 macro ops. The game's threads run as coroutines on one host
+  thread. Next: a smaller machine model
   ([`docs/plans/port-architecture.md`](docs/plans/port-architecture.md)).
 
 ## Screenshots
@@ -280,8 +280,9 @@ boundaries) is committed. To explore the binary yourself, see
 | `ssx3-snd` | The native sound driver (EA's IOP SNDDRV in Rust). |
 | `ssx3` | Front ends: the windowed `ssx3` (winit + wgpu + gilrs + cpal) and `ssx3-headless`. |
 
-Each guest thread currently runs on its own host thread, and a baton lets only one run
-at a time (to be replaced by one host thread, `docs/plans/port-architecture.md`).
+The game's guest threads run as coroutines (one stack each, `corosensei`) on the
+one host thread that drives frames; a thread switch is a stack switch
+(`crates/ssx3-ps2/src/threads.rs`).
 A guest call is a plain Rust call. `recomp-ee --unwind` generates the original
 resumable form, which uses the unwind/trampoline model from
 [ps2-web-recomp](https://github.com/snuri00/ps2-web-recomp) (MIT).

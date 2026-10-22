@@ -503,6 +503,9 @@ pub struct Ctx<'a> {
     pub threads: bool,
     /// Recovered, globally unique symbol names usable as Rust identifiers.
     pub names: &'a BTreeMap<u32, String>,
+    /// (Unwind form) functions the host-thread form emits structured: their
+    /// cycle charges are reproduced block for block.
+    pub structured: Option<&'a BTreeSet<u32>>,
 }
 
 /// Statistics for one emitted function.
@@ -538,10 +541,20 @@ pub fn emit_function_named(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, o
     // Labels.
     let mut labels: BTreeSet<u32> = BTreeSet::new();
     labels.insert(f.start);
+    // Return points of calls and syscalls (unwind form): their cycles are
+    // charged with the call's block, as the host-thread form charges them
+    // (a call does not end a basic block there), unless something else
+    // also makes them a label.
+    let mut cont_labels: BTreeSet<u32> = BTreeSet::new();
+    // How the host-thread form emitted this function (its block starts are
+    // where its cycle charges split): structured (`structure.rs`) or this
+    // emitter's dispatch form.
+    let as_structured = ctx.structured.is_some_and(|s| s.contains(&f.start));
+    let has_switch = insns.iter().any(|&(pc, w)| matches!(classify(pc, w), Ctl::JumpReg { rs } if rs != 31));
     for &(pc, w) in &insns {
         match classify(pc, w) {
-            Ctl::Branch { target, .. } => {
-                if inside(target) {
+            Ctl::Branch { target, link, .. } => {
+                if inside(target) && !(as_structured && link) {
                     labels.insert(target);
                 }
                 if inside(pc + 8) {
@@ -555,23 +568,45 @@ pub fn emit_function_named(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, o
             }
             Ctl::Call { .. } | Ctl::CallReg { .. } if !ctx.threads => {
                 if inside(pc + 8) {
-                    labels.insert(pc + 8);
+                    cont_labels.insert(pc + 8);
                 }
             }
             Ctl::Syscall if !ctx.threads => {
                 if inside(pc + 4) {
-                    labels.insert(pc + 4);
+                    cont_labels.insert(pc + 4);
                 }
             }
             _ => {}
         }
     }
-    for &a in ctx.data_refs.range(f.start..f.end).chain(ctx.extra_labels.range(f.start..f.end)) {
-        if inside(a) {
-            labels.insert(a);
-        }
+    // Data references: block starts of the structured form only as jump-table
+    // targets (functions with a computed jump).
+    let refs: Vec<u32> = ctx.data_refs.range(f.start..f.end).copied().filter(|a| inside(*a)).collect();
+    if !as_structured || has_switch {
+        labels.extend(refs.iter().copied());
     }
+    if !as_structured {
+        labels.extend(ctx.extra_labels.range(f.start..f.end).copied().filter(|a| inside(*a) && !cont_labels.contains(a)));
+    }
+    // Extra entries (resume points, entries from elsewhere) and other data
+    // references of a structured function: labels its main body does not
+    // split its cycle charge at (its `__entries` twin charges an entry from
+    // outside; see the entry charge below).
+    let extra_only: BTreeSet<u32> = ctx
+        .extra_labels
+        .range(f.start..f.end)
+        .copied()
+        .chain(refs.iter().copied())
+        .filter(|a| inside(*a) && !labels.contains(a) && !cont_labels.contains(a))
+        .collect();
+    let cont_only: BTreeSet<u32> = cont_labels.difference(&labels).copied().collect();
+    let pass: BTreeSet<u32> = cont_only.union(&extra_only).copied().collect();
+    labels.extend(cont_labels.iter().copied());
+    labels.extend(extra_only.iter().copied());
     st.labels = labels.len();
+    let mut raw_count: BTreeMap<u32, usize> = BTreeMap::new();
+    let mut cont_edge: BTreeMap<u32, u32> = BTreeMap::new();
+    let fn_text_start = out.len();
 
     if let Some(sym) = &f.name {
         let _ = writeln!(out, "/// `{sym}`");
@@ -583,6 +618,7 @@ pub fn emit_function_named(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, o
         let _ = writeln!(out, "    let _ = &mut pc;");
     } else {
         let _ = writeln!(out, "    let mut pc: u32 = c.pc;");
+        let _ = writeln!(out, "@@ENTRY@@");
     }
     let _ = writeln!(out, "    loop {{");
     let _ = writeln!(out, "        match pc {{");
@@ -599,11 +635,13 @@ pub fn emit_function_named(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, o
             let (pc, w) = insns[i];
             if pc != l && Some(pc) == next_label.filter(|n| *n <= pc) {
                 // Fall into the next label.
+                cont_edge.insert(l, pc);
                 let _ = writeln!(body, "                pc = {pc:#010x}; continue;");
                 terminated = true;
                 break;
             }
             if pc != l && labels.contains(&pc) {
+                cont_edge.insert(l, pc);
                 let _ = writeln!(body, "                pc = {pc:#010x}; continue;");
                 terminated = true;
                 break;
@@ -744,6 +782,7 @@ pub fn emit_function_named(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, o
                     let _ = writeln!(body, "                {ds}");
                     let _ = writeln!(body, "                {}", call_code(target, pc + 8, shard, ctx, &labels, f));
                     if inside(pc + 8) {
+                        cont_edge.insert(l, pc + 8);
                         let _ = writeln!(body, "                pc = {:#010x}; continue;", pc + 8);
                     } else {
                         let _ = writeln!(body, "                return;");
@@ -773,6 +812,7 @@ pub fn emit_function_named(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, o
                         pc + 8
                     );
                     if inside(pc + 8) {
+                        cont_edge.insert(l, pc + 8);
                         let _ = writeln!(body, "                pc = {:#010x}; continue;", pc + 8);
                     } else {
                         let _ = writeln!(body, "                return;");
@@ -790,6 +830,7 @@ pub fn emit_function_named(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, o
                         "                if c.cycles >= c.next_event && c.event() {{ return; }}"
                     );
                     if inside(pc + 4) {
+                        cont_edge.insert(l, pc + 4);
                         let _ = writeln!(body, "                pc = {:#010x}; continue;", pc + 4);
                     } else {
                         let _ = writeln!(body, "                return;");
@@ -812,10 +853,48 @@ pub fn emit_function_named(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, o
             let after = insns.last().map(|(a, _)| a + 4).unwrap_or(f.end);
             let _ = writeln!(body, "                {}", tail(after, shard, ctx));
         }
-        let _ = writeln!(out, "                c.cycles += {count};");
+        raw_count.insert(l, count);
+        let _ = writeln!(out, "                c.cycles += @@CYC{l:08x}@@;");
         out.push_str(&body);
         let _ = writeln!(out, "            }}");
     }
+    // Cycle charges: a block ending in a call also pays for the
+    // continuation-only blocks after it; those pay nothing themselves.
+    // Sum the pass-through blocks from `x` on (`through`: which ones).
+    let chain = |mut x: u32, through: &BTreeSet<u32>| -> usize {
+        let mut n = 0;
+        let mut guard = 0;
+        while through.contains(&x) && guard < 100_000 {
+            guard += 1;
+            n += raw_count.get(&x).copied().unwrap_or(0);
+            match cont_edge.get(&x) {
+                Some(&y) => x = y,
+                None => break,
+            }
+        }
+        n
+    };
+    let mut text = out.split_off(fn_text_start);
+    // An entry from outside at an extra entry pays for its block (up to the
+    // next label of the twin: calls do not end it there either).
+    let mut entry = String::new();
+    for &e in &extra_only {
+        if let Some(&n) = raw_count.get(&e) {
+            let charge = n + cont_edge.get(&e).map_or(0, |&y| chain(y, &cont_only));
+            if charge > 0 {
+                let _ = writeln!(entry, "        {e:#010x} => c.cycles += {charge},");
+            }
+        }
+    }
+    let entry = if entry.is_empty() { String::new() } else { format!("    match pc {{\n{entry}        _ => {{}}\n    }}\n") };
+    text = text.replacen("@@ENTRY@@\n", &entry, 1);
+    for (&l, &n) in &raw_count {
+        let charge = if pass.contains(&l) { 0 } else { n + cont_edge.get(&l).map_or(0, |&y| chain(y, &pass)) };
+        let ph = format!("                c.cycles += @@CYC{l:08x}@@;\n");
+        let rep = if charge == 0 { String::new() } else { format!("                c.cycles += {charge};\n") };
+        text = text.replacen(&ph, &rep, 1);
+    }
+    out.push_str(&text);
     let _ = writeln!(
         out,
         "            _ => {{ c.jump_out(pc, {:#010x}, {:#010x}); return; }}",

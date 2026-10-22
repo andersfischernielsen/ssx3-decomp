@@ -14,7 +14,7 @@ Status legend: ✅ done · 🟡 in progress · ⬜ not started
 | Layer | Today |
 | --- | --- |
 | Game logic (EE) | Statically compiled to Rust; 5,092 of 11,844 functions hand-written typed Rust (~90% of a race's per-frame work), the rest generated. Still PS2-shaped: register file, guest RAM, PS2 float rules. |
-| Kernel | Native HLE: guest threads on host threads with a baton, semaphores, alarms, interrupts. |
+| Kernel | Native HLE: guest threads as coroutines on one host thread, semaphores, alarms, interrupts. |
 | Graphics | Native: the draw functions record typed draws, `ssx3-gfx` (wgpu) renders them. The emulated DMA/VIF/VU1/GS remain only for the reference path. |
 | Movies, sound, files, pads, memory card | Native (`ssx3-mpeg`, `ssx3-snd`, `std::fs`, native libpad/libmc). The IOP does not run. |
 

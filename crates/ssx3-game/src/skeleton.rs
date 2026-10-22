@@ -1924,7 +1924,7 @@ mod tests {
             let mut c = fresh();
             let mode = setup(&mut c, seed);
             let first = c.next_event;
-            generated(&mut c);
+            crate::difftest::run_generated(&mut c, generated);
             if mode != Events::Off {
                 event_seeds += 1;
                 if c.next_event != first {

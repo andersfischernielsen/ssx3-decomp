@@ -241,7 +241,27 @@ fn main() {
             ok.then(|| (f.start, n.clone()))
         })
         .collect();
-    let ctx = Ctx { shard_of: &shard_of, data_refs: &data_refs, extra_labels: &extra, threads, names: &names };
+    // The unwind form charges cycles as the host-thread form does, which
+    // emits most functions structured: which ones.
+    let structured_set: BTreeSet<u32> = if threads {
+        BTreeSet::new()
+    } else {
+        let tctx = Ctx { shard_of: &shard_of, data_refs: &data_refs, extra_labels: &extra, threads: true, names: &names, structured: None };
+        let none = BTreeSet::new();
+        funcs
+            .iter()
+            .filter(|f| ssx3_recomp::structure::emit_structured(&img, f, shard_of[&f.start], &tctx, &none).is_some())
+            .map(|f| f.start)
+            .collect()
+    };
+    let ctx = Ctx {
+        shard_of: &shard_of,
+        data_refs: &data_refs,
+        extra_labels: &extra,
+        threads,
+        names: &names,
+        structured: if threads { None } else { Some(&structured_set) },
+    };
     // Functions replaced by hand-written Rust (crates/ssx3-game/overrides.txt):
     // the generated body is kept as `f_X__generated`, and `f_X` calls through
     // a slot that the game crate fills in at boot (default: the generated body).

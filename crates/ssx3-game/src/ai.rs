@@ -1332,7 +1332,7 @@ mod tests {
         for seed in 0..SEEDS {
             let mut c = fresh();
             setup(&mut c, seed);
-            gen(&mut c);
+            crate::difftest::run_generated(&mut c, gen);
             seen.insert(classify(&mut c));
         }
         for i in 0..n {

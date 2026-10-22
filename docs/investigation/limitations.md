@@ -15,7 +15,7 @@
 ## Runtime
 
 - **Still a PS2-shaped runtime around the game code:** guest RAM, the EE
-  kernel (guest threads on host threads with a baton), DMAC/INTC/timer and
+  kernel (guest threads as coroutines on one host thread), DMAC/INTC/timer and
   GS register state, VU0 macro ops, PS2 float semantics. Plan to reduce it:
   [`../plans/port-architecture.md`](../plans/port-architecture.md).
 - **The frame build replays the captured draws through a VIF model** into

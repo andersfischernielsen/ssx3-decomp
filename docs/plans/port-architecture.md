@@ -94,16 +94,28 @@ race replay RAM identical.
 
 ## Task 3: modern runtime (branch `modern-runtime`)
 
-1. **One host thread for all guest threads.** The host-thread form runs each
-   guest thread on an OS thread with a baton (condvar handoffs, ~1.3 ms per
-   frame on desktop against the single-thread form). Replace with
-   cooperative switching on one host thread (stackful contexts, or the
-   unwind form's mechanism made cheap), keeping the kernel's scheduling
-   decisions identical so replays stay byte-identical.
-2. **Service threads as direct calls from a native frame loop.** The DMA
-   kick thread is already native. Next: `PS2ExecMan_VSyncThread`
-   (`App_VSyncTick` at VBlank), the exec worker, `SND_EeThread` (the sound
-   tick), each run by the frame loop at the point the scheduler ran it.
+1. **One host thread for all guest threads.** ✅ The host-thread form ran
+   each guest thread on an OS thread with a baton (condvar handoffs). Guest
+   threads are now stackful coroutines (`corosensei`) on the frame-driving
+   host thread; a thread switch is a stack switch, the kernel's scheduling
+   decisions are unchanged and the replays byte-identical (system time of a
+   6000-frame race 7.1 s -> 5.7 s). Making the unwind form (one host thread
+   by construction) the desktop default was tried first: it needed the
+   unwind form to charge cycles exactly as the host-thread form (done:
+   `recomp-ee --unwind` now charges a call's whole block before the call
+   and an extra entry's block on entry, as the structured form and its
+   `__entries` twin do; the browser replay stays identical), but 34 unit
+   tests still differed at thread-switch points (structured-loop ports
+   defer a switch the unwind code takes at once), so it stays the browser
+   form.
+2. **Service threads as direct calls from a native frame loop.** ✅ (as far
+   as it is sound) No OS service threads remain: every guest thread is a
+   coroutine on the frame thread, and the DMA kick thread is native
+   (`kick.rs`). `SND_EeThread`, the exec worker and the CD threads block in
+   the middle of an iteration (a lock another thread may hold, arbitrary
+   job functions, CD waits), which a direct call from the signalling
+   context cannot reproduce; with coroutines there is no switch cost left
+   to save, so they stay guest threads.
 3. **Shrink `Machine`.** Keep what generated code touches (guest RAM, the
    kernel calls, the few status registers); the GS, DMAC, VIF and IPU models
    move behind a verification feature or go.

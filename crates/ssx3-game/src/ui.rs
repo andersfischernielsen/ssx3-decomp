@@ -2289,7 +2289,7 @@ mod tests {
         for seed in 0..seeds {
             let mut c = fresh();
             setup(&mut c, seed);
-            gen(&mut c);
+            crate::difftest::run_generated(&mut c, gen);
             for (i, f) in results.iter().enumerate() {
                 seen[i] |= f(c.g[V0][0]);
             }
@@ -2580,7 +2580,7 @@ mod tests {
         let mut r = hud_fx_setup(&mut c, 0, 0xb1);
         number_setup(&mut c, &mut r);
         c.g[A2][0] = (-42i64) as u64;
-        ssx3_ee::s00::f_001171a8__generated(&mut c);
+        crate::difftest::run_generated(&mut c, ssx3_ee::s00::f_001171a8__generated);
         let text: Vec<u8> = (0..4).map(|i| c.bus.read8(DATA + 0x418 + i)).collect();
         assert_eq!(text, b"-42\0");
     }
@@ -2688,7 +2688,7 @@ mod tests {
             let mut c = fresh();
             font_setup(&mut c, seed, 0xc1, 0);
             let x = c.bus.read32(FONT + 0x28) & 0x7f80_0000 != 0;
-            generated(&mut c);
+            crate::difftest::run_generated(&mut c, generated);
             let calls = c.bus.read32(crate::difftest::fakes::LOG_COUNT);
             seen[if calls == 1 { 0 } else if x { 1 } else { 2 }] += 1;
         }

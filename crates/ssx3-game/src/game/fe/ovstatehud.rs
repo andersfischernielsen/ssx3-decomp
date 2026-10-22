@@ -9042,7 +9042,7 @@ pub(crate) mod tests {
         for seed in 0..32 {
             let mut c = fresh();
             setup_2(&mut c, seed, ENTRY);
-            ee::s04::f_001ec3f8__generated(&mut c);
+            crate::difftest::run_generated(&mut c, ee::s04::f_001ec3f8__generated);
             costs.insert(c.cycles);
         }
         assert!(

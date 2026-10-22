@@ -1935,7 +1935,7 @@ mod tests {
         for seed in 0..seeds {
             let mut c = fresh();
             setup(&mut c, seed);
-            gen(&mut c);
+            crate::difftest::run_generated(&mut c, gen);
             let n = c.bus.read32(LOG_COUNT);
             for i in 0..n {
                 let p = LOG_START + 0x220 * i;
@@ -2355,7 +2355,7 @@ mod tests {
             scramble(&mut c, &mut r);
             let this = nash_setup(&mut c, &mut r, 1, 1);
             let before = c.bus.read32(this + 0x209c);
-            gen(&mut c);
+            crate::difftest::run_generated(&mut c, gen);
             seen.insert((c.cycles, c.bus.read32(this + 0x209c) - before));
         }
         assert!(seen.len() >= 10, "instance paths seen: {seen:?}");

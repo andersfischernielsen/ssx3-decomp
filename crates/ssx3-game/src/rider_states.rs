@@ -1080,7 +1080,7 @@ mod tests {
         for seed in 0..seeds {
             let mut c = fresh();
             setup(&mut c, seed);
-            gen(&mut c);
+            crate::difftest::run_generated(&mut c, gen);
             reached += (c.bus.read32(LOG_COUNT) > 0) as u32;
             unwound += (c.pc != RA) as u32;
         }

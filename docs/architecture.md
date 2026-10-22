@@ -35,7 +35,7 @@ default native mode does not use them on the frame path.
  │ captures; texture pages (FrameMem)   │   │ interpolation, any resolution / aspect       │
  └──────────────────────────────────────┘   └──────────────────────────────────────────────┘
 
- Still modelled for the game: the EE kernel (threads on host threads with a baton,
+ Still modelled for the game: the EE kernel (threads as coroutines on one host thread,
  semaphores, interrupt handlers), DMAC/INTC/timer registers, the GS register state
  (detached: it draws nothing), VU0 (macro ops; its microprogram is hand-written Rust).
  What remains and the plan: plans/native-rendering.md (N6).
@@ -87,8 +87,9 @@ A hardware change rebuilds only its crate and relinks (GS/kernel ~3 s, VU
 - **Nothing decodes game instructions at run time.** EE, VU and IOP code is
   translated ahead of time. A jump to untranslated code is a fatal "miss" that
   `ssx3-headless` records in `generated/entries.txt` for the next generation.
-- **One guest thread runs at a time.** The baton serialises the host threads,
-  so the shared `Cpu` is never touched concurrently by guest code. The GS
+- **One guest thread runs at a time.** Guest threads are coroutines on the
+  frame-driving host thread (`threads.rs`), so the shared `Cpu` is never
+  touched concurrently by guest code. The GS
   runs on its own host thread (`gs::Mtgs`, `SSX3_MTGS=0` turns it off) and,
   like the rasterizer's worker threads, only touches GS-owned state; every
   GS value the guest can observe is kept on the guest side or read after a

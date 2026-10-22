@@ -28,3 +28,6 @@ vu1-microcode = ["ssx3-vu/microcode"]
 name = "vu_diff"
 path = "src/bin/vu_diff.rs"
 required-features = ["vu1-microcode"]
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+corosensei = "0.3.4"
