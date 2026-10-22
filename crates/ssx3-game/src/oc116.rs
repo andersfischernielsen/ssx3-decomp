@@ -1857,9 +1857,9 @@ pub fn cbx_string_ctor_cstr(c: &mut Cpu) {
             c.g[S0][0] = c.g[V0][0];
         }
         c.cycles += 2;
+        c.g[A0][0] = c.g[S2][0];
         if c.g[S0][0] != 0 {
             c.cycles += 6;
-            c.g[A0][0] = c.g[S2][0];
             c.g[A1][0] = c.g[S0][0];
             callee::CBX_STRING_ALLOC_BUFFER.call(c, 0x0031_8324)?;
             c.g[A0][0] = Addr(low(c, S2)).lw(c);

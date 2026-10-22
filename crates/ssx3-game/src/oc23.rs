@@ -149,7 +149,7 @@ pub fn do_global_dtors_aux(c: &mut Cpu) {
         c.sq(FP, frame.at(c, 0x10));
         frame_sd(c, frame, 0, c.g[RA][0]);
         c.g[FP][0] = c.g[SP][0];
-        c.g[A0][0] = sx(0x0043_cd00);
+        c.g[A0][0] = sx(0x0043_ce00);
         DEREGISTER_FRAME_INFO.call(c, 0x0010_0238)?;
         c.g[SP][0] = c.g[FP][0];
         c.lq(FP, frame.at(c, 0x10));

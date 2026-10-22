@@ -4184,6 +4184,7 @@ pub fn cfestaterequestline_update_song_count(c: &mut Cpu) {
         c.g[A0][0] = c.g[S0][0];
         call_ptr(c, f, 0x0019_8160)?;
         c.g[S1][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S1][0];
         call_ptr(c, 0x003d_bca0, 0x0019_816c)?;
         c.g[V0][0] = sx(r32(c, V0).wrapping_add(5));
         c.g[A1][0] = 0x460000;

@@ -2048,10 +2048,11 @@ pub fn ui_screen_set_data(c: &mut Cpu) {
         c.g[A0][0] = c.g[S0][0];
         call_ptr(c, table::EAC_GET_UNPACKED_SIZE, 0x0039_c6a8)?;
         let none = c.g[V0][0] == 0;
-        c.g[A1][0] = 0x0049_3e00;
+        c.g[A1][0] = 0x0049_0000;
         if !none {
             c.cycles += 14;
             c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = 0x0049_3e00;
             c.g[A2][0] = 0x100;
             c.g[A3][0] = 0;
             call_ptr(c, table::OPERATOR_NEW_TAG, 0x0039_c6c4)?;
@@ -2066,7 +2067,7 @@ pub fn ui_screen_set_data(c: &mut Cpu) {
         } else {
             c.cycles += 4;
             c.g[V0][0] = lw(c, S1, 0x14);
-            c.g[V1][0] = 0xffff_fffd;
+            c.g[V1][0] = 0xffff_ffff_ffff_fffd;
             c.g[V0][0] &= c.g[V1][0];
             sw(c, S1, 0x14, c.g[V0][0]);
         }

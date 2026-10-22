@@ -1291,7 +1291,6 @@ pub fn av_player_set_rate(c: &mut Cpu) {
         c.cycles += 7;
         let stream = Addr(c.g[S0][0] as u32).off(0x5c).lw(c);
         c.g[S0][0] = stream;
-        c.g[A0][0] = stream;
         call_ptr(c, EATIMER_GET_TICKS, 0x003a_e8c0)?;
         c.g[A1][0] = c.g[V0][0];
         c.g[A0][0] = Addr(stream as u32).off(0x10).lw(c);

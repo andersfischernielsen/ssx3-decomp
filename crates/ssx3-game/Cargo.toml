@@ -217,6 +217,6 @@ oc160 = []
 oc161 = []
 oc162 = []
 [dev-dependencies]
-ssx3-ee-rt = { path = "../ssx3-ee-rt", features = ["dirty-pages"] }
+ssx3-ee-rt = { path = "../ssx3-ee-rt", features = ["dirty-pages", "calltrace"] }
 # A real machine (VU0 included) for the differential tests in src/difftest.rs.
 ssx3-ps2 = { path = "../ssx3-ps2" }

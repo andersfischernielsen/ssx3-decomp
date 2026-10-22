@@ -46,6 +46,28 @@ Tools: `SSX3_SHADOW=addr,...|all` (+ `SSX3_SHADOW_FIRST`,
 | `BEMissionInt_IsCollected` 0x1538e8 | CTM Much-2-Much | the two multiplies (profile × 0x9b50, slot × 0xc) swapped | swapped back |
 | `GameCamera_ResetAll` 0x15db58 | CTM Peak 3 runs, monkey | `a0 = camera manager` missing before the first call; vtable targets not left in `v0`/`a1` | added |
 
+Unit-test sweep with the call trace (`SSX3_DIFF_STRICT=args`: each call's
+callee and arguments, generated vs hand-written; feature `calltrace` of
+`ssx3-ee-rt`, on in the tests) found more wrong arguments the scenarios had
+not reached:
+
+| function | difference | fix |
+| --- | --- | --- |
+| `RiderScriptObj_AcceptCommand` 0x280458 | `a0 = rider` missing for `Rider_IsLoaded` / `Rider_GetCharacter` | added |
+| `SSXAudioSystem_PASay20C5` 0x2a3708 | `a0` missing for `IsReplayPlaying`, `GetLanguageMask` | added |
+| `cFEStateRequestLine_UpdateSongCount` 0x198118 | `a0` missing for 0x3dbca0 | added |
+| `FEStateOnlineCharacterSelect_V25` | 4th string 0x4614e8 instead of 0x4638b0 | fixed |
+| `LobbyMan_On*Reply` (3) / `NetEventFD/FE_Clone` | wrong allocation name pointer | 0x4804a8 / 0x480488 |
+| `__do_global_dtors_aux` | 0x43cd00 instead of 0x43ce00 | fixed |
+| `AnimDataBase_SampleChannel`, `WScriptMan_DeactivateAll`, `WScriptMan_CallTableFunction`, `AV_Player_SetRate` | argument registers left differently (`a1`/`a3` delay slots) | as generated |
+| constants `0xffff_fffd` etc. without sign extension (oc127, oc131, oc143) | upper word | sign-extended |
+
+Remaining `SSX3_DIFF_STRICT=args` differences: `f13` before `Math_SinCos`
+in five camera functions (oc54; the callee does not read it). With
+`SSX3_DIFF_STRICT=1` (all scratch registers and the call sequence) about
+120 ports differ, almost all leaf functions written as native code (math,
+chase, skeleton) or a callee computed natively: not observable.
+
 The full run (2026-10-22, 33 scenarios, every hand-written function on vs
 off): 23 identical, 10 different; after the fixes all 33 identical except
 the new career's opening movie, where the native libmpeg (`movie.rs`)

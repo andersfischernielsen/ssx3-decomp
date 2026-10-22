@@ -87,10 +87,40 @@ pub fn compare(generated: GuestFn, hand: GuestFn, setup: &dyn Fn(&mut Cpu)) -> R
     let mut b = fresh();
     setup(&mut a);
     setup(&mut b);
+    let args = [a.g[4][0], a.g[5][0], a.g[6][0], a.g[7][0]];
+    ssx3_ee_rt::prof::trace::start();
     generated(&mut a);
+    let mut calls_a = ssx3_ee_rt::prof::trace::take();
+    ssx3_ee_rt::prof::trace::start();
     hand(&mut b);
+    let mut calls_b = ssx3_ee_rt::prof::trace::take();
     let mut hard = Vec::new();
     let mut soft = Vec::new();
+    // The calls made, with their arguments. The function's own entry (the
+    // generated body, or a slot wrapper, records it) is left out. When both
+    // call the same functions in the same order, differing arguments are a
+    // likely bug ("call args"); a different sequence ("calls") is expected
+    // where a replacement computes a callee natively. Both are reported
+    // with the scratch registers (`SSX3_DIFF_STRICT` fails on them).
+    let me = [&calls_a, &calls_b].iter().find_map(|v| v.first().filter(|k| k[1..5] == args).map(|k| k[0]));
+    if let Some(me) = me {
+        calls_a.retain(|k| k[0] != me);
+        calls_b.retain(|k| k[0] != me);
+    }
+    let show = |k: Option<&ssx3_ee_rt::prof::trace::Call>| {
+        k.map_or("none".to_string(), |k| {
+            format!("{:#x}(a0-a3 {:x} {:x} {:x} {:x}, f12 {:#x} f13 {:#x})", k[0], k[1], k[2], k[3], k[4], k[5], k[6])
+        })
+    };
+    let same_callees = calls_a.len() == calls_b.len() && calls_a.iter().zip(&calls_b).all(|(x, y)| x[0] == y[0]);
+    if same_callees {
+        if let Some(i) = calls_a.iter().zip(&calls_b).position(|(x, y)| x != y) {
+            soft.push(format!("call args {i}: {} vs {}", show(calls_a.get(i)), show(calls_b.get(i))));
+        }
+    } else {
+        let i = calls_a.iter().zip(&calls_b).take_while(|(x, y)| x[0] == y[0]).count();
+        soft.push(format!("calls {i}: {} vs {}", show(calls_a.get(i)), show(calls_b.get(i))));
+    }
     for r in 0..32 {
         // Results, callee-saved and special registers must match; caller-saved
         // temporaries (at, a0-a3, t0-t9, k0/k1; FPU f2-f19) are reported only:
@@ -201,11 +231,17 @@ pub fn seed_count(seeds: u32) -> u32 {
     }
 }
 
-/// `SSX3_DIFF_STRICT=1`: the scratch registers must match too (ports keep
-/// every register the generated body leaves; a sweep finds the ones that
-/// do not, e.g. a constant without its sign extension).
-pub fn strict() -> bool {
-    std::env::var_os("SSX3_DIFF_STRICT").is_some()
+/// `SSX3_DIFF_STRICT=1`: the scratch registers and the calls made must
+/// match too (ports keep every register the generated body leaves; a sweep
+/// finds the ones that do not, e.g. a constant without its sign
+/// extension). `SSX3_DIFF_STRICT=args`: only the arguments of the calls
+/// both make (a missing argument setup).
+pub fn strict_ok(soft: &[String]) -> bool {
+    match std::env::var("SSX3_DIFF_STRICT").ok().as_deref() {
+        None => true,
+        Some("args") => !soft.iter().any(|m| m.starts_with("call args")),
+        Some(_) => soft.is_empty(),
+    }
 }
 
 /// Assert no hard differences over many `setup(seed)` states.
@@ -213,7 +249,7 @@ pub fn check(generated: GuestFn, hand: GuestFn, seeds: u32, setup: &dyn Fn(&mut 
     for seed in 0..seed_count(seeds) {
         let r = compare(generated, hand, &|c| setup(c, seed));
         assert!(r.hard.is_empty(), "seed {seed}: {:#?}", r.hard);
-        assert!(!strict() || r.soft.is_empty(), "seed {seed} (scratch): {:#?}", r.soft);
+        assert!(strict_ok(&r.soft), "seed {seed} (scratch): {:#?}", r.soft);
     }
 }
 
@@ -224,7 +260,7 @@ pub fn check_lohi(generated: GuestFn, hand: GuestFn, seeds: u32, setup: &dyn Fn(
         let r = compare(generated, hand, &|c| setup(c, seed));
         assert!(r.hard.is_empty(), "seed {seed}: {:#?}", r.hard);
         assert!(r.lohi.is_empty(), "seed {seed} (LO/HI): {:#?}", r.lohi);
-        assert!(!strict() || r.soft.is_empty(), "seed {seed} (scratch): {:#?}", r.soft);
+        assert!(strict_ok(&r.soft), "seed {seed} (scratch): {:#?}", r.soft);
     }
 }
 

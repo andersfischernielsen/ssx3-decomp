@@ -1307,6 +1307,7 @@ pub fn ssx_audio_system_pa_say20c5(c: &mut Cpu) {
         out = c.g[V0][0] == 0;
         if !out {
             c.cycles += 4;
+            c.g[A0][0] = c.g[S0][0];
             callee::IS_REPLAY_PLAYING.call(c, 0x002a_373c)?;
             out = c.g[V0][0] != 0;
         }
@@ -1362,6 +1363,7 @@ pub fn ssx_audio_system_pa_say20c5(c: &mut Cpu) {
             callee::SPEECH_SET_EVENT_CONTEXT.call(c, 0x002a_37e0)?;
             if c.g[V0][0] != 0 {
                 c.cycles += 23;
+                c.g[A0][0] = c.g[S0][0];
                 callee::GET_LANGUAGE_MASK.call(c, 0x002a_37f0)?;
                 c.g[A0][0] = c.g[S0][0];
                 c.g[S2][0] = c.g[V0][0];

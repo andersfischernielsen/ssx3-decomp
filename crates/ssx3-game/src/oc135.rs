@@ -1924,7 +1924,6 @@ pub fn wscript_man_call_table_function(c: &mut Cpu) {
         c.g[S2][0] = abi::arg64(c, 2);
         frame.save_ra(c, 0x40);
         c.g[S0][0] = abi::arg64(c, 1);
-        c.g[A1][0] = 0;
         Addr(sp(c)).off(8).sw(c, c.g[V0][0]);
 
         // key = LunoVMRegister_AsId(&key); *key = value
@@ -4392,6 +4391,7 @@ pub fn rider_script_obj_accept_command(c: &mut Cpu) {
             c.g[A0][0] = sx(this.wrapping_add(c.g[A0][0] as u32));
             call_ptr(c, target, 0x0028_0494)?;
             c.g[S0][0] = c.g[V0][0];
+            c.g[A0][0] = c.g[S0][0];
             callee::RIDER_IS_LOADED.call(c, 0x0028_04a0)?;
             let not_loaded = c.g[V0][0] == 0;
             c.g[V0][0] = 0;
@@ -4400,6 +4400,7 @@ pub fn rider_script_obj_accept_command(c: &mut Cpu) {
                 c.lq(16, frame.at(c, 0x40));
             } else {
                 c.cycles += 13;
+                c.g[A0][0] = c.g[S0][0];
                 callee::RIDER_GET_CHARACTER.call(c, 0x0028_04b0)?;
                 c.g[V1][0] = 0x0048_0000;
                 c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);

@@ -647,7 +647,7 @@ pub fn shp_calc_alloc_size(c: &mut Cpu) {
                 if !no_blocks {
                     c.cycles += 3;
                     c.g[V1][0] = sx(r32v(c, S0).wrapping_add(0xf));
-                    c.g[V0][0] = 0xffff_fff0;
+                    c.g[V0][0] = 0xffff_ffff_ffff_fff0;
                     c.g[S0][0] = c.g[V1][0] & c.g[V0][0];
                 }
                 c.cycles += 13;
@@ -657,7 +657,7 @@ pub fn shp_calc_alloc_size(c: &mut Cpu) {
                 // v0 = v0 * flags (the palette bytes), rounded up to 8.
                 c.mult(0, 2, 2, 20);
                 c.g[A1][0] = sx(r32v(c, S0).wrapping_add(0xf));
-                c.g[V1][0] = 0xffff_fff0;
+                c.g[V1][0] = 0xffff_ffff_ffff_fff0;
                 c.g[A0][0] = 0xffff_ffff_ffff_ffff;
                 c.g[A1][0] = c.g[A1][0] & c.g[V1][0];
                 c.g[A0][0] = ((c.g[A0][0] as i64) < (c.g[V0][0] as i64)) as u64;

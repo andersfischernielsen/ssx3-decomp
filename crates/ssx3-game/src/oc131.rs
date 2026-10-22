@@ -1177,7 +1177,7 @@ pub fn cfe_reward_gallery_init_pages(c: &mut Cpu) {
         c.g[V0][0] = Addr(p(c.g[S0][0] as u32, 0x48)).lw(c);
         if !ready {
             c.cycles += 8;
-            c.g[V1][0] = 0xffff_fffd;
+            c.g[V1][0] = 0xffff_ffff_ffff_fffd;
             c.g[A0][0] = c.g[S1][0];
             c.g[V0][0] = c.g[V0][0] & c.g[V1][0];
             c.g[V0][0] = c.g[V0][0] | 0x1;
@@ -1185,7 +1185,7 @@ pub fn cfe_reward_gallery_init_pages(c: &mut Cpu) {
             call_ptr(c, 0x0015_6a10, 0x001d_01d0)?;
         } else {
         c.cycles += 13;
-        c.g[V1][0] = 0xffff_fffe;
+        c.g[V1][0] = 0xffff_ffff_ffff_fffe;
         c.g[A1][0] = Addr(p(c.g[S0][0] as u32, 8)).lw(c);
         c.g[V0][0] = c.g[V0][0] & c.g[V1][0];
         c.g[V0][0] = c.g[V0][0] | 0x2;
@@ -1728,6 +1728,7 @@ pub fn input_parser_lookup_modifier(c: &mut Cpu) {
         c.g[A0][0] = name;
         c.g[A1][0] = 0x4a3ef8;
         call_ptr(c, 0x0041_aa88, 0x0032_17f0)?;
+        c.g[A1][0] = 0x4a_0000;
         let differs = c.g[V0][0] != 0;
         if !differs {
             c.cycles += 2;
@@ -1742,6 +1743,7 @@ pub fn input_parser_lookup_modifier(c: &mut Cpu) {
         c.g[A0][0] = name;
         c.g[A1][0] = 0x4a3f00;
         call_ptr(c, 0x0041_aa88, 0x0032_180c)?;
+        c.g[A1][0] = 0x4a_0000;
         if c.g[V0][0] == 0 {
             c.cycles += 2;
             c.g[V0][0] = 1;
@@ -1755,6 +1757,7 @@ pub fn input_parser_lookup_modifier(c: &mut Cpu) {
         c.g[A0][0] = name;
         c.g[A1][0] = 0x4a3f08;
         call_ptr(c, 0x0041_aa88, 0x0032_1828)?;
+        c.g[A1][0] = 0x49_0000;
         if c.g[V0][0] == 0 {
             c.cycles += 2;
             c.g[V0][0] = 2;
@@ -1768,6 +1771,7 @@ pub fn input_parser_lookup_modifier(c: &mut Cpu) {
         c.g[A0][0] = name;
         c.g[A1][0] = 0x48ddd8;
         call_ptr(c, 0x0041_aa88, 0x0032_1844)?;
+        c.g[A1][0] = 0x4a_0000;
         if c.g[V0][0] == 0 {
             c.cycles += 1;
             c.g[V0][0] = 3;

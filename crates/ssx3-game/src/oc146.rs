@@ -1572,7 +1572,7 @@ fn lobby_send_reply(c: &mut Cpu, tag: u64, ret1: u32, ret2: u32, ret3: u32) -> c
         c.sw(p(c.g[S0][0] as u32, 8), c.g[A0][0]);
         c.g[A1][0] = 0x0048_0000;
         c.sw(c.g[S0][0] as u32, c.g[V1][0]);
-        c.g[A1][0] = sx(0x0048_0930);
+        c.g[A1][0] = sx(0x0048_04a8);
         c.sw(p(c.g[S0][0] as u32, 4), c.g[V0][0]);
         c.g[A0][0] = 0xc;
         c.sw(p(c.g[SP][0] as u32, 0x10), c.g[A2][0]);

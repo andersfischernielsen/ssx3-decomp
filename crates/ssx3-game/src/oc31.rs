@@ -1068,7 +1068,8 @@ pub fn anim_data_base_sample_channel(c: &mut Cpu) {
             head_slot.sw(c, next);
             c.g[S0][0] = sx(entry.wrapping_add(4));
             c.g[A0][0] = c.g[S0][0];
-            let data = db.off(adb::DATA).lw(c) as u32;
+            c.g[A3][0] = db.off(adb::DATA).lw(c);
+            let data = c.g[A3][0] as u32;
             let offset = desc.lw(c) as u32;
             c.g[A2][0] = desc.off(6).lhu(c);
             abi::set_word(c, A1, data.wrapping_add(offset));

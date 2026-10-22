@@ -1264,10 +1264,10 @@ pub fn uistatemgr_close_all_popups(c: &mut Cpu) {
         frame.save_ra(c, 0);
         callee::UI_LIST_FIRST.call(c, 0x0039_f6a8)?;
         let node = c.g[V0][0];
+        c.g[A0][0] = node;
         let mut v0 = 0u64;
         if node != 0 {
             c.cycles += 4;
-            c.g[A0][0] = node;
             c.g[V0][0] = lw_at(c, p(node as u32, 0x1c));
             c.g[V0][0] &= 1;
             c.g[A2][0] = 0xffff_ffff_ffff_c0ff;

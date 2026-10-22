@@ -20,8 +20,45 @@ use crate::cpu::Cpu;
 pub fn enter(c: &Cpu, start: u32) {
     #[cfg(feature = "callprof")]
     imp::enter(c, start);
-    #[cfg(not(feature = "callprof"))]
+    #[cfg(feature = "calltrace")]
+    trace::enter(c, start);
     let _ = (c, start);
+}
+
+/// Differential tests (feature `calltrace`): the calls a function makes,
+/// with their arguments, so a replacement that passes a wrong argument to a
+/// real callee shows up even when the result does not.
+#[cfg(feature = "calltrace")]
+pub mod trace {
+    use crate::cpu::Cpu;
+    use std::cell::RefCell;
+
+    /// (callee, a0, a1, a2, a3, f12, f13)
+    pub type Call = [u64; 7];
+
+    thread_local! {
+        static T: RefCell<Option<Vec<Call>>> = const { RefCell::new(None) };
+    }
+
+    /// Start recording on this thread.
+    pub fn start() {
+        T.with(|t| *t.borrow_mut() = Some(Vec::new()));
+    }
+
+    /// Stop recording; the calls since [`start`].
+    pub fn take() -> Vec<Call> {
+        T.with(|t| t.borrow_mut().take().unwrap_or_default())
+    }
+
+    pub(super) fn enter(c: &Cpu, start: u32) {
+        T.with(|t| {
+            if let Some(v) = t.borrow_mut().as_mut() {
+                if v.len() < 4096 {
+                    v.push([start as u64, c.g[4][0], c.g[5][0], c.g[6][0], c.g[7][0], c.f[12] as u64, c.f[13] as u64]);
+                }
+            }
+        });
+    }
 }
 
 /// Frame `n` has just finished.

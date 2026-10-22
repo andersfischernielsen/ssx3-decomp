@@ -1569,8 +1569,8 @@ pub fn wscript_man_deactivate_all(c: &mut Cpu) {
                     c.cycles += 4;
                     c.g[A0][0] = c.g[S1][0];
                     call_ptr(c, 0x0030_b208, 0x0030_b86c)?; // PopFront
+                    c.g[A1][0] = c.g[V0][0];
                     if c.g[V0][0] != 0 {
-                        c.g[A1][0] = c.g[V0][0];
                         if event_due(c) {
                             c.pc = 0x0030_b858;
                             if c.event() {

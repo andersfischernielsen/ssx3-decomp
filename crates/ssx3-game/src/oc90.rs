@@ -1880,7 +1880,7 @@ fn net_event_clone(c: &mut Cpu, kind: u64, vtable_off: u32, ret: u32) {
         let frame = Frame::open(c, 0x20);
         c.g[A1][0] = 0x480000;
         frame.save(c, S0, 0x10);
-        c.g[A1][0] = sx(ea(c.g[A1][0], vtable_off));
+        c.g[A1][0] = sx(ea(c.g[A1][0], 0x488)); // the allocation's name
         c.g[S0][0] = c.g[A0][0];
         frame.save_ra(c, 0);
         c.g[A0][0] = 0xc;

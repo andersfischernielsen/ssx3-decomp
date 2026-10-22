@@ -47,6 +47,9 @@ to 6000 frames.
   with boost and tricks, random menu input, ...) with the ports in `LIST`
   installed and skipped, and compares the RAM; `tools/bisect_overrides.py`
   finds the port behind a difference.
+- **`SSX3_DIFF_STRICT=args`** (unit tests): also compare the arguments of
+  every call the function makes (the `calltrace` feature records them);
+  `SSX3_DIFF_STRICT=1`: also every scratch register and the call sequence.
 - **`SSX3_SHADOW=addr,...|all`:** each call of the listed replacements runs
   the hand-written form and the generated body from the same state and
   reports the first differing registers, cycles or memory

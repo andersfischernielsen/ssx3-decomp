@@ -13,5 +13,7 @@ license.workspace = true
 dirty-pages = []
 # Count caller -> callee edges per frame window (SSX3_CALLPROF; see prof.rs).
 callprof = []
+# Record each call's arguments (differential tests only; see prof::trace).
+calltrace = []
 
 [dependencies]
