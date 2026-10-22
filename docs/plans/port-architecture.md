@@ -116,9 +116,18 @@ race replay RAM identical.
    job functions, CD waits), which a direct call from the signalling
    context cannot reproduce; with coroutines there is no switch cost left
    to save, so they stay guest threads.
-3. **Shrink `Machine`.** Keep what generated code touches (guest RAM, the
-   kernel calls, the few status registers); the GS, DMAC, VIF and IPU models
-   move behind a verification feature or go.
+3. **Shrink `Machine`.** 🟡 The native race touches (`SSX3_MMIO_PROFILE=1`):
+   the GS privileged registers and CSR (the game polls CSR ~120 times a
+   frame; SIGNAL/FINISH/LABEL come from its GIF packets), the scratchpad
+   DMA channels (game code moves data through SPR), the GIF/VIF1 channels
+   and VIF1_STAT, timer 1 and VU0 memory. So the DMAC, the timers, VU0/VU1
+   and the VIF model (the frame build replays through it) stay; the GS is
+   reduced to its guest-side register file in native mode: `Mtgs::detach`
+   now also stops the GS thread (the core is kept only for debug
+   readbacks). The IPU model is small and runs only with
+   `SSX3_NATIVE_MPEG=0`. Still to do: compile the GS core (rasterizer,
+   GPU backend, VRAM; ~15k lines) only behind a verification feature, which
+   needs the front ends' emulated-path calls (`gs.core()`, ~40) gated.
 
 Each step gated by the race replay RAM and the scenario RAMs.
 

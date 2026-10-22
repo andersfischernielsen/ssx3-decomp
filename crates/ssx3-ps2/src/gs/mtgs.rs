@@ -464,7 +464,19 @@ impl Mtgs {
     /// display are the native renderer's.
     pub fn detach(&mut self) {
         self.sync();
+        self.drain();
         self.detached = true;
+        // No GS work follows: stop the GS thread and keep the core here
+        // (debug readbacks only).
+        if let Mode::Threaded(t) = &mut self.mode {
+            t.shared.queue.lock().unwrap().shutdown = true;
+            t.shared.work.notify_all();
+            if let Some(h) = t.thread.take() {
+                let _ = h.join();
+            }
+            let core = std::mem::take(&mut *t.shared.core.lock().unwrap());
+            self.mode = Mode::Direct(Arc::new(Mutex::new(core)), Mutex::new(None));
+        }
     }
 
     pub fn detached(&self) -> bool {
