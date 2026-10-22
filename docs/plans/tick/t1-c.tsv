@@ -1,0 +1,49 @@
+entry	site	function	class	reason
+0x49b40c	0x10da58	ComputerActorRider_ShouldAttackBack	STEP	timer +0xf30 (reset to 2.0f) minus 1/60 per tick: `t -= 1/60` countdown in seconds
+0x49beec	0x1391ac	RiderHandplantState_Update	STEP	`+0x88 += *(anim+0x300) * (1/60)`, clamped to +0x84 then used as the lerp fraction: elapsed time
+0x49bef4	0x13940c	RiderHandplantState_Update	STEP	f12 = 1/60 passed as the step to func_00113648, which does `acc += step`
+0x49befc	0x1394f4	RiderHandplantState_Update	STEP	f12 = 1/60 passed as the step to func_00113648 (second call site)
+0x49bf1c	0x139a48	RiderAirState_Update	STEP	`f12 = rider(+0x300) * 1/60` air-prediction step handed to func_00113648
+0x49bf20	0x139b1c	RiderAirState_Update	STEP	one-tick guard `if (1/60 <= t1-t0) x = dt/(t1-t0) else x = dt*60`: threshold is one tick (paired with pool 60.0 at 0x49bf24, must convert together)
+0x49bf84	0x13afc8	RiderRailslideState_Update	STEP	`f23 = *(anim+0x300) * 1/60`: rate times the tick step
+0x49bfe8	0x13c344	RiderRailslideState_CollideWalls	STEP	`+0x40 += 1/60; if (0.5 <= +0x40)` wall-contact cooldown timer in seconds
+0x49c08c	0x13d8e4	RiderGroundState_Update	STEP	`f25 = *(+0x300) * 1/60`, then accel*step integrated into ground speed +0x4
+0x49c12c	0x13ee80	RiderGroundState_Update	STEP	`f12 = (x * 1/60) * rate` passed to 0x11dfe0: a per-tick amount from a per-second value
+0x49c2c8	0x144140	?	STEP	leaf at 0x144138 (no symbol): `(int)(field@0xc * 1/60)`, counter -> whole seconds
+0x49c4b0	0x15fdf8	ManualCamAlgo_Update	STEP	`pitch/yaw += max(speed,2) * (axis * 2pi/10) * 1/60`: angular rate * dt
+0x49c4cc	0x1600e4	CameraWobble_UpdateTarget	STEP	`+0x20 += 1/60` wobble elapsed-time accumulator compared against +0x28
+0x49c4d0	0x1601e8	CameraWobble_UpdateRoll	STEP	`+0x24 += 1/60` roll wobble elapsed-time accumulator
+0x49c590	0x1613f4	SplineCameraAlgorithm_Update	STEP	`t = min(t + 1/60, +0x3b4)` spline cursor, and `+0x3bc * 1/60` as its per-tick rate
+0x49c5cc	0x161df0	ChaseCamController_Update	STEP	override timer `+= 1/60` compared with OVERRIDE_TIMEOUT = 10.0 s
+0x49c5d8	0x1621ec	ChaseCamController_EnterSpokeMode	STEP	`f12 = 0.6 (or 1.2) * 1/60` = the timed-override duration in seconds, arg to ChaseCamController_SetAlgorithm
+0x49c64c	0x1634a0	ChaseCameraAlgorithm_ApplyHandplantHold	STEP	handplant blend `t += 1/60` up to the blend duration f3 (seconds)
+0x49c650	0x1636e8	ChaseCameraAlgorithm_ApplyJumpCurves	STEP	`+0x1f4 = (16-n) * 1/60`: air-curve elapsed time started from a tick count
+0x49c654	0x163710	ChaseCameraAlgorithm_ApplyJumpCurves	STEP	`+0x218 = 1/60`: takeoff-curve timer starts at one tick, later `+= 1/60`
+0x49c7a0	0x163d94	ChaseCameraAlgorithm_ApplyJumpCurves	STEP	`+0x218 += 1/60`, clamped to 4.0 s, then the takeoff spline is evaluated at it
+0x49c7a4	0x163dfc	ChaseCameraAlgorithm_ApplyJumpCurves	STEP	`+0x1f4 += 1/60`, clamped to the curve duration +0x200
+0x49c7c8	0x164480	ChaseCameraAlgorithm_ApplyLowSpeedHold	STEP	in-blend step `w += (1/60) / inTime`: weight reaches 1 after inTime seconds
+0x49c7cc	0x1644bc	ChaseCameraAlgorithm_ApplyLowSpeedHold	STEP	out-blend step `w -= (1/60) / outTime`
+0x49c7d0	0x1648dc	ChaseCameraAlgorithm_ApplyAirSwing	STEP	`+0x22c += 1/60` time-spent-in-drop accumulator compared with the air time
+0x49c808	0x164fb0	ChaseCameraAlgorithm_ApplyAirSwing	STEP	`+0x234 += 1/60` swing progress, normalised by the duration +0x230
+0x49c810	0x1651a4	ChaseCameraAlgorithm_ApplyAirSwing	STEP	`+0x23c -= 1/60` remaining swing duration (set to the duration, clamped at 0)
+0x49c814	0x165348	ChaseCameraAlgorithm_ApplyAirSwing	STEP	`+0x240 -= 1/60` remaining blend-back duration (+0x244 is its length)
+0x49c820	0x1659c0	ChaseCameraAlgorithm_ApplyShake	STEP	`+0x2b4 = max(+0x2b4 - 1/60, 0)` shake-duration countdown (initialised to 2.0 s)
+0x49c824	0x165a18	ChaseCameraAlgorithm_ApplyShake	STEP	`+0x278/+0x27c/+0x280 += 1/60`, each compared with its shake interval +0x254/0x258/0x25c
+0x49cd24	0x17398c	BoundedCameraAlgorithmBase_Update	STEP	`yaw += angle_diff * gain(+0x5c) * 1/60`
+0x49cd60	0x173bcc	BoundedCameraAlgorithmBase_Update	STEP	`pitch += angle_diff * gain(+0x60) * 1/60`
+0x49cd7c	0x173d48	BoundedCameraAlgorithmBase_Update	STEP	`+0x50 = base + diff * gain(+0x64) * 1/60`
+0x49cd90	0x173e00	BoundedCameraAlgorithmBase_Update	STEP	`+0x54 = a + (b-a) * gain(+0x68) * 1/60`
+0x49d5d0	0x17b3c4	DebugMenu_ctor	UNSURE	only use is one store into the debug-menu global DAT_00534b40 (+0x534b40, next to 0x534b38/3c); no reader of that global exists in generated/ee or the ports, so per-tick step vs. fixed 1/60 s cannot be decided
+0x49df10	0x22c008	?	STEP	GameModule_Render (0x22b008): `f12 = frames(+0xac) * 1/60`, the dt arg of SSXAudioSystem_Update, then +0xac is cleared
+0x49e0e8	0x247724	cFELoadState_ShowMPPlayerStats	STEP	`(int)(table[idx] * 1/60)` through __fixunssfsi: a count of ticks converted to whole seconds
+0x49ead0	0x287c0c	SSXAudioSystem_SetFadeGain	STEP	fade rate `= (target - cur) / time * 1/60`: increment per tick for a fade of `time` seconds
+0x49eadc	0x2887dc	SSXAudioSystem_SetGainTarget	STEP	same `(target - cur) / time * 1/60` gain-ramp rate per tick
+0x4a059c	0x345b78	ParticleModifier_Update	STEP	`Emitter_Update(m+0x50, 1/60)` on the negative-life single-tick path
+0x4a05a0	0x345b8c	ParticleModifier_Update	STEP	`Emitter_Update(m+0x50, 1/60)` on the normal per-tick path
+0x4a05a4	0x345e3c	DynamicParticleModifier_ctor_2	STEP	`DynamicEmitter_Spawn(..., 1/60)`: the emitter's time step
+0x4a05a8	0x345fd0	DynamicParticleModifier_Update	STEP	`DynamicEmitter_Spawn(..., 1/60)` on the per-tick update path
+0x4a05ac	0x346000	DynamicParticleModifier_Update	STEP	`DynamicEmitter_Spawn(..., 1/60)` (second per-tick path)
+0x4a05b0	0x34601c	DynamicParticleModifier_Update	STEP	`DynamicEmitter_Spawn(..., 1/60)` (third per-tick path)
+0x4a0704	0x35e854	RollerModifier_Update	STEP	`+0x20 += 1/60` compared with 16.0 s: state timer
+0x4a0718	0x35eb8c	RollerModifier_Update	STEP	`f0 = f6 * 1/60` scales the motion vector +0x50 through VU0, then feeds the +0x30 delta used by RollerModifier_Integrate: rate * dt
+0x4a0720	0x35f054	RollerModifier_CollideWorld	STEP	`+0x28 += 1/60` compared with 5.0 s, then +0x20 is set: contact cooldown timer

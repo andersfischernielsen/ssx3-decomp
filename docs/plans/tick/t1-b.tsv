@@ -1,0 +1,49 @@
+entry	site	function	class	reason
+0x49b4c4	0x113f20	Rider_SetSlew0Target	STEP	0x113f20: rider+0x1f4 = (|target-cur|*7, clamped) * 1/60 -- the per-tick slew cap
+0x49b4cc	0x113f70	Rider_SetSlew5Target	STEP	0x113f70: rider+0x230 = clamped slew * 1/60 -- per-tick slew step (port rider.rs:1257)
+0x49b544	0x114b08	Rider_LaunchIntoAir	STEP	0x114b08: (AI_GetFrameCounter() - anim->+0x10) * 1/60 = seconds, vs the 0x49b548/0x49b54c second thresholds
+0x49b59c	0x115d98	Rider_UpdateIdleLookAnim	STEP	0x115d98: rider+0x35c += 1/60, fires at >= 1.0 -- one-second idle-look timer
+0x49b5d8	0x116fe4	cHUDFX_Update	STEP	0x116fe4: slot+8 += 1/60, done when slot+4 (duration, s) <= slot+8 -- elapsed seconds
+0x49b5f0	0x117c2c	RiderMetrix_Update	STEP	0x117c2c: fVar9 = rider DELTA_TIME(0x300) * 1/60, then += into the score/time accumulators
+0x49b680	0x118950	RiderMetrix_UpdateTrickHUD	STEP	0x118950: +-1/60 dead-band = one tick of the slot's 1/60-per-tick HUD ramp (cHUDFX_Update slot+8)
+0x49b684	0x1189b4	RiderMetrix_UpdateTrickHUD	STEP	0x1189b4: +-1/60 dead-band = one tick of the slot's 1/60-per-tick HUD ramp (cHUDFX_Update slot+8)
+0x49b694	0x118ba8	RiderMetrix_UpdateTrickHUD	STEP	0x118ba8: +-1/60 dead-band = one tick of the slot's 1/60-per-tick HUD ramp (cHUDFX_Update slot+8)
+0x49b69c	0x118cfc	RiderMetrix_UpdateTrickHUD	STEP	0x118cfc: +-1/60 dead-band = one tick of the slot's 1/60-per-tick HUD ramp (cHUDFX_Update slot+8)
+0x49b6a4	0x118db8	RiderMetrix_UpdateTrickHUD	STEP	0x118db8: +-1/60 dead-band = one tick of the slot's 1/60-per-tick HUD ramp (cHUDFX_Update slot+8)
+0x49b6b4	0x118e7c	RiderMetrix_UpdateTrickHUD	STEP	0x118e7c: +-1/60 dead-band = one tick of the slot's 1/60-per-tick HUD ramp (cHUDFX_Update slot+8)
+0x49b6c0	0x118f60	RiderMetrix_UpdateTrickHUD	STEP	0x118f60: +-1/60 dead-band = one tick of the slot's 1/60-per-tick HUD ramp (cHUDFX_Update slot+8)
+0x49b8b0	0x12c050	RiderGateSub_IsStartTimeReached	STEP	0x12c050: (float)race->frames(+0xc) * 1/60 = seconds, vs rider+0xb30 (port calls it seconds per frame)
+0x49b8d0	0x12c2dc	RiderGateSub_UpdateCharge	STEP	0x12c2dc: step = min(|target-cur|*4.5, cap) * 1/60 -- per-tick move of gate charge +0x10
+0x49b8d4	0x12c320	RiderGateSub_UpdateCharge	STEP	0x12c320: gate+0x4 += 1/60 per tick -- a seconds counter vs the 0x49b8d8 threshold
+0x49b928	0x12cc3c	RiderWipeoutSub_HandleInput	STEP	0x12cc3c: +0x70 += rate * 1/60, cue at >= 1.0 s -- elapsed seconds
+0x49b990	0x12ed94	RiderPrewindSub_HandleInput	STEP	0x12ed94: +0x2a8/+0x2b4 = rate * |target-cur| * 1/60 -- per-tick slew steps
+0x49ba1c	0x12fe9c	RiderBoardPressSub_Exit	STEP	0x12fe9c: +0x278 = 1/60 = DELTA_TIME * 1.0 per-tick spin step (same field is DELTA*1/60 elsewhere)
+0x49ba40	0x13029c	RiderBoardPressSub_UpdateStart	STEP	0x13029c: +0x26c = (2*DELTA_TIME) * 1/60 -- per-tick board-press step
+0x49ba44	0x1302f4	RiderBoardPressSub_UpdateStart	STEP	0x1302f4: +0x26c = (2*DELTA_TIME) * 1/60 in the other branch -- per-tick step
+0x49ba48	0x130458	RiderBoardPressSub_UpdatePress	STEP	0x130458: +0x26c = (2*DELTA_TIME) * 1/60 -- per-tick board-press step
+0x49ba50	0x1305f8	RiderBoardPressSub_UpdateEnd	STEP	0x1305f8: +0x26c = (2*DELTA_TIME) * 1/60 -- per-tick board-press step
+0x49ba98	0x130b8c	RiderBoardPressSub_CheckSpin	STEP	0x130b8c: angle *= 1/60 * (2*DELTA_TIME) -- per-second spin rate to per tick
+0x49bac0	0x130d04	RiderBoardPressSub_CheckSpin	STEP	0x130d04: +0x278 = DELTA_TIME * 1/60 -- per-tick spin step
+0x49bac4	0x130dd4	RiderBoardPressSub_UpdateBalance	STEP	0x130dd4: balance += DELTA_TIME * 1/60 -- per-tick balance delta
+0x49bae0	0x131260	RiderBoardPressSub_CheckRelease	STEP	0x131260: +0xc += DELTA_TIME * 1/60 -- per-tick balance accumulator
+0x49baec	0x1312e4	RiderBoardPressSub_CheckRelease	STEP	0x1312e4: +0x278 = (2*cur) * 1/60 -- per-tick spin step
+0x49bb90	0x132b34	RiderHandplantSub_HandleInput	STEP	0x132b34: *pfVar4 += DELTA_TIME * 1/60 -- per-tick handplant angle
+0x49bbe8	0x133878	RiderSpinSub_HandleInput	STEP	0x133878: spin+0x15 += 1/60 per tick -- hold-time counter vs the seconds threshold at 0x49bbf4
+0x49bbf8	0x133974	RiderSpinSub_HandleInput	STEP	0x133974: spin+0x12 += 1/60 per tick -- seconds counter vs the 0x49bc00 threshold
+0x49bbfc	0x1339a0	RiderSpinSub_HandleInput	STEP	0x1339a0: spin+0x13 += 1/60 per tick -- seconds counter
+0x49bc98	0x134138	RiderSpinSub_HandleInput	STEP	0x134138: +0x2dc (spin rate) * 1/60 -- per-tick angle step
+0x49bca4	0x1342b4	RiderSpinSub_HandleInput	STEP	0x1342b4: +0x2e0 (spin rate) * 1/60 -- per-tick angle step
+0x49bd54	0x134cdc	RiderSpinSub_Exit	STEP	0x134cdc: +0x290 and +0x29c = 1/60 -- the per-tick spin step fields (elsewhere rate*1/60)
+0x49be38	0x136f48	RiderWipeoutState_UpdateRootPose	STEP	0x136f48: DELTA_TIME * 1/60 into the wipeout root-pose rotation
+0x49be78	0x137754	RiderWipeoutState_UpdateAir	STEP	0x137754: DELTA_TIME * 1/60 is AirPredictor_Update's step
+0x49be7c	0x1377bc	RiderWipeoutState_UpdateAir	STEP	0x1377bc: remaining air time (0x98-0xa0) >= 1/60 -- one-tick threshold, then step = DELTA/remaining
+0x49be9c	0x137d68	RiderWipeoutState_UpdateGround	STEP	0x137d68: DELTA_TIME * 1/60 into the wipeout ground integration
+0x49ddac	0x21f81c	cOVStateHUD1P_DrawRaceTime	STEP	0x21f81c: race time table 0x536640[i] (frames) * 1/60 = seconds, printed %02d:%02d:%02d
+0x49df40	0x231d24	AppModule_UpdateFade	STEP	0x231d24: fade level += 1/60 per tick (1 s fade in)
+0x49df44	0x231d34	AppModule_UpdateFade	STEP	0x231d34: fade level -= 1/60 per tick (1 s fade out)
+0x49df48	0x231f80	LoadIndicator_Advance	STEP	0x231f80: loading-indicator phase += 1/60 per tick, wrapped into [0,1) -- one turn per second
+0x49dfa4	0x23b664	GMHandler4_v06	STEP	0x23b664: (int)(race->frames(+0xc) * 1/60) = seconds for the HUD message
+0x49e970	0x282d4c	cTransitionMan_ScriptAdvanceTimer	STEP	0x282d4c: transition timer +0x2c += frame delta * 1/60, vs hold time in seconds (port: 'frame delta')
+0x49e978	0x282e7c	cTransitionMan_StartTransition	STEP	0x282e7c: +0x1c/+0x20/+0x24 = frame counts * 1/60 -- durations stored in seconds
+0x49f484	0x2dafb4	cBoardSparkFX_Update	STEP	0x2dafb4: 1/60 as DynamicEmitter_SpawnAt's float arg -> DynamicEmitter_Spawn accum += rate*1/60
+0x49f488	0x2dafd4	cBoardSparkFX_Update	STEP	0x2dafd4: same 1/60 as DynamicEmitter_SpawnAt's float arg -> spawn accumulator += rate*1/60

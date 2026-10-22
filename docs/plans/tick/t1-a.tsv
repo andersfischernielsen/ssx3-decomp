@@ -1,0 +1,50 @@
+entry	site	function	class	reason
+0x49b798	0x1200d4	Rider_UpdateBoostTimers	STEP	step = rider->+0x300 * (1/60); boostA (+0x2e8) decays by step per tick (generated 0x1200d4 mul_s 20,0,1; port rider.rs:5978)
+0x49b79c	0x120124	Rider_UpdateBoostTimers	STEP	one-frame threshold on the seconds timer: `if (1/60 < boostB) skip the decay`; boostB decays by the tick step, so "one frame" stays one tick (port rider.rs:5998)
+0x49b7a0	0x1201d8	Rider_UpdateBoostTimers	STEP	one-frame clamp: `0 < boostAmount <= 1/60 -> boostAmount = 1/60`; the amount decays by the tick step (port rider.rs:6067)
+0x49b7d0	0x121044	Rider_BeginFrame	STEP	`finishTime += 1/60` per tick (elapsed-seconds accumulator, compared with 1 s/11 s thresholds; generated 0x121044 add_s 0,1,0)
+0x49b828	0x121e64	Rider_UpdateOrientation	STEP	slerp step per tick: `angle = min(y, angleDiff*rate) * (1/60)`, then `Math_SinCos(angle*0.5)` rotates the rider quaternion (ghidra 0x121aa0)
+0x49b860	0x1247f4	Rider_ApplyScriptTrack	NOT_A_STEP	`scriptTrack->+0x10 * (1/60)` -> AnimController_SampleAnimPose time t and AnimSequence_SetTrackTime(seq+2); a script/anim frame index in a fixed 60 Hz authoring unit, not a tick step
+0x49b868	0x124cd0	Rider_ApplyScriptTrack	NOT_A_STEP	`(float)scriptTrack->+0x18 * (1/60)` -> AnimController_PlayAnimDirect time (seek into the anim clip); same fixed frame unit, frames are not game ticks
+0x49b874	0x12531c	Rider_CheckRaceFinish	STEP	tick counter to seconds: `(float)ticks * (1/60)`, __fixunssfsi, then *60 and compare with the race clock (port rider.rs:6346)
+0x49cc4c	0x16b5d8	AlgorithmicScriptCameraAlgo_Update	STEP	per-tick move: `pos += normalize(dir) * (k * (1/60))` (rsqrt, then scale by 1/60*speed and add to +0x30)
+0x49dbb0	0x1fd910	OVScreenRivalPre_TransitionIn	STEP	tick counter to seconds for the clock display: `(float)rival->+0x78 * (1/60)` -> __fixunssfsi -> FE_FormatMinSec(seconds)
+0x49df5c	0x2323e8	PreStartScreen_Update	STEP	`stateTimer += 1/60` per tick (elapsed seconds, compared with 11; port loadscreens_prestart.rs:1057)
+0x49e57c	0x263aa8	Net_StartGameSetup	STEP	stores 1/60 into `D_00534B30[0].rate`, the network session's tick step (tagsunk.cpp:6233)
+0x49e694	0x267dd8	cDSockChannel_Base_v05	UNSURE	virtual getter that returns the channel base tick 1/60 (tags2.rs:5223); no call site resolves in the binary, so it may be the session's per-update step (STEP) or a fixed DSock wire period (NOT_A_STEP)
+0x49e8ec	0x276538	ScriptList_Start	NOT_A_STEP	three keyframe frame counts (+0xa/+0xc/+0xe) * (1/60) -> func_002E4370 (=cTransitionMan_Start) f0/f1/f2, the transition duration; that effect's elapsed counter does `+= 1/appmanRate` (boardwakefx.cpp:2656), i.e. wall clock, so the duration must stay a wall-clock time
+0x49e8f0	0x2765a0	ScriptList_Start	NOT_A_STEP	same frame-to-second conversion for cTransitionMan_StartCaptured: `(float)keyframeFrames(+0xa) * (1/60)` -> func_002E4540's duration; fixed script frame unit, wall-clock duration
+0x49e8f4	0x277ab0	ScriptList_StartTransition	NOT_A_STEP	three script shorts (+0x12/+0x14/+0x16) * (1/60) -> func_002E4370 f0/f1/f2, the transition's start/duration in seconds (same wall-clock duration as 0x49e8ec)
+0x49e8f8	0x277b04	ScriptList_StartTransition	NOT_A_STEP	`(float)short(+0x12) * (1/60)` -> func_002E4540 duration; script frame unit, must keep the authored wall-clock length
+0x49f3e4	0x2d5b20	Avalanche_SampleHistory	STEP	f12 = 1/60 -> func_003717C0 (DynamicEmitter_Spawn), whose dt does `f = self+0x10 + self+0x14 * dt` (particle.cpp:268), the emission step
+0x49f41c	0x2d7d8c	Avalanche_UpdateInstance	STEP	f12 = 1/60 -> DynamicEmitter_Spawn dt (particle emission accumulator)
+0x49f4bc	0x2dd10c	cBoardWakeFX_Update	STEP	dt constant: `strip->age (+0x64) += dt`, then compared with the strip life (+0xbc, seconds); port boardwakefx.rs:6426
+0x49f588	0x2e0044	cDynamicSprayFX_UpdateEmitter3	STEP	loaded once into f20 = 1/60: it is the spawn dt (`mov_s(12,20)` -> DynamicEmitter_Spawn) and also divides the colour ramp `(speed*0.036-20)*(1/60)`; the dt use is the timing one
+0x49f58c	0x2e0280	cDynamicSprayFX_UpdateEmitter3	STEP	f12 = 1/60 as DynamicEmitter_Spawn's dt on the "no new interval" path (port boardwakefx.rs:5273)
+0x49f5a0	0x2e0508	cDynamicSprayFX_UpdateEmitter1	STEP	f12 = 1/60 as DynamicEmitter_Spawn's dt (spawn with volume)
+0x49f5ec	0x2e0df8	cDynamicSprayFX_UpdateEmitter1	STEP	f12 = 1/60 as DynamicEmitter_Spawn's dt (velocity spawn)
+0x49f5f0	0x2e0e68	cDynamicSprayFX_UpdateEmitter1	STEP	f12 = 1/60 as DynamicEmitter_Spawn's dt inside the slot loop
+0x49f5f8	0x2e0fa8	cDynamicSprayFX_UpdateEmitter0	STEP	f12 = 1/60 as DynamicEmitter_Spawn's dt (port boardwakefx.rs:2902)
+0x49f5fc	0x2e1088	cDynamicSprayFX_UpdateEmitter0	STEP	f12 = 1/60 as DynamicEmitter_Spawn's dt on the spray-off path (port boardwakefx.rs:2961)
+0x49f610	0x2e1240	cDynamicSprayFX_UpdateEmitter4	STEP	`wobbleTimer (+0x20) += 1/60`, compared with the hold time (+0x24); seconds timer
+0x49f628	0x2e1384	cDynamicSprayFX_UpdateEmitter4	STEP	emission accumulator: `credit += (18 + rand*6) * (1/60)` per tick, spawn when credit > 1 then credit -= 1 (port boardwakefx.rs:5549)
+0x49f62c	0x2e1534	cDynamicSprayFX_UpdateEmitter4	STEP	f12 = 1/60 as DynamicEmitter_Spawn's dt (mid path, port boardwakefx.rs:5304)
+0x49f630	0x2e155c	cDynamicSprayFX_UpdateEmitter4	STEP	f12 = 1/60 as DynamicEmitter_Spawn's dt (late path, port boardwakefx.rs:5322)
+0x49f650	0x2e198c	cDynamicSprayFX_UpdateEmitter5	STEP	f20 = 1/60 used twice as DynamicEmitter_Spawn's dt (two slots, port boardwakefx.rs:3645)
+0x49f65c	0x2e1a14	cDynamicSprayFX_UpdateEmitter5	STEP	f20 = 1/60 as DynamicEmitter_Spawn's dt on the spray-off path (port boardwakefx.rs:3689)
+0x49f674	0x2e1bc8	cDynamicSprayFX_UpdateEmitter7	STEP	`(jitter * riderVel) * (1/60)` scaled into the spawn position/velocity offset (VU0 mul with f2 = 1/60)
+0x49f67c	0x2e1e10	cDynamicSprayFX_UpdateEmitter7	STEP	f12 = 1/60 as DynamicEmitter_Spawn's dt
+0x49f680	0x2e1f3c	cDynamicSprayFX_UpdateEmitter7	STEP	f12 = 1/60 as DynamicEmitter_Spawn's dt (spray-off path)
+0x49f688	0x2e1fc8	cDynamicSprayFX_UpdateEmitter8	STEP	seconds countdown: `t = clamp(t - 1/60 + 0.01, 0, 1/60)` per tick (clamped to one tick's worth)
+0x49f69c	0x2e21fc	cDynamicSprayFX_UpdateEmitter8	STEP	f12 = 1/60 as DynamicEmitter_Spawn's dt (after AddRandomVelocity)
+0x49f6a0	0x2e2220	cDynamicSprayFX_UpdateEmitter8	STEP	f12 = 1/60 as DynamicEmitter_Spawn's dt (spray-off path)
+0x49f6a8	0x2e22f4	cDynamicSprayFX_UpdateEmitter9	STEP	f21 = 1/60, `mov_s(12,21)` -> DynamicEmitter_Spawn's dt
+0x49f6ac	0x2e2394	cDynamicSprayFX_UpdateEmitter9	STEP	f12 = 1/60 as DynamicEmitter_Spawn's dt
+0x49f6c0	0x2e3a10	cPlayerPulseFX_Update	STEP	pulse phase per tick: `phase += (1/60) * k`, wrapped at 1, then cos(2*pi*phase) (port boardwakefx.rs:3840)
+0x49f714	0x2e6b98	cSpeedBoostStreamerFX_Update	STEP	streamer scroll phase per tick: `x = wrap(x - f4*f5*(1/60))` (keeps the 0..1 fraction)
+0x49f7cc	0x2f1bd4	AttachedEmitterFX_Update	STEP	noise phase per tick: `phase += desc->+0x10c * (1/60)`, wrapped at 2.0 (port attachedemitterfx.rs:670)
+0x49f7d0	0x2f2000	AttachedEmitterFX_Update	STEP	f12 = 1/60 as DynamicEmitter_Spawn's dt (idle spawn, port attachedemitterfx.rs:924)
+0x49f7d4	0x2f201c	AttachedEmitterFX_Update	STEP	f12 = 1/60 as DynamicEmitter_Spawn's dt (fire/turn, port attachedemitterfx.rs:854)
+0x49f7d8	0x2f2828	cSplashManager_UpdateDrop	STEP	`age (+0x1c) += 1/60` per tick, then the drop's velocity/position are stepped from it
+0x49f7e4	0x2f3034	cSplashManager_UpdateCrystal	STEP	seconds timers: `timer (+0x40) -= 1/60` and `elapsed (+0x20) += 1/60` per tick
+0x4a0670	0x358124	MultiParticle_Update	STEP	f12 = 1/60 as the particle system's frame-time argument (port multiparticle.rs:747)

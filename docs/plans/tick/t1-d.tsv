@@ -1,0 +1,49 @@
+entry	site	function	class	reason
+0x49b15c	0x101538	DangerMan_Update	STEP	sub_s f0, [danger timer], 1/60 per tick @0x101538, stored back and checked <=0 to release the danger (timer in seconds)
+0x49b180	0x103c80	RiderAnim_ScrubSeq	STEP	mul_s f12, f21 (f12 = frames-per-tick, 1.0 from Rider_TickAnimation) * 1/60 = seconds per tick, passed to AnimSequence_UpdateWeightFade (fade countdown at seq+0x9c is in seconds, @0x313800)
+0x49b184	0x103da4	RiderAnim_BlendSeq2	STEP	lwc1 f20 (f12 = frames-per-tick, 1.0 from Rider_TickAnimation) * 1/60 = seconds per tick, passed to AnimSequence_AdvanceTrack (time += rate*speed*step, duration at +0x10 s, @0x3135b0) and UpdateWeightFade
+0x49b188	0x103f74	RiderAnim_BlendSeq4	STEP	lwc1 f20 (f12 = frames-per-tick, 1.0 from Rider_TickAnimation) * 1/60 = seconds per tick, passed to AnimSequence_AdvanceTrack @0x3135b0 and UpdateWeightFade (same seconds step as BlendSeq2)
+0x49b18c	0x104048	RiderAnim_PlaySeqThenLoop	STEP	lwc1 f12 (f12 = frames-per-tick, 1.0 from Rider_TickAnimation) * 1/60 = seconds per tick, passed to AnimSequence_AdvanceTrack @0x3135b0 on the same-sequence branch (track time is seconds)
+0x49b190	0x1040b4	RiderAnim_PlaySeqThenLoop	STEP	lwc1 f12 (f12 = frames-per-tick, 1.0 from Rider_TickAnimation) * 1/60 = seconds per tick, passed to AnimSequence_AdvanceTrack @0x3135b0 on the other-sequence branch (track time is seconds)
+0x49b194	0x1040c8	RiderAnim_PlaySeqThenLoop	STEP	lwc1 f12 (f12 = frames-per-tick, 1.0 from Rider_TickAnimation) * 1/60 = seconds per tick, passed to AnimSequence_UpdateWeightFade @0x313800 (shared tail; fade countdown in seconds)
+0x49b198	0x1043b4	RiderAnim_UpdateSeqType07	STEP	mul_s f12, f20 (f12 = frames-per-tick, 1.0 from Rider_TickAnimation) * 1/60 = seconds per tick, passed to AnimSequence_UpdateWeightFade @0x313800 (type 07 scrub, fade countdown in seconds)
+0x49b19c	0x104554	RiderAnim_UpdateSeqType0B	STEP	mul_s f20, f22 (f12 = frames-per-tick, 1.0 from Rider_TickAnimation) * 1/60 = seconds per tick, passed to AnimSequence_AdvanceTrack @0x3135b0 and UpdateWeightFade @0x313800 (type 0B)
+0x49b1a0	0x104618	RiderAnim_UpdateSeqType08	STEP	mul_s f12, f20 (f12 = frames-per-tick, 1.0 from Rider_TickAnimation) * 1/60 = seconds per tick, passed to AnimSequence_AdvanceTrack @0x3135b0 (type 08)
+0x49b1a4	0x1047ac	RiderAnim_UpdateSeqType0E	STEP	mul_s f12, f20 (f12 = frames-per-tick, 1.0 from Rider_TickAnimation) * 1/60 = seconds per tick, passed to AnimSequence_AdvanceTrack @0x3135b0 (type 0E)
+0x49b1a8	0x10487c	RiderAnim_UpdateSeqType0D	STEP	mul_s f12, f20 (f12 = frames-per-tick, 1.0 from Rider_TickAnimation) * 1/60 = seconds per tick, passed to AnimSequence_AdvanceTrack @0x3135b0 (type 0D)
+0x49b1ac	0x1048c4	RiderAnim_UpdateSeqType00	STEP	mul_s f20, f12, 1/60 (frames-per-tick * 1/60 = seconds) then AdvanceTrack @0x3135b0 (type 00)
+0x49b1b0	0x104944	RiderAnim_UpdateSeqType01	STEP	mul_s f20, f12, 1/60 (frames-per-tick * 1/60 = seconds) then AdvanceTrack @0x3135b0 (type 01)
+0x49b1b4	0x1049c4	RiderAnim_UpdateSeqType02	STEP	mul_s f20, f12, 1/60 (frames-per-tick * 1/60 = seconds) then AdvanceTrack @0x3135b0 (type 02)
+0x49b480	0x113298	AirPredictor_Simulate	STEP	lwc1 f25,1/60 @0x113298 then div_s f22 = (1/60)/maxTime: the predictor's step size, the loop runs maxTime*60 one-1/60-s steps
+0x49b48c	0x113464	AirPredictor_Simulate	STEP	lwc1 f0,1/60 @0x113464 then mul_s f0,f3,f0 f0*=f21: predTime -= steps*fraction*(1/60), a step count converted back to seconds
+0x49b494	0x113808	AirPredictor_Update	STEP	lwc1 f2,1/60 @0x113808: while (1/60 <= elapsed) { AirPredictor_Step(); elapsed -= 1/60; } elapsed is the tick time (caller passes rider->0x300 * 1/60)
+0x49b4a0	0x1139a4	AirPredictor_Step	STEP	lwc1 f0,1/60 @0x1139a4 -> qmtc2 into VU0, vmulbc: pos += vel * (1/60) (integration step)
+0x49c304	0x154d00	BEScoreInt_SubmitRaceResult	STEP	lwc1 f0,1/60 @0x154d00, f0 = frames * 1/60, cvt_w_s: race time in ticks -> seconds before comparing with the high-score table
+0x49cca8	0x16e250	CameraTrigger_ApplyAction	STEP	lwc1 f1,1/60 @0x16e250, div_s f0 = 1.0/duration, f12 = f0*f1: per-tick blend step 1/(duration*60) handed to ChaseCamController_SetOverrideAlgorithm (blend lasts `duration` s)
+0x49ccac	0x16e298	CameraTrigger_ApplyAction	STEP	lwc1 f1,1/60 @0x16e298, div_s f0 = 1.0/duration, f12 = f0*f1: per-tick blend step in ChaseCamController_SetOverrideAlgorithm
+0x49ccb0	0x16e2f4	CameraTrigger_ApplyAction	STEP	lwc1 f1,1/60 @0x16e2f4, div_s f0 = 1.0/duration, f12 = f0*f1: per-tick blend step in ChaseCamController_SetOverrideAlgorithm
+0x49d7e4	0x1c4f60	cFEStateStats_FormatTime	STEP	ldf f1,1/60 @0x1c4f60 (port feasyncfile.rs:14557) then mul_s f0,frames,f1: frame count -> seconds before h:mm:ss.mmm (div by 60 twice, 1000.0 for ms)
+0x49d95c	0x1e6d58	OVScreenFinalStandings_TransitionIn	STEP	lwc1 f1,1/60 @0x1e6d58: (int)((float)raceTimeTicks * 1/60) -> FE_FormatMinSec(seconds)
+0x49d960	0x1e7d70	OVScreenFinishOv_Init	STEP	lwc1 f1,1/60 @0x1e7d70: (int)((float)raceTimeTicks * 1/60) -> FE_FormatMinSec(seconds)
+0x49d964	0x1e8108	OVScreenFinishOv_Update	STEP	port fepopup3.rs:4252: f0 = transition timer + 1/60 per tick, stored at self+0x9c (test writes 0.05f there to speed the transition up)
+0x49d968	0x1e8828	OVScreenFinishOv2_Update	STEP	port fepopup3.rs:4350: same body as OVScreenFinishOv_Update, timer += 1/60 per tick
+0x49d96c	0x1e8b74	OVScreenPeakChallengeResults_Init	STEP	lwc1 f1,1/60 @0x1e8b74: (int)((float)raceTimeTicks * 1/60) -> FE_FormatMinSec(seconds)
+0x49d970	0x1e8bd8	OVScreenPeakChallengeResults_Init	STEP	lwc1 f1,1/60 @0x1e8bd8: (int)((float)eventBestTicks * 1/60) -> FE_FormatMinSec(seconds)
+0x49d998	0x1eb02c	cOVStateHUD1P_Update	STEP	lwc1 f0,1/60 @0x1eb02c: f1 = hud timer + 1/60 per tick, stored at self+0x190 (wrap/scale to +0x194/+0x198)
+0x49d9ac	0x1eb420	cOVStateHUD1P_Update	STEP	lwc1 f0,1/60 @0x1eb420: f0 = self+0x3c0 timer + 1/60 per tick, clamped to f2, stored back
+0x49d9b4	0x1eb568	cOVStateHUD1P_Update	STEP	lwc1 f12,1/60 @0x1eb568: f12 = 2*ticks * 1/60 passed to __fixunssfsi -> whole seconds, then integer /60
+0x49d9b8	0x1eb5bc	cOVStateHUD1P_Update	STEP	lwc1 f0,1/60 @0x1eb5bc: f2 = (float)ticks * 1/60, cvt_w_s -> whole seconds, then seconds*60 subtracted from the frame count
+0x49d9bc	0x1eb684	cOVStateHUD1P_Update	STEP	lwc1 f0,1/60 @0x1eb684: self+0x3d0 timer += 1/60 per tick, wrapped at 1.0
+0x49d9c0	0x1eb710	cOVStateHUD1P_Update	STEP	lwc1 f0,1/60 @0x1eb710: self+0x164 timer += 1/60 per tick, wrapped at 1.0
+0x49d9c4	0x1eb780	cOVStateHUD1P_Update	STEP	lwc1 f0,1/60 @0x1eb780: f0 = self+0x168 timer + 1/60 per tick, clamped to f2, stored back
+0x49d9e8	0x1ebffc	cOVStateHUD1P_Update	STEP	lwc1 f2,1/60 @0x1ebffc: f0 = self+0x78 timer + 1/60 per tick, clamped at 1.0
+0x49db60	0x1f0a50	cOVStateHUD1P_Render	STEP	port ovstatehud.rs:7699: race clock in ticks - integer div by 60 for whole seconds, the remainder *1/60 for the fraction, compared with the neighbour 1/60 entry
+0x49db78	0x1f0be4	cOVStateHUD1P_Render	STEP	port ovstatehud.rs:7843: (ticks-1)/60 whole seconds plus (ticks%60)*1/60 fraction, rounding compare, for the clock/timer text
+0x49db90	0x1f0d90	cOVStateHUD1P_Render	STEP	port ovstatehud.rs:7992: f0 = (float)ticks * 1/60 -> seconds for the timer text element
+0x49db94	0x1f3198	LoadIndicator_Update	STEP	lwc1 f0,1/60 @0x1f3198: progress += 1/60 per tick, cycles at 2.0 (one unit per second spinner)
+0x49dc3c	0x20ff90	cOVStateHUD1P_DrawProgressMeterMP	STEP	lwc1 f28,1/60 @0x20ff90: marker position x -= (target-x)*1/60 per tick (per-tick smoothing factor, 1 s time constant)
+0x49dc40	0x2102b0	cOVStateHUD1P_DrawProgressMeterMP	STEP	lwc1 f28,1/60 @0x2102b0: marker position x -= (target-x)*1/60 per tick (per-tick smoothing factor)
+0x49df18	0x22cc84	GameModule_RenderUI	STEP	lwc1 f0,1/60 @0x22cc84: SSXAudioSystem_Update(ticks_since_last_render * 1/60) - the frame count is reset to 0 right after
+0x49eb54	0x29cd18	SSXAudioSystem_UpdateCountdownBeeps	STEP	port audio_system.rs:3027: k1 = 1/60, elapsed = raceTimeTicks * k1 -> whole seconds; countdown remaining ticks converted the same way
+0x49eb58	0x29cd58	SSXAudioSystem_UpdateCountdownBeeps	STEP	port audio_system.rs:3050: k2 = 1/60, seconds = fixunssfsi(countdownTicks*k2) - elapsed (mod 3600) -> beep at 10/8/6/4..1 s
+0x4a01f8	0x316d64	App_Run_MainLoop	STEP	lwc1 f0,1/60 @0x316d64 then swc1 to cAppMan+0x14 with +0x10 = 60: this *is* the tick step the app manager runs at

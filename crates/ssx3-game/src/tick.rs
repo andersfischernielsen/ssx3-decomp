@@ -37,7 +37,33 @@ pub const STEP_60: u32 = 0x3c88_8889;
 
 /// `.lit4` entries holding `1/60` that are not the tick step (left at 1/60).
 /// Add an entry with the reason when a worker finds one.
-pub const NOT_A_STEP: &[u32] = &[];
+///
+/// The script and animation data are authored at a fixed 60 Hz. A script
+/// frame count is not a tick count: the script timeline runs in real time
+/// (`ScriptList_Start` adds keyframe counts to a frame counter, and
+/// `cTransitionMan_Update` advances its fade by `1.0 / rate` per tick), so a
+/// duration of `frames * (1/60)` is a wall-clock time at every rate. Patch
+/// these and the transition would be 4x shorter at 240 Hz.
+pub const NOT_A_STEP: &[u32] = &[
+    // Rider_ApplyScriptTrack (0x124788): script track time in frames ->
+    // seconds for AnimController_SampleAnimPose / AnimSequence_SetTrackTime.
+    0x0049_b860,
+    // Rider_ApplyScriptTrack (0x124788): track start frame -> seconds for
+    // AnimController_PlayAnimDirect.
+    0x0049_b868,
+    // ScriptList_Start (0x276388): three keyframe counts -> the transition
+    // duration passed to cTransitionMan_Start.
+    0x0049_e8ec,
+    // ScriptList_Start (0x276388): keyframe count -> the captured
+    // transition's duration.
+    0x0049_e8f0,
+    // ScriptList_StartTransition (0x277980): script shorts -> transition
+    // start/duration in seconds.
+    0x0049_e8f4,
+    // ScriptList_StartTransition (0x277980): script short -> captured
+    // transition's duration.
+    0x0049_e8f8,
+];
 
 /// The configured rate (Hz).
 static RATE: AtomicU32 = AtomicU32::new(60);
@@ -267,19 +293,26 @@ fn patch_pool(c: &mut Cpu, hz: u32) {
     let mut pool = POOL.lock().unwrap();
     if pool.is_empty() {
         // First use: the executable's values are still in place.
-        let mut a = LIT4.0;
-        while a < LIT4.1 {
-            if c.bus.read32(a) == STEP_60 && !NOT_A_STEP.contains(&a) {
-                pool.push(a);
-            }
-            a += 4;
-        }
+        *pool = collect_pool(c);
     }
     let bits = step_bits(hz);
     for &a in pool.iter() {
         c.bus.write32(a, bits);
     }
     eprintln!("[tick] {hz} Hz: step 1/{hz} in the app manager and {} .lit4 entries", pool.len());
+}
+
+/// The `.lit4` entries holding `1/60` that follow the rate.
+fn collect_pool(c: &mut Cpu) -> Vec<u32> {
+    let mut out = Vec::new();
+    let mut a = LIT4.0;
+    while a < LIT4.1 {
+        if c.bus.read32(a) == STEP_60 && !NOT_A_STEP.contains(&a) {
+            out.push(a);
+        }
+        a += 4;
+    }
+    out
 }
 
 /// Unit tests at rate `hz`: an app manager at a scratch address with the
@@ -378,5 +411,23 @@ mod tests {
         set_for_test(&mut c, 120);
         assert_eq!((rate(&mut c), dt(&mut c)), (120, 1.0 / 120.0));
         assert_eq!(ticks_from_frames60(&mut c, 30), 60);
+    }
+
+    /// The script/animation frame-time entries stay at `1/60`; every other
+    /// `1/60` entry of `.lit4` follows the rate.
+    #[test]
+    fn script_frame_entries_are_not_the_tick_step() {
+        let mut c = ssx3_ps2::new_cpu();
+        for (i, &e) in NOT_A_STEP.iter().enumerate() {
+            assert!((LIT4.0..LIT4.1).contains(&e), "{e:#x} is not in .lit4");
+            assert!(!NOT_A_STEP[..i].contains(&e), "{e:#x} is listed twice");
+            c.bus.write32(e, STEP_60);
+        }
+        c.bus.write32(0x0049_b118, STEP_60);
+        let pool = collect_pool(&mut c);
+        assert!(pool.contains(&0x0049_b118));
+        for &e in NOT_A_STEP {
+            assert!(!pool.contains(&e), "{e:#x}");
+        }
     }
 }

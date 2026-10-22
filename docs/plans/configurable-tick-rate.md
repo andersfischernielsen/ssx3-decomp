@@ -14,8 +14,12 @@ Status (2026-10-22):
   the rate: at 120 Hz the race clock and course progress match 60 Hz.
 - ✅ A slow host keeps game time real time (catch-up, below); interpolation
   is removed (the game rate replaces it).
-- ⏳ Worker pass (AGENTS.md "Tick-rate pass"): classify the `1/60` entries,
-  convert the other rate constants and the per-tick code the scan cannot see.
+- ✅ T1: the 193 `1/60` entries classified (187 STEP, 6 NOT_A_STEP, 2 UNSURE);
+  the script/animation frame-time entries no longer follow the rate.
+- ⏳ T2: the other rate constants (`60.0`, `3600`, `1/30`, `30.0`, `1/50`,
+  `50.0`).
+- ⏳ T3: the per-tick code the scan cannot see (front end first, see "Fast at
+  240 Hz").
 
 ## How the game keeps time
 
@@ -189,6 +193,40 @@ Not found by the scan (T3):
   thresholds in frames, scripter and camera-script durations in frames;
 - per-tick factors without the step: `v *= k`, `x += (t - x) * a`, `+= c`;
 - random chances per tick.
+
+### T1: the 193 `1/60` entries, classified
+
+Four workers read every load site (hand-written port or `generated/ee`, plus
+the C++ reference) and wrote one row per entry to `docs/plans/tick/t1-{a,b,c,d}.tsv`
+(`entry site function class reason`). Result: **187 STEP, 6 NOT_A_STEP, 2
+UNSURE**. Every entry is loaded by exactly one function, so the split is a
+per-site decision.
+
+The six `NOT_A_STEP` entries are script/animation data converted with the
+fixed 60 Hz authoring unit, now listed in `tick::NOT_A_STEP`:
+
+| entries | use |
+| --- | --- |
+| `0x49b860`, `0x49b868` | `Rider_ApplyScriptTrack`: script track time/start frame → seconds for `AnimController_SampleAnimPose` / `PlayAnimDirect` |
+| `0x49e8ec`, `0x49e8f0` | `ScriptList_Start`: keyframe counts → the transition duration |
+| `0x49e8f4`, `0x49e8f8` | `ScriptList_StartTransition`: script shorts → transition start/duration |
+
+Why they stay `1/60`: the transition manager advances its fade by
+`1.0 / rate` per tick (`cTransitionMan_Update`, 0x2e46c8) and compares it with
+the duration, so the duration is a wall-clock time; the script timeline is
+data authored at a fixed 60 frames/s (T3 makes the script engine advance
+`N/60` frames per tick, which keeps the authoring unit fixed).
+
+Two entries are `UNSURE` and stay STEP (they behave the same either way): a
+DSock channel virtual getter that returns `1/60` with no resolvable caller
+(`0x49e694`), and a `DebugMenu_ctor` store to a write-only global
+(`0x49d5d0`).
+
+T1 also found one constant the scan misses: `0x49bf24` holds `59.999996`
+(the reciprocal of the `1/60` bits) in `RiderAirState_Update`, alongside the
+`1/60` guard at `0x49bf20`; it is a T2 item (the air-turn fraction's
+fallback), not a `.lit4` step.
+
 
 ## Conversion rules (exact at 60)
 
