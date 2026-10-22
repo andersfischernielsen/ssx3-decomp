@@ -690,10 +690,12 @@ pub fn fx_trail_reset(c: &mut Cpu) {
     Addr(tmp).sw(c, 0);
     Addr(tmp + 4).sw(c, 0);
     Addr(tmp + 8).sw(c, 0);
+    let trail = abi::arg(c, 0);
+    // (+0xc cleared too, before the copy.)
+    c.sw(trail.wrapping_add(0xc), 0);
     c.ldl(V0, tmp + 7);
     c.ldr(V0, tmp);
     c.g[V1][0] = Addr(tmp + 8).lw(c);
-    let trail = abi::arg(c, 0);
     c.sdl(V0, trail.wrapping_add(7));
     c.sdr(V0, trail);
     c.sw(trail.wrapping_add(trail::COUNT), c.g[V1][0]);

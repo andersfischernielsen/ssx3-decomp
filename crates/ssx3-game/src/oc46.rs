@@ -242,9 +242,8 @@ pub fn rider_update_leg_ik_blend(c: &mut Cpu) {
             }
             c.cycles += 4;
             c.lwc1(0, gp(c, -0x7930));
+            // (Towards 0: f1 = 0, then the clamp.)
             c.mtc1(0, 1);
-            c.g[AT][0] = 0x3f80_0000;
-            c.mtc1(1, 1);
             leg_ik_blend_clamp(c, frame);
             return Ok(());
         }

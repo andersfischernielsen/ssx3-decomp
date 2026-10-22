@@ -656,7 +656,9 @@ pub fn rider_update_visibility(c: &mut Cpu) {
                         let more = c.g[V0][0] != 0;
                         c.g[A1][0] = add32(c.g[A1][0], 8);
                         if !more {
-                            break 'frustum;
+                            // (Out of the list the way an empty one leaves:
+                            // b_122418's cycle.)
+                            break 'list;
                         }
                         if event_due(c) {
                             deliver_event_here(c, 0x001223b8);

@@ -396,6 +396,8 @@ profile of the game thread `ee-thread-1`, busy 81% of the time):
 | EE kernel | threads (host threads with a baton), semaphores, interrupt handlers | ~4 thread switches | keep; a native scheduler later |
 | sound | `ssx3-snd` drives the SPU2 voice model as its mixer | 1 tick / 512 samples | already native; the SPU2 model is the mixer |
 | memory | 32 MiB guest RAM, scratchpad, PS2 float semantics | everywhere | stays while game logic is recompiled |
+| movies | done (N5) | | |
+| light queries | done: the native flare visibility query reads the depth of the frame two before, tagged with its frame number, waiting for the render thread when it is late (`depth_of`, 100 ms cap; `SSX3_DEPTH_SYNC=0` for the latest). Two race runs end with identical RAM; the browser (no render thread) keeps the latest depth | | |
 
 What is left is either small (scratchpad DMAs, a few status registers) or
 part of running recompiled game code (guest memory, the EE kernel's
@@ -497,8 +499,6 @@ those are <=600 bytes. The small-function waves (50 per writer) are the best
 yield; the 400-function dispatcher-heavy waves at the start of the session
 yielded only 5-7 per writer.
 
-| movies | done (N5) | | |
-| light queries | done: the native flare visibility query reads the depth of the frame two before, tagged with its frame number, waiting for the render thread when it is late (`depth_of`, 100 ms cap; `SSX3_DEPTH_SYNC=0` for the latest). Two race runs end with identical RAM; the browser (no render thread) keeps the latest depth | | |
 
 ## Rules
 

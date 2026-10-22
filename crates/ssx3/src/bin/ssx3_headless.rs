@@ -335,6 +335,9 @@ fn main() {
     }
     eprintln!("halted: {:?}", ssx3_ps2::m!(c).kernel.halted);
     eprint!("{}", game::dump(&c));
+    for l in ssx3_game::shadow::report() {
+        eprintln!("[shadow] {l}");
+    }
     let mmio = ssx3_ps2::platform::mmio_profile();
     if !mmio.is_empty() {
         eprintln!("mmio (register, r/w, count): {:?}", mmio.iter().take(60).map(|(a, w, n)| format!("{a:#010x}{}={n}", if *w { "w" } else { "r" })).collect::<Vec<_>>());

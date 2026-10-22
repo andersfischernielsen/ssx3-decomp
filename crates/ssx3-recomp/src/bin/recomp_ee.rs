@@ -402,6 +402,13 @@ fn main() {
         let _ = writeln!(lib, "        {a:#010x} => unsafe {{ ssx3_ee_s{:02}::OVERRIDE_{a:08X} = f }},", shard_of[a]);
     }
     lib.push_str("        _ => return false,\n    }\n    true\n}\n");
+    // (Runtime A/B checks of a replacement, `ssx3-game`'s shadow mode, run
+    // the generated body by address.)
+    lib.push_str("\n/// The generated body of the function at `addr` when it has an override\n/// slot (whatever is installed in the slot).\npub fn generated_body(addr: u32) -> Option<fn(&mut ssx3_ee_rt::Cpu)> {\n    Some(match addr {\n");
+    for a in &overrides {
+        let _ = writeln!(lib, "        {a:#010x} => ssx3_ee_s{:02}::f_{a:08x}__generated,", shard_of[a]);
+    }
+    lib.push_str("        _ => return None,\n    })\n}\n");
     let _ = writeln!(lib, "\n/// True when generated for host-thread mode (`ssx3_ps2::threads`).\npub const HOST_THREADS: bool = {threads};");
     write_if_changed(game.join("src/lib.rs"), lib).unwrap();
 

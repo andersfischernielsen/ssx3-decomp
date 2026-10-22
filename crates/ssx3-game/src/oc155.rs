@@ -289,6 +289,8 @@ pub fn rider_metrix_update_trick_hud(c: &mut Cpu) {
                     call_ptr(c, table::AUDIO_SYSTEM, 0x0011_8078)?;
                     lw(c, A1, S1, mx::RIDER);
                     c.g[A0][0] = c.g[V0][0];
+                    // (The points again: the calls above clobbered a2.)
+                    c.g[A2][0] = c.g[S0][0];
                     call_ptr(c, table::AUDIO_TRICK_TICK, 0x0011_8088)?;
                 }
             }

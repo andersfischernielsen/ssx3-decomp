@@ -24,6 +24,7 @@ pub mod abi;
 pub mod capture;
 pub mod packetless;
 pub mod movie;
+pub mod shadow;
 pub mod debug;
 #[cfg(feature = "oc28")]
 pub mod oc28;
@@ -813,11 +814,18 @@ pub fn install() -> usize {
     let skip: Vec<u32> = std::env::var("SSX3_SKIP_OVERRIDES")
         .map(|s| s.split(',').filter_map(|a| u32::from_str_radix(a.trim().trim_start_matches("0x"), 16).ok()).collect())
         .unwrap_or_default();
+    let shadow = shadow::wanted();
     let mut n = 0;
     for (addr, f, name) in overrides() {
         if only.as_ref().is_some_and(|o| !o.contains(&addr)) || skip.contains(&addr) {
             continue;
         }
+        // (`SSX3_SHADOW`: the replacement checked against the generated
+        // body at run time, `shadow.rs`.)
+        let f = match &shadow {
+            Some(list) if list.as_ref().is_none_or(|l| l.contains(&addr)) => shadow::wrap(addr, name, f).unwrap_or(f),
+            _ => f,
+        };
         assert!(
             ssx3_ee::set_override(addr, f),
             "{name} ({addr:#x}) has no override slot: list it in crates/ssx3-game/overrides.txt and rerun recomp-ee"
