@@ -5233,5 +5233,9 @@
 # Phase 2 wave: oc149, oc155
 0x00117fe0    RiderMetrix_UpdateTrickHUD
 0x002e6c08    cSpeedBoostStreamerFX_UpdatePoints
+# Phase 2 wave: oc158
+0x0014dc80    cBE_getBE
+0x00106848    Rider_TryStartRailslide
+0x00106f78    Rider_HandleWallRailContact
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
