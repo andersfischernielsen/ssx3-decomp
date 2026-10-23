@@ -2,9 +2,13 @@
 
 [![SSX 3 running as recompiled Rust: title screen, mode select, race start and three moments of a Snow Jam race](docs/images/screenshots.jpg)](docs/ssx3.mp4)
 
-▶ **[Watch it running natively (video, docs/ssx3.mp4)](docs/ssx3.mp4)**
+▶ **[Video)](docs/ssx3.mp4)**
 
-<sub>The recompiled game running headless at 2× internal resolution (`SSX3_RENDER_NATIVE=all SSX3_RENDER_SCALE=2`): title, mode select, and the first 75 seconds of a Snow Jam race.</sub>
+> SSX 3 is © Electronic Arts; "SSX" is an EA trademark. This project is not affiliated
+> with or endorsed by EA. **The repository contains no game data and no game code.** The
+> disc image, the executable and everything translated from them (`orig/`,
+> `generated/ee`, `generated/iop`, `generated/vu`) are produced locally from **your own
+> copy** of the game. They are ignored by git, and must never be committed or shared.
 
 A native **Rust** static recompilation of **SSX 3 (USA)** (`SLUS_207.72`) for the
 PlayStation 2, on its way to a native port. The game's Emotion Engine code is translated
@@ -58,12 +62,6 @@ natively, at the output resolution:
 See [`docs/plans/roadmap.md`](docs/plans/roadmap.md) for the plan and
 [`docs/investigation/limitations.md`](docs/investigation/limitations.md) for known
 issues.
-
-> SSX 3 is © Electronic Arts; "SSX" is an EA trademark. This project is not affiliated
-> with or endorsed by EA. **The repository contains no game data and no game code.** The
-> disc image, the executable and everything translated from them (`orig/`,
-> `generated/ee`, `generated/iop`, `generated/vu`) are produced locally from **your own
-> copy** of the game. They are ignored by git, and must never be committed or shared.
 
 ## Getting started
 
@@ -131,6 +129,27 @@ together with the keyboard.
 
 Saves go to `saves/ssx3-mc0.ps2`.
 
+### 4. A standalone build (optional)
+
+`tools/bundle.py` packs the game data from your disc image into a build that runs on its own,
+without the ISO or this repository:
+
+```sh
+python3 tools/bundle.py macos            # dist/SSX3.app
+python3 tools/bundle.py linux-x86_64     # dist/ssx3-linux-x86_64 (one file)
+python3 tools/bundle.py windows-x86_64   # dist/ssx3-windows-x86_64.exe (one file)
+python3 tools/bundle.py all              # all of the above, plus linux-aarch64
+```
+
+The data pack is the disc without its padding files and empty sectors (about 2.4 GB). On
+Linux and Windows it is appended to the executable. On macOS it sits inside the app bundle,
+because a signed binary cannot carry appended data. The Linux and Windows builds are
+cross-compiled in Docker (`tools/bundle/Dockerfile`); the macOS build needs a Mac. A
+standalone build keeps its saves and settings in the user's data folder:
+`~/Library/Application Support/SSX3`, `%APPDATA%\SSX3` or `~/.local/share/ssx3`.
+
+The result contains the game. It is for your own use with your own disc; do not share it.
+
 ## Options
 
 Most options can be changed in the game with the settings overlay (F10): display rate,
@@ -149,6 +168,7 @@ configuration. The plain command above is the recommended way to play.
 | `SSX3_SKIP_MOVIES=1` | Skip the EA, THX and intro movies at boot. |
 | `SSX3_ISO=<path>` | Disc image location (default `./SSX 3 (USA).iso`). |
 | `SSX3_MEMCARD=<path>` | Memory card file (default `saves/ssx3-mc0.ps2`). |
+| `SSX3_PACK=<path>` | Play from a data pack made by `tools/bundle.py pack` instead of the disc image. |
 | `SSX3_PAD2=1` | Plug in pad 2; a second controller drives it (Multi Play). |
 | `SSX3_AUDIO=0` | No audio output. |
 | `SSX3_REAL_CLOCK=1` | Give the PS2 the host's date and time (the default is a fixed time, so runs are reproducible). |
