@@ -5312,3 +5312,5 @@
 0x0018ca10    cFEStateOptionsController_OnWidgetAction
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
+# tick rate: screen-script frames on 60 Hz boundaries
+0x0039c978    UIScreen_RunThreadFrame

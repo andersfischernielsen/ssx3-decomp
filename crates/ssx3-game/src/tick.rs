@@ -302,6 +302,68 @@ impl Pacer {
     }
 }
 
+/// Per-object clocks of [`frame60_due`]: the object's address → (credit,
+/// the frame it was left at).
+struct Clock {
+    credit: u32,
+    frame: u32,
+}
+
+thread_local! {
+    static CLOCKS: std::cell::RefCell<std::collections::HashMap<u32, Clock>> = Default::default();
+}
+
+/// Whether an object's timeline authored at 60 fps (a UI animation, a screen
+/// script thread) takes its next frame this tick: always at 60; above 60,
+/// at once when the timeline is new or was moved since its last step (`frame`
+/// differs from what [`frame60_ran`] recorded, e.g. a newly started thread
+/// or a restarted animation), then once per `rate / 60` ticks of its own.
+///
+/// Each object keeps its own phase, so a timeline's first frame runs on the
+/// tick it starts, in the same order with the code around it as at 60 (a
+/// shared 60 Hz boundary delays it by up to `rate / 60 - 1` ticks; measured:
+/// a menu's description text is then wrapped before its box is sized).
+/// Call once per tick per object, and [`frame60_ran`] after the step.
+pub fn frame60_due(c: &mut Cpu, key: u32, frame: u32) -> bool {
+    let r = rate(c);
+    if r == 60 {
+        return true;
+    }
+    CLOCKS.with(|m| {
+        let mut m = m.borrow_mut();
+        match m.get_mut(&key) {
+            Some(k) if k.frame == frame => {
+                k.credit += 60;
+                if k.credit >= r {
+                    k.credit -= r;
+                    true
+                } else {
+                    false
+                }
+            }
+            _ => {
+                if m.len() > 4096 {
+                    m.clear();
+                }
+                m.insert(key, Clock { credit: 0, frame });
+                true
+            }
+        }
+    })
+}
+
+/// After a [`frame60_due`] step: the frame the object was left at.
+pub fn frame60_ran(c: &mut Cpu, key: u32, frame: u32) {
+    if rate(c) == 60 {
+        return;
+    }
+    CLOCKS.with(|m| {
+        if let Some(k) = m.borrow_mut().get_mut(&key) {
+            k.frame = frame;
+        }
+    });
+}
+
 /// A 60 Hz frame boundary for UI/script timelines authored at 60 fps: true
 /// once per 60 Hz frame at any rate (always at 60).
 ///
@@ -311,8 +373,8 @@ impl Pacer {
 /// Use it for a quantity that is authored per 60 Hz frame and cannot be
 /// scaled (an integer step, a scroll in pixels per frame). Do **not** use it
 /// to skip a whole UI screen update: the screens also lay out their widgets,
-/// which must happen every tick (measured: gating `UIState_UpdateScreens` at
-/// 240 Hz wraps the menu description text).
+/// which must happen every tick. For a timeline that belongs to one object,
+/// use [`frame60_due`] (its own phase).
 pub fn ui_frame_due(c: &mut Cpu) -> bool {
     let r = rate(c);
     if r == 60 {

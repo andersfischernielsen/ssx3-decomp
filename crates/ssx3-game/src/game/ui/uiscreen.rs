@@ -58,6 +58,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0039_c688, ui_screen_set_data, "UIScreen_SetData"),
     (0x0039_c728, uiscreen_find_keyframe, "UIScreen_FindKeyframe"),
     (0x0039_c7c0, ui_screen_get_primary_thread, "UIScreen_GetPrimaryThread"),
+    (0x0039_c978, ui_screen_run_thread_frame, "UIScreen_RunThreadFrame"),
     (0x0039_cbc8, uiscreen_cmd_stop_thread, "UIScreen_CmdStopThread"),
     (0x0039_cbe0, ui_screen_cmd_goto_label, "UIScreen_CmdGotoLabel"),
     (0x0039_cc38, ui_screen_cmd_start_thread, "UIScreen_CmdStartThread"),
@@ -585,6 +586,31 @@ pub fn ui_screen_cmd_begin_transition_out(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     })
+}
+
+
+/// `void UIScreen_RunThreadFrame(UIScreen* s, UIThread* t)` (0x39c978):
+/// one screen-script frame of a thread (called by `UIScreen_Update` while
+/// the thread's frame `+0xc` differs from its last run `+0xe`): step the
+/// frame by `+0x12` towards the end frame `+0x10`, then run the commands of
+/// the keyframe at the old frame.
+///
+/// Screen scripts are authored at 60 fps: above 60 Hz each thread runs one
+/// frame per `rate / 60` ticks of its own (`tick::frame60_due`; its first
+/// frame on the tick it starts, as at 60), so transitions and screen
+/// animations keep their wall-clock speed. The screen update itself (the
+/// widgets' layout, `cUIGroup_UpdateAnim` at the held frame) still runs
+/// every tick. At 60 every call runs the original.
+pub fn ui_screen_run_thread_frame(c: &mut Cpu) {
+    let thread = r32(c, A1);
+    let frame = c.bus.read16(thread.wrapping_add(0xc)) as u32;
+    if !crate::tick::frame60_due(c, thread, frame) {
+        abi::ret(c);
+        return;
+    }
+    ee::s13::f_0039c978__generated(c);
+    let frame = c.bus.read16(thread.wrapping_add(0xc)) as u32;
+    crate::tick::frame60_ran(c, thread, frame);
 }
 
 
@@ -2015,6 +2041,79 @@ pub(crate) mod tests {
 
 
     // --------------------------------------------------------------- UI screen
+
+    /// A thread at frame `frame` (speed `speed`, end `end`) of a screen whose
+    /// keyframe list has an entry at frames 0..4 with `n` no-op commands.
+    fn thread_fixture(c: &mut Cpu, r: &mut Rng, frame: u16, speed: i8, end: u16, n: u16) -> (u32, u32) {
+        let screen = DATA;
+        let thread = DATA + 0x80;
+        let list = DATA + 0x100;
+        c.bus.write32(list, 5);
+        let mut at = list + 4;
+        for i in 0..5u32 {
+            let size = 0xc + 4 * n as u32;
+            c.bus.write32(at + 4, size);
+            c.bus.write16(at + 8, i as u16);
+            c.bus.write16(at + 0xa, n);
+            for k in 0..n as u32 {
+                // UIScreen_ThreadNopA/B/C.
+                c.bus.write8(at + 0xc + 4 * k, [0x22u8, 0x31, 0x40][(r.next_u32() % 3) as usize]);
+                c.bus.write16(at + 0xc + 4 * k + 2, 4);
+            }
+            at += size;
+        }
+        c.bus.write32(screen + 0x34, list);
+        c.bus.write16(thread + 0xc, frame);
+        c.bus.write16(thread + 0xe, frame.wrapping_sub(1));
+        c.bus.write16(thread + 0x10, end);
+        c.bus.write8(thread + 0x12, speed as u8);
+        c.g[A0][0] = sx(screen);
+        c.g[A1][0] = sx(thread);
+        (screen, thread)
+    }
+
+    #[test]
+    fn ui_screen_run_thread_frame_matches() {
+        check(ee::s13::f_0039c978__generated, ui_screen_run_thread_frame, 120, &|c, seed| {
+            let mut r = Rng(0x39c9_7800 ^ seed as u64);
+            scramble(c, &mut r);
+            let frame = (seed % 7) as u16;
+            let speed = [1i8, 2, -1, 0][(seed / 7 % 4) as usize];
+            let end = [0xffffu16, 3, 0][(seed / 28 % 3) as usize];
+            thread_fixture(c, &mut r, frame, speed, end, (seed % 3) as u16);
+            // (Entered by a call: the generated body dispatches on pc.)
+            c.pc = 0x0039_c978;
+        });
+        // The fixture runs the body (the frame steps when speed != 0).
+        let mut c = crate::difftest::fresh();
+        thread_fixture(&mut c, &mut Rng(1), 2, 1, 0xffff, 1);
+        c.pc = 0x0039_c978;
+        ui_screen_run_thread_frame(&mut c);
+        assert_eq!((c.bus.read16(DATA + 0x80 + 0xc), c.bus.read16(DATA + 0x80 + 0xe)), (3, 2));
+    }
+
+    /// At 240 Hz a thread steps one frame per four ticks (60 per second),
+    /// at 60 one per tick.
+    #[test]
+    fn ui_screen_run_thread_frame_rate() {
+        for (hz, ticks) in [(60u32, 60u32), (240, 240)] {
+            let mut c = crate::difftest::fresh();
+            let mut r = Rng(0x39c978);
+            crate::tick::set_for_test(&mut c, hz);
+            let app = c.bus.read32(crate::tick::APPMAN_PTR);
+            let (_, thread) = thread_fixture(&mut c, &mut r, 0, 1, 0xffff, 1);
+            for t in 1..=ticks {
+                c.bus.write32(app + crate::tick::APPMAN_VSYNC, t);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(thread);
+                c.g[RA][0] = sx(0x0010_0000);
+                // (Entered by a call, like UIScreen_Update does.)
+                c.pc = 0x0039_c978;
+                ui_screen_run_thread_frame(&mut c);
+            }
+            assert_eq!(c.bus.read16(thread + 0xc), 60, "{hz} Hz");
+        }
+    }
 
     #[test]
     fn uiscreen_find_keyframe_matches() {
