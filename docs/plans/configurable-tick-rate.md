@@ -199,8 +199,6 @@ the two runs are in the sequence.
 
 | System | What is wrong | Evidence |
 | --- | --- | --- |
-| Race start (load/intro) | starts ~2 s earlier in real time at 240 Hz, so the race clock carries a constant offset; the scripted intro/loading timeline is the likely cause | `sheet3` row 3 (00:00:03 vs 00:00:01), `sheet4` |
-| Scripted timelines (attract demo, camera scripts, intros) | the script VM advances one script frame per tick; script durations are already wall-clock seconds, but the script's own clock runs at the tick rate | `tick_ab.py` sheets |
 | Boot memory-card check | the "Checking for memory card" screen ends ~4.5 s early at 240 Hz (its minimum display time counts ticks) | 60 Hz frames 185-460 vs 240 Hz frames 740-1840 of the race replay |
 | Front-end title/attract particles | the title snow flurry runs at the tick rate | `sheet0` rows 1-3 |
 
@@ -220,7 +218,7 @@ refresh/poll/retry/fade/credits timers.
 | --- | --- | --- | --- | --- |
 | 120 | in lockstep (same screen at the same instant) | ~1 s (0:02 vs 0:01 at the start), then constant | tracks within 1 % | 55 vs 55 MPH |
 | 144 | in lockstep | ~1 s, constant | tracks within 1 % | 55 vs 50 MPH (the 144 Hz run is airborne there) |
-| 240 | in lockstep | ~2 s, constant | tracks within 1-2 % (4/6, 7/8, 8/10, 11/12, 13/14, 21/21 %) | 53/55, 47/55, 53/55 MPH |
+| 240 | in lockstep | ~2 s, constant (now 0, see below) | tracks within 1-2 % (4/6, 7/8, 8/10, 11/12, 13/14, 21/21 %) | 53/55, 47/55, 53/55 MPH |
 
 Re-measured after the porting follow-up (`/tmp/ssx3-tick-port-120`,
 `/tmp/ssx3-tick-port-240`): unchanged — 120 Hz clock 0:02 vs 0:01, course 1/3 %
@@ -232,6 +230,24 @@ The remaining start offset is the load/intro (scripted) timeline, see
 "Left for a design decision". The score shown in the HUD differs, but the two
 runs land different tricks (85 Rail vs 50/50 Rail) because a different step is
 a different simulation; it is not a timing quantity.
+
+### Race countdown and script clock (done)
+
+The constant race-clock offset (~1 s at 120, ~2 s at 240) was the start
+countdown, not a script: `RaceStateCountdown_Enter` sets 180 frames at
+`race+0x1c`, `RaceStateCountdown_Update` (0x113d48) took one per tick, so
+"3, 2, 1, GO" took 0.75 s at 240 Hz. It now counts once per `rate / 60` ticks
+of its own (`tick::frame60_due`). `GameStateCountdown_Update` (0x234c68,
+override running the generated body) sounds a start light when the value is
+a multiple of 60; above 60 Hz it runs only when the value changed
+(`tick::value_changed`), so each light sounds once. Measured (`tick_ab.py
+240`): race clock 0:01/0:01, 0:05/0:05, 0:42/0:42, course 2/2 %, 21/22 %.
+
+The script VM's clock follows the rate too: `InSeq_InstanceUpdate`'s
+per-tick `InSeq_InstanceTick` (`pos += speed`, channels advanced to `pos`)
+runs with `speed · 60 / rate` (the instance's own speed restored after,
+and kept on the host for a tick that unwinds), with a rate test. The race
+replay does not show a scripted sequence, so this one is unit-tested only.
 
 ### UI animation and screen scripts (done)
 
@@ -259,7 +275,6 @@ boot memory-card check (above) and the loading/race start.
 
 | Where | What | Why it needs a decision |
 | --- | --- | --- |
-| the script VM (`ScriptEngine_TickProcess` → `InSeq_InstanceUpdate`) | one script frame per tick | `InSeq_InstanceUpdate` (0x274a30) and `ScriptEngine_TickProcess` (0x282450) are hand-written now, so the clock can be converted: either advance `N/60` script frames per tick (a fractional position, or a gate on the VSync counter like `tick::ui_frame_due`) or run the process only on 60 Hz boundaries. This is also the likely cause of the race-start offset (~2 s at 240 Hz). Not done here: the request was to port it keeping one frame per tick and leave the clock for a later wave. |
 | `ChaseCamController_Update` (0x161bb8) blend weights | `w += rate` per update | Classified per caller in `docs/plans/tick/chasecam-callers.tsv`; the two raw per-tick rates are converted at their callers. What remains is `ChaseCamController_SetAlgorithm` (0x15d078), still generated: the node rate is written inside it, so its end-to-end rate test needs that port. Mission/script rates are authored data and stay. |
 | `tick::ui_frame_due` (credits scroll) under catch-up | the gate reads the VSync counter, so several updates queued per VSync advance one 60 Hz frame (average correct, jitter ≤ 1 frame) | Only affects a host slower than the game rate; the 60 Hz path is always true and unchanged. |
 

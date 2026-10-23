@@ -59,7 +59,25 @@ pub fn race_state_freeride_update(c: &mut Cpu) {
 /// `void RaceStateCountdown_Update(AIRaceState *state, AIRaceState *next)`
 /// (0x113d48): tick the countdown at `+0x1c`; when it expires, move the
 /// object in `a1` to race state 5.
+///
+/// The countdown is in 60 Hz frames (`RaceStateCountdown_Enter` sets 180, the
+/// start lights come at multiples of 60, `GameStateCountdown_Update`): above
+/// 60 Hz it counts down once per `rate / 60` ticks (`tick::frame60_due`), so
+/// the start takes 3 s at any rate. Every call counts at 60.
 pub fn race_state_countdown_update(c: &mut Cpu) {
+    let timer = (c.g[A1][0] as u32).wrapping_add(0x1c);
+    let value = c.bus.read32(timer);
+    if (value as i32) > 0 && !crate::tick::frame60_due(c, timer, value) {
+        abi::ret(c);
+        return;
+    }
+    race_state_countdown_step(c);
+    let value = c.bus.read32(timer);
+    crate::tick::frame60_ran(c, timer, value);
+}
+
+/// The step of [`race_state_countdown_update`] (the original).
+fn race_state_countdown_step(c: &mut Cpu) {
     call::guest(c, |c| {
         c.cycles += 6;
         let frame = Frame::open(c, 0x10);
@@ -132,5 +150,24 @@ pub(crate) mod tests {
             c.bus.write32(DATA + 0x1c, countdown);
             c.bus.write32(DATA, 5);
         });
+    }
+
+    /// The countdown (180 frames at 60 Hz) takes 3 s at 60, 120, 144 and
+    /// 240 Hz: 180 decrements in `3 * rate` ticks.
+    #[test]
+    fn race_state_countdown_update_rate() {
+        for hz in [60u32, 120, 144, 240] {
+            let mut c = crate::difftest::fresh();
+            crate::tick::set_for_test(&mut c, hz);
+            c.bus.write32(DATA, 4);
+            c.bus.write32(DATA + 0x1c, 180);
+            for _ in 0..3 * hz {
+                c.g[A1][0] = DATA as u64;
+                c.g[RA][0] = crate::difftest::RA as u64;
+                c.pc = 0x0011_3d48;
+                race_state_countdown_update(&mut c);
+            }
+            assert_eq!(c.bus.read32(DATA + 0x1c), 0, "{hz} Hz");
+        }
     }
 }

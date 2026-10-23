@@ -352,6 +352,27 @@ pub fn frame60_due(c: &mut Cpu, key: u32, frame: u32) -> bool {
     })
 }
 
+/// Whether a counter at `key` holds a different value than at the last call
+/// (always at 60). For code that reacts to a 60 Hz frame counter each tick
+/// (e.g. `value % 60 == 0`): when the counter steps once per 60 Hz frame
+/// ([`frame60_due`]), the reaction must run once per value, not once per
+/// tick.
+pub fn value_changed(c: &mut Cpu, key: u32, value: u32) -> bool {
+    if rate(c) == 60 {
+        return true;
+    }
+    thread_local! {
+        static SEEN: std::cell::RefCell<std::collections::HashMap<u32, u32>> = Default::default();
+    }
+    SEEN.with(|m| {
+        let mut m = m.borrow_mut();
+        if m.len() > 1024 {
+            m.clear();
+        }
+        m.insert(key, value) != Some(value)
+    })
+}
+
 /// After a [`frame60_due`] step: the frame the object was left at.
 pub fn frame60_ran(c: &mut Cpu, key: u32, frame: u32) {
     if rate(c) == 60 {

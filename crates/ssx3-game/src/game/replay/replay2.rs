@@ -4734,6 +4734,61 @@ pub(crate) fn pa(a: u64, off: u32) -> u32 {
 
 
 
+/// The speeds [`script_speed_for_rate`] wrote: instance → (its own speed,
+/// the speed written for the tick).
+struct ScriptSpeed {
+    speed: u32,
+    tick_speed: u32,
+}
+
+thread_local! {
+    static SCRIPT_SPEEDS: std::cell::RefCell<std::collections::HashMap<u32, ScriptSpeed>> = Default::default();
+}
+
+/// Script time follows the tick rate: the per-tick advance of a sequence
+/// (`InSeq_InstanceTick`: `pos += speed`, the channels advanced to `pos`) is
+/// authored in 60 Hz frames, so above 60 the tick runs with `speed · 60 /
+/// rate` in `+0x24` (the seek above does the same with its partial steps).
+/// Returns the instance's own speed and the one written, for
+/// [`script_speed_restore`]; `None` at 60, where nothing changes.
+///
+/// The instance's own speed is also kept here: if the tick unwinds (the
+/// generated code resumes after it, without the restore), the next tick
+/// finds the written speed still in place and takes the kept one.
+fn script_speed_for_rate(c: &mut Cpu, this: u32) -> Option<(u32, u32)> {
+    let r = crate::tick::rate(c);
+    if r == 60 {
+        return None;
+    }
+    let at = this.wrapping_add(0x24);
+    let now = c.bus.read32(at);
+    let speed = SCRIPT_SPEEDS.with(|m| match m.borrow().get(&this) {
+        Some(k) if k.tick_speed == now => k.speed,
+        _ => now,
+    });
+    let tick_speed = (f32::from_bits(speed) * 60.0 / r as f32).to_bits();
+    c.bus.write32(at, tick_speed);
+    SCRIPT_SPEEDS.with(|m| {
+        let mut m = m.borrow_mut();
+        if m.len() > 1024 {
+            m.clear();
+        }
+        m.insert(this, ScriptSpeed { speed, tick_speed });
+    });
+    Some((speed, tick_speed))
+}
+
+/// After the tick: the instance's own speed back, unless the tick set a new
+/// one (a script command).
+fn script_speed_restore(c: &mut Cpu, this: u32, speed: u32, tick_speed: u32) {
+    let at = this.wrapping_add(0x24);
+    if c.bus.read32(at) == tick_speed {
+        c.bus.write32(at, speed);
+    }
+    SCRIPT_SPEEDS.with(|m| m.borrow_mut().remove(&this));
+}
+
+
 /// `void InSeq_InstanceUpdate(InSeq_Instance* self)` (0x274a30): apply a
 /// pending seek (`+0x34`) or a step count (`+0x38`), else advance exactly one
 /// script frame; keeps the short step budget (`+0x2c`) and pauses when it runs
@@ -4947,7 +5002,11 @@ pub fn in_seq_instance_update(c: &mut Cpu) {
         if c.g[S2][0] != 0 {
             c.cycles += 3;
             c.g[A0][0] = c.g[S0][0];
+            let scaled = script_speed_for_rate(c, this as u32);
             callee::TICK.call(c, 0x0027_4be8)?;
+            if let Some((speed, tick_speed)) = scaled {
+                script_speed_restore(c, this as u32, speed, tick_speed);
+            }
         }
         c.lq(S0, frame.at(c, 0x40));
         // 0x274bec
@@ -6616,5 +6675,37 @@ pub(crate) mod tests {
         check(ee::s07::f_00274a30__generated, in_seq_instance_update, 24, &|c, seed| {
             fixture(c, seed);
         });
+    }
+
+    /// A playing sequence (speed 1, then 0.5) moves the same script time per
+    /// second at 60, 120, 144 and 240 Hz, and keeps its own speed.
+    #[test]
+    fn in_seq_instance_update_rate() {
+        for speed in [1.0f32, 0.5] {
+            for hz in [60u32, 120, 144, 240] {
+                let mut c = crate::difftest::fresh();
+                fixture(&mut c, 2);
+                crate::tick::set_for_test(&mut c, hz);
+                let obj = DATA + 0x1000;
+                c.bus.write32(obj + 0x1c, 1);
+                c.bus.write32(obj + 0x20, 3);
+                c.bus.write32(obj + 0x24, speed.to_bits());
+                c.bus.write32(obj + 0x28, 0);
+                c.bus.write32(obj + 0x2c, 0);
+                c.bus.write32(obj + 0x30, 1000);
+                c.bus.write32(obj + 0x34, 0xffff_ffff);
+                c.bus.write32(obj + 0x38, 0);
+                for _ in 0..hz {
+                    c.g[A0][0] = obj as u64;
+                    c.g[RA][0] = SENTINEL_RA as u64;
+                    c.pc = 0x0027_4a30;
+                    in_seq_instance_update(&mut c);
+                    assert_eq!(c.pc, SENTINEL_RA, "{hz} Hz returned");
+                }
+                let pos = f32::from_bits(c.bus.read32(obj + 0x28));
+                assert!((pos - 60.0 * speed).abs() < 0.01, "{hz} Hz speed {speed}: pos {pos}");
+                assert_eq!(f32::from_bits(c.bus.read32(obj + 0x24)), speed, "{hz} Hz keeps its speed");
+            }
+        }
     }
 }

@@ -5312,5 +5312,6 @@
 0x0018ca10    cFEStateOptionsController_OnWidgetAction
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
-# tick rate: screen-script frames on 60 Hz boundaries
+# tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights)
 0x0039c978    UIScreen_RunThreadFrame
+0x00234c68    GameStateCountdown_Update

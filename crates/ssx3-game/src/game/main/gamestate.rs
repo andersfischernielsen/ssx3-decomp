@@ -63,6 +63,7 @@ pub(crate) use crate::game::be::belibrary::lb;
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0023_4be8, game_state_play_script_event, "GameState_PlayScriptEvent"),
+    (0x0023_4c68, game_state_countdown_update, "GameStateCountdown_Update"),
     (0x0023_4e20, game_state_race_enter, "GameStateRace_Enter"),
     (0x0023_4ef8, game_state_reset_ctor, "GameStateReset_ctor"),
     (0x0023_5570, game_state_reset_overlay_exit, "GameStateReset_OverlayExit"),
@@ -1845,6 +1846,30 @@ pub fn input_sync_is_ready(c: &mut Cpu) {
 }
 
 
+/// `void GameStateCountdown_Update(GameState* g)` (0x234c68): while the race
+/// countdown (`world->race->+0x1c`, 60 Hz frames, `RaceStateCountdown_Update`)
+/// runs, sound a start light at each multiple of 60; when it is out, open
+/// the gate (script event, HUD, audio) and go to the next state.
+///
+/// Above 60 Hz the countdown holds each value for `rate / 60` ticks, so the
+/// body runs only when the value changed (or is out): a light per value, not
+/// per tick. With a positive countdown the body does nothing else (getters
+/// and the light). Every call runs the original at 60.
+pub fn game_state_countdown_update(c: &mut Cpu) {
+    let world = c.bus.read32((c.g[GP][0] as u32).wrapping_sub(0x488));
+    let race = if world == 0 { 0 } else { c.bus.read32(world.wrapping_add(0xc)) };
+    if race != 0 {
+        let timer = race.wrapping_add(0x1c);
+        let value = c.bus.read32(timer);
+        if !crate::tick::value_changed(c, timer, value) && (value as i32) > 0 {
+            abi::ret(c);
+            return;
+        }
+    }
+    ee::s06::f_00234c68__generated(c);
+}
+
+
 /// `void GameState_PlayScriptEvent(GameState* g, UStr* name)`
 /// (0x00234be8): resolve the current track's world section and call the
 /// script function it names, when the table has it.
@@ -2691,6 +2716,32 @@ pub fn inputsync_apply_input(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    /// Above 60 Hz the countdown's light check runs once per countdown value:
+    /// a repeated positive value returns at once (nothing read past the
+    /// counter, no cycles), a new one runs the body.
+    #[test]
+    fn game_state_countdown_update_once_per_value() {
+        let mut c = crate::difftest::fresh();
+        crate::tick::set_for_test(&mut c, 240);
+        c.g[GP][0] = GAME_GP as u64;
+        let world = DATA;
+        let race = DATA + 0x100;
+        c.bus.write32(GAME_GP - 0x488, world);
+        c.bus.write32(world + 0xc, race);
+        c.bus.write32(race + 0x1c, 120);
+        // The first sight of a value runs the body; mark it as seen without
+        // running it (this test's world is not a game).
+        assert!(crate::tick::value_changed(&mut c, race + 0x1c, 120));
+        let cycles = c.cycles;
+        c.g[RA][0] = crate::difftest::RA as u64;
+        c.pc = 0x0023_4c68;
+        game_state_countdown_update(&mut c);
+        assert_eq!((c.pc, c.cycles), (crate::difftest::RA, cycles));
+        assert!(crate::tick::value_changed(&mut c, race + 0x1c, 119));
+        crate::tick::set_for_test(&mut c, 60);
+        assert!(crate::tick::value_changed(&mut c, race + 0x1c, 119), "always at 60");
+    }
     use crate::difftest::check;
     use crate::difftest::check_lohi;
     use crate::difftest::check_paths;
