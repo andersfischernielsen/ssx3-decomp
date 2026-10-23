@@ -20,6 +20,7 @@
 use crate::call::{call_ptr, guest, tail_wrapper, Callee, Frame, Target, VSlot};
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
+use crate::game::ai::rider::rate_step_60;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
@@ -660,11 +661,13 @@ pub fn rider_clear_nearby_lights(c: &mut Cpu) {
 
 /// `Rider_SetAnimTimeScale(rider, target /*f12*/)` (0x120090): slew the
 /// rubber-band time scale toward `target` by at most 0.05/60 per call
-/// (CPU riders' catch-up). Leaf.
+/// (CPU riders' catch-up; at another rate a call's step is `60/rate` of that,
+/// so the slew takes the same wall-clock time). Leaf.
 pub fn rider_set_anim_time_scale(c: &mut Cpu) {
     c.cycles += 7;
     let rider = c.g[A0][0] as u32;
-    let step = Addr(gp_minus(c, gp::TIME_SCALE_STEP_NEG)).read_fpu(c);
+    let raw = Addr(gp_minus(c, gp::TIME_SCALE_STEP_NEG)).read_fpu(c);
+    let step = rate_step_60(c, raw);
     let scale = Addr(rider.wrapping_add(rider::TIME_SCALE));
     let cur = scale.read_fpu(c);
     let target = FpuF32(c.f[12]);
@@ -1387,6 +1390,40 @@ mod tests {
             };
             c.bus.write32(p + 0x300, cur);
         });
+    }
+
+    /// `Rider_SetAnimTimeScale` (0x120090) slews by 0.000833 **per call**
+    /// (gp-0x795c, 0.05/s at 60 Hz): half a second of calls must reach the same
+    /// time scale at 120/240 Hz, so the rubber-band catch-up keeps its timing.
+    #[test]
+    fn rider_set_anim_time_scale_follows_the_rate() {
+        use crate::tick;
+        // The game's step at gp-0x795c (0.0008333333).
+        const STEP_60: u32 = 0x3a5a_740f;
+        let scale = |hz: u32, ticks: u32| -> f32 {
+            let mut c = fresh();
+            c.g[GP][0] = GAME_GP as u64;
+            let p = 0x0080_0000u32;
+            c.g[A0][0] = p as u64;
+            c.bus.write32(p + 0x300, 1.0f32.to_bits()); // the time scale
+            c.bus.write32(GAME_GP.wrapping_sub(0x795c), STEP_60);
+            tick::set_for_test(&mut c, hz);
+            for _ in 0..ticks {
+                c.f[12] = 1.1f32.to_bits(); // the target (above the band)
+                super::rider_set_anim_time_scale(&mut c);
+            }
+            f32::from_bits(c.bus.read32(p + 0x300))
+        };
+        // 30 ticks at 60 Hz = 0.025 up from 1.0.
+        let at_60 = scale(60, 30);
+        assert!((at_60 - 1.025).abs() < 1e-4, "{at_60}");
+        for hz in [120u32, 240] {
+            let at = scale(hz, 30 * hz / 60);
+            assert!(
+                (at - at_60).abs() < 1e-5,
+                "{hz} Hz: {at} after half a second, 60 Hz: {at_60}"
+            );
+        }
     }
 
     #[test]

@@ -19,6 +19,7 @@ use crate::abi;
 use crate::call::{call_ptr, guest, Callee, Frame};
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
+use crate::game::ai::rider::{rate_step_60, smoothing_60};
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
@@ -749,7 +750,9 @@ pub fn rider_set_slew3_and4_targets(c: &mut Cpu) {
         c.f[0] = cur.0;
         if !c_eq_s(c, cur, zero) {
             c.cycles += 4;
-            let step = gp_float(c, 0x7c20);
+            // 0.04166 per tick at 60 Hz: a fixed per-tick step.
+            let raw = gp_float(c, 0x7c20);
+            let step = rate_step_60(c, raw);
             swc1(c, rider, slew::BRAKE + slew::TARGET, zero);
             swc1(c, rider, slew::BRAKE + slew::MAX_STEP, step);
             c.f[0] = step.0;
@@ -764,7 +767,9 @@ pub fn rider_set_slew3_and4_targets(c: &mut Cpu) {
         c.cycles += 3;
         if !c_eq_s(c, crouch_cur, zero) {
             c.cycles += 4;
-            let step = gp_float(c, 0x7c1c);
+            // 0.1 per tick at 60 Hz: a fixed per-tick step.
+            let raw = gp_float(c, 0x7c1c);
+            let step = rate_step_60(c, raw);
             swc1(c, rider, slew::CROUCH + slew::TARGET, zero);
             swc1(c, rider, slew::CROUCH + slew::MAX_STEP, step);
             c.f[0] = step.0;
@@ -786,12 +791,21 @@ pub fn rider_set_slew3_and4_targets(c: &mut Cpu) {
     c.cycles += 5;
     let threshold = gp_float(c, 0x7c18);
     let dist = delta.abs();
+    // The crouch's step is `a · max(dist, 0.1)` per tick (a = 0.1000018): at
+    // another rate the fraction is `1 - (1-a)^(60/rate)` and the floor follows
+    // it (the game's floor is a·0.1). At 60 both entries are used unchanged.
+    let raw = gp_float(c, 0x7c14);
+    let a = smoothing_60(c, raw);
     let step = if c_le_s(c, threshold, dist) {
         c.cycles += 3;
-        dist * gp_float(c, 0x7c14)
+        dist * a
     } else {
         c.cycles += 1;
-        gp_float(c, 0x7c10)
+        if crate::tick::rate(c) == 60 {
+            gp_float(c, 0x7c10)
+        } else {
+            a * threshold
+        }
     };
     c.f[1] = threshold.0;
     c.f[2] = dist.0;
@@ -873,7 +887,9 @@ pub fn rider_set_slew3_and4_targets(c: &mut Cpu) {
         amount = dist.min(FpuF32::ONE);
     }
     c.cycles += 5;
-    let k = gp_float(c, 0x7c00);
+    // `clamp(|Δ|, 0.1, 1) · k` per tick: the fraction follows the rate.
+    let raw = gp_float(c, 0x7c00);
+    let k = smoothing_60(c, raw);
     swc1(c, rider, slew::BRAKE + slew::TARGET, brake);
     let step = amount * k;
     swc1(c, rider, slew::BRAKE + slew::MAX_STEP, step);
@@ -1198,6 +1214,10 @@ pub fn rider_handle_boost_input(c: &mut Cpu) {
                             c.cycles += 5;
                             let meter = lwc1(c, rider, rider::BOOST_METER);
                             let drain = gp_float(c, 0x7bf4);
+                            // 0.0015068 per tick at 60 Hz (~11 s from full):
+                            // the meter lasts the same wall-clock time at any
+                            // rate (f1 keeps the per-tick amount, as at 60).
+                            let drain = rate_step_60(c, drain);
                             c.f[1] = drain.0;
                             let left = meter - drain;
                             c.f[0] = left.0;
@@ -1686,6 +1706,77 @@ mod tests {
         check(ssx3_ee::s00::f_00113f88, super::rider_set_slew3_and4_targets, 3000, &|c, seed| slew_setup(c, seed));
     }
 
+    /// `Rider_SetCrouchBrakeTargets`'s (0x113f88) slew steps are per tick: the
+    /// approach fractions (`dist · a` for the crouch, `clamp(|Δ|, 0.1, 1) · k`
+    /// for the brake) become `1 - (1-a)^(60/rate)`, and the two fixed "clear
+    /// the other slew" steps `a · 60/rate`, so both slews move the same amount
+    /// per second at any rate. At 60 the loaded entries are used unchanged.
+    #[test]
+    fn set_slew3_and4_targets_follows_the_rate() {
+        use crate::tick;
+        // The game's entries: crouch fraction, its floor (a·0.1), brake
+        // fraction, 0.1.
+        const A: u32 = 0x3dcc_cdc2; // 0.100001827
+        const FLOOR: u32 = 0x3c23_d7cf; // 0.010000183
+        const K: u32 = 0x3d2a_a635; // 0.0416624136
+        const TENTH: u32 = 0x3dcc_cccd;
+        const MINUS_TENTH: u32 = 0xbdcc_cccd;
+        // The crouch (`+0x220`) and brake (`+0x214`) `maxStep` the function
+        // writes for a crouch request, a brake request, and the two "clear the
+        // other slew" cases.
+        let steps = |hz: u32, crouch: f32, brake: f32, crouch_cur: f32, brake_cur: f32| -> (u32, u32) {
+            let mut c = fresh();
+            c.g[GP][0] = GAME_GP as u64;
+            let p = 0x0080_0000u32;
+            c.g[A0][0] = p as u64;
+            c.bus.write32(p + 0x1f0, 0); // slew #0 (steer) cur
+            c.bus.write32(p + 0x214, brake_cur.to_bits());
+            c.bus.write32(p + 0x220, crouch_cur.to_bits());
+            for (off, bits) in [
+                (0x7c20u32, K),
+                (0x7c1c, A),
+                (0x7c18, TENTH),
+                (0x7c14, A),
+                (0x7c10, FLOOR),
+                (0x7c0c, TENTH),
+                (0x7c08, MINUS_TENTH),
+                (0x7c04, TENTH),
+                (0x7c00, K),
+            ] {
+                c.bus.write32(GAME_GP.wrapping_sub(off), bits);
+            }
+            c.f[12] = crouch.to_bits();
+            c.f[13] = brake.to_bits();
+            tick::set_for_test(&mut c, hz);
+            super::rider_set_slew3_and4_targets(&mut c);
+            (c.bus.read32(p + 0x224), c.bus.read32(p + 0x218))
+        };
+        // 60 Hz: the entries as stored.
+        assert_eq!(steps(60, 1.0, 0.0, 0.0, 0.0).0, A, "crouch step");
+        assert_eq!(steps(60, 0.0, 1.0, 0.0, 0.0).1, K, "brake step");
+        assert_eq!(steps(60, 1.0, 0.0, 0.0, 0.5).1, K, "clear brake");
+        assert_eq!(steps(60, 0.0, 1.0, 0.5, 0.0).0, A, "clear crouch");
+        for hz in [120u32, 240] {
+            let frac = 60.0f32 / hz as f32;
+            let a = 1.0f32 - (1.0f32 - f32::from_bits(A)).powf(frac);
+            let k = 1.0f32 - (1.0f32 - f32::from_bits(K)).powf(frac);
+            let crouch = f32::from_bits(steps(hz, 1.0, 0.0, 0.0, 0.0).0);
+            assert!((crouch - a).abs() < 1e-7, "{hz} Hz crouch {crouch}, want {a}");
+            let brake = f32::from_bits(steps(hz, 0.0, 1.0, 0.0, 0.0).1);
+            assert!((brake - k).abs() < 1e-7, "{hz} Hz brake {brake}, want {k}");
+            assert_eq!(
+                steps(hz, 1.0, 0.0, 0.0, 0.5).1,
+                (f32::from_bits(K) * frac).to_bits(),
+                "{hz} Hz clear brake"
+            );
+            assert_eq!(
+                steps(hz, 0.0, 1.0, 0.5, 0.0).0,
+                (f32::from_bits(A) * frac).to_bits(),
+                "{hz} Hz clear crouch"
+            );
+        }
+    }
+
     fn slew_setup(c: &mut Cpu, seed: u32) {
         let mut r = machine(c, seed, 0x18, 0);
         let p = slew_rider(c, &mut r, seed);
@@ -1803,6 +1894,46 @@ mod tests {
             c.g[A1][0] = if seed % 4 == 0 { 0 } else { r.next_u32() as u64 | 1 };
             c.g[A2][0] = if seed % 5 < 2 { 0 } else { r.next_u32() as u64 | 1 };
         });
+    }
+
+    /// The boost meter drain (`Rider_HandleBoostInput`, 0x114130; the load and
+    /// subtract at 0x114220/0x114224) is 0.0015068 **per tick**: a full meter
+    /// must last the same wall-clock time at any rate, so a second of ticks
+    /// drains the same amount at 60, 120 and 240 Hz.
+    #[test]
+    fn handle_boost_input_drain_follows_the_rate() {
+        use crate::tick;
+        // The game's drain at gp-0x7bf4 (0.00150679936632514).
+        const DRAIN_60: u32 = 0x3ac5_7fcc;
+        let drained = |hz: u32, ticks: u32| -> f32 {
+            let mut c = fresh();
+            let mut r = machine(&mut c, 0, 0x1c, 0);
+            let p = boost_rider(&mut c, &mut r, 0);
+            // A full meter, no power-up boost, boost mode 1, uber level 0.
+            c.bus.write32(p + 0x2f8, 1.0f32.to_bits());
+            c.bus.write32(p + 0x2e8, 0);
+            c.bus.write32(p + 0x2f4, 0);
+            c.bus.write32(p + 0x304, 1);
+            c.bus.write32(GAME_GP.wrapping_sub(0x7bf4), DRAIN_60);
+            c.g[A0][0] = p as u64;
+            c.g[A1][0] = 1; // held
+            c.g[A2][0] = 0; // not pressed
+            tick::set_for_test(&mut c, hz);
+            for _ in 0..ticks {
+                super::rider_handle_boost_input(&mut c);
+            }
+            1.0 - f32::from_bits(c.bus.read32(p + 0x2f8))
+        };
+        // Half a second of ticks: 30 ticks of the 60 Hz drain.
+        let at_60 = drained(60, 30);
+        assert!((at_60 - 30.0 * 0.0015068).abs() < 1e-5, "{at_60}");
+        for hz in [120u32, 240] {
+            let at = drained(hz, 30 * hz / 60);
+            assert!(
+                (at - at_60).abs() < 1e-5,
+                "{hz} Hz drained {at} in half a second, 60 Hz {at_60}"
+            );
+        }
     }
 
     #[test]

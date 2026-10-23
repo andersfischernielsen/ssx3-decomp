@@ -8,6 +8,7 @@ use crate::call::VSlot;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 use crate::guest::Addr;
+use crate::tick;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -920,7 +921,19 @@ pub fn ov_screen_session_update(c: &mut Cpu) {
                             } else {
                                 c.cycles += 4;
                                 c.lwc1(0, r32(c, GP).wrapping_sub(0x5504));
-                                c.add_s(0, 1, 0);
+                                // The fade step (0.1 at `gp-0x5504`) is one
+                                // authored 60 Hz frame's worth of alpha; at a
+                                // higher tick rate scale it so the fade still
+                                // takes ten frames of wall time.
+                                let r = tick::rate(c);
+                                if r == 60 {
+                                    c.add_s(0, 1, 0);
+                                } else {
+                                    c.g[AT][0] = (60.0f32 / r as f32).to_bits() as u64;
+                                    c.mtc1(AT, 2);
+                                    c.mul_s(0, 0, 2);
+                                    c.add_s(0, 1, 0);
+                                }
                                 c.swc1(0, at(c, S0, 0xcc));
                                 c.g[A0][0] = lw_3(c, at(c, S0, 0xd0));
                                 break 'b_2093dc;
@@ -1702,6 +1715,67 @@ pub(crate) mod tests {
                                                             // the icon positions.
             },
         );
+    }
+
+
+    // ------------------------------------------------------ rate: image fade
+
+    /// A callee outside the translated code: answer null and return at once.
+    /// The rate test below only looks at the fade value.
+    fn no_callee(c: &mut Cpu, _target: u32) {
+        c.g[V0][0] = 0;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+
+    /// `OVScreenSession_Update` (0x209370) at rate `hz` for `updates` updates
+    /// with the session image loaded and the fade starting at 0, the VSync
+    /// counter running from 1: the fade value afterwards.
+    fn session_fade(hz: u32, updates: u32) -> f32 {
+        let mut c = crate::difftest::fresh();
+        let _ = base(&mut c, 0, 0x2093_70, 0);
+        c.hooks.miss = no_callee;
+        crate::tick::set_for_test(&mut c, hz);
+        let app = c.bus.read32(crate::tick::APPMAN_PTR);
+        // The fade step is the game's 0.1 at gp-0x5504.
+        c.bus.write32((c.g[GP][0] as u32).wrapping_sub(0x5504), 0.1f32.to_bits());
+        c.bus.write32(SESSION + 0xdc, 0); // not busy
+        c.bus.write32(SESSION + 0xc8, 1); // image loaded
+        c.bus.write32(SESSION + 0xcc, 0); // fade
+        c.bus.write32(SESSION + 0xd0, SESSION_IMG);
+        c.bus.write32(SESSION + 0xc4, 0); // async slot
+        for i in 0..updates {
+            c.bus.write32(app + 0x18, 1 + i);
+            c.g[A0][0] = sx(SESSION);
+            ov_screen_session_update(&mut c);
+            assert_eq!(c.pc, crate::difftest::RA, "the update did not return");
+        }
+        f32::from_bits(c.bus.read32(SESSION + 0xcc))
+    }
+
+
+    /// The image fade adds one authored 60 Hz frame's worth of alpha (0.1) per
+    /// 60 Hz boundary, so it takes the same wall-clock time at every rate: one
+    /// update at 60 Hz, two at 120 and four at 240 give the same fade.
+    #[test]
+    fn ov_screen_session_fade_follows_the_rate() {
+        let one = session_fade(60, 1);
+        assert!((one - 0.1).abs() < 1e-6, "one 60 Hz frame: {one}");
+        for (hz, mul) in [(120u32, 2u32), (240, 4)] {
+            let f = session_fade(hz, mul);
+            assert!((f - one).abs() < 1e-6, "{hz} Hz, one frame: {f} vs {one}");
+        }
+        // Five frames (0.5) and nine frames (0.9) agree the same way.
+        for frames in [5u32, 9] {
+            let at60 = session_fade(60, frames);
+            for (hz, mul) in [(120u32, 2u32), (240, 4)] {
+                let f = session_fade(hz, frames * mul);
+                assert!(
+                    (f - at60).abs() < 1e-5,
+                    "{hz} Hz, {frames} frames: {f} vs {at60}"
+                );
+            }
+        }
     }
 
 

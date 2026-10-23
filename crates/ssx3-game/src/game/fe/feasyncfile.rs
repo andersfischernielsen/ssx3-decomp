@@ -15,6 +15,7 @@ use crate::call::VSlot;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 use crate::ps2f::FpuF32;
+use crate::tick;
 use ssx3_ee as ee;
 use crate::abi::r32;
 use crate::call::Flow;
@@ -5040,9 +5041,15 @@ pub fn fe_state_create_step2_ctor(c: &mut Cpu) {
 }
 
 
+/// The quick-play popup's retry interval: 30 frames (0.5 s at 60 Hz). The
+/// countdown consumes one tick per update, so the value reloaded is the
+/// interval in ticks.
+const QUICK_PLAY_RETRY_FRAMES: u32 = 30;
+
+
 /// `void cFEStateNetQuickPlayPopup_Update(self)` (0x1c1038): count the
-/// popup's timeout down (wrapping to 30) while it is armed, then run the net
-/// front-end state update.
+/// popup's timeout down (reloading the interval when it passes 0) while it is
+/// armed, then run the net front-end state update.
 pub fn fe_state_net_quick_play_popup_update(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 5;
@@ -5058,7 +5065,7 @@ pub fn fe_state_net_quick_play_popup_update(c: &mut Cpu) {
             sw(c, r32(c, A0), 0x6e8, c.g[V0][0]);
             if !nonzero {
                 c.cycles += 2;
-                c.g[V0][0] = 0x1e;
+                c.g[V0][0] = tick::ticks_from_frames60(c, QUICK_PLAY_RETRY_FRAMES) as u64;
                 sw(c, r32(c, A0), 0x6e8, c.g[V0][0]);
             }
         }
@@ -5667,13 +5674,19 @@ pub fn c_fe_state_online_character_select_on_child_event(c: &mut Cpu) {
 }
 
 
-/// `void cFEStateChatRoom_Update(self)` (0x1b2320): every 10000th tick update
-/// the player quality, then run the net state's update.
+/// The chat room's player-quality poll period: 10000 frames (166.7 s at
+/// 60 Hz). The divisor is applied to the VSync counter `cAppMan+0x18`, so at
+/// 120 Hz it is 20000 VSyncs.
+const CHAT_ROOM_POLL_FRAMES: u32 = 10000;
+
+
+/// `void cFEStateChatRoom_Update(self)` (0x1b2320): every 10000th VSync
+/// update the player quality, then run the net state's update.
 pub fn c_fe_state_chat_room_update(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 8;
         let frame = Frame::open(c, 0x20);
-        c.g[V1][0] = 0x2710;
+        c.g[V1][0] = tick::ticks_from_frames60(c, CHAT_ROOM_POLL_FRAMES) as u64;
         frame.save(c, S0, 0x10);
         frame.save_ra(c, 0);
         c.g[S0][0] = c.g[A0][0];
@@ -6440,9 +6453,20 @@ pub(crate) fn lw_3(c: &mut Cpu, a: u32) -> u64 {
 // ---------------------------------------------------------------------------
 // Front-end state: net messenger.
 
+/// The messenger's player-list refresh period: one second, i.e. 60 frames of
+/// the VSync counter (`cAppMan+0x18`, bumped once per VSync). The update
+/// compares `elapsed - 1 < 59`, i.e. refreshes once `elapsed` reaches the
+/// period.
+const NET_MESSENGER_REFRESH_FRAMES: u32 = 60;
+
+
 /// `void cFEStateNetMessenger_Update(self)` (0x1a3fe0): refresh the player
 /// list when a second has passed since the last refresh, then poll the net
 /// state.
+///
+/// `now` and the remembered `self+0x6dc` are both counts of the VSync counter,
+/// so the threshold is the seconds' worth of VSyncs, not 60 ticks: at 120 Hz
+/// the list refreshes every 120 VSyncs.
 pub fn fe_state_net_messenger_update(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 12;
@@ -6455,7 +6479,8 @@ pub fn fe_state_net_messenger_update(c: &mut Cpu) {
         c.g[V1][0] = lw_3(c, p_5(c.g[V1][0], 0x18));
         c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
         c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
-        c.g[V0][0] = (c.g[V0][0] < 0x3bu64) as u64;
+        let period = tick::ticks_from_frames60(c, NET_MESSENGER_REFRESH_FRAMES) as u64;
+        c.g[V0][0] = (c.g[V0][0] < period - 1) as u64;
         if c.g[V0][0] == 0 {
             c.cycles += 5;
             Addr(p_5(c.g[S0][0], 0x6dc)).sw(c, c.g[V1][0]);
@@ -20676,6 +20701,134 @@ pub(crate) mod tests {
             );
             c.g[A0][0] = sx(s);
         });
+    }
+
+
+    // ------------------------------------------------- rate: front-end timers
+
+    /// A callee outside the translated code: answer null and return at once.
+    /// The rate tests below only look at their timer, so callee results and
+    /// the arguments passed to them do not matter.
+    fn no_callee(c: &mut Cpu, _target: u32) {
+        c.g[V0][0] = 0;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+
+    /// The app manager at rate `hz` with its VSync counter at `now`, installed
+    /// both where `tick::rate` reads it (`tick::APPMAN_PTR`) and where the game
+    /// reads it (`gp+0x2a74`, the same `D_004A5B64`).
+    fn app_manager(c: &mut Cpu, hz: u32, now: u32) -> u32 {
+        crate::tick::set_for_test(c, hz);
+        let app = c.bus.read32(crate::tick::APPMAN_PTR);
+        c.bus.write32(app + 0x18, now);
+        c.bus.write32(GAME_GP.wrapping_add(0x2a74), app);
+        app
+    }
+
+
+    /// `cFEStateNetMessenger_Update` (0x1a3fe0) at rate `hz` with the last
+    /// refresh `elapsed` VSyncs ago: true when it refreshed. The refresh path
+    /// stores the current VSync count at `self+0x6dc`, the wait path leaves it.
+    fn messenger_refreshes(hz: u32, elapsed: u32) -> bool {
+        const NOW: u32 = 5_000_000;
+        let mut c = crate::difftest::fresh();
+        let _ = base_2(&mut c, 0, 0x1a3f_e0);
+        c.hooks.miss = no_callee;
+        app_manager(&mut c, hz, NOW);
+        let s = DATA + 0x100;
+        clear_4(&mut c, s, 0x800);
+        c.bus.write32(s + 0x6dc, NOW - elapsed);
+        c.g[A0][0] = sx(s);
+        fe_state_net_messenger_update(&mut c);
+        assert_eq!(c.pc, crate::difftest::RA, "the update did not return");
+        c.bus.read32(s + 0x6dc) == NOW
+    }
+
+
+    /// The player-list refresh is a one-second period of the VSync counter:
+    /// 60 VSyncs at 60 Hz, 120 at 120, 240 at 240.
+    #[test]
+    fn fe_state_net_messenger_refresh_follows_the_rate() {
+        for (hz, period) in [(60u32, 60u32), (120, 120), (240, 240)] {
+            assert!(
+                !messenger_refreshes(hz, period - 1),
+                "{hz} Hz: refreshed one VSync early"
+            );
+            assert!(messenger_refreshes(hz, period), "{hz} Hz: did not refresh");
+        }
+        // 60 VSyncs are one second only at 60 Hz: at 120 the list waits on.
+        assert!(!messenger_refreshes(120, 60));
+    }
+
+
+    /// `cFEStateChatRoom_Update` (0x1b2320) at rate `hz` with the VSync counter
+    /// at `now`: true when it ran the player-quality poll (0x1b3bf0), which is
+    /// the only thing the `% period` branch adds.
+    fn chat_room_polls(hz: u32, now: u32) -> bool {
+        let mut c = crate::difftest::fresh();
+        let _ = common(&mut c, 0, 0x1b_2320, 0);
+        c.hooks.miss = no_callee;
+        app_manager(&mut c, hz, now);
+        let this = DATA + 0x100;
+        clear_4(&mut c, this, 0x400);
+        c.g[A0][0] = sx(this);
+        ssx3_ee_rt::prof::trace::start();
+        c_fe_state_chat_room_update(&mut c);
+        let calls = ssx3_ee_rt::prof::trace::take();
+        assert_eq!(c.pc, crate::difftest::RA, "the update did not return");
+        calls.iter().any(|k| k[0] == 0x001b_3bf0)
+    }
+
+
+    /// The player-quality poll runs every 10000 frames of the VSync counter:
+    /// every 10000 VSyncs at 60 Hz, 20000 at 120, 40000 at 240.
+    #[test]
+    fn c_fe_state_chat_room_poll_follows_the_rate() {
+        for (hz, period) in [(60u32, 10_000u32), (120, 20_000), (240, 40_000)] {
+            assert!(chat_room_polls(hz, period), "{hz} Hz: no poll at {period}");
+            assert!(chat_room_polls(hz, 3 * period), "{hz} Hz: no poll at 3 x {period}");
+            assert!(!chat_room_polls(hz, period - 1), "{hz} Hz: poll just before");
+            assert!(
+                !chat_room_polls(hz, period + period / 2),
+                "{hz} Hz: poll half a period late"
+            );
+        }
+        // 10000 VSyncs are the period only at 60 Hz.
+        assert!(!chat_room_polls(120, 10_000));
+    }
+
+
+    /// `cFEStateNetQuickPlayPopup_Update` (0x1c1038) at rate `hz`, one update
+    /// from `value` in `self+0x6e8`, armed: the counter afterwards.
+    fn quick_play_step(hz: u32, value: u32) -> u32 {
+        let mut c = crate::difftest::fresh();
+        let _ = machine(&mut c, 0, 0x1c1038, 0);
+        be_library_3(&mut c);
+        pool_allocator_2(&mut c);
+        c.hooks.miss = no_callee;
+        crate::tick::set_for_test(&mut c, hz);
+        let this = DATA + 0x100;
+        c.bus.write32(this + 0x6ec, 1); // armed
+        c.bus.write32(this + 0x6e8, value);
+        c.g[A0][0] = sx(this);
+        fe_state_net_quick_play_popup_update(&mut c);
+        assert_eq!(c.pc, crate::difftest::RA, "the update did not return");
+        c.bus.read32(this + 0x6e8)
+    }
+
+
+    /// The quick-play popup's retry interval is 0.5 s: the reloaded countdown is
+    /// 30 ticks at 60 Hz, 60 at 120, 120 at 240, while the countdown itself
+    /// still takes one off per update.
+    #[test]
+    fn fe_state_net_quick_play_popup_interval_follows_the_rate() {
+        assert_eq!(quick_play_step(60, 0), 30, "60 Hz reload");
+        assert_eq!(quick_play_step(120, 0), 60, "120 Hz reload");
+        assert_eq!(quick_play_step(240, 0), 120, "240 Hz reload");
+        for hz in [60u32, 120, 240] {
+            assert_eq!(quick_play_step(hz, 5), 4, "{hz} Hz: countdown");
+        }
     }
 
 

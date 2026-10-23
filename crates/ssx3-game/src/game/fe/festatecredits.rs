@@ -9,6 +9,7 @@ use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 use crate::guest::Addr;
+use crate::tick;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -146,6 +147,13 @@ pub(crate) mod g {
 
 /// `void cFEOptionsCredits_Update(cFEOptionsCredits* self)` (0x1863b8):
 /// advance the credits scroll (`+0x60 += +0x64`), then the base update.
+///
+/// The scroll is authored as a per-60 Hz-frame step: `+0x64` is a speed in
+/// pixels per authored frame (it ramps between -8 and 8), so the position
+/// advances once per 60 Hz boundary (`tick::ui_frame_due`) rather than once
+/// per tick. Scaling the *step* with `* 60 / rate` is not usable here: a
+/// 1 px/frame speed would truncate to 0 and the credits would stall while the
+/// speed ramps up.
 pub fn cfe_options_credits_update(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 11;
@@ -155,7 +163,10 @@ pub fn cfe_options_credits_update(c: &mut Cpu) {
         frame.save_ra(c, 0);
         c.g[V1][0] = Addr(at(self_, 0x60)).lw(c);
         c.g[A1][0] = Addr(at(self_, 0x64)).lw(c);
-        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        // One authored frame per 60 Hz boundary; at 60 Hz that is every
+        // update, so the original add runs unchanged.
+        let step = if tick::ui_frame_due(c) { c.g[A1][0] as u32 } else { 0 };
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(step));
         let y = c.g[V1][0];
         Addr(at(self_, 0x60)).sw(c, y);
         call_ptr(c, callee::UI_STATE_V13, 0x0018_63d8)?;
@@ -475,6 +486,52 @@ pub(crate) mod tests {
             c.bus.write32(OBJ + 0x60, 0x1000 + seed as u32);
             c.bus.write32(OBJ + 0x64, seed as u32 & 0x3f);
         });
+    }
+
+
+    // --------------------------------------------------- rate: credits scroll
+
+    /// A callee outside the translated code: answer null and return at once.
+    /// The rate test below only looks at the scroll position.
+    fn no_callee(c: &mut Cpu, _target: u32) {
+        c.g[V0][0] = 0;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+
+    /// The credits position after `updates` updates at rate `hz` with speed
+    /// `speed`, the VSync counter running from 1 (so a faster tick sees its
+    /// 60 Hz boundaries).
+    fn credits_position(hz: u32, updates: u32, speed: u32) -> u32 {
+        let mut c = crate::difftest::fresh();
+        let _ = machine(&mut c, 0, 0x1863b8, 0);
+        globals(&mut c);
+        c.hooks.miss = no_callee;
+        crate::tick::set_for_test(&mut c, hz);
+        let app = c.bus.read32(crate::tick::APPMAN_PTR);
+        clear(&mut c, OBJ, 0x100);
+        c.bus.write32(OBJ + 0x64, speed);
+        for i in 0..updates {
+            c.bus.write32(app + 0x18, 1 + i);
+            c.g[A0][0] = sx(OBJ);
+            cfe_options_credits_update(&mut c);
+            assert_eq!(c.pc, crate::difftest::RA, "the update did not return");
+        }
+        c.bus.read32(OBJ + 0x60)
+    }
+
+
+    /// The credits scroll advances one authored frame per 60 Hz boundary: four
+    /// such frames of speed 3 move 12 px whether that is 4 updates at 60 Hz, 8
+    /// at 120 or 16 at 240, and a 1 px/frame speed is not truncated away.
+    #[test]
+    fn cfe_options_credits_scroll_follows_the_rate() {
+        assert_eq!(credits_position(60, 4, 3), 12, "60 Hz, speed 3");
+        assert_eq!(credits_position(120, 8, 3), 12, "120 Hz, speed 3");
+        assert_eq!(credits_position(240, 16, 3), 12, "240 Hz, speed 3");
+        assert_eq!(credits_position(60, 4, 1), 4, "60 Hz, speed 1");
+        assert_eq!(credits_position(120, 8, 1), 4, "120 Hz, speed 1");
+        assert_eq!(credits_position(240, 16, 1), 4, "240 Hz, speed 1");
     }
 
 
