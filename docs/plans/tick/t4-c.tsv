@@ -1,0 +1,150 @@
+site	function	class	kind	constant	reason	conversion
+0x3cd29c	SND_UtkSkipBits	NOT_PER_TICK	COUNTER	+1	UTK decoder bit-reader cursor	
+0x394fb4	DeferMan_InternState	NOT_PER_TICK	COUNTER	+1	+0x51480 count of interned draw states (allocation cursor in the state table)	
+0x22a0f4	Nash_ClassifyInstance	NOT_PER_TICK	COUNTER	+1	length of a per-frame classified-instance list (VU0 visibility class jump table)	
+0x22a118	Nash_ClassifyInstance	NOT_PER_TICK	COUNTER	+1	length of a per-frame classified-instance list	
+0x3cd24c	SND_UtkReadBits	NOT_PER_TICK	COUNTER	+1	UTK decoder bit-reader cursor	
+0x379b2c	PS2GraphicsMan_v71	NOT_PER_TICK	COUNTER	+1	render-list entry count (same pattern as the 0x7494 bucket counter in PS2BezierMan_v18)	
+0x379b84	PS2GraphicsMan_v71	NOT_PER_TICK	OTHER	+16	DMA packet qword cursor	
+0x2b8560	cWorldSound_QueryTreeNode	NOT_PER_TICK	COUNTER	+1	result count of a spatial tree query	
+0x2b8658	cWorldSound_QueryTreeNode	NOT_PER_TICK	COUNTER	+1	result count of a spatial tree query	
+0x330b80	Cell_GatherObjects	NOT_PER_TICK	COUNTER	+1	gathered-object list length	
+0x335b74	Cell_CollideInstance	NOT_PER_TICK	COUNTER	+1	contact/hit list length	
+0x3c3410	SND_MutexUnlock	NOT_PER_TICK	COUNTER	-1	lock depth	
+0x3b58cc	SND_Lock	NOT_PER_TICK	COUNTER	+1	lock depth	
+0x37114c	DynamicEmitter_Spawn	NOT_PER_TICK	COUNTER	+1	+0x1e0 live-particle count (+1/-1 on the new particle's life sign); spawn phase +0x10 already advances by the dt argument	
+0x371210	DynamicEmitter_Spawn	NOT_PER_TICK	COUNTER	-1	+0x17c particle ring cursor (wraps to +0x178-1)	
+0x37a1ec	PS2GraphicsMan_v72	NOT_PER_TICK	COUNTER	+1	render-list entry count	
+0x37a238	PS2GraphicsMan_v72	NOT_PER_TICK	OTHER	+16	DMA packet qword cursor	
+0x37b9a8	PS2GraphicsMan_v100	NOT_PER_TICK	COUNTER	+1	render-list entry count	
+0x37ba04	PS2GraphicsMan_v100	NOT_PER_TICK	OTHER	+16	DMA packet qword cursor	
+0x3797e8	PS2GraphicsMan_v81	NOT_PER_TICK	COUNTER	+1	render-list entry count	
+0x3cd01c	SND_EaxaDecode	NOT_PER_TICK	OTHER	+4	EA-XA decoder sample/output cursor	
+0x3cd024	SND_EaxaDecode	NOT_PER_TICK	OTHER	+4	EA-XA decoder sample/output cursor	
+0x3c7070	SNDSTRM_ReleaseBytes	NOT_PER_TICK	COUNTER	+1	stream buffer block index	
+0x38d8f8	PS2BezierMan_DrawPatchFX	NOT_PER_TICK	COUNTER	+1	patch draw-list count	
+0x38d93c	PS2BezierMan_DrawPatchFX	NOT_PER_TICK	OTHER	+16	DMA packet qword cursor	
+0x3e578c	EAMutex_Unlock	NOT_PER_TICK	COUNTER	-1	lock depth	
+0x3ce024	SND_UtkDecode	NOT_PER_TICK	COUNTER	+1	UTK decoder cursor	
+0x2d4ec4	cAngerFX_Update	PER_TICK	COUNTER	+1	per-rival entry +0x20: anger pulse frame (mod 41), indexes the curve tables 0x488ea0/0x488f48 every tick; runs one 41-frame cycle per level change	advance the three phase counters (+0x20/+0x24/+0x28) only when tick::frame60_due(entry) (keyed by the per-rival entry address), hold otherwise; exact at 60
+0x2d4f04	cAngerFX_Update	PER_TICK	COUNTER	+1	per-rival entry +0x24: anger pulse frame (mod 31), indexes 0x488ff0/0x489070	same gate as 0x2d4ec4
+0x2d4f48	cAngerFX_Update	PER_TICK	COUNTER	+1	per-rival entry +0x28: anger pulse frame (mod 24), indexes 0x4890f0/0x489150; restarts on a level increase	same gate as 0x2d4ec4
+0x2d4e94	cAngerFX_Update	PER_TICK	STEP	1/15, 0.1 (gp-0x3d2c, gp-0x3d34)	scan missed: per-rival intensity +0x0 ramps up by 0.1/tick to 1.0 (rival level >=2) or decays by 1/15/tick to 0 (0.25 s at 60); 0x49f3bc=0.1, 0x49f3c4=1/15, 0x49f3c8=-1/15 are not 1/60 entries	scale the step by 60/rate (0.1*60/rate, (1/15)*60/rate) and the snap bands with it; or run inside the same frame60_due gate as the pulse counters; exact at 60
+0x2e79d4	cSpeedBoostStreamerFX_UpdatePoints	NOT_PER_TICK	COUNTER	-1	+0x14 point count trimmed from the tail while the streamer length +0x18 exceeds the max length +0x4 (length budget, distance)	
+0x2ef83c	cAirStreamerFX_Update	PER_TICK	COUNTER	+1	+0x8 trail ring head (mod 25), advanced on every even AI frame (AI_GetFrameCounter()&1): the 25 samples cover 50 ticks = 0.83 s at 60, 0.21 s at 240 (air streamer 4x shorter)	advance the ring on a 30 Hz real-time cadence: a per-streamer 60 Hz frame from tick::frame60_due(this), then its parity instead of the AI frame parity (at 60 keep AI_GetFrameCounter()&1 so it stays exact)
+0x2ef864	cAirStreamerFX_Update	PER_TICK	COUNTER	+1	+0xc visible point count grows by 1 per ring advance up to +0x14 (trail grows in 4x less time)	follows 0x2ef83c (same gate)
+0x2ef8b4	cAirStreamerFX_Update	PER_TICK	COUNTER	-2	scan missed: on the ground +0xc shrinks by 2 toward 0 every tick (trail fade-out after landing, 4x faster at 240)	apply only when tick::frame60_due(this) (same per-streamer clock); exact at 60
+0x2ef904	cAirStreamerFX_Update	PER_TICK	STEP	0.01/60 (gp-0x393c = 0x49f7b4, 0x392ec33e)	scan missed: +0x10 texture scroll -= |velocity| * 1.667e-4 per tick, wrapped to 0..1; the constant is a premultiplied 1/60 step that the .lit4 patch does not touch (4x scroll speed at 240)	multiply the product by 60/rate (or load tick::dt(c)*0.01) when rate != 60; exact at 60
+0x382108	PS2GraphicsMan_v75	NOT_PER_TICK	COUNTER	+1	render-list entry count	
+0x382154	PS2GraphicsMan_v75	NOT_PER_TICK	OTHER	+16	DMA packet qword cursor	
+0x38f4b4	SprStream_BeginBlock	NOT_PER_TICK	COUNTER	+1	scratchpad stream block count	
+0x411eb8	_fpadd_parts_d	NOT_PER_TICK	OTHER	-1	libgcc soft-float exponent normalisation	
+0x411f0c	_fpadd_parts_d	NOT_PER_TICK	OTHER	+1	libgcc soft-float exponent normalisation	
+0x276d84	ScriptList_Update	PER_TICK	COUNTER	-1	+0xb8 wait before the next script entry resumes, set by ScriptList_StartTransition to in+hold keyframes (shorts +0x12 + +0x14, 60 Hz frames) and by ScriptList_Start (s7); the transition itself is converted to seconds (NOT_A_STEP 0x49e8ec..0x49e8f8) so it runs in real time, but this countdown runs in ticks: at 240 the next entry/movie starts after 1/4 of the fade-in+hold (cut mid-fade in scripted sequences/attract)	scale the stored count with tick::ticks_from_frames60 at the two writers (ScriptList_StartTransition 0x277980, ScriptList_Start 0x276388), or decrement only on tick::frame60_due(list); exact at 60
+0x276e70	ScriptList_Update	NOT_PER_TICK	COUNTER	-1	+0xc8 one-update deferral set to 1 by ScriptList_SkipCurrent (stop transition and advance on the next update), not a duration	
+0x37674c	PS2GraphicsMan_PushView	NOT_PER_TICK	COUNTER	+1	view stack depth	
+0x10d2d0	ComputerActorRider_ShouldResetPath	PER_TICK	COUNTER	+1	+0xe78 wrong-way frames, compared with 0x3c (61 frames); +0xe74 stuck frames vs 0xde	already converted in crates/ssx3-game/src/game/ai/computer.rs (ticks_from_frames60(61) and (223)); nothing left
+0x3c6e88	SNDSTRM_PopBlock	NOT_PER_TICK	COUNTER	+1	stream ring indices/counts	
+0x3c6e94	SNDSTRM_PopBlock	NOT_PER_TICK	COUNTER	+1	stream ring indices/counts	
+0x3c6ea0	SNDSTRM_PopBlock	NOT_PER_TICK	COUNTER	+1	stream ring indices/counts	
+0x3c6f44	SNDSTRM_PopBlock	NOT_PER_TICK	COUNTER	+1	stream ring indices/counts	
+0x3c6f50	SNDSTRM_PopBlock	NOT_PER_TICK	COUNTER	+1	stream ring indices/counts	
+0x3c6f94	SNDSTRM_PopBlock	NOT_PER_TICK	COUNTER	+1	stream ring indices/counts	
+0x3c7000	SNDSTRM_PopBlock	NOT_PER_TICK	COUNTER	-1	stream ring queued-block count	
+0x3a8b80	cWorldCache_AllocResource	NOT_PER_TICK	COUNTER	+1	resource reference/allocation count	
+0x3a8ca4	cWorldCache_AllocResource	NOT_PER_TICK	COUNTER	-1	resource reference/allocation count	
+0x388504	PS2GraphicsMan_v90	NOT_PER_TICK	COUNTER	+1	render-list entry count	
+0x388558	PS2GraphicsMan_v90	NOT_PER_TICK	OTHER	+16	DMA packet qword cursor	
+0x37d3e8	PS2GraphicsMan_v53	NOT_PER_TICK	COUNTER	+1	render-list entry count	
+0x37d438	PS2GraphicsMan_v53	NOT_PER_TICK	OTHER	+16	DMA packet qword cursor	
+0x332f4c	OverlapList_GatherAll	NOT_PER_TICK	COUNTER	+1	overlap list lengths (unrolled gather loop)	
+0x332f88	OverlapList_GatherAll	NOT_PER_TICK	COUNTER	+1	overlap list lengths	
+0x33317c	OverlapList_GatherAll	NOT_PER_TICK	COUNTER	+1	overlap list lengths	
+0x3331b8	OverlapList_GatherAll	NOT_PER_TICK	COUNTER	+1	overlap list lengths	
+0x333384	OverlapList_GatherAll	NOT_PER_TICK	COUNTER	+1	overlap list lengths	
+0x3333c0	OverlapList_GatherAll	NOT_PER_TICK	COUNTER	+1	overlap list lengths	
+0x33358c	OverlapList_GatherAll	NOT_PER_TICK	COUNTER	+1	overlap list lengths	
+0x3335c8	OverlapList_GatherAll	NOT_PER_TICK	COUNTER	+1	overlap list lengths	
+0x333794	OverlapList_GatherAll	NOT_PER_TICK	COUNTER	+1	overlap list lengths	
+0x3337d0	OverlapList_GatherAll	NOT_PER_TICK	COUNTER	+1	overlap list lengths	
+0x33399c	OverlapList_GatherAll	NOT_PER_TICK	COUNTER	+1	overlap list lengths	
+0x3339d8	OverlapList_GatherAll	NOT_PER_TICK	COUNTER	+1	overlap list lengths	
+0x333ba4	OverlapList_GatherAll	NOT_PER_TICK	COUNTER	+1	overlap list lengths	
+0x333be0	OverlapList_GatherAll	NOT_PER_TICK	COUNTER	+1	overlap list lengths	
+0x333dac	OverlapList_GatherAll	NOT_PER_TICK	COUNTER	+1	overlap list lengths	
+0x333de8	OverlapList_GatherAll	NOT_PER_TICK	COUNTER	+1	overlap list lengths	
+0x32133c	InputPad_Update	PER_TICK	COUNTER	+1	per-button +0x18 ticks since the last edge, edges ignored below 3 (debounce); same function: auto-repeat timer +0x14 (scan missed, decrement) starts at 0x18 = 24 frames and re-arms at 0xc = 12 frames, sets the repeat flag +0x10 each expiry: held-direction menu repeat 4x faster at 240 (0.1 s delay, 0.05 s period)	thresholds via tick::ticks_from_frames60: 3 -> ticks_from_frames60(3), 0x18 -> ticks_from_frames60(24), 0xc -> ticks_from_frames60(12) (port in crates/ssx3-game/src/game/input/inputmap.rs input_pad_update, lines ~455-456); exact at 60
+0x380730	PS2GraphicsMan_v82	NOT_PER_TICK	COUNTER	+1	render-list entry count	
+0x38077c	PS2GraphicsMan_v82	NOT_PER_TICK	OTHER	+16	DMA packet qword cursor	
+0x3b5620	SND_Tick	NOT_PER_TICK	COUNTER	+1	sound-driver tick count; SND_Tick runs from the EE timer (~100 Hz, 1.664 calls per 60 Hz frame in menu and race), not the game tick; the timers count EE cycles, i.e. real time at any VSync rate	
+0x3b56c4	SND_Tick	NOT_PER_TICK	COUNTER	+1	channel LFO/pitch-envelope step on the ~100 Hz sound timer	
+0x3b5708	SND_Tick	NOT_PER_TICK	COUNTER	+1	channel volume-envelope step on the sound timer	
+0x3b5770	SND_Tick	NOT_PER_TICK	COUNTER	-1	envelope segment countdown on the sound timer	
+0x3b57ac	SND_Tick	NOT_PER_TICK	COUNTER	+1	envelope segment index	
+0x3c73b8	SND_ParseNextTag	NOT_PER_TICK	COUNTER	+1	stream header parse cursor	
+0x3c73ec	SND_ParseNextTag	NOT_PER_TICK	COUNTER	+1	stream header parse cursor	
+0x3c742c	SND_ParseNextTag	NOT_PER_TICK	OTHER	+4	stream header parse cursor	
+0x3c743c	SND_ParseNextTag	NOT_PER_TICK	COUNTER	+1	stream header parse cursor	
+0x378790	PS2GraphicsMan_v79	NOT_PER_TICK	COUNTER	+1	render-list entry count	
+0x3787dc	PS2GraphicsMan_v79	NOT_PER_TICK	OTHER	+16	DMA packet qword cursor	
+0x10b2d0	ComputerActorRider_ThinkSpin	PER_TICK	COUNTER	+1	rider +0x484 ticks spent spinning with more than 15 units of height left (air-state 1/3); > 0x1e (30 frames) sets input flag 0x1000 and resets: the AI gives up a spin after 0.125 s instead of 0.5 s at 240	threshold 30 frames -> tick::ticks_from_frames60(c, 30) (function still generated: port first); exact at 60
+0x1629b4	ChaseCameraAlgorithm_UpdateHandplantFade	PER_TICK	COUNTER	+1	+0x2c0 frames since handplant, thresholds 120/820	already converted in crates/ssx3-game/src/chase.rs (ticks_from_frames60 on both thresholds, fade rate stretched); nothing left
+0x3e4e38	EATimer_Rcnt1Handler	NOT_PER_TICK	COUNTER	+1	EE timer interrupt counters (RCNT1, cycle-based: real time)	
+0x3e4e44	EATimer_Rcnt1Handler	NOT_PER_TICK	COUNTER	+1	EE timer interrupt counters	
+0x129144	AI_Update	PER_TICK	COUNTER	+1	AI +0x8 frame counter (AI_GetFrameCounter): a tick clock used as time by ~15 callers (timestamps compared with frame thresholds: Rider_SetTimedEvent, FocusMan_Update, Rider_CheckRiderCollisions, ComputerActorRider_ThinkGate/FindAttackTarget/ShouldAttackBack/SelectTargetRider, Rider_UpdateIdleLookAnim, Rider_UpdateSpeedAnims, RiderGroundState_Enter/Exit, ChaseCameraAlgorithm_UpdateAirTransitions, RiderMetrix_UpdateTrickHUD, cAirStreamerFX_Update parity)	keep the counter in ticks (deadlines stored in it are tick counts); convert each consumer's frame threshold with ticks_from_frames60 (done for Rider_SetTimedEvent); audit the remaining callers listed here
+0x1ead60	cOVStateHUD1P_Update	NOT_PER_TICK	COUNTER	+1	+0x3a4 HUD layout row index (rows built per update, reset each call)	
+0x1eae0c	cOVStateHUD1P_Update	NOT_PER_TICK	COUNTER	+1	+0x3a4 HUD layout row index	
+0x1eaee8	cOVStateHUD1P_Update	NOT_PER_TICK	COUNTER	+1	+0x3a4 HUD layout row index	
+0x1eafa4	cOVStateHUD1P_Update	NOT_PER_TICK	COUNTER	+1	+0x3a4 HUD layout row index	
+0x22a540	Nash_ClassifyEffects	NOT_PER_TICK	COUNTER	+1	classified effect list length	
+0x22a74c	Nash_CollectPatches	NOT_PER_TICK	COUNTER	+1	+0x50a8 collected-patch list length	
+0x2308e4	GameModule_Update	NOT_PER_TICK	COUNTER	+1	D_004A2A54 UI screen-stack depth (push on opening screen 0x1d)	
+0x230970	GameModule_Update	NOT_PER_TICK	COUNTER	+1	D_004A2A54 screen-stack push (screen 0x1e)	
+0x2309f8	GameModule_Update	NOT_PER_TICK	COUNTER	+1	D_004A2A54 screen-stack push (pause menu)	
+0x230ab8	GameModule_Update	NOT_PER_TICK	COUNTER	+1	D_004A2A54 screen-stack push (screen 0x22)	
+0x230d90	GameModule_Update	UNSURE	COUNTER	+1	GameModule +0xac update counter, +1 per in-game update; no reader found in generated code (ScriptCameraAlgo_ctor reads +0xac of a view object, a different structure)	if a reader turns up that compares it with a frame count: ticks_from_frames60 at the reader
+0x266a50	cUsbKeyboard_Update	NOT_PER_TICK	COUNTER	+1	USB keyboard key ring buffer tail	
+0x266a7c	cUsbKeyboard_Update	NOT_PER_TICK	COUNTER	+1	USB keyboard key ring buffer head	
+0x26f4dc	Replay_Update	PER_TICK	COUNTER	-1	replay +0x614 countdown set to 180 (3 s) by ReplayCache_PushFrame when the 4096-frame cache is full (+0x610 flag); only decremented, no reader found: no visible effect	none needed now; if a reader appears, set ticks_from_frames60(180) in ReplayCache_PushFrame
+0x26f6f4	Replay_Update	NOT_PER_TICK	COUNTER	+1	replay +0x3cc recorded-frame count (one input frame per tick; playback is tick for tick). Side effect: the 4096-frame cache covers 17 s at 240 instead of 68 s	
+0x26f704	Replay_Update	NOT_PER_TICK	COUNTER	+1	replay +0x3c8 frame index; snapshot every 60 ticks (% 0x3c) is a memory cadence, not a visible duration	
+0x2897cc	SSXAudioSystem_UpdateSpeechDucking	NOT_PER_TICK	COUNTER	+1	+0x6864 speech frame counter; the envelope index is frame * (+0x6c54) / AppMan+0x2c, and AppMan+0x2c is the measured update rate (App_RunModuleLoop: rate * updates-per-VSync / updates), so the index is wall-clock time	
+0x289814	SSXAudioSystem_UpdateSpeechDucking	NOT_PER_TICK	COUNTER	+1	+0x6c60 apply-once flag (reset to 0 every second tick, gain applied when 0)	
+0x28c900	SSXAudioSystem_UpdateMusicIntensity	PER_TICK	COUNTER	-1	+0x6250 countdown set by SSXAudioSystem_SetCountdownValue, decremented per tick; no other reader found: no visible effect	none needed now; if a reader appears, scale at SetCountdownValue with ticks_from_frames60
+0x2952b4	SSXAudioSystem_UpdateTrackedSounds	NOT_PER_TICK	COUNTER	+1	tracked-sound ring buffer read/write indices (+0x5984/+0x5988)	
+0x2952f8	SSXAudioSystem_UpdateTrackedSounds	NOT_PER_TICK	COUNTER	+1	ring buffer index	
+0x29533c	SSXAudioSystem_UpdateTrackedSounds	NOT_PER_TICK	COUNTER	+1	ring buffer index	
+0x295380	SSXAudioSystem_UpdateTrackedSounds	NOT_PER_TICK	COUNTER	+1	ring buffer index	
+0x2953c4	SSXAudioSystem_UpdateTrackedSounds	NOT_PER_TICK	COUNTER	+1	ring buffer index	
+0x295470	SSXAudioSystem_UpdateTrackedSounds	NOT_PER_TICK	COUNTER	+1	ring buffer index	
+0x2954c8	SSXAudioSystem_UpdateTrackedSounds	NOT_PER_TICK	COUNTER	+1	ring buffer index	
+0x295520	SSXAudioSystem_UpdateTrackedSounds	NOT_PER_TICK	COUNTER	+1	ring buffer index	
+0x295578	SSXAudioSystem_UpdateTrackedSounds	NOT_PER_TICK	COUNTER	+1	ring buffer index	
+0x2955d0	SSXAudioSystem_UpdateTrackedSounds	NOT_PER_TICK	COUNTER	+1	ring buffer index	
+0x2a5248	CrowdAudio_UpdateInstance	NOT_PER_TICK	COUNTER	+1	audio push-param stack index (+500 of the MIDI bank state)	
+0x2a5678	CrowdAudio_UpdateInstance	NOT_PER_TICK	COUNTER	+1	audio push-param stack index	
+0x2e2360	cDynamicSprayFX_UpdateEmitter9	NOT_PER_TICK	COUNTER	+1	+0x78 spawn-joint cursor (0..29) choosing the bone for the next particle; the strength decay uses the patched 1/60 entry 0x49f6a8 and the emitter takes dt	
+0x317380	App_VSyncTick	NOT_PER_TICK	COUNTER	+1	AppMan +0x18 VSync counter; the clock tick::ui_frame_due reads (already rate-aware)	
+0x3635f8	PS2GraphicsMan_RenderFrame	NOT_PER_TICK	COUNTER	+1	per-list counts in the render-list build loop	
+0x36361c	PS2GraphicsMan_RenderFrame	NOT_PER_TICK	COUNTER	+1	per-list counts in the render-list build loop	
+0x3639e0	PS2GraphicsMan_RenderFrame	NOT_PER_TICK	OTHER	+16	DMA packet qword cursor	
+0x363b74	PS2GraphicsMan_RenderFrame	NOT_PER_TICK	OTHER	+16	DMA packet qword cursor	
+0x363ba8	PS2GraphicsMan_RenderFrame	NOT_PER_TICK	OTHER	+16	DMA packet qword cursor	
+0x374c28	BezierPatchCache_ReleaseUnused	NOT_PER_TICK	COUNTER	+1	free-list counts of released patch slots	
+0x374c48	BezierPatchCache_ReleaseUnused	NOT_PER_TICK	COUNTER	+1	free-list counts of released patch slots	
+0x382b30	Renderer_SetDisplayRegs	NOT_PER_TICK	COUNTER	+1	display field/frame parity for the double-buffer flip (one per presented image)	
+0x38c1ec	PS2BezierMan_v18	NOT_PER_TICK	COUNTER	+1	+0x57494 render bucket entry count	
+0x38c26c	PS2BezierMan_v18	NOT_PER_TICK	COUNTER	+1	+0x67ca4 render list count	
+0x38c308	PS2BezierMan_v18	NOT_PER_TICK	OTHER	+16	DMA packet qword cursor	
+0x38c430	PS2BezierMan_v18	NOT_PER_TICK	COUNTER	+1	+0x67ca4 render list count	
+0x38c4f4	PS2BezierMan_v18	NOT_PER_TICK	OTHER	+16	DMA packet qword cursor	
+0x3a94a4	cWorldCache_StreamerUpdate	NOT_PER_TICK	COUNTER	+1	+0x2e0 resident-section count (reset to 0 each call)	
+0x3a94b8	cWorldCache_StreamerUpdate	NOT_PER_TICK	COUNTER	+1	+0x2e0 resident-section count	
+0x3a94c0	cWorldCache_StreamerUpdate	NOT_PER_TICK	COUNTER	+1	+0x2e4 count of sections in state 6	
+0x2a78f0	IniParser_GetChar	NOT_PER_TICK	COUNTER	+1	parser read cursor	
+0x22a330	Nash_ClassifyEffect	NOT_PER_TICK	COUNTER	+1	classified effect list length	
+0x22a354	Nash_ClassifyEffect	NOT_PER_TICK	COUNTER	+1	classified effect list length	
+0x19d320	BoltFile_CacheUpdate	NOT_PER_TICK	COUNTER	-1	+0xb4004 outstanding async loads	
+0x369a54	PS2GraphicsMan_AllocBlendedMatrixHistory	NOT_PER_TICK	COUNTER	+1	+0xf4c count of cached blended-matrix sets (allocation cursor)	
+0x2de0a8	cBoardWakeFX_AdvanceRing	NOT_PER_TICK	COUNTER	+1	+0x4 wake ring fill count; AdvanceRing runs when the new wake segment is longer than 50 units (distance), not per tick	
+0x2de358	cBoardWakeFX_AdvanceRing	NOT_PER_TICK	COUNTER	+1	+0x40 segment counter for the wake texture coordinate (per segment, distance-based)	

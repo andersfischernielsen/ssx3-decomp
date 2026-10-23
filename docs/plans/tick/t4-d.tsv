@@ -1,0 +1,162 @@
+site	function	class	kind	constant	reason	conversion
+0x22aae4	Nash_CullNode	NOT_PER_TICK	COUNTER	+1	visible-instance count while walking the spatial hash (reset each cull)	
+0x22ac7c	Nash_CullNode	NOT_PER_TICK	COUNTER	+1	visible-instance count while walking the spatial hash (reset each cull)	
+0x22a238	Nash_ClassifyPatch	NOT_PER_TICK	COUNTER	+1	per-patch classification counts (list lengths)	
+0x22a25c	Nash_ClassifyPatch	NOT_PER_TICK	COUNTER	+1	per-patch classification counts (list lengths)	
+0x37feb8	PS2GraphicsMan_v95	NOT_PER_TICK	COUNTER	+1	draw/packet entry counts built per render	
+0x37ff24	PS2GraphicsMan_v95	NOT_PER_TICK	COUNTER	+1	draw/packet entry counts built per render	
+0x37ff94	PS2GraphicsMan_v95	NOT_PER_TICK	COUNTER	+1	draw/packet entry counts built per render	
+0x38013c	PS2GraphicsMan_v95	NOT_PER_TICK	COUNTER	+1	draw/packet entry counts built per render	
+0x3802a8	PS2GraphicsMan_v95	NOT_PER_TICK	COUNTER	+1	draw/packet entry counts built per render	
+0x2ab854	BankMonitor_TimerUpdate	NOT_PER_TICK	COUNTER	-10	audio timer in ms: -10 per call from SSXAudioSystem_UpdateTimers, which runs from the 100 Hz sound timer (1.664 calls/frame in both profiles, not once per tick); real time as long as that timer is not tied to VSync	
+0x3561b4	ModObj_Update	NOT_PER_TICK	COUNTER	-1	countdown +0x20 is reloaded by ModObj_v40 with cAppMan rate/2 (gp+0x2a74 -> +0x10), so it is already 0.5 s at any rate	
+0x39750c	UIAnim_Advance	NOT_PER_TICK	COUNTER	-1	UI animation frame step, already gated by tick::frame60_due (uianimation.rs)	
+0x33b84c	Cell_GatherAllRecursive	NOT_PER_TICK	COUNTER	+1	gathered-object count (list length)	
+0x33b888	Cell_GatherAllRecursive	NOT_PER_TICK	COUNTER	+1	gathered-object count (list length)	
+0x33bd0c	Cell_GatherAllRecursive	NOT_PER_TICK	COUNTER	+1	gathered-object count (list length)	
+0x33bd48	Cell_GatherAllRecursive	NOT_PER_TICK	COUNTER	+1	gathered-object count (list length)	
+0x33bf24	Cell_GatherAllRecursive	NOT_PER_TICK	COUNTER	+1	gathered-object count (list length)	
+0x33bf60	Cell_GatherAllRecursive	NOT_PER_TICK	COUNTER	+1	gathered-object count (list length)	
+0x33c13c	Cell_GatherAllRecursive	NOT_PER_TICK	COUNTER	+1	gathered-object count (list length)	
+0x33c178	Cell_GatherAllRecursive	NOT_PER_TICK	COUNTER	+1	gathered-object count (list length)	
+0x33c354	Cell_GatherAllRecursive	NOT_PER_TICK	COUNTER	+1	gathered-object count (list length)	
+0x33c390	Cell_GatherAllRecursive	NOT_PER_TICK	COUNTER	+1	gathered-object count (list length)	
+0x33c56c	Cell_GatherAllRecursive	NOT_PER_TICK	COUNTER	+1	gathered-object count (list length)	
+0x33c5a8	Cell_GatherAllRecursive	NOT_PER_TICK	COUNTER	+1	gathered-object count (list length)	
+0x33c784	Cell_GatherAllRecursive	NOT_PER_TICK	COUNTER	+1	gathered-object count (list length)	
+0x33c7c0	Cell_GatherAllRecursive	NOT_PER_TICK	COUNTER	+1	gathered-object count (list length)	
+0x33c99c	Cell_GatherAllRecursive	NOT_PER_TICK	COUNTER	+1	gathered-object count (list length)	
+0x33c9d8	Cell_GatherAllRecursive	NOT_PER_TICK	COUNTER	+1	gathered-object count (list length)	
+0x33cbb4	Cell_GatherAllRecursive	NOT_PER_TICK	COUNTER	+1	gathered-object count (list length)	
+0x33cbf0	Cell_GatherAllRecursive	NOT_PER_TICK	COUNTER	+1	gathered-object count (list length)	
+0x3c33c8	SND_MutexLock	NOT_PER_TICK	COUNTER	+1	lock nesting depth	
+0x378fb0	PS2GraphicsMan_v80	NOT_PER_TICK	COUNTER	+1	draw/packet entry count	
+0x3b58f8	SND_Unlock	NOT_PER_TICK	COUNTER	-1	lock nesting depth	
+0x3baa2c	SND_NextHandleChannel	NOT_PER_TICK	COUNTER	+1	handle/channel id allocator	
+0x3baa74	SND_NextHandleChannel	NOT_PER_TICK	COUNTER	+1	handle/channel id allocator	
+0x3baa84	SND_NextHandleChannel	NOT_PER_TICK	COUNTER	+1	handle/channel id allocator	
+0x37ad40	PS2GraphicsMan_v99	NOT_PER_TICK	COUNTER	+1	draw/packet entry count	
+0x37b470	PS2GraphicsMan_v99	NOT_PER_TICK	COUNTER	+1	draw/packet entry count	
+0x37b4b8	PS2GraphicsMan_v99	NOT_PER_TICK	OTHER	+16	packet qword cursor	
+0x101a84	FocusMan_CollectNodeObjects	NOT_PER_TICK	COUNTER	+1	collected-object count	
+0x41d20c	_vfiprintf_r	NOT_PER_TICK	OTHER	+16	printf internals (iov/buffer cursors)	
+0x41d214	_vfiprintf_r	NOT_PER_TICK	OTHER	-16	printf internals	
+0x41d3cc	_vfiprintf_r	NOT_PER_TICK	OTHER	+2	printf internals	
+0x41d3d4	_vfiprintf_r	NOT_PER_TICK	OTHER	-2	printf internals	
+0x41d4ac	_vfiprintf_r	NOT_PER_TICK	OTHER	+16	printf internals	
+0x41d4b4	_vfiprintf_r	NOT_PER_TICK	OTHER	-16	printf internals	
+0x41d60c	_vfiprintf_r	NOT_PER_TICK	OTHER	+16	printf internals	
+0x41d614	_vfiprintf_r	NOT_PER_TICK	OTHER	-16	printf internals	
+0x41d80c	_vfiprintf_r	NOT_PER_TICK	OTHER	+16	printf internals	
+0x41d814	_vfiprintf_r	NOT_PER_TICK	OTHER	-16	printf internals	
+0x3ca568	SND_DecEaxa_DecodeStream	NOT_PER_TICK	OTHER	+4	decoder stream pointer	
+0x317a88	Rand_Next	NOT_PER_TICK	COUNTER	+1	generator table indices	
+0x317aa0	Rand_Next	NOT_PER_TICK	COUNTER	+1	generator table indices	
+0x317ab0	Rand_Next	NOT_PER_TICK	COUNTER	+1	generator table indices	
+0x317ac0	Rand_Next	NOT_PER_TICK	COUNTER	+1	generator table indices	
+0x317ad0	Rand_Next	NOT_PER_TICK	COUNTER	+1	generator table indices	
+0x3e572c	EAMutex_Lock	NOT_PER_TICK	COUNTER	+1	lock count	
+0x3e574c	EAMutex_Lock	NOT_PER_TICK	COUNTER	+1	lock count	
+0x364b78	DeferMan_InternMatrixRecord	NOT_PER_TICK	COUNTER	+1	matrix record count	
+0x3452a4	SplineModifier_EvalPathAtDistance	NOT_PER_TICK	COUNTER	-1	segment index while seeking the distance (distance is the time input)	
+0x3452e4	SplineModifier_EvalPathAtDistance	NOT_PER_TICK	COUNTER	+1	segment index while seeking the distance	
+0x2e68d4	cSpeedBoostStreamerFX_Update	PER_TICK	COUNTER	+1	+0x39c ring head (mod 20): one streamer point recorded per tick, so the 20-point streamer covers 1/3 s at 60 but 1/12 s at 240 (4x shorter streamers behind a boosting rider)	record a point only on tick::frame60_due(this) (and scale the per-tick point drift, see the 1.4 row)
+0x2e68fc	cSpeedBoostStreamerFX_Update	PER_TICK	COUNTER	+1	+0x3a0 live point count grows by 1 per tick up to +0x3a4 (and shrinks by 1 per tick when not boosting): streamer grows/collapses 4x faster	advance with the ring head on tick::frame60_due(this)
+0x2ea268	cBoardTrailFX_Update	NOT_PER_TICK	COUNTER	+1	+0x90 trail vertex count (clamped to 54) on a restart	
+0x2ea278	cBoardTrailFX_Update	NOT_PER_TICK	COUNTER	+2	+0x90 trail vertex count on a restart	
+0x2ea280	cBoardTrailFX_Update	NOT_PER_TICK	COUNTER	+3	+0x90 trail vertex count on a restart	
+0x2ea374	cBoardTrailFX_Update	NOT_PER_TICK	COUNTER	+1	+0x90 vertex count, bumped only when cBoardTrailFX_ShouldEmit emits (distance moved >= 110/30 units), so samples are spatial	
+0x2f656c	RiderBase_UpdateCheatCode	NOT_PER_TICK	COUNTER	-1	gp+0xad0 is set to 8 by RiderBase_MatchCheatCode on a completed code and taken down once per rider update (6 riders), clearing each rider's code state: counts rider updates, not time	
+0x381258	PS2GraphicsMan_v84	NOT_PER_TICK	COUNTER	+1	draw/packet entry count	
+0x3812b0	PS2GraphicsMan_v84	NOT_PER_TICK	OTHER	+16	packet qword cursor	
+0x364c80	DeferMan_SetScissor	NOT_PER_TICK	COUNTER	+1	scissor record count	
+0x2e2ff4	LensFX_AddSource	NOT_PER_TICK	COUNTER	+1	lens-flare source count for this frame	
+0x2e870c	cBoardTrailFX_ShouldEmit	NOT_PER_TICK	COUNTER	-1	+0xe0 skip counter set to 2 on a trail reset (+0x94 == 1): skips two updates so the anchor settles; update count, effect negligible (8 ms vs 33 ms of trail)	
+0x376790	PS2GraphicsMan_PopView	NOT_PER_TICK	COUNTER	-1	view stack depth	
+0x39e660	UIState_Update	NOT_PER_TICK	COUNTER	+1	+0x14 loop index over the two input sources (reset to 0xff after)	
+0x119284	RiderMetrix_CheckScoreMilestone	NOT_PER_TICK	COUNTER	+1	next score-milestone index, advanced when the score passes it	
+0x3a8d80	cWorldCache_ResolveResource	NOT_PER_TICK	COUNTER	+1	resolve/reference count	
+0x3a78c8	SectionAllocator_Alloc	NOT_PER_TICK	COUNTER	+1	allocation cursor/count	
+0x3a79f0	SectionAllocator_Alloc	NOT_PER_TICK	COUNTER	+1	allocation cursor/count	
+0x37d8a0	PS2GraphicsMan_v55	NOT_PER_TICK	COUNTER	+1	draw/packet entry count	
+0x37d8f0	PS2GraphicsMan_v55	NOT_PER_TICK	OTHER	+16	packet qword cursor	
+0x2f3bcc	cSplashManager_Update	NOT_PER_TICK	COUNTER	-1	+0x14 live drop count, decremented when a dead drop is removed (swap-remove)	
+0x2f3cc8	cSplashManager_Update	NOT_PER_TICK	COUNTER	+1	per-crystal drip count, capped by gp+0x117c (2); the count itself is not time, but the per-tick drip chance that drives it is (extra row 0x2f3c2c)	
+0x2f3de0	cSplashManager_Update	NOT_PER_TICK	COUNTER	-1	+0x18 live crystal count, decremented on swap-remove	
+0x327118	PS2Pad_Update	NOT_PER_TICK	COUNTER	+1	+0x4c retry count for the pad press-mode request (>4 failed polls gives up); handshake retries, not time	
+0x3271c4	PS2Pad_Update	NOT_PER_TICK	COUNTER	+1	+0x4c retry count for the actuator-align request	
+0x2adc24	BankMonitor_Tick	NOT_PER_TICK	COUNTER	+1	bank monitor clock, ticked from SSXAudioSystem_UpdateTimers on the 100 Hz sound timer (1.664 calls/frame), not per game tick	
+0x3b975c	SNDMIDI_Service	NOT_PER_TICK	COUNTER	+1	MIDI sequencer clock, serviced by the sound driver timer (1.664/frame), scaled by tempo	
+0x3b9788	SNDMIDI_Service	NOT_PER_TICK	COUNTER	+1	MIDI event index	
+0x3b5590	SND_Service	NOT_PER_TICK	COUNTER	+1	sound service call count converted to driver ticks by (count*100/serviceHz); driven by the sound timer	
+0x378130	PS2GraphicsMan_v78	NOT_PER_TICK	COUNTER	+1	draw/packet entry count	
+0x378174	PS2GraphicsMan_v78	NOT_PER_TICK	OTHER	+16	packet qword cursor	
+0x2726f4	InSeq_CurveTrackUpdate	NOT_PER_TICK	COUNTER	+1	+0x18 curve key index, advanced when the (already rate-scaled) sequence time passes a key	
+0x1636c0	ChaseCameraAlgorithm_ApplyJumpCurves	PER_TICK	COUNTER	-1	+0x2c4 takeoff countdown (set to 15 by ChaseCameraAlgorithm_UpdateAirTransitions, chase.rs TAKEOFF_COUNTDOWN) taken down once per tick: takeoff kick curves built at 14 (1 tick after takeoff), air-arc curves built when it reaches 0 = 0.25 s of air at 60 but 0.0625 s at 240, so short hops that never reached the air arc at 60 trigger the air-arc camera move at 240; (16 - n) * 1/60 (lit4 0x49c650, already 1/rate) is the elapsed air time on an early landing	port ApplyJumpCurves and take the countdown down only on tick::frame60_due(algo+0x2c4) (then the 0x49c650 elapsed factor must stay 1/60: add it to NOT_A_STEP or compute it from 60 Hz frames); or set the countdown to ticks_from_frames60(15) and compare with ticks_from_frames60-based 14/16 at rate != 60
+0x1014d8	DangerMan_Update	PER_TICK	COUNTER	-1	per-rider danger hold +0x(8 of each 12-byte slot): set to 60 (0x3c) when a danger source is seen, cleared (level 0) when it reaches 0: 1 s hold at 60, 0.25 s at 240 (AI danger awareness / avoidance flickers off sooner)	0x3c -> tick::ticks_from_frames60(c, 60) at the store in DangerMan_Update (port needed)
+0x12bbfc	AI_UpdateRaceTimeLimit	PER_TICK	COUNTER	-1	ai+0x18 post-finish time limit: min(54180 - frameCount, 7200) ticks after the first finisher, then everyone still racing is finished; also the 54060/54180 thresholds on the AI frame counter (15 min) and the %60 sync checks. Only runs when DAT_00534b30 (online session) is set, so offline play is unaffected; 4x short at 240 online	thresholds 7200/54060/54180 -> ticks_from_frames60; sync %60 -> %ticks_from_frames60(60) (or leave: network sync cadence)
+0x229504	CrowdMan2d_Update	PER_TICK	COUNTER	-1	+0x2230 per-sprite lifetime of the 2D crowd camera-flash sprites (CrowdMan2d_SpawnSprites adds them with 3): each flash shows 3 ticks = 50 ms at 60, 12.5 ms at 240 (flashes barely visible)	add sprites with ticks_from_frames60(3) (in CrowdMan2d_SpawnSprites) or take the lifetime down on tick::frame60_due
+0x22a674	Nash_CollectInstances	NOT_PER_TICK	COUNTER	+1	collected-instance count	
+0x22a7f0	Nash_CollectEffects	NOT_PER_TICK	COUNTER	+1	collected-effect count	
+0x22a810	Nash_CollectEffects	NOT_PER_TICK	COUNTER	+1	collected-effect count	
+0x2428bc	OcclusionMan_BuildVisible	NOT_PER_TICK	COUNTER	+1	visible count	
+0x266c78	cUsbKeyboard_GetKey	NOT_PER_TICK	COUNTER	+1	key ring-buffer read cursor	
+0x2788ec	ScriptEngine_Update	PER_TICK	COUNTER	-1	+0x554 skip delay: while > 0 the script cannot be skipped; GameStateEventSelect_Update sets 30 (0.5 s) via ScriptEngine_SetSkipDelay at 0x236550 (GameStateFinish_Exit sets 1 = one-update debounce, fine): at 240 the event intro becomes skippable after 0.125 s, so the press that started the event can skip its intro	30 -> ticks_from_frames60(30) at 0x236550 (GameStateEventSelect_Update, a1 = 0x1e) or take +0x554 down on tick::frame60_due
+0x28b03c	SndLoadQueue_Update	NOT_PER_TICK	COUNTER	+1	ring-buffer tail (+0x198) wraps at +0x18c	
+0x28b060	SndLoadQueue_Update	NOT_PER_TICK	COUNTER	+1	ring-buffer tail (+0x1a8)	
+0x28b084	SndLoadQueue_Update	NOT_PER_TICK	COUNTER	+1	ring-buffer tail (+0x1b8)	
+0x28b0a8	SndLoadQueue_Update	NOT_PER_TICK	COUNTER	+1	ring-buffer tail (+0x1c8)	
+0x28f0b8	SSXAudioSystem_UpdateMusicFadeIn	PER_TICK	COUNTER	+1	+0x628c music fade-in frame count, +1 per SSXAudioSystem_Update (once per tick) up to 800/1000/1200 by rider rating tier; volume = 127 * count/length: the race music fades in over 13-20 s at 60, 3.3-5 s at 240 (audible)	length 800/1000/1200 -> ticks_from_frames60 (the volume fraction count/length then stays exact at 60), in audio_system.rs ssx_audio_update_music_fade_in
+0x29adc4	SSXAudioSystem_UpdateBoostMeterSounds	NOT_PER_TICK	COUNTER	+1	pushed-sound stack index (Audio_PlayPushedSound)	
+0x2b1740	SpeechSystem_TickEventContexts	PER_TICK	COUNTER	-1	speech event-context lifetime (+0x1c of each of 10 slots), set to 180 (0xb4) by SpeechSystem_SetEventContext (0x2b1458) and freed at 0; ApplyEventContext uses it to give a playing line its rider/position: 3 s at 60, 0.75 s at 240, so lines that start later lose their context (wrong/no rider attribution) and duplicate suppression is 4x shorter	0xb4 -> ticks_from_frames60(180) in SpeechSystem_SetEventContext (both stores), or tick on tick::frame60_due(sys)
+0x2f69c4	RiderBase_MatchCheatCode	NOT_PER_TICK	COUNTER	+1	+6 button-event count of the code step (input events)	
+0x2f6a00	RiderBase_MatchCheatCode	NOT_PER_TICK	COUNTER	+1	+5 code step index	
+0x36303c	DeferMan_BuildBuckets	NOT_PER_TICK	COUNTER	+1	bucket entry count	
+0x363124	DeferMan_BuildBuckets	NOT_PER_TICK	COUNTER	+1	bucket entry count	
+0x363310	DeferMan_BuildBuckets	NOT_PER_TICK	COUNTER	+1	bucket entry count	
+0x3633f8	DeferMan_BuildBuckets	NOT_PER_TICK	COUNTER	+1	bucket entry count	
+0x364104	DeferMan_SortBuckets	NOT_PER_TICK	COUNTER	+1	sort indices/counts	
+0x364118	DeferMan_SortBuckets	NOT_PER_TICK	COUNTER	+1	sort indices/counts	
+0x364124	DeferMan_SortBuckets	NOT_PER_TICK	COUNTER	+1	sort indices/counts	
+0x364134	DeferMan_SortBuckets	NOT_PER_TICK	COUNTER	+1	sort indices/counts	
+0x3641e0	DeferMan_SortBuckets	NOT_PER_TICK	COUNTER	+1	sort indices/counts	
+0x382618	PS2GraphicsMan_OnVBlankStart	NOT_PER_TICK	COUNTER	+1	+0x5abc VBlanks since the swap request, compared with the swap interval +0x5ab8: display pacing in VSyncs (VSync = tick), not game time	
+0x387120	PS2GraphicsMan_v89	NOT_PER_TICK	OTHER	+16	packet qword cursor	
+0x387138	PS2GraphicsMan_v89	NOT_PER_TICK	OTHER	+16	packet qword cursor	
+0x38715c	PS2GraphicsMan_v89	NOT_PER_TICK	OTHER	+16	packet qword cursor	
+0x3871dc	PS2GraphicsMan_v89	NOT_PER_TICK	OTHER	+16	packet qword cursor	
+0x3871f4	PS2GraphicsMan_v89	NOT_PER_TICK	OTHER	+16	packet qword cursor	
+0x387214	PS2GraphicsMan_v89	NOT_PER_TICK	OTHER	+16	packet qword cursor	
+0x3873b0	PS2GraphicsMan_v89	NOT_PER_TICK	OTHER	+16	packet qword cursor	
+0x3873d4	PS2GraphicsMan_v89	NOT_PER_TICK	OTHER	+16	packet qword cursor	
+0x38754c	PS2GraphicsMan_v89	NOT_PER_TICK	OTHER	+16	packet qword cursor	
+0x387568	PS2GraphicsMan_v89	NOT_PER_TICK	OTHER	+16	packet qword cursor	
+0x38758c	PS2GraphicsMan_v89	NOT_PER_TICK	OTHER	+16	packet qword cursor	
+0x387614	PS2GraphicsMan_v89	NOT_PER_TICK	OTHER	+16	packet qword cursor	
+0x387668	PS2GraphicsMan_v89	NOT_PER_TICK	OTHER	+16	packet qword cursor	
+0x387688	PS2GraphicsMan_v89	NOT_PER_TICK	OTHER	+16	packet qword cursor	
+0x387810	PS2GraphicsMan_v89	NOT_PER_TICK	OTHER	+16	packet qword cursor	
+0x387828	PS2GraphicsMan_v89	NOT_PER_TICK	OTHER	+16	packet qword cursor	
+0x387850	PS2GraphicsMan_v89	NOT_PER_TICK	OTHER	+16	packet qword cursor	
+0x387908	PS2GraphicsMan_v89	NOT_PER_TICK	OTHER	+16	packet qword cursor	
+0x387920	PS2GraphicsMan_v89	NOT_PER_TICK	OTHER	+16	packet qword cursor	
+0x387940	PS2GraphicsMan_v89	NOT_PER_TICK	OTHER	+16	packet qword cursor	
+0x387b50	PS2GraphicsMan_v89	NOT_PER_TICK	OTHER	+16	packet qword cursor	
+0x387b74	PS2GraphicsMan_v89	NOT_PER_TICK	OTHER	+16	packet qword cursor	
+0x387cd0	PS2GraphicsMan_v89	NOT_PER_TICK	OTHER	+16	packet qword cursor	
+0x387de4	PS2GraphicsMan_v89	NOT_PER_TICK	COUNTER	+1	draw entry count	
+0x387e3c	PS2GraphicsMan_v89	NOT_PER_TICK	OTHER	+16	packet qword cursor	
+0x390c88	VfxScreenTint_Update	PER_TICK	COUNTER	-1	gp+0x15c4 thunder-sound delay: VfxScreenTint_TriggerFlash sets distance * 0.0018 (ticks, ~speed of sound at 60 Hz), VfxScreenTint_PollFlashSound plays the thunder at 0: thunder follows the lightning 4x sooner at 240 (lightning weather only, gp+0x151c)	scale the delay at TriggerFlash (0x390ec8): (int)(d * k) -> ticks_from_frames60, or take it down on tick::frame60_due
+0x113dd0	RaceStateRace_Update	NOT_PER_TICK	COUNTER	+1	ai+0xc raceTicks; its reader (RiderGateSub_IsStartTimeReached, ai.rs) multiplies by the .lit4 1/60 at 0x49b8b0, which is patched to 1/rate, so the gate start time is in seconds at any rate (no other reader documented in docs/investigation/structs/world.md)	
+0x385e48	cPS2GridMesh_Draw	NOT_PER_TICK	COUNTER	+1	drawn strip/cell count	
+0x2f54ac	WorldLightMan_GetInstanceLighting	NOT_PER_TICK	COUNTER	+1	+0x3290 lighting-cache slot count (up to 32, then evict oldest)	
+0x1a225c	FEModule_Render	NOT_PER_TICK	COUNTER	-1	+0xb5adc one-shot skip flag (set to 1 by 0x1a27a0), cleared at the next render	
+0x3de044	EAFile_ServiceQueue	NOT_PER_TICK	COUNTER	+1	queued-request count	
+0x3de09c	EAFile_ServiceQueue	NOT_PER_TICK	COUNTER	-1	queued-request count	
+0x390d44	VfxScreenTint_Update	PER_TICK	COUNTER	+1	(scan missed: gp-relative) gp+0x15a8 lightning-flash phase, +1 per tick through the four phase lengths gp+0x1528..0x1534 (ticks) that shape the tint ramp: each lightning flash 4x short at 240	advance the phase on tick::frame60_due (key gp+0x15a8) or compare with ticks_from_frames60 of the four lengths
+0x390cc8	VfxScreenTint_Update	PER_TICK	OTHER	rand < gp+0x1524^2	(scan missed) per-tick random lightning trigger (chance = intensity^2 per tick while idle): 4x as many lightning strikes per second at 240	chance -> 1-(1-p)^(60/rate), or roll only on tick::frame60_due
+0x2f3a60	cSplashManager_Update	PER_TICK	STEP	59.99999 (.lit4 0x49f7ec) * 0.036	(scan missed: 60.0 not 1/60) camera speed +0x1020 = per-tick camera displacement * 60 * 0.036: 4x low at 240; it feeds cSplashManager_UpdateDrop/UpdateCrystal and the >1000 teleport reset (now needs a 4x larger jump)	displacement * rate * 0.036 (write rate into 0x49f7ec if it has no other user, else scale at the site); exact at 60
+0x2f3c2c	cSplashManager_Update	PER_TICK	OTHER	rand*n/24 < 0.01 (gp+0x1168, gp+0x1170)	(scan missed) per-tick random chance that a crystal drips (adds a drop, up to 2 per crystal): drips 4x as often at 240, crystals exhausted 4x sooner	chance -> 1-(1-p)^(60/rate), or roll only on tick::frame60_due(this)
+0x229530	CrowdMan2d_SpawnSprites	PER_TICK	STEP	-(reaction*10+4) per tick, reload 300..599	(scan missed) per-emitter spawn timer +0x240 taken down by (crowd reaction*10 + 4) every tick, reload rand%300+300: 4x as many crowd camera flashes per second at 240 (with the 3-tick lifetime row, the crowd flicker rate and look change)	subtract on tick::frame60_due(emitter) or scale the step by 60/rate in a float accumulator
+0x2e66b8	cSpeedBoostStreamerFX_Update	PER_TICK	STEP	*0.95 (gp-0x39ec, .lit4 0x49f704)	(scan missed) when not boosting, +4/+8/+0xc (width, alpha 1.0, segment length) decay *= 0.95 per tick: streamer fades 4x faster at 240	k -> k^(60/rate)
+0x2e66b8	cSpeedBoostStreamerFX_Update	PER_TICK	STEP	1.4 (gp-0x39e8, .lit4 0x49f708)	(scan missed) every tick all 20 ring points shift by rider velocity * 1.4 (points spread backward per tick): spread rate 4x at 240; tied to the per-tick ring sampling above	scale by 60/rate together with the frame60_due ring advance (or advance both only on frame60_due)

@@ -1,0 +1,94 @@
+site	function	class	kind	constant	reason	conversion
+0x39ff04	UIObject_ApplyAlignment	NOT_PER_TICK	OTHER	0.5	alignment: y -= h*0.5 (centre) on the caller's rect from the object's flags (+0x14 >> 13); a layout offset on a fresh rect, no state carried	
+0x39ff44	UIObject_ApplyAlignment	NOT_PER_TICK	OTHER	0.5	alignment: x -= w*0.5 (centre), same as above	
+0x35fad8	UVScrollModifier_Update	NOT_PER_TICK	OTHER	1	wrap of the UV offset +0x30 into [-1,1]; the per-tick velocity add (+0x38/+0x3c) is already converted in object/railmodifier.rs (uv_velocity_scale, 60/rate) and the phase step is 1/(*(gp+0x2a74)+0x10)	
+0x35faf8	UVScrollModifier_Update	NOT_PER_TICK	OTHER	1	wrap of the UV offset +0x34; already converted in object/railmodifier.rs (see above)	
+0x3ba884	SND_ChannelCalcVolume	NOT_PER_TICK	OTHER	127	volume normalisation (x * table / 127, x * 127 table index); computed fresh per call	
+0x21ef18	HUD_DrawPositionPanel	NOT_PER_TICK	OTHER	0.0555556	draw-time layout: the size just written by the layout call 0x1f10f8 into s1 is scaled by gp-0x5354 (1/18) and the element scale; recomputed every draw	
+0x21ef1c	HUD_DrawPositionPanel	NOT_PER_TICK	OTHER	0.0555556	same as above (the x size)	
+0x389468	Irradiance_AddDirectionalScaled	NOT_PER_TICK	OTHER	0.247708 0.315392 0.886227 3	spherical-harmonic basis constants (sqrt(pi)/2, 0.4886, 1.0233, ...) projecting one directional light into the irradiance coefficients; accumulation over lights, not over time	
+0x3894a4	Irradiance_AddDirectionalScaled	NOT_PER_TICK	OTHER	0.429043 0.546274	SH projection, as above	
+0x3894ac	Irradiance_AddDirectionalScaled	NOT_PER_TICK	OTHER	0.429043 0.546274	SH projection, as above	
+0x3894b0	Irradiance_AddDirectionalScaled	NOT_PER_TICK	OTHER	0.315392 0.743125 3	SH projection, as above	
+0x3894b4	Irradiance_AddDirectionalScaled	NOT_PER_TICK	OTHER	0.858086 1.09255	SH projection, as above	
+0x3894b8	Irradiance_AddDirectionalScaled	NOT_PER_TICK	OTHER	0.858086 1.09255	SH projection, as above	
+0x3894bc	Irradiance_AddDirectionalScaled	NOT_PER_TICK	OTHER	0.858086 1.09255	SH projection, as above	
+0x3894cc	Irradiance_AddDirectionalScaled	NOT_PER_TICK	OTHER	0.488603 1.02333	SH projection, as above	
+0x3894d8	Irradiance_AddDirectionalScaled	NOT_PER_TICK	OTHER	0.488603 1.02333	SH projection, as above	
+0x3894e8	Irradiance_AddDirectionalScaled	NOT_PER_TICK	OTHER	0.488603 1.02333	SH projection, as above	
+0x2d4e94	cAngerFX_Update	PER_TICK	STEP	0.0666667 0.1	anger glow level (slot+0x0, one 0x2c slot per rider): rival level >= 2 fades in +0.1 per tick (gp-0x3d34) up to 1 (snaps 0.9..1.1 to 1, -0.1 above 1.1), else fades out -1/15 per tick (gp-0x3d2c/-0x3d28); per-tick update from the visual-effects manager; 4x fast fade at 240	step k/r: f3 = 0.1/r (gp-0x3d34) and 1/15/r (gp-0x3d2c, -0x3d28) on the non-60 branch; the 0.9 snap window becomes 1-0.1/r
+0x2d4ed4	cAngerFX_Update	PER_TICK	COUNTER	41	extra: slot+0x20 pulse frame += 1 per tick mod 41 (indexes the colour tables 0x488ea0/0x488f48); the glow pulse runs 4x fast at 240	advance slot+0x20, +0x24, +0x28 only when tick::frame60_due(c, slot address, frame) (once per 60 Hz frame); exact at 60
+0x2d4f18	cAngerFX_Update	PER_TICK	COUNTER	31	extra: slot+0x24 pulse frame += 1 per tick mod 31 (tables 0x488ff0/0x489070)	same gate as slot+0x20
+0x2d4f60	cAngerFX_Update	PER_TICK	COUNTER	24	extra: slot+0x28 pulse frame += 1 per tick mod 24 (tables 0x4890f0/0x489150)	same gate as slot+0x20
+0x2dd900	cBoardWakeFX_Update	PER_TICK	SMOOTH	0.3 0.7	wake intensity +0x94 = 0.7*old + 0.3*new (gp-0x3bf8/-0x3bf4) each tick; it gates ring emission (> 0.05) and is the BuildTrail width; not converted in visualfx/boardwakefx.rs (c_board_wake_fx_update has no tick code)	keep 0.7^(1/r), weight 1-keep, into f0/f6 after the loads at 0x2dd7e4/0x2dd800
+0x2dd908	cBoardWakeFX_Update	PER_TICK	SMOOTH	0.2 0.8	smoothed speed +0x90 = 0.8*old + 0.2*new (gp-0x3c00/-0x3bfc) each tick; gates ring emission (> 55.6)	keep 0.8^(1/r), weight 1-keep, into f5/f4 after the loads at 0x2dd7c0/0x2dd7dc (the same registers drive the three vector rows below)
+0x2dd824	cBoardWakeFX_Update	PER_TICK	SMOOTH	0.8 0.2	extra: wake point +0x60 = 0.8*old + 0.2*cur (vf, f5/f4) each tick	covered by the f5/f4 conversion above
+0x2dd87c	cBoardWakeFX_Update	PER_TICK	SMOOTH	0.8 0.2	extra: wake point +0x70 = 0.8*old + 0.2*cur each tick	covered by the f5/f4 conversion above
+0x2dd8f0	cBoardWakeFX_Update	PER_TICK	SMOOTH	0.8 0.2	extra: wake direction +0x80 = 0.8*old + 0.2*cur each tick	covered by the f5/f4 conversion above
+0x2e1744	cDynamicSprayFX_UpdateEmitter5	NOT_PER_TICK	STEP	0.5 2	level +0x4 rise (2*ramp*f5, clamp 2) is already converted in visualfx/boardwakefx.rs (dynamic_spray_fx_update_emitter5, per_tick_step)	
+0x2e17a0	cDynamicSprayFX_UpdateEmitter5	NOT_PER_TICK	STEP	0.5 2	level +0x4 rise (clamp 2) already converted in visualfx/boardwakefx.rs (per_tick_step)	
+0x2e1970	cDynamicSprayFX_UpdateEmitter5	NOT_PER_TICK	SMOOTH	0.2 0.8	alpha 0.8/0.2 smoothing already converted in visualfx/boardwakefx.rs (0.8^(60/rate))	
+0x2e1a08	cDynamicSprayFX_UpdateEmitter5	NOT_PER_TICK	DECAY	0.4	strength decay (cfg decay * 0.4) already converted in visualfx/boardwakefx.rs (per_tick_factor)	
+0x2e689c	cSpeedBoostStreamerFX_Update	PER_TICK	DECAY	0.95	extra (scan missed it): +0x4 streamer length *= 0.95 per tick (gp-0x39ec) once the boost ends	0.95^(1/r) into f0 after the load at 0x2e6884 (covers +0x4, +0x8, +0xc)
+0x2e68a0	cSpeedBoostStreamerFX_Update	PER_TICK	DECAY	0.95	+0x8 streamer alpha *= 0.95 per tick (gp-0x39ec) when not boosting; per-tick FX update; fades 4x fast at 240	0.95^(1/r) on f0 (see 0x2e689c)
+0x2e68a4	cSpeedBoostStreamerFX_Update	PER_TICK	DECAY	0.95	+0xc streamer width *= 0.95 per tick (gp-0x39ec) when not boosting	0.95^(1/r) on f0 (see 0x2e689c)
+0x2e68f4	cSpeedBoostStreamerFX_Update	PER_TICK	COUNTER	20	extra: +0x39c history ring index += 1 per tick mod 20 and +0x3a0 count++ (0x2e68fc) while boosting: the streamer keeps the last 20 ticks of points, so it is 4x shorter at 240	run the boosting ring block (advance, copy, spread at 0x2e696c/0x2e6984) only when tick::frame60_due(c, self, frame); exact at 60
+0x2e696c	cSpeedBoostStreamerFX_Update	PER_TICK	STEP	1.4	extra: every history point pair spread by -/+ (rider+0x1a0)*1.4 (gp-0x39e8) per tick	inside the frame60_due gate above (once per 60 Hz frame); otherwise step 1.4/r
+0x2e69bc	cSpeedBoostStreamerFX_Update	PER_TICK	COUNTER	1	extra: +0x3a0 point count -1 per tick toward 0 when not boosting (streamer shrink)	decrement only on tick::frame60_due(c, self, frame)
+0x2e6bec	cSpeedBoostStreamerFX_Update	NOT_PER_TICK	OTHER	1	wrap of the UV scroll +0x10; its step is 0.01*|v|*gp-0x39dc where gp-0x39dc is a .lit4 1/60 (patched, follows)	
+0x2ef904	cAirStreamerFX_Update	PER_TICK	STEP	0.000166667	UV scroll +0x10 -= |rider+0x1e0| * gp-0x393c per tick; 1.6667e-4 = (1/60)/100 is a folded step the .lit4 patch does not touch (the boost streamer uses 0.01 * the patched 1/60); scrolls 4x fast at 240	step k/r: f2 = gp-0x393c / r (or 1.6667e-4 * tick::dt*60) on the non-60 branch
+0x2ef914	cAirStreamerFX_Update	NOT_PER_TICK	OTHER	1	wrap +1 of the UV scroll +0x10	
+0x2ef938	cAirStreamerFX_Update	NOT_PER_TICK	OTHER	1	wrap -1 of the UV scroll +0x10	
+0x2ef85c	cAirStreamerFX_Update	PER_TICK	COUNTER	25	extra: +0x8 history ring index += 1 mod 25 and +0xc count++ (0x2ef864) on every even game frame (AI_GetFrameCounter & 1) while airborne: the air streamer covers 50 ticks, 4x shorter at 240	advance when tick::frame60_due says a 60 Hz frame passed and that frame is even (or frame60_due with a 2-frame period); exact at 60
+0x2ef8b4	cAirStreamerFX_Update	PER_TICK	COUNTER	2	extra: +0xc point count -2 per tick toward 0 after landing	decrement only on tick::frame60_due(c, self, frame)
+0x2f1c10	AttachedEmitterFX_Update	NOT_PER_TICK	OTHER	4	wrap -4 of the noise phase +0x208; its step is data(+0x10c) * gp-0x3924, a .lit4 1/60 (patched, follows)	
+0x3c3df4	SND_ChannelApplyPan	NOT_PER_TICK	OTHER	32767	pan to 16-bit volume scale; computed fresh per call	
+0x34b978	cFlagManager_GroupUpdate	NOT_PER_TICK	OTHER	1	wrap -1 of phase +0x88 (the per-tick add is the extra row 0x34b970)	
+0x34b99c	cFlagManager_GroupUpdate	NOT_PER_TICK	OTHER	1	wrap -1 of phase +0x8c (the per-tick add is the extra row 0x34b994)	
+0x34b970	cFlagManager_GroupUpdate	PER_TICK	STEP	+0x50	extra: flag ripple phase +0x88 += +0x50 per tick (authored per-tick rate); per-tick world update; flags wave 4x fast at 240	step k/r: f1 (+0x50) / r on the non-60 branch
+0x34b994	cFlagManager_GroupUpdate	PER_TICK	STEP	+0x54	extra: flag ripple phase +0x8c += +0x54 per tick	step k/r: f0 (+0x54) / r
+0x34b89c	cFlagManager_GroupUpdate	PER_TICK	STEP	+0x4..+0x10	extra: four wave phases +0x78..+0x84 += speed_i * (base +0x4c + wind (flag manager +0x10) * (1 - base)) per tick, wrap 1	step k/r: f2 (the common factor computed at 0x34b878) / r
+0x34c1b8	cFlagManager_GroupComputeVerts	NOT_PER_TICK	OTHER	0.5	builds the flag vertices into the caller's stack buffer from the current phases (sums of table sines); no state carried	
+0x34c26c	cFlagManager_GroupComputeVerts	NOT_PER_TICK	OTHER	0.5	same as above	
+0x162c30	ChaseCameraAlgorithm_ApplyTargetHeight	PER_TICK	SMOOTH	f16	look-at height +0x1e4 = f16*old + (1-f16)*lift each update; f16 is a per-tick weight from the caller's gp constant (Default_2: gp-0x6168 = 0.924; 7 *ChaseCameraAlgorithm_Update callers); the 0.000514/1388.9 are the speed ramp, not time; the port in chase.rs (apply_target_height) does not convert f16	smoothing: f16' = f16^(1/r) at entry on the non-60 branch (per_tick_factor in chase.rs)
+0x163318	ChaseCameraAlgorithm_ApplyCameraHeight	NOT_PER_TICK	OTHER	0.5	slope bonus +0x204 = ramp^2 * slope * (slot18 - 0.5), computed fresh (held while airborne)	
+0x163368	ChaseCameraAlgorithm_ApplyCameraHeight	PER_TICK	SMOOTH	f16	eye drop +0x1d4 = f16*old + (1-f16)*drop each update; f16 from the caller (Default_2: gp-0x619c = 0.978); not converted in chase.rs (apply_camera_height)	smoothing: f16' = f16^(1/r) at entry
+0x163438	ChaseCameraAlgorithm_ApplyFov	PER_TICK	SMOOTH	f15	FOV scale +0x1dc = f15*old + (1-f15)*t; chase.rs converts only the 0.999 (neither Ground nor Air) path; on the Ground path (state 0) f15 is the caller's weight (Default_2: gp-0x6184 = 0.95), still per tick	smoothing: on the state == 0 path f15' = per_tick_factor(f15) = f15^(1/r)
+0x163f80	ChaseCameraAlgorithm_ApplyJumpCurves	NOT_PER_TICK	OTHER	0.5	+0x224 is rewritten from scratch at 0x163ef8 (x*f31 + (1-x)*K) and then blended with (0.5+0.5w); no carry-over from the previous tick	
+0x15f1d8	GameCamera_AvoidCollision	NOT_PER_TICK	CLAMP	0.05 50	collision lift +0x460 corrected by the clearance deficit of this tick's sweep (50/max(sin,0.05) is a geometric margin, reset above 150); a positional correction, not a rate	
+0x15f29c	GameCamera_AvoidCollision	PER_TICK	DECAY	0.97	collision lift +0x460 *= 0.97 (gp-0x6c54) every update (camera update, once per tick); relaxes 4x fast at 240 (camera drops back towards the wall sooner)	decay 0.97^(1/r)
+0x166440	ChaseCameraAlgorithm_SmoothPitch	PER_TICK	SMOOTH	k (f14/f15)	smoothed pitch +0x1d8 = k*old + (1-k)*pitch, k = f14 (down) or f15 (up) from the algorithm's getter (vtable +0x3c, called by ChaseCameraAlgorithm_PostUpdate every update); not converted in camera/camera.rs	smoothing: k' = k^(1/r) for f14/f15 at entry (before the angle-limit division k / (angle / limit))
+0x166448	ChaseCameraAlgorithm_SmoothPitch	PER_TICK	SMOOTH	k (f14/f15)	camera pitch +0x54 set to the same smoothed value	covered by the k' conversion above
+0x1eab50	cOVStateHUD1P_Update	PER_TICK	STEP	0.00833333	HUD pulse phase +0xc94 += 1/120 (gp-0x576c, not a .lit4 1/60) per tick while the HUD is allowed, wrap 1 (2 s cycle at 60)	step k/r
+0x1eab6c	cOVStateHUD1P_Update	NOT_PER_TICK	OTHER	1	wrap of +0xc94	
+0x1eae40	cOVStateHUD1P_Update	NOT_PER_TICK	OTHER	2.99987	now-playing box layout: line spacing += 3.0 (gp-0x5760) in the one-shot song title/artist/album layout	
+0x1eb4a8	cOVStateHUD1P_Update	PER_TICK	STEP	0.00333349	+0xa44 timer += 1/300 (gp-0x5740) per tick, clamp 1, then the 0x20000 element is hidden (5 s at 60, 1.25 s at 240)	step k/r
+0x1eb6bc	cOVStateHUD1P_Update	NOT_PER_TICK	OTHER	1	wrap of +0x3d0 (its step gp-0x5734 is a .lit4 1/60, follows)	
+0x1ebbec	cOVStateHUD1P_Update	PER_TICK	STEP	0.0264569 0.148417	player slot +0x48 flash += 0.148 (gp-0x5728) or 0.02646 (gp-0x5724) per tick, clamp 1 (the position-change flash)	step k/r on both constants
+0x1ebc44	cOVStateHUD1P_Update	PER_TICK	STEP	0.0267822	player slot +0x4c blink phase += 0.02678 (gp-0x5720) per tick, wrap 2	step k/r
+0x1ebc5c	cOVStateHUD1P_Update	NOT_PER_TICK	OTHER	2	wrap of slot +0x4c	
+0x1ebe44	cOVStateHUD1P_Update	PER_TICK	STEP	0.0333333	extra: player slot +0x64 pulse += (1/30 gp-0x5714) / ((1 - ratio) * 0.910 + 0.030) per tick, wrap 2 (pulse speeds up as the meter fills)	step k/r (scale gp-0x5714 by 1/r)
+0x1ebf14	cOVStateHUD1P_Update	PER_TICK	STEP	0.0879163	player slot +0x68 blink += 0.0879 (gp-0x5710) per tick, wrap 1	step k/r
+0x1ebf2c	cOVStateHUD1P_Update	NOT_PER_TICK	OTHER	1	wrap of slot +0x68	
+0x1ebf98	cOVStateHUD1P_Update	PER_TICK	STEP	0.0208333	player slot +0x70 fade += 1/48 (gp-0x570c) per tick, clamp 1	step k/r
+0x2e1238	cDynamicSprayFX_UpdateEmitter4	NOT_PER_TICK	STEP	0.00166667	blend +0x1c -= 1/600 per tick already converted in visualfx/boardwakefx.rs (dynamic_spray_update_emitter4, per_tick_step)	
+0x2f4370	cSplashManager_SetSnowAmount	PER_TICK	STEP	0.00769231 10	pending lens snow splats +0x1024 += amount * (+0x1020 + 10) * 0.015 * (1/130) per call; called once per tick by SnowFall_Update for each splash manager and drained by cSplashManager_EmitPending (int part = drops spawned): 4x the snow on the lens at 240; port fe/splashmanager.rs has no tick code	step k/r: multiply the increment by 1/r (60/rate) on the non-60 branch
+0x2f50e4	LensFX_UpdateSunPosition	NOT_PER_TICK	CLAMP	16	sun flare screen rect clamped to the viewport minus 16; computed fresh	
+0x2f5110	LensFX_UpdateSunPosition	NOT_PER_TICK	CLAMP	16	same (y)	
+0x3c78a0	SND_MixAddRamp16	NOT_PER_TICK	OTHER	0.0588235	audio mixer: linear gain ramp over a 16-sample block (1/17 per sample); runs per audio block, not per game tick	
+0x3c78fc	SND_MixAddRamp16	NOT_PER_TICK	OTHER	0.0588235	audio mixer ramp, as above	
+0x3c7958	SND_MixAddRamp16	NOT_PER_TICK	OTHER	0.0588235 3	audio mixer ramp, as above	
+0x3c79a0	SND_MixAddRamp16	NOT_PER_TICK	OTHER	0.0588235 4	audio mixer ramp, as above	
+0x3c79c0	SND_MixAddRamp16	NOT_PER_TICK	OTHER	0.0588235 5	audio mixer ramp, as above	
+0x3c79d0	SND_MixAddRamp16	NOT_PER_TICK	OTHER	0.0588235 6	audio mixer ramp, as above	
+0x3c79e0	SND_MixAddRamp16	NOT_PER_TICK	OTHER	0.0588235 7	audio mixer ramp, as above	
+0x3c79f0	SND_MixAddRamp16	NOT_PER_TICK	OTHER	0.0588235 8	audio mixer ramp, as above	
+0x3c7a14	SND_MixAddRamp16	NOT_PER_TICK	OTHER	0.0588235 9	audio mixer ramp, as above	
+0x3c7a24	SND_MixAddRamp16	NOT_PER_TICK	OTHER	0.0588235 10	audio mixer ramp, as above	
+0x3c7a34	SND_MixAddRamp16	NOT_PER_TICK	OTHER	0.0588235 11	audio mixer ramp, as above	
+0x3c7a48	SND_MixAddRamp16	NOT_PER_TICK	OTHER	0.0588235 12	audio mixer ramp, as above	
+0x3c7a68	SND_MixAddRamp16	NOT_PER_TICK	OTHER	0.0588235 13	audio mixer ramp, as above	
+0x3c7a78	SND_MixAddRamp16	NOT_PER_TICK	OTHER	0.0588235 14	audio mixer ramp, as above	
+0x3c7a88	SND_MixAddRamp16	NOT_PER_TICK	OTHER	0.0588235 15	audio mixer ramp, as above	
+0x3c7a98	SND_MixAddRamp16	NOT_PER_TICK	OTHER	0.0588235 16	audio mixer ramp, as above	
+0x2de258	cBoardWakeFX_AdvanceRing	NOT_PER_TICK	OTHER	32 64	texture-u wrap of a new ring's coordinate (x - floor(x/64)*64 - 32); AdvanceRing runs when the board has moved > 50 units (distance-driven, not per tick)	

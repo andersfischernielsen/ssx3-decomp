@@ -45,6 +45,8 @@ fn main() {
         .and_then(|i| args.get(i + 1))
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
+    // SSX3_SHOT_FROM=F: screenshots only from frame F on.
+    let shot_from: u64 = std::env::var("SSX3_SHOT_FROM").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
     let shot_dir = std::env::var("SSX3_SHOTS").unwrap_or_else(|_| "/tmp/ssx3-shots".into());
     let _ = std::fs::create_dir_all(&shot_dir);
 
@@ -156,7 +158,7 @@ fn main() {
                 eprintln!("          {s}");
             }
         }
-        if shot_every > 0 && f % shot_every == 0 {
+        if shot_every > 0 && f % shot_every == 0 && f >= shot_from {
             let path = format!("{shot_dir}/frame{f:05}.png");
             // Native: the draw-layer renderer's image is the one shown.
             match gfx.as_ref().filter(|_| ssx3_ps2::frame_sink::native()).and_then(|g| g.read_image()) {

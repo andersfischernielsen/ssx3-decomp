@@ -87,6 +87,124 @@ pub const FRAME_COUNTS: &[(u32, u32)] = &[
     (0x004a_17c0, 300),
 ];
 
+/// What a [`PER_TICK`] constant is per tick.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PerTick {
+    /// An amount added per tick: `k * 60 / rate`.
+    Step,
+    /// A factor applied per tick (`v *= k`, or the kept share of a blend
+    /// `k * old + (1 - k) * new`): `k ^ (60 / rate)`.
+    Decay,
+    /// `v = v * k - b` per tick, `b` in the entry given: `k' = k ^ (60 /
+    /// rate)` and `b' = b * (1 - k') / (1 - k)`, the same fixed point and
+    /// the composition of the 60 Hz steps.
+    Affine(u32),
+}
+
+/// `.lit4` constants that are amounts *per tick* with no 1/60 in them
+/// (`tools/scan_tick_patterns.py`, `docs/plans/tick/t4-*.tsv`), rewritten for
+/// the rate like the 1/60 entries: (entry, its value in the executable, what
+/// it is). Each is loaded at exactly one site (checked against the
+/// executable), so the rewrite changes that site only; hand-written ports
+/// load them from memory as well. Nothing is written at 60.
+pub const PER_TICK: &[(u32, u32, PerTick)] = &[
+    // Rider_HandleBoostInput (0x114130): the boost meter (rider +0x2f8)
+    // drains 0.0015068 per tick while boost is held.
+    (0x0049_b4fc, 0x3ac5_7fcc, PerTick::Step),
+    // Rider_UpdateTargetSpeed (0x11b3f8): target speed (+0x2e4) blend,
+    // `k * old + (1 - k) * new` per tick, k = 0.9 rising, 0.97 falling.
+    (0x0049_b728, 0x3f66_6666, PerTick::Decay),
+    (0x0049_b730, 0x3f78_51ec, PerTick::Decay),
+    // Rider_UpdateImpacts (0x1210b0): per-tick decays of the last collision
+    // normal (+0x3e0, 0.98), the stuck (+0x3f0, 0.956) and bounce (+0x3f4,
+    // 0.978) accumulators behind the reset to the path.
+    (0x0049_b7d4, 0x3f7a_e148, PerTick::Decay),
+    (0x0049_b7d8, 0x3f74_bc6a, PerTick::Decay),
+    (0x0049_b7dc, 0x3f7a_740e, PerTick::Decay),
+    // RiderGroundState_Update (0x13d818): the ground wobble's phase advances
+    // speed * 2.65 per tick.
+    (0x0049_c13c, 0x4029_999a, PerTick::Step),
+    // Rider_UpdateTweakLayerAnim (0x1163b0): the tweak layer's weight
+    // (+0x350) approaches 1 by time scale / 90 per tick.
+    (0x0049_b5d0, 0x3c36_0b62, PerTick::Step),
+    // RiderSpinSub_HandleInput (0x133308): the spin and flip leans (+0x28,
+    // +0x2c) approach the stick by at most 0.05 (scaled) per tick; their
+    // change also turns the rider.
+    (0x0049_bc94, 0x3d4c_c9c7, PerTick::Step),
+    (0x0049_bca0, 0x3d4c_d331, PerTick::Step),
+    // Player_ApplyRumble (0x125b18): the motor strengths decay per tick,
+    // `max(0, a * 0.91333 - 18.5185)` and `b * 0.99167`.
+    (0x0049_b890, 0x3f69_d037, PerTick::Affine(0x0049_b894)),
+    (0x0049_b898, 0x3f7d_ddde, PerTick::Decay),
+    // RiderWipeoutSub_HandleInput (0x12cb68): the wipeout meter (+0x70)
+    // falls back by 0.00417 per tick (the same value as a +/- band).
+    (0x0049_b914, 0x3b88_a358, PerTick::Step),
+    (0x0049_b918, 0xbb88_a358, PerTick::Step),
+];
+
+/// The value of [`PER_TICK`] entries at `hz`: (entry, bits) pairs, the
+/// executable's values at 60.
+pub fn per_tick_values(hz: u32) -> Vec<(u32, u32)> {
+    let q = hz as f64 / 60.0;
+    let f = |bits: u32| f32::from_bits(bits) as f64;
+    let mut out = Vec::new();
+    for &(a, bits, kind) in PER_TICK {
+        if hz == 60 {
+            out.push((a, bits));
+            if let PerTick::Affine(b) = kind {
+                out.push((b, AFFINE_B.iter().find(|e| e.0 == b).map_or(0, |e| e.1)));
+            }
+            continue;
+        }
+        match kind {
+            PerTick::Step => out.push((a, ((f(bits) / q) as f32).to_bits())),
+            PerTick::Decay => out.push((a, (f(bits).powf(1.0 / q) as f32).to_bits())),
+            PerTick::Affine(b) => {
+                let k = f(bits);
+                let k2 = k.powf(1.0 / q);
+                let b0 = f(AFFINE_B.iter().find(|e| e.0 == b).map_or(0, |e| e.1));
+                out.push((a, (k2 as f32).to_bits()));
+                out.push((b, ((b0 * (1.0 - k2) / (1.0 - k)) as f32).to_bits()));
+            }
+        }
+    }
+    out
+}
+
+/// The offsets of [`PerTick::Affine`] entries: (entry, executable value).
+const AFFINE_B: &[(u32, u32)] = &[(0x0049_b894, 0x4194_25ed)];
+
+/// Rewrite the [`PER_TICK`] constants for `hz` (each only if it still holds
+/// the executable's value or one this wrote, so a wrong address is caught).
+fn patch_per_tick(c: &mut Cpu, hz: u32) {
+    let ok: Vec<u32> = PER_TICK
+        .iter()
+        .filter(|&&(a, bits, _)| {
+            let cur = c.bus.read32(a);
+            let known = [60, 120, 144, 180, 240, 300, 360, APPLIED.load(Ordering::Relaxed)]
+                .iter()
+                .any(|&h| h != 0 && per_tick_values(h).iter().any(|&(e, v)| e == a && v == cur));
+            if cur != bits && !known {
+                eprintln!("[tick] per-tick constant at {a:#x} holds {cur:#x}, not {bits:#x}: left alone");
+            }
+            cur == bits || known
+        })
+        .map(|e| e.0)
+        .collect();
+    let affine: Vec<u32> = PER_TICK
+        .iter()
+        .filter_map(|&(a, _, k)| match k {
+            PerTick::Affine(b) if ok.contains(&a) => Some(b),
+            _ => None,
+        })
+        .collect();
+    for (a, v) in per_tick_values(hz) {
+        if ok.contains(&a) || affine.contains(&a) {
+            c.bus.write32(a, v);
+        }
+    }
+}
+
 /// The configured rate (Hz).
 static RATE: AtomicU32 = AtomicU32::new(60);
 /// The rate last written into guest memory (0: none yet).
@@ -183,6 +301,7 @@ pub fn on_vblank(c: &mut Cpu) {
     if APPLIED.load(Ordering::Relaxed) != want {
         patch_pool(c, want);
         patch_frame_counts(c, want);
+        patch_per_tick(c, want);
         APPLIED.store(want, Ordering::Relaxed);
     }
 }
@@ -559,6 +678,46 @@ pub fn set_for_test(c: &mut Cpu, hz: u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn per_tick_constants_follow_the_rate() {
+        let f = |v: &[(u32, u32)], a: u32| f32::from_bits(v.iter().find(|e| e.0 == a).unwrap().1) as f64;
+        let v60 = per_tick_values(60);
+        // At 60 the executable's values, untouched.
+        for &(a, bits, _) in PER_TICK {
+            assert_eq!(v60.iter().find(|e| e.0 == a).unwrap().1, bits, "{a:#x}");
+        }
+        for hz in [120u32, 240] {
+            let q = hz as f64 / 60.0;
+            let v = per_tick_values(hz);
+            // A step: q ticks move as far as one at 60.
+            let boost = f(&v, 0x0049_b4fc);
+            assert!((boost * q - f(&v60, 0x0049_b4fc)).abs() < 1e-9, "{hz}: boost {boost}");
+            // A decay: q ticks keep as much as one at 60.
+            let k = f(&v, 0x0049_b7d8);
+            assert!((k.powf(q) - 0.956).abs() < 1e-6, "{hz}: {k}");
+            // The rumble: q steps of the converted map equal one at 60.
+            let (a, b) = (f(&v, 0x0049_b890), f(&v, 0x0049_b894));
+            let (a0, b0) = (f(&v60, 0x0049_b890), f(&v60, 0x0049_b894));
+            let mut x = 1000.0;
+            for _ in 0..hz / 60 {
+                x = x * a - b;
+            }
+            assert!((x - (1000.0 * a0 - b0)).abs() < 1e-2, "{hz}: rumble {x}");
+        }
+        // The rewrite leaves an entry that does not hold its value alone.
+        let mut c = ssx3_ps2::new_cpu();
+        for (a, v) in per_tick_values(60) {
+            c.bus.write32(a, v);
+        }
+        c.bus.write32(0x0049_b4fc, 0x1234_5678);
+        patch_per_tick(&mut c, 240);
+        assert_eq!(c.bus.read32(0x0049_b4fc), 0x1234_5678);
+        assert_eq!(c.bus.read32(0x0049_b7d8), (0.956f64.powf(0.25) as f32).to_bits());
+        patch_per_tick(&mut c, 60);
+        assert_eq!(c.bus.read32(0x0049_b7d8), 0x3f74_bc6a);
+        assert_eq!(c.bus.read32(0x0049_b894), 0x4194_25ed);
+    }
 
     #[test]
     fn step_60_is_the_games_constant() {
