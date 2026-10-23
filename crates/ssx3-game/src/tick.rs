@@ -26,6 +26,9 @@ pub const APPMAN_PTR: u32 = 0x004A_5B64;
 /// `cAppMan` fields: tick rate (int, Hz), step (f32, s).
 pub const APPMAN_RATE: u32 = 0x10;
 pub const APPMAN_STEP: u32 = 0x14;
+/// `cAppMan +0x18`: VSyncs seen (int, incremented by `App_VSyncTick`). The UI
+/// and script timelines advance in 60 Hz frames against it.
+pub const APPMAN_VSYNC: u32 = 0x18;
 /// `cAppMan +0x24`: game updates queued per VSync (f32, 1.0). `App_VSyncTick`
 /// adds it to an accumulator and queues one update per whole unit; the main
 /// loop runs the queued updates (at most `+0x20` = 12), then renders once.
@@ -299,6 +302,30 @@ impl Pacer {
     }
 }
 
+/// `Frames per second of the UI (and script) timelines`: the screens advance
+/// one frame per VSync at 60 Hz, and one frame per 60 Hz boundary at a higher
+/// rate, so animations and screen scripts keep their wall-clock speed.
+///
+/// [`APPMAN_VSYNC`] is the VSync counter `App_VSyncTick` bumps once per VSync;
+/// it advances 60 times per second at any rate (see [`frame60_due`]).
+pub fn ui_frame_due(c: &mut Cpu) -> bool {
+    let r = rate(c);
+    if r == 60 {
+        return true;
+    }
+    let t = vsync_count(c);
+    ((t as u64 * 60) % r as u64) < 60
+}
+
+/// The VSync counter `App_VSyncTick` keeps at `cAppMan +0x18` (0 before the
+/// app manager exists).
+pub fn vsync_count(c: &mut Cpu) -> u32 {
+    match c.bus.read32(APPMAN_PTR) {
+        0 => 0,
+        app => c.bus.read32(app + APPMAN_VSYNC),
+    }
+}
+
 /// Write the step for `hz` into the `.lit4` `1/60` entries.
 fn patch_pool(c: &mut Cpu, hz: u32) {
     let mut pool = POOL.lock().unwrap();
@@ -451,6 +478,32 @@ mod tests {
         assert!(pool.contains(&0x0049_b118));
         for &e in NOT_A_STEP {
             assert!(!pool.contains(&e), "{e:#x}");
+        }
+    }
+
+    /// The UI/screen timeline advances one frame per VSync at 60 Hz and one
+    /// frame per 60 Hz boundary above it: 60 frames per second at 60, 120,
+    /// 144 and 240 Hz, and every VSync at 60.
+    #[test]
+    fn ui_frames_stay_at_60_per_second() {
+        let mut c = ssx3_ps2::new_cpu();
+        const APP: u32 = 0x01ff_f000;
+        set_for_test(&mut c, 60);
+        for t in 1..=60u32 {
+            c.bus.write32(APP + APPMAN_VSYNC, t);
+            assert!(ui_frame_due(&mut c), "60 Hz VSync {t}");
+        }
+        for hz in [120u32, 144, 240] {
+            set_for_test(&mut c, hz);
+            let mut n = 0;
+            for t in 1..=hz {
+                c.bus.write32(APP + APPMAN_VSYNC, t);
+                if ui_frame_due(&mut c) {
+                    assert_eq!(vsync_count(&mut c), t);
+                    n += 1;
+                }
+            }
+            assert_eq!(n, 60, "{hz} Hz: {n} frames per second");
         }
     }
 
