@@ -1,0 +1,78 @@
+func	name	race	menu	ported	site	class	constants
+0x0039feb8	UIObject_ApplyAlignment	0.0	82.315	yes	0x39ff04	OTHER	0.5
+0x0039feb8	UIObject_ApplyAlignment	0.0	82.315	yes	0x39ff44	OTHER	0.5
+0x0035f7d0	UVScrollModifier_Update	47.153	0.778	yes	0x35fad8	STEP	1
+0x0035f7d0	UVScrollModifier_Update	47.153	0.778	yes	0x35faf8	STEP	1
+0x003ba7b0	SND_ChannelCalcVolume	10.734	2.822	yes	0x3ba884	OTHER	127
+0x0021ed48	HUD_DrawPositionPanel	9.0	0.0	yes	0x21ef18	SCALE	0.0555556
+0x0021ed48	HUD_DrawPositionPanel	9.0	0.0	yes	0x21ef1c	SCALE	0.0555556
+0x00389308	Irradiance_AddDirectionalScaled	5.114	7.832	no	0x389468	LERP	0.247708 0.315392 0.886227 3
+0x00389308	Irradiance_AddDirectionalScaled	5.114	7.832	no	0x3894a4	LERP	0.429043 0.546274
+0x00389308	Irradiance_AddDirectionalScaled	5.114	7.832	no	0x3894ac	OTHER	0.429043 0.546274
+0x00389308	Irradiance_AddDirectionalScaled	5.114	7.832	no	0x3894b0	LERP	0.315392 0.743125 3
+0x00389308	Irradiance_AddDirectionalScaled	5.114	7.832	no	0x3894b4	OTHER	0.858086 1.09255
+0x00389308	Irradiance_AddDirectionalScaled	5.114	7.832	no	0x3894b8	OTHER	0.858086 1.09255
+0x00389308	Irradiance_AddDirectionalScaled	5.114	7.832	no	0x3894bc	OTHER	0.858086 1.09255
+0x00389308	Irradiance_AddDirectionalScaled	5.114	7.832	no	0x3894cc	OTHER	0.488603 1.02333
+0x00389308	Irradiance_AddDirectionalScaled	5.114	7.832	no	0x3894d8	OTHER	0.488603 1.02333
+0x00389308	Irradiance_AddDirectionalScaled	5.114	7.832	no	0x3894e8	OTHER	0.488603 1.02333
+0x002d4c08	cAngerFX_Update	6.0	0.163	yes	0x2d4e94	STEP	0.0666667
+0x002dd0b8	cBoardWakeFX_Update	6.0	0.163	yes	0x2dd900	OTHER	0.3 0.7
+0x002dd0b8	cBoardWakeFX_Update	6.0	0.163	yes	0x2dd908	OTHER	0.2 0.8
+0x002e1598	cDynamicSprayFX_UpdateEmitter5	6.0	0.163	yes	0x2e1744	CLAMP	0.5 3333.33
+0x002e1598	cDynamicSprayFX_UpdateEmitter5	6.0	0.163	yes	0x2e17a0	CLAMP	0.5 2 3333.33
+0x002e1598	cDynamicSprayFX_UpdateEmitter5	6.0	0.163	yes	0x2e1970	OTHER	0.2 0.8
+0x002e1598	cDynamicSprayFX_UpdateEmitter5	6.0	0.163	yes	0x2e1a08	SCALE	0.4
+0x002e66b8	cSpeedBoostStreamerFX_Update	6.0	0.163	no	0x2e68a0	SCALE	0.95
+0x002e66b8	cSpeedBoostStreamerFX_Update	6.0	0.163	no	0x2e68a4	SCALE	0.95
+0x002e66b8	cSpeedBoostStreamerFX_Update	6.0	0.163	no	0x2e6bec	STEP	1
+0x002ef6d0	cAirStreamerFX_Update	6.0	0.163	yes	0x2ef904	OTHER	0.000166667
+0x002ef6d0	cAirStreamerFX_Update	6.0	0.163	yes	0x2ef914	LERP	0.000166667
+0x002ef6d0	cAirStreamerFX_Update	6.0	0.163	yes	0x2ef938	STEP	1
+0x002f1a08	AttachedEmitterFX_Update	6.0	0.322	yes	0x2f1c10	STEP	4
+0x003c38e0	SND_ChannelApplyPan	1.254	0.058	no	0x3c3df4	OTHER	32767
+0x0034b818	cFlagManager_GroupUpdate	1.244	0.108	yes	0x34b978	STEP	1
+0x0034b818	cFlagManager_GroupUpdate	1.244	0.108	yes	0x34b99c	STEP	1
+0x00162b90	ChaseCameraAlgorithm_ApplyTargetHeight	1.001	0.008	yes	0x162c30	CLAMP	0.000514286 1388.89
+0x00163270	ChaseCameraAlgorithm_ApplyCameraHeight	1.001	0.008	yes	0x163318	OTHER	0.5
+0x00163270	ChaseCameraAlgorithm_ApplyCameraHeight	1.001	0.008	yes	0x163368	CLAMP	0.0001 0.5 1388.89
+0x001633b0	ChaseCameraAlgorithm_ApplyFov	1.001	0.008	yes	0x163438	LERP	1e-07 0.999
+0x001635f8	ChaseCameraAlgorithm_ApplyJumpCurves	1.001	0.008	no	0x163f80	LERP	0.5
+0x0015ee00	GameCamera_AvoidCollision	1.0	0.002	no	0x15f1d8	CLAMP	0.05 50
+0x0015ee00	GameCamera_AvoidCollision	1.0	0.002	no	0x15f29c	SCALE	0.97
+0x001662a0	ChaseCameraAlgorithm_SmoothPitch	1.0	0.005	yes	0x166440	LERP	0.0174533 1.5708
+0x001662a0	ChaseCameraAlgorithm_SmoothPitch	1.0	0.005	yes	0x166448	LERP	0.0174533 1.5708
+0x001ea930	cOVStateHUD1P_Update	1.0	0.166	no	0x1eab50	STEP	0.00833333
+0x001ea930	cOVStateHUD1P_Update	1.0	0.166	no	0x1eab6c	STEP	1
+0x001ea930	cOVStateHUD1P_Update	1.0	0.166	no	0x1eae40	STEP	2.99987
+0x001ea930	cOVStateHUD1P_Update	1.0	0.166	no	0x1eb4a8	STEP	0.00333349
+0x001ea930	cOVStateHUD1P_Update	1.0	0.166	no	0x1eb6bc	STEP	1
+0x001ea930	cOVStateHUD1P_Update	1.0	0.166	no	0x1ebbec	STEP	0.0264569
+0x001ea930	cOVStateHUD1P_Update	1.0	0.166	no	0x1ebc44	STEP	0.0267822
+0x001ea930	cOVStateHUD1P_Update	1.0	0.166	no	0x1ebc5c	STEP	2
+0x001ea930	cOVStateHUD1P_Update	1.0	0.166	no	0x1ebf14	STEP	0.0879163
+0x001ea930	cOVStateHUD1P_Update	1.0	0.166	no	0x1ebf2c	STEP	1
+0x001ea930	cOVStateHUD1P_Update	1.0	0.166	no	0x1ebf98	STEP	0.0208333
+0x002e1120	cDynamicSprayFX_UpdateEmitter4	1.0	0.163	yes	0x2e1238	STEP	0.00166667
+0x002f4330	cSplashManager_SetSnowAmount	1.0	0.027	yes	0x2f4370	OTHER	0.00769231 10
+0x002f4db8	LensFX_UpdateSunPosition	1.0	0.166	no	0x2f50e4	CLAMP	16
+0x002f4db8	LensFX_UpdateSunPosition	1.0	0.166	no	0x2f5110	CLAMP	16
+0x0034bca0	cFlagManager_GroupComputeVerts	0.622	0.055	no	0x34c1b8	OTHER	0.5
+0x0034bca0	cFlagManager_GroupComputeVerts	0.622	0.055	no	0x34c26c	OTHER	0.5
+0x003c7828	SND_MixAddRamp16	0.556	0.268	no	0x3c78a0	LERP	0.0588235
+0x003c7828	SND_MixAddRamp16	0.556	0.268	no	0x3c78fc	LERP	0.0588235
+0x003c7828	SND_MixAddRamp16	0.556	0.268	no	0x3c7958	LERP	0.0588235 3
+0x003c7828	SND_MixAddRamp16	0.556	0.268	no	0x3c79a0	LERP	0.0588235 4
+0x003c7828	SND_MixAddRamp16	0.556	0.268	no	0x3c79c0	LERP	0.0588235 5
+0x003c7828	SND_MixAddRamp16	0.556	0.268	no	0x3c79d0	LERP	0.0588235 6
+0x003c7828	SND_MixAddRamp16	0.556	0.268	no	0x3c79e0	LERP	0.0588235 7
+0x003c7828	SND_MixAddRamp16	0.556	0.268	no	0x3c79f0	LERP	0.0588235 8
+0x003c7828	SND_MixAddRamp16	0.556	0.268	no	0x3c7a14	LERP	0.0588235 9
+0x003c7828	SND_MixAddRamp16	0.556	0.268	no	0x3c7a24	LERP	0.0588235 10
+0x003c7828	SND_MixAddRamp16	0.556	0.268	no	0x3c7a34	LERP	0.0588235 11
+0x003c7828	SND_MixAddRamp16	0.556	0.268	no	0x3c7a48	LERP	0.0588235 12
+0x003c7828	SND_MixAddRamp16	0.556	0.268	no	0x3c7a68	LERP	0.0588235 13
+0x003c7828	SND_MixAddRamp16	0.556	0.268	no	0x3c7a78	LERP	0.0588235 14
+0x003c7828	SND_MixAddRamp16	0.556	0.268	no	0x3c7a88	LERP	0.0588235 15
+0x003c7828	SND_MixAddRamp16	0.556	0.268	no	0x3c7a98	LERP	0.0588235 16
+0x002de058	cBoardWakeFX_AdvanceRing	0.518	0.0	no	0x2de258	LERP	32 64

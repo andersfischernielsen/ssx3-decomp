@@ -1,0 +1,40 @@
+func	name	race	menu	ported	site	class	constants
+0x00117c28	RiderMetrix_Update	6.0	0.002	yes	0x117f18	OTHER	0.1 0.9
+0x00117c28	RiderMetrix_Update	6.0	0.002	yes	0x117f20	STEP	1
+0x00117fe0	RiderMetrix_UpdateTrickHUD	6.0	0.002	yes	0x1188cc	OTHER	0.000833333 2
+0x0011b3f8	Rider_UpdateTargetSpeed	6.0	0.163	no	0x11b634	LERP	0.97 0.98 27.7778 3333.33
+0x0011b3f8	Rider_UpdateTargetSpeed	6.0	0.163	no	0x11b658	CLAMP	0.97 0.98 27.7778 3333.33
+0x00120d90	Rider_UpdateLegIKBlend	6.0	0.163	yes	0x120e18	STEP	0.05
+0x001210b0	Rider_UpdateImpacts	6.0	0.163	no	0x121100	SCALE	0.956
+0x001210b0	Rider_UpdateImpacts	6.0	0.163	no	0x121108	SCALE	0.978333
+0x00121950	Rider_UpdateHeadingAndAudio	6.0	0.163	yes	0x121a74	LERP	0.15 3.14159 6.28319
+0x00114130	Rider_HandleBoostInput	5.951	0.003	no	0x11422c	STEP	0.0015068
+0x00120090	Rider_SetAnimTimeScale	5.0	0.135	yes	0x1200c8	STEP	0.000833333
+0x00106848	Rider_TryStartRailslide	4.947	0.0	no	0x106964	SCALE	0.1
+0x0013d818	RiderGroundState_Update	3.343	0.0	yes	0x13de74	CLAMP	-10
+0x0013d818	RiderGroundState_Update	3.343	0.0	yes	0x13f0f0	OTHER	0.1 2.65
+0x0013d818	RiderGroundState_Update	3.343	0.0	yes	0x13f0f8	LERP	0.1 2.65 6.28319
+0x001163b0	Rider_UpdateTweakLayerAnim	2.699	0.0	no	0x11668c	OTHER	0.0111111
+0x00374d00	BoaderShadow_ComputeProjection	2.015	0.163	yes	0x374f74	STEP	0.01
+0x00119898	RiderMetrix_SetSpinAmount	1.522	0.0	no	0x1198d0	CLAMP	0.0159155
+0x001198d8	RiderMetrix_SetFlipAmount	1.521	0.0	no	0x119910	CLAMP	0.0286479
+0x00133308	RiderSpinSub_HandleInput	1.521	0.0	no	0x133908	STEP	3.14159
+0x00133308	RiderSpinSub_HandleInput	1.521	0.0	no	0x133a84	CLAMP	0.799952 2.99956
+0x00133308	RiderSpinSub_HandleInput	1.521	0.0	no	0x133b54	CLAMP	0.639923 2.99956
+0x00133308	RiderSpinSub_HandleInput	1.521	0.0	no	0x133e80	OTHER	0.500259
+0x00133308	RiderSpinSub_HandleInput	1.521	0.0	no	0x133ea8	SCALE	1.99975
+0x00133308	RiderSpinSub_HandleInput	1.521	0.0	no	0x133fbc	OTHER	0.500259
+0x00133308	RiderSpinSub_HandleInput	1.521	0.0	no	0x133fe0	SCALE	1.99975
+0x00133308	RiderSpinSub_HandleInput	1.521	0.0	no	0x134100	CLAMP	0.0499971 0.5 10
+0x00133308	RiderSpinSub_HandleInput	1.521	0.0	no	0x134130	CLAMP	0.0499971 0.5 10
+0x00133308	RiderSpinSub_HandleInput	1.521	0.0	no	0x13427c	CLAMP	0.0500061 0.5 10
+0x00133308	RiderSpinSub_HandleInput	1.521	0.0	no	0x1342ac	CLAMP	0.0500061 0.5 10
+0x00125b18	Player_ApplyRumble	1.0	0.166	no	0x125b88	OTHER	0.913333 18.5185
+0x00125b18	Player_ApplyRumble	1.0	0.166	no	0x125b90	SCALE	0.991667
+0x00135cb0	RiderSpinSub_GetFlipProgress	0.865	0.0	no	0x135d38	SCALE	0.500062
+0x00135cb0	RiderSpinSub_GetFlipProgress	0.865	0.0	no	0x135d8c	OTHER	0.500259
+0x00135cb0	RiderSpinSub_GetFlipProgress	0.865	0.0	no	0x135d9c	OTHER	0.500259
+0x00135db0	RiderSpinSub_GetSpinProgress	0.865	0.0	no	0x135e38	SCALE	0.500062
+0x00135db0	RiderSpinSub_GetSpinProgress	0.865	0.0	no	0x135e8c	OTHER	0.500259
+0x00135db0	RiderSpinSub_GetSpinProgress	0.865	0.0	no	0x135e9c	OTHER	0.500259
+0x0012cb68	RiderWipeoutSub_HandleInput	0.688	0.0	no	0x12cbf4	STEP	0.00416986
