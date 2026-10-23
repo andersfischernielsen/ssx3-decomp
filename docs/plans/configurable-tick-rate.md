@@ -205,6 +205,21 @@ magnet/halo/texflip per-tick steps, the rider boost drain, the animation
 time-scale slew, the crouch/brake slew fractions, and the front-end
 refresh/poll/retry/fade/credits timers.
 
+### Measured after the T3 waves (all three rates)
+
+`python3 tools/tick_ab.py HZ` for 240, 120 and 144 (`/tmp/ssx3-tick-final-*`):
+
+| rate | menu/title flow | race clock offset | course % | speed |
+| --- | --- | --- | --- | --- |
+| 120 | in lockstep (same screen at the same instant) | ~1 s (0:02 vs 0:01 at the start), then constant | tracks within 1 % | 55 vs 55 MPH |
+| 144 | in lockstep | ~1 s, constant | tracks within 1 % | 55 vs 50 MPH (the 144 Hz run is airborne there) |
+| 240 | in lockstep | ~2 s, constant | tracks within 1-2 % (4/6, 7/8, 8/10, 11/12, 13/14, 21/21 %) | 53/55, 47/55, 53/55 MPH |
+
+The remaining start offset is the load/intro (scripted) timeline, see
+"Left for a design decision". The score shown in the HUD differs, but the two
+runs land different tricks (85 Rail vs 50/50 Rail) because a different step is
+a different simulation; it is not a timing quantity.
+
 ### Left for a design decision (not converted)
 
 | Where | What | Why it needs a decision |
