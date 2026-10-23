@@ -28,9 +28,16 @@ Status (2026-10-23):
   counters, effects per-tick blends, and the front-end refresh/poll/fade/
   credits timers follow the rate. The front end is in lockstep with 60 Hz at
   240 Hz and the race clock/course % agree up to the start offset.
-- ⏳ T3 next (see "Left for a design decision"): the script timeline, the UI
-  animation frame clock, the options vibration setter, the UV-scroll
-  modifier, and the race-start offset.
+- ✅ Porting follow-up for T3: `InSeq_InstanceUpdate` (0x274a30) and
+  `cFEStateOptionsController_OnWidgetAction` (0x18ca10) are hand-written now
+  (`game/replay/replay2.rs`, `game/fe/festateoptions.rs`); their differential
+  tests pass with the strict register/call comparison. Their rate work:
+  the options vibration timers (60 ticks) follow the rate, the UV-scroll
+  velocity is a per-60-Hz-frame value applied as `60/rate`, and the two
+  per-tick chase-camera blend rates are converted at their callers
+  (`docs/plans/tick/chasecam-callers.tsv`).
+- ⏳ T3 next (see "Left for a design decision"): the script timeline (now
+  portable), the UI animation frame clock, and the race-start offset.
 
 ## How the game keeps time
 
@@ -215,6 +222,12 @@ refresh/poll/retry/fade/credits timers.
 | 144 | in lockstep | ~1 s, constant | tracks within 1 % | 55 vs 50 MPH (the 144 Hz run is airborne there) |
 | 240 | in lockstep | ~2 s, constant | tracks within 1-2 % (4/6, 7/8, 8/10, 11/12, 13/14, 21/21 %) | 53/55, 47/55, 53/55 MPH |
 
+Re-measured after the porting follow-up (`/tmp/ssx3-tick-port-120`,
+`/tmp/ssx3-tick-port-240`): unchanged — 120 Hz clock 0:02 vs 0:01, course 1/3 %
+at the start and 13/14, 15/16, 18/18, 21/21 % at 240 Hz, 55 MPH both. The ports
+did not change the replay (the gate is identical) and the two conversions
+(vibration timers, UV scroll) do not run in the race replay.
+
 The remaining start offset is the load/intro (scripted) timeline, see
 "Left for a design decision". The score shown in the HUD differs, but the two
 runs land different tricks (85 Rail vs 50/50 Rail) because a different step is
@@ -225,10 +238,8 @@ a different simulation; it is not a timing quantity.
 | Where | What | Why it needs a decision |
 | --- | --- | --- |
 | `UIAnim_Advance` / `UIScreen_RunThreadFrame` (0x3974b0, 0x39c978) | the UI animation and screen-script clocks advance one frame per update | The smallest correct fix is a 60 Hz gate on the *frame advance*, not on the screen update: gating all of `UIState_UpdateScreens` at 240 Hz (tried, `1ea2b3b`, reverted) makes the menu description text wrap at a stale width, because the same call lays out the widgets. A per-screen 0.25-frame accumulator needs one byte in `UIScreen` (0xd4 → 0xd8) and its two initialisers; `UIThread` and `UIAnim` have no spare field (`UIAnim+0x0f` is uninitialised). |
-| the script VM (`ScriptEngine_TickProcess` → `InSeqInstance_Update`) | one script frame per tick | Same shape as the UI timeline: either a 60 Hz gate on the script clock (needs to be located in the generated VM, so a port first) or a per-process accumulator. This is also the likely cause of the race-start offset. |
-| `cFEStateOptionsController_Update` (0x18d058) vibration countdowns | the 60-tick (1 s) durations are immediates in the **unported** setter `cFEStateOptionsController_OnWidgetAction` (0x18ca10) | The setter must be ported, then its two stores become `ticks_from_frames60(c, 60)`; converting the countdown now would double-scale later. |
-| `UVScrollModifier_Update` (0x35f7d0) DU/DV per tick | a real per-tick rate bug | Its differential test runs the generated body with the app manager at 25/30/60 Hz, so any rate-dependent conversion fails it. The test pins exactness at rates other than the game's; pinning it to 60 (a test change) is needed first. |
-| `ChaseCamController_Update` (0x161bb8) blend weights | `w += rate` per update, with blend rates passed in mixed units (some callers pass `1/60`-scaled, one a raw `1/150`, scripts pass data) and `0` mapped to 1.0 = instant | Converting at one point would double-scale the `1/60`-relative rates; convert the raw rates at their sources, or leave as is. |
+| the script VM (`ScriptEngine_TickProcess` → `InSeq_InstanceUpdate`) | one script frame per tick | `InSeq_InstanceUpdate` (0x274a30) and `ScriptEngine_TickProcess` (0x282450) are hand-written now, so the clock can be converted: either advance `N/60` script frames per tick (a fractional position, or a gate on the VSync counter like `tick::ui_frame_due`) or run the process only on 60 Hz boundaries. This is also the likely cause of the race-start offset (~2 s at 240 Hz). Not done here: the request was to port it keeping one frame per tick and leave the clock for a later wave. |
+| `ChaseCamController_Update` (0x161bb8) blend weights | `w += rate` per update | Classified per caller in `docs/plans/tick/chasecam-callers.tsv`; the two raw per-tick rates are converted at their callers. What remains is `ChaseCamController_SetAlgorithm` (0x15d078), still generated: the node rate is written inside it, so its end-to-end rate test needs that port. Mission/script rates are authored data and stay. |
 | `tick::ui_frame_due` under catch-up | the gate reads the VSync counter, so several updates queued per VSync advance one 60 Hz frame (average correct, jitter ≤ 1 frame) | Only affects a host slower than the game rate; the 60 Hz path is always true and unchanged. |
 
 
