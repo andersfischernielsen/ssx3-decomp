@@ -5334,3 +5334,9 @@
 0x0023b268    GMHandler4_Reset
 0x0023bb98    GMHandler6_Reset
 0x0023c0d0    GMHandler7_Reset
+0x0010b790    ComputerActorRider_ThinkGate
+0x0010dbf0    ComputerActorRider_FindAttackTarget
+0x00115d48    Rider_UpdateIdleLookAnim
+0x0013c7a8    RiderGroundState_Enter
+0x0013f410    RiderGroundState_Exit
+0x0023b468    GMHandler4_OnRiderFinished
