@@ -55,9 +55,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0019_93a0, c_fe_state_char_equip_on_activate, "cFEStateCharEquip_OnActivate"),
     (0x0019_9420, fe_char_equip_on_deactivate, "cFEStateCharEquip_OnDeactivate"),
     (0x0019_9870, cfe_state_char_equip_on_child_event, "cFEStateCharEquip_OnChildEvent"),
+    (0x0019_9a38, cfe_state_char_equip_handle_input, "cFEStateCharEquip_HandleInput"),
     (0x0019_a098, c_fe_state_char_equip_get_preview_texture, "cFEStateCharEquip_GetPreviewTexture"),
+    (0x0019_a4e8, cfe_state_char_equip_request_preview, "cFEStateCharEquip_RequestPreview"),
     (0x0019_afd0, cfe_state_char_equip_category_has_flagged_item, "cFEStateCharEquip_CategoryHasFlaggedItem"),
     (0x0019_b098, c_fe_state_char_equip_category_all_flagged, "cFEStateCharEquip_CategoryAllFlagged"),
+    (0x0019_bfe8, cfe_state_char_equip_update_preview_camera, "cFEStateCharEquip_UpdatePreviewCamera"),
     (0x0019_c880, bolt_file_index_manager_alloc_node, "BoltFileIndexManager_AllocNode"),
     (0x0019_c8d0, bolt_file_index_manager_get_prev_node, "BoltFileIndexManager_GetPrevNode"),
     (0x0019_c920, bolt_file_index_manager_node_index, "BoltFileIndexManager_NodeIndex"),
@@ -2225,6 +2228,887 @@ pub fn c_fe_state_char_equip_get_preview_texture(c: &mut Cpu) {
     return;
 }
 
+
+// ---------------------------------------------------------------------------
+// Rider/item preview: camera, stick input, item preview request (tick rate).
+
+/// Fields of `cFEStateCharEquip` used by the preview.
+mod equip_preview {
+    /// Mode word: 1 = the equip menu has the input (no preview control).
+    pub const MODE: u32 = 0xc8;
+    /// Preview zoom (0..1) and pitch (-1..1), driven by the right stick.
+    pub const ZOOM: u32 = 0xaa4;
+    pub const PITCH: u32 = 0xaa8;
+    /// Preview yaw (degrees, 0..360), driven by the left stick.
+    pub const YAW: u32 = 0xaac;
+    /// Turntable angle of the preview rider (degrees, +1 per 60 Hz tick).
+    pub const SPIN: u32 = 0xab0;
+    /// The camera's two vectors (position-like and target-like) and its
+    /// state (1/2: snap to a view, 3/4: glide to a view, then 2/1).
+    pub const CAM_A: u32 = 0xac0;
+    pub const CAM_B: u32 = 0xad0;
+    pub const CAM_STATE: u32 = 0xae0;
+    /// Item preview: load delay (ticks), item list, category.
+    pub const PREVIEW_DELAY: u32 = 0x95c;
+}
+
+const PCAM_GET_RIDER_PREVIEW: Callee = Callee { addr: 0x001a_0548, f: ee::s03::f_001a0548 };
+const PCAM_SET_TRANSFORM: Callee = Callee { addr: 0x0019_f3e8, f: ee::s03::f_0019f3e8 };
+const PCAM_SET_TRANSFORM2: Callee = Callee { addr: 0x0019_f548, f: ee::s03::f_0019f548 };
+const PREQ_RELEASE_PREVIEW: Callee = Callee { addr: 0x0019_a498, f: ee::s03::f_0019a498 };
+const PCAM_MATH_SIN_COS: u32 = 0x0031_be50;
+const PCAM_SNAP_CHASE_VIEW: u32 = 0x0015_e050;
+
+/// `base(reg) + off`.
+#[inline(always)]
+fn pv_at(c: &Cpu, reg: usize, off: u32) -> u32 {
+    (c.g[reg][0] as u32).wrapping_add(off)
+}
+
+/// `gp - off`.
+#[inline(always)]
+fn pv_gp(c: &Cpu, off: u32) -> u32 {
+    (c.g[GP][0] as u32).wrapping_sub(off)
+}
+
+/// `lui at, hi; mtc1 at, f`.
+#[inline(always)]
+fn pv_lif(c: &mut Cpu, f: usize, bits: u32) {
+    c.g[AT][0] = sx(bits);
+    c.mtc1(1, f);
+}
+
+/// The quaternion product the preview builds its rotations with:
+/// `sp+0x40 = sp+0x10 * sp+0x30` (VU0 macro ops of the original).
+fn pv_quat_mul(c: &mut Cpu) {
+    let a = sp(c);
+    c.lqc2(4, a.wrapping_add(0x10));
+    c.lqc2(5, a.wrapping_add(0x30));
+    c.vu0().mul(0b1111, 7, 4, Src::Vec(5));
+    c.vu0().opmula(4, 5);
+    c.vu0().opmsub(6, 5, 4);
+    c.vu0().mula(0b1110, 4, Src::Bc(5, W));
+    c.vu0().madda(0b1110, 5, Src::Bc(4, W));
+    c.vu0().suba(0b0001, 7, Src::Bc(7, X));
+    c.vu0().msuba(0b0001, 0, Src::Bc(7, Y));
+    c.vu0().msub(0b0001, 8, 0, Src::Bc(7, Z));
+    c.vu0().madd(0b1110, 8, 6, Src::Bc(0, W));
+    c.sqc2(8, a.wrapping_add(0x40));
+}
+
+/// `mfc1 v1, f1` of the glide factor: at another rate the factor for the
+/// rate (`1 - (1 - a)^(60/rate)`), so the glide keeps its time constant.
+/// `f1` itself stays (it is also the settle threshold).
+fn pv_glide_factor_to_v1(c: &mut Cpu) {
+    if crate::tick::rate(c) == 60 {
+        c.mfc1(3, 1);
+    } else {
+        let a = FpuF32(c.f[1]);
+        let a = crate::game::ai::rider::smoothing_60(c, a);
+        c.g[V1][0] = sx(a.0);
+    }
+}
+
+/// States 3/4: both camera vectors move by `factor` (`.lit4` at `gp-k`) of
+/// their gap to the view in `sp+0x20`/`sp+0x30`; returns whether the gap of
+/// the vector at `sp+cmp` (before the move) was below the factor (the
+/// settle test, `c.lt.s`).
+fn pv_glide(c: &mut Cpu, k: u32, cmp: u32) -> bool {
+    let s = sp(c);
+    let at = |o: u32| s.wrapping_add(o);
+    c.lqc2(3, at(0x20));
+    c.lqc2(4, pv_at(c, S0, equip_preview::CAM_A));
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, at(0x50));
+    c.lwc1(1, pv_gp(c, k));
+    c.lq(2, at(0x50));
+    c.sq(2, at(0x40));
+    c.lqc2(3, at(0x30));
+    c.lqc2(4, pv_at(c, S0, equip_preview::CAM_B));
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, at(0x60));
+    c.lq(2, at(0x60));
+    c.sq(2, at(0x50));
+    pv_glide_factor_to_v1(c);
+    c.lqc2(4, at(0x40));
+    c.qmtc2(3, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, at(0x70));
+    c.lq(2, at(0x70));
+    c.sq(2, at(0x60));
+    c.lqc2(3, pv_at(c, S0, equip_preview::CAM_A));
+    c.lqc2(4, at(0x60));
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, pv_at(c, S0, equip_preview::CAM_A));
+    pv_glide_factor_to_v1(c);
+    c.lqc2(4, at(0x50));
+    c.qmtc2(3, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, at(0x70));
+    c.lq(2, at(0x70));
+    c.sq(2, at(0x60));
+    c.lqc2(3, pv_at(c, S0, equip_preview::CAM_B));
+    c.lqc2(4, at(0x60));
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, pv_at(c, S0, equip_preview::CAM_B));
+    c.lqc2(3, at(cmp));
+    c.lqc2(5, at(cmp));
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.qmfc2(2, 4);
+    c.mtc1(2, 0);
+    c.c_lt_s(0, 1);
+    c.fcc()
+}
+
+/// `void cFEStateCharEquip_UpdatePreviewCamera(cFEStateCharEquip* self)`
+/// (0x19bfe8), once per tick on the equip screen: when the rider preview is
+/// loaded, move the preview camera by its state (1/2 snap to the zoomed or
+/// the overview, 3/4 glide there and settle), turn the rider by the stick
+/// yaw, spin its turntable (+1 degree per 60 Hz tick, wrapped at 360), set
+/// both preview transforms; then snap the game camera to the default view.
+///
+/// Tick rate: the spin step is `1 * 60/rate` and the glide factor
+/// `1 - 0.8^(60/rate)` (the 0.2 settle threshold stays); exact at 60.
+pub fn cfe_state_char_equip_update_preview_camera(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x170);
+        c.g[V0][0] = c.lw(pv_gp(c, 0x848));
+        frame.save(c, S0, 0x130);
+        frame.save(c, S4, 0xf0);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x120);
+        frame.save(c, S2, 0x110);
+        frame.save(c, S3, 0x100);
+        frame.save(c, S5, 0xe0);
+        frame.save(c, S6, 0xd0);
+        frame.save(c, S7, 0xc0);
+        frame.save_ra(c, 0xb0);
+        frame.save_fpr(c, 24, 0x160);
+        frame.save_fpr(c, 23, 0x158);
+        frame.save_fpr(c, 22, 0x150);
+        frame.save_fpr(c, 21, 0x148);
+        frame.save_fpr(c, 20, 0x140);
+        c.g[A0][0] = c.lw(pv_at(c, V0, 0x7c));
+        c.g[A1][0] = c.lb(pv_at(c, S0, 0x44));
+        c.g[A0][0] = sx(pv_at(c, A0, 0xb0));
+        PCAM_GET_RIDER_PREVIEW.call(c, 0x0019_c03c)?;
+        // The preview is ready: state < 10, loaded (+0xcb8) and shown (+0xcb4).
+        c.g[S4][0] = c.g[V0][0];
+        c.g[V0][0] = c.lw(c.g[S4][0] as u32);
+        c.g[V0][0] = (c.g[V0][0] < 0xa) as u64;
+        c.g[V1][0] = 0;
+        if c.g[V0][0] != 0 {
+            c.cycles += 3;
+            c.g[V0][0] = c.lw(pv_at(c, S4, 0xcb8));
+            if c.g[V0][0] != 0 {
+                c.cycles += 2;
+                c.g[V0][0] = c.lw(pv_at(c, S4, 0xcb4));
+                c.g[V1][0] = (0 < c.g[V0][0]) as u64;
+            }
+        }
+        c.cycles += 2;
+        c.g[A1][0] = 1;
+        if c.g[V1][0] != 0 {
+            preview_camera_move(c);
+            preview_transforms(c)?;
+        }
+
+        // Snap the game camera to its default chase view of the front end.
+        c.cycles += 40;
+        let s = sp(c);
+        c.g[V0][0] = c.lw(pv_gp(c, 0x848));
+        c.g[A1][0] = c.g[SP][0];
+        pv_lif(c, 3, 0x3f80_0000);
+        c.g[A2][0] = sx(s.wrapping_add(0x10));
+        c.g[S0][0] = c.lw(pv_at(c, V0, 0x7c));
+        pv_lif(c, 1, 0xc2dc_0000);
+        pv_lif(c, 2, 0x43c5_0000);
+        c.g[A0][0] = sx(pv_at(c, S0, 0x10));
+        pv_lif(c, 0, 0xc20c_0000);
+        c.swc1(1, s);
+        c.swc1(0, s.wrapping_add(0x10));
+        c.swc1(2, s.wrapping_add(4));
+        c.swc1(3, s.wrapping_add(0x1c));
+        c.sw(s.wrapping_add(8), 0);
+        c.swc1(3, s.wrapping_add(0xc));
+        c.sw(s.wrapping_add(0x14), 0);
+        c.sw(s.wrapping_add(0x18), 0);
+        call_ptr(c, PCAM_SNAP_CHASE_VIEW, 0x0019_c7a0)?;
+        c.lwc1(0, pv_gp(c, 0x5974));
+        frame.restore(c, S1, 0x120);
+        c.swc1(0, pv_at(c, S0, 0x10));
+        frame.restore(c, S0, 0x130);
+        frame.restore(c, S2, 0x110);
+        frame.restore(c, S3, 0x100);
+        frame.restore(c, S4, 0xf0);
+        frame.restore(c, S5, 0xe0);
+        frame.restore(c, S6, 0xd0);
+        frame.restore(c, S7, 0xc0);
+        frame.restore_ra(c, 0xb0);
+        frame.restore_fpr(c, 24, 0x160);
+        frame.restore_fpr(c, 23, 0x158);
+        frame.restore_fpr(c, 22, 0x150);
+        frame.restore_fpr(c, 21, 0x148);
+        frame.restore_fpr(c, 20, 0x140);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The camera state step of [`cfe_state_char_equip_update_preview_camera`]
+/// (0x19c09c..0x19c3a4): ends with `sp+0x10 = 0`.
+fn preview_camera_move(c: &mut Cpu) {
+    use equip_preview as f;
+    let s = sp(c);
+    let at = |o: u32| s.wrapping_add(o);
+    c.cycles += 12;
+    c.lwc1(2, pv_at(c, S0, f::ZOOM));
+    c.lwc1(0, pv_at(c, S0, f::PITCH));
+    pv_lif(c, 3, 0x4282_0000);
+    c.mul_s(0, 0, 2);
+    pv_lif(c, 1, 0x43a0_0000);
+    c.g[V1][0] = c.lw(pv_at(c, S0, f::CAM_STATE));
+    c.mul_s(2, 2, 1);
+    c.lwc1(24, pv_at(c, S0, f::YAW));
+    c.mul_s(4, 0, 3);
+
+    // Whether the camera reached its view this tick (sp+0x10 cleared with 1
+    // more cycle) or is still moving / idle (cleared directly).
+    let settled_path: bool;
+    if c.g[V1][0] == c.g[A1][0] {
+        // State 1: snap to the zoomed view (zoom/pitch place it).
+        c.cycles += 20;
+        pv_lif(c, 0, 0xc2c8_0000);
+        pv_lif(c, 1, 0xc2a0_0000);
+        c.add_s(0, 2, 0);
+        pv_lif(c, 3, 0x3f80_0000);
+        c.add_s(1, 4, 1);
+        pv_lif(c, 2, 0xc2d2_0000);
+        c.swc1(3, at(0x2c));
+        c.swc1(2, at(0x20));
+        c.swc1(0, at(0x24));
+        c.swc1(1, at(0x28));
+        c.lwc1(0, pv_gp(c, 0x59a0));
+        c.lwc1(1, pv_gp(c, 0x599c));
+        pv_lif(c, 2, 0xc368_0000);
+        c.lq(3, at(0x20));
+        pv_snap(c);
+        settled_path = true;
+    } else {
+        c.cycles += 3;
+        c.g[A0][0] = 2;
+        c.g[V0][0] = 3;
+        if c.g[V1][0] == c.g[A0][0] {
+            // State 2: snap to the overview.
+            c.cycles += 18;
+            pv_lif(c, 0, 0xc37a_0000);
+            c.lwc1(1, pv_gp(c, 0x5998));
+            pv_lif(c, 2, 0xc357_0000);
+            pv_lif(c, 3, 0x3f80_0000);
+            c.swc1(0, at(0x20));
+            c.swc1(1, at(0x24));
+            c.swc1(2, at(0x28));
+            c.swc1(3, at(0x2c));
+            pv_lif(c, 0, 0xc2c8_0000);
+            pv_lif(c, 1, 0x4234_0000);
+            pv_lif(c, 2, 0x4170_0000);
+            c.lq(3, at(0x20));
+            pv_snap(c);
+            settled_path = true;
+        } else {
+            c.cycles += 2;
+            let state3 = c.g[V1][0] == c.g[V0][0];
+            c.g[V0][0] = 4;
+            if state3 {
+                // State 3: glide to the overview, then state 2.
+                c.cycles += 69;
+                pv_lif(c, 6, 0x3f80_0000);
+                pv_lif(c, 0, 0xc37a_0000);
+                c.lwc1(1, pv_gp(c, 0x5994));
+                pv_lif(c, 2, 0xc357_0000);
+                pv_lif(c, 3, 0xc2c8_0000);
+                pv_lif(c, 4, 0x4234_0000);
+                pv_lif(c, 5, 0x4170_0000);
+                c.swc1(0, at(0x20));
+                c.swc1(1, at(0x24));
+                c.swc1(2, at(0x28));
+                c.swc1(3, at(0x30));
+                c.swc1(4, at(0x34));
+                c.swc1(5, at(0x38));
+                c.swc1(6, at(0x3c));
+                c.swc1(6, at(0x2c));
+                if pv_glide(c, 0x5990, 0x50) {
+                    c.sw(pv_at(c, S0, f::CAM_STATE), c.g[A0][0]);
+                    settled_path = true;
+                } else {
+                    c.cycles += 2;
+                    settled_path = false;
+                }
+            } else {
+                c.cycles += 2;
+                if c.g[V1][0] != c.g[V0][0] {
+                    settled_path = false;
+                } else {
+                    // State 4: glide to the zoomed view, then state 1.
+                    c.cycles += 70;
+                    pv_lif(c, 0, 0xc2c8_0000);
+                    pv_lif(c, 1, 0xc2a0_0000);
+                    c.add_s(0, 2, 0);
+                    pv_lif(c, 6, 0x3f80_0000);
+                    c.add_s(1, 4, 1);
+                    pv_lif(c, 2, 0xc2d2_0000);
+                    c.lwc1(3, pv_gp(c, 0x598c));
+                    c.lwc1(4, pv_gp(c, 0x5988));
+                    pv_lif(c, 5, 0xc368_0000);
+                    c.swc1(0, at(0x24));
+                    c.swc1(1, at(0x28));
+                    c.swc1(2, at(0x20));
+                    c.swc1(3, at(0x30));
+                    c.swc1(4, at(0x34));
+                    c.swc1(5, at(0x38));
+                    c.swc1(6, at(0x3c));
+                    c.swc1(6, at(0x2c));
+                    if pv_glide(c, 0x5984, 0x40) {
+                        c.sw(pv_at(c, S0, f::CAM_STATE), c.g[A1][0]);
+                    }
+                    settled_path = true;
+                }
+            }
+        }
+    }
+    if settled_path {
+        c.cycles += 1;
+    }
+    c.sw(at(0x10), 0);
+}
+
+/// States 1/2: both camera vectors take the view (`v1` = the first, the
+/// second from f0..f2 over `sp+0x20`).
+fn pv_snap(c: &mut Cpu) {
+    let s = sp(c);
+    c.cycles += 7;
+    c.swc1(0, s.wrapping_add(0x20));
+    c.swc1(1, s.wrapping_add(0x24));
+    c.swc1(2, s.wrapping_add(0x28));
+    c.sq(3, pv_at(c, S0, equip_preview::CAM_A));
+    c.lq(2, s.wrapping_add(0x20));
+    c.sq(2, pv_at(c, S0, equip_preview::CAM_B));
+}
+
+/// The two preview transforms (0x19c3a4..0x19c748): rotations built from
+/// sin/cos of the angles (yaw from the stick, the turntable spin), the spin
+/// step, both `SetTransform` calls.
+fn preview_transforms(c: &mut Cpu) -> Flow {
+    use equip_preview as f;
+    let s = sp(c);
+    let at = |o: u32| s.wrapping_add(o);
+    c.cycles += 130;
+    c.g[A0][0] = sx(at(0x80));
+    pv_lif(c, 21, 0x3f80_0000);
+    c.g[A1][0] = sx(at(0x84));
+    c.lwc1(20, at(0x10));
+    c.g[S7][0] = 0x50_0000;
+    c.lq(2, pv_at(c, S0, f::CAM_A));
+    c.g[S6][0] = sx(pv_at(c, S7, 0u32.wrapping_sub(0xec0)));
+    c.swc1(21, at(0x1c));
+    c.mov_s(12, 20);
+    c.sq(2, s);
+    c.g[S5][0] = 0x50_0000;
+    c.sw(at(0x14), 0);
+    c.g[S3][0] = sx(pv_at(c, S5, 0u32.wrapping_sub(0xeb0)));
+    c.sw(at(0x18), 0);
+    c.g[S2][0] = 0x50_0000;
+    call_ptr(c, PCAM_MATH_SIN_COS, 0x0019_c3e8)?;
+    c.lwc1(23, pv_gp(c, 0x5980));
+    c.lwc1(1, pv_at(c, S6, 4));
+    c.g[A0][0] = sx(at(0x88));
+    c.lwc1(0, at(0x80));
+    c.g[A1][0] = sx(at(0x8c));
+    c.lwc1(2, pv_at(c, S7, 0u32.wrapping_sub(0xec0)));
+    c.mov_s(12, 20);
+    c.lwc1(4, pv_at(c, S6, 8));
+    c.mul_s(1, 0, 1);
+    c.mul_s(2, 0, 2);
+    c.lwc1(3, at(0x84));
+    c.mul_s(0, 0, 4);
+    pv_lif(c, 22, 0x3f00_0000);
+    c.swc1(3, at(0x3c));
+    c.g[S1][0] = sx(pv_at(c, S2, 0u32.wrapping_sub(0xea0)));
+    c.swc1(2, at(0x30));
+    c.swc1(1, at(0x34));
+    c.swc1(0, at(0x38));
+    pv_quat_mul(c);
+    c.lq(2, at(0x40));
+    c.sq(2, at(0x10));
+    c.sq(2, at(0x20));
+    call_ptr(c, PCAM_MATH_SIN_COS, 0x0019_c474)?;
+    c.lwc1(0, pv_at(c, S3, 4));
+    c.g[A0][0] = sx(at(0x90));
+    c.lwc1(1, at(0x88));
+    c.g[A1][0] = sx(at(0x94));
+    c.lwc1(2, pv_at(c, S5, 0u32.wrapping_sub(0xeb0)));
+    pv_lif(c, 12, 0x42a0_0000);
+    c.mul_s(0, 1, 0);
+    c.lwc1(4, pv_at(c, S3, 8));
+    c.mul_s(2, 1, 2);
+    c.add_s(12, 24, 12);
+    c.lwc1(3, at(0x8c));
+    c.mul_s(1, 1, 4);
+    c.swc1(0, at(0x34));
+    c.swc1(3, at(0x3c));
+    c.mul_s(12, 12, 23);
+    c.swc1(2, at(0x30));
+    c.swc1(1, at(0x38));
+    pv_quat_mul(c);
+    c.lq(2, at(0x40));
+    c.mul_s(12, 12, 22);
+    c.sq(2, at(0x10));
+    c.sq(2, at(0x20));
+    call_ptr(c, PCAM_MATH_SIN_COS, 0x0019_c500)?;
+    c.lwc1(0, pv_at(c, S1, 4));
+    c.g[A0][0] = c.g[S4][0];
+    c.lwc1(2, at(0x90));
+    c.g[A1][0] = c.g[SP][0];
+    c.lwc1(3, pv_at(c, S2, 0u32.wrapping_sub(0xea0)));
+    c.lwc1(4, pv_at(c, S1, 8));
+    c.mul_s(0, 2, 0);
+    c.mul_s(3, 2, 3);
+    c.lwc1(1, at(0x94));
+    c.mul_s(2, 2, 4);
+    c.swc1(1, at(0x3c));
+    c.swc1(0, at(0x34));
+    c.swc1(3, at(0x30));
+    c.swc1(2, at(0x38));
+    pv_quat_mul(c);
+    c.lq(2, at(0x40));
+    c.sq(2, at(0x10));
+    c.sq(2, at(0x20));
+    PCAM_SET_TRANSFORM.call(c, 0x0019_c578)?;
+
+    // The turntable: +1 degree per 60 Hz tick (f21 = 1.0, also the w of
+    // the identity rotation stored below), wrapped once at 360.
+    c.lwc1(0, pv_at(c, S0, f::SPIN));
+    pv_lif(c, 1, 0x43b4_0000);
+    if crate::tick::rate(c) == 60 {
+        c.add_s(0, 0, 21);
+    } else {
+        let step = crate::game::ai::rider::rate_step_60(c, FpuF32(c.f[21]));
+        c.f[0] = (FpuF32(c.f[0]) + step).0;
+    }
+    c.lq(2, pv_at(c, S0, f::CAM_B));
+    c.swc1(20, at(0x18));
+    c.sq(2, s);
+    c.c_le_s(1, 0);
+    c.swc1(21, at(0x1c));
+    c.swc1(20, at(0x10));
+    c.swc1(20, at(0x14));
+    let wrap = c.fcc();
+    c.swc1(0, pv_at(c, S0, f::SPIN));
+    if wrap {
+        c.cycles += 2;
+        c.sub_s(0, 0, 1);
+        c.swc1(0, pv_at(c, S0, f::SPIN));
+    }
+
+    c.cycles += 101;
+    c.lwc1(12, pv_gp(c, 0x597c));
+    c.g[A0][0] = sx(at(0x98));
+    c.g[A1][0] = sx(at(0x9c));
+    call_ptr(c, PCAM_MATH_SIN_COS, 0x0019_c5c4)?;
+    c.lwc1(1, pv_at(c, S1, 8));
+    c.g[A0][0] = sx(at(0xa0));
+    c.lwc1(0, at(0x98));
+    c.g[A1][0] = sx(at(0xa4));
+    c.lwc1(2, pv_at(c, S2, 0u32.wrapping_sub(0xea0)));
+    c.lwc1(4, pv_at(c, S1, 4));
+    c.mul_s(1, 0, 1);
+    c.mul_s(2, 0, 2);
+    c.lwc1(3, at(0x9c));
+    c.mul_s(0, 0, 4);
+    c.lwc1(12, pv_gp(c, 0x5978));
+    c.swc1(3, at(0x3c));
+    c.swc1(1, at(0x38));
+    c.swc1(2, at(0x30));
+    c.swc1(0, at(0x34));
+    pv_quat_mul(c);
+    c.lq(2, at(0x40));
+    c.sq(2, at(0x10));
+    c.sq(2, at(0x20));
+    call_ptr(c, PCAM_MATH_SIN_COS, 0x0019_c640)?;
+    c.lwc1(1, pv_at(c, S3, 8));
+    c.g[A0][0] = sx(at(0xa8));
+    c.lwc1(0, at(0xa0));
+    c.g[A1][0] = sx(at(0xac));
+    c.lwc1(2, pv_at(c, S5, 0u32.wrapping_sub(0xeb0)));
+    c.lwc1(4, pv_at(c, S3, 4));
+    c.mul_s(1, 0, 1);
+    c.mul_s(2, 0, 2);
+    c.lwc1(3, at(0xa4));
+    c.mul_s(0, 0, 4);
+    pv_lif(c, 5, 0x42b4_0000);
+    c.swc1(3, at(0x3c));
+    c.swc1(1, at(0x38));
+    c.swc1(2, at(0x30));
+    c.swc1(0, at(0x34));
+    pv_quat_mul(c);
+    c.lwc1(12, pv_at(c, S0, f::SPIN));
+    c.lq(2, at(0x40));
+    c.add_s(12, 12, 5);
+    c.sq(2, at(0x10));
+    c.sq(2, at(0x20));
+    c.mul_s(12, 12, 23);
+    c.mul_s(12, 12, 22);
+    call_ptr(c, PCAM_MATH_SIN_COS, 0x0019_c6d0)?;
+    c.lwc1(1, pv_at(c, S6, 8));
+    c.g[A0][0] = c.g[S4][0];
+    c.lwc1(0, at(0xa8));
+    c.g[A1][0] = c.g[SP][0];
+    c.lwc1(2, pv_at(c, S7, 0u32.wrapping_sub(0xec0)));
+    c.lwc1(4, pv_at(c, S6, 4));
+    c.mul_s(1, 0, 1);
+    c.mul_s(2, 0, 2);
+    c.lwc1(3, at(0xac));
+    c.mul_s(0, 0, 4);
+    c.swc1(3, at(0x3c));
+    c.swc1(1, at(0x38));
+    c.swc1(2, at(0x30));
+    c.swc1(0, at(0x34));
+    pv_quat_mul(c);
+    c.lq(2, at(0x40));
+    c.sq(2, at(0x10));
+    c.sq(2, at(0x20));
+    PCAM_SET_TRANSFORM2.call(c, 0x0019_c748)?;
+    Ok(())
+}
+
+/// `int cFEStateCharEquip_HandleInput(cFEStateCharEquip* self, Pad* pad)`
+/// (0x199a38): unless the equip menu has the input (`+0xc8 == 1`), in the
+/// camera states 1/4 the left stick turns the preview (`yaw += x * 3`,
+/// wrapped to 0..360) and the right stick zooms (`+0xaa4`, 0..1) and
+/// pitches (`+0xaa8`, -1..1) it by `-0.1` per tick. Returns whether
+/// anything moved.
+///
+/// `UIState_Update` calls it every tick while the pad has input held (the
+/// state's pad mask `+0x15` is set in its ctor), so it is a per-tick step:
+/// the 3.0 becomes `3.0 * 60/rate` (the -0.1 steps are `tick::PER_TICK`
+/// `.lit4` entries already). Exact at 60.
+pub fn cfe_state_char_equip_handle_input(c: &mut Cpu) {
+    use equip_preview as f;
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[V0][0] = c.lw(pv_at(c, S1, f::MODE)) ^ 1;
+        c.g[S2][0] = 0;
+        'out: {
+            if c.g[V0][0] == 0 {
+                c.cycles += 1;
+                c.g[V0][0] = c.g[S2][0];
+                break 'out;
+            }
+            c.cycles += 4;
+            c.g[V1][0] = c.lw(pv_at(c, S1, f::CAM_STATE));
+            c.g[V0][0] = 1;
+            let one = c.g[V1][0] == c.g[V0][0];
+            c.g[V0][0] = 4;
+            if !one {
+                c.cycles += 2;
+                let four = c.g[V1][0] == c.g[V0][0];
+                c.g[V0][0] = c.g[S2][0];
+                if !four {
+                    break 'out;
+                }
+            }
+
+            // Left stick: yaw.
+            c.cycles += 7;
+            c.g[V1][0] = c.lw(pv_at(c, S0, 8));
+            pv_pad_call(c, V1, V0, 0x118, 0x0019_9a90)?;
+            if c.g[V0][0] == 0 {
+                c.g[V1][0] = c.lw(pv_at(c, S0, 8));
+            } else {
+                c.cycles += 16;
+                c.g[V0][0] = c.lw(pv_at(c, S0, 8));
+                pv_pad_call(c, V0, V1, 0x130, 0x0019_9aac)?;
+                pv_lif(c, 1, 0x4040_0000);
+                crate::game::ai::rider::per_tick_60(c, 1);
+                c.lwc1(2, pv_at(c, S1, f::YAW));
+                c.mul_s(0, 0, 1);
+                pv_lif(c, 3, 0x43b4_0000);
+                c.add_s(2, 2, 0);
+                c.c_le_s(3, 2);
+                let wrap = c.fcc();
+                c.swc1(2, pv_at(c, S1, f::YAW));
+                if wrap {
+                    const HEAD: u32 = 0x0019_9ae0;
+                    c.cycles += 2;
+                    c.mov_s(0, 3);
+                    c.sub_s(2, 2, 0);
+                    loop {
+                        c.cycles += 4;
+                        c.c_le_s(0, 2);
+                        if !c.fcc() {
+                            break;
+                        }
+                        c.sub_s(2, 2, 0);
+                        if event_due(c) {
+                            deliver_event_here(c, HEAD);
+                        }
+                    }
+                    c.cycles += 1;
+                    c.swc1(2, pv_at(c, S1, f::YAW));
+                }
+                c.cycles += 6;
+                c.lwc1(1, pv_at(c, S1, f::YAW));
+                c.mtc1(0, 2);
+                c.c_lt_s(1, 2);
+                if c.fcc() {
+                    const HEAD: u32 = 0x0019_9b18;
+                    c.cycles += 3;
+                    pv_lif(c, 3, 0x43b4_0000);
+                    loop {
+                        c.cycles += 5;
+                        c.add_s(0, 1, 3);
+                        c.c_lt_s(0, 2);
+                        let again = c.fcc();
+                        c.mov_s(1, 0);
+                        if !again {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, HEAD);
+                        }
+                    }
+                    c.cycles += 2;
+                    c.swc1(0, pv_at(c, S1, f::YAW));
+                }
+                c.g[S2][0] = 1;
+                c.cycles += 1;
+                c.g[V1][0] = c.lw(pv_at(c, S0, 8));
+            }
+
+            // Right stick up/down: zoom.
+            c.cycles += 6;
+            pv_pad_call(c, V1, V0, 0x108, 0x0019_9b48)?;
+            if c.g[V0][0] == 0 {
+                c.g[V1][0] = c.lw(pv_at(c, S0, 8));
+            } else {
+                c.cycles += 16;
+                c.g[V0][0] = c.lw(pv_at(c, S0, 8));
+                pv_pad_call(c, V0, V1, 0x120, 0x0019_9b64)?;
+                c.lwc1(1, pv_gp(c, 0x59a8));
+                c.lwc1(3, pv_at(c, S1, f::ZOOM));
+                c.mul_s(0, 0, 1);
+                pv_lif(c, 4, 0x3f80_0000);
+                c.mtc1(0, 2);
+                c.add_s(3, 3, 0);
+                c.c_le_s(2, 3);
+                let inside = c.fcc();
+                c.mov_s(0, 2);
+                if inside {
+                    c.cycles += 1;
+                    c.min_s(0, 3, 4);
+                }
+                c.cycles += 3;
+                c.swc1(0, pv_at(c, S1, f::ZOOM));
+                c.g[S2][0] = 1;
+                c.g[V1][0] = c.lw(pv_at(c, S0, 8));
+            }
+
+            // Right stick left/right: pitch.
+            c.cycles += 6;
+            pv_pad_call(c, V1, V0, 0x110, 0x0019_9bb0)?;
+            let none = c.g[V0][0] == 0;
+            c.g[V0][0] = c.g[S2][0];
+            if none {
+                break 'out;
+            }
+            c.cycles += 17;
+            c.g[V0][0] = c.lw(pv_at(c, S0, 8));
+            pv_pad_call(c, V0, V1, 0x128, 0x0019_9bcc)?;
+            c.lwc1(1, pv_gp(c, 0x59a4));
+            c.lwc1(3, pv_at(c, S1, f::PITCH));
+            c.mul_s(0, 0, 1);
+            pv_lif(c, 2, 0xbf80_0000);
+            pv_lif(c, 4, 0x3f80_0000);
+            c.add_s(3, 3, 0);
+            c.c_le_s(2, 3);
+            let inside = c.fcc();
+            c.mov_s(1, 2);
+            if inside {
+                c.cycles += 1;
+                c.min_s(1, 3, 4);
+            }
+            c.cycles += 2;
+            c.swc1(1, pv_at(c, S1, f::PITCH));
+            c.g[S2][0] = 1;
+            c.cycles += 1;
+            c.g[V0][0] = c.g[S2][0];
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// A pad method call `pad->slot()` (pad in `s0`): the vtable already in
+/// `vt`, the method into `fnr` (the registers the original uses).
+fn pv_pad_call(c: &mut Cpu, vt: usize, fnr: usize, slot: u32, ret: u32) -> Flow {
+    let v = c.g[vt][0] as u32;
+    c.g[A0][0] = c.lh(v.wrapping_add(slot));
+    c.g[fnr][0] = c.lw(v.wrapping_add(slot + 4));
+    let target = c.g[fnr][0] as u32;
+    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, target, ret)
+}
+
+/// `void cFEStateCharEquip_RequestPreview(cFEStateCharEquip* self, int
+/// delayed)` (0x19a4e8): drop the current item preview (and the screen's
+/// preview texture), then, for a selected item with a model name, start its
+/// load after a delay of 20 frames when `delayed` (1 tick otherwise), and
+/// build the file name `"<bank>_<name>.<digits>"`-style into `+0x960`.
+///
+/// Tick rate: the 20 frames are `ticks_from_frames60(20)` ticks
+/// (`cFEStateCharEquip_UpdatePreview` counts the delay down per tick).
+pub fn cfe_state_char_equip_request_preview(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S3, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = c.lw(pv_at(c, S1, 0x5c));
+        c.g[S0][0] = c.g[A1][0];
+        'tail: {
+            if c.g[V0][0] == 0 {
+                c.cycles += 1;
+                break 'tail;
+            }
+            c.cycles += 5;
+            PREQ_RELEASE_PREVIEW.call(c, 0x0019_a518)?;
+            c.g[A1][0] = c.lw(pv_at(c, S1, 0xa74));
+            c.g[A2][0] = c.lw(pv_gp(c, 0x854));
+            if (c.g[A1][0] as i64) >= 0 {
+                // Release the screen's preview texture (a method of gp-0x854).
+                c.cycles += 5;
+                c.g[V0][0] = c.lw(pv_at(c, A2, 0x10d8));
+                c.g[A0][0] = c.lh(pv_at(c, V0, 0x190));
+                c.g[V1][0] = c.lw(pv_at(c, V0, 0x194));
+                let target = c.g[V1][0] as u32;
+                c.g[A0][0] = sx(pv_at(c, A2, c.g[A0][0] as u32));
+                call_ptr(c, target, 0x0019_a538)?;
+            }
+            c.cycles += 8;
+            c.g[V0][0] = c.lw(pv_at(c, S1, 0xa70));
+            c.g[V1][0] = u64::MAX;
+            c.sw(pv_at(c, S1, 0xa70), c.g[V1][0]);
+            c.sw(pv_at(c, S1, 0xa74), c.g[V0][0]);
+            c.g[V1][0] = c.lw(pv_at(c, S1, 0x5c));
+            c.g[V1][0] = c.lbu(pv_at(c, V1, 0x95));
+            // (`bltz` on the byte just loaded: never taken.)
+            c.cycles += 4;
+            c.g[V0][0] = c.lw(pv_at(c, S1, 0x958));
+            c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+            let past_end = c.g[V0][0] == 0;
+            c.g[V0][0] = sx((c.g[V1][0] as u32) << 2);
+            if past_end {
+                c.cycles += 1;
+                break 'tail;
+            }
+            c.cycles += 5;
+            c.g[V0][0] = sx(pv_at(c, S1, c.g[V0][0] as u32));
+            c.g[V1][0] = c.lw(pv_at(c, V0, 0x124));
+            c.g[S2][0] = c.lw(pv_at(c, V1, 0x30));
+            if c.g[S2][0] == 0 {
+                break 'tail;
+            }
+            c.cycles += 2;
+            c.g[V0][0] = 1;
+            if c.g[S0][0] != 0 {
+                c.cycles += 1;
+                c.g[V0][0] = crate::tick::ticks_from_frames60(c, 20) as u64;
+            }
+            c.cycles += 24;
+            c.sw(pv_at(c, S1, equip_preview::PREVIEW_DELAY), c.g[V0][0]);
+            call_ptr(c, 0x0014_dc80, 0x0019_a590)?; // BELibrary_GetInstance
+            c.g[S0][0] = sx(pv_at(c, S1, 0x960));
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = 9;
+            call_ptr(c, 0x0014_dd58, 0x0019_a5a0)?; // BELibrary_GetInterface(9)
+            c.g[A1][0] = c.lw(pv_at(c, S1, 0xbc));
+            c.g[A0][0] = c.g[V0][0];
+            call_ptr(c, 0x0014_b700, 0x0019_a5ac)?; // BEBoltInt_DispatchCategory
+            c.g[S1][0] = c.g[V0][0];
+            c.g[A1][0] = 0x2e;
+            c.g[A0][0] = c.g[S1][0];
+            call_ptr(c, 0x0041_acc0, 0x0019_a5bc)?; // strrchr(path, '.')
+            c.g[A1][0] = c.g[S1][0];
+            c.g[S3][0] = c.g[V0][0];
+            c.g[S1][0] = sx((c.g[S3][0] as u32).wrapping_sub(c.g[S1][0] as u32));
+            c.g[A0][0] = c.g[S0][0];
+            c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(1));
+            c.g[A2][0] = c.g[S1][0];
+            call_ptr(c, 0x0041_6ce0, 0x0019_a5d8)?; // strncpy
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = 0x4a_0000;
+            c.g[S0][0] = sx(pv_at(c, S0, c.g[S1][0] as u32));
+            c.sb(c.g[S0][0] as u32, 0);
+            // Skip the name to its first digit.
+            const HEAD: u32 = 0x0019_a5e8;
+            loop {
+                c.cycles += 3;
+                c.g[V0][0] = c.lb(c.g[S2][0] as u32);
+                c.g[V1][0] = c.lbu(c.g[S2][0] as u32);
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                c.cycles += 4;
+                c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x30));
+                c.g[V0][0] = (c.g[V0][0] < 0xa) as u64;
+                if c.g[V0][0] != 0 {
+                    break;
+                }
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(1));
+                if event_due(c) {
+                    deliver_event_here(c, HEAD);
+                }
+            }
+            c.cycles += 5;
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x1958));
+            c.g[A3][0] = c.g[S2][0];
+            c.g[T0][0] = c.g[S3][0];
+            c.g[A2][0] = c.g[A0][0];
+            call_ptr(c, 0x0041_7828, 0x0019_a618)?; // sprintf("%s_%s%s")
+            c.cycles += 1;
+        }
+        frame.restore(c, S0, 0x40);
+        c.cycles += 6;
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2831,5 +3715,259 @@ pub(crate) mod tests {
                 }
             },
         );
+    }
+
+
+    // ------------------------------------------- preview camera / input / request
+
+    /// The equip state at `DATA`, its rider preview module through the world
+    /// (`gp-0x848 -> +0x7c`, preview 0 at `module + 0xb0`), the camera
+    /// constants at `gp-0x59a0..-0x5970` and the preview fields.
+    fn preview_camera_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x19_bfe8, 0);
+        let st = DATA;
+        let world = DATA + 0x8_0000;
+        let module = DATA + 0x2000;
+        let preview = module + 0xb0;
+        w(c, GAME_GP - 0x848, world);
+        w(c, world + 0x7c, module);
+        for k in (0x5970u32..=0x59a0).step_by(4) {
+            w(c, GAME_GP - k, r.f32(300.0));
+        }
+        // The two 0.2 glide factors / settle thresholds.
+        w(c, GAME_GP - 0x5990, 0x3e4c_cccd);
+        w(c, GAME_GP - 0x5984, 0x3e4c_cccd);
+        c.bus.write8(st + 0x44, 0);
+        w(c, preview, if seed % 9 == 0 { 10 } else { seed % 4 });
+        w(c, preview + 0xcb8, if seed % 11 == 1 { 0 } else { 1 });
+        w(c, preview + 0xcb4, if seed % 13 == 2 { 0 } else { 1 });
+        let state = seed % 6;
+        w(c, st + equip_preview::CAM_STATE, state);
+        w(c, st + equip_preview::ZOOM, r.f32(1.0));
+        w(c, st + equip_preview::PITCH, r.f32(1.0));
+        w(c, st + equip_preview::YAW, r.f32(360.0));
+        // Near the wrap sometimes.
+        let spin = if seed % 3 == 0 { 359.5f32.to_bits() } else { r.f32(360.0) };
+        w(c, st + equip_preview::SPIN, spin);
+        for i in 0..4 {
+            w(c, st + equip_preview::CAM_A + 4 * i, r.f32(300.0));
+            w(c, st + equip_preview::CAM_B + 4 * i, r.f32(300.0));
+        }
+        if seed % 4 == 1 {
+            // Already at the view: the settle branches.
+            if state == 3 {
+                put_words(c, st + equip_preview::CAM_B, &[(-100f32).to_bits(), 45f32.to_bits(), 15f32.to_bits(), 1f32.to_bits()]);
+            } else {
+                w(c, st + equip_preview::ZOOM, 0);
+                w(c, st + equip_preview::PITCH, 0);
+                put_words(c, st + equip_preview::CAM_A, &[(-105f32).to_bits(), (-100f32).to_bits(), (-80f32).to_bits(), 1f32.to_bits()]);
+            }
+        }
+        c.g[A0][0] = sx(st);
+    }
+
+    #[test]
+    fn cfe_state_char_equip_update_preview_camera_matches() {
+        check(
+            ee::s03::f_0019bfe8__generated,
+            cfe_state_char_equip_update_preview_camera,
+            96,
+            &|c, seed| preview_camera_setup(c, seed),
+        );
+    }
+
+    /// Run a replacement once from the current state (returns to the
+    /// sentinel `ra`).
+    fn run_hand(c: &mut Cpu, f: GuestFn) {
+        c.g[RA][0] = SENTINEL as u64;
+        f(c);
+        assert_eq!(c.pc, SENTINEL, "returned");
+    }
+
+    fn fbits(c: &mut Cpu, a: u32) -> f32 {
+        f32::from_bits(c.bus.read32(a))
+    }
+
+    #[test]
+    fn cfe_state_char_equip_update_preview_camera_rate() {
+        // State 3 far from its view: one tick at 60 = two ticks at 120 for
+        // the glide (both vectors) and the turntable spin.
+        let run = |hz: u32| -> Vec<f32> {
+            let mut c = crate::difftest::fresh();
+            let c = &mut *c;
+            preview_camera_setup(c, 3);
+            crate::tick::set_for_test(c, hz);
+            let st = DATA;
+            w(c, st + equip_preview::CAM_STATE, 3);
+            w(c, st + equip_preview::SPIN, 10f32.to_bits());
+            put_words(c, st + equip_preview::CAM_A, &[0, 0, 0, 1f32.to_bits()]);
+            put_words(c, st + equip_preview::CAM_B, &[0, 0, 0, 1f32.to_bits()]);
+            for _ in 0..hz / 60 {
+                c.g[A0][0] = sx(st);
+                run_hand(c, cfe_state_char_equip_update_preview_camera);
+            }
+            assert_eq!(c.bus.read32(st + equip_preview::CAM_STATE), 3, "still gliding");
+            let mut v = vec![fbits(c, st + equip_preview::SPIN)];
+            for i in 0..3 {
+                v.push(fbits(c, st + equip_preview::CAM_A + 4 * i));
+                v.push(fbits(c, st + equip_preview::CAM_B + 4 * i));
+            }
+            v
+        };
+        let a = run(60);
+        assert!((a[0] - 11.0).abs() < 1e-5, "spin {}", a[0]);
+        for hz in [120, 240] {
+            let b = run(hz);
+            for (x, y) in a.iter().zip(&b) {
+                assert!((x - y).abs() <= 1e-3 * (1.0 + x.abs()), "{hz} Hz: {a:?} vs {b:?}");
+            }
+        }
+    }
+
+    /// Pad fakes for `HandleInput`: the vtable slots in the order
+    /// [`PAD_SLOTS`] point at `FAKE + 0x10 * i`; the "active" queries
+    /// (`0x118`, `0x108`, `0x110`) return 0/1, the stick reads -1..1 in f0.
+    const PAD_SLOTS: [u32; 6] = [0x118, 0x130, 0x108, 0x120, 0x110, 0x128];
+
+    fn pad_fake(c: &mut Cpu, target: u32) {
+        fake_call(c, target);
+        let h = c.g[V1][0];
+        match target.wrapping_sub(FAKE) {
+            0x00 | 0x20 | 0x40 => c.g[V0][0] = (h >> 7) & 1,
+            _ => c.f[0] = (((h >> 8) & 0xffff) as f32 / 32768.0 - 1.0).to_bits(),
+        }
+    }
+
+    fn pv_pad(c: &mut Cpu, r: &mut Rng, at_: u32) {
+        let vt = at_ + 0x200;
+        w(c, at_ + 8, vt);
+        for (i, off) in PAD_SLOTS.iter().enumerate() {
+            let delta = (r.next_u32() as i16 as i32 & !3 & 0xff) as u32;
+            c.bus.write16(vt + off, delta as u16);
+            w(c, vt + off + 4, FAKE + 0x10 * i as u32);
+        }
+    }
+
+    #[test]
+    fn cfe_state_char_equip_handle_input_matches() {
+        check(ee::s03::f_00199a38__generated, cfe_state_char_equip_handle_input, 200, &|c, seed| {
+            let mut r = machine(c, seed, 0x19_9a38, 6);
+            c.hooks.miss = pad_fake;
+            let st = DATA;
+            let p = DATA + 0x4000;
+            pv_pad(c, &mut r, p);
+            w(c, st + equip_preview::MODE, if seed % 7 == 0 { 1 } else { seed % 3 });
+            w(c, st + equip_preview::CAM_STATE, [1, 4, 1, 4, 2, 0][(seed % 6) as usize]);
+            w(c, st + equip_preview::YAW, r.f32(1000.0));
+            w(c, st + equip_preview::ZOOM, r.f32(1.2));
+            w(c, st + equip_preview::PITCH, r.f32(1.2));
+            w(c, GAME_GP - 0x59a8, 0xbdcc_cccd);
+            w(c, GAME_GP - 0x59a4, 0xbdcc_cccd);
+            c.g[A0][0] = sx(st);
+            c.g[A1][0] = sx(p);
+        });
+    }
+
+    /// Only the left stick, held at 0.5.
+    fn pad_yaw(c: &mut Cpu, target: u32) {
+        match target.wrapping_sub(FAKE) {
+            0x00 => c.g[V0][0] = 1,
+            0x10 => c.f[0] = 0.5f32.to_bits(),
+            _ => c.g[V0][0] = 0,
+        }
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    #[test]
+    fn cfe_state_char_equip_handle_input_rate() {
+        // The yaw turns as far in one 60 Hz tick as in rate/60 ticks.
+        let run = |hz: u32| -> f32 {
+            let mut c = crate::difftest::fresh();
+            let c = &mut *c;
+            let mut r = machine(c, 1, 0x19_9a38, 0);
+            c.hooks.miss = pad_yaw;
+            crate::tick::set_for_test(c, hz);
+            let st = DATA;
+            let p = DATA + 0x4000;
+            pv_pad(c, &mut r, p);
+            w(c, st + equip_preview::MODE, 0);
+            w(c, st + equip_preview::CAM_STATE, 1);
+            w(c, st + equip_preview::YAW, 10f32.to_bits());
+            for _ in 0..hz / 60 {
+                c.g[A0][0] = sx(st);
+                c.g[A1][0] = sx(p);
+                run_hand(c, cfe_state_char_equip_handle_input);
+                assert_eq!(c.g[V0][0], 1);
+            }
+            fbits(c, st + equip_preview::YAW)
+        };
+        assert_eq!(run(60), 11.5);
+        for hz in [120, 240] {
+            assert!((run(hz) - 11.5).abs() < 1e-4, "{hz} Hz");
+        }
+    }
+
+    /// The equip state at `EQUIP` with an item list, the item's model name,
+    /// the BELibrary (`GetInterface(9)` a fake), the screen dummy at
+    /// `gp-0x854` (its texture release a fake) and the game image (the bolt
+    /// category path table and libc).
+    fn request_preview_setup(c: &mut Cpu, seed: u32, calls: u32) {
+        crate::difftest::elf_image(c);
+        let mut r = crate::game::fe::fepopup::tests::base_14(c, seed, 0x19_a4e8, calls);
+        use crate::game::fe::fepopup::tests::AUX;
+        let st = EQUIP;
+        let list = DATA + 0x1_4000;
+        let item = DATA + 0x1_5000;
+        let name = DATA + 0x1_6000;
+        // BELibrary_GetInterface: index 0 of the interface table.
+        w(c, GAME_GP - 0x1efc, 0);
+        let iface = DATA + 0x1_7000;
+        let vt = DATA + 0x1_7100;
+        w(c, 0x0053_08a8, iface);
+        w(c, iface + 4, vt);
+        c.bus.write16(vt + 8, 0);
+        w(c, vt + 0xc, FAKE);
+        // The screen's texture release.
+        let auxv = AUX + 0x2000;
+        w(c, AUX + 0x10d8, auxv);
+        c.bus.write16(auxv + 0x190, 0);
+        w(c, auxv + 0x194, FAKE + 0x10);
+        w(c, st + 0x5c, if seed % 7 == 0 { 0 } else { list });
+        w(c, st + 0xa6c, u32::MAX);
+        w(c, st + 0xa70, r.next_u32());
+        w(c, st + 0xa74, if seed % 2 == 0 { u32::MAX } else { seed % 5 });
+        let idx = seed % 4;
+        c.bus.write8(list + 0x95, idx as u8);
+        w(c, st + 0x958, 3);
+        w(c, st + 0x124 + 4 * idx, item);
+        w(c, item + 0x30, if seed % 6 == 1 { 0 } else { name });
+        cstr(c, name, ["hat07", "abc", "", "x9y", "12"][(seed % 5) as usize]);
+        w(c, st + 0xbc, seed % 10);
+        c.g[A0][0] = sx(st);
+        c.g[A1][0] = (seed % 3 != 0) as u64;
+    }
+
+    #[test]
+    fn cfe_state_char_equip_request_preview_matches() {
+        check(
+            ee::s03::f_0019a4e8__generated,
+            cfe_state_char_equip_request_preview,
+            60,
+            &|c, seed| request_preview_setup(c, seed, 2),
+        );
+    }
+
+    #[test]
+    fn cfe_state_char_equip_request_preview_rate() {
+        // The 20-frame delay as ticks: 20 at 60, 40 at 120, 80 at 240.
+        for hz in [60u32, 120, 240] {
+            let mut c = crate::difftest::fresh();
+            let c = &mut *c;
+            request_preview_setup(c, 5, 0);
+            crate::tick::set_for_test(c, hz);
+            c.g[A1][0] = 1;
+            run_hand(c, cfe_state_char_equip_request_preview);
+            assert_eq!(c.bus.read32(EQUIP + equip_preview::PREVIEW_DELAY), 20 * hz / 60, "{hz} Hz");
+        }
     }
 }

@@ -73,6 +73,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0026_f428, replay_free_buffers, "Replay_FreeBuffers"),
     (0x0026_f7b8, replay_advance_from_state10, "Replay_AdvanceFromState10"),
     (0x0026_f7f8, replay_save_resume_snapshot, "Replay_SaveResumeSnapshot"),
+    (0x0026_fb88, replay_handle_input, "Replay_HandleInput"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1449,6 +1450,357 @@ pub fn replay_dtor(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// Replay_HandleInput (0x26fb88).
+
+/// Where a [`replay_handle_input`] path continues (the shared tails).
+enum InputExit {
+    /// `+0x618 = s2`, then the result.
+    Store,
+    /// `v0 = s2 > 0`.
+    Result,
+    /// Return with `v0` as it is.
+    Done,
+}
+
+/// The step hold-repeat clock key: the toggle word `+0x20`.
+const REPLAY_STEP_TOGGLE: u32 = 0x20;
+/// The hold delay `+0x1c` before stepping repeats (10 frames at 60 Hz).
+const REPLAY_STEP_DELAY: u32 = 0x1c;
+
+/// `InputBinding_EvalBool(player input, binding)` (0x320c48) returning to
+/// `ret`: `a0` is the player's input binding (`s0`).
+fn replay_binding(c: &mut Cpu, binding: u64, ret: u32) -> Flow {
+    c.g[A1][0] = binding;
+    call_ptr(c, 0x0032_0c48, ret)
+}
+
+/// The gate of the step and slow-motion commands (`v1` = the replay state):
+/// not paused (state 3) gives 7; paused, the command's `result` unless a
+/// state 1..9 replay sits on its last frame (`+0x484 == +0x3cc`), then 0.
+fn replay_paused_gate(c: &mut Cpu, result: u64) -> InputExit {
+    c.g[V0][0] = c.g[V1][0] ^ 3;
+    if c.g[V0][0] != 0 {
+        c.g[S2][0] = 7;
+        return InputExit::Store;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = 0;
+    c.g[A0][0] = 0;
+    if c.g[V1][0] != 0 {
+        c.cycles += 1;
+        c.g[A0][0] = ((c.g[V1][0] as i64) < 10) as u64;
+    }
+    c.cycles += 2;
+    c.g[S2][0] = result;
+    if c.g[A0][0] != 0 {
+        c.cycles += 4;
+        let replay = r32(c, S1);
+        c.g[V0][0] = Addr(replay).off(0x484).lw(c);
+        c.g[V1][0] = Addr(replay).off(0x3cc).lw(c);
+        c.g[V0][0] ^= c.g[V1][0];
+        c.g[V0][0] = (c.g[V0][0] < 1) as u64;
+    }
+    c.cycles += 2;
+    if c.g[V0][0] != 0 {
+        c.g[S2][0] = 0;
+    }
+    InputExit::Store
+}
+
+/// The gate of the two speed commands (`v1` = the replay state): `None`
+/// when not paused (`s2 = 7`), else whether the replay is at its end
+/// (`+0x484 == +0x3cc`, or only `+0x484 == 0` for `at_end_only`), with
+/// `v0` = the speed controller's vtable.
+fn replay_speed_gate(c: &mut Cpu, at_end_only: bool) -> Option<bool> {
+    c.g[V0][0] = c.g[V1][0] ^ 3;
+    if c.g[V0][0] != 0 {
+        c.g[S2][0] = 7;
+        return None;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = 0;
+    c.g[A0][0] = 0;
+    if c.g[V1][0] != 0 {
+        c.cycles += 1;
+        c.g[A0][0] = ((c.g[V1][0] as i64) < 10) as u64;
+    }
+    c.cycles += 2;
+    if c.g[A0][0] != 0 {
+        let replay = r32(c, S1);
+        if at_end_only {
+            c.cycles += 2;
+            c.g[V0][0] = Addr(replay).off(0x484).lw(c);
+        } else {
+            c.cycles += 4;
+            c.g[V0][0] = Addr(replay).off(0x484).lw(c);
+            c.g[V1][0] = Addr(replay).off(0x3cc).lw(c);
+            c.g[V0][0] ^= c.g[V1][0];
+        }
+        c.g[V0][0] = (c.g[V0][0] < 1) as u64;
+    }
+    c.cycles += 2;
+    let at_end = c.g[V0][0] != 0;
+    c.g[V0][0] = Addr(r32(c, S3)).lw(c);
+    Some(at_end)
+}
+
+/// The speed controller's slot `+0x10` with `a1` = 4 (at the end) or 2
+/// (`s2 = command`), then the command is stored.
+fn replay_set_speed(c: &mut Cpu, at_end: bool, command: u64) -> Result<InputExit, Unwound> {
+    if at_end {
+        c.cycles += 1;
+        c.g[A1][0] = 4;
+    } else {
+        c.cycles += 3;
+        c.g[A1][0] = 2;
+        c.g[S2][0] = command;
+    }
+    c.cycles += 6;
+    let vt = r32(c, V0);
+    c.g[A0][0] = Addr(vt).off(0x10).lh(c);
+    c.g[V1][0] = Addr(vt).off(0x14).lw(c);
+    c.g[A0][0] = sx(r32(c, S3).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, r32(c, V1), 0x0026_fdf4)?;
+    Addr(r32(c, S1)).off(0x618).sw(c, c.g[S2][0]);
+    Ok(InputExit::Result)
+}
+
+/// The body of [`replay_handle_input`] up to its shared tails.
+fn replay_handle_input_body(c: &mut Cpu) -> Result<InputExit, Unwound> {
+    const NEXT_CAMERA: Callee = Callee { addr: 0x0026_ed98, f: ee::s07::Replay_NextCamera };
+    let replay = r32(c, S1);
+    let world = r32(c, A3);
+    c.g[A0][0] = Addr(world).off(0x84).lw(c);
+    c.g[A2][0] = Addr(replay).off(0x618).lw(c);
+    c.g[V1][0] = Addr(r32(c, A0)).off(0x48).lw(c);
+    c.g[V0][0] = Addr(r32(c, V1)).off(0x14).lw(c);
+    if c.g[V0][0] != 0 {
+        c.g[S3][0] = c.g[V0][0];
+    }
+    c.g[V0][0] = 0;
+    if c.g[A2][0] != 0 {
+        // A command is still pending.
+        return Ok(InputExit::Done);
+    }
+    c.cycles += 7;
+    c.g[V0][0] = Addr(replay).off(0x28).lw(c);
+    c.g[S2][0] = 0;
+    c.g[V1][0] = Addr(replay).off(0x61c).lw(c);
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+    c.g[V0][0] = sx(world.wrapping_add(c.g[V0][0] as u32));
+    c.g[S0][0] = Addr(r32(c, V0)).off(0xb0).lw(c);
+    if c.g[V1][0] != 0 {
+        return Ok(InputExit::Store);
+    }
+    c.cycles += 3;
+    c.g[V0][0] = Addr(replay).off(0x620).lw(c);
+    if c.g[V0][0] != 0 {
+        Addr(replay).off(0x618).sw(c, c.g[S2][0]);
+        return Ok(InputExit::Result);
+    }
+
+    // Step (0x6a pressed, 0x6b held): the first press steps at once and
+    // arms a 10-frame hold delay, then a held button steps every other
+    // frame.
+    c.cycles += 5;
+    c.g[A0][0] = c.g[S0][0];
+    replay_binding(c, 0x6a, 0x0026_fc04)?;
+    let pressed = c.g[V0][0] != 0;
+    c.g[V0][0] = 0xa;
+    if pressed {
+        c.cycles += 4;
+        c.g[V1][0] = Addr(replay).lw(c);
+        Addr(replay).off(REPLAY_STEP_DELAY).sw(c, c.g[V0][0]);
+        Addr(replay).off(REPLAY_STEP_TOGGLE).sw(c, 0);
+        // Tick rate: a new hold starts its own 60 Hz clock.
+        crate::tick::frame60_ran(c, replay.wrapping_add(REPLAY_STEP_TOGGLE), u32::MAX);
+        c.cycles += 3;
+        return Ok(replay_paused_gate(c, 5));
+    }
+    c.cycles += 5;
+    c.g[A0][0] = c.g[S0][0];
+    replay_binding(c, 0x6b, 0x0026_fc28)?;
+    let held = c.g[V0][0] != 0;
+    c.g[A0][0] = c.g[S0][0];
+    if held {
+        // Tick rate: the delay and the every-other-frame toggle are in
+        // 60 Hz frames; between two 60 Hz frames of the hold nothing
+        // happens (as on the ticks the original waits).
+        if !crate::tick::frame60_due(c, replay.wrapping_add(REPLAY_STEP_TOGGLE), 0) {
+            return Ok(InputExit::Store);
+        }
+        c.cycles += 3;
+        let delay = Addr(replay).off(REPLAY_STEP_DELAY).lw(c);
+        c.g[V0][0] = sx((delay as u32).wrapping_sub(1));
+        if (delay as i64) > 0 {
+            c.cycles += 1;
+            Addr(replay).off(REPLAY_STEP_DELAY).sw(c, c.g[V0][0]);
+        }
+        c.cycles += 5;
+        c.g[V0][0] = Addr(replay).off(REPLAY_STEP_TOGGLE).lw(c);
+        c.g[V1][0] = Addr(replay).off(REPLAY_STEP_DELAY).lw(c);
+        c.g[V0][0] ^= 1;
+        Addr(replay).off(REPLAY_STEP_TOGGLE).sw(c, c.g[V0][0]);
+        if (c.g[V1][0] as i64) > 0 {
+            return Ok(InputExit::Store);
+        }
+        c.cycles += 2;
+        if c.g[V0][0] != 0 {
+            Addr(replay).off(0x618).sw(c, c.g[S2][0]);
+            return Ok(InputExit::Result);
+        }
+        c.cycles += 1;
+        c.g[V1][0] = Addr(replay).lw(c);
+        c.cycles += 3;
+        return Ok(replay_paused_gate(c, 5));
+    }
+
+    // 0x67: command 6.
+    c.cycles += 4;
+    replay_binding(c, 0x67, 0x0026_fca4)?;
+    let on = c.g[V0][0] != 0;
+    c.g[A0][0] = c.g[S0][0];
+    if on {
+        c.cycles += 4;
+        c.g[V1][0] = Addr(replay).lw(c);
+        return Ok(replay_paused_gate(c, 6));
+    }
+
+    // 0x66: leave the replay (with `a1`: end the playback; command 8), or
+    // command 7 unless paused.
+    c.cycles += 4;
+    replay_binding(c, 0x66, 0x0026_fcf4)?;
+    let on = c.g[V0][0] != 0;
+    c.g[A0][0] = c.g[S0][0];
+    if on {
+        c.cycles += 2;
+        c.g[V0][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x848)).lw(c);
+        let store = if c.g[S4][0] != 0 {
+            c.cycles += 4;
+            c.g[A0][0] = Addr(r32(c, V0)).off(0x84).lw(c);
+            call_ptr(c, 0x0023_05c8, 0x0026_fd0c)?; // GameModule_EndReplayPlayback
+            c.g[V0][0] = 8;
+            true
+        } else {
+            c.cycles += 4;
+            c.g[V0][0] = Addr(replay).lw(c);
+            c.g[V0][0] ^= 3;
+            let paused = c.g[V0][0] == 0;
+            c.g[V0][0] = 7;
+            !paused
+        };
+        if store {
+            c.cycles += 1;
+            Addr(replay).off(0x618).sw(c, c.g[V0][0]);
+        }
+        c.cycles += 2;
+        c.g[V0][0] = 0;
+        return Ok(InputExit::Done);
+    }
+
+    // 0x68 / 0x69: the speed commands 4 and 3.
+    c.cycles += 4;
+    replay_binding(c, 0x68, 0x0026_fd38)?;
+    let on = c.g[V0][0] != 0;
+    c.g[A0][0] = c.g[S0][0];
+    if on {
+        c.cycles += 4;
+        c.g[V1][0] = Addr(replay).lw(c);
+        return match replay_speed_gate(c, false) {
+            None => Ok(InputExit::Store),
+            Some(at_end) => replay_set_speed(c, at_end, 4),
+        };
+    }
+    c.cycles += 4;
+    replay_binding(c, 0x69, 0x0026_fd94)?;
+    let on = c.g[V0][0] != 0;
+    c.g[A0][0] = c.g[S0][0];
+    if on {
+        c.cycles += 4;
+        c.g[V1][0] = Addr(replay).lw(c);
+        return match replay_speed_gate(c, true) {
+            None => Ok(InputExit::Store),
+            Some(at_end) => replay_set_speed(c, at_end, 3),
+        };
+    }
+
+    // 0x6c: the next camera (the controller's slot `+0x10` with 2 first).
+    c.cycles += 4;
+    replay_binding(c, 0x6c, 0x0026_fe04)?;
+    let on = c.g[V0][0] != 0;
+    c.g[A1][0] = 2;
+    if on {
+        c.cycles += 7;
+        c.g[V0][0] = Addr(r32(c, S3)).lw(c);
+        let vt = r32(c, V0);
+        c.g[A0][0] = Addr(vt).off(0x10).lh(c);
+        c.g[V1][0] = Addr(vt).off(0x14).lw(c);
+        c.g[A0][0] = sx(r32(c, S3).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, r32(c, V1), 0x0026_fe20)?;
+        c.g[A0][0] = c.g[S1][0];
+        NEXT_CAMERA.call(c, 0x0026_fe28)?;
+    }
+    Ok(InputExit::Store)
+}
+
+/// `int Replay_HandleInput(Replay* self, int canExit)` (0x26fb88): read the
+/// replay controls of the player watching (`world + 0xb0 + 4 * self[+0x28]`)
+/// and queue one command in `+0x618` (0 none; 3/4 speed, 5 step, 6, 7
+/// unpause, 8 end playback); returns whether a command was queued. Nothing
+/// happens while a command is pending (`+0x618`) or input is locked
+/// (`+0x61c`, `+0x620`). `canExit` lets the exit binding end the playback
+/// (`GameModule_EndReplayPlayback`).
+///
+/// Tick rate: holding the step binding repeats after a 10-frame delay
+/// (`+0x1c`) every other frame (`+0x20` toggles), both in 60 Hz frames.
+/// Above 60 the hold logic runs only on the hold's own 60 Hz frames
+/// ([`crate::tick::frame60_due`] keyed by `self + 0x20`, restarted by a new
+/// press), so the repeat starts after 1/6 s and runs at 30 steps/s at any
+/// rate. Nothing changes at 60.
+pub fn replay_handle_input(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x60);
+        c.g[A3][0] = Addr((c.g[GP][0] as u32).wrapping_sub(0x848)).lw(c);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S3, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S4, 0x10);
+        c.g[S3][0] = sx((c.g[GP][0] as u32).wrapping_add(0x2968));
+        frame.save(c, S0, 0x50);
+        c.g[S4][0] = c.g[A1][0];
+        frame.save(c, S2, 0x30);
+        frame.save_ra(c, 0);
+        let mut exit = replay_handle_input_body(c)?;
+        loop {
+            match exit {
+                InputExit::Store => {
+                    c.cycles += 1;
+                    Addr(r32(c, S1)).off(0x618).sw(c, c.g[S2][0]);
+                    exit = InputExit::Result;
+                }
+                InputExit::Result => {
+                    c.cycles += 1;
+                    c.g[V0][0] = (0 < c.g[S2][0]) as u64;
+                    exit = InputExit::Done;
+                }
+                InputExit::Done => break,
+            }
+        }
+        c.cycles += 8;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1892,5 +2244,172 @@ pub(crate) mod tests {
             c.g[A0][0] = sx(this);
             c.g[A2][0] = sx(r.next_u32() & 0xff);
         });
+    }
+
+
+    // ---------------------------------------------------- Replay_HandleInput
+
+    /// The replay controls in order of evaluation.
+    const REPLAY_BINDINGS: [u32; 7] = [0x6a, 0x6b, 0x67, 0x66, 0x68, 0x69, 0x6c];
+
+    /// Fixture of `Replay_HandleInput`: the replay at `DATA`, a world at
+    /// `DATA + 0x1000` (its game `+0x84` at `DATA + 0x1200`: speed
+    /// controller at `+0x48 -> +0x14`, an empty camera rider list at `+0x84`,
+    /// a replay in state 14 at `+0x28` and a UI at `+0xa4` for
+    /// `GameModule_EndReplayPlayback`), and every player's input binding at
+    /// `DATA + 0x1800` whose input map runs, per binding, a two-word program
+    /// "`v[0] = value`; stop" (the binding's result).
+    fn replay_input_fixture(c: &mut Cpu, r: &mut Rng, controller: bool) -> u32 {
+        // The executable's data: `InputVM_Execute` dispatches its opcodes
+        // through the jump table at 0x48e330 (zero RAM would jump to 0).
+        elf_image(c);
+        let replay = DATA;
+        for k in 0..0x1c0u32 {
+            c.bus.write32(replay + 4 * k, 0);
+        }
+        c.bus.write32(GAME_GP.wrapping_sub(0x1f04), DATA + 0x30_0000);
+        crate::game::fe::feasyncfile::tests::heap_init_5(c);
+        let world = DATA + 0x1000;
+        let game = DATA + 0x1200;
+        c.bus.write32(GAME_GP.wrapping_sub(0x848), world);
+        c.bus.write32(world + 0x84, game);
+        let h = DATA + 0x1300;
+        c.bus.write32(game + 0x48, h);
+        let obj = DATA + 0x1700;
+        c.bus.write32(h + 0x14, if controller { obj } else { 0 });
+        // The controller's vtable at a fixed address (a random one may land
+        // on the fixture): slot `+0x10` is a fake.
+        let _ = r.next_u32();
+        let vt = DATA + 0x1780;
+        c.bus.write16(vt + 0x10, 0);
+        c.bus.write32(vt + 0x14, FAKE);
+        c.bus.write32(obj, vt);
+        c.bus.write32(GAME_GP.wrapping_add(0x2968), vt);
+        let list = DATA + 0x1380;
+        c.bus.write32(list, 0);
+        c.bus.write32(game + 0x84, list);
+        let ended = DATA + 0x1400;
+        c.bus.write32(ended, 14);
+        c.bus.write32(game + 0x28, ended);
+        // The replay UI: one menu page whose close slot is a fake.
+        let ui = DATA + 0x1480;
+        for k in 0..0xa0u32 {
+            c.bus.write32(ui + 4 * k, 0);
+        }
+        c.bus.write32(game + 0xa4, ui);
+        let page = DATA + 0x1500;
+        let page_vt = DATA + 0x1680;
+        c.bus.write32(ui, 1);
+        c.bus.write32(ui + 4, page);
+        c.bus.write32(page + 0x12c, page_vt);
+        c.bus.write32(page_vt + 0x3c, FAKE + 0x40);
+        let binding = DATA + 0x1800;
+        let map = DATA + 0x1900;
+        for i in 0..4u32 {
+            c.bus.write32(world + 0xb0 + 4 * i, binding);
+        }
+        c.bus.write32(binding, r.next_u32());
+        c.bus.write32(binding + 4, map);
+        c.bus.write32(map + 4, DATA + 0x1a00);
+        c.bus.write32(map + 0x14, DATA + 0x1c00);
+        for (i, &b) in REPLAY_BINDINGS.iter().enumerate() {
+            let i = i as u32;
+            c.bus.write32(DATA + 0x1a00 + 4 * b, 3 * i);
+            c.bus.write32(DATA + 0x1c00 + 12 * i, 0);
+            c.bus.write32(DATA + 0x1c00 + 12 * i + 8, 0x20);
+        }
+        replay_input_set(c, &[false; 7]);
+        c.g[A0][0] = sx(replay);
+        replay
+    }
+
+    /// The results of the seven bindings (in [`REPLAY_BINDINGS`] order).
+    fn replay_input_set(c: &mut Cpu, on: &[bool; 7]) {
+        for (i, &v) in on.iter().enumerate() {
+            let bits = if v { 1.0f32.to_bits() } else { 0 };
+            c.bus.write32(DATA + 0x1c00 + 12 * i as u32 + 4, bits);
+        }
+    }
+
+
+    #[test]
+    fn replay_handle_input_matches() {
+        check(ee::s07::f_0026fb88__generated, replay_handle_input, 320, &|c, seed| {
+            let mut r = machine(c, seed, 0x26fb88, 2);
+            let replay = replay_input_fixture(c, &mut r, seed % 3 != 0);
+            // The first binding that is on (or none), the others random.
+            let first = (seed % 8) as usize;
+            let mut on = [false; 7];
+            for (i, v) in on.iter_mut().enumerate() {
+                *v = i == first || (i > first && r.next_u32() % 2 == 0);
+            }
+            replay_input_set(c, &on);
+            let pick = |r: &mut Rng, xs: &[u32]| xs[(r.next_u32() as usize) % xs.len()];
+            c.bus.write32(replay, pick(&mut r, &[3, 3, 0, 1, 5, 12]));
+            c.bus.write32(replay + 0x1c, pick(&mut r, &[0, 1, 2, 5, 0xffff_ffff]));
+            c.bus.write32(replay + 0x20, r.next_u32() % 2);
+            c.bus.write32(replay + 0x28, r.next_u32() % 4);
+            let end = r.next_u32() % 3;
+            c.bus.write32(replay + 0x484, end);
+            c.bus.write32(replay + 0x3cc, if r.next_u32() % 2 == 0 { end } else { end + 1 });
+            c.bus.write32(replay + 0x630, r.next_u32() % 9);
+            // Pending command / locked input on a few seeds.
+            c.bus.write32(replay + 0x618, if seed % 11 == 0 { 3 } else { 0 });
+            c.bus.write32(replay + 0x61c, if seed % 13 == 0 { 1 } else { 0 });
+            c.bus.write32(replay + 0x620, if seed % 17 == 0 { 1 } else { 0 });
+            c.g[A1][0] = (r.next_u32() % 2) as u64;
+            c.bus.write32(GAME_GP.wrapping_sub(0x69c), r.next_u32() % 4);
+        });
+    }
+
+
+    /// Holding the step binding: a step at the press, the first repeat after
+    /// 10 frames, then one every other frame, in 60 Hz frames at any rate
+    /// (each step within one frame of its 60 Hz time).
+    #[test]
+    fn replay_handle_input_step_repeat_follows_the_rate() {
+        fn steps(hz: u32) -> Vec<f32> {
+            let mut c = crate::difftest::fresh();
+            let c = &mut *c;
+            let mut r = machine(c, 3, 0x26fb88, 0);
+            let replay = replay_input_fixture(c, &mut r, true);
+            crate::tick::set_for_test(c, hz);
+            c.bus.write32(replay, 3);
+            c.bus.write32(replay + 0x484, 1);
+            c.bus.write32(replay + 0x3cc, 2);
+            let mut out = Vec::new();
+            for t in 0..hz {
+                let mut on = [false; 7];
+                on[if t == 0 { 0 } else { 1 }] = true;
+                replay_input_set(c, &on);
+                c.g[A0][0] = sx(replay);
+                c.g[A1][0] = 0;
+                c.g[RA][0] = sx(crate::difftest::RA);
+                c.pc = 0x0026_fb88;
+                replay_handle_input(c);
+                assert_eq!(
+                    c.pc,
+                    crate::difftest::RA,
+                    "{hz} Hz, tick {t}: pc {:#x}, fake calls {}",
+                    c.pc,
+                    c.bus.read32(fakes::LOG_COUNT)
+                );
+                if c.bus.read32(replay + 0x618) == 5 {
+                    out.push(t as f32 * 60.0 / hz as f32);
+                    c.bus.write32(replay + 0x618, 0);
+                }
+            }
+            out
+        }
+        let base = steps(60);
+        assert_eq!(base.len(), 26, "{base:?}");
+        assert_eq!(&base[..3], &[0.0, 10.0, 12.0]);
+        for hz in [120, 240] {
+            let s = steps(hz);
+            assert!(s.len() >= 25, "{hz} Hz: {s:?}");
+            for (a, b) in base.iter().zip(&s).take(25) {
+                assert!((a - b).abs() <= 1.0, "{hz} Hz: {s:?} vs {base:?}");
+            }
+        }
     }
 }

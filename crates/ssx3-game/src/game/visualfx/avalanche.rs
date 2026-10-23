@@ -47,6 +47,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x002d_7c00, avalanche_compute_instance_fade, "Avalanche_ComputeInstanceFade"),
     (0x002d_7dd8, avalanche_release_instance, "Avalanche_ReleaseInstance"),
     (0x002d_7e60, avalanche_build_active_node_array, "Avalanche_BuildActiveNodeArray"),
+    (0x002d_7ef8, avalanche_update_active, "Avalanche_UpdateActive"),
     (0x002d_9660, avalanche_bake_group, "Avalanche_BakeGroup"),
     (0x002d_9738, avalanche_add_node_event, "Avalanche_AddNodeEvent"),
     (0x002d_9a80, avalanche_free_histories, "Avalanche_FreeHistories"),
@@ -790,6 +791,315 @@ pub fn vfx_avalanche_dtor(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     })
+}
+
+
+/// `Avalanche` fields used by the update.
+mod av {
+    /// The avalanche definition (0 = not playing): `+0xc` spawn key count,
+    /// `+0xe` sound cue count, spawn keys at `+0x10` (8 bytes: time, info),
+    /// sound cues at `+0x110` (4 bytes: halfword frame, halfword node).
+    pub const DEF: u32 = 0x0;
+    /// The live instances (linked at `+0x2e4`).
+    pub const INSTANCES: u32 = 0x4;
+    /// Node slots (one word per instance / node index).
+    pub const NODES: u32 = 0x8;
+    /// Cursors into the spawn keys and the sound cues.
+    pub const SPAWN_CURSOR: u32 = 0x10;
+    pub const CUE_CURSOR: u32 = 0x14;
+    /// Playback time (s).
+    pub const TIME: u32 = 0x18;
+}
+
+/// Direct callees of the avalanche update.
+mod av_callee {
+    use super::{ee, Callee};
+    pub const UPDATE_INSTANCE: Callee = Callee { addr: 0x002d_7ca8, f: ee::s09::Avalanche_UpdateInstance };
+    pub const STOP: Callee = Callee { addr: 0x002d_81b0, f: ee::s09::Avalanche_Stop };
+    /// `EA_MemAllocNamed`, `AnimObject_ctor`, `SSXAudioSystem_GetInstance`,
+    /// `SSXAudioSystem_AvalancheUpdateStub` (through the function table).
+    pub const ALLOC: u32 = 0x0031_7d70;
+    pub const ANIM_OBJECT_CTOR: u32 = 0x0034_1aa0;
+    pub const AUDIO_GET_INSTANCE: u32 = 0x0028_b180;
+    pub const AUDIO_AVALANCHE_STUB: u32 = 0x0029_e560;
+}
+
+/// `void Avalanche_UpdateActive(Avalanche* self)` (0x2d7ef8): one tick of a
+/// playing avalanche. Advances the playback time by `gp+0x974` (0.009, a
+/// debug tunable), updates every live instance at that time (clearing the
+/// node slot of each one that ended), spawns the anim objects whose key time
+/// has come (allocating one the first time a key has no object, after setting
+/// up the shared spawn record at 0x4d5770 once), fires the sound cues whose
+/// frame (`time * 30`) has come, and stops the avalanche when no instance is
+/// alive any more.
+///
+/// Tick rate: the time step is per tick, so above 60 it is scaled by
+/// `60/rate` at the add (the `.sdata` tunable itself is not touched): the
+/// avalanche plays in the same wall time. Nothing changes at 60.
+pub fn avalanche_update_active(c: &mut Cpu) {
+    use av::*;
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0xb0);
+        frame.save(c, S1, 0x80);
+        frame.save(c, S0, 0x90);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S2, 0x70);
+        frame.save(c, S3, 0x60);
+        frame.save(c, S4, 0x50);
+        frame.save(c, S5, 0x40);
+        frame.save(c, S6, 0x30);
+        frame.save_ra(c, 0x20);
+        frame.save_fpr(c, 21, 0xa8);
+        frame.save_fpr(c, 20, 0xa0);
+        let this = r32(c, S1);
+        c.g[V0][0] = Addr(this).off(DEF).lw(c);
+        c.g[S5][0] = 0;
+        if c.g[V0][0] != 0 {
+            update_active_body(c, this)?;
+            // Nothing alive any more: stop.
+            c.cycles += 2;
+            let alive = c.g[S5][0] != 0;
+            frame.restore(c, S0, 0x90);
+            if !alive {
+                c.cycles += 2;
+                c.g[A0][0] = c.g[S1][0];
+                av_callee::STOP.call(c, 0x002d_8180)?;
+                c.cycles += 1;
+                frame.restore(c, S0, 0x90);
+            }
+        } else {
+            c.cycles += 1;
+            frame.restore(c, S0, 0x90);
+        }
+        c.cycles += 11;
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.restore_fpr(c, 21, 0xa8);
+        frame.restore_fpr(c, 20, 0xa0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The time step, the instances, the spawn keys and the sound cues (up to
+/// 0x2d8170).
+fn update_active_body(c: &mut Cpu, this: u32) -> Flow {
+    use av::*;
+    // Advance the time; update the instances.
+    c.cycles += 7;
+    c.lwc1(0, this.wrapping_add(TIME));
+    c.lwc1(1, gp(c, 0x974));
+    // Tick rate: the step is per 60 Hz tick.
+    crate::game::ai::rider::per_tick_60(c, 1);
+    c.g[S2][0] = 0;
+    c.g[S0][0] = Addr(this).off(INSTANCES).lw(c);
+    c.add_s(0, 0, 1);
+    c.swc1(0, this.wrapping_add(TIME));
+    if c.g[S0][0] != 0 {
+        loop {
+            c.cycles += 6;
+            c.lwc1(12, this.wrapping_add(TIME));
+            c.g[A0][0] = c.g[S0][0];
+            av_callee::UPDATE_INSTANCE.call(c, 0x002d_7f5c)?;
+            c.g[V1][0] = (0 < c.g[V0][0]) as u64;
+            c.g[S5][0] |= c.g[V1][0];
+            if c.g[V0][0] == 0 {
+                // Ended: clear its node slot.
+                c.cycles += 4;
+                c.g[V1][0] = Addr(this).off(NODES).lw(c);
+                c.g[V0][0] = sx(r32(c, S2) << 2);
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+                Addr(r32(c, V0)).sw(c, 0);
+            }
+            c.cycles += 3;
+            c.g[S0][0] = Addr(r32(c, S0)).off(0x2e4).lw(c);
+            c.g[S2][0] = sx(r32(c, S2).wrapping_add(1));
+            if c.g[S0][0] == 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x002d_7f50);
+            }
+        }
+    }
+
+    // Spawn keys whose time has come.
+    c.cycles += 6;
+    c.g[A0][0] = Addr(this).off(DEF).lw(c);
+    c.g[V1][0] = Addr(this).off(SPAWN_CURSOR).lw(c);
+    c.g[V0][0] = Addr(r32(c, A0)).off(0xc).lhu(c);
+    let more = (c.g[V1][0] as i64) < (c.g[V0][0] as i64);
+    c.g[V0][0] = sx(r32(c, V1) << 3);
+    if more {
+        c.cycles += 7;
+        c.lwc1(1, this.wrapping_add(TIME));
+        c.g[V0][0] = sx(r32(c, A0).wrapping_add(r32(c, V0)));
+        c.lwc1(0, r32(c, V0).wrapping_add(0x10));
+        c.c_le_s(0, 1);
+        let due = c.fcc();
+        c.g[S4][0] = 0x4d_0000;
+        if due {
+            c.cycles += 8;
+            c.g[AT][0] = 0xffff_ffff_bf80_0000; // -1.0
+            c.mtc1(AT, 20);
+            c.g[AT][0] = 0x41f0_0000; // 30.0
+            c.mtc1(AT, 21);
+            c.g[S0][0] = sx(r32(c, S4).wrapping_add(0x5770));
+            c.g[S3][0] = 1;
+            c.g[S6][0] = 0x48_0000;
+            c.g[V0][0] = sx(r32(c, V1) << 3);
+            loop {
+                spawn_key(c, this)?;
+                // Next key.
+                c.g[V0][0] = Addr(this).off(SPAWN_CURSOR).lw(c);
+                c.g[A0][0] = Addr(this).off(DEF).lw(c);
+                c.g[V1][0] = sx(r32(c, V0).wrapping_add(1));
+                Addr(this).off(SPAWN_CURSOR).sw(c, c.g[V1][0]);
+                c.g[V0][0] = Addr(r32(c, A0)).off(0xc).lhu(c);
+                let more = (c.g[V1][0] as i64) < (c.g[V0][0] as i64);
+                c.g[V0][0] = sx(r32(c, V1) << 3);
+                if !more {
+                    break;
+                }
+                c.cycles += 7;
+                c.lwc1(0, this.wrapping_add(TIME));
+                c.g[V0][0] = sx(r32(c, A0).wrapping_add(r32(c, V0)));
+                c.lwc1(1, r32(c, V0).wrapping_add(0x10));
+                c.c_le_s(1, 0);
+                let due = c.fcc();
+                c.g[V0][0] = sx(r32(c, V1) << 3);
+                if !due {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002d_7fd8);
+                }
+            }
+        }
+    }
+
+    // Sound cues whose frame (time * 30) has come.
+    c.cycles += 6;
+    c.g[A1][0] = Addr(this).off(DEF).lw(c);
+    c.g[V1][0] = Addr(this).off(CUE_CURSOR).lw(c);
+    c.g[AT][0] = 0x41f0_0000; // 30.0
+    c.mtc1(AT, 20);
+    c.g[V0][0] = Addr(r32(c, A1)).off(0xe).lhu(c);
+    loop {
+        c.cycles += 3;
+        c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+        if c.g[V0][0] == 0 {
+            return Ok(());
+        }
+        c.cycles += 11;
+        c.g[A0][0] = sx(r32(c, V1) << 2);
+        c.lwc1(1, this.wrapping_add(TIME));
+        c.g[V0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+        c.g[V1][0] = Addr(r32(c, V0)).off(0x110).lhu(c);
+        c.mul_s(1, 1, 20);
+        c.mtc1(V1, 0);
+        c.cvt_s_w(0, 0);
+        c.c_le_s(0, 1);
+        if !c.fcc() {
+            return Ok(());
+        }
+        c.g[V1][0] = Addr(r32(c, V0)).off(0x112).lhu(c);
+        if event_due(c) {
+            deliver_event_here(c, 0x002d_80f8);
+        }
+        // The cue's node, if it has one, plays its sound.
+        c.cycles += 6;
+        c.g[A0][0] = Addr(this).off(NODES).lw(c);
+        c.g[V1][0] = sx(r32(c, V1) << 2);
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A0)));
+        c.g[S0][0] = Addr(r32(c, V1)).lw(c);
+        if c.g[S0][0] != 0 {
+            c.cycles += 6;
+            call_ptr(c, av_callee::AUDIO_GET_INSTANCE, 0x002d_8118)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = sx(r32(c, S0).wrapping_add(0x60));
+            call_ptr(c, av_callee::AUDIO_AVALANCHE_STUB, 0x002d_8124)?;
+        }
+        c.g[V0][0] = Addr(this).off(CUE_CURSOR).lw(c);
+        c.cycles += 4;
+        c.g[A1][0] = Addr(this).off(DEF).lw(c);
+        c.g[V1][0] = sx(r32(c, V0).wrapping_add(1));
+        Addr(this).off(CUE_CURSOR).sw(c, c.g[V1][0]);
+        c.g[V0][0] = Addr(r32(c, A1)).off(0xe).lhu(c);
+    }
+}
+
+/// One due spawn key (`v0` = cursor * 8, `a0` = the definition): create its
+/// anim object if it has none, then tell the audio system (0x2d7fd8 to
+/// 0x2d80a0).
+fn spawn_key(c: &mut Cpu, this: u32) -> Flow {
+    use av::*;
+    c.cycles += 5;
+    c.g[V0][0] = sx(r32(c, A0).wrapping_add(r32(c, V0)));
+    c.g[V1][0] = Addr(r32(c, V0)).off(0x14).lw(c);
+    c.g[A0][0] = Addr(r32(c, V1)).off(0xc).lw(c);
+    let has_object = c.g[A0][0] != 0;
+    c.g[V0][0] = Addr(gp(c, 0x23d8)).lw(c);
+    if !has_object {
+        c.cycles += 2;
+        let ready = c.g[V0][0] != 0;
+        c.g[S2][0] = 0x4d_0000;
+        if !ready {
+            // The shared spawn record at 0x4d5770, once.
+            c.cycles += 16;
+            let rec = r32(c, S0);
+            c.g[V0][0] = 0xffff_ffff_ffff_0000;
+            c.g[V1][0] = Addr(rec).off(0x28).lbu(c);
+            Addr(rec).off(0x4).sw(c, c.g[S3][0]);
+            c.g[V0][0] |= 0xffff;
+            Addr(r32(c, S4)).off(0x5770).sw(c, c.g[V0][0]);
+            Addr(rec).off(0x28).sb(c, c.g[V1][0]);
+            Addr(rec).off(0x8).sw(c, 0);
+            c.swc1(20, rec.wrapping_add(0xc));
+            c.swc1(20, rec.wrapping_add(0x10));
+            c.swc1(21, rec.wrapping_add(0x14));
+            Addr(rec).off(0x18).sw(c, 0);
+            c.swc1(20, rec.wrapping_add(0x1c));
+            Addr(rec).off(0x20).sw(c, 0);
+            Addr(rec).off(0x24).sw(c, c.g[S3][0]);
+            Addr(sp(c)).sb(c, c.g[V1][0]);
+            Addr(gp(c, 0x23d8)).sw(c, c.g[S3][0]);
+        }
+        c.cycles += 15;
+        c.g[A0][0] = 0x6c;
+        c.g[A1][0] = sx(r32(c, S6).wrapping_add(0x7558));
+        c.g[A2][0] = 0x2000_0000;
+        c.g[A3][0] = 0;
+        call_ptr(c, av_callee::ALLOC, 0x002d_8048)?;
+        c.g[V1][0] = Addr(this).off(SPAWN_CURSOR).lw(c);
+        c.g[A0][0] = c.g[V0][0];
+        c.g[V0][0] = Addr(this).off(DEF).lw(c);
+        c.g[T0][0] = sx(r32(c, S2).wrapping_add(0x5770));
+        c.g[V1][0] = sx(r32(c, V1) << 3);
+        c.g[A1][0] = 1;
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+        c.g[A2][0] = 1;
+        c.g[A3][0] = Addr(r32(c, V0)).off(0x14).lw(c);
+        call_ptr(c, av_callee::ANIM_OBJECT_CTOR, 0x002d_8070)?;
+    }
+    c.cycles += 20;
+    call_ptr(c, av_callee::AUDIO_GET_INSTANCE, 0x002d_8078)?;
+    c.g[A3][0] = Addr(this).off(SPAWN_CURSOR).lw(c);
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A2][0] = Addr(this).off(DEF).lw(c);
+    c.g[A1][0] = sx(sp(c).wrapping_add(0x10));
+    c.g[A3][0] = sx(r32(c, A3) << 3);
+    c.g[A2][0] = sx(r32(c, A2).wrapping_add(r32(c, A3)));
+    c.g[V1][0] = Addr(r32(c, A2)).off(0x14).lw(c);
+    c.lq(V0, r32(c, V1).wrapping_add(0x40));
+    c.sq(V0, sp(c).wrapping_add(0x10));
+    call_ptr(c, av_callee::AUDIO_AVALANCHE_STUB, 0x002d_80a0)
 }
 
 
@@ -1770,5 +2080,126 @@ pub(crate) mod tests {
                 put_vec(c, v, q);
             },
         );
+    }
+
+
+    /// A playing avalanche at `DATA` for `Avalanche_UpdateActive`: `live`
+    /// says per instance whether it has data (a type-2 instance whose history
+    /// index is already at the sample, so `Avalanche_SampleHistory` takes its
+    /// straight path and the instance stays alive) or not (it ends at once).
+    /// `keys` spawn keys (0.3 s apart, all with an object) and `cues` sound
+    /// cues (7 frames apart). The audio system and the world for
+    /// `Avalanche_Stop`.
+    fn update_active_fixture(c: &mut Cpu, r: &mut Rng, time: f32, live: &[bool], keys: u32, cues: u32) {
+        let this = DATA;
+        let def = DATA + 0x1000;
+        c.bus.write32(this, def);
+        c.bus.write32(this + 0x18, time.to_bits());
+        // Instances.
+        let mut next = 0;
+        for (i, &l) in live.iter().enumerate().rev() {
+            let inst = DATA + 0x8000 + 0x400 * i as u32;
+            let data = DATA + 0x6000 + 0x400 * i as u32;
+            if l {
+                c.bus.write32(inst + 0x2e0, data);
+                c.bus.write16(data + 0xf0, 2);
+                c.bus.write32(data + 0x100, 1000.0f32.to_bits());
+                c.bus.write32(data + 0x104, 1.0f32.to_bits());
+                c.bus.write32(data + 0x10c, 1.0f32.to_bits());
+                c.bus.write32(data + 0xfc, data + 0x200);
+                c.bus.write32(inst, 15);
+            }
+            c.bus.write32(inst + 0x2e4, next);
+            next = inst;
+        }
+        c.bus.write32(this + 4, next);
+        let any_live = live.iter().any(|&l| l);
+        // Node slots (no array when the avalanche stops: Avalanche_Stop would
+        // free it).
+        let nodes = if any_live { DATA + 0x3000 } else { 0 };
+        c.bus.write32(this + 8, nodes);
+        if nodes != 0 {
+            for k in 0..4 {
+                c.bus.write32(nodes + 4 * k, if k % 2 == 0 { DATA + 0x5000 + 0x100 * k } else { 0 });
+            }
+        }
+        // Spawn keys.
+        c.bus.write16(def + 0xc, keys as u16);
+        for k in 0..keys {
+            let info = DATA + 0x4000 + 0x100 * k;
+            c.bus.write32(def + 0x10 + 8 * k, (0.3 * k as f32).to_bits());
+            c.bus.write32(def + 0x14 + 8 * k, info);
+            c.bus.write32(info + 0xc, 1);
+            for w in 0..4 {
+                c.bus.write32(info + 0x40 + 4 * w, r.next_u32());
+            }
+        }
+        c.bus.write32(this + 0x10, r.next_u32() % 2);
+        // Sound cues.
+        c.bus.write16(def + 0xe, cues as u16);
+        for k in 0..cues {
+            c.bus.write16(def + 0x110 + 4 * k, (7 * k) as u16);
+            c.bus.write16(def + 0x112 + 4 * k, (k % 3) as u16);
+        }
+        c.bus.write32(this + 0x14, r.next_u32() % 2);
+        // The audio system (avalanche sound refcount stays above 0) and the
+        // world's active-avalanche count.
+        let aud = DATA + 0x1_0000;
+        c.bus.write32(GAME_GP + 0x410, aud);
+        c.bus.write32(aud + 0x6040, 5);
+        let wld = DATA + 0x2_0000;
+        c.bus.write32(GAME_GP.wrapping_sub(0x848), wld);
+        c.bus.write32(wld + 0x84, wld + 0x100);
+        c.bus.write32(wld + 0x100 + 0xc, wld + 0x200);
+        c.bus.write32(wld + 0x200 + 0xa8, wld + 0x300);
+        c.bus.write32(wld + 0x300 + 0x708, 3);
+    }
+
+
+    #[test]
+    fn avalanche_update_active_matches() {
+        check(ee::s09::f_002d7ef8__generated, avalanche_update_active, 120, &|c, seed| {
+            let mut r = machine(c, seed, 0x2d7ef8, 0);
+            elf_image(c);
+            let live: Vec<bool> = (0..seed % 3).map(|i| (seed / 3 + i) % 2 == 0).collect();
+            let time = if live.iter().any(|&l| l) { 0.5 } else { (seed % 7) as f32 * 0.1 };
+            update_active_fixture(c, &mut r, time, &live, (seed / 2) % 4, (seed / 5) % 5);
+            if seed % 13 == 12 {
+                c.bus.write32(DATA, 0);
+            }
+            c.g[A0][0] = DATA as u64;
+            // The generated body dispatches on `pc` (its entry).
+            c.pc = 0x002d_7ef8;
+        });
+    }
+
+
+    /// The playback time advances per 60 Hz frame: one update at 60 and
+    /// `rate/60` updates at 120 / 240 Hz move it by the same amount.
+    #[test]
+    fn avalanche_update_active_follows_the_rate() {
+        fn after(hz: u32) -> f32 {
+            let mut c = crate::difftest::fresh();
+            let c = &mut *c;
+            let mut r = machine(c, 3, 0x2d7ef9, 0);
+            elf_image(c);
+            crate::tick::set_for_test(c, hz);
+            update_active_fixture(c, &mut r, 0.5, &[true], 0, 0);
+            for _ in 0..hz / 60 {
+                c.g[A0][0] = DATA as u64;
+                c.g[RA][0] = crate::difftest::RA as u64;
+                c.g[SP][0] = crate::difftest::SP as u64;
+                avalanche_update_active(c);
+                assert_eq!(c.pc, crate::difftest::RA);
+                assert_ne!(c.bus.read32(DATA), 0, "{hz} Hz: stopped");
+            }
+            f32::from_bits(c.bus.read32(DATA + 0x18))
+        }
+        let base = after(60);
+        assert!((base - 0.509).abs() < 1e-6, "{base}");
+        for hz in [120, 240] {
+            let t = after(hz);
+            assert!((t - base).abs() < 1e-6, "{hz} Hz: time {t} vs {base} at 60");
+        }
     }
 }

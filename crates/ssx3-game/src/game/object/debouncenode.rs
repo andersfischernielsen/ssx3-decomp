@@ -55,6 +55,7 @@ pub(crate) use crate::game::fe::feasyncfile::p_6 as p_5;
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0034_2d10, debounce_ctor, "Debounce_ctor"),
+    (0x0034_2d88, debounce_v15, "Debounce_v15"),
     (0x0034_2dd8, debounce_kill, "Debounce_Kill"),
     (0x0034_3010, conveyor_ctor, "Conveyor_ctor"),
     (0x0034_34e8, conveyor_update, "Conveyor_Update"),
@@ -1597,6 +1598,62 @@ pub fn crowd_man3d_dtor(c: &mut Cpu) {
 }
 
 
+/// `int Debounce_v15(cDebounceNode* self)` (0x342d88): the node's per-tick
+/// update (vtable slot 15, called by `WorldObj_Update` once per tick). While
+/// the delay at `+0x2c` is positive it counts down by one; when it reaches 0
+/// the node fires its vtable slot 34 with argument 1 and returns 0, else it
+/// returns 1.
+///
+/// Tick rate: the delay comes from the level data in 60 Hz frames, so above
+/// 60 it goes down once per 60 Hz frame of this node
+/// ([`crate::tick::frame60_due`], keyed by `self + 0x2c`); a tick that is not
+/// one returns 1 like a countdown still running. Nothing changes at 60.
+pub fn debounce_v15(c: &mut Cpu) {
+    const DELAY: u32 = 0x2c;
+    guest(c, |c| {
+        c.cycles += 6;
+        let frame = Frame::open(c, 0x10);
+        c.g[A2][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        let this = r32(c, A2);
+        c.g[V0][0] = Addr(this).off(DELAY).lw(c);
+        let n = r32(c, V0);
+        let running = (c.g[V0][0] as i64) > 0;
+        c.g[V0][0] = sx(n.wrapping_sub(1));
+        if running {
+            c.cycles += 2;
+            let key = this.wrapping_add(DELAY);
+            if crate::tick::frame60_due(c, key, n) {
+                Addr(this).off(DELAY).sw(c, c.g[V0][0]);
+                crate::tick::frame60_ran(c, key, n.wrapping_sub(1));
+                if c.g[V0][0] == 0 {
+                    // Fire: vtable slot 34 (this + delta, 1).
+                    c.cycles += 8;
+                    c.g[V0][0] = Addr(this).off(0xc).lw(c);
+                    c.g[A1][0] = 1;
+                    c.g[A0][0] = Addr(r32(c, V0)).off(0x110).lh(c);
+                    c.g[V1][0] = Addr(r32(c, V0)).off(0x114).lw(c);
+                    let target = r32(c, V1);
+                    c.g[A0][0] = sx(this.wrapping_add(r32(c, A0)));
+                    call_ptr(c, target, 0x0034_2dc0)?;
+                    c.g[V0][0] = 0;
+                    c.cycles += 3;
+                    frame.restore_ra(c, 0);
+                    frame.close(c);
+                    return Ok(());
+                }
+            }
+        }
+        c.cycles += 1;
+        c.g[V0][0] = 1;
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
 /// `void Debounce_Kill(self)` (0x342dd8): kill a debounce node and, if it has
 /// no queued callback, allocate and post the dead node.
 pub fn debounce_kill(c: &mut Cpu) {
@@ -2669,5 +2726,59 @@ pub(crate) mod tests {
                 c.bus.write32(DATA + 0x3100, 0);
             },
         );
+    }
+
+
+    #[test]
+    fn debounce_v15_matches() {
+        check(ssx3_ee::s11::f_00342d88__generated, debounce_v15, 200, &|c, seed| {
+            let mut r = machine(c, seed, 0x342d88, 1);
+            let this = DATA + 0x1000;
+            c.g[A0][0] = this as u64;
+            let n = match seed % 4 {
+                0 => 1,
+                1 => 0,
+                2 => (r.next_u32() | 0x8000_0000) as u32,
+                _ => 2 + r.next_u32() % 100,
+            };
+            c.bus.write32(this + 0x2c, n);
+            let vt = vtable(c, &mut r, &[0x110]);
+            c.bus.write32(this + 0xc, vt);
+        });
+    }
+
+
+    /// Above 60 Hz the delay counts 60 Hz frames: a delay of 10 fires after
+    /// 10 ticks at 60, after `10 * rate/60 - (rate/60 - 1)` ticks at 120/240.
+    #[test]
+    fn debounce_v15_follows_the_rate() {
+        fn ticks(hz: u32) -> u32 {
+            let mut c = crate::difftest::fresh();
+            let c = &mut *c;
+            let mut r = machine(c, 1, 0x342d89, 0);
+            crate::tick::set_for_test(c, hz);
+            let this = DATA + 0x1000;
+            c.bus.write32(this + 0x2c, 10);
+            let vt = vtable(c, &mut r, &[0x110]);
+            c.bus.write32(this + 0xc, vt);
+            let mut n = 0;
+            loop {
+                n += 1;
+                c.g[A0][0] = this as u64;
+                c.g[RA][0] = crate::difftest::RA as u64;
+                c.g[ssx3_ee_rt::cpu::reg::SP][0] = crate::difftest::SP as u64;
+                debounce_v15(c);
+                assert_eq!(c.pc, crate::difftest::RA);
+                if c.g[V0][0] == 0 {
+                    return n;
+                }
+                assert!(n < 10_000);
+            }
+        }
+        assert_eq!(ticks(60), 10);
+        for hz in [120u32, 240] {
+            let q = hz / 60;
+            assert_eq!(ticks(hz), 10 * q - (q - 1), "{hz} Hz");
+        }
     }
 }

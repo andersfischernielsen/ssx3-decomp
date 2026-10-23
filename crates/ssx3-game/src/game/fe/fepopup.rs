@@ -68,6 +68,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x001c_5a90, c_fe_popup_confirm_base_dtor, "cFEPopupConfirm_BaseDtor"),
     (0x001c_5af8, c_fe_popup_confirm_v04, "cFEPopupConfirm_v04"),
     (0x001c_5b88, cfe_popup_confirm_v06, "cFEPopupConfirm_v06"),
+    (0x001c_5c30, cfe_popup_confirm_transition_in, "cFEPopupConfirm_v07"),
     (0x001c_7040, cfe_popup_confirm_layout_post_text, "cFEPopupConfirm_LayoutPostText"),
     (0x001c_70f0, cfe_popup_confirm_resize_text_widgets, "cFEPopupConfirm_ResizeTextWidgets"),
     (0x001c_75c8, c_fe_popup_confirm_select_option, "cFEPopupConfirm_SelectOption"),
@@ -6062,6 +6063,179 @@ pub(crate) fn epilogue(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
     Ok(())
 }
 
+
+const PCF_APPLY_CONFIG: Callee = Callee { addr: 0x001c_6b08, f: ee::s03::f_001c6b08 };
+const PCF_APPLY_BACKGROUND_SCALE: Callee = Callee { addr: 0x001c_7738, f: ee::s03::f_001c7738 };
+const PCF_SET_FADE: Callee = Callee { addr: 0x001c_5f20, f: ee::s03::f_001c5f20 };
+
+/// `base(reg) + off`.
+#[inline(always)]
+fn pcf_at(c: &Cpu, reg: usize, off: u32) -> u32 {
+    (c.g[reg][0] as u32).wrapping_add(off)
+}
+
+/// `int cFEPopupConfirm_v07(cFEPopupConfirm* self, int first)` (0x1c5c30),
+/// the popup's `TransitionIn` (state vtable slot `+0x38`): on the first call
+/// apply its config (`+0xbc`) at the start scale, fade it in when it has a
+/// background (`+0x31c == 1`) and set up the grow-in: `+0xa8` steps (the
+/// screen's value, 25 without one, at least 2), per-step scale `+0xac/+0xb0`
+/// toward the final scale `+0x278..`. Each call (`UIStateMgr_ProcessStates`,
+/// once per tick until it returns nonzero) applies `step * per-step + base`
+/// and takes the next step (`+0xa4`), then returns 1 at the last one (or at
+/// once with the final scale without a background).
+///
+/// Tick rate: the grow-in is a 60 Hz timeline: the step counter goes up
+/// once per 60 Hz frame of the popup ([`crate::tick::frame60_due`]); exact
+/// at 60.
+pub fn cfe_popup_confirm_transition_in(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S0, 0x40);
+        c.g[S1][0] = c.g[A0][0];
+        let first = c.g[A1][0] != 0;
+        frame.save_ra(c, 0x20);
+        if first {
+            c.cycles += 16;
+            let s = sp(c);
+            c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x5908));
+            c.g[S0][0] = 1;
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(1, 0);
+            c.sw(pcf_at(c, S1, 0x2bc), c.g[S0][0]);
+            c.g[A1][0] = sx(pcf_at(c, S1, 0xbc));
+            c.swc1(1, s.wrapping_add(4));
+            c.swc1(0, s.wrapping_add(8));
+            c.swc1(1, s);
+            PCF_APPLY_CONFIG.call(c, 0x001c_5c70)?;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = c.g[SP][0];
+            PCF_APPLY_BACKGROUND_SCALE.call(c, 0x001c_5c7c)?;
+            c.g[V0][0] = c.lw(pcf_at(c, S1, 0x31c));
+            if c.g[V0][0] == c.g[S0][0] {
+                c.cycles += 4;
+                c.mtc1(0, 12);
+                c.g[A0][0] = c.g[S1][0];
+                PCF_SET_FADE.call(c, 0x001c_5c94)?;
+            }
+            // The step count: the screen's value for the popup's name hash.
+            c.g[A0][0] = 0x4a_0000;
+            c.cycles += 9;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1c48));
+            call_ptr(c, 0x0031_7670, 0x001c_5ca0)?; // StrHash
+            c.g[A0][0] = c.lw(pcf_at(c, S1, 0x40));
+            c.g[A1][0] = c.g[V0][0];
+            call_ptr(c, 0x0039_c778, 0x001c_5cac)?; // UIScreen_LookupValue
+            c.g[V1][0] = c.g[V0][0];
+            c.g[V0][0] = 0xffff;
+            let missing = c.g[V1][0] == c.g[V0][0];
+            c.g[V0][0] = 0x19;
+            if missing {
+                c.cycles += 1;
+                c.sw(pcf_at(c, S1, 0xa8), c.g[V0][0]);
+            } else {
+                c.cycles += 2;
+                c.sw(pcf_at(c, S1, 0xa8), c.g[V1][0]);
+            }
+            c.cycles += 4;
+            c.g[V0][0] = c.lw(pcf_at(c, S1, 0xa8));
+            c.g[V1][0] = 1;
+            if c.g[V0][0] == c.g[V1][0] {
+                c.cycles += 3;
+                c.g[V0][0] = 2;
+                c.sw(pcf_at(c, S1, 0xa8), c.g[V0][0]);
+                c.g[V0][0] = c.lw(pcf_at(c, S1, 0xa8));
+            }
+            // Per-step scale = (final - start) / (steps - 1); step 1.
+            c.cycles += 13;
+            c.lwc1(3, (c.g[GP][0] as u32).wrapping_sub(0x5904));
+            c.lwc1(1, pcf_at(c, S1, 0x278));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+            c.lwc1(0, pcf_at(c, S1, 0x27c));
+            c.mtc1(2, 2);
+            c.cvt_s_w(2, 2);
+            c.sub_s(1, 1, 3);
+            c.sw(pcf_at(c, S1, 0xa4), c.g[V1][0]);
+            c.sub_s(0, 0, 3);
+            c.div_s(1, 1, 2);
+            c.div_s(0, 0, 2);
+            c.swc1(1, pcf_at(c, S1, 0xac));
+            c.swc1(0, pcf_at(c, S1, 0xb0));
+        }
+
+        c.cycles += 4;
+        c.g[V1][0] = c.lw(pcf_at(c, S1, 0x31c));
+        c.g[V0][0] = 1;
+        let growing = c.g[V1][0] == c.g[V0][0];
+        c.g[A0][0] = c.g[S1][0];
+        'out: {
+            if growing {
+                c.cycles += 25;
+                let s = sp(c);
+                c.lwc1(1, pcf_at(c, S1, 0xa4));
+                c.cvt_s_w(1, 1);
+                c.lwc1(0, pcf_at(c, S1, 0xb0));
+                c.lwc1(3, pcf_at(c, S1, 0xac));
+                c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x5900));
+                c.g[A1][0] = sx(s.wrapping_add(0x10));
+                c.mul_s(0, 1, 0);
+                c.g[V0][0] = c.lw(pcf_at(c, S1, 0x58));
+                c.mul_s(1, 1, 3);
+                c.ldl(3, pcf_at(c, V0, 0x4b));
+                c.ldr(3, pcf_at(c, V0, 0x44));
+                c.g[A2][0] = c.lw(pcf_at(c, V0, 0x4c));
+                c.sdl(3, s.wrapping_add(7));
+                c.sdr(3, s);
+                c.sw(s.wrapping_add(8), c.g[A2][0]);
+                c.add_s(0, 0, 2);
+                c.add_s(1, 1, 2);
+                c.swc1(0, s.wrapping_add(0x14));
+                c.swc1(1, s.wrapping_add(0x10));
+                PCF_APPLY_BACKGROUND_SCALE.call(c, 0x001c_5d78)?;
+                c.g[V1][0] = c.lw(pcf_at(c, S1, 0xa4));
+                c.g[V0][0] = c.lw(pcf_at(c, S1, 0xa8));
+                let more = (c.g[V1][0] as i64) < (c.g[V0][0] as i64);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+                if !more {
+                    c.cycles += 1;
+                    c.g[V0][0] = 1;
+                    break 'out;
+                }
+                c.cycles += 3;
+                c.g[V0][0] = 0;
+                // The next step once per 60 Hz frame of this popup.
+                let key = pcf_at(c, S1, 0xa4);
+                let step = c.g[V1][0] as u32;
+                if crate::tick::frame60_due(c, key, step.wrapping_sub(1)) {
+                    c.sw(key, c.g[V1][0]);
+                    crate::tick::frame60_ran(c, key, step);
+                }
+                break 'out;
+            }
+            // No background: the final scale at once.
+            c.cycles += 8;
+            let s = sp(c);
+            c.ldl(2, pcf_at(c, S1, 0x27f));
+            c.ldr(2, pcf_at(c, S1, 0x278));
+            c.g[V1][0] = c.lw(pcf_at(c, S1, 0x280));
+            c.sdl(2, s.wrapping_add(7));
+            c.sdr(2, s);
+            c.sw(s.wrapping_add(8), c.g[V1][0]);
+            c.g[A1][0] = c.g[SP][0];
+            PCF_APPLY_BACKGROUND_SCALE.call(c, 0x001c_5db8)?;
+            c.cycles += 1;
+            c.g[V0][0] = 1;
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7781,5 +7955,107 @@ pub(crate) mod tests {
                 c.bus.write32(POPUP3_SIZE + 4, r.f32(1.0));
             },
         );
+    }
+
+
+    // -------------------------------------------- cFEPopupConfirm_v07 (grow-in)
+
+    /// A confirm popup at `POPUP` in its grow-in (`a1 = 0`): background
+    /// `+0x31c`, step `+0xa4` of `+0xa8`, scales, no widgets.
+    fn transition_in_setup(c: &mut Cpu, seed: u32) {
+        let mut r = base_14(c, seed, 0x1c_5c30, 3);
+        let p = POPUP;
+        c.bus.write32(p + 0x31c, if seed % 4 == 0 { 0 } else { 1 });
+        let steps = 2 + seed % 30;
+        c.bus.write32(p + 0xa8, steps);
+        c.bus.write32(p + 0xa4, if seed % 5 == 0 { steps } else { r.next_u32() % steps });
+        for off in [0xac, 0xb0, 0x278, 0x27c, 0x280] {
+            c.bus.write32(p + off, r.f32(2.0));
+        }
+        c.bus.write32(GAME_GP - 0x5900, r.f32(1.0));
+        c.bus.write32(p + 0x58, DATA + 0x2_0000);
+        for k in 0..4 {
+            c.bus.write32(DATA + 0x2_0000 + 0x44 + 4 * k, r.next_u32());
+        }
+        c.g[A0][0] = sx(p);
+        c.g[A1][0] = 0;
+    }
+
+    #[test]
+    fn cfe_popup_confirm_transition_in_matches() {
+        check(
+            ee::s03::f_001c5c30__generated,
+            cfe_popup_confirm_transition_in,
+            200,
+            &|c, seed| transition_in_setup(c, seed),
+        );
+    }
+
+    #[test]
+    fn cfe_popup_confirm_transition_in_open_matches() {
+        // The first call (`a1 != 0`): the popup's config (as
+        // `cFEPopupConfirm_Rebuild`'s test lays it out), no screen.
+        check(
+            ee::s03::f_001c5c30__generated,
+            cfe_popup_confirm_transition_in,
+            8,
+            &|c, seed| {
+                let _ = crate::game::movie::movieplayer::tests::alloc_base(c, seed, 0x1c_5c31, 6);
+                let p = DATA;
+                let child = DATA + 0x1000;
+                c.bus.write32(p + 0x8, child);
+                crate::game::movie::movieplayer::tests::ret_slot(
+                    c,
+                    child,
+                    0x30,
+                    crate::game::movie::movieplayer::tests::RET_ZERO,
+                );
+                c.bus.write32(p + 0x278, 0x3f00_0000);
+                c.bus.write32(p + 0x27c, 0x3fc0_0000);
+                c.bus.write32(p + 0x280, 0x3f80_0000);
+                c.bus.write32(p + 0xbc, 0);
+                // The background style (config word 0x30 -> +0x31c).
+                c.bus.write32(p + 0xbc + 0xc0, (seed % 2) as u32);
+                c.g[A0][0] = p as u64;
+                c.g[A1][0] = 1;
+            },
+        );
+    }
+
+    #[test]
+    fn cfe_popup_confirm_transition_in_rate() {
+        // The grow-in takes as long at any rate: 25 calls at 60 (24 steps and
+        // the last), about rate/60 times as many calls above.
+        let calls = |hz: u32| -> u32 {
+            let mut c = crate::difftest::fresh();
+            let c = &mut *c;
+            transition_in_setup(c, 1);
+            crate::difftest::fakes::machine(c, 1, 0x1c_5c30, 0);
+            c.bus.write32(GAME_GP - 0x1f04, BEL);
+            crate::tick::set_for_test(c, hz);
+            let p = POPUP;
+            c.bus.write32(p + 0x31c, 1);
+            c.bus.write32(p + 0xa8, 25);
+            c.bus.write32(p + 0xa4, 1);
+            let mut n = 0;
+            loop {
+                n += 1;
+                c.g[A0][0] = sx(p);
+                c.g[A1][0] = 0;
+                c.g[RA][0] = crate::difftest::RA as u64;
+                cfe_popup_confirm_transition_in(c);
+                assert_eq!(c.pc, crate::difftest::RA);
+                if c.g[V0][0] == 1 {
+                    return n;
+                }
+                assert!(n < 1000);
+            }
+        };
+        assert_eq!(calls(60), 25);
+        for hz in [120u32, 240] {
+            let n = calls(hz);
+            let k = hz / 60;
+            assert!(n >= 24 * k - (k - 1) && n <= 25 * k, "{hz} Hz: {n} calls");
+        }
     }
 }

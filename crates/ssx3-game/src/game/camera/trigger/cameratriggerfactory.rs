@@ -98,6 +98,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0017_85b0, superpipe_chase_camera_get_eye_drop, "SuperpipeChaseCameraAlgorithm_GetEyeDrop"),
     (0x0017_85c0, superpipe_chase_camera_get_tuning, "SuperpipeChaseCameraAlgorithm_GetTuning"),
     (0x0017_8938, superpipe_chase_camera_algorithm_reset_for_rider, "SuperpipeChaseCameraAlgorithm_ResetForRider"),
+    (0x0017_8bb0, post_race_1_chase_camera_update, "Post_Race_1ChaseCameraAlgorithm_Update"),
     (0x0017_8e90, post_race_1_chase_camera_reset_for_rider, "Post_Race_1ChaseCameraAlgorithm_ResetForRider"),
     (0x0017_9fc8, debug_menu_is_track_selectable, "DebugMenu_IsTrackSelectable"),
     (0x0017_a028, debug_menu_next_enabled_item, "DebugMenu_NextEnabledItem"),
@@ -1943,6 +1944,243 @@ pub fn direction_ne_chase_camera_reset_for_rider(c: &mut Cpu) {
 pub fn post_race_1_chase_camera_reset_for_rider(c: &mut Cpu) {
     guest(c, |c| {
         chase_reset_for_rider(c, 0x0017_8e90, BackHeight::Hundred)
+    })
+}
+
+
+/// The post-race orbit: one turn every 1100 updates (gp-0x5d58 = 1/1100).
+const POST_RACE_ORBIT_FRAMES: u32 = 1100;
+
+/// `void Post_Race_1ChaseCameraAlgorithm_Update(algo)` (0x178bb0): the
+/// results-screen camera. Gathers the rider state with this camera's
+/// tuning, steps the orbit counter `+0x3a0` (`(n + 1) % 1100`), and turns
+/// the chase direction `+0x390` about the world up by a swing angle
+/// `a = (1 − cos(2π n/1100)) × 0.748 − 0.748` (both angles wrapped to
+/// ±π); the look-at `+0x20` is the target's position (slot 1) 3 below, the
+/// eye `+0x40` sits `126 (+200)` back along the turned direction and
+/// `−27 (+150)` up (the `+` terms with two or more players).
+///
+/// The counter counts updates and the 1100 is 60 Hz frames: at another rate
+/// it wraps at `ticks_from_frames60(1100)` and the per-update angle share
+/// is `(1/1100) × 1100/that`, so one orbit takes the same wall time and the
+/// angle still advances every update.
+pub fn post_race_1_chase_camera_update(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 31;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x150));
+        let sp = c.g[SP][0] as u32;
+        let gp = c.g[GP][0] as u32;
+        c.lwc1(12, gp.wrapping_sub(0x5d7c));
+        c.sq(17, sp.wrapping_add(0x110));
+        c.g[A1][0] = c.g[SP][0];
+        for (f, off) in [(13, 0x5d78u32), (14, 0x5d74), (15, 0x5d70), (16, 0x5d6c), (17, 0x5d68), (18, 0x5d64), (19, 0x5d60)] {
+            c.lwc1(f, gp.wrapping_sub(off));
+        }
+        c.swc1(22, sp.wrapping_add(0x140));
+        c.swc1(21, sp.wrapping_add(0x138));
+        c.swc1(20, sp.wrapping_add(0x130));
+        c.sq(16, sp.wrapping_add(0x120));
+        c.sq(18, sp.wrapping_add(0x100));
+        c.sd(sp.wrapping_add(0xf0), c.g[RA][0]);
+        c.g[S1][0] = c.g[A0][0];
+        let algo = c.g[S1][0] as u32;
+        // ChaseCameraAlgorithm_GatherRiderState(algo, &state, tuning f12..f19).
+        call_ptr(c, 0x0016_2568, 0x0017_8bfc)?;
+
+        // The orbit counter.
+        c.lwc1(21, gp.wrapping_sub(0x5d5c));
+        c.g[V0][0] = c.lw(algo.wrapping_add(0x3a0));
+        c.g[V1][0] = POST_RACE_ORBIT_FRAMES as u64;
+        c.lwc1(0, gp.wrapping_sub(0x5d58));
+        if crate::tick::rate(c) != 60 {
+            let n = crate::tick::ticks_from_frames60(c, POST_RACE_ORBIT_FRAMES);
+            c.g[V1][0] = n as u64;
+            let share = FpuF32(c.f[0]) * FpuF32((POST_RACE_ORBIT_FRAMES as f32 / n as f32).to_bits());
+            c.f[0] = share.0;
+        }
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+        c.lwc1(22, gp.wrapping_sub(0x5d54));
+        c.div(0, V0, V1);
+        c.g[AT][0] = 0x3f00_0000;
+        c.mtc1(AT, 20);
+        c.sw(algo.wrapping_add(0x3a0), c.g[V0][0]);
+
+        // angle = wrap(n × share × 2π).
+        c.cycles += 14;
+        c.g[A0][0] = c.hi[0];
+        c.mtc1(A0, 1);
+        c.cvt_s_w(1, 1);
+        c.sw(algo.wrapping_add(0x3a0), c.g[A0][0]);
+        c.mul_s(1, 1, 0);
+        c.mul_s(1, 1, 21);
+        c.mul_s(0, 1, 22);
+        c.add_s(0, 0, 20);
+        c.cvt_w_s(12, 0);
+        c.cvt_s_w(12, 12);
+        c.c_lt_s(0, 12);
+        if c.fcc() {
+            c.cycles += 4;
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(AT, 0);
+            c.sub_s(12, 12, 0);
+        }
+        c.mul_s(12, 12, 21);
+
+        // Math_Cos, then the swing angle, wrapped the same way.
+        c.cycles += 17;
+        c.sub_s(12, 1, 12);
+        call_ptr(c, 0x0031_c040, 0x0017_8c7c)?;
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 3);
+        c.lwc1(2, gp.wrapping_sub(0x5d50));
+        c.sub_s(0, 3, 0);
+        c.lwc1(1, gp.wrapping_sub(0x5d4c));
+        c.mul_s(0, 0, 2);
+        c.add_s(12, 0, 1);
+        c.mul_s(0, 12, 22);
+        c.add_s(0, 0, 20);
+        c.cvt_w_s(1, 0);
+        c.cvt_s_w(1, 1);
+        c.c_lt_s(0, 1);
+        if c.fcc() {
+            c.sub_s(1, 1, 3);
+        }
+
+        // Math_SinCos(a / 2, &s, &c): the rotation about the world up.
+        c.cycles += 69;
+        c.mul_s(0, 1, 21);
+        c.g[A1][0] = sx(sp.wrapping_add(0xe4));
+        c.g[S2][0] = 0x50_0000;
+        c.g[A0][0] = sx(sp.wrapping_add(0xe0));
+        c.g[S0][0] = sx(0x004f_f160);
+        c.sub_s(12, 12, 0);
+        c.mul_s(12, 12, 20);
+        call_ptr(c, 0x0031_be50, 0x0017_8cd8)?;
+        let up = 0x004f_f160u32;
+        c.lwc1(3, up + 0x8);
+        c.g[A0][0] = sx(sp.wrapping_add(0xa0));
+        c.lwc1(0, sp.wrapping_add(0xe0));
+        c.lwc1(1, up);
+        c.lwc1(4, up + 0x4);
+        c.mul_s(3, 0, 3);
+        c.mul_s(1, 0, 1);
+        c.lwc1(2, sp.wrapping_add(0xe4));
+        c.mul_s(0, 0, 4);
+        c.swc1(3, sp.wrapping_add(0x88));
+        c.swc1(2, sp.wrapping_add(0x8c));
+        c.swc1(0, sp.wrapping_add(0x84));
+        c.swc1(1, sp.wrapping_add(0x80));
+        c.lq(2, sp.wrapping_add(0x80));
+        c.sq(2, sp.wrapping_add(0x70));
+        // v = q · dir · q* (VU0 outer products and broadcasts).
+        c.lqc2(4, sp.wrapping_add(0x70));
+        c.lqc2(5, algo.wrapping_add(0x390));
+        c.vu0().sub(0b0001, 8, 8, Src::Vec(8));
+        c.vu0().opmula(4, 5);
+        c.vu0().opmsub(6, 5, 4);
+        c.vu0().opmula(4, 6);
+        c.vu0().opmsub(7, 6, 4);
+        c.vu0().mula(0b1110, 5, Src::Bc(0, W));
+        c.vu0().madda(0b1110, 6, Src::Bc(4, W));
+        c.vu0().madda(0b1110, 6, Src::Bc(4, W));
+        c.vu0().madda(0b1110, 7, Src::Bc(0, W));
+        c.vu0().madd(0b1110, 8, 7, Src::Bc(0, W));
+        c.sqc2(8, sp.wrapping_add(0x90));
+        c.lq(2, sp.wrapping_add(0x90));
+        // target->GetPosition(&pos) (slot 1).
+        c.g[A2][0] = c.lw(algo.wrapping_add(0x30));
+        c.sq(2, sp.wrapping_add(0x80));
+        c.g[V1][0] = c.lw(c.g[A2][0] as u32);
+        c.g[A1][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x8));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+        let t = c.g[V0][0] as u32;
+        c.g[A1][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        call_ptr(c, t, 0x0017_8d68)?;
+
+        // look_at = pos + up × −3.
+        c.g[AT][0] = 0xffff_ffff_c040_0000;
+        c.mtc1(AT, 0);
+        c.mfc1(V0, 0);
+        c.lqc2(4, up);
+        c.qmtc2(V0, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, sp.wrapping_add(0xc0));
+        c.mtc1(0, 3);
+        c.lq(2, sp.wrapping_add(0xc0));
+        c.sq(2, sp.wrapping_add(0xb0));
+        c.lqc2(3, sp.wrapping_add(0xa0));
+        c.lqc2(4, sp.wrapping_add(0xb0));
+        c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, sp.wrapping_add(0xc0));
+        c.lq(2, sp.wrapping_add(0xc0));
+        c.g[A1][0] = c.lw(gp.wrapping_sub(0x848));
+        c.sq(2, algo.wrapping_add(0x20));
+        c.sq(2, sp.wrapping_add(0x90));
+        // Two or more players: the eye sits farther back and higher.
+        c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x84));
+        c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+        c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x78));
+        c.g[V0][0] = ((c.g[V0][0] as i64) < 2) as u64 ^ 1;
+        let multi = c.g[V0][0] != 0;
+        if multi {
+            c.cycles += 2;
+            c.g[AT][0] = 0x4316_0000;
+            c.mtc1(AT, 3);
+        }
+        c.cycles += 3;
+        c.mtc1(0, 2);
+        if multi {
+            c.cycles += 2;
+            c.g[AT][0] = 0x4348_0000;
+            c.mtc1(AT, 2);
+        }
+
+        // eye = look_at − v × (d + 126) + up × (h − 27).
+        c.cycles += 42;
+        c.g[AT][0] = 0x42fc_0000;
+        c.mtc1(AT, 0);
+        c.g[AT][0] = 0xffff_ffff_c1d8_0000;
+        c.mtc1(AT, 1);
+        c.add_s(0, 2, 0);
+        c.lq(16, sp.wrapping_add(0x120));
+        c.mfc1(V0, 0);
+        c.lqc2(4, sp.wrapping_add(0x80));
+        c.qmtc2(V0, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, sp.wrapping_add(0xc0));
+        c.add_s(1, 3, 1);
+        c.lq(2, sp.wrapping_add(0xc0));
+        c.g[RA][0] = c.ld(sp.wrapping_add(0xf0));
+        c.sq(2, sp.wrapping_add(0xb0));
+        c.lqc2(3, algo.wrapping_add(0x20));
+        c.lqc2(4, sp.wrapping_add(0xb0));
+        c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, sp.wrapping_add(0xc0));
+        c.lwc1(22, sp.wrapping_add(0x140));
+        c.lq(2, sp.wrapping_add(0xc0));
+        c.lwc1(21, sp.wrapping_add(0x138));
+        c.sq(2, sp.wrapping_add(0xa0));
+        c.mfc1(V1, 1);
+        c.lqc2(4, up);
+        c.qmtc2(V1, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, sp.wrapping_add(0xd0));
+        c.lwc1(20, sp.wrapping_add(0x130));
+        c.lq(2, sp.wrapping_add(0xd0));
+        c.lq(18, sp.wrapping_add(0x100));
+        c.sq(2, sp.wrapping_add(0xc0));
+        c.lqc2(3, sp.wrapping_add(0xa0));
+        c.lqc2(4, sp.wrapping_add(0xc0));
+        c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, sp.wrapping_add(0xd0));
+        c.lq(2, sp.wrapping_add(0xd0));
+        c.sq(2, algo.wrapping_add(0x40));
+        c.lq(17, sp.wrapping_add(0x110));
+        c.sq(2, sp.wrapping_add(0x90));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx(sp.wrapping_add(0x150));
+        c.pc = t;
+        Ok(())
     })
 }
 
@@ -5063,6 +5301,106 @@ pub(crate) use camera_test;
         post_race_1_chase_camera_reset_for_rider,
         0x178e90
     );
+
+    /// A post-race camera at `DATA` with its target (`+0x30`, the vtable
+    /// slots GatherRiderState and the update call: 1, 3, 17, 18, 20), the
+    /// rider behind it (`Rider_GetMainState` reads `rider+0x77c → +0xde0`),
+    /// the world's player count (`gp-0x848 → +0x84 → +0xc → +0x78`) and the
+    /// game's constants (`.lit4`, the world up at 0x4ff160).
+    fn post_race_update_case(c: &mut Cpu, r: &mut Rng, counter: i32, players: u32) {
+        let (algo, t, rider, ms) = (DATA, DATA + 0x1000, DATA + 0x2000, DATA + 0x3000);
+        c.g[A0][0] = sx(algo);
+        for i in 0..0x100 {
+            c.bus.write32(algo + 4 * i, r.f32(400.0));
+        }
+        put_vec(c, algo + 0x390, [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0]);
+        c.bus.write32(algo + 0x3a0, counter as u32);
+        c.bus.write32(algo + 0x30, t);
+        let vt = vtable(c, r, &[0x8, 0x18, 0x88, 0x90, 0xa0]);
+        c.bus.write32(t, vt);
+        c.bus.write32(t + 4, rider);
+        c.bus.write32(rider + 0x77c, ms);
+        c.bus.write32(ms + 0xde0, r.next_u32() % 8);
+        let (w, w84, w0c) = (DATA + 0x4000, DATA + 0x4100, DATA + 0x4200);
+        c.bus.write32(GAME_GP.wrapping_sub(0x848), w);
+        c.bus.write32(w + 0x84, w84);
+        c.bus.write32(w84 + 0xc, w0c);
+        c.bus.write32(w0c + 0x78, players);
+        c.bus.write32(crate::tick::APPMAN_PTR, 0);
+    }
+
+    #[test]
+    fn post_race_1_chase_camera_update_matches() {
+        covered(
+            ee::s02::f_00178bb0__generated,
+            post_race_1_chase_camera_update,
+            SEEDS,
+            &|c, seed| {
+                elf_image(c);
+                let mut r = machine(c, seed, 0x178bb0, 6);
+                // Negative counters reach the first floor's correction.
+                let counter = match seed % 4 {
+                    0 => 1099,
+                    1 => -((r.next_u32() % 3000) as i32),
+                    _ => (r.next_u32() % 1100) as i32,
+                };
+                let players = r.next_u32() % 4;
+                post_race_update_case(c, &mut r, counter, players);
+                if seed % 3 == 0 {
+                    // Other angle constants: the swing angle's floor goes
+                    // below zero too.
+                    for off in (0x5d4c..=0x5d5c).step_by(4) {
+                        c.bus.write32(GAME_GP.wrapping_sub(off), r.f32(8.0));
+                    }
+                }
+            },
+        );
+    }
+
+    /// The orbit counter counts updates: at 120 it wraps at 2200 and each
+    /// update turns the orbit half as far, so two 120 Hz updates leave the
+    /// eye where one 60 Hz update does.
+    #[test]
+    fn post_race_1_chase_camera_update_follows_the_rate() {
+        // (counter, eye − look_at) after `ticks` updates at `hz` from `start`.
+        let run = |hz: u32, ticks: u32, start: i32| {
+            let mut boxed = crate::difftest::fresh();
+            let c: &mut Cpu = &mut boxed;
+            elf_image(c);
+            let mut r = machine(c, 7, 0x178bb1, 0);
+            post_race_update_case(c, &mut r, start, 1);
+            put_vec(c, DATA + 0x390, [0x3f80_0000, 0, 0, 0]);
+            crate::tick::set_for_test(c, hz);
+            let sp = c.g[SP][0];
+            for _ in 0..ticks {
+                c.g[A0][0] = sx(DATA);
+                c.g[SP][0] = sp;
+                c.g[RA][0] = sx(TEST_RA);
+                post_race_1_chase_camera_update(c);
+                assert_eq!(c.pc, TEST_RA, "returned");
+            }
+            let rd = |c: &mut Cpu, a: u32| f32::from_bits(c.bus.read32(a));
+            let rel: Vec<f32> = (0..3).map(|i| rd(c, DATA + 0x40 + 4 * i) - rd(c, DATA + 0x20 + 4 * i)).collect();
+            (c.bus.read32(DATA + 0x3a0) as i32, rel)
+        };
+        for start in [0, 100, 400, 1098] {
+            let (n60, eye60) = run(60, 1, start);
+            assert_eq!(n60, start + 1);
+            for hz in [120u32, 240] {
+                let k = (hz / 60) as i32;
+                let (n, eye) = run(hz, k as u32, start * k);
+                assert_eq!(n, (start + 1) * k % (1100 * k), "counter at {hz}");
+                for i in 0..3 {
+                    assert!((eye[i] - eye60[i]).abs() < 0.05, "eye at {hz} from {start}: {eye:?}, at 60: {eye60:?}");
+                }
+            }
+        }
+        // The wrap: one orbit is 1100 frames at every rate.
+        assert_eq!(run(60, 1, 1099).0, 0);
+        assert_eq!(run(120, 1, 2199).0, 0);
+        assert_eq!(run(120, 1, 1099).0, 1100);
+        assert_eq!(run(240, 1, 4399).0, 0);
+    }
 
 
     pub(crate) fn c_ui_state_buy_popup_ctor_matches() {

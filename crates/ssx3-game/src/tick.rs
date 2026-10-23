@@ -180,6 +180,21 @@ pub const PER_TICK: &[(u32, u32, PerTick)] = &[
     (0x0049_df70, 0x3daa_aaab, PerTick::Step),
     (0x0049_df74, 0x3daa_aaab, PerTick::Step),
     (0x0049_df78, 0x3daa_aaab, PerTick::Step),
+    // PreStartScreen_Update (0x232348): the boot screen's load indicator fades
+    // in by 1/12 per tick, and with a pad its timer gets 0.15 extra per tick.
+    (0x0049_df58, 0x3daa_aaab, PerTick::Step),
+    (0x0049_df60, 0x3e19_999a, PerTick::Step),
+    // ManualChaseCameraAlgorithm_Update (0x1604b8), the right-stick orbit
+    // camera: yaw, and pitch and zoom, move stick*|stick|*0.05 per tick.
+    (0x0049_c4f8, 0x3d4c_cccd, PerTick::Step),
+    (0x0049_c500, 0x3d4c_cccd, PerTick::Step),
+    // MatrixChaseCameraAlgorithm_Update (0x1607e0): the orbit angle (+0x390)
+    // gains 0.0614 rad per tick.
+    (0x0049_c530, 0x3d7b_4caa, PerTick::Step),
+    // OVScreenSession_Update (0x209370), the pause map: the icons' scale
+    // pulse speed, -0.16 / +0.16 per tick.
+    (0x0049_dbf0, 0xbe23_d70a, PerTick::Step),
+    (0x0049_dbf4, 0x3e23_d70a, PerTick::Step),
     // OVScreenPauseFreeride_Init (0x1f8314) copies the unread-messages
     // indicator's blink step (0.05 per tick) into +0xcc.
     (0x0049_dbac, 0x3d4c_cccd, PerTick::Step),

@@ -186,6 +186,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x001b_43a8, cfe_state_net_config_check_card, "cFEStateNetConfig_CheckCard"),
     (0x001b_47c0, cfe_state_net_config_show_checking_card_popup, "cFEStateNetConfig_ShowCheckingCardPopup"),
     (0x001b_4c00, c_fe_state_net_config_on_popup_event_passthrough, "cFEStateNetConfig_OnPopupEventPassthrough"),
+    (0x001b_4cd8, cfe_state_net_config_load_config_list, "cFEStateNetConfig_LoadConfigList"),
     (0x001b_4fa0, cfe_state_net_config_handle_load_error, "cFEStateNetConfig_HandleLoadError"),
     (0x001b_5268, fe_state_net_config_start_card_scan, "cFEStateNetConfig_StartCardScan"),
     (0x001b_5cf8, cfe_state_net_config_on_info_popup_closed, "cFEStateNetConfig_OnInfoPopupClosed"),
@@ -15675,6 +15676,280 @@ pub fn cfe_state_net_config_show_checking_card_popup(c: &mut Cpu) {
 }
 
 
+/// The popup delay `+0x6e0` that `cFEStateNetConfig_LoadConfigList` arms:
+/// `cFEStateNetConfig_Update` takes one per update and acts when it goes
+/// below 0 (15 frames at 60 Hz, then one more update).
+const NET_CONFIG_POPUP_DELAY_FRAMES: u32 = 15;
+
+/// The epilogue of [`cfe_state_net_config_load_config_list`].
+fn net_config_load_config_list_leave(c: &mut Cpu, frame: Frame) {
+    c.cycles += 13;
+    frame.restore(c, S0, 0x200);
+    frame.restore(c, S1, 0x1f0);
+    frame.restore(c, S2, 0x1e0);
+    frame.restore(c, S3, 0x1d0);
+    frame.restore(c, S4, 0x1c0);
+    frame.restore(c, S5, 0x1b0);
+    frame.restore(c, S6, 0x1a0);
+    frame.restore(c, S7, 0x190);
+    frame.restore(c, FP, 0x180);
+    frame.restore_ra(c, 0x170);
+    frame.restore_fpr(c, 20, 0x210);
+    frame.close(c);
+}
+
+/// `void cFEStateNetConfig_LoadConfigList(cFEStateNetConfig* self)`
+/// (0x1b4cd8): query the network configurations on the selected memory
+/// card (`NetConfig_QueryConnections`; count `gp-0x234`, at most 4, kept
+/// in `+0x6d4`) and fill the screen's list:
+///
+/// - none or an error, first time (`gp-0x1570 == 0`): select card 1 and
+///   show the "checking card" popup (`+0x708 = 1`, `+0x70c = count`);
+/// - no configurations: state `+0x708 = 5` with the popup delay `+0x6e0`;
+/// - an error: after a retry (`+0x70c`) the load error popup (`+0x708 =
+///   0`), else back to card 0 with state 5 and the popup delay;
+/// - otherwise one list row per configuration (`"<n> "` prefix when there
+///   are several, the UTF-8 name at `0x5367d2 + 0x100 * i` wrapped to the
+///   list width, an ASCII row from `0x536794 + 0x100 * i`), then show the
+///   list, state 5 and the popup delay.
+///
+/// Tick rate: the popup delay counts updates, so it is stored in ticks
+/// (`ticks_from_frames60(15)`; 15 at 60).
+pub fn cfe_state_net_config_load_config_list(c: &mut Cpu) {
+    const SHOW_CHECKING: Callee =
+        Callee { addr: 0x001b_47c0, f: ee::s03::cFEStateNetConfig_ShowCheckingCardPopup };
+    const LOAD_ERROR: Callee =
+        Callee { addr: 0x001b_4fa0, f: ee::s03::cFEStateNetConfig_HandleLoadError };
+    const LIST_VISIBLE: Callee =
+        Callee { addr: 0x001b_5068, f: ee::s03::cFEStateNetConfig_SetListVisible };
+    guest(c, |c| {
+        c.cycles += 24;
+        c.g[V0][0] = Addr(gp_18(c, -0x1570)).lw(c);
+        let frame = Frame::open(c, 0x220);
+        frame.save(c, S1, 0x1f0);
+        c.g[V1][0] = sx(gp_18(c, -0x1560));
+        frame.save(c, S0, 0x200);
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+        frame.save(c, S2, 0x1e0);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        frame.save(c, S3, 0x1d0);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S4, 0x1c0);
+        frame.save(c, S5, 0x1b0);
+        frame.save(c, S6, 0x1a0);
+        frame.save(c, S7, 0x190);
+        frame.save(c, FP, 0x180);
+        frame.save_ra(c, 0x170);
+        frame.save_fpr(c, 20, 0x210);
+        let this = Addr(r32(c, S1));
+        c.g[A0][0] = Addr(gp_18(c, -0x238)).lw(c);
+        c.g[A1][0] = Addr(r32(c, V0)).lw(c);
+        call_ptr(c, 0x0025_5f20, 0x001b_4d28)?; // NetConfig_QueryConnections
+        c.g[V1][0] = Addr(gp_18(c, -0x234)).lw(c);
+        c.g[V0][0] = ((c.g[V1][0] as i64) < 5) as u64;
+        this.off(0x6d4).sw(c, c.g[V1][0]);
+        if c.g[V0][0] == 0 {
+            c.cycles += 2;
+            c.g[V0][0] = 4;
+            this.off(0x6d4).sw(c, c.g[V0][0]);
+        }
+
+        c.cycles += 3;
+        c.g[A1][0] = this.off(0x6d4).lw(c);
+        c.g[A0][0] = 0x0046_0000;
+        // `v1` = the state for the popup-delay tail.
+        if (c.g[A1][0] as i64) <= 0 {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(gp_18(c, -0x1570)).lw(c);
+            c.g[S0][0] = 1;
+            if c.g[V0][0] == 0 {
+                // First try: card 1, "checking card".
+                c.cycles += 8;
+                c.g[A0][0] = c.g[S1][0];
+                Addr(gp_18(c, -0x1570)).sw(c, c.g[S0][0]);
+                c.g[A1][0] = 2;
+                SHOW_CHECKING.call(c, 0x001b_4d68)?;
+                c.g[V0][0] = this.off(0x6d4).lw(c);
+                this.off(0x708).sw(c, c.g[S0][0]);
+                this.off(0x70c).sw(c, c.g[V0][0]);
+                net_config_load_config_list_leave(c, frame);
+                return Ok(());
+            }
+            c.cycles += 2;
+            c.g[V1][0] = 5;
+            if c.g[A1][0] != 0 {
+                // An error.
+                c.cycles += 3;
+                c.g[V0][0] = this.off(0x70c).lw(c);
+                let retried = c.g[V0][0] != 0;
+                c.g[V0][0] = 5;
+                if retried {
+                    c.cycles += 4;
+                    c.g[A0][0] = c.g[S1][0];
+                    LOAD_ERROR.call(c, 0x001b_4da8)?;
+                    this.off(0x708).sw(c, 0);
+                } else {
+                    c.cycles += 5;
+                    Addr(gp_18(c, -0x1570)).sw(c, 0);
+                    c.g[V1][0] = tick::ticks_from_frames60(c, NET_CONFIG_POPUP_DELAY_FRAMES) as u64;
+                    this.off(0x708).sw(c, c.g[V0][0]);
+                    this.off(0x6e0).sw(c, c.g[V1][0]);
+                }
+                net_config_load_config_list_leave(c, frame);
+                return Ok(());
+            }
+        } else {
+            // The list rows.
+            c.cycles += 22;
+            c.g[A0][0] = sx(0x0046_3f88);
+            call_ptr(c, 0x0031_7670, 0x001b_4db8)?; // hash of the list name
+            c.g[A0][0] = this.off(0x40).lw(c);
+            c.g[A1][0] = c.g[V0][0];
+            call_ptr(c, 0x0039_d860, 0x001b_4dc4)?; // find it in the screen
+            c.g[V1][0] = Addr(r32(c, V0)).off(8).lw(c);
+            c.g[A1][0] = sx(sp(c).wrapping_add(0x160));
+            c.g[A0][0] = Addr(r32(c, V1)).off(0xa0).lh(c);
+            c.g[A2][0] = Addr(r32(c, V1)).off(0xa4).lw(c);
+            c.g[A0][0] = sx(r32(c, V0).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, r32(c, A2), 0x001b_4ddc)?; // its size into sp+0x160
+            c.g[V0][0] = this.off(0x6d4).lw(c);
+            c.g[V1][0] = this.off(0x6e8).lw(c);
+            c.g[V0][0] = ((c.g[V0][0] as i64) < 5) as u64;
+            let text = r32(c, V1);
+            c.ldl(A0, text.wrapping_add(0x57));
+            c.ldr(A0, text.wrapping_add(0x50));
+            c.g[A1][0] = Addr(text).off(0x58).lw(c);
+            let at = sp(c);
+            c.sdl(A0, at.wrapping_add(0x157));
+            c.sdr(A0, at.wrapping_add(0x150));
+            Addr(at).off(0x158).sw(c, c.g[A1][0]);
+            if c.g[V0][0] == 0 {
+                c.cycles += 3;
+                c.g[V0][0] = 4;
+                this.off(0x6d4).sw(c, c.g[V0][0]);
+            }
+            c.g[V1][0] = this.off(0x6d4).lw(c);
+
+            c.cycles += 2;
+            c.g[S2][0] = 0;
+            if (c.g[V1][0] as i64) > 0 {
+                c.cycles += 3;
+                c.g[FP][0] = sx(sp(c).wrapping_add(0x40));
+                c.g[S7][0] = sx(sp(c).wrapping_add(0xc0));
+                c.g[A0][0] = 0x0053_0000;
+                loop {
+                    c.cycles += 6;
+                    let i = r32(c, S2);
+                    c.g[V0][0] = sx(i << 8);
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x67d2));
+                    c.g[V1][0] = ((c.g[V1][0] as i64) < 2) as u64;
+                    c.g[S5][0] = c.g[V0][0];
+                    c.g[S4][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+                    if c.g[V1][0] != 0 {
+                        // A single configuration: no number.
+                        c.cycles += 4;
+                        c.lwc1(20, sp(c).wrapping_add(0x160));
+                        c.g[S3][0] = 0;
+                        c.sb(sp(c), 0);
+                        c.g[S6][0] = sx(i.wrapping_add(1));
+                    } else {
+                        // "<n> " and the width left after it.
+                        c.cycles += 20;
+                        c.g[A2][0] = 0x004a_0000;
+                        c.g[S0][0] = sx(i.wrapping_add(1));
+                        c.g[A1][0] = sx(0x004a_1b98);
+                        c.g[A0][0] = c.g[SP][0];
+                        c.g[A2][0] = c.g[S0][0];
+                        c.g[S6][0] = c.g[S0][0];
+                        call_ptr(c, 0x0041_7828, 0x001b_4e5c)?; // sprintf
+                        c.g[A0][0] = this.off(0x6e8).lw(c);
+                        c.g[S3][0] = c.g[V0][0];
+                        call_ptr(c, 0x0039_9920, 0x001b_4e68)?; // the list's font
+                        c.lwc1(12, sp(c).wrapping_add(0x150));
+                        c.g[A0][0] = c.g[V0][0];
+                        c.lwc1(13, sp(c).wrapping_add(0x154));
+                        c.g[A1][0] = c.g[SP][0];
+                        c.g[A2][0] = sx(sp(c).wrapping_add(0x140));
+                        c.g[A3][0] = 1;
+                        call_ptr(c, 0x0039_1fb0, 0x001b_4e84)?; // measure it
+                        c.lwc1(1, sp(c).wrapping_add(0x160));
+                        c.sub_s(20, 1, 0);
+                    }
+
+                    c.cycles += 30;
+                    c.g[A3][0] = 0x0053_0000;
+                    c.g[A2][0] = c.g[S4][0];
+                    c.g[A3][0] = sx(0x0053_6794);
+                    c.g[A0][0] = c.g[FP][0];
+                    c.g[S0][0] = sx(r32(c, S5).wrapping_add(r32(c, A3)));
+                    c.g[A1][0] = 0x40;
+                    call_ptr(c, 0x003e_fa48, 0x001b_4ebc)?; // Utf8DecodeToUCS2
+                    c.g[A1][0] = c.g[SP][0];
+                    c.g[A0][0] = c.g[S7][0];
+                    call_ptr(c, 0x0039_7ad8, 0x001b_4ec8)?; // UI_AsciiToWide
+                    c.g[A0][0] = this.off(0x6e8).lw(c);
+                    call_ptr(c, 0x0039_9920, 0x001b_4ed0)?;
+                    c.lwc1(12, sp(c).wrapping_add(0x150));
+                    c.g[A2][0] = sx(r32(c, S3) << 1);
+                    c.g[A3][0] = 0x40;
+                    c.g[A0][0] = c.g[V0][0];
+                    c.g[A3][0] = sx(0x40u32.wrapping_sub(r32(c, S3)));
+                    c.mov_s(13, 20);
+                    c.g[A2][0] = sx(r32(c, S7).wrapping_add(r32(c, A2)));
+                    c.g[A1][0] = c.g[FP][0];
+                    call_ptr(c, 0x0039_2680, 0x001b_4ef4)?; // Font_FindLineBreakW
+                    c.g[A0][0] = this.off(0x6e8).lw(c);
+                    c.g[A1][0] = c.g[S7][0];
+                    c.g[A2][0] = sx(r32(c, S2).wrapping_add(0x14));
+                    call_ptr(c, 0x0039_a4b0, 0x001b_4f04)?; // UIListBox_AddItemWide
+                    c.g[A0][0] = Addr(gp_18(c, -0x1574)).lw(c);
+                    c.g[A1][0] = c.g[S0][0];
+                    call_ptr(c, 0x0041_65a8, 0x001b_4f10)?;
+                    let differs = c.g[V0][0] != 0;
+                    c.g[A0][0] = this.off(0x6e4).lw(c);
+                    if differs {
+                        c.cycles += 4;
+                        c.g[A1][0] = c.g[S0][0];
+                        c.g[A2][0] = sx(r32(c, S2).wrapping_add(0x1e));
+                        call_ptr(c, 0x0039_a3f8, 0x001b_4f38)?; // UIListBox_AddItemAscii
+                    } else {
+                        c.cycles += 5;
+                        c.g[A1][0] = c.g[S0][0];
+                        c.g[A2][0] = sx(r32(c, S2).wrapping_add(0x1e));
+                        call_ptr(c, 0x0039_a3f8, 0x001b_4f24)?;
+                    }
+                    c.g[V1][0] = this.off(0x6d4).lw(c);
+
+                    c.cycles += 4;
+                    c.g[S2][0] = c.g[S6][0];
+                    c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    c.g[A0][0] = 0x0053_0000;
+                    if c.g[V0][0] == 0 {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x001b_4e28);
+                    }
+                }
+            }
+            c.cycles += 4;
+            c.g[A1][0] = this.off(0x6d4).lw(c);
+            c.g[A0][0] = c.g[S1][0];
+            LIST_VISIBLE.call(c, 0x001b_4f58)?;
+            c.g[V1][0] = 5;
+        }
+
+        // State `v1` (5) with the popup delay.
+        c.cycles += 3;
+        c.g[V0][0] = tick::ticks_from_frames60(c, NET_CONFIG_POPUP_DELAY_FRAMES) as u64;
+        this.off(0x6e0).sw(c, c.g[V0][0]);
+        this.off(0x708).sw(c, c.g[V1][0]);
+        net_config_load_config_list_leave(c, frame);
+        Ok(())
+    });
+}
+
+
 /// `cFEStateNetConfig_HandleLoadError(this, err)` (0x1b4fa0): map a network
 /// load error to the config popup's message and hide the list.
 pub fn cfe_state_net_config_handle_load_error(c: &mut Cpu) {
@@ -25764,5 +26039,121 @@ pub(crate) mod tests {
                 let _ = &mut r;
             },
         );
+    }
+
+
+    // ------------------------------------- cFEStateNetConfig_LoadConfigList
+
+    /// The configuration count `NetConfig_QueryConnections` stores in
+    /// `gp-0x234`: on a test machine the IOP request has no server
+    /// (`DirtyRpc_InitRequest` finds no client and `DirtyRpc_Send` returns at
+    /// once), so it is the reply word in `NetConnQuery`'s frame, three calls
+    /// below the entry stack (0x220 + 0x10 + 0x70 deep, reply at `+0x20`).
+    pub(crate) fn net_config_count(c: &mut Cpu, count: u32) {
+        c.bus.write32(SP - 0x280, count);
+    }
+
+
+    /// No configurations or a card error: the first try ("checking card"),
+    /// none found, an error before and after a retry.
+    #[test]
+    fn cfe_state_net_config_load_config_list_matches() {
+        check(
+            ee::s03::f_001b4cd8__generated,
+            cfe_state_net_config_load_config_list,
+            SEEDS_16,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1b4c, 4);
+                c.hooks.miss = fake_small;
+                game_globals(c);
+                let this = DATA;
+                c.g[A0][0] = this as u64;
+                // The popup text lookup of ShowCheckingCardPopup.
+                let mc = DATA + 0x2400;
+                c.bus.write32(WORLD_7 + 0x8c, mc);
+                let obj = DATA + 0x2800;
+                c.bus.write32(mc + 4, obj);
+                let vt = vtable(c, &mut r, &[0x20]);
+                c.bus.write32(obj, vt);
+                c.bus.write32(obj + 0x20, 0);
+                // HandleLoadError.
+                c.bus.write32(this + 0x10, DATA + 0x2000);
+                c.bus.write32(GAME_GP - 0x1570, if seed % 4 == 0 { 0 } else { 1 + seed % 2 });
+                c.bus.write32(GAME_GP - 0x238, r.next_u32());
+                c.bus.write32(this + 0x70c, (seed / 4 % 2) * r.next_u32());
+                let count = match seed / 8 % 4 {
+                    0 => 0,
+                    1 => 0xffff_ffff,
+                    2 => 0xffff_fff1,
+                    _ => 0xffff_ff38,
+                };
+                net_config_count(c, count);
+            },
+        );
+    }
+
+
+    /// One to four configurations (five is clamped to four): the list rows,
+    /// with and without the number prefix, the ASCII name matching the
+    /// current one (`gp-0x1574`) or not.
+    #[test]
+    fn cfe_state_net_config_load_config_list_rows_match() {
+        check(
+            ee::s03::f_001b4cd8__generated,
+            cfe_state_net_config_load_config_list,
+            20,
+            &|c, seed| {
+                let mut r = fe_base(c, seed, 0x1b_4cd9);
+                let this = DATA;
+                for k in 0..0x1d0u32 {
+                    c.bus.write32(this + 4 * k, 0);
+                }
+                c.g[A0][0] = sx(this);
+                let screen = DATA + 0x3000;
+                let wide = DATA + 0x3400;
+                let ascii = DATA + 0x3800;
+                for k in 0..0x300u32 {
+                    c.bus.write32(screen + 4 * k, 0);
+                }
+                c.bus.write32(this + 0x40, screen);
+                c.bus.write32(this + 0x6e8, wide);
+                c.bus.write32(this + 0x6e4, ascii);
+                c.bus.write32(GAME_GP - 0x1570, 1);
+                c.bus.write32(GAME_GP - 0x238, r.next_u32());
+                let current = DATA + 0x3c00;
+                put_str(c, current, "cfg1");
+                c.bus.write32(GAME_GP - 0x1574, current);
+                for i in 0..4u32 {
+                    let name = if (seed + i) % 2 == 0 { "cfg1" } else { "home" };
+                    put_str(c, 0x0053_6794 + 0x100 * i, name);
+                    put_str(c, 0x0053_67d2 + 0x100 * i, "net");
+                }
+                net_config_count(c, 1 + seed % 5);
+            },
+        );
+    }
+
+
+    /// The popup delay `+0x6e0` is 15 frames at 60 Hz: 15 ticks at 60, 30
+    /// at 120, 60 at 240.
+    #[test]
+    fn cfe_state_net_config_load_config_list_delay_follows_the_rate() {
+        for hz in [60u32, 120, 240] {
+            let mut c = crate::difftest::fresh();
+            let c = &mut *c;
+            let _ = machine(c, 1, 0x1b4c, 0);
+            game_globals(c);
+            let this = DATA;
+            c.g[A0][0] = this as u64;
+            c.bus.write32(GAME_GP - 0x1570, 1);
+            c.bus.write32(this + 0x70c, 0);
+            net_config_count(c, 0);
+            crate::tick::set_for_test(c, hz);
+            c.g[RA][0] = sx(crate::difftest::RA);
+            cfe_state_net_config_load_config_list(c);
+            assert_eq!(c.pc, crate::difftest::RA);
+            assert_eq!(c.bus.read32(this + 0x708), 5);
+            assert_eq!(c.bus.read32(this + 0x6e0), 15 * hz / 60, "{hz} Hz");
+        }
     }
 }

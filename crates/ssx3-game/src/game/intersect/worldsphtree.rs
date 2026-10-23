@@ -11330,6 +11330,10 @@ pub fn boost_modifier_v02(c: &mut Cpu) {
 /// `void Boost_Update(void* boost)` (0x3415d0): per-frame boost update: read
 /// the rider, advance the boost timers and meter, and spawn/refresh the
 /// boost effect.
+///
+/// Tick rate: the window `+0x3c` counts 60 Hz frames
+/// ([`crate::tick::frame60_due`] keyed by its address); everything else runs
+/// per tick.
 pub fn boost_update(c: &mut Cpu) {
     let mut pc: u32 = c.pc;
     loop {
@@ -11363,7 +11367,19 @@ pub fn boost_update(c: &mut Cpu) {
             }
             0x00341610 => {
                 c.cycles += 4;
-                c.g[V0][0] = sx(r32(c, V1).wrapping_sub(0x1));
+                // The boost window `+0x3c` (set from the zone's data, a
+                // count of 60 Hz frames, by Boost_HandleEvent) goes down
+                // once per 60 Hz frame of its own: above 60 Hz the ticks
+                // between frames keep it (always taken down at 60).
+                let window = at(c, S1, 0x3c);
+                let left = r32(c, V1);
+                c.g[V0][0] = if crate::tick::frame60_due(c, window, left) {
+                    sx(left.wrapping_sub(0x1))
+                } else {
+                    c.g[V1][0]
+                };
+                let now = c.g[V0][0] as u32;
+                crate::tick::frame60_ran(c, window, now);
                 c.g[V1][0] = ((c.g[V0][0] as i64) < 1i64) as u64;
                 sw_2(c, at(c, S1, 0x3c), c.g[V0][0]);
                 if c.g[V1][0] == 0 {
@@ -12839,6 +12855,36 @@ pub(crate) mod tests {
 
 
     pub(crate) const BOOST: u32 = DATA + 0x1_0000;
+
+
+    /// The boost window (`+0x3c`, 30 frames) lasts 0.5 s at any rate: the
+    /// zone (mode 0) stays active without testing riders until it runs out.
+    #[test]
+    fn boost_update_window_follows_rate() {
+        for (hz, ticks) in [(60, 30), (120, 59), (240, 117)] {
+            let mut c = crate::difftest::fresh();
+            c.hooks.miss = crate::difftest::fakes::fake_call;
+            c.bus.write32(crate::difftest::fakes::LOG_UNWIND_AT, u32::MAX);
+            crate::tick::set_for_test(&mut c, hz);
+            // Its vtable (+0xc) is empty: the effect calls are fakes.
+            c.bus.write32(BOOST + 0xc, BOOST + 0x1000);
+            c.bus.write32(BOOST + 0x40, 0);
+            c.bus.write32(BOOST + 0x3c, 30);
+            let mut n = 0;
+            while c.bus.read32(BOOST + 0x3c) != 0 {
+                n += 1;
+                assert!(n < 1000);
+                c.g[GP][0] = GAME_GP as u64;
+                c.g[SP][0] = crate::difftest::SP as u64;
+                c.g[RA][0] = crate::difftest::RA as u64;
+                c.g[A0][0] = sx(BOOST);
+                c.pc = 0x0034_15d0;
+                boost_update(&mut c);
+                assert_eq!(c.pc, crate::difftest::RA);
+            }
+            assert_eq!(n, ticks, "{hz} Hz");
+        }
+    }
 
 
     #[test]

@@ -1510,13 +1510,18 @@ pub fn apply_handplant_hold(c: &mut Cpu) {
         c.g[V1][0] = handplant;
         let old = handplant_lift(algo).read_fpu(c);
         let (height, smoothing, decay) = (abi::farg(c, 4), abi::farg(c, 5), abi::farg(c, 6));
+        // f17 (the smoothing toward `height`) and f18 (the decay) are per
+        // update: `k^(60/rate)` at another rate, the originals at 60 (the
+        // argument registers are left as the caller set them).
         let lift = if handplant == 0 {
             c.cycles += 1;
             c.f[0] = old.0;
+            let decay = per_tick_factor(c, decay);
             decay * old
         } else {
             c.cycles += 8;
             c.g[AT][0] = one.0 as u64;
+            let smoothing = per_tick_factor(c, smoothing);
             let new_part = (one - smoothing) * height;
             c.f[0] = new_part.0;
             smoothing * old + new_part
@@ -1701,6 +1706,9 @@ pub fn apply_rail_pullback(c: &mut Cpu) {
         let one = FpuF32::ONE;
         c.g[AT][0] = one.0 as u64;
         let old = rail_weight(algo).read_fpu(c);
+        // f15 (kept in f20, restored on exit) is the kept share per update:
+        // `k^(60/rate)` at another rate, the original at 60.
+        let rate = per_tick_factor(c, rate);
         let w = rate * old + (one - rate) * target_weight;
         rail_weight(algo).write_fpu(c, w);
         let push = w * back;
@@ -1864,7 +1872,10 @@ pub fn apply_rail_align(c: &mut Cpu) {
         let one = FpuF32::ONE;
         c.g[AT][0] = one.0 as u64;
         sp.off(0x20).write_vec4(c, target);
+        // f13 is the kept share per update: `k^(60/rate)` at another rate,
+        // the original at 60 (f13 itself is left as the caller set it).
         let smoothing = abi::farg(c, 1);
+        let smoothing = per_tick_factor(c, smoothing);
         let kept = vmul(rail_align_offset(algo).read_vec4(c), splat(VuF32(smoothing.0)));
         sp.off(0x60).write_vec4(c, kept);
         let rest = one - smoothing;
@@ -3684,6 +3695,96 @@ mod tests {
             let b = run(hz, hz / 60, 150.0, 10.0, true);
             assert!((b - 9.0).abs() < 1e-5, "boost bonus at {hz}: {b}");
         }
+    }
+
+    /// The handplant lift (+0x2b8): smoothed toward `height` (f17) during a
+    /// handplant and decayed (f18) afterwards, both per update.
+    #[test]
+    fn apply_handplant_hold_follows_the_rate() {
+        // The lift after `ticks` updates from `old`, in a handplant or not.
+        let run = |hz: u32, ticks: u32, handplant: bool, old: f32| {
+            rate_run(
+                hz,
+                ticks,
+                &move |c, algo, st| {
+                    c.bus.write32(GAME_GP.wrapping_sub(0x6aa4), (1.0f32 / 60.0).to_bits());
+                    c.bus.write32(st + 0x5c, handplant as u32);
+                    c.bus.write32(algo + 0x1e0, 5.0f32.to_bits()); // no eye blend
+                    c.bus.write32(algo + 0x2b8, old.to_bits());
+                },
+                &|c| {
+                    c.f[15] = 1.0f32.to_bits(); // blend time
+                    c.f[16] = 1.0f32.to_bits(); // height: the target
+                    c.f[17] = 0.98f32.to_bits();
+                    c.f[18] = 0.96f32.to_bits();
+                },
+                super::apply_handplant_hold,
+                &|c, algo| f32::from_bits(c.bus.read32(algo + 0x2b8)),
+            )
+        };
+        assert_blend_follows_the_rate("handplant lift", 0.98, &|hz, n| run(hz, n, true, 2.0));
+        // The decay from 2 toward 0, scaled to the blend helper's 2 -> 1.
+        assert_blend_follows_the_rate("handplant lift decay", 0.96, &|hz, n| {
+            1.0 + run(hz, n, false, 2.0) / 2.0
+        });
+    }
+
+    /// The rail weight (+0x214) follows the rail flag with f15 per update.
+    #[test]
+    fn apply_rail_pullback_follows_the_rate() {
+        let run = |hz: u32, ticks: u32| {
+            rate_run(
+                hz,
+                ticks,
+                &|c, algo, _| {
+                    // target->IsRailSliding() (slot 24, a fake) returns 1.
+                    let (t, vt) = (DATA + 0x2000, DATA + 0x3000);
+                    c.bus.write32(algo + 0x30, t);
+                    c.bus.write32(t, vt);
+                    c.bus.write16(vt + 0xc0, 0);
+                    c.bus.write32(vt + 0xc4, FAKE + 0x40);
+                    for n in 0..8 {
+                        c.bus.write32(LOG_RESULTS + 4 * n, 1);
+                    }
+                    c.bus.write32(algo + 0x214, 2.0f32.to_bits()); // the old weight
+                },
+                &|c| {
+                    // No push: the eye stays where it is.
+                    for f in 12..=14 {
+                        c.f[f] = 0;
+                    }
+                    c.f[15] = 0.98f32.to_bits();
+                },
+                super::apply_rail_pullback,
+                &|c, algo| f32::from_bits(c.bus.read32(algo + 0x214)),
+            )
+        };
+        assert_blend_follows_the_rate("rail weight", 0.98, &run);
+    }
+
+    /// The rail alignment offset (+0xc0) is smoothed with f13 per update.
+    #[test]
+    fn apply_rail_align_follows_the_rate() {
+        // Standing still and not rail sliding: the offset decays toward the
+        // zero vector, `x = 2 k^n`; scaled to the blend helper's 2 -> 1.
+        let run = |hz: u32, ticks: u32| {
+            let x = rate_run(
+                hz,
+                ticks,
+                &|c, algo, _| {
+                    put_vec(c, 0x4ff120, [0; 4]);
+                    put_vec(c, algo + 0xc0, [2.0f32.to_bits(), 0, 0, 0]);
+                },
+                &|c| {
+                    c.f[12] = 0;
+                    c.f[13] = 0.9707f32.to_bits();
+                },
+                super::apply_rail_align,
+                &|c, algo| f32::from_bits(c.bus.read32(algo + 0xc0)),
+            );
+            1.0 + x / 2.0
+        };
+        assert_blend_follows_the_rate("rail alignment", 0.9707, &run);
     }
 
     /// Make the closing `CheckDistanceReset` take its 34-cycle no-reset

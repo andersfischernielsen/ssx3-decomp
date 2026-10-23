@@ -49,6 +49,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0024_5e78, game_mode_man_compare_by_time, "GameModeMan_CompareByTime"),
     (0x0024_5ec0, game_mode_man_compare_standings, "GameModeMan_CompareStandings"),
     (0x0024_5f00, generic_stream_pause_dtor, "GenericStreamPause_dtor"),
+    (0x0024_5f50, cfe_state_progressive_verify_ps2_init, "cFEStateProgressiveVerifyPS2_Init"),
     (0x0024_6268, cfe_state_progressive_verify_ps2_on_widget_notify, "cFEStateProgressiveVerifyPS2_OnWidgetNotify"),
 ];
 
@@ -570,6 +571,127 @@ pub fn c_fe_load_state_init(c: &mut Cpu) {
     });
 }
 
+
+// ---------------------------------------------------------------------------
+// cFEStateProgressiveVerifyPS2_Init (0x245f50).
+
+/// The confirm window of the progressive-scan check (`+0x4c`), counted down
+/// once per update by `cFEStateProgressiveVerifyPS2_Update`: 300 frames at
+/// 60 Hz (5 s).
+const PROGRESSIVE_VERIFY_FRAMES: u32 = 300;
+
+/// `void cFEStateProgressiveVerifyPS2_Init(cFEStateProgressiveVerifyPS2* self)`
+/// (0x245f50): create the screen (`+0x40`) from the state's screen set
+/// (`+0x10`), set the message text (mode `+0x48` picks one of two strings),
+/// fill the second text object, reset the button list, and arm the
+/// 5-second confirm countdown (`+0x4c`).
+///
+/// Tick rate: the countdown takes one per update, so it is stored in ticks
+/// (`ticks_from_frames60(300)`; 300 at 60).
+pub fn cfe_state_progressive_verify_ps2_init(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S1, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        frame.save(c, S0, 0x20);
+        let this = r32(c, S1);
+        c.g[A0][0] = 0x004a_2ad8;
+        c.g[S0][0] = Addr(this).off(0x10).lw(c);
+        call_ptr(c, 0x0031_7670, 0x0024_5f74)?; // hash of the screen name
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = c.g[V0][0];
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A3][0] = 0;
+        call_ptr(c, 0x0039_7cc0, 0x0024_5f88)?; // create the screen
+        Addr(this).off(0x40).sw(c, c.g[V0][0]);
+        if c.g[V0][0] != 0 {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = 0;
+            c.g[A2][0] = 0;
+            call_ptr(c, 0x0039_c870, 0x0024_5fa0)?;
+        }
+
+        // The message text: one of two strings by the mode byte +0x48.
+        c.cycles += 9;
+        c.g[A0][0] = 0x004a_2ac0;
+        call_ptr(c, 0x0031_7670, 0x0024_5fac)?;
+        c.g[A0][0] = Addr(this).off(0x40).lw(c);
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x0039_d860, 0x0024_5fb8)?; // find the object by hash
+        c.g[A0][0] = c.g[V0][0];
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(this).off(0x48).lb(c);
+            c.g[A1][0] = 0x0048_0000;
+            if c.g[V0][0] != 0 {
+                c.cycles += 3;
+                c.g[A1][0] = sx(0x0048_0000u32.wrapping_sub(0x46d0));
+                call_ptr(c, 0x003a_0c50, 0x0024_5fec)?;
+            } else {
+                c.cycles += 5;
+                c.g[A1][0] = sx(0x0048_0000u32.wrapping_sub(0x4708));
+                call_ptr(c, 0x003a_0c50, 0x0024_5fdc)?;
+            }
+        }
+        c.g[A0][0] = 0x004a_0000;
+
+        // The second text object.
+        c.cycles += 8;
+        c.g[A0][0] = 0x004a_2ac8;
+        call_ptr(c, 0x0031_7670, 0x0024_5ff8)?;
+        c.g[A0][0] = Addr(this).off(0x40).lw(c);
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x0039_d860, 0x0024_6004)?;
+        c.g[S0][0] = c.g[V0][0];
+        if c.g[S0][0] != 0 {
+            c.cycles += 7;
+            c.g[A0][0] = sx(0x0048_0000u32.wrapping_sub(0x4698));
+            call_ptr(c, 0x0031_7670, 0x0024_601c)?;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[V0][0];
+            call_ptr(c, 0x003a_1000, 0x0024_6028)?;
+        }
+        c.g[A0][0] = 0x004a_0000;
+
+        // The button list: virtual slots +0x48 (reset) and +0x40 (select 1).
+        c.cycles += 8;
+        c.g[A0][0] = 0x004a_2ad0;
+        call_ptr(c, 0x0031_7670, 0x0024_6034)?;
+        c.g[A0][0] = Addr(this).off(0x40).lw(c);
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x0039_d860, 0x0024_6040)?;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A1][0] = 0;
+        if c.g[S0][0] != 0 {
+            c.cycles += 11;
+            let list = r32(c, S0);
+            c.g[V0][0] = Addr(list).off(8).lw(c);
+            c.g[A0][0] = Addr(r32(c, V0)).off(0x48).lh(c);
+            c.g[V1][0] = Addr(r32(c, V0)).off(0x4c).lw(c);
+            c.g[A0][0] = sx(list.wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, r32(c, V1), 0x0024_6060)?;
+            c.g[V0][0] = Addr(list).off(8).lw(c);
+            c.g[A1][0] = 1;
+            c.g[A0][0] = Addr(r32(c, V0)).off(0x40).lh(c);
+            c.g[V1][0] = Addr(r32(c, V0)).off(0x44).lw(c);
+            c.g[A0][0] = sx(list.wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, r32(c, V1), 0x0024_6078)?;
+        }
+
+        c.cycles += 7;
+        c.g[V0][0] = crate::tick::ticks_from_frames60(c, PROGRESSIVE_VERIFY_FRAMES) as u64;
+        frame.restore(c, S0, 0x20);
+        Addr(this).off(0x4c).sw(c, c.g[V0][0]);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -784,5 +906,45 @@ pub(crate) mod tests {
             w(c, DATA + 0x10, r.next_u32());
             w(c, DATA + 0x20, r.next_u32());
         });
+    }
+
+
+    /// The progressive-scan check's screen setup: the mode byte `+0x48`
+    /// picks the message (both strings), the screen set `+0x10` is random.
+    pub(crate) fn progressive_verify_init_setup(c: &mut Cpu, seed: u32) {
+        let mut r = fe_base(c, seed, 0x24_5f50);
+        c.g[A0][0] = sx(DATA);
+        w(c, DATA + 0x10, r.next_u32());
+        c.bus.write8(DATA + 0x48, (seed % 2) as u8);
+        w(c, DATA + 0x4c, r.next_u32());
+    }
+
+
+    #[test]
+    fn cfe_state_progressive_verify_ps2_init_matches() {
+        diff(
+            ee::s06::f_00245f50__generated,
+            cfe_state_progressive_verify_ps2_init,
+            20,
+            &progressive_verify_init_setup,
+        );
+    }
+
+
+    /// The confirm countdown is 300 frames at 60 Hz: 300 ticks at 60, 600
+    /// at 120 and 1200 at 240 (5 s at every rate).
+    #[test]
+    fn cfe_state_progressive_verify_ps2_init_follows_the_rate() {
+        for hz in [60u32, 120, 240] {
+            let mut c = crate::difftest::fresh();
+            let c = &mut *c;
+            progressive_verify_init_setup(c, 1);
+            crate::tick::set_for_test(c, hz);
+            c.g[RA][0] = sx(crate::difftest::RA);
+            cfe_state_progressive_verify_ps2_init(c);
+            assert_eq!(c.pc, crate::difftest::RA);
+            let ticks = c.bus.read32(DATA + 0x4c);
+            assert_eq!(ticks, 300 * hz / 60, "{hz} Hz");
+        }
     }
 }

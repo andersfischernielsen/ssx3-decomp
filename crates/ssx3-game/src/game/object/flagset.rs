@@ -62,6 +62,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0034_c898, c_flag_manager_load, "cFlagManager_Load"),
     (0x0034_cb80, fence_dtor, "Fence_dtor"),
     (0x0034_cde8, fence_kick_from_neighbour, "Fence_KickFromNeighbour"),
+    (0x0034_ce48, fence_update, "Fence_Update"),
     (0x0034_d650, fence_v40, "Fence_v40"),
     (0x0034_d6f0, fence_add_impulse, "Fence_AddImpulse"),
     (0x0034_d778, fence_render, "Fence_Render"),
@@ -1411,8 +1412,174 @@ pub fn c_flag_manager_load(c: &mut Cpu) {
 // ---------------------------------------------------------------------------
 // Fences and riders.
 
+/// The delay before a fence passes its wobble on to a neighbour (`+0x38`
+/// towards `+0x104`, `+0x3c` towards `+0x108`), counted down once per
+/// update by [`fence_update`]: 4 frames at 60 Hz. Stored in ticks so the
+/// wobble travels along the fence at the same speed at any rate (4 at 60).
+fn fence_kick_delay(c: &mut Cpu) -> u64 {
+    crate::tick::ticks_from_frames60(c, 4) as u64
+}
+
+
+/// `void Fence_Update(Fence* self)` (0x34ce48, vtable slot 2): once per
+/// tick for a fence that was hit.
+///
+/// - The neighbour delays `+0x38` / `+0x3c` count down; when one runs out
+///   the wobble is passed on (`Fence_PropagateToNeighbour(self, +0x104, 1)`
+///   / `(self, +0x108, 0)`).
+/// - The sway angle `+0x2c` moves by the velocity `+0x34`. When the
+///   amplitude `+0x30` and `|angle|` are both below `gp-0x2ac8` (0.01) the
+///   fence goes to sleep (its interface's slot at `+0x110`, arg 1) and the
+///   vertices are left alone. Otherwise the angle bounces at `±amplitude`:
+///   it is clamped there, the amplitude halves, and the velocity turns
+///   round as `∓0.1 * amplitude` (`gp-0x2ac4` / `gp-0x2ac0`); then the
+///   vertices are rebuilt (`Fence_UpdateVerts`).
+///
+/// Tick rate: the velocity is per 60 Hz frame (no step), so above 60 the
+/// angle moves by `velocity * 60/rate` per tick; the bounce and halving
+/// happen per swing and need nothing. The delays are set in ticks by
+/// [`fence_kick_delay`].
+pub fn fence_update(c: &mut Cpu) {
+    const PROPAGATE: Callee = Callee { addr: 0x0034_cc80, f: ee::s11::f_0034cc80 };
+    const UPDATE_VERTS: Callee = Callee { addr: 0x0034_cf98, f: ee::s11::f_0034cf98 };
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let fence = r32(c, S0);
+
+        // Neighbour delays.
+        let left = Addr(fence).off(0x38).lw(c);
+        c.g[V0][0] = sx((left as u32).wrapping_sub(1));
+        if (left as i64) > 0 {
+            c.cycles += 2;
+            Addr(fence).off(0x38).sw(c, c.g[V0][0]);
+            if c.g[V0][0] == 0 {
+                c.cycles += 3;
+                c.g[A1][0] = Addr(fence).off(0x104).lw(c);
+                c.g[A2][0] = 1;
+                PROPAGATE.call(c, 0x0034_ce78)?;
+            }
+        }
+        c.cycles += 3;
+        let right = Addr(fence).off(0x3c).lw(c);
+        c.g[V0][0] = sx((right as u32).wrapping_sub(1));
+        if (right as i64) > 0 {
+            c.cycles += 2;
+            Addr(fence).off(0x3c).sw(c, c.g[V0][0]);
+            if c.g[V0][0] == 0 {
+                c.cycles += 4;
+                c.g[A1][0] = Addr(fence).off(0x108).lw(c);
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A2][0] = 0;
+                PROPAGATE.call(c, 0x0034_ce9c)?;
+            }
+        }
+
+        // Sway: angle += velocity.
+        c.cycles += 10;
+        c.lwc1(0, fence + 0x2c);
+        c.g[V0][0] = sx(fence + 0x1c);
+        c.lwc1(1, fence + 0x34);
+        c.lwc1(2, fence + 0x30);
+        c.lwc1(3, gp(c, -0x2ac8));
+        if crate::tick::rate(c) == 60 {
+            c.add_s(0, 0, 1);
+        } else {
+            let step = crate::game::ai::rider::rate_step_60(c, FpuF32(c.f[1]));
+            c.f[0] = (FpuF32(c.f[0]) + step).0;
+        }
+        c.c_lt_s(2, 3);
+        let small = c.fcc();
+        c.swc1(0, fence + 0x2c);
+        if small {
+            c.cycles += 6;
+            c.lwc1(0, r32(c, V0) + 0x10);
+            c.abs_s(0, 0);
+            c.c_lt_s(0, 3);
+            c.g[A1][0] = 1;
+            if c.fcc() {
+                // Settled: put the fence to sleep.
+                c.cycles += 7;
+                c.g[V0][0] = Addr(fence).off(0xc).lw(c);
+                c.g[A0][0] = Addr(r32(c, V0)).off(0x110).lh(c);
+                c.g[V1][0] = Addr(r32(c, V0)).off(0x114).lw(c);
+                c.g[A0][0] = sx(fence.wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, r32(c, V1), 0x0034_cef0)?;
+                frame.restore(c, S0, 0x10);
+                c.cycles += 3;
+                frame.restore_ra(c, 0);
+                frame.close(c);
+                return Ok(());
+            }
+        }
+
+        // Bounce at ±amplitude.
+        c.cycles += 6;
+        c.lwc1(1, fence + 0x34);
+        c.mtc1(0, 0);
+        c.c_le_s(0, 1);
+        let mut bounced = false;
+        if c.fcc() {
+            // Moving up: clamp at +amplitude.
+            c.cycles += 5;
+            c.lwc1(0, fence + 0x2c);
+            c.lwc1(1, fence + 0x30);
+            c.c_le_s(1, 0);
+            if c.fcc() {
+                c.cycles += 9;
+                c.g[AT][0] = 0x3f00_0000;
+                c.mtc1(AT, 0);
+                c.swc1(1, fence + 0x2c);
+                c.mul_s(0, 1, 0);
+                c.lwc1(2, gp(c, -0x2ac4));
+                c.neg_s(1, 0);
+                c.swc1(0, fence + 0x30);
+                c.mul_s(1, 1, 2);
+                bounced = true;
+            }
+        } else {
+            // Moving down: clamp at -amplitude.
+            c.lwc1(3, fence + 0x30);
+            c.cycles += 5;
+            c.lwc1(0, fence + 0x2c);
+            c.neg_s(2, 3);
+            c.c_le_s(0, 2);
+            if c.fcc() {
+                c.cycles += 7;
+                c.g[AT][0] = 0x3f00_0000;
+                c.mtc1(AT, 0);
+                c.lwc1(1, gp(c, -0x2ac0));
+                c.mul_s(0, 3, 0);
+                c.swc1(2, fence + 0x2c);
+                c.mul_s(1, 0, 1);
+                c.swc1(0, fence + 0x30);
+                bounced = true;
+            }
+        }
+        if bounced {
+            c.cycles += 1;
+            c.swc1(1, fence + 0x34);
+        }
+
+        c.cycles += 3;
+        c.g[A0][0] = c.g[S0][0];
+        UPDATE_VERTS.call(c, 0x0034_cf84)?;
+        frame.restore(c, S0, 0x10);
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+
 /// `void Fence_KickFromNeighbour(Fence* self, int on)` (0x34cde8): give the
 /// fence an impulse and arm the kick timer for whichever side was hit.
+///
+/// Tick rate: the timer is [`fence_kick_delay`] (4 frames at 60 Hz).
 pub fn fence_kick_from_neighbour(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 9;
@@ -1430,7 +1597,7 @@ pub fn fence_kick_from_neighbour(c: &mut Cpu) {
             frame.restore(c, S0, 0x20);
             if !armed {
                 c.cycles += 2;
-                c.g[V0][0] = 4;
+                c.g[V0][0] = fence_kick_delay(c);
                 Addr(p_2(c.g[S1][0], 0x3c)).sw(c, c.g[V0][0]);
             }
         } else {
@@ -1440,7 +1607,7 @@ pub fn fence_kick_from_neighbour(c: &mut Cpu) {
             frame.restore(c, S0, 0x20);
             if !armed {
                 c.cycles += 3;
-                c.g[V0][0] = 4;
+                c.g[V0][0] = fence_kick_delay(c);
                 Addr(p_2(c.g[S1][0], 0x38)).sw(c, c.g[V0][0]);
             }
         }
@@ -1654,7 +1821,7 @@ pub fn fence_v40(c: &mut Cpu) {
             c.g[V0][0] = lw(c, p(c.g[S0][0] as u32, 0x3c));
         } else {
             c.cycles += 3;
-            c.g[V0][0] = 4;
+            c.g[V0][0] = fence_kick_delay(c);
             sw(c, p(c.g[S0][0] as u32, 0x38), c.g[V0][0]);
             c.g[V0][0] = lw(c, p(c.g[S0][0] as u32, 0x3c));
         }
@@ -1663,7 +1830,7 @@ pub fn fence_v40(c: &mut Cpu) {
             c.lq(16, frame_at(c, 0x10));
         } else {
             c.cycles += 3;
-            c.g[V0][0] = 4;
+            c.g[V0][0] = fence_kick_delay(c);
             sw(c, p(c.g[S0][0] as u32, 0x3c), c.g[V0][0]);
             c.lq(16, frame_at(c, 0x10));
         }
@@ -2623,5 +2790,177 @@ pub(crate) mod tests {
             }
             w_5(c, draw + 0x18, r.next_u32());
         });
+    }
+
+
+    // ---------------------------------------------------------- Fence_Update
+
+    /// A hit fence at `DATA + 0x100` (no mesh, `+0x40 = 0`, so the real
+    /// `Fence_PropagateToNeighbour` / `Fence_UpdateVerts` take their short
+    /// paths), its interface (`+0xc`, sleep slot `+0x110` a fake) and the
+    /// three constants it reads from `gp`.
+    pub(crate) fn fence_update_fixture(c: &mut Cpu, r: &mut Rng) -> u32 {
+        let fence = DATA + 0x100;
+        for k in 0..0x48u32 {
+            c.bus.write32(fence + 4 * k, 0);
+        }
+        let vt = vtable(c, r, &[0x110]);
+        c.bus.write32(fence + 0xc, vt);
+        c.bus.write32(fence + 0x104, ptr(r));
+        c.bus.write32(fence + 0x108, ptr(r));
+        c.bus.write32(GAME_GP.wrapping_sub(0x2ac8), 0.01f32.to_bits());
+        // The executable's values: both bounce factors are +0.1 (the
+        // velocity turns round through the `neg.s` before the multiply).
+        c.bus.write32(GAME_GP.wrapping_sub(0x2ac4), 0.1f32.to_bits());
+        c.bus.write32(GAME_GP.wrapping_sub(0x2ac0), 0.1f32.to_bits());
+        c.g[A0][0] = sx(fence);
+        fence
+    }
+
+
+    #[test]
+    fn fence_update_matches() {
+        covered(ee::s11::f_0034ce48__generated, fence_update, 120, &|c, seed| {
+            let mut r = machine(c, seed, 0x34ce48, 1);
+            let fence = fence_update_fixture(c, &mut r);
+            // Neighbour delays: idle, running out this tick, still running,
+            // negative.
+            let delay = |k: u32| match k % 4 {
+                0 => 0u32,
+                1 => 1,
+                2 => 3,
+                _ => 0xffff_fffe,
+            };
+            c.bus.write32(fence + 0x38, delay(seed));
+            c.bus.write32(fence + 0x3c, delay(seed / 4));
+            // Sway: settled (sleeps, two cases), about to bounce up or down,
+            // mid-swing, random.
+            let (angle, amp, vel) = match seed % 6 {
+                0 => (0.004f32, 0.008f32, 0.0005f32),
+                1 => (0.49, 0.5, 0.02),
+                2 => (-0.49, 0.5, -0.02),
+                3 => (0.1, 0.5, 0.02),
+                4 => (0.008, 0.005, -0.003),
+                _ => (f32::from_bits(r.f32(1.0)), f32::from_bits(r.f32(1.0)), f32::from_bits(r.f32(0.1))),
+            };
+            c.bus.write32(fence + 0x2c, angle.to_bits());
+            c.bus.write32(fence + 0x30, amp.to_bits());
+            c.bus.write32(fence + 0x34, vel.to_bits());
+        });
+    }
+
+
+    /// Run `Fence_Update` once at the test machine's rate.
+    fn fence_update_tick(c: &mut Cpu, fence: u32) {
+        c.g[A0][0] = sx(fence);
+        c.g[RA][0] = sx(crate::difftest::RA);
+        fence_update(c);
+        assert_eq!(c.pc, crate::difftest::RA);
+    }
+
+
+    /// The neighbour delay runs out after 4 frames at 60 Hz at any rate
+    /// (4, 8 and 16 updates), and one 60 Hz frame of updates moves the sway
+    /// angle by one frame's velocity.
+    #[test]
+    fn fence_update_follows_the_rate() {
+        for hz in [60u32, 120, 240] {
+            let mut c = crate::difftest::fresh();
+            let c = &mut *c;
+            let mut r = machine(c, 1, 0x34ce48, 0);
+            let fence = fence_update_fixture(c, &mut r);
+            crate::tick::set_for_test(c, hz);
+            let delay = fence_kick_delay(c) as u32;
+            c.bus.write32(fence + 0x38, delay);
+            c.bus.write32(fence + 0x2c, 0.1f32.to_bits());
+            c.bus.write32(fence + 0x30, 0.5f32.to_bits());
+            c.bus.write32(fence + 0x34, 0.02f32.to_bits());
+            let mut ticks = 0;
+            while c.bus.read32(fence + 0x38) != 0 {
+                fence_update_tick(c, fence);
+                ticks += 1;
+                if ticks == hz / 60 {
+                    let angle = f32::from_bits(c.bus.read32(fence + 0x2c));
+                    assert!((angle - 0.12).abs() < 1e-5, "{hz} Hz: angle {angle}");
+                }
+            }
+            assert_eq!(ticks, 4 * hz / 60, "{hz} Hz");
+        }
+    }
+
+
+    /// A hit fence wobbles for the same time at any rate: the number of
+    /// updates until it goes to sleep, in 60 Hz frames, is within a few
+    /// frames of the 60 Hz count.
+    #[test]
+    fn fence_update_settles_in_the_same_time() {
+        fn frames(hz: u32) -> f32 {
+            let mut c = crate::difftest::fresh();
+            let c = &mut *c;
+            let mut r = machine(c, 2, 0x34ce48, 0);
+            let fence = fence_update_fixture(c, &mut r);
+            crate::tick::set_for_test(c, hz);
+            c.bus.write32(fence + 0x2c, 0.0f32.to_bits());
+            c.bus.write32(fence + 0x30, 0.5f32.to_bits());
+            c.bus.write32(fence + 0x34, 0.05f32.to_bits());
+            let mut ticks = 0u32;
+            while c.bus.read32(fakes::LOG_COUNT) == 0 {
+                fence_update_tick(c, fence);
+                ticks += 1;
+                assert!(ticks < 100_000, "{hz} Hz: never settles");
+            }
+            ticks as f32 * 60.0 / hz as f32
+        }
+        let base = frames(60);
+        assert!(base > 20.0, "{base}");
+        for hz in [120, 240] {
+            let f = frames(hz);
+            assert!((f - base).abs() <= 6.0, "{hz} Hz: {f} frames vs {base} at 60");
+        }
+    }
+
+
+    /// The kick timers `Fence_KickFromNeighbour` and `Fence_v40` arm are 4
+    /// frames at 60 Hz: 4 ticks at 60, 8 at 120, 16 at 240.
+    #[test]
+    fn fence_kick_timers_follow_the_rate() {
+        for hz in [60u32, 120, 240] {
+            for on in 0..2u64 {
+                let mut c = crate::difftest::fresh();
+                let c = &mut *c;
+                let _ = base(c, 1, 0x34cd_e8);
+                let s = DATA + 0x100;
+                clear(c, s, 0x40);
+                crate::tick::set_for_test(c, hz);
+                c.g[A0][0] = sx(s);
+                c.g[A1][0] = on;
+                c.g[RA][0] = sx(crate::difftest::RA);
+                fence_kick_from_neighbour(c);
+                assert_eq!(c.pc, crate::difftest::RA);
+                let timer = c.bus.read32(s + if on == 0 { 0x3c } else { 0x38 });
+                assert_eq!(timer, 4 * hz / 60, "kick, {hz} Hz");
+            }
+
+            let mut c = crate::difftest::fresh();
+            let c = &mut *c;
+            let mut r = base_3(c, 1, 0x0034_d650);
+            let fence = DATA + 0x100;
+            let impulse = DATA + 0x2000;
+            clear_2(c, fence, 0x100);
+            for k in 0..16 {
+                w_3(c, impulse + 4 * k, r.f32(1.0));
+            }
+            w_3(c, fence + 0x30, 0.25f32.to_bits());
+            let cst = gp(c, -0x2ab8);
+            c.bus.write32(cst, 0.5f32.to_bits());
+            crate::tick::set_for_test(c, hz);
+            c.g[A0][0] = sx(fence);
+            c.g[A1][0] = sx(impulse);
+            c.g[RA][0] = sx(crate::difftest::RA);
+            fence_v40(c);
+            assert_eq!(c.pc, crate::difftest::RA);
+            assert_eq!(c.bus.read32(fence + 0x38), 4 * hz / 60, "v40 +0x38, {hz} Hz");
+            assert_eq!(c.bus.read32(fence + 0x3c), 4 * hz / 60, "v40 +0x3c, {hz} Hz");
+        }
     }
 }

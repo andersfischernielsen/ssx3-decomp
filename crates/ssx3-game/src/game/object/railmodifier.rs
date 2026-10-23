@@ -73,6 +73,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0035_da38, roller_modifier_load_body, "RollerModifier_LoadBody"),
     (0x0035_e1e0, roller_modifier_save, "RollerModifier_Save"),
     (0x0035_e770, rollermodifier_get_pose, "RollerModifier_GetPose"),
+    (0x0035_e850, roller_modifier_update, "RollerModifier_Update"),
     (0x0035_ed90, roller_modifier_translate, "RollerModifier_Translate"),
     (0x0035_f0b8, tex_flip_modifier_ctor, "TexFlipModifier_ctor"),
     (0x0035_f1a8, tex_flip_modifier_ctor_2, "TexFlipModifier_ctor_2"),
@@ -1378,6 +1379,410 @@ pub fn world_obj_update(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     })
+}
+
+
+/// Direct callees of `RollerModifier_Update`.
+mod roller_callee {
+    use super::{ee, Callee};
+    pub const TRANSLATE: Callee = Callee { addr: 0x0035_ed90, f: ee::s11::RollerModifier_Translate };
+    pub const GET_POSE: Callee = Callee { addr: 0x0035_e770, f: ee::s11::RollerModifier_GetPose };
+    pub const INTEGRATE: Callee = Callee { addr: 0x0035_d340, f: ee::s11::RollerModifier_Integrate };
+    pub const UPDATE_INERTIA: Callee = Callee { addr: 0x0035_e248, f: ee::s11::RollerModifier_UpdateInertia };
+    pub const UPDATE_MOMENTUM: Callee = Callee { addr: 0x0035_d288, f: ee::s11::RollerModifier_UpdateMomentum };
+    pub const COLLIDE_WORLD: Callee = Callee { addr: 0x0035_edc8, f: ee::s11::RollerModifier_CollideWorld };
+    /// `SphereTree_SetTransform` (through the function table).
+    pub const SPHERE_TREE_SET_TRANSFORM: u32 = 0x0032_c648;
+}
+
+/// `RollerModifier` fields used by the update.
+mod roller {
+    /// Running average of the kinetic energy (below `gp-0x29e0` = 10000 the
+    /// roller stops).
+    pub const ENERGY_AVG: u32 = 0x4;
+    /// State timer (s): 10 stopped, 11..16 waiting, 16 reset.
+    pub const TIMER: u32 = 0x20;
+    /// Velocity damping (decays per tick, `tick::PER_TICK`).
+    pub const DAMPING: u32 = 0x28;
+    /// Linear and angular momentum, mass, linear/angular velocity.
+    pub const MOMENTUM: u32 = 0x50;
+    pub const ANGULAR: u32 = 0x60;
+    pub const MASS: u32 = 0x70;
+    pub const VELOCITY: u32 = 0xb0;
+    pub const SPIN: u32 = 0xc0;
+    /// The collision sphere tree and its transform.
+    pub const TREE: u32 = 0xe0;
+    pub const TRANSFORM: u32 = 0x240;
+}
+
+/// The VU0 sequence that turns the pose at `pose` (quaternion at `+0`,
+/// position at `+0x10`) into the 4x4 transform at `out` (rotation rows
+/// `+0..+0x20`, position `+0x30`).
+fn roller_pose_matrix(c: &mut Cpu, pose: u32, out: u32) {
+    c.lqc2(4, pose.wrapping_add(0x10));
+    c.lqc2(3, pose);
+    c.vu0().add(0b1110, 1, 0, Src::Bc(0, W));
+    c.vu0().add(0b1110, 5, 4, Src::Vec(4));
+    c.vu0().sub(0b0001, 10, 10, Src::Vec(10));
+    c.vu0().sub(0b0001, 11, 11, Src::Vec(11));
+    c.vu0().sub(0b0001, 12, 12, Src::Vec(12));
+    c.vu0().mul(0b1110, 6, 5, Src::Vec(4));
+    c.vu0().mul(0b1110, 7, 5, Src::Bc(4, W));
+    c.vu0().opmula(5, 4);
+    c.vu0().madd(0b1110, 8, 0, Src::Vec(0));
+    c.vu0().suba(0b1000, 1, Src::Bc(6, Y));
+    c.vu0().msub(0b1000, 10, 1, Src::Bc(6, Z));
+    c.vu0().suba(0b0100, 1, Src::Bc(6, Z));
+    c.vu0().msub(0b0100, 11, 1, Src::Bc(6, X));
+    c.vu0().suba(0b0010, 1, Src::Bc(6, X));
+    c.vu0().msub(0b0010, 12, 1, Src::Bc(6, Y));
+    c.vu0().adda(0b0100, 0, Src::Bc(8, Z));
+    c.vu0().madd(0b0100, 10, 1, Src::Bc(7, Z));
+    c.vu0().adda(0b0010, 0, Src::Bc(8, X));
+    c.vu0().madd(0b0010, 11, 1, Src::Bc(7, X));
+    c.vu0().adda(0b0100, 0, Src::Bc(8, X));
+    c.vu0().msub(0b0100, 12, 1, Src::Bc(7, X));
+    c.vu0().adda(0b0010, 0, Src::Bc(8, Y));
+    c.vu0().msub(0b0010, 10, 1, Src::Bc(7, Y));
+    c.vu0().adda(0b1000, 0, Src::Bc(8, Z));
+    c.vu0().msub(0b1000, 11, 1, Src::Bc(7, Z));
+    c.vu0().adda(0b1000, 0, Src::Bc(8, Y));
+    c.vu0().madd(0b1000, 12, 1, Src::Bc(7, Y));
+    c.sqc2(3, out.wrapping_add(0x30));
+    c.sqc2(10, out);
+    c.sqc2(11, out.wrapping_add(0x10));
+    c.sqc2(12, out.wrapping_add(0x20));
+}
+
+/// `w = dot(a, b)` of two quadwords (VU0, the `.w` lane of vf4), moved to
+/// `f{fr}` through v0.
+fn roller_dot(c: &mut Cpu, a: u32, b: u32, fr: usize) {
+    c.lqc2(3, a);
+    c.lqc2(5, b);
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.qmfc2(V0, 4);
+    c.mtc1(V0, fr);
+}
+
+/// `void RollerModifier_Update(RollerModifier* self)` (0x35e850): one tick
+/// of a rolling object (a boulder, a log). The state timer at `+0x20`
+/// advances by the step; from 11 s it waits, at 16 s it is put back 10 units
+/// lower and its collision tree moved there. Otherwise the kinetic energy
+/// (`v.p + w.L`, times the mass) feeds a running average (`0.95 old + 0.05
+/// new` per tick); below 10000, or from 10 s on, the roller stops (timer
+/// 11, momenta and velocities cleared). Else the damping decays, the body
+/// integrates one step with a velocity-dependent drag, its inertia and
+/// momentum are updated, the collision tree follows the pose, the world
+/// collision runs, and the transform is rebuilt.
+///
+/// Tick rate: the average is a per-tick blend, so above 60 its kept share
+/// is `k' = 0.95^(60/rate)` and the new share `1 - k'` (the same time
+/// constant). The timer and the integration step load `.lit4` 1/60 (follow
+/// the rate) and the 0.8333 damping decay is in `tick::PER_TICK`. Nothing
+/// changes at 60.
+pub fn roller_modifier_update(c: &mut Cpu) {
+    use roller::*;
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0xa0);
+        c.lwc1(0, gp(c, -0x29ec));
+        frame.save(c, S2, 0x60);
+        frame.save(c, S0, 0x80);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S1, 0x70);
+        frame.save_ra(c, 0x50);
+        frame.save_fpr(c, 20, 0x90);
+        let this = r32(c, S2);
+        c.g[AT][0] = 0x4130_0000; // 11.0
+        c.mtc1(AT, 2);
+        c.lwc1(1, this.wrapping_add(TIMER));
+        c.add_s(1, 1, 0);
+        c.c_le_s(2, 1);
+        let waiting = c.fcc();
+        c.swc1(1, this.wrapping_add(TIMER));
+        if waiting {
+            c.cycles += 6;
+            c.g[AT][0] = 0x4180_0000; // 16.0
+            c.mtc1(AT, 0);
+            c.c_le_s(0, 1);
+            let reset = c.fcc();
+            frame.restore(c, S0, 0x80);
+            if reset {
+                // Put it back 10 below and move its collision tree there.
+                c.cycles += 51;
+                let s = sp(c);
+                c.g[AT][0] = 0xffff_ffff_c120_0000; // -10.0
+                c.mtc1(AT, 0);
+                c.g[A1][0] = sx(s);
+                Addr(s).sw(c, 0);
+                c.swc1(0, s.wrapping_add(8));
+                Addr(s).off(4).sw(c, 0);
+                Addr(s).off(0xc).sw(c, 0);
+                roller_callee::TRANSLATE.call(c, 0x0035_e8c8)?;
+                c.g[A1][0] = c.g[S2][0];
+                c.g[A0][0] = sx(sp(c).wrapping_add(0x10));
+                roller_callee::GET_POSE.call(c, 0x0035_e8d4)?;
+                c.g[A1][0] = sx(r32(c, S2).wrapping_add(TRANSFORM));
+                roller_pose_matrix(c, sp(c).wrapping_add(0x10), r32(c, A1));
+                c.g[AT][0] = 0x3f80_0000;
+                c.mtc1(AT, 12);
+                c.g[A0][0] = sx(r32(c, S2).wrapping_add(TREE));
+                call_ptr(c, roller_callee::SPHERE_TREE_SET_TRANSFORM, 0x0035_e96c)?;
+                frame.restore(c, S0, 0x80);
+            }
+        } else {
+            roller_update_body(c, frame)?;
+        }
+        c.cycles += 6;
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore_ra(c, 0x50);
+        frame.restore_fpr(c, 20, 0x90);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The energy average and then the stop or the simulation step (0x35e974 to
+/// 0x35ed70; `s0` is restored at the end).
+fn roller_update_body(c: &mut Cpu, frame: Frame) -> Flow {
+    use roller::*;
+    let this = r32(c, S2);
+    c.cycles += 24;
+    c.lwc1(3, this.wrapping_add(MASS));
+    roller_dot(c, this.wrapping_add(VELOCITY), this.wrapping_add(MOMENTUM), 1);
+    c.mtc1(ZERO, 2);
+    roller_dot(c, this.wrapping_add(SPIN), this.wrapping_add(ANGULAR), 0);
+    c.c_eq_s(3, 2);
+    let massless = c.fcc();
+    c.add_s(5, 1, 0);
+    if massless {
+        c.cycles += 2;
+        c.g[AT][0] = 0xffff_ffff_bf80_0000; // -1.0
+        c.mtc1(AT, 4);
+    } else {
+        c.cycles += 5;
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 0);
+        c.div_s(4, 0, 3);
+    }
+
+    // avg = avg * 0.95 + energy * 0.05 (per tick).
+    c.cycles += 12;
+    let hz = crate::tick::rate(c);
+    let kept = if hz == 60 {
+        None
+    } else {
+        let entry = gp(c, -0x29e4);
+        let k = f32::from_bits(c.bus.read32(entry));
+        let k = k.powf(60.0 / hz as f32);
+        Some((FpuF32::from_f32(k), FpuF32::from_f32(1.0 - k)))
+    };
+    c.lwc1(1, gp(c, -0x29e8));
+    if let Some((_, w)) = kept {
+        c.f[1] = w.0;
+    }
+    c.lwc1(0, this.wrapping_add(ENERGY_AVG));
+    c.mul_s(1, 5, 1);
+    c.lwc1(2, gp(c, -0x29e4));
+    if let Some((k, _)) = kept {
+        c.f[2] = k.0;
+    }
+    c.lwc1(3, gp(c, -0x29e0));
+    c.mul_s(0, 0, 2);
+    c.div_s(1, 1, 4);
+    c.add_s(0, 0, 1);
+    c.c_lt_s(0, 3);
+    let slow = c.fcc();
+    c.swc1(0, this.wrapping_add(ENERGY_AVG));
+    let mut stop = slow;
+    if !slow {
+        c.cycles += 7;
+        c.lwc1(3, this.wrapping_add(TIMER));
+        c.g[AT][0] = 0x4120_0000; // 10.0
+        c.mtc1(AT, 5);
+        c.c_le_s(5, 3);
+        stop = c.fcc();
+        if !stop {
+            c.lwc1(0, this.wrapping_add(DAMPING));
+        }
+    }
+    if stop {
+        roller_stop(c, this);
+    } else {
+        roller_step(c, this)?;
+    }
+    c.cycles += 1;
+    frame.restore(c, S0, 0x80);
+    Ok(())
+}
+
+/// The roller stops: timer 11, momenta cleared, velocities = momenta / mass
+/// (0x35ea3c).
+fn roller_stop(c: &mut Cpu, this: u32) {
+    use roller::*;
+    c.cycles += 59;
+    let s = sp(c);
+    for k in 0..4 {
+        Addr(s).off(4 * k).sw(c, 0);
+    }
+    c.g[AT][0] = 0x4130_0000; // 11.0
+    c.mtc1(AT, 0);
+    c.lq(V0, s);
+    c.swc1(0, this.wrapping_add(TIMER));
+    c.sq(V0, this.wrapping_add(MOMENTUM));
+    c.lwc1(0, this.wrapping_add(MASS));
+    c.mfc1(V0, 0);
+    c.lqc2(4, s);
+    c.qmtc2(V0, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, s.wrapping_add(0x20));
+    for k in 0..4 {
+        Addr(s).off(4 * k).sw(c, 0);
+    }
+    c.lq(V0, s);
+    c.lwc1(3, this.wrapping_add(0x80));
+    c.sq(V0, this.wrapping_add(ANGULAR));
+    c.lwc1(9, this.wrapping_add(0x8c));
+    c.lwc1(2, this.wrapping_add(0x60));
+    c.lwc1(4, this.wrapping_add(0x64));
+    c.lwc1(0, this.wrapping_add(0x84));
+    c.mul_s(3, 3, 2);
+    c.lwc1(7, this.wrapping_add(0x90));
+    c.mul_s(9, 9, 4);
+    c.lwc1(1, this.wrapping_add(0x88));
+    c.mul_s(0, 0, 2);
+    c.lwc1(8, this.wrapping_add(0x94));
+    c.mul_s(7, 7, 4);
+    c.lwc1(6, this.wrapping_add(0x68));
+    c.mul_s(1, 1, 2);
+    c.lwc1(5, this.wrapping_add(0x98));
+    c.mul_s(8, 8, 4);
+    c.lwc1(2, this.wrapping_add(0x9c));
+    c.add_s(3, 3, 9);
+    c.lwc1(4, this.wrapping_add(0xa0));
+    c.mul_s(5, 5, 6);
+    c.add_s(0, 0, 7);
+    c.lq(V0, s.wrapping_add(0x20));
+    c.mul_s(2, 2, 6);
+    c.add_s(1, 1, 8);
+    c.sq(V0, this.wrapping_add(VELOCITY));
+    c.mul_s(4, 4, 6);
+    c.add_s(3, 3, 5);
+    c.add_s(0, 0, 2);
+    c.add_s(1, 1, 4);
+    c.swc1(3, s.wrapping_add(0x20));
+    c.swc1(0, s.wrapping_add(0x24));
+    c.swc1(1, s.wrapping_add(0x28));
+    c.lwc1(0, this.wrapping_add(0x6c));
+    c.swc1(0, s.wrapping_add(0x2c));
+    c.lq(V0, s.wrapping_add(0x20));
+    c.sq(V0, this.wrapping_add(SPIN));
+    c.sq(V0, s.wrapping_add(0x10));
+}
+
+/// One simulation step (0x35eb28 to 0x35ed6c; `f0` = the damping, `f5` =
+/// 10.0).
+fn roller_step(c: &mut Cpu, this: u32) -> Flow {
+    use roller::*;
+    // The damping decays; the drag scale is min(damping * 10, 2) (0 when
+    // negative).
+    c.cycles += 13;
+    c.lwc1(1, gp(c, -0x29dc));
+    c.mtc1(ZERO, 4);
+    c.mul_s(0, 0, 1);
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(AT, 20);
+    c.g[AT][0] = 0x4000_0000;
+    c.mtc1(AT, 2);
+    c.mov_s(6, 4);
+    c.mul_s(1, 0, 5);
+    c.c_le_s(4, 1);
+    let positive = c.fcc();
+    c.swc1(0, this.wrapping_add(DAMPING));
+    if positive {
+        c.cycles += 1;
+        c.min_s(6, 1, 2);
+    }
+
+    // Forces: gravity (-980 / mass on z) and drag on both momenta, then
+    // integrate one step.
+    c.cycles += 131;
+    let s = sp(c);
+    c.lwc1(2, this.wrapping_add(MASS));
+    c.add_s(0, 3, 3);
+    c.g[AT][0] = 0xffff_ffff_c475_0000; // -980.0
+    c.mtc1(AT, 1);
+    c.g[S0][0] = sx(this.wrapping_add(0x30));
+    c.swc1(4, s.wrapping_add(0x10));
+    c.g[A1][0] = sx(s);
+    c.div_s(1, 1, 2);
+    c.swc1(4, s.wrapping_add(0x14));
+    c.add_s(0, 0, 20);
+    c.swc1(4, s.wrapping_add(0x1c));
+    c.lwc1(12, gp(c, -0x29d8));
+    c.g[A2][0] = sx(s.wrapping_add(0x10));
+    c.g[A0][0] = c.g[S0][0];
+    c.g[S1][0] = sx(this.wrapping_add(TRANSFORM));
+    c.mul_s(0, 6, 0);
+    c.swc1(1, s.wrapping_add(0x18));
+    c.mfc1(V1, 0);
+    c.lqc2(4, this.wrapping_add(MOMENTUM));
+    c.qmtc2(V1, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, s.wrapping_add(0x30));
+    c.lq(V0, s.wrapping_add(0x30));
+    c.sq(V0, s.wrapping_add(0x20));
+    c.lqc2(3, s.wrapping_add(0x10));
+    c.lqc2(4, s.wrapping_add(0x20));
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, s.wrapping_add(0x30));
+    c.lq(V0, s.wrapping_add(0x30));
+    c.swc1(4, s.wrapping_add(0x2c));
+    c.sq(V0, s);
+    c.swc1(4, s.wrapping_add(0x20));
+    c.swc1(4, s.wrapping_add(0x24));
+    c.swc1(4, s.wrapping_add(0x28));
+    c.mfc1(V1, 0);
+    c.lqc2(4, this.wrapping_add(ANGULAR));
+    c.qmtc2(V1, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, s.wrapping_add(0x40));
+    c.lq(V0, s.wrapping_add(0x40));
+    c.sq(V0, s.wrapping_add(0x30));
+    c.lqc2(3, s.wrapping_add(0x20));
+    c.lqc2(4, s.wrapping_add(0x30));
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, s.wrapping_add(0x40));
+    c.lq(V0, s.wrapping_add(0x40));
+    c.sq(V0, s.wrapping_add(0x10));
+    roller_callee::INTEGRATE.call(c, 0x0035_ec20)?;
+    c.g[A0][0] = c.g[S2][0];
+    roller_callee::UPDATE_INERTIA.call(c, 0x0035_ec28)?;
+    c.g[A0][0] = c.g[S0][0];
+    roller_callee::UPDATE_MOMENTUM.call(c, 0x0035_ec30)?;
+
+    // The collision tree follows the pose; collide; rebuild the transform.
+    c.g[S0][0] = sx(sp(c).wrapping_add(0x20));
+    c.g[A1][0] = c.g[S2][0];
+    c.g[A0][0] = c.g[S0][0];
+    roller_callee::GET_POSE.call(c, 0x0035_ec40)?;
+    roller_pose_matrix(c, sp(c).wrapping_add(0x20), r32(c, S1));
+    c.mov_s(12, 20);
+    c.g[A1][0] = c.g[S1][0];
+    c.g[A0][0] = sx(r32(c, S2).wrapping_add(TREE));
+    call_ptr(c, roller_callee::SPHERE_TREE_SET_TRANSFORM, 0x0035_ecd4)?;
+    c.g[A0][0] = c.g[S2][0];
+    roller_callee::COLLIDE_WORLD.call(c, 0x0035_ecdc)?;
+    c.g[A0][0] = c.g[S0][0];
+    c.g[A1][0] = c.g[S2][0];
+    roller_callee::GET_POSE.call(c, 0x0035_ece8)?;
+    roller_pose_matrix(c, sp(c).wrapping_add(0x20), r32(c, S1));
+    Ok(())
 }
 
 
@@ -6086,5 +6491,108 @@ pub(crate) mod tests {
                 let _ = sp;
             },
         );
+    }
+
+
+    /// A roller at `DATA` for `RollerModifier_Update`: random body state, a
+    /// collision tree of one sphere (radius 1) and a world whose collision
+    /// set is empty (`Nash_FindClosestContact` finds nothing), a heap for the
+    /// collision query's tree.
+    fn roller_update_fixture(c: &mut Cpu, r: &mut Rng, timer: f32, avg: f32, mass: f32) {
+        let this = DATA;
+        for off in (0x30..0xe0u32).step_by(4) {
+            c.bus.write32(this + off, r.f32(2.0));
+        }
+        c.bus.write32(this + 0x4, avg.to_bits());
+        c.bus.write32(this + 0x20, timer.to_bits());
+        c.bus.write32(this + 0x28, r.f32(1.0));
+        c.bus.write32(this + 0x70, mass.to_bits());
+        // The collision tree: +0x90 scale, +0x98 its sphere set (index 0 of
+        // a radius table).
+        let tree = this + 0xe0;
+        for off in (0..0x160u32).step_by(4) {
+            c.bus.write32(tree + off, 0);
+        }
+        c.bus.write32(tree + 0x90, 1.0f32.to_bits());
+        let set = DATA + 0x7000;
+        c.bus.write32(tree + 0x98, set);
+        c.bus.write32(set + 0xc, 0);
+        c.bus.write32(set + 0x20, DATA + 0x7100);
+        c.bus.write32(DATA + 0x7100, 2.0f32.to_bits());
+        // The world's collision set (World_GetNash): no root.
+        let wld = DATA + 0x2_0000;
+        c.bus.write32(GAME_GP.wrapping_sub(0x848), wld);
+        c.bus.write32(wld + 0x84, wld + 0x100);
+        c.bus.write32(wld + 0x100 + 0x20, wld + 0x200);
+        c.bus.write32(wld + 0x200 + 0x10, 0);
+        c.bus.write32(wld + 0x200 + 0xa4, 0);
+    }
+
+
+    #[test]
+    fn roller_modifier_update_matches() {
+        check(ee::s11::f_0035e850__generated, roller_modifier_update, 120, &|c, seed| {
+            let mut r = machine(c, seed, 0x35e850, 0);
+            elf_image(c);
+            crate::game::wscript::wscriptman::tests::alloc_ready(c);
+            // reset, waiting, stop by time, stop by energy, simulate x2.
+            let (timer, avg) = match seed % 6 {
+                0 => (16.5, 50000.0),
+                1 => (12.0, 50000.0),
+                2 => (10.5, 50000.0),
+                3 => (1.0, 10.0),
+                _ => (1.0, 50000.0),
+            };
+            let mass = if seed % 7 == 0 { 0.0 } else { 1.0 + (seed % 5) as f32 };
+            roller_update_fixture(c, &mut r, timer, avg, mass);
+            if seed % 6 == 3 {
+                for off in [0x50u32, 0x60, 0xb0, 0xc0] {
+                    for k in 0..4 {
+                        c.bus.write32(DATA + off + 4 * k, 0);
+                    }
+                }
+            }
+            c.g[A0][0] = DATA as u64;
+        });
+    }
+
+
+    /// The energy average keeps its time constant: with the same energy each
+    /// tick, one update at 60 and `rate/60` updates at 120 / 240 Hz give the
+    /// same average (the timer is put back each tick so the blend runs on
+    /// every call; the stop path runs and clears the momenta, which the test
+    /// sets again).
+    #[test]
+    fn roller_modifier_update_follows_the_rate() {
+        fn after(hz: u32) -> f32 {
+            let mut c = crate::difftest::fresh();
+            let c = &mut *c;
+            let mut r = machine(c, 5, 0x35e851, 0);
+            elf_image(c);
+            crate::tick::set_for_test(c, hz);
+            roller_update_fixture(c, &mut r, 10.5, 50000.0, 2.0);
+            for _ in 0..hz / 60 {
+                c.bus.write32(DATA + 0x20, 10.5f32.to_bits());
+                for off in [0x50u32, 0x60, 0xb0, 0xc0] {
+                    for k in 0..4 {
+                        c.bus.write32(DATA + off + 4 * k, 0);
+                    }
+                }
+                c.bus.write32(DATA + 0x50, 100.0f32.to_bits());
+                c.bus.write32(DATA + 0xb0, 1.0f32.to_bits());
+                c.g[A0][0] = DATA as u64;
+                c.g[RA][0] = crate::difftest::RA as u64;
+                c.g[ssx3_ee_rt::cpu::reg::SP][0] = crate::difftest::SP as u64;
+                roller_modifier_update(c);
+                assert_eq!(c.pc, crate::difftest::RA);
+            }
+            f32::from_bits(c.bus.read32(DATA + 0x4))
+        }
+        let base = after(60);
+        assert!((base - 47510.0).abs() < 0.5, "{base}");
+        for hz in [120, 240] {
+            let v = after(hz);
+            assert!((v - base).abs() < 0.1, "{hz} Hz: average {v} vs {base} at 60");
+        }
     }
 }

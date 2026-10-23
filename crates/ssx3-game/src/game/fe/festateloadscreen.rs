@@ -680,6 +680,10 @@ pub fn c_fe_load_screen_render(c: &mut Cpu) {
 /// `void GameStateFinish_Enter(GameStateFinish* self)` (0x233c50): stop the
 /// replay recorder, close the UI states, stop the script list, mark the
 /// loading indicator busy and flag the finished race.
+///
+/// Tick rate: the finish screen's delay `+0x14` (180 frames at 60 Hz) is
+/// taken down by 1 per tick, so it is stored as
+/// [`crate::tick::ticks_from_frames60`]`(180)`.
 pub fn game_state_finish_enter(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 25;
@@ -700,7 +704,9 @@ pub fn game_state_finish_enter(c: &mut Cpu) {
         c.g[RA][0] = sx(0x0023_3c88);
         c.g[A1][0] = 0;
         call_ptr(c, 0x0027_90a0, 0x0023_3c88)?;
-        c.g[V0][0] = 0xb4;
+        // The delay before the finish screen: 180 frames (3 s), counted down
+        // once per tick by GameStateFinish_Update, so stored in ticks.
+        c.g[V0][0] = crate::tick::ticks_from_frames60(c, 180) as u64;
         Addr(p(r32(c, S0), 0x10)).sw(c, 0);
         Addr(p(r32(c, S0), 0x14)).sw(c, c.g[V0][0]);
         c.g[A1][0] = 0x4;
@@ -1157,6 +1163,34 @@ pub(crate) mod tests {
 
             // ------------------------------------------------------------------
     // Game state.
+
+    fn game_state_finish_enter_fixture(c: &mut Cpu, seed: u32, calls: u32) {
+        let mut r = machine(c, seed, 0x233c50, calls);
+        be_library(c);
+        world(c);
+        c.g[A0][0] = (DATA + 0x100) as u64;
+        let replay = DATA + 0x200;
+        w(c, GAME_GP.wrapping_sub(0x488), replay);
+        w(c, replay + 0x28, 0);
+        w(c, replay + 0x48, DATA + 0x280);
+        w(c, GAME_GP.wrapping_sub(0x84c), 0);
+        w(c, GAME_GP.wrapping_sub(0x204), if seed % 3 == 0 { 0 } else { DATA + 0x300 });
+        let _ = r.next_u32();
+    }
+
+    /// The finish screen's 180-frame delay is stored in ticks (3 s at any
+    /// rate).
+    #[test]
+    fn game_state_finish_enter_delay_follows_rate() {
+        for (hz, ticks) in [(60, 180), (120, 360), (240, 720)] {
+            let mut c = crate::difftest::fresh();
+            game_state_finish_enter_fixture(&mut c, 1, 0);
+            crate::tick::set_for_test(&mut c, hz);
+            game_state_finish_enter(&mut c);
+            assert_eq!(c.pc, TEST_RA);
+            assert_eq!(c.bus.read32(DATA + 0x100 + 0x14), ticks, "{hz} Hz");
+        }
+    }
 
     #[test]
     fn game_state_finish_enter_matches() {

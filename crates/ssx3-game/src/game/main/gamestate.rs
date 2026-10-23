@@ -66,10 +66,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0023_4c68, game_state_countdown_update, "GameStateCountdown_Update"),
     (0x0023_4e20, game_state_race_enter, "GameStateRace_Enter"),
     (0x0023_4ef8, game_state_reset_ctor, "GameStateReset_ctor"),
+    (0x0023_5080, game_state_reset_overlay_update, "GameStateReset_OverlayUpdate"),
     (0x0023_5570, game_state_reset_overlay_exit, "GameStateReset_OverlayExit"),
     (0x0023_55b0, game_state_reset_v08, "GameStateReset_v08"),
     (0x0023_57f8, game_state_reset_update, "GameStateReset_Update"),
     (0x0023_5a18, gamestatereset_load_state, "GameStateReset_LoadState"),
+    (0x0023_5cc8, game_state_restart_race_update, "GameStateRestartRace_Update"),
     (0x0023_5f20, game_state_restart_race_exit, "GameStateRestartRace_Exit"),
     (0x0023_5fd0, gamestaterestartrace_load_state, "GameStateRestartRace_LoadState"),
     (0x0023_6198, game_state_warp_to_event_update, "GameStateWarpToEvent_Update"),
@@ -1713,6 +1715,730 @@ pub fn game_state_finish_cinematic_exit(c: &mut Cpu) {
     c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
     c.sw((c.g[A0][0] as u32).wrapping_add(0x8c), 0);
     abi::ret(c);
+}
+
+
+/// `lw rt, -off(gp)`.
+fn gpw(c: &mut Cpu, off: u32) -> u64 {
+    c.lw((c.g[GP][0] as u32).wrapping_sub(off))
+}
+
+
+/// `ScriptEngine_ListAddChoice(engine, 1, choice, 3, 0, -1, -1, -1)` with
+/// `a0` already the script engine, returning to `ret`.
+fn reset_overlay_add_choice(c: &mut Cpu, choice: u64, ret: u32) -> Flow {
+    c.g[A1][0] = 0x1;
+    c.g[A2][0] = choice;
+    c.g[A3][0] = 0x3;
+    c.g[T0][0] = 0;
+    c.g[T1][0] = u64::MAX;
+    c.g[T2][0] = u64::MAX;
+    c.g[T3][0] = u64::MAX;
+    call_ptr(c, 0x0027_8e50, ret)
+}
+
+
+/// `void GameStateReset_OverlayUpdate(GameStateReset* self)` (0x235080): the
+/// reset overlay's load sequence. `+0x18` counts updates since the overlay
+/// opened; `+0x10` is the step:
+///
+/// - 0: once the script engine has loaded, prepare list 0 and (for the peak
+///   transition, `+0x14` set) queue the peak transition script and its two
+///   choices (and the peak music) on list 1, else the two reset choices when
+///   the rider's state is 14..16 and `+0x1c8` is set; then step 1.
+/// - 1: wait until neither script list is in state 1; step 2.
+/// - 2: once every computer and actor rider has a render slot, restart the
+///   game mode (unless the world type is 6..11), hand the AI rider count and
+///   characters to the BE interfaces, rebuild the computer riders (and the
+///   actor riders when the world type and sub-type are 0); step 3.
+/// - 3: load the riders one step at a time; once all are loaded, reset them
+///   (world type 0) or reorder them (type 5, sub-type 0); step 4.
+/// - 4: the peak transition holds the overlay for at least 180 frames (3 s)
+///   since it opened; step 5.
+///
+/// Tick rate: `+0x18` goes up once per tick, so the 180-frame hold is
+/// compared in ticks ([`crate::tick::ticks_from_frames60`]; 180 at 60 Hz).
+pub fn game_state_reset_overlay_update(c: &mut Cpu) {
+    /// How a step ends: store `v0` as the new step (0x23553c), leave the step
+    /// (0x235540), or leave with `s0` already reloaded (0x235544).
+    enum End {
+        Store,
+        Leave,
+        Reloaded,
+    }
+    guest(c, |c| {
+        c.cycles += 17;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x90));
+        c.sq(22, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x80));
+        c.g[S6][0] = c.g[A0][0];
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x70));
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.sq(23, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.sd(c.g[SP][0] as u32, c.g[RA][0]);
+        let this = c.g[S6][0] as u32;
+        c.g[V0][0] = c.lw(this.wrapping_add(0x18));
+        c.g[A0][0] = c.lw(this.wrapping_add(0x10));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+        c.g[V1][0] = (c.g[A0][0] < 0x6u64) as u64;
+        c.sw(this.wrapping_add(0x18), c.g[V0][0]);
+        let step = c.g[A0][0];
+        let end = if step >= 6 {
+            End::Leave
+        } else {
+            // The jump table at 0x47c060.
+            c.cycles += 7;
+            c.g[V0][0] = sx(0x0047_c060);
+            c.g[V1][0] = sx(((step as u32) << 2).wrapping_add(0x0047_c060));
+            c.g[A0][0] = c.lw(c.g[V1][0] as u32);
+            match step {
+                0 => 'step0: {
+                    c.cycles += 4;
+                    c.g[A0][0] = gpw(c, 0x84c);
+                    call_ptr(c, 0x0027_8d58, 0x0023_50e8)?;
+                    let loading = c.g[V0][0] == 0;
+                    c.g[A0][0] = gpw(c, 0x84c);
+                    if loading {
+                        break 'step0 End::Leave;
+                    }
+                    c.cycles += 10;
+                    c.g[A1][0] = 0;
+                    call_ptr(c, 0x0027_8f38, 0x0023_50f8)?;
+                    c.g[V1][0] = gpw(c, 0x848);
+                    c.g[A0][0] = c.lw(this.wrapping_add(0x14));
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x84));
+                    c.g[V0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x78));
+                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1bc));
+                    c.g[A1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0xe));
+                    c.g[A1][0] = (c.g[A1][0] < 0x3u64) as u64;
+                    if c.g[A0][0] == 0 {
+                        // The plain reset: the two choices when the rider's
+                        // state is 14..16 and `+0x1c8` is set.
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x1c8));
+                        let off = c.g[V0][0] == 0;
+                        c.g[V0][0] = 0x1;
+                        if off {
+                            break 'step0 End::Store;
+                        }
+                        c.cycles += 2;
+                        let state_ok = c.g[A1][0] != 0;
+                        c.g[A0][0] = gpw(c, 0x84c);
+                        if !state_ok {
+                            break 'step0 End::Store;
+                        }
+                        c.cycles += 19;
+                        reset_overlay_add_choice(c, 0x10, 0x0023_5254)?;
+                        c.g[A0][0] = gpw(c, 0x84c);
+                        reset_overlay_add_choice(c, 0x11, 0x0023_5278)?;
+                        c.g[V0][0] = 0x1;
+                        break 'step0 End::Store;
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = 0xe;
+                    let state14 = c.g[V1][0] == 0xe;
+                    c.g[V1][0] ^= 0xf;
+                    if state14 {
+                        // The peak transition script, its music, and the two
+                        // peak choices.
+                        c.cycles += 33;
+                        c.g[A0][0] = gpw(c, 0x84c);
+                        c.g[A1][0] = 0x1;
+                        c.g[A2][0] = 0x1d;
+                        c.g[A3][0] = 0x3;
+                        call_ptr(c, 0x0027_8e20, 0x0023_5138)?;
+                        call_ptr(c, 0x0028_b180, 0x0023_5140)?;
+                        c.g[A0][0] = c.g[V0][0];
+                        call_ptr(c, 0x0028_cd48, 0x0023_5148)?;
+                        call_ptr(c, 0x0028_b180, 0x0023_5150)?;
+                        c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x118));
+                        call_ptr(c, 0x002b_3a70, 0x0023_5158)?;
+                        c.g[A0][0] = gpw(c, 0x84c);
+                        reset_overlay_add_choice(c, 0, 0x0023_517c)?;
+                        c.g[A0][0] = gpw(c, 0x84c);
+                        reset_overlay_add_choice(c, 1, 0x0023_51a0)?;
+                    } else {
+                        // Script 0x1e (state 15) or 0x1f, and the two reset
+                        // choices.
+                        c.cycles += 26;
+                        c.g[V0][0] = 0x1f;
+                        c.g[A0][0] = gpw(c, 0x84c);
+                        c.g[A2][0] = if c.g[V1][0] != 0 { 0x1f } else { 0x1e };
+                        c.g[A1][0] = 0x1;
+                        c.g[A3][0] = 0x3;
+                        call_ptr(c, 0x0027_8e20, 0x0023_51c4)?;
+                        c.g[A0][0] = gpw(c, 0x84c);
+                        reset_overlay_add_choice(c, 0x10, 0x0023_51e8)?;
+                        c.g[A0][0] = gpw(c, 0x84c);
+                        reset_overlay_add_choice(c, 0x11, 0x0023_520c)?;
+                    }
+                    c.g[A0][0] = gpw(c, 0x84c);
+                    c.cycles += 4;
+                    c.g[A1][0] = 0x1;
+                    call_ptr(c, 0x0027_8f38, 0x0023_5218)?;
+                    c.g[V0][0] = 0x1;
+                    End::Store
+                }
+                1 => {
+                    // Both script lists out of state 1.
+                    c.cycles += 7;
+                    c.g[A0][0] = gpw(c, 0x84c);
+                    c.g[A1][0] = 0;
+                    c.g[S0][0] = 0;
+                    call_ptr(c, 0x0027_91d8, 0x0023_5290)?;
+                    c.g[V0][0] ^= 0x1;
+                    let busy = c.g[V0][0] == 0;
+                    c.g[A0][0] = gpw(c, 0x84c);
+                    if !busy {
+                        c.cycles += 5;
+                        c.g[A1][0] = 0x1;
+                        call_ptr(c, 0x0027_91d8, 0x0023_52a4)?;
+                        c.g[V0][0] ^= 0x1;
+                        c.g[V1][0] = 0x1;
+                        if c.g[V0][0] != 0 {
+                            c.g[S0][0] = 1;
+                        }
+                    }
+                    c.cycles += 2;
+                    let done = c.g[S0][0] != 0;
+                    c.g[V0][0] = 0x2;
+                    if done {
+                        c.cycles += 2;
+                        c.sw(this.wrapping_add(0x10), c.g[V0][0]);
+                    }
+                    End::Leave
+                }
+                2 => 'step2: {
+                    c.cycles += 5;
+                    c.g[V0][0] = gpw(c, 0x488);
+                    c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+                    call_ptr(c, 0x0012_abd0, 0x0023_52cc)?;
+                    let no_slots = c.g[V0][0] == 0;
+                    c.g[V0][0] = gpw(c, 0x488);
+                    if no_slots {
+                        break 'step2 End::Leave;
+                    }
+                    c.cycles += 4;
+                    c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+                    call_ptr(c, 0x0012_acf8, 0x0023_52dc)?;
+                    let no_slots = c.g[V0][0] == 0;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x80));
+                    if no_slots {
+                        break 'step2 End::Reloaded;
+                    }
+                    c.cycles += 19;
+                    call_ptr(c, 0x0014_dc80, 0x0023_52ec)?;
+                    c.g[A0][0] = c.g[V0][0];
+                    c.g[A1][0] = 0;
+                    call_ptr(c, 0x0014_dd58, 0x0023_52f8)?;
+                    c.g[S1][0] = c.g[V0][0];
+                    call_ptr(c, 0x0014_dc80, 0x0023_5300)?;
+                    c.g[A0][0] = c.g[V0][0];
+                    c.g[A1][0] = 0x1;
+                    call_ptr(c, 0x0014_dd58, 0x0023_530c)?;
+                    c.g[V1][0] = 0x530000;
+                    c.g[S4][0] = c.g[V0][0];
+                    c.g[V0][0] = sx(0x0053_5bc8);
+                    c.g[A0][0] = gpw(c, 0x848);
+                    // The world type (0x535c12).
+                    c.g[A1][0] = c.lb(0x0053_5c12);
+                    c.g[S7][0] = c.g[V1][0];
+                    c.g[V0][0] = ((c.g[A1][0] as i64) < 6) as u64;
+                    let below = c.g[V0][0] != 0;
+                    c.g[S0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xc0));
+                    let restart = below || {
+                        c.cycles += 4;
+                        c.g[V0][0] = (0xb < (c.g[A1][0] as i64)) as u64;
+                        c.g[A2][0] = gpw(c, 0x488);
+                        c.g[V0][0] != 0
+                    };
+                    if restart {
+                        c.cycles += 3;
+                        c.g[A0][0] = c.g[S0][0];
+                        call_ptr(c, 0x0023_8160, 0x0023_5348)?;
+                        c.g[A2][0] = gpw(c, 0x488);
+                    }
+                    // The AI rider count and characters.
+                    c.cycles += 16;
+                    let mode = c.g[S0][0] as u32;
+                    c.g[A0][0] = c.g[S1][0];
+                    c.g[A1][0] = c.lw(mode.wrapping_add(0x10));
+                    c.g[S2][0] = 0;
+                    c.g[V0][0] = c.lw(mode.wrapping_add(0x14));
+                    c.g[V1][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0xc));
+                    c.g[S5][0] = sx((c.g[A1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                    c.g[S3][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x7c));
+                    c.g[A1][0] = c.g[S5][0];
+                    call_ptr(c, 0x0014_4d98, 0x0023_5370)?;
+                    c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xc));
+                    c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x8));
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+                    let commit = c.g[V0][0] as u32;
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    call_ptr(c, commit, 0x0023_5384)?;
+                    let none = (c.g[S5][0] as i64) <= 0;
+                    c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(0x40));
+                    if !none {
+                        c.cycles += 3;
+                        c.g[V0][0] = sx((c.g[S3][0] as u32) << 2);
+                        c.g[S1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                        c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[S3][0] as u32));
+                        loop {
+                            c.cycles += 13;
+                            c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_sub(0x28));
+                            c.g[A0][0] = c.g[S4][0];
+                            c.g[A1][0] = c.g[S0][0];
+                            call_ptr(c, 0x0014_7338, 0x0023_53a8)?;
+                            c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+                            c.g[A2][0] = c.lw(c.g[S1][0] as u32);
+                            c.g[A1][0] = c.g[S0][0];
+                            c.g[A0][0] = c.g[S4][0];
+                            c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x4));
+                            call_ptr(c, 0x0014_73d0, 0x0023_53c0)?;
+                            c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[S5][0] as i64)) as u64;
+                            let more = c.g[V0][0] != 0;
+                            c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[S3][0] as u32));
+                            if !more {
+                                break;
+                            }
+                            if crate::events::event_due(c) {
+                                crate::events::deliver_event_here(c, 0x0023_5398);
+                            }
+                        }
+                    }
+                    // Rebuild the riders.
+                    c.cycles += 16;
+                    c.g[V0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0xc));
+                    c.g[S0][0] = sx(0x0053_5bc8);
+                    c.g[S1][0] = 0;
+                    c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x8));
+                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+                    let commit = c.g[V1][0] as u32;
+                    c.g[A0][0] = sx((c.g[S4][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    call_ptr(c, commit, 0x0023_53e8)?;
+                    c.g[V0][0] = gpw(c, 0x488);
+                    c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+                    call_ptr(c, 0x0012_b030, 0x0023_53f4)?;
+                    c.g[V0][0] = gpw(c, 0x488);
+                    c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+                    call_ptr(c, 0x0012_b000, 0x0023_5400)?;
+                    c.g[V0][0] = c.lb(0x0053_5c10);
+                    let typed = c.g[V0][0] != 0;
+                    c.g[V0][0] = gpw(c, 0x488);
+                    if !typed {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lb(0x0053_5c11);
+                        c.g[S1][0] = (c.g[V0][0] < 0x1u64) as u64;
+                        c.g[V0][0] = gpw(c, 0x488);
+                    }
+                    c.cycles += 4;
+                    c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+                    call_ptr(c, 0x0012_8958, 0x0023_5420)?;
+                    let some = c.g[S5][0] != 0;
+                    c.g[V0][0] = 0x3;
+                    if some {
+                        break 'step2 End::Store;
+                    }
+                    c.cycles += 2;
+                    if c.g[S1][0] == 0 {
+                        c.sw(this.wrapping_add(0x10), c.g[V0][0]);
+                        break 'step2 End::Leave;
+                    }
+                    // No AI riders, world type and sub-type 0: the actor
+                    // riders (mode 0, or 2 for a typed world).
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lb(0x0053_5c10);
+                    let typed = c.g[V0][0] != 0;
+                    c.g[V0][0] = gpw(c, 0x488);
+                    c.cycles += 5;
+                    c.g[A1][0] = if typed { 0x2 } else { 0 };
+                    c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+                    call_ptr(c, 0x0012_8998, if typed { 0x0023_545c } else { 0x0023_5448 })?;
+                    c.g[V0][0] = 0x3;
+                    End::Store
+                }
+                3 => 'step3: {
+                    c.cycles += 5;
+                    c.g[V0][0] = gpw(c, 0x488);
+                    c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+                    call_ptr(c, 0x0012_a180, 0x0023_5470)?;
+                    let loading = c.g[V0][0] == 0;
+                    c.g[V0][0] = gpw(c, 0x488);
+                    if loading {
+                        c.cycles += 4;
+                        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+                        call_ptr(c, 0x0012_96f8, 0x0023_5514)?;
+                        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x80));
+                        break 'step3 End::Reloaded;
+                    }
+                    c.cycles += 10;
+                    call_ptr(c, 0x0014_dc80, 0x0023_5480)?;
+                    c.g[A0][0] = c.g[V0][0];
+                    c.g[A1][0] = 0;
+                    call_ptr(c, 0x0014_dd58, 0x0023_548c)?;
+                    c.g[V1][0] = 0x530000;
+                    c.g[V0][0] = sx(0x0053_5bc8);
+                    c.g[S0][0] = c.lb(0x0053_5c10);
+                    let typed = c.g[S0][0] != 0;
+                    c.g[S7][0] = c.g[V1][0];
+                    if !typed {
+                        c.cycles += 8;
+                        c.g[V0][0] = gpw(c, 0x488);
+                        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+                        call_ptr(c, 0x0012_89f0, 0x0023_54ac)?;
+                        c.g[V0][0] = gpw(c, 0x488);
+                        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+                        let ai = c.g[A0][0] as u32;
+                        c.g[V1][0] = c.lw(ai.wrapping_add(0x80));
+                        let none = (c.g[V1][0] as i64) <= 0;
+                        c.g[V0][0] = 0x1;
+                        if !none {
+                            c.cycles += 1;
+                            c.sw(ai.wrapping_add(0x14), c.g[V0][0]);
+                        }
+                        c.cycles += 5;
+                        c.g[V0][0] = gpw(c, 0x488);
+                        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+                        let ai = c.g[A0][0] as u32;
+                        c.g[V1][0] = c.lw(ai.wrapping_add(0x84));
+                        let none = (c.g[V1][0] as i64) <= 0;
+                        c.g[V0][0] = 0x1;
+                        if !none {
+                            c.cycles += 1;
+                            c.sw(ai.wrapping_add(0x8c), c.g[V0][0]);
+                        }
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = 0x5;
+                    let type5 = c.g[S0][0] == 0x5;
+                    c.g[V0][0] = 0x4;
+                    if !type5 {
+                        break 'step3 End::Store;
+                    }
+                    c.cycles += 4;
+                    c.g[V0][0] = sx(0x0053_5bc8);
+                    c.g[V1][0] = c.lb(0x0053_5c11);
+                    if c.g[V1][0] != 0 {
+                        c.g[V0][0] = 0x4;
+                        break 'step3 End::Store;
+                    }
+                    c.cycles += 5;
+                    c.g[V0][0] = gpw(c, 0x488);
+                    c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+                    call_ptr(c, 0x0012_8a10, 0x0023_5504)?;
+                    c.g[V0][0] = 0x4;
+                    End::Store
+                }
+                4 => 'step4: {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw(this.wrapping_add(0x14));
+                    let plain = c.g[V0][0] == 0;
+                    c.g[V0][0] = 0x5;
+                    if plain {
+                        break 'step4 End::Store;
+                    }
+                    // The peak transition's minimum hold: 180 frames since
+                    // the overlay opened (`slti v0, v0, 180`).
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lw(this.wrapping_add(0x18));
+                    let hold = crate::tick::ticks_from_frames60(c, 180) as i64;
+                    c.g[V0][0] = ((c.g[V0][0] as i64) < hold) as u64;
+                    let wait = c.g[V0][0] != 0;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x80));
+                    if wait {
+                        break 'step4 End::Reloaded;
+                    }
+                    c.cycles += 1;
+                    c.g[V0][0] = 0x5;
+                    End::Store
+                }
+                _ => End::Leave,
+            }
+        };
+        match end {
+            End::Store => {
+                c.cycles += 2;
+                c.sw(this.wrapping_add(0x10), c.g[V0][0]);
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x80));
+            }
+            End::Leave => {
+                c.cycles += 1;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x80));
+            }
+            End::Reloaded => {}
+        }
+        c.cycles += 10;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x70));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(22, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(23, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld(c.g[SP][0] as u32);
+        let ra = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x90));
+        c.pc = ra;
+        Ok(())
+    });
+}
+
+
+/// `void GameStateRestartRace_Update(GameStateRestartRace* self)` (0x235cc8):
+/// restart the race. `+0x14` counts updates; `+0x10` is the step:
+///
+/// - 0: once the computer riders have render slots, rebuild them (and drop
+///   the actor riders with two or more AI riders); step 1.
+/// - 1: load the riders one step at a time; once all are loaded, reset them,
+///   arm the AI start, and put the streamer's view on the start marker;
+///   step 2.
+/// - 2: with `+0x18` set, wait until the streamer's view is clear, at least
+///   120 frames (2 s) have passed, list 0 is not running, no list or
+///   transition is active, then skip the finish script; step 3.
+/// - 3: go to the next game state.
+///
+/// Tick rate: `+0x14` goes up once per tick, so the 120-frame minimum is
+/// compared in ticks ([`crate::tick::ticks_from_frames60`]; 120 at 60 Hz).
+pub fn game_state_restart_race_update(c: &mut Cpu) {
+    /// Where a step leaves: reload s0 (0x235f04), s1 (0x235f08), or only the
+    /// rest (0x235f0c).
+    enum End {
+        S0,
+        S1,
+        Rest,
+    }
+    guest(c, |c| {
+        c.cycles += 24;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x70));
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.g[S1][0] = c.g[A0][0];
+        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[RA][0]);
+        let this = c.g[S1][0] as u32;
+        c.g[S3][0] = 0x1;
+        c.g[V0][0] = c.lw(this.wrapping_add(0x14));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x1));
+        c.sw(this.wrapping_add(0x14), c.g[V0][0]);
+        call_ptr(c, 0x0014_dc80, 0x0023_5cf8)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0;
+        call_ptr(c, 0x0014_dd58, 0x0023_5d04)?;
+        c.g[V0][0] = gpw(c, 0x848);
+        c.g[A2][0] = c.lw(this.wrapping_add(0x10));
+        c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84));
+        c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x84));
+        c.g[S2][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x10));
+        c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+        c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xb0));
+        // The streamer view index: 1 when `+0xb0` is clear.
+        c.g[S0][0] = (c.g[A0][0] < 0x1u64) as u64;
+        let step = c.g[A2][0];
+        let end = 'step: {
+            if step == 1 {
+                // Load the riders; once loaded, reset them and set up the
+                // start.
+                c.cycles += 4;
+                c.g[A0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0xc));
+                call_ptr(c, 0x0012_a180, 0x0023_5db8)?;
+                let loading = c.g[V0][0] == 0;
+                c.g[V0][0] = gpw(c, 0x848);
+                if loading {
+                    c.cycles += 5;
+                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84));
+                    c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+                    call_ptr(c, 0x0012_96f8, 0x0023_5e38)?;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+                    break 'step End::S1;
+                }
+                c.cycles += 27;
+                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84));
+                c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+                call_ptr(c, 0x0012_89f0, 0x0023_5dcc)?;
+                c.g[V0][0] = gpw(c, 0x488);
+                c.g[V1][0] = 0x50;
+                c.g[A2][0] = gpw(c, 0x848);
+                c.mult(0, V1, S0, V1);
+                c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+                c.g[A0][0] = c.g[SP][0];
+                c.sw((c.g[A1][0] as u32).wrapping_add(0x14), c.g[S3][0]);
+                c.g[V0][0] = c.lw(c.g[S2][0] as u32);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+                c.sw((c.g[V0][0] as u32).wrapping_add(0x250), c.g[S3][0]);
+                c.g[V1][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x84));
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+                c.g[A2][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x40));
+                c.g[A1][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x18));
+                call_ptr(c, 0x0012_2c28, 0x0023_5e08)?;
+                c.g[A0][0] = c.lw(c.g[S2][0] as u32);
+                c.g[A1][0] = c.g[S0][0];
+                c.lwc1(12, (c.g[GP][0] as u32).wrapping_sub(0x5170));
+                c.g[A2][0] = c.g[SP][0];
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x10));
+                call_ptr(c, 0x003a_9658, 0x0023_5e20)?;
+                c.g[V0][0] = 0x2;
+                c.sw(this.wrapping_add(0x10), c.g[V0][0]);
+                break 'step End::S0;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[A2][0] as i64) < 2) as u64;
+            if c.g[V0][0] != 0 {
+                c.cycles += 2;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+                if step != 0 {
+                    c.cycles += 2;
+                    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+                    break 'step End::Rest;
+                }
+                // Rebuild the computer riders once they have render slots.
+                c.cycles += 4;
+                c.g[A0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0xc));
+                call_ptr(c, 0x0012_abd0, 0x0023_5d64)?;
+                let no_slots = c.g[V0][0] == 0;
+                c.g[V0][0] = gpw(c, 0x848);
+                if no_slots {
+                    break 'step End::S0;
+                }
+                c.cycles += 8;
+                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84));
+                c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+                call_ptr(c, 0x0012_b030, 0x0023_5d78)?;
+                c.g[V1][0] = 0x530000;
+                // The AI rider count (0x535c04).
+                c.g[V0][0] = c.lw(0x0053_5c04);
+                c.g[V0][0] = ((c.g[V0][0] as i64) < 2) as u64;
+                let few = c.g[V0][0] != 0;
+                c.g[V0][0] = gpw(c, 0x848);
+                if !few {
+                    c.cycles += 4;
+                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84));
+                    c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+                    call_ptr(c, 0x0012_b000, 0x0023_5d98)?;
+                    c.g[V0][0] = gpw(c, 0x848);
+                }
+                c.cycles += 5;
+                c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84));
+                c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+                call_ptr(c, 0x0012_8958, 0x0023_5da8)?;
+                c.sw(this.wrapping_add(0x10), c.g[S3][0]);
+                break 'step End::S0;
+            }
+            c.g[V0][0] = 0x2;
+            c.cycles += 2;
+            let step2 = step == 2;
+            c.g[V0][0] = 0x3;
+            if !step2 {
+                c.cycles += 2;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+                if step == 3 {
+                    c.cycles += 2;
+                    c.g[A0][0] = c.g[S1][0];
+                    call_ptr(c, 0x0023_3aa0, 0x0023_5f04)?;
+                    break 'step End::S0;
+                }
+                c.cycles += 2;
+                c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+                break 'step End::Rest;
+            }
+            // Wait for the restart to settle, then skip the finish script.
+            c.cycles += 3;
+            c.g[V0][0] = c.lw(this.wrapping_add(0x18));
+            let skip = c.g[V0][0] != 0;
+            c.g[A1][0] = c.g[S0][0];
+            if skip {
+                c.cycles += 11;
+                c.g[A0][0] = c.lw(c.g[S2][0] as u32);
+                c.g[A2][0] = c.g[SP][0];
+                c.g[A3][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x10));
+                call_ptr(c, 0x003a_9770, 0x0023_5e60)?;
+                c.lwc1(1, (c.g[SP][0] as u32).wrapping_add(0x10));
+                c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x516c));
+                c.c_lt_s(1, 0);
+                let blocked = c.fcc();
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+                if blocked {
+                    break 'step End::S1;
+                }
+                // At least 120 frames (`slti v0, v0, 0x78`), in ticks.
+                c.cycles += 4;
+                c.g[V0][0] = c.lw(this.wrapping_add(0x14));
+                let min = crate::tick::ticks_from_frames60(c, 120) as i64;
+                c.g[V0][0] = ((c.g[V0][0] as i64) < min) as u64;
+                if c.g[V0][0] != 0 {
+                    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+                    break 'step End::Rest;
+                }
+                c.cycles += 5;
+                c.g[A0][0] = gpw(c, 0x84c);
+                c.g[A1][0] = 0;
+                call_ptr(c, 0x0027_91d8, 0x0023_5e94)?;
+                let running = c.g[V0][0] == c.g[S3][0];
+                c.g[V0][0] = gpw(c, 0x848);
+                if running {
+                    break 'step End::S0;
+                }
+                c.cycles += 8;
+                c.g[A1][0] = 0;
+                c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84));
+                call_ptr(c, 0x0023_0698, 0x0023_5ea8)?;
+                c.g[A0][0] = gpw(c, 0x84c);
+                c.g[S0][0] = c.g[V0][0];
+                call_ptr(c, 0x0027_9298, 0x0023_5eb4)?;
+                if c.g[V0][0] != 0 {
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+                    break 'step End::S1;
+                }
+                c.cycles += 8;
+                let trans = c.g[S0][0] as u32;
+                c.g[V1][0] = c.lw(trans.wrapping_add(0x1c));
+                c.g[A1][0] = sx(trans.wrapping_add(0x10));
+                c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x40));
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x44));
+                let active = c.g[V0][0] as u32;
+                c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, active, 0x0023_5ed4)?;
+                if c.g[V0][0] != 0 {
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+                    break 'step End::S1;
+                }
+                c.cycles += 3;
+                c.g[V0][0] = c.lw(trans.wrapping_add(0x44));
+                let busy = c.g[V0][0] != 0;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+                if busy {
+                    break 'step End::S1;
+                }
+                c.cycles += 2;
+                c.g[A0][0] = gpw(c, 0x84c);
+                call_ptr(c, 0x0027_a9f0, 0x0023_5ef0)?;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = 0x3;
+            c.sw(this.wrapping_add(0x10), c.g[V0][0]);
+            End::S0
+        };
+        if let End::S0 = end {
+            c.cycles += 1;
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+        }
+        if !matches!(end, End::Rest) {
+            c.cycles += 1;
+            c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+        }
+        c.cycles += 5;
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x20));
+        let ra = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
+        c.pc = ra;
+        Ok(())
+    });
 }
 
 
@@ -3509,5 +4235,303 @@ pub(crate) mod tests {
                 c.bus.write32(DATA + 0x4000, 0x11);
             },
         );
+    }
+
+
+    // ------------------------------------------------------------------
+    // GameStateReset_OverlayUpdate / GameStateRestartRace_Update.
+
+    /// The reset/restart fixture's base (above the fakes' result pointers,
+    /// `DATA..DATA + 0x4_0000`, and their log at `DATA + 0x10_0000`).
+    const RS: u32 = DATA + 0x20_0000;
+    const RS_ENGINE: u32 = RS + 0x1000;
+    const RS_LISTS: u32 = RS + 0x2000;
+    const RS_WORLD: u32 = RS + 0x3000;
+    const RS_RACE: u32 = RS + 0x3100;
+    const RS_RIDER: u32 = RS + 0x3200;
+    const RS_GM: u32 = RS + 0x4000;
+    const RS_AI: u32 = RS + 0x4100;
+    const RS_OBJ: u32 = RS + 0x4400;
+    const RS_RENDER: u32 = RS + 0x4500;
+    const RS_LOAD: u32 = RS + 0x4600;
+    const RS_MODE: u32 = RS + 0x5000;
+    const RS_AUDIO: u32 = RS + 0x6000;
+    const RS_AUDIO_VT: u32 = RS + 0xc000;
+    const RS_PENDING: u32 = RS + 0xd000;
+
+    /// The script engine (`gp-0x84c`): lists 0 and 1 not loading (state
+    /// 2, so `ScriptList_Prepare` returns at once) and full (so the adds
+    /// push nothing), no async load polled; the BE library dummy.
+    fn rs_engine(c: &mut Cpu, pending: bool) {
+        be_library(c);
+        c.bus.write32(GAME_GP - 0x84c, RS_ENGINE);
+        c.bus.write32(RS_ENGINE + 0x54c, RS_LISTS);
+        c.bus.write32(RS_ENGINE + 0x550, 2);
+        c.bus.write32(RS_ENGINE + 0x620, 0);
+        c.bus.write32(RS_ENGINE + 0x538, if pending { RS_PENDING } else { 0 });
+        c.bus.write32(RS_ENGINE + 0x630 + 16, 0);
+        for i in 0..2 {
+            let list = RS_LISTS + 0xcc * i;
+            c.bus.write32(list + 0xa0, 1);
+            c.bus.write32(list + 0xa4, 2);
+            c.bus.write32(list + 0xbc, 0);
+            c.bus.write32(list + 0xc0, 0);
+        }
+    }
+
+    /// The AI (`gp-0x488 -> +0xc`, also `world -> +0x84 -> +0xc`): no
+    /// riders, or one rider without a render slot (`computer`/`actor`), or
+    /// one rider not loaded yet (`+0x880` = 8: `Rider_LoadStep` does nothing).
+    fn rs_ai(c: &mut Cpu, computer_unslotted: bool, actor_unslotted: bool, unloaded: bool) {
+        c.bus.write32(GAME_GP - 0x488, RS_GM);
+        c.bus.write32(RS_GM + 0xc, RS_AI);
+        c.bus.write32(RS_OBJ + 0x18, RS_RENDER);
+        c.bus.write32(RS_RENDER + 0x888, u32::MAX);
+        c.bus.write32(RS_LOAD + 0x880, 8);
+        if computer_unslotted {
+            c.bus.write32(RS_AI + 0x80, 1);
+            c.bus.write32(RS_AI + 0x48, RS_OBJ);
+        }
+        if actor_unslotted {
+            c.bus.write32(RS_AI + 0x84, 1);
+            c.bus.write32(RS_AI + 0x5c, RS_OBJ);
+        }
+        if unloaded {
+            c.bus.write32(RS_AI + 0x78, 1);
+            c.bus.write32(RS_AI + 0x28, RS_LOAD);
+        }
+    }
+
+    fn reset_overlay_setup(c: &mut Cpu, seed: u32) {
+        // The step jump table (0x47c060) and the game's data.
+        crate::difftest::elf_image(c);
+        let mut r = machine(c, seed, 0x2350_80, 6);
+        let step = seed % 7;
+        let v = seed / 7;
+        c.pc = 0x0023_5080;
+        c.g[A0][0] = sx(RS);
+        c.bus.write32(RS + 0x10, step);
+        c.bus.write32(RS + 0x14, if v % 2 == 0 { 0 } else { r.next_u32() | 1 });
+        let counter = match v % 5 {
+            0 => 178,
+            1 => 179,
+            2 => 180,
+            3 => r.next_u32() % 400,
+            _ => r.next_u32(),
+        };
+        c.bus.write32(RS + 0x18, counter);
+        rs_engine(c, step == 0 && v % 4 == 3);
+        c.bus.write32(GAME_GP - 0x848, RS_WORLD);
+        c.bus.write32(RS_WORLD + 0x84, RS_RACE);
+        c.bus.write32(RS_RACE + 0x78, RS_RIDER);
+        c.bus.write32(RS_RIDER + 0x1bc, 13 + r.next_u32() % 5);
+        c.bus.write32(RS_RIDER + 0x1c8, r.next_u32() % 2);
+        // The audio system: no song playing, its channel vtable empty (fakes).
+        c.bus.write32(GAME_GP + 0x410, RS_AUDIO);
+        c.bus.write32(RS_AUDIO + 0x5558, RS_AUDIO_VT);
+        // World type, sub-type, mode (0x535c10..12).
+        c.bus.write8(0x0053_5c10, [0, 0, 1, 5][(r.next_u32() % 4) as usize]);
+        c.bus.write8(0x0053_5c11, [0, 0, 1][(r.next_u32() % 3) as usize]);
+        c.bus.write8(0x0053_5c12, (r.next_u32() % 14) as u8);
+        match step {
+            1 => {
+                for i in 0..2 {
+                    c.bus.write32(RS_LISTS + 0xcc * i + 0xa4, r.next_u32() % 3);
+                }
+            }
+            2 => {
+                let k = v % 4;
+                rs_ai(c, k == 0, k == 1, false);
+                c.bus.write32(RS_AI + 0x7c, r.next_u32() % 3);
+                c.bus.write32(GAME_GP - 0x848, RS_WORLD);
+                c.bus.write32(RS_WORLD + 0xc0, RS_MODE);
+                c.bus.write32(RS_MODE + 0x4, r.next_u32() % 13);
+                let ai_riders = if k == 3 { 1 + r.next_u32() % 2 } else { 0 };
+                let humans = r.next_u32() % 3;
+                c.bus.write32(RS_MODE + 0x10, humans + ai_riders);
+                c.bus.write32(RS_MODE + 0x14, humans);
+                for i in 0..16 {
+                    c.bus.write32(RS_MODE + 0x18 + 4 * i, r.next_u32() % 64);
+                }
+                if ai_riders > 0 {
+                    // Creating AI riders is a whole subsystem: unwind at the
+                    // second interface commit (after the character loop).
+                    let c12 = c.bus.read8(0x0053_5c12);
+                    let restart = !(6..=11).contains(&c12);
+                    c.bus.write32(LOG_UNWIND_AT, if restart { 6 } else { 3 });
+                }
+            }
+            3 => {
+                rs_ai(c, false, false, v % 3 == 0);
+                c.bus.write32(RS_AI + 0x80, r.next_u32() % 2);
+                c.bus.write32(RS_AI + 0x84, r.next_u32() % 2);
+                c.bus.write32(RS_AI + 0x88, 0);
+            }
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn game_state_reset_overlay_update_matches() {
+        check(
+            ee::s06::f_00235080__generated,
+            game_state_reset_overlay_update,
+            7 * 40,
+            &|c, seed| reset_overlay_setup(c, seed),
+        );
+    }
+
+    /// Run `f` (entry `pc`) on the state at `RS` until its step reaches
+    /// `want`: the number of updates it took.
+    fn rs_ticks(c: &mut Cpu, f: GuestFn, pc: u32, want: u32) -> u32 {
+        for n in 1..10_000 {
+            c.g[29][0] = sx(SP);
+            c.g[RA][0] = sx(TEST_RA);
+            c.g[GP][0] = GAME_GP as u64;
+            c.g[A0][0] = sx(RS);
+            c.pc = pc;
+            f(c);
+            assert_eq!(c.pc, TEST_RA);
+            if c.bus.read32(RS + 0x10) == want {
+                return n;
+            }
+        }
+        panic!("step {want} never reached");
+    }
+
+    /// The peak transition's 180-frame hold (step 4) lasts 3 s at any rate.
+    #[test]
+    fn game_state_reset_overlay_update_hold_follows_rate() {
+        for (hz, ticks) in [(60, 180), (120, 360), (240, 720)] {
+            let mut c = crate::difftest::fresh();
+            crate::tick::set_for_test(&mut c, hz);
+            c.bus.write32(RS + 0x10, 4);
+            c.bus.write32(RS + 0x14, 1);
+            c.bus.write32(RS + 0x18, 0);
+            assert_eq!(rs_ticks(&mut c, game_state_reset_overlay_update, 0x0023_5080, 5), ticks, "{hz} Hz");
+        }
+    }
+
+    fn restart_race_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x235c_c8, 6);
+        let step = seed % 5;
+        let v = seed / 5;
+        c.g[A0][0] = sx(RS);
+        c.bus.write32(RS + 0x10, step);
+        let counter = match v % 5 {
+            0 => 118,
+            1 => 119,
+            2 => 120,
+            3 => r.next_u32() % 300,
+            _ => r.next_u32(),
+        };
+        c.bus.write32(RS + 0x14, counter);
+        c.bus.write32(RS + 0x18, if v % 3 == 0 { 0 } else { 1 });
+        rs_engine(c, false);
+        c.bus.write32(RS_LISTS + 0xa4, r.next_u32() % 3);
+        if v % 2 == 1 {
+            // An active list: its `+0xb0`.
+            c.bus.write32(RS_ENGINE + 0x550, 0);
+            c.bus.write32(RS_LISTS + 0xb0, r.next_u32() % 2);
+        }
+        // world -> +0x84 game: +0x84 -> +4 -> +0xb0 (the view index), +0x10
+        // the streamer, +0xc the AI, +0x5c the transition manager.
+        let game = RS + 0x7000;
+        let x = RS + 0x7100;
+        let y = RS + 0x7200;
+        let streamer_ref = RS + 0x7300;
+        let streamer = RS + 0x8000;
+        let trans = RS + 0x7400;
+        let trans_vt = RS + 0x7500;
+        c.bus.write32(GAME_GP - 0x848, RS_WORLD);
+        c.bus.write32(RS_WORLD + 0x84, game);
+        c.bus.write32(game + 0x84, x);
+        c.bus.write32(x + 4, y);
+        c.bus.write32(y + 0xb0, r.next_u32() % 2);
+        c.bus.write32(game + 0x10, streamer_ref);
+        c.bus.write32(streamer_ref, streamer);
+        c.bus.write32(game + 0xc, RS_AI);
+        c.bus.write32(game + 0x5c, trans);
+        c.bus.write32(trans + 0x1c, trans_vt);
+        // The transition manager's "active" query: a leaf
+        // (`GameStateReset_v08`: its argument's `+0x10 == 5`).
+        let off = (r.next_u32() % 8) * 4;
+        c.bus.write16(trans_vt + 0x40, off as u16);
+        c.bus.write32(trans_vt + 0x44, 0x0023_55b0);
+        c.bus.write32(trans + 0x10 + off + 0x10, if r.next_u32() % 3 == 0 { 5 } else { 0 });
+        c.bus.write32(trans + 0x44, r.next_u32() % 2);
+        let k = v % 4;
+        rs_ai(c, k == 0, false, step == 1 && k == 1);
+        // The start marker's rider (AI +0x40 -> +0x18).
+        c.bus.write32(RS_AI + 0x40, RS_OBJ);
+        // The AI rider count. Creating computer riders is a whole subsystem:
+        // with riders to create, unwind at `AI_CreateComputerRiders`' first
+        // interface call (fake 1).
+        let riders = r.next_u32() % 4;
+        c.bus.write32(0x0053_5c04, riders);
+        if step == 0 && riders > 0 {
+            c.bus.write32(LOG_UNWIND_AT, 1);
+        }
+        // The view clearance the streamer reports (its view is idle, so the
+        // stack word stays as written): below or above the threshold 0.
+        let clear: f32 = if r.next_u32() % 3 == 0 { -1.0 } else { 1.0 };
+        c.bus.write32(SP - 0x70 + 0x10, clear.to_bits());
+        c.bus.write32(GAME_GP - 0x516c, 0);
+    }
+
+    #[test]
+    fn game_state_restart_race_update_matches() {
+        check(
+            ee::s06::f_00235cc8__generated,
+            game_state_restart_race_update,
+            5 * 48,
+            &|c, seed| restart_race_setup(c, seed),
+        );
+    }
+
+    /// The restart's 120-frame minimum (step 2) lasts 2 s at any rate.
+    #[test]
+    fn game_state_restart_race_update_minimum_follows_rate() {
+        for (hz, ticks) in [(60, 120), (120, 240), (240, 480)] {
+            let mut c = crate::difftest::fresh();
+            c.hooks.miss = fake_call;
+            c.bus.write32(LOG_UNWIND_AT, u32::MAX);
+            crate::tick::set_for_test(&mut c, hz);
+            restart_race_rate_fixture(&mut c);
+            assert_eq!(rs_ticks(&mut c, game_state_restart_race_update, 0x0023_5cc8, 3), ticks, "{hz} Hz");
+        }
+    }
+
+    /// Step 2 with the skip armed, a clear view, list 0 idle, no active
+    /// list or transition: only the update count holds it.
+    fn restart_race_rate_fixture(c: &mut Cpu) {
+        c.g[GP][0] = GAME_GP as u64;
+        c.bus.write32(RS + 0x10, 2);
+        c.bus.write32(RS + 0x14, 0);
+        c.bus.write32(RS + 0x18, 1);
+        rs_engine(c, false);
+        c.bus.write32(RS_LISTS + 0xa4, 0);
+        let game = RS + 0x7000;
+        let x = RS + 0x7100;
+        let streamer_ref = RS + 0x7300;
+        let streamer = RS + 0x8000;
+        let trans = RS + 0x7400;
+        let trans_vt = RS + 0x7500;
+        c.bus.write32(GAME_GP - 0x848, RS_WORLD);
+        c.bus.write32(RS_WORLD + 0x84, game);
+        c.bus.write32(game + 0x84, x);
+        c.bus.write32(x + 4, RS + 0x7200);
+        c.bus.write32(game + 0x10, streamer_ref);
+        c.bus.write32(streamer_ref, streamer);
+        c.bus.write32(game + 0xc, RS_AI);
+        c.bus.write32(game + 0x5c, trans);
+        c.bus.write32(trans + 0x1c, trans_vt);
+        // The transition manager's "active" query: a leaf returning 0
+        // (`GameStateReset_v08` on a state whose `+0x10` is not 5).
+        c.bus.write32(trans_vt + 0x44, 0x0023_55b0);
+        c.bus.write32(trans + 0x44, 0);
+        // The streamer view is idle: the clearance word on the stack stays
+        // as written (1.0 above the 0 threshold).
+        c.bus.write32(SP - 0x70 + 0x10, 1.0f32.to_bits());
     }
 }

@@ -4774,6 +4774,10 @@ pub(crate) mod spin {
 /// Tick rate: `+0x484` counts calls of this function (once per tick per
 /// spinning AI rider), so the limit is `tick::ticks_from_frames60(30)`
 /// (exact at 60).
+/// `ComputerActorRider_ChooseTrick` (the uber/fitted/random trick rolls) is
+/// tried once per 60 Hz frame of the AI ([`crate::tick::frame60_due`] keyed by
+/// its `+0xe0c`) until a trick is picked, so failed rolls do not retry
+/// `rate/60` times as often (every tick at 60).
 pub fn computer_actor_rider_think_spin(c: &mut Cpu) {
     use spin::*;
     guest(c, |c| {
@@ -4924,6 +4928,13 @@ fn think_spin_plan(c: &mut Cpu, ai: u32) -> Result<bool, call::Unwound> {
                     let skip = c.g[V0][0] == c.g[V1][0];
                     c.mov_s(12, 20);
                     if !skip {
+                        // One pick (its random rolls) per 60 Hz frame of
+                        // this AI: a failed pick retries on the next frame,
+                        // not on every tick. Between frames the tick ends as
+                        // after a failed pick (no trick yet).
+                        if !crate::tick::frame60_due(c, ai.wrapping_add(TRICK), 0) {
+                            return Ok(false);
+                        }
                         c.cycles += 4;
                         c.g[A0][0] = c.g[S0][0];
                         CHOOSE_TRICK.call(c, 0x0010_b3b0)?;
@@ -6922,6 +6933,47 @@ pub(crate) mod tests {
         assert_eq!(spin_give_up_call(60), 31);
         assert_eq!(spin_give_up_call(120), 61);
         assert_eq!(spin_give_up_call(240), 121);
+    }
+
+    /// One tick of an airborne AI with no trick yet, 0.7 units up (above
+    /// the 0.5 pick height, so `ChooseTrick` is called; below 0.75, so it
+    /// answers -1 at once), on a freshly built world each tick (the 60 Hz
+    /// clocks of [`crate::tick::frame60_due`] live outside the machine):
+    /// the cycles the tick took.
+    fn think_spin_pick_tick(hz: u32) -> u64 {
+        let mut c = crate::difftest::fresh();
+        let c = &mut *c;
+        let mut r = machine(c, 7, 0x0010_b250, 0);
+        think_spin_world(c, &mut r, 0);
+        crate::tick::set_for_test(c, hz);
+        c.bus.write32(SPIN_AIR + 0xac, 1);
+        c.bus.write32(SPIN_AIR + 0xa0, 0);
+        c.bus.write32(SPIN_AIR + 0x98, 0.7f32.to_bits());
+        c.bus.write32(SPIN_RIDER + 0x484, 0);
+        c.bus.write32(SPIN_ANIMS + 8, 0x1b6);
+        c.bus.write32(SPIN_AI + 0xe14, 0);
+        c.bus.write32(SPIN_AI + 0xe18, 0);
+        c.bus.write32(SPIN_AI + 0xe0c, u32::MAX);
+        c.bus.write32(SPIN_AI + 0xe20, 0);
+        c.bus.write32(SPIN_AI + 0xe34, 50.0f32.to_bits());
+        let before = c.cycles;
+        computer_actor_rider_think_spin(c);
+        assert_eq!(c.pc, RET, "think did not return");
+        c.cycles - before
+    }
+
+    /// The trick pick (its random rolls) is tried once per 60 Hz frame:
+    /// every tick at 60, every other tick at 120, every fourth at 240.
+    #[test]
+    fn computer_actor_rider_think_spin_picks_once_per_frame() {
+        let with_pick = think_spin_pick_tick(60);
+        for _ in 0..8 {
+            assert_eq!(think_spin_pick_tick(60), with_pick, "60 Hz: a pick every tick");
+        }
+        for (hz, ticks) in [(120, 120), (240, 240)] {
+            let picks = (0..ticks).filter(|_| think_spin_pick_tick(hz) == with_pick).count();
+            assert_eq!(picks, 60, "{hz} Hz: one pick per 60 Hz frame");
+        }
     }
 
     // ------------------------------------------- start gate and attacks

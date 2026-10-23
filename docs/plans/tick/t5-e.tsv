@@ -1,0 +1,162 @@
+site	function	func_addr	ported	class	kind	constant	reason	conversion
+0x1017f8	DangerMan_AddDanger	0x00101728	no	NOT_PER_TICK	COUNTER	+1	zone/danger list count += 1 when a danger is registered (event-driven, not per tick); runs when danger zones are added (AI danger manager setup; no scenario hit it)	
+0x1019a0	DangerMan_ReleaseZone	0x00101970	no	NOT_PER_TICK	COUNTER	-1	refcount/list count -= 1 when a zone is released (event-driven); level teardown / zone release	
+0x14c254	Bolts_BuildChildTables	0x0014c068	no	NOT_PER_TICK	COUNTER	+1	loop index / table length while building bolt child tables at load time	
+0x152598	BE_RecordCharProfileEventPlace	0x00152528	no	NOT_PER_TICK	COUNTER	+1	career profile stats: placings/medal counts += 1 once per finished event (save data, event-driven); runs at event end in career mode	
+0x152600	BE_RecordCharProfileEventPlace	0x00152528	no	NOT_PER_TICK	COUNTER	+1	career profile stats: placings/medal counts += 1 once per finished event (save data, event-driven); runs at event end in career mode	
+0x16bd28	Math_WrapAnglePi	0x0016bce0	yes	NOT_PER_TICK	OTHER	6.28319	angle wrap into [-pi,pi] by +/-2pi; a range fix, not a step (pure helper)	
+0x1806ac	KeyboardScreen_CursorRight	0x00180678	yes	NOT_PER_TICK	COUNTER	-9	debug FE on-screen keyboard cursor column +1 / wrap -9 per button press (debugfe.cpp); input-driven, debug front end only	
+0x1806d4	KeyboardScreen_CursorRight	0x00180678	yes	NOT_PER_TICK	COUNTER	+1	debug FE on-screen keyboard cursor column +1 / wrap -9 per button press (debugfe.cpp); input-driven, debug front end only	
+0x182374	cFEStateCheatCharSelect_ctor	0x00182220	no	NOT_PER_TICK	COUNTER	+1	constructor loop index over character slots; cheat character select screen (cheat-only menu)	
+0x1a564c	cFEStateNetMessenger_AddNewBuddies	0x001a54d8	no	NOT_PER_TICK	COUNTER	+4	buddy list pointer += 4 while appending (online messenger; online-only)	
+0x1c0ae4	cFEStateOnlineAgreement_Update	0x001c0a80	yes	NOT_PER_TICK	COUNTER	+1	+0x6d8 = index of the next agreement text line; one line is appended per update until +0x6d4 lines (load spreading over ticks, ends when the text is complete; not timed). Online user agreement screen (online-only)	
+0x1c9320	cFEPopupConfirm_GetTextBoxSize	0x001c9210	yes	NOT_PER_TICK	OTHER	3	layout math (text box size: lines * 3 etc.), called when the popup is laid out	
+0x1cb5c0	cKeyboardPopup_MoveLeft	0x001cb500	no	NOT_PER_TICK	COUNTER	+13	on-screen keyboard cursor -1 / wrap +13 per button press (input-driven); name entry popup (profile/online name entry)	
+0x1cb5ec	cKeyboardPopup_MoveLeft	0x001cb500	no	NOT_PER_TICK	COUNTER	-1	on-screen keyboard cursor -1 / wrap +13 per button press (input-driven); name entry popup (profile/online name entry)	
+0x1d173c	cFEStateRewardGalleryVideos_InitButtons	0x001d16c0	yes	NOT_PER_TICK	COUNTER	+1	loop index over gallery video buttons at screen init; rewards > videos screen (not visited by scenarios)	
+0x1d4aec	cFEStateTrophyRoom_LoadTrophyTextures	0x001d4a20	no	NOT_PER_TICK	COUNTER	-1	loop countdown over trophy textures at load; trophy room screen (not visited)	
+0x1e2ad8	MessageCenter_CheckAggressionMessage	0x001e2a08	no	NOT_PER_TICK	CHANCE	reg	Rand_NextMain()&7 + 15 < aggression: chance to post a rival taunt message to the career inbox; called only from BEAggressionInt_AddAggression (on an aggression event, rider 0 only) and BEAggressionInt_DecayAll (from GameStateFinish_Update / GameStatePreRaceLoad_Exit, once per race end/load). Not rolled per tick; career mode message center (flag 0x5305f9 clear)	
+0x1f4cd4	cFEStateBuyAttrib_PostInput	0x001f4c30	no	NOT_PER_TICK	COUNTER	-1	attribute points -1/+1 per button press when buying/selling stats (input-driven); career stat purchase screen	
+0x1f4db8	cFEStateBuyAttrib_PostInput	0x001f4c30	no	NOT_PER_TICK	COUNTER	+1	attribute points -1/+1 per button press when buying/selling stats (input-driven); career stat purchase screen	
+0x1fb330	OVScreenInGameError_HandleSelect	0x001fb2b8	no	NOT_PER_TICK	COUNTER	-1	menu cursor/index -1 on select (input-driven); in-game error overlay (online disconnect)	
+0x208cf8	OVScreenSession_OnWidgetAction	0x00208c28	no	NOT_PER_TICK	COUNTER	-1	index -1 on widget action (input-driven); online session overlay	
+0x232390	PreStartScreen_Update	0x00232348	yes (game/main/loadscreens_prestart.rs)	PER_TICK	STEP	1/12 (gp-0x5198 = 0x49df58, 0x3daaaaab)	boot pre-start screen (cPreStartScreen, vtable 0x47d96c; runs once at boot before the title, the scenarios start past it): load indicator (world+0xa4)+4 alpha += 1/12 per tick, clamped to 1 (0.2 s fade-in). Called once per tick. At 240 Hz the fade takes 0.05 s (barely visible)	tick::PER_TICK (0x0049_df58, 0x3daa_aaab, PerTick::Step); loaded only at 0x232390 (s06 and the port); same as the sibling InitLoadScreen entries in t5-b
+0x23b6a0	GMHandler4_v06	0x0023b5f8	yes	NOT_PER_TICK	COUNTER	+1	+8 (short) index of the next special-event value += 1 per call; the handler is called per event (checkpoint/trigger), not per tick. The race-frames * 1/60 at 0x23b664 is a .lit4 1/60 entry (T1, follows the rate). Special event tracks 0x11..0x15 only	
+0x240ba8	MCManager_State28_Format	0x00240b88	yes	NOT_PER_TICK	COUNTER	-1	memory card state machine retry/slot counter -1 per state step during a card format (operation-driven; memory card format path)	
+0x240dac	MCManager_State2C_Delete	0x00240d90	no	NOT_PER_TICK	COUNTER	-1	memory card delete state: index/retry -1/+1 per step (operation-driven)	
+0x240e84	MCManager_State2C_Delete	0x00240d90	no	NOT_PER_TICK	COUNTER	+1	memory card delete state: index/retry -1/+1 per step (operation-driven)	
+0x244bd8	GameModule_UpdatePauseAndUI	0x00244b48	no	DEBUG	COUNTER	+1	iGp-0x69c += 1 is a UI-state stack push (state written at 0x5366e8[depth]), not a counter of time. The function has no caller (no jal/call_ptr in generated code, no pointer to 0x244b48 anywhere in the executable): dead code; the live pause path is elsewhere	
+0x244c64	GameModule_UpdatePauseAndUI	0x00244b48	no	DEBUG	COUNTER	+1	iGp-0x69c += 1 is a UI-state stack push (state written at 0x5366e8[depth]), not a counter of time. The function has no caller (no jal/call_ptr in generated code, no pointer to 0x244b48 anywhere in the executable): dead code; the live pause path is elsewhere	
+0x244cec	GameModule_UpdatePauseAndUI	0x00244b48	no	DEBUG	COUNTER	+1	iGp-0x69c += 1 is a UI-state stack push (state written at 0x5366e8[depth]), not a counter of time. The function has no caller (no jal/call_ptr in generated code, no pointer to 0x244b48 anywhere in the executable): dead code; the live pause path is elsewhere	
+0x244dac	GameModule_UpdatePauseAndUI	0x00244b48	no	DEBUG	COUNTER	+1	iGp-0x69c += 1 is a UI-state stack push (state written at 0x5366e8[depth]), not a counter of time. The function has no caller (no jal/call_ptr in generated code, no pointer to 0x244b48 anywhere in the executable): dead code; the live pause path is elsewhere	
+0x2460bc	cFEStateProgressiveVerifyPS2_Update	0x00246098	no	PER_TICK	COUNTER	-1	+0x4c countdown -1 per update (FE state update, once per tick); set to 300 (li v0,0x12c; sw v0,0x4c(s1) at 0x246078/0x246080) by cFEStateProgressiveVerifyPS2_Init (0x245f50). At 0 it shows "The display mode has been switched to Progressive Mode" -> confirm/revert. A 5 s confirm window after switching to progressive scan (boot with the progressive-mode button combo / display option); not in any scenario. At 240 Hz the window is 1.25 s	port cFEStateProgressiveVerifyPS2_Init (0x245f50) and store tick::ticks_from_frames60(c, 300) instead of li 0x12c at 0x246078 (exact at 60); Update unchanged
+0x2578b8	cGameComm_CheckConnection	0x002577c8	no	PER_TICK	COUNTER	-1	+0x94 connection timeout -1 per call; cGameComm_Update (once per tick while an online race is active) calls this; at 0 sets +0x2c=1 and ends the session. +0x94 is set by cGameComm_SetTimeoutTimer (0x258870) from callers with frame counts (cGameComm_SetState: 0xe10 = 3600 = 60 s, 0x708 = 1800 = 30 s; also PopPacket, SendPauseState, WaitForPeerReady, ProcessControlPackets). Online play only (EA servers gone; unreachable in practice). At 240 Hz the timeouts are 4x shorter	port cGameComm_SetTimeoutTimer (0x258870) and store tick::ticks_from_frames60(c, a1) into +0x94 (covers all callers, exact at 60); low priority (online only). Also +0xb0 < 3600.0 in this function is probably a seconds/frames clock: check its writer when porting
+0x257f60	cGameComm_SendPacket	0x00257e98	no	NOT_PER_TICK	COUNTER	+1	+0x364 send-queue write index += 1 per queued packet (ring of 32); online only	
+0x25bcf0	LobbyMan_ParseNameSuggestions	0x0025bc48	yes	NOT_PER_TICK	COUNTER	+1	parse index/count over suggested names; online lobby	
+0x261570	BuddyMan_DestroyApi	0x00261530	yes	NOT_PER_TICK	COUNTER	-4	pointer -= 4 walking an array on shutdown; online buddy API	
+0x263094	BuddyMan_RemoveChallenger	0x00263018	no	NOT_PER_TICK	COUNTER	-4	vector end pointer -= 4 on erase; online	
+0x264bb8	cSetupMan_FlushSendQueue	0x00264b20	yes	NOT_PER_TICK	COUNTER	+1	queue read index += 1 per packet sent; online setup	
+0x267324	BuddyMan_ChallengerVectorInsert	0x002672c8	no	NOT_PER_TICK	COUNTER	+4	vector pointer += 4 on insert; online	
+0x26d594	ReplayCache_Deserialize	0x0026d558	no	NOT_PER_TICK	COUNTER	+8	read pointer += 8 / += 4 while deserializing the replay cache (memory card load)	
+0x26d5b0	ReplayCache_Deserialize	0x0026d558	no	NOT_PER_TICK	COUNTER	+4	read pointer += 8 / += 4 while deserializing the replay cache (memory card load)	
+0x2712e8	Replay_SaveWriteHeader	0x002712c0	yes	NOT_PER_TICK	COUNTER	+1	write byte counter += 1 (serialization); replay save to memory card	
+0x2716d4	Replay_SaveWritePadding	0x00271688	yes	NOT_PER_TICK	COUNTER	+1	padding loop counter += 1; replay save to memory card	
+0x283ba0	ScriptMovie_SetPaused	0x00283b78	yes	NOT_PER_TICK	COUNTER	+1	pause refcount +1/-1 per call (event-driven: pause/unpause requests); scripted movie (videengine) playback	
+0x28c4f4	SSXAudioSystem_PlaySongSegmentCallback	0x0028c430	no	NOT_PER_TICK	COUNTER	+1	audio push-stack depth +1 (sound param block push) and +0x20 segment index +1 per callback; called per song segment by the music system (event), not per tick; adaptive music segment playback path not in scenarios	
+0x28c878	SSXAudioSystem_PlaySongSegmentCallback	0x0028c430	no	NOT_PER_TICK	COUNTER	+1	audio push-stack depth +1 (sound param block push) and +0x20 segment index +1 per callback; called per song segment by the music system (event), not per tick; adaptive music segment playback path not in scenarios	
+0x299884	SSXAudioSystem_PlayMeterFullSound	0x002997b8	no	NOT_PER_TICK	COUNTER	+1	audio param push-stack depth (+500) += 1 before Audio_PlayPushedSound; one-shot sound when the boost meter fills (event), not per tick	
+0x29c0e8	SSXAudioSystem_PlayAnimEventSound52	0x0029c088	no	NOT_PER_TICK	COUNTER	+1	audio param push-stack depth += 1 for a one-shot anim-event sound (event-driven)	
+0x2b17e0	MusicPlayer_CreateStream	0x002b1780	no	NOT_PER_TICK	COUNTER	+1	stream count / refcount +1/-1 at stream creation (event)	
+0x2b1a38	MusicPlayer_CreateStream	0x002b1780	no	NOT_PER_TICK	COUNTER	-1	stream count / refcount +1/-1 at stream creation (event)	
+0x2b68ac	WorldTriggerManager_MarkPlayed	0x002b6868	yes	NOT_PER_TICK	COUNTER	+1	+0x324 count of played triggers += 1 (list append, max 200), event-driven	
+0x2ba48c	Audio_PushParamsBankSound	0x002ba448	no	NOT_PER_TICK	COUNTER	+1	audio param push-stack depth += 1 (event-driven sound)	
+0x2c18c4	QuadTree_AllocNode	0x002c17d0	no	NOT_PER_TICK	COUNTER	+1	node allocation count += 1 (build time)	
+0x2c86ac	HUFF_writebits	0x002c8600	no	NOT_PER_TICK	COUNTER	+1	Huffman bit writer: byte pointer/bit counter (compression, save data)	
+0x2c86d0	HUFF_writebits	0x002c8600	no	NOT_PER_TICK	COUNTER	+1	Huffman bit writer: byte pointer/bit counter (compression, save data)	
+0x2c86d8	HUFF_writebits	0x002c8600	no	NOT_PER_TICK	COUNTER	-8	Huffman bit writer: byte pointer/bit counter (compression, save data)	
+0x2cbd38	MenuSysPage_InsertItem	0x002cbcc8	yes	NOT_PER_TICK	COUNTER	+1	item count / index += 1 on insert (menu building); MenuSys is used by the online LobbyMenu	
+0x2cbd48	MenuSysPage_InsertItem	0x002cbcc8	yes	NOT_PER_TICK	COUNTER	+1	item count / index += 1 on insert (menu building); MenuSys is used by the online LobbyMenu	
+0x2cc41c	MenuSys_PushPage	0x002cc3b8	yes	NOT_PER_TICK	COUNTER	+1	page stack depth += 1 (menu navigation, event-driven); online LobbyMenu	
+0x2d09f0	MenuSysPoint2DItem_HandleInput	0x002d0908	no	DEBUG	COUNTER	+1	selected point index +1 per button press (input-driven); and the item is never constructed (see the LERP rows)	
+0x2d0a90	MenuSysPoint2DItem_HandleInput	0x002d0908	no	DEBUG	STEP	1/60 at 0x49f150 (gp-0x3fa0) (scan shows 0.00833)	point += stick * range * 1/60 per HandleInput while the stick is held (a per-tick step, but its constant is a .lit4 1/60 entry, so it already follows the rate). The item is dead: MenuSysPoint2DItem_ctor (0x2d0808) has no caller and no pointer to it exists in the executable	none needed (the 1/60 entry is rewritten by tick.rs)
+0x2d0c2c	MenuSysPoint2DItem_HandleInput	0x002d0908	no	DEBUG	STEP	1/60 at 0x49f154 (gp-0x3f9c) (scan shows 0.00833)	point += stick * range * 1/60 per HandleInput while the stick is held (a per-tick step, but its constant is a .lit4 1/60 entry, so it already follows the rate). The item is dead: MenuSysPoint2DItem_ctor (0x2d0808) has no caller and no pointer to it exists in the executable	none needed (the 1/60 entry is rewritten by tick.rs)
+0x2d2208	Serialize_WriteU32	0x002d21d0	yes	NOT_PER_TICK	COUNTER	+4	write pointer += 4 (serialization)	
+0x2d979c	Avalanche_AddNodeEvent	0x002d9738	yes	NOT_PER_TICK	COUNTER	+1	+0xe event count += 1 (list append, max 64), event-driven	
+0x307e74	WScriptProcess_NextTask	0x00307e10	yes	NOT_PER_TICK	COUNTER	+1	script task index += 1 when a task completes (event-driven)	
+0x321b5c	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x321b78	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x321b98	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x321bec	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x321ce8	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x321d5c	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x321dfc	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x321f04	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x321f88	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x321fb0	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x322074	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x322150	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x3221c4	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x322238	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x322240	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+2	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x3222f4	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x322384	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x3223bc	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x322410	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x32244c	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x32249c	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x3224e8	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x322540	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x322574	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x3225a8	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x3225dc	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x32262c	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x322668	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x3226b8	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x3226f4	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x322744	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x322798	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x3227e0	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x32282c	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x322874	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x3228a8	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x3228dc	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x322910	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x322944	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x322978	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x3229ac	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x322a08	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x322ad8	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x322ca4	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x322d40	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x322dc4	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x322e68	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x322ef4	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x322fa4	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x323008	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x323060	InputParser_NextToken	0x00321af0	no	NOT_PER_TICK	COUNTER	+1	text cursor / token length += 1 in a config/script text tokenizer (load time)	
+0x32324c	InputParser_ParseStatement	0x003230e0	no	NOT_PER_TICK	COUNTER	+1	parser index += 1 (load time)	
+0x32470c	InputParser_EmitNode	0x00324678	no	NOT_PER_TICK	COUNTER	-1	parser node count / depth +/-1 (load time)	
+0x324968	InputParser_EmitNode	0x00324678	no	NOT_PER_TICK	COUNTER	+1	parser node count / depth +/-1 (load time)	
+0x3264a8	InputPreproc_NextChar	0x00326478	yes	NOT_PER_TICK	COUNTER	+1	preprocessor character cursor += 1 (load time)	
+0x326978	InputPreproc_Directive	0x003266e8	no	NOT_PER_TICK	COUNTER	+1	preprocessor cursor += 1 (load time)	
+0x343ef0	CrowdMan3d_AddInstance	0x00343c60	no	NOT_PER_TICK	COUNTER	+1	crowd instance count += 1 (setup)	
+0x348c80	FlexRail_UnregisterSpaceNode	0x00348c48	no	NOT_PER_TICK	COUNTER	+1	loop index while searching/removing a node	
+0x362440	GsPkt_AddScissor	0x003623d8	yes	NOT_PER_TICK	COUNTER	+2	GS packet qword count += 2 (render packet building)	
+0x362654	GsPkt_AddClamp	0x003625c0	yes	NOT_PER_TICK	COUNTER	+16	GS packet pointer += 16 / count += 1 (render packet building)	
+0x36265c	GsPkt_AddClamp	0x003625c0	yes	NOT_PER_TICK	COUNTER	+1	GS packet pointer += 16 / count += 1 (render packet building)	
+0x37d000	PS2GraphicsMan_v61	0x0037cc98	no	NOT_PER_TICK	COUNTER	+1	packet count += 1 / pointer += 16 (render packet building)	
+0x37d058	PS2GraphicsMan_v61	0x0037cc98	no	NOT_PER_TICK	COUNTER	+16	packet count += 1 / pointer += 16 (render packet building)	
+0x38d5ac	PS2BezierMan_EmitPatchProjectorPasses	0x0038d448	no	NOT_PER_TICK	COUNTER	+1	pass index += 1 / packet pointer += 16 (render)	
+0x38d5f0	PS2BezierMan_EmitPatchProjectorPasses	0x0038d448	no	NOT_PER_TICK	COUNTER	+16	pass index += 1 / packet pointer += 16 (render)	
+0x3984dc	UIFontSet_AddFont	0x003984b0	yes	NOT_PER_TICK	COUNTER	+1	font count += 1 (load time)	
+0x3a2048	cUITextScroll_RemoveLine	0x003a1f90	no	NOT_PER_TICK	COUNTER	-1	line count -= 1 (list removal)	
+0x3b9428	SNDMIDI_PitchBend	0x003b93c8	no	NOT_PER_TICK	COUNTER	+1	channel loop index (sound library)	
+0x3cbcfc	SND_EeFxProcess	0x003cbc58	no	NOT_PER_TICK	COUNTER	+1	sample/voice loop index in the EE-side audio effect processor (runs per audio buffer, in samples, not game ticks)	
+0x3cc958	SND_EaxaDecodeRawBlock	0x003cc938	no	NOT_PER_TICK	COUNTER	+1	EA-XA ADPCM decoder byte/sample pointer increments	
+0x3cc970	SND_EaxaDecodeRawBlock	0x003cc938	no	NOT_PER_TICK	COUNTER	+3	EA-XA ADPCM decoder byte/sample pointer increments	
+0x3cc994	SND_EaxaDecodeRawBlock	0x003cc938	no	NOT_PER_TICK	COUNTER	+5	EA-XA ADPCM decoder byte/sample pointer increments	
+0x3cc9f0	SND_EaxaDecodeRawBlock	0x003cc938	no	NOT_PER_TICK	COUNTER	+4	EA-XA ADPCM decoder byte/sample pointer increments	
+0x3cc9f8	SND_EaxaDecodeRawBlock	0x003cc938	no	NOT_PER_TICK	COUNTER	+2	EA-XA ADPCM decoder byte/sample pointer increments	
+0x3d9530	SPCH_AssignVariations	0x003d93c0	no	NOT_PER_TICK	COUNTER	+1	loop index over speech variations (load/setup)	
+0x3e7a74	LobbyApi_PopPingRequest	0x003e7918	no	NOT_PER_TICK	COUNTER	-1	queue count -= 1; online lobby	
+0x3e9550	LobbyApi_ServerPingCallback	0x003e94f0	no	NOT_PER_TICK	COUNTER	+1	reply counter += 1 per ping reply (network event); online	
+0x3ee394	Lobby_ListAdd	0x003ee320	no	NOT_PER_TICK	COUNTER	+1	linked list count/index +/-1; online lobby library	
+0x3ee39c	Lobby_ListAdd	0x003ee320	no	NOT_PER_TICK	COUNTER	-1	linked list count/index +/-1; online lobby library	
+0x3ee3c0	Lobby_ListAdd	0x003ee320	no	NOT_PER_TICK	COUNTER	+1	linked list count/index +/-1; online lobby library	
+0x3ee4e4	Lobby_ListRemove	0x003ee480	no	NOT_PER_TICK	COUNTER	-1	linked list count/index +/-1; online lobby library	
+0x3ee4ec	Lobby_ListRemove	0x003ee480	no	NOT_PER_TICK	COUNTER	+1	linked list count/index +/-1; online lobby library	
+0x3ee500	Lobby_ListRemove	0x003ee480	no	NOT_PER_TICK	COUNTER	-1	linked list count/index +/-1; online lobby library	
+0x3ee548	Lobby_ListRemove	0x003ee480	no	NOT_PER_TICK	COUNTER	+1	linked list count/index +/-1; online lobby library	
+0x3eea38	Lobby_HashPopAny	0x003ee9a0	no	NOT_PER_TICK	COUNTER	-1	hash table count -= 1; online lobby library	
+0x3eefa4	Lobby_HashDelInt	0x003eef40	no	NOT_PER_TICK	COUNTER	-1	hash table count -= 1; online lobby library	
+0x3f31bc	CryptMD5_Update	0x003f3128	no	NOT_PER_TICK	COUNTER	+1	MD5 block counter (online login crypto)	
+0x3fc2a8	SLoginStore_Shutdown	0x003fc260	no	NOT_PER_TICK	COUNTER	+12	pointer += 12 walking the login store on shutdown; online	
+0x403204	libmpeg_DecodeFieldPic	0x004030e0	no	NOT_PER_TICK	COUNTER	+1	MPEG decoder macroblock/field counters (movie decode; movie time comes from the stream)	
+0x40320c	libmpeg_DecodeFieldPic	0x004030e0	no	NOT_PER_TICK	COUNTER	+1	MPEG decoder macroblock/field counters (movie decode; movie time comes from the stream)	
+0x40bf08	libscf_ClockIncHour	0x0040bef0	no	NOT_PER_TICK	COUNTER	+1	RTC/clock conversion helper: hour += 1 on minute carry (calendar math, not ticks)	
+0x40d0f0	libusbkb_KeyBufPop	0x0040d0b0	no	NOT_PER_TICK	COUNTER	+1	USB keyboard ring buffer read index +1 / count -1	
+0x40d114	libusbkb_KeyBufPop	0x0040d0b0	no	NOT_PER_TICK	COUNTER	-1	USB keyboard ring buffer read index +1 / count -1	
+0x413fc8	add_fdes	0x00413f80	no	NOT_PER_TICK	COUNTER	+1	libgcc unwind FDE count += 1 (startup)	
+0x42047c	ungetc	0x00420378	no	NOT_PER_TICK	COUNTER	+1	libc stdio buffer pointer/count	
+0x4204c0	ungetc	0x00420378	no	NOT_PER_TICK	COUNTER	+1	libc stdio buffer pointer/count	
+0x232404	PreStartScreen_Update	0x00232348	yes (game/main/loadscreens_prestart.rs)	PER_TICK	STEP	0.15 (gp-0x5190 = 0x49df60, 0x3e19999a)	[scan missed] screen timer +4 += 1/60 (a .lit4 1/60 entry, follows the rate) and, while a pad is connected (PadQueue+0x2ee8 > 0), another += 0.15 per tick; PreStartScreen_TryExit compares +4 with 11, so with a pad the screen leaves after ~66 ticks (1.1 s) at 60 and 0.27 s at 240. Called once per tick at boot	tick::PER_TICK (0x0049_df60, 0x3e19_999a, PerTick::Step); loaded only at 0x232404 (lwc1 f0,-0x5190(gp); s06 lib.rs:5879 and the port, loadscreens_prestart.rs:1067)

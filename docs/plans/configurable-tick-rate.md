@@ -355,6 +355,36 @@ ported). Left in ticks: `FocusMan_Update`'s 20-frame rescan limit (only CPU)
 and `AI_UpdateRaceTimeLimit` (online only). The scan covers code that ran in
 the two profiles only.
 
+### T5: the whole game (done)
+
+The T4 scan used a menu and a race profile. T5 profiled all 33 scenarios of
+`tools/scenarios.py` (every single event, Conquer The Mountain transport,
+free-ride, lodge, collectibles, a fresh career, random input) with the
+overrides off, extended the scanner with constants passed to stepping helpers
+(CALLSTEP) and random chances rolled per tick (CHANCE), and classified every
+remaining candidate, also in code that ran in no scenario (other camera views,
+replays, online, unvisited screens): `docs/plans/tick/t5-a..h.tsv`, about
+1300 sites. Converted (exact at 60, gate and browser form identical):
+
+- `tick::PER_TICK`: the finish-line coast, the reset to the path, the
+  character select/equip zoom and pitch, the event-select fade, the load and
+  boot screen fades and timer, the pause indicator blink, roller damping, the
+  manual and Matrix orbit cameras, the pause map's icon pulse.
+- Hand-written: the chase camera helpers' handplant, rail pull-back and rail
+  align smoothing (all five chase views), the finish-screen delay, boost
+  zone windows, AI trick picking once per 60 Hz frame.
+- Ported and converted: the character equip preview camera, input and preview
+  delay, character select input, the confirm popup's grow-in, the post-race
+  orbit camera, the Gravitude avalanche playback, the reset overlay and race
+  restart waits, lens splash drops, crystals and deep-powder build-up, rolling
+  objects, debounce nodes, fences (wobble and the wave along them), replay
+  step-repeat, the 2D crowd animation, the progressive-scan confirm window,
+  the network-config delay, and `FocusMan_Update` (3 rescans a second).
+
+Left in ticks on purpose: the online-only timers (connection, ping, peer
+timeouts, `AI_UpdateRaceTimeLimit`): the port has no network play, and a
+lockstep session would need both peers at one rate anyway.
+
 ### Left for a design decision (not converted)
 
 | Where | What | Why it needs a decision |

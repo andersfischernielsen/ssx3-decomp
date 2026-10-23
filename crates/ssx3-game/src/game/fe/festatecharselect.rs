@@ -42,6 +42,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0018_1238, c_fe_state_char_select_shutdown, "cFEStateCharSelect_Shutdown"),
     (0x0018_12a8, c_fe_state_char_select_transition_in, "cFEStateCharSelect_TransitionIn"),
     (0x0018_1420, cfe_state_char_select_update, "cFEStateCharSelect_Update"),
+    (0x0018_1450, cfe_state_char_select_handle_input, "cFEStateCharSelect_HandleInput"),
     (0x0018_2420, c_fe_state_cheat_char_select_init, "cFEStateCheatCharSelect_Init"),
     (0x0018_2808, cfe_state_cheat_char_select_on_widget_notify, "cFEStateCheatCharSelect_OnWidgetNotify"),
     (0x0018_2870, cfe_state_cheat_char_select_apply_outfit, "cFEStateCheatCharSelect_ApplyOutfit"),
@@ -495,6 +496,192 @@ pub fn cfestate_charselect_init(c: &mut Cpu) {
     })
 }
 
+
+/// `cFEStateCharSelect` preview fields driven by the sticks.
+mod select_preview {
+    /// Zoom (0..1), pitch (-1..1), yaw (degrees, 0..360).
+    pub const ZOOM: u32 = 0x58;
+    pub const PITCH: u32 = 0x5c;
+    pub const YAW: u32 = 0x60;
+}
+
+/// `base(reg) + off`.
+#[inline(always)]
+fn cs_at(c: &Cpu, reg: usize, off: u32) -> u32 {
+    (c.g[reg][0] as u32).wrapping_add(off)
+}
+
+/// `lui at, hi; mtc1 at, f`.
+#[inline(always)]
+fn cs_lif(c: &mut Cpu, f: usize, bits: u32) {
+    c.g[AT][0] = sx(bits);
+    c.mtc1(1, f);
+}
+
+/// `pad->slot()` (pad in `s0`) with the vtable in `vt`, the method into
+/// `fnr` (the registers the original uses).
+fn cs_pad_call(c: &mut Cpu, vt: usize, fnr: usize, slot: u32, ret: u32) -> Flow {
+    let v = c.g[vt][0] as u32;
+    c.g[A0][0] = c.lh(v.wrapping_add(slot));
+    c.g[fnr][0] = c.lw(v.wrapping_add(slot + 4));
+    let target = c.g[fnr][0] as u32;
+    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, target, ret)
+}
+
+/// `int cFEStateCharSelect_HandleInput(cFEStateCharSelect* self, Pad* pad)`
+/// (0x181450): the left stick turns the rider model (`yaw += x * 3`,
+/// wrapped to 0..360), the right stick zooms (`+0x58`, 0..1) and pitches
+/// (`+0x5c`, -1..1) by `-0.1` per tick. Returns whether anything moved.
+///
+/// `UIState_Update` calls it every tick while the pad has input held (the
+/// state's pad mask `+0x15` is set in its ctor), so the 3.0 is a per-tick
+/// step: `3.0 * 60/rate` (the -0.1 steps are `tick::PER_TICK` `.lit4`
+/// entries already). Exact at 60.
+pub fn cfe_state_char_select_handle_input(c: &mut Cpu) {
+    use select_preview as f;
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S2][0] = 0;
+
+        // Left stick: yaw.
+        c.g[V1][0] = c.lw(cs_at(c, S0, 8));
+        cs_pad_call(c, V1, V0, 0x118, 0x0018_1484)?;
+        if c.g[V0][0] == 0 {
+            c.g[V1][0] = c.lw(cs_at(c, S0, 8));
+        } else {
+            c.cycles += 16;
+            c.g[V0][0] = c.lw(cs_at(c, S0, 8));
+            cs_pad_call(c, V0, V1, 0x130, 0x0018_14a0)?;
+            cs_lif(c, 1, 0x4040_0000);
+            crate::game::ai::rider::per_tick_60(c, 1);
+            c.lwc1(2, cs_at(c, S1, f::YAW));
+            c.mul_s(0, 0, 1);
+            cs_lif(c, 3, 0x43b4_0000);
+            c.add_s(2, 2, 0);
+            c.c_le_s(3, 2);
+            let wrap = c.fcc();
+            c.swc1(2, cs_at(c, S1, f::YAW));
+            if wrap {
+                const HEAD: u32 = 0x0018_14d8;
+                c.cycles += 3;
+                c.mov_s(0, 3);
+                c.sub_s(2, 2, 0);
+                loop {
+                    c.cycles += 4;
+                    c.c_le_s(0, 2);
+                    if !c.fcc() {
+                        break;
+                    }
+                    c.sub_s(2, 2, 0);
+                    if event_due(c) {
+                        deliver_event_here(c, HEAD);
+                    }
+                }
+                c.cycles += 1;
+                c.swc1(2, cs_at(c, S1, f::YAW));
+            }
+            c.cycles += 6;
+            c.lwc1(1, cs_at(c, S1, f::YAW));
+            c.mtc1(0, 2);
+            c.c_lt_s(1, 2);
+            if c.fcc() {
+                const HEAD: u32 = 0x0018_1510;
+                c.cycles += 3;
+                cs_lif(c, 3, 0x43b4_0000);
+                loop {
+                    c.cycles += 5;
+                    c.add_s(0, 1, 3);
+                    c.c_lt_s(0, 2);
+                    let again = c.fcc();
+                    c.mov_s(1, 0);
+                    if !again {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, HEAD);
+                    }
+                }
+                c.cycles += 2;
+                c.swc1(0, cs_at(c, S1, f::YAW));
+            }
+            c.g[S2][0] = 1;
+            c.cycles += 1;
+            c.g[V1][0] = c.lw(cs_at(c, S0, 8));
+        }
+
+        // Right stick up/down: zoom.
+        c.cycles += 6;
+        cs_pad_call(c, V1, V0, 0x108, 0x0018_1540)?;
+        if c.g[V0][0] == 0 {
+            c.g[V1][0] = c.lw(cs_at(c, S0, 8));
+        } else {
+            c.cycles += 16;
+            c.g[V0][0] = c.lw(cs_at(c, S0, 8));
+            cs_pad_call(c, V0, V1, 0x120, 0x0018_155c)?;
+            c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x5a24));
+            c.lwc1(3, cs_at(c, S1, f::ZOOM));
+            c.mul_s(0, 0, 1);
+            cs_lif(c, 4, 0x3f80_0000);
+            c.mtc1(0, 2);
+            c.add_s(3, 3, 0);
+            c.c_le_s(2, 3);
+            let inside = c.fcc();
+            c.mov_s(0, 2);
+            if inside {
+                c.cycles += 1;
+                c.min_s(0, 3, 4);
+            }
+            c.cycles += 3;
+            c.swc1(0, cs_at(c, S1, f::ZOOM));
+            c.g[S2][0] = 1;
+            c.g[V1][0] = c.lw(cs_at(c, S0, 8));
+        }
+
+        // Right stick left/right: pitch.
+        c.cycles += 6;
+        cs_pad_call(c, V1, V0, 0x110, 0x0018_15a8)?;
+        let none = c.g[V0][0] == 0;
+        c.g[V0][0] = c.g[S2][0];
+        if !none {
+            c.cycles += 17;
+            c.g[V0][0] = c.lw(cs_at(c, S0, 8));
+            cs_pad_call(c, V0, V1, 0x128, 0x0018_15c4)?;
+            c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x5a20));
+            c.lwc1(3, cs_at(c, S1, f::PITCH));
+            c.mul_s(0, 0, 1);
+            cs_lif(c, 2, 0xbf80_0000);
+            cs_lif(c, 4, 0x3f80_0000);
+            c.add_s(3, 3, 0);
+            c.c_le_s(2, 3);
+            let inside = c.fcc();
+            c.mov_s(1, 2);
+            if inside {
+                c.cycles += 1;
+                c.min_s(1, 3, 4);
+            }
+            c.cycles += 3;
+            c.swc1(1, cs_at(c, S1, f::PITCH));
+            c.g[S2][0] = 1;
+            c.g[V0][0] = c.g[S2][0];
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -678,5 +865,89 @@ pub(crate) mod tests {
             c.bus.write8(this + 0x44, (seed % 4) as u8);
             c.g[A0][0] = sx(this);
         });
+    }
+
+
+    // ------------------------------------------------------------ stick input
+
+    /// Pad fakes for `HandleInput`: the vtable slots in this order point at
+    /// `FAKE + 0x10 * i`; the "active" queries (`0x118`, `0x108`, `0x110`)
+    /// return 0/1, the stick reads -1..1 in f0.
+    const CS_PAD_SLOTS: [u32; 6] = [0x118, 0x130, 0x108, 0x120, 0x110, 0x128];
+
+    fn cs_pad_fake(c: &mut Cpu, target: u32) {
+        crate::difftest::fakes::fake_call(c, target);
+        let h = c.g[V1][0];
+        match target.wrapping_sub(FAKE) {
+            0x00 | 0x20 | 0x40 => c.g[V0][0] = (h >> 7) & 1,
+            _ => c.f[0] = (((h >> 8) & 0xffff) as f32 / 32768.0 - 1.0).to_bits(),
+        }
+    }
+
+    fn cs_pad(c: &mut Cpu, r: &mut Rng, at_: u32) {
+        let vt = at_ + 0x200;
+        c.bus.write32(at_ + 8, vt);
+        for (i, off) in CS_PAD_SLOTS.iter().enumerate() {
+            let delta = (r.next_u32() as i16 as i32 & !3 & 0xff) as u32;
+            c.bus.write16(vt + off, delta as u16);
+            c.bus.write32(vt + off + 4, FAKE + 0x10 * i as u32);
+        }
+    }
+
+    #[test]
+    fn cfe_state_char_select_handle_input_matches() {
+        check(ee::s02::f_00181450__generated, cfe_state_char_select_handle_input, 200, &|c, seed| {
+            let mut r = machine(c, seed, 0x18_1450, 6);
+            c.hooks.miss = cs_pad_fake;
+            let st = DATA;
+            let p = DATA + 0x4000;
+            cs_pad(c, &mut r, p);
+            c.bus.write32(st + select_preview::YAW, r.f32(1000.0));
+            c.bus.write32(st + select_preview::ZOOM, r.f32(1.2));
+            c.bus.write32(st + select_preview::PITCH, r.f32(1.2));
+            c.bus.write32(GAME_GP - 0x5a24, 0xbdcc_cccd);
+            c.bus.write32(GAME_GP - 0x5a20, 0xbdcc_cccd);
+            c.g[A0][0] = sx(st);
+            c.g[A1][0] = sx(p);
+        });
+    }
+
+    /// Only the left stick, held at 0.5.
+    fn cs_pad_yaw(c: &mut Cpu, target: u32) {
+        match target.wrapping_sub(FAKE) {
+            0x00 => c.g[V0][0] = 1,
+            0x10 => c.f[0] = 0.5f32.to_bits(),
+            _ => c.g[V0][0] = 0,
+        }
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    #[test]
+    fn cfe_state_char_select_handle_input_rate() {
+        // The model turns as far in one 60 Hz tick as in rate/60 ticks.
+        let run = |hz: u32| -> f32 {
+            let mut c = crate::difftest::fresh();
+            let c = &mut *c;
+            let mut r = machine(c, 1, 0x18_1450, 0);
+            c.hooks.miss = cs_pad_yaw;
+            crate::tick::set_for_test(c, hz);
+            let st = DATA;
+            let p = DATA + 0x4000;
+            cs_pad(c, &mut r, p);
+            c.bus.write32(st + select_preview::YAW, 10f32.to_bits());
+            for _ in 0..hz / 60 {
+                c.g[A0][0] = sx(st);
+                c.g[A1][0] = sx(p);
+                c.g[RA][0] = SENTINEL_RA as u64;
+                cfe_state_char_select_handle_input(c);
+                assert_eq!(c.pc, SENTINEL_RA);
+                assert_eq!(c.g[V0][0], 1);
+            }
+            f32::from_bits(c.bus.read32(st + select_preview::YAW))
+        };
+        assert_eq!(run(60), 11.5);
+        for hz in [120, 240] {
+            assert!((run(hz) - 11.5).abs() < 1e-4, "{hz} Hz");
+        }
     }
 }
