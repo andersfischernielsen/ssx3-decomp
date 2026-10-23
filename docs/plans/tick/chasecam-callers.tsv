@@ -1,0 +1,14 @@
+site	function	address	rate_source	unit	action	why
+crates/ssx3-game/src/game/camera/camera.rs:1231	chase_cam_reset_to_default	0x162170	SetAlgorithmImmediate (f12 = 1.0)	instant	none	the algorithm is switched at once; no blend to scale
+crates/ssx3-game/src/game/camera/camera.rs:1259	chase_cam_start_post_race_camera	0x162258	gp-0x6b10 = 0.0167934	per-tick (raw)	converted (blend_rate_60)	one-second blend to the post-race camera; 4x fast at 240
+crates/ssx3-game/src/game/camera/camera.rs:1393	chase_cam_controller_exit_spoke_mode	0x162218	gp-0x6b14 = 1/150	per-tick (raw)	converted (blend_rate_60)	2.5 s blend out of spoke mode; 4x fast at 240
+crates/ssx3-game/src/game/camera/camera.rs:1630	chase_cam_controller_set_default_algorithm	0x1622a8	SetAlgorithmImmediate (f12 = 1.0)	instant	none	switched at once
+crates/ssx3-game/src/game/camera/camera.rs:3096	chase_cam_controller_enter_spoke_mode	0x1621a8	(0.6 or 1.2) x gp-0x6b18 (1/60 .lit4)	per-tick, already follows	none	the 1/60 entry is patched by tick::on_vblank, so the blend time is kept
+crates/ssx3-game/src/game/camera/camera.rs:5245	chase_cam_controller_push_algorithm	0x161e58	f12 of the caller	forwarded	none	passes the caller's rate through unchanged
+crates/ssx3-game/src/game/camera/camera.rs:5253	chase_cam_controller_push_algorithm	0x161e58	f12 of the caller (empty list)	forwarded	none	same
+crates/ssx3-game/src/game/camera/cameracontroller.rs:345	chase_cam_controller_set_algorithm_immediate	0x15d050	f12 = 1.0	instant	none	the immediate wrapper
+crates/ssx3-game/src/game/camera/cameracontroller.rs:437	cam_controller_set_algorithm	0x15cf28	f12 = 1.0	instant	none	single algorithm, no blend
+crates/ssx3-game/src/game/camera/script/scriptcontroller.rs:552	script_cam_controller_push_algorithm	0x169340	f12 = 1.0	instant	none	script cameras switch at once
+crates/ssx3-game/src/game/camera/camera.rs (callee)	ChaseCamController_SetAlgorithm	0x15d078	its callers' f12	(generated)	pending port	the node rate is written inside the generated body (0x15d628); its callers are covered above
+crates/ssx3-game/src/game/be/beintmission.rs (callee)	CHASE_CAM_SET_ALGORITHM callers	0x15d078	mission / script data	script data	none (decision)	mission data owns the blend rate; converting it would change authored timing
+docs (reference)	CameraTrigger / wscript push sites	0x15c988	script / trigger data	script data	none (decision)	same as above

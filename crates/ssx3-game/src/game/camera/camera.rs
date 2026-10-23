@@ -1252,6 +1252,8 @@ pub fn chase_cam_start_post_race_camera(c: &mut Cpu) {
         if !replaying {
             c.cycles += 5;
             c.lwc1(12, (c.g[GP][0] as u32).wrapping_sub(0x6b10));
+            // ~1/60 per tick (the game's 0.0167934): a one-second blend.
+            c.f[12] = blend_rate_60(c, FpuF32(c.f[12])).0;
             c.g[A1][0] = 0x44;
             c.g[A2][0] = 0;
             callee::CHASE_CAM_SET_ALGORITHM.call(c, 0x0016_2280)?;
@@ -1353,6 +1355,20 @@ pub fn mid_left_chase_camera_algorithm_ctor(c: &mut Cpu) {
 /// `void ChaseCamController_ExitSpokeMode(this)` (0x162218): clear the
 /// spoke-mode bits 0 and 1 of the flags at `+0x30`; when neither was set,
 /// blend back to the stored algorithm `+0x24` over one 150th of a second.
+/// A camera blend rate authored as a per-60-Hz-tick step, as the step per tick
+/// at the game's rate: `60 / rate` (exactly the authored value at 60, where
+/// nothing changes). A rate of 1.0 ("instant") is left alone by the callers.
+#[inline]
+pub(crate) fn blend_rate_60(c: &mut Cpu, raw: FpuF32) -> FpuF32 {
+    let r = crate::tick::rate(c);
+    if r == 60 || raw == FpuF32::ONE {
+        raw
+    } else {
+        raw * FpuF32::from_f32(60.0f32 / r as f32)
+    }
+}
+
+
 pub fn chase_cam_controller_exit_spoke_mode(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 8;
@@ -1370,6 +1386,8 @@ pub fn chase_cam_controller_exit_spoke_mode(c: &mut Cpu) {
             c.cycles += 4;
             let rate = gp(c, -0x6b14);
             c.lwc1(12, rate);
+            // 1/150 per 60 Hz tick: the blend takes 2.5 s at any rate.
+            c.f[12] = blend_rate_60(c, FpuF32(c.f[12])).0;
             c.g[A2][0] = 0;
             c.g[A1][0] = Addr((this as u32).wrapping_add(0x24)).lw(c);
             callee::CHASE_CAM_SET_ALGORITHM_2.call(c, 0x0016_2248)?;
@@ -6374,6 +6392,32 @@ pub(crate) mod tests {
             c.bus.write32(cam + 0x24, r.next_u32());
             c.g[A0][0] = sx(cam);
         });
+    }
+
+
+    /// A camera blend rate authored per 60 Hz tick is `60/rate` of it per
+    /// tick at another rate, so the blend takes the same time; a rate of 1.0
+    /// ("instant") is never scaled.
+    ///
+    /// The two converted callers pass this value to
+    /// `ChaseCamController_SetAlgorithm`, which is still generated and whose
+    /// body writes the node rate, so the end-to-end observation would need
+    /// that port first (the fixture cannot reach its push on test data).
+    #[test]
+    fn blend_rate_60_scales_per_tick_steps() {
+        let mut c = crate::difftest::fresh();
+        let raw = FpuF32::from_f32(0.016_793_4);
+        crate::tick::set_for_test(&mut c, 60);
+        assert_eq!(blend_rate_60(&mut c, raw), raw, "60 Hz unchanged");
+        for hz in [120u32, 240] {
+            crate::tick::set_for_test(&mut c, hz);
+            let r = blend_rate_60(&mut c, raw).to_f32();
+            assert!(
+                (r * hz as f32 - raw.to_f32() * 60.0).abs() < 1e-7,
+                "{hz} Hz: {r} per tick"
+            );
+            assert_eq!(blend_rate_60(&mut c, FpuF32::ONE), FpuF32::ONE, "instant");
+        }
     }
 
 
