@@ -5306,5 +5306,7 @@
 0x0025bf18    LobbyMan_EditAccount
 0x002a3708    SSXAudioSystem_PASay20C5
 0x0012f230    RiderResetSub_Enter
+# Phase 2 wave: oc1
+0x00274a30    InSeq_InstanceUpdate
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
