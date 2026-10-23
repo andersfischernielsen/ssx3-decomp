@@ -204,10 +204,10 @@ instruction addresses (`sites`) and, for loads, the `.lit4` entry each loads
 
 | Kind | Functions | Hand-written | State |
 | --- | --- | --- | --- |
-| `1/60` loads (193 entries) | 129 (with `60.0`/`3600`) | 41 | follow the rate; classify (T1) |
-| `60.0` (27 sites, 24 built in registers), `3600` (17) | in the above | | classify, convert (T2) |
-| `1/30`, `30.0` (mostly 30 fps animation data) | 35 | 8 | classify (T2) |
-| `1/50`, `50.0` (mostly not timing) | 15 | 6 | classify (T2) |
+| `1/60` loads (193 entries) | 129 (with `60.0`/`3600`) | 41 | follow the rate; T1 classified all 193 |
+| `60.0` (27 sites, 24 built in registers), `3600` (17) | in the above | | T2: the ported ones classified (all non-timing except `Rider_SetTimedEvent`, `Rider_EstimateFinishTime`); the generated ones need a port first |
+| `1/30`, `30.0` (mostly 30 fps animation data) | 35 | 8 | T2: the ported ones are authored 30 fps data or per-tick slews (converted) |
+| `1/50`, `50.0` (mostly not timing) | 15 | 6 | T2: the ported ones are distances/angles, not time |
 | App manager rate or step reads | 29 | 14 | follow the rate |
 
 Not found by the scan (T3):

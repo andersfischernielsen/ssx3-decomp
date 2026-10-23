@@ -32,6 +32,7 @@ use crate::call::{call_ptr, guest, Callee, Flow, Frame, VSlot};
 use crate::camera::{ChaseCamController, ChaseCameraAlgorithm};
 use crate::guest::Addr;
 use crate::ps2f::{vu0_scratch, FpuF32, Vec4, VuF32};
+use crate::tick;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
@@ -310,6 +311,32 @@ fn c_le_s(c: &mut Cpu, a: FpuF32, b: FpuF32) -> bool {
     let le = a.le(b);
     abi::set_fcc(c, le);
     le
+}
+
+/// A per-tick smoothing/decay factor `k` as it becomes at the current rate:
+/// `k^(60/rate)` (the same fraction per unit of wall-clock time). At 60 the
+/// caller keeps the original constant.
+#[inline]
+fn per_tick_factor(c: &mut Cpu, k: FpuF32) -> FpuF32 {
+    let r = tick::rate(c);
+    if r == 60 {
+        k
+    } else {
+        FpuF32(f32::from_bits(k.0).powf(60.0 / r as f32).to_bits())
+    }
+}
+
+/// A per-tick step `s` (a `+= s` increment, or the decay rate of a linear
+/// ramp) as it becomes at the current rate: `s * 60/rate`. At 60 the caller
+/// keeps the original constant.
+#[inline]
+fn per_tick_step(c: &mut Cpu, s: FpuF32) -> FpuF32 {
+    let r = tick::rate(c);
+    if r == 60 {
+        s
+    } else {
+        s * FpuF32((60.0 / r as f32).to_bits())
+    }
 }
 
 /// `lw` through the CPU path (sign-extended).
@@ -1034,7 +1061,11 @@ pub fn apply_fov(c: &mut Cpu) {
             c.f[15] = one.0;
         } else if state != 0 {
             c.cycles += 1;
-            c.f[15] = gp_const(c, FOV_SMOOTHING_GROUND_GP).0;
+            // 0.999 is a per-update lag: at another rate it becomes the same
+            // lag per unit of wall-clock time (`0.999^(60/rate)`). At 60 the
+            // loaded constant goes into f15 unchanged.
+            let keep = gp_const(c, FOV_SMOOTHING_GROUND_GP);
+            c.f[15] = per_tick_factor(c, keep).0;
         }
 
         c.cycles += 17;
@@ -1323,6 +1354,11 @@ fn frames_since_handplant(algo: ChaseCameraAlgorithm) -> Addr {
 /// 2, count the frames since the last handplant (+0x2c0, up to 820) and
 /// set the fade weight `st+0x48`: 1 during and for 120 frames after a
 /// handplant, then falling by 1/700 per frame down to 0. Leaf.
+///
+/// The counter counts updates and the 820/120 thresholds and the 1/700 rate
+/// are 60 Hz frames: at another rate the counter counts ticks, so the two
+/// thresholds become tick counts (`ticks_from_frames60`, 820 and 120 at 60)
+/// and the fade rate is stretched to the same wall-clock drop per tick.
 pub fn update_handplant_fade(c: &mut Cpu) {
     c.cycles += 3;
     let algo = ChaseCameraAlgorithm(Addr(abi::arg(c, 0)));
@@ -1340,7 +1376,7 @@ pub fn update_handplant_fade(c: &mut Cpu) {
         let frames = lw(c, frames_since_handplant(algo));
         c.g[V1][0] = frames;
         c.g[V0][0] = sx((frames as u32).wrapping_add(1));
-        if (frames as i64) < HANDPLANT_FADE_MAX {
+        if (frames as i64) < tick::ticks_from_frames60(c, HANDPLANT_FADE_MAX as u32) as i64 {
             c.cycles += 1;
             frames_since_handplant(algo).sw(c, c.g[V0][0]);
         }
@@ -1348,14 +1384,16 @@ pub fn update_handplant_fade(c: &mut Cpu) {
         let frames = lw(c, frames_since_handplant(algo));
         c.g[A0][0] = frames;
         c.g[AT][0] = one.0 as u64;
-        let holding = (frames as i64) < HANDPLANT_FADE_HOLD;
+        let hold_ticks = tick::ticks_from_frames60(c, HANDPLANT_FADE_HOLD as u32);
+        let holding = (frames as i64) < hold_ticks as i64;
         c.g[V0][0] = holding as u64;
         let mut fade = one;
         if !holding {
             c.cycles += 8;
-            let hold = FpuF32(0x42f0_0000); // 120.0
+            let hold = FpuF32::from_i32(hold_ticks as i32); // 120.0 at 60
             c.g[AT][0] = hold.0 as u64;
-            let rate = gp_const(c, HANDPLANT_FADE_RATE_GP);
+            let step = gp_const(c, HANDPLANT_FADE_RATE_GP);
+            let rate = per_tick_step(c, step);
             let elapsed = FpuF32::from_i32(frames as i32) - hold;
             let drop = elapsed * rate;
             fade = one - drop;
@@ -2241,7 +2279,10 @@ fn takeoff(c: &mut Cpu, algo: ChaseCameraAlgorithm, st: RiderCamState, sp: Addr)
     let curve = lw(c, air_curve_active(algo));
     c.g[A0][0] = curve;
     let ground_frames = sx((c.g[V0][0] as u32).wrapping_sub(last as u32));
-    let long_ground = !((ground_frames as i64) < TAKEOFF_MIN_GROUND_FRAMES);
+    // `AI_GetFrameCounter` counts updates, so the ground run is compared with
+    // the frame threshold as ticks (31 at 60).
+    let min_ground = tick::ticks_from_frames60(c, TAKEOFF_MIN_GROUND_FRAMES as u32) as i64;
+    let long_ground = !((ground_frames as i64) < min_ground);
     c.g[V0][0] = long_ground as u64;
     if curve == 0 {
         c.cycles += 2;
@@ -3403,6 +3444,55 @@ mod tests {
         covered(g, super::apply_fov, SEEDS, &setup);
     }
 
+    /// The FOV smoothing weight `0.999` is per update: one tick at 60 Hz and
+    /// two at 120 Hz leave the same scale, `1 + (old − 1) · 0.999`.
+    #[test]
+    fn apply_fov_smoothing_follows_the_rate() {
+        /// The smoothed FOV scale (+0x1dc) after `ticks` updates at rate `hz`.
+        fn scale_after(hz: u32, ticks: u32) -> f32 {
+            let mut c = crate::difftest::fresh();
+            machine(&mut c, 1, 0xd311, 0);
+            crate::tick::set_for_test(&mut c, hz);
+            let (algo, st) = (DATA, DATA + 0x1000);
+            for (off, v) in [
+                (0x6ab0u32, 1e-7f32),                   // speed² gain
+                (0x6aac, 0.999),                        // the per-update smoothing
+                (0x6aa8, std::f32::consts::FRAC_PI_4),  // π/4
+                (0x6778, 1e30),                         // the reset distance limit
+            ] {
+                c.bus.write32(GAME_GP.wrapping_sub(off), v.to_bits());
+            }
+            c.bus.write32(st + 0x40, 2); // neither Ground (0) nor Air (1): 0.999
+            c.bus.write32(st + 0x44, 0.0f32.to_bits()); // speed 0: the target is 1
+            c.bus.write32(st + 0x4c, 0.0f32.to_bits());
+            c.bus.write32(algo + 0x1dc, 2.0f32.to_bits()); // the old scale
+            put_vec(&mut c, algo + 0x20, [0, 0, 0, 1]); // look-at
+            put_vec(&mut c, algo + 0x40, [0x4316_0000, 0, 0, 1]); // eye, 150 away
+            put_vec(&mut c, 0x4ff160, [0, 0, 0, 0]);
+            for _ in 0..ticks {
+                c.g[A0][0] = algo as u64;
+                c.g[A1][0] = st as u64;
+                c.f[12] = 0.0f32.to_bits(); // speed² gain
+                c.f[13] = 4.0f32.to_bits(); // base
+                c.f[14] = 1.0f32.to_bits(); // boost widen
+                c.f[15] = 0.5f32.to_bits(); // the ground smoothing (unused)
+                super::apply_fov(&mut c);
+            }
+            f32::from_bits(c.bus.read32(algo + 0x1dc))
+        }
+
+        let one_tick_60 = scale_after(60, 1);
+        let two_ticks_120 = scale_after(120, 2);
+        let want = 1.0f32 + 0.999f32;
+        assert!((one_tick_60 - want).abs() < 1e-6, "at 60: {one_tick_60}");
+        assert!(
+            (two_ticks_120 - one_tick_60).abs() < 1e-5,
+            "at 120: {two_ticks_120}, at 60: {one_tick_60}"
+        );
+        // Unconverted, two 120 Hz ticks would leave 1 + 0.999² = 1.998001.
+        assert!(two_ticks_120 > 1.9985, "at 120: {two_ticks_120}");
+    }
+
     /// Make the closing `CheckDistanceReset` take its 34-cycle no-reset
     /// path (no limit, no world-up offsets, eye 128 from the look-at).
     fn quiet_reset(c: &mut Cpu) {
@@ -3473,6 +3563,42 @@ mod tests {
             c.bus.write32(algo + 0x2c0, frames[(seed / 4 % 10) as usize]);
             c.bus.write32(GAME_GP - 0x6af4, if seed % 3 == 0 { r.f32(0.01) } else { (1.0f32 / 700.0).to_bits() });
         });
+    }
+
+    /// The handplant fade is frame-counted: the 120-frame hold and the 1/700
+    /// per-frame drop become tick counts and a per-tick rate at other rates.
+    #[test]
+    fn handplant_fade_follows_the_rate() {
+        /// The fade weight (`st+0x48`) after `ticks` updates at rate `hz`.
+        fn fade_after(hz: u32, ticks: u32) -> f32 {
+            let mut c = crate::difftest::fresh();
+            machine(&mut c, 1, 0xd314, 0);
+            crate::tick::set_for_test(&mut c, hz);
+            let (algo, st) = (DATA, DATA + 0x1000);
+            c.bus.write32(GAME_GP.wrapping_sub(0x6af4), (1.0f32 / 700.0).to_bits());
+            c.bus.write32(st + 0x5c, 0); // not a handplant
+            c.bus.write32(algo + 0x2c0, 0); // frames since the last handplant
+            for _ in 0..ticks {
+                c.g[A0][0] = algo as u64;
+                c.g[A1][0] = st as u64;
+                super::update_handplant_fade(&mut c);
+            }
+            f32::from_bits(c.bus.read32(st + 0x48))
+        }
+
+        // 1 s and 1.5 s after the handplant: the hold is over, the drop runs.
+        assert_eq!(fade_after(60, 120), 1.0);
+        assert_eq!(fade_after(120, 240), 1.0);
+        let at_60 = fade_after(60, 180);
+        let at_120 = fade_after(120, 360);
+        let want = 1.0f32 - 60.0f32 / 700.0f32;
+        assert!((at_60 - want).abs() < 1e-6, "at 60: {at_60}, want {want}");
+        assert!((at_120 - at_60).abs() < 1e-6, "at 120: {at_120}, at 60: {at_60}");
+        // Unconverted, 360 ticks at 120 would have dropped 240/700.
+        assert!(at_120 > 0.8, "at 120: {at_120}");
+        // The 820-frame cap: the fade reaches 0 at both rates.
+        assert!(fade_after(60, 900) < 1e-6, "at 60: {}", fade_after(60, 900));
+        assert!(fade_after(120, 1800) < 1e-6, "at 120: {}", fade_after(120, 1800));
     }
 
     fn handplant_hold_setup(c: &mut Cpu, seed: u32) {
@@ -3631,6 +3757,42 @@ mod tests {
         // Ground (19, 23), airborne (26), takeoff without / with a moving
         // check (50, 73) + countdown (2, 4).
         paths_no_unwind(g, SEEDS, &[19, 23, 26, 50, 52, 54, 73, 75, 77], &air_transitions_setup);
+    }
+
+    /// The takeoff kick waits for a long ground run, measured on the AI frame
+    /// counter against 31 frames: a tick count at another rate.
+    #[test]
+    fn takeoff_ground_threshold_follows_the_rate() {
+        /// Whether a takeoff after `ground_frames` updates starts the countdown.
+        fn kicks_after(hz: u32, ground_frames: u32) -> bool {
+            let mut c = crate::difftest::fresh();
+            machine(&mut c, 1, 0xd31a, 0);
+            crate::tick::set_for_test(&mut c, hz);
+            let (algo, st) = (DATA, DATA + 0x1000);
+            c.bus.write32(st + 0x60, 1); // airborne
+            c.bus.write32(algo + 0x2d4, 0); // was not airborne: the takeoff path
+            c.bus.write32(algo + 0x2e0, 0); // no air-arc curve
+            c.bus.write32(st + 0x44, 100.0f32.to_bits()); // speed > 0
+            put_vec(&mut c, st + 0x20, [0x3f80_0000, 0, 0, 0]); // dir z = 0: not a drop
+            // The AI frame counter: *(gp-0x848) -> +0x84 -> +0x0c -> +0x08.
+            let (module, x, ai) = (DATA + 0xa_0000, DATA + 0xa_0100, DATA + 0xa_0200);
+            c.bus.write32(GAME_GP.wrapping_sub(0x848), module);
+            c.bus.write32(module + 0x84, x);
+            c.bus.write32(x + 0xc, ai);
+            c.bus.write32(ai + 8, 1000);
+            c.bus.write32(algo + 0x2cc, 1000 - ground_frames); // last air frame
+            c.bus.write32(algo + 0x2c4, 0); // the takeoff countdown
+            c.g[A0][0] = algo as u64;
+            c.g[A1][0] = st as u64;
+            super::update_air_transitions(&mut c);
+            c.bus.read32(algo + 0x2c4) == 15
+        }
+
+        // 31 frames of ground: 31 updates at 60 Hz, 62 at 120 Hz.
+        assert!(!kicks_after(60, 30));
+        assert!(kicks_after(60, 31));
+        assert!(!kicks_after(120, 61));
+        assert!(kicks_after(120, 62));
     }
 
     fn compute_angles_setup(c: &mut Cpu, seed: u32) {

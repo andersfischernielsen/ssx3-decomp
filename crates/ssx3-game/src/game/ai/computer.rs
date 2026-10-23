@@ -1765,12 +1765,13 @@ pub fn computer_actor_rider_should_reset_path(c: &mut Cpu) {
                 c.sw(p(actor, computer::WRONG_TIME), 0);
             }
         }
-        // wrong = wrongTime >= 0x3d
+        // wrong = wrongTime >= 0x3d (61 frames, ~1 s: a duration, not a count)
         c.cycles += 8;
         let wrong_time = lw(c, p(actor, computer::WRONG_TIME));
         c.g[V0][0] = wrong_time;
         c.g[A0][0] = lw(c, p(actor, computer::RIDER));
-        c.g[V0][0] = ((wrong_time as i64) < 61) as u64;
+        let wrong_limit = crate::tick::ticks_from_frames60(c, 61) as i64;
+        c.g[V0][0] = ((wrong_time as i64) < wrong_limit) as u64;
         c.g[S2][0] = c.g[V0][0] ^ 1;
         callee::GET_MAIN_STATE.call(c, 0x0010_d2ec)?;
         c.g[V1][0] = 2;
@@ -1849,7 +1850,7 @@ pub fn computer_actor_rider_should_reset_path(c: &mut Cpu) {
             c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
             c.sw(p(actor, computer::STUCK_TIME), c.g[V0][0]);
         }
-        // stuck = wrong || stuckTime >= 0xdf
+        // stuck = wrong || stuckTime >= 0xdf (223 frames, ~3.7 s)
         c.cycles += 2;
         let wrong = c.g[S2][0] != 0;
         c.g[S1][0] = 0;
@@ -1859,7 +1860,8 @@ pub fn computer_actor_rider_should_reset_path(c: &mut Cpu) {
         } else {
             c.cycles += 4;
             c.g[V0][0] = lw(c, p(actor, computer::STUCK_TIME));
-            c.g[V0][0] = ((c.g[V0][0] as i64) < 223) as u64;
+            let stuck_limit = crate::tick::ticks_from_frames60(c, 223) as i64;
+            c.g[V0][0] = ((c.g[V0][0] as i64) < stuck_limit) as u64;
             if c.g[V0][0] == 0 {
                 c.cycles += 1;
                 c.g[S1][0] = 1;

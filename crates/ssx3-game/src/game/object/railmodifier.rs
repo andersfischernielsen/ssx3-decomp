@@ -3518,6 +3518,14 @@ pub fn texflip_modifier_handle_event(c: &mut Cpu) {
                     }
                     // event 300: speed = v
                     c.cycles += 2;
+                    // The stored speed is the per-tick timer step; the script
+                    // value is per 60 Hz frame, so at a higher rate the same
+                    // flips per second need a smaller step (60 is unchanged).
+                    let hz = crate::tick::rate(c);
+                    if hz != 60 {
+                        let k = FpuF32::from_f32(60.0 / hz as f32);
+                        c.f[12] = (FpuF32(c.f[12]) * k).0;
+                    }
                     c.swc1(12, Addr(r(c, A2)).off(0x8).0);
                     break 'switch;
                 }
@@ -5850,6 +5858,25 @@ pub(crate) mod tests {
                 w(c, DATA + 0x20, 1 + (seed % 4) as u32);
             },
         );
+    }
+
+
+    /// Event 300's speed is the per-tick timer step: the same flip rate per
+    /// second is `v * 60/rate` at another rate.
+    #[test]
+    fn texflip_modifier_handle_event_speed_follows_the_rate() {
+        fn speed(hz: u32) -> f32 {
+            let mut c = crate::difftest::fresh();
+            crate::tick::set_for_test(&mut c, hz);
+            c.g[A0][0] = DATA as u64;
+            c.g[A1][0] = 300;
+            c.f[12] = 1.0f32.to_bits();
+            texflip_modifier_handle_event(&mut c);
+            f32::from_bits(c.bus.read32(DATA + 0x8))
+        }
+        assert_eq!(speed(60), 1.0);
+        assert_eq!(speed(120), 0.5);
+        assert_eq!(speed(240), 0.25);
     }
 
 

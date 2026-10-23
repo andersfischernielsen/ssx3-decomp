@@ -33,6 +33,7 @@ pub(crate) use crate::game::ai::rider::r;
 pub(crate) use crate::game::ai::rider::p;
 pub(crate) use crate::game::ai::rider::at;
 pub(crate) use crate::game::ai::rider::gp_2 as gp;
+pub(crate) use crate::game::ai::rider::rate_step_60;
 pub(crate) use crate::game::ai::rider::sp_2;
 pub(crate) use crate::game::ai::rider::slt;
 pub(crate) use crate::game::ai::rider::Ops;
@@ -3075,6 +3076,8 @@ pub fn rider_railslide_state_enter(c: &mut Cpu) {
         call_ptr(c, 0x0011_e098, 0x0013_ad44)?;
         c.g[V1][0] = lw_2(c, S0, 0x50);
         c.lwc1(0, gp_8(c, -0x7184));
+        // The rail-value slew's step is 0.05 per 60 Hz tick (`+0x260`).
+        c.f[0] = rate_step_60(c, FpuF32(c.f[0])).0;
         sw(c, V1, 0x1f4, 0);
         sw(c, V1, 0x1f8, 0);
         sw(c, V1, 0x1f0, 0);
@@ -6725,6 +6728,37 @@ pub(crate) mod tests {
             w_2(c, rider + 0x770, 0);
             w_2(c, GAME_GP.wrapping_sub(0x7184), 0.05f32.to_bits());
         });
+    }
+
+
+    /// `RiderRailslideState_Enter` seeds the rail-value slew's step (`+0x260`)
+    /// with 0.05 per tick: at 120/240 Hz the step is halved/quartered, so the
+    /// rail value reaches its target in the same real time.
+    #[test]
+    fn rider_railslide_state_enter_follows_the_rate() {
+        use crate::tick;
+        // The game's 0.05 at gp-0x7184.
+        const STEP_60: u32 = 0x3d4c_ccce;
+        let step = |hz: u32| -> u32 {
+            let mut c = crate::difftest::fresh();
+            let _r = base(&mut c, 0, 0x13ad20, 0);
+            let this = DATA + 0x1000;
+            let rider = DATA + 0x4000;
+            c.g[A0][0] = this as u64;
+            c.bus.write32(this + 0x50, rider);
+            for (i, v) in [1.0f32, 2.0, 3.0, 0.0].into_iter().enumerate() {
+                c.bus.write32(rider + 0x110 + 4 * i as u32, v.to_bits());
+            }
+            c.bus.write32(rider + 0x10, 0);
+            c.bus.write32(rider + 0x770, 0);
+            c.bus.write32(GAME_GP.wrapping_sub(0x7184), STEP_60);
+            tick::set_for_test(&mut c, hz);
+            rider_railslide_state_enter(&mut c);
+            c.bus.read32(rider + 0x260) // slew #9's maxStep
+        };
+        assert_eq!(step(60), STEP_60, "60 Hz step");
+        assert_eq!(step(120), 0x3ccc_ccce, "120 Hz step");
+        assert_eq!(step(240), 0x3c4c_ccce, "240 Hz step");
     }
 
 

@@ -37,6 +37,9 @@ pub(crate) use crate::game::ai::rider::stf;
 pub(crate) use crate::game::ai::rider::li_f;
 pub(crate) use crate::game::ai::rider::fcc;
 pub(crate) use crate::game::ai::rider::qcopy;
+pub(crate) use crate::game::ai::rider::per_tick_60;
+pub(crate) use crate::game::ai::rider::rate_step_60;
+pub(crate) use crate::game::ai::rider::smoothing_60;
 pub(crate) use crate::game::ai::rider::dot_tail;
 pub(crate) use crate::game::ai::rider::v_dot_self;
 pub(crate) use crate::game::ai::rider::v_length;
@@ -861,6 +864,18 @@ pub fn rider_metrix_update(c: &mut Cpu) {
         let avg = ldf(c, 3, p(m, 0x1a8));
         let k_keep = ldf(c, 0, gp(c, -0x7ae8));
         let k_new = ldf(c, 1, gp(c, -0x7ae4));
+        // `avg = avg*0.9 + speed*0.1` per tick is a smoothing filter (`a` = 0.1):
+        // at another rate both factors follow from `a' = smoothing_60(a)`, so
+        // the average speed keeps its time constant.
+        let (k_keep, k_new) = if crate::tick::rate(c) == 60 {
+            (k_keep, k_new)
+        } else {
+            let a = smoothing_60(c, k_new);
+            let keep = FpuF32::ONE - a;
+            c.f[0] = keep.0;
+            c.f[1] = a.0;
+            (keep, a)
+        };
         let avg = setf(c, 3, avg * k_keep);
         let dist = ldf(c, 2, p(m, 0x164));
         let add = setf(c, 1, speed * k_new);
@@ -1930,24 +1945,39 @@ pub(crate) fn gpf(c: &Cpu, off: u32) -> u32 {
 
 
 /// The trick HUD's number animation steps toward its target by at most one
-/// `1/30` entry per tick (two 60 Hz frames of progress). At another rate that
-/// is `dt * 2` (exactly 1/30 at 60, where the entry is still loaded).
+/// `1/30` entry per tick (two 60 Hz frames of progress): [`rate_step_60`].
 #[inline]
 pub(crate) fn hud_step_30(c: &mut Cpu) -> FpuF32 {
-    FpuF32::from_f32(crate::tick::dt(c) * 2.0)
+    rate_step_60(c, FpuF32::from_f32(1.0f32 / 30.0))
 }
 
 
 /// The trick-name banner's alpha oscillates with `sin(frameCounter * 6°)`:
-/// 6° per 60 Hz frame. At another rate the phase per tick is `6° * 60 / rate`
-/// (exact at 60, where nothing is written; the 120/240 factors are 1/2, 1/4).
+/// 6° per 60 Hz frame, so the phase per tick is [`rate_step_60`] of it (exact
+/// at 60, where nothing is written; the 120/240 factors are 1/2, 1/4).
 #[inline]
 pub(crate) fn hud_wave_step(c: &mut Cpu, six_degrees: FpuF32) -> FpuF32 {
-    let hz = crate::tick::rate(c);
-    if hz == 60 {
-        six_degrees
+    rate_step_60(c, six_degrees)
+}
+
+
+/// The boost-level bar's slew step: `1/150` per 60 Hz tick (the game's entry
+/// at gp-0x7a64).
+#[inline]
+pub(crate) fn hud_step_150(c: &mut Cpu) -> FpuF32 {
+    rate_step_60(c, FpuF32(0x3bda_740f))
+}
+
+
+/// The band `1 ± step` around a bar's 1.0 target in which the step snaps to it
+/// (`above`: `1 + step`, else `1 - step`). At 60 the baked thresholds are used
+/// instead, so this is only called on the other branch.
+#[inline]
+pub(crate) fn hud_band(step: FpuF32, above: bool) -> FpuF32 {
+    if above {
+        FpuF32::ONE + step
     } else {
-        six_degrees * FpuF32::from_f32(60.0f32 / hz as f32)
+        FpuF32::ONE - step
     }
 }
 
@@ -1971,10 +2001,12 @@ pub(crate) fn remove_message(c: &mut Cpu, id: u64, ret: u32) -> Flow {
 /// `RiderMetrix_UpdateTrickHUD(RiderMetrix* m)` (0x117fe0).
 ///
 /// The numbers it shows move toward their targets by at most one step per
-/// tick: seven `1/60` `.lit4` entries (which follow the rate) and three `1/30`
-/// ones (the trick-name banner's tracking step, [`hud_step_30`]). The banner's
-/// alpha oscillates `sin(frameCounter * 6°)`, a phase per tick
-/// ([`hud_wave_step`]).
+/// tick: seven `1/60` `.lit4` entries (which follow the rate), the banner's
+/// tracking step (a `1/30` entry, [`hud_step_30`]) and the boost-level bar's
+/// step (a `1/150` entry, [`hud_step_150`]); the bands the steps snap inside
+/// are `1 ± step` ([`hud_band`]). The banner's alpha oscillates
+/// `sin(frameCounter * 6°)`, a phase per tick ([`hud_wave_step`]), and the
+/// trick history accumulates `points/1200` per tick ([`per_tick_60`]).
 pub fn rider_metrix_update_trick_hud(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 22;
@@ -2927,6 +2959,9 @@ pub fn rider_metrix_update_trick_hud(c: &mut Cpu) {
                     c.lwc1(0, gpf(c, 0x7a74));
                     lwc1(c, 1, S1, 0x1c);
                     c.mul_s(0, 20, 0);
+                    // `+= points/1200` per tick: the trick history counts up
+                    // in real time.
+                    per_tick_60(c, 0);
                     c.add_s(1, 1, 0);
                     let t = c.g[S0][0] == c.g[S2][0];
                     swc1(c, S1, 0x1c, 1);
@@ -3147,6 +3182,11 @@ pub fn rider_metrix_update_trick_hud(c: &mut Cpu) {
                         c.mtc1(7, 0);
                         c.cvt_s_w(0, 0);
                         c.lwc1(5, gpf(c, 0x7a64));
+                        // The bar's step is 1/150 per 60 Hz tick.
+                        if crate::tick::rate(c) != 60 {
+                            let step = hud_step_150(c);
+                            c.f[5] = step.0;
+                        }
                         c.div_s(3, 1, 3);
                         c.mul_s(0, 0, 4);
                         c.min_s(12, 0, 2);
@@ -3482,6 +3522,12 @@ pub fn rider_metrix_update_trick_hud(c: &mut Cpu) {
                             c.cycles += 5;
                             c.lwc1(0, gpf(c, 0x7a50));
                             c.lwc1(2, gpf(c, 0x7a4c));
+                            // `1 + step`: the band around the target must be
+                            // one tick wide, and the step follows the rate.
+                            if crate::tick::rate(c) != 60 {
+                                let band = hud_band(FpuF32(c.f[2]), true);
+                                c.f[0] = band.0;
+                            }
                             c.c_lt_s(0, 1);
                             let t = !c.fcc();
                             if t {
@@ -3495,6 +3541,11 @@ pub fn rider_metrix_update_trick_hud(c: &mut Cpu) {
                         c.cycles += 7;
                         c.lwc1(0, gpf(c, 0x7a48));
                         fc(c, 12, 0x3f80_0000);
+                        // `1 - step`.
+                        if crate::tick::rate(c) != 60 {
+                            let band = hud_band(FpuF32(c.f[2]), false);
+                            c.f[0] = band.0;
+                        }
                         c.c_lt_s(1, 0);
                         if c.fcc() {
                             c.add_s(12, 1, 2);
@@ -3568,6 +3619,11 @@ pub fn rider_metrix_update_trick_hud(c: &mut Cpu) {
                                         c.lwc1(2, gpf(c, 0x7a40));
                                         c.div_s(1, 1, 0);
                                         c.lwc1(3, gpf(c, 0x7a3c));
+                                        // `1 + step`.
+                                        if crate::tick::rate(c) != 60 {
+                                            let band = hud_band(FpuF32(c.f[3]), true);
+                                            c.f[2] = band.0;
+                                        }
                                         c.c_lt_s(2, 1);
                                         let t = !c.fcc();
                                         if t {
@@ -3581,6 +3637,11 @@ pub fn rider_metrix_update_trick_hud(c: &mut Cpu) {
                                     c.cycles += 7;
                                     c.lwc1(0, gpf(c, 0x7a38));
                                     fc(c, 12, 0x3f80_0000);
+                                    // `1 - step`.
+                                    if crate::tick::rate(c) != 60 {
+                                        let band = hud_band(FpuF32(c.f[3]), false);
+                                        c.f[0] = band.0;
+                                    }
                                     c.c_lt_s(1, 0);
                                     if c.fcc() {
                                         c.add_s(12, 1, 3);
@@ -3656,6 +3717,11 @@ pub fn rider_metrix_update_trick_hud(c: &mut Cpu) {
                             c.lwc1(2, gpf(c, 0x7a34));
                             c.div_s(1, 1, 0);
                             c.lwc1(3, gpf(c, 0x7a30));
+                            // `1 + step`.
+                            if crate::tick::rate(c) != 60 {
+                                let band = hud_band(FpuF32(c.f[3]), true);
+                                c.f[2] = band.0;
+                            }
                             c.c_lt_s(2, 1);
                             let t = !c.fcc();
                             lw_3(c, A2, A0, slot(4) + 0x14);
@@ -3670,6 +3736,11 @@ pub fn rider_metrix_update_trick_hud(c: &mut Cpu) {
                         c.cycles += 7;
                         c.lwc1(0, gpf(c, 0x7a2c));
                         fc(c, 12, 0x3f80_0000);
+                        // `1 - step`.
+                        if crate::tick::rate(c) != 60 {
+                            let band = hud_band(FpuF32(c.f[3]), false);
+                            c.f[0] = band.0;
+                        }
                         c.c_lt_s(1, 0);
                         if c.fcc() {
                             c.add_s(12, 1, 3);
@@ -4344,6 +4415,7 @@ pub(crate) mod tests {
         tick::set_for_test(&mut c, 60);
         assert_eq!(hud_wave_step(&mut c, SIX_DEGREES), SIX_DEGREES, "60 Hz phase");
         assert_eq!(hud_step_30(&mut c).to_f32(), 1.0f32 / 30.0, "60 Hz step");
+        assert_eq!(hud_step_150(&mut c), FpuF32(0x3bda_740f), "60 Hz bar step");
         for hz in [120u32, 240] {
             tick::set_for_test(&mut c, hz);
             // The same progress per tick, measured in 60 Hz frames.
@@ -4359,6 +4431,48 @@ pub(crate) mod tests {
                 (phase - SIX_DEGREES.to_f32()).abs() < 1e-7,
                 "{hz} Hz: {frames} ticks of the wave cover {phase} rad, not 6°"
             );
+            // The boost bar's step, and the band it snaps inside: one tick
+            // wide, so a second of ticks moves the bar as far as at 60.
+            let bar = hud_step_150(&mut c).to_f32() * frames as f32;
+            let want_bar = FpuF32(0x3bda_740f).to_f32();
+            assert!(
+                (bar - want_bar).abs() < 1e-9,
+                "{hz} Hz: {frames} ticks of the bar step cover {bar}, not {want_bar}"
+            );
+            let one_tick = FpuF32(tick::step_bits(hz)); // the 1/60 entry, patched
+            for (above, want) in [(true, 1.0f32 + 1.0 / hz as f32), (false, 1.0 - 1.0 / hz as f32)] {
+                let band = hud_band(one_tick, above).to_f32();
+                assert!((band - want).abs() < 1e-6, "{hz} Hz: band {band}, not {want}");
+            }
+        }
+    }
+
+    /// `RiderMetrix_Update`'s smoothed speed (`avg = avg*0.9 + speed*0.1` per
+    /// tick): after one second of ticks the average must be the same at any
+    /// rate, so the filter's time constant (and the peak speed it feeds) does
+    /// not change with the tick rate.
+    #[test]
+    fn rider_metrix_update_smoothed_speed_follows_the_rate() {
+        use crate::tick;
+        const TARGET: f32 = 100.0;
+        let mut c = crate::difftest::fresh();
+        let run = |c: &mut Cpu, hz: u32| -> f32 {
+            tick::set_for_test(c, hz);
+            // The two factors the function multiplies by (`0.9` and `0.1`).
+            let a = smoothing_60(c, FpuF32::from_f32(0.1));
+            let keep = FpuF32::ONE - a;
+            let mut avg = FpuF32::ZERO;
+            for _ in 0..hz {
+                avg = avg * keep + FpuF32::from_f32(TARGET) * a;
+            }
+            avg.to_f32()
+        };
+        let at_60 = run(&mut c, 60);
+        // One time constant (~0.158 s) of a 100 unit/s step.
+        assert!(at_60 > 99.0 && at_60 < 100.0, "{at_60}");
+        for hz in [120u32, 240] {
+            let at = run(&mut c, hz);
+            assert!((at - at_60).abs() < 1e-3, "{hz} Hz: {at} after 1 s, 60 Hz: {at_60}");
         }
     }
 }

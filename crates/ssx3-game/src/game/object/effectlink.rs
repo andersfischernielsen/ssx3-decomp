@@ -420,6 +420,14 @@ pub fn halo_modifier_update(c: &mut Cpu) {
     c.cycles += 10;
     c.lwc1(1, p_2(h, 0x2c));
     c.cvt_s_w(1, 1);
+    // The step at +0x2c is degrees per 60 Hz frame: at a higher rate the same
+    // rotation per second needs a proportionally smaller per-tick step (the
+    // 60 Hz path keeps the original value untouched).
+    let hz = crate::tick::rate(c);
+    if hz != 60 {
+        let k = FpuF32::from_f32(60.0 / hz as f32);
+        c.f[1] = (FpuF32(c.f[1]) * k).0;
+    }
     c.lwc1(0, p_2(h, 0x30));
     c.g[AT][0] = 0x43b4_0000; // 360.0f
     c.mtc1(1, 2);
@@ -988,6 +996,30 @@ pub(crate) mod tests {
             word(c, DATA + 0x2c, pick(&mut r, &[0.0f32, 1.0, -1.0, 100.0, -100.0, 360.0, -360.0]));
             word(c, DATA + 0x30, pick(&mut r, &[0.0, 0.5, 259.0, 260.0, 359.9, -359.9, -355.0]));
         });
+    }
+
+
+    /// The angle after `ticks` updates at `hz` with one degree per 60 Hz frame.
+    fn halo_angle(hz: u32, ticks: u32) -> f32 {
+        let mut c = crate::difftest::fresh();
+        crate::tick::set_for_test(&mut c, hz);
+        c.bus.write32(DATA + 0x2c, 1);
+        c.bus.write32(DATA + 0x30, 0);
+        for _ in 0..ticks {
+            c.g[A0][0] = sx(DATA);
+            halo_modifier_update(&mut c);
+        }
+        f32::from_bits(c.bus.read32(DATA + 0x30))
+    }
+
+    /// The halo's `+0x2c` step is degrees per 60 Hz frame: one second of
+    /// rotation is the same angle at any rate.
+    #[test]
+    fn halo_modifier_update_follows_the_rate() {
+        let a60 = halo_angle(60, 60);
+        assert_eq!(a60, 60.0);
+        assert_eq!(halo_angle(120, 120), a60);
+        assert_eq!(halo_angle(240, 240), a60);
     }
 
 

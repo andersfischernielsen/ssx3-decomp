@@ -9,6 +9,7 @@ use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 use crate::guest::Addr;
+use crate::tick;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -69,9 +70,19 @@ pub fn cfe_state_options_ctor(c: &mut Cpu) {
 }
 
 
+/// The autosave popup's delay before it looks up the autosave screen: 4 s at
+/// 60 Hz (the original's `self+0x48 == 0xf0`, 240 frames).
+const AUTOSAVE_POPUP_FRAMES: u32 = 240;
+
+
 /// `void FEScreenAutosavePopup_Update(FEScreenAutosavePopup* p)` (0x00187cb8):
-/// tick the base state; every 240 ticks look up the autosave screen, start
-/// its thread (or report failure) and close the top states.
+/// tick the base state; 4 s after the popup was created look up the autosave
+/// screen, start its thread (or report failure) and close the top states.
+///
+/// The delay is a wall clock duration, so the count it waits for is
+/// `ticks_from_frames60(240)` (240 at 60 Hz, 480 at 120, 960 at 240). The
+/// comparison stays an equality test: the original fires once, on the update
+/// whose counter reaches the limit, and never again.
 pub fn fe_screen_autosave_popup_update(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 10;
@@ -81,11 +92,11 @@ pub fn fe_screen_autosave_popup_update(c: &mut Cpu) {
         c.g[S0][0] = c.g[A0][0];
         call_ptr(c, 0x0039_e510, 0x0018_7ccc)?; // UIState_Update
         c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x48));
-        c.g[V1][0] = 0xf0;
+        c.g[V1][0] = tick::ticks_from_frames60(c, AUTOSAVE_POPUP_FRAMES) as u64;
         c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
-        let tick = c.g[V0][0] != c.g[V1][0];
+        let waiting = c.g[V0][0] != c.g[V1][0];
         c.sw((c.g[S0][0] as u32).wrapping_add(0x48), c.g[V0][0]);
-        if !tick {
+        if !waiting {
             c.cycles += 10;
             c.g[A0][0] = sx(0x0045_dc60);
             c.g[RA][0] = sx(0x0018_7cec);
@@ -180,5 +191,56 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(p);
             },
         );
+    }
+
+
+    // --------------------------------------------------- autosave popup timer
+
+    /// A callee outside the translated code: answer null and return at once.
+    /// The popup's state manager and screen pointers are zero, so the only
+    /// work of the update is the base state, which lands in the `miss` hook.
+    fn no_callee(c: &mut Cpu, _target: u32) {
+        c.g[V0][0] = 0;
+        c.pc = c.g[RA][0] as u32;
+    }
+
+
+    /// `FEScreenAutosavePopup_Update` at rate `hz`, `n` times from a zero
+    /// counter; the `v0` the last update left. While it is waiting that is the
+    /// counter (n); on the update that fires it is the zero the closing
+    /// `UIStateMgr_CloseTopStates` call leaves behind.
+    fn autosave_after(hz: u32, n: u32) -> u64 {
+        let mut c = crate::difftest::fresh();
+        c.hooks.miss = no_callee;
+        crate::tick::set_for_test(&mut c, hz);
+        c.g[GP][0] = GAME_GP as u64;
+        let this = DATA;
+        // no state manager (+0x10), no screen (+0x40), counter 0
+        for off in [0x10u32, 0x20, 0x40, 0x48] {
+            c.bus.write32(this + off, 0);
+        }
+        for _ in 0..n {
+            c.g[A0][0] = this as u64;
+            fe_screen_autosave_popup_update(&mut c);
+            assert_eq!(c.pc, crate::difftest::RA, "update did not return");
+        }
+        c.g[V0][0]
+    }
+
+
+    /// The autosave popup waits 4 s (240 frames) at every rate: it fires on the
+    /// 240th/480th/960th update, and exactly once (the comparison is an
+    /// equality test).
+    #[test]
+    fn fe_screen_autosave_popup_delay_follows_the_rate() {
+        for (hz, n) in [(60u32, 240u32), (120, 480), (240, 960)] {
+            assert_eq!(autosave_after(hz, n - 1), (n - 1) as u64, "{hz} Hz: still waiting");
+            assert_eq!(autosave_after(hz, n), 0, "{hz} Hz: fires on update {n}");
+            assert_eq!(
+                autosave_after(hz, n + 1),
+                (n + 1) as u64,
+                "{hz} Hz: fires only once"
+            );
+        }
     }
 }

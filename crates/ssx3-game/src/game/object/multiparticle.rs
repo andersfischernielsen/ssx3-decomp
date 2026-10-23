@@ -1518,6 +1518,10 @@ pub fn anim_delta_v15(c: &mut Cpu) {
                     c.cycles += 2;
                     if !c.fcc() {
                         // t == 0 and v > 0: bleed the delta by |s+0x10|
+                        // No 60/rate here: +0x10 is already a per-tick step
+                        // (AnimObject msg 0x66 and the ctor divide the 30 fps
+                        // value by the rate), so the budget drains in the same
+                        // wall-clock time at every rate.
                         c.cycles += 7;
                         c.lwc1(0, p_7(c.g[S0][0] as u32, 0x10));
                         c.abs_s(0, 0);

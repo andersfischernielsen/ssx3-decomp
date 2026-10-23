@@ -3501,6 +3501,15 @@ pub fn magnet_modifier_update(c: &mut Cpu) {
                     c.lwc1(1, c.pa(S0, 0x4c));
                     c.div_s(0, 0, 2);
                     c.mul_s(0, 0, 1);
+                    // `speed/len * time` is the distance moved this tick. The
+                    // ramp is per tick, so at a higher rate the step must be
+                    // smaller to cover the same distance per second (60 Hz is
+                    // the original: no change).
+                    let hz = crate::tick::rate(c);
+                    if hz != 60 {
+                        let k = FpuF32::from_f32(60.0 / hz as f32);
+                        c.f[0] = (FpuF32(c.f[0]) * k).0;
+                    }
                     c.mfc1(3, 0);
                     c.lqc2(4, c.pa(SP, 0));
                     c.qmtc2(3, 3);
@@ -5030,6 +5039,69 @@ pub(crate) mod tests {
                 );
             },
         );
+    }
+
+
+    /// The node-position getter at the magnet target's vtable slot 0x2c: not
+    /// translated, so it answers with a pointer just past its argument (where
+    /// the test stores the target position).
+    fn magnet_target_pos(c: &mut Cpu, _pc: u32) {
+        c.g[V0][0] = c.g[A0][0].wrapping_add(0x10);
+        c.pc = c.g[RA][0] as u32;
+    }
+
+    /// Distance the magnet has moved along +x after `ticks` updates at `hz`,
+    /// from rest at the origin toward (1000, 0, 0) at one unit per second.
+    fn magnet_moved(hz: u32, ticks: u32) -> f32 {
+        let mut c = crate::difftest::fresh();
+        crate::tick::set_for_test(&mut c, hz);
+        c.g[GP][0] = GAME_GP as u64;
+        // World_GetSecondsPerTick (0x2d1c70) reads the step at world+0x14.
+        let (world, game, race) = (DATA + 0x1000, DATA + 0x2000, DATA + 0x3000);
+        c.bus.write32(GAME_GP.wrapping_sub(0x848), world);
+        c.bus.write32(world + 0x14, crate::tick::step_bits(hz));
+        c.bus.write32(world + 0x84, game);
+        c.bus.write32(game + 0xc, race);
+        // The target id indexes race+0x28; its node's vtable slot 0x2c is the
+        // position getter (the miss handler above).
+        let (node, vt, id) = (DATA + 0x4000, DATA + 0x5000, 3u32);
+        c.bus.write32(race + 0x28 + 4 * id, node);
+        c.bus.write32(node + 0x6c0, vt);
+        c.bus.write16(vt + 0x28, 0);
+        c.bus.write32(vt + 0x2c, 0x0abc_0000);
+        let target = node + 0x6c0 + 0x10;
+        for (i, v) in [1000.0f32, 0.0, 0.0, 0.0].iter().enumerate() {
+            c.bus.write32(target + 4 * i as u32, v.to_bits());
+        }
+        c.hooks.miss = magnet_target_pos;
+        let s = DATA + 0x100;
+        c.bus.write32(s + 0x44, id);
+        c.bus.write32(s + 0x48, 1.0f32.to_bits()); // one unit per second
+        for off in [0x4cu32, 0x50, 0x54] {
+            c.bus.write32(s + off, 0);
+        }
+        for i in 0..4u32 {
+            c.bus.write32(s + 0x10 + 4 * i, 0); // position = origin
+        }
+        for _ in 0..ticks {
+            c.g[A0][0] = s as u64;
+            magnet_modifier_update(&mut c);
+        }
+        f32::from_bits(c.bus.read32(s + 0x10))
+    }
+
+    /// The magnet's per-tick step is `dir * (speed/len) * elapsed`, so a
+    /// higher rate must take a proportionally smaller step: one second of
+    /// pulling moves the node the same distance at every rate.
+    #[test]
+    fn magnet_modifier_update_follows_the_rate() {
+        let d60 = magnet_moved(60, 60);
+        assert!((d60 - 30.5).abs() < 0.01, "{d60}");
+        for (hz, ticks) in [(120u32, 120u32), (240, 240)] {
+            let d = magnet_moved(hz, ticks);
+            // The discrete ramp differs from 60 Hz by O(1/rate); 2% covers it.
+            assert!((d - d60).abs() <= 0.02 * d60.abs(), "{hz} Hz: {d} vs {d60}");
+        }
     }
 
 

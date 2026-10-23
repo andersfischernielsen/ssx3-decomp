@@ -5726,6 +5726,9 @@ pub fn rider_update_heading_and_audio(c: &mut Cpu) {
             }
             c.cycles += 4;
             let k = ldf_2(c, 0, gp_3(c, -0x78ec));
+            // `heading += (target - heading) * 0.15` per tick is a smoothing
+            // filter: the factor follows the rate (exact at 60).
+            let k = smoothing_60(c, k);
             let step = fr_2(c, 12) * k;
             setf_2(c, 0, step);
             let heading = fr_2(c, 2) + step;
@@ -6709,6 +6712,8 @@ pub fn rider_update_leg_ik_blend(c: &mut Cpu) {
         if in_air_anim {
             c.cycles += 5;
             c.lwc1(3, gp(c, -0x7934));
+            // The blend's step is 0.05 per 60 Hz tick (also the clamp's step).
+            c.f[3] = rate_step_60(c, FpuF32(c.f[3])).0;
             c.c_lt_s(3, 2);
             if c.fcc() {
                 // blend = current - step, straight out (no clamp).
@@ -6726,7 +6731,15 @@ pub fn rider_update_leg_ik_blend(c: &mut Cpu) {
         // Not an air animation: approach 1.
         c.cycles += 5;
         c.lwc1(0, gp(c, -0x792c));
+        // `1 + step`: the band the blend settles inside (the step follows the
+        // rate; at 60 the baked 1.05 is used).
+        if crate::tick::rate(c) != 60 {
+            let step = rate_step_60(c, FpuF32::from_f32(0.05f32));
+            c.f[0] = (FpuF32::ONE + step).0;
+        }
         c.lwc1(3, gp(c, -0x7928));
+        // The blend's step is 0.05 per 60 Hz tick.
+        c.f[3] = rate_step_60(c, FpuF32(c.f[3])).0;
         c.c_lt_s(0, 2);
         if !c.fcc() {
             c.cycles += 3;
@@ -7377,12 +7390,13 @@ pub fn rider_update_timed_event_anim(c: &mut Cpu) {
             return Ok(());
         }
 
-        // Recent enough (under 180 frames) and not in the future.
+        // Recent enough (under 180 frames = 3 s) and not in the future.
         c.cycles += 7;
         anim_callee::FRAME_COUNTER.call(c, 0x0011_5bc0)?;
         c.g[V1][0] = lw_2(c, p(r32_3(c, S0), rider_anim::LAST_FRAME));
         c.g[V1][0] = sx(r32_3(c, V0).wrapping_sub(r32_3(c, V1)));
-        c.g[V0][0] = ((c.g[V1][0] as i64) < 180) as u64;
+        // 180 frames is a duration: 180 ticks at 60, 360 at 120.
+        c.g[V0][0] = ((c.g[V1][0] as i64) < crate::tick::ticks_from_frames60(c, 180) as i64) as u64;
         let recent = c.g[V0][0] != 0;
         c.g[V0][0] = 0xffff_ffff_ffff_ffff;
         if !recent {
@@ -8095,14 +8109,41 @@ pub fn rider_estimate_finish_time(c: &mut Cpu) {
 }
 
 
-/// An `f{r}` holding a speed in units per 60 Hz tick, as a speed per tick at
-/// the game's rate (units/tick × 60 / rate). At 60 nothing changes, so the
+/// An amount per 60 Hz tick — a speed in units/tick, a per-tick increment, a
+/// slew step, a per-tick phase — as the amount per tick at the game's rate
+/// (`x * 60 / rate`). At 60 the value is returned unchanged, so the
 /// differential test still sees the original bits.
 #[inline]
-pub(crate) fn per_tick_60(c: &mut Cpu, r: usize) {
+pub(crate) fn rate_step_60(c: &mut Cpu, x: FpuF32) -> FpuF32 {
     let hz = crate::tick::rate(c);
-    if hz != 60 {
-        setf_2(c, r, fr_2(c, r) * FpuF32::from_f32(60.0f32 / hz as f32));
+    if hz == 60 {
+        x
+    } else {
+        x * FpuF32::from_f32(60.0f32 / hz as f32)
+    }
+}
+
+
+/// [`rate_step_60`] for the value in `f{r}` (nothing changes at 60).
+#[inline]
+pub(crate) fn per_tick_60(c: &mut Cpu, r: usize) {
+    let x = fr_2(c, r);
+    let y = rate_step_60(c, x);
+    setf_2(c, r, y);
+}
+
+
+/// A per-60-Hz-tick smoothing factor `a` of `x += (t - x) * a`, as the factor
+/// for the game's rate: `1 - (1 - a)^(60/rate)`, so the filter keeps its time
+/// constant. At 60 it is unchanged.
+#[inline]
+pub(crate) fn smoothing_60(c: &mut Cpu, a: FpuF32) -> FpuF32 {
+    let hz = crate::tick::rate(c);
+    if hz == 60 {
+        a
+    } else {
+        let a = a.to_f32();
+        FpuF32::from_f32(1.0 - (1.0 - a).powf(60.0 / hz as f32))
     }
 }
 
@@ -9895,6 +9936,76 @@ pub(crate) mod tests {
                 c.bus.write32(rider + 0x358, event);
             },
         );
+    }
+
+
+    /// `Rider_UpdateTimedEventAnim`'s "recent enough" window is 180 frames
+    /// (3 s) of the AI's tick counter: the same wall-clock window at 120/240 Hz.
+    #[test]
+    fn rider_update_timed_event_anim_window_is_a_duration() {
+        use crate::tick;
+        let mut c = crate::difftest::fresh();
+        for hz in [60u32, 120, 240] {
+            tick::set_for_test(&mut c, hz);
+            // The comparison the function makes: `now - last < 180 frames`.
+            let limit = tick::ticks_from_frames60(&mut c, 180);
+            assert_eq!(limit, 3 * hz, "{hz} Hz: 3 s of ticks");
+            // A counter difference of 179 frames is inside the window, 180 is not.
+            let inside = tick::ticks_from_frames60(&mut c, 179);
+            assert!(inside < limit, "{hz} Hz");
+        }
+    }
+
+
+    /// `Rider_UpdateHeadingAndAudio` blends the heading 15% of the way to the
+    /// ground normal per tick: a tenth of a second of ticks must cover the same
+    /// fraction of the difference at every rate (the factor is
+    /// `1 - 0.85^(60/rate)`), so the steering response keeps its timing.
+    #[test]
+    fn rider_update_heading_and_audio_follows_the_rate() {
+        use crate::tick;
+        let mut c = crate::difftest::fresh();
+        let run = |c: &mut Cpu, hz: u32| -> f32 {
+            tick::set_for_test(c, hz);
+            let k = smoothing_60(c, FpuF32::from_f32(0.15));
+            let mut heading = FpuF32::ZERO;
+            // 1/10 s of ticks.
+            for _ in 0..hz / 10 {
+                heading = heading + (FpuF32::ONE - heading) * k;
+            }
+            heading.to_f32()
+        };
+        let at_60 = run(&mut c, 60);
+        assert!((at_60 - 0.6228).abs() < 1e-3, "{at_60}");
+        for hz in [120u32, 240] {
+            let at = run(&mut c, hz);
+            assert!((at - at_60).abs() < 1e-4, "{hz} Hz: {at} after 0.1 s, 60 Hz: {at_60}");
+        }
+    }
+
+
+    /// `Rider_UpdateLegIKBlend` moves the blend 0.05 per tick: at 120/240 Hz a
+    /// tick carries `60/rate` of that, so a blend takes the same wall-clock
+    /// time to reach its target.
+    #[test]
+    fn rider_update_leg_ik_blend_follows_the_rate() {
+        use crate::tick;
+        let mut c = crate::difftest::fresh();
+        let per_60 = |c: &mut Cpu, hz: u32| -> f32 {
+            tick::set_for_test(c, hz);
+            let step = rate_step_60(c, FpuF32::from_f32(0.05));
+            step.to_f32() * (hz / 60) as f32
+        };
+        let at_60 = per_60(&mut c, 60);
+        assert!((at_60 - 0.05).abs() < 1e-9, "{at_60}");
+        for hz in [120u32, 240] {
+            let at = per_60(&mut c, hz);
+            assert!(
+                (at - 0.05).abs() < 1e-9,
+                "{hz} Hz: {} ticks move the blend {at}, not 0.05",
+                hz / 60
+            );
+        }
     }
 
 

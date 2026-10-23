@@ -42,6 +42,7 @@ pub(crate) use crate::game::main::gamemode::low as low_2;
 pub(crate) use crate::game::main::gamemode::sp_2;
 pub(crate) use crate::game::main::gamemode::lw_r;
 pub(crate) use crate::game::movie::movieplayer::gp as gp_3;
+pub(crate) use crate::game::ai::rider::rate_step_60;
 pub(crate) use crate::game::movie::movieplayer::at;
 pub(crate) use crate::game::movie::movieplayer::word;
 pub(crate) use crate::game::fe::feasyncfile::lw as lw_2;
@@ -2885,6 +2886,8 @@ pub fn rider_board_press_sub_settle_slew(c: &mut Cpu) {
         if below {
             c.cycles += 5;
             c.lwc1(1, gp_3(c, -0x75f8));
+            // The slew's step is 0.025 per 60 Hz tick (times the time scale).
+            c.f[1] = rate_step_60(c, FpuF32(c.f[1])).0;
             Addr(at(c, V0, 0x288)).sw(c, 0);
             c.mul_s(0, 0, 1);
             let ra = word(c, RA);
@@ -2894,6 +2897,8 @@ pub fn rider_board_press_sub_settle_slew(c: &mut Cpu) {
         }
         c.cycles += 5;
         c.lwc1(1, gp_3(c, -0x75fc));
+        // 0.025 per 60 Hz tick.
+        c.f[1] = rate_step_60(c, FpuF32(c.f[1])).0;
         c.g[AT][0] = 0x3f80_0000;
         c.mtc1(AT, 2);
         c.mul_s(0, 0, 1);
@@ -2901,6 +2906,8 @@ pub fn rider_board_press_sub_settle_slew(c: &mut Cpu) {
         c.cycles += 5;
         c.lwc1(0, at(c, V0, 0x300));
         c.lwc1(1, gp_3(c, -0x7600));
+        // 0.025 per 60 Hz tick.
+        c.f[1] = rate_step_60(c, FpuF32(c.f[1])).0;
         c.g[AT][0] = 0xffff_ffff_bf80_0000;
         c.mtc1(AT, 2);
         c.mul_s(0, 0, 1);
@@ -5662,6 +5669,45 @@ pub(crate) use load_state_tests;
         );
     }
 
+
+    /// `RiderBoardPressSub_SettleSlew` writes the slew's `maxStep` from the
+    /// rider's time scale and 0.025 **per tick**: at 120/240 Hz the step is
+    /// halved/quartered, so the board press settles in the same real time.
+    #[test]
+    fn rider_board_press_sub_settle_slew_follows_the_rate() {
+        use crate::tick;
+        const STATE: u32 = 0x0080_0000;
+        const RIDER: u32 = 0x0080_1000;
+        // The game's 0.025 at the three sites (gp-0x7600/-0x75fc/-0x75f8).
+        const STEP_60: u32 = 0x3ccc_ccce;
+        let step = |hz: u32, amount: f32| -> (u32, u32) {
+            let mut c = crate::difftest::fresh();
+            c.g[GP][0] = GAME_GP as u64;
+            c.g[A0][0] = STATE as u64;
+            c.bus.write32(STATE + 0x14, RIDER);
+            c.bus.write32(RIDER + 0x280, amount.to_bits());
+            c.bus.write32(RIDER + 0x300, 1.0f32.to_bits()); // time scale
+            for off in [0x7600u32, 0x75fc, 0x75f8] {
+                c.bus.write32(GAME_GP.wrapping_sub(off), STEP_60);
+            }
+            tick::set_for_test(&mut c, hz);
+            rider_board_press_sub_settle_slew(&mut c);
+            (c.bus.read32(RIDER + 0x284), c.bus.read32(RIDER + 0x288))
+        };
+        // 60 Hz: the step as stored, and the snap direction of each branch.
+        assert_eq!(step(60, 0.2), (STEP_60, 0), "below");
+        assert_eq!(step(60, 0.8), (STEP_60, 0x3f80_0000), "above");
+        // Below -0.5 (the clamp) it snaps down; exactly -0.5 takes the
+        // `|slew| < 0.5` branch and leaves the snap direction at 0.
+        assert_eq!(step(60, -0.5), (STEP_60, 0), "at the clamp");
+        assert_eq!(step(60, -0.6), (STEP_60, 0xbf80_0000), "negative");
+        for (hz, want) in [(120u32, 0x3c4c_ccceu32), (240, 0x3bcc_ccce)] {
+            for amount in [0.2f32, 0.8, -0.6] {
+                let (s, _) = step(hz, amount);
+                assert_eq!(s, want, "{hz} Hz, amount {amount}");
+            }
+        }
+    }
 
     #[test]
     fn ai_update_rider_poses_matches() {
