@@ -225,7 +225,14 @@ impl ApplicationHandler for App {
             .current_monitor()
             .and_then(|m| m.refresh_rate_millihertz())
             .map_or(60.0, |m| (m as f64 / 1000.0).clamp(24.0, 500.0));
-        eprintln!("[window] display {:.0} Hz, game {} Hz", self.display_hz, ssx3_ps2::machine::vsync_hz());
+        let game_hz = ssx3_ps2::machine::vsync_hz() as f64 / 1.001;
+        let locked = self.pacer.lock_to_display(game_hz, self.display_hz);
+        eprintln!(
+            "[window] display {:.0} Hz, game {} Hz{}",
+            self.display_hz,
+            ssx3_ps2::machine::vsync_hz(),
+            if locked { ", locked to the display" } else { "" }
+        );
         self.window = Some(window);
         self.follow_window_size(size.width, size.height);
     }
@@ -319,6 +326,12 @@ impl ApplicationHandler for App {
                 let max_vsyncs = (game_hz / self.display_hz - 0.01).ceil().max(1.0) as u32;
                 let plan = self.pacer.plan(now, period, max_vsyncs, self.catch_up);
                 if plan.vsyncs == 0 {
+                    if self.pacer.repeat_image() {
+                        // Show the last image again: the next call comes
+                        // with the next display refresh.
+                        self.show();
+                        return;
+                    }
                     let w = self.pacer.wait(now, period);
                     std::thread::sleep(Duration::from_secs_f64(w.min(0.002)));
                     return;
@@ -354,9 +367,11 @@ impl App {
                 let app = self.cpu.bus.read32(ssx3_game::tick::APPMAN_PTR);
                 let updates = if app != 0 { self.cpu.bus.read32(app + 0x1c) } else { 0 };
                 eprintln!(
-                    "          game updates {updates}, audio gaps {:.2}s total, lead {} ms",
+                    "          game updates {updates}, audio gaps {:.2}s total, lead {} ms, repeated images {}, catch-up VSyncs {}",
                     ssx3_iop::audio::underrun_frames() as f64 / 48000.0,
-                    ssx3_ps2::machine::audio_lead_frames() / 48
+                    ssx3_ps2::machine::audio_lead_frames() / 48,
+                    self.pacer.repeats,
+                    self.pacer.doubled
                 );
             }
             let now = Instant::now();

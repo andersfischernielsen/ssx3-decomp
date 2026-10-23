@@ -94,6 +94,18 @@ games are:
   changes the game's speed. Measured on a 60 Hz display at a 120 Hz game
   rate: 119 updates, 118 VSyncs and 290 M EE cycles (294.9 M nominal) per
   second.
+- Locked to the display (`Pacer::lock_to_display`) when the game rate is a
+  whole multiple or fraction of the display rate (within 1%: 120 Hz on a 120
+  or 60 Hz display, 60 Hz on 120 Hz): a fixed number of updates per image,
+  the last image shown again when none is due, and the wall clock only
+  corrects when it is more than one whole update away. Rounding the wall
+  clock at every image instead stuttered: a 119.88 Hz game and a 120 Hz
+  display stay in phase for seconds at a time, and present jitter around the
+  half-update point flipped between 0 updates (a repeated image) and 2 (a
+  catch-up VSync, the game's frame drop). Simulated (1 ms jitter, 60 s):
+  locked, one repeated image per ~8 s and no catch-up. Measured (120 Hz game,
+  60 Hz display, 30 s): no repeated images, catch-up only during loading.
+  The status line counts both (`repeated images`, `catch-up VSyncs`).
 - A host too slow to run that many VSyncs: with catch-up (`SSX3_CATCHUP`,
   settings "Keep speed when slow", on by default) the extra updates are
   queued per VSync instead, through the game's own frame-drop path

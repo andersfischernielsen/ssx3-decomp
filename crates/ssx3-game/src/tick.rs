@@ -229,6 +229,20 @@ pub struct Pacer {
     /// The previous run's time and the longest recent frame (s, decaying).
     last: Option<f64>,
     worst: f64,
+    /// Display lock ([`Pacer::lock_to_display`]): updates per image when the
+    /// game rate is a whole multiple or fraction of the display's, and the
+    /// fraction of an update carried to the next image.
+    step: Option<f64>,
+    carry: f64,
+    /// The display's refresh period (s) and the last image's time.
+    display: f64,
+    shown: Option<f64>,
+    /// The last plan asked to show the previous image again.
+    repeat: bool,
+    /// Images that repeated the previous game frame and VSyncs that ran
+    /// extra updates (catch-up), for the front end's status line.
+    pub repeats: u64,
+    pub doubled: u64,
 }
 
 impl Pacer {
@@ -251,17 +265,54 @@ impl Pacer {
 
     /// The plan at wall time `now` (s), one update per `period` (s).
     pub fn plan(&mut self, now: f64, period: f64, max_vsyncs: u32, catch_up: bool) -> Plan {
+        self.repeat = false;
+        if self.step.is_some() {
+            // Back well before the next refresh: the display does not wait
+            // for our images (a hidden window, startup). Wait on the clock.
+            if self.shown.is_some_and(|t| now - t < 0.5 * self.display) {
+                return Plan { vsyncs: 0, updates_per_vsync: 0 };
+            }
+            self.shown = Some(now);
+        }
         let owed = self.owed(now, period);
-        // Nearest whole update: half an update of slack either way absorbs
-        // jitter without dropping or doubling frames.
-        let n = (owed + 0.5).floor().max(0.0) as u32;
+        let n = match self.step {
+            // Locked to the display: the display's own cadence, and the wall
+            // clock only when it is more than a whole update away (a display
+            // a little off the game rate, 120 Hz for 119.88: one repeated
+            // image every ~8 s; a host that missed a VSync: catch-up).
+            // Rounding the wall clock instead flips between 0 and 2 updates
+            // per image while the two clocks are in phase, which they are
+            // for seconds at a time.
+            Some(step) => {
+                self.carry += step;
+                let mut n = (self.carry + 1e-6).floor();
+                self.carry -= n;
+                let dev = owed - n;
+                if dev > 1.0 {
+                    n += dev.floor();
+                } else if dev < -1.0 {
+                    n = (n + dev.ceil()).max(0.0);
+                }
+                n as u32
+            }
+            // Nearest whole update: half an update of slack either way
+            // absorbs jitter without dropping or doubling frames.
+            None => (owed + 0.5).floor().max(0.0) as u32,
+        };
         if n == 0 {
+            if self.step.is_some() {
+                self.repeats += 1;
+                self.repeat = true;
+            }
             return Plan { vsyncs: 0, updates_per_vsync: 0 };
         }
         self.note_frame(now);
         let vsyncs = n.min(max_vsyncs.max(1));
         let per = if catch_up { n.div_ceil(vsyncs).min(Self::MAX_UPDATES_PER_VSYNC) } else { 1 };
         let delivered = (vsyncs * per) as f64;
+        if per > 1 {
+            self.doubled += vsyncs as u64;
+        }
         self.done += delivered;
         if owed - delivered > 1.5 {
             // More than the caps can repay: slow down instead of carrying it.
@@ -285,6 +336,9 @@ impl Pacer {
 
     /// Seconds until the next update is due (after a plan with no VSyncs).
     pub fn wait(&self, now: f64, period: f64) -> f64 {
+        if let (Some(_), Some(t)) = (self.step, self.shown) {
+            return (t + 0.5 * self.display - now).max(0.0);
+        }
         match self.base {
             Some(base) => (base + (self.done + 0.5) * period - now).max(0.0),
             None => 0.0,
@@ -305,9 +359,38 @@ impl Pacer {
         (self.worst * 2.5).clamp(0.06, 0.18)
     }
 
-    /// Start over (e.g. after a pause).
+    /// Start over (e.g. after a pause); the display lock stays.
     pub fn reset(&mut self) {
-        *self = Self::default();
+        *self = Self { step: self.step, display: self.display, repeats: self.repeats, doubled: self.doubled, ..Self::default() };
+    }
+
+    /// Follow the display's cadence when the game rate is (within 1%) a
+    /// whole multiple of the display rate (120 Hz game on 120 or 60 Hz) or a
+    /// whole fraction of it (60 Hz game on 120 Hz): `plan` is then called
+    /// once per display refresh (the front end shows an image every call,
+    /// repeating the last one when no update is due) and runs a fixed number
+    /// of updates per image. Otherwise (144 Hz display, 120 Hz game) it
+    /// paces on the wall clock alone. Returns whether it locked.
+    pub fn lock_to_display(&mut self, game_hz: f64, display_hz: f64) -> bool {
+        let e = game_hz / display_hz;
+        let near = |x: f64| x.round() >= 1.0 && (x / x.round() - 1.0).abs() < 0.01;
+        self.step = if near(e) {
+            Some(e.round())
+        } else if near(1.0 / e) {
+            Some(1.0 / (1.0 / e).round())
+        } else {
+            None
+        };
+        self.carry = 0.0;
+        self.display = 1.0 / display_hz;
+        self.step.is_some()
+    }
+
+    /// After a plan with no VSyncs: show the last image again (locked to the
+    /// display: that waits for the next refresh) rather than wait on the
+    /// clock ([`Pacer::wait`]).
+    pub fn repeat_image(&self) -> bool {
+        self.repeat
     }
 }
 
@@ -526,6 +609,85 @@ mod tests {
         // A 10 fps host: capped (the game slows down, no spiral).
         let (u, _) = simulate(60.0, 0.1, 1, true, 10.0);
         assert!(u <= 101 * Pacer::MAX_UPDATES_PER_VSYNC && u < 600, "{u}");
+    }
+
+    /// A VSync'd display at `display_hz` with presentation jitter (s, ±):
+    /// returns (repeated images, images with extra updates, updates) over
+    /// `secs`.
+    fn simulate_vsync(game_hz: f64, display_hz: f64, jitter: f64, lock: bool, secs: f64) -> (u32, u32, u32) {
+        let p = 1.001 / (game_hz.round());
+        let d = 1.0 / display_hz;
+        let mut k = Pacer::default();
+        if lock {
+            assert!(k.lock_to_display(game_hz, display_hz));
+        }
+        let maxv = (game_hz / display_hz - 0.01).ceil().max(1.0) as u32;
+        let (mut repeats, mut extra, mut updates) = (0, 0, 0);
+        let mut seed = 12345u32;
+        let mut i = 0u64;
+        while (i as f64) * d < secs {
+            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            let j = ((seed >> 8) as f64 / (1u32 << 24) as f64 * 2.0 - 1.0) * jitter;
+            let t = i as f64 * d + j;
+            let plan = k.plan(t, p, maxv, true);
+            if plan.vsyncs == 0 {
+                repeats += 1;
+                if !lock {
+                    // The unlocked front end looks again shortly.
+                    let t2 = t + k.wait(t, p).min(0.002);
+                    let plan = k.plan(t2, p, maxv, true);
+                    updates += plan.vsyncs * plan.updates_per_vsync;
+                }
+            } else {
+                if plan.vsyncs * plan.updates_per_vsync > (game_hz / display_hz).round().max(1.0) as u32 {
+                    extra += 1;
+                }
+                updates += plan.vsyncs * plan.updates_per_vsync;
+            }
+            i += 1;
+        }
+        (repeats, extra, updates)
+    }
+
+    #[test]
+    fn pacer_locks_to_the_display() {
+        // 120 Hz game on a 120 Hz display, 1 ms of jitter, 60 s: about one
+        // repeated image per 8.3 s (120 vs 119.88), no extra updates.
+        let (r, x, u) = simulate_vsync(120.0, 120.0, 0.001, true, 60.0);
+        assert!(r <= 8 && x == 0, "locked: {r} repeats, {x} extra");
+        assert!((u as f64 - 60.0 * 120.0 / 1.001).abs() <= 3.0, "{u}");
+        // The same with wall-clock rounding stutters while the clocks are in
+        // phase.
+        let (r, x, _) = simulate_vsync(120.0, 120.0, 0.001, false, 60.0);
+        assert!(r + x > 50, "unlocked: {r} repeats, {x} extra");
+        // 60 Hz game on 120 Hz: every other image; 240 Hz game on 120 Hz: two
+        // updates per image.
+        let (r, x, u) = simulate_vsync(60.0, 120.0, 0.001, true, 60.0);
+        assert!(x == 0 && (r as f64 - 3600.0).abs() <= 10.0, "{r} {x}");
+        assert!((u as f64 - 3600.0 / 1.001).abs() <= 3.0, "{u}");
+        let (_, x, u) = simulate_vsync(240.0, 120.0, 0.001, true, 60.0);
+        assert!(x == 0, "{x}");
+        assert!((u as f64 - 60.0 * 240.0 / 1.001).abs() <= 3.0, "{u}");
+        // 120 Hz on 144 Hz does not lock.
+        assert!(!Pacer::default().lock_to_display(120.0, 144.0));
+        // A display that does not wait for images (a hidden window): the
+        // clock paces, no spinning.
+        let mut k = Pacer::default();
+        k.lock_to_display(120.0, 120.0);
+        let p = 1.001 / 120.0;
+        let (mut t, mut u, mut shown) = (0.0, 0, 0);
+        while t < 10.0 {
+            let plan = k.plan(t, p, 1, true);
+            if plan.vsyncs > 0 || k.repeat_image() {
+                u += plan.vsyncs * plan.updates_per_vsync;
+                shown += 1;
+                t += 1e-4;
+            } else {
+                t += k.wait(t, p).clamp(1e-4, 0.002);
+            }
+        }
+        assert!((u as f64 - 1200.0 / 1.001).abs() <= 3.0, "{u}");
+        assert!(shown <= 2410, "{shown}");
     }
 
     #[test]
