@@ -71,6 +71,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0010_8f88, computer_actor_rider_init_2, "ComputerActorRider_Init_2"),
     (0x0010_a768, computer_actor_rider_get_control_input, "ComputerActorRider_GetControlInput"),
     (0x0010_b250, computer_actor_rider_think_spin, "ComputerActorRider_ThinkSpin"),
+    (0x0010_b790, computer_actor_rider_think_gate, "ComputerActorRider_ThinkGate"),
     (0x0010_c4f8, computer_actor_rider_apply_difficulty, "ComputerActorRider_ApplyDifficulty"),
     (0x0010_cab8, computer_actor_rider_init_difficulty_2, "ComputerActorRider_InitDifficulty_2"),
     (0x0010_d170, computer_actor_rider_reset_trick_counts, "ComputerActorRider_ResetTrickCounts"),
@@ -79,6 +80,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0010_d938, computer_actor_rider_is_far_behind_human, "ComputerActorRider_IsFarBehindHuman"),
     (0x0010_d990, computer_actor_rider_is_far_ahead_of_human, "ComputerActorRider_IsFarAheadOfHuman"),
     (0x0010_d9e8, computer_actor_rider_is_rival_target, "ComputerActorRider_IsRivalTarget"),
+    (0x0010_dbf0, computer_actor_rider_find_attack_target, "ComputerActorRider_FindAttackTarget"),
     (0x0010_e028, rider_set_timed_event, "Rider_SetTimedEvent"),
     (0x0010_e098, rider_add_boost, "Rider_AddBoost"),
     (0x0010_e558, rider_on_split_marker, "Rider_OnSplitMarker"),
@@ -1099,6 +1101,9 @@ pub(crate) const RACE_EVENTS: u32 = 0x004a_5d60;
 /// within 200 units, or its event test reports one, then tells the race-event
 /// handler about every entry (matched ones with `found`, the unmatched shared
 /// list with 1,0).
+///
+/// Tick rate: 500 units off the path, the reselect is forced once a second
+/// (`now % reselect_period`, 60 ticks at 60 Hz).
 pub fn rider_update_race_progress(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 30;
@@ -1145,7 +1150,8 @@ pub fn rider_update_race_progress(c: &mut Cpu) {
                     // The race clock modulo 60 check.
                     c.cycles += 4;
                     c.g[V0][0] = c.lw(gp(c, -0x848));
-                    c.g[A1][0] = 0x3c;
+                    // Once per second: 60 ticks at 60 Hz, `rate` otherwise.
+                    c.g[A1][0] = reselect_period(c);
                     c.cycles += 7;
                     c.g[V1][0] = c.lw(p(c.g[V0][0] as u32, 0x84));
                     c.g[A0][0] = c.lw(p(c.g[V1][0] as u32, 0xc));
@@ -1348,6 +1354,9 @@ pub fn rider_update_race_progress(c: &mut Cpu) {
 /// ends within 200 units or its event test fires, then computes the AI heading
 /// (+0x4cc) from the look-ahead point's offset (`atan2(dy, dx)`, wrapped to
 /// (-pi, pi]).
+///
+/// Tick rate: 500 units off the path, the reselect is forced once a second
+/// (`now % reselect_period`, 60 ticks at 60 Hz).
 pub fn rider_update_ai_path_progress(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 14;
@@ -1419,7 +1428,8 @@ pub fn rider_update_ai_path_progress(c: &mut Cpu) {
                 if far {
                     // The race clock modulo 60 check.
                     c.cycles += 3;
-                    c.g[A1][0] = 0x3c;
+                    // Once per second: 60 ticks at 60 Hz, `rate` otherwise.
+                    c.g[A1][0] = reselect_period(c);
                     c.cycles += 7;
                     c.g[V1][0] = c.lw(p(c.g[V0][0] as u32, 0x84));
                     c.g[A0][0] = c.lw(p(c.g[V1][0] as u32, 0xc));
@@ -5094,6 +5104,530 @@ fn write_spin_input(c: &mut Cpu, ai: u32) {
 }
 
 
+// ---------------------------------------------------------------------------
+// The start gate and attacks (tick-rate T4: AI frame counter readers).
+
+/// `int AI_GetFrameCounter()` (0x1298c8): the AI frame counter (AI `+0x8`,
+/// incremented once per tick by `AI_Update`).
+const AI_FRAME_COUNTER: u32 = 0x0012_98c8;
+/// `BEAggressionInt* BEAggressionInt_GetInstance()` (0x155a50).
+const AGGRESSION_INSTANCE: u32 = 0x0015_5a50;
+/// `int BEAggressionInt_GetRivalLevel(aggr, int rider, int other)` (0x155b50).
+const AGGRESSION_RIVAL_LEVEL: u32 = 0x0015_5b50;
+
+/// Fields read by `ThinkGate` and `FindAttackTarget`.
+pub(crate) mod gate {
+    /// `ComputerActorRider +0x18`: the rider. Its object at `+0x6c0` has a
+    /// vtable whose slot 7 (`+0x38` delta, `+0x3c` function) answers the
+    /// rider's index in the race.
+    pub const RIDER: u32 = 0x18;
+    pub const RIDER_V: u32 = 0x6c0;
+    /// `ComputerActorRider +0xdf0`: the gate steering jitter (-1..1, f32).
+    pub const STEER_JITTER: u32 = 0xdf0;
+    /// The jitter is re-rolled every 20 60 Hz frames.
+    pub const JITTER_FRAMES: u32 = 20;
+    /// `Rider +0x1b0`: velocity; `+0x8 + 0x24 i` / `+0xc + 0x24 i`: the
+    /// distance and direction to rider i; `+0xf4`: the AI frame counter at
+    /// the last attack.
+    pub const VELOCITY: u32 = 0x1b0;
+    pub const OTHER_DIST: u32 = 0x8;
+    pub const OTHER_ANGLE: u32 = 0xc;
+    pub const OTHER_STRIDE: u32 = 0x24;
+    pub const LAST_ATTACK: u32 = 0xf4;
+    /// 60 Hz frames between two attacks of one AI (2 s).
+    pub const ATTACK_COOLDOWN_FRAMES: u32 = 120;
+    /// `AI +0x78`: the number of riders.
+    pub const AI_RIDER_COUNT: u32 = 0x78;
+}
+
+/// The forced path reselect of `Rider_UpdateRaceProgress` and
+/// `Rider_UpdateAIPathProgress` when 500 units off the path runs once a
+/// second: `AI frame counter % period == 0`, period = 60 ticks at 60 Hz
+/// (`li a1, 0x3c`), `rate` ticks otherwise.
+pub(crate) fn reselect_period(c: &mut Cpu) -> u64 {
+    crate::tick::ticks_from_frames60(c, 60) as u64
+}
+
+/// `void ComputerActorRider_ThinkGate(ComputerActorRider *ai, ControlInput
+/// *in)` (0x10b790): the AI's steering input at the start gate.
+///
+/// `t = 180 - now` (60 Hz frames left of the start countdown, `now` = the AI
+/// frame counter, reset at the race start). Riders with index < 4 push off
+/// (steer +31) once `t < 33 - (index - 1) * 10`; riders with index < 3 lean
+/// back (steer -31) while `t < 72`. Otherwise the gate jitter `+0xdf0` (a
+/// random -1..1 re-rolled every 20 frames) is written, scaled by 31.
+///
+/// Tick rate: `now` counts ticks. Off 60 it is converted to 60 Hz frames
+/// (`now * 60 / rate`) before `180 - now`, so the thresholds keep their
+/// wall-clock times; the re-roll period is `ticks_from_frames60(20)`. Both
+/// are exact at 60.
+pub fn computer_actor_rider_think_gate(c: &mut Cpu) {
+    use gate::*;
+    guest(c, |c| {
+        c.cycles += 32;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_fpr(c, 21, 0x38);
+        frame.save_fpr(c, 20, 0x30);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        let ai = c.g[S0][0] as u32;
+        let input = c.g[S1][0] as u32;
+        call_ptr(c, AI_FRAME_COUNTER, 0x0010_b7b4)?;
+
+        // f21 = 180 - now (frames left), f20 = 33 - (index - 1) * 10.
+        c.g[AT][0] = 0x4204_0000;
+        c.mtc1(AT, 20);
+        c.g[A0][0] = c.lw(ai.wrapping_add(RIDER));
+        c.mtc1(V0, 1);
+        c.cvt_s_w(1, 1);
+        let rate = crate::tick::rate(c);
+        if rate != 60 {
+            // The elapsed time in 60 Hz frames.
+            let now = c.g[V0][0] as u32 as i32;
+            let frames60 = (now as f64 * 60.0 / rate as f64) as f32;
+            setf(c, 1, FpuF32::from_f32(frames60));
+        }
+        c.g[AT][0] = 0x4334_0000;
+        c.mtc1(AT, 0);
+        c.g[A1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(RIDER_V));
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(RIDER_V));
+        c.sub_s(21, 0, 1);
+        c.g[V1][0] = c.lh((c.g[A1][0] as u32).wrapping_add(0x38));
+        c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x3c));
+        let target = c.g[V0][0] as u32;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        call_ptr(c, target, 0x0010_b7ec)?;
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+        c.g[V1][0] = 0xa;
+        c.mult(0, V0, V0, V1);
+        c.mtc1(V0, 0);
+        c.cvt_s_w(0, 0);
+        c.sub_s(20, 20, 0);
+        c.c_lt_s(21, 20);
+
+        // The control input word's steering field (6-bit signed, bits
+        // 12..17): `steer` = write `a0` (+31: 0x1f000, -31: 0x21000) into
+        // v0 (the word with the field cleared); else the jitter.
+        let mut steer = false;
+        if c.fcc() {
+            // Push-off time for this rider: indices 1..3 only.
+            c.cycles += 10;
+            rider_index_call(c, ai, 0x0010_b82c)?;
+            c.g[V0][0] = ((c.g[V0][0] as i64) < 4) as u64;
+            let not_front = c.g[V0][0] == 0;
+            c.g[A0][0] = 0x10000;
+            if !not_front {
+                c.cycles += 6;
+                c.g[V0][0] = c.lw(input);
+                c.g[V1][0] = 0xffff_ffff_fffc_0000;
+                c.g[V1][0] |= 0xfff;
+                c.g[V0][0] &= c.g[V1][0];
+                c.g[A0][0] |= 0xf000;
+                steer = true;
+            }
+        }
+        if !steer {
+            // b_10b850: lean back while fewer than 72 frames are left.
+            c.cycles += 5;
+            c.g[AT][0] = 0x4290_0000;
+            c.mtc1(AT, 0);
+            c.c_lt_s(21, 0);
+            if c.fcc() {
+                c.cycles += 10;
+                rider_index_call(c, ai, 0x0010_b880)?;
+                c.g[V0][0] = ((c.g[V0][0] as i64) < 3) as u64;
+                let not_front = c.g[V0][0] == 0;
+                c.g[A0][0] = 0x20000;
+                if !not_front {
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lw(input);
+                    c.g[V1][0] = 0xffff_ffff_fffc_0000;
+                    c.g[V1][0] |= 0xfff;
+                    c.g[V0][0] &= c.g[V1][0];
+                    c.g[A0][0] |= 0x1000;
+                    steer = true;
+                }
+            }
+        }
+        if steer {
+            // b_10b8a0
+            c.cycles += 3;
+            c.g[V0][0] |= c.g[A0][0];
+            c.sw(input, c.g[V0][0]);
+        } else {
+            // b_10b8ac: re-roll the jitter every 20 frames.
+            c.cycles += 6;
+            call_ptr(c, AI_FRAME_COUNTER, 0x0010_b8b4)?;
+            c.g[V1][0] = crate::tick::ticks_from_frames60(c, JITTER_FRAMES) as u64;
+            c.div(0, V0, V1);
+            c.cycles += 3;
+            c.g[A0][0] = c.hi[0];
+            if c.g[A0][0] != 0 {
+                c.lwc1(0, ai.wrapping_add(STEER_JITTER));
+            } else {
+                // A random 0..1 (unsigned u32 to float), scaled.
+                c.cycles += 4;
+                call_ptr(c, RAND_U, 0x0010_b8d8)?;
+                let high = (c.g[V0][0] as i64) < 0;
+                c.g[A0][0] = sx(ai.wrapping_add(STEER_JITTER));
+                if !high {
+                    c.cycles += 4;
+                    c.mtc1(V0, 1);
+                    c.cvt_s_w(1, 1);
+                } else {
+                    c.cycles += 6;
+                    c.g[V1][0] = sx((c.g[V0][0] as u32) >> 1);
+                    c.g[V0][0] &= 1;
+                    c.g[V0][0] |= c.g[V1][0];
+                    c.mtc1(V0, 1);
+                    c.cvt_s_w(1, 1);
+                    c.add_s(1, 1, 1);
+                }
+                c.cycles += 7;
+                c.lwc1(0, gp(c, -0x7e0c));
+                c.mul_s(0, 1, 0);
+                c.swc1(0, c.g[A0][0] as u32);
+                // A random sign.
+                call_ptr(c, RAND_U, 0x0010_b918)?;
+                c.g[V0][0] &= 1;
+                let keep = c.g[V0][0] != 0;
+                c.lwc1(0, ai.wrapping_add(STEER_JITTER));
+                if !keep {
+                    c.cycles += 3;
+                    c.neg_s(0, 0);
+                    c.swc1(0, ai.wrapping_add(STEER_JITTER));
+                    c.lwc1(0, ai.wrapping_add(STEER_JITTER));
+                }
+            }
+            // b_10b930: steer = (int)(jitter * 31) & 0x3f.
+            c.cycles += 13;
+            c.g[A0][0] = 0xffff_ffff_fffc_0000;
+            c.g[AT][0] = 0x41f8_0000;
+            c.mtc1(AT, 1);
+            c.g[A0][0] |= 0xfff;
+            c.g[V1][0] = c.lw(input);
+            c.mul_s(0, 0, 1);
+            c.g[V1][0] &= c.g[A0][0];
+            c.cvt_w_s(1, 0);
+            c.mfc1(V0, 1);
+            c.g[V0][0] &= 0x3f;
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 12);
+            c.g[V1][0] |= c.g[V0][0];
+            c.sw(input, c.g[V1][0]);
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 21, 0x38);
+        frame.restore_fpr(c, 20, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `riderV(ai->rider, 7)`: the rider's index in the race (`a0` = the
+/// rider's `+0x6c0` object adjusted by the slot's delta, `v1` = vtable, `a1`
+/// = delta).
+fn rider_index_call(c: &mut Cpu, ai: u32, ret: u32) -> Flow {
+    c.g[A0][0] = c.lw(ai.wrapping_add(gate::RIDER));
+    c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(gate::RIDER_V));
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(gate::RIDER_V));
+    c.g[A1][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x38));
+    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x3c));
+    let target = c.g[V0][0] as u32;
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+    call_ptr(c, target, ret)
+}
+
+/// `bool ComputerActorRider_FindAttackTarget(ComputerActorRider *ai, int
+/// *side)` (0x10dbf0): on every 6th tick, look for a rider to knock: another
+/// rider closer than 200 whose direction differs from our velocity's heading
+/// by 30..150 degrees, against whom our rivalry level is at least 3, when
+/// the last attack is 120 frames ago. Writes the side (`dir > 0`) to `*side`,
+/// stamps the attack time (rider `+0xf4`) and returns 1; else 0.
+///
+/// Tick rate: the cooldown is `ticks_from_frames60(120)` ticks (exact at
+/// 60). The `% 6` spreads the search over ticks and stays in ticks.
+pub fn computer_actor_rider_find_attack_target(c: &mut Cpu) {
+    use gate::*;
+    guest(c, |c| {
+        c.cycles += 22;
+        let frame = Frame::open(c, 0xd0);
+        let sp = sp(c);
+        frame.save(c, S1, 0x80);
+        frame.save(c, S6, 0x30);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x90);
+        c.g[S6][0] = c.g[A1][0];
+        frame.save(c, S2, 0x70);
+        frame.save(c, S3, 0x60);
+        frame.save(c, S4, 0x50);
+        frame.save(c, S5, 0x40);
+        frame.save_ra(c, 0x20);
+        frame.save_fpr(c, 25, 0xc8);
+        frame.save_fpr(c, 24, 0xc0);
+        frame.save_fpr(c, 23, 0xb8);
+        frame.save_fpr(c, 22, 0xb0);
+        frame.save_fpr(c, 21, 0xa8);
+        frame.save_fpr(c, 20, 0xa0);
+        let ai = c.g[S1][0] as u32;
+        call_ptr(c, AI_FRAME_COUNTER, 0x0010_dc38)?;
+        c.g[V1][0] = 6;
+        c.div(0, V0, V1);
+
+        // b_10dc48
+        c.cycles += 3;
+        c.g[A0][0] = c.hi[0];
+        let off_tick = c.g[A0][0] != 0;
+        c.g[V0][0] = 0;
+        'done: {
+            if off_tick {
+                break 'done;
+            }
+            c.cycles += 6;
+            c.g[V0][0] = c.lw(gp(c, -0x848));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84));
+            c.g[S3][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+            let mgr = c.g[S3][0] as u32;
+            c.g[V0][0] = c.lw(mgr.wrapping_add(AI_RIDER_COUNT));
+            let none = (c.g[V0][0] as i64) <= 0;
+            c.g[S2][0] = 0;
+            if !none {
+                c.cycles += 5;
+                c.lwc1(23, gp(c, -0x7ce0));
+                c.g[S5][0] = 0;
+                c.lwc1(25, gp(c, -0x7cdc));
+                c.g[S4][0] = 0;
+                c.lwc1(24, gp(c, -0x7cd8));
+                loop {
+                    if attack_candidate(c, ai, mgr, sp)? {
+                        // Found: v0 = 1.
+                        break 'done;
+                    }
+                    // b_10de58 (v0 = the rider count).
+                    c.cycles += 5;
+                    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(1));
+                    c.g[S5][0] = sx((c.g[S5][0] as u32).wrapping_add(OTHER_STRIDE));
+                    c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let more = c.g[V0][0] != 0;
+                    c.g[S4][0] = sx((c.g[S4][0] as u32).wrapping_add(OTHER_STRIDE));
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0010_dc80);
+                    }
+                }
+            }
+            // b_10de6c
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        }
+        // b_10de70
+        c.cycles += 16;
+        frame.restore(c, S0, 0x90);
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.restore_fpr(c, 25, 0xc8);
+        frame.restore_fpr(c, 24, 0xc0);
+        frame.restore_fpr(c, 23, 0xb8);
+        frame.restore_fpr(c, 22, 0xb0);
+        frame.restore_fpr(c, 21, 0xa8);
+        frame.restore_fpr(c, 20, 0xa0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// One rider `i = s2` of `FindAttackTarget` (s4 = s5 = `0x24 i`). Ok(true)
+/// when it is the target (v0 = 1, `*side` and the attack time written);
+/// Ok(false) with v0 = the rider count otherwise.
+fn attack_candidate(c: &mut Cpu, ai: u32, mgr: u32, sp: u32) -> Result<bool, call::Unwound> {
+    use gate::*;
+    let skip = |c: &mut Cpu| -> Result<bool, call::Unwound> {
+        c.g[V0][0] = c.lw(mgr.wrapping_add(AI_RIDER_COUNT));
+        Ok(false)
+    };
+    // Not ourselves.
+    c.cycles += 9;
+    c.g[A0][0] = c.lw(ai.wrapping_add(RIDER));
+    c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(RIDER_V));
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(RIDER_V));
+    c.g[A1][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x38));
+    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x3c));
+    let target = c.g[V0][0] as u32;
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+    call_ptr(c, target, 0x0010_dc9c)?;
+    if c.g[S2][0] == c.g[V0][0] {
+        return skip(c);
+    }
+    // Closer than 200.
+    c.cycles += 9;
+    c.g[V1][0] = c.lw(ai.wrapping_add(RIDER));
+    let rider = c.g[V1][0] as u32;
+    c.g[AT][0] = 0x4348_0000;
+    c.mtc1(AT, 0);
+    c.g[V0][0] = sx(rider.wrapping_add(c.g[S4][0] as u32));
+    c.lwc1(1, (c.g[V0][0] as u32).wrapping_add(OTHER_DIST));
+    c.c_lt_s(1, 0);
+    if !c.fcc() {
+        return skip(c);
+    }
+
+    // f12 = atan2(vel.y, vel.x) (f20 = x, f21 = y, f22 = 0).
+    c.cycles += 10;
+    c.lq(2, rider.wrapping_add(VELOCITY));
+    c.mtc1(0, 22);
+    c.sq(2, sp);
+    c.lq(2, rider.wrapping_add(VELOCITY));
+    c.lwc1(21, sp.wrapping_add(4));
+    c.sq(2, sp.wrapping_add(0x10));
+    c.lwc1(20, sp.wrapping_add(0x10));
+    c.c_eq_s(20, 22);
+    let mut reload_rider = true;
+    if c.fcc() {
+        // x == 0: 0 when y == 0, else -/+ pi/2.
+        c.cycles += 4;
+        c.c_eq_s(21, 22);
+        let y_zero = c.fcc();
+        c.mov_s(12, 21);
+        if !y_zero {
+            c.cycles += 4;
+            c.c_le_s(22, 21);
+            c.lwc1(12, gp(c, -0x7cd4));
+            let y_neg = !c.fcc();
+            c.g[V0][0] = c.lw(ai.wrapping_add(RIDER));
+            if !y_neg {
+                c.cycles += 3;
+                c.lwc1(12, gp(c, -0x7cd0));
+            }
+            reload_rider = false;
+        }
+    } else {
+        // b_10dd1c
+        c.cycles += 7;
+        c.div_s(12, 21, 20);
+        call_ptr(c, MATH_ATAN, 0x0010_dd28)?;
+        c.c_lt_s(20, 22);
+        let x_neg = c.fcc();
+        c.mov_s(12, 0);
+        if x_neg {
+            c.cycles += 4;
+            c.c_lt_s(22, 21);
+            if !c.fcc() {
+                c.sub_s(0, 0, 23);
+            } else {
+                c.cycles += 1;
+                c.add_s(0, 0, 23);
+            }
+            // b_10dd4c
+            c.cycles += 1;
+            c.mov_s(12, 0);
+        }
+    }
+    if reload_rider {
+        // b_10dd50
+        c.cycles += 1;
+        c.g[V0][0] = c.lw(ai.wrapping_add(RIDER));
+    }
+
+    // b_10dd54: d = wrap(heading - direction to i) into [-pi, pi).
+    c.cycles += 13;
+    c.lwc1(1, gp(c, -0x7ccc));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S5][0] as u32));
+    c.g[AT][0] = 0x3f00_0000;
+    c.mtc1(AT, 2);
+    c.lwc1(0, (c.g[V0][0] as u32).wrapping_add(OTHER_ANGLE));
+    c.sub_s(12, 12, 0);
+    c.mul_s(1, 12, 1);
+    c.add_s(1, 1, 2);
+    c.cvt_w_s(2, 1);
+    c.cvt_s_w(2, 2);
+    c.c_lt_s(1, 2);
+    if c.fcc() {
+        c.cycles += 3;
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 0);
+        c.sub_s(2, 2, 0);
+    }
+    // b_10dd94: |d| in (lo, hi).
+    c.cycles += 8;
+    c.lwc1(0, gp(c, -0x7cc8));
+    c.mul_s(0, 2, 0);
+    c.sub_s(20, 12, 0);
+    c.abs_s(0, 20);
+    c.c_lt_s(25, 0);
+    if !c.fcc() {
+        return skip(c);
+    }
+    c.cycles += 4;
+    c.c_lt_s(0, 24);
+    if !c.fcc() {
+        return skip(c);
+    }
+
+    // A rival (level >= 3).
+    c.cycles += 18;
+    call_ptr(c, AGGRESSION_INSTANCE, 0x0010_ddcc)?;
+    c.g[A0][0] = c.lw(ai.wrapping_add(RIDER));
+    c.g[S0][0] = c.g[V0][0];
+    c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(RIDER_V));
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(RIDER_V));
+    c.g[A1][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x38));
+    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x3c));
+    let target = c.g[V0][0] as u32;
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+    call_ptr(c, target, 0x0010_ddec)?;
+    c.g[A0][0] = c.g[S0][0];
+    c.g[A1][0] = c.g[V0][0];
+    c.g[A2][0] = c.g[S2][0];
+    call_ptr(c, AGGRESSION_RIVAL_LEVEL, 0x0010_ddfc)?;
+    c.g[V0][0] = ((c.g[V0][0] as i64) < 3) as u64;
+    c.g[V0][0] ^= 1;
+    if c.g[V0][0] == 0 {
+        return skip(c);
+    }
+
+    // The cooldown: last attack + 120 frames < now.
+    c.cycles += 7;
+    c.g[V0][0] = c.lw(ai.wrapping_add(RIDER));
+    c.g[S0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(LAST_ATTACK));
+    let cooldown = crate::tick::ticks_from_frames60(c, ATTACK_COOLDOWN_FRAMES);
+    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(cooldown));
+    call_ptr(c, AI_FRAME_COUNTER, 0x0010_de1c)?;
+    c.g[S0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+    if c.g[S0][0] == 0 {
+        return skip(c);
+    }
+
+    // Attack: *side = d > 0; stamp the time.
+    c.cycles += 5;
+    c.mtc1(0, 0);
+    c.c_lt_s(0, 20);
+    let right = c.fcc();
+    c.g[V0][0] = 1;
+    if !right {
+        c.cycles += 1;
+        c.g[V0][0] = 0;
+    }
+    c.cycles += 6;
+    c.sw(c.g[S6][0] as u32, c.g[V0][0]);
+    call_ptr(c, AI_FRAME_COUNTER, 0x0010_de48)?;
+    c.g[V1][0] = c.lw(ai.wrapping_add(RIDER));
+    c.sw((c.g[V1][0] as u32).wrapping_add(LAST_ATTACK), c.g[V0][0]);
+    c.g[V0][0] = 1;
+    Ok(true)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6388,5 +6922,272 @@ pub(crate) mod tests {
         assert_eq!(spin_give_up_call(60), 31);
         assert_eq!(spin_give_up_call(120), 61);
         assert_eq!(spin_give_up_call(240), 121);
+    }
+
+    // ------------------------------------------- start gate and attacks
+
+    const GATE_AI: u32 = DATA + 0xa_0000;
+    const GATE_RIDER: u32 = DATA + 0xa_1000;
+    const GATE_WORLD: u32 = DATA + 0xa_2000;
+    const GATE_MODULE: u32 = DATA + 0xa_2100;
+    const GATE_MGR: u32 = DATA + 0xa_2200;
+    const GATE_VT: u32 = DATA + 0xa_2400;
+    const GATE_INPUT: u32 = DATA + 0xa_3000;
+    const GATE_SIDE: u32 = DATA + 0xa_3010;
+    /// The answer of the fake `riderV(.., 7)` in the rate tests.
+    const GATE_INDEX: u32 = DATA + 0xa_3020;
+    /// Pre-built BE singletons (aggression, race, player, library).
+    const GATE_BE: u32 = DATA + 0xa_4000;
+    /// `BEAggressionInt_GetRivalLevel`'s byte for profile 0, characters 0/0.
+    const RIVALRY_00: u32 = 0x004a_6ca8 + 0xbc2;
+
+    /// The AI frame counter chain (`gp-0x848 -> +0x84 -> +0xc`, counter at
+    /// `+8`, rider count at `+0x78`), the AI's rider and its `riderV`
+    /// vtable (slot 7 at `FAKE + 0x10`).
+    fn gate_world(c: &mut Cpu, now: u32, riders: u32) {
+        c.g[GP][0] = GAME_GP as u64;
+        c.bus.write32(GAME_GP - 0x848, GATE_WORLD);
+        c.bus.write32(GATE_WORLD + 0x84, GATE_MODULE);
+        c.bus.write32(GATE_MODULE + 0xc, GATE_MGR);
+        c.bus.write32(GATE_MGR + 8, now);
+        c.bus.write32(GATE_MGR + 0x78, riders);
+        c.bus.write32(GATE_AI + 0x18, GATE_RIDER);
+        c.bus.write32(GATE_RIDER + 0x6c0, GATE_VT);
+        c.bus.write16(GATE_VT + 0x38, 0);
+        c.bus.write32(GATE_VT + 0x3c, FAKE + 0x10);
+    }
+
+    /// `riderV(.., 7)` answering the index stored at [`GATE_INDEX`].
+    fn gate_index_hook(c: &mut Cpu, _target: u32) {
+        let ra = c.g[RA][0] as u32;
+        c.g[V0][0] = sx(c.bus.read32(GATE_INDEX));
+        c.pc = ra;
+    }
+
+    #[test]
+    fn computer_actor_rider_think_gate_matches() {
+        check_lohi(ee::s00::f_0010b790__generated, computer_actor_rider_think_gate, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x0010_b790, 3);
+            let pick = |r: &mut Rng, v: &[u32]| v[(r.next_u32() as usize) % v.len()];
+            let now = pick(
+                &mut r,
+                &[0, 20, 40, 7, 100, 108, 109, 120, 140, 146, 147, 150, 160, 170, 175, 179, 180, 200, 0x7fff_fff0],
+            );
+            let now = if seed % 7 == 0 { r.next_u32() } else { now };
+            gate_world(c, now, 4);
+            // The rider index (fake results 0..2; nonzero: 1..5).
+            for n in 0..3u32 {
+                c.bus.write32(LOG_RESULTS + 4 * n, 1 + r.next_u32() % 5);
+            }
+            // The jitter scale and the game RNG state.
+            let any = r.next_u32();
+            c.bus.write32(GAME_GP - 0x7e0c, pick(&mut r, &[0x2f80_0000, 0x3000_0000, any]));
+            for i in 0..6u32 {
+                c.bus.write32(0x004f_f030 + 4 * i, r.next_u32());
+            }
+            c.bus.write32(GATE_AI + 0xdf0, if seed % 5 == 0 { r.edge_f32() } else { r.f32(1.0) });
+            c.bus.write32(GATE_INPUT, r.next_u32());
+            c.g[A0][0] = sx(GATE_AI);
+            c.g[A1][0] = sx(GATE_INPUT);
+        });
+    }
+
+    /// The steering field `ThinkGate` writes at rate `hz`, `frames60` 60 Hz
+    /// frames after the race start, for rider `index` (jitter preset to 0.5,
+    /// a fresh RNG): (field, whether the jitter was re-rolled).
+    fn gate_steer(hz: u32, frames60: u32, index: u32) -> (u32, bool) {
+        let mut c = crate::difftest::fresh();
+        let c = &mut *c;
+        crate::tick::set_for_test(c, hz);
+        c.hooks.miss = gate_index_hook;
+        gate_world(c, frames60 * hz / 60, 4);
+        c.bus.write32(GATE_INDEX, index);
+        const SENTINEL: u32 = 0x7fc0_1234;
+        c.bus.write32(GATE_AI + 0xdf0, SENTINEL);
+        c.bus.write32(GATE_INPUT, 0);
+        c.g[A0][0] = sx(GATE_AI);
+        c.g[A1][0] = sx(GATE_INPUT);
+        c.g[ssx3_ee_rt::cpu::reg::SP][0] = sx(STACK);
+        c.g[RA][0] = sx(RET);
+        computer_actor_rider_think_gate(c);
+        assert_eq!(c.pc, RET, "think gate did not return");
+        let field = (c.bus.read32(GATE_INPUT) >> 12) & 0x3f;
+        (field, c.bus.read32(GATE_AI + 0xdf0) != SENTINEL)
+    }
+
+    /// The start gate decisions (push off at `t < 33 - (index - 1) * 10`,
+    /// lean back at `t < 72`, the jitter re-rolled every 20 frames) fall on
+    /// the same wall-clock times at 120 and 240 Hz as at 60, and the jitter
+    /// is re-rolled 3 times a second at every rate.
+    #[test]
+    fn computer_actor_rider_think_gate_follows_the_rate() {
+        let frames = [0u32, 20, 30, 59, 100, 107, 108, 109, 120, 127, 128, 140, 146, 147, 148, 160, 170, 179];
+        for index in 1..=4u32 {
+            for &f in &frames {
+                let at60 = gate_steer(60, f, index);
+                for hz in [120u32, 240] {
+                    assert_eq!(gate_steer(hz, f, index), at60, "{hz} Hz, frame {f}, index {index}");
+                }
+            }
+        }
+        // A rider that waits (index 4): t = 180 - frames > 72 for a second.
+        for hz in [60u32, 120, 240] {
+            let mut c = crate::difftest::fresh();
+            let c = &mut *c;
+            crate::tick::set_for_test(c, hz);
+            c.hooks.miss = gate_index_hook;
+            gate_world(c, 0, 4);
+            c.bus.write32(GATE_INDEX, 4);
+            let mut rerolls = 0;
+            for now in 0..hz {
+                c.bus.write32(GATE_MGR + 8, now);
+                c.bus.write32(GATE_AI + 0xdf0, 0x7fc0_1234);
+                c.g[A0][0] = sx(GATE_AI);
+                c.g[A1][0] = sx(GATE_INPUT);
+                c.g[ssx3_ee_rt::cpu::reg::SP][0] = sx(STACK);
+                c.g[RA][0] = sx(RET);
+                computer_actor_rider_think_gate(c);
+                assert_eq!(c.pc, RET);
+                rerolls += (c.bus.read32(GATE_AI + 0xdf0) != 0x7fc0_1234) as u32;
+            }
+            assert_eq!(rerolls, 3, "{hz} Hz");
+        }
+    }
+
+    /// The angle constants of `FindAttackTarget` (`gp - 0x7ce0..`: pi,
+    /// pi/6, 5pi/6, -pi/2, pi/2, 1/(2pi), 2pi), `Math_Atan`'s, and the BE
+    /// singletons `GetRivalLevel` reaches, with every rider on slot 0
+    /// (profile 0, character 0): its level is the byte at [`RIVALRY_00`].
+    fn attack_world(c: &mut Cpu, level: u8) {
+        let pi = std::f32::consts::PI;
+        for (k, v) in [pi, pi / 6.0, 5.0 * pi / 6.0, -pi / 2.0, pi / 2.0, 0.5 / pi, 2.0 * pi].into_iter().enumerate() {
+            c.bus.write32(GAME_GP - 0x7ce0 + 4 * k as u32, v.to_bits());
+        }
+        atan_constants(c);
+        c.bus.write32(GAME_GP - 0x1ea4, GATE_BE);
+        c.bus.write32(GAME_GP - 0x1f3c, GATE_BE + 0x100);
+        c.bus.write32(GAME_GP - 0x1f30, GATE_BE + 0x200);
+        c.bus.write32(GAME_GP - 0x1f04, GATE_BE + 0x300);
+        for i in 0..8u32 {
+            c.bus.write32(0x0053_05b0 + 4 * i, 0);
+        }
+        for k in 0..7u32 {
+            c.bus.write32(0x0053_5b20 + 4 * k, 0);
+        }
+        c.bus.write8(RIVALRY_00, level);
+    }
+
+    #[test]
+    fn computer_actor_rider_find_attack_target_matches() {
+        check_lohi(ee::s00::f_0010dbf0__generated, computer_actor_rider_find_attack_target, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x0010_dbf0, 4);
+            let pick = |r: &mut Rng, v: &[u32]| v[(r.next_u32() as usize) % v.len()];
+            let f = |x: f32| x.to_bits();
+            let now = match seed % 8 {
+                0 => r.next_u32(),
+                1 => 1 + 6 * (r.next_u32() % 100),
+                _ => 6 * (r.next_u32() % 200),
+            };
+            let riders = pick(&mut r, &[0, 1, 2, 3, 3]);
+            gate_world(c, now, riders);
+            attack_world(c, pick(&mut r, &[1, 2, 3, 4, 0x80]) as u8);
+            // Our own index (fake results; nonzero: 1..3).
+            for n in 0..8u32 {
+                c.bus.write32(LOG_RESULTS + 4 * n, 1 + r.next_u32() % 3);
+            }
+            // Last attack: long ago, at the edge of the cooldown, or recent.
+            let last = pick(&mut r, &[0, 1, 2, 3]);
+            let last = match last {
+                0 => 0,
+                1 => now.wrapping_sub(121),
+                2 => now.wrapping_sub(120),
+                _ => now.wrapping_sub(r.next_u32() % 120),
+            };
+            c.bus.write32(GATE_RIDER + 0xf4, last);
+            let comp = |r: &mut Rng| pick(r, &[0, f(1.0), f(-1.0), f(0.5), f(-2.0)]);
+            let (vx, vy) = if seed % 3 == 0 { (r.f32(3.0), r.f32(3.0)) } else { (comp(&mut r), comp(&mut r)) };
+            c.bus.write32(GATE_RIDER + 0x1b0, vx);
+            c.bus.write32(GATE_RIDER + 0x1b4, vy);
+            c.bus.write32(GATE_RIDER + 0x1b8, r.next_u32());
+            c.bus.write32(GATE_RIDER + 0x1bc, r.next_u32());
+            for i in 0..4u32 {
+                let e = GATE_RIDER + 0x24 * i;
+                c.bus.write32(e + 8, pick(&mut r, &[f(50.0), f(150.0), f(199.0), f(250.0)]));
+                c.bus.write32(e + 0xc, if seed % 4 == 0 { r.f32(4.0) } else { comp(&mut r) });
+            }
+            c.bus.write32(GATE_SIDE, r.next_u32());
+            c.g[A0][0] = sx(GATE_AI);
+            c.g[A1][0] = sx(GATE_SIDE);
+        });
+    }
+
+    /// The ticks (in seconds) on which an AI attacks a rival in reach, over
+    /// `seconds` at rate `hz`.
+    fn attack_times(hz: u32, seconds: u32) -> Vec<f64> {
+        let mut c = crate::difftest::fresh();
+        let c = &mut *c;
+        crate::tick::set_for_test(c, hz);
+        c.hooks.miss = gate_index_hook;
+        gate_world(c, 0, 2);
+        attack_world(c, 4);
+        // We are rider 0; rider 1 is 50 away at direction 0, and we head
+        // pi/2 (velocity (0, 1)): 90 degrees off, on our right.
+        c.bus.write32(GATE_INDEX, 0);
+        c.bus.write32(GATE_RIDER + 0x1b0, 0);
+        c.bus.write32(GATE_RIDER + 0x1b4, 1.0f32.to_bits());
+        c.bus.write32(GATE_RIDER + 0x24 + 8, 50.0f32.to_bits());
+        c.bus.write32(GATE_RIDER + 0x24 + 0xc, 0);
+        c.bus.write32(GATE_RIDER + 8, 1000.0f32.to_bits());
+        c.bus.write32(GATE_RIDER + 0xf4, 0);
+        let mut times = Vec::new();
+        for now in 0..hz * seconds {
+            c.bus.write32(GATE_MGR + 8, now);
+            c.bus.write32(GATE_SIDE, 0);
+            c.g[A0][0] = sx(GATE_AI);
+            c.g[A1][0] = sx(GATE_SIDE);
+            c.g[ssx3_ee_rt::cpu::reg::SP][0] = sx(STACK);
+            c.g[RA][0] = sx(RET);
+            computer_actor_rider_find_attack_target(c);
+            assert_eq!(c.pc, RET, "find attack target did not return");
+            if c.g[V0][0] == 1 {
+                assert_eq!(c.bus.read32(GATE_SIDE), 1);
+                assert_eq!(c.bus.read32(GATE_RIDER + 0xf4), now);
+                times.push(now as f64 / hz as f64);
+            }
+        }
+        times
+    }
+
+    /// The 120-frame attack cooldown takes the same wall-clock time at 120
+    /// and 240 Hz (the `% 6` search spreading stays in ticks, so the times
+    /// differ by under 6 ticks of 60 Hz).
+    #[test]
+    fn computer_actor_rider_find_attack_target_follows_the_rate() {
+        let at60 = attack_times(60, 10);
+        assert_eq!(at60, [126.0 / 60.0, 252.0 / 60.0, 378.0 / 60.0, 504.0 / 60.0]);
+        for hz in [120u32, 240] {
+            let at = attack_times(hz, 10);
+            assert_eq!(at.len(), at60.len(), "{hz} Hz: {at:?}");
+            for (a, b) in at.iter().zip(&at60) {
+                assert!((a - b).abs() < 0.1 * (1.0 + b / 2.0), "{hz} Hz: {at:?}, 60 Hz: {at60:?}");
+            }
+        }
+    }
+
+    /// The forced path reselect off the path (`Rider_UpdateRaceProgress`,
+    /// `Rider_UpdateAIPathProgress`: `now % period == 0`) runs once a
+    /// second at every rate; at 60 the period is the original 0x3c.
+    #[test]
+    fn rider_path_reselect_period_follows_the_rate() {
+        for hz in [60u32, 120, 240] {
+            let mut c = crate::difftest::fresh();
+            crate::tick::set_for_test(&mut c, hz);
+            let period = reselect_period(&mut c);
+            if hz == 60 {
+                assert_eq!(period, 0x3c);
+            }
+            let per_10s = (0..hz * 10).filter(|t| *t as u64 % period == 0).count();
+            assert_eq!(per_10s, 10, "{hz} Hz");
+        }
     }
 }

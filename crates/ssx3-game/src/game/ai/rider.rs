@@ -67,6 +67,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0010_7888, rider_check_rider_collisions, "Rider_CheckRiderCollisions"),
     (0x0011_3f38, rider_set_slew5_target, "Rider_SetSlew5Target"),
     (0x0011_5b58, rider_update_timed_event_anim, "Rider_UpdateTimedEventAnim"),
+    (0x0011_5d48, rider_update_idle_look_anim, "Rider_UpdateIdleLookAnim"),
     (0x0011_6930, rider_empty_stance_hook, "Rider_EmptyStanceHook"),
     (0x0011_bb40, rider_create_focus_box, "Rider_CreateFocusBox"),
     (0x0011_c0e0, rider_has_render_slot, "Rider_HasRenderSlot"),
@@ -5240,7 +5241,9 @@ pub(crate) fn rider_pair_bump(c: &mut Cpu) -> Flow {
     callee::TRANSLATE.call(c, 0x0010_7af0)?;
     callee::AI_GET_FRAME_COUNTER_2.call(c, 0x0010_7af8)?;
     c.lw_r(V1, at(c, S2, 0x10));
-    c.inc_r(V0, (-3i32) as u32);
+    // 3-frame bump cooldown is a duration: 3 ticks at 60, 6 at 120.
+    let cool = crate::tick::ticks_from_frames60(c, 3);
+    c.inc_r(V0, cool.wrapping_neg());
     c.g[V1][0] = slt(c, V1, V0);
     let due = c.g[V1][0] != 0;
     c.lw_r(V0, p(s, 0x60));
@@ -5301,7 +5304,9 @@ pub(crate) fn rider_pair_knock_down(c: &mut Cpu) -> Flow {
     c.cycles += 7;
     callee::AI_GET_FRAME_COUNTER_2.call(c, 0x0010_7bec)?;
     c.lw_r(V1, at(c, S5, 0x18));
-    c.inc_r(V0, (-3i32) as u32);
+    // 3-frame knock-down cooldown is a duration: 3 ticks at 60, 6 at 120.
+    let cool = crate::tick::ticks_from_frames60(c, 3);
+    c.inc_r(V0, cool.wrapping_neg());
     c.g[V1][0] = slt(c, V1, V0);
     if c.g[V1][0] == 0 {
         c.inc_r(S7, 1);
@@ -7509,6 +7514,434 @@ pub fn rider_update_timed_event_anim(c: &mut Cpu) {
 }
 
 
+/// Where `Rider_UpdateIdleLookAnim` plays its look animation.
+const IDLE_LOOK_PLAY: u32 = 0x0031_28e8;
+
+/// `void Rider_UpdateIdleLookAnim(Rider* rider)` (0x00115d48): while layer 1
+/// of the animation controller is idle, the rider's idle clock (`+0x35c`,
+/// 1/60 per tick) runs; once it reaches 1 s, each update: with a 90% roll,
+/// look at the first other rider (slots `rider + 0x24 * i`) within 1000
+/// units and more than 60 degrees off the heading that was not looked at in
+/// the last 10 s (`slot+0x20`): over the shoulder (0x13f) beyond 135
+/// degrees, else left or right (0x141/0x140) by side and stance; otherwise
+/// (or when none qualifies) glance back at the first rider within 1000
+/// units and more than 120 degrees off (0x13d/0x13c). Busy: the clock
+/// restarts.
+pub fn rider_update_idle_look_anim(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0xb0);
+        c.g[A1][0] = 1;
+        frame.save(c, S2, 0x50);
+        frame.save(c, S0, 0x70);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S1, 0x60);
+        frame.save(c, S3, 0x40);
+        frame.save(c, S4, 0x30);
+        frame.save_ra(c, 0x20);
+        for (f, off) in [(24, 0xa0), (23, 0x98), (22, 0x90), (21, 0x88), (20, 0x80)] {
+            frame.save_fpr(c, f, off);
+        }
+        let rider = r32_3(c, S2);
+        c.g[A0][0] = c.lw(p(rider, 0x784));
+        call_ptr(c, 0x0031_1ae8, 0x0011_5d88)?;
+        if c.g[V0][0] != 0 {
+            // Layer 1 busy: restart the idle clock.
+            c.cycles += 2;
+            c.sw(p(rider, 0x35c), 0);
+            idle_look_epilogue(c, frame, true);
+            return Ok(());
+        }
+        // The idle clock: += 1/60 (the `.lit4` step, follows the rate); wait
+        // for 1 s.
+        c.lwc1(0, p(rider, 0x35c));
+        c.cycles += 8;
+        c.lwc1(1, gp_2(c, -0x7b54));
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(1, 2);
+        c.add_s(0, 0, 1);
+        c.c_lt_s(0, 2);
+        let waiting = c.fcc();
+        c.swc1(0, p(rider, 0x35c));
+        if waiting {
+            idle_look_epilogue(c, frame, true);
+            return Ok(());
+        }
+
+        // f22 = heading of the velocity (atan(y/x) in -pi..pi).
+        c.cycles += 9;
+        c.lq(V0, p(rider, 0x1b0));
+        c.mtc1(0, 22);
+        let s = sp(c);
+        c.sq(V0, p(s, 0x10));
+        c.sq(V0, s);
+        c.lwc1(20, p(s, 0x10));
+        c.c_eq_s(20, 22);
+        let x_nonzero = !c.fcc();
+        c.lwc1(21, p(s, 0x4));
+        if x_nonzero {
+            c.cycles += 7;
+            c.div_s(12, 21, 20);
+            call_ptr(c, 0x0031_c228, 0x0011_5e18)?;
+            c.c_lt_s(20, 22);
+            let x_pos = !c.fcc();
+            c.mov_s(12, 0);
+            if !x_pos {
+                c.cycles += 3;
+                c.c_lt_s(22, 21);
+                if c.fcc() {
+                    c.cycles += 3;
+                    c.lwc1(0, gp_2(c, -0x7b48));
+                    c.add_s(12, 12, 0);
+                } else {
+                    c.cycles += 2;
+                    c.lwc1(0, gp_2(c, -0x7b44));
+                    c.sub_s(12, 12, 0);
+                }
+            }
+            c.cycles += 1;
+            c.mov_s(22, 12);
+        } else {
+            c.cycles += 3;
+            c.c_eq_s(21, 22);
+            if c.fcc() {
+                c.cycles += 2;
+                c.mov_s(22, 21);
+            } else {
+                c.cycles += 4;
+                c.c_le_s(22, 21);
+                c.lwc1(22, gp_2(c, -0x7b50));
+                if c.fcc() {
+                    c.cycles += 3;
+                    c.lwc1(22, gp_2(c, -0x7b4c));
+                }
+            }
+        }
+
+        // 90%: look at a rider not looked at for 10 s.
+        c.cycles += 6;
+        call_ptr(c, 0x0031_7810, 0x0011_5e54)?;
+        c.g[V1][0] = 0x64;
+        c.divu(0, V0, V1);
+        c.cycles += 4;
+        c.g[A0][0] = c.hi[0];
+        c.g[A0][0] = ((c.g[A0][0] as i64) < 90) as u64;
+        let look = c.g[A0][0] != 0;
+        c.g[V0][0] = 0x24;
+        if look {
+            c.cycles += 3;
+            c.lwc1(23, gp_2(c, -0x7b40));
+            c.g[S4][0] = 0;
+            c.lwc1(24, gp_2(c, -0x7b3c));
+            loop {
+                if let Some(a1) = idle_look_slot(c)? {
+                    // A rider to look at: play it and clear the blend source.
+                    c.g[A1][0] = a1;
+                    if a1 == 0x140 {
+                        idle_look_play_b(c)?;
+                    } else {
+                        idle_look_play_a(c)?;
+                    }
+                    idle_look_epilogue(c, frame, true);
+                    return Ok(());
+                }
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[S4][0] as i64) < 6) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[V0][0] = 0x24;
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0011_5e80);
+                }
+            }
+        }
+
+        // Otherwise glance back at a rider more than 120 degrees off (the
+        // roll is always under 100).
+        c.cycles += 6;
+        call_ptr(c, 0x0031_7810, 0x0011_5fac)?;
+        c.g[V1][0] = 0x64;
+        c.divu(0, V0, V1);
+        c.cycles += 4;
+        c.g[A0][0] = c.hi[0];
+        c.g[A0][0] = ((c.g[A0][0] as i64) < 100) as u64;
+        let glance = c.g[A0][0] != 0;
+        frame.restore(c, S0, 0x70);
+        if !glance {
+            idle_look_epilogue(c, frame, false);
+            return Ok(());
+        }
+        c.cycles += 9;
+        c.g[V1][0] = c.g[S2][0];
+        c.lwc1(7, gp_2(c, -0x7b30));
+        c.lwc1(6, gp_2(c, -0x7b2c));
+        c.g[A2][0] = sx(r32_3(c, V1).wrapping_add(0xd8));
+        c.g[AT][0] = 0x3f00_0000;
+        c.mtc1(1, 5);
+        c.g[A1][0] = sx(r32_3(c, V1).wrapping_add(0xc));
+        c.g[A0][0] = 0;
+        loop {
+            c.cycles += 3;
+            c.g[V0][0] = c.lw(r32_3(c, V1));
+            let empty = c.g[V0][0] == 0;
+            c.g[V0][0] = sx(r32_3(c, A1).wrapping_add(r32_3(c, A0)));
+            let mut skip_d8 = false;
+            if !empty {
+                // f1 = wrap(angle - heading) to -pi..pi.
+                c.cycles += 9;
+                let v0 = r32_3(c, V0);
+                c.lwc1(1, v0);
+                c.sub_s(4, 1, 22);
+                c.mul_s(0, 4, 6);
+                c.add_s(0, 0, 5);
+                c.cvt_w_s(3, 0);
+                c.cvt_s_w(3, 3);
+                c.c_lt_s(0, 3);
+                if c.fcc() {
+                    c.cycles += 3;
+                    c.g[AT][0] = 0x3f80_0000;
+                    c.mtc1(1, 0);
+                    c.sub_s(3, 3, 0);
+                }
+                c.cycles += 10;
+                c.lwc1(0, gp_2(c, -0x7b28));
+                c.g[V0][0] = sx(r32_3(c, S2).wrapping_add(r32_3(c, A0)));
+                c.g[AT][0] = 0x447a_0000;
+                c.mtc1(1, 1);
+                let v0 = r32_3(c, V0);
+                c.lwc1(2, p(v0, 0x8));
+                c.mul_s(0, 3, 0);
+                c.c_lt_s(2, 1);
+                let far = !c.fcc();
+                c.sub_s(1, 4, 0);
+                if !far {
+                    c.cycles += 5;
+                    c.abs_s(0, 1);
+                    c.c_lt_s(7, 0);
+                    let in_view = !c.fcc();
+                    c.g[V1][0] = sx(r32_3(c, V1).wrapping_add(0x24));
+                    if in_view {
+                        skip_d8 = true;
+                    } else {
+                        c.cycles += 8;
+                        c.mtc1(0, 0);
+                        c.g[A0][0] = 1;
+                        c.g[V1][0] = c.lw(p(rider, 0x784));
+                        c.g[V0][0] = c.ld(p(rider, 0x8d0));
+                        c.c_lt_s(1, 0);
+                        let left = c.fcc();
+                        let v1 = r32_3(c, V1);
+                        c.sd(p(v1, 0x20), c.g[V0][0]);
+                        if !left {
+                            c.cycles += 1;
+                            c.g[A0][0] = 0;
+                        }
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw(p(rider, 0x320));
+                        let other = c.g[A0][0] != c.g[V0][0];
+                        c.g[A0][0] = c.lw(p(rider, 0x784));
+                        if other {
+                            c.cycles += 1;
+                            c.g[A1][0] = 0x13c;
+                            idle_look_play_b(c)?;
+                        } else {
+                            c.cycles += 1;
+                            c.g[A1][0] = 0x13d;
+                            idle_look_play_a(c)?;
+                        }
+                        idle_look_epilogue(c, frame, true);
+                        return Ok(());
+                    }
+                }
+            }
+            if !skip_d8 {
+                c.cycles += 1;
+                c.g[V1][0] = sx(r32_3(c, V1).wrapping_add(0x24));
+            }
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A2][0] as i64)) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[A0][0] = sx(r32_3(c, A0).wrapping_add(0x24));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0011_5ff0);
+            }
+        }
+        idle_look_epilogue(c, frame, true);
+        Ok(())
+    })
+}
+
+/// One slot of `Rider_UpdateIdleLookAnim`'s look loop (s4 = index, s1 =
+/// s4 * 0x24, f22 = heading, f23/f24 = 60/135 degrees). Returns the
+/// animation (0x13f/0x141/0x140, with a0 = the controller) when this rider
+/// is looked at, else advances s4.
+fn idle_look_slot(c: &mut Cpu) -> Result<Option<u64>, call::Unwound> {
+    c.cycles += 5;
+    c.mult(0, S1, S4, V0);
+    c.g[V1][0] = sx(r32_3(c, S2).wrapping_add(r32_3(c, S1)));
+    c.g[V0][0] = c.lw(r32_3(c, V1));
+    let empty = c.g[V0][0] == 0;
+    c.g[V0][0] = c.g[V1][0];
+    if empty {
+        c.cycles += 1;
+        c.inc_r(S4, 1);
+        return Ok(None);
+    }
+    c.cycles += 3;
+    c.g[V1][0] = c.lw(p(r32_3(c, V0), 0x1c));
+    let off = c.g[V1][0] == 0;
+    c.g[V0][0] = sx(r32_3(c, S2).wrapping_add(0x20));
+    if off {
+        c.cycles += 1;
+        c.inc_r(S4, 1);
+        return Ok(None);
+    }
+    // Looked at less than 10 s ago (600 frames at 60 Hz): skip. The
+    // cooldown is a duration: 600 ticks at 60, 1200 at 120.
+    c.cycles += 7;
+    c.g[S3][0] = sx(r32_3(c, V0).wrapping_add(r32_3(c, S1)));
+    c.g[S0][0] = c.lw(r32_3(c, S3));
+    let cooldown = crate::tick::ticks_from_frames60(c, 600);
+    c.g[S0][0] = sx(r32_3(c, S0).wrapping_add(cooldown));
+    anim_callee::FRAME_COUNTER.call(c, 0x0011_5eb0)?;
+    c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[S0][0] as i64)) as u64;
+    if c.g[V0][0] != 0 {
+        c.inc_r(S4, 1);
+        return Ok(None);
+    }
+    // f21 = wrap(angle - heading) to -pi..pi; within 1000 units.
+    c.cycles += 13;
+    c.g[V0][0] = sx(r32_3(c, S2).wrapping_add(r32_3(c, S1)));
+    c.lwc1(0, gp_2(c, -0x7b38));
+    let v0 = r32_3(c, V0);
+    c.lwc1(1, p(v0, 0xc));
+    c.g[AT][0] = 0x3f00_0000;
+    c.mtc1(1, 2);
+    c.sub_s(4, 1, 22);
+    c.mul_s(0, 4, 0);
+    c.add_s(0, 0, 2);
+    c.cvt_w_s(3, 0);
+    c.cvt_s_w(3, 3);
+    c.c_lt_s(0, 3);
+    if c.fcc() {
+        c.cycles += 3;
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(1, 0);
+        c.sub_s(3, 3, 0);
+    }
+    c.cycles += 9;
+    c.lwc1(0, gp_2(c, -0x7b34));
+    c.lwc1(2, p(v0, 0x8));
+    c.g[AT][0] = 0x447a_0000;
+    c.mtc1(1, 1);
+    c.mul_s(0, 3, 0);
+    c.c_lt_s(2, 1);
+    let far = !c.fcc();
+    c.sub_s(21, 4, 0);
+    if far {
+        c.cycles += 1;
+        c.inc_r(S4, 1);
+        return Ok(None);
+    }
+    c.cycles += 5;
+    c.abs_s(20, 21);
+    c.c_lt_s(23, 20);
+    if !c.fcc() {
+        // Within 60 degrees of the heading (in view): no need to look.
+        c.inc_r(S4, 1);
+        return Ok(None);
+    }
+    // Look: stamp the slot, clear the blend source.
+    c.cycles += 8;
+    anim_callee::FRAME_COUNTER.call(c, 0x0011_5f3c)?;
+    let s3 = r32_3(c, S3);
+    c.sw(s3, c.g[V0][0]);
+    c.c_lt_s(24, 20);
+    let rider = r32_3(c, S2);
+    c.g[V1][0] = c.lw(p(rider, 0x784));
+    c.g[V0][0] = c.ld(p(rider, 0x8c0));
+    let behind = c.fcc();
+    let v1 = r32_3(c, V1);
+    c.sd(p(v1, 0x20), c.g[V0][0]);
+    if behind {
+        c.cycles += 3;
+        c.g[A0][0] = c.lw(p(rider, 0x784));
+        return Ok(Some(0x13f));
+    }
+    c.cycles += 5;
+    c.mtc1(0, 0);
+    c.c_lt_s(21, 0);
+    let left = c.fcc();
+    c.g[V1][0] = 1;
+    if !left {
+        c.cycles += 1;
+        c.g[V1][0] = 0;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = c.lw(p(rider, 0x320));
+    let other = c.g[V1][0] != c.g[V0][0];
+    c.g[A0][0] = c.lw(p(rider, 0x784));
+    c.cycles += 2;
+    Ok(Some(if other { 0x140 } else { 0x141 }))
+}
+
+/// `Rider_UpdateIdleLookAnim` 0x11609c: play a1 (blend -1) and reset the
+/// controller's blend source.
+fn idle_look_play_a(c: &mut Cpu) -> Flow {
+    c.cycles += 6;
+    c.g[AT][0] = 0xffff_ffff_bf80_0000;
+    c.mtc1(1, 12);
+    c.g[A2][0] = 0;
+    call_ptr(c, IDLE_LOOK_PLAY, 0x0011_60ac)?;
+    idle_look_clear(c);
+    Ok(())
+}
+
+/// `Rider_UpdateIdleLookAnim` 0x1160b8: the same call at its other site.
+fn idle_look_play_b(c: &mut Cpu) -> Flow {
+    c.cycles += 5;
+    c.g[AT][0] = 0xffff_ffff_bf80_0000;
+    c.mtc1(1, 12);
+    c.g[A2][0] = 0;
+    call_ptr(c, IDLE_LOOK_PLAY, 0x0011_60c8)?;
+    idle_look_clear(c);
+    Ok(())
+}
+
+/// 0x1160cc: `controller+0x20 = -1`.
+fn idle_look_clear(c: &mut Cpu) {
+    let rider = r32_3(c, S2);
+    c.g[V1][0] = c.lw(p(rider, 0x784));
+    c.cycles += 3;
+    c.g[V0][0] = 0xffff_ffff_ffff_ffff;
+    let v1 = r32_3(c, V1);
+    c.sd(p(v1, 0x20), c.g[V0][0]);
+}
+
+/// 0x1160e8 (`with_s0`: s0 not yet restored) / 0x1160ec.
+fn idle_look_epilogue(c: &mut Cpu, frame: Frame, with_s0: bool) {
+    if with_s0 {
+        c.cycles += 1;
+        frame.restore(c, S0, 0x70);
+    }
+    c.cycles += 12;
+    frame.restore(c, S1, 0x60);
+    frame.restore(c, S2, 0x50);
+    frame.restore(c, S3, 0x40);
+    frame.restore(c, S4, 0x30);
+    frame.restore_ra(c, 0x20);
+    for (f, off) in [(24, 0xa0), (23, 0x98), (22, 0x90), (21, 0x88), (20, 0x80)] {
+        frame.restore_fpr(c, f, off);
+    }
+    frame.close(c);
+}
+
+
 /// `void Rider_StopTransition(Rider* r)` (0x125038): when the rider is in a
 /// view and its view index is valid, stop the transition on the current
 /// camera.
@@ -9187,7 +9620,13 @@ pub(crate) mod tests {
 
     #[test]
     fn rider_check_rider_collisions_matches() {
-        check(ee::s00::f_00107888__generated, rider_check_rider_collisions, SEEDS, &|c, seed| {
+        check(ee::s00::f_00107888__generated, rider_check_rider_collisions, SEEDS, &collisions_setup);
+    }
+
+    /// `Rider_CheckRiderCollisions`' fixture: this rider (`RIDER_2`), six
+    /// other riders (`OTHERS`) around it, pair timers a few frames old.
+    pub(crate) fn collisions_setup(c: &mut Cpu, seed: u32) {
+        {
             let mut r = setup_machine(c, seed, 0x7888, 12);
             put_rider(c, &mut r, seed % 3, 0);
             let (ail, arr) = (WORLD + 0x100, WORLD + 0x200);
@@ -9235,7 +9674,47 @@ pub(crate) mod tests {
                 }
             }
             c.g[A0][0] = sx(RIDER_2);
-        });
+        }
+    }
+
+    /// `Rider_CheckRiderCollisions`' bump and knock-down cooldowns are 3
+    /// frames at 60 Hz (`slot+0x10`/`+0x18` < now - 3): the same 50 ms at
+    /// every rate. With every pair timer `age` ticks old, the seeds that bump
+    /// (re-stamp a pair timer with `now`) at 60 Hz with age 4 bump at 120 Hz
+    /// only from age 7 on (6 ticks = 3 frames), and none bump at age 3 / 6.
+    #[test]
+    fn rider_check_rider_collisions_cooldowns_follow_the_rate() {
+        use crate::tick;
+        let bumps = |hz: u32, age: u32| -> Vec<u32> {
+            let mut hit = Vec::new();
+            for seed in 0..SEEDS {
+                let mut c = crate::difftest::fresh();
+                collisions_setup(&mut c, seed);
+                tick::set_for_test(&mut c, hz);
+                c.bus.write32(LOG_UNWIND_AT, u32::MAX);
+                let frame = c.bus.read32(WORLD + 0x200 + 8);
+                let me = c.bus.read32(RIDER_2 + 0x86c);
+                for i in 0..6u32 {
+                    for slot in [RIDER_2 + 0x24 * i, OTHERS + 0x1000 * i + 0x24 * me] {
+                        c.bus.write32(slot + 0x14, frame.wrapping_sub(1));
+                        c.bus.write32(slot + 0x10, frame.wrapping_sub(age));
+                        c.bus.write32(slot + 0x18, frame.wrapping_sub(age));
+                    }
+                }
+                rider_check_rider_collisions(&mut c);
+                if (0..6u32).any(|i| c.bus.read32(RIDER_2 + 0x24 * i + 0x10) == frame) {
+                    hit.push(seed);
+                }
+            }
+            hit
+        };
+        let at_60 = bumps(60, 4);
+        assert!(!at_60.is_empty(), "no seed bumps at 60 Hz");
+        assert!(bumps(60, 3).is_empty(), "60 Hz: bump inside the 3-frame cooldown");
+        assert!(bumps(120, 6).is_empty(), "120 Hz: bump inside the 6-tick cooldown");
+        assert_eq!(bumps(120, 7), at_60, "120 Hz: past the cooldown");
+        assert!(bumps(240, 12).is_empty(), "240 Hz: bump inside the 12-tick cooldown");
+        assert_eq!(bumps(240, 13), at_60, "240 Hz: past the cooldown");
     }
 
     /// A scratch object after the rider fields.
@@ -9953,6 +10432,119 @@ pub(crate) mod tests {
             // A counter difference of 179 frames is inside the window, 180 is not.
             let inside = tick::ticks_from_frames60(&mut c, 179);
             assert!(inside < limit, "{hz} Hz");
+        }
+    }
+
+
+    /// `Rider_UpdateIdleLookAnim`'s fixture (shared by the differential and
+    /// the rate test): the rider at `DATA`, its controller at `DATA+0x4000`
+    /// (layer 1 idle, `PlayAnim` reaching a fake), the AI frame counter
+    /// `now`, the idle clock, the velocity and the `Rand_NextGame` state.
+    pub(crate) fn idle_look_base(c: &mut Cpu, r: &mut Rng, now: u32, clock: f32, vel: [f32; 2]) -> u32 {
+        let rider = DATA;
+        let ctrl = DATA + 0x4000;
+        let vt = fakes::vtable(c, r, &[0x20]);
+        c.pc = 0x0011_5d48;
+        c.g[A0][0] = rider as u64;
+        c.bus.write32(rider + 0x784, ctrl);
+        c.bus.write32(ctrl + 0x58, vt);
+        c.bus.write32(ctrl + 4, 0x1b6);
+        c.bus.write32(ctrl + 8, 0x1b6);
+        for i in 0..8 {
+            c.bus.write32(fakes::LOG_RESULTS + 4 * i, 0x207);
+        }
+        // AI_GetFrameCounter: [[[gp-0x848]+0x84]+0xc]+8.
+        let (a, b, d) = (DATA + 0x5000, DATA + 0x5100, DATA + 0x5200);
+        c.bus.write32(GAME_GP - 0x848, a);
+        c.bus.write32(a + 0x84, b);
+        c.bus.write32(b + 0xc, d);
+        c.bus.write32(d + 8, now);
+        c.bus.write32(rider + 0x35c, clock.to_bits());
+        c.bus.write32(rider + 0x1b0, vel[0].to_bits());
+        c.bus.write32(rider + 0x1b4, vel[1].to_bits());
+        c.bus.write32(rider + 0x320, r.next_u32() % 2);
+        c.bus.write64(rider + 0x8c0, (r.next_u32() as u64) << 32 | r.next_u32() as u64);
+        c.bus.write64(rider + 0x8d0, (r.next_u32() as u64) << 32 | r.next_u32() as u64);
+        // Rand_NextGame's state (`0x4ff030`, six words).
+        for i in 0..6u32 {
+            c.bus.write32(0x004f_f030 + 4 * i, r.next_u32());
+        }
+        rider
+    }
+
+
+    #[test]
+    fn rider_update_idle_look_anim_matches() {
+        check_lohi(ee::s00::f_00115d48__generated, rider_update_idle_look_anim, 400, &|c, seed| {
+            elf_image(c);
+            let mut r = machine(c, seed, 0x5d48, 1);
+            let now = 5000u32;
+            let clock = match seed % 9 {
+                0 => 0.5f32,
+                1 => 0.99,
+                _ => 1.0 + (r.next_u32() % 100) as f32 * 0.01,
+            };
+            let f = |r: &mut Rng| (r.next_u32() % 2000) as f32 * 0.001 - 1.0;
+            let vel = match seed % 7 {
+                0 => [0.0, 0.0],
+                1 => [0.0, 0.5],
+                2 => [0.0, -0.5],
+                3 => [-0.5, f(&mut r)],
+                _ => [f(&mut r), f(&mut r)],
+            };
+            let rider = idle_look_base(c, &mut r, now, clock, vel);
+            if seed % 11 == 5 {
+                // Layer 1 busy (anim table entry 0x12 is non-zero).
+                c.bus.write32(DATA + 0x4000 + 4, 0x12);
+            }
+            for i in 0..6u32 {
+                let slot = rider + 0x24 * i;
+                c.bus.write32(slot, (r.next_u32() % 4 != 0) as u32);
+                c.bus.write32(slot + 0x1c, (r.next_u32() % 5 != 0) as u32);
+                let dist = if r.next_u32() % 4 == 0 { 1500.0f32 } else { (r.next_u32() % 1000) as f32 };
+                c.bus.write32(slot + 0x8, dist.to_bits());
+                let angle = (r.next_u32() % 14000) as f32 * 0.001 - 7.0;
+                c.bus.write32(slot + 0xc, angle.to_bits());
+                let age = [0u32, 1, 599, 600, 601, 3000][(r.next_u32() % 6) as usize];
+                c.bus.write32(slot + 0x20, now - age);
+            }
+        });
+    }
+
+
+    /// `Rider_UpdateIdleLookAnim` looks at the same rider again only after
+    /// 600 frames (10 s): 600 ticks at 60 Hz, 1200 at 120, 2400 at 240.
+    #[test]
+    fn rider_update_idle_look_anim_cooldown_is_a_duration() {
+        use crate::tick;
+        let now = 5000u32;
+        // True when the rider looked at rider 0 (90 degrees to the side,
+        // looked at `age` ticks ago): its stamp becomes `now`.
+        let looked = |k: u32, hz: u32, age: u32| -> bool {
+            let mut c = crate::difftest::fresh();
+            elf_image(&mut c);
+            let mut r = machine(&mut c, k, 0x5d49, 0);
+            tick::set_for_test(&mut c, hz);
+            let rider = idle_look_base(&mut c, &mut r, now, 2.0, [1.0, 0.0]);
+            for i in 0..6u32 {
+                c.bus.write32(rider + 0x24 * i, 0);
+            }
+            c.bus.write32(rider, 1);
+            c.bus.write32(rider + 0x1c, 1);
+            c.bus.write32(rider + 0x8, 100.0f32.to_bits());
+            c.bus.write32(rider + 0xc, std::f32::consts::FRAC_PI_2.to_bits());
+            c.bus.write32(rider + 0x20, now - age);
+            rider_update_idle_look_anim(&mut c);
+            c.bus.read32(rider + 0x20) == now
+        };
+        // A Rand state whose roll takes the look branch (90%).
+        let k = (0..64).find(|&k| looked(k, 60, 600)).expect("no seed rolls the look branch");
+        assert!(!looked(k, 60, 599), "60 Hz: inside 600 ticks");
+        for hz in [120u32, 240] {
+            let ticks = 10 * hz;
+            assert!(!looked(k, hz, 600), "{hz} Hz: 600 ticks is not 10 s");
+            assert!(!looked(k, hz, ticks - 1), "{hz} Hz: inside 10 s");
+            assert!(looked(k, hz, ticks), "{hz} Hz: 10 s passed");
         }
     }
 

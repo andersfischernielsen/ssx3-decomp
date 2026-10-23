@@ -343,12 +343,17 @@ counter); about 85 were real. Fixed:
   `GMHandler0/4/6/7_Reset` deadlines. `tick::countdowns60` and
   `tick::frame60_due` hold integer countdowns to 60 Hz frames.
 
-Still open from t4-e: the AI frame-counter readers `Rider_CheckRiderCollisions`
-(3-frame cooldowns), `ComputerActorRider_ThinkGate`, `FindAttackTarget`,
-`Rider_UpdateRaceProgress`/`UpdateAIPathProgress` (once per second),
-`Rider_UpdateIdleLookAnim`, `RiderGroundState_Enter`/`Exit`, `FocusMan_Update`,
-`GMHandler4_OnRiderFinished` (medal times * 60), `AI_UpdateRaceTimeLimit`
-(online only). The scan covers code that ran in the two profiles only.
+The AI frame counter's readers (t4-e) are converted too: the bump and
+knock-down cooldowns (`Rider_CheckRiderCollisions`), the AI's gate start and
+steering jitter (`ComputerActorRider_ThinkGate`, ported), the attack cooldown
+(`FindAttackTarget`, ported), the once-per-second path reselect
+(`Rider_UpdateRaceProgress`/`UpdateAIPathProgress`), the 10 s idle look
+cooldown (`Rider_UpdateIdleLookAnim`, ported), the landing speed factor from
+air time and the "left the ground long ago" stamp (`RiderGroundState_Enter`/
+`Exit`, ported), and the time-trial medal times (`GMHandler4_OnRiderFinished`,
+ported). Left in ticks: `FocusMan_Update`'s 20-frame rescan limit (only CPU)
+and `AI_UpdateRaceTimeLimit` (online only). The scan covers code that ran in
+the two profiles only.
 
 ### Left for a design decision (not converted)
 

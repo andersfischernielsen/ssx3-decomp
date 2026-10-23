@@ -73,10 +73,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0013_ace8, rider_air_state_load_state, "RiderAirState_LoadState"),
     (0x0013_ad20, rider_railslide_state_enter, "RiderRailslideState_Enter"),
     (0x0013_c618, rider_railslide_state_load_state, "RiderRailslideState_LoadState"),
+    (0x0013_c7a8, rider_ground_state_enter, "RiderGroundState_Enter"),
     (0x0013_c878, rider_ground_state_compute_friction_accel, "RiderGroundState_ComputeFrictionAccel"),
     (0x0013_d028, rider_ground_state_compute_carve_accel, "RiderGroundState_ComputeCarveAccel"),
     (0x0013_d1b8, rider_ground_state_probe_ground, "RiderGroundState_ProbeGround"),
     (0x0013_d818, rider_ground_state_update, "RiderGroundState_Update"),
+    (0x0013_f410, rider_ground_state_exit, "RiderGroundState_Exit"),
     (0x0013_f880, rider_ground_state_load_state, "RiderGroundState_LoadState"),
     (0x0014_0738, rider_init_data, "Rider_InitData"),
     (0x0014_0bc8, rider_is_computer, "Rider_IsComputer"),
@@ -3105,6 +3107,154 @@ pub fn rider_railslide_state_enter(c: &mut Cpu) {
         sw(c, S0, 0x40, 0);
         c.sq(3, (c.g[S0][0] as u32).wrapping_add(0x30));
         frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+// ---------------------------------------------------------------------------
+// RiderGroundState_Enter / _Exit.
+
+/// The AI frame counter (`AI_GetFrameCounter`, AI +0x8, one per tick).
+const AI_GET_FRAME_COUNTER: u32 = 0x0012_98c8;
+
+/// `void RiderGroundState_Enter(RiderGroundState* self)` (0x13c7a8): reset the
+/// state, take the section's ground friction pair scaled by the model's
+/// factor (`+0x4`/`+0x8`), copy the rider's position to `+0x390`, stamp the
+/// landing time (`+0x10`) and scale the rider's velocity (`+0x1e0`) by the
+/// landing speed factor: 0.7 after up to 40 frames in the air, then +0.01 per
+/// further frame, clamped to 1.
+///
+/// The air time is `now - self+0x14` in ticks of the AI frame counter; off
+/// 60 Hz it is converted to 60 Hz frames (`ticks * 60 / rate`, in float)
+/// before the formula, so a hop of the same real length lands with the same
+/// factor at any rate. At 60 the original integer path runs unchanged.
+pub fn rider_ground_state_enter(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 31;
+        let frame = Frame::open(c, 0x20);
+        c.g[A2][0] = 0xb0;
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let gp = c.g[GP][0] as u32;
+        c.g[A0][0] = c.lw(gp.wrapping_sub(0x848));
+        let this = c.g[S0][0] as u32;
+        c.sw(this, 0u64);
+        c.g[A1][0] = c.lw(this.wrapping_add(0x18));
+        c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x84));
+        c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x438));
+        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x44));
+        // v1 = ground index * 0xb0 (the section record stride).
+        c.mult(0, 3, 3, 6);
+        c.g[V0][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x780));
+        c.lwc1(2, (c.g[V0][0] as u32).wrapping_add(0x140));
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        c.lwc1(0, (c.g[A0][0] as u32).wrapping_add(0x14));
+        c.mul_s(0, 2, 0);
+        c.swc1(0, this.wrapping_add(0x4));
+        c.lwc1(1, (c.g[A0][0] as u32).wrapping_add(0x18));
+        c.mul_s(2, 2, 1);
+        c.swc1(2, this.wrapping_add(0x8));
+        c.lq(2, (c.g[A1][0] as u32).wrapping_add(0x370));
+        c.sq(2, (c.g[A1][0] as u32).wrapping_add(0x390));
+        c.sw(this.wrapping_add(0xc), 0u64);
+        call_ptr(c, AI_GET_FRAME_COUNTER, 0x0013_c80c)?;
+        c.g[V1][0] = c.lw(this.wrapping_add(0x14));
+        c.sw(this.wrapping_add(0x10), c.g[V0][0]);
+        // Air time in ticks.
+        c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+        c.g[V0][0] = ((c.g[V1][0] as i64) < 41i64) as u64;
+        let short = c.g[V0][0] != 0;
+        c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x28));
+        let hz = crate::tick::rate(c);
+        if hz == 60 {
+            if short {
+                c.cycles += 1;
+                c.lwc1(1, gp.wrapping_sub(0x70ec));
+            } else {
+                c.cycles += 7;
+                c.lwc1(2, gp.wrapping_sub(0x70f4));
+                c.mtc1(2, 0);
+                c.cvt_s_w(0, 0);
+                c.lwc1(1, gp.wrapping_sub(0x70f0));
+                c.mul_s(0, 0, 2);
+                c.add_s(1, 0, 1);
+            }
+        } else {
+            // The air time in 60 Hz frames.
+            let frames = (c.g[V1][0] as u32 as i32) as f32 * 60.0 / hz as f32;
+            if frames > 40.0 {
+                c.cycles += 7;
+                c.lwc1(2, gp.wrapping_sub(0x70f4));
+                c.f[0] = (frames - 40.0).to_bits();
+                c.lwc1(1, gp.wrapping_sub(0x70f0));
+                c.mul_s(0, 0, 2);
+                c.add_s(1, 0, 1);
+            } else {
+                c.cycles += 1;
+                c.lwc1(1, gp.wrapping_sub(0x70ec));
+            }
+        }
+        c.cycles += 13;
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(1, 0);
+        c.g[V0][0] = c.lw(this.wrapping_add(0x18));
+        c.min_s(0, 1, 0);
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        c.mfc1(3, 0);
+        c.lqc2(4, (c.g[V0][0] as u32).wrapping_add(0x1e0));
+        c.qmtc2(3, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, (c.g[V0][0] as u32).wrapping_add(0x1e0));
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void RiderGroundState_Exit(RiderGroundState* self)` (0x13f410): reset
+/// three of the rider's slews (`+0x2c0`, `+0x20c`, `+0x2cc`) and stamp the
+/// take-off time (`+0x14`) from the AI frame counter. The first exit (stamp
+/// still `-1`) stores `now - 500` frames ("left the ground long ago", read by
+/// `RiderGroundState_Enter`); the 500 is converted to ticks at the current
+/// rate (exact at 60).
+pub fn rider_ground_state_exit(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x20);
+        let gp = c.g[GP][0] as u32;
+        c.lwc1(0, gp.wrapping_sub(0x6fa8));
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let this = c.g[S0][0] as u32;
+        c.lwc1(1, gp.wrapping_sub(0x6fa4));
+        c.g[A0][0] = u64::MAX;
+        c.g[V1][0] = c.lw(this.wrapping_add(0x18));
+        c.swc1(0, (c.g[V1][0] as u32).wrapping_add(0x2c0));
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x2c4), 0u64);
+        c.g[V0][0] = c.lw(this.wrapping_add(0x18));
+        c.swc1(0, (c.g[V0][0] as u32).wrapping_add(0x20c));
+        c.sw((c.g[V0][0] as u32).wrapping_add(0x210), 0u64);
+        c.g[V1][0] = c.lw(this.wrapping_add(0x18));
+        c.swc1(1, (c.g[V1][0] as u32).wrapping_add(0x2cc));
+        c.sw((c.g[V1][0] as u32).wrapping_add(0x2d0), 0u64);
+        c.g[V0][0] = c.lw(this.wrapping_add(0x14));
+        if c.g[V0][0] != c.g[A0][0] {
+            c.cycles += 2;
+            call_ptr(c, AI_GET_FRAME_COUNTER, 0x0013_f474)?;
+        } else {
+            c.cycles += 4;
+            call_ptr(c, AI_GET_FRAME_COUNTER, 0x0013_f464)?;
+            let long_ago = crate::tick::ticks_from_frames60(c, 500);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(long_ago));
+        }
+        c.cycles += 5;
+        c.sw(this.wrapping_add(0x14), c.g[V0][0]);
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
         frame.close(c);
         Ok(())
     })
@@ -6759,6 +6909,129 @@ pub(crate) mod tests {
         assert_eq!(step(60), STEP_60, "60 Hz step");
         assert_eq!(step(120), 0x3ccc_ccce, "120 Hz step");
         assert_eq!(step(240), 0x3c4c_ccce, "240 Hz step");
+    }
+
+
+    // -----------------------------------------------------------------
+    // RiderGroundState_Enter / _Exit.
+
+    const GSE_THIS: u32 = DATA + 0xa_0000;
+    const GSE_RIDER: u32 = DATA + 0xa_1000;
+    const GSE_MODEL: u32 = DATA + 0xa_2000;
+    const GSE_WORLD: u32 = DATA + 0xa_3000;
+    const GSE_AI: u32 = DATA + 0xa_3100;
+    const GSE_SECT: u32 = DATA + 0xa_4000;
+
+    /// The ground state, its rider, the world's AI record (sections at +0x44,
+    /// the frame counter's owner at +0xc, counter at owner+0x8 = `now`) and
+    /// the gp literals both functions load. The real `AI_GetFrameCounter`
+    /// runs.
+    fn ground_enter_exit_fixture(c: &mut Cpu, seed: u32, now: u32, stamp: u32) -> Rng {
+        let mut r = machine(c, seed, 0x13_c7a8, 0);
+        c.bus.write32(GAME_GP.wrapping_sub(0x848), GSE_WORLD);
+        c.bus.write32(GSE_WORLD + 0x84, GSE_AI);
+        c.bus.write32(GSE_AI + 0x44, GSE_SECT);
+        c.bus.write32(GSE_AI + 0xc, GSE_AI + 0x80);
+        c.bus.write32(GSE_AI + 0x88, now);
+        c.bus.write32(GSE_THIS + 0x18, GSE_RIDER);
+        c.bus.write32(GSE_THIS + 0x14, stamp);
+        for off in [0x0u32, 0x4, 0x8, 0xc, 0x10] {
+            c.bus.write32(GSE_THIS + off, r.next_u32());
+        }
+        let idx = r.next_u32() % 8;
+        c.bus.write32(GSE_RIDER + 0x438, idx);
+        c.bus.write32(GSE_SECT + idx * 0xb0 + 0x14, r.f32(2.0));
+        c.bus.write32(GSE_SECT + idx * 0xb0 + 0x18, r.f32(2.0));
+        c.bus.write32(GSE_RIDER + 0x780, GSE_MODEL);
+        c.bus.write32(GSE_MODEL + 0x140, r.f32(2.0));
+        put_vec(c, GSE_RIDER + 0x370, [r.f32(100.0), r.f32(100.0), r.f32(100.0), r.f32(1.0)]);
+        put_vec(c, GSE_RIDER + 0x1e0, [r.f32(50.0), r.f32(50.0), r.f32(50.0), r.f32(1.0)]);
+        c.bus.write32(GAME_GP.wrapping_sub(0x70f4), 0.01f32.to_bits());
+        c.bus.write32(GAME_GP.wrapping_sub(0x70f0), 0.7f32.to_bits());
+        c.bus.write32(GAME_GP.wrapping_sub(0x70ec), 0.7f32.to_bits());
+        c.bus.write32(GAME_GP.wrapping_sub(0x6fa8), r.f32(1.0));
+        c.bus.write32(GAME_GP.wrapping_sub(0x6fa4), r.f32(1.0));
+        c.g[A0][0] = sx(GSE_THIS);
+        r
+    }
+
+    #[test]
+    fn rider_ground_state_enter_matches() {
+        check_lohi(ee::s01::f_0013c7a8__generated, rider_ground_state_enter, 200, &|c, seed| {
+            let mut r = Rng(0x13c7_a8 ^ seed as u64);
+            let now = 1000 + r.next_u32() % 100_000;
+            // Air time: short, the ramp, clamped to 1, negative, the 40/41 edge.
+            let air: i32 = match seed % 5 {
+                0 => (r.next_u32() % 41) as i32,
+                1 => 41 + (r.next_u32() % 30) as i32,
+                2 => 71 + (r.next_u32() % 2000) as i32,
+                3 => -1 - (r.next_u32() % 500) as i32,
+                _ => 40 + (seed / 5 % 2) as i32,
+            };
+            let _ = ground_enter_exit_fixture(c, seed, now, now.wrapping_sub(air as u32));
+        });
+    }
+
+    #[test]
+    fn rider_ground_state_exit_matches() {
+        check(ee::s01::f_0013f410__generated, rider_ground_state_exit, 100, &|c, seed| {
+            let mut r = Rng(0x13f4_10 ^ seed as u64);
+            let now = r.next_u32() % 100_000;
+            let stamp = match seed % 3 {
+                0 | 1 => u32::MAX,
+                _ => r.next_u32(),
+            };
+            let _ = ground_enter_exit_fixture(c, seed, now, stamp);
+        });
+    }
+
+    /// `RiderGroundState_Enter`'s landing speed factor follows the air time in
+    /// real time: `n` 60 Hz frames in the air give the same factor (and the
+    /// same scaled velocity, bit for bit) as `2n` ticks at 120 Hz and `4n`
+    /// ticks at 240 Hz, over the 0.7 floor, the ramp and the clamp to 1.
+    #[test]
+    fn rider_ground_state_enter_follows_the_rate() {
+        use crate::tick;
+        let vel = |hz: u32, ticks: u32| -> [u32; 4] {
+            let mut c = crate::difftest::fresh();
+            let now = 50_000u32;
+            let _ = ground_enter_exit_fixture(&mut c, 7, now, now - ticks);
+            put_vec(&mut c, GSE_RIDER + 0x1e0, [1.0f32.to_bits(), 2.0f32.to_bits(), (-3.0f32).to_bits(), 1.0f32.to_bits()]);
+            tick::set_for_test(&mut c, hz);
+            rider_ground_state_enter(&mut c);
+            assert_eq!(c.bus.read32(GSE_THIS + 0x10), now, "{hz} Hz: landing stamp");
+            [0u32, 4, 8, 12].map(|k| c.bus.read32(GSE_RIDER + 0x1e0 + k))
+        };
+        for n in [0u32, 10, 39, 40, 41, 55, 69, 70, 71, 100, 600] {
+            let at60 = vel(60, n);
+            assert_eq!(vel(120, 2 * n), at60, "{n} frames at 120 Hz");
+            assert_eq!(vel(240, 4 * n), at60, "{n} frames at 240 Hz");
+        }
+        // 100 ticks at 240 Hz are 25 frames: the short-hop 0.7, not the
+        // clamped 1 that 100 frames at 60 Hz give.
+        assert_eq!(f32::from_bits(vel(240, 100)[0]), 0.7f32);
+        assert_eq!(f32::from_bits(vel(60, 100)[0]), 1.0f32);
+    }
+
+    /// `RiderGroundState_Exit`'s first-exit stamp is `now - 500` 60 Hz frames:
+    /// 500, 1000 and 2000 ticks back at 60, 120 and 240 Hz. A real take-off
+    /// stamp is `now` at any rate.
+    #[test]
+    fn rider_ground_state_exit_follows_the_rate() {
+        use crate::tick;
+        let stamp = |hz: u32, old: u32| -> u32 {
+            let mut c = crate::difftest::fresh();
+            let _ = ground_enter_exit_fixture(&mut c, 3, 10_000, old);
+            tick::set_for_test(&mut c, hz);
+            rider_ground_state_exit(&mut c);
+            c.bus.read32(GSE_THIS + 0x14)
+        };
+        assert_eq!(stamp(60, u32::MAX), 9_500);
+        assert_eq!(stamp(120, u32::MAX), 9_000);
+        assert_eq!(stamp(240, u32::MAX), 8_000);
+        for hz in [60u32, 120, 240] {
+            assert_eq!(stamp(hz, 1234), 10_000, "{hz} Hz: take-off stamp");
+        }
     }
 
 

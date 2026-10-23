@@ -70,6 +70,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0023_b038, gm_handler8_save_state, "GMHandler8_SaveState"),
     (0x0023_b070, gm_handler8_load_state, "GMHandler8_LoadState"),
     (0x0023_b268, gm_handler4_reset, "GMHandler4_Reset"),
+    (0x0023_b468, gm_handler4_on_rider_finished, "GMHandler4_OnRiderFinished"),
     (0x0023_b5f8, gm_handler4_v06, "GMHandler4_v06"),
     (0x0023_bb98, gm_handler6_reset, "GMHandler6_Reset"),
     (0x0023_c0d0, gm_handler7_reset, "GMHandler7_Reset"),
@@ -2513,6 +2514,144 @@ pub fn gm_handler4_reset(c: &mut Cpu) {
     })
 }
 
+/// The per-player "out of time / DNF" flags (`D_005366A8`).
+const OUT_FLAGS: u32 = 0x0053_66a8;
+/// The per-player medal won (`D_00536730`): 0 gold, 1 silver, 2 bronze.
+const MEDALS: u32 = 0x0053_6730;
+
+/// `void GMHandler4_OnRiderFinished(GMHandler4* self, int idx)` (0x23b468):
+/// a timed event's rider `idx` finished. Its finish time (rider +0x478, in
+/// game updates) goes to the standings; a DNF (rider +0x480) stores 360000
+/// and the out flag; over the handler's limit (`self->+0x4`, in updates:
+/// see [`gm_handler4_reset`]) only the out flag; otherwise the medal from
+/// the event's medal times (seconds, `* 60` updates per second: the game
+/// rate).
+pub fn gm_handler4_on_rider_finished(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 35;
+        let f = Frame::open(c, 0x70);
+        f.save(c, S0, 0x60);
+        f.save(c, S2, 0x40);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S2][0] = sx(r32(c, A1) << 2);
+        f.save(c, S3, 0x30);
+        f.save(c, S4, 0x20);
+        f.save(c, S5, 0x10);
+        f.save(c, S1, 0x50);
+        f.save_ra(c, 0);
+        c.g[S4][0] = 1;
+        call_ptr(c, BE_GET, 0x0023_b498)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0;
+        call_ptr(c, BE_IFACE, 0x0023_b4a4)?;
+        // The rider: world -> +0x84 -> +0xc -> +0x28 + 4 * idx.
+        c.g[A2][0] = Addr(gpo(c, -0x848)).lw(c);
+        c.g[S5][0] = c.g[V0][0];
+        c.g[A3][0] = gm_man(c);
+        c.g[A0][0] = Addr(r32(c, A2)).off(0x84).lw(c);
+        c.g[V1][0] = sx(STANDINGS);
+        c.g[S3][0] = sx(r32(c, S2).wrapping_add(STANDINGS));
+        c.g[V0][0] = Addr(r32(c, A0)).off(0xc).lw(c);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, S2)));
+        c.g[V1][0] = Addr(r32(c, V0)).off(0x28).lw(c);
+        c.g[A0][0] = Addr(r32(c, V1)).off(0x478).lw(c);
+        Addr(r32(c, S3)).sw(c, c.g[A0][0]);
+        Addr(r32(c, A3)).off(0x9c).sw(c, c.g[S4][0]);
+        c.g[V1][0] = Addr(r32(c, A2)).off(0x84).lw(c);
+        c.g[V0][0] = Addr(r32(c, V1)).off(0xc).lw(c);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, S2)));
+        c.g[A1][0] = Addr(r32(c, V0)).off(0x28).lw(c);
+        c.g[V1][0] = Addr(r32(c, A1)).off(0x480).lw(c);
+        c.g[V0][0] = 0x5_0000;
+        if c.g[V1][0] != 0 {
+            // DNF: 360000 and out.
+            c.cycles += 13;
+            c.g[V0][0] = 0x5_7e40;
+            Addr(r32(c, S3)).sw(c, c.g[V0][0]);
+            c.g[A0][0] = sx(r32(c, S2).wrapping_add(OUT_FLAGS));
+            c.g[V1][0] = Addr(r32(c, A2)).off(0x84).lw(c);
+            c.g[V0][0] = Addr(r32(c, V1)).off(0xc).lw(c);
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, S2)));
+            c.g[V1][0] = Addr(r32(c, V0)).off(0x28).lw(c);
+            Addr(r32(c, V1)).off(0x100).sw(c, 0);
+            Addr(r32(c, A3)).off(0x70).sw(c, c.g[S4][0]);
+            Addr(r32(c, A0)).sw(c, c.g[S4][0]);
+        } else {
+            c.cycles += 5;
+            c.g[V0][0] = Addr(r32(c, S0)).off(0x4).lw(c);
+            c.g[V1][0] = Addr(r32(c, S3)).lw(c);
+            let over = c.g[V0][0] < c.g[V1][0];
+            c.g[V0][0] = 0x53_0000;
+            if over {
+                // Over the time limit: out.
+                c.cycles += 4;
+                Addr(r32(c, A1)).off(0x100).sw(c, 0);
+                c.g[V0][0] = sx(OUT_FLAGS);
+                Addr(r32(c, A3)).off(0x70).sw(c, c.g[S4][0]);
+            } else {
+                c.cycles += 18;
+                Addr(r32(c, A1)).off(0x100).sw(c, c.g[S4][0]);
+                c.g[A0][0] = c.g[S5][0];
+                c.g[A2][0] = 2;
+                Addr(r32(c, A3)).off(0x84).sw(c, c.g[S4][0]);
+                c.g[A1][0] = Addr(r32(c, A3)).off(0x8).lw(c);
+                // `li s1, 60`: updates per second (the medal times are in
+                // seconds, the finish time in game updates).
+                c.g[S1][0] = crate::tick::rate(c) as u64;
+                call_ptr(c, RACE_MEDAL_SECONDS, 0x0023_b568)?;
+                c.g[V1][0] = gm_man(c);
+                c.mult(0, S0, V0, S1);
+                c.g[A0][0] = c.g[S5][0];
+                c.g[A2][0] = 1;
+                c.g[A1][0] = Addr(r32(c, V1)).off(0x8).lw(c);
+                call_ptr(c, RACE_MEDAL_SECONDS, 0x0023_b580)?;
+                c.mult(0, V1, V0, S1);
+                c.g[V0][0] = Addr(r32(c, S3)).lw(c);
+                c.g[S0][0] = (c.g[S0][0] < c.g[V0][0]) as u64;
+                let past_gold = c.g[S0][0] != 0;
+                c.g[V0][0] = (c.g[V1][0] < c.g[V0][0]) as u64;
+                if !past_gold {
+                    // Gold: 0.
+                    c.cycles += 2;
+                    c.g[V0][0] = sx(MEDALS);
+                } else {
+                    c.cycles += 2;
+                    let past_silver = c.g[V0][0] != 0;
+                    c.g[V0][0] = 0x53_0000;
+                    c.cycles += 4;
+                    c.g[V0][0] = sx(r32(c, S2).wrapping_add(MEDALS));
+                    if past_silver {
+                        c.g[V1][0] = 2;
+                        Addr(r32(c, V0)).sw(c, c.g[V1][0]);
+                    } else {
+                        Addr(r32(c, V0)).sw(c, c.g[S4][0]);
+                    }
+                    return gm4_finished_leave(c, f);
+                }
+            }
+            // The flag (out) or the medal (gold) at `v0 + idx * 4`: 0.
+            c.cycles += 3;
+            c.g[V0][0] = sx(r32(c, S2).wrapping_add(r32(c, V0)));
+            Addr(r32(c, V0)).sw(c, 0);
+        }
+        gm4_finished_leave(c, f)
+    })
+}
+
+/// [`gm_handler4_on_rider_finished`]'s epilogue.
+fn gm4_finished_leave(c: &mut Cpu, f: Frame) -> Flow {
+    c.cycles += 9;
+    f.restore(c, S0, 0x60);
+    f.restore(c, S1, 0x50);
+    f.restore(c, S2, 0x40);
+    f.restore(c, S3, 0x30);
+    f.restore(c, S4, 0x20);
+    f.restore(c, S5, 0x10);
+    f.restore_ra(c, 0);
+    f.close(c);
+    Ok(())
+}
+
 /// `void GMHandler6_Reset(GMHandler6* self)` (0x23bb98): one round; the
 /// deadline (+0x78) is the mode time in seconds, in game updates; then the
 /// riders: in a two-player race (`QUICK_RACE` == 2) both players with their
@@ -3388,6 +3527,132 @@ pub(crate) mod tests {
     fn gm_handler4_reset_matches() {
         check3(ee::s06::f_0023b268__generated, gm_handler4_reset, 40, &gm4_reset_setup);
         deadline_stored(gm_handler4_reset, &gm4_reset_setup, 40);
+    }
+
+    /// The rider [`gm4_finished_setup`] finishes (world -> game -> AI
+    /// +0x28 + 4 * idx).
+    const GM4_RIDER: u32 = DATA + 0x3_0000;
+    /// What the fixture leaves in the rider's +0x100, the player's medal and
+    /// out flag, so the stores can be told apart.
+    const GM4_UNSET: u32 = 0x7777_7777;
+
+    /// The event's medal time (seconds) for `mode` (6..8) and medal `level`
+    /// (2 gold, 1 silver), from the image's table (`D_00440D18`).
+    fn gm4_medal_seconds(c: &mut Cpu, mode: u32, level: u32) -> u32 {
+        c.bus.read16(0x0044_0d18 + ((mode - 6) * 3 + level) * 20 + 4) as u32
+    }
+
+    /// Case `(seed / 4) % 5`: 0 DNF, 1 over the limit, 2 gold, 3 silver,
+    /// 4 bronze; player `seed % 4`; event mode 6..8. The finish time and the
+    /// handler's limit are in 60 Hz updates.
+    fn gm4_finished_setup(c: &mut Cpu, seed: u32) {
+        let mut r = gm_reset_base(c, seed, 0x23b468);
+        let slot = seed % 4;
+        let mode = 6 + (seed / 20) % 3;
+        c.bus.write32(GM + 0x8, mode);
+        let ai = WORLD_3 + 0x2000;
+        c.bus.write32(ai + 0x28 + 4 * slot, GM4_RIDER);
+        c.bus.write32(GM4_RIDER + 0x100, GM4_UNSET);
+        c.bus.write32(MEDALS + 4 * slot, GM4_UNSET);
+        c.bus.write32(OUT_FLAGS + 4 * slot, GM4_UNSET);
+        let gold = gm4_medal_seconds(c, mode, 2) * 60;
+        let silver = gm4_medal_seconds(c, mode, 1) * 60;
+        let case = (seed / 4) % 5;
+        let time = match case {
+            1 => 1000 + r.next_u32() % 5000,
+            2 => r.next_u32() % (gold + 1),
+            3 => gold + 1 + r.next_u32() % silver.saturating_sub(gold).max(1),
+            _ => silver + 1 + r.next_u32() % 600,
+        };
+        let limit = if case == 1 { time - 1 - r.next_u32() % 500 } else { time + r.next_u32() % 1000 };
+        c.bus.write32(GM4_RIDER + 0x478, time);
+        c.bus.write32(GM4_RIDER + 0x480, if case == 0 { r.next_u32() | 1 } else { 0 });
+        c.bus.write32(HANDLER_OBJ + 4, limit);
+        c.g[A0][0] = sx(HANDLER_OBJ);
+        c.g[A1][0] = slot as u64;
+    }
+
+    #[test]
+    fn gm_handler4_on_rider_finished_matches() {
+        check3(ee::s06::f_0023b468__generated, gm_handler4_on_rider_finished, 60, &gm4_finished_setup);
+        // Most seeds reach the medal compare (rider +0x100 = 1), and every
+        // medal is won.
+        let mut medals = [0u32; 3];
+        let mut compared = 0;
+        for seed in 0..60 {
+            let mut c = crate::difftest::fresh();
+            gm4_finished_setup(&mut c, seed);
+            gm_handler4_on_rider_finished(&mut c);
+            if c.bus.read32(GM4_RIDER + 0x100) == 1 {
+                compared += 1;
+                medals[c.bus.read32(MEDALS + 4 * (seed % 4)) as usize] += 1;
+            }
+        }
+        assert!(compared * 2 >= 60, "only {compared} of 60 seeds reached the medal compare");
+        assert!(medals.iter().all(|&n| n > 0), "medals won: {medals:?}");
+    }
+
+    /// The game rate `hz` in the app manager (or a test one).
+    fn at_rate(c: &mut Cpu, hz: u32) {
+        let app = c.bus.read32(crate::tick::APPMAN_PTR);
+        if app == 0 {
+            crate::tick::set_for_test(c, hz);
+        } else {
+            c.bus.write32(app + crate::tick::APPMAN_RATE, hz);
+            c.bus.write32(app + crate::tick::APPMAN_STEP, crate::tick::step_bits(hz));
+        }
+    }
+
+    /// The medal is the same at any rate for the same wall time: the finish
+    /// time and the limit are `rate / 60` times the 60 Hz counts, the medal
+    /// times (seconds) are scaled by the rate. Includes the exact gold and
+    /// silver boundaries.
+    #[test]
+    fn gm_handler4_on_rider_finished_medal_follows_the_rate() {
+        let medal = |seed: u32, hz: u32, time60: Option<u32>| {
+            let mut c = crate::difftest::fresh();
+            gm4_finished_setup(&mut c, seed);
+            if let Some(t) = time60 {
+                c.bus.write32(GM4_RIDER + 0x478, t);
+                c.bus.write32(HANDLER_OBJ + 4, t + 100);
+            }
+            let k = hz / 60;
+            for off in [GM4_RIDER + 0x478, HANDLER_OBJ + 4] {
+                let v = c.bus.read32(off);
+                c.bus.write32(off, v * k);
+            }
+            at_rate(&mut c, hz);
+            gm_handler4_on_rider_finished(&mut c);
+            assert_eq!(c.bus.read32(GM4_RIDER + 0x100), 1, "seed {seed}, {hz} Hz: no medal compare");
+            c.bus.read32(MEDALS + 4 * (seed % 4))
+        };
+        let mut seen = [false; 3];
+        // Cases 2..4 (gold, silver, bronze) on a few players and modes.
+        for seed in [8u32, 13, 16, 29, 34, 39, 48, 53, 58] {
+            let m60 = medal(seed, 60, None);
+            seen[m60 as usize] = true;
+            for hz in [120u32, 240] {
+                assert_eq!(medal(seed, hz, None), m60, "seed {seed}, {hz} Hz");
+            }
+        }
+        assert!(seen.iter().all(|&s| s), "medals at 60 Hz: {seen:?}");
+        // On the boundaries: exactly the gold time is gold, one 60 Hz update later
+        // silver; exactly the silver time silver, one later bronze.
+        for seed in [8u32, 28, 48] {
+            let mode = 6 + (seed / 20) % 3;
+            let mut c = crate::difftest::fresh();
+            gm4_finished_setup(&mut c, seed);
+            let gold = gm4_medal_seconds(&mut c, mode, 2) * 60;
+            let silver = gm4_medal_seconds(&mut c, mode, 1) * 60;
+            for hz in [60u32, 120, 240] {
+                assert_eq!(medal(seed, hz, Some(gold)), 0, "seed {seed}, {hz} Hz: gold");
+                if silver > gold {
+                    assert_eq!(medal(seed, hz, Some(gold + 1)), 1, "seed {seed}, {hz} Hz: past gold");
+                    assert_eq!(medal(seed, hz, Some(silver)), 1, "seed {seed}, {hz} Hz: silver");
+                }
+                assert_eq!(medal(seed, hz, Some(silver + 1)), 2, "seed {seed}, {hz} Hz: past silver");
+            }
+        }
     }
 
     fn gm6_reset_setup(c: &mut Cpu, seed: u32) {
