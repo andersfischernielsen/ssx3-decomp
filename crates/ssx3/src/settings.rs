@@ -30,6 +30,15 @@ pub const ITEMS: &[Item] = &[
     Item { key: "SSX3_RESOLUTION", label: "Resolution", choices: &[("", "100%"), ("75", "75%"), ("50", "50%")], live: true },
     Item { key: "SSX3_ANISO", label: "Anisotropic filter", choices: &[("1", "Off"), ("2", "2x"), ("4", "4x"), ("8", "8x"), ("", "16x")], live: true },
     Item { key: "SSX3_FULLSCREEN", label: "Fullscreen", choices: &[("", "Off"), ("1", "On")], live: true },
+    // Modern graphics (all off/original by default: the game as it was).
+    Item { key: "SSX3_AA", label: "Anti-aliasing", choices: &[("", "Off"), ("fxaa", "FXAA")], live: true },
+    Item { key: "SSX3_MIPMAPS", label: "Texture mipmaps", choices: &[("", "Off"), ("1", "On")], live: true },
+    Item { key: "SSX3_LOD_BIAS", label: "Texture sharpness", choices: &[("0.5", "Soft"), ("", "Standard"), ("-0.5", "Sharp"), ("-1", "Sharper")], live: true },
+    Item { key: "SSX3_TERRAIN", label: "Terrain detail", choices: &[("", "Original"), ("2", "2x"), ("4", "4x")], live: true },
+    Item { key: "SSX3_DRAW_DIST", label: "Rider detail dist.", choices: &[("", "Original"), ("1.5", "1.5x"), ("2", "2x"), ("3", "3x")], live: true },
+    Item { key: "SSX3_AO", label: "Ambient occlusion", choices: &[("", "Off"), ("1", "On")], live: true },
+    Item { key: "SSX3_BLOOM", label: "Bloom", choices: &[("", "Original"), ("modern", "Modern"), ("off", "Off")], live: true },
+    Item { key: "SSX3_SNOW", label: "Snow sparkle", choices: &[("", "Off"), ("1", "On")], live: true },
     Item { key: "SSX3_RENDER", label: "Renderer", choices: &[("", "Native (wgpu)"), ("emu", "Emulated GS")], live: false },
     Item { key: "SSX3_SND", label: "Sound", choices: &[("", "Native mixer"), ("iop", "Emulated IOP")], live: false },
     Item { key: "SSX3_IOP_SIO2", label: "Pads & memory card", choices: &[("", "Native"), ("1", "Emulated IOP")], live: false },
@@ -144,8 +153,12 @@ pub fn step(item: &Item, dir: i32) -> String {
 pub fn draw(sel: usize, restart_pending: bool) -> (u32, u32, Vec<u32>) {
     const W: u32 = 320;
     const ROW: u32 = 12;
-    let rows = ITEMS.len() as u32 + 1;
-    let h = 28 + rows * ROW + 26;
+    // The rows: the settings, then "Close". At most VISIBLE at a time,
+    // scrolled to keep the selection in view (centred where possible).
+    let total = ITEMS.len() + 1;
+    let shown = total.min(VISIBLE);
+    let top = sel.saturating_sub(shown / 2).min(total - shown);
+    let h = 28 + shown as u32 * ROW + 26;
     let mut img = vec![rgba(10, 20, 40, 225); (W * h) as usize];
     let fill = |img: &mut Vec<u32>, x0: u32, y0: u32, w: u32, hh: u32, c: u32| {
         for y in y0..(y0 + hh).min(h) {
@@ -163,12 +176,17 @@ pub fn draw(sel: usize, restart_pending: bool) -> (u32, u32, Vec<u32>) {
     text(&mut img, W, 10, 9, "SETTINGS", orange);
     text(&mut img, W, W - 10 - 8 * 7, 9, "F10/ESC", grey);
     let mut y = 28;
-    for (i, item) in ITEMS.iter().enumerate() {
+    for i in top..top + shown {
         let selected = i == sel;
         if selected {
             fill(&mut img, 4, y - 2, W - 8, ROW, rgba(255, 120, 20, 90));
         }
         let c = if selected { white } else { grey };
+        let Some(item) = ITEMS.get(i) else {
+            text(&mut img, W, 10, y, "Close", c);
+            y += ROW;
+            continue;
+        };
         let label = if item.live { item.label.to_string() } else { format!("{}*", item.label) };
         text(&mut img, W, 10, y, &label, c);
         let mut value = item.choices[choice(item)].1.to_string();
@@ -182,15 +200,20 @@ pub fn draw(sel: usize, restart_pending: bool) -> (u32, u32, Vec<u32>) {
         }
         y += ROW;
     }
-    let close = ITEMS.len() == sel;
-    if close {
-        fill(&mut img, 4, y - 2, W - 8, ROW, rgba(255, 120, 20, 90));
+    // Scroll markers: more rows above / below.
+    if top > 0 {
+        text(&mut img, W, W / 2 - 4, 18, "^", orange);
     }
-    text(&mut img, W, 10, y, "Close", if close { white } else { grey });
+    if top + shown < total {
+        text(&mut img, W, W / 2 - 4, y - 2, "v", orange);
+    }
     let note = if restart_pending { "* changed: applies after a restart" } else { "* applies after a restart" };
     text(&mut img, W, 10, h - 16, note, if restart_pending { orange } else { grey });
     (W, h, img)
 }
+
+/// Rows the overlay shows at once (it scrolls).
+const VISIBLE: usize = 16;
 
 fn rgba(r: u8, g: u8, b: u8, a: u8) -> u32 {
     r as u32 | (g as u32) << 8 | (b as u32) << 16 | (a as u32) << 24
@@ -225,6 +248,16 @@ mod tests {
         assert_eq!(m.get("SSX3_FOV").map(String::as_str), Some("1.2"));
         assert_eq!(m.get("SSX3_TICK_HZ").map(String::as_str), Some("120"));
         assert!(!m.contains_key("SSX3_BOGUS"));
+    }
+
+    #[test]
+    fn overlay_scrolls_to_the_selection() {
+        // Every row, including "Close", can be selected and drawn.
+        for sel in 0..=ITEMS.len() {
+            let (w, h, img) = draw(sel, false);
+            assert_eq!(img.len(), (w * h) as usize);
+            assert!(h <= 28 + VISIBLE as u32 * 12 + 26);
+        }
     }
 
     #[test]

@@ -88,11 +88,41 @@ pub struct DrawState {
 #[derive(Clone)]
 pub struct Batch {
     pub state: DrawState,
+    /// What produced it (for the renderer's own passes, `Options`).
+    pub tag: Tag,
     pub first: u32,
     pub count: u32,
     /// Vertices computed by the GPU (`ssx3_render::gpu`): `first`/`count`
     /// are unused.
     pub gpu: Option<GpuBatch>,
+}
+
+/// The terrain's camera this frame (the first Bezier strip call drawn into
+/// the main target): world (the patches' space) → GS screen is
+/// `screen = go + (M·p)·gS / w`, GS pixels = screen.xy − `off`, the depth
+/// buffer holds Z / (ZMAX + 1) with Z = screen.z (XYZF2) or 16·screen.z.
+#[derive(Clone, Copy, Debug)]
+pub struct Cam {
+    /// M columns (model → guard clip).
+    pub m: [[f32; 4]; 4],
+    pub gscale: [f32; 4],
+    pub goffset: [f32; 4],
+    /// XYOFFSET / 16.
+    pub off: [f32; 2],
+    pub zmax: u32,
+    pub xyzf: bool,
+}
+
+/// What produced a batch: the draw's material, HUD, a post pass.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Tag {
+    /// Bezier terrain (materials `Bezier1`/`Bezier2`).
+    pub terrain: bool,
+    /// HUD (layers 9 and up).
+    pub hud: bool,
+    /// The post pass it belongs to (`RenderDepthFog` / `RenderBloom` /
+    /// `RenderColorFilter`).
+    pub post: Option<ssx3_render::direct::PostKind>,
 }
 
 /// A batch of GPU-computed vertices: one call's triangle list.
@@ -229,6 +259,10 @@ pub struct Gs {
     /// `hud_squeeze` around the frame's centre, main target only).
     pub hud: bool,
     pub hud_squeeze: f32,
+    /// The tag of the batches now coming.
+    pub tag: Tag,
+    /// This frame's terrain camera (ambient occlusion).
+    pub cam: Option<Cam>,
     /// CLUTs of this frame's depth-fog passes (see ZFOG_TEX).
     pub fog_cluts: Vec<Upload>,
     /// XYOFFSET_1/2 written: the game sets context 2's once at startup,
@@ -286,6 +320,7 @@ impl Gs {
         self.gpu.verts = 0;
         self.gpu.sources.clear();
         self.gpu.last_split = None;
+        self.cam = None;
         self.queue.clear();
         self.size = size;
         self.main_fbp = fbp;
@@ -742,8 +777,8 @@ impl Gs {
         }
         let n = vs.len() as u32;
         match self.batches.last_mut() {
-            Some(b) if b.gpu.is_none() && b.state == st && b.first + b.count == first => b.count += n,
-            _ => self.batches.push(Batch { state: st, first, count: n, gpu: None }),
+            Some(b) if b.gpu.is_none() && b.state == st && b.tag == Tag { hud: self.hud, ..self.tag } && b.first + b.count == first => b.count += n,
+            _ => self.batches.push(Batch { state: st, tag: Tag { hud: self.hud, ..self.tag }, first, count: n, gpu: None }),
         }
     }
 
@@ -874,6 +909,18 @@ impl Gs {
         let nreg = match bits(lo, 60, 4) { 0 => 16, n => n as u32 };
         let vreg = ((call.tag >> 64) >> (4 * (nreg - 1))) as u32 & 0xf;
         u[gpu_params::MISC] = [f(self.fog as f32), base, reuse, vreg];
+        // The terrain camera (renderer options).
+        let fl = |v: [u32; 4]| v.map(f32::from_bits);
+        if call.program == ssx3_render::gpu::Program::Bezier && self.cam.is_none() && st.target == self.main_fbp && call.uniforms[7][0] == 1 {
+            self.cam = Some(Cam {
+                m: std::array::from_fn(|i| fl(call.uniforms[i])),
+                gscale: fl(call.uniforms[4]),
+                goffset: fl(call.uniforms[5]),
+                off: [bits(xy, 0, 16) as f32 / 16.0, bits(xy, 32, 16) as f32 / 16.0],
+                zmax,
+                xyzf: vreg == 4,
+            });
+        }
         u[gpu_params::RGBAQ] = [u32::from_le_bytes(self.rgbaq), f(self.q), f(self.s), f(self.t)];
         let gb = GpuBatch {
             program: call.program,
@@ -898,11 +945,11 @@ impl Gs {
         // A call right after one of the same program and state joins its
         // draw.
         match self.batches.last_mut() {
-            Some(Batch { state, gpu: Some(g), .. }) if *state == st && g.program == gb.program && g.first + g.count == gb.first => {
+            Some(Batch { state, gpu: Some(g), tag, .. }) if *state == st && *tag == Tag { hud: self.hud, ..self.tag } && g.program == gb.program && g.first + g.count == gb.first => {
                 g.count += gb.count;
                 g.alpha_max = g.alpha_max.max(gb.alpha_max);
             }
-            _ => self.batches.push(Batch { state: st, first: 0, count: 0, gpu: Some(gb) }),
+            _ => self.batches.push(Batch { state: st, tag: Tag { hud: self.hud, ..self.tag }, first: 0, count: 0, gpu: Some(gb) }),
         }
     }
 

@@ -658,9 +658,18 @@ pub mod gpu {
     /// the mark in the packet (the tags keep their NLOOP: a type-1 re-draw
     /// on the CPU kicks with them).
     pub fn draw(m: &mut Mem, s: &Strips, colour: V, n: u16, program: u32, out: &mut Vec<GpuCall>) {
+        let data = s.verts.iter().flat_map(|v| [m.ld(v.pos), m.ld(v.uv)]).collect::<Vec<_>>();
+        let nv = s.verts.len() as u32;
+        draw_data(m, s, data, nv, colour, n, program, out);
+    }
+
+    /// [`draw`] with the vertex data given ({position, UV} per strip
+    /// vertex), and the vertex count the mark records (the program's).
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_data(m: &mut Mem, s: &Strips, data: Vec<[u32; 4]>, mark_nv: u32, colour: V, n: u16, program: u32, out: &mut Vec<GpuCall>) {
         let r = Raster::load(m);
         let nv = s.verts.len() as u32;
-        let mut data = Some(s.verts.iter().flat_map(|v| [m.ld(v.pos), m.ld(v.uv)]).collect::<Vec<_>>());
+        let mut data = Some(data);
         let alpha_max = colour[3] as i32 as f32;
         let fan = m.ld(FAN_TAG_A);
         let mut call = |mode: u32, t: V, (indices, index_mode): (Vec<u32>, u32), out: &mut Vec<GpuCall>| {
@@ -690,7 +699,7 @@ pub mod gpu {
             }
             call(STRIPS, t, strip_indices(s.triangles(ps)), out);
         }
-        m.st(PACKET_A + 1, [MARK, nv, n as u32, program]);
+        m.st(PACKET_A + 1, [MARK, mark_nv, n as u32, program]);
         m.st(PACKET_A + 2, colour);
     }
 
@@ -705,10 +714,15 @@ pub mod gpu {
     /// [`rewrite_st`] and the re-kicks): `s` gives the strips (as drawn)
     /// and the UV2 address of each vertex in `.uv`.
     pub fn rewrite_st(m: &Mem, s: &Strips, out: &mut Vec<GpuCall>) {
+        let data: Vec<[u32; 4]> = s.verts.iter().map(|v| m.ld(v.uv)).collect();
+        rewrite_st_data(m, s, data, out);
+    }
+
+    /// [`rewrite_st`] with the UV2s given (one per strip vertex).
+    pub fn rewrite_st_data(m: &Mem, s: &Strips, data: Vec<[u32; 4]>, out: &mut Vec<GpuCall>) {
         let r = Raster::load(m);
         let (_, _, _, colour) = mark(m).expect("rewrite after a GPU draw");
         let nv = s.verts.len() as u32;
-        let data: Vec<[u32; 4]> = s.verts.iter().map(|v| m.ld(v.uv)).collect();
         for (t, ps) in s.runs(m) {
             // (Each call carries the UV2s; positions are the source's.)
             let (indices, index_mode) = strip_indices(s.triangles(ps));
@@ -726,6 +740,100 @@ pub mod gpu {
                 mesh_key: None,
             });
         }
+    }
+
+    // -------------------------------------------------------------------
+    // Finer terrain (options: terrain detail)
+    // -------------------------------------------------------------------
+
+    static TESS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+
+    /// Tessellate uniform-LOD patches `f` times finer (1: the game's grids).
+    pub fn set_tessellation(f: u32) {
+        TESS.store(f.clamp(1, 8), std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn tessellation() -> u32 {
+        TESS.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// A finer grid of an n×n patch grid (qwords row-major from `base` per
+    /// attribute): the patch through the grid points (Lagrange interpolation
+    /// of degree n − 1 reproduces the bicubic patch exactly), evaluated on
+    /// (f·(n − 1) + 1)² points. The border stays on the game's border samples
+    /// (straight between them), so it matches the neighbouring patches,
+    /// which may be at another LOD. Lanes 0..`lanes` are interpolated as
+    /// floats, the others are the nearest sample's.
+    pub fn fine_grid(m: &Mem, n: u16, f: u32, base: u16, lanes: usize) -> Vec<[u32; 4]> {
+        let n = n as usize;
+        let k = f as usize * (n - 1) + 1;
+        let at = |i: usize, j: usize| m.ld(base.wrapping_add((i * n + j) as u16));
+        let samples: Vec<[f64; 4]> = (0..n * n)
+            .map(|q| {
+                let v = at(q / n, q % n);
+                std::array::from_fn(|l| f32::from_bits(v[l]) as f64)
+            })
+            .collect();
+        // Lagrange weights at parameter t (nodes 0..n-1).
+        let weights = |t: f64| -> Vec<f64> {
+            (0..n)
+                .map(|a| (0..n).filter(|&b| b != a).map(|b| (t - b as f64) / (a as f64 - b as f64)).product())
+                .collect()
+        };
+        // Straight between the two border samples around t.
+        let linear = |t: f64| -> Vec<f64> {
+            let a = (t.floor() as usize).min(n - 2);
+            let w = t - a as f64;
+            (0..n).map(|b| if b == a { 1.0 - w } else if b == a + 1 { w } else { 0.0 }).collect()
+        };
+        let mut out = Vec::with_capacity(k * k);
+        for qi in 0..k {
+            for qj in 0..k {
+                let (u, v) = ((qi as f64) / f as f64, (qj as f64) / f as f64);
+                let edge_i = qi == 0 || qi == k - 1;
+                let edge_j = qj == 0 || qj == k - 1;
+                let wu = if edge_j && !edge_i { linear(u) } else { weights(u) };
+                let wv = if edge_i && !edge_j { linear(v) } else { weights(v) };
+                let mut acc = [0f64; 4];
+                for (i, &a) in wu.iter().enumerate() {
+                    if a == 0.0 {
+                        continue;
+                    }
+                    for (j, &b) in wv.iter().enumerate() {
+                        if b == 0.0 {
+                            continue;
+                        }
+                        let sm = &samples[i * n + j];
+                        for l in 0..lanes {
+                            acc[l] += a * b * sm[l];
+                        }
+                    }
+                }
+                let near = at(((u + 0.5) as usize).min(n - 1), ((v + 0.5) as usize).min(n - 1));
+                out.push(std::array::from_fn(|l| if l < lanes { (acc[l] as f32).to_bits() } else { near[l] }));
+            }
+        }
+        out
+    }
+
+    /// The strips of a k-wide fine grid: rows r, r+1 alternating; packet A
+    /// rows `0..rows_a`, packet B the rest (to `k - 1`). With `data` per
+    /// grid point, the per-strip-vertex data.
+    pub fn fine_strips(k: usize, rows_a: usize, grid: &[[u32; 4]], per_vertex: usize) -> (Strips, Vec<[u32; 4]>) {
+        let mut s = Strips::default();
+        let mut data = Vec::new();
+        for (packet, rows) in [(PACKET_A, 0..rows_a), (PACKET_B, rows_a..k - 1)] {
+            s.packet(packet);
+            for r in rows {
+                let strip: Vec<Vertex> = (0..2 * k).map(|_| Vertex { pos: 0, uv: 0 }).collect();
+                for i in 0..2 * k {
+                    let g = (r + i % 2) * k + i / 2;
+                    data.extend_from_slice(&grid[g * per_vertex..(g + 1) * per_vertex]);
+                }
+                s.strip(&strip);
+            }
+        }
+        (s, data)
     }
 
     /// Whether the fan tags a draw finds in memory (when it does not write

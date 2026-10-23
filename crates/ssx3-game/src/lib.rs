@@ -91,6 +91,9 @@ pub mod snd_lib;
 /// The configurable tick rate.
 pub mod tick;
 
+/// Detail distance (terrain grids, rider LOD).
+pub mod detail;
+
 /// Replacements outside the work-package modules: (address, function, name).
 const CORE: &[(u32, GuestFn, &str)] = &[
     (0x0011_e098, rider::build_world_matrix, "Rider_BuildWorldMatrix"),
