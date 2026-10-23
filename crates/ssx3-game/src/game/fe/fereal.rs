@@ -37,6 +37,7 @@ pub(crate) use crate::game::animation::rideranimbase::sw;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
+    (0x001a_27a0, boot_movies_update, "ssx_BootMoviesUpdate"),
     (0x001a_0720, feui_custom_ctor, "FEUICustom_ctor"),
     (0x001a_07c8, feuicustom_v03, "FEUICustom_v03"),
     (0x001a_1cb8, fe_module_set_player_pad_mask, "FEModule_SetPlayerPadMask"),
@@ -661,6 +662,25 @@ pub fn fe_module_load_anim_data(c: &mut Cpu) {
     })
 }
 
+/// `ssx_BootMoviesUpdate` (0x1a27a0): the boot movies (EA logo, THX, the
+/// intro), one at a time. The original lets X or Start skip only the intro:
+/// it sets the "skippable" flag (`+0xb5ad8`) for the intro and clears it for
+/// the logos when each starts. Here the flag is set while any of them plays
+/// (`+0xb5ad4`, the player), so the game's own skip check (bindings 0x70 and
+/// 0x7a) ends the logos too. Runs without movies (headless, the replays)
+/// never see a player and are unchanged.
+pub fn boot_movies_update(c: &mut Cpu) {
+    let fe = r32(c, A0);
+    if c.bus.read32(fe.wrapping_add(BOOT_PLAYER)) != 0 {
+        c.bus.write32(fe.wrapping_add(BOOT_SKIPPABLE), 1);
+    }
+    ssx3_ee::s03::f_001a27a0__generated(c);
+}
+
+/// The front-end module's boot movie player and its "skippable" flag.
+const BOOT_PLAYER: u32 = 0xb5ad4;
+const BOOT_SKIPPABLE: u32 = 0xb5ad8;
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -893,5 +913,29 @@ pub(crate) mod tests {
                 w(c, OBJ2, if seed % 3 == 0 { 0 } else { SELF2 });
             },
         );
+    }
+
+    /// With no movie playing the wrapper is the original; while a logo plays
+    /// it is marked skippable. (`+0xb5adc` set: the update returns at once,
+    /// so only the flag differs.)
+    #[test]
+    fn boot_movies_update_makes_the_logos_skippable() {
+        const FE: u32 = 0x0010_0000;
+        for playing in [0u32, 0x0080_0000] {
+            let run = |f: GuestFn| {
+                let mut c = crate::difftest::fresh();
+                c.pc = 0x001a_27a0;
+                c.g[A0][0] = FE as u64;
+                c.bus.write32(FE + 0xb5adc, 1);
+                c.bus.write32(FE + BOOT_PLAYER, playing);
+                f(&mut c);
+                (c.pc, c.bus.read32(FE + BOOT_SKIPPABLE))
+            };
+            let (pc_g, flag_g) = run(ee::s03::f_001a27a0__generated);
+            let (pc_h, flag_h) = run(boot_movies_update);
+            assert_eq!(pc_g, pc_h);
+            assert_eq!(flag_g, 0);
+            assert_eq!(flag_h, (playing != 0) as u32, "player {playing:#x}");
+        }
     }
 }

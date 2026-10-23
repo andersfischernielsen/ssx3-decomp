@@ -5361,3 +5361,5 @@
 0x00245f50    cFEStateProgressiveVerifyPS2_Init
 0x001b4cd8    cFEStateNetConfig_LoadConfigList
 0x00101b60    FocusMan_Update
+# The boot logos (EA, THX) can be skipped with X/Start, like the intro
+0x001a27a0    ssx_BootMoviesUpdate
