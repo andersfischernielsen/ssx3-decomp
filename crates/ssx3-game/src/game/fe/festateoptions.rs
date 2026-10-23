@@ -1851,6 +1851,9 @@ pub(crate) fn call_vtable(c: &mut Cpu, target: u32, ret: u32) -> Flow {
 
 
 
+/// The vibration timer a checked option turns on: one second at 60 Hz.
+const VIBRATION_FRAMES: u32 = 60;
+
 /// `void cFEStateOptionsController_OnWidgetAction(self, widget, event)`
 /// (0x18ca10): the options screen's widget actions. Event 7 closes a popup,
 /// event 6 opens the config popup, event 9 toggles vibration (ids
@@ -2047,7 +2050,8 @@ pub fn fe_options_controller_on_widget_action(c: &mut Cpu) {
         c.mov_s(13, 12);
         callee::SET_VIBRATION.call(c, 0x0018cb8c)?;
         c.g[V0][0] = c.lbu((c.g[S2][0] as u32).wrapping_add(0x50));
-        c.g[V1][0] = 0x3c;
+        // The vibration lasts 60 frames (1 s): ticks of the VSync clock.
+        c.g[V1][0] = crate::tick::ticks_from_frames60(c, VIBRATION_FRAMES) as u64;
         c.sw((c.g[S2][0] as u32).wrapping_add(0x48), c.g[V1][0]);
         c.g[V0][0] = c.g[V0][0] | 0x1;
         let t = true;
@@ -2107,7 +2111,8 @@ pub fn fe_options_controller_on_widget_action(c: &mut Cpu) {
         c.mov_s(13, 12);
         callee::SET_VIBRATION.call(c, 0x0018cc04)?;
         c.g[V0][0] = c.lbu((c.g[S2][0] as u32).wrapping_add(0x50));
-        c.g[V1][0] = 0x3c;
+        // One second, in ticks of the VSync clock.
+        c.g[V1][0] = crate::tick::ticks_from_frames60(c, VIBRATION_FRAMES) as u64;
         c.sw((c.g[S2][0] as u32).wrapping_add(0x4c), c.g[V1][0]);
         c.g[V0][0] = c.g[V0][0] | 0x2;
         let t = true;
@@ -2830,7 +2835,7 @@ pub(crate) mod tests {
 
 
     pub(crate) fn fixture(c: &mut Cpu, seed: u32) {
-        let _r = base_3(c, seed, 0x18ca10);
+        let _r = crate::game::fe::feasyncfile::tests::base_3(c, seed, 0x18ca10, 0);
         c.pc = 0x0018_ca10;
         let self_ = DATA;
         let widget = DATA + 0x800;
@@ -2853,6 +2858,30 @@ pub(crate) mod tests {
         c.bus.write32(widget + 0x18, 0);
     }
 
+
+    /// The vibration timer an option turns on is one second of the VSync
+    /// clock: 60 ticks at 60 Hz, 120 at 120, 240 at 240.
+    #[test]
+    fn widget_action_vibration_timer_follows_the_rate() {
+        for hz in [60u32, 120, 240] {
+            let mut c = crate::difftest::fresh();
+            fixture(&mut c, 9); // event 9, the first vibration id
+            // The option is checked (`WIDGET_CHECKED`: count 0 < 1 and value
+            // `widget+0xa4`), and the player-int record `Vibration_Apply`
+            // reads has its bit 1 set (slot 0 is player 0; the test machine's
+            // id strings hash to 0, so the first vibration id is the branch).
+            c.bus.write8(DATA + 0x800 + 0x318, 1);
+            c.bus.write8(DATA + 0x800 + 0x319, 0);
+            c.bus.write32(DATA + 0x800 + 0xa4, 1);
+            c.bus.write32(0x0053_05b0, 0);
+            c.bus.write32(0x0053_4fe0 + 0x10, 2);
+            crate::tick::set_for_test(&mut c, hz);
+            fe_options_controller_on_widget_action(&mut c);
+            assert_eq!(c.pc, crate::difftest::RA, "{hz}: did not return");
+            let t = c.bus.read32(DATA + 0x48);
+            assert_eq!(t, hz, "{hz} Hz: vibration timer");
+        }
+    }
 
     #[test]
     fn on_widget_action_matches() {
