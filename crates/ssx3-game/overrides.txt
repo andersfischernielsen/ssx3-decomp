@@ -5316,3 +5316,15 @@
 0x00113648    AirPredictor_Update
 0x0039c978    UIScreen_RunThreadFrame
 0x00234c68    GameStateCountdown_Update
+# tick rate T4: per-tick updates with no 1/60 marker, ported to convert them
+0x0015ee00    GameCamera_AvoidCollision
+0x001635f8    ChaseCameraAlgorithm_ApplyJumpCurves
+0x002e66b8    cSpeedBoostStreamerFX_Update
+0x002f39e0    cSplashManager_Update
+0x001ea930    cOVStateHUD1P_Update
+0x002294c8    CrowdMan2d_Update
+0x00229530    CrowdMan2d_SpawnSprites
+0x002b1458    SpeechSystem_SetEventContext
+0x002b1720    SpeechSystem_TickEventContexts
+0x001013a8    DangerMan_Update
+0x0010b250    ComputerActorRider_ThinkSpin
