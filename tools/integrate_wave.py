@@ -21,11 +21,8 @@ import sys
 import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SCRATCH = os.environ.get(
-    "SSX3_SCRATCH",
-    "/private/tmp/claude-501/-Users-fischer-Desktop-ssx3-decomp/"
-    "68f2ad6e-0159-47ca-a8a9-b59b61a6720b/scratchpad",
-)
+# Gate data (the baseline RAM dump, base/ds1.bin): kept out of git.
+SCRATCH = os.environ.get("SSX3_SCRATCH", os.path.join(ROOT, "target", "gate"))
 BASELINE = os.path.join(SCRATCH, "base", "ds1.bin")
 RACE_INPUT = (
     "1600:0008:8,2000:4000:8,2500:4000:8,2700:4000:8,2900:4000:8,"
