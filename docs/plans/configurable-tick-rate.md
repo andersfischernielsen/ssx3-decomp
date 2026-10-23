@@ -6,7 +6,7 @@ so no interpolation is needed. Game speed, physics, timers, animation and
 audio cues are the same at every rate. At 60 Hz the game stays exactly the
 original (the race RAM gate and the differential tests keep working).
 
-Status (2026-10-22):
+Status (2026-10-23):
 
 - ✅ Rate switch: `ssx3_game::tick`, `SSX3_TICK_HZ`, the settings
   overlay's "Game rate" (F10, applies after a restart).
@@ -22,11 +22,15 @@ Status (2026-10-22):
   (`Rider_SetTimedEvent`, `Rider_EstimateFinishTime`, the trick-HUD and
   state slews, the air state's last partial tick) now scale. The 98
   still-generated functions with such constants are porting work first.
-- ✅ T3 first wave: the title idle timeout and pre-fade wait (the attract loop
-  and menu drift) follow the rate; board-wake/spray per-tick blends follow.
-  The front end is in lockstep at 240 Hz (see "Fast at 240 Hz").
-- ⏳ T3 next: race start (load/intro), trick score and boost-meter count-up,
-  UI animation frames, title particles, scripted timelines.
+- ✅ T3 waves (see "Fast at 240 Hz"): the front-end attract loop and menu drift
+  (title idle timeout, pre-fade wait), the HUD/trick-score ramps, rider
+  steering/slew/spin steps, boost drain, camera FOV smoothing and fade
+  counters, effects per-tick blends, and the front-end refresh/poll/fade/
+  credits timers follow the rate. The front end is in lockstep with 60 Hz at
+  240 Hz and the race clock/course % agree up to the start offset.
+- ⏳ T3 next (see "Left for a design decision"): the script timeline, the UI
+  animation frame clock, the options vibration setter, the UV-scroll
+  modifier, and the race-start offset.
 
 ## How the game keeps time
 
@@ -188,11 +192,30 @@ the two runs are in the sequence.
 
 | System | What is wrong | Evidence |
 | --- | --- | --- |
-| Race start (load/intro) | starts ~2 s earlier in real time at 240 Hz, so the race clock carries a constant offset | `sheet3` row 3 (00:00:03 vs 00:00:01), `sheet4` |
-| Trick score / HUD count-up | the 240 Hz run banks more score (730 vs 230/280) and the "SUPER UBER" gauge fills faster: the trick-history and boost-meter ramps are per-tick (`1/1200`, `1/600` with ±1/60 thresholds) | `sheet5` rows 1-3, `sheet6` |
-| UI animations (menus, screens) | `UIAnim_Advance` advances one animation frame per update, so every menu/screen animation and thread frame runs at the tick rate (4× fast at 240); the screen flow looks right because it is input/state driven | `sheet0`-`sheet2` in-between frames |
+| Race start (load/intro) | starts ~2 s earlier in real time at 240 Hz, so the race clock carries a constant offset; the scripted intro/loading timeline is the likely cause | `sheet3` row 3 (00:00:03 vs 00:00:01), `sheet4` |
+| Scripted timelines (attract demo, camera scripts, intros) | the script VM advances one script frame per tick; script durations are already wall-clock seconds, but the script's own clock runs at the tick rate | `tick_ab.py` sheets |
+| UI animations (menus, screens) | `UIAnim_Advance` advances one animation frame per update, so menu/screen animations run at the tick rate (4× fast at 240); the screen *flow* is right because it is input/state driven | `sheet0`-`sheet2` in-between frames |
 | Front-end title/attract particles | the title snow flurry runs at the tick rate | `sheet0` rows 1-3 |
-| Scripted timelines (attract demo, camera scripts, transitions) | the script engine advances one script frame per tick (`Avalanche_UpdateInstance` and the script VM); script durations are already correct (they are wall-clock seconds) | `sheet0` before the fix |
+
+**Converted since** (measured on the 240 Hz sheets): the trick-history and
+boost-meter ramps with their ±step bands, the smoothed speed, heading, leg-IK
+blend, the timer windows (180-frame event window, AI reset-path timers), the
+camera FOV smoothing, the handplant fade counter and takeoff threshold, the
+magnet/halo/texflip per-tick steps, the rider boost drain, the animation
+time-scale slew, the crouch/brake slew fractions, and the front-end
+refresh/poll/retry/fade/credits timers.
+
+### Left for a design decision (not converted)
+
+| Where | What | Why it needs a decision |
+| --- | --- | --- |
+| `UIAnim_Advance` / `UIScreen_RunThreadFrame` (0x3974b0, 0x39c978) | the UI animation and screen-script clocks advance one frame per update | The smallest correct fix is a 60 Hz gate on the *frame advance*, not on the screen update: gating all of `UIState_UpdateScreens` at 240 Hz (tried, `1ea2b3b`, reverted) makes the menu description text wrap at a stale width, because the same call lays out the widgets. A per-screen 0.25-frame accumulator needs one byte in `UIScreen` (0xd4 → 0xd8) and its two initialisers; `UIThread` and `UIAnim` have no spare field (`UIAnim+0x0f` is uninitialised). |
+| the script VM (`ScriptEngine_TickProcess` → `InSeqInstance_Update`) | one script frame per tick | Same shape as the UI timeline: either a 60 Hz gate on the script clock (needs to be located in the generated VM, so a port first) or a per-process accumulator. This is also the likely cause of the race-start offset. |
+| `cFEStateOptionsController_Update` (0x18d058) vibration countdowns | the 60-tick (1 s) durations are immediates in the **unported** setter `cFEStateOptionsController_OnWidgetAction` (0x18ca10) | The setter must be ported, then its two stores become `ticks_from_frames60(c, 60)`; converting the countdown now would double-scale later. |
+| `UVScrollModifier_Update` (0x35f7d0) DU/DV per tick | a real per-tick rate bug | Its differential test runs the generated body with the app manager at 25/30/60 Hz, so any rate-dependent conversion fails it. The test pins exactness at rates other than the game's; pinning it to 60 (a test change) is needed first. |
+| `ChaseCamController_Update` (0x161bb8) blend weights | `w += rate` per update, with blend rates passed in mixed units (some callers pass `1/60`-scaled, one a raw `1/150`, scripts pass data) and `0` mapped to 1.0 = instant | Converting at one point would double-scale the `1/60`-relative rates; convert the raw rates at their sources, or leave as is. |
+| `tick::ui_frame_due` under catch-up | the gate reads the VSync counter, so several updates queued per VSync advance one 60 Hz frame (average correct, jitter ≤ 1 frame) | Only affects a host slower than the game rate; the 60 Hz path is always true and unchanged. |
+
 
 
 ## Inventory
