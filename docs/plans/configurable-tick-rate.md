@@ -194,7 +194,7 @@ the two runs are in the sequence.
 | --- | --- | --- |
 | Race start (load/intro) | starts ~2 s earlier in real time at 240 Hz, so the race clock carries a constant offset; the scripted intro/loading timeline is the likely cause | `sheet3` row 3 (00:00:03 vs 00:00:01), `sheet4` |
 | Scripted timelines (attract demo, camera scripts, intros) | the script VM advances one script frame per tick; script durations are already wall-clock seconds, but the script's own clock runs at the tick rate | `tick_ab.py` sheets |
-| UI animations (menus, screens) | `UIAnim_Advance` advances one animation frame per update, so menu/screen animations run at the tick rate (4× fast at 240); the screen *flow* is right because it is input/state driven | `sheet0`-`sheet2` in-between frames |
+| Boot memory-card check | the "Checking for memory card" screen ends ~4.5 s early at 240 Hz (its minimum display time counts ticks) | 60 Hz frames 185-460 vs 240 Hz frames 740-1840 of the race replay |
 | Front-end title/attract particles | the title snow flurry runs at the tick rate | `sheet0` rows 1-3 |
 
 **Converted since** (measured on the 240 Hz sheets): the trick-history and
@@ -220,16 +220,37 @@ The remaining start offset is the load/intro (scripted) timeline, see
 runs land different tricks (85 Rail vs 50/50 Rail) because a different step is
 a different simulation; it is not a timing quantity.
 
+### UI animation and screen scripts (done)
+
+`UIAnim_Advance` (0x3974b0) and `UIScreen_RunThreadFrame` (0x39c978, now an
+override that runs the generated body) take their next frame only when
+`tick::frame60_due` says so: every call at 60; above 60, once per `rate / 60`
+ticks *of that animation or thread*, and at once when it is new or was moved
+(its frame differs from the one recorded after its last step). The clocks
+live on the host (`tick.rs`, keyed by the guest address), so no guest
+structure changes.
+
+Each object keeps its own phase on purpose. A shared 60 Hz boundary
+(`ui_frame_due`) delays a thread's first frame by up to `rate / 60 - 1`
+ticks; tick-driven menu code then sets the description text before the
+screen script has sized its box, and the text wraps at the stale width
+(measured at 240 Hz: "Continue / to / peak / selection"). That, not the
+skipped layout, is why the whole-screen gate (`1ea2b3b`) wrapped the text.
+
+Measured (race replay, 60 Hz frame F vs 240 Hz frame 4F, mean absolute
+difference): the screen transitions after each button press went from 45-105
+to 0-12; the description text wraps as at 60. Remaining differences are the
+boot memory-card check (above) and the loading/race start.
+
 ### Left for a design decision (not converted)
 
 | Where | What | Why it needs a decision |
 | --- | --- | --- |
-| `UIAnim_Advance` / `UIScreen_RunThreadFrame` (0x3974b0, 0x39c978) | the UI animation and screen-script clocks advance one frame per update | The smallest correct fix is a 60 Hz gate on the *frame advance*, not on the screen update: gating all of `UIState_UpdateScreens` at 240 Hz (tried, `1ea2b3b`, reverted) makes the menu description text wrap at a stale width, because the same call lays out the widgets. A per-screen 0.25-frame accumulator needs one byte in `UIScreen` (0xd4 → 0xd8) and its two initialisers; `UIThread` and `UIAnim` have no spare field (`UIAnim+0x0f` is uninitialised). |
 | the script VM (`ScriptEngine_TickProcess` → `InSeqInstance_Update`) | one script frame per tick | Same shape as the UI timeline: either a 60 Hz gate on the script clock (needs to be located in the generated VM, so a port first) or a per-process accumulator. This is also the likely cause of the race-start offset. |
 | `cFEStateOptionsController_Update` (0x18d058) vibration countdowns | the 60-tick (1 s) durations are immediates in the **unported** setter `cFEStateOptionsController_OnWidgetAction` (0x18ca10) | The setter must be ported, then its two stores become `ticks_from_frames60(c, 60)`; converting the countdown now would double-scale later. |
 | `UVScrollModifier_Update` (0x35f7d0) DU/DV per tick | a real per-tick rate bug | Its differential test runs the generated body with the app manager at 25/30/60 Hz, so any rate-dependent conversion fails it. The test pins exactness at rates other than the game's; pinning it to 60 (a test change) is needed first. |
 | `ChaseCamController_Update` (0x161bb8) blend weights | `w += rate` per update, with blend rates passed in mixed units (some callers pass `1/60`-scaled, one a raw `1/150`, scripts pass data) and `0` mapped to 1.0 = instant | Converting at one point would double-scale the `1/60`-relative rates; convert the raw rates at their sources, or leave as is. |
-| `tick::ui_frame_due` under catch-up | the gate reads the VSync counter, so several updates queued per VSync advance one 60 Hz frame (average correct, jitter ≤ 1 frame) | Only affects a host slower than the game rate; the 60 Hz path is always true and unchanged. |
+| `tick::ui_frame_due` (credits scroll) under catch-up | the gate reads the VSync counter, so several updates queued per VSync advance one 60 Hz frame (average correct, jitter ≤ 1 frame) | Only affects a host slower than the game rate; the 60 Hz path is always true and unchanged. |
 
 
 

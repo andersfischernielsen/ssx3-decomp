@@ -501,7 +501,24 @@ pub fn uianim_eval_channel(c: &mut Cpu) {
 /// animation by `flags & 7` (mode 1 forward, 2 back, 3 bounce using
 /// `self->dir`), clamping to `data->count`; bit 8 wraps instead of clamping.
 /// The frame is at `+0xa`, the direction at `+0xe`, the data at `+0`.
+///
+/// Animations are authored at 60 fps: above 60 Hz each animation steps once
+/// per `rate / 60` ticks of its own (`tick::frame60_due`), so it keeps its
+/// wall-clock speed. Every call steps at 60.
 pub fn ui_anim_advance(c: &mut Cpu) {
+    let anim = r32(c, A0);
+    let frame = c.bus.read16(anim.wrapping_add(0xa)) as u32;
+    if !crate::tick::frame60_due(c, anim, frame) {
+        abi::ret(c);
+        return;
+    }
+    ui_anim_step(c);
+    let frame = c.bus.read16(anim.wrapping_add(0xa)) as u32;
+    crate::tick::frame60_ran(c, anim, frame);
+}
+
+/// The step of [`ui_anim_advance`] (the original).
+fn ui_anim_step(c: &mut Cpu) {
     'b_3974e0: {
         c.cycles += 3;
         c.g[A2][0] = c.ldw_2(A0, 0);
@@ -926,5 +943,31 @@ pub(crate) mod tests {
                 c.bus.write8(anim + 0xe, (seed % 2) as u8);
             },
         );
+    }
+
+    /// At 240 Hz a looping animation steps one frame per four ticks (60 per
+    /// second), at 60 one per tick.
+    #[test]
+    fn ui_anim_advance_rate() {
+        for (hz, ticks) in [(60u32, 60u32), (240, 240)] {
+            let mut c = crate::difftest::fresh();
+            crate::tick::set_for_test(&mut c, hz);
+            let app = c.bus.read32(crate::tick::APPMAN_PTR);
+            let anim = DATA + 0x100;
+            let data = DATA + 0x200;
+            c.bus.write32(anim, data);
+            c.bus.write16(data + 2, 1000);
+            c.bus.write16(anim + 0xa, 0);
+            c.bus.write8(anim + 0xe, 0);
+            for t in 1..=ticks {
+                c.bus.write32(app + crate::tick::APPMAN_VSYNC, t);
+                c.g[A0][0] = anim as u64;
+                // Mode 1: forward.
+                c.g[A1][0] = 1;
+                c.g[RA][0] = sx(0x0010_0000);
+                ui_anim_advance(&mut c);
+            }
+            assert_eq!(c.bus.read16(anim + 0xa), 60, "{hz} Hz");
+        }
     }
 }
