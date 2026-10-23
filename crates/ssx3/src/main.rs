@@ -69,6 +69,21 @@ struct App {
     preview: u32,
 }
 
+/// Settings that are renderer options (`game::gfx_options`).
+const GFX_KEYS: &[&str] = &[
+    "SSX3_SHADOW_RES",
+    "SSX3_SOFT_SHADOWS",
+    "SSX3_SUN_SHADOWS",
+    "SSX3_AA",
+    "SSX3_MIPMAPS",
+    "SSX3_LOD_BIAS",
+    "SSX3_TERRAIN",
+    "SSX3_AO",
+    "SSX3_BLOOM",
+    "SSX3_GRADE",
+    "SSX3_SNOW",
+];
+
 /// The game's field time: one tick at the game rate (59.94 Hz originally,
 /// `SSX3_TICK_HZ`).
 fn field() -> Duration {
@@ -496,9 +511,15 @@ impl App {
     fn apply_setting(&mut self, key: &str) {
         match key {
             "SSX3_CATCHUP" => self.apply_catch_up(),
+            "SSX3_DRAW_DIST" => ssx3_game::detail::set(game::detail_distance()),
             "SSX3_ANISO" => {
                 if let Some(g) = self.gfx.as_ref() {
                     g.set_anisotropy(game::anisotropy());
+                }
+            }
+            k if k.starts_with("SSX3_") && GFX_KEYS.contains(&k) => {
+                if let Some(g) = self.gfx.as_ref() {
+                    g.set_options(game::gfx_options());
                 }
             }
             "SSX3_FULLSCREEN" => {

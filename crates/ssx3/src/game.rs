@@ -9,6 +9,17 @@ pub fn repo_root() -> PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
+/// At every VSync: the game rate and the detail distance tables.
+fn vblank(c: &mut Cpu) {
+    ssx3_game::tick::on_vblank(c);
+    ssx3_game::detail::on_vblank(c);
+}
+
+/// `SSX3_DRAW_DIST=<factor>` (settings "Detail distance"): 1 = original.
+pub fn detail_distance() -> f32 {
+    crate::settings::get("SSX3_DRAW_DIST").and_then(|v| v.parse::<f32>().ok()).map_or(1.0, |f| f.clamp(1.0, 4.0))
+}
+
 /// Create the machine, load the disc and the executable, start the main thread.
 pub fn boot(skip_movies_default: bool) -> Box<Cpu> {
     machine::register_functions(&ssx3_ee::FUNCTIONS);
@@ -20,7 +31,8 @@ pub fn boot(skip_movies_default: bool) -> Box<Cpu> {
     }
     // The tick rate (SSX3_TICK_HZ, settings "Game rate").
     machine::set_vsync_hz(ssx3_game::tick::install());
-    machine::set_vblank_hook(ssx3_game::tick::on_vblank);
+    machine::set_vblank_hook(vblank);
+    ssx3_game::detail::set(detail_distance());
     ssx3_game::debug::install();
     // Phase 3: the draw functions record their draws for the renderer.
     if !ssx3_game::capture::install() {
@@ -163,6 +175,7 @@ pub fn install_renderer(c: &mut Cpu) -> Option<ssx3_gfx::Renderer> {
     let r = ssx3_gfx::Renderer::new(ctx.device.clone(), ctx.queue.clone());
     r.set_want_depth(native);
     r.set_anisotropy(anisotropy());
+    r.set_options(gfx_options());
     // SSX3_RENDER_SIZE=WxH: render at that size, widened to its aspect.
     if let Some((w, h)) = render_size() {
         r.set_output_size(Some((w, h)));
@@ -229,6 +242,8 @@ fn lensfx_query_native(c: &mut Cpu) {
         ssx3_ee::s09::f_002ec478__generated(c);
         return;
     }
+    // (The renderer's sun shadows take the sun's direction from it.)
+    ssx3_ps2::frame_sink::note_light(f[4] + f[6] * 0.5, f[5] + f[7] * 0.5, if f[9] < 0.0 { 0 } else { f[9] as u32 });
     let Some(v) = ssx3_ps2::frame_sink::with_depth(|d| lensfx_visibility(&f, d.w, d.h, &d.z)) else {
         ssx3_ee::s09::f_002ec478__generated(c);
         return;
@@ -344,6 +359,39 @@ pub fn aspect_box() -> Option<f32> {
         Some("4:3") => Some(4.0 / 3.0),
         Some("16:9") => Some(16.0 / 9.0),
         _ => None,
+    }
+}
+
+/// The modern graphics options from the settings (F10) or environment:
+/// `SSX3_SHADOW_RES`, `SSX3_SOFT_SHADOWS`, `SSX3_SUN_SHADOWS`, `SSX3_AA`,
+/// `SSX3_MIPMAPS`, `SSX3_LOD_BIAS`, `SSX3_TERRAIN`, `SSX3_AO`, `SSX3_BLOOM`,
+/// `SSX3_GRADE`, `SSX3_SNOW`. Unset: the original look.
+pub fn gfx_options() -> ssx3_gfx::Options {
+    let get = |k: &str| crate::settings::get(k);
+    let on = |k: &str| get(k).is_some_and(|v| v != "0");
+    ssx3_gfx::Options {
+        shadow_scale: get("SSX3_SHADOW_RES").and_then(|v| v.parse().ok()).map_or(0, |n: u32| n.clamp(1, 8)),
+        soft_shadows: on("SSX3_SOFT_SHADOWS"),
+        sun_shadows: on("SSX3_SUN_SHADOWS"),
+        aa: match get("SSX3_AA").as_deref() {
+            Some("fxaa") => ssx3_gfx::Aa::Fxaa,
+            _ => ssx3_gfx::Aa::Off,
+        },
+        mipmaps: on("SSX3_MIPMAPS"),
+        lod_bias: get("SSX3_LOD_BIAS").and_then(|v| v.parse::<f32>().ok()).map_or(0.0, |b| b.clamp(-2.0, 2.0)),
+        terrain: get("SSX3_TERRAIN").and_then(|v| v.parse().ok()).map_or(1, |n: u32| n.clamp(1, 4)),
+        ao: on("SSX3_AO"),
+        bloom: match get("SSX3_BLOOM").as_deref() {
+            Some("modern") => ssx3_gfx::Bloom::Modern,
+            Some("off") => ssx3_gfx::Bloom::Off,
+            _ => ssx3_gfx::Bloom::Original,
+        },
+        grade: match get("SSX3_GRADE").as_deref() {
+            Some("vivid") => ssx3_gfx::Grade::Vivid,
+            Some("filmic") => ssx3_gfx::Grade::Filmic,
+            _ => ssx3_gfx::Grade::Original,
+        },
+        snow: on("SSX3_SNOW"),
     }
 }
 

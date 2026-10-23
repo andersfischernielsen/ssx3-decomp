@@ -31,7 +31,14 @@ struct Batch {
     ta: vec2<f32>,
     // Depth fog: ZMAX + 1 (depth is stored as Z / (ZMAX + 1)).
     zscale: f32,
-    pad: f32,
+    // Flag 1024: the texture is sampled with a blur of this radius (UV).
+    soft: f32,
+    // Texture LOD bias (options: texture sharpness).
+    lod_bias: f32,
+    // Seconds (animated effects: flag 2048, snow glints).
+    time: f32,
+    pad0: f32,
+    pad1: f32,
 }
 
 @group(0) @binding(0) var<uniform> b: Batch;
@@ -91,6 +98,40 @@ fn alpha_ok(a: f32) -> bool {
     }
 }
 
+const POISSON = array<vec2<f32>, 12>(
+    vec2<f32>(-0.326, -0.406), vec2<f32>(-0.840, -0.074), vec2<f32>(-0.696, 0.457),
+    vec2<f32>(-0.203, 0.621), vec2<f32>(0.962, -0.195), vec2<f32>(0.473, -0.480),
+    vec2<f32>(0.519, 0.767), vec2<f32>(0.185, -0.893), vec2<f32>(0.507, 0.064),
+    vec2<f32>(0.896, 0.412), vec2<f32>(-0.322, -0.933), vec2<f32>(-0.792, -0.598),
+);
+
+fn hash2(p: vec2<f32>) -> f32 {
+    let q = fract(p * vec2<f32>(0.1031, 0.1030));
+    let r = q + dot(q, q.yx + 33.33);
+    return fract((r.x + r.y) * r.x);
+}
+
+// Snow glints: sparse texture-space cells on bright, unsaturated texels
+// flash as the view and time change.
+fn sparkle(rgb: vec3<f32>, v: VOut) -> vec3<f32> {
+    let lum = (rgb.r + rgb.g + rgb.b) / 765.0;
+    let sat = max(rgb.r, max(rgb.g, rgb.b)) - min(rgb.r, min(rgb.g, rgb.b));
+    if (lum < 0.7 || sat > 40.0) {
+        return rgb;
+    }
+    let uv = v.stq.xy / v.stq.z;
+    let cell = floor(uv * 384.0);
+    let h = hash2(cell);
+    if (h < 0.97) {
+        return rgb;
+    }
+    // Each glint flashes on its own phase; the screen position makes it
+    // shift as the camera moves.
+    let ph = h * 97.0 + b.time * 2.5 + (v.pos.x + v.pos.y) * 0.013;
+    let flash = pow(max(sin(ph), 0.0), 16.0);
+    return min(rgb + vec3<f32>(255.0) * flash * smoothstep(0.7, 0.9, lum), vec3<f32>(255.0));
+}
+
 @fragment
 fn fs(v: VOut) -> @location(0) vec4<f32> {
     return shade(v);
@@ -108,7 +149,16 @@ fn shade(v: VOut) -> vec4<f32> {
     var rgb = floor(v.col.rgb);
     var a = floor(v.col.a);
     if ((b.flags & 1u) != 0u) {
-        var ts = textureSample(tex, samp, v.stq.xy / v.stq.z);
+        let uv = v.stq.xy / v.stq.z;
+        var ts = textureSampleBias(tex, samp, uv, b.lod_bias);
+        if ((b.flags & 1024u) != 0u) {
+            // Soft shadow: a 12-tap Poisson disc.
+            var acc = vec4<f32>(0.0);
+            for (var i = 0; i < 12; i = i + 1) {
+                acc = acc + textureSampleLevel(tex, samp, uv + POISSON[i] * b.soft, 0.0);
+            }
+            ts = acc / 12.0;
+        }
         if ((b.flags & 256u) != 0u) {
             let z = u32(round(textureLoad(zsnap, vec2<i32>(v.pos.xy), 0) * b.zscale));
             ts = textureLoad(tex, vec2<i32>(i32((z >> 8u) & 255u), 0), 0);
@@ -141,6 +191,9 @@ fn shade(v: VOut) -> vec4<f32> {
         }
         rgb = min(rgb, vec3<f32>(255.0));
         a = min(a, 255.0);
+    }
+    if ((b.flags & 2048u) != 0u) {
+        rgb = sparkle(rgb, v);
     }
     if ((b.flags & 4u) != 0u) {
         let f = clamp(floor(v.fog), 0.0, 255.0);

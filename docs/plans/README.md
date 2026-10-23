@@ -8,6 +8,7 @@ them current.
 | [`roadmap.md`](roadmap.md) | **Start here.** The phases: static recompilation → typed Rust → native port (→ optional browser) |
 | [`native-rendering.md`](native-rendering.md) | Everything around the game logic native: renderer, draw functions, movies, the remaining PS2 (N1-N6) |
 | [`configurable-tick-rate.md`](configurable-tick-rate.md) | Game rate as a setting (120/144/240 Hz, no interpolation): the rate switch (`ssx3_game::tick`), the physics decision, the measurements, the inventory and the worker pass (AGENTS.md) |
+| [`modern-graphics.md`](modern-graphics.md) | Optional modern rendering in F10 (shadows, sun shadows, FXAA, mipmaps, terrain detail, AO, bloom, colour, snow sparkle): what each does, how it fits the renderer, how it was checked |
 | [`port-architecture.md`](port-architecture.md) | Current: the review harness, the module layout, the modern runtime (one host thread, a native frame loop, a smaller `Machine`) |
 
 Development, debugging and verification switches: [`../development.md`](../development.md).

@@ -22,8 +22,12 @@
 pub mod debug;
 mod draw;
 pub mod gs;
+mod options;
 pub mod pack;
+mod post;
 pub mod tex;
+
+pub use options::{Aa, Bloom, Grade, Options};
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -124,6 +128,14 @@ pub struct Inner {
     /// Horizontal squeeze of the HUD (layers 9 and up) around the centre,
     /// so 4:3 HUD art keeps its shape on a wider output (1: none).
     pub hud_squeeze: f32,
+    /// Modern graphics options (`Options`; the default is the original).
+    opts: Options,
+    /// Render targets the rider shadow silhouette is drawn into.
+    shadow_rts: std::collections::HashSet<u32>,
+    /// The renderer's own passes (created on first use).
+    post: Option<post::Post>,
+    /// Seconds since the renderer started (animated effects).
+    t0: web_time::Instant,
     /// Batches of VIF phase 1 (the 3D scene) in this frame.
     phase1_end: usize,
     /// Keep the depth after phase 1 (`depth()`, native mode).
@@ -244,6 +256,10 @@ impl Renderer {
             fxy: (1.0, 1.0),
             rt_scale: 1,
             hud_squeeze: 1.0,
+            opts: Options::default(),
+            shadow_rts: Default::default(),
+            post: None,
+            t0: web_time::Instant::now(),
             phase1_end: usize::MAX,
             want_depth: false,
             pending_depth: None,
@@ -303,6 +319,17 @@ impl Renderer {
         let t = g.as_ref()?.0.last()?;
         let view = t.create_view(&wgpu::TextureViewDescriptor { format: Some(wgpu::TextureFormat::Rgba8UnormSrgb), ..Default::default() });
         Some((view, t.width(), t.height()))
+    }
+
+    /// The modern graphics options.
+    pub fn set_options(&self, o: Options) {
+        let mut g = self.0.lock().unwrap();
+        if g.opts.mipmaps != o.mipmaps {
+            // Textures are made with or without mipmaps.
+            g.texcache.clear();
+        }
+        g.opts = o;
+        ssx3_render::bezier::gpu::set_tessellation(o.terrain);
     }
 
     /// Anisotropic filtering: 1 (off) to 16 (the default).
@@ -528,7 +555,9 @@ impl Inner {
                 eprintln!("[gfx] replacement {} is {}x{}, the texture {}x{}: aspect ratio differs", pack::name(&key), r[0].width, r[0].height, d.width, d.height);
             }
         }
-        let levels: &[tex::Decoded] = replaced.as_deref().unwrap_or(std::slice::from_ref(&d));
+        // Options: mipmaps for the game's own textures.
+        let generated = (replaced.is_none() && self.opts.mipmaps).then(|| tex::mipmaps(&d));
+        let levels: &[tex::Decoded] = replaced.as_deref().or(generated.as_deref()).unwrap_or(std::slice::from_ref(&d));
         let t = self.dev.create_texture(&wgpu::TextureDescriptor {
             label: Some("ssx3-gfx tex"),
             size: wgpu::Extent3d { width: levels[0].width, height: levels[0].height, depth_or_array_layers: 1 },
@@ -580,6 +609,9 @@ impl Inner {
     fn rt_fxy(&self, fbp: u32) -> (f32, f32) {
         if Some(fbp) == self.display_fbp {
             self.fxy
+        } else if self.opts.shadow_scale > self.rt_scale && self.shadow_rts.contains(&fbp) {
+            // The rider shadow at its own resolution.
+            (self.opts.shadow_scale as f32, self.opts.shadow_scale as f32)
         } else {
             (self.rt_scale as f32, self.rt_scale as f32)
         }
@@ -715,6 +747,9 @@ impl Inner {
         self.fxy = (pw as f32 / w as f32, ph as f32 / h as f32);
         self.rt_scale = (self.fxy.0.max(self.fxy.1).round() as u32).clamp(1, 8);
         self.ensure_targets(pw, ph);
+        // The rider shadow's targets (their own resolution, soft sampling).
+        let main_fbp = self.gs.main_fbp;
+        self.shadow_rts = self.gs.batches.iter().filter(|b| b.tag.shadow && b.state.target != main_fbp).map(|b| b.state.target).collect();
         self.ensure_rts();
         self.stats.prims += self.gs.prims - p0.0;
         self.stats.dropped += self.gs.dropped - p0.1;
@@ -819,6 +854,9 @@ impl Inner {
             batch: usize,
             /// GPU-computed vertices.
             gpu: Option<gs::GpuBatch>,
+            /// What produced it (the renderer's own passes go before the
+            /// game's post passes and before the HUD).
+            tag: gs::Tag,
         }
         let mut items = Vec::new();
         let mut ubytes: Vec<u8> = Vec::new();
@@ -832,8 +870,14 @@ impl Inner {
         // Debug: SSX3_GFX_PROBE=x,y prints that main-target pixel after every
         // item that changes it (on the SSX3_GFX_TRACE frame, if set).
         let probe = dbg.probe.filter(|_| dbg.trace.is_none_or(|f| f == self.stats.frames));
+        let opts = self.opts;
+        let time = self.t0.elapsed().as_secs_f32();
         for (bi, b) in batches.iter().enumerate() {
             let st = &b.state;
+            // The game's bloom, replaced or off.
+            if !opts.keeps_post(b.tag.post) {
+                continue;
+            }
             let alpha_only = (st.ctx.frame >> 32) as u32 & 0x00ff_ffff == 0x00ff_ffff;
             // `z`: keep the batch but without depth writes.
             let no_zw = skip_test.iter().any(|&(t, m)| t == st.ctx.test && m == b'z');
@@ -931,6 +975,20 @@ impl Inner {
                 if date {
                     p.u.flags |= 64 | (((st.ctx.test >> 15) & 1) as u32) << 7;
                 }
+                // The rider shadow sampled with a blur (soft edges).
+                let mut soft = 0.0f32;
+                if opts.soft_shadows {
+                    if let Some(rt) = st.tex.filter(|t| *t != gs::FRAME_TEX && t & gs::RT_TEX != 0 && self.shadow_rts.contains(&(t & !gs::RT_TEX))) {
+                        if let Some(r) = self.gs.rts.get(&(rt & !gs::RT_TEX)) {
+                            p.u.flags |= 1024;
+                            soft = 2.0 / r.w.max(1) as f32;
+                        }
+                    }
+                }
+                // Glints on bright snow (textured terrain).
+                if opts.snow && b.tag.terrain && st.tex.is_some() {
+                    p.u.flags |= 2048;
+                }
                 if zfog {
                     p.u.flags |= 256;
                     // Depth is stored as Z / (ZMAX + 1).
@@ -941,7 +999,7 @@ impl Inner {
                     };
                 }
                 let u = &p.u;
-                let words: [u32; 20] = [
+                let words: [u32; 24] = [
                     u.size[0].to_bits(),
                     u.size[1].to_bits(),
                     u.tfx,
@@ -961,6 +1019,10 @@ impl Inner {
                     u.ta[0].to_bits(),
                     u.ta[1].to_bits(),
                     u.pad[0].to_bits(),
+                    soft.to_bits(),
+                    opts.lod_bias.to_bits(),
+                    time.to_bits(),
+                    0,
                     0,
                 ];
                 // SAFETY: u32 words as their (little-endian) bytes.
@@ -974,7 +1036,7 @@ impl Inner {
                 } else {
                     String::new()
                 };
-                items.push(Item { batch: bi, gpu: b.gpu, desc, frame: st.tex == Some(gs::FRAME_TEX), date, zfog, target: st.target, key: p.key, ubo, constant: p.constant, bind, first: b.first, count: b.count, scissor });
+                items.push(Item { tag: b.tag, batch: bi, gpu: b.gpu, desc, frame: st.tex == Some(gs::FRAME_TEX), date, zfog, target: st.target, key: p.key, ubo, constant: p.constant, bind, first: b.first, count: b.count, scissor });
             }
         }
         if items.is_empty() {
@@ -1020,6 +1082,24 @@ impl Inner {
                     self.pipes.get(&self.dev, it.key);
                 }
             }
+        }
+        // The renderer's own passes: AO before the game's post passes, the
+        // rest before the HUD (or at the end of a frame without them).
+        let hud_post = opts.bloom == Bloom::Modern || opts.grade != Grade::Original || opts.aa != Aa::Off;
+        // The sun: the lens flare's farthest light, else the riders' main
+        // light direction.
+        let flare = ssx3_ps2::frame_sink::take_light();
+        let sun = opts
+            .sun_shadows
+            .then(|| self.gs.cam.and_then(|cam| flare.and_then(|l| post::light_dir(&cam, l)).or(self.gs.light).map(|l| (cam, l))))
+            .flatten();
+        let ao_at = if opts.ao || sun.is_some() { items.iter().position(|it| it.tag.post.is_some() || it.tag.hud).unwrap_or(items.len()) } else { usize::MAX };
+        let hud_at = if hud_post { items.iter().position(|it| it.tag.hud).unwrap_or(items.len()) } else { usize::MAX };
+        if (opts.ao || sun.is_some() || hud_post) && self.post.is_none() {
+            self.post = Some(post::Post::new(&self.dev));
+        }
+        if let Some(po) = self.post.as_mut() {
+            po.begin_frame();
         }
         let t = self.targets.as_ref().expect("targets");
         let cv = t.color.create_view(&Default::default());
@@ -1095,7 +1175,28 @@ impl Inner {
                 wgpu::Extent3d { width: t.w, height: t.h, depth_or_array_layers: 1 },
             );
         };
-        for it in &items {
+        let post_frame = post::Frame { color: &t.color, snapshot: &t.snapshot, depth: &t.depth, zsnap: &t.zsnap, w: t.w, h: t.h };
+        for (k, it) in items.iter().enumerate() {
+            if k == ao_at || k == hud_at {
+                drop(pass);
+                let po = self.post.as_mut().expect("post passes");
+                if k == ao_at {
+                    if opts.ao {
+                        po.ao(&self.dev, &self.queue, &mut enc, &post_frame, self.gs.cam.as_ref(), self.fxy);
+                    }
+                    if let Some((cam, light)) = sun {
+                        po.sun(&self.dev, &self.queue, &mut enc, &post_frame, &cam, light, self.fxy);
+                    }
+                }
+                if k == hud_at {
+                    po.before_hud(&self.dev, &self.queue, &mut enc, &post_frame, &opts);
+                }
+                pass = begin(&mut enc, cur_target, false);
+                pass.set_vertex_buffer(0, vbuf.slice(..));
+                last = Last::default();
+                // (They overwrote the snapshot.)
+                prev_frame = false;
+            }
             if self.want_depth && !depth_taken && it.batch >= phase1_end {
                 depth_taken = true;
                 drop(pass);
@@ -1188,6 +1289,20 @@ impl Inner {
             }
         }
         drop(pass);
+        if ao_at == items.len() || hud_at == items.len() {
+            let po = self.post.as_mut().expect("post passes");
+            if ao_at == items.len() {
+                if opts.ao {
+                    po.ao(&self.dev, &self.queue, &mut enc, &post_frame, self.gs.cam.as_ref(), self.fxy);
+                }
+                if let Some((cam, light)) = sun {
+                    po.sun(&self.dev, &self.queue, &mut enc, &post_frame, &cam, light, self.fxy);
+                }
+            }
+            if hud_at == items.len() {
+                po.before_hud(&self.dev, &self.queue, &mut enc, &post_frame, &opts);
+            }
+        }
         if self.want_depth && !depth_taken {
             take_depth(&mut enc);
         }
@@ -1585,8 +1700,12 @@ impl Build {
         // phase's VIF stream ends unmasked (the post passes, before the
         // HUD of phase 2 is drawn).
         // (A frame built without the chains carries its PATH3 packets.)
+        // (Each packet with the post pass it belongs to, if any.)
+        let tagged = |ph: usize, v: &Vec<Vec<u128>>| -> Vec<(Vec<u128>, Option<ssx3_render::direct::PostKind>)> {
+            v.iter().enumerate().map(|(k, q)| (q.clone(), built.path3_post[ph].get(k).copied().flatten())).collect()
+        };
         let (p1, mut p2) = match &built.path3 {
-            Some([a, b]) => (a.clone(), b.clone()),
+            Some([a, c]) => (tagged(0, a), tagged(1, c)),
             None => Default::default(),
         };
         let dbg = debug::get();
@@ -1607,7 +1726,15 @@ impl Build {
         b.gs.gif(&flip[split..]);
         b.display_fbp = (split > 0).then(|| d.draw_fbp + (d.fb_width.div_ceil(64) * d.fb_height.div_ceil(32)).max(1));
         let mode = dbg.path3;
-        let mut p3: std::collections::VecDeque<Vec<u128>> = std::collections::VecDeque::new();
+        let mut p3: std::collections::VecDeque<(Vec<u128>, Option<ssx3_render::direct::PostKind>)> = std::collections::VecDeque::new();
+        // A PATH3 packet through the GS, tagged with its post pass.
+        let path3 = |gs: &mut gs::Gs, (pk, post): (Vec<u128>, Option<ssx3_render::direct::PostKind>)| {
+            let hud = std::mem::replace(&mut gs.hud, false);
+            let tag = std::mem::replace(&mut gs.tag, gs::Tag { post, ..Default::default() });
+            gs.gif(&pk);
+            gs.hud = hud;
+            gs.tag = tag;
+        };
         if mode & 1 != 0 {
             p3.extend(p1);
         }
@@ -1641,9 +1768,7 @@ impl Build {
                 label(&mut b.gs, "path3".into());
                 if !p3_masked {
                     while let Some(pk) = p3.pop_front() {
-                        let hud = std::mem::replace(&mut b.gs.hud, false);
-                    b.gs.gif(&pk);
-                    b.gs.hud = hud;
+                        path3(&mut b.gs, pk);
                     }
                 }
                 b.phase1_end = b.gs.batches.len();
@@ -1655,6 +1780,13 @@ impl Build {
             let n = match owner {
                 Owner::Prelude(n) | Owner::Payload(n) => Some(*n),
                 _ => None,
+            };
+            // The batches' tag: the draw's material (none between draws).
+            let m = n.and_then(|n| draws.get(n)).map(|d| d.state.material);
+            b.gs.tag = gs::Tag {
+                shadow: m == Some(Material::Shadow),
+                terrain: matches!(m, Some(Material::Bezier1 | Material::Bezier2)),
+                ..Default::default()
             };
             if let Some(n) = n {
                 if cur != Some(n) {
@@ -1719,9 +1851,7 @@ impl Build {
                     if !m {
                         if let Some(pk) = p3.pop_front() {
                             label(&mut b.gs, "path3".into());
-                            let hud = std::mem::replace(&mut b.gs.hud, false);
-                    b.gs.gif(&pk);
-                    b.gs.hud = hud;
+                            path3(&mut b.gs, pk);
                         }
                     }
                     p3_masked = *m;
@@ -1740,9 +1870,7 @@ impl Build {
         // Whatever is left runs before the next frame.
         label(&mut b.gs, "path3".into());
         while let Some(pk) = p3.pop_front() {
-            let hud = std::mem::replace(&mut b.gs.hud, false);
-                    b.gs.gif(&pk);
-                    b.gs.hud = hud;
+            path3(&mut b.gs, pk);
         }
         if split > 0 {
             label(&mut b.gs, "flip-blend".into());

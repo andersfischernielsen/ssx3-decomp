@@ -78,6 +78,7 @@ struct Native<'a> {
     posts: [Vec<usize>; 3],
     next_post: [usize; 3],
     path3: [Vec<Vec<u128>>; 2],
+    path3_post: [Vec<Option<PostKind>>; 2],
     phase: usize,
     /// TexMan: the ids bound per context, the CLUT id (tm+0x1f4c..).
     bound: [i32; 2],
@@ -395,7 +396,9 @@ impl Native<'_> {
         self.next_post[i] += 1;
         let Cmd::Post { gif, windows, .. } = &self.direct[k].cmd else { return };
         let (gif, windows) = (gif.clone(), *windows);
-        self.path3[self.phase].extend(split_gif(&gif));
+        let packets = split_gif(&gif);
+        self.path3_post[self.phase].extend(packets.iter().map(|_| Some(kind)));
+        self.path3[self.phase].extend(packets);
         for _ in 0..windows {
             let d = || Event::Direct(crate::vif::Direct { qwords: vec![EMPTY_TAG], native: true });
             self.push(Owner::Post, d());
@@ -483,6 +486,7 @@ pub(super) fn build(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
         posts,
         next_post: [0; 3],
         path3: Default::default(),
+        path3_post: Default::default(),
         phase: 0,
         bound: [-1; 2],
         clut: -1,
@@ -578,6 +582,7 @@ pub(super) fn build(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
     let views = (0..num_views).map(|v| View { screen: mat4(m, g + gm::VIEW_MATRICES + v * 0x40) }).collect();
     let n_draws = draws.len();
     let path3 = std::mem::take(&mut n.path3);
+    let path3_post = std::mem::take(&mut n.path3_post);
     Built {
         frame: Frame { gm: g, defer, vif_heads, gif_heads, views, matrices, scissors: scissors[..ns.max(1) as usize].to_vec(), passes, display },
         events: n.events,
@@ -588,6 +593,7 @@ pub(super) fn build(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
         emitter,
         direct: direct.clone(),
         path3: Some(path3),
+        path3_post,
         flip: super::flip_packet(m),
     }
 }
