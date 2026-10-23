@@ -66,6 +66,15 @@ pub const NOT_A_STEP: &[u32] = &[
     // ScriptList_StartTransition (0x277980): script short -> captured
     // transition's duration.
     0x0049_e8f8,
+    // The air predictor's fixed 1/60 s step: its gravity (-31.67/-14.17) and
+    // drag are per step, so the step must stay 1/60 (the predictor keeps its
+    // own clock and takes as many steps as the tick time covers).
+    // AirPredictor_Update (0x113648): the step loop's step.
+    0x0049_b494,
+    // AirPredictor_Step (0x1139a0): pos += vel * 1/60.
+    0x0049_b4a0,
+    // AirPredictor_Simulate (0x113200): the trajectory preview's step.
+    0x0049_b480,
 ];
 
 /// 60 Hz frame counts in the game's *data* (not `.lit4`), rewritten to the

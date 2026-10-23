@@ -163,6 +163,20 @@ the constant offset. The paths differ (a different step is a different
 simulation), the rates agree. Drag and friction look step-correct (the
 speeds match); a per-tick factor there would show as a lower top speed.
 
+**Exception: the air predictor.** `AirPredictor_Update` (0x113648), which
+moves an airborne rider, already runs fixed 1/60 s steps on its own clock
+(`while elapsed >= 1/60: AirPredictor_Step`), and the step's gravity
+(-31.67, -14.17 rising) and drag are per step. T1 had its three `1/60`
+entries as STEP, so at 240 Hz it took a 1/240 s step per tick with a full
+step's gravity: 4× gravity, riders airborne 15 % of the time against 44 % at
+60 ("almost impossible to jump"). The entries are now in `tick::NOT_A_STEP`,
+and `AirPredictor_Update` is an override: at 60 the generated body; above,
+when under 0.01 s is left over (the original then holds the last step), it
+interpolates to the current time like the original does above 0.01 s, so the
+rider moves every tick. Measured (jump sequence, 5400 60 Hz frames): player
+airborne 6.9 s with 6 takeoffs at 60, 7.7 s with 7 at 240; gravity -7.92 per
+tick at 240; takeoff pops +602/+590 against +616/+496.
+
 Keep watching for: rail catches and landings decided by a per-tick distance
 threshold, jump heights (semi-implicit Euler at a smaller step gives slightly
 different arcs), wall collisions. If one of them changes behaviour at N Hz,

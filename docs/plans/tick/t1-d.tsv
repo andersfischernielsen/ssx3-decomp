@@ -14,10 +14,10 @@ entry	site	function	class	reason
 0x49b1ac	0x1048c4	RiderAnim_UpdateSeqType00	STEP	mul_s f20, f12, 1/60 (frames-per-tick * 1/60 = seconds) then AdvanceTrack @0x3135b0 (type 00)
 0x49b1b0	0x104944	RiderAnim_UpdateSeqType01	STEP	mul_s f20, f12, 1/60 (frames-per-tick * 1/60 = seconds) then AdvanceTrack @0x3135b0 (type 01)
 0x49b1b4	0x1049c4	RiderAnim_UpdateSeqType02	STEP	mul_s f20, f12, 1/60 (frames-per-tick * 1/60 = seconds) then AdvanceTrack @0x3135b0 (type 02)
-0x49b480	0x113298	AirPredictor_Simulate	STEP	lwc1 f25,1/60 @0x113298 then div_s f22 = (1/60)/maxTime: the predictor's step size, the loop runs maxTime*60 one-1/60-s steps
+0x49b480	0x113298	AirPredictor_Simulate	NOT_A_STEP	fixed 60 Hz sub-step of the air predictor (gravity -31.67/-14.17 and drag are per step; the predictor keeps its own clock); was STEP, measured 4x gravity at 240 Hz. lwc1 f25,1/60 @0x113298 then div_s f22 = (1/60)/maxTime: the predictor's step size, the loop runs maxTime*60 one-1/60-s steps
 0x49b48c	0x113464	AirPredictor_Simulate	STEP	lwc1 f0,1/60 @0x113464 then mul_s f0,f3,f0 f0*=f21: predTime -= steps*fraction*(1/60), a step count converted back to seconds
-0x49b494	0x113808	AirPredictor_Update	STEP	lwc1 f2,1/60 @0x113808: while (1/60 <= elapsed) { AirPredictor_Step(); elapsed -= 1/60; } elapsed is the tick time (caller passes rider->0x300 * 1/60)
-0x49b4a0	0x1139a4	AirPredictor_Step	STEP	lwc1 f0,1/60 @0x1139a4 -> qmtc2 into VU0, vmulbc: pos += vel * (1/60) (integration step)
+0x49b494	0x113808	AirPredictor_Update	NOT_A_STEP	fixed 60 Hz sub-step of the air predictor (gravity -31.67/-14.17 and drag are per step; the predictor keeps its own clock); was STEP, measured 4x gravity at 240 Hz. lwc1 f2,1/60 @0x113808: while (1/60 <= elapsed) { AirPredictor_Step(); elapsed -= 1/60; } elapsed is the tick time (caller passes rider->0x300 * 1/60)
+0x49b4a0	0x1139a4	AirPredictor_Step	NOT_A_STEP	fixed 60 Hz sub-step of the air predictor (gravity -31.67/-14.17 and drag are per step; the predictor keeps its own clock); was STEP, measured 4x gravity at 240 Hz. lwc1 f0,1/60 @0x1139a4 -> qmtc2 into VU0, vmulbc: pos += vel * (1/60) (integration step)
 0x49c304	0x154d00	BEScoreInt_SubmitRaceResult	STEP	lwc1 f0,1/60 @0x154d00, f0 = frames * 1/60, cvt_w_s: race time in ticks -> seconds before comparing with the high-score table
 0x49cca8	0x16e250	CameraTrigger_ApplyAction	STEP	lwc1 f1,1/60 @0x16e250, div_s f0 = 1.0/duration, f12 = f0*f1: per-tick blend step 1/(duration*60) handed to ChaseCamController_SetOverrideAlgorithm (blend lasts `duration` s)
 0x49ccac	0x16e298	CameraTrigger_ApplyAction	STEP	lwc1 f1,1/60 @0x16e298, div_s f0 = 1.0/duration, f12 = f0*f1: per-tick blend step in ChaseCamController_SetOverrideAlgorithm

@@ -24,10 +24,69 @@ use crate::call::sp;
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0011_3198, air_predictor_reset, "AirPredictor_Reset"),
     (0x0011_35b8, air_predictor_prime, "AirPredictor_Prime"),
+    (0x0011_3648, air_predictor_update, "AirPredictor_Update"),
     (0x0011_3998, air_predictor_clear_air_time, "AirPredictor_ClearAirTime"),
     (0x0011_3aa0, air_predictor_save_state, "AirPredictor_SaveState"),
     (0x0011_3ad8, air_predictor_load_state, "AirPredictor_LoadState"),
 ];
+
+
+/// `void AirPredictor_Update(AirPredictor *ap, Vec4 *pos, Vec4 *vel, float dt)`
+/// (0x113648): advance the flight by `dt` in fixed 1/60 s steps
+/// (`AirPredictor_Step`, 0x1139a0: gravity -31.67 or -14.17 and drag -0.2/60
+/// per step, so the step size is not the tick step: its `.lit4` entries are
+/// in `tick::NOT_A_STEP`), and write the state at the current time to
+/// `pos`/`vel`: the last step, or between it and the next step when more than
+/// 0.01 s is left over.
+///
+/// At 60 the time left over is always 0 and this is the generated body. Above
+/// 60 it is often under 0.01 s (1/240, 2/240 at 240 Hz), where the original
+/// would hold the last step for those ticks; the state is then interpolated
+/// the same way, so the rider moves every tick.
+pub fn air_predictor_update(c: &mut Cpu) {
+    if crate::tick::rate(c) == 60 {
+        ee::s00::f_00113648__generated(c);
+        return;
+    }
+    let ap = abi::r32(c, A0);
+    let pos = abi::r32(c, A1);
+    let vel = abi::r32(c, A2);
+    let ret = c.g[RA][0] as u32;
+    ee::s00::f_00113648__generated(c);
+    if c.pc != ret {
+        return;
+    }
+    let f = |c: &mut Cpu, a: u32| f32::from_bits(c.bus.read32(a));
+    let left = f(c, ap + 0xa0) - f(c, ap + 0xa4);
+    if !(left > 0.0 && left <= 0.01) {
+        return;
+    }
+    let s_pos: [f32; 4] = std::array::from_fn(|i| f(c, ap + 0x70 + 4 * i as u32));
+    let s_vel: [f32; 4] = std::array::from_fn(|i| f(c, ap + 0x80 + 4 * i as u32));
+    let (n_pos, n_vel) = air_predictor_step(s_pos, s_vel, f(c, ap + 0xa8));
+    let k = left * 59.999996;
+    for i in 0..4 {
+        let p = if i == 3 { 1.0 } else { n_pos[i] * k + s_pos[i] * (1.0 - k) };
+        let v = n_vel[i] * k + s_vel[i] * (1.0 - k);
+        c.bus.write32(pos + 4 * i as u32, p.to_bits());
+        c.bus.write32(vel + 4 * i as u32, v.to_bits());
+    }
+}
+
+/// `AirPredictor_Step` (0x1139a0) on host floats: one 1/60 s step of the
+/// position and velocity, the speed clamped to `max_speed` (`+0xa8`).
+fn air_predictor_step(pos: [f32; 4], vel: [f32; 4], max_speed: f32) -> ([f32; 4], [f32; 4]) {
+    const STEP: f32 = 0.016_666_668;
+    let p = std::array::from_fn(|i| pos[i] + vel[i] * STEP);
+    let g = if vel[2] > 0.0 { -14.166_667 } else { -31.666_668 };
+    let mut v = [vel[0] + vel[0] * -0.003_333_333_6, vel[1] + vel[1] * -0.003_333_333_6, vel[2] + g, vel[3]];
+    let len = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+    if max_speed < len {
+        let k = max_speed / len;
+        v.iter_mut().for_each(|x| *x *= k);
+    }
+    (p, v)
+}
 
 
 /// `void AirPredictor_Reset(AirPredictor *ap)` (0x113198): zero the timers at
@@ -196,6 +255,94 @@ pub(crate) mod tests {
     pub(crate) use crate::game::ai::ai::tests::leaf_setup;
     pub(crate) use crate::game::ai::ai::tests::leaf;
 
+
+    /// The predictor's `.lit4` constants (the test machine has no data image).
+    fn predictor_pool(c: &mut Cpu) {
+        c.g[GP][0] = sx(crate::difftest::GAME_GP);
+        for (a, v) in [
+            (0x0049_b47c, 0x4883_d600u32),
+            (0x0049_b480, crate::tick::STEP_60),
+            (0x0049_b484, 0x3f7d_70a4),
+            (0x0049_b490, (-0.2f32).to_bits()),
+            (0x0049_b494, crate::tick::STEP_60),
+            (0x0049_b498, 0.01f32.to_bits()),
+            (0x0049_b49c, 59.999996f32.to_bits()),
+            (0x0049_b4a0, crate::tick::STEP_60),
+            (0x0049_b4a4, (-0.0033333336f32).to_bits()),
+            (0x0049_b4a8, (-31.666668f32).to_bits()),
+            (0x0049_b4ac, 0xc162_aaab),
+        ] {
+            c.bus.write32(a, v);
+        }
+    }
+
+    #[test]
+    fn air_predictor_update_matches() {
+        crate::difftest::check(ee::s00::f_00113648__generated, air_predictor_update, 64, &|c, seed| {
+            let mut r = crate::difftest::Rng(0x5eed_3648 ^ seed as u64);
+            crate::difftest::scramble(c, &mut r);
+            let ap = crate::difftest::DATA;
+            for o in (0..0xb0).step_by(4) {
+                c.bus.write32(ap + o, 0);
+            }
+            // A flight in progress: state at +0x70/+0x80, timers in seconds.
+            let f = |r: &mut crate::difftest::Rng, lo: f32, hi: f32| lo + (r.next_u32() % 1000) as f32 / 1000.0 * (hi - lo);
+            for i in 0..3 {
+                c.bus.write32(ap + 0x70 + 4 * i, f(&mut r, -1000.0, 1000.0).to_bits());
+                c.bus.write32(ap + 0x80 + 4 * i, f(&mut r, -500.0, 500.0).to_bits());
+            }
+            c.bus.write32(ap + 0x7c, 1.0f32.to_bits());
+            c.bus.write32(ap + 0xa8, 2000.0f32.to_bits());
+            c.bus.write32(ap + 0xac, 3);
+            let t = (seed % 7) as f32 / 60.0;
+            c.bus.write32(ap + 0xa0, t.to_bits());
+            c.bus.write32(ap + 0xa4, t.to_bits());
+            c.g[A0][0] = sx(ap);
+            c.g[A1][0] = sx(ap + 0x100);
+            c.g[A2][0] = sx(ap + 0x110);
+            c.f[12] = (1.0f32 / 60.0).to_bits();
+            predictor_pool(c);
+        });
+    }
+
+    /// Above 60 Hz the flight follows the 60 Hz steps in real time: after one
+    /// second (60, 120, 240 calls) the velocity is the one 60 steps give, and
+    /// between steps the state moves every tick.
+    #[test]
+    fn air_predictor_update_rate() {
+        let fly = |hz: u32| {
+            let mut c = crate::difftest::fresh();
+            crate::tick::set_for_test(&mut c, hz);
+            predictor_pool(&mut c);
+            let ap = crate::difftest::DATA;
+            for o in (0..0xb0).step_by(4) {
+                c.bus.write32(ap + o, 0);
+            }
+            c.bus.write32(ap + 0x7c, 1.0f32.to_bits());
+            c.bus.write32(ap + 0x80, 100.0f32.to_bits());
+            c.bus.write32(ap + 0x88, 600.0f32.to_bits());
+            c.bus.write32(ap + 0xa8, 5000.0f32.to_bits());
+            c.bus.write32(ap + 0xac, 3);
+            let mut zs = Vec::new();
+            for _ in 0..hz {
+                c.g[A0][0] = sx(ap);
+                c.g[A1][0] = sx(ap + 0x100);
+                c.g[A2][0] = sx(ap + 0x110);
+                c.g[RA][0] = crate::difftest::RA as u64;
+                c.f[12] = (1.0f32 / hz as f32).to_bits();
+                c.pc = 0x0011_3648;
+                air_predictor_update(&mut c);
+                zs.push(f32::from_bits(c.bus.read32(ap + 0x108)));
+            }
+            (f32::from_bits(c.bus.read32(ap + 0x118)), zs)
+        };
+        let (vz60, _) = fly(60);
+        for hz in [120u32, 240] {
+            let (vz, zs) = fly(hz);
+            assert!((vz - vz60).abs() < 1.0, "{hz} Hz: vz {vz} vs {vz60}");
+            assert!(zs.windows(2).all(|w| w[1] != w[0]), "{hz} Hz: height held for a tick");
+        }
+    }
 
     #[test]
     fn air_predictor_reset_matches() {
