@@ -1,0 +1,161 @@
+func	name	max_calls_per_frame	scenario	ported	site	class	constants
+0x00129c00	AI_CreateMissionRider	0.000	-	no	0x129df0	COUNT	+1
+0x00129c00	AI_CreateMissionRider	0.000	-	no	0x129dfc	COUNT	+1
+0x001441a0	DangerMan_ReleaseDanger	0.000	-	no	0x1441b4	COUNT	-1
+0x0015a628	BERewardInt_AddNewReward	0.000	-	yes	0x15a6a8	COUNT	+1
+0x001604b8	ManualChaseCameraAlgorithm_Update	0.000	-	no	0x160584	OTHER	0.05
+0x001604b8	ManualChaseCameraAlgorithm_Update	0.000	-	no	0x1605a4	OTHER	0.05 6.28319
+0x001604b8	ManualChaseCameraAlgorithm_Update	0.000	-	no	0x1605d0	OTHER	0.05
+0x001604b8	ManualChaseCameraAlgorithm_Update	0.000	-	no	0x1605e0	CLAMP	0.05 1.50796
+0x001604b8	ManualChaseCameraAlgorithm_Update	0.000	-	no	0x160674	CLAMP	0.05 850
+0x00177110	Default_4ChaseCameraAlgorithm_Update	0.000	-	no	0x1771a8	CALLSTEP	ChaseCameraAlgorithm_ApplyFollowDistance f16=1.76684
+0x00177110	Default_4ChaseCameraAlgorithm_Update	0.000	-	no	0x1771c8	CALLSTEP	ChaseCameraAlgorithm_ApplyCameraHeight f12=13.0212
+0x00177110	Default_4ChaseCameraAlgorithm_Update	0.000	-	no	0x1771c8	CALLSTEP	ChaseCameraAlgorithm_ApplyCameraHeight f13=98.8478
+0x00177110	Default_4ChaseCameraAlgorithm_Update	0.000	-	no	0x1771c8	CALLSTEP	ChaseCameraAlgorithm_ApplyCameraHeight f14=12.2936
+0x00177110	Default_4ChaseCameraAlgorithm_Update	0.000	-	no	0x1771c8	CALLSTEP	ChaseCameraAlgorithm_ApplyCameraHeight f16=0.978392
+0x00177110	Default_4ChaseCameraAlgorithm_Update	0.000	-	no	0x177214	CALLSTEP	ChaseCameraAlgorithm_ApplyHandplantHold f17=0.98
+0x00177110	Default_4ChaseCameraAlgorithm_Update	0.000	-	no	0x177214	CALLSTEP	ChaseCameraAlgorithm_ApplyHandplantHold f18=0.96
+0x00177110	Default_4ChaseCameraAlgorithm_Update	0.000	-	no	0x177234	CALLSTEP	ChaseCameraAlgorithm_ApplyTargetHeight f12=50.027
+0x00177110	Default_4ChaseCameraAlgorithm_Update	0.000	-	no	0x177234	CALLSTEP	ChaseCameraAlgorithm_ApplyTargetHeight f13=2.57811
+0x00177110	Default_4ChaseCameraAlgorithm_Update	0.000	-	no	0x177234	CALLSTEP	ChaseCameraAlgorithm_ApplyTargetHeight f14=13.9774
+0x00177110	Default_4ChaseCameraAlgorithm_Update	0.000	-	no	0x177234	CALLSTEP	ChaseCameraAlgorithm_ApplyTargetHeight f15=10.7488
+0x00177110	Default_4ChaseCameraAlgorithm_Update	0.000	-	no	0x177234	CALLSTEP	ChaseCameraAlgorithm_ApplyTargetHeight f16=0.924191
+0x00177110	Default_4ChaseCameraAlgorithm_Update	0.000	-	no	0x17729c	CALLSTEP	ChaseCameraAlgorithm_ApplyRailPullback f15=0.98
+0x00177110	Default_4ChaseCameraAlgorithm_Update	0.000	-	no	0x1772bc	CALLSTEP	ChaseCameraAlgorithm_ApplyLowSpeedHold f13=1.5
+0x00177110	Default_4ChaseCameraAlgorithm_Update	0.000	-	no	0x1772bc	CALLSTEP	ChaseCameraAlgorithm_ApplyLowSpeedHold f14=1.5
+0x0017b4e0	DebugMenu_Update	0.000	-	no	0x17c3e4	COUNT	+1
+0x0017b4e0	DebugMenu_Update	0.000	-	no	0x17c41c	COUNT	-1
+0x00180618	KeyboardScreen_CursorLeft	0.000	-	yes	0x180648	COUNT	+9
+0x00180840	KeyboardScreen_TypeKey	0.000	-	no	0x1808bc	COUNT	+1
+0x00180840	KeyboardScreen_TypeKey	0.000	-	no	0x1808ec	COUNT	-1
+0x00180840	KeyboardScreen_TypeKey	0.000	-	no	0x18090c	COUNT	+1
+0x00180840	KeyboardScreen_TypeKey	0.000	-	no	0x18094c	COUNT	+1
+0x0019b458	cFEStateCharEquip_RemoveListItem	0.000	-	yes	0x19b4bc	COUNT	-1
+0x001a7dd8	cFEStateReadMessagePopup_AddMessage	0.000	-	no	0x1a7e50	COUNT	-4
+0x001a7dd8	cFEStateReadMessagePopup_AddMessage	0.000	-	no	0x1a7eb0	COUNT	+4
+0x001b41a8	cFEStateNetConfig_Update	0.000	-	no	0x1b428c	COUNT	-1
+0x001c4e40	cFEStateStats_FocusPrevColumn	0.000	-	no	0x1c4ec0	COUNT	-1
+0x001cb9b0	cKeyboardPopup_MoveDown	0.000	-	yes	0x1cbae0	COUNT	+14
+0x001cb9b0	cKeyboardPopup_MoveDown	0.000	-	yes	0x1cbb0c	COUNT	+1
+0x001d1528	cFEStateRewardGalleryConceptArts_InitButtons	0.000	-	yes	0x1d15a4	COUNT	+1
+0x001d4918	cFEStateTrophyRoom_RequestTrophyImages	0.000	-	no	0x1d49ec	COUNT	+1
+0x001db918	StdVector_InsertAux_2	0.000	-	no	0x1db974	COUNT	+4
+0x001e3e30	OVScreenMessageCenter_Shutdown	0.000	-	yes	0x1e3e8c	COUNT	-1
+0x001ff7b8	OVScreenRewardList_GetEntryText	0.000	-	no	0x1ffb30	COUNT	+1
+0x0020df38	OVScreenReplayMenu_HandleInput	0.000	-	no	0x20e0b8	COUNT	+1
+0x0020df38	OVScreenReplayMenu_HandleInput	0.000	-	no	0x20e1b0	COUNT	-1
+0x0020df38	OVScreenReplayMenu_HandleInput	0.000	-	no	0x20e270	COUNT	-1
+0x0020df38	OVScreenReplayMenu_HandleInput	0.000	-	no	0x20e2ac	COUNT	-1
+0x0020df38	OVScreenReplayMenu_HandleInput	0.000	-	no	0x20e320	COUNT	-1
+0x002305c8	GameModule_EndReplayPlayback	0.000	-	yes	0x230610	COUNT	-1
+0x00232588	InitLoadScreen_Update	0.000	-	yes	0x2325cc	STEP	0.0833333
+0x00232588	InitLoadScreen_Update	0.000	-	yes	0x2325ec	STEP	0.0833333
+0x002373b8	InputSync_Update	0.000	-	no	0x237544	COUNT	+1
+0x002373b8	InputSync_Update	0.000	-	no	0x2376dc	COUNT	+1
+0x002373b8	InputSync_Update	0.000	-	no	0x237750	COUNT	+1
+0x002373b8	InputSync_Update	0.000	-	no	0x2378b4	COUNT	+1
+0x002379c8	InputSync_ApplyInput	0.000	-	yes	0x237a60	COUNT	+1
+0x00240860	MCManager_State1A_Delete	0.000	-	yes	0x2408e0	COUNT	-1
+0x00245950	cFELoadHintState_Init	0.000	-	no	0x2459c0	COUNT	+1
+0x00256ee0	cGameComm_dtor	0.000	-	no	0x256f70	COUNT	+1
+0x00257dc0	cGameComm_FlushSendQueue	0.000	-	no	0x257e68	COUNT	+1
+0x00257f98	cGameComm_ProcessControlPackets	0.000	-	no	0x258010	COUNT	+1
+0x00257f98	cGameComm_ProcessControlPackets	0.000	-	no	0x2580ec	COUNT	+1
+0x00258c00	cGameComm_SendResync	0.000	-	no	0x258c34	COUNT	+1
+0x0025d538	LobbyMan_OnDeletePersonaReply	0.000	-	no	0x25d588	COUNT	-1
+0x00262ec0	BuddyMan_RemoveTempEntryAt	0.000	-	no	0x262ff4	COUNT	-4
+0x002649b0	cSetupMan_PopPacket	0.000	-	yes	0x2649f8	COUNT	+1
+0x00267128	BuddyMan_MessageVectorInsert	0.000	-	no	0x267184	COUNT	+4
+0x00271228	Replay_SaveBuildHeader	0.000	-	yes	0x2712a8	COUNT	+1
+0x00271620	Replay_SaveComputePadding	0.000	-	yes	0x271670	COUNT	+1
+0x00277c08	ScriptList_SetPaused	0.000	-	no	0x277c44	COUNT	+1
+0x00277c08	ScriptList_SetPaused	0.000	-	no	0x277c5c	COUNT	-1
+0x0027b4b8	ScriptEngine_CancelBankLoad	0.000	-	yes	0x27b50c	COUNT	-1
+0x00289470	SSXAudioSystem_ReadPlaylistNames	0.000	-	no	0x2894cc	COUNT	+1
+0x00295cc8	SSXAudioSystem_StopTrackedSounds	0.000	-	no	0x295d5c	COUNT	+1
+0x00295cc8	SSXAudioSystem_StopTrackedSounds	0.000	-	no	0x295da0	COUNT	+1
+0x00295cc8	SSXAudioSystem_StopTrackedSounds	0.000	-	no	0x295de4	COUNT	+1
+0x00295cc8	SSXAudioSystem_StopTrackedSounds	0.000	-	no	0x295e28	COUNT	+1
+0x00295cc8	SSXAudioSystem_StopTrackedSounds	0.000	-	no	0x295ef4	COUNT	+1
+0x00295cc8	SSXAudioSystem_StopTrackedSounds	0.000	-	no	0x295f4c	COUNT	+1
+0x00295cc8	SSXAudioSystem_StopTrackedSounds	0.000	-	no	0x295fa4	COUNT	+1
+0x00295cc8	SSXAudioSystem_StopTrackedSounds	0.000	-	no	0x295ffc	COUNT	+1
+0x00295cc8	SSXAudioSystem_StopTrackedSounds	0.000	-	no	0x296054	COUNT	+1
+0x0029bcf8	SSXAudioSystem_PlayAnimEventSound50	0.000	-	no	0x29bd58	COUNT	+1
+0x002b0088	SpeechInstance_LoadSpeechInf	0.000	-	no	0x2b01ec	COUNT	+1
+0x002b0348	SpeechInstance_AddBank	0.000	-	yes	0x2b0398	COUNT	+1
+0x002b0348	SpeechInstance_AddBank	0.000	-	yes	0x2b03a0	COUNT	+1
+0x002b28c0	MusicPlayer_ctor	0.000	-	no	0x2b2d38	COUNT	+1
+0x002b28c0	MusicPlayer_ctor	0.000	-	no	0x2b2e94	COUNT	+1
+0x002b28c0	MusicPlayer_ctor	0.000	-	no	0x2b332c	COUNT	+1
+0x002ba208	Audio_PushParamsBank	0.000	-	no	0x2ba244	COUNT	+1
+0x002badd0	cWorldSound_CollectSubtree	0.000	-	no	0x2bae20	COUNT	+1
+0x002c7260	Date_AddDays	0.000	-	no	0x2c72dc	COUNT	+1
+0x002c7260	Date_AddDays	0.000	-	no	0x2c72f0	COUNT	+1
+0x002cad58	MenuSysPage_Draw	0.000	-	no	0x2caf64	COUNT	+1
+0x002ce488	MenuSysTextEditItem_HandleInput	0.000	-	no	0x2ce558	COUNT	-1
+0x002ce488	MenuSysTextEditItem_HandleInput	0.000	-	no	0x2ce5d0	COUNT	+1
+0x002ce488	MenuSysTextEditItem_HandleInput	0.000	-	no	0x2ce7f4	COUNT	+1
+0x002ced78	MenuSysColorChannelItem_HandleInput	0.000	-	no	0x2cee1c	COUNT	+1
+0x002d2790	Serialize_ReadU8	0.000	-	yes	0x2d27ac	COUNT	+1
+0x002d66a0	Avalanche_BakeNodeHistory	0.000	-	no	0x2d6a5c	COUNT	+1
+0x002d66a0	Avalanche_BakeNodeHistory	0.000	-	no	0x2d6ee8	CHANCE	gp+0x97c
+0x002ff5e8	WorldObjFactory_SpringRail	0.000	-	no	0x2ff7fc	SCALE	0.001
+0x00321428	InputParser_ctor	0.000	-	no	0x32149c	COUNT	+1
+0x00326360	InputPreproc_Write	0.000	-	yes	0x326414	COUNT	+1
+0x00326678	InputPreproc_SkipLine	0.000	-	yes	0x3266cc	COUNT	+1
+0x00331e90	OverlapList_GatherObjectsAndInstances	0.000	-	no	0x332004	COUNT	+1
+0x00331e90	OverlapList_GatherObjectsAndInstances	0.000	-	no	0x3321f4	COUNT	+1
+0x00331e90	OverlapList_GatherObjectsAndInstances	0.000	-	no	0x3323bc	COUNT	+1
+0x00331e90	OverlapList_GatherObjectsAndInstances	0.000	-	no	0x332584	COUNT	+1
+0x00331e90	OverlapList_GatherObjectsAndInstances	0.000	-	no	0x33274c	COUNT	+1
+0x00331e90	OverlapList_GatherObjectsAndInstances	0.000	-	no	0x332914	COUNT	+1
+0x00331e90	OverlapList_GatherObjectsAndInstances	0.000	-	no	0x332adc	COUNT	+1
+0x00331e90	OverlapList_GatherObjectsAndInstances	0.000	-	no	0x332ca4	COUNT	+1
+0x0033a3d8	Cell_GatherObjInstRecursive	0.000	-	no	0x33a4dc	COUNT	+1
+0x0033a3d8	Cell_GatherObjInstRecursive	0.000	-	no	0x33a95c	COUNT	+1
+0x0033a3d8	Cell_GatherObjInstRecursive	0.000	-	no	0x33ab34	COUNT	+1
+0x0033a3d8	Cell_GatherObjInstRecursive	0.000	-	no	0x33ad0c	COUNT	+1
+0x0033a3d8	Cell_GatherObjInstRecursive	0.000	-	no	0x33aee4	COUNT	+1
+0x0033a3d8	Cell_GatherObjInstRecursive	0.000	-	no	0x33b0bc	COUNT	+1
+0x0033a3d8	Cell_GatherObjInstRecursive	0.000	-	no	0x33b294	COUNT	+1
+0x0033a3d8	Cell_GatherObjInstRecursive	0.000	-	no	0x33b46c	COUNT	+1
+0x0033a3d8	Cell_GatherObjInstRecursive	0.000	-	no	0x33b644	COUNT	+1
+0x00342880	BoostModifier_v02	0.000	-	yes	0x3428c8	COUNT	-1
+0x00347d90	FlexRail_ctor	0.000	-	no	0x347dfc	COUNT	+1
+0x00362340	IntcTable_Vif1Handler	0.000	-	yes	0x362388	COUNT	+1
+0x00362478	GsPkt_AddAlpha	0.000	-	no	0x3625b0	COUNT	+16
+0x00362478	GsPkt_AddAlpha	0.000	-	no	0x3625b8	COUNT	+1
+0x003627a8	GsPkt_Finish	0.000	-	yes	0x362890	COUNT	+16
+0x003627a8	GsPkt_Finish	0.000	-	yes	0x3628a4	COUNT	+16
+0x00384fd0	LineStrip_AddVertex	0.000	-	yes	0x385098	COUNT	+1
+0x0038ca70	PS2BezierMan_EmitPatchType1	0.000	-	no	0x38ccf4	COUNT	+1
+0x0038ca70	PS2BezierMan_EmitPatchType1	0.000	-	no	0x38cd3c	COUNT	+16
+0x0038ca70	PS2BezierMan_EmitPatchType1	0.000	-	no	0x38cde8	COUNT	+1
+0x0038d168	PS2BezierMan_EmitPatchMatrixPass	0.000	-	no	0x38d3e4	COUNT	+1
+0x0038d168	PS2BezierMan_EmitPatchMatrixPass	0.000	-	no	0x38d430	COUNT	+16
+0x003a1958	cUITextScroll_GrowLines	0.000	-	yes	0x3a198c	COUNT	+1
+0x003b5bd0	SND_MemInitHeap	0.000	-	yes	0x3b5c18	COUNT	+15
+0x003c6040	SND_RemoveServiceCallback	0.000	-	no	0x3c6090	COUNT	-1
+0x003ce7c0	SND_FirDesign	0.000	-	no	0x3cea58	OTHER	0.46 0.54
+0x003ce7c0	SND_FirDesign	0.000	-	no	0x3cea90	OTHER	0.46 0.54
+0x003ce7c0	SND_FirDesign	0.000	-	no	0x3ceadc	STEP	1
+0x003ce7c0	SND_FirDesign	0.000	-	no	0x3ceb3c	LERP	0.46 0.54
+0x003d7b98	SPCH_FlushQueue	0.000	-	no	0x3d7bd8	COUNT	-1
+0x003e3758	EAFile_CdScanDir	0.000	-	no	0x3e38f8	COUNT	+1
+0x003e3758	EAFile_CdScanDir	0.000	-	no	0x3e3924	COUNT	+1
+0x003e4648	EAFile_CdRead	0.000	-	no	0x3e47f0	COUNT	+1
+0x003e9160	LobbyApi_TrimRankList	0.000	-	no	0x3e9210	COUNT	+1
+0x003ee600	Lobby_ListMarkDirty	0.000	-	no	0x3ee60c	COUNT	+1
+0x003eeda0	Lobby_HashAddInt	0.000	-	no	0x3eee60	COUNT	+1
+0x003f17d8	BuddyApi_Process	0.000	-	no	0x3f1c64	COUNT	-1
+0x003fc0e8	SLoginStore_Init	0.000	-	no	0x3fc240	COUNT	-12
+0x00401718	sceCdInit	0.000	-	no	0x4017d8	COUNT	+1
+0x0040d040	libusbkb_KeyBufPush	0.000	-	no	0x40d084	COUNT	+1
+0x0040d040	libusbkb_KeyBufPush	0.000	-	no	0x40d0a8	COUNT	+1
+0x00412a28	__cp_pop_exception	0.000	-	no	0x412a4c	COUNT	-1
+0x00418d08	__malloc_unlock	0.000	-	yes	0x418d20	COUNT	-1
+0x0041c938	vfiprintf_BufferedWrite	0.000	-	no	0x41c9dc	COUNT	+1
+0x0041c938	vfiprintf_BufferedWrite	0.000	-	no	0x41c9e8	COUNT	+1
+0x00424e68	libkernl_TtyRingPop	0.000	-	no	0x424e80	COUNT	-1
+0x00424e68	libkernl_TtyRingPop	0.000	-	no	0x424e90	COUNT	+1

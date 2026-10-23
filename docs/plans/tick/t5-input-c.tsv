@@ -1,0 +1,163 @@
+func	name	max_calls_per_frame	scenario	ported	site	class	constants
+0x0010c258	ComputerActorRider_RollUberTrick	0.005	p1_race_metro_city	no	0x10c2fc	CHANCE	+0xdfc 100
+0x0010c758	ComputerActorRider_InitDifficulty	0.001	p1_race_snow_jam	no	0x10c96c	OTHER	0.1
+0x00117638	RiderMetrix_AddComboPoints	0.006	p3_race_gravitude	no	0x117668	COUNT	+1
+0x00119708	RiderMetrix_AddTrick	0.009	p3_race_gravitude	no	0x11978c	OTHER	0.0001
+0x00119b08	RiderMetrix_OnWipeout	0.002	p1_race_snow_jam	no	0x119b38	COUNT	+1
+0x00119b08	RiderMetrix_OnWipeout	0.002	p1_race_snow_jam	no	0x119b54	COUNT	+1
+0x0011a168	RiderMetrix_AnnounceTrick	0.002	monkey	no	0x11a1e0	OTHER	0.0001
+0x0011a228	RiderMetrix_FinishTrick	0.044	monkey	no	0x11a36c	OTHER	0.0001
+0x0011a228	RiderMetrix_FinishTrick	0.044	monkey	no	0x11a43c	COUNT	+1
+0x0011a228	RiderMetrix_FinishTrick	0.044	monkey	no	0x11a46c	COUNT	+1
+0x0012c678	RiderFinishLineSub_HandleInput	0.052	p2_free_schizophrenia	no	0x12c964	CLAMP	10
+0x00132060	RiderRailslideSub_RotateStance	0.001	p2_race_intimidator	no	0x132098	STEP	1.5708
+0x00132060	RiderRailslideSub_RotateStance	0.001	p2_race_intimidator	no	0x1322f0	STEP	1.5708
+0x00139548	RiderHandplantState_UpdateVelocity	0.009	p3_race_gravitude	no	0x139964	STEP	416.667
+0x0014c488	Bolts_IndexTable4ByChar	0.000	ctm_tp_p3_ride_black_station	yes	0x14c508	COUNT	+1
+0x0015ca50	AlgorithmList_Remove	0.005	p1_free_crows_nest	yes	0x15caf0	COUNT	-1
+0x0016d238	CameraTriggerMan_PushTriggerStack	0.001	p1_free_the_junction	yes	0x16d258	COUNT	+1
+0x00176b10	Default_2ChaseCameraAlgorithm_Update	0.020	p2_free_launch_time	no	0x176bac	CALLSTEP	ChaseCameraAlgorithm_ApplyFollowDistance f16=1.76684
+0x00176b10	Default_2ChaseCameraAlgorithm_Update	0.020	p2_free_launch_time	no	0x176bcc	CALLSTEP	ChaseCameraAlgorithm_ApplyCameraHeight f12=5.74874
+0x00176b10	Default_2ChaseCameraAlgorithm_Update	0.020	p2_free_launch_time	no	0x176bcc	CALLSTEP	ChaseCameraAlgorithm_ApplyCameraHeight f13=27.035
+0x00176b10	Default_2ChaseCameraAlgorithm_Update	0.020	p2_free_launch_time	no	0x176bcc	CALLSTEP	ChaseCameraAlgorithm_ApplyCameraHeight f14=8.82035
+0x00176b10	Default_2ChaseCameraAlgorithm_Update	0.020	p2_free_launch_time	no	0x176bcc	CALLSTEP	ChaseCameraAlgorithm_ApplyCameraHeight f16=0.978392
+0x00176b10	Default_2ChaseCameraAlgorithm_Update	0.020	p2_free_launch_time	no	0x176c18	CALLSTEP	ChaseCameraAlgorithm_ApplyHandplantHold f17=0.98
+0x00176b10	Default_2ChaseCameraAlgorithm_Update	0.020	p2_free_launch_time	no	0x176c18	CALLSTEP	ChaseCameraAlgorithm_ApplyHandplantHold f18=0.96
+0x00176b10	Default_2ChaseCameraAlgorithm_Update	0.020	p2_free_launch_time	no	0x176c38	CALLSTEP	ChaseCameraAlgorithm_ApplyTargetHeight f12=57.041
+0x00176b10	Default_2ChaseCameraAlgorithm_Update	0.020	p2_free_launch_time	no	0x176c38	CALLSTEP	ChaseCameraAlgorithm_ApplyTargetHeight f13=1.55213
+0x00176b10	Default_2ChaseCameraAlgorithm_Update	0.020	p2_free_launch_time	no	0x176c38	CALLSTEP	ChaseCameraAlgorithm_ApplyTargetHeight f14=10.3781
+0x00176b10	Default_2ChaseCameraAlgorithm_Update	0.020	p2_free_launch_time	no	0x176c38	CALLSTEP	ChaseCameraAlgorithm_ApplyTargetHeight f15=10.0665
+0x00176b10	Default_2ChaseCameraAlgorithm_Update	0.020	p2_free_launch_time	no	0x176c38	CALLSTEP	ChaseCameraAlgorithm_ApplyTargetHeight f16=0.924191
+0x00176b10	Default_2ChaseCameraAlgorithm_Update	0.020	p2_free_launch_time	no	0x176ca0	CALLSTEP	ChaseCameraAlgorithm_ApplyRailPullback f15=0.98
+0x00176b10	Default_2ChaseCameraAlgorithm_Update	0.020	p2_free_launch_time	no	0x176cc0	CALLSTEP	ChaseCameraAlgorithm_ApplyLowSpeedHold f13=1.5
+0x00176b10	Default_2ChaseCameraAlgorithm_Update	0.020	p2_free_launch_time	no	0x176cc0	CALLSTEP	ChaseCameraAlgorithm_ApplyLowSpeedHold f14=1.5
+0x00181450	cFEStateCharSelect_HandleInput	0.000	ctm_collectible	no	0x1814c8	OTHER	3
+0x00181450	cFEStateCharSelect_HandleInput	0.000	ctm_collectible	no	0x1814e8	LERP	3 360
+0x00181450	cFEStateCharSelect_HandleInput	0.000	ctm_collectible	no	0x181524	STEP	360
+0x00181450	cFEStateCharSelect_HandleInput	0.000	ctm_collectible	no	0x18158c	CLAMP	-0.1
+0x00181450	cFEStateCharSelect_HandleInput	0.000	ctm_collectible	no	0x1815f8	CLAMP	-0.1
+0x001947f8	cFEStateTitle_TransitionIn	0.091	ctm_collectible	yes	0x194818	COUNT	-1
+0x00194ea8	cFEStateMainMenu_OnWidgetAction	0.002	ctm_collectible	no	0x195220	COUNT	+1
+0x0019d8b8	BoltFile_LoadSlot	0.013	ctm_lodge	no	0x19d9cc	COUNT	+1
+0x001c8678	cFEPopupConfirm_LayoutTitle	0.029	ctm_lodge	no	0x1c8708	STEP	5
+0x001c9038	cFEPopupConfirm_GetTextBoxSizeW	0.029	ctm_lodge	yes	0x1c9160	STEP	3
+0x001c9038	cFEPopupConfirm_GetTextBoxSizeW	0.029	ctm_lodge	yes	0x1c91c4	STEP	3
+0x001f8948	OVScreenPauseFreeride_OnWidgetAction	0.009	monkey	no	0x1f8ac4	COUNT	-1
+0x001f8948	OVScreenPauseFreeride_OnWidgetAction	0.009	monkey	no	0x1f8c58	COUNT	-1
+0x00202828	EventSelect_Update	0.097	ctm_tp_p3_ride_kick_doubt	no	0x202890	STEP	0.1
+0x0021e1b0	HUD_DrawRiderIndicator	0.567	p1_race_happiness	no	0x21e6bc	CALLSTEP	HUD_DrawStretchedPanel f13=1.81018
+0x0021e1b0	HUD_DrawRiderIndicator	0.567	p1_race_happiness	no	0x21e6bc	CALLSTEP	HUD_DrawStretchedPanel f14=1.81018
+0x0021e1b0	HUD_DrawRiderIndicator	0.567	p1_race_happiness	no	0x21e708	CALLSTEP	HUD_DrawStretchedPanel f13=1.81018
+0x0021e1b0	HUD_DrawRiderIndicator	0.567	p1_race_happiness	no	0x21e708	CALLSTEP	HUD_DrawStretchedPanel f14=1.81018
+0x00224df0	cLunoTable_dtor	0.764	monkey	no	0x224e18	COUNT	-1
+0x00232a08	cPreFELoadScreen_Update	0.000	ctm_tp_p3_ride_black_station	no	0x232a4c	STEP	0.0833333
+0x00232a08	cPreFELoadScreen_Update	0.000	ctm_tp_p3_ride_black_station	no	0x232a6c	STEP	0.0833333
+0x00232d18	StartScreen_Update	0.046	ctm_collectible	no	0x232d40	COUNT	+1
+0x00236bb0	GameStatePreRaceMenu_Enter	0.000	monkey	yes	0x236c28	COUNT	+1
+0x0023ec00	MCManager_State06_Check	0.046	ctm_tp_p3_ride_black_station	no	0x23ec30	COUNT	-1
+0x00240130	MCManager_State20_Load	0.001	ctm_collectible	no	0x24014c	COUNT	-1
+0x002535f8	VidEnginePlayer_Close	0.000	ctm_fresh	yes	0x253684	COUNT	-1
+0x0026d420	ReplayCache_ReadFrame	0.216	p1_free_the_junction	yes	0x26d4b0	COUNT	-1
+0x0026d420	ReplayCache_ReadFrame	0.216	p1_free_the_junction	yes	0x26d4bc	COUNT	+1
+0x0026e608	SnapshotList_Remove	0.022	ctm_tp_p3_ride_gravitude	yes	0x26e66c	COUNT	-1
+0x00273418	InSeq_EventTrackFireKey	0.001	ctm_tp_p2_race_ruthless_ridge	yes	0x273460	COUNT	+1
+0x002738f8	InSeq_RampTrackNextKey	0.002	ctm_tp_p2_race_ruthless_ridge	yes	0x273924	COUNT	+1
+0x00276388	ScriptList_Start	0.001	ctm_tp_p3_ride_perpendiculous	no	0x276610	CALLSTEP	cCutSceneTransitionMan_StartIn f12=0.5
+0x00279a70	ScriptEngine_v10	0.001	ctm_tp_p3_ride_perpendiculous	no	0x279cd4	COUNT	+1
+0x0027b5d8	ScriptEngine_OnBankLoaded	0.001	ctm_tp_p1_ride_happiness	yes	0x27b638	COUNT	-1
+0x00282908	ScriptEngine_LaunchPendingProcess	0.001	ctm_tp_p1_ride_happiness	yes	0x2829ac	COUNT	+1
+0x002839a8	ScriptMovie_Start	0.000	ctm_fresh	no	0x283a18	COUNT	+1
+0x0028a728	SndLoadQueue_CancelBank	0.004	ctm_collectible	no	0x28a81c	COUNT	+1
+0x0028a728	SndLoadQueue_CancelBank	0.004	ctm_collectible	no	0x28a840	COUNT	+1
+0x0028a728	SndLoadQueue_CancelBank	0.004	ctm_collectible	no	0x28a864	COUNT	+1
+0x0028a728	SndLoadQueue_CancelBank	0.004	ctm_collectible	no	0x28a8c8	COUNT	+1
+0x0028a728	SndLoadQueue_CancelBank	0.004	ctm_collectible	no	0x28a914	COUNT	+1
+0x0028a728	SndLoadQueue_CancelBank	0.004	ctm_collectible	no	0x28a970	COUNT	+1
+0x0028a728	SndLoadQueue_CancelBank	0.004	ctm_collectible	no	0x28a9bc	COUNT	+1
+0x0028a728	SndLoadQueue_CancelBank	0.004	ctm_collectible	no	0x28aa18	COUNT	+1
+0x0028a728	SndLoadQueue_CancelBank	0.004	ctm_collectible	no	0x28aa64	COUNT	+1
+0x0028a728	SndLoadQueue_CancelBank	0.004	ctm_collectible	no	0x28aac0	COUNT	+1
+0x00290cc0	SSXAudioSystem_PlaySound	0.007	monkey	yes	0x290d04	COUNT	+1
+0x00292508	SSXAudioSystem_StartBoardEdgeLoop	0.005	p3_race_gravitude	no	0x2925c0	COUNT	+1
+0x00296868	SSXAudioSystem_StartWipeoutLoop	0.001	p2_race_intimidator	no	0x296a04	COUNT	+1
+0x00298138	SSXAudioSystem_PlayRiderBumpSound	0.000	p2_race_ruthless_ridge	no	0x2981cc	COUNT	+1
+0x00299368	SSXAudioSystem_PlayBoostEmptySound	0.050	monkey	no	0x2993e8	COUNT	+1
+0x0029a530	SSXAudioSystem_PlayGrabTrickSound	0.003	p3_race_gravitude	no	0x29a584	COUNT	+1
+0x0029c7b0	SSXAudioSystem_OnStartGateOpen	0.000	p1_free_crows_nest	no	0x29c840	COUNT	+1
+0x0029e590	SSXAudioSystem_PlayWipeoutImpactSfx	0.001	p3_free_kick_doubt	no	0x29e620	COUNT	+1
+0x0029f660	SSXAudioSystem_PlayRiderGrunt	0.004	p1_race_metro_city	no	0x29f7e8	CHANCE	6
+0x0029f660	SSXAudioSystem_PlayRiderGrunt	0.004	p1_race_metro_city	no	0x29f8a4	COUNT	+1
+0x002a62f0	CrowdAudio_InstanceRemoveSource	0.002	p3_free_perpendiculous	yes	0x2a633c	COUNT	-1
+0x002a62f0	CrowdAudio_InstanceRemoveSource	0.002	p3_free_perpendiculous	yes	0x2a6354	COUNT	-1
+0x002a62f0	CrowdAudio_InstanceRemoveSource	0.002	p3_free_perpendiculous	yes	0x2a638c	COUNT	-1
+0x002a7678	CrowdAudio_AddSource	0.002	p3_free_perpendiculous	no	0x2a7700	COUNT	-1
+0x002b42b8	MusicPlayer_SelectNextSong	0.002	ctm_collectible	no	0x2b42e8	COUNT	+1
+0x002b42b8	MusicPlayer_SelectNextSong	0.002	ctm_collectible	no	0x2b433c	COUNT	+1
+0x002c48c0	cPS2MemCard_SetState	0.030	ctm_tp_p3_ride_black_station	no	0x2c4e94	COUNT	+1
+0x002d5778	Avalanche_SampleHistory	2.391	p3_free_much_2_much	no	0x2d5e24	COUNT	+1
+0x002dc190	cPS2FogParticleMan_v02	1.185	monkey	no	0x2dc744	COUNT	+1
+0x002f2810	cSplashManager_UpdateDrop	1.567	p3_race_gravitude	no	0x2f2a00	CLAMP	120
+0x002f2810	cSplashManager_UpdateDrop	1.567	p3_race_gravitude	no	0x2f2a08	CLAMP	120
+0x002f3640	cSplashManager_SpawnCrystals	0.006	p2_free_ruthless_jam	no	0x2f3760	COUNT	+1
+0x003097e0	WScriptMan_PostTriggerEvent	0.033	p2_free_ruthless_jam	yes	0x309838	COUNT	+1
+0x00309990	WScriptMan_PostWipeoutEvent	0.002	p1_race_snow_jam	yes	0x3099e8	COUNT	+1
+0x0030db70	RiderModel_AddModelRef	0.005	p1_race_snow_jam	no	0x30db88	COUNT	+1
+0x00314668	AnimSeqList_Clear	0.154	monkey	no	0x3146b8	COUNT	-1
+0x00318448	cBXString_assign	0.001	ctm_collectible	yes	0x3184c8	COUNT	+1
+0x00345798	ParticleModifier_BaseCtor	0.019	p1_free_the_junction	yes	0x3457c0	COUNT	+1
+0x003459a8	ParticleModifier_ctor_2	0.007	p1_free_the_junction	yes	0x345ac4	COUNT	+1
+0x00345e88	DynamicParticleModifier_dtor	0.013	p3_race_the_throne	yes	0x345ed0	COUNT	-1
+0x0034af38	cFlagManager_GroupCtor	0.005	ctm_collectible	yes	0x34af98	COUNT	+1
+0x0034e448	AnimObject_AllocNodeInfo	0.013	p3_race_the_throne	no	0x34e4ac	COUNT	+1
+0x00354850	SyncProcess_ctor	0.070	monkey	no	0x354890	COUNT	+1
+0x00354850	SyncProcess_ctor	0.070	monkey	no	0x3548a0	COUNT	+1
+0x00358140	MultiParticle_RemoveSectionInstances	0.000	ctm_tp_p3_ride_gravitude	yes	0x358178	COUNT	-1
+0x0035aad0	MultiSplineModifier_AddRef	0.010	p1_free_the_junction	no	0x35aadc	COUNT	+1
+0x0035bd70	RailModifier_v01	0.001	ctm_tp_p3_ride_kick_doubt	no	0x35bdd0	COUNT	+1
+0x0035da70	RollerModifier_ctor	0.000	ctm_tp_p3_ride_perpendiculous	no	0x35dbcc	SCALE	0.5
+0x0035da70	RollerModifier_ctor	0.000	ctm_tp_p3_ride_perpendiculous	no	0x35dbd4	SCALE	0.5
+0x0035da70	RollerModifier_ctor	0.000	ctm_tp_p3_ride_perpendiculous	no	0x35dbd8	SCALE	0.5
+0x0035da70	RollerModifier_ctor	0.000	ctm_tp_p3_ride_perpendiculous	no	0x35dbdc	SCALE	0.5
+0x0035da70	RollerModifier_ctor	0.000	ctm_tp_p3_ride_perpendiculous	no	0x35dbe0	SCALE	0.5
+0x0035da70	RollerModifier_ctor	0.000	ctm_tp_p3_ride_perpendiculous	no	0x35dbe4	SCALE	0.5
+0x0035da70	RollerModifier_ctor	0.000	ctm_tp_p3_ride_perpendiculous	no	0x35dbe8	SCALE	0.5
+0x0035da70	RollerModifier_ctor	0.000	ctm_tp_p3_ride_perpendiculous	no	0x35dbec	SCALE	0.5
+0x0035da70	RollerModifier_ctor	0.000	ctm_tp_p3_ride_perpendiculous	no	0x35dc04	SCALE	0.5
+0x00367260	TexMan_AllocBTexInfo	0.043	ctm_tp_p3_ride_black_station	yes	0x3672ac	COUNT	+1
+0x003739d0	BezierPatchCache_Reset	0.000	ctm_collectible	no	0x373a74	COUNT	+1
+0x003739d0	BezierPatchCache_Reset	0.000	ctm_collectible	no	0x373aa4	COUNT	+1
+0x003739d0	BezierPatchCache_Reset	0.000	ctm_collectible	no	0x373ad4	COUNT	+1
+0x003739d0	BezierPatchCache_Reset	0.000	ctm_collectible	no	0x373ba4	COUNT	+1
+0x003739d0	BezierPatchCache_Reset	0.000	ctm_collectible	no	0x373bd4	COUNT	+1
+0x003739d0	BezierPatchCache_Reset	0.000	ctm_collectible	no	0x373c04	COUNT	+1
+0x0037a430	PS2GraphicsMan_EndTriStrip	0.309	p2_race_ruthless_ridge	no	0x37a4b8	COUNT	+1
+0x0037a430	PS2GraphicsMan_EndTriStrip	0.309	p2_race_ruthless_ridge	no	0x37a50c	COUNT	+16
+0x00392d90	FXTrail_AddPoint	0.044	ctm_tp_p2_race_ruthless_ridge	yes	0x392dd8	COUNT	+1
+0x00399970	UIListBox_HandleInput	0.000	monkey	no	0x399a1c	COUNT	-1
+0x00399970	UIListBox_HandleInput	0.000	monkey	no	0x399b88	COUNT	+1
+0x003a13e0	cUITextScroll_HandleInput	0.011	p2_free_launch_time	yes	0x3a1480	COUNT	-1
+0x003a13e0	cUITextScroll_HandleInput	0.011	p2_free_launch_time	yes	0x3a14bc	COUNT	+1
+0x003a13e0	cUITextScroll_HandleInput	0.011	p2_free_launch_time	yes	0x3a1528	COUNT	-1
+0x003a13e0	cUITextScroll_HandleInput	0.011	p2_free_launch_time	yes	0x3a1560	COUNT	+1
+0x003a7790	WorldBlockPool_FreeBlock	0.006	ctm_tp_p3_ride_black_station	yes	0x3a77ac	COUNT	+1
+0x003b0fb8	PS2_SONY_CODEC_INTERNAL_GetPicture	0.021	ctm_fresh	yes	0x3b103c	COUNT	+1
+0x003b5948	SND_RemoveTickCallback	0.000	ctm_tp_p3_ride_black_station	no	0x3b59c0	COUNT	-1
+0x003bb0c8	SND_NextHandleSerial	0.058	monkey	no	0x3bb0e0	COUNT	+1
+0x003bb140	SND_PlayPatchVoices	0.091	monkey	no	0x3bb218	CHANCE	128
+0x003bb140	SND_PlayPatchVoices	0.091	monkey	no	0x3bb2bc	CHANCE	128
+0x003bc5c8	SND_Random	0.093	p2_race_intimidator	yes	0x3bc644	COUNT	+1
+0x003bc5c8	SND_Random	0.093	p2_race_intimidator	yes	0x3bc66c	COUNT	+1
+0x003bc5c8	SND_Random	0.093	p2_race_intimidator	yes	0x3bc67c	COUNT	+1
+0x003bc5c8	SND_Random	0.093	p2_race_intimidator	yes	0x3bc68c	COUNT	+1
+0x003bc5c8	SND_Random	0.093	p2_race_intimidator	yes	0x3bc69c	COUNT	+1
+0x003c6288	SND_ListPushFront	0.013	ctm_tp_p3_ride_much_2_much	yes	0x3c62b4	COUNT	+1
+0x003c6ab8	SNDSTRM_PushBlock	0.354	ctm_tp_p3_ride_much_2_much	no	0x3c6bb4	COUNT	+1
+0x003c6ab8	SNDSTRM_PushBlock	0.354	ctm_tp_p3_ride_much_2_much	no	0x3c6bf0	COUNT	+1
+0x003c6ab8	SNDSTRM_PushBlock	0.354	ctm_tp_p3_ride_much_2_much	no	0x3c6bfc	COUNT	+1
+0x003d1ba8	PATH_RemoveEvent	0.001	ctm_tp_p1_ride_happiness	no	0x3d1d18	COUNT	-1
+0x003d88c8	SPCH_ChooseSample	0.003	p2_free_ruthless_jam	no	0x3d8ad4	COUNT	+1
+0x003d88c8	SPCH_ChooseSample	0.003	p2_free_ruthless_jam	no	0x3d8bcc	COUNT	+1
+0x003d9bd8	SPCH_PlaySentence	0.001	p1_race_snow_jam	no	0x3d9e58	COUNT	+1
+0x00404758	libmpeg_SetupPredBlock	23.509	ctm_fresh	no	0x404b68	COUNT	+1
+0x004265d0	sceSifRpc_GetPacket	0.022	ctm_tp_p3_ride_black_station	no	0x426628	COUNT	+1
+0x004265d0	sceSifRpc_GetPacket	0.022	ctm_tp_p3_ride_black_station	no	0x426634	COUNT	+2
