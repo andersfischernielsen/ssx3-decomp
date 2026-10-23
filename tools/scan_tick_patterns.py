@@ -18,6 +18,11 @@ value computed from the same memory field it stores to plus a constant:
 - COUNT    integer field = field +/- n      (frame counters, but also
            indexes and reference counts)
 
+- CALLSTEP a constant passed to a helper that moves a field by that argument
+           (`Slew(x, t, 0.05)` per tick); the helper is found first
+- CHANCE   a random roll (Rand_*, SND_Random, ...) compared with something
+           (a chance rolled per tick)
+
 A value that also involves 1/60, 1/30, 1/50 (the scanned step entries) or
 the app manager's step is already rate-aware and is not reported. Constants
 0 and +/-1 alone (a sign, a clear) are not reported for floats.
@@ -40,6 +45,9 @@ from scan_framerate import ELF, ROOT, sections  # noqa: E402
 
 RATE_AWARE = {0x3C888889, 0x3D088889, 0x3CA3D70A, 0x3C888CE7}  # 1/60 1/30 1/50 0.01667
 APPMAN = 0x4A5B64
+# Random number sources (their result in v0/f0 is a roll).
+RANDS = {0x2ADF60, 0x303598, 0x3177F0, 0x317810, 0x317830, 0x317890, 0x317A08,
+         0x36D400, 0x3BC5C8, 0x3C72A0, 0x3DB4D0}
 COP1_S = {0: "add", 1: "sub", 2: "mul", 3: "div", 5: "abs", 6: "mov", 7: "neg",
           0x16: "rsqrt", 0x04: "sqrt", 0x18: "adda", 0x19: "suba", 0x1A: "mula",
           0x1C: "madd", 0x1D: "msub", 0x1E: "madda", 0x1F: "msuba",
@@ -117,16 +125,21 @@ def main():
 
     ta, toff, tsize = sec[".text"]
     rows = []
-    for start, end, name in funcs:
+    # Pass 1 finds stepping helpers (a field moved by an argument), pass 2
+    # reports their callers that pass a constant, with everything else.
+    helpers = {}
+    fname = {f[0]: f[2] for f in funcs}
+    for pass_no, (start, end, name) in [(p, f) for p in (1, 2) for f in funcs]:
         if not (ta <= start < ta + tsize):
             continue
         ver = [0] * 32  # GPR write versions (a field is (base, version, off))
         lui = {}  # GPR -> known constant
         app = set()  # GPRs holding the cAppMan pointer
         ints = {}  # GPR -> ("F", key) or ("INC", key, n)
-        fpr = {}  # FPR -> Val
+        fpr = {r: Val(frozenset({("ARG", r)})) for r in range(12, 20)}  # FPR -> Val
         acc = Val()
         found = []
+        hi_rand = False
 
         def wr(r):
             if r:
@@ -143,11 +156,26 @@ def main():
             return ("F", base, ver[base], off)
 
         call_at = None
+        call_to = None
         for a in range(start, end, 4):
             if call_at is not None and a == call_at + 8:
+                if pass_no == 2 and call_to in helpers:
+                    for reg in sorted(helpers[call_to]):
+                        v = fpr.get(reg)
+                        if not v or any(x[0] in ("DT", "F", "G", "ARG") for x in v.leaves):
+                            continue
+                        consts = [x[1] for x in v.leaves if x[0] == "K" and x[1] is not None]
+                        if consts and not any(c in RATE_AWARE for c in consts):
+                            consts = [c for c in consts if f32(c) not in (0.0, 1.0, -1.0)]
+                            if consts:
+                                found.append((call_at, "CALLSTEP", f"{fname.get(call_to, hex(call_to))} f{reg}=" +
+                                              " ".join(f"{f32(c):.6g}" for c in sorted(set(consts)))))
                 fpr = {r: v for r, v in fpr.items() if r >= 20}
                 for r in list(range(1, 16)) + [24, 25, 31]:
                     wr(r)
+                if call_to in RANDS:
+                    fpr[0] = Val(frozenset({("RAND",)}))
+                    ints[2] = ("RAND",)
                 call_at = None
             w = struct.unpack_from("<I", d, toff + a - ta)[0]
             op, rs, rt, imm = w >> 26, (w >> 21) & 31, (w >> 16) & 31, w & 0xFFFF
@@ -169,6 +197,8 @@ def main():
             elif op == 0x09 or op == 0x19:  # addiu/daddiu
                 src = ints.get(rs)
                 wr(rt)
+                if src == ("RAND",):
+                    ints[rt] = src
                 if src and src[0] == "F" and simm and abs(simm) <= 16:
                     ints[rt] = ("INC", src[1], simm)
             elif op in (0x23, 0x21, 0x25, 0x20, 0x24, 0x37):  # lw lh lhu lb lbu ld
@@ -201,6 +231,10 @@ def main():
             elif op == 0x39:  # swc1
                 k = key(rs, simm) if rs != 28 else ("G", (gp + simm) & 0xFFFFFFFF)
                 v = fpr.get(rt)
+                if pass_no == 1 and k and v and k in v.leaves and v.ops & {"add", "sub", "madd", "msub"}:
+                    args = {x[1] for x in v.leaves if x[0] == "ARG"}
+                    if args:
+                        helpers.setdefault(start, set()).update(args)
                 if k and v and k in v.leaves and v.ops:
                     consts = [x[1] for x in v.leaves if x[0] == "K"]
                     if any(x[0] == "DT" for x in v.leaves) or any(c in RATE_AWARE for c in consts if c is not None):
@@ -227,8 +261,11 @@ def main():
                 fmt = rs
                 if fmt == 0x04:  # mtc1 rt -> fs
                     fs = (w >> 11) & 31
-                    fpr[fs] = Val(frozenset({("K", lui[rt] if rt in lui else (0 if rt == 0 else None))})) \
-                        if (rt in lui or rt == 0) else Val()
+                    if ints.get(rt) == ("RAND",):
+                        fpr[fs] = Val(frozenset({("RAND",)}))
+                    else:
+                        fpr[fs] = Val(frozenset({("K", lui[rt] if rt in lui else (0 if rt == 0 else None))})) \
+                            if (rt in lui or rt == 0) else Val()
                 elif fmt == 0x10:  # .s
                     fn = w & 63
                     ft, fs, fd = rt, (w >> 11) & 31, (w >> 6) & 31
@@ -244,17 +281,32 @@ def main():
                         acc = acc.join(a_.join(b_, "mul"), "add")
                     elif o in ("madd", "msub"):
                         fpr[fd] = acc.join(a_.join(b_, "mul"), o)
-                    elif fn >= 0x30:
-                        pass  # compare
+                    elif fn >= 0x30:  # compare: a roll against a constant
+                        for x_, y_ in ((a_, b_), (b_, a_)):
+                            if ("RAND",) in x_.leaves and y_.leaves and ("RAND",) not in y_.leaves:
+                                ks = [f"{f32(l[1]):.6g}" if l[0] == "K" and l[1] is not None else
+                                      (f"gp{l[1] - gp:+#x}" if l[0] == "G" else f"+{l[3]:#x}" if l[0] == "F" else l[0])
+                                      for l in y_.leaves]
+                                found.append((a, "CHANCE", " ".join(ks)))
+                                break
                     else:
                         fpr[fd] = Val()
-                elif fmt == 0x14:  # .w (cvt.s.w)
+                elif fmt == 0x14:  # .w (cvt.s.w): keeps a roll a roll
                     fd, fs = (w >> 6) & 31, (w >> 11) & 31
-                    fpr[fd] = Val()
+                    fpr[fd] = Val(frozenset({("RAND",)})) if ("RAND",) in fpr.get(fs, Val()).leaves else Val()
                 elif fmt == 0x00:  # mfc1 -> rt
                     wr(rt)
             elif (op == 0 and (w & 63) == 0x09) or op == 0x03:  # jalr/jal
                 call_at = a  # clobbers temporaries after the delay slot
+                call_to = (((a + 4) & 0xF0000000) | ((w & 0x3FFFFFF) << 2)) if op == 0x03 else None
+            elif op == 0 and (w & 63) in (0x18, 0x19, 0x1A, 0x1B):  # mult/div: rand % n
+                hi_rand = ("RAND",) in (ints.get(rs), ints.get(rt))
+            elif op == 0 and (w & 63) in (0x10, 0x12):  # mfhi/mflo
+                rd = (w >> 11) & 31
+                r_ = hi_rand
+                wr(rd)
+                if r_:
+                    ints[rd] = ("RAND",)
             elif op in (0x00,) and (w & 63) in (0x21, 0x2D, 0x25, 0x23, 0x2F, 0x24, 0x2A, 0x2B):
                 rd = (w >> 11) & 31
                 # move rd, rs (addu/daddu/or with $zero) keeps the field
@@ -265,7 +317,16 @@ def main():
                     elif rs == 0:
                         src = rt
                 info = (ints.get(src), lui.get(src), src in app) if src is not None else None
+                if (w & 63) in (0x2A, 0x2B):  # slt/sltu: a roll against a constant
+                    for x_, y_ in ((rs, rt), (rt, rs)):
+                        if ints.get(x_) == ("RAND",) and y_ and ints.get(y_) != ("RAND",):
+                            found.append((a, "CHANCE", f"{lui[y_]}" if y_ in lui else "reg"))
+                            break
+                rnd = (w & 63) not in (0x2A, 0x2B) and ("RAND",) in (ints.get(rs), ints.get(rt))
                 wr(rd)
+                if rnd:
+                    ints[rd] = ("RAND",)
+                    info = None
                 if info:
                     if info[0]:
                         ints[rd] = info[0]
@@ -274,15 +335,25 @@ def main():
                     if info[2]:
                         app.add(rd)
             elif op in (0x0A, 0x0B, 0x0C, 0x0E, 0x18, 0x1A, 0x1B):
+                rnd = ints.get(rs) == ("RAND",)
+                if rnd and op in (0x0A, 0x0B):  # slti/sltiu: a roll against a constant
+                    found.append((a, "CHANCE", f"{simm}"))
                 wr(rt)
+                if rnd and op == 0x0C:  # andi: still a roll
+                    ints[rt] = ("RAND",)
             elif op == 0x00 and w != 0:
                 fn = w & 63
                 if fn not in (0x08, 0x09, 0x0C, 0x0D, 0x0F, 0x18, 0x19, 0x1A, 0x1B):
+                    # A roll stays a roll through shifts and arithmetic.
+                    rnd = ("RAND",) in (ints.get(rs), ints.get(rt))
                     wr((w >> 11) & 31)
+                    if rnd:
+                        ints[(w >> 11) & 31] = ("RAND",)
             elif op == 0x1C or op == 0x12:
                 wr((w >> 11) & 31)
-        for a, cls, k in found:
-            rows.append((start, name, a, cls, k))
+        if pass_no == 2:
+            for a, cls, k in found:
+                rows.append((start, name, a, cls, k))
 
     names = {f[0]: f[2] for f in funcs}
     by_func = collections.OrderedDict()
