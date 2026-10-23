@@ -514,14 +514,6 @@ pub fn ui_state_mgr_render(c: &mut Cpu) {
 /// structured loop at 0x39e888.
 pub fn ui_state_update_screens(c: &mut Cpu) {
     const HEAD: u32 = 0x0039_e888;
-    // The UI screens (animations and screen scripts) are authored at 60 fps:
-    // one frame per 60 Hz boundary, whatever the tick rate (always true at
-    // 60, where nothing changes). A frame that is not due returns to the
-    // caller like the guest epilogue (the caller checks `pc == RA`).
-    if !crate::tick::ui_frame_due(c) {
-        c.pc = c.g[RA][0] as u32;
-        return;
-    }
     guest(c, |c| {
         c.cycles += 8;
         let frame = Frame::open(c, 0x20);

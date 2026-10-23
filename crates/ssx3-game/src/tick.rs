@@ -302,12 +302,17 @@ impl Pacer {
     }
 }
 
-/// `Frames per second of the UI (and script) timelines`: the screens advance
-/// one frame per VSync at 60 Hz, and one frame per 60 Hz boundary at a higher
-/// rate, so animations and screen scripts keep their wall-clock speed.
+/// A 60 Hz frame boundary for UI/script timelines authored at 60 fps: true
+/// once per 60 Hz frame at any rate (always at 60).
 ///
 /// [`APPMAN_VSYNC`] is the VSync counter `App_VSyncTick` bumps once per VSync;
-/// it advances 60 times per second at any rate (see [`frame60_due`]).
+/// it advances 60 times per second at any rate.
+///
+/// Use it for a quantity that is authored per 60 Hz frame and cannot be
+/// scaled (an integer step, a scroll in pixels per frame). Do **not** use it
+/// to skip a whole UI screen update: the screens also lay out their widgets,
+/// which must happen every tick (measured: gating `UIState_UpdateScreens` at
+/// 240 Hz wraps the menu description text).
 pub fn ui_frame_due(c: &mut Cpu) -> bool {
     let r = rate(c);
     if r == 60 {
