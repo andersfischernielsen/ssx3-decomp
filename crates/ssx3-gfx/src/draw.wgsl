@@ -31,14 +31,13 @@ struct Batch {
     ta: vec2<f32>,
     // Depth fog: ZMAX + 1 (depth is stored as Z / (ZMAX + 1)).
     zscale: f32,
-    // Flag 1024: the texture is sampled with a blur of this radius (UV).
-    soft: f32,
     // Texture LOD bias (options: texture sharpness).
     lod_bias: f32,
     // Seconds (animated effects: flag 2048, snow glints).
     time: f32,
     pad0: f32,
     pad1: f32,
+    pad2: f32,
 }
 
 @group(0) @binding(0) var<uniform> b: Batch;
@@ -98,13 +97,6 @@ fn alpha_ok(a: f32) -> bool {
     }
 }
 
-const POISSON = array<vec2<f32>, 12>(
-    vec2<f32>(-0.326, -0.406), vec2<f32>(-0.840, -0.074), vec2<f32>(-0.696, 0.457),
-    vec2<f32>(-0.203, 0.621), vec2<f32>(0.962, -0.195), vec2<f32>(0.473, -0.480),
-    vec2<f32>(0.519, 0.767), vec2<f32>(0.185, -0.893), vec2<f32>(0.507, 0.064),
-    vec2<f32>(0.896, 0.412), vec2<f32>(-0.322, -0.933), vec2<f32>(-0.792, -0.598),
-);
-
 fn hash2(p: vec2<f32>) -> f32 {
     let q = fract(p * vec2<f32>(0.1031, 0.1030));
     let r = q + dot(q, q.yx + 33.33);
@@ -151,14 +143,6 @@ fn shade(v: VOut) -> vec4<f32> {
     if ((b.flags & 1u) != 0u) {
         let uv = v.stq.xy / v.stq.z;
         var ts = textureSampleBias(tex, samp, uv, b.lod_bias);
-        if ((b.flags & 1024u) != 0u) {
-            // Soft shadow: a 12-tap Poisson disc.
-            var acc = vec4<f32>(0.0);
-            for (var i = 0; i < 12; i = i + 1) {
-                acc = acc + textureSampleLevel(tex, samp, uv + POISSON[i] * b.soft, 0.0);
-            }
-            ts = acc / 12.0;
-        }
         if ((b.flags & 256u) != 0u) {
             let z = u32(round(textureLoad(zsnap, vec2<i32>(v.pos.xy), 0) * b.zscale));
             ts = textureLoad(tex, vec2<i32>(i32((z >> 8u) & 255u), 0), 0);

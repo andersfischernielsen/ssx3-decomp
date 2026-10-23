@@ -242,8 +242,6 @@ fn lensfx_query_native(c: &mut Cpu) {
         ssx3_ee::s09::f_002ec478__generated(c);
         return;
     }
-    // (The renderer's sun shadows take the sun's direction from it.)
-    ssx3_ps2::frame_sink::note_light(f[4] + f[6] * 0.5, f[5] + f[7] * 0.5, if f[9] < 0.0 { 0 } else { f[9] as u32 });
     let Some(v) = ssx3_ps2::frame_sink::with_depth(|d| lensfx_visibility(&f, d.w, d.h, &d.z)) else {
         ssx3_ee::s09::f_002ec478__generated(c);
         return;
@@ -363,16 +361,12 @@ pub fn aspect_box() -> Option<f32> {
 }
 
 /// The modern graphics options from the settings (F10) or environment:
-/// `SSX3_SHADOW_RES`, `SSX3_SOFT_SHADOWS`, `SSX3_SUN_SHADOWS`, `SSX3_AA`,
-/// `SSX3_MIPMAPS`, `SSX3_LOD_BIAS`, `SSX3_TERRAIN`, `SSX3_AO`, `SSX3_BLOOM`,
-/// `SSX3_GRADE`, `SSX3_SNOW`. Unset: the original look.
+/// `SSX3_AA`, `SSX3_MIPMAPS`, `SSX3_LOD_BIAS`, `SSX3_TERRAIN`, `SSX3_AO`,
+/// `SSX3_BLOOM`, `SSX3_SNOW`. Unset: the original look.
 pub fn gfx_options() -> ssx3_gfx::Options {
     let get = |k: &str| crate::settings::get(k);
     let on = |k: &str| get(k).is_some_and(|v| v != "0");
     ssx3_gfx::Options {
-        shadow_scale: get("SSX3_SHADOW_RES").and_then(|v| v.parse().ok()).map_or(0, |n: u32| n.clamp(1, 8)),
-        soft_shadows: on("SSX3_SOFT_SHADOWS"),
-        sun_shadows: on("SSX3_SUN_SHADOWS"),
         aa: match get("SSX3_AA").as_deref() {
             Some("fxaa") => ssx3_gfx::Aa::Fxaa,
             _ => ssx3_gfx::Aa::Off,
@@ -385,11 +379,6 @@ pub fn gfx_options() -> ssx3_gfx::Options {
             Some("modern") => ssx3_gfx::Bloom::Modern,
             Some("off") => ssx3_gfx::Bloom::Off,
             _ => ssx3_gfx::Bloom::Original,
-        },
-        grade: match get("SSX3_GRADE").as_deref() {
-            Some("vivid") => ssx3_gfx::Grade::Vivid,
-            Some("filmic") => ssx3_gfx::Grade::Filmic,
-            _ => ssx3_gfx::Grade::Original,
         },
         snow: on("SSX3_SNOW"),
     }

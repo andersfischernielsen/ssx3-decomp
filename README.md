@@ -167,7 +167,7 @@ through the native renderer too.
 | `SSX3_FOV=1.2` | Field of view relative to the game's (here 20% wider). |
 | `SSX3_ANISO=16` | Anisotropic filtering, 1 (off) to 16 (default), for textures with mipmaps (texture-pack replacements). |
 | `SSX3_CATCHUP=0` | Turn off catch-up (window; settings "Keep speed when slow", on by default). The window always runs the game on the wall clock at the game rate, whatever the display's refresh rate (a 60 Hz display at a 120 Hz game rate gets two game updates per image). When the host itself is too slow, catch-up queues extra updates per image (at most 4) and keeps the audio device fed from the wall clock; off, the game slows down instead. Replays and headless runs never use it. |
-| `SSX3_SHADOW_RES`, `SSX3_SOFT_SHADOWS`, `SSX3_SUN_SHADOWS`, `SSX3_AA`, `SSX3_MIPMAPS`, `SSX3_LOD_BIAS`, `SSX3_TERRAIN`, `SSX3_DRAW_DIST`, `SSX3_AO`, `SSX3_BLOOM`, `SSX3_GRADE`, `SSX3_SNOW` | Modern graphics options (F10, all off by default): see `docs/plans/modern-graphics.md`. `SSX3_GFX_SHOW=ao\|sun` shows the AO / sun shadow mask. |
+| `SSX3_AA`, `SSX3_MIPMAPS`, `SSX3_LOD_BIAS`, `SSX3_TERRAIN`, `SSX3_DRAW_DIST`, `SSX3_AO`, `SSX3_BLOOM`, `SSX3_SNOW` | Modern graphics options (F10, all off by default): see `docs/plans/modern-graphics.md`. `SSX3_GFX_SHOW=ao` shows the AO mask. |
 | `SSX3_ASPECT=4:3\|16:9\|stretch` | The classic fixed-aspect image (512×448 scaled, letterboxed) instead of following the window. |
 | `SSX3_RENDER_SCALE=2` (up to 8) | N× internal resolution (native renderer; with `SSX3_RENDER=emu SSX3_RENDER_NATIVE=all`, the emulated GS's). |
 | `SSX3_RENDER=shadow` | Both: the native renderer draws next to the emulated GS, which is shown (headless writes `frameNNNNN-gfx.png` too). |

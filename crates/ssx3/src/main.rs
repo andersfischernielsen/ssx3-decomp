@@ -71,16 +71,12 @@ struct App {
 
 /// Settings that are renderer options (`game::gfx_options`).
 const GFX_KEYS: &[&str] = &[
-    "SSX3_SHADOW_RES",
-    "SSX3_SOFT_SHADOWS",
-    "SSX3_SUN_SHADOWS",
     "SSX3_AA",
     "SSX3_MIPMAPS",
     "SSX3_LOD_BIAS",
     "SSX3_TERRAIN",
     "SSX3_AO",
     "SSX3_BLOOM",
-    "SSX3_GRADE",
     "SSX3_SNOW",
 ];
 

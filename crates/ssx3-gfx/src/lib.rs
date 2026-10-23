@@ -27,7 +27,7 @@ pub mod pack;
 mod post;
 pub mod tex;
 
-pub use options::{Aa, Bloom, Grade, Options};
+pub use options::{Aa, Bloom, Options};
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -130,8 +130,6 @@ pub struct Inner {
     pub hud_squeeze: f32,
     /// Modern graphics options (`Options`; the default is the original).
     opts: Options,
-    /// Render targets the rider shadow silhouette is drawn into.
-    shadow_rts: std::collections::HashSet<u32>,
     /// The renderer's own passes (created on first use).
     post: Option<post::Post>,
     /// Seconds since the renderer started (animated effects).
@@ -257,7 +255,6 @@ impl Renderer {
             rt_scale: 1,
             hud_squeeze: 1.0,
             opts: Options::default(),
-            shadow_rts: Default::default(),
             post: None,
             t0: web_time::Instant::now(),
             phase1_end: usize::MAX,
@@ -609,9 +606,6 @@ impl Inner {
     fn rt_fxy(&self, fbp: u32) -> (f32, f32) {
         if Some(fbp) == self.display_fbp {
             self.fxy
-        } else if self.opts.shadow_scale > self.rt_scale && self.shadow_rts.contains(&fbp) {
-            // The rider shadow at its own resolution.
-            (self.opts.shadow_scale as f32, self.opts.shadow_scale as f32)
         } else {
             (self.rt_scale as f32, self.rt_scale as f32)
         }
@@ -747,9 +741,6 @@ impl Inner {
         self.fxy = (pw as f32 / w as f32, ph as f32 / h as f32);
         self.rt_scale = (self.fxy.0.max(self.fxy.1).round() as u32).clamp(1, 8);
         self.ensure_targets(pw, ph);
-        // The rider shadow's targets (their own resolution, soft sampling).
-        let main_fbp = self.gs.main_fbp;
-        self.shadow_rts = self.gs.batches.iter().filter(|b| b.tag.shadow && b.state.target != main_fbp).map(|b| b.state.target).collect();
         self.ensure_rts();
         self.stats.prims += self.gs.prims - p0.0;
         self.stats.dropped += self.gs.dropped - p0.1;
@@ -975,16 +966,6 @@ impl Inner {
                 if date {
                     p.u.flags |= 64 | (((st.ctx.test >> 15) & 1) as u32) << 7;
                 }
-                // The rider shadow sampled with a blur (soft edges).
-                let mut soft = 0.0f32;
-                if opts.soft_shadows {
-                    if let Some(rt) = st.tex.filter(|t| *t != gs::FRAME_TEX && t & gs::RT_TEX != 0 && self.shadow_rts.contains(&(t & !gs::RT_TEX))) {
-                        if let Some(r) = self.gs.rts.get(&(rt & !gs::RT_TEX)) {
-                            p.u.flags |= 1024;
-                            soft = 2.0 / r.w.max(1) as f32;
-                        }
-                    }
-                }
                 // Glints on bright snow (textured terrain).
                 if opts.snow && b.tag.terrain && st.tex.is_some() {
                     p.u.flags |= 2048;
@@ -1019,9 +1000,9 @@ impl Inner {
                     u.ta[0].to_bits(),
                     u.ta[1].to_bits(),
                     u.pad[0].to_bits(),
-                    soft.to_bits(),
                     opts.lod_bias.to_bits(),
                     time.to_bits(),
+                    0,
                     0,
                     0,
                 ];
@@ -1085,17 +1066,10 @@ impl Inner {
         }
         // The renderer's own passes: AO before the game's post passes, the
         // rest before the HUD (or at the end of a frame without them).
-        let hud_post = opts.bloom == Bloom::Modern || opts.grade != Grade::Original || opts.aa != Aa::Off;
-        // The sun: the lens flare's farthest light, else the riders' main
-        // light direction.
-        let flare = ssx3_ps2::frame_sink::take_light();
-        let sun = opts
-            .sun_shadows
-            .then(|| self.gs.cam.and_then(|cam| flare.and_then(|l| post::light_dir(&cam, l)).or(self.gs.light).map(|l| (cam, l))))
-            .flatten();
-        let ao_at = if opts.ao || sun.is_some() { items.iter().position(|it| it.tag.post.is_some() || it.tag.hud).unwrap_or(items.len()) } else { usize::MAX };
+        let hud_post = opts.bloom == Bloom::Modern || opts.aa != Aa::Off;
+        let ao_at = if opts.ao { items.iter().position(|it| it.tag.post.is_some() || it.tag.hud).unwrap_or(items.len()) } else { usize::MAX };
         let hud_at = if hud_post { items.iter().position(|it| it.tag.hud).unwrap_or(items.len()) } else { usize::MAX };
-        if (opts.ao || sun.is_some() || hud_post) && self.post.is_none() {
+        if (opts.ao || hud_post) && self.post.is_none() {
             self.post = Some(post::Post::new(&self.dev));
         }
         if let Some(po) = self.post.as_mut() {
@@ -1181,12 +1155,7 @@ impl Inner {
                 drop(pass);
                 let po = self.post.as_mut().expect("post passes");
                 if k == ao_at {
-                    if opts.ao {
-                        po.ao(&self.dev, &self.queue, &mut enc, &post_frame, self.gs.cam.as_ref(), self.fxy);
-                    }
-                    if let Some((cam, light)) = sun {
-                        po.sun(&self.dev, &self.queue, &mut enc, &post_frame, &cam, light, self.fxy);
-                    }
+                    po.ao(&self.dev, &self.queue, &mut enc, &post_frame, self.gs.cam.as_ref(), self.fxy);
                 }
                 if k == hud_at {
                     po.before_hud(&self.dev, &self.queue, &mut enc, &post_frame, &opts);
@@ -1292,12 +1261,7 @@ impl Inner {
         if ao_at == items.len() || hud_at == items.len() {
             let po = self.post.as_mut().expect("post passes");
             if ao_at == items.len() {
-                if opts.ao {
-                    po.ao(&self.dev, &self.queue, &mut enc, &post_frame, self.gs.cam.as_ref(), self.fxy);
-                }
-                if let Some((cam, light)) = sun {
-                    po.sun(&self.dev, &self.queue, &mut enc, &post_frame, &cam, light, self.fxy);
-                }
+                po.ao(&self.dev, &self.queue, &mut enc, &post_frame, self.gs.cam.as_ref(), self.fxy);
             }
             if hud_at == items.len() {
                 po.before_hud(&self.dev, &self.queue, &mut enc, &post_frame, &opts);
@@ -1784,7 +1748,6 @@ impl Build {
             // The batches' tag: the draw's material (none between draws).
             let m = n.and_then(|n| draws.get(n)).map(|d| d.state.material);
             b.gs.tag = gs::Tag {
-                shadow: m == Some(Material::Shadow),
                 terrain: matches!(m, Some(Material::Bezier1 | Material::Bezier2)),
                 ..Default::default()
             };

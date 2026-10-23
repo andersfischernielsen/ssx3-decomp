@@ -5,20 +5,17 @@
 struct P {
     // Source texel size (1 / source size).
     texel: vec2<f32>,
-    // Pass parameter: the grade mode, the blur direction, ...
-    mode: u32,
+    pad: u32,
     strength: f32,
     dir: vec2<f32>,
     // Depth: the main target's size in pixels.
     size: vec2<f32>,
-    // Sun shadows: world → GS screen (homogeneous) and back, (XYOFFSET/16,
-    // target pixels per GS pixel), (ZMAX + 1, Z per screen z, ray length,
-    // strength), the light direction (world, towards the light).
+    // AO with the terrain camera: world → GS screen (homogeneous) and back,
+    // (XYOFFSET/16, target pixels per GS pixel), (ZMAX + 1, Z per screen z).
     w2s: mat4x4<f32>,
     s2w: mat4x4<f32>,
     off: vec4<f32>,
     zp: vec4<f32>,
-    light: vec4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> p: P;
@@ -144,40 +141,6 @@ fn fs_fxaa(v: VOut) -> @location(0) vec4<f32> {
         uvF.x = uvF.x + off * step;
     }
     return vec4<f32>(tex(uvF), 1.0);
-}
-
-// ---------------------------------------------------------------- grade
-fn aces(x: vec3<f32>) -> vec3<f32> {
-    let a = 2.51;
-    let b = 0.03;
-    let c = 2.43;
-    let d = 0.59;
-    let e = 0.14;
-    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), vec3<f32>(0.0), vec3<f32>(1.0));
-}
-
-@fragment
-fn fs_grade(v: VOut) -> @location(0) vec4<f32> {
-    var c = tex(v.uv);
-    if (p.mode == 1u) {
-        // Vivid: saturation, then a gentle contrast S-curve.
-        let l = luma(c);
-        c = mix(vec3<f32>(l), c, 1.3);
-        c = clamp(c, vec3<f32>(0.0), vec3<f32>(1.0));
-        c = c + (c - 0.5) * 0.12 * (1.0 - abs(c - 0.5) * 2.0);
-    } else if (p.mode == 2u) {
-        // Filmic: in linear light, a filmic curve (soft highlights), slight
-        // warmth, back to the stored encoding.
-        // (Normalised so white stays white: an S-curve, not a brightening.)
-        var lin = pow(max(c, vec3<f32>(0.0)), vec3<f32>(2.2));
-        lin = lin * vec3<f32>(1.03, 1.0, 0.96);
-        let k = 1.2;
-        lin = aces(lin * k) / aces(vec3<f32>(k));
-        c = pow(clamp(lin, vec3<f32>(0.0), vec3<f32>(1.0)), vec3<f32>(1.0 / 2.2));
-        let l = luma(c);
-        c = mix(vec3<f32>(l), c, 1.12);
-    }
-    return vec4<f32>(clamp(c, vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
 }
 
 // ---------------------------------------------------------------- bloom
@@ -359,11 +322,8 @@ fn fs_ao_apply(v: VOut) -> @location(0) vec4<f32> {
     return vec4<f32>(vec3<f32>(a), 1.0);
 }
 
-// ---------------------------------------------------------------- sun
-// Screen-space sun shadows: each pixel's world position from the depth
-// buffer and the terrain camera, a short march towards the light through
-// the depth buffer; a sample behind a nearer surface (within a thickness)
-// is in shadow.
+// ---------------------------------------------------------------- camera
+// The terrain camera's mapping between target pixels and world positions.
 fn to_world(px: vec2<f32>, d: f32) -> vec4<f32> {
     // Target pixel → GS screen (pixels + XYOFFSET), depth → screen z.
     // (The GS samples pixels at integer coordinates, the GPU at centres.)
@@ -379,38 +339,4 @@ fn to_screen(w: vec3<f32>) -> vec4<f32> {
     let h = p.w2s * vec4<f32>(w, 1.0);
     let s = h.xyz / h.w;
     return vec4<f32>((s.x - p.off.x + 0.5) * p.off.z, (s.y - p.off.y + 0.5) * p.off.w, h.w, s.z);
-}
-
-@fragment
-fn fs_sun(v: VOut) -> @location(0) vec4<f32> {
-    let px = vec2<i32>(v.pos.xy);
-    let d = textureLoad(depth, px, 0);
-    if (d <= 1e-6) {
-        return vec4<f32>(1.0);
-    }
-    let wp = to_world(v.pos.xy, d).xyz;
-    let w0 = to_screen(wp).z;
-    let noise = fract(52.9829189 * fract(dot(v.pos.xy, vec2<f32>(0.06711056, 0.00583715))));
-    let steps = 20;
-    var lit = 1.0;
-    for (var i = 1; i <= steps; i = i + 1) {
-        let t = p.zp.z * (f32(i) - noise) / f32(steps);
-        // (A start offset keeps a surface from shadowing itself.)
-        let q = to_screen(wp + p.light.xyz * (t + 0.02 * w0));
-        if (q.z <= 0.0 || q.x < 0.0 || q.y < 0.0 || q.x >= p.size.x || q.y >= p.size.y) {
-            break;
-        }
-        let dq = textureLoad(depth, vec2<i32>(q.xy), 0);
-        if (dq <= 1e-6) {
-            continue;
-        }
-        // The surface there, as view depth.
-        let wq = to_screen(to_world(q.xy, dq).xyz).z;
-        let behind = q.z - wq;
-        if (behind > 0.01 * q.z && behind < p.zp.z * 0.5) {
-            lit = 0.0;
-            break;
-        }
-    }
-    return vec4<f32>(vec3<f32>(1.0 - p.zp.w * (1.0 - lit)), 1.0);
 }

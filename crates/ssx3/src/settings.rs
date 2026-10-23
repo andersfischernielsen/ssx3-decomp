@@ -31,9 +31,6 @@ pub const ITEMS: &[Item] = &[
     Item { key: "SSX3_ANISO", label: "Anisotropic filter", choices: &[("1", "Off"), ("2", "2x"), ("4", "4x"), ("8", "8x"), ("", "16x")], live: true },
     Item { key: "SSX3_FULLSCREEN", label: "Fullscreen", choices: &[("", "Off"), ("1", "On")], live: true },
     // Modern graphics (all off/original by default: the game as it was).
-    Item { key: "SSX3_SHADOW_RES", label: "Shadow resolution", choices: &[("", "Original"), ("2", "2x"), ("4", "4x"), ("8", "8x")], live: true },
-    Item { key: "SSX3_SOFT_SHADOWS", label: "Soft shadows", choices: &[("", "Off"), ("1", "On")], live: true },
-    Item { key: "SSX3_SUN_SHADOWS", label: "Sun shadows", choices: &[("", "Off"), ("1", "On")], live: true },
     Item { key: "SSX3_AA", label: "Anti-aliasing", choices: &[("", "Off"), ("fxaa", "FXAA")], live: true },
     Item { key: "SSX3_MIPMAPS", label: "Texture mipmaps", choices: &[("", "Off"), ("1", "On")], live: true },
     Item { key: "SSX3_LOD_BIAS", label: "Texture sharpness", choices: &[("0.5", "Soft"), ("", "Standard"), ("-0.5", "Sharp"), ("-1", "Sharper")], live: true },
@@ -41,7 +38,6 @@ pub const ITEMS: &[Item] = &[
     Item { key: "SSX3_DRAW_DIST", label: "Rider detail dist.", choices: &[("", "Original"), ("1.5", "1.5x"), ("2", "2x"), ("3", "3x")], live: true },
     Item { key: "SSX3_AO", label: "Ambient occlusion", choices: &[("", "Off"), ("1", "On")], live: true },
     Item { key: "SSX3_BLOOM", label: "Bloom", choices: &[("", "Original"), ("modern", "Modern"), ("off", "Off")], live: true },
-    Item { key: "SSX3_GRADE", label: "Colour", choices: &[("", "Original"), ("vivid", "Vivid"), ("filmic", "Filmic")], live: true },
     Item { key: "SSX3_SNOW", label: "Snow sparkle", choices: &[("", "Off"), ("1", "On")], live: true },
     Item { key: "SSX3_RENDER", label: "Renderer", choices: &[("", "Native (wgpu)"), ("emu", "Emulated GS")], live: false },
     Item { key: "SSX3_SND", label: "Sound", choices: &[("", "Native mixer"), ("iop", "Emulated IOP")], live: false },

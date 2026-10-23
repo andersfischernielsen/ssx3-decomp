@@ -116,8 +116,6 @@ pub struct Cam {
 /// What produced a batch: the draw's material, HUD, a post pass.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Tag {
-    /// The rider shadow silhouette (material `Shadow`).
-    pub shadow: bool,
     /// Bezier terrain (materials `Bezier1`/`Bezier2`).
     pub terrain: bool,
     /// HUD (layers 9 and up).
@@ -263,10 +261,8 @@ pub struct Gs {
     pub hud_squeeze: f32,
     /// The tag of the batches now coming.
     pub tag: Tag,
-    /// This frame's terrain camera and the riders' main light direction
-    /// (world, towards the light: the linear terms of their SH lighting).
+    /// This frame's terrain camera (ambient occlusion).
     pub cam: Option<Cam>,
-    pub light: Option<[f32; 3]>,
     /// CLUTs of this frame's depth-fog passes (see ZFOG_TEX).
     pub fog_cluts: Vec<Upload>,
     /// XYOFFSET_1/2 written: the game sets context 2's once at startup,
@@ -325,7 +321,6 @@ impl Gs {
         self.gpu.sources.clear();
         self.gpu.last_split = None;
         self.cam = None;
-        self.light = None;
         self.queue.clear();
         self.size = size;
         self.main_fbp = fbp;
@@ -914,7 +909,7 @@ impl Gs {
         let nreg = match bits(lo, 60, 4) { 0 => 16, n => n as u32 };
         let vreg = ((call.tag >> 64) >> (4 * (nreg - 1))) as u32 & 0xf;
         u[gpu_params::MISC] = [f(self.fog as f32), base, reuse, vreg];
-        // The terrain camera and the riders' light (renderer options).
+        // The terrain camera (renderer options).
         let fl = |v: [u32; 4]| v.map(f32::from_bits);
         if call.program == ssx3_render::gpu::Program::Bezier && self.cam.is_none() && st.target == self.main_fbp && call.uniforms[7][0] == 1 {
             self.cam = Some(Cam {
@@ -925,18 +920,6 @@ impl Gs {
                 zmax,
                 xyzf: vreg == 4,
             });
-        }
-        if call.program == ssx3_render::gpu::Program::Mat6Skin && self.light.is_none() && call.data.len() > 10 && call.uniforms[0][0] == 0 {
-            // L7..L9 (×255): the irradiance's gradient over the normal.
-            let lum = |q: [u32; 4]| {
-                let v = fl(q);
-                0.3 * v[0] + 0.59 * v[1] + 0.11 * v[2]
-            };
-            let d = [lum(call.data[8]), lum(call.data[9]), lum(call.data[10])];
-            let n = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
-            if n > 1e-3 && n.is_finite() {
-                self.light = Some(d.map(|x| x / n));
-            }
         }
         u[gpu_params::RGBAQ] = [u32::from_le_bytes(self.rgbaq), f(self.q), f(self.s), f(self.t)];
         let gb = GpuBatch {

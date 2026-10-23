@@ -1,39 +1,38 @@
 //! The renderer's own full-screen passes on the 3D image (`options.rs`):
-//! ambient occlusion before the game's post passes, then modern bloom, the
-//! colour grade and FXAA before the HUD. They write colour only: the alpha
+//! ambient occlusion before the game's post passes, then modern bloom and
+//! FXAA before the HUD. They write colour only: the alpha
 //! channel holds the GS's destination alpha, which later draws test and
 //! blend with.
 
 use std::collections::HashMap;
 
-use crate::options::{Aa, Bloom, Grade, Options};
+use crate::options::{Aa, Bloom, Options};
 
 /// Pass uniforms (`P` in post.wgsl).
 #[derive(Clone, Copy, Default)]
 struct U {
     texel: [f32; 2],
-    mode: u32,
+    pad: u32,
     strength: f32,
     dir: [f32; 2],
     size: [f32; 2],
-    /// Sun shadows (`fs_sun`): world → screen, screen → world (columns),
-    /// offsets, depth parameters, light.
+    /// Ambient occlusion with the terrain camera: world → screen, screen →
+    /// world (columns), offsets, depth parameters.
     w2s: [[f32; 4]; 4],
     s2w: [[f32; 4]; 4],
     off: [f32; 4],
     zp: [f32; 4],
-    light: [f32; 4],
 }
 
 /// Uniform buffer size (`P` in post.wgsl).
-const U_BYTES: usize = 208;
+const U_BYTES: usize = 192;
 
 impl U {
     fn bytes(&self) -> Vec<u8> {
         let mut w: Vec<u32> = vec![
             self.texel[0].to_bits(),
             self.texel[1].to_bits(),
-            self.mode,
+            self.pad,
             self.strength.to_bits(),
             self.dir[0].to_bits(),
             self.dir[1].to_bits(),
@@ -43,7 +42,7 @@ impl U {
         for m in [&self.w2s, &self.s2w] {
             w.extend(m.iter().flatten().map(|v| v.to_bits()));
         }
-        for v in [&self.off, &self.zp, &self.light] {
+        for v in [&self.off, &self.zp] {
             w.extend(v.iter().map(|v| v.to_bits()));
         }
         debug_assert_eq!(w.len() * 4, U_BYTES);
@@ -64,7 +63,7 @@ enum Write {
     Multiply,
 }
 
-/// Debug: `SSX3_GFX_SHOW=ao|sun` shows that mask as the image.
+/// Debug: `SSX3_GFX_SHOW=ao` shows the AO mask as the image.
 fn show(which: &str) -> bool {
     static S: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     S.get_or_init(|| std::env::var("SSX3_GFX_SHOW").unwrap_or_default()) == which
@@ -318,7 +317,7 @@ impl Post {
         self.ensure(dev, f.w, f.h);
         // With the terrain camera, exact view depth (else 1 / z).
         let mut u = U { size: [f.w as f32, f.h as f32], strength: 0.75, ..Default::default() };
-        if let Some((w2s, s2w)) = cam.and_then(sun_matrices) {
+        if let Some((w2s, s2w)) = cam.and_then(cam_matrices) {
             let c = cam.unwrap();
             u.w2s = w2s;
             u.s2w = s2w;
@@ -336,36 +335,7 @@ impl Post {
         self.pass(dev, queue, enc, "fs_ao_apply", f.color, w, Some(&v0), None, None, u);
     }
 
-    /// Sun shadows onto the image (before the game's post passes): `cam`
-    /// the terrain camera, `light` the direction towards the light (world),
-    /// `fxy` target pixels per GS pixel.
-    pub fn sun(&mut self, dev: &wgpu::Device, queue: &wgpu::Queue, enc: &mut wgpu::CommandEncoder, f: &Frame, cam: &crate::gs::Cam, light: [f32; 3], fxy: (f32, f32)) {
-        let Some((w2s, s2w)) = sun_matrices(cam) else { return };
-        if show("sun") {
-            eprintln!("[sun] light {light:?} cam {cam:?}");
-        }
-        self.ensure(dev, f.w, f.h);
-        Self::copy(enc, f.depth, f.zsnap);
-        let zv = f.zsnap.create_view(&Default::default());
-        let (a0, a1) = (self.ao[0].clone(), self.ao[1].clone());
-        let (v0, v1) = (a0.create_view(&Default::default()), a1.create_view(&Default::default()));
-        let u = U {
-            size: [f.w as f32, f.h as f32],
-            w2s,
-            s2w,
-            off: [cam.off[0], cam.off[1], fxy.0, fxy.1],
-            zp: [cam.zmax as f32 + 1.0, if cam.xyzf { 1.0 } else { 16.0 }, 1000.0, 0.45],
-            light: [light[0], light[1], light[2], 0.0],
-            ..Default::default()
-        };
-        self.pass(dev, queue, enc, "fs_sun", &a0, Write::All, None, Some(&zv), None, u);
-        self.pass(dev, queue, enc, "fs_ao_blur", &a1, Write::All, Some(&v0), Some(&zv), None, U { dir: [1.0, 0.0], ..u });
-        self.pass(dev, queue, enc, "fs_ao_blur", &a0, Write::All, Some(&v1), Some(&zv), None, U { dir: [0.0, 1.0], ..u });
-        let w = if show("sun") { Write::Rgb } else { Write::Multiply };
-        self.pass(dev, queue, enc, "fs_ao_apply", f.color, w, Some(&v0), None, None, u);
-    }
-
-    /// Modern bloom, the colour grade and FXAA (before the HUD).
+    /// Modern bloom and FXAA (before the HUD).
     pub fn before_hud(&mut self, dev: &wgpu::Device, queue: &wgpu::Queue, enc: &mut wgpu::CommandEncoder, f: &Frame, o: &Options) {
         self.ensure(dev, f.w, f.h);
         let size = [f.w as f32, f.h as f32];
@@ -385,15 +355,6 @@ impl Post {
                 self.pass(dev, queue, enc, "fs_up", &levels[i].0, Write::Add, Some(&views[i + 1]), None, None, U { texel: texel(w, h), size, ..Default::default() });
             }
             self.pass(dev, queue, enc, "fs_bloom_mix", f.color, Write::Rgb, Some(&views[0]), None, Some(&snap), U { strength: 0.2, size, ..Default::default() });
-        }
-        if o.grade != Grade::Original {
-            Self::copy(enc, f.color, f.snapshot);
-            let mode = match o.grade {
-                Grade::Vivid => 1,
-                Grade::Filmic => 2,
-                Grade::Original => 0,
-            };
-            self.pass(dev, queue, enc, "fs_grade", f.color, Write::Rgb, Some(&snap), None, None, U { mode, size, ..Default::default() });
         }
         if o.aa == Aa::Fxaa {
             Self::copy(enc, f.color, f.snapshot);
@@ -429,7 +390,7 @@ fn unproject(inv: &[[f64; 4]; 4], x: f64, y: f64, z: f64) -> [f64; 3] {
 /// WGSL), in world coordinates relative to a point in front of the camera:
 /// the game's world coordinates are large (≈ 10⁵), too large for f32
 /// reconstruction.
-fn sun_matrices(c: &crate::gs::Cam) -> Option<([[f32; 4]; 4], [[f32; 4]; 4])> {
+fn cam_matrices(c: &crate::gs::Cam) -> Option<([[f32; 4]; 4], [[f32; 4]; 4])> {
     let s = screen_matrix(c);
     let inv = invert(s)?;
     let k = if c.xyzf { 1.0 } else { 16.0 };
@@ -447,19 +408,6 @@ fn sun_matrices(c: &crate::gs::Cam) -> Option<([[f32; 4]; 4], [[f32; 4]; 4])> {
     }
     let cols = |a: [[f64; 4]; 4]| -> [[f32; 4]; 4] { std::array::from_fn(|k| std::array::from_fn(|r| a[r][k] as f32)) };
     Some((cols(s2), cols(inv2)))
-}
-
-/// The direction (world, unit) towards a light the lens flare queried at
-/// GS pixel (x, y) and GS depth z: along that pixel's ray, near to far.
-pub fn light_dir(c: &crate::gs::Cam, (x, y, z): (f32, f32, u32)) -> Option<[f32; 3]> {
-    let inv = invert(screen_matrix(c))?;
-    let k = if c.xyzf { 1.0 } else { 16.0 };
-    let (sx, sy) = (x as f64 + c.off[0] as f64, y as f64 + c.off[1] as f64);
-    let far = unproject(&inv, sx, sy, (z.max(1) as f64) / k);
-    let near = unproject(&inv, sx, sy, c.zmax as f64 * 0.99 / k);
-    let d = [far[0] - near[0], far[1] - near[1], far[2] - near[2]];
-    let n = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
-    (n > 1e-9 && n.is_finite()).then(|| d.map(|v| (v / n) as f32))
 }
 
 /// The inverse of a 4×4 matrix (rows), by Gauss-Jordan elimination.
