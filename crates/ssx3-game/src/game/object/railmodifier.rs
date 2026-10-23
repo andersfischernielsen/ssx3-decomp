@@ -1064,6 +1064,21 @@ pub(crate) fn matrix_append(c: &mut Cpu, man: u32, base: u32, new: u32) {
 }
 
 
+/// The scroll velocity (`+0x38`/`+0x3c`, a UV offset per 60 Hz frame) as the
+/// per-tick step at the game's rate: `60 / rate` (exactly 1 at 60, where
+/// nothing changes). The time step itself already follows the rate (it is
+/// `1 / (*(gp+0x2a74)+0x10)`).
+#[inline]
+fn uv_velocity_scale(c: &mut Cpu) -> FpuF32 {
+    let r = crate::tick::rate(c);
+    if r == 60 {
+        FpuF32::ONE
+    } else {
+        FpuF32::from_f32(60.0f32 / r as f32)
+    }
+}
+
+
 /// `void UVScrollModifier_Update(UVScrollModifier* m)` (0x35f7d0): advance
 /// a texture scroll by one frame (1 / the frame rate at `*(gp+0x2a74)+0x10`).
 /// While stopped it waits out the delay; while running it advances the
@@ -1208,8 +1223,12 @@ pub fn uv_scroll_modifier_update(c: &mut Cpu) {
         v1 = mode;
         if mode != 6 {
             c.cycles += 7;
-            let u = m.off(uv::U).read_fpu(c) + m.off(uv::DU).read_fpu(c);
-            let v = m.off(uv::V).read_fpu(c) + m.off(uv::DV).read_fpu(c);
+            // The velocity is authored per 60 Hz frame; at another rate a
+            // tick moves `60/rate` of it, so the texture scrolls at the same
+            // speed in wall time (1.0 and bit-identical at 60).
+            let scale = uv_velocity_scale(c);
+            let u = m.off(uv::U).read_fpu(c) + m.off(uv::DU).read_fpu(c) * scale;
+            let v = m.off(uv::V).read_fpu(c) + m.off(uv::DV).read_fpu(c) * scale;
             m.off(uv::U).write_fpu(c, u);
             m.off(uv::V).write_fpu(c, v);
         } else {
@@ -1247,7 +1266,9 @@ pub fn uv_scroll_modifier_update(c: &mut Cpu) {
                 stack.off(spill_down).write_fpu(c, du_t);
                 (du_t, dv_t)
             };
-            let (step_u, step_v) = (du_t * rate, dv_t * rate);
+            // The ramp's area is a per-60-Hz-frame step too.
+            let scale = uv_velocity_scale(c);
+            let (step_u, step_v) = (du_t * rate * scale, dv_t * rate * scale);
             let v = m.off(uv::V).read_fpu(c) + step_v;
             let u = m.off(uv::U).read_fpu(c) + step_u;
             stack.off(4).write_fpu(c, step_v);
@@ -4760,7 +4781,9 @@ pub(crate) mod tests {
             c.g[GP][0] = GAME_GP as u64;
             let clock = DATA + 0x400;
             c.bus.write32(GAME_GP + 0x2a74, clock);
-            c.bus.write32(clock + 0x10, pick(&mut r, &[30u32, 60, 25]));
+            // The generated body is the reference at the game's own rate;
+            // the per-tick velocity conversion only matches at 60.
+            c.bus.write32(clock + 0x10, 60);
             c.bus.write32(GAME_GP - 0x29cc, f(1.0));
             // 4-aligned, sometimes not 8-aligned (the unaligned velocity store)
             let m = DATA + 4 * (seed % 2);
@@ -4780,6 +4803,54 @@ pub(crate) mod tests {
             c.bus.write32(m + 0x40, (seed % 3 != 0) as u32);
             c.g[A0][0] = sx(m);
         });
+    }
+
+
+    /// The scroll velocity is a UV offset per 60 Hz frame: half a second of
+    /// ticks moves the same offset at 60, 120 and 240 Hz (the time step already
+    /// follows the rate).
+    #[test]
+    fn uv_scroll_speed_follows_the_rate() {
+        let offset = |hz: u32, mode: u32, du: f32| -> f32 {
+            let mut c = crate::difftest::fresh();
+            c.g[GP][0] = GAME_GP as u64;
+            let clock = DATA + 0x400;
+            c.bus.write32(GAME_GP + 0x2a74, clock);
+            c.bus.write32(clock + 0x10, hz);
+            c.bus.write32(GAME_GP - 0x29cc, 1.0f32.to_bits());
+            let m = DATA + 0x800;
+            for off in [0u32, 4, 8, 0xc, 0x10, 0x14, 0x30, 0x34, 0x38, 0x3c, 0x40] {
+                c.bus.write32(m + off, 0);
+            }
+            c.bus.write32(m + 0x8, 10.0f32.to_bits()); // cycle: never ends
+            c.bus.write32(m + 0x0, mode);
+            c.bus.write32(m + 0x38, du.to_bits());
+            c.bus.write32(m + 0x3c, (du * 2.0).to_bits());
+            c.bus.write32(m + 0x40, 1); // running
+            crate::tick::set_for_test(&mut c, hz);
+            let ticks = hz / 2; // half a second
+            for _ in 0..ticks {
+                c.g[A0][0] = m as u64;
+                uv_scroll_modifier_update(&mut c);
+                assert_eq!(c.pc, RET, "{hz}: did not return");
+            }
+            let u = f32::from_bits(c.bus.read32(m + 0x30));
+            let v = f32::from_bits(c.bus.read32(m + 0x34));
+            assert!((v - 2.0 * u).abs() < 1e-3, "{hz}: v {v} vs u {u}");
+            u
+        };
+        let u60 = offset(60, 0, 0.01);
+        assert!((u60 - 0.3).abs() < 1e-4, "60 Hz: {u60}");
+        for hz in [120u32, 240] {
+            let u = offset(hz, 0, 0.01);
+            assert!((u - u60).abs() < 1e-5, "{hz} Hz: {u} vs {u60}");
+        }
+        // The mode-6 ramp (a triangular speed) too.
+        let r60 = offset(60, 6, 0.01);
+        for hz in [120u32, 240] {
+            let r = offset(hz, 6, 0.01);
+            assert!((r - r60).abs() < 1e-3, "ramp {hz} Hz: {r} vs {r60}");
+        }
     }
 
 
