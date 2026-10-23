@@ -32,6 +32,12 @@ fn main() {
         ssx3_ps2::machine::set_realtime(true);
         ssx3_game::tick::Pacer::default()
     });
+    // Test knob: SSX3_UPDATES_PER_VSYNC=N[@F] queues N game updates at every
+    // VSync from frame F on (the catch-up path, deterministic).
+    let forced_updates: Option<(u32, u64)> = std::env::var("SSX3_UPDATES_PER_VSYNC").ok().and_then(|v| {
+        let (n, f) = v.split_once('@').unwrap_or((&v, "0"));
+        Some((n.parse().ok()?, f.parse().ok()?))
+    });
     let started = std::time::Instant::now();
     let shot_every: u64 = args
         .iter()
@@ -105,6 +111,9 @@ fn main() {
         }
         ssx3_ps2::m!(c).sif.pad_buttons = held;
         ssx3_ps2::vu::capture::set_frame(f);
+        if let Some((n, from)) = forced_updates {
+            ssx3_game::tick::set_updates_per_vsync(if f >= from { n } else { 1 });
+        }
         if let Some(k) = catch_up.as_mut() {
             let n = k.per_vsync(started.elapsed().as_secs_f64(), 1.001 / ssx3_ps2::machine::vsync_hz() as f64);
             ssx3_game::tick::set_updates_per_vsync(n);

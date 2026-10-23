@@ -4284,6 +4284,11 @@ pub fn rider_gate_sub_update_launch(c: &mut Cpu) {
             sw(c, at(c, V0, 0x2cc), 0u64);
             c.swc1(0, at(c, V0, 0x2d0));
             c.lwc1(3, r32(c, GP).wrapping_sub(0x7808));
+            // The launch's progress steps 0.015 per 60 Hz tick (not a 1/60
+            // entry: the scan missed it). At 1.0 the rider goes back to
+            // riding; 4x early at 240 Hz that is still in the air off the
+            // gate, where a held stick starts a flip and the landing crashes.
+            crate::game::ai::rider::per_tick_60(c, 3);
             c.lwc1(2, at(c, S0, 0x10));
             c.c_lt_s(1, 2);
             let t = !c.fcc();
@@ -6185,6 +6190,44 @@ pub(crate) use load_state_tests;
                 put_words(c, GATE_RIDER + 0x1b0, &[0]);
             },
         );
+    }
+
+    /// `RiderGateSub_UpdateLaunch` steps the launch's progress (`+0x10`)
+    /// 0.015 per 60 Hz tick: four ticks at 240 Hz move it as far as one at
+    /// 60, so the rider leaves the gate state after the same real time.
+    #[test]
+    fn rider_gate_sub_update_launch_follows_the_rate() {
+        let run = |hz: u32, start: f32| -> f32 {
+            let mut c = crate::difftest::fresh();
+            let _ = base_8(&mut c, 1, 0x12c4_08, 10);
+            c.bus.write32(GATE + 0x14, GATE_RIDER);
+            c.bus.write32(GATE + 0xc, 1.0f32.to_bits());
+            c.bus.write32(GATE_RIDER + 0x77c, GATE_RIDERBASE);
+            c.bus.write32(GATE_RIDER + 0x784, 0);
+            c.bus.write32(GATE_RIDERBASE + 0xde0, 0); // not main state 3: no launch
+            put_words(&mut c, GATE_RIDER + 0x1b0, &[0]);
+            c.bus.write32(GATE + 0x10, start.to_bits());
+            // The game's constants (gp-0x780c..-0x7800: 1.015, 0.015, 0.985,
+            // 0.62).
+            c.g[GP][0] = GAME_GP as u64;
+            for (off, v) in [(0x780cu32, 0x3f81_eb85u32), (0x7808, 0x3c75_c291), (0x7804, 0x3f7c_28f6), (0x7800, 0x3f1e_b852)] {
+                c.bus.write32(GAME_GP.wrapping_sub(off), v);
+            }
+            crate::tick::set_for_test(&mut c, hz);
+            for _ in 0..hz / 60 {
+                c.g[A0][0] = sx(GATE);
+                rider_gate_sub_update_launch(&mut c);
+            }
+            f32::from_bits(c.bus.read32(GATE + 0x10))
+        };
+        for start in [0.31f32, 0.62] {
+            let want = run(60, start);
+            assert!((want - (start + 0.015)).abs() < 1e-6, "60 Hz from {start}: {want}");
+            for hz in [120, 240] {
+                let got = run(hz, start);
+                assert!((got - want).abs() < 1e-5, "{hz} Hz from {start}: {got} vs {want}");
+            }
+        }
     }
 
     /// The dummy world (and its nested objects).
