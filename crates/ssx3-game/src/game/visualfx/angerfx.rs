@@ -27,6 +27,8 @@ use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 pub(crate) use crate::game::visualfx::boardwakefx::p;
 pub(crate) use crate::game::visualfx::boardwakefx::gp;
+use crate::game::ai::rider::per_tick_60;
+use crate::tick;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -494,6 +496,13 @@ pub fn anger_fx_update(c: &mut Cpu) {
                                 c.cycles += 6;
                                 c.lwc1(0, gp(c, -0x3d38)); // 1.1
                                 c.lwc1(3, gp(c, -0x3d34)); // 0.1
+                                if tick::rate(c) != 60 {
+                                    // The fade-in step per tick is 0.1 * 60/rate
+                                    // and the snap band 1 +/- that step (0.9..1.1
+                                    // at 60), so the glow takes the same time.
+                                    per_tick_60(c, 3);
+                                    c.f[0] = (FpuF32::from_f32(1.0) + FpuF32(c.f[3])).0;
+                                }
                                 c.c_lt_s(0, 2);
                                 if c.fcc() {
                                     c.sub_s(1, 2, 3);
@@ -501,6 +510,9 @@ pub fn anger_fx_update(c: &mut Cpu) {
                                 }
                                 c.cycles += 5;
                                 c.lwc1(0, gp(c, -0x3d30)); // 0.9
+                                if tick::rate(c) != 60 {
+                                    c.f[0] = (FpuF32::from_f32(1.0) - FpuF32(c.f[3])).0;
+                                }
                                 c.g[AT][0] = 0x3f80_0000;
                                 c.mtc1(1, 1);
                                 break 'target;
@@ -508,6 +520,8 @@ pub fn anger_fx_update(c: &mut Cpu) {
                             'rise: {
                                 c.cycles += 4;
                                 c.lwc1(3, gp(c, -0x3d2c)); // 0.0666
+                                // The fade-out step: 1/15 * 60/rate per tick.
+                                per_tick_60(c, 3);
                                 c.c_lt_s(3, 2);
                                 let t = !c.fcc();
                                 if !t {
@@ -518,6 +532,10 @@ pub fn anger_fx_update(c: &mut Cpu) {
                             }
                             c.cycles += 2;
                             c.lwc1(0, gp(c, -0x3d28)); // -0.0666
+                            if tick::rate(c) != 60 {
+                                // -step (the snap band below 0).
+                                c.f[0] = c.f[3] ^ 0x8000_0000;
+                            }
                             c.mtc1(0, 1); // f1 = 0
                             break 'target;
                         }
@@ -528,7 +546,13 @@ pub fn anger_fx_update(c: &mut Cpu) {
                         }
                         break 'approach;
                     }
-                    // Fade in the glow, then advance the three counters.
+                    // Fade in the glow, then advance the three counters. The
+                    // pulse counters are frames of 60 Hz colour tables: above
+                    // 60 Hz a running pulse advances once per 60 Hz frame of
+                    // this slot's own clock (always at 60); the starts and
+                    // restarts (level changes) still happen on the tick.
+                    let slot_at = r32(c, S2);
+                    let due = tick::frame60_due(c, slot_at, 0);
                     't20_block: {
                         't20: {
                             c.cycles += 7;
@@ -545,6 +569,9 @@ pub fn anger_fx_update(c: &mut Cpu) {
                                     c.g[V1][0] = c.lw(p(r32(c, S2), anger_slot::T24));
                                     break 't20_block;
                                 }
+                            } else if !due {
+                                c.g[V1][0] = c.lw(p(r32(c, S2), anger_slot::T24));
+                                break 't20_block;
                             }
                         }
                         c.cycles += 6;
@@ -564,6 +591,10 @@ pub fn anger_fx_update(c: &mut Cpu) {
                             let running = (c.g[V1][0] as i64) > 0;
                             c.g[V0][0] = sx(r32(c, V1).wrapping_add(1));
                             if running {
+                                if !due {
+                                    c.g[V0][0] = c.lw(p(r32(c, S2), anger_slot::T28));
+                                    break 't24_block;
+                                }
                                 break 't24;
                             }
                             c.cycles += 3;
@@ -602,6 +633,9 @@ pub fn anger_fx_update(c: &mut Cpu) {
                                     c.g[V0][0] = c.lw(p(r32(c, S2), anger_slot::T20));
                                     break 't28_block;
                                 }
+                            } else if !due && c.g[V1][0] == 0 {
+                                c.g[V0][0] = c.lw(p(r32(c, S2), anger_slot::T20));
+                                break 't28_block;
                             }
                         }
                         c.cycles += 2;
@@ -997,6 +1031,99 @@ pub(crate) mod tests {
             c.bus.write32(gp_at(-0x1f04), DATA + 0x4a00);
             c.g[A0][0] = sx(fx);
         });
+    }
+
+
+    /// One anger slot after `ticks` updates at `hz`: (glow level, the three
+    /// pulse counters). The slot lives at its own address per run (the
+    /// per-slot 60 Hz clock is keyed by it).
+    fn anger_after(hz: u32, ticks: u32, slots: u32) -> (f32, u32, u32, u32) {
+        let mut c = crate::difftest::fresh();
+        let _r = machine(&mut c, 1, 0x2d4c, 0);
+        c.hooks.miss = anger_rider_v;
+        crate::tick::set_for_test(&mut c, hz);
+        let (fx, rider, other, vt, vt2, world, g, players, aggr) = (
+            DATA,
+            DATA + 0x2000,
+            DATA + 0x2400,
+            DATA + 0x3000,
+            DATA + 0x3100,
+            DATA + 0x4000,
+            DATA + 0x4200,
+            DATA + 0x4400,
+            DATA + 0x4800,
+        );
+        // The ramp constants (1.1, 0.1, 0.9, 1/15, -1/15, 0.8).
+        for (off, v) in [
+            (-0x3d38, 1.1f32),
+            (-0x3d34, 0.1),
+            (-0x3d30, 0.9),
+            (-0x3d2c, 1.0 / 15.0),
+            (-0x3d28, -1.0 / 15.0),
+            (-0x3d24, 0.8),
+        ] {
+            c.bus.write32(gp_at(off), v.to_bits());
+        }
+        c.bus.write32(fx, rider);
+        c.bus.write32(fx + anger::SLOTS, slots);
+        c.bus.write32(slots + anger_slot::LEVEL, 0.3f32.to_bits());
+        // A level change on the first tick, all three pulses running.
+        c.bus.write32(slots + anger_slot::ANGER, 99);
+        c.bus.write32(slots + anger_slot::T20, 1);
+        c.bus.write32(slots + anger_slot::T24, 1);
+        c.bus.write32(slots + anger_slot::T28, 1);
+        c.bus.write32(rider + 0x6c0, vt);
+        c.bus.write16(vt + 0x40, 0);
+        c.bus.write32(vt + 0x44, 0x0000_5000);
+        c.bus.write16(vt + 0x38, 0);
+        c.bus.write32(vt + 0x3c, 0x0000_5010);
+        c.bus.write32(other + 0x6c0, vt2);
+        c.bus.write16(vt2 + 0x38, 0);
+        c.bus.write32(vt2 + 0x3c, 0x0000_5020);
+        c.bus.write32(rider + anger_rider::SPECIAL, 0);
+        c.bus.write32(gp_at(-0x848), world);
+        c.bus.write32(world + 0x84, g);
+        c.bus.write32(g + 0x84, players);
+        c.bus.write32(players + 0x10, 1);
+        let (rec, node) = (DATA + 0x5000, DATA + 0x6000);
+        c.bus.write32(players + 4, rec);
+        c.bus.write32(rec + 0xa8, node);
+        c.bus.write32(node + 0x20, DATA + 0x7000);
+        c.bus.write32(DATA + 0x7000 + 4, other);
+        let nptr = DATA + 0x7800;
+        c.bus.write32(g + 0x28, nptr);
+        c.bus.write32(nptr, 0);
+        c.bus.write32(gp_at(-0x1ea4), aggr);
+        c.bus.write32(gp_at(-0x1f3c), DATA + 0x4900);
+        c.bus.write32(gp_at(-0x1f04), DATA + 0x4a00);
+        for _ in 0..ticks {
+            c.g[A0][0] = sx(fx);
+            anger_fx_update(&mut c);
+        }
+        (
+            f32::from_bits(c.bus.read32(slots + anger_slot::LEVEL)),
+            c.bus.read32(slots + anger_slot::T20),
+            c.bus.read32(slots + anger_slot::T24),
+            c.bus.read32(slots + anger_slot::T28),
+        )
+    }
+
+
+    /// The glow ramp and the pulse counters take the same wall-clock time at
+    /// 120 and 240 Hz as at 60.
+    #[test]
+    fn anger_fx_update_follows_the_rate() {
+        for (i, frames) in [2u32, 5, 12].into_iter().enumerate() {
+            let at60 = anger_after(60, frames, DATA + 0x8000 + 0x100 * i as u32);
+            // At 60 the glow level moved and the pulses ran.
+            assert_eq!(at60.1, (1 + frames) % 41, "{frames}: {at60:?}");
+            for (k, hz) in [120u32, 240].into_iter().enumerate() {
+                let slots = DATA + 0x9000 + 0x100 * (4 * i + k) as u32;
+                let at = anger_after(hz, frames * hz / 60, slots);
+                assert_eq!((at.1, at.2, at.3), (at60.1, at60.2, at60.3), "{hz} Hz, {frames}: {at:?} vs {at60:?}");
+                assert!((at.0 - at60.0).abs() < 1e-4, "{hz} Hz, {frames}: level {} vs {}", at.0, at60.0);
+            }
+        }
     }
 
 

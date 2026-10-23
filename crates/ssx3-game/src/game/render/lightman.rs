@@ -442,6 +442,10 @@ pub fn ps2_graphics_man_reset_color_filter(c: &mut Cpu) {
 /// `void VfxScreenTint_TriggerFlash(float intensity)` (0x390ec8): when the
 /// screen tint is active, start a flash: store the scaled intensity and its
 /// integer value in the global tint block.
+///
+/// Tick rate: the thunder delay (`+0x15c4`, ticks counted down by
+/// `VfxScreenTint_Update`) is converted from 60 Hz frames with
+/// `tick::ticks_from_frames60` (exact at 60).
 pub fn vfx_screen_tint_trigger_flash(c: &mut Cpu) {
     c.cycles += 3;
     let gp = c.g[GP][0] as u32;
@@ -455,7 +459,12 @@ pub fn vfx_screen_tint_trigger_flash(c: &mut Cpu) {
         c.f[0] = scaled.0;
         Addr(gp.wrapping_add(0x15ac)).sw(c, 0);
         Addr(gp.wrapping_add(0x15c0)).write_fpu(c, abi::farg(c, 0));
-        let i = scaled.to_i32();
+        // The thunder delay is a count of 60 Hz frames (distance times the
+        // speed of sound per frame): the same wall-clock delay at any rate.
+        let mut i = scaled.to_i32();
+        if i > 0 {
+            i = crate::tick::ticks_from_frames60(c, i as u32) as i32;
+        }
         c.f[1] = i as u32;
         Addr(gp.wrapping_add(0x15c4)).write_fpu(c, FpuF32(c.f[1]));
     }
@@ -867,6 +876,13 @@ pub(crate) fn tint_body(c: &mut Cpu, frame: Frame) -> Result<bool, Unwound> {
         c.lwc1(0, gp_2(c, CHANCE));
         c.mtc1(2, 2);
         c.mul_s(0, 0, 0);
+        // The chance is per 60 Hz frame: at rate r roll with
+        // 1 - (1 - p)^(60/r) per tick (the same strikes per second).
+        let hz = crate::tick::rate(c);
+        if hz != 60 {
+            let p = (f32::from_bits(c.f[0]) as f64).clamp(0.0, 1.0);
+            c.f[0] = ((1.0 - (1.0 - p).powf(60.0 / hz as f64)) as f32).to_bits();
+        }
         c.sub_s(1, 2, 20);
         c.c_lt_s(1, 0);
         if !c.fcc() {
@@ -918,8 +934,15 @@ pub(crate) fn tint_body(c: &mut Cpu, frame: Frame) -> Result<bool, Unwound> {
     }
     if advance {
         c.cycles += 2;
-        c.g[V0][0] = sx((c.g[A3][0] as u32).wrapping_add(1));
-        c.sw(gp_2(c, TIMER), c.g[V0][0]);
+        // The four segment lengths are 60 Hz frames: the flash timer steps
+        // on its own 60 Hz clock (every tick at 60).
+        let t = c.g[A3][0] as u32;
+        let key = gp_2(c, TIMER);
+        if crate::tick::frame60_due(c, key, t) {
+            c.g[V0][0] = sx(t.wrapping_add(1));
+            c.sw(gp_2(c, TIMER), c.g[V0][0]);
+            crate::tick::frame60_ran(c, key, t.wrapping_add(1));
+        }
     }
 
     // The tint level and colours for the current segment of the flash.
@@ -1050,6 +1073,11 @@ pub(crate) fn tint_body(c: &mut Cpu, frame: Frame) -> Result<bool, Unwound> {
 /// roll for a new flash (`RandF() < D_004A4614^2`, with a random duration and
 /// colour) or step the running flash through its four segments, writing the
 /// level (+0x15ac) and colours (+0x15b0..+0x15bc).
+///
+/// Tick rate: the flash timer advances on a 60 Hz clock
+/// (`tick::frame60_due`, keyed by the timer's address), the per-tick strike
+/// chance is `1 - (1 - p)^(60/rate)`, and the thunder countdown (+0x15c4)
+/// counts the ticks `VfxScreenTint_TriggerFlash` converted. Exact at 60.
 ///
 /// Frame 0x40: s0 at +0x20, s1 at +0x10, ra at 0, f20 at +0x30.
 pub fn vfx_screen_tint_update(c: &mut Cpu) {
@@ -2058,5 +2086,125 @@ pub(crate) mod tests {
             w_4(c, 0x1000_8020, 0);
             w_4(c, 0x1000_8030, 0);
         });
+    }
+
+
+    // ------------------------------------------------- screen tint at a rate
+
+    /// A lightning screen tint at rate `hz`: enabled, segments 4/3/2/5
+    /// frames, no hold point, a seeded `Rand_Next` state, idle.
+    fn tint_machine(hz: u32) -> Box<Cpu> {
+        let mut c = crate::difftest::fresh();
+        crate::tick::set_for_test(&mut c, hz);
+        c.g[GP][0] = GAME_GP as u64;
+        let g = GAME_GP;
+        let mut r = Rng(0x0039_0c60);
+        for i in 0..6u32 {
+            c.bus.write32(0x004f_f018 + i * 4, r.next_u32() | 1);
+        }
+        c.bus.write32(g + 0x151c, 1);
+        c.bus.write32(g + 0x15c4, 0);
+        c.bus.write32(g + 0x15a8, 0xffff_ffff);
+        c.bus.write32(g + 0x1520, 0xffff_ffff);
+        c.bus.write32(g + 0x1524, 0);
+        for (off, d) in [(0x1528u32, 4u32), (0x152c, 3), (0x1530, 2), (0x1534, 5)] {
+            c.bus.write32(g + off, d);
+        }
+        for (off, v) in [(0x1538u32, 1.0f32), (0x153c, 0.5), (0x1540, 0.75)] {
+            c.bus.write32(g + off, v.to_bits());
+        }
+        c
+    }
+
+    fn tint_tick(c: &mut Cpu) {
+        c.g[SP][0] = STACK as u64;
+        c.g[RA][0] = TEST_RA as u64;
+        vfx_screen_tint_update(c);
+        assert_eq!(c.pc, TEST_RA, "update did not return");
+    }
+
+    /// A flash from its start (timer 0) at rate `hz`: (timer, level) after
+    /// each update until the timer is back to idle.
+    fn flash_at(hz: u32) -> Vec<(u32, u32)> {
+        let mut c = tint_machine(hz);
+        c.bus.write32(GAME_GP + 0x15a8, 0);
+        let mut out = Vec::new();
+        for _ in 0..1000 {
+            tint_tick(&mut c);
+            let timer = c.bus.read32(GAME_GP + 0x15a8);
+            out.push((timer, c.bus.read32(GAME_GP + 0x15ac)));
+            if timer == 0xffff_ffff {
+                return out;
+            }
+        }
+        panic!("{hz} Hz: the flash never ended");
+    }
+
+    /// The flash runs through its four segments in the same wall-clock time
+    /// at every rate (its timer steps on a 60 Hz clock): the state after
+    /// 60 Hz update i is the state after update (i - 1) * r / 60 + 1 at r.
+    #[test]
+    fn vfx_screen_tint_flash_follows_the_rate() {
+        let at60 = flash_at(60);
+        assert_eq!(at60.len(), 15);
+        for hz in [120u32, 240] {
+            let q = (hz / 60) as usize;
+            let at = flash_at(hz);
+            assert_eq!(at.len(), (at60.len() - 1) * q + 1, "{hz} Hz: flash length");
+            for (i, e) in at60.iter().enumerate() {
+                assert_eq!(at[i * q], *e, "{hz} Hz: 60 Hz update {}", i + 1);
+            }
+        }
+    }
+
+    /// The thunder follows the lightning after the same wall-clock delay:
+    /// `VfxScreenTint_TriggerFlash` stores r/60 times the 60 Hz tick count.
+    #[test]
+    fn vfx_screen_tint_thunder_delay_follows_the_rate() {
+        let delay = |hz: u32, intensity: f32| {
+            let mut c = tint_machine(hz);
+            c.bus.write32(GAME_GP - 0x2698, 0.001_807_228_9f32.to_bits());
+            c.f[12] = intensity.to_bits();
+            c.g[RA][0] = TEST_RA as u64;
+            vfx_screen_tint_trigger_flash(&mut c);
+            assert_eq!(c.pc, TEST_RA);
+            c.bus.read32(GAME_GP + 0x15c4)
+        };
+        for intensity in [2000.0f32, 50_000.0, 199_999.0] {
+            let d60 = delay(60, intensity);
+            assert!(d60 > 0);
+            for hz in [120u32, 240] {
+                assert_eq!(delay(hz, intensity), d60 * hz / 60, "{hz} Hz, {intensity}");
+            }
+        }
+    }
+
+    /// Strikes per second while idle (chance 0.2: p = 0.04 per 60 Hz frame)
+    /// over 100 s of updates at rate `hz`, forcing the tint back to idle after
+    /// each update.
+    fn strikes_at(hz: u32) -> u32 {
+        let mut c = tint_machine(hz);
+        c.bus.write32(GAME_GP + 0x1524, 0.2f32.to_bits());
+        let mut n = 0;
+        for _ in 0..100 * hz {
+            c.bus.write32(GAME_GP + 0x15a8, 0xffff_ffff);
+            tint_tick(&mut c);
+            if c.bus.read32(GAME_GP + 0x15a8) == 0 {
+                n += 1;
+            }
+        }
+        n
+    }
+
+    /// The random strike chance is per 60 Hz frame: as many strikes per
+    /// second at every rate (about 240 in 100 s; 25% tolerance).
+    #[test]
+    fn vfx_screen_tint_strike_chance_follows_the_rate() {
+        let n60 = strikes_at(60) as f64;
+        assert!((170.0..310.0).contains(&n60), "60 Hz: {n60} strikes");
+        for hz in [120u32, 240] {
+            let n = strikes_at(hz) as f64;
+            assert!((n / n60 - 1.0).abs() < 0.25, "{hz} Hz: {n} strikes vs {n60} at 60");
+        }
     }
 }

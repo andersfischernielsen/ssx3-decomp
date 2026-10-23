@@ -64,6 +64,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0027_5dd8, scriptlist_add, "ScriptList_Add"),
     (0x0027_6998, script_list_get_entry_type, "ScriptList_GetEntryType"),
     (0x0027_6b98, script_list_get_state, "ScriptList_GetState"),
+    (0x0027_6cc8, script_list_update, "ScriptList_Update"),
     (0x0027_7060, script_list_can_skip, "ScriptList_CanSkip"),
     (0x0027_70c0, script_list_is_current_skippable, "ScriptList_IsCurrentSkippable"),
     (0x0027_71c8, scriptlist_is_playing_script, "ScriptList_IsPlayingScript"),
@@ -2113,6 +2114,335 @@ pub fn script_engine_dtor(c: &mut Cpu) {
     return;
 }
 
+// ---------------------------------------------------------------------------
+// Script list update (tick rate).
+
+/// The callees of [`script_list_update`].
+mod update_callee {
+    use super::{ee, Callee};
+    pub(super) const POLL_LOADING: Callee = Callee { addr: 0x0027_7778, f: ee::s07::ScriptList_PollLoading };
+    pub(super) const START: Callee = Callee { addr: 0x0027_6388, f: ee::s07::ScriptList_Start };
+    pub(super) const CMD_QUEUE_AT: Callee = Callee { addr: 0x0028_3d70, f: ee::s07::ScriptCmdQueue_At };
+    pub(super) const IS_MOVIE_ENTRY: Callee = Callee { addr: 0x0027_7dd8, f: ee::s07::ScriptList_IsMovieEntry };
+    pub(super) const RESUME_PROCESS: Callee = Callee { addr: 0x0028_2720, f: ee::s07::ScriptEngine_ResumeProcess };
+    pub(super) const MOVIE_START: Callee = Callee { addr: 0x0028_39a8, f: ee::s07::ScriptMovie_Start };
+    pub(super) const GET_PROCESS_STATE: Callee = Callee { addr: 0x0028_2798, f: ee::s07::ScriptEngine_GetProcessState };
+    pub(super) const IS_PROCESS_FINISHED: Callee = Callee { addr: 0x0028_2838, f: ee::s07::ScriptEngine_IsProcessFinished };
+    pub(super) const SET_PAUSED: Callee = Callee { addr: 0x0027_7c08, f: ee::s07::ScriptList_SetPaused };
+    pub(super) const NEXT_ENTRY: Callee = Callee { addr: 0x0027_7838, f: ee::s07::ScriptList_NextEntry };
+    pub(super) const TRY_ADVANCE: Callee = Callee { addr: 0x0027_7800, f: ee::s07::ScriptList_TryAdvance };
+    pub(super) const MOVIE_GET_ID: Callee = Callee { addr: 0x0028_3bb8, f: ee::s07::ScriptMovie_GetId };
+    pub(super) const START_TRANSITION: Callee = Callee { addr: 0x0027_7980, f: ee::s07::ScriptList_StartTransition };
+}
+
+/// `GameApp_GetPlayer(app, n)` (through the function table).
+const APP_GET_PLAYER: u32 = 0x0023_0698;
+/// The player's wake effect stop (through the function table).
+const WAKE_FX_STOP: u32 = 0x002e_4578;
+
+/// Script list fields.
+mod slf {
+    /// 1 loading, 2 ready, 3 playing.
+    pub const STATE: u32 = 0xa4;
+    pub const PAUSED: u32 = 0xa8;
+    pub const RESUME_PENDING: u32 = 0xac;
+    pub const TRANSITION: u32 = 0xb0;
+    pub const START_PENDING: u32 = 0xb4;
+    /// 60 Hz frames before the paused entry (script or movie) resumes:
+    /// the transition's fade-in + hold (`ScriptList_StartTransition`,
+    /// `ScriptList_Start`).
+    pub const RESUME_WAIT: u32 = 0xb8;
+    pub const NEXT: u32 = 0xbc;
+    pub const NESTED_PAUSE: u32 = 0xc4;
+    /// 60 Hz frames before a skipped entry advances (`ScriptList_SkipCurrent`
+    /// sets 1).
+    pub const SKIP_WAIT: u32 = 0xc8;
+}
+
+/// One update of a countdown that counts 60 Hz frames (`lw; beqz; addiu -1;
+/// sw` in the original): at 60 it goes down by 1 when not 0, as the original;
+/// above 60 only on a 60 Hz frame of its own (`tick::frame60_due`, keyed by
+/// the field's address), so the wait lasts the same wall time. Returns the
+/// value before (None when it was 0) and leaves `v0` = the value minus 1, as
+/// the original's delay slot does.
+fn countdown60(c: &mut Cpu, field: u32) -> Option<u32> {
+    let v = Addr(field).lw(c);
+    c.g[V0][0] = sx((v as u32).wrapping_sub(1));
+    if v == 0 {
+        return None;
+    }
+    let v = v as u32;
+    let next = if crate::tick::frame60_due(c, field, v) { v.wrapping_sub(1) } else { v };
+    c.cycles += 2;
+    Addr(field).sw(c, sx(next));
+    crate::tick::frame60_ran(c, field, next);
+    Some(next)
+}
+
+/// `void ScriptList_Update(ScriptList* self)` (0x276cc8): one update of a
+/// script list. While loading (state 1) it polls the loader; a pending start
+/// (+0xb4) starts the list. While playing (state 3, not nested-paused):
+/// during a transition (+0xb0) the resume wait (+0xb8) runs down and then
+/// the paused script resumes (or the movie starts); a paused list (+0xa8)
+/// waits for its next entry to be ready and moves on; else the skip wait
+/// (+0xc8) runs down (ending the transition and advancing), or the list
+/// advances when the current entry's script has finished or its movie ended.
+///
+/// Both waits count 60 Hz frames ([`countdown60`]): at another game rate they
+/// last the same wall time (the fade-in + hold the transition shows).
+pub fn script_list_update(c: &mut Cpu) {
+    use update_callee as callee;
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x40);
+        c.g[V0][0] = 1;
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x10);
+        frame.save_ra(c, 0);
+        let this = r32(c, S0);
+        let at = |off: u32| Addr(this.wrapping_add(off));
+        c.g[V1][0] = at(slf::STATE).lw(c);
+        let loading = c.g[V1][0] == c.g[V0][0];
+        c.g[V0][0] = 2;
+        if loading {
+            c.cycles += 4;
+            callee::POLL_LOADING.call(c, 0x0027_6cf8)?;
+            frame.restore(c, S0, 0x30);
+            return script_list_update_leave(c, frame);
+        }
+        c.cycles += 2;
+        if c.g[V1][0] == c.g[V0][0] {
+            // Ready: start the list when asked (+0xb4: 1 = from the top).
+            c.cycles += 3;
+            c.g[A1][0] = at(slf::START_PENDING).lw(c);
+            let pending = c.g[A1][0] != 0;
+            c.g[A1][0] ^= 1;
+            if pending {
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = (c.g[A1][0] < 1) as u64;
+                c.g[A2][0] = 0;
+                callee::START.call(c, 0x0027_6d24)?;
+                at(slf::START_PENDING).sw(c, 0);
+            }
+            c.cycles += 1;
+        }
+        c.g[V1][0] = at(slf::STATE).lw(c);
+        c.cycles += 3;
+        c.g[V0][0] = 3;
+        if c.g[V1][0] != c.g[V0][0] {
+            frame.restore(c, S0, 0x30);
+            return script_list_update_leave(c, frame);
+        }
+        c.cycles += 3;
+        c.g[V0][0] = at(slf::NESTED_PAUSE).lw(c);
+        if c.g[V0][0] != 0 {
+            frame.restore(c, S0, 0x30);
+            return script_list_update_leave(c, frame);
+        }
+        c.cycles += 3;
+        c.g[V0][0] = at(slf::TRANSITION).lw(c);
+        if c.g[V0][0] != 0 {
+            // A transition: the resume wait runs down, then the paused entry
+            // resumes.
+            c.cycles += 12;
+            c.g[A0][0] = sx(this.wrapping_add(0xc));
+            c.g[A1][0] = 0;
+            callee::CMD_QUEUE_AT.call(c, 0x0027_6d5c)?;
+            c.g[S1][0] = c.g[V0][0];
+            c.g[A1][0] = 0;
+            c.g[V0][0] = Addr(gw(c, -0x848)).lw(c);
+            c.g[A0][0] = Addr(r32(c, V0)).off(0x84).lw(c);
+            call_ptr(c, APP_GET_PLAYER, 0x0027_6d70)?;
+            c.g[S2][0] = c.g[V0][0];
+            let mut charge = true;
+            if countdown60(c, this.wrapping_add(slf::RESUME_WAIT)) == Some(0) {
+                c.cycles += 3;
+                c.g[V0][0] = at(slf::RESUME_PENDING).lw(c);
+                c.g[A0][0] = c.g[S0][0];
+                if c.g[V0][0] == 0 {
+                    return script_list_update_advance(c, frame);
+                }
+                c.cycles += 4;
+                c.g[A1][0] = c.g[S1][0];
+                callee::IS_MOVIE_ENTRY.call(c, 0x0027_6d9c)?;
+                c.g[A0][0] = at(0).lw(c);
+                if c.g[V0][0] != 0 {
+                    c.cycles += 2;
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x500));
+                    callee::MOVIE_START.call(c, 0x0027_6dc0)?;
+                } else {
+                    c.cycles += 5;
+                    c.g[A1][0] = Addr(r32(c, S1)).off(0xc).lw(c);
+                    callee::RESUME_PROCESS.call(c, 0x0027_6db0)?;
+                    charge = false;
+                }
+            }
+            if charge {
+                c.cycles += 1;
+            }
+            // The player's effect done and nothing to wait for: the
+            // transition is over.
+            c.g[V0][0] = Addr(r32(c, S2)).off(0x44).lw(c);
+            c.cycles += 2;
+            if c.g[V0][0] == 0 {
+                c.cycles += 3;
+                c.g[V0][0] = at(slf::RESUME_WAIT).lw(c);
+                if c.g[V0][0] == 0 {
+                    c.cycles += 3;
+                    at(slf::RESUME_PENDING).sw(c, 0);
+                    at(slf::TRANSITION).sw(c, 0);
+                }
+            }
+        }
+        c.g[V0][0] = at(slf::PAUSED).lw(c);
+        c.cycles += 2;
+        let paused = c.g[V0][0] != 0;
+        c.g[S2][0] = sx(this.wrapping_add(0xc));
+        if paused {
+            // Paused: move on once the next entry is ready.
+            c.cycles += 9;
+            c.g[A1][0] = at(slf::NEXT).lw(c);
+            c.g[A0][0] = c.g[S2][0];
+            callee::CMD_QUEUE_AT.call(c, 0x0027_6df8)?;
+            c.g[S1][0] = c.g[V0][0];
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[S1][0];
+            callee::IS_MOVIE_ENTRY.call(c, 0x0027_6e08)?;
+            if c.g[V0][0] != 0 {
+                // A movie is ready when it has an id.
+                c.g[V0][0] = Addr(r32(c, S1)).off(0xc).lw(c);
+                c.cycles += 2;
+                c.g[V0][0] = !c.g[V0][0];
+                c.g[V0][0] = sx((c.g[V0][0] as u32) >> 31);
+            } else {
+                // A script when its process is ready (state 2).
+                c.cycles += 9;
+                c.g[A1][0] = at(slf::NEXT).lw(c);
+                c.g[A0][0] = c.g[S2][0];
+                callee::CMD_QUEUE_AT.call(c, 0x0027_6e1c)?;
+                c.g[A1][0] = Addr(r32(c, V0)).off(0xc).lw(c);
+                c.g[A0][0] = at(0).lw(c);
+                callee::GET_PROCESS_STATE.call(c, 0x0027_6e28)?;
+                c.g[V0][0] ^= 2;
+                c.g[V0][0] = (c.g[V0][0] < 1) as u64;
+            }
+            c.cycles += 2;
+            let ready = c.g[V0][0] != 0;
+            c.g[A1][0] = 0;
+            if !ready {
+                c.cycles += 1;
+                frame.restore(c, S0, 0x30);
+                return script_list_update_leave(c, frame);
+            }
+            c.cycles += 7;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A2][0] = 1;
+            callee::SET_PAUSED.call(c, 0x0027_6e50)?;
+            c.g[A0][0] = c.g[S0][0];
+            callee::NEXT_ENTRY.call(c, 0x0027_6e58)?;
+            frame.restore(c, S0, 0x30);
+            return script_list_update_leave(c, frame);
+        }
+        c.cycles += 3;
+        if countdown60(c, this.wrapping_add(slf::SKIP_WAIT)) == Some(0) {
+            // A skip ran out: end the transition, advance.
+            c.cycles += 3;
+            c.g[V0][0] = at(slf::TRANSITION).lw(c);
+            let transition = c.g[V0][0] != 0;
+            c.g[V0][0] = Addr(gw(c, -0x848)).lw(c);
+            if transition {
+                c.cycles += 8;
+                c.g[A1][0] = 0;
+                c.g[A0][0] = Addr(r32(c, V0)).off(0x84).lw(c);
+                call_ptr(c, APP_GET_PLAYER, 0x0027_6e8c)?;
+                c.g[A0][0] = c.g[V0][0];
+                call_ptr(c, WAKE_FX_STOP, 0x0027_6e94)?;
+                at(slf::RESUME_PENDING).sw(c, 0);
+                at(slf::TRANSITION).sw(c, 0);
+                at(slf::RESUME_WAIT).sw(c, 0);
+            }
+            return script_list_update_advance(c, frame);
+        }
+        // The current entry: advance once its script finished or its movie
+        // has an id (then the transition starts).
+        c.cycles += 10;
+        c.g[A0][0] = sx(this.wrapping_add(0xc));
+        c.g[A1][0] = 0;
+        callee::CMD_QUEUE_AT.call(c, 0x0027_6ebc)?;
+        c.g[S2][0] = 0;
+        c.g[S1][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S1][0];
+        callee::IS_MOVIE_ENTRY.call(c, 0x0027_6ed0)?;
+        let movie = c.g[V0][0] != 0;
+        c.g[A0][0] = at(0).lw(c);
+        if movie {
+            c.cycles += 4;
+            c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x500));
+            callee::MOVIE_GET_ID.call(c, 0x0027_6f10)?;
+            let id = c.g[V0][0] != 0;
+            c.g[A0][0] = c.g[S0][0];
+            if id {
+                c.cycles += 2;
+                c.g[S2][0] = 1;
+                callee::START_TRANSITION.call(c, 0x0027_6f20)?;
+            }
+        } else {
+            c.cycles += 5;
+            c.g[A1][0] = Addr(r32(c, S1)).off(0xc).lw(c);
+            callee::GET_PROCESS_STATE.call(c, 0x0027_6ee0)?;
+            c.g[V1][0] = 2;
+            if c.g[V0][0] == c.g[V1][0] {
+                c.g[S2][0] = 1;
+            } else {
+                c.cycles += 5;
+                c.g[A1][0] = Addr(r32(c, S1)).off(0xc).lw(c);
+                c.g[A0][0] = at(0).lw(c);
+                callee::IS_PROCESS_FINISHED.call(c, 0x0027_6ef8)?;
+                if c.g[V0][0] != 0 {
+                    c.cycles += 2;
+                    c.g[S2][0] = 1;
+                }
+            }
+        }
+        c.cycles += 2;
+        if c.g[S2][0] == 0 {
+            frame.restore(c, S0, 0x30);
+            return script_list_update_leave(c, frame);
+        }
+        c.cycles += 2;
+        c.g[A0][0] = c.g[S0][0];
+        callee::TRY_ADVANCE.call(c, 0x0027_6f30)?;
+        c.cycles += 1;
+        frame.restore(c, S0, 0x30);
+        script_list_update_leave(c, frame)
+    })
+}
+
+/// [`script_list_update`]: `ScriptList_TryAdvance(self)` (a0 = self) and
+/// leave (0x276ea0).
+fn script_list_update_advance(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 4;
+    c.g[A0][0] = c.g[S0][0];
+    update_callee::TRY_ADVANCE.call(c, 0x0027_6ea8)?;
+    frame.restore(c, S0, 0x30);
+    script_list_update_leave(c, frame)
+}
+
+/// [`script_list_update`]'s epilogue (0x276f34; s0 already restored).
+fn script_list_update_leave(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 5;
+    frame.restore(c, S1, 0x20);
+    frame.restore(c, S2, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2692,5 +3022,237 @@ pub(crate) mod tests {
             // slot destructor loop only decrements.
             c.bus.write32(ENGINE + 0x910, 0);
         });
+    }
+
+
+    // ------------------------------------------------------------------
+    // Script list update.
+
+    const SL_LIST: u32 = DATA + 0x100;
+    const SL_ENGINE: u32 = DATA + 0x1000;
+    const SL_INSEQ: u32 = DATA + 0x3000;
+    const SL_MOVIE: u32 = DATA + 0x3800;
+    const SL_WORLD: u32 = DATA + 0x5000;
+    const SL_APP: u32 = DATA + 0x5100;
+    const SL_PLAYER: u32 = DATA + 0x5200;
+    const SL_TABLE: u32 = DATA + 0x5400;
+
+    /// The shape of a [`script_list_fixture`].
+    #[derive(Clone, Copy)]
+    struct SlShape {
+        state: u32,
+        start_pending: u32,
+        nested: u32,
+        transition: u32,
+        resume_wait: u32,
+        resume_pending: u32,
+        paused: u32,
+        next: u32,
+        skip_wait: u32,
+        /// The engine's movie playing (`*p` = an id, active): every callee
+        /// that would stop it (`ScriptList_NextEntry`) is kept off by a
+        /// pausing next entry (+0xbc = 1, a movie without an id).
+        movie_playing: bool,
+        /// The player's effect (+0x44) running.
+        player_fx: u32,
+        /// The current entry is a movie (else a script).
+        head_movie: bool,
+        head_movie_id: u32,
+        /// The script process (id -1, the record at engine+0x29c): present,
+        /// its state (never 1, which launches) and its sequence's state.
+        proc_present: u32,
+        proc_state: u32,
+        inseq_state: u32,
+    }
+
+    /// A script list at [`SL_LIST`] with a three-entry queue, its engine
+    /// (one script process record, id -1, and the movie player at +0x500),
+    /// the world's app with the player and an empty UI state table. Scripts
+    /// in the queue have id -1, so popping them stops nothing, and an idle
+    /// movie player (`p` = 0) makes starting and stopping movies no-ops.
+    fn script_list_fixture(c: &mut Cpu, r: &mut Rng, s: SlShape) {
+        clear(c, SL_LIST, 0x40);
+        clear(c, SL_ENGINE, 0x180);
+        clear(c, SL_INSEQ, 0x20);
+        clear(c, SL_MOVIE, 0x10);
+        clear(c, SL_WORLD, 0x200);
+        clear(c, SL_TABLE, 0x20);
+        w(c, GAME_GP.wrapping_sub(0x848), SL_WORLD);
+        w(c, GAME_GP.wrapping_sub(0x84c), SL_ENGINE);
+        w(c, SL_WORLD + 0x84, SL_APP);
+        w(c, SL_APP + 0x5c, SL_PLAYER);
+        w(c, SL_APP + 0x48, SL_TABLE);
+        w(c, SL_PLAYER + 0x44, s.player_fx);
+        w(c, SL_PLAYER + 0x6c, u32::MAX);
+        // The process record of id -1.
+        let rec = SL_ENGINE + 0x29c;
+        w(c, rec, SL_INSEQ);
+        w(c, rec + 4, s.proc_state);
+        w(c, rec + 0x20, s.proc_present);
+        w(c, SL_INSEQ + 0x20, s.inseq_state);
+        w(c, SL_INSEQ + 0x2c, r.next_u32() % 3);
+        // The movie player.
+        if s.movie_playing {
+            w(c, SL_ENGINE + 0x500, SL_MOVIE);
+            w(c, SL_ENGINE + 0x504, 1);
+            w(c, SL_MOVIE, 7);
+        }
+        // The list.
+        let l = SL_LIST;
+        w(c, l, SL_ENGINE);
+        w(c, l + 8, r.next_u32() % 4);
+        let fields = [
+            (0xa4, s.state),
+            (0xa8, s.paused),
+            (0xac, s.resume_pending),
+            (0xb0, s.transition),
+            (0xb4, s.start_pending),
+            (0xb8, s.resume_wait),
+            (0xbc, s.next),
+            (0xc4, s.nested),
+            (0xc8, s.skip_wait),
+        ];
+        for (off, v) in fields {
+            w(c, l + off, v);
+        }
+        // The queue: three entries from a random read slot; the second is a
+        // movie without an id (it pauses the list when it is next), the third
+        // a movie with one.
+        let q = l + 0xc;
+        let read = r.next_u32() % 5;
+        w(c, q + 0x8c, read);
+        w(c, q + 0x90, (read + 3) % 5);
+        w(c, q + 0x94, 0);
+        let entries = [
+            if s.head_movie { (29 + r.next_u32() % 4, s.head_movie_id) } else { (r.next_u32() % 29, u32::MAX) },
+            (30, u32::MAX),
+            (31, 2),
+        ];
+        for (i, (kind, id)) in entries.into_iter().enumerate() {
+            let e = q + ((read + i as u32) % 5) * 0x1c;
+            w(c, e, kind);
+            w(c, e + 8, r.next_u32() % 16);
+            w(c, e + 0xc, id);
+        }
+        c.g[A0][0] = sx(l);
+    }
+
+    /// The shape for `seed`: every branch of `ScriptList_Update` with callees
+    /// that stay on short paths.
+    fn script_list_shape(seed: u32, r: &mut Rng) -> SlShape {
+        let k = seed / 6;
+        let mut s = SlShape {
+            state: 3,
+            start_pending: 0,
+            nested: 0,
+            transition: 0,
+            resume_wait: 0,
+            resume_pending: 0,
+            paused: 0,
+            next: u32::MAX,
+            skip_wait: 0,
+            movie_playing: false,
+            player_fx: r.next_u32() % 2,
+            head_movie: k % 2 == 0,
+            head_movie_id: [0, 1, u32::MAX][(k / 2 % 3) as usize],
+            proc_present: (k % 7 != 0) as u32,
+            proc_state: [0, 2, 3, 4, 5][(k % 5) as usize],
+            inseq_state: [0, 3, 4][(k % 3) as usize],
+        };
+        match seed % 6 {
+            // Loading.
+            0 => s.state = 1,
+            // Ready, maybe started (the current entry is a movie, so the
+            // start only switches the state).
+            1 => {
+                s.state = 2;
+                s.start_pending = k % 3;
+                s.head_movie = true;
+            }
+            // Not playing, or nested-paused.
+            2 => match k % 3 {
+                0 => s.state = 0,
+                1 => s.state = 4,
+                _ => s.nested = 1,
+            },
+            // Playing.
+            _ => {
+                let m = seed / 3;
+                s.movie_playing = m % 3 == 0;
+                s.transition = if s.movie_playing { 1 } else { (m / 3) % 2 };
+                s.resume_wait = [0, 1, 1, 2, 5][(m % 5) as usize];
+                s.resume_pending = (m / 5) % 2;
+                s.skip_wait = [0, 1, 3][(m / 2 % 3) as usize];
+                if s.movie_playing {
+                    s.player_fx = 1;
+                    s.next = 1;
+                } else {
+                    s.paused = (m / 7) % 2;
+                    s.next = if s.paused != 0 { 0 } else { [u32::MAX, 0][(m % 2) as usize] };
+                }
+            }
+        }
+        s
+    }
+
+    #[test]
+    fn script_list_update_matches() {
+        check(ee::s07::f_00276cc8__generated, script_list_update, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x276cc8, 0);
+            let s = script_list_shape(seed, &mut r);
+            script_list_fixture(c, &mut r, s);
+        });
+    }
+
+    /// Updates of a playing list until the countdown at `field` (+0xb8 the
+    /// resume wait, +0xc8 the skip wait) of `frames` 60 Hz frames runs out,
+    /// at game rate `hz`.
+    fn script_list_wait_updates(hz: u32, field: u32, frames: u32) -> u32 {
+        let mut c = crate::difftest::fresh();
+        let c = &mut *c;
+        let mut r = machine(c, 3, 0x276cc8, 0);
+        let s = SlShape {
+            state: 3,
+            start_pending: 0,
+            nested: 0,
+            transition: (field == 0xb8) as u32,
+            resume_wait: if field == 0xb8 { frames } else { 0 },
+            resume_pending: 1,
+            paused: 0,
+            next: u32::MAX,
+            skip_wait: if field == 0xc8 { frames } else { 0 },
+            movie_playing: false,
+            player_fx: 1,
+            head_movie: false,
+            head_movie_id: 0,
+            proc_present: 1,
+            proc_state: 3,
+            inseq_state: 0,
+        };
+        script_list_fixture(c, &mut r, s);
+        crate::tick::set_for_test(c, hz);
+        let mut updates = 0;
+        while c.bus.read32(SL_LIST + field) != 0 {
+            updates += 1;
+            assert!(updates < 1000);
+            c.g[A0][0] = sx(SL_LIST);
+            script_list_update(c);
+            assert_eq!(c.pc, TEST_RA, "{hz} Hz: update {updates} did not return");
+        }
+        updates
+    }
+
+    /// The resume and skip waits count 60 Hz frames: a 30-frame wait runs
+    /// out after 30 updates at 60 Hz and after the same time at 120 / 240 Hz
+    /// (its first frame on the first update, then one per `rate/60`).
+    #[test]
+    fn script_list_update_waits_follow_the_rate() {
+        for field in [0xb8u32, 0xc8] {
+            assert_eq!(script_list_wait_updates(60, field, 30), 30, "{field:#x}");
+            for hz in [120u32, 240] {
+                let q = hz / 60;
+                assert_eq!(script_list_wait_updates(hz, field, 30), 30 * q - (q - 1), "{field:#x} at {hz} Hz");
+            }
+        }
     }
 }

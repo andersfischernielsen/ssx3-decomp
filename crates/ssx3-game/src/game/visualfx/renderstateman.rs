@@ -27,6 +27,7 @@ use crate::call::Unwound;
 use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::call;
+use crate::tick;
 pub(crate) use crate::game::visualfx::boardwakefx::GFX_MAN;
 pub(crate) use crate::game::visualfx::boardwakefx::GS_TOP;
 pub(crate) use crate::game::visualfx::boardwakefx::RECORD;
@@ -737,13 +738,28 @@ pub(crate) fn air_build_second(c: &mut Cpu, frame: Frame) -> Flow {
     c.sq(2, p(sp(c), 0x40));
     c.sq(2, p(r32(c, V1), 0x10));
     call_ptr(c, 0x0012_98c8, 0x002e_f820)?;
+    let ai_frame = r32(c, V0);
     c.g[V0][0] &= 1;
-    if c.g[V0][0] != 0 {
+    let skip = if tick::rate(c) == 60 { c.g[V0][0] != 0 } else { !air_ring_due(c, ai_frame) };
+    if skip {
         c.g[V0][0] = Addr(r32(c, S0)).lw(c);
         air_length(c, frame)
     } else {
         air_step(c, frame)
     }
+}
+
+
+/// Above 60 Hz: whether the air streamer records a point this tick. The
+/// original records on even AI frames (ticks), every other 60 Hz frame: 30
+/// per second. At rate `r` the AI frame `n` is 60 Hz frame `n * 60 / r`;
+/// record on the tick that frame starts, when it is even, so the 25 points
+/// cover the same 0.83 s at any rate.
+pub(crate) fn air_ring_due(c: &mut Cpu, ai_frame: u32) -> bool {
+    let r = tick::rate(c) as u64;
+    let frame60 = |n: u32| n as u64 * 60 / r;
+    let now = frame60(ai_frame);
+    now != frame60(ai_frame.wrapping_sub(1)) && now % 2 == 0
 }
 
 
@@ -805,6 +821,13 @@ pub(crate) fn air_copy(c: &mut Cpu, frame: Frame) -> Flow {
 /// 0x2ef894: `Approach(count, 2)` — the slot count jumps by two when it is
 /// long enough, else falls back to the negative side (0x2ef8a4).
 pub(crate) fn air_approach_count(c: &mut Cpu, frame: Frame) -> Flow {
+    // The fade after landing: two points per 60 Hz frame of this streamer's
+    // clock (every tick at 60); between those frames the count holds.
+    let fx = r32(c, S0);
+    if !tick::frame60_due(c, fx, 0) {
+        c.g[V1][0] = c.g[A0][0];
+        return air_store_count(c, frame);
+    }
     c.cycles += 4;
     c.g[V0][0] = 2;
     let over = 2i64 < c.g[A0][0] as i64;
@@ -862,6 +885,9 @@ pub(crate) fn air_load_owner(c: &mut Cpu, frame: Frame) -> Flow {
 pub(crate) fn air_length(c: &mut Cpu, frame: Frame) -> Flow {
     c.cycles += 19;
     c.lwc1(2, gp(c, -0x393c));
+    // The scroll per tick is speed * (0.01 / 60) (a folded constant the
+    // `.lit4` patch does not see): * 60/rate above 60.
+    crate::game::ai::rider::per_tick_60(c, 2);
     c.lqc2(3, p(r32(c, V0), 0x1e0));
     c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
     c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
@@ -1797,6 +1823,70 @@ pub(crate) mod tests {
             c.pc = 0x002e_f6d0;
             c.g[A0][0] = sx(fx);
         });
+    }
+
+
+    /// The air streamer after `ticks` updates at `hz` (the AI frame counter
+    /// stepping once per tick): (head, count, texture start). `fx` is a
+    /// fresh address per run (the 60 Hz clock is keyed by it).
+    fn air_after(hz: u32, ticks: u32, fx: u32, airborne: bool) -> (u32, u32, f32) {
+        let mut c = crate::difftest::fresh();
+        let _r = machine(&mut c, 1, 0x2ef6d1, 0);
+        crate::tick::set_for_test(&mut c, hz);
+        let (world, man, ctx) = (DATA + 0x100, DATA + 0x200, DATA + 0x300);
+        put_world(&mut c, world, man, ctx);
+        let owner = DATA + 0x1000;
+        let state = DATA + 0x1400;
+        c.bus.write32(owner + 0x77c, state);
+        c.bus.write32(state + 0xde0, if airborne { 1 } else { 0 });
+        c.bus.write32(owner + 0x780, DATA + 0x1800);
+        put_vec(&mut c, owner + 0x1e0, [100.0f32.to_bits(), 0, 0, 0]);
+        // 0.01/60, the executable's value.
+        put_words(&mut c, GAME_GP - 0x393c, &[0x392e_c33e]);
+        c.bus.write32(fx, owner);
+        c.bus.write32(fx + air_streamer::RING, DATA + 0x2000);
+        c.bus.write32(fx + air_streamer::HEAD, 0);
+        c.bus.write32(fx + air_streamer::COUNT, if airborne { 0 } else { 20 });
+        c.bus.write32(fx + air_streamer::LEN, 25);
+        c.bus.write32(fx + air_streamer::START, 0.5f32.to_bits());
+        for t in 0..ticks {
+            c.bus.write32(ctx + 8, t);
+            c.g[A0][0] = sx(fx);
+            c.pc = 0x002e_f6d0;
+            c_air_streamer_fx_update(&mut c);
+        }
+        (
+            c.bus.read32(fx + air_streamer::HEAD),
+            c.bus.read32(fx + air_streamer::COUNT),
+            f32::from_bits(c.bus.read32(fx + air_streamer::START)),
+        )
+    }
+
+
+    /// The air streamer records 30 points per second, fades two points per
+    /// 60 Hz frame after landing and scrolls at the same speed at 120 and
+    /// 240 Hz as at 60.
+    #[test]
+    fn c_air_streamer_fx_update_follows_the_rate() {
+        let mut fx = DATA + 0x8000;
+        for airborne in [true, false] {
+            for frames in [3u32, 8] {
+                let at60 = air_after(60, frames, fx, airborne);
+                fx += 0x100;
+                if airborne {
+                    assert_eq!((at60.0, at60.1), ((frames + 1) / 2, (frames + 1) / 2), "{at60:?}");
+                } else {
+                    assert_eq!(at60.1, 20 - 2 * frames, "{at60:?}");
+                }
+                for hz in [120u32, 240] {
+                    let at = air_after(hz, frames * hz / 60, fx, airborne);
+                    fx += 0x100;
+                    assert_eq!((at.0, at.1), (at60.0, at60.1), "{hz} Hz {airborne} {frames}: {at:?} vs {at60:?}");
+                    let d = (at.2 - at60.2).abs();
+                    assert!(d.min((1.0 - d).abs()) < 1e-4, "{hz} Hz {airborne} {frames}: start {} vs {}", at.2, at60.2);
+                }
+            }
+        }
     }
 
 

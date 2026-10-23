@@ -80,6 +80,7 @@ pub(crate) use crate::game::ai::computer::sd;
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0027_42e0, inseq_channel_get_block_payload, "InSeq_ChannelGetBlockPayload"),
+    (0x0027_8720, script_engine_update, "ScriptEngine_Update"),
     (0x0027_89e0, script_engine_stop_lists, "ScriptEngine_StopLists"),
     (0x0027_8a10, script_engine_set_locator_table, "ScriptEngine_SetLocatorTable"),
     (0x0027_8a58, script_engine_clear_locator_table, "ScriptEngine_ClearLocatorTable"),
@@ -7101,6 +7102,320 @@ pub fn script_engine_queue_intro_scripts(c: &mut Cpu) {
     return;
 }
 
+// ---------------------------------------------------------------------------
+// Script engine update (tick rate).
+
+/// The callees of [`script_engine_update`].
+mod engine_update_callee {
+    use super::{ee, Callee};
+    pub(super) const LIST_UPDATE: Callee = Callee { addr: 0x0027_6cc8, f: ee::s07::ScriptList_Update };
+    pub(super) const UPDATE_PROCESSES: Callee = Callee { addr: 0x0028_20b0, f: ee::s07::ScriptEngine_UpdateProcesses };
+    pub(super) const MOVIE_UPDATE: Callee = Callee { addr: 0x0028_3aa0, f: ee::s07::ScriptMovie_Update };
+    pub(super) const VIEW_UPDATE: Callee = Callee { addr: 0x0028_1100, f: ee::s07::ScriptViewObj_Update };
+    pub(super) const AUDIO_UPDATE: Callee = Callee { addr: 0x0028_0640, f: ee::s07::ScriptAudioObj_UpdateSounds };
+    pub(super) const CAN_SKIP: Callee = Callee { addr: 0x0027_7060, f: ee::s07::ScriptList_CanSkip };
+    pub(super) const GET_STATE: Callee = Callee { addr: 0x0027_6b98, f: ee::s07::ScriptList_GetState };
+    pub(super) const EXIT_SCRIPT_MODE: Callee = Callee { addr: 0x0027_bf90, f: ee::s07::ScriptEngine_ExitScriptMode };
+    pub(super) const IS_PAUSED: Callee = Callee { addr: 0x0027_7298, f: ee::s07::ScriptList_IsPaused };
+    pub(super) const SKIP_CURRENT: Callee = Callee { addr: 0x0027_6f48, f: ee::s07::ScriptList_SkipCurrent };
+}
+
+/// `bool InputBinding_EvalBool(binding, id)` (through the function table).
+const INPUT_EVAL_BOOL: u32 = 0x0032_0c48;
+/// The skip button's input id.
+const INPUT_SKIP: u64 = 0x6f;
+/// `GetHashValue32(name)`, the UI state stack lookup, the HUD flag set/clear
+/// (through the function table).
+const HASH_VALUE32: u32 = 0x0031_7670;
+const UI_STATE_FIND: u32 = 0x0039_f9d8;
+const HUD_FLAG_SET: u32 = 0x001f_36c0;
+const HUD_FLAG_CLEAR: u32 = 0x001f_36d8;
+
+/// Script engine fields.
+const ENGINE_LISTS_A: u32 = 0x54c;
+const ENGINE_LISTS_B: u32 = 0x624;
+const ENGINE_ACTIVE_LIST: u32 = 0x550;
+/// Updates (60 Hz frames) before a running script may be skipped
+/// (`GameStateEventSelect_Update` sets 30 so the press that started the
+/// event cannot skip its intro).
+const ENGINE_SKIP_DELAY: u32 = 0x554;
+
+/// Where [`script_engine_update`] continues (its loop heads are resume
+/// points of the original's dispatcher: an event at a back edge may unwind
+/// the thread there).
+#[derive(Clone, Copy)]
+enum EngineStage {
+    /// 0x278750: the two lists at +0x54c (s1 = offset, s0 = count left).
+    ListsA,
+    /// 0x278778: the two lists at +0x624.
+    ListsB,
+    /// 0x2787a8: the two view objects at +0x6d0 (s0 = object, s1 = count left).
+    Views,
+    /// 0x278810: the riders' skip buttons (s0 = rider slot, s1 = index,
+    /// s3 = count, s4 = the active list).
+    Riders,
+    /// 0x278850: the active list's state, the HUD flag.
+    State,
+}
+
+/// `void ScriptEngine_Update(ScriptEngine* self)` (0x278720): one update of
+/// the script engine: its four script lists, the processes, the movie, the
+/// two view objects and the script sounds; then, while a list is active
+/// (+0x550 != 2), a rider pressing skip skips its current entry (once the
+/// skip delay is over), the engine leaves script mode when the list stopped
+/// playing, and the HUD flag follows the list's pause. The skip delay
+/// (+0x554) counts down 60 Hz frames: above 60 Hz one per 60 Hz frame
+/// (`tick::frame60_due`), so it lasts the same wall time.
+pub fn script_engine_update(c: &mut Cpu) {
+    use engine_update_callee as callee;
+    const FRAME: Frame = Frame { size: 0x70 };
+    guest(c, |c| {
+        let mut stage = match c.pc {
+            0x0027_8720 => {
+                c.cycles += 12;
+                let f = Frame::open(c, 0x70);
+                f.save(c, S0, 0x60);
+                f.save(c, S1, 0x50);
+                c.g[S0][0] = 1;
+                f.save(c, S2, 0x40);
+                c.g[S1][0] = 0;
+                f.save(c, S3, 0x30);
+                c.g[S2][0] = c.g[A0][0];
+                f.save(c, S4, 0x20);
+                f.save(c, S5, 0x10);
+                f.save_ra(c, 0);
+                EngineStage::ListsA
+            }
+            0x0027_8750 => EngineStage::ListsA,
+            0x0027_8778 => EngineStage::ListsB,
+            0x0027_87a8 => EngineStage::Views,
+            0x0027_8810 => EngineStage::Riders,
+            0x0027_8850 => EngineStage::State,
+            pc => {
+                c.jump_out(pc, 0x0027_8720, 0x0027_8914);
+                return Ok(());
+            }
+        };
+        loop {
+            stage = match stage {
+                EngineStage::ListsA | EngineStage::ListsB => {
+                    let (lists, head, ret) = match stage {
+                        EngineStage::ListsA => (ENGINE_LISTS_A, 0x0027_8750, 0x0027_8760),
+                        _ => (ENGINE_LISTS_B, 0x0027_8778, 0x0027_8788),
+                    };
+                    loop {
+                        c.cycles += 6;
+                        c.g[A0][0] = Addr(r32(c, S2).wrapping_add(lists)).lw(c);
+                        c.g[S0][0] = sx(r32(c, S0).wrapping_sub(1));
+                        c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, S1)));
+                        callee::LIST_UPDATE.call(c, ret)?;
+                        let more = (c.g[S0][0] as i64) >= 0;
+                        c.g[S1][0] = sx(r32(c, S1).wrapping_add(0xcc));
+                        if !more {
+                            break;
+                        }
+                        if back_edge_unwinds(c, head) {
+                            return Ok(());
+                        }
+                    }
+                    if let EngineStage::ListsA = stage {
+                        c.cycles += 4;
+                        c.g[S3][0] = sx(r32(c, S2).wrapping_add(0x500));
+                        c.g[S4][0] = sx(r32(c, S2).wrapping_add(0x92c));
+                        c.g[S1][0] = 0;
+                        c.g[S0][0] = 1;
+                        EngineStage::ListsB
+                    } else {
+                        c.cycles += 6;
+                        c.g[A0][0] = c.g[S2][0];
+                        c.g[S0][0] = sx(r32(c, S2).wrapping_add(0x6d0));
+                        callee::UPDATE_PROCESSES.call(c, 0x0027_879c)?;
+                        c.g[S1][0] = 1;
+                        c.g[A0][0] = c.g[S3][0];
+                        callee::MOVIE_UPDATE.call(c, 0x0027_87a8)?;
+                        EngineStage::Views
+                    }
+                }
+                EngineStage::Views => {
+                    loop {
+                        c.cycles += 5;
+                        c.g[A0][0] = c.g[S0][0];
+                        c.g[S1][0] = sx(r32(c, S1).wrapping_sub(1));
+                        callee::VIEW_UPDATE.call(c, 0x0027_87b4)?;
+                        let more = (c.g[S1][0] as i64) >= 0;
+                        c.g[S0][0] = sx(r32(c, S0).wrapping_add(0x120));
+                        if !more {
+                            break;
+                        }
+                        if back_edge_unwinds(c, 0x0027_87a8) {
+                            return Ok(());
+                        }
+                    }
+                    c.cycles += 6;
+                    c.g[A0][0] = c.g[S4][0];
+                    callee::AUDIO_UPDATE.call(c, 0x0027_87c4)?;
+                    c.g[A1][0] = Addr(r32(c, S2).wrapping_add(ENGINE_ACTIVE_LIST)).lw(c);
+                    c.g[V0][0] = 2;
+                    let idle = c.g[A1][0] == c.g[V0][0];
+                    c.g[V0][0] = 0xcc;
+                    if idle {
+                        c.cycles += 1;
+                        c.g[V0][0] = Addr(r32(c, S2).wrapping_add(ENGINE_SKIP_DELAY)).lw(c);
+                        return script_engine_update_leave(c, FRAME);
+                    }
+                    // The active list; can its current entry be skipped?
+                    c.cycles += 8;
+                    c.g[V1][0] = Addr(r32(c, S2).wrapping_add(ENGINE_LISTS_A)).lw(c);
+                    c.mult(0, V0, A1, V0);
+                    c.g[S5][0] = 0x4a_0000;
+                    c.g[S4][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+                    c.g[A0][0] = c.g[S4][0];
+                    callee::CAN_SKIP.call(c, 0x0027_87ec)?;
+                    let skippable = c.g[V0][0] != 0;
+                    c.g[V1][0] = Addr(gp(c, -0x848)).lw(c);
+                    if !skippable {
+                        EngineStage::State
+                    } else {
+                        c.cycles += 5;
+                        c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0x84)).lw(c);
+                        c.g[V0][0] = Addr(r32(c, V0).wrapping_add(0xc)).lw(c);
+                        c.g[S3][0] = Addr(r32(c, V0).wrapping_add(0x7c)).lw(c);
+                        let none = (c.g[S3][0] as i64) <= 0;
+                        c.g[S1][0] = 0;
+                        if none {
+                            EngineStage::State
+                        } else {
+                            c.cycles += 2;
+                            c.g[S0][0] = sx(r32(c, V0).wrapping_add(0x40));
+                            EngineStage::Riders
+                        }
+                    }
+                }
+                EngineStage::Riders => {
+                    // A rider with an input map, once the skip delay is over,
+                    // pressing skip.
+                    c.cycles += 6;
+                    c.g[V0][0] = Addr(r32(c, S0)).lw(c);
+                    c.g[A0][0] = Addr(r32(c, V0).wrapping_add(0xdf0)).lw(c);
+                    c.g[V1][0] = Addr(r32(c, A0)).lw(c);
+                    c.g[V0][0] = Addr(r32(c, V1)).lw(c);
+                    let mut pressed = false;
+                    if c.g[V0][0] != 0 {
+                        c.cycles += 3;
+                        c.g[V0][0] = Addr(r32(c, S2).wrapping_add(ENGINE_SKIP_DELAY)).lw(c);
+                        if c.g[V0][0] == 0 {
+                            c.cycles += 4;
+                            c.g[A1][0] = INPUT_SKIP;
+                            call_ptr(c, INPUT_EVAL_BOOL, 0x0027_883c)?;
+                            pressed = c.g[V0][0] != 0;
+                        }
+                    }
+                    c.g[S1][0] = sx(r32(c, S1).wrapping_add(1));
+                    if pressed {
+                        c.cycles += 4;
+                        c.g[A0][0] = c.g[S4][0];
+                        callee::SKIP_CURRENT.call(c, 0x0027_88c8)?;
+                        if back_edge_unwinds(c, 0x0027_8850) {
+                            return Ok(());
+                        }
+                        EngineStage::State
+                    } else {
+                        c.cycles += 3;
+                        c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[S3][0] as i64)) as u64;
+                        let more = c.g[V0][0] != 0;
+                        c.g[S0][0] = sx(r32(c, S0).wrapping_add(4));
+                        if !more {
+                            EngineStage::State
+                        } else {
+                            if back_edge_unwinds(c, 0x0027_8810) {
+                                return Ok(());
+                            }
+                            EngineStage::Riders
+                        }
+                    }
+                }
+                EngineStage::State => {
+                    c.cycles += 5;
+                    c.g[A0][0] = c.g[S4][0];
+                    callee::GET_STATE.call(c, 0x0027_8858)?;
+                    c.g[V1][0] = 3;
+                    let playing = c.g[V0][0] == c.g[V1][0];
+                    c.g[V1][0] = Addr(gp(c, -0x848)).lw(c);
+                    if !playing {
+                        c.cycles += 3;
+                        c.g[A0][0] = c.g[S2][0];
+                        callee::EXIT_SCRIPT_MODE.call(c, 0x0027_886c)?;
+                        c.g[V1][0] = Addr(gp(c, -0x848)).lw(c);
+                    }
+                    // The HUD flag (when the HUD state is on the UI stack).
+                    c.cycles += 10;
+                    c.g[A0][0] = sx(r32(c, S5).wrapping_add(0x34a0));
+                    c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0x84)).lw(c);
+                    c.g[S0][0] = Addr(r32(c, V0).wrapping_add(0x48)).lw(c);
+                    c.g[S0][0] = sx(r32(c, S0).wrapping_add(0x18));
+                    call_ptr(c, HASH_VALUE32, 0x0027_8884)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = c.g[V0][0];
+                    call_ptr(c, UI_STATE_FIND, 0x0027_8890)?;
+                    if c.g[V0][0] != 0 {
+                        c.cycles += 4;
+                        c.g[A0][0] = c.g[S4][0];
+                        callee::IS_PAUSED.call(c, 0x0027_88a0)?;
+                        let paused = c.g[V0][0] != 0;
+                        c.g[V1][0] = Addr(gp(c, -0x848)).lw(c);
+                        c.g[A1][0] = 1;
+                        if paused {
+                            c.cycles += 6;
+                            c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0x84)).lw(c);
+                            c.g[A0][0] = Addr(r32(c, V0).wrapping_add(0x94)).lw(c);
+                            call_ptr(c, HUD_FLAG_SET, 0x0027_88b8)?;
+                        } else {
+                            c.cycles += 4;
+                            c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0x84)).lw(c);
+                            c.g[A0][0] = Addr(r32(c, V0).wrapping_add(0x94)).lw(c);
+                            call_ptr(c, HUD_FLAG_CLEAR, 0x0027_88e0)?;
+                            c.cycles += 1;
+                        }
+                    }
+                    c.g[V0][0] = Addr(r32(c, S2).wrapping_add(ENGINE_SKIP_DELAY)).lw(c);
+                    return script_engine_update_leave(c, FRAME);
+                }
+            };
+        }
+    })
+}
+
+/// [`script_engine_update`]'s end (0x2788e4, v0 = the skip delay): the delay
+/// goes down by one 60 Hz frame (above 60 only on a 60 Hz frame of its own),
+/// then the epilogue.
+fn script_engine_update_leave(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 2;
+    let delay = c.g[V0][0];
+    c.g[V0][0] = sx((delay as u32).wrapping_sub(1));
+    if (delay as i64) > 0 {
+        c.cycles += 1;
+        let field = r32(c, S2).wrapping_add(ENGINE_SKIP_DELAY);
+        let left = if crate::tick::frame60_due(c, field, delay as u32) {
+            (delay as u32).wrapping_sub(1)
+        } else {
+            delay as u32
+        };
+        Addr(field).sw(c, sx(left));
+        crate::tick::frame60_ran(c, field, left);
+    }
+    c.cycles += 9;
+    frame.restore(c, S0, 0x60);
+    frame.restore(c, S1, 0x50);
+    frame.restore(c, S2, 0x40);
+    frame.restore(c, S3, 0x30);
+    frame.restore(c, S4, 0x20);
+    frame.restore(c, S5, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -9512,5 +9827,161 @@ pub(crate) mod tests {
                 }
             },
         );
+    }
+
+
+    // ------------------------------------------------------------------
+    // Script engine update.
+
+    const SE_ENGINE: u32 = DATA + 0x2_0000;
+    const SE_LISTS_A: u32 = DATA + 0x2_1000;
+    const SE_LISTS_B: u32 = DATA + 0x2_1400;
+    const SE_WORLD: u32 = DATA + 0x2_2000;
+    const SE_GAME: u32 = DATA + 0x2_2200;
+    const SE_RACE: u32 = DATA + 0x2_2400;
+    const SE_TABLE: u32 = DATA + 0x2_2600;
+    const SE_HUD: u32 = DATA + 0x2_2700;
+    const SE_RIDERS: u32 = DATA + 0x3_0000;
+    const SE_MAP: u32 = DATA + 0x3_8000;
+    use crate::game::camera::camera::tests::{INPUT_VM_STOP, INPUT_VM_TABLE, STOP_OPCODE};
+
+    /// `GetHashValue32("")` (the HUD state's name is in the game image; the
+    /// fixtures leave it empty).
+    fn empty_name_hash() -> u32 {
+        let mut c = crate::difftest::fresh();
+        c.g[A0][0] = sx(DATA + 0x7_f000);
+        c.pc = 0x0031_7670;
+        ee::s10::f_00317670(&mut c);
+        assert_eq!(c.pc, TEST_RA);
+        c.g[V0][0] as u32
+    }
+
+    /// A script engine at [`SE_ENGINE`]: four script lists (the active one,
+    /// `+0x550`, playing and nested-paused, its current entry maybe
+    /// skippable, the others idle), no processes, movie, views or script
+    /// sounds; the race's riders with input maps whose skip binding stops the
+    /// input VM at once; the UI state table maybe holding the HUD state.
+    fn script_engine_fixture(c: &mut Cpu, seed: u32, hash: u32) -> Rng {
+        let mut r = machine(c, seed, 0x278720, 0);
+        clear(c, SE_ENGINE, 0x2a0);
+        clear(c, SE_LISTS_A, 0x200);
+        clear(c, SE_WORLD, 0x800);
+        clear(c, SE_MAP, 0x120);
+        let e = SE_ENGINE;
+        w(c, e + 0x54c, SE_LISTS_A);
+        w(c, e + 0x624, SE_LISTS_B);
+        // The script sounds: four idle triggers.
+        for i in 0..4 {
+            w(c, e + 0x92c + 0xbc + 0xc * i, u32::MAX);
+        }
+        let active = [0u32, 1, 2][seed as usize % 3];
+        w(c, e + 0x550, active);
+        w(c, e + 0x554, [0, 0, 1, 30][(seed / 3 % 4) as usize]);
+        // The lists.
+        for i in 0..4u32 {
+            let l = if i < 2 { SE_LISTS_A + 0xcc * i } else { SE_LISTS_B + 0xcc * (i - 2) };
+            w(c, l + 0xbc, u32::MAX);
+            if i == active {
+                let playing = seed / 12 % 4 != 0;
+                w(c, l + 0xa4, if playing { 3 } else { 0 });
+                w(c, l + 0xc4, 1);
+                w(c, l + 0xc8, 1);
+                w(c, l + 0xa8, (seed / 48) % 2);
+                // The current entry's skippable flag (bit 0).
+                w(c, l + 0xc + 8, (seed / 12 % 2) | 2);
+            }
+        }
+        // The world, the race and its riders.
+        w(c, GAME_GP.wrapping_sub(0x848), SE_WORLD);
+        w(c, SE_WORLD + 0x84, SE_GAME);
+        w(c, SE_GAME + 0xc, SE_RACE);
+        w(c, SE_GAME + 0x48, SE_TABLE);
+        w(c, SE_GAME + 0x94, SE_HUD);
+        w(c, SE_HUD + 4, r.next_u32() % 4);
+        let riders = seed / 5 % 3;
+        w(c, SE_RACE + 0x7c, riders);
+        for i in 0..2u32 {
+            let rider = SE_RIDERS + 0x1000 * i;
+            let binding = rider + 0x100;
+            let flag = rider + 0x200;
+            w(c, SE_RACE + 0x40 + 4 * i, rider);
+            w(c, rider + 0xdf0, binding);
+            w(c, binding, flag);
+            w(c, flag, (r.next_u32() % 3 != 0) as u32);
+            w(c, binding + 4, SE_MAP);
+        }
+        // The input map: the skip binding (0x6f) is one VM stop.
+        w(c, SE_MAP + 4, SE_MAP + 0x80);
+        w(c, SE_MAP + 0x14, SE_MAP + 0x400);
+        w(c, SE_MAP + 0x80 + 4 * 0x6f, 0);
+        w(c, SE_MAP + 0x400, STOP_OPCODE);
+        w(c, INPUT_VM_TABLE + 4 * STOP_OPCODE, INPUT_VM_STOP);
+        // The VM's result (left in the evaluator's frame): pressed or not.
+        w(c, SP - 0x70 - 0x10 - 0x1d0 + 8, if seed % 2 == 0 { 0 } else { 1.0f32.to_bits() });
+        // The UI state table: empty, or the HUD state (named "").
+        clear(c, SE_TABLE, 0x40);
+        if seed % 4 == 1 {
+            let node = SE_TABLE + 0x80;
+            let sentinel = SE_TABLE + 0xc0;
+            w(c, SE_TABLE + 0x18 + 4, node);
+            w(c, node, sentinel);
+            w(c, node + 4, sentinel);
+            w(c, node + 0xc, hash);
+            w(c, sentinel + 4, sentinel);
+            w(c, sentinel, sentinel);
+        }
+        c.g[A0][0] = sx(e);
+        c.pc = 0x0027_8720;
+        r
+    }
+
+    #[test]
+    fn script_engine_update_matches() {
+        let hash = empty_name_hash();
+        check(ee::s07::f_00278720__generated, script_engine_update, 192, &|c, seed| {
+            let _ = script_engine_fixture(c, seed, hash);
+        });
+    }
+
+    driven!(gen_engine_update, ee::s07::f_00278720__generated);
+
+    driven!(hand_engine_update, script_engine_update);
+
+    #[test]
+    fn script_engine_update_events_match() {
+        let hash = empty_name_hash();
+        check_events(gen_engine_update, hand_engine_update, 48, &|c, seed| {
+            let mut r = script_engine_fixture(c, seed, hash);
+            schedule(c, &mut r, seed, 0x0027_8720)
+        });
+    }
+
+    /// The skip delay counts 60 Hz frames: the 30 `GameStateEventSelect`
+    /// sets lasts 30 updates at 60 Hz and the same time at 120 / 240 Hz.
+    #[test]
+    fn script_engine_update_skip_delay_follows_the_rate() {
+        let updates = |hz: u32| {
+            let mut c = crate::difftest::fresh();
+            let c = &mut *c;
+            // Seed 2: the engine idle (+0x550 = 2), straight to the delay.
+            let _ = script_engine_fixture(c, 2, 0);
+            w(c, SE_ENGINE + 0x554, 30);
+            crate::tick::set_for_test(c, hz);
+            let mut n = 0;
+            while c.bus.read32(SE_ENGINE + 0x554) != 0 {
+                n += 1;
+                assert!(n < 1000);
+                c.pc = 0x0027_8720;
+                c.g[A0][0] = sx(SE_ENGINE);
+                script_engine_update(c);
+                assert_eq!(c.pc, TEST_RA, "{hz} Hz: update {n} did not return");
+            }
+            n
+        };
+        assert_eq!(updates(60), 30);
+        for hz in [120u32, 240] {
+            let q = hz / 60;
+            assert_eq!(updates(hz), 30 * q - (q - 1), "{hz} Hz");
+        }
     }
 }

@@ -28,6 +28,7 @@ use crate::events::back_edge_unwinds;
 use crate::call::sp;
 pub(crate) use crate::game::intersect::worldsphtree::p;
 pub(crate) use crate::game::intersect::worldsphtree::sp_2;
+use crate::game::ai::rider::per_tick_60;
 pub(crate) use crate::game::visualfx::boardwakefx::gp;
 pub(crate) use crate::game::visualfx::boardwakefx::ldf_2 as ldf;
 pub(crate) use crate::game::visualfx::boardwakefx::fr_2 as fr;
@@ -1166,6 +1167,9 @@ pub fn cflag_manager_group_update(c: &mut Cpu) {
             c.g[V0][0] = 3;
             c.mul_s(2, 2, 1);
             c.add_s(2, 0, 2);
+            // Tick rate: the four phases advance per 60 Hz tick, so scale
+            // the common step by 60/rate (nothing changes at 60).
+            per_tick_60(c, 2);
             loop {
                 c.cycles += 8;
                 c.lwc1(0, c.g[A0][0] as u32);
@@ -1253,6 +1257,9 @@ pub fn cflag_manager_group_update(c: &mut Cpu) {
             c.cycles += 7;
             c.g[AT][0] = 0x3f80_0000;
             c.mtc1(AT, 2);
+            // Tick rate: the scroll speeds are per 60 Hz tick (the test
+            // above them keeps the authored values).
+            per_tick_60(c, 1);
             c.add_s(0, 0, 1);
             c.c_lt_s(2, 0);
             let no_wrap = !c.fcc();
@@ -1265,6 +1272,7 @@ pub fn cflag_manager_group_update(c: &mut Cpu) {
             c.cycles += 7;
             c.lwc1(1, off(c.g[S0][0] as u32, U));
             c.lwc1(0, off(c.g[S0][0] as u32, SCROLL_U));
+            per_tick_60(c, 0);
             c.add_s(0, 1, 0);
             c.c_lt_s(2, 0);
             let no_wrap = !c.fcc();
@@ -2325,6 +2333,61 @@ pub(crate) mod tests {
                 c.bus.write32(mesh + 4, vt);
             },
         );
+    }
+
+
+    /// The flag's wave phases (`+0x78..`) and texture scroll (`+0x88`,
+    /// `+0x8c`) advance per 60 Hz tick: one update at 60 Hz and `rate/60`
+    /// updates at 120 and 240 Hz end at the same values.
+    #[test]
+    fn cflag_manager_group_update_follows_the_rate() {
+        fn after(hz: u32) -> Vec<f32> {
+            let mut c = crate::difftest::fresh();
+            let c = &mut *c;
+            let _ = machine(c, 1, 0x34b819, 0);
+            crate::tick::set_for_test(c, hz);
+            let selfp = DATA;
+            let world = DATA + 0x4000;
+            let w84 = DATA + 0x4100;
+            c.bus.write32(GAME_GP.wrapping_add(0x1150), 1);
+            c.bus.write32(GAME_GP.wrapping_sub(0x848), world);
+            c.bus.write32(world + 0x84, w84);
+            c.bus.write32(w84 + 0x70, DATA + 0x4200);
+            c.bus.write32(w84 + 0xc, DATA + 0x4300);
+            c.bus.write32(DATA + 0x4308, 2);
+            c.bus.write32(selfp + 0x5c, 1);
+            c.bus.write32(selfp + 0x60, DATA + 0x2000);
+            // Parity never matches the (fixed) frame count: no rebuild.
+            c.bus.write32(selfp + 0x90, 1);
+            put_f32(c, selfp + 0x4c, f(0.25));
+            put_f32(c, DATA + 0x4200 + 0x10, f(0.5));
+            for i in 0..4 {
+                put_f32(c, selfp + 4 + 4 * i, f(0.01 * (i + 1) as f32));
+                put_f32(c, selfp + 0x78 + 4 * i, f(0.1));
+            }
+            put_f32(c, selfp + 0x50, f(0.02));
+            put_f32(c, selfp + 0x54, f(0.03));
+            put_f32(c, selfp + 0x88, f(0.2));
+            put_f32(c, selfp + 0x8c, f(0.3));
+            put_f32(c, GAME_GP.wrapping_sub(0x2b00), 0x3a83_126f); // 0.001f
+            for _ in 0..hz / 60 {
+                c.g[A0][0] = selfp as u64;
+                cflag_manager_group_update(c);
+                assert_eq!(c.pc, crate::difftest::RA);
+            }
+            let mut out: Vec<f32> =
+                (0..4).map(|i| f32::from_bits(c.bus.read32(selfp + 0x78 + 4 * i))).collect();
+            out.push(f32::from_bits(c.bus.read32(selfp + 0x88)));
+            out.push(f32::from_bits(c.bus.read32(selfp + 0x8c)));
+            out
+        }
+        let base = after(60);
+        assert!((base[0] - 0.1).abs() > 1e-4 && (base[4] - 0.2).abs() > 1e-4);
+        for hz in [120, 240] {
+            for (a, b) in base.iter().zip(after(hz)) {
+                assert!((a - b).abs() < 1e-5, "{hz} Hz: {b} vs {a} at 60");
+            }
+        }
     }
 
 

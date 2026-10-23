@@ -69,6 +69,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0015_cf80, manual_cam_controller_select_algorithm, "ManualCamController_SelectAlgorithm"),
     (0x0015_dc18, game_camera_reset_all_chase_controllers, "GameCamera_ResetAllChaseControllers"),
     (0x0015_dd88, game_camera_dtor, "GameCamera_dtor"),
+    (0x0015_ee00, game_camera_avoid_collision, "GameCamera_AvoidCollision"),
+    (0x0016_35f8, chase_camera_algorithm_apply_jump_curves, "ChaseCameraAlgorithm_ApplyJumpCurves"),
     (0x0015_f598, rider_camera_target_get_orientation, "RiderCameraTarget_GetOrientation"),
     (0x0015_f5f8, rider_camera_target_get_forward, "RiderCameraTarget_GetForward"),
     (0x0015_f610, rider_camera_target_get_side, "RiderCameraTarget_GetSide"),
@@ -968,6 +970,19 @@ pub(crate) fn vu0_dot(c: &mut Cpu, a: u32, b: u32, gpr: usize) {
 }
 
 
+/// A per-update kept share `k` (`v = k * v + (1 - k) * t`, or `v *= k`) at
+/// the game's rate: `k^(60/rate)`, the same share per unit of wall-clock
+/// time. Unchanged at 60.
+fn keep_per_tick(c: &mut Cpu, k: FpuF32) -> FpuF32 {
+    let hz = crate::tick::rate(c);
+    if hz == 60 {
+        k
+    } else {
+        FpuF32(f32::from_bits(k.0).powf(60.0 / hz as f32).to_bits())
+    }
+}
+
+
 /// `void ChaseCameraAlgorithm_SmoothPitch(self, float x, float y, float z,
 /// float w)` (0x1662a0): blend the camera's pitch (`+0x54`) and its smoothed
 /// pitch (`+0x1d8`) towards the target angles, limited by the angle between
@@ -1009,6 +1024,14 @@ pub fn chase_camera_algorithm_smooth_pitch(c: &mut Cpu) {
             c.cycles += 2;
             c.mov_s(20, 14);
             c.mov_s(22, 12);
+        }
+        // The blend factor is the kept share per update: at another rate the
+        // same share per unit of wall-clock time (`k^(60/rate)`), before the
+        // angle limit below divides it. f20 is callee-saved (restored on
+        // return); unchanged at 60.
+        if crate::tick::rate(c) != 60 {
+            let k = keep_per_tick(c, FpuF32(c.f[20]));
+            c.f[20] = k.0;
         }
 
         // Blend the current pitch and re-aim the camera to get the actual
@@ -4196,6 +4219,432 @@ pub(crate) fn add_point(c: &mut Cpu, spline: usize, ret: u32) -> Flow {
 }
 
 
+/// `lqc2 vf3, a; lqc2 vf4, b; vadd.xyzw vf5, vf3, vf4; sqc2 vf5, out`.
+#[inline(always)]
+fn v_add_to(c: &mut Cpu, a: u32, b: u32, out: u32) {
+    c.lqc2(3, a);
+    c.lqc2(4, b);
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, out);
+}
+
+
+/// `lqc2 vf3, a; lqc2 vf4, b; vsub.xyzw vf5, vf3, vf4; sqc2 vf5, out`.
+#[inline(always)]
+fn v_sub_to(c: &mut Cpu, a: u32, b: u32, out: u32) {
+    c.lqc2(3, a);
+    c.lqc2(4, b);
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, out);
+}
+
+
+/// World up (`0x4ff160`) and the side axis next to it (`0x4ff140`), the
+/// statics the camera code addresses as `0x500000 - 0xea0 / - 0xec0`.
+const AVOID_UP: u32 = 0x004f_f160;
+const AVOID_SIDE: u32 = 0x004f_f140;
+/// `CollSegment_ctor(seg, start, end, kind)` (0x32e100) and
+/// `Nash_FindClosestContact(world, seg, out, ignore)` (0x336850).
+const COLL_SEGMENT_CTOR: u32 = 0x0032_e100;
+const NASH_FIND_CLOSEST_CONTACT: u32 = 0x0033_6850;
+/// `GameCamera` fields of the collision avoidance.
+const CAM_LOOK_AT: u32 = 0xe0;
+const CAM_EYE: u32 = 0x100;
+const CAM_CONTROLLER: u32 = 0xa8;
+/// The collision lift along world up (f32), decayed per update.
+const CAM_LIFT: u32 = 0x460;
+/// The last contact's normal (vec4).
+const CAM_CONTACT_NORMAL: u32 = 0x470;
+const CAM_IGNORE: u32 = 0x480;
+/// The script camera's last clear eye (vec4) and its two flags.
+const CAM_SCRIPT_EYE: u32 = 0x490;
+const CAM_SCRIPT_BLOCKED: u32 = 0x4a0;
+const CAM_SCRIPT_RESET: u32 = 0x4a4;
+
+/// `void GameCamera_AvoidCollision(GameCamera* cam)` (0x15ee00): keep the
+/// eye out of the world.
+///
+/// The eye lifted by the collision lift (+0x460) is swept by a vertical
+/// segment `±300 / s` along world up (s: the sine of the eye's elevation
+/// seen from the look-at point, at least `gp-0x6c58`), pushed 50 to the
+/// side of the view (the side opposite the last contact normal +0x470). On a
+/// contact at fraction x (side d: the record's +0x18) the lift is corrected
+/// with `e = 300/s · |2x − 1|`: by `max(0, 50/s − e)` when the half of the
+/// segment and the side agree, else by `e + 50/s` (0 beyond 150); added
+/// for d > 0, subtracted otherwise. The eye is then lifted, put back at
+/// its distance from the look-at point, and the lift decays by
+/// `gp-0x6c54` (0.97) per update.
+///
+/// With a script camera active (the controller at +0xa8), a segment from
+/// the eye to 100 above the look-at point is tested too: on a hit the eye
+/// goes back to the last clear one (+0x490) or, when +0x4a4 is set, to
+/// 180 above and beside the look-at point; on the first blocked update it
+/// moves 50 along the contact normal; when it ends up within 2 of the
+/// look-at point or (nearly) straight above it, it is reset to 150 up and
+/// 100 to the side. The eye is saved at +0x490 and +0x4a4 cleared.
+///
+/// Frame 0x400: the vector scratch at +0x00..+0x360 (the contact records
+/// at +0x00 and +0x2a0, the segments at +0x110 and +0x1f0), `ra` at +0x370,
+/// s0..s4 at +0x3c0, +0x3b0, +0x3a0, +0x390, +0x380, f20..f25 at +0x3d0..
+pub fn game_camera_avoid_collision(c: &mut Cpu) {
+    guest(c, |c| {
+        // Block 0x15ee00: the sweep segment's geometry.
+        c.cycles += 148;
+        let frame = Frame::open(c, 0x400);
+        c.g[A1][0] = c.lw(gp_7(c, -0x848));
+        frame.save(c, S1, 0x3b0);
+        c.g[V1][0] = 0x50_0000;
+        frame.save(c, S2, 0x3a0);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_fpr(c, 25, 0x3f8);
+        c.g[S2][0] = c.g[V1][0];
+        frame.save_fpr(c, 23, 0x3e8);
+        frame.save_fpr(c, 22, 0x3e0);
+        frame.save_fpr(c, 21, 0x3d8);
+        frame.save_fpr(c, 20, 0x3d0);
+        frame.save(c, S0, 0x3c0);
+        frame.save(c, S3, 0x390);
+        frame.save(c, S4, 0x380);
+        frame.save_ra(c, 0x370);
+        frame.save_fpr(c, 24, 0x3f0);
+        c.mtc1(0, 22); // f22 = 0
+        let cam = r32(c, S1);
+        c.g[V0][0] = c.lw(r32(c, A1).wrapping_add(0x84));
+        c.lwc1(0, cam + CAM_LIFT);
+        // s3: the collision world.
+        c.g[S3][0] = c.lw(r32(c, V0).wrapping_add(0x20));
+        vscale_q(c, A0, 0, AVOID_UP, sp_at(c, 0xa0));
+        c.lwc1(3, gp_7(c, -0x6c58)); // the least elevation sine
+        qcopy(c, sp_at(c, 0xa0), sp_at(c, 0x90));
+        fconst(c, 23, 0x3f80_0000); // f23 = 1
+        // The lifted eye, and the look-at point seen from it (+0x90).
+        v_add_to(c, cam + CAM_EYE, sp_at(c, 0x90), sp_at(c, 0xa0));
+        fconst(c, 4, 0x4396_0000); // 300
+        qcopy(c, sp_at(c, 0xa0), sp_at(c, 0x80));
+        c.mov_s(6, 23);
+        fconst(c, 5, 0x4248_0000); // 50
+        v_sub_to(c, cam + CAM_LOOK_AT, sp_at(c, 0x80), sp_at(c, 0xa0));
+        qcopy(c, sp_at(c, 0xa0), sp_at(c, 0x90));
+        // Its length, and its horizontal length (z zeroed): the sine.
+        v_length(c, sp_at(c, 0x90), A0, 0);
+        c.swc1(22, sp_at(c, 0xa8));
+        c.mul_s(0, 0, 0);
+        v_length(c, sp_at(c, 0xa0), V0, 1);
+        c.mul_s(2, 1, 1);
+        v_sub_to(c, cam + CAM_LOOK_AT, cam + CAM_EYE, sp_at(c, 0xc0));
+        c.lq(2, sp_at(c, 0xc0));
+        c.add_s(2, 2, 0);
+        c.sq(2, sp_at(c, 0xb0));
+        c.sqrt_s(2, 2);
+        // f25: the eye's distance from the look-at point.
+        v_length(c, sp_at(c, 0xb0), V0, 25);
+        c.div_s(1, 1, 2);
+        c.lwc1(0, cam + CAM_LIFT);
+        vscale_q(c, A0, 0, AVOID_UP, sp_at(c, 0xd0));
+        qcopy(c, sp_at(c, 0xd0), sp_at(c, 0xc0));
+        v_add_to(c, cam + CAM_EYE, sp_at(c, 0xc0), sp_at(c, 0xd0));
+        c.max_s(1, 1, 3);
+        qcopy(c, sp_at(c, 0xd0), sp_at(c, 0xb0));
+        c.div_s(1, 23, 1);
+        // f21 = 300 / s (half the segment), f20 = 50 / s.
+        c.mul_s(21, 1, 4);
+        vscale_q(c, A0, 21, AVOID_UP, sp_at(c, 0xd0));
+        c.mul_s(20, 1, 5);
+        qcopy(c, sp_at(c, 0xd0), sp_at(c, 0xc0));
+        v_sub_to(c, sp_at(c, 0xb0), sp_at(c, 0xc0), sp_at(c, 0xe0));
+        qcopy(c, sp_at(c, 0xe0), sp_at(c, 0xd0));
+        v_add_to(c, sp_at(c, 0xb0), sp_at(c, 0xc0), sp_at(c, 0xf0));
+        qcopy(c, sp_at(c, 0xf0), sp_at(c, 0xe0));
+        // The side of the view, towards the last contact normal.
+        v_cross(c, sp_at(c, 0x90), AVOID_UP, sp_at(c, 0x100));
+        qcopy(c, sp_at(c, 0x100), sp_at(c, 0xf0));
+        v_dot2(c, cam + CAM_CONTACT_NORMAL, sp_at(c, 0xf0));
+        c.qmfc2(3, 4);
+        c.mtc1(3, 0);
+        c.c_lt_s(22, 0);
+        if c.fcc() {
+            c.cycles += 3;
+            fconst(c, 6, 0xbf80_0000); // f6 = -1
+        }
+        c.mul_s(0, 6, 5);
+
+        // Block 0x15f05c: build the segment and sweep it.
+        c.cycles += 47;
+        v_length(c, sp_at(c, 0xf0), V0, 1);
+        fconst(c, 24, 0x3f00_0000); // 0.5
+        c.g[S0][0] = sx(sp_at(c, 0x110));
+        c.g[A2][0] = sx(sp_at(c, 0x1c0));
+        c.g[A1][0] = sx(sp_at(c, 0x100));
+        c.div_s(0, 0, 1);
+        c.g[S4][0] = c.g[A2][0];
+        vscale_q(c, V0, 0, sp_at(c, 0xf0), sp_at(c, 0xf0));
+        c.g[A0][0] = c.g[S0][0];
+        v_add_to(c, sp_at(c, 0xe0), sp_at(c, 0xf0), sp_at(c, 0x1c0));
+        c.mov_s(12, 24);
+        c.lq(2, sp_at(c, 0x1c0));
+        c.g[A3][0] = 2;
+        c.sq(2, sp_at(c, 0x100));
+        v_add_to(c, sp_at(c, 0xd0), sp_at(c, 0xf0), sp_at(c, 0x1d0));
+        qcopy(c, sp_at(c, 0x1d0), sp_at(c, 0x1c0));
+        call_ptr(c, COLL_SEGMENT_CTOR, 0x0015_f0f4)?;
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A2][0] = c.g[SP][0];
+        c.g[A3][0] = sx(cam + CAM_IGNORE);
+        call_ptr(c, NASH_FIND_CLOSEST_CONTACT, 0x0015_f108)?;
+        // f0: the contact's fraction along the segment (-1: none).
+        c.c_lt_s(22, 0);
+        if !c.fcc() {
+            c.lwc1(0, cam + CAM_LIFT);
+        } else {
+            avoid_collision_correct_lift(c, cam);
+        }
+
+        // Block 0x15f1e8: lift the eye, keep its distance, decay the lift.
+        c.cycles += 48;
+        vscale_q(c, V0, 0, AVOID_UP, sp_at(c, 0x1c0));
+        c.lwc1(1, gp_7(c, -0x6c54)); // 0.97
+        // The lift decays by this factor per update: at another rate the
+        // same share per unit of wall-clock time (`k^(60/rate)`); unchanged
+        // at 60.
+        if crate::tick::rate(c) != 60 {
+            let k = keep_per_tick(c, FpuF32(c.f[1]));
+            c.f[1] = k.0;
+        }
+        qcopy(c, sp_at(c, 0x1c0), sp_at(c, 0x100));
+        v_add_to(c, cam + CAM_EYE, sp_at(c, 0x100), cam + CAM_EYE);
+        v_sub_to(c, cam + CAM_LOOK_AT, cam + CAM_EYE, sp_at(c, 0x1c0));
+        qcopy(c, sp_at(c, 0x1c0), sp_at(c, 0x100));
+        v_length(c, sp_at(c, 0x100), V1, 0);
+        c.div_s(0, 25, 0);
+        vscale_q(c, V0, 0, sp_at(c, 0x100), sp_at(c, 0x100));
+        v_sub_to(c, cam + CAM_LOOK_AT, sp_at(c, 0x100), sp_at(c, 0x1d0));
+        c.lwc1(0, cam + CAM_LIFT);
+        c.lq(2, sp_at(c, 0x1d0));
+        c.mul_s(0, 0, 1);
+        c.g[A0][0] = c.lw(cam + CAM_CONTROLLER);
+        c.sq(2, cam + CAM_EYE);
+        c.sq(2, sp_at(c, 0x1c0));
+        c.swc1(0, cam + CAM_LIFT);
+        Callee { addr: 0x0015_d020, f: ee::s01::ChaseCamController_IsScriptCameraActive }
+            .call(c, 0x0015_f2a0)?;
+        c.g[S0][0] = sx(sp_at(c, 0x1f0));
+        if c.g[V0][0] == 0 {
+            c.cycles += 1;
+            c.sw(cam + CAM_SCRIPT_BLOCKED, 0);
+        } else {
+            avoid_collision_script(c, cam)?;
+        }
+
+        // Block 0x15f52c.
+        c.cycles += 15;
+        c.sw(cam + CAM_SCRIPT_RESET, 0);
+        frame.restore(c, S0, 0x3c0);
+        frame.restore(c, S1, 0x3b0);
+        frame.restore(c, S2, 0x3a0);
+        frame.restore(c, S3, 0x390);
+        frame.restore(c, S4, 0x380);
+        frame.restore_ra(c, 0x370);
+        frame.restore_fpr(c, 25, 0x3f8);
+        frame.restore_fpr(c, 24, 0x3f0);
+        frame.restore_fpr(c, 23, 0x3e8);
+        frame.restore_fpr(c, 22, 0x3e0);
+        frame.restore_fpr(c, 21, 0x3d8);
+        frame.restore_fpr(c, 20, 0x3d0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+/// [`game_camera_avoid_collision`]'s lift correction on a contact (blocks
+/// 0x15f114..0x15f1d8): f0 the fraction x, f1 = the contact record's +0x18
+/// (which side), f21 = 300/s, f20 = 50/s, f22 = 0, f23 = 1, f24 = 0.5.
+/// Stores the lift and the contact normal; leaves the lift in f0.
+fn avoid_collision_correct_lift(c: &mut Cpu, cam: u32) {
+    c.cycles += 4;
+    c.c_lt_s(24, 0);
+    let far_half = c.fcc(); // 0.5 < x
+    c.lwc1(1, sp_at(c, 0x18));
+    c.cycles += 5;
+    c.add_s(0, 0, 0);
+    c.c_lt_s(22, 1);
+    if far_half {
+        c.sub_s(0, 0, 23); // 2x - 1
+    } else {
+        c.sub_s(0, 23, 0); // 1 - 2x
+    }
+    let positive = c.fcc(); // 0 < side
+    c.mul_s(0, 21, 0); // e
+    // The amount: max(0, 50/s - e) when the half and the side agree (far
+    // half and positive side, or near half and the other), else e + 50/s
+    // (0 beyond 150). Added on the positive side, subtracted on the other.
+    let raise_rest = far_half == positive;
+    let raise = positive;
+    if raise_rest {
+        c.cycles += 4;
+        c.c_lt_s(0, 20);
+        let short = c.fcc();
+        c.mov_s(1, 22);
+        if short {
+            c.cycles += 1;
+            c.sub_s(1, 20, 0);
+        }
+    } else {
+        c.cycles += 7;
+        c.add_s(1, 0, 20);
+        fconst(c, 0, 0x4316_0000); // 150
+        c.c_lt_s(0, 1);
+        let beyond = c.fcc();
+        if beyond {
+            c.mov_s(1, 22);
+        }
+        if !raise && !beyond {
+            // (the far-half drop loads the lift in its own block)
+            c.cycles += 1;
+        }
+    }
+    if raise {
+        c.cycles += 3;
+        c.lwc1(0, cam + CAM_LIFT);
+        c.add_s(0, 0, 1);
+    } else {
+        c.cycles += 1;
+        c.lwc1(0, cam + CAM_LIFT);
+        c.cycles += 1;
+        c.sub_s(0, 0, 1);
+    }
+    c.cycles += 4;
+    c.swc1(0, cam + CAM_LIFT);
+    c.lq(2, sp_at(c, 0x10));
+    c.sq(2, cam + CAM_CONTACT_NORMAL);
+    c.lwc1(0, cam + CAM_LIFT);
+}
+
+
+/// [`game_camera_avoid_collision`] with a script camera active (blocks
+/// 0x15f2b0..0x15f528): keep the eye clear of the line to the look-at point.
+fn avoid_collision_script(c: &mut Cpu, cam: u32) -> Flow {
+    c.cycles += 36;
+    fconst(c, 0, 0x42c8_0000); // 100
+    vscale_q(c, V0, 0, AVOID_UP, sp_at(c, 0x1e0));
+    fconst(c, 12, 0x3f00_0000);
+    c.lq(2, sp_at(c, 0x1e0));
+    c.g[A2][0] = sx(sp_at(c, 0x1d0));
+    c.g[A1][0] = c.g[S4][0];
+    c.g[A0][0] = c.g[S0][0];
+    c.sq(2, sp_at(c, 0x1d0));
+    c.g[A3][0] = 2;
+    v_add_to(c, cam + CAM_LOOK_AT, sp_at(c, 0x1d0), sp_at(c, 0x1e0));
+    c.lq(V1, cam + CAM_EYE);
+    c.lq(2, sp_at(c, 0x1e0));
+    c.sq(V1, sp_at(c, 0x1d0));
+    c.sq(2, sp_at(c, 0x1c0));
+    call_ptr(c, COLL_SEGMENT_CTOR, 0x0015_f308)?;
+    c.g[V1][0] = c.lw(gp_7(c, -0x848));
+    c.g[A1][0] = c.g[S0][0];
+    c.g[A2][0] = sx(sp_at(c, 0x2a0));
+    c.g[A3][0] = 0;
+    c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(0x84));
+    c.g[A0][0] = c.lw(r32(c, V0).wrapping_add(0x20));
+    call_ptr(c, NASH_FIND_CLOSEST_CONTACT, 0x0015_f324)?;
+    c.mtc1(0, 1);
+    c.c_lt_s(1, 0);
+    // Whether the closing `lq v0, eye` is still to come (+1 cycle).
+    let mut load_eye = true;
+    if !c.fcc() {
+        c.sw(cam + CAM_SCRIPT_BLOCKED, 0);
+    } else {
+        // Blocked: back to the last clear eye, or above and beside the
+        // look-at point.
+        c.cycles += 3;
+        c.g[V0][0] = c.lw(cam + CAM_SCRIPT_RESET);
+        if c.g[V0][0] == 0 {
+            c.lq(2, cam + CAM_SCRIPT_EYE);
+            c.cycles += 1;
+            c.sq(2, cam + CAM_EYE);
+        } else {
+            c.cycles += 32;
+            fconst(c, 0, 0x4334_0000); // 180
+            vscale_q(c, V1, 0, AVOID_UP, sp_at(c, 0x340));
+            qcopy(c, sp_at(c, 0x340), sp_at(c, 0x330));
+            v_add_to(c, cam + CAM_LOOK_AT, sp_at(c, 0x330), sp_at(c, 0x340));
+            qcopy(c, sp_at(c, 0x340), sp_at(c, 0x320));
+            c.g[V0][0] = sx(AVOID_SIDE);
+            vscale_q(c, V1, 0, AVOID_SIDE, sp_at(c, 0x350));
+            qcopy(c, sp_at(c, 0x350), sp_at(c, 0x340));
+            v_add_to(c, sp_at(c, 0x320), sp_at(c, 0x340), sp_at(c, 0x350));
+            c.lq(2, sp_at(c, 0x350));
+            c.sq(2, cam + CAM_EYE);
+            c.sq(2, sp_at(c, 0x1e0));
+        }
+        // The first blocked update moves 50 along the contact normal.
+        c.cycles += 3;
+        let was_blocked = c.lw(cam + CAM_SCRIPT_BLOCKED);
+        c.g[V0][0] = 1;
+        if was_blocked == 0 {
+            c.cycles += 14;
+            fconst(c, 0, 0x4248_0000); // 50
+            vscale_q(c, V1, 0, sp_at(c, 0x2b0), sp_at(c, 0x320));
+            qcopy(c, sp_at(c, 0x320), sp_at(c, 0x1e0));
+            v_add_to(c, cam + CAM_EYE, sp_at(c, 0x1e0), cam + CAM_EYE);
+            c.g[V0][0] = 1;
+        }
+        c.cycles += 23;
+        fconst(c, 1, 0x4000_0000); // 2
+        c.sw(cam + CAM_SCRIPT_BLOCKED, c.g[V0][0]);
+        v_sub_to(c, cam + CAM_LOOK_AT, cam + CAM_EYE, sp_at(c, 0x320));
+        qcopy(c, sp_at(c, 0x320), sp_at(c, 0x1e0));
+        v_length(c, sp_at(c, 0x1e0), V1, 0);
+        c.c_lt_s(0, 1);
+        let too_close = c.fcc();
+        c.lwc1(0, sp_at(c, 0x1e0));
+        let reset = too_close || {
+            c.cycles += 7;
+            fconst(c, 1, 0x3f80_0000);
+            c.abs_s(0, 0);
+            c.c_lt_s(0, 1);
+            let x_small = c.fcc();
+            c.lwc1(0, sp_at(c, 0x1e4));
+            x_small && {
+                c.cycles += 5;
+                c.abs_s(0, 0);
+                c.c_lt_s(0, 1);
+                if !c.fcc() {
+                    c.lq(2, cam + CAM_EYE);
+                    load_eye = false;
+                }
+                c.fcc()
+            }
+        };
+        if reset {
+            // 150 above and 100 beside the look-at point.
+            c.cycles += 33;
+            fconst(c, 0, 0x4316_0000); // 150
+            vscale_q(c, V0, 0, AVOID_UP, sp_at(c, 0x350));
+            fconst(c, 1, 0x42c8_0000); // 100
+            qcopy(c, sp_at(c, 0x350), sp_at(c, 0x340));
+            v_add_to(c, cam + CAM_LOOK_AT, sp_at(c, 0x340), sp_at(c, 0x350));
+            qcopy(c, sp_at(c, 0x350), sp_at(c, 0x330));
+            c.g[V0][0] = sx(AVOID_SIDE);
+            vscale_q(c, V1, 1, AVOID_SIDE, sp_at(c, 0x360));
+            qcopy(c, sp_at(c, 0x360), sp_at(c, 0x350));
+            v_add_to(c, sp_at(c, 0x330), sp_at(c, 0x350), sp_at(c, 0x360));
+            c.lq(2, sp_at(c, 0x360));
+            c.sq(2, cam + CAM_EYE);
+            c.sq(2, sp_at(c, 0x320));
+        }
+    }
+    if load_eye {
+        c.cycles += 1;
+        c.lq(2, cam + CAM_EYE);
+    }
+    c.cycles += 2;
+    c.sq(2, cam + CAM_SCRIPT_EYE);
+    Ok(())
+}
+
+
 /// `void ChaseCameraAlgorithm_ApplyJumpCurves(algo, info, dt, f13, f14, f15)`
 /// (0x1635f8): one frame of the chase camera's jump/landing curve blend.
 ///
@@ -4254,15 +4703,30 @@ pub fn chase_camera_algorithm_apply_jump_curves(c: &mut Cpu) {
                 c.g[V0][0] = c.lw(p(s2, st::JUMP_READY));
                 break 'out;
             }
-            // The landing timer: while it still counts down, ask the rig
-            // whether the camera may be applied again right away.
+            // The takeoff countdown: while it still counts down, ask the rig
+            // whether the rider already landed (the countdown then ends).
+            // It counts 60 Hz frames (15 at takeoff, see
+            // `ChaseCameraAlgorithm_UpdateAirTransitions`): the takeoff curves
+            // are built at 14, the air arc at 0 (0.25 s of air), and an early
+            // landing measures the air time as `(16 - n) / 60` s. At another
+            // rate it is taken down only when the algorithm's own 60 Hz clock
+            // has a frame due (`tick::frame60_due`), and the reactions to 14
+            // and 0 run once, on the tick the value was reached. At 60 every
+            // tick takes it down.
+            let timer = p(s2, st::TIMER);
+            let mut timer_moved: bool;
             'timer: {
                 c.cycles += 5;
-                c.g[V0][0] = c.lw(p(s2, st::TIMER));
+                c.g[V0][0] = c.lw(timer);
                 c.mtc1(0, 29);
-                c.g[V0][0] = sx(r32(c, V0).wrapping_sub(1));
+                let at_60 = crate::tick::rate(c) == 60;
+                timer_moved = at_60 || crate::tick::frame60_due(c, timer, r32(c, V0));
+                if timer_moved {
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_sub(1));
+                    crate::tick::frame60_ran(c, timer, r32(c, V0));
+                }
                 let expired = (c.g[V0][0] as i64) <= 0;
-                c.sw(p(s2, st::TIMER), c.g[V0][0]);
+                c.sw(timer, c.g[V0][0]);
                 if expired {
                     break 'timer;
                 }
@@ -4281,8 +4745,15 @@ pub fn chase_camera_algorithm_apply_jump_curves(c: &mut Cpu) {
                 c.cycles += 7;
                 c.g[V1][0] = c.lw(p(s2, st::TIMER));
                 c.lwc1(1, gp_7(c, -0x6aa0));
+                if crate::tick::rate(c) != 60 {
+                    // The countdown is in 60 Hz frames: a frame is 1/60 s
+                    // whatever the step this `.lit4` entry holds.
+                    c.f[1] = crate::tick::STEP_60;
+                }
                 c.g[V0][0] = sx(0x10u32.wrapping_sub(r32(c, V1)));
                 c.sw(p(s2, st::TIMER), 0);
+                timer_moved = true;
+                crate::tick::frame60_ran(c, timer, 0);
                 c.mtc1(2, 0);
                 c.cvt_s_w(0, 0);
                 c.mul_s(29, 0, 1);
@@ -4291,7 +4762,7 @@ pub fn chase_camera_algorithm_apply_jump_curves(c: &mut Cpu) {
             c.cycles += 4;
             c.g[V1][0] = c.lw(p(s2, st::TIMER));
             c.g[V0][0] = 0xe;
-            if c.g[V1][0] != c.g[V0][0] {
+            if c.g[V1][0] != c.g[V0][0] || !timer_moved {
                 c.g[V0][0] = c.lw(p(s2, st::TIMER));
             } else {
                 // `f1` = the rig's jump progress in 0..1.
@@ -4476,66 +4947,68 @@ pub fn chase_camera_algorithm_apply_jump_curves(c: &mut Cpu) {
                 c.g[V0][0] = c.lw(p(s2, st::TIMER));
             }
             c.cycles += 2;
-            if c.g[V0][0] != 0 {
+            if c.g[V0][0] != 0 || !timer_moved {
                 c.g[V0][0] = c.lw(p(s2, st::JUMP_READY));
                 break 'out;
             }
             // The timer expired: blend the jump and landing curves.
-            'active: {
-                'blend: {
-                    c.cycles += 15;
-                    c.swc1(29, p(s2, st::JUMP_BLEND));
-                    c.g[A1][0] = c.lw(p(s2, st::RIG));
-                    c.g[V0][0] = c.lw(r32(c, A1));
-                    c.g[A0][0] = c.lh(p(r32(c, V0), 0x60));
-                    c.g[V1][0] = c.lw(p(r32(c, V0), 0x64));
-                    let target = r32(c, V1);
-                    c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
-                    call_ptr(c, target, 0x0016_3a2c)?;
-                    c.lwc1(1, gp_7(c, -0x69fc));
-                    c.mov_s(27, 0);
-                    fconst(c, 0, 0x3e80_0000); // 0.25
-                    c.c_le_s(1, 27);
-                    let skip = !c.fcc();
-                    c.mul_s(26, 27, 0);
-                    if skip {
-                        break 'blend;
-                    }
-                    'ease2: {
-                        c.cycles += 4;
-                        c.lwc1(0, gp_7(c, -0x69f8));
-                        c.c_le_s(27, 0);
-                        if c.fcc() {
-                            c.cycles += 16;
-                            c.sub_s(0, 27, 1);
-                            c.lwc1(2, gp_7(c, -0x69f4));
-                            fconst(c, 3, 0x4040_0000); // 3
-                            fconst(c, 4, 0x3f80_0000); // 1
-                            c.div_s(0, 0, 2);
-                            c.add_s(1, 0, 0);
-                            c.mul_s(0, 0, 0);
-                            c.mul_s(1, 1, 0);
-                            c.mul_s(0, 0, 3);
-                            c.sub_s(0, 0, 1);
-                            c.c_lt_s(4, 0);
-                            if !c.fcc() {
-                                c.mul_s(1, 0, 28);
-                                break 'active;
+            {
+                // `f1` = the landing blend (blocks 0x163a10..0x163ab4).
+                'blended: {
+                    'blend: {
+                        c.cycles += 15;
+                        c.swc1(29, p(s2, st::JUMP_BLEND));
+                        c.g[A1][0] = c.lw(p(s2, st::RIG));
+                        c.g[V0][0] = c.lw(r32(c, A1));
+                        c.g[A0][0] = c.lh(p(r32(c, V0), 0x60));
+                        c.g[V1][0] = c.lw(p(r32(c, V0), 0x64));
+                        let target = r32(c, V1);
+                        c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+                        call_ptr(c, target, 0x0016_3a2c)?;
+                        c.lwc1(1, gp_7(c, -0x69fc));
+                        c.mov_s(27, 0);
+                        fconst(c, 0, 0x3e80_0000); // 0.25
+                        c.c_le_s(1, 27);
+                        let skip = !c.fcc();
+                        c.mul_s(26, 27, 0);
+                        if skip {
+                            break 'blend;
+                        }
+                        {
+                            c.cycles += 4;
+                            c.lwc1(0, gp_7(c, -0x69f8));
+                            c.c_le_s(27, 0);
+                            if c.fcc() {
+                                c.cycles += 16;
+                                c.sub_s(0, 27, 1);
+                                c.lwc1(2, gp_7(c, -0x69f4));
+                                fconst(c, 3, 0x4040_0000); // 3
+                                fconst(c, 4, 0x3f80_0000); // 1
+                                c.div_s(0, 0, 2);
+                                c.add_s(1, 0, 0);
+                                c.mul_s(0, 0, 0);
+                                c.mul_s(1, 1, 0);
+                                c.mul_s(0, 0, 3);
+                                c.sub_s(0, 0, 1);
+                                c.c_lt_s(4, 0);
+                                if !c.fcc() {
+                                    c.mul_s(1, 0, 28);
+                                    break 'blended;
+                                }
                             }
                         }
+                        c.cycles += 4;
+                        fconst(c, 0, 0x3f80_0000);
+                        c.mul_s(1, 0, 28);
+                        // The original's `break 'b_163ab4`: `f1` keeps this value
+                        // and the `f1 = 0` pair below is skipped.
+                        break 'blended;
                     }
-                    c.cycles += 4;
-                    fconst(c, 0, 0x3f80_0000);
+                    c.cycles += 2;
+                    c.mtc1(0, 0);
                     c.mul_s(1, 0, 28);
-                    // The original's `break 'b_163ab4`: `f1` keeps this value
-                    // (it is the jump/landing blend the guard below tests) and
-                    // the `f1 = 0` pair after this block is skipped.
-                    break 'blend;
                 }
-                c.cycles += 2;
-                c.mtc1(0, 0);
-                c.mul_s(1, 0, 28);
-                // The landing blend and the two landing splines.
+                // The landing blend and the two landing splines (0x163ab4).
                 c.cycles += 7;
                 c.lwc1(0, p(s2, st::TIME_2));
                 c.mtc1(0, 28);
@@ -4679,7 +5152,7 @@ pub fn chase_camera_algorithm_apply_jump_curves(c: &mut Cpu) {
                     c.sw(p(s2, st::APPLYING), c.g[V0][0]);
                     c.swc1(0, p(s2, st::JUMP_SCALE));
                     c.swc1(27, p(s2, st::AMPLITUDE_2));
-                    c.swc1(0, p(s2, st::JUMP_BLEND));
+                    c.swc1(0, p(s2, st::LAND_BLEND));
                     c.sw(p(s2, st::LANDING), 0);
                 }
                 c.cycles += 1;
@@ -4890,6 +5363,14 @@ pub fn chase_camera_algorithm_apply_jump_curves(c: &mut Cpu) {
             }
             c.cycles += 14;
             c.lwc1(0, p(s2, st::VERTICAL_VEL));
+            // After landing the four curve offsets shrink by this factor per
+            // update: at another rate by `k^(60/rate)` (the same share per
+            // unit of wall-clock time; a factor of 0 or below is kept).
+            // Unchanged at 60.
+            if crate::tick::rate(c) != 60 && FpuF32(c.f[0]).to_f32() > 0.0 {
+                let k = keep_per_tick(c, FpuF32(c.f[0]));
+                c.f[0] = k.0;
+            }
             c.lwc1(2, p(s2, st::JUMP_VEL_X));
             c.lwc1(3, p(s2, st::JUMP_VEL_Y));
             c.lwc1(4, p(s2, st::LAND_VEL_X));
@@ -6309,6 +6790,62 @@ pub(crate) mod tests {
     }
 
 
+    /// The pitch smoothing factors (f14 down, f15 up) are per update: one
+    /// 60 Hz update and `hz/60` updates at `hz` leave the smoothed pitch
+    /// (+0x1d8) at the same value (old 2, the camera pitch +0x54 held at 1 by
+    /// the angle step: `1 + k`).
+    #[test]
+    fn smooth_pitch_follows_the_rate() {
+        fn pitch_after(hz: u32, ticks: u32) -> f32 {
+            let mut boxed = crate::difftest::fresh();
+            let c: &mut Cpu = &mut boxed;
+            let mut r = Rng(0x1662_a0f4);
+            scramble(c, &mut r);
+            c.g[GP][0] = GAME_GP as u64;
+            crate::tick::set_for_test(c, hz);
+            let s = DATA;
+            for off in (0..0x300u32).step_by(4) {
+                c.bus.write32(s + off, 0);
+            }
+            put_vec(c, s + 0x20, [0, 0, 0, 0]); // look-at
+            put_vec(c, s + 0x40, [0, 0x4316_0000, 0, 0]); // eye
+            // The target (`self+0x30`): slot 1 is MenuSys_IsActive, the rider
+            // a zeroed block.
+            c.bus.write32(s + 0x30, s + 0x100);
+            c.bus.write32(s + 0x100, s + 0x200);
+            c.bus.write16(s + 0x208, 0);
+            c.bus.write32(s + 0x20c, 0x002c_c098);
+            c.bus.write32(s + 0x104, s + 0x400);
+            c.bus.write32(s + 0x1d8, 2.0f32.to_bits()); // the old smoothed pitch
+            // No angle limit (the aimed direction never "long enough"), a
+            // linear turn rate of 1, no distance reset limit.
+            c.bus.write32(GAME_GP.wrapping_sub(0x68c0), 1e30f32.to_bits());
+            c.bus.write32(GAME_GP.wrapping_sub(0x68bc), 0);
+            c.bus.write32(GAME_GP.wrapping_sub(0x68b8), 1.0f32.to_bits());
+            c.bus.write32(GAME_GP.wrapping_sub(0x6778), 1e30f32.to_bits());
+            for _ in 0..ticks {
+                c.g[A0][0] = s as u64;
+                c.f[12] = 0.5f32.to_bits(); // target angles
+                c.f[13] = 0.5f32.to_bits();
+                c.f[14] = 0.9f32.to_bits(); // down
+                c.f[15] = 0.9f32.to_bits(); // up
+                c.bus.write32(s + 0x54, 1.0f32.to_bits()); // this update's pitch
+                chase_camera_algorithm_smooth_pitch(c);
+            }
+            f32::from_bits(c.bus.read32(s + 0x1d8))
+        }
+
+        let at_60 = pitch_after(60, 1);
+        assert!((at_60 - 1.9).abs() < 1e-5, "at 60: {at_60}");
+        for hz in [120u32, 240] {
+            let fast = pitch_after(hz, hz / 60);
+            assert!((fast - at_60).abs() < 1e-4, "at {hz}: {fast}, at 60: {at_60}");
+        }
+        // Unconverted, two 120 Hz updates would leave 1 + 0.9² = 1.81.
+        assert!(pitch_after(120, 2) > 1.85);
+    }
+
+
     #[test]
     fn camera_algorithm_default_fov_matches() {
         check(ee::s02::f_00167e30__generated, camera_algorithm_default_fov, SEEDS_2, &|c, seed| {
@@ -7328,7 +7865,11 @@ pub(crate) mod tests {
         w_5(c, RIG + 4, RIG + 0x200); // the rider
         w_5(c, ME + st::RIG, RIG);
         slot_2(c, VT, 0x8, FAKE);
-        slot_2(c, VT, 0x60, FAKE);
+        // Slot +0x60 (the air arc's scale, f27): `Rider_GetDistToFinish`, a
+        // real leaf returning the float at +0x4d0, kept positive so the
+        // landing splines' knot times (scaled by it) ascend.
+        slot_2(c, VT, 0x60, 0x0011_3128);
+        wf(c, RIG + 0x4d0, (0.05f32 + (r.next_u32() % 100) as f32 / 50.0).to_bits());
         slot_2(c, VT, 0xa8, FAKE);
         slot_2(c, VT, 0xb8, FAKE);
         if seed % 2 == 0 {
@@ -7354,9 +7895,13 @@ pub(crate) mod tests {
         );
         w_5(c, ME + st::AIRBORNE, ((seed / 3) % 3 == 0) as u32);
         w_5(c, INFO + 0x60, ((seed / 9) % 3 == 0) as u32);
-        w_5(c, ME + st::APPLYING, ((seed / 7) % 2) as u32);
+        // The splines are zeroed (never built), so the flags that evaluate
+        // them start clear: `cCSICubicSpline_Evaluate` on an empty spline
+        // searches forever (0x31e060). They are set, and the curves
+        // evaluated, by the rebuild and air-arc paths of the same call.
+        w_5(c, ME + st::APPLYING, 0);
         w_5(c, ME + st::LANDING, ((seed / 11) % 2) as u32);
-        w_5(c, ME + st::JUMP_READY, ((seed / 13) % 2) as u32);
+        w_5(c, ME + st::JUMP_READY, 0);
         // The float state.
         for off in [
             0x1f4u32, 0x1f8, 0x1fc, 0x200, 0x20c, 0x210, 0x21c, 0x220, 0x224, 0x228, 0x218,
@@ -7369,6 +7914,20 @@ pub(crate) mod tests {
             wf(c, GAME_GP.wrapping_sub(off), r.f32(3.0));
             off += 4;
         }
+        // The splines' knot times (`AddPoint`'s f12) must ascend (the
+        // evaluation's binary search loops otherwise): jump A/B 0, .25, .5,
+        // .75|1, 1|1.25, 1.5, 2|1.75, 2.25|2, 2.5, 3, 3.25, 3.5, 4; the
+        // landing splines the same scaled by the air arc's f26 > 0.
+        for (off, v) in [
+            (0x6a98u32, 0.25f32), (0x6a94, 0.5), (0x6a80, 0.75), (0x6a78, 1.0), (0x6a70, 1.5),
+            (0x6a64, 2.25), (0x6a5c, 2.5), (0x6a90, 3.25), (0x6a4c, 3.5),
+            (0x6a34, 1.25), (0x6a2c, 1.5), (0x6a24, 1.75), (0x6a1c, 2.0), (0x6a14, 2.5), (0x6a04, 3.5),
+            (0x69f0, 0.25), (0x69e8, 0.5), (0x69e0, 0.75), (0x69d8, 1.0), (0x69d0, 1.5),
+            (0x69c4, 2.25), (0x69bc, 2.5), (0x69b0, 3.25), (0x69a8, 3.5),
+            (0x6990, 1.25), (0x6988, 1.5), (0x6980, 1.75), (0x6978, 2.0), (0x6970, 2.5), (0x6960, 3.5),
+        ] {
+            wf(c, GAME_GP.wrapping_sub(off), v.to_bits());
+        }
         // `CheckDistanceReset`'s "too far" limit: never.
         wf(c, GAME_GP.wrapping_sub(0x6778), 0x7f7f_ffff);
         // The four incoming tuning floats.
@@ -7378,6 +7937,101 @@ pub(crate) mod tests {
         c.f[15] = r.f32(1.0);
         c.g[A0][0] = ME as u64;
         c.g[A1][0] = INFO as u64;
+    }
+
+
+    #[test]
+    fn apply_jump_curves_matches() {
+        check(ee::s01::f_001635f8__generated, chase_camera_algorithm_apply_jump_curves, 300, &fixture_2);
+    }
+
+
+    /// The takeoff countdown (+0x2c4, 15 at takeoff) counts 60 Hz frames: the
+    /// takeoff curves are built 1 frame and the air arc 15 frames (0.25 s)
+    /// after takeoff at every rate, each once.
+    #[test]
+    fn apply_jump_curves_countdown_follows_the_rate() {
+        /// Rig slots +0xa8 (the jump progress, asked when the takeoff curves
+        /// are built) and +0x60 (asked when the air arc is built).
+        const KICK: u32 = FAKE + 0xa0;
+        const ARC: u32 = FAKE + 0x60;
+        /// The countdown after each tick, and how often each was built.
+        fn run(hz: u32) -> (Vec<i32>, u32, u32) {
+            let mut boxed = crate::difftest::fresh();
+            let c: &mut Cpu = &mut boxed;
+            fixture_2(c, 1);
+            crate::tick::set_for_test(c, hz);
+            c.bus.write32(LOG_UNWIND_AT, u32::MAX);
+            slot_2(c, VT, 0x98, LOAD_B0); // no early landing
+            w_5(c, RIG + 0xb0, 0);
+            slot_2(c, VT, 0xa8, KICK);
+            slot_2(c, VT, 0x60, ARC);
+            w_5(c, ME + st::TIMER, 15);
+            w_5(c, ME + st::AIRBORNE, 0);
+            w_5(c, INFO + 0x60, 1);
+            let mut timeline = Vec::new();
+            for _ in 0..hz / 4 + 8 {
+                c.g[A0][0] = ME as u64;
+                c.g[A1][0] = INFO as u64;
+                c.f[12] = 1.0f32.to_bits();
+                c.f[13] = 0.5f32.to_bits();
+                // f14 = 0 scales both curve sets to 0: they are not built (the
+                // fake rig's progress values would give them arbitrary knots),
+                // the rig is still asked on the tick each would be built.
+                c.f[14] = 0;
+                c.f[15] = 0.5f32.to_bits();
+                chase_camera_algorithm_apply_jump_curves(c);
+                timeline.push(c.bus.read32(ME + st::TIMER) as i32);
+            }
+            let calls = c.bus.read32(crate::difftest::fakes::LOG_COUNT);
+            let target = |c: &mut Cpu, i: u32| c.bus.read32(crate::difftest::fakes::LOG_START + 0x220 * i);
+            let kicks = (0..calls).filter(|&i| target(c, i) == KICK).count() as u32;
+            let arcs = (0..calls).filter(|&i| target(c, i) == ARC).count() as u32;
+            (timeline, kicks, arcs)
+        }
+        for hz in [60u32, 120, 240] {
+            let q = (hz / 60) as usize;
+            let (timeline, kicks, arcs) = run(hz);
+            assert_eq!(timeline.iter().position(|&n| n == 14), Some(0), "{hz} Hz: {timeline:?}");
+            assert_eq!(timeline.iter().filter(|&&n| n == 14).count(), q, "{hz} Hz: {timeline:?}");
+            assert_eq!(timeline.iter().position(|&n| n == 0), Some(14 * q), "{hz} Hz: {timeline:?}");
+            assert_eq!((kicks, arcs), (1, 1), "{hz} Hz: takeoff curves / air arc built");
+        }
+    }
+
+
+    /// After landing the curve offsets (+0x20c, +0x210, +0x21c, +0x220)
+    /// shrink by the vertical blend (+0x224) per update: one 60 Hz update and
+    /// `hz/60` updates at `hz` leave the same offsets.
+    #[test]
+    fn apply_jump_curves_landing_decay_follows_the_rate() {
+        fn offset_after(hz: u32, ticks: u32) -> f32 {
+            let mut boxed = crate::difftest::fresh();
+            let c: &mut Cpu = &mut boxed;
+            fixture_2(c, 2);
+            crate::tick::set_for_test(c, hz);
+            c.bus.write32(LOG_UNWIND_AT, u32::MAX);
+            // Straight to the landed state: no curves to build or evaluate.
+            w_5(c, INFO + 0x60, 1);
+            w_5(c, ME + st::AIRBORNE, 1);
+            w_5(c, ME + st::JUMP_READY, 0);
+            w_5(c, ME + st::APPLYING, 0);
+            w_5(c, ME + st::LANDING, 1);
+            wf(c, ME + st::VERTICAL_VEL, 0.9f32.to_bits());
+            wf(c, ME + st::JUMP_VEL_X, 1.0f32.to_bits());
+            for _ in 0..ticks {
+                c.g[A0][0] = ME as u64;
+                c.g[A1][0] = INFO as u64;
+                chase_camera_algorithm_apply_jump_curves(c);
+            }
+            f32::from_bits(c.bus.read32(ME + st::JUMP_VEL_X))
+        }
+        let at_60 = offset_after(60, 1);
+        assert!((at_60 - 0.9).abs() < 1e-6, "at 60: {at_60}");
+        for hz in [120u32, 240] {
+            let fast = offset_after(hz, hz / 60);
+            assert!((fast - at_60).abs() < 1e-5, "at {hz}: {fast}, at 60: {at_60}");
+        }
     }
 
 
@@ -7690,5 +8344,177 @@ pub(crate) mod tests {
                 c.bus.write32((GAME_GP as u32).wrapping_sub(0x68d4), r.f32(1.0));
             },
         );
+    }
+
+
+    /// `GameCamera_AvoidCollision` (0x15ee00) against its generated body.
+    mod avoid_collision {
+        use super::*;
+
+        const CAM: u32 = 0x0085_0000;
+        const CTL: u32 = CAM + 0x1000;
+        const WORLD_OBJ: u32 = CAM + 0x2000;
+        const GAME: u32 = CAM + 0x2100;
+        /// The collision world (`world+0x84 → +0x20`): a spatial key and
+        /// one cell with one object.
+        const COLL: u32 = CAM + 0x2200;
+        const CELL: u32 = CAM + 0x2300;
+        const OBJ: u32 = CAM + 0x2400;
+        const KIND: u32 = CAM + 0x2500;
+        const KIND_VT: u32 = CAM + 0x2600;
+        const HIT_BOX: u32 = CAM + 0x2800;
+        const MISS_BOX: u32 = CAM + 0x2840;
+        /// The vtable `CollSegment_ctor` stores (slot +0x18 is called by
+        /// `Nash_FindClosestContact` on a contact): MenuSys_IsActive here.
+        const SEG_VT: u32 = 0x0048_e6a8;
+        /// `Nash_FindClosestContact`'s contact records (its frame below ours).
+        const RECORDS: u32 = SP - 0x400 - 0x2050;
+        /// 2^30: on this x/y every offset below 32 rounds away, so the sweep
+        /// segments are vertical lines exactly on the cell's upper x/y bound
+        /// (`SpatialKey_ClassifyAABB` then reports "inside" and the object
+        /// list is tested).
+        const BIG: u32 = 0x4e80_0000;
+
+        fn fb(v: f32) -> u32 {
+            v.to_bits()
+        }
+
+        /// Seeds `% 4 < 2` place the camera on the collision cell (contacts
+        /// through the fake object's methods: fake 0/2 its kind tests, 1 its
+        /// bounds, 3 the contact count; 4..7 the script camera's query), the
+        /// others at random (no contact). The contact record's fraction and
+        /// side select the lift correction; the flags and the side axis the
+        /// script camera's exits.
+        pub(crate) fn setup(c: &mut Cpu, seed: u32) {
+            let mut r = machine(c, seed, 0x15_ee00, 8);
+            for a in (CAM..CAM + 0x2900).step_by(4) {
+                c.bus.write32(a, 0);
+            }
+            let on_cell = seed % 4 < 2;
+            c.bus.write32(GAME_GP.wrapping_sub(0x848), WORLD_OBJ);
+            c.bus.write32(WORLD_OBJ + 0x84, GAME);
+            c.bus.write32(GAME + 0x20, COLL);
+            // A level-10 key (cells of 1024) whose x/y upper bound is 2^30.
+            c.bus.write32(COLL, 10);
+            c.bus.write32(COLL + 4, (1 << 20) - 1);
+            c.bus.write32(COLL + 8, (1 << 20) - 1);
+            c.bus.write32(COLL + 0xc, 0);
+            c.bus.write32(COLL + 0x10, CELL);
+            c.bus.write32(GAME_GP.wrapping_sub(0x2dfc), 0); // the key's margin
+            c.bus.write32(CELL + 0x20, OBJ);
+            c.bus.write32(OBJ + 0x8, 0x40);
+            c.bus.write32(OBJ + 0xc, KIND);
+            c.bus.write32(OBJ + 0x88, 1);
+            c.bus.write32(KIND + 0xc, KIND_VT);
+            for (i, off) in [0x164u32, 0x16c, 0x134, 0x13c].into_iter().enumerate() {
+                c.bus.write16(KIND_VT + off - 4, 0);
+                c.bus.write32(KIND_VT + off, FAKE + 0x10 * i as u32);
+            }
+            c.bus.write16(SEG_VT + 0x18, 0);
+            c.bus.write32(SEG_VT + 0x1c, 0x002c_c098);
+            let (lo, hi) = (fb(-3e38), fb(3e38));
+            put_vec(c, HIT_BOX, [lo, lo, lo, 0]);
+            put_vec(c, HIT_BOX + 0x10, [hi, hi, hi, 0]);
+            put_vec(c, MISS_BOX, [hi, hi, hi, 0]);
+            put_vec(c, MISS_BOX + 0x10, [lo, lo, lo, 0]);
+            let script_box = if seed / 16 % 4 == 0 { MISS_BOX } else { HIT_BOX };
+            for (n, v) in [1, HIT_BOX, 1, 1, 1, script_box, 1, 1].into_iter().enumerate() {
+                c.bus.write32(LOG_RESULTS + 4 * n as u32, v);
+            }
+
+            // The script camera: inactive, its excluded state, or active.
+            c.bus.write32(CAM + 0xa8, CTL);
+            let (flags, state) = match seed / 2 % 4 {
+                0 => (0, 0),
+                1 => (2, 0x5d),
+                _ => (2, r.next_u32() % 0x80),
+            };
+            c.bus.write32(CTL + 0x30, flags);
+            c.bus.write32(CTL + 0x2c, state);
+            c.bus.write32(CAM + 0x4a0, seed / 64 % 2);
+            c.bus.write32(CAM + 0x4a4, seed / 128 % 2);
+            c.bus.write32(CAM + 0x460, r.f32(50.0)); // the lift
+            put_vec(c, CAM + 0x470, [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0]);
+            put_vec(c, CAM + 0x480, [r.next_u32(), 0, 0, 0]);
+
+            // The contact record (fraction +0x40, side +0x18, normal +0x10).
+            for i in 0..0x20 {
+                c.bus.write32(RECORDS + 4 * i, r.f32(2.0));
+            }
+            let fraction = match seed / 8 % 5 {
+                0 => 0.55f32,
+                1 => 0.9,
+                2 => 0.45,
+                3 => 0.1,
+                _ => (r.next_u32() % 1000) as f32 / 1000.0,
+            };
+            c.bus.write32(RECORDS + 0x40, fraction.to_bits());
+            let side = if seed / 40 % 2 == 0 { 0.5f32 } else { -0.5 };
+            c.bus.write32(RECORDS + 0x18, side.to_bits());
+
+            if on_cell {
+                c.bus.write32(GAME_GP.wrapping_sub(0x6c58), fb(1.0));
+                put_vec(c, 0x004f_f160, [0, 0, fb(1.0), 0]); // world up
+                let side_axis = match seed / 32 % 3 {
+                    0 => [fb(1.0), 0, 0, 0],
+                    1 => [0, fb(1.0), 0, 0],
+                    _ => [0, 0, 0, 0],
+                };
+                put_vec(c, 0x004f_f140, side_axis);
+                let look = [BIG, BIG, fb(700.0), fb(1.0)];
+                put_vec(c, CAM + 0xe0, look);
+                put_vec(c, CAM + 0x100, [BIG, BIG, fb(450.0), fb(1.0)]);
+                // The last clear eye: on the look-at point, or 250 below it.
+                let z = if seed / 24 % 2 == 0 { 700.0 } else { 450.0 };
+                put_vec(c, CAM + 0x490, [BIG, BIG, fb(z), fb(1.0)]);
+                // A normal with x/y large enough to survive the rounding.
+                let n = |r: &mut Rng| if r.next_u32() % 2 == 0 { 0 } else { fb(8.0) };
+                let (nx, ny) = (n(&mut r), n(&mut r));
+                c.bus.write32(RECORDS + 0x10, nx);
+                c.bus.write32(RECORDS + 0x14, ny);
+            } else {
+                c.bus.write32(GAME_GP.wrapping_sub(0x6c58), fb(0.05));
+                put_vec(c, 0x004f_f160, [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0]);
+                put_vec(c, 0x004f_f140, [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0]);
+                put_vec(c, CAM + 0xe0, [r.f32(500.0), r.f32(500.0), r.f32(500.0), fb(1.0)]);
+                put_vec(c, CAM + 0x100, [r.f32(500.0), r.f32(500.0), r.f32(500.0), fb(1.0)]);
+                put_vec(c, CAM + 0x490, [r.f32(500.0), r.f32(500.0), r.f32(500.0), fb(1.0)]);
+            }
+            c.bus.write32(GAME_GP.wrapping_sub(0x6c54), fb(0.97));
+            c.g[A0][0] = CAM as u64;
+        }
+
+        #[test]
+        fn avoid_collision_matches() {
+            check(ee::s01::f_0015ee00__generated, game_camera_avoid_collision, 400, &setup);
+        }
+
+        /// The lift (+0x460) decays by 0.97 per update: one 60 Hz update and
+        /// `hz/60` updates at `hz` leave the same lift (no contact, no
+        /// script camera).
+        #[test]
+        fn avoid_collision_lift_decay_follows_the_rate() {
+            fn lift_after(hz: u32, ticks: u32) -> f32 {
+                let mut boxed = crate::difftest::fresh();
+                let c: &mut Cpu = &mut boxed;
+                setup(c, 2); // random geometry (no contact), script inactive
+                c.bus.write32(LOG_UNWIND_AT, u32::MAX);
+                crate::tick::set_for_test(c, hz);
+                c.bus.write32(CAM + 0x460, fb(40.0));
+                for _ in 0..ticks {
+                    c.g[A0][0] = CAM as u64;
+                    game_camera_avoid_collision(c);
+                }
+                f32::from_bits(c.bus.read32(CAM + 0x460))
+            }
+            let at_60 = lift_after(60, 1);
+            assert!((at_60 - 40.0 * 0.97).abs() < 1e-3, "at 60: {at_60}");
+            for hz in [120u32, 240] {
+                let fast = lift_after(hz, hz / 60);
+                assert!((fast - at_60).abs() < 1e-3, "at {hz}: {fast}, at 60: {at_60}");
+            }
+            // Unconverted, two 120 Hz updates would leave 40 · 0.97².
+            assert!(lift_after(120, 2) > 40.0 * 0.97 * 0.97 + 0.5);
+        }
     }
 }

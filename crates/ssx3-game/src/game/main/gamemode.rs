@@ -49,6 +49,8 @@ pub(crate) use crate::game::fe::fepopup::sq;
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0023_80e8, game_mode_man_destroy, "GameModeMan_Destroy"),
+    (0x0023_8e20, gm_handler0_reset, "GMHandler0_Reset"),
+    (0x0023_98e8, gm_handler0_v06, "GMHandler0_v06"),
     (0x0023_8510, game_mode_man_handler_v06, "GameModeMan_HandlerV06"),
     (0x0023_8550, game_mode_man_handler_v07, "GameModeMan_HandlerV07"),
     (0x0023_8590, game_mode_man_handler_v09, "GameModeMan_HandlerV09"),
@@ -67,7 +69,10 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0023_ae00, gm_handler8_on_rider_finished, "GMHandler8_OnRiderFinished"),
     (0x0023_b038, gm_handler8_save_state, "GMHandler8_SaveState"),
     (0x0023_b070, gm_handler8_load_state, "GMHandler8_LoadState"),
+    (0x0023_b268, gm_handler4_reset, "GMHandler4_Reset"),
     (0x0023_b5f8, gm_handler4_v06, "GMHandler4_v06"),
+    (0x0023_bb98, gm_handler6_reset, "GMHandler6_Reset"),
+    (0x0023_c0d0, gm_handler7_reset, "GMHandler7_Reset"),
     (0x0023_c560, gm_handler7_v06, "GMHandler7_v06"),
     (0x0023_c770, game_rand_shuffle, "GameRand_Shuffle"),
 ];
@@ -731,8 +736,9 @@ pub fn gm_handler0_v09(c: &mut Cpu) {
 
 /// `int GMHandler9_v06(Handler9* self, int player, int other)` (0x23a070):
 /// bump `self->score[player]` and report whether it is now strictly ahead of
-/// the other player; if so and the race is running, accumulate the frame
-/// time into `manager->+0x78` (capped at the race's frame limit).
+/// the other player; if so and the race is running, extend the deadline
+/// `manager->+0x78` by `other` seconds (in game updates) unless the AI update
+/// counter (world->+0x84->+0xc->+0x8) has already passed it (then 0).
 pub fn gm_handler9_v06(c: &mut Cpu) {
     const ONE: u64 = 0x1;
     c.cycles += 17;
@@ -775,14 +781,15 @@ pub fn gm_handler9_v06(c: &mut Cpu) {
         return;
     }
     c.cycles += 7;
-    c.g[A2][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x78)); // accumulated
-    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84)); // race manager
-    c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc)); // race
-    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8)); // frame limit
+    c.g[A2][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x78)); // the deadline
+    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x84)); // game
+    c.g[A0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc)); // AI / race
+    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8)); // AI update counter
     c.g[V0][0] = (c.g[A2][0] < c.g[V0][0]) as u64;
-    let limited = c.g[V0][0] != 0;
-    c.g[V1][0] = 0x3c;
-    if limited {
+    let passed = c.g[V0][0] != 0;
+    // Updates per second (`li v1, 60`): the game rate.
+    c.g[V1][0] = deadline_updates_per_second(c);
+    if passed {
         c.cycles += 2;
         c.g[V0][0] = 0;
         abi::ret(c);
@@ -1379,7 +1386,9 @@ pub fn gm_handler9_reset(c: &mut Cpu) {
         c.g[RA][0] = sx(0x0023_9e1c);
         c.sw((c.g[V1][0] as u32).wrapping_add(0x14), 0);
         call_ptr(c, 0x0014_54f8, 0x0023_9e1c)?;
-        c.g[V1][0] = 0x3c;
+        // The deadline (+0x78): the mode time in seconds, in game updates
+        // (`li v1, 60`: the game rate).
+        c.g[V1][0] = deadline_updates_per_second(c);
         c.g[A3][0] = Addr(gp(c, -0x480)).lw(c);
         c.mult(0, V0, V0, V1);
         c.g[A2][0] = 0x28;
@@ -1837,6 +1846,967 @@ pub fn gmhandler8_reset(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// Game-mode resets and deadlines (tick rate).
+//
+// The game-mode manager (`gp-0x480`) keeps a deadline at +0x78 that the
+// handlers' `v06` callbacks compare with the AI update counter (world ->
+// +0x84 -> +0xc -> +0x8, one step per game update): the resets set it to
+// `seconds * 60` and `GMHandler0_v06` / `GMHandler9_v06` extend it by
+// `seconds * 60`. The 60 is updates per second: at another game rate it is
+// [`crate::tick::rate`] (60 at 60), so the deadline is the same wall time.
+
+/// `cBE_getBE()`.
+const BE_GET: u32 = 0x0014_dc80;
+/// `cBE_getInterface(be, n)`: 0 race, 1 player, 8 score.
+const BE_IFACE: u32 = 0x0014_dd58;
+/// `memset(p, c, n)`.
+const MEMSET: u32 = 0x0041_6210;
+/// The race interface's mode time (seconds) for a mode/level.
+const RACE_MODE_SECONDS: u32 = 0x0014_54f8;
+/// The race interface's medal time (seconds) for a mode and medal.
+const RACE_MEDAL_SECONDS: u32 = 0x0014_55d0;
+/// The race interface's time limit (seconds) for a mode and medal.
+const RACE_LIMIT_SECONDS: u32 = 0x0014_5600;
+/// The score interface's best medal for a level and mode.
+const SCORE_BEST_MEDAL: u32 = 0x0015_58f8;
+/// The player interface's slot / character / name helpers.
+const PLAYER_SLOT: u32 = 0x0014_6e98;
+const PLAYER_CHAR_ID: u32 = 0x0014_7398;
+const PLAYER_NAME: u32 = 0x0014_7410;
+/// The race interface's opponent character.
+const RACE_OPPONENT: u32 = 0x0014_5750;
+/// The quick-race / multiplayer flag and the event mode (bytes).
+const QUICK_RACE: u32 = 0x0053_5c11;
+const EVENT_MODE: u32 = 0x0053_5c12;
+/// The standings scratch table (`D_00536640`) and the sorted order
+/// (`D_00536708`).
+const STANDINGS: u32 = 0x0053_6640;
+const ORDER: u32 = 0x0053_6708;
+
+const PICK_OPPONENTS: Callee = Callee { addr: 0x0023_9938, f: ee::s06::GMHandler0_PickOpponents };
+const INIT_STANDINGS: Callee = Callee { addr: 0x0023_9aa0, f: ee::s06::GMHandler0_InitStandings };
+const SORT_BY_SCORE: Callee = Callee { addr: 0x0023_8b70, f: ee::s06::GameModeMan_SortByScore };
+
+/// The game-mode manager (`lw gp-0x480`).
+#[inline]
+fn gm_man(c: &mut Cpu) -> u64 {
+    Addr(gpo(c, -0x480)).lw(c)
+}
+
+/// Updates per second of the deadline arithmetic (`li 60`): the game rate.
+#[inline]
+fn deadline_updates_per_second(c: &mut Cpu) -> u64 {
+    crate::tick::rate(c) as u64
+}
+
+/// `int GMHandler0_v06(GMHandler0* self, int player, int seconds)`
+/// (0x2398e8): while the race runs (manager +0x8 == 1), extend the deadline
+/// (manager +0x78) by `seconds` and return 1, or 0 once the AI update counter
+/// has passed it. The deadline is in AI updates: `seconds * rate`.
+pub fn gm_handler0_v06(c: &mut Cpu) {
+    c.cycles += 5;
+    let gm = gm_man(c);
+    c.g[A3][0] = gm;
+    c.g[V0][0] = 1;
+    c.g[T0][0] = Addr(gm as u32).off(0x8).lw(c);
+    let running = c.g[T0][0] == c.g[V0][0];
+    c.g[V1][0] = c.g[A2][0];
+    if running {
+        c.cycles += 12;
+        c.g[A2][0] = Addr(gpo(c, -0x848)).lw(c);
+        c.g[A0][0] = deadline_updates_per_second(c);
+        c.mult(0, A0, V1, A0);
+        c.g[V0][0] = Addr(r32(c, A2)).off(0x84).lw(c);
+        c.g[V1][0] = Addr(gm as u32).off(0x78).lw(c);
+        c.g[A1][0] = Addr(r32(c, V0)).off(0xc).lw(c);
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A0)));
+        // The AI update counter.
+        c.g[V0][0] = Addr(r32(c, A1)).off(0x8).lw(c);
+        Addr(gm as u32).off(0x78).sw(c, c.g[V1][0]);
+        c.g[V1][0] = (c.g[V1][0] < c.g[V0][0]) as u64;
+        c.g[V0][0] = c.g[T0][0];
+        if c.g[V1][0] != 0 {
+            c.g[V0][0] = 0;
+        }
+    }
+    c.cycles += 2;
+    abi::ret(c);
+}
+
+/// `void GMHandler0_Reset(GMHandler0* self)` (0x238e20): in a quick race,
+/// reset the opponent count, the times table and the standings; set the
+/// deadline (manager +0x78) to the mode's time; then start round
+/// `manager->+0x70` (1, 2 or 3) with its standings sorted by score.
+pub fn gm_handler0_reset(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let f = Frame::open(c, 0x40);
+        f.save(c, S0, 0x30);
+        f.save(c, S1, 0x20);
+        f.save(c, S2, 0x10);
+        f.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, BE_GET, 0x0023_8e3c)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0;
+        call_ptr(c, BE_IFACE, 0x0023_8e48)?;
+        c.g[S1][0] = c.g[V0][0]; // the race interface
+        let gm = gm_man(c);
+        c.g[A0][0] = gm;
+        c.g[V0][0] = 0x53_0000;
+        c.g[V1][0] = Addr(QUICK_RACE).lb(c);
+        Addr(gm as u32).off(0x8c).sw(c, 0);
+        Addr(gm as u32).off(0x7c).sw(c, 0);
+        if c.g[V1][0] != 0 {
+            // A quick race: five opponents, the standings start over.
+            c.cycles += 5;
+            c.g[A1][0] = 5;
+            c.g[V1][0] = Addr(gm as u32).off(0x8).lw(c);
+            c.g[V0][0] = 1;
+            Addr(gm as u32).off(0x10).sw(c, 5);
+            if c.g[V1][0] != c.g[V0][0] {
+                c.cycles += 1;
+                Addr(gm as u32).off(0x14).sw(c, c.g[A1][0]);
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = 4;
+                Addr(gm as u32).off(0x14).sw(c, 4);
+            }
+            c.cycles += 7;
+            let gm = gm_man(c);
+            c.g[A0][0] = gm;
+            c.g[V0][0] = u64::MAX;
+            c.g[V1][0] = 1;
+            c.g[A1][0] = Addr(gm as u32).off(0x8).lw(c);
+            Addr(gm as u32).off(0x6c).sw(c, u64::MAX);
+            Addr(gm as u32).off(0x90).sw(c, 0);
+            if c.g[A1][0] != c.g[V1][0] {
+                c.cycles += 1;
+                Addr(gm as u32).off(0x94).sw(c, 0);
+            } else {
+                c.cycles += 2;
+                Addr(gm as u32).off(0x94).sw(c, c.g[A1][0]);
+            }
+            c.cycles += 14;
+            c.g[A0][0] = sx(r32(c, S0).wrapping_add(4));
+            c.g[A1][0] = 0;
+            c.g[A2][0] = 0x78;
+            call_ptr(c, MEMSET, 0x0023_8ec0)?;
+            reset_vcall(c, 0x0023_8ed4)?;
+            let gm = gm_man(c);
+            c.g[V1][0] = gm;
+            c.g[A0][0] = 1;
+            c.g[V0][0] = Addr(gm as u32).off(0x84).lw(c);
+            let pick = c.g[V0][0] == c.g[A0][0];
+            c.g[V0][0] = 3;
+            if pick {
+                c.cycles += 4;
+                c.g[A0][0] = c.g[S0][0];
+                PICK_OPPONENTS.call(c, 0x0023_8ef0)?;
+                c.g[V1][0] = gm_man(c);
+                c.g[V0][0] = 3;
+            }
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S0][0];
+            Addr(r32(c, V1)).off(0x74).sw(c, c.g[V0][0]);
+            Addr(r32(c, V1)).off(0x70).sw(c, c.g[V0][0]);
+            INIT_STANDINGS.call(c, 0x0023_8f08)?;
+        }
+        // The deadline: the mode's time in seconds, in game updates.
+        c.cycles += 11;
+        let gm = gm_man(c);
+        c.g[V0][0] = gm;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = Addr(gm as u32).lw(c);
+        call_ptr(c, RACE_MODE_SECONDS, 0x0023_8f18)?;
+        c.g[V1][0] = deadline_updates_per_second(c);
+        let gm = gm_man(c);
+        c.g[A1][0] = gm;
+        c.mult(0, V0, V0, V1);
+        c.g[A0][0] = 2;
+        c.g[V1][0] = Addr(gm as u32).off(0x8).lw(c);
+        Addr(gm as u32).off(0x78).sw(c, c.g[V0][0]);
+        c.cycles += 2;
+        if c.g[V1][0] != c.g[A0][0] {
+            c.g[V0][0] = 1;
+            Addr(gm as u32).off(0x94).sw(c, 1);
+        } else {
+            Addr(gm as u32).off(0x94).sw(c, 0);
+        }
+        // The round to start.
+        c.cycles += 5;
+        let gm = gm_man(c);
+        let g = Addr(gm as u32);
+        c.g[A1][0] = gm;
+        c.g[V0][0] = 2;
+        c.g[V1][0] = g.off(0x70).lw(c);
+        g.sw(c, c.g[V1][0]);
+        let round = c.g[V1][0];
+        if round == 2 {
+            gm0_round2(c, g)?;
+            f.restore(c, S0, 0x30);
+        } else {
+            c.cycles += 3;
+            let first = (round as i64) < 3;
+            c.g[V0][0] = 3;
+            if first {
+                c.cycles += 2;
+                c.g[V1][0] = 1;
+                if (round as i64) >= 0 {
+                    gm0_round1(c, g)?;
+                }
+                c.cycles += 1;
+                f.restore(c, S0, 0x30);
+            } else {
+                c.cycles += 2;
+                c.g[V0][0] = 1;
+                if round == 3 {
+                    gm0_round3(c, g)?;
+                    c.cycles += 1;
+                    f.restore(c, S0, 0x30);
+                } else {
+                    c.cycles += 2;
+                    f.restore(c, S0, 0x30);
+                }
+            }
+        }
+        c.cycles += 5;
+        f.restore(c, S1, 0x20);
+        f.restore(c, S2, 0x10);
+        f.restore_ra(c, 0);
+        f.close(c);
+        Ok(())
+    })
+}
+
+/// `self->vtable[4](self)` (the slot at +0x20/+0x24), returning to `ret`.
+fn reset_vcall(c: &mut Cpu, ret: u32) -> Flow {
+    c.g[V1][0] = Addr(r32(c, S0)).lw(c);
+    c.g[A0][0] = Addr(r32(c, V1)).off(0x20).lh(c);
+    c.g[V0][0] = Addr(r32(c, V1)).off(0x24).lw(c);
+    let func = c.g[V0][0] as u32;
+    c.g[A0][0] = sx(r32(c, S0).wrapping_add(r32(c, A0)));
+    call_ptr(c, func, ret)
+}
+
+/// The standings copy loop of [`gm_handler0_reset`]: `STANDINGS[i] =
+/// *src` for `i = 1..=count` (`count` = manager +0x10 read through `gm_reg`
+/// each pass), `src` in `src_reg` and `dst` in `dst_reg` both stepping by 4;
+/// the loop counter is t1 (starting at 1). `head` is the loop's address.
+fn gm0_copy_loop(c: &mut Cpu, src_reg: usize, dst_reg: usize, gm_reg: usize, head: u32) {
+    loop {
+        c.cycles += 9;
+        c.g[V0][0] = Addr(r32(c, src_reg)).lw(c);
+        c.g[T1][0] = sx(r32(c, T1).wrapping_add(1));
+        c.g[src_reg][0] = sx(r32(c, src_reg).wrapping_add(4));
+        Addr(r32(c, dst_reg)).sw(c, c.g[V0][0]);
+        c.g[V0][0] = Addr(r32(c, gm_reg)).off(0x10).lw(c);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+        c.g[V0][0] = ((c.g[T1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[dst_reg][0] = sx(r32(c, dst_reg).wrapping_add(4));
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, head);
+        }
+    }
+}
+
+/// `t1 = 1; v0 = (1 < manager->count + 1)` (the copy loops' entry test,
+/// manager in `gm_reg`): whether there is anything to copy.
+fn gm0_count_test(c: &mut Cpu, gm_reg: usize) -> bool {
+    c.g[T1][0] = 1;
+    c.g[V0][0] = Addr(r32(c, gm_reg)).off(0x10).lw(c);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+    c.g[V0][0] = (1i64 < (c.g[V0][0] as i64)) as u64;
+    c.g[V0][0] != 0
+}
+
+/// `SortByScore(manager, manager->count + 1)`, returning to `ret`.
+fn gm0_sort(c: &mut Cpu, ret: u32) -> Flow {
+    let gm = gm_man(c);
+    c.g[A0][0] = gm;
+    c.g[A1][0] = Addr(gm as u32).off(0x10).lw(c);
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(1));
+    SORT_BY_SCORE.call(c, ret)
+}
+
+/// Round 0/1 of [`gm_handler0_reset`] (0x238f9c..0x239118): a fresh event
+/// (five opponents, no times), opponents picked again when asked (+0x84),
+/// the two front riders from the standings of round 3, then the round-1
+/// standings.
+fn gm0_round1(c: &mut Cpu, g: Addr) -> Flow {
+    c.cycles += 19;
+    c.g[A0][0] = 5;
+    c.g[V0][0] = u64::MAX;
+    g.off(0x14).sw(c, 5);
+    g.off(0x6c).sw(c, u64::MAX);
+    g.sw(c, c.g[V1][0]);
+    g.off(0x70).sw(c, c.g[V1][0]);
+    g.off(0x74).sw(c, c.g[V1][0]);
+    g.off(0x10).sw(c, 5);
+    g.off(0x88).sw(c, c.g[V1][0]);
+    g.off(0x90).sw(c, 0);
+    g.off(0x9c).sw(c, 0);
+    g.off(0x98).sw(c, 0);
+    g.off(0x80).sw(c, 0);
+    let this = Addr(r32(c, S0));
+    this.off(0x4).sw(c, 0);
+    this.off(0x2c).sw(c, 0);
+    this.off(0x54).sw(c, 0);
+    c.g[V0][0] = g.off(0x84).lw(c);
+    let pick = c.g[V0][0] == c.g[V1][0];
+    c.g[S2][0] = sx(r32(c, S0).wrapping_add(4));
+    if pick {
+        c.cycles += 13;
+        c.g[A1][0] = 0;
+        c.g[A2][0] = 0x78;
+        c.g[A0][0] = c.g[S2][0];
+        call_ptr(c, MEMSET, 0x0023_8fd8)?;
+        reset_vcall(c, 0x0023_8fec)?;
+        c.g[A0][0] = c.g[S0][0];
+        PICK_OPPONENTS.call(c, 0x0023_8ff4)?;
+        c.g[A0][0] = c.g[S0][0];
+        INIT_STANDINGS.call(c, 0x0023_8ffc)?;
+    }
+    // Round-3 times (self+0x58..) into the standings.
+    c.cycles += 9;
+    c.g[V1][0] = 0x53_0000;
+    c.g[A1][0] = gm_man(c);
+    Addr(STANDINGS).sw(c, 0);
+    let any = gm0_count_test(c, A1);
+    c.g[S1][0] = 0x53_0000;
+    if any {
+        c.cycles += 4;
+        c.g[V0][0] = sx(STANDINGS);
+        c.g[V1][0] = sx(r32(c, S0).wrapping_add(0x58));
+        c.g[A0][0] = sx(STANDINGS + 4);
+        gm0_copy_loop(c, V1, A0, A1, 0x0023_9030);
+    }
+    // Sort; the two front riders' characters into the race.
+    c.cycles += 28;
+    gm0_sort(c, 0x0023_9064)?;
+    c.g[T2][0] = gm_man(c);
+    c.g[T0][0] = sx(ORDER);
+    c.g[A3][0] = Addr(gpo(c, -0x848)).lw(c);
+    c.g[T1][0] = 1;
+    c.g[V0][0] = Addr(ORDER).lw(c);
+    c.g[A1][0] = sx(r32(c, T2).wrapping_add(0x18));
+    c.g[A2][0] = Addr(r32(c, A3)).off(0x84).lw(c);
+    c.g[V0][0] = sx(r32(c, V0) << 2);
+    c.g[V0][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+    c.g[V1][0] = Addr(r32(c, A2)).off(0xc).lw(c);
+    c.g[A0][0] = Addr(r32(c, V0)).lw(c);
+    Addr(r32(c, V1)).off(0x20).sw(c, c.g[A0][0]);
+    c.g[V0][0] = Addr(ORDER + 4).lw(c);
+    c.g[A2][0] = Addr(r32(c, A3)).off(0x84).lw(c);
+    c.g[V0][0] = sx(r32(c, V0) << 2);
+    c.g[A1][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+    c.g[A0][0] = Addr(r32(c, A2)).off(0xc).lw(c);
+    c.g[V1][0] = Addr(r32(c, A1)).lw(c);
+    Addr(r32(c, A0)).off(0x24).sw(c, c.g[V1][0]);
+    c.g[V0][0] = Addr(r32(c, T2)).off(0x10).lw(c);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+    c.g[V0][0] = (1i64 < (c.g[V0][0] as i64)) as u64;
+    let any = c.g[V0][0] != 0;
+    c.g[V0][0] = 0x53_0000;
+    if any {
+        // Round-1 times (self+0x8..) into the standings.
+        c.cycles += 5;
+        c.g[A1][0] = c.g[T2][0];
+        c.g[V0][0] = sx(STANDINGS);
+        c.g[A0][0] = sx(r32(c, S2).wrapping_add(4));
+        c.g[V1][0] = sx(STANDINGS + 4);
+        gm0_copy_loop(c, A0, V1, A1, 0x0023_90d8);
+    }
+    c.cycles += 7;
+    gm0_sort(c, 0x0023_910c)?;
+    c.g[V0][0] = gm_man(c);
+    Addr(r32(c, V0)).off(0x84).sw(c, 0);
+    Ok(())
+}
+
+/// Round 2 of [`gm_handler0_reset`] (0x239118): the standings are the sums
+/// of the round-1 and round-2 times.
+fn gm0_round2(c: &mut Cpu, g: Addr) -> Flow {
+    c.cycles += 13;
+    c.g[V0][0] = 1;
+    g.off(0x9c).sw(c, 0);
+    g.off(0x74).sw(c, 1);
+    c.g[V1][0] = 0x53_0000;
+    g.off(0x70).sw(c, 1);
+    c.g[T1][0] = 1;
+    g.off(0x98).sw(c, 0);
+    Addr(STANDINGS).sw(c, 0);
+    c.g[V0][0] = g.off(0x10).lw(c);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+    c.g[V0][0] = (1i64 < (c.g[V0][0] as i64)) as u64;
+    let any = c.g[V0][0] != 0;
+    c.g[V0][0] = sx(STANDINGS);
+    if any {
+        c.cycles += 3;
+        c.g[A2][0] = c.g[A1][0];
+        c.g[A1][0] = sx(STANDINGS + 4);
+        c.g[A0][0] = sx(r32(c, S0).wrapping_add(8));
+        loop {
+            c.cycles += 11;
+            c.g[V0][0] = Addr(r32(c, A0)).off(0x28).lw(c);
+            c.g[T1][0] = sx(r32(c, T1).wrapping_add(1));
+            c.g[V1][0] = Addr(r32(c, A0)).lw(c);
+            c.g[A0][0] = sx(r32(c, A0).wrapping_add(4));
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+            Addr(r32(c, A1)).sw(c, c.g[V0][0]);
+            c.g[V0][0] = Addr(r32(c, A2)).off(0x10).lw(c);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+            c.g[V0][0] = ((c.g[T1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[A1][0] = sx(r32(c, A1).wrapping_add(4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0023_9158);
+            }
+        }
+    }
+    c.cycles += 6;
+    gm0_sort(c, 0x0023_9194)
+}
+
+/// Round 3 of [`gm_handler0_reset`] (0x23919c): the final, standings from
+/// the round-3 times (self+0x58..). Entered with v1 = 3, v0 = 1.
+fn gm0_round3(c: &mut Cpu, g: Addr) -> Flow {
+    c.cycles += 14;
+    g.off(0x74).sw(c, c.g[V1][0]);
+    g.off(0x88).sw(c, c.g[V0][0]);
+    c.g[A0][0] = 0x53_0000;
+    g.off(0x98).sw(c, c.g[V0][0]);
+    c.g[T1][0] = 1;
+    g.off(0x70).sw(c, c.g[V1][0]);
+    g.off(0x9c).sw(c, 0);
+    g.off(0x84).sw(c, 0);
+    Addr(STANDINGS).sw(c, 0);
+    c.g[V0][0] = g.off(0x10).lw(c);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+    c.g[V0][0] = (1i64 < (c.g[V0][0] as i64)) as u64;
+    let any = c.g[V0][0] != 0;
+    c.g[V0][0] = sx(STANDINGS);
+    if any {
+        c.cycles += 3;
+        c.g[V1][0] = sx(r32(c, S0).wrapping_add(0x58));
+        c.g[A0][0] = sx(STANDINGS + 4);
+        gm0_copy_loop(c, V1, A0, A1, 0x0023_91e0);
+    }
+    c.cycles += 4;
+    gm0_sort(c, 0x0023_9214)
+}
+
+/// The score interface's best medal for the event (a 0..3 result) as the
+/// handler's medal level at self+0xa (0x23b34c / 0x23c1a4): `level(result)`
+/// gives the stored level, or `None` to leave 0. Charges like the original.
+fn best_medal_level(c: &mut Cpu, ret: u32, two: fn(u64) -> bool) -> Flow {
+    c.g[A1][0] = 0;
+    c.g[A3][0] = Addr(r32(c, V0)).off(0x8).lw(c);
+    c.g[A2][0] = Addr(r32(c, V0)).off(0x68).lw(c);
+    call_ptr(c, SCORE_BEST_MEDAL, ret)?;
+    c.g[V1][0] = c.g[V0][0];
+    let level2 = two(c.g[V1][0]);
+    c.g[V0][0] = level2 as u64;
+    Addr(r32(c, S1)).off(0xa).sh(c, 0);
+    let level = if level2 {
+        c.cycles += 2;
+        c.g[V0][0] = 2;
+        Some(2)
+    } else {
+        c.cycles += 3;
+        c.g[V0][0] = 3;
+        let three = c.g[V1][0] == 3;
+        c.g[V0][0] = gm_man(c);
+        if three {
+            c.cycles += 1;
+            c.g[V0][0] = 1;
+            Some(1)
+        } else {
+            None
+        }
+    };
+    if level.is_some() {
+        c.cycles += 2;
+        Addr(r32(c, S1)).off(0xa).sh(c, c.g[V0][0]);
+        c.g[V0][0] = gm_man(c);
+    }
+    Ok(())
+}
+
+/// The three `cBE_getInterface` calls of the timed-event resets: race in s0,
+/// player in s2, score in v0 (returns at `rets`).
+fn race_player_score(c: &mut Cpu, rets: [u32; 6]) -> Flow {
+    call_ptr(c, BE_GET, rets[0])?;
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = 0;
+    call_ptr(c, BE_IFACE, rets[1])?;
+    c.g[S0][0] = c.g[V0][0];
+    call_ptr(c, BE_GET, rets[2])?;
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = 1;
+    call_ptr(c, BE_IFACE, rets[3])?;
+    c.g[S2][0] = c.g[V0][0];
+    call_ptr(c, BE_GET, rets[4])?;
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = 8;
+    call_ptr(c, BE_IFACE, rets[5])
+}
+
+/// The player's character into the manager's rider slot (`a18[slot] =
+/// charID(player, slot)`), after clearing the slots to -1 (0x23b3e8 /
+/// 0x23c248 ..): v0 = the character, s0 = the slot.
+fn seat_player(c: &mut Cpu, rets: [u32; 4]) -> Flow {
+    let gm = gm_man(c);
+    c.g[A0][0] = gm;
+    c.g[A2][0] = 0x28;
+    c.g[A1][0] = u64::MAX;
+    c.g[A0][0] = sx((gm as u32).wrapping_add(0x18));
+    call_ptr(c, MEMSET, rets[0])?;
+    c.g[A0][0] = c.g[S2][0];
+    c.g[A1][0] = 0;
+    call_ptr(c, PLAYER_SLOT, rets[1])?;
+    c.g[A0][0] = c.g[S2][0];
+    c.g[S0][0] = c.g[V0][0];
+    c.g[A1][0] = 0;
+    call_ptr(c, PLAYER_SLOT, rets[2])?;
+    c.g[A0][0] = c.g[S2][0];
+    c.g[A1][0] = c.g[V0][0];
+    call_ptr(c, PLAYER_CHAR_ID, rets[3])
+}
+
+/// `void GMHandler4_Reset(GMHandler4* self)` (0x23b268): a timed event
+/// (event modes 6..8): the medal level from the best score, the event's
+/// time limit `self->+0x4` = the medal time in seconds, as game updates (it
+/// is compared with the rider's finish time, counted in updates), copied to
+/// the deadline (+0x78) and +0x7c; the player seated alone.
+pub fn gm_handler4_reset(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 32;
+        let f = Frame::open(c, 0x40);
+        f.save(c, S1, 0x20);
+        f.save(c, S0, 0x30);
+        f.save(c, S2, 0x10);
+        f.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        race_player_score(c, [0x0023_b284, 0x0023_b290, 0x0023_b298, 0x0023_b2a4, 0x0023_b2ac, 0x0023_b2b8])?;
+        let gm = gm_man(c);
+        let g = Addr(gm as u32);
+        c.g[A1][0] = gm;
+        c.g[A2][0] = c.g[V0][0];
+        c.g[V0][0] = 1;
+        c.g[V1][0] = 0x53_0000;
+        g.sw(c, 1);
+        c.g[A0][0] = 7;
+        c.g[V1][0] = Addr(EVENT_MODE).lb(c);
+        g.off(0x10).sw(c, 0);
+        g.off(0x8).sw(c, c.g[V1][0]);
+        g.off(0x14).sw(c, 0);
+        g.off(0x8c).sw(c, 0);
+        let mode = c.g[V1][0];
+        // The level/medal table entries for modes 6, 7 and 8.
+        let entries = if mode == 7 {
+            c.cycles += 3;
+            Some((0xf, 3))
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = ((mode as i64) < 8) as u64;
+            if c.g[V0][0] == 0 {
+                c.g[V0][0] = 6;
+                c.cycles += 3;
+                c.g[V0][0] = 8;
+                let eight = mode == 8;
+                c.g[V0][0] = gm_man(c);
+                if eight {
+                    c.cycles += 2;
+                    Some((0x10, 4))
+                } else {
+                    c.cycles += 2;
+                    c.g[A0][0] = c.g[A2][0];
+                    None
+                }
+            } else {
+                c.g[V0][0] = 6;
+                c.cycles += 2;
+                let six = mode == 6;
+                c.g[V0][0] = gm_man(c);
+                if six {
+                    c.cycles += 4;
+                    c.g[V0][0] = 0xe;
+                    g.off(0x6c).sw(c, 0);
+                    g.off(0x68).sw(c, 0xe);
+                    c.cycles += 2;
+                    c.g[V0][0] = gm_man(c);
+                    c.g[A0][0] = c.g[A2][0];
+                } else {
+                    c.cycles += 2;
+                    c.g[A0][0] = c.g[A2][0];
+                }
+                None
+            }
+        };
+        if let Some((level, medal)) = entries {
+            c.g[V1][0] = level;
+            c.g[V0][0] = medal;
+            c.cycles += 2;
+            g.off(0x6c).sw(c, medal);
+            g.off(0x68).sw(c, level);
+            c.cycles += 2;
+            c.g[V0][0] = gm_man(c);
+            c.g[A0][0] = c.g[A2][0];
+        }
+        c.cycles += 9;
+        best_medal_level(c, 0x0023_b35c, |r| sx((r as u32).wrapping_sub(1)) < 2)?;
+        // The time limit: the medal time in seconds, in game updates.
+        c.cycles += 54;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = Addr(r32(c, S1)).off(0xa).lh(c);
+        c.g[A1][0] = Addr(r32(c, V0)).off(0x8).lw(c);
+        call_ptr(c, RACE_MEDAL_SECONDS, 0x0023_b3a0)?;
+        c.g[A0][0] = deadline_updates_per_second(c);
+        let gm = gm_man(c);
+        let g = Addr(gm as u32);
+        c.g[V1][0] = gm;
+        c.mult(0, V0, V0, A0);
+        c.g[A1][0] = 1;
+        c.g[A2][0] = 2;
+        let this = Addr(r32(c, S1));
+        this.off(0x4).sw(c, c.g[V0][0]);
+        g.off(0x88).sw(c, 1);
+        c.g[V0][0] = this.off(0x4).lw(c);
+        g.off(0x78).sw(c, c.g[V0][0]);
+        c.g[A0][0] = this.off(0x4).lw(c);
+        g.off(0x74).sw(c, 2);
+        g.off(0x70).sw(c, 2);
+        g.off(0x7c).sw(c, c.g[A0][0]);
+        // self->vtable[5](self).
+        c.g[V0][0] = this.lw(c);
+        c.g[A0][0] = Addr(r32(c, V0)).off(0x28).lh(c);
+        c.g[V1][0] = Addr(r32(c, V0)).off(0x2c).lw(c);
+        let func = c.g[V1][0] as u32;
+        c.g[A0][0] = sx(r32(c, S1).wrapping_add(r32(c, A0)));
+        call_ptr(c, func, 0x0023_b3e8)?;
+        seat_player(c, [0x0023_b3fc, 0x0023_b408, 0x0023_b418, 0x0023_b424])?;
+        let gm = gm_man(c);
+        let g = Addr(gm as u32);
+        c.g[V1][0] = gm;
+        c.g[S0][0] = sx(r32(c, S0) << 2);
+        f.restore(c, S2, 0x10);
+        c.g[S0][0] = sx((gm as u32).wrapping_add(r32(c, S0)));
+        f.restore_ra(c, 0);
+        Addr(r32(c, S0)).off(0x18).sw(c, c.g[V0][0]);
+        for off in [0x9c, 0x80, 0x84, 0x90, 0x94, 0x98] {
+            g.off(off).sw(c, 0);
+        }
+        Addr(r32(c, S1)).off(0x8).sh(c, 0);
+        f.restore(c, S0, 0x30);
+        f.restore(c, S1, 0x20);
+        f.close(c);
+        Ok(())
+    })
+}
+
+/// `void GMHandler6_Reset(GMHandler6* self)` (0x23bb98): one round; the
+/// deadline (+0x78) is the mode time in seconds, in game updates; then the
+/// riders: in a two-player race (`QUICK_RACE` == 2) both players with their
+/// names, else the player and the race's opponent.
+pub fn gm_handler6_reset(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 54;
+        let f = Frame::open(c, 0x60);
+        f.save(c, S1, 0x40);
+        f.save(c, S0, 0x50);
+        c.g[S1][0] = c.g[A0][0];
+        f.save(c, S2, 0x30);
+        f.save(c, S4, 0x10);
+        f.save(c, S3, 0x20);
+        f.save_ra(c, 0);
+        c.g[S0][0] = 1;
+        call_ptr(c, BE_GET, 0x0023_bbc0)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 1;
+        call_ptr(c, BE_IFACE, 0x0023_bbcc)?;
+        c.g[S4][0] = c.g[V0][0]; // the player interface
+        call_ptr(c, BE_GET, 0x0023_bbd4)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0;
+        call_ptr(c, BE_IFACE, 0x0023_bbe0)?;
+        c.g[S2][0] = c.g[V0][0]; // the race interface
+        c.g[V1][0] = u64::MAX;
+        let gm = gm_man(c);
+        let g = Addr(gm as u32);
+        c.g[V0][0] = gm;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = 1;
+        g.off(0x6c).sw(c, u64::MAX);
+        g.off(0x68).sw(c, u64::MAX);
+        g.off(0x74).sw(c, 1);
+        g.sw(c, 1);
+        g.off(0x10).sw(c, 1);
+        g.off(0x14).sw(c, 0);
+        g.off(0x70).sw(c, 1);
+        call_ptr(c, RACE_MODE_SECONDS, 0x0023_bc14)?;
+        // The deadline: the mode time in seconds, in game updates.
+        c.g[A0][0] = deadline_updates_per_second(c);
+        let gm = gm_man(c);
+        let g = Addr(gm as u32);
+        c.g[V1][0] = gm;
+        c.mult(0, V0, V0, A0);
+        g.off(0x98).sw(c, 1);
+        g.off(0x9c).sw(c, 0);
+        g.off(0x7c).sw(c, 0);
+        g.off(0x78).sw(c, c.g[V0][0]);
+        g.off(0x80).sw(c, 0);
+        g.off(0x84).sw(c, 0);
+        g.off(0x88).sw(c, 1);
+        g.off(0x8c).sw(c, 0);
+        g.off(0x90).sw(c, 0);
+        g.off(0x94).sw(c, 0);
+        // self->vtable[4](self).
+        c.g[V0][0] = Addr(r32(c, S1)).lw(c);
+        c.g[A0][0] = Addr(r32(c, V0)).off(0x20).lh(c);
+        c.g[V1][0] = Addr(r32(c, V0)).off(0x24).lw(c);
+        let func = c.g[V1][0] as u32;
+        c.g[A0][0] = sx(r32(c, S1).wrapping_add(r32(c, A0)));
+        call_ptr(c, func, 0x0023_bc5c)?;
+        c.g[A0][0] = 0x53_0000;
+        c.g[V1][0] = 2;
+        c.g[V0][0] = Addr(QUICK_RACE).lb(c);
+        let two_players = c.g[V0][0] == c.g[V1][0];
+        c.g[A0][0] = gm_man(c);
+        if two_players {
+            c.cycles += 37;
+            c.g[V0][0] = gm_man(c);
+            c.g[A0][0] = c.g[S4][0];
+            c.g[A1][0] = 0;
+            Addr(r32(c, V0)).off(0x10).sw(c, 0);
+            call_ptr(c, PLAYER_SLOT, 0x0023_bc84)?;
+            c.g[S0][0] = c.g[V0][0];
+            c.g[A0][0] = c.g[S4][0];
+            c.g[A1][0] = 1;
+            c.g[S2][0] = sx(r32(c, S0) << 2);
+            call_ptr(c, PLAYER_SLOT, 0x0023_bc98)?;
+            c.g[S1][0] = c.g[V0][0];
+            c.g[A0][0] = c.g[S4][0];
+            c.g[A1][0] = c.g[S0][0];
+            c.g[S3][0] = sx(r32(c, S1) << 2);
+            call_ptr(c, PLAYER_CHAR_ID, 0x0023_bcac)?;
+            c.g[A1][0] = c.g[S0][0];
+            c.g[A0][0] = c.g[S4][0];
+            store_at_slot(c, S2, 0x18);
+            call_ptr(c, PLAYER_NAME, 0x0023_bcc4)?;
+            c.g[A0][0] = c.g[S4][0];
+            c.g[A1][0] = c.g[S1][0];
+            store_at_slot(c, S2, 0x40);
+            call_ptr(c, PLAYER_CHAR_ID, 0x0023_bcdc)?;
+            c.g[A0][0] = c.g[S4][0];
+            c.g[A1][0] = c.g[S1][0];
+            store_at_slot(c, S3, 0x18);
+            call_ptr(c, PLAYER_NAME, 0x0023_bcf4)?;
+            store_at_slot(c, S3, 0x40);
+        } else {
+            c.cycles += 37;
+            c.g[A2][0] = 0x28;
+            c.g[A1][0] = u64::MAX;
+            c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x18));
+            call_ptr(c, MEMSET, 0x0023_bd14)?;
+            c.g[A0][0] = c.g[S4][0];
+            c.g[A1][0] = 0;
+            call_ptr(c, PLAYER_SLOT, 0x0023_bd20)?;
+            c.g[S0][0] = c.g[V0][0];
+            c.g[A0][0] = c.g[S4][0];
+            c.g[A1][0] = 0;
+            call_ptr(c, PLAYER_SLOT, 0x0023_bd30)?;
+            c.g[A1][0] = c.g[V0][0];
+            c.g[A0][0] = c.g[S4][0];
+            call_ptr(c, PLAYER_CHAR_ID, 0x0023_bd3c)?;
+            c.g[S0][0] = sx(r32(c, S0) << 2);
+            c.g[A1][0] = 0;
+            c.g[A0][0] = c.g[S4][0];
+            store_at_slot(c, S0, 0x18);
+            call_ptr(c, PLAYER_SLOT, 0x0023_bd58)?;
+            c.g[S0][0] = c.g[V0][0];
+            c.g[A0][0] = c.g[S2][0];
+            call_ptr(c, RACE_OPPONENT, 0x0023_bd64)?;
+            c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+            c.g[S0][0] = sx(r32(c, S0) << 2);
+            c.g[A0][0] = c.g[S4][0];
+            store_at_slot(c, S0, 0x18);
+            c.g[A1][0] = 0;
+            call_ptr(c, PLAYER_SLOT, 0x0023_bd84)?;
+            c.g[V1][0] = gm_man(c);
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
+            c.g[V0][0] = sx(r32(c, V0) << 2);
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+            Addr(r32(c, V1)).off(0x40).sw(c, 0);
+        }
+        c.cycles += 8;
+        f.restore(c, S0, 0x50);
+        f.restore(c, S1, 0x40);
+        f.restore(c, S2, 0x30);
+        f.restore(c, S3, 0x20);
+        f.restore(c, S4, 0x10);
+        f.restore_ra(c, 0);
+        f.close(c);
+        Ok(())
+    })
+}
+
+/// `v1 = manager + slot_reg; sw v0, field(v1)` (a per-rider table entry).
+fn store_at_slot(c: &mut Cpu, slot: usize, field: u32) {
+    c.g[V1][0] = gm_man(c);
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, slot)));
+    Addr(r32(c, V1)).off(field).sw(c, c.g[V0][0]);
+}
+
+/// `void GMHandler7_Reset(GMHandler7* self)` (0x23c0d0): a timed event
+/// (modes 9..11): the medal level from the best score, the target time
+/// `self->+0x4` = +0x7c = the medal time in 1/100 s (compared with finish
+/// times in 1/100 s, left alone), and the deadline (+0x78) = the time limit
+/// in seconds, in game updates; the player seated alone.
+pub fn gm_handler7_reset(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 31;
+        let f = Frame::open(c, 0x40);
+        f.save(c, S1, 0x20);
+        f.save(c, S0, 0x30);
+        f.save(c, S2, 0x10);
+        f.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        race_player_score(c, [0x0023_c0ec, 0x0023_c0f8, 0x0023_c100, 0x0023_c10c, 0x0023_c114, 0x0023_c120])?;
+        let gm = gm_man(c);
+        let g = Addr(gm as u32);
+        c.g[A1][0] = gm;
+        c.g[A2][0] = c.g[V0][0];
+        c.g[V0][0] = 1;
+        c.g[V1][0] = 0x53_0000;
+        g.sw(c, 1);
+        c.g[A0][0] = 9;
+        c.g[V1][0] = Addr(EVENT_MODE).lb(c);
+        g.off(0x10).sw(c, 0);
+        g.off(0x8).sw(c, c.g[V1][0]);
+        g.off(0x14).sw(c, 0);
+        let mode = c.g[V1][0];
+        let entries = if mode == 9 {
+            c.cycles += 3;
+            Some((0xe, 5))
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = ((mode as i64) < 9) as u64;
+            let below = c.g[V0][0] != 0;
+            c.g[V0][0] = gm_man(c);
+            if below {
+                None
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = 0xa;
+                let ten = mode == 0xa;
+                c.g[V0][0] = 0xb;
+                if ten {
+                    c.cycles += 3;
+                    Some((0xf, 6))
+                } else {
+                    c.cycles += 2;
+                    let eleven = mode == 0xb;
+                    c.g[V0][0] = gm_man(c);
+                    if eleven {
+                        c.cycles += 2;
+                        Some((0x10, 4))
+                    } else {
+                        // No table entries; straight to the score lookup.
+                        c.cycles += 2;
+                        c.g[A0][0] = c.g[A2][0];
+                        c.cycles += 8;
+                        return gm7_after_entries(c, f);
+                    }
+                }
+            }
+        };
+        if let Some((level, medal)) = entries {
+            c.g[V1][0] = level;
+            c.g[V0][0] = medal;
+            c.cycles += 3;
+            g.off(0x6c).sw(c, medal);
+            g.off(0x68).sw(c, level);
+            c.g[V0][0] = gm_man(c);
+        }
+        c.cycles += 1;
+        c.g[A0][0] = c.g[A2][0];
+        c.cycles += 8;
+        gm7_after_entries(c, f)
+    })
+}
+
+/// The rest of [`gm_handler7_reset`] from the score lookup (0x23c1a4).
+fn gm7_after_entries(c: &mut Cpu, f: Frame) -> Flow {
+    best_medal_level(c, 0x0023_c1b4, |r| r < 3)?;
+    c.cycles += 60;
+    c.g[A0][0] = c.g[S0][0];
+    c.g[A2][0] = Addr(r32(c, S1)).off(0xa).lh(c);
+    c.g[A1][0] = Addr(r32(c, V0)).off(0x8).lw(c);
+    call_ptr(c, RACE_MEDAL_SECONDS, 0x0023_c1f4)?;
+    // The target time in 1/100 s (finish times are in 1/100 s).
+    c.g[V1][0] = 0x64;
+    let gm = gm_man(c);
+    c.g[A2][0] = gm;
+    c.mult(0, V0, V0, V1);
+    c.g[A0][0] = c.g[S0][0];
+    let this = Addr(r32(c, S1));
+    this.off(0x4).sw(c, c.g[V0][0]);
+    Addr(gm as u32).off(0x7c).sw(c, c.g[V0][0]);
+    c.g[A1][0] = Addr(gm as u32).off(0x8).lw(c);
+    c.g[A2][0] = this.off(0xa).lh(c);
+    call_ptr(c, RACE_LIMIT_SECONDS, 0x0023_c218)?;
+    // The deadline: the time limit in seconds, in game updates.
+    c.g[A1][0] = deadline_updates_per_second(c);
+    let gm = gm_man(c);
+    let g = Addr(gm as u32);
+    c.g[V1][0] = gm;
+    c.mult(0, V0, V0, A1);
+    c.g[A0][0] = 2;
+    g.off(0x74).sw(c, 2);
+    g.off(0x70).sw(c, 2);
+    g.off(0x78).sw(c, c.g[V0][0]);
+    // self->vtable[4](self).
+    c.g[V0][0] = this.lw(c);
+    c.g[A0][0] = Addr(r32(c, V0)).off(0x20).lh(c);
+    c.g[V1][0] = Addr(r32(c, V0)).off(0x24).lw(c);
+    let func = c.g[V1][0] as u32;
+    c.g[A0][0] = sx(r32(c, S1).wrapping_add(r32(c, A0)));
+    call_ptr(c, func, 0x0023_c248)?;
+    seat_player(c, [0x0023_c25c, 0x0023_c268, 0x0023_c278, 0x0023_c284])?;
+    let gm = gm_man(c);
+    let g = Addr(gm as u32);
+    c.g[V1][0] = gm;
+    c.g[S0][0] = sx(r32(c, S0) << 2);
+    c.g[A0][0] = 1;
+    f.restore(c, S2, 0x10);
+    c.g[S0][0] = sx((gm as u32).wrapping_add(r32(c, S0)));
+    f.restore_ra(c, 0);
+    Addr(r32(c, S0)).off(0x18).sw(c, c.g[V0][0]);
+    g.off(0x8c).sw(c, 1);
+    g.off(0x9c).sw(c, 0);
+    g.off(0x80).sw(c, 0);
+    g.off(0x84).sw(c, 0);
+    g.off(0x88).sw(c, 1);
+    g.off(0x90).sw(c, 0);
+    g.off(0x94).sw(c, 0);
+    g.off(0x98).sw(c, 0);
+    this.off(0x8).sh(c, 0);
+    f.restore(c, S0, 0x30);
+    f.restore(c, S1, 0x20);
+    f.close(c);
+    Ok(())
+}
+
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2240,9 +3210,12 @@ pub(crate) mod tests {
 
     #[test]
     fn gm_handler9_reset_matches() {
-        check3(ee::s06::f_00239d88__generated, gm_handler9_reset, 40, &|c, seed| {
+        let setup = |c: &mut Cpu, seed: u32| {
             let mut r = base_4(c, seed, 0x239d88);
-            // The handler object with a vtable, and the global state block.
+            // The BE interfaces (else `cBE_getInterface` calls a null
+            // pointer), the handler object with a vtable, and the global
+            // state block.
+            be_interfaces(c);
             let h = DATA;
             let vt = DATA + 0x100;
             c.bus.write32(h, vt);
@@ -2250,8 +3223,11 @@ pub(crate) mod tests {
             c.bus.write16(vt + 0x20, 0);
             c.bus.write32(vt + 0x24, LEAF);
             c.bus.write32(GAME_GP - 0x480, DATA + 0x800);
+            c.bus.write32(DATA + 0x800 + 0x78, DEADLINE_UNSET);
             c.g[A0][0] = sx(h);
-        });
+        };
+        check3(ee::s06::f_00239d88__generated, gm_handler9_reset, 40, &setup);
+        deadline_stored(gm_handler9_reset, &setup, 40);
     }
 
 
@@ -2280,5 +3256,287 @@ pub(crate) mod tests {
                 }
             },
         );
+    }
+
+
+    // ------------------------------------------------------------------
+    // Game-mode resets and deadlines (tick rate).
+
+    /// The game-mode manager the reset fixtures use.
+    const GM: u32 = DATA + 0x800;
+    /// The handler object and its vtable (slots 4 and 5 are leaves).
+    const HANDLER_OBJ: u32 = DATA;
+
+    /// What the reset fixtures leave in the deadline (manager +0x78), so a
+    /// run that stored it can be told apart.
+    const DEADLINE_UNSET: u32 = 0x7777_7777;
+
+    /// The BE library's interfaces: `cBE_getInterface(be, n)` asks the
+    /// current BE state (`D_005308A8[gp-0x1efc]`) through its vtable slot
+    /// +0x8/+0xc. The test image has no state (a call through a null
+    /// pointer), so the state here answers through a fake callee: a zeroed
+    /// interface object. (The interface functions the resets call read
+    /// globals, not the object.)
+    fn be_interfaces(c: &mut Cpu) {
+        const IFACE: u32 = DATA + 0x6_0000;
+        const STATE: u32 = DATA + 0x6_1000;
+        const VT: u32 = DATA + 0x6_1100;
+        c.hooks.miss = fake_call;
+        c.hooks.jump_out = crate::difftest::fakes::fake_jump_out;
+        c.bus.write32(crate::difftest::fakes::LOG_UNWIND_AT, u32::MAX);
+        for n in 0..8u32 {
+            c.bus.write32(LOG_RESULTS + 4 * n, IFACE);
+        }
+        c.bus.write32(GAME_GP - 0x1efc, 0);
+        c.bus.write32(0x0053_08a8, STATE);
+        c.bus.write32(STATE + 4, VT);
+        c.bus.write16(VT + 8, 0);
+        c.bus.write32(VT + 0xc, FAKE);
+    }
+
+    /// At least a quarter of the `seeds` fixtures reach the deadline store
+    /// (run through the replacement; the differential test proves the
+    /// original does the same).
+    fn deadline_stored(f: GuestFn, setup: &dyn Fn(&mut Cpu, u32), seeds: u32) {
+        let stored = (0..seeds)
+            .filter(|&seed| {
+                let mut c = crate::difftest::fresh();
+                setup(&mut c, seed);
+                f(&mut c);
+                c.bus.read32(GM + 0x78) != DEADLINE_UNSET
+            })
+            .count() as u32;
+        assert!(stored * 4 >= seeds, "only {stored} of {seeds} seeds stored the deadline");
+    }
+
+    /// A scrambled machine with the game image, the BE interfaces
+    /// ([`be_interfaces`]), the world (game -> AI with its update counter)
+    /// and the manager at `gp-0x480` (deadline [`DEADLINE_UNSET`]); the
+    /// handler's vtable slots 4 and 5 are a leaf.
+    fn gm_reset_base(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
+        let mut r = base_4(c, seed, salt);
+        be_interfaces(c);
+        let vt = DATA + 0x100;
+        c.bus.write32(HANDLER_OBJ, vt);
+        for slot in [0x20u32, 0x28] {
+            c.bus.write16(vt + slot, 0);
+            c.bus.write32(vt + slot + 4, LEAF);
+        }
+        // The handler's time tables (+0x4.., three rows of ten).
+        for i in 0..0x20u32 {
+            c.bus.write32(HANDLER_OBJ + 4 + 4 * i, r.next_u32() % 5000);
+        }
+        c.bus.write32(GAME_GP - 0x480, GM);
+        for i in 0..0x28u32 {
+            c.bus.write32(GM + 4 * i, 0);
+        }
+        c.bus.write32(GM + 0x78, DEADLINE_UNSET);
+        // The rider character slots (+0x18..).
+        for i in 0..10u32 {
+            c.bus.write32(GM + 0x18 + 4 * i, r.next_u32() % 10);
+        }
+        let game = WORLD_3 + 0x1000;
+        let ai = WORLD_3 + 0x2000;
+        c.bus.write32(WORLD_3 + 0x84, game);
+        c.bus.write32(game + 0xc, ai);
+        c.bus.write32(ai + 0x8, r.next_u32() % 4000);
+        c.g[A0][0] = sx(HANDLER_OBJ);
+        r
+    }
+
+    fn gm0_reset_setup(c: &mut Cpu, seed: u32) {
+        let _ = gm_reset_base(c, seed, 0x238e20);
+        // Quick race (0x535c11) on some seeds.
+        c.bus.write8(QUICK_RACE, if seed % 4 == 1 { 1 } else { 0 });
+        c.bus.write32(GM + 0x8, [1, 2, 3][seed as usize % 3]);
+        c.bus.write32(GM + 0x10, seed % 6);
+        // The round to start: 0..3 and two out-of-range values.
+        c.bus.write32(GM + 0x70, [0, 1, 2, 3, u32::MAX, 4][(seed / 3) as usize % 6]);
+        c.bus.write32(GM + 0x84, (seed / 2) % 2);
+    }
+
+    #[test]
+    fn gm_handler0_reset_matches() {
+        check3(ee::s06::f_00238e20__generated, gm_handler0_reset, 60, &gm0_reset_setup);
+        deadline_stored(gm_handler0_reset, &gm0_reset_setup, 60);
+    }
+
+    fn gm0_v06_setup(c: &mut Cpu, seed: u32) {
+        let mut r = gm_reset_base(c, seed, 0x2398e8);
+        c.bus.write32(GM + 0x8, if seed % 3 == 0 { 0 } else { 1 });
+        let now = c.bus.read32(WORLD_3 + 0x2000 + 0x8);
+        // The deadline before or after the counter.
+        c.bus.write32(GM + 0x78, if seed % 2 == 0 { now + r.next_u32() % 900 } else { now / 2 });
+        c.g[A1][0] = (seed % 2) as u64;
+        c.g[A2][0] = sx(r.next_u32() % 300);
+    }
+
+    #[test]
+    fn gm_handler0_v06_matches() {
+        check3(ee::s06::f_002398e8__generated, gm_handler0_v06, 100, &gm0_v06_setup);
+    }
+
+    fn gm4_reset_setup(c: &mut Cpu, seed: u32) {
+        let _ = gm_reset_base(c, seed, 0x23b268);
+        // The event mode (0x535c12): 6..8 have table entries.
+        c.bus.write8(EVENT_MODE, [6, 7, 8, 9, 5][seed as usize % 5]);
+        // The score lookup answers -1 (the profile database is closed).
+        c.bus.write8(0x0053_05f9, 1);
+    }
+
+    #[test]
+    fn gm_handler4_reset_matches() {
+        check3(ee::s06::f_0023b268__generated, gm_handler4_reset, 40, &gm4_reset_setup);
+        deadline_stored(gm_handler4_reset, &gm4_reset_setup, 40);
+    }
+
+    fn gm6_reset_setup(c: &mut Cpu, seed: u32) {
+        let _ = gm_reset_base(c, seed, 0x23bb98);
+        // Two players (0x535c11 == 2) or one.
+        c.bus.write8(QUICK_RACE, [2, 0, 1][seed as usize % 3]);
+    }
+
+    #[test]
+    fn gm_handler6_reset_matches() {
+        check3(ee::s06::f_0023bb98__generated, gm_handler6_reset, 40, &gm6_reset_setup);
+        deadline_stored(gm_handler6_reset, &gm6_reset_setup, 40);
+    }
+
+    fn gm7_reset_setup(c: &mut Cpu, seed: u32) {
+        let _ = gm_reset_base(c, seed, 0x23c0d0);
+        c.bus.write8(EVENT_MODE, [9, 10, 11, 12, 8][seed as usize % 5]);
+        c.bus.write8(0x0053_05f9, 1);
+    }
+
+    #[test]
+    fn gm_handler7_reset_matches() {
+        check3(ee::s06::f_0023c0d0__generated, gm_handler7_reset, 40, &gm7_reset_setup);
+        deadline_stored(gm_handler7_reset, &gm7_reset_setup, 40);
+    }
+
+    /// The deadline (manager +0x78) one call of `f` leaves at game rate `hz`
+    /// (with the manager's deadline before the call in `.1`).
+    fn deadline_at(hz: u32, f: GuestFn, setup: &dyn Fn(&mut Cpu, u32), seed: u32) -> (i32, i32) {
+        let mut c = crate::difftest::fresh();
+        setup(&mut c, seed);
+        // The rate lives in the app manager; the fixture may already have
+        // an object there (the pointer is a gp global it also uses).
+        let app = c.bus.read32(crate::tick::APPMAN_PTR);
+        if app == 0 {
+            crate::tick::set_for_test(&mut c, hz);
+        } else {
+            c.bus.write32(app + crate::tick::APPMAN_RATE, hz);
+            c.bus.write32(app + crate::tick::APPMAN_STEP, crate::tick::step_bits(hz));
+        }
+        let before = c.bus.read32(GM + 0x78) as i32;
+        f(&mut c);
+        (c.bus.read32(GM + 0x78) as i32, before)
+    }
+
+    /// A reset's deadline is the mode time in game updates: twice the 60 Hz
+    /// count at 120 Hz, four times at 240 (the same wall time).
+    fn reset_deadline_follows_the_rate(f: GuestFn, setup: &dyn Fn(&mut Cpu, u32), seeds: &[u32]) {
+        let mut timed = false;
+        for &seed in seeds {
+            let (d60, before) = deadline_at(60, f, setup, seed);
+            timed |= d60 != before;
+            for hz in [120u32, 240] {
+                let (d, _) = deadline_at(hz, f, setup, seed);
+                assert_eq!(d, d60.wrapping_mul(hz as i32 / 60), "seed {seed}, {hz} Hz");
+            }
+        }
+        assert!(timed, "no seed set a deadline");
+    }
+
+    #[test]
+    fn gm_handler0_reset_deadline_follows_the_rate() {
+        // Seed 0: no quick race, round 0; seed 4: round 1 with picks.
+        reset_deadline_follows_the_rate(gm_handler0_reset, &gm0_reset_setup, &[0, 4, 13]);
+    }
+
+    #[test]
+    fn gm_handler4_reset_deadline_follows_the_rate() {
+        // Modes 6, 7, 8 (time limits from the event table).
+        reset_deadline_follows_the_rate(gm_handler4_reset, &gm4_reset_setup, &[0, 1, 2]);
+        // The handler's own limit (+0x4, compared with finish times in
+        // updates) is the same count.
+        let mut c = crate::difftest::fresh();
+        gm4_reset_setup(&mut c, 0);
+        crate::tick::set_for_test(&mut c, 120);
+        gm_handler4_reset(&mut c);
+        assert_eq!(c.bus.read32(HANDLER_OBJ + 4), c.bus.read32(GM + 0x78));
+    }
+
+    #[test]
+    fn gm_handler6_reset_deadline_follows_the_rate() {
+        reset_deadline_follows_the_rate(gm_handler6_reset, &gm6_reset_setup, &[0, 1]);
+    }
+
+    #[test]
+    fn gm_handler7_reset_deadline_follows_the_rate() {
+        reset_deadline_follows_the_rate(gm_handler7_reset, &gm7_reset_setup, &[0, 1, 2]);
+        // The target time (+0x7c) stays in 1/100 s.
+        let target = |hz: u32| {
+            let mut c = crate::difftest::fresh();
+            gm7_reset_setup(&mut c, 1);
+            crate::tick::set_for_test(&mut c, hz);
+            gm_handler7_reset(&mut c);
+            c.bus.read32(GM + 0x7c)
+        };
+        assert_eq!(target(240), target(60));
+    }
+
+    #[test]
+    fn gm_handler9_reset_deadline_follows_the_rate() {
+        let setup = |c: &mut Cpu, seed: u32| {
+            let mut r = base_4(c, seed, 0x239d88);
+            be_interfaces(c);
+            let h = DATA;
+            let vt = DATA + 0x100;
+            c.bus.write32(h, vt);
+            c.bus.write32(h + 4, r.next_u32());
+            c.bus.write16(vt + 0x20, 0);
+            c.bus.write32(vt + 0x24, LEAF);
+            c.bus.write32(GAME_GP - 0x480, GM);
+            c.bus.write32(GM + 0x78, DEADLINE_UNSET);
+            c.g[A0][0] = sx(h);
+        };
+        reset_deadline_follows_the_rate(gm_handler9_reset, &setup, &[0, 1]);
+    }
+
+    /// The `v06` extensions add the seconds in game updates: the deadline
+    /// moves by `rate` per second.
+    fn extension_follows_the_rate(f: GuestFn, setup: &dyn Fn(&mut Cpu, u32), seed: u32) {
+        let (a60, b60) = deadline_at(60, f, setup, seed);
+        assert_ne!(a60, b60, "seed {seed}: not extended");
+        for hz in [120u32, 240] {
+            let (a, b) = deadline_at(hz, f, setup, seed);
+            assert_eq!(a.wrapping_sub(b), a60.wrapping_sub(b60).wrapping_mul(hz as i32 / 60), "{hz} Hz");
+        }
+    }
+
+    #[test]
+    fn gm_handler0_v06_extension_follows_the_rate() {
+        // Seed 2: running, the deadline still ahead of the counter.
+        extension_follows_the_rate(gm_handler0_v06, &|c, seed| {
+            gm0_v06_setup(c, seed);
+            c.g[A2][0] = 7;
+        }, 2);
+    }
+
+    #[test]
+    fn gm_handler9_v06_extension_follows_the_rate() {
+        extension_follows_the_rate(gm_handler9_v06, &|c, seed| {
+            let _ = gm_reset_base(c, seed, 0x23a070);
+            // Player 0 one point behind, then ahead after the bump.
+            c.bus.write16(DATA + 4, 3);
+            c.bus.write16(DATA + 6, 3);
+            c.g[A0][0] = sx(DATA);
+            c.g[A1][0] = 0;
+            c.g[A2][0] = 9;
+            c.bus.write32(GM + 0x8, 1);
+            let now = c.bus.read32(WORLD_3 + 0x2000 + 0x8);
+            c.bus.write32(GM + 0x78, now + 100);
+        }, 0);
     }
 }

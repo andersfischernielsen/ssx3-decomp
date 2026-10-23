@@ -118,6 +118,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x002b_0e60, spch_create_instance, "SPCH_CreateInstance"),
     (0x002b_11b0, speech_system_stop_instance, "SpeechSystem_StopInstance"),
     (0x002b_1220, speech_system_get_instance_stream_slot, "SpeechSystem_GetInstanceStreamSlot"),
+    (0x002b_1458, speech_system_set_event_context, "SpeechSystem_SetEventContext"),
+    (0x002b_1720, speech_system_tick_event_contexts, "SpeechSystem_TickEventContexts"),
     (0x002b_1a98, csong_configuration_ctor, "cSongConfiguration_ctor"),
     (0x002b_1b68, c_song_configuration_dtor, "cSongConfiguration_dtor"),
     (0x002b_1f78, song_instance_dtor, "SongInstance_dtor"),
@@ -1801,6 +1803,169 @@ pub fn speech_system_get_instance_stream_slot(c: &mut Cpu) {
         c.g[V0][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x4)).lw(c);
         abi::ret(c);
     }
+}
+
+
+/// The speech system's event contexts: 10 slots of 0x20 bytes from
+/// `sys + 0x18`, each remembering who/where a speech event came from for a
+/// few seconds so a line that starts later can still be attributed.
+pub(crate) mod speech_ctx {
+    /// The first slot.
+    pub const SLOTS: u32 = 0x18;
+    pub const SLOT_SIZE: u32 = 0x20;
+    pub const COUNT: u32 = 10;
+    /// Slot fields: in use, ticks left, the two keys, then the context
+    /// (two words, a float, a word).
+    pub const USED: u32 = 0x0;
+    pub const LIFE: u32 = 0x4;
+    pub const KEY_A: u32 = 0x8;
+    pub const KEY_B: u32 = 0xc;
+    pub const ARG_A3: u32 = 0x10;
+    pub const ARG_T0: u32 = 0x14;
+    pub const ARG_F12: u32 = 0x18;
+    pub const ARG_T1: u32 = 0x1c;
+    /// A context's lifetime in 60 Hz frames (3 s).
+    pub const LIFETIME_FRAMES: u32 = 0xb4;
+}
+
+
+/// `bool SpeechSystem_SetEventContext(SpeechSystem *sys, int keyA, int keyB,
+/// int a3, int t0, int t1, float f12, bool refresh)` (0x2b1458): look for a
+/// live context with both keys; if there is one, renew its lifetime when
+/// `refresh` (t2) is set and return `refresh`; otherwise fill the first free
+/// slot (lifetime 3 s, the keys and the context) and return 1, or 0 when all
+/// ten are in use.
+///
+/// Tick rate: the lifetime counts ticks (`SpeechSystem_TickEventContexts`),
+/// so the 180 frames are `tick::ticks_from_frames60(180)` (exact at 60).
+pub fn speech_system_set_event_context(c: &mut Cpu) {
+    use speech_ctx::*;
+    c.cycles += 8;
+    let sys = c.g[A0][0];
+    c.g[T3][0] = sys;
+    c.g[T4][0] = c.g[A1][0];
+    c.g[T5][0] = c.g[A2][0];
+    let (key_a, key_b) = (c.g[T4][0], c.g[T5][0]);
+    c.g[V1][0] = sx((sys as u32).wrapping_add(SLOTS));
+    // a0: the first free slot (-1: none yet); a2: the slot index; a1: the
+    // slot's lifetime field.
+    c.g[A0][0] = u64::MAX;
+    c.g[A2][0] = 0;
+    let life = crate::tick::ticks_from_frames60(c, LIFETIME_FRAMES);
+    c.g[T6][0] = life as u64;
+    c.g[A1][0] = sx((sys as u32).wrapping_add(SLOTS + LIFE));
+    loop {
+        c.cycles += 3;
+        let at = c.g[A1][0] as u32;
+        c.g[V0][0] = c.lw(at.wrapping_sub(LIFE));
+        let free = c.g[V0][0] == 0;
+        c.g[V0][0] = !c.g[A0][0];
+        if free {
+            c.cycles += 2;
+            if c.g[V0][0] == 0 {
+                c.g[A0][0] = c.g[A2][0];
+            }
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = c.lw(at.wrapping_add(KEY_A - LIFE));
+            if c.g[V0][0] == key_a {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw(at.wrapping_add(KEY_B - LIFE));
+                if c.g[V0][0] == key_b {
+                    // The same event: renew it (or just report it).
+                    c.cycles += 4;
+                    if c.g[T2][0] == 0 {
+                        c.g[V0][0] = 0;
+                    } else {
+                        c.g[V0][0] = 1;
+                        c.sw(at, life as u64);
+                    }
+                    abi::ret(c);
+                    return;
+                }
+            }
+        }
+        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+        c.cycles += 3;
+        let more = (c.g[A2][0] as i64) < COUNT as i64;
+        c.g[V0][0] = more as u64;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(SLOT_SIZE));
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x002b_1478);
+        }
+    }
+    c.cycles += 3;
+    c.g[V0][0] = u64::MAX;
+    let none = c.g[A0][0] == u64::MAX;
+    let off = (c.g[A0][0] as u32) << 5;
+    c.g[A0][0] = sx(off);
+    if none {
+        c.cycles += 2;
+        c.g[V0][0] = 0;
+        abi::ret(c);
+        return;
+    }
+    // Fill the free slot.
+    c.cycles += 17;
+    let slot = (c.g[T3][0] as u32).wrapping_add(off);
+    c.g[A1][0] = 1;
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(off));
+    c.sw(c.g[V1][0] as u32, 1);
+    c.sw(slot + SLOTS + LIFE, life as u64);
+    c.sw(slot + SLOTS + KEY_A, c.g[T4][0]);
+    c.sw(slot + SLOTS + KEY_B, c.g[T5][0]);
+    c.sw(slot + SLOTS + ARG_A3, c.g[A3][0]);
+    c.sw(slot + SLOTS + ARG_T0, c.g[T0][0]);
+    c.swc1(12, slot + SLOTS + ARG_F12);
+    c.sw(slot + SLOTS + ARG_T1, c.g[T1][0]);
+    c.g[A2][0] = sx(slot);
+    c.g[V1][0] = sx(slot);
+    c.g[A0][0] = sx(slot);
+    c.g[V0][0] = 1;
+    abi::ret(c);
+}
+
+
+/// `void SpeechSystem_TickEventContexts(SpeechSystem *sys)` (0x2b1720): count
+/// down the lifetime of each live event context, freeing it at zero.
+///
+/// Tick rate: counts ticks; `SpeechSystem_SetEventContext` converts the
+/// lifetime.
+pub fn speech_system_tick_event_contexts(c: &mut Cpu) {
+    use speech_ctx::*;
+    c.cycles += 2;
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(SLOTS + LIFE));
+    c.g[V1][0] = (COUNT - 1) as u64;
+    loop {
+        c.cycles += 3;
+        let at = c.g[A0][0] as u32;
+        c.g[V0][0] = c.lw(at.wrapping_sub(LIFE));
+        let used = c.g[V0][0] != 0;
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(1));
+        if used {
+            c.cycles += 4;
+            c.g[V0][0] = sx((c.lw(at) as u32).wrapping_sub(1));
+            c.sw(at, c.g[V0][0]);
+            if (c.g[V0][0] as i64) <= 0 {
+                c.cycles += 1;
+                c.sw(at.wrapping_sub(LIFE), 0);
+            }
+        }
+        c.cycles += 2;
+        let more = (c.g[V1][0] as i64) >= 0;
+        c.g[A0][0] = sx(at.wrapping_add(SLOT_SIZE));
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x002b_1728);
+        }
+    }
+    c.cycles += 2;
+    abi::ret(c);
 }
 
 
@@ -6058,6 +6223,89 @@ pub(crate) mod tests {
                 c.bus.write32(stream + 4, r.next_u32());
             }
         });
+    }
+
+
+    /// Ten event-context slots at `DATA + 0x18` with keys from a small set
+    /// (so lookups hit), some free, some about to expire.
+    fn speech_contexts(c: &mut Cpu, r: &mut Rng, all_used: bool) {
+        for i in 0..10u32 {
+            let s = DATA + 0x18 + 0x20 * i;
+            let used = all_used || r.next_u32() % 3 != 0;
+            c.bus.write32(s, if used { 1 + r.next_u32() % 3 } else { 0 });
+            c.bus.write32(s + 4, [0u32, 1, 2, 0xffff_ffff, 179, 0x8000_0000][(r.next_u32() % 6) as usize]);
+            c.bus.write32(s + 8, r.next_u32() % 3);
+            c.bus.write32(s + 0xc, r.next_u32() % 3);
+            for off in [0x10u32, 0x14, 0x18, 0x1c] {
+                c.bus.write32(s + off, r.next_u32());
+            }
+        }
+    }
+
+
+    #[test]
+    fn speech_system_set_event_context_matches() {
+        check(ee::s08::f_002b1458__generated, speech_system_set_event_context, 300, &|c, seed| {
+            let mut r = rng(0x002b_1458, seed);
+            scramble(c, &mut r);
+            c.g[A0][0] = sx(DATA);
+            speech_contexts(c, &mut r, seed % 5 == 0);
+            let key = |r: &mut Rng| match r.next_u32() % 5 {
+                0 => (r.next_u32() as u64) << 32 | r.next_u32() as u64,
+                _ => (r.next_u32() % 3) as u64,
+            };
+            c.g[A1][0] = key(&mut r);
+            c.g[A2][0] = key(&mut r);
+            c.g[T2][0] = if seed % 2 == 0 { 0 } else { (r.next_u32() as u64) << 32 | 1 };
+            c.f[12] = r.edge_f32();
+        });
+    }
+
+
+    #[test]
+    fn speech_system_tick_event_contexts_matches() {
+        check(ee::s08::f_002b1720__generated, speech_system_tick_event_contexts, 300, &|c, seed| {
+            let mut r = rng(0x002b_1720, seed);
+            scramble(c, &mut r);
+            c.g[A0][0] = sx(DATA);
+            speech_contexts(c, &mut r, false);
+        });
+    }
+
+
+    /// Ticks until a context set at rate `hz` is freed by the per-tick
+    /// countdown.
+    fn speech_context_ticks(hz: u32) -> u32 {
+        let mut c = crate::difftest::fresh();
+        crate::tick::set_for_test(&mut c, hz);
+        for i in 0..10u32 {
+            c.bus.write32(DATA + 0x18 + 0x20 * i, 0);
+        }
+        c.g[A0][0] = sx(DATA);
+        c.g[A1][0] = 1;
+        c.g[A2][0] = 2;
+        c.g[T2][0] = 1;
+        c.g[RA][0] = sx(TEST_RA);
+        speech_system_set_event_context(&mut c);
+        assert_eq!(c.g[V0][0], 1, "context stored");
+        for n in 1..=10_000 {
+            c.g[A0][0] = sx(DATA);
+            c.g[RA][0] = sx(TEST_RA);
+            speech_system_tick_event_contexts(&mut c);
+            if c.bus.read32(DATA + 0x18) == 0 {
+                return n;
+            }
+        }
+        panic!("{hz} Hz: context never freed");
+    }
+
+
+    /// A speech event context lives 3 s at every rate.
+    #[test]
+    fn speech_system_event_context_lifetime_follows_the_rate() {
+        assert_eq!(speech_context_ticks(60), 180);
+        assert_eq!(speech_context_ticks(120), 360);
+        assert_eq!(speech_context_ticks(240), 720);
     }
 
 

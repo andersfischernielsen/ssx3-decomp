@@ -5321,10 +5321,16 @@
 0x001635f8    ChaseCameraAlgorithm_ApplyJumpCurves
 0x002e66b8    cSpeedBoostStreamerFX_Update
 0x002f39e0    cSplashManager_Update
-0x001ea930    cOVStateHUD1P_Update
 0x002294c8    CrowdMan2d_Update
 0x00229530    CrowdMan2d_SpawnSprites
 0x002b1458    SpeechSystem_SetEventContext
 0x002b1720    SpeechSystem_TickEventContexts
 0x001013a8    DangerMan_Update
 0x0010b250    ComputerActorRider_ThinkSpin
+0x00276cc8    ScriptList_Update
+0x00278720    ScriptEngine_Update
+0x002398e8    GMHandler0_v06
+0x00238e20    GMHandler0_Reset
+0x0023b268    GMHandler4_Reset
+0x0023bb98    GMHandler6_Reset
+0x0023c0d0    GMHandler7_Reset

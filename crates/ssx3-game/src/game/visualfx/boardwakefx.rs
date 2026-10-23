@@ -103,6 +103,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x002e_5d18, snow_fall_dtor, "SnowFall_dtor"),
     (0x002e_62c8, snow_fall_reset_boxes, "SnowFall_ResetBoxes"),
     (0x002e_6640, c_speed_boost_streamer_fx_reset, "cSpeedBoostStreamerFX_Reset"),
+    (0x002e_66b8, c_speed_boost_streamer_fx_update, "cSpeedBoostStreamerFX_Update"),
     (0x002e_6c08, c_speed_boost_streamer_fx_update_points, "cSpeedBoostStreamerFX_UpdatePoints"),
     (0x002e_7a10, c_speed_boost_streamer_fx_render, "cSpeedBoostStreamerFX_Render"),
 ];
@@ -145,6 +146,12 @@ pub(crate) mod boost {
     pub const FIRST: u32 = 0x39c;
 
     pub const COUNT: u32 = 0x3a0;
+
+    /// The most points the streamer keeps (20, or 18 for some riders).
+    pub const MAX_COUNT: u32 = 0x3a4;
+
+    /// The rider was in the air at the last update.
+    pub const IN_AIR: u32 = 0x3a8;
 
     pub const POINTS: u32 = 0x3ac;
 }
@@ -1145,6 +1152,515 @@ pub fn c_speed_boost_streamer_fx_reset(c: &mut Cpu) {
     Addr(this).off(0x3a4).sw(c, c.g[A1][0]);
     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
     abi::ret(c);
+}
+
+
+/// `void cSpeedBoostStreamerFX_UpdatePoints(cSpeedBoostStreamerFX*)`
+/// (0x2e6c08).
+pub(crate) const UPDATE_POINTS: Callee = Callee {
+    addr: 0x002e_6c08,
+    f: ee::s09::cSpeedBoostStreamerFX_UpdatePoints,
+};
+
+
+/// `void cSpeedBoostStreamerFX_Update(cSpeedBoostStreamerFX* self)`
+/// (0x2e66b8): the boost streamers behind a rider. The rider boosts when it
+/// is not in the air and one of its boost timers (`+0x2fc`, `+0x2e8`) runs;
+/// leaving the air clears the streamer. Picks the streamer texture (and its
+/// scroll rate) from the boost phase and globals, sets length, alpha and
+/// width while boosting and fades them (`*= 0.95`) otherwise. With streamers
+/// enabled (`gp+0x1610`) it records one point pair per tick into the 20-slot
+/// ring while boosting (the older pairs spreading apart by the rider's
+/// direction * 1.4) and shrinks the live count by one per tick otherwise,
+/// writes the newest pair from the board's bones, scrolls the texture by the
+/// speed, then runs `UpdatePoints`.
+///
+/// Tick rate: the ring records, spreads and shrinks once per 60 Hz frame of
+/// the streamer's own clock (`tick::frame60_due`; every tick at 60), so the
+/// trail covers the same time and spreads at the same speed; the fade
+/// constant becomes 0.95^(60/rate). The texture scroll's step is a `.lit4`
+/// 1/60 (follows the rate). Exact at 60.
+pub fn c_speed_boost_streamer_fx_update(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x90);
+        frame.save(c, S0, 0x80);
+        frame.save_ra(c, 0x70);
+        c.g[S0][0] = c.g[A0][0];
+        let fx = r32(c, S0);
+        c.g[A0][0] = c.lw(fx);
+        call_ptr(c, RIDER_GET_MAIN_STATE, 0x002e_66d0)?;
+        // In the air (main state 1)? Otherwise boosting while a boost timer
+        // runs.
+        c.g[V0][0] ^= 1;
+        c.g[V1][0] = (c.g[V0][0] < 1) as u64;
+        let in_air = c.g[V1][0] != 0;
+        c.g[A2][0] = 0;
+        'boost: {
+            if !in_air {
+                c.cycles += 7;
+                c.g[V0][0] = c.lw(fx);
+                c.mtc1(0, 1);
+                c.lwc1(0, p(r32(c, V0), 0x2fc));
+                c.c_lt_s(1, 0);
+                if !c.fcc() {
+                    c.cycles += 5;
+                    c.lwc1(0, p(r32(c, V0), 0x2e8));
+                    c.c_lt_s(1, 0);
+                    if !c.fcc() {
+                        c.g[V0][0] = c.lw(p(fx, boost::IN_AIR));
+                        break 'boost;
+                    }
+                    c.cycles += 1;
+                }
+                c.g[A2][0] = 1;
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.lw(p(fx, boost::IN_AIR));
+        }
+        // Leaving the air clears the streamer and the flames.
+        c.cycles += 2;
+        if c.g[V0][0] != 0 {
+            c.cycles += 2;
+            if c.g[V1][0] == 0 {
+                c.cycles += 4;
+                c.sw(p(fx, boost::COUNT), 0);
+                c.sw(p(fx, boost::FLAME_CLAMP), 0);
+                c.sw(p(fx, boost::FLAMES), 0);
+            }
+        }
+        c.sw(p(fx, boost::IN_AIR), c.g[V1][0]);
+        // The texture (v0) and its scroll rate (f4).
+        'tex: {
+            c.cycles += 6;
+            c.g[V0][0] = 0xb;
+            c.g[A0][0] = c.lw(fx);
+            c.lwc1(4, gp(c, -0x3a00));
+            c.g[V1][0] = c.lw(p(r32(c, A0), 0x2f4));
+            if c.g[V1][0] == c.g[V0][0] {
+                c.cycles += 3;
+                c.lwc1(4, gp(c, -0x39fc));
+                c.g[V0][0] = 0x3d;
+                break 'tex;
+            }
+            c.lwc1(0, p(r32(c, A0), 0x2e8));
+            'phase: {
+                c.cycles += 5;
+                c.lwc1(1, gp(c, -0x39f8));
+                c.c_lt_s(1, 0);
+                let long = c.fcc();
+                c.g[V0][0] = 0x3c;
+                if !long {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw(gp(c, 0x1640));
+                    let off = c.g[V0][0] == 0;
+                    c.g[V0][0] = 0x3c;
+                    if off {
+                        break 'phase;
+                    }
+                }
+                c.cycles += 2;
+                c.mov_s(4, 1);
+                break 'tex;
+            }
+            'under5: {
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[V1][0] as i64) < 10) as u64;
+                let at_least10 = c.g[V0][0] == 0;
+                c.g[V0][0] = c.lw(gp(c, 0x1644));
+                if !at_least10 {
+                    c.cycles += 2;
+                    let off = c.g[V0][0] == 0;
+                    c.g[V0][0] = ((c.g[V1][0] as i64) < 5) as u64;
+                    if off {
+                        break 'under5;
+                    }
+                }
+                c.cycles += 3;
+                c.g[V0][0] = 0x3b;
+                c.mov_s(4, 1);
+                break 'tex;
+            }
+            c.cycles += 2;
+            let at_least5 = c.g[V0][0] == 0;
+            c.g[V0][0] = c.lw(gp(c, 0x1648));
+            if !at_least5 {
+                c.cycles += 2;
+                let off = c.g[V0][0] == 0;
+                c.g[V0][0] = 0x39;
+                if off {
+                    break 'tex;
+                }
+            }
+            c.cycles += 2;
+            c.lwc1(4, gp(c, -0x39f4));
+            c.g[V0][0] = 0x3a;
+        }
+        // f5 = |rider velocity|; length, alpha and width.
+        'size: {
+            c.cycles += 14;
+            c.sw(p(fx, boost::TEXTURE), c.g[V0][0]);
+            c.g[A0][0] = c.lw(fx);
+            c.lqc2(3, p(r32(c, A0), 0x1e0));
+            c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+            c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+            c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+            c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+            c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+            c.vu0().sqrt(4, 0);
+            c.vu0().waitq();
+            c.cfc2(2, 22);
+            c.mtc1(2, 5);
+            if c.g[A2][0] != 0 {
+                // Boosting: f3 = clamp(max(timers), 0, 1);
+                // length = (f3 * 400 + 400) * (speed / k).
+                c.cycles += 9;
+                c.lwc1(1, p(r32(c, A0), 0x2fc));
+                c.lwc1(0, p(r32(c, A0), 0x2e8));
+                c.mtc1(0, 2);
+                c.max_s(0, 0, 1);
+                c.c_le_s(2, 0);
+                c.g[AT][0] = 0x3f80_0000;
+                c.mtc1(1, 1);
+                let negative = !c.fcc();
+                c.mov_s(3, 2);
+                if !negative {
+                    c.cycles += 1;
+                    c.min_s(3, 0, 1);
+                }
+                'width: {
+                    c.cycles += 12;
+                    c.g[AT][0] = 0x43c8_0000;
+                    c.mtc1(1, 2);
+                    c.lwc1(1, gp(c, -0x39f0));
+                    c.g[V1][0] = 0xb;
+                    c.mul_s(0, 3, 2);
+                    c.div_s(1, 5, 1);
+                    c.add_s(0, 0, 2);
+                    c.mul_s(0, 0, 1);
+                    c.swc1(0, p(fx, boost::FADE));
+                    c.g[V0][0] = c.lw(p(r32(c, A0), 0x2f4));
+                    let phase_b = c.g[V0][0] == c.g[V1][0];
+                    c.g[A1][0] = sx(p(fx, boost::WIDTH));
+                    if !phase_b {
+                        // width = f3 * 9 + 6
+                        c.cycles += 7;
+                        c.g[AT][0] = 0x4110_0000;
+                        c.mtc1(1, 0);
+                        c.g[AT][0] = 0x40c0_0000;
+                        c.mtc1(1, 1);
+                        c.mul_s(0, 3, 0);
+                        c.add_s(2, 0, 1);
+                        break 'width;
+                    }
+                    c.cycles += 2;
+                    c.g[AT][0] = 0x4248_0000;
+                    c.mtc1(1, 2); // width 50
+                }
+                c.cycles += 5;
+                c.g[AT][0] = 0x3f80_0000;
+                c.mtc1(1, 0);
+                c.swc1(2, r32(c, A1));
+                c.swc1(0, p(fx, boost::ALPHA));
+                break 'size;
+            }
+            c.lwc1(1, p(fx, boost::FADE));
+            // Not boosting: length, alpha and width fade by 0.95 per tick
+            // (0.95^(60/rate) above 60).
+            c.cycles += 9;
+            c.lwc1(0, gp(c, -0x39ec));
+            per_tick_factor(c, 0);
+            c.lwc1(2, p(fx, boost::ALPHA));
+            c.lwc1(3, p(fx, boost::WIDTH));
+            c.mul_s(1, 1, 0);
+            c.mul_s(2, 2, 0);
+            c.mul_s(3, 3, 0);
+            c.swc1(1, p(fx, boost::FADE));
+            c.swc1(2, p(fx, boost::ALPHA));
+            c.swc1(3, p(fx, boost::WIDTH));
+        }
+        'points: {
+            c.cycles += 3;
+            c.g[V0][0] = c.lw(gp(c, 0x1610));
+            let disabled = c.g[V0][0] == 0;
+            c.g[A3][0] = c.g[SP][0];
+            if disabled {
+                break 'points;
+            }
+            // v0 = the live point count after this tick's record or shrink.
+            'count: {
+                c.cycles += 4;
+                c.g[V1][0] = c.lw(fx);
+                c.lq(2, p(r32(c, V1), 0x1a0)); // the rider's direction
+                let boosting = c.g[A2][0] != 0;
+                c.sq(2, sp(c));
+                // One record (or shrink step) per 60 Hz frame of this
+                // streamer (every tick at 60).
+                if !tick::frame60_due(c, fx, 0) {
+                    c.g[V0][0] = c.lw(p(fx, boost::COUNT));
+                    break 'count;
+                }
+                if boosting {
+                    // Advance the ring head (mod 20), grow the count up to
+                    // the maximum, start the new pair as a copy of the last.
+                    c.cycles += 7;
+                    c.g[A1][0] = c.lw(p(fx, boost::FIRST));
+                    c.g[V1][0] = 0x14;
+                    c.g[V0][0] = sx(r32(c, A1).wrapping_add(1));
+                    c.div(0, 2, 3);
+                    c.sw(p(fx, boost::FIRST), c.g[V0][0]);
+                    c.cycles += 6;
+                    c.g[V1][0] = c.lw(p(fx, boost::COUNT));
+                    c.g[V0][0] = c.lw(p(fx, boost::MAX_COUNT));
+                    c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    c.g[A0][0] = c.hi[0];
+                    let full = c.g[V0][0] == 0;
+                    c.sw(p(fx, boost::FIRST), c.g[A0][0]);
+                    if !full {
+                        c.cycles += 2;
+                        c.g[V0][0] = sx(r32(c, V1).wrapping_add(1));
+                        c.sw(p(fx, boost::COUNT), c.g[V0][0]);
+                    }
+                    c.cycles += 20;
+                    c.g[V0][0] = c.lw(p(fx, boost::POINTS));
+                    c.g[A1][0] = sx(r32(c, A1) << 5);
+                    c.g[A0][0] = c.lw(p(fx, boost::FIRST));
+                    c.g[A2][0] = 0;
+                    c.g[A1][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+                    c.lwc1(0, gp(c, -0x39e8)); // 1.4
+                    c.lq(3, r32(c, A1));
+                    c.g[A0][0] = sx(r32(c, A0) << 5);
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, V0)));
+                    c.sq(3, r32(c, A0));
+                    c.lq(2, p(r32(c, A1), 0x10));
+                    c.sq(2, p(r32(c, A0), 0x10));
+                    // spread = direction * 1.4
+                    c.mfc1(3, 0);
+                    c.lqc2(4, sp(c));
+                    c.qmtc2(3, 3);
+                    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                    c.sqc2(5, p(sp(c), 0x20));
+                    c.lq(2, p(sp(c), 0x20));
+                    c.sq(2, p(sp(c), 0x10));
+                    c.g[V1][0] = c.lw(p(fx, boost::POINTS));
+                    // Every pair: a -= spread, b += spread.
+                    loop {
+                        c.cycles += 16;
+                        c.g[A0][0] = sx(r32(c, A2) << 5);
+                        c.g[A2][0] = sx(r32(c, A2).wrapping_add(1));
+                        c.g[V1][0] = sx(r32(c, A0).wrapping_add(r32(c, V1)));
+                        c.g[A1][0] = ((c.g[A2][0] as i64) < 20) as u64;
+                        c.lqc2(3, r32(c, V1));
+                        c.lqc2(4, p(sp(c), 0x10));
+                        c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+                        c.sqc2(5, r32(c, V1));
+                        c.g[V0][0] = c.lw(p(fx, boost::POINTS));
+                        c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, V0)));
+                        c.lqc2(3, p(r32(c, A0), 0x10));
+                        c.lqc2(4, p(sp(c), 0x10));
+                        c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                        c.sqc2(5, p(r32(c, A0), 0x10));
+                        if c.g[A1][0] == 0 {
+                            break;
+                        }
+                        c.g[V1][0] = c.lw(p(fx, boost::POINTS));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x002e_6950);
+                        }
+                    }
+                    c.cycles += 2;
+                    c.g[V0][0] = c.lw(p(fx, boost::COUNT));
+                    break 'count;
+                }
+                // Not boosting: the count steps towards 0 by one.
+                c.cycles += 5;
+                c.g[A0][0] = c.lw(p(fx, boost::COUNT));
+                c.g[V0][0] = 1;
+                c.g[V0][0] = (1i64 < c.g[A0][0] as i64) as u64;
+                let above = c.g[V0][0] != 0;
+                c.g[V1][0] = sx(r32(c, A0).wrapping_sub(1));
+                if !above {
+                    c.cycles += 4;
+                    c.g[V0][0] = 0xffff_ffff_ffff_fffe;
+                    c.g[V1][0] = sx(r32(c, A0).wrapping_add(1));
+                    c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                    if c.g[V0][0] != 0 {
+                        c.g[V1][0] = 0;
+                    }
+                }
+                c.cycles += 2;
+                c.sw(p(fx, boost::COUNT), c.g[V1][0]);
+                c.g[V0][0] = c.lw(p(fx, boost::COUNT));
+            }
+            c.cycles += 2;
+            if (c.g[V0][0] as i64) <= 0 {
+                break 'points;
+            }
+            // The newest pair from the board bones (+0x89c, +0x8b0, +0x8b8):
+            // the side facing the direction gets the -0x39e4 or -0x39e0
+            // offset.
+            'pair: {
+                'other: {
+                    c.cycles += 44;
+                    c.g[A2][0] = c.lw(fx);
+                    c.g[V0][0] = c.lw(p(r32(c, A2), 0x780));
+                    c.g[V1][0] = c.lw(p(r32(c, A2), 0x89c));
+                    c.g[A0][0] = c.lw(p(r32(c, V0), 0x30));
+                    c.g[V1][0] = sx(r32(c, V1) << 6);
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, V1)));
+                    c.lq(2, p(r32(c, A0), 0x30));
+                    c.sq(2, p(sp(c), 0x10));
+                    c.g[A1][0] = c.lw(p(r32(c, A2), 0x780));
+                    c.g[V1][0] = c.lw(p(r32(c, A2), 0x8b0));
+                    c.g[A0][0] = c.lw(p(r32(c, A1), 0x30));
+                    c.g[V1][0] = sx(r32(c, V1) << 6);
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, V1)));
+                    c.lq(2, p(r32(c, A0), 0x30));
+                    c.sq(2, p(sp(c), 0x20));
+                    c.g[A1][0] = c.lw(p(r32(c, A2), 0x780));
+                    c.g[V1][0] = c.lw(p(r32(c, A2), 0x8b8));
+                    c.g[A0][0] = c.lw(p(r32(c, A1), 0x30));
+                    c.g[V1][0] = sx(r32(c, V1) << 6);
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, V1)));
+                    c.lq(2, p(r32(c, A0), 0x30));
+                    c.sq(2, p(sp(c), 0x30));
+                    c.lqc2(3, p(sp(c), 0x30));
+                    c.lqc2(5, r32(c, A3));
+                    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                    c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+                    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                    c.qmfc2(3, 4);
+                    c.mtc1(3, 1);
+                    c.lqc2(3, p(sp(c), 0x20));
+                    c.lqc2(5, r32(c, A3));
+                    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                    c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+                    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                    c.qmfc2(2, 4);
+                    c.mtc1(2, 0);
+                    c.c_lt_s(0, 1);
+                    let behind = !c.fcc();
+                    c.g[V1][0] = c.lw(p(fx, boost::POINTS));
+                    if behind {
+                        break 'other;
+                    }
+                    c.cycles += 35;
+                    c.g[A0][0] = c.lw(p(fx, boost::FIRST));
+                    c.lwc1(0, gp(c, -0x39e4));
+                    c.mfc1(2, 0);
+                    c.lqc2(4, p(sp(c), 0x10));
+                    c.qmtc2(2, 3);
+                    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                    c.sqc2(5, p(sp(c), 0x60));
+                    c.g[A0][0] = sx(r32(c, A0) << 5);
+                    c.lq(2, p(sp(c), 0x60));
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, V1)));
+                    c.sq(2, p(sp(c), 0x50));
+                    c.lqc2(3, p(sp(c), 0x20));
+                    c.lqc2(4, p(sp(c), 0x50));
+                    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+                    c.sqc2(5, p(sp(c), 0x60));
+                    c.lq(2, p(sp(c), 0x60));
+                    c.sq(2, p(sp(c), 0x40));
+                    c.sq(2, r32(c, A0));
+                    c.g[V1][0] = c.lw(p(fx, boost::FIRST));
+                    c.g[A0][0] = c.lw(p(fx, boost::POINTS));
+                    c.mfc1(2, 0);
+                    c.lqc2(4, p(sp(c), 0x10));
+                    c.qmtc2(2, 3);
+                    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                    c.sqc2(5, p(sp(c), 0x60));
+                    c.g[V1][0] = sx(r32(c, V1) << 5);
+                    c.lq(2, p(sp(c), 0x60));
+                    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A0)));
+                    c.sq(2, p(sp(c), 0x50));
+                    c.lqc2(3, p(sp(c), 0x30));
+                    c.lqc2(4, p(sp(c), 0x50));
+                    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+                    c.sqc2(5, p(sp(c), 0x60));
+                    c.lq(2, p(sp(c), 0x60));
+                    break 'pair;
+                }
+                c.cycles += 34;
+                c.g[A0][0] = c.lw(p(fx, boost::FIRST));
+                c.lwc1(0, gp(c, -0x39e0));
+                c.mfc1(2, 0);
+                c.lqc2(4, p(sp(c), 0x10));
+                c.qmtc2(2, 3);
+                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                c.sqc2(5, p(sp(c), 0x60));
+                c.g[A0][0] = sx(r32(c, A0) << 5);
+                c.lq(2, p(sp(c), 0x60));
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, V1)));
+                c.sq(2, p(sp(c), 0x50));
+                c.lqc2(3, p(sp(c), 0x30));
+                c.lqc2(4, p(sp(c), 0x50));
+                c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, p(sp(c), 0x60));
+                c.lq(2, p(sp(c), 0x60));
+                c.sq(2, p(sp(c), 0x40));
+                c.sq(2, r32(c, A0));
+                c.g[V1][0] = c.lw(p(fx, boost::FIRST));
+                c.g[A0][0] = c.lw(p(fx, boost::POINTS));
+                c.mfc1(2, 0);
+                c.lqc2(4, p(sp(c), 0x10));
+                c.qmtc2(2, 3);
+                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                c.sqc2(5, p(sp(c), 0x60));
+                c.g[V1][0] = sx(r32(c, V1) << 5);
+                c.lq(2, p(sp(c), 0x60));
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A0)));
+                c.sq(2, p(sp(c), 0x50));
+                c.lqc2(3, p(sp(c), 0x20));
+                c.lqc2(4, p(sp(c), 0x50));
+                c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, p(sp(c), 0x60));
+                c.lq(2, p(sp(c), 0x60));
+            }
+            // Scroll the texture by speed * rate * 1/60 (a `.lit4` step),
+            // wrapped to [0, 1].
+            c.cycles += 12;
+            c.sq(2, p(sp(c), 0x40));
+            c.sq(2, p(r32(c, V1), 0x10));
+            c.lwc1(0, gp(c, -0x39dc));
+            c.lwc1(2, p(fx, boost::V_START));
+            c.mul_s(0, 5, 0);
+            c.mtc1(0, 1);
+            c.mul_s(0, 4, 0);
+            c.sub_s(2, 2, 0);
+            c.c_lt_s(2, 1);
+            let below = c.fcc();
+            c.swc1(2, p(fx, boost::V_START));
+            if below {
+                c.cycles += 4;
+                c.g[AT][0] = 0x3f80_0000;
+                c.mtc1(1, 0);
+                c.add_s(0, 2, 0);
+                c.swc1(0, p(fx, boost::V_START));
+            }
+            c.cycles += 6;
+            c.lwc1(0, p(fx, boost::V_START));
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(1, 1);
+            c.c_lt_s(1, 0);
+            if c.fcc() {
+                c.cycles += 2;
+                c.sub_s(0, 0, 1);
+                c.swc1(0, p(fx, boost::V_START));
+            }
+        }
+        c.cycles += 6;
+        c.g[A0][0] = c.g[S0][0];
+        UPDATE_POINTS.call(c, 0x002e_6bf8)?;
+        frame.restore(c, S0, 0x80);
+        frame.restore_ra(c, 0x70);
+        frame.close(c);
+        Ok(())
+    })
 }
 
 
@@ -7135,6 +7651,10 @@ pub fn c_board_wake_fx_update(c: &mut Cpu) {
                 0x002d_d7c0 => {
                     c.cycles += 83;
                     c.lwc1(5, (c.g[GP][0] as u32).wrapping_sub(0x3c00));
+                    // Per-tick blends `k * old + (1 - k) * new`: above 60 Hz
+                    // k becomes k^(60/rate) and the weight 1 - k, the same lag
+                    // in wall-clock time (at 60 the loaded constants).
+                    per_tick_factor(c, 5); // 0.8: +0x60/+0x70/+0x80, +0x90
                     c.g[S1][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
                     c.mfc1(2, 5);
                     c.lqc2(4, (c.g[S2][0] as u32).wrapping_add(0x60));
@@ -7142,8 +7662,12 @@ pub fn c_board_wake_fx_update(c: &mut Cpu) {
                     c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
                     c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0x90));
                     c.lwc1(4, (c.g[GP][0] as u32).wrapping_sub(0x3bfc));
+                    if tick::rate(c) != 60 {
+                        c.f[4] = (FpuF32::from_f32(1.0) - FpuF32(c.f[5])).0; // 0.2
+                    }
                     c.lq(2, (c.g[SP][0] as u32).wrapping_add(0x90));
                     c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x3bf8));
+                    per_tick_factor(c, 0); // 0.7: +0x94
                     c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x80));
                     c.mfc1(3, 4);
                     c.lqc2(4, (c.g[SP][0] as u32));
@@ -7151,6 +7675,9 @@ pub fn c_board_wake_fx_update(c: &mut Cpu) {
                     c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
                     c.sqc2(5, (c.g[SP][0] as u32).wrapping_add(0xa0));
                     c.lwc1(6, (c.g[GP][0] as u32).wrapping_sub(0x3bf4));
+                    if tick::rate(c) != 60 {
+                        c.f[6] = (FpuF32::from_f32(1.0) - FpuF32(c.f[0])).0; // 0.3
+                    }
                     c.lq(2, (c.g[SP][0] as u32).wrapping_add(0xa0));
                     c.lwc1(7, (c.g[GP][0] as u32).wrapping_sub(0x3bf0));
                     c.sq(2, (c.g[SP][0] as u32).wrapping_add(0x90));
@@ -10452,6 +10979,60 @@ pub(crate) mod tests {
     }
 
 
+    /// The wake's per-tick blends (0x2dd7c0..) after `ticks` ticks at `hz`
+    /// towards fixed targets: (+0x90 smoothed speed, +0x94 intensity, +0x60
+    /// point x). Entered at the blend block with the locals it reads in the
+    /// frame; the intensity and speed stay above the gates, so each tick
+    /// ends in `BuildTrail` and the epilogue.
+    fn wake_blend_after(hz: u32, ticks: u32) -> [f32; 3] {
+        let mut c = crate::difftest::fresh();
+        setup_2(&mut c, 1);
+        c.bus.write32(fakes::LOG_UNWIND_AT, u32::MAX);
+        crate::tick::set_for_test(&mut c, hz);
+        let f = |x: f32| x.to_bits();
+        let seg = [f(5.0), f(6.0), f(7.0), f(1.0)];
+        put_vec(&mut c, SELF + 0x50, seg);
+        for off in [0x60, 0x70, 0x80] {
+            put_vec(&mut c, SELF + off, [0; 4]);
+        }
+        c.bus.write32(SELF + 0x90, f(100.0));
+        c.bus.write32(SELF + 0x94, f(0.5));
+        for _ in 0..ticks {
+            let sp = STACK_TOP - 0x170;
+            c.g[SP][0] = sx(sp);
+            put_vec(&mut c, sp, [f(10.0), f(20.0), f(30.0), f(1.0)]);
+            put_vec(&mut c, sp + 0x10, [f(1.0), f(2.0), f(3.0), f(0.0)]);
+            put_vec(&mut c, sp + 0x20, [f(0.0), f(1.0), f(0.0), f(0.0)]);
+            put_vec(&mut c, sp + 0x30, [f(200.0), f(1.0), 0, 0]);
+            put_vec(&mut c, sp + 0x50, seg);
+            c.g[S2][0] = sx(SELF);
+            c.f[20] = f(1.0);
+            c.pc = 0x002d_d7c0;
+            c_board_wake_fx_update(&mut c);
+        }
+        [0x90, 0x94, 0x60].map(|off| f32::from_bits(c.bus.read32(SELF + off)))
+    }
+
+
+    /// The wake's 0.8/0.2 and 0.7/0.3 blends keep their time constants at
+    /// 120 and 240 Hz.
+    #[test]
+    fn board_wake_fx_update_follows_the_rate() {
+        for frames in [1u32, 4, 10] {
+            let at60 = wake_blend_after(60, frames);
+            let k = |x: f32| x.powi(frames as i32);
+            let want = [200.0 - 100.0 * k(0.8), 1.0 - 0.5 * k(0.7), 10.0 * (1.0 - k(0.8))];
+            for hz in [60u32, 120, 240] {
+                let at = if hz == 60 { at60 } else { wake_blend_after(hz, frames * hz / 60) };
+                for i in 0..3 {
+                    let tol = 1e-3 * want[i].abs().max(1.0);
+                    assert!((at[i] - want[i]).abs() < tol, "{hz} Hz, {frames}: [{i}] {} vs {}", at[i], want[i]);
+                }
+            }
+        }
+    }
+
+
     /// The speed-boost streamer's own object, its rider and model.
     pub(crate) const FX_RIDER: u32 = DATA + 0x9000;
 
@@ -10517,5 +11098,177 @@ pub(crate) mod tests {
                 c.pc = 0x002e_6c08;
             },
         );
+    }
+
+
+    /// The boost streamer's rider owner (main state at `+0xde0`) and point
+    /// ring (20 pairs of quads).
+    pub(crate) const BOOST_OWNER: u32 = DATA + 0xc000;
+
+    pub(crate) const BOOST_POINTS: u32 = DATA + 0xd000;
+
+
+    /// The rider, its model, board vtable and animation as
+    /// `UpdatePoints` reads them (see its test), at `FX_RIDER`.
+    pub(crate) fn boost_rider(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        c.bus.write32(GAME_GP.wrapping_sub(0x1f04), BELIB);
+        c.bus.write32(FX_RIDER + 0x77c, BOOST_OWNER);
+        c.bus.write32(FX_RIDER + 0x6c0, FX_VT);
+        c.bus.write32(FX_RIDER + 0x780, MODEL_2);
+        c.bus.write32(FX_RIDER + 0x784, ANIM);
+        c.bus.write32(FX_RIDER + 0x8a4, r.next_u32() % 8);
+        c.bus.write32(FX_RIDER + 0x320, (seed % 2) as u32);
+        c.bus.write32(FX_RIDER + 0x330, r.f32(1.0));
+        c.bus.write16(FX_VT + 0x28, 0);
+        c.bus.write32(FX_VT + 0x2c, FAKE);
+        c.bus.write32(MODEL_2 + 0x30, BONES);
+    }
+
+
+    #[test]
+    fn speed_boost_streamer_fx_update_matches() {
+        check_lohi(
+            ee::s09::f_002e66b8__generated,
+            c_speed_boost_streamer_fx_update,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x66b8, 1);
+                elf_image(c);
+                boost_rider(c, &mut r, seed);
+                // In the air (state 1) or not; the two boost timers.
+                c.bus.write32(BOOST_OWNER + 0xde0, if seed % 4 == 0 { 1 } else { r.next_u32() % 3 * 2 });
+                let (t1, t2): (f32, f32) = match (seed / 4) % 4 {
+                    0 => (0.5, -1.0),
+                    1 => (-0.5, 0.7),
+                    2 => (-1.0, 0.0),
+                    _ => (3.0, 2.0),
+                };
+                c.bus.write32(FX_RIDER + 0x2fc, f(t1));
+                c.bus.write32(FX_RIDER + 0x2e8, f(t2));
+                c.bus.write32(FX_RIDER + 0x2f4, [0xbu32, 3, 7, 12, 0][(seed / 16 % 5) as usize]);
+                for off in [0x1640, 0x1644, 0x1648] {
+                    c.bus.write32(GAME_GP + off, r.next_u32() % 2);
+                }
+                c.bus.write32(GAME_GP + 0x1610, (seed % 7 != 0) as u32);
+                for off in [0x1a0, 0x1e0, 0x370, 0x460] {
+                    put_vec(
+                        c,
+                        FX_RIDER + off,
+                        [r.f32(100.0), r.f32(100.0), r.f32(100.0), r.f32(1.0)],
+                    );
+                }
+                // Board bones (+0x89c, +0x8b0, +0x8b8).
+                c.bus.write32(FX_RIDER + 0x89c, r.next_u32() % 4);
+                c.bus.write32(FX_RIDER + 0x8b0, r.next_u32() % 4);
+                c.bus.write32(FX_RIDER + 0x8b8, r.next_u32() % 4);
+                for i in 0..0x100 {
+                    c.bus.write32(BONES + 4 * i, r.edge_f32());
+                }
+                // The streamer: fade, alpha, width, texture start, the
+                // flames UpdatePoints runs, the point ring.
+                c.bus.write32(M, FX_RIDER);
+                c.bus.write32(M + 0x4, f([0.5f32, -0.5, 30.0][(seed % 3) as usize]));
+                c.bus.write32(M + 0x8, r.f32(1.0));
+                c.bus.write32(M + 0xc, r.f32(50.0));
+                c.bus.write32(M + 0x10, f([0.0f32, 0.999, 1.5, -0.4, 0.5][(seed / 3 % 5) as usize]));
+                c.bus.write32(M + 0x18, f(if seed % 5 == 0 { -0.5 } else { 0.5 }));
+                c.bus.write32(M + 0x14, r.next_u32() % 40);
+                c.bus.write32(M + 0x30, r.next_u32() % 4);
+                for i in 0..0x30 {
+                    c.bus.write32(M + 0x50 + 4 * i, r.edge_f32());
+                }
+                c.bus.write32(M + 0x20, r.f32(1.0));
+                c.bus.write32(M + 0x24, r.f32(1.0));
+                c.bus.write32(M + boost::FIRST, r.next_u32() % 20);
+                c.bus.write32(
+                    M + boost::COUNT,
+                    [0u32, 1, 2, 5, 19, 20, (-1i32) as u32, (-2i32) as u32, (-5i32) as u32][(seed / 2 % 9) as usize],
+                );
+                c.bus.write32(M + boost::MAX_COUNT, if seed % 3 == 0 { 18 } else { 20 });
+                c.bus.write32(M + boost::IN_AIR, (seed % 3 == 1) as u32);
+                c.bus.write32(M + boost::POINTS, BOOST_POINTS);
+                for i in 0..20 * 8 {
+                    c.bus.write32(BOOST_POINTS + 4 * i, r.f32(100.0));
+                }
+                c.g[A0][0] = sx(M);
+                c.pc = 0x002e_66b8;
+            },
+        );
+    }
+
+
+    /// The boost streamer after `ticks` updates at `hz` with the object at
+    /// `fx` (its 60 Hz clock is keyed by the address): (first, count, fade,
+    /// alpha, width, texture start, first pair's `a.y`).
+    fn boost_after(hz: u32, ticks: u32, fx: u32, boosting: bool) -> (u32, u32, [f32; 5]) {
+        let mut c = crate::difftest::fresh();
+        let mut r = machine(&mut c, 1, 0x66b9, 0);
+        elf_image(&mut c);
+        crate::tick::set_for_test(&mut c, hz);
+        // The texture scroll's `.lit4` 1/60.
+        c.bus.write32(GAME_GP.wrapping_sub(0x39dc), crate::tick::step_bits(hz));
+        boost_rider(&mut c, &mut r, 0);
+        c.bus.write32(BOOST_OWNER + 0xde0, 0); // on the ground
+        c.bus.write32(FX_RIDER + 0x2fc, f(if boosting { 0.5 } else { -1.0 }));
+        c.bus.write32(FX_RIDER + 0x2e8, f(-1.0));
+        c.bus.write32(FX_RIDER + 0x2f4, 3);
+        c.bus.write32(GAME_GP + 0x1610, 1);
+        put_vec(&mut c, FX_RIDER + 0x1e0, [f(100.0), 0, 0, 0]);
+        put_vec(&mut c, FX_RIDER + 0x1a0, [0, f(1.0), 0, 0]);
+        for off in [0x370, 0x460] {
+            put_vec(&mut c, FX_RIDER + off, [f(1.0), f(2.0), f(3.0), 0]);
+        }
+        c.bus.write32(fx, FX_RIDER);
+        c.bus.write32(fx + boost::FADE, f(100.0));
+        c.bus.write32(fx + boost::ALPHA, f(1.0));
+        c.bus.write32(fx + boost::WIDTH, f(50.0));
+        c.bus.write32(fx + boost::V_START, f(0.5));
+        c.bus.write32(fx + boost::FIRST, 0);
+        c.bus.write32(fx + boost::COUNT, if boosting { 0 } else { 10 });
+        c.bus.write32(fx + boost::MAX_COUNT, 20);
+        c.bus.write32(fx + boost::IN_AIR, 0);
+        c.bus.write32(fx + boost::POINTS, BOOST_POINTS);
+        for _ in 0..ticks {
+            c.g[A0][0] = sx(fx);
+            c.pc = 0x002e_66b8;
+            c_speed_boost_streamer_fx_update(&mut c);
+        }
+        let floats = [fx + boost::FADE, fx + boost::ALPHA, fx + boost::WIDTH, fx + boost::V_START, BOOST_POINTS + 4]
+            .map(|a| f32::from_bits(c.bus.read32(a)));
+        (c.bus.read32(fx + boost::FIRST), c.bus.read32(fx + boost::COUNT), floats)
+    }
+
+
+    /// Records, spread and shrink once per 60 Hz frame and the 0.95 fade per
+    /// 60 Hz frame of time: the same trail at 120 and 240 Hz as at 60.
+    #[test]
+    fn speed_boost_streamer_fx_update_follows_the_rate() {
+        // A fresh object address per run (clear of the fixture's rider,
+        // model, bones and points at DATA + 0x9000..0xe000).
+        let mut fx = DATA + 0x2_0000;
+        for boosting in [false, true] {
+            for frames in [3u32, 7] {
+                let at60 = boost_after(60, frames, fx, boosting);
+                fx += 0x1000;
+                if boosting {
+                    assert_eq!((at60.0, at60.1), (frames % 20, frames), "{at60:?}");
+                    assert!((at60.2[4] + 1.4 * frames as f32).abs() < 1e-3, "{at60:?}");
+                } else {
+                    assert_eq!(at60.1, 10 - frames, "{at60:?}");
+                }
+                for hz in [120u32, 240] {
+                    let at = boost_after(hz, frames * hz / 60, fx, boosting);
+                    fx += 0x1000;
+                    assert_eq!((at.0, at.1), (at60.0, at60.1), "{hz} Hz {boosting} {frames}: {at:?} vs {at60:?}");
+                    for i in 0..5 {
+                        let (a, b) = (at.2[i], at60.2[i]);
+                        let d = (a - b).abs();
+                        // The texture start wraps at 1.
+                        let d = if i == 3 { d.min((1.0 - d).abs()) } else { d };
+                        assert!(d < 1e-3 * b.abs().max(1.0), "{hz} Hz {boosting} {frames}: [{i}] {a} vs {b}");
+                    }
+                }
+            }
+        }
     }
 }

@@ -70,6 +70,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0010_0680, computer_actor_rider_cruise_follow_path, "ComputerActorRider_CruiseFollowPath"),
     (0x0010_8f88, computer_actor_rider_init_2, "ComputerActorRider_Init_2"),
     (0x0010_a768, computer_actor_rider_get_control_input, "ComputerActorRider_GetControlInput"),
+    (0x0010_b250, computer_actor_rider_think_spin, "ComputerActorRider_ThinkSpin"),
     (0x0010_c4f8, computer_actor_rider_apply_difficulty, "ComputerActorRider_ApplyDifficulty"),
     (0x0010_cab8, computer_actor_rider_init_difficulty_2, "ComputerActorRider_InitDifficulty_2"),
     (0x0010_d170, computer_actor_rider_reset_trick_counts, "ComputerActorRider_ResetTrickCounts"),
@@ -4710,6 +4711,389 @@ pub fn rider_handle_race_path_event(c: &mut Cpu) {
     return;
 }
 
+// ---------------------------------------------------------------------------
+// Spin.
+
+/// `ComputerActorRider_UpdateSpinPlan(ai, float height)` (0x10b0e8).
+const UPDATE_SPIN_PLAN: Callee =
+    Callee { addr: 0x0010_b0e8, f: ee::s00::ComputerActorRider_UpdateSpinPlan };
+/// `int ComputerActorRider_ChooseTrick(ai, float height)` (0x10cad8).
+const CHOOSE_TRICK: Callee = Callee { addr: 0x0010_cad8, f: ee::s00::ComputerActorRider_ChooseTrick };
+/// `int AnimSet_GetEntryType(set, int slot)` (0x311ae8): the type word of
+/// the animation in `slot` (0 for the empty animation 0x1b6).
+const ANIM_ENTRY_TYPE: u32 = 0x0031_1ae8;
+/// `u32 RandU()` (0x317810).
+const RAND_U: u32 = 0x0031_7810;
+
+/// The AI's spin plan (fields of the `ComputerActorRider`).
+pub(crate) mod spin {
+    /// The rider (`Rider*`): its air state object at `+0x788` (state at
+    /// `+0xac`, height at `+0x98`, ground below at `+0xa0`), the ticks spent
+    /// spinning high up at `+0x484`, the animation set at `+0x784`.
+    pub const RIDER: u32 = 0x18;
+    pub const TRICK_STICK: u32 = 0xdf0;
+    pub const TRICK: u32 = 0xe0c;
+    pub const PLAN_READY: u32 = 0xe14;
+    pub const PLAN_RESET: u32 = 0xe18;
+    pub const SLOW_SPIN: u32 = 0xe20;
+    pub const GRAB_HELD: u32 = 0xe24;
+    pub const GRAB: u32 = 0xe28;
+    pub const GRAB_START: u32 = 0xe2c;
+    pub const GRAB_END: u32 = 0xe30;
+    pub const TRICK_HEIGHT: u32 = 0xe34;
+    pub const SPIN_RATE: u32 = 0xe3c;
+    /// Rider fields.
+    pub const AIR: u32 = 0x788;
+    pub const SPIN_TICKS: u32 = 0x484;
+    pub const ANIMS: u32 = 0x784;
+    /// The AI gives up a spin it holds more than 30 60 Hz frames while more
+    /// than 15 units above the ground.
+    pub const GIVE_UP_FRAMES: u32 = 30;
+}
+
+/// `void ComputerActorRider_ThinkSpin(ComputerActorRider *ai, ControlInput
+/// *in)` (0x10b250): the AI's input while spinning in the air.
+///
+/// While in air state 1 or 3 more than 15 units up, count the ticks
+/// (rider `+0x484`); past 30 frames give the spin up (input flag 0x1000).
+/// Otherwise plan the spin (`UpdateSpinPlan`), pick a trick when high
+/// enough, start/stop grabs, or roll a random spin direction, and write the
+/// stick (`+0xdf0` +0x48/+0x4c, scaled by 31), the trick byte and the grab
+/// flags into `in`.
+///
+/// Tick rate: `+0x484` counts calls of this function (once per tick per
+/// spinning AI rider), so the limit is `tick::ticks_from_frames60(30)`
+/// (exact at 60).
+pub fn computer_actor_rider_think_spin(c: &mut Cpu) {
+    use spin::*;
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x20);
+        c.g[V1][0] = 1;
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_fpr(c, 20, 0x30);
+        let ai = c.g[S0][0] as u32;
+        c.g[V0][0] = c.lw(ai.wrapping_add(RIDER));
+        c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(AIR));
+        c.g[A1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xac));
+        c.g[A2][0] = 0;
+        // Air states 1 and 3 count.
+        if c.g[A1][0] == c.g[V1][0] {
+            c.cycles += 1;
+            c.g[A2][0] = 1;
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = 3;
+            if c.g[A1][0] == c.g[V0][0] {
+                c.cycles += 1;
+                c.g[A2][0] = 1;
+            }
+        }
+        // f20: the height above the ground (100 when not counting).
+        c.cycles += 2;
+        let mut high = false;
+        if c.g[A2][0] == 0 {
+            c.g[V0][0] = c.lw(ai.wrapping_add(RIDER));
+            c.cycles += 2;
+            c.g[AT][0] = 0x42c8_0000;
+            c.mtc1(AT, 20);
+        } else {
+            c.cycles += 9;
+            let air = c.g[A0][0] as u32;
+            c.lwc1(0, air.wrapping_add(0xa0));
+            c.lwc1(1, air.wrapping_add(0x98));
+            c.g[AT][0] = 0x4170_0000;
+            c.mtc1(AT, 2);
+            c.sub_s(20, 1, 0);
+            c.c_lt_s(2, 20);
+            high = c.fcc();
+            if !high {
+                c.g[V0][0] = c.lw(ai.wrapping_add(RIDER));
+            }
+        }
+        if high {
+            c.cycles += 5;
+            c.g[V1][0] = c.lw(ai.wrapping_add(RIDER));
+            let rider = c.g[V1][0] as u32;
+            c.g[V0][0] = sx((c.lw(rider.wrapping_add(SPIN_TICKS)) as u32).wrapping_add(1));
+            c.sw(rider.wrapping_add(SPIN_TICKS), c.g[V0][0]);
+        } else {
+            c.cycles += 1;
+            c.sw((c.g[V0][0] as u32).wrapping_add(SPIN_TICKS), 0);
+        }
+
+        // Held too long: give the spin up.
+        c.cycles += 5;
+        c.g[V1][0] = c.lw(ai.wrapping_add(RIDER));
+        let rider = c.g[V1][0] as u32;
+        c.g[V0][0] = c.lw(rider.wrapping_add(SPIN_TICKS));
+        let limit = crate::tick::ticks_from_frames60(c, GIVE_UP_FRAMES) as i64 + 1;
+        c.g[V0][0] = ((c.g[V0][0] as i64) < limit) as u64;
+        if c.g[V0][0] == 0 {
+            c.cycles += 5;
+            c.sw(rider.wrapping_add(SPIN_TICKS), 0);
+            let input = c.g[S1][0] as u32;
+            c.g[V0][0] = c.lw(input) | 0x1000;
+            c.sw(input, c.g[V0][0]);
+        } else {
+            c.g[V0][0] = c.lw(ai.wrapping_add(PLAN_READY));
+            if think_spin_plan(c, ai)? {
+                write_spin_input(c, ai);
+            } else {
+                c.cycles += 1;
+                c.g[A2][0] = sx(ai.wrapping_add(TRICK_STICK));
+                write_spin_input(c, ai);
+            }
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The plan part of `ThinkSpin` (`v0` = `+0xe14`, f20 = height). Returns
+/// true when it already set `a2` to the trick stick (the original's direct
+/// jumps to the input block), false when the caller does.
+fn think_spin_plan(c: &mut Cpu, ai: u32) -> Result<bool, call::Unwound> {
+    use spin::*;
+    c.cycles += 2;
+    if c.g[V0][0] == 0 {
+        // Plan the spin; a fresh plan gets a trick height of 15.
+        c.cycles += 9;
+        c.g[A0][0] = c.g[S0][0];
+        c.mov_s(12, 20);
+        UPDATE_SPIN_PLAN.call(c, 0x0010_b31c)?;
+        c.lwc1(1, ai.wrapping_add(TRICK_HEIGHT));
+        c.mtc1(0, 0);
+        c.c_le_s(1, 0);
+        if c.fcc() {
+            c.cycles += 4;
+            c.g[AT][0] = 0x4170_0000;
+            c.mtc1(AT, 0);
+            c.swc1(0, ai.wrapping_add(TRICK_HEIGHT));
+        }
+        c.g[V0][0] = c.lw(ai.wrapping_add(PLAN_RESET));
+        c.cycles += 2;
+        if c.g[V0][0] != 0 {
+            c.cycles += 3;
+            c.swc1(20, ai.wrapping_add(TRICK_HEIGHT));
+            c.sw(ai.wrapping_add(PLAN_RESET), 0);
+            return Ok(false);
+        }
+        c.g[V1][0] = c.lw(ai.wrapping_add(TRICK));
+
+        // No trick yet, higher than 0.5 and below the trick height: pick one
+        // unless the animation in slot 2 is of type 0x14.
+        c.cycles += 3;
+        c.g[V0][0] = u64::MAX;
+        if c.g[V1][0] == c.g[V0][0] {
+            c.cycles += 6;
+            c.g[AT][0] = 0x3f00_0000;
+            c.mtc1(AT, 0);
+            c.c_lt_s(0, 20);
+            if c.fcc() {
+                c.cycles += 5;
+                c.lwc1(0, ai.wrapping_add(TRICK_HEIGHT));
+                c.c_lt_s(20, 0);
+                let below = c.fcc();
+                c.g[A1][0] = 2;
+                if below {
+                    c.cycles += 6;
+                    c.g[V0][0] = c.lw(ai.wrapping_add(RIDER));
+                    c.g[A0][0] = c.lw((c.g[V0][0] as u32).wrapping_add(ANIMS));
+                    call_ptr(c, ANIM_ENTRY_TYPE, 0x0010_b39c)?;
+                    c.g[V1][0] = 0x14;
+                    let skip = c.g[V0][0] == c.g[V1][0];
+                    c.mov_s(12, 20);
+                    if !skip {
+                        c.cycles += 4;
+                        c.g[A0][0] = c.g[S0][0];
+                        CHOOSE_TRICK.call(c, 0x0010_b3b0)?;
+                        c.sw(ai.wrapping_add(TRICK), c.g[V0][0]);
+                        return Ok(false);
+                    }
+                }
+                c.cycles += 1;
+            }
+        }
+        c.g[V0][0] = c.lw(ai.wrapping_add(SLOW_SPIN));
+
+        // A slow spin under 1 unit up: drop the trick and the grab.
+        c.cycles += 2;
+        let slow = c.g[V0][0] != 0;
+        c.g[V1][0] = 0;
+        if slow {
+            c.cycles += 6;
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(AT, 0);
+            c.c_lt_s(20, 0);
+            if c.fcc() {
+                c.g[V1][0] = 1;
+            }
+        }
+        c.cycles += 2;
+        let drop = c.g[V1][0] != 0;
+        c.g[V0][0] = u64::MAX;
+        if drop {
+            c.cycles += 3;
+            c.sw(ai.wrapping_add(GRAB), 0);
+            c.sw(ai.wrapping_add(TRICK), c.g[V0][0]);
+            return Ok(false);
+        }
+
+        // The grab window: [start + k, end - 2).
+        c.cycles += 7;
+        let gp = c.g[GP][0] as u32;
+        c.lwc1(0, ai.wrapping_add(GRAB_START));
+        c.lwc1(1, gp.wrapping_sub(0x7e10));
+        c.add_s(0, 0, 1);
+        c.c_le_s(20, 0);
+        if c.fcc() {
+            c.sw(ai.wrapping_add(GRAB), 0);
+        } else {
+            c.cycles += 8;
+            c.lwc1(0, ai.wrapping_add(GRAB_END));
+            c.g[AT][0] = 0x4000_0000;
+            c.mtc1(AT, 1);
+            c.sub_s(0, 0, 20);
+            c.c_lt_s(1, 0);
+            let inside = c.fcc();
+            c.g[A2][0] = sx(ai.wrapping_add(TRICK_STICK));
+            if !inside {
+                return Ok(true);
+            }
+            c.cycles += 3;
+            c.g[V0][0] = c.lw(ai.wrapping_add(GRAB_HELD));
+            let held = c.g[V0][0] != 0;
+            c.g[V0][0] = u64::MAX;
+            if held {
+                return Ok(true);
+            }
+            c.cycles += 1;
+            c.sw(ai.wrapping_add(GRAB), 0);
+        }
+        c.cycles += 3;
+        c.sw(ai.wrapping_add(TRICK), c.g[V0][0]);
+        c.sw(ai.wrapping_add(GRAB_HELD), 0);
+        return Ok(false);
+    }
+
+    // A plan exists: with no spin rate and no trick, roll a trick (0..14)
+    // and a grab.
+    c.lwc1(1, ai.wrapping_add(SPIN_RATE));
+    c.cycles += 5;
+    c.mtc1(0, 0);
+    c.c_eq_s(1, 0);
+    let still = c.fcc();
+    c.g[V0][0] = u64::MAX;
+    if !still {
+        return Ok(false);
+    }
+    c.cycles += 3;
+    c.g[V1][0] = c.lw(ai.wrapping_add(TRICK));
+    let has_trick = c.g[V1][0] != c.g[V0][0];
+    c.g[A2][0] = sx(ai.wrapping_add(TRICK_STICK));
+    if has_trick {
+        return Ok(true);
+    }
+    c.cycles += 6;
+    call_ptr(c, RAND_U, 0x0010_b470)?;
+    c.g[V1][0] = 0xf;
+    c.divu(0, V0, V1);
+    c.cycles += 6;
+    c.g[A0][0] = c.hi[0];
+    c.sw(ai.wrapping_add(TRICK), c.g[A0][0]);
+    call_ptr(c, RAND_U, 0x0010_b48c)?;
+    c.g[V0][0] &= 1;
+    let grab = c.g[V0][0] != 0;
+    c.g[V0][0] = 1;
+    if grab {
+        c.cycles += 1;
+        c.sw(ai.wrapping_add(GRAB), c.g[V0][0]);
+    }
+    Ok(false)
+}
+
+/// The input block of `ThinkSpin` (`a2` = the trick stick): the stick
+/// scaled by 31 into the low 6 bits of `in[0] >> 24` and `in[1]`, the trick
+/// byte at `in + 2`, the grab flag 0x4000, and a slow spin's flag bits.
+fn write_spin_input(c: &mut Cpu, ai: u32) {
+    use spin::*;
+    let input = c.g[S1][0] as u32;
+    let stick = c.g[A2][0] as u32;
+    c.cycles += 29;
+    c.g[AT][0] = 0x41f8_0000;
+    c.mtc1(AT, 1);
+    c.lwc1(0, stick.wrapping_add(0x48));
+    c.g[V0][0] = 0xffff_ffff_c0ff_0000;
+    c.g[A0][0] = c.lw(input);
+    c.g[V1][0] = 0xffff_ffff_ffff_ffc0;
+    c.mul_s(0, 0, 1);
+    c.g[A1][0] = c.lw(input.wrapping_add(4));
+    c.g[V0][0] |= 0xffff;
+    c.g[A1][0] &= c.g[V1][0];
+    c.g[A0][0] &= c.g[V0][0];
+    c.cvt_w_s(2, 0);
+    c.mfc1(V0, 2);
+    c.g[V0][0] &= 0x3f;
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 24);
+    c.g[A0][0] |= c.g[V0][0];
+    c.sw(input, c.g[A0][0]);
+    c.lwc1(0, stick.wrapping_add(0x4c));
+    c.mul_s(0, 0, 1);
+    c.cvt_w_s(1, 0);
+    c.mfc1(V0, 1);
+    c.g[V0][0] &= 0x3f;
+    c.g[A1][0] |= c.g[V0][0];
+    c.sw(input.wrapping_add(4), c.g[A1][0]);
+    c.g[V0][0] = c.lbu(ai.wrapping_add(TRICK));
+    c.sb(input.wrapping_add(2), c.g[V0][0]);
+    c.g[V1][0] = c.lw(ai.wrapping_add(GRAB_HELD));
+    if c.g[V1][0] != 0 {
+        c.cycles += 3;
+        c.g[V0][0] = c.lw(input) | 0x4000;
+    } else {
+        c.g[V0][0] = c.lw(ai.wrapping_add(GRAB));
+        c.cycles += 2;
+        let grab = c.g[V0][0] != 0;
+        c.g[V0][0] = c.lw(input);
+        c.cycles += 2;
+        if grab {
+            c.g[V0][0] |= 0x4000;
+        } else {
+            c.g[V1][0] = 0xffff_ffff_ffff_bfff;
+            c.g[V0][0] &= c.g[V1][0];
+        }
+    }
+    c.cycles += 5;
+    c.sw(input, c.g[V0][0]);
+    c.g[V1][0] = c.lw(ai.wrapping_add(SLOW_SPIN));
+    c.g[V0][0] = 1;
+    if c.g[V1][0] == c.g[V0][0] {
+        c.cycles += 9;
+        c.g[V0][0] = c.lw(input.wrapping_add(4));
+        c.g[V1][0] = 0xffff_ffff_fffc_0000;
+        c.g[A0][0] = 0x20000;
+        c.g[V1][0] |= 0xfff;
+        c.g[V0][0] &= c.g[V1][0];
+        c.g[A0][0] |= 0x1000;
+        c.g[V0][0] |= c.g[A0][0];
+        c.sw(input.wrapping_add(4), c.g[V0][0]);
+    }
+    c.g[V1][0] = c.lw(ai.wrapping_add(TRICK));
+    c.cycles += 1;
+    c.g[V0][0] = u64::MAX;
+}
+
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5879,5 +6263,130 @@ pub(crate) mod tests {
                 c.bus.write32(RACE_EVENT_STATE + 0x98, (seed % 2) as u32);
             },
         );
+    }
+
+
+    // ---------------------------------------------------------- think spin
+
+    const SPIN_AI: u32 = DATA + 0x9_0000;
+    const SPIN_RIDER: u32 = DATA + 0x9_1000;
+    const SPIN_AIR: u32 = DATA + 0x9_2000;
+    const SPIN_STATE: u32 = DATA + 0x9_3000;
+    const SPIN_MODEL: u32 = DATA + 0x9_4000;
+    const SPIN_ANIMS: u32 = DATA + 0x9_5000;
+    const SPIN_INPUT: u32 = DATA + 0x9_6000;
+    /// `AnimTable_GetEntry`'s table (0x446990, 0x1c per animation).
+    const ANIM_TABLE: u32 = 0x0044_6990;
+
+    /// The AI, its rider (air state, spin counter, animation set, spin
+    /// sub-state for `UpdateSpinPlan`), the plan fields and the input block.
+    /// Heights stay off the trick pickers' long paths: a trick is only chosen
+    /// at 0.6/0.7 units (`ChooseTrick` answers -1 there at once).
+    fn think_spin_world(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        let pick = |r: &mut Rng, v: &[u32]| v[(r.next_u32() as usize) % v.len()];
+        let f = |x: f32| x.to_bits();
+        // The BE library singleton and interface slot 0 (a fake), for the
+        // attribute factor `UpdateSpinPlan`'s progress queries ask.
+        c.bus.write32(GAME_GP - 0x1f04, BE_LIBRARY);
+        c.bus.write32(GAME_GP - 0x1efc, 0);
+        c.bus.write32(0x0053_08a8, BE_IFACE);
+        c.bus.write32(BE_IFACE + 4, BE_VTABLE);
+        c.bus.write16(BE_VTABLE + 8, 0);
+        c.bus.write32(BE_VTABLE + 0xc, FAKE + 0x80);
+        // `.lit4` constants the plan compares with.
+        for off in [0x7e10u32, 0x7e14, 0x7e18, 0x7e1c, 0x7e20] {
+            c.bus.write32(GAME_GP - off, pick(&mut *r, &[f(0.0), f(0.5), f(2.0), f(-1.0)]));
+        }
+        for i in 0..6u32 {
+            c.bus.write32(0x004f_f030 + 4 * i, r.next_u32());
+        }
+
+        c.bus.write32(SPIN_AI + 0x18, SPIN_RIDER);
+        c.bus.write32(SPIN_RIDER + 0x788, SPIN_AIR);
+        c.bus.write32(SPIN_AIR + 0xac, [1u32, 3, 0, 2][(seed % 4) as usize]);
+        c.bus.write32(SPIN_AIR + 0xa0, 0);
+        c.bus.write32(SPIN_AIR + 0x98, pick(&mut *r, &[f(0.3), f(0.6), f(0.7), f(20.0), f(16.0)]));
+        c.bus.write32(SPIN_RIDER + 0x484, pick(&mut *r, &[0, 5, 29, 30, 31, 100]));
+        c.bus.write32(SPIN_RIDER + 0x77c, SPIN_STATE);
+        let x = SPIN_STATE + 0x230;
+        for off in [0x10u32, 0x14, 0x18, 0x1c, 0x38, 0x3c] {
+            c.bus.write32(x + off, r.f32(4.0));
+        }
+        c.bus.write32(x + 0x58, SPIN_MODEL);
+        c.bus.write32(SPIN_MODEL + 0x2ec, r.f32(2.0));
+        c.bus.write32(SPIN_MODEL + 0x86c, r.next_u32() % 4);
+        c.bus.write32(SPIN_MODEL + 0xb34, 1 + r.next_u32() % 3);
+        // Animation slot 2: the empty animation, or one of type 0x14 / 7.
+        c.bus.write32(SPIN_RIDER + 0x784, SPIN_ANIMS);
+        c.bus.write32(SPIN_ANIMS + 8, pick(&mut *r, &[0x1b6, 5, 6]));
+        c.bus.write32(ANIM_TABLE + 5 * 0x1c, 0x14);
+        c.bus.write32(ANIM_TABLE + 6 * 0x1c, 7);
+
+        let ai = SPIN_AI;
+        c.bus.write32(ai + 0xe14, r.next_u32() % 2);
+        c.bus.write32(ai + 0xe18, if r.next_u32() % 4 == 0 { 1 } else { 0 });
+        c.bus.write32(ai + 0xe0c, pick(&mut *r, &[0xffff_ffff, 0xffff_ffff, 3]));
+        c.bus.write32(ai + 0xe20, pick(&mut *r, &[0, 0, 1, 2]));
+        c.bus.write32(ai + 0xe24, r.next_u32() % 2);
+        c.bus.write32(ai + 0xe28, r.next_u32() % 2);
+        c.bus.write32(ai + 0xe2c, pick(&mut *r, &[f(0.0), f(10.0), f(-5.0)]));
+        c.bus.write32(ai + 0xe30, pick(&mut *r, &[f(0.0), f(30.0), f(100.0)]));
+        c.bus.write32(ai + 0xe34, pick(&mut *r, &[f(0.0), f(-1.0), f(0.65), f(50.0)]));
+        c.bus.write32(ai + 0xe3c, pick(&mut *r, &[0, 0, f(1.0)]));
+        c.bus.write32(ai + 0xdf0 + 0x48, r.f32(1.0));
+        c.bus.write32(ai + 0xdf0 + 0x4c, r.f32(1.0));
+        c.bus.write32(SPIN_INPUT, r.next_u32());
+        c.bus.write32(SPIN_INPUT + 4, r.next_u32());
+
+        c.g[A0][0] = sx(ai);
+        c.g[A1][0] = sx(SPIN_INPUT);
+    }
+
+    #[test]
+    fn computer_actor_rider_think_spin_matches() {
+        check_lohi(ee::s00::f_0010b250__generated, computer_actor_rider_think_spin, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x0010_b250, 4);
+            think_spin_world(c, &mut r, seed);
+        });
+    }
+
+    /// The call (1-based) on which a rider spinning more than 15 units up
+    /// gives the spin up (input flag 0x1000), at rate `hz`, with a plan in
+    /// place (no callees).
+    fn spin_give_up_call(hz: u32) -> u32 {
+        let mut c = crate::difftest::fresh();
+        let c = &mut *c;
+        crate::tick::set_for_test(c, hz);
+        c.g[GP][0] = GAME_GP as u64;
+        c.bus.write32(SPIN_AI + 0x18, SPIN_RIDER);
+        c.bus.write32(SPIN_RIDER + 0x788, SPIN_AIR);
+        c.bus.write32(SPIN_AIR + 0xac, 1);
+        c.bus.write32(SPIN_AIR + 0xa0, 0);
+        c.bus.write32(SPIN_AIR + 0x98, 20.0f32.to_bits());
+        c.bus.write32(SPIN_RIDER + 0x484, 0);
+        c.bus.write32(SPIN_AI + 0xe14, 1);
+        c.bus.write32(SPIN_AI + 0xe3c, 1.0f32.to_bits());
+        for n in 1..=10_000 {
+            c.bus.write32(SPIN_INPUT, 0);
+            c.g[A0][0] = sx(SPIN_AI);
+            c.g[A1][0] = sx(SPIN_INPUT);
+            c.g[ssx3_ee_rt::cpu::reg::SP][0] = sx(STACK);
+            c.g[RA][0] = sx(RET);
+            computer_actor_rider_think_spin(c);
+            assert_eq!(c.pc, RET, "think did not return");
+            if c.bus.read32(SPIN_INPUT) & 0x1000 != 0 {
+                return n;
+            }
+        }
+        panic!("{hz} Hz: never gave up");
+    }
+
+    /// The AI gives a high spin up after the same wall-clock time (30 frames
+    /// at 60 Hz): on call 31 at 60, (31 - 1) * r / 60 + 1 at r.
+    #[test]
+    fn computer_actor_rider_think_spin_give_up_follows_the_rate() {
+        assert_eq!(spin_give_up_call(60), 31);
+        assert_eq!(spin_give_up_call(120), 61);
+        assert_eq!(spin_give_up_call(240), 121);
     }
 }

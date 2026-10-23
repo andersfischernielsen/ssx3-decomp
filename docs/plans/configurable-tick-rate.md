@@ -309,6 +309,47 @@ difference): the screen transitions after each button press went from 45-105
 to 0-12; the description text wraps as at 60. Remaining differences are the
 loading/race start.
 
+### T4: per-tick updates with no 1/60 marker (done)
+
+The T1 scan only finds loads of 1/60. Code that moves a value by another
+constant once per tick (`x += 0.015`, `v *= 0.98`, `x += (t - x) * 0.1`,
+`frames++` against a frame threshold) carries no marker. The start gate's
+launch progress (`RiderGateSub_UpdateLaunch`, `+= 0.015` per tick) handed
+control back mid-air at 240 Hz, and a held stick then flipped the rider into a
+crash. `tools/scan_tick_patterns.py` finds stores of a value computed from the
+same field plus a constant (and integer `+= n`); with a menu and a race call
+profile, 416 candidates in functions that run at least every other frame.
+Classified in `docs/plans/tick/t4-a..e.tsv` (e: the readers of the AI frame
+counter); about 85 were real. Fixed:
+
+- Single-site `.lit4` constants: `tick::PER_TICK` rewrites them for the rate
+  like the 1/60 entries (step `k*60/rate`, factor `k^(60/rate)`, affine
+  decay): boost drain (4x fast at 240 Hz), target-speed blend, impact decays,
+  ground wobble, tweak layer, spin/flip lean, rumble, wipeout meter, the
+  HUD's pulse/blink/fade/timer steps.
+- Hand-written conversions: chase camera smoothing (target height, camera
+  height, ground FOV, follow distance and its boost fall, pitch), anger glow
+  ramp and pulse counters, board wake blends, air streamer ring/fade/scroll,
+  flag waves, lens snow, menu input debounce and repeat, race music fade-in,
+  lightning flash/thunder/strike chance, game-mode deadlines (seconds *
+  rate).
+- Ported and converted: `GameCamera_AvoidCollision` (lift decay),
+  `ChaseCameraAlgorithm_ApplyJumpCurves` (takeoff countdown in 60 Hz frames,
+  landing decay; two bugs of the old uninstalled port fixed),
+  `cSpeedBoostStreamerFX_Update`, `cSplashManager_Update`, the crowd flashes
+  (`CrowdMan2d_Update`/`SpawnSprites`), speech event contexts, `DangerMan_Update`,
+  `ComputerActorRider_ThinkSpin`, `ScriptList_Update` (entry and skip waits),
+  `ScriptEngine_Update` (skip delay), `GMHandler0_v06` and the
+  `GMHandler0/4/6/7_Reset` deadlines. `tick::countdowns60` and
+  `tick::frame60_due` hold integer countdowns to 60 Hz frames.
+
+Still open from t4-e: the AI frame-counter readers `Rider_CheckRiderCollisions`
+(3-frame cooldowns), `ComputerActorRider_ThinkGate`, `FindAttackTarget`,
+`Rider_UpdateRaceProgress`/`UpdateAIPathProgress` (once per second),
+`Rider_UpdateIdleLookAnim`, `RiderGroundState_Enter`/`Exit`, `FocusMan_Update`,
+`GMHandler4_OnRiderFinished` (medal times * 60), `AI_UpdateRaceTimeLimit`
+(online only). The scan covers code that ran in the two profiles only.
+
 ### Left for a design decision (not converted)
 
 | Where | What | Why it needs a decision |

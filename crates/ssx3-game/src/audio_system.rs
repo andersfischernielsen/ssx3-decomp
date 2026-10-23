@@ -2872,6 +2872,9 @@ fn sample_paint(c: &mut Cpu, layer: u64, radius: usize, ret: u32) -> Flow {
 /// 800 frames (1000 when the player's music state is 1, 1200 when 2),
 /// counting frames at `sys + 0x628c` (state 2 at `+0x6288` starts the
 /// count), at `127 * clamp(frames / length, 0, 1)`.
+///
+/// Tick rate: the count advances once per tick, so the length (60 Hz frames)
+/// is converted with `tick::ticks_from_frames60` (13-20 s at every rate).
 pub fn ssx_audio_update_music_fade_in(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 12;
@@ -2922,7 +2925,10 @@ pub fn ssx_audio_update_music_fade_in(c: &mut Cpu) {
                 }
             }
             c.cycles += 9;
-            let length = reg(c, S1);
+            // The fade length is in 60 Hz frames: the same wall-clock fade
+            // at any rate (exact at 60; `s1` is restored below).
+            let length = crate::tick::ticks_from_frames60(c, reg(c, S1) as u32) as u64;
+            set_reg(c, S1, length);
             let frames = lw_at(c, sys, sys::MUSIC_FADE_FRAMES);
             set_reg(c, V1, frames);
             let fl = FpuF32::from_i32(length as i32);
@@ -3693,6 +3699,56 @@ mod tests {
             c.bus.write32(SYS + sys::MUSIC_FADE_FRAMES, pick(&mut r, &[0, 5, 799, 800, 1200, 1600]));
             c.g[A0][0] = sx(SYS);
         });
+    }
+
+    /// `SSXAudioSystem_UpdateMusicFadeIn` on the differential fixture of
+    /// `seed` at rate `hz`: `updates` updates from fade count `start` (fade
+    /// state 2); the count it leaves, or `None` if an update did not return.
+    fn fade_count(hz: u32, seed: u32, start: u32, updates: u32) -> Option<u32> {
+        let mut c = crate::difftest::fresh();
+        let c = &mut *c;
+        let mut r = base(c, seed, 0x32, 2);
+        find_rider_world(c, &mut r);
+        audio_globals(c, &mut r);
+        c.bus.write32(SYS + sys::ROOT + 0x408, if r.next_u32() % 3 == 0 { 0 } else { MP });
+        c.bus.write32(SYS + sys::ROOT + 0x418, r.next_u32() % 2);
+        c.bus.write32(SYS + sys::ROOT + 0x58, r.next_u32() % 4);
+        c.bus.write32(SYS + sys::MUSIC_FADE_STATE, 2);
+        c.bus.write32(SYS + sys::MUSIC_FADE_FRAMES, start);
+        crate::tick::set_for_test(c, hz);
+        for _ in 0..updates {
+            c.g[A0][0] = sx(SYS);
+            c.g[RA][0] = sx(crate::difftest::RA);
+            c.g[SP][0] = sx(crate::difftest::SP);
+            ssx_audio_update_music_fade_in(c);
+            if c.pc != crate::difftest::RA {
+                return None;
+            }
+        }
+        Some(c.bus.read32(SYS + sys::MUSIC_FADE_FRAMES))
+    }
+
+    /// The music fades in over the same wall-clock time at every rate: the
+    /// count stops at the length (800/1000/1200 frames at 60, r/60 times as
+    /// many ticks at r), and r/60 updates at r advance it as far (in time) as
+    /// one at 60, so the volume `127 * count / length` is the same.
+    #[test]
+    fn update_music_fade_in_follows_the_rate() {
+        // A fixture that takes the fade path (not busy, no unwind).
+        let seed = (0..200u32)
+            .find(|&s| fade_count(60, s, 5, 1) == Some(6) && fade_count(60, s, 100, 2) == Some(102))
+            .expect("no fixture reaches the fade path");
+        let length = fade_count(60, seed, 100_000, 1).unwrap();
+        assert!([800, 1000, 1200].contains(&length), "length {length}");
+        for hz in [120u32, 240] {
+            let q = hz / 60;
+            assert_eq!(fade_count(hz, seed, 100_000, 1), Some(length * q), "{hz} Hz: length");
+            assert_eq!(fade_count(hz, seed, length * q - 1, 2), Some(length * q), "{hz} Hz: stops");
+            for t in [0u32, 100, length / 2] {
+                let at60 = fade_count(60, seed, t, 1).unwrap();
+                assert_eq!(fade_count(hz, seed, t * q, q), Some(at60 * q), "{hz} Hz: from {t}");
+            }
+        }
     }
 
     // --- countdown ---------------------------------------------------------

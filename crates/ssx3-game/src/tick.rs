@@ -75,6 +75,9 @@ pub const NOT_A_STEP: &[u32] = &[
     0x0049_b4a0,
     // AirPredictor_Simulate (0x113200): the trajectory preview's step.
     0x0049_b480,
+    // ChaseCameraAlgorithm_ApplyJumpCurves (0x1635f8): `(16 - n) * 1/60`,
+    // the air time of the takeoff countdown n, which counts 60 Hz frames.
+    0x0049_c650,
 ];
 
 /// 60 Hz frame counts in the game's *data* (not `.lit4`), rewritten to the
@@ -140,6 +143,18 @@ pub const PER_TICK: &[(u32, u32, PerTick)] = &[
     // falls back by 0.00417 per tick (the same value as a +/- band).
     (0x0049_b914, 0x3b88_a358, PerTick::Step),
     (0x0049_b918, 0xbb88_a358, PerTick::Step),
+    // cOVStateHUD1P_Update (0x1ea930): HUD animation steps per tick: the
+    // pulse phase (+0xc94, 1/120), the element timer (+0xa44, 1/300, the
+    // element hides at 1), and the player slot's flash (+0x48), blink
+    // (+0x4c, +0x68), pulse (+0x64) and fade (+0x70).
+    (0x0049_d984, 0x3c08_8889, PerTick::Step),
+    (0x0049_d9b0, 0x3b5a_769c, PerTick::Step),
+    (0x0049_d9c8, 0x3e17_faab, PerTick::Step),
+    (0x0049_d9cc, 0x3cd8_bc1e, PerTick::Step),
+    (0x0049_d9d0, 0x3cdb_6642, PerTick::Step),
+    (0x0049_d9dc, 0x3d08_8889, PerTick::Step),
+    (0x0049_d9e0, 0x3db4_0d7c, PerTick::Step),
+    (0x0049_d9e4, 0x3caa_aaab, PerTick::Step),
 ];
 
 /// The value of [`PER_TICK`] entries at `hz`: (entry, bits) pairs, the
@@ -563,6 +578,42 @@ pub fn frame60_due(c: &mut Cpu, key: u32, frame: u32) -> bool {
     })
 }
 
+/// Run `body` (one tick of an update) so that the integer countdowns at
+/// `addrs`, which the original takes down by 1 per tick and which count 60 Hz
+/// frames (a wait in frames, a delay before a skip is allowed), go down once
+/// per 60 Hz frame at any rate: a countdown the body took down by exactly 1
+/// on a tick that is not a 60 Hz frame of its own ([`frame60_due`], keyed by
+/// its address) is put back. A countdown the body set to a new value starts
+/// a new clock. Nothing changes at 60. Returns false when the body unwound
+/// (the caller returns at once).
+pub fn countdowns60(c: &mut Cpu, addrs: &[u32], body: impl FnOnce(&mut Cpu)) -> bool {
+    if rate(c) == 60 {
+        body(c);
+        return true;
+    }
+    let ret = c.g[ssx3_ee_rt::cpu::reg::RA][0] as u32;
+    let before: Vec<(u32, u32, bool)> = addrs
+        .iter()
+        .map(|&a| {
+            let v = c.bus.read32(a);
+            (a, v, v == 0 || frame60_due(c, a, v))
+        })
+        .collect();
+    body(c);
+    if c.pc != ret {
+        return false;
+    }
+    for (a, v, due) in before {
+        let now = c.bus.read32(a);
+        if !due && now == v.wrapping_sub(1) {
+            c.bus.write32(a, v);
+        }
+        let v = c.bus.read32(a);
+        frame60_ran(c, a, v);
+    }
+    true
+}
+
 /// Whether a counter at `key` holds a different value than at the last call
 /// (always at 60). For code that reacts to a 60 Hz frame counter each tick
 /// (e.g. `value % 60 == 0`): when the counter steps once per 60 Hz frame
@@ -678,6 +729,28 @@ pub fn set_for_test(c: &mut Cpu, hz: u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn countdowns_take_60hz_frames() {
+        // A countdown of 30 frames runs out after 30 ticks at 60, 120 at 240.
+        for hz in [60u32, 120, 240] {
+            let mut c = ssx3_ps2::new_cpu();
+            set_for_test(&mut c, hz);
+            const A: u32 = 0x0010_0000;
+            c.bus.write32(A, 30);
+            let mut ticks = 0;
+            while c.bus.read32(A) != 0 {
+                ticks += 1;
+                countdowns60(&mut c, &[A], |c| {
+                    let v = c.bus.read32(A);
+                    c.bus.write32(A, v - 1);
+                    c.pc = c.g[ssx3_ee_rt::cpu::reg::RA][0] as u32;
+                });
+                assert!(ticks < 1000);
+            }
+            assert_eq!(ticks, 30 * hz / 60 - (hz / 60 - 1), "{hz} Hz");
+        }
+    }
 
     #[test]
     fn per_tick_constants_follow_the_rate() {

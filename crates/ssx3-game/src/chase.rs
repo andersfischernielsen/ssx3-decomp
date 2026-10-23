@@ -991,6 +991,10 @@ pub fn apply_target_height(c: &mut Cpu) {
         c.cycles += 35;
         let (base, speed_gain, slope_gain, boost_gain, smoothing) =
             (abi::farg(c, 0), abi::farg(c, 1), abi::farg(c, 2), abi::farg(c, 3), abi::farg(c, 4));
+        // The caller's weight (f16) is the kept share per update: at another
+        // rate the same share per unit of wall-clock time (`k^(60/rate)`).
+        // At 60 the argument is used unchanged (f16 itself is not written).
+        let smoothing = per_tick_factor(c, smoothing);
         algo.look_at_slope_term().write_fpu(c, slope);
         let speed_lift = ramp * speed_gain;
         let slope_lift = slope_gain * slope;
@@ -1070,6 +1074,11 @@ pub fn apply_fov(c: &mut Cpu) {
 
         c.cycles += 17;
         let smoothing = abi::farg(c, 3);
+        // On the ground (state 0) f15 is the caller's per-update weight: at
+        // another rate `k^(60/rate)` (the other paths set f15 above: 1.0 in
+        // Air, the already converted 0.999 elsewhere). f15 itself is left as
+        // the caller passed it; unchanged at 60.
+        let smoothing = if state == 0 { per_tick_factor(c, smoothing) } else { smoothing };
         c.g[A0][0] = c.g[V1][0];
         let old = algo.fov_scale().read_fpu(c);
         let keep = one - smoothing;
@@ -1166,6 +1175,9 @@ pub fn apply_follow_distance(c: &mut Cpu) {
 
         // Boost bonus decay; pick the smoothing factor.
         c.cycles += 12;
+        // f16 is the boost bonus's linear fall per update: `k * 60/rate` at
+        // another rate, unchanged at 60.
+        let boost_decay = per_tick_step(c, boost_decay);
         let bonus = boost_dist_bonus(algo).read_fpu(c) - boost_decay;
         let mut factor_slot = sp.off(0x34);
         c.g[V0][0] = sx(factor_slot.0);
@@ -1183,7 +1195,11 @@ pub fn apply_follow_distance(c: &mut Cpu) {
         }
 
         c.cycles += 36;
+        // f17 (growing) / f18 (shrinking) are kept shares per update: at
+        // another rate `k^(60/rate)` (the stack slots keep the caller's
+        // values); unchanged at 60.
         let s = factor_slot.read_fpu(c);
+        let s = per_tick_factor(c, s);
         c.g[A0][0] = c.g[V1][0];
         let one = FpuF32::ONE;
         c.g[AT][0] = one.0 as u64;
@@ -1299,6 +1315,9 @@ pub fn apply_camera_height(c: &mut Cpu) {
         c.g[AT][0] = one.0 as u64;
         let boost_root = st.boost().read_fpu(c).sqrt();
         let (gain, offset, boost_gain, smoothing) = (abi::farg(c, 0), abi::farg(c, 1), abi::farg(c, 2), abi::farg(c, 4));
+        // f16 is the kept share per update: `k^(60/rate)` at another rate,
+        // unchanged at 60 (f16 itself is not written).
+        let smoothing = per_tick_factor(c, smoothing);
         let keep = one - smoothing;
         let speed_drop = gain * scaled;
         let old = algo.eye_drop().read_fpu(c);
@@ -3491,6 +3510,180 @@ mod tests {
         );
         // Unconverted, two 120 Hz ticks would leave 1 + 0.999² = 1.998001.
         assert!(two_ticks_120 > 1.9985, "at 120: {two_ticks_120}");
+    }
+
+    /// Run `step` `ticks` times at rate `hz` on an algorithm at `DATA` and a
+    /// `RiderCamState` at `DATA + 0x1000` (speed 0, boost 0, on the ground,
+    /// look-at at the origin, eye 150 away, world up 0, no reset limit):
+    /// `prep` sets the state once, `args` the argument registers before
+    /// every call; returns `read` of the state afterwards.
+    fn rate_run(
+        hz: u32,
+        ticks: u32,
+        prep: &dyn Fn(&mut Cpu, u32, u32),
+        args: &dyn Fn(&mut Cpu),
+        step: fn(&mut Cpu),
+        read: &dyn Fn(&mut Cpu, u32) -> f32,
+    ) -> f32 {
+        let mut boxed = crate::difftest::fresh();
+        let c: &mut Cpu = &mut boxed;
+        machine(c, 1, 0xd319, 0);
+        crate::tick::set_for_test(c, hz);
+        let (algo, st) = (DATA, DATA + 0x1000);
+        c.bus.write32(GAME_GP.wrapping_sub(0x6778), 1e30f32.to_bits());
+        for off in [0x40u32, 0x44, 0x48, 0x4c, 0x54, 0x58, 0x5c, 0x60, 0x64] {
+            c.bus.write32(st + off, 0);
+        }
+        put_vec(c, algo + 0x20, [0, 0, 0, 0]); // look-at
+        put_vec(c, algo + 0x40, [0x4316_0000, 0, 0, 0]); // eye, 150 away
+        put_vec(c, 0x4ff160, [0, 0, 0, 0]); // world up
+        prep(c, algo, st);
+        for _ in 0..ticks {
+            c.g[A0][0] = algo as u64;
+            c.g[A1][0] = st as u64;
+            args(c);
+            step(c);
+        }
+        read(c, algo)
+    }
+
+    /// One 60 Hz update and `hz/60` updates at `hz` leave a per-update blend
+    /// `k * old + (1 - k) * target` at the same value (old 2, target 1:
+    /// `1 + k`); unconverted, the faster rate would leave `1 + k^(hz/60)`.
+    fn assert_blend_follows_the_rate(name: &str, k: f32, run: &dyn Fn(u32, u32) -> f32) {
+        let at_60 = run(60, 1);
+        assert!((at_60 - (1.0 + k)).abs() < 1e-5, "{name} at 60: {at_60}, want {}", 1.0 + k);
+        for hz in [120u32, 240] {
+            let n = hz / 60;
+            let fast = run(hz, n);
+            assert!((fast - at_60).abs() < 1e-4, "{name} at {hz}: {fast}, at 60: {at_60}");
+            assert!(fast > 1.0 + k.powi(n as i32) + 1e-3, "{name} at {hz}: {fast} (unconverted)");
+        }
+    }
+
+    /// The look-at lift smoothing (f16) is per update.
+    #[test]
+    fn apply_target_height_smoothing_follows_the_rate() {
+        let run = |hz: u32, ticks: u32| {
+            rate_run(
+                hz,
+                ticks,
+                &|c, algo, _| {
+                    c.bus.write32(GAME_GP.wrapping_sub(0x6ae8), 1388.9f32.to_bits());
+                    c.bus.write32(GAME_GP.wrapping_sub(0x6ae4), 5.15e-4f32.to_bits());
+                    c.bus.write32(algo + 0x1e4, 2.0f32.to_bits()); // the old lift
+                },
+                &|c| {
+                    c.f[12] = 1.0f32.to_bits(); // base lift: the target
+                    for f in 13..=15 {
+                        c.f[f] = 0;
+                    }
+                    c.f[16] = 0.9f32.to_bits();
+                },
+                super::apply_target_height,
+                &|c, algo| f32::from_bits(c.bus.read32(algo + 0x1e4)),
+            )
+        };
+        assert_blend_follows_the_rate("look-at lift", 0.9, &run);
+    }
+
+    /// The eye drop smoothing (f16) is per update.
+    #[test]
+    fn apply_camera_height_smoothing_follows_the_rate() {
+        let run = |hz: u32, ticks: u32| {
+            rate_run(
+                hz,
+                ticks,
+                &|c, algo, _| {
+                    for (off, v) in [(0x6ac0u32, 1388.9f32), (0x6abc, 833.3), (0x6ab8, 1666.7), (0x6ab4, 1e-4)] {
+                        c.bus.write32(GAME_GP.wrapping_sub(off), v.to_bits());
+                    }
+                    c.bus.write32(algo + 0x1d4, 2.0f32.to_bits()); // the old drop
+                },
+                &|c| {
+                    c.f[12] = 0; // speed gain
+                    c.f[13] = (-1.0f32).to_bits(); // offset: the drop is 1
+                    c.f[14] = 0; // boost gain
+                    c.f[15] = 0; // slope
+                    c.f[16] = 0.978f32.to_bits();
+                },
+                super::apply_camera_height,
+                &|c, algo| f32::from_bits(c.bus.read32(algo + 0x1d4)),
+            )
+        };
+        assert_blend_follows_the_rate("eye drop", 0.978, &run);
+    }
+
+    /// On the ground (state 0) the caller's FOV smoothing (f15) is per update.
+    #[test]
+    fn apply_fov_ground_smoothing_follows_the_rate() {
+        let run = |hz: u32, ticks: u32| {
+            rate_run(
+                hz,
+                ticks,
+                &|c, algo, st| {
+                    for (off, v) in [(0x6ab0u32, 1e-7f32), (0x6aac, 0.999), (0x6aa8, std::f32::consts::FRAC_PI_4)] {
+                        c.bus.write32(GAME_GP.wrapping_sub(off), v.to_bits());
+                    }
+                    c.bus.write32(st + 0x40, 0); // Ground
+                    c.bus.write32(algo + 0x1dc, 2.0f32.to_bits()); // the old scale
+                },
+                &|c| {
+                    c.f[12] = 0; // speed² gain
+                    c.f[13] = 4.0f32.to_bits(); // base
+                    c.f[14] = 1.0f32.to_bits(); // boost widen: the target is 1
+                    c.f[15] = 0.95f32.to_bits(); // the ground smoothing
+                },
+                super::apply_fov,
+                &|c, algo| f32::from_bits(c.bus.read32(algo + 0x1dc)),
+            )
+        };
+        assert_blend_follows_the_rate("FOV scale", 0.95, &run);
+    }
+
+    /// The follow distance smoothing (f17 growing, f18 shrinking) and the
+    /// boost bonus's fall (f16) are per update.
+    #[test]
+    fn apply_follow_distance_follows_the_rate() {
+        // (follow distance, boost bonus) after `ticks` updates at `hz`.
+        let run = |hz: u32, ticks: u32, old: f32, bonus: f32, read_bonus: bool| {
+            rate_run(
+                hz,
+                ticks,
+                &|c, algo, st| {
+                    c.bus.write32(GAME_GP.wrapping_sub(0x6ac4), 1e-4f32.to_bits());
+                    put_vec(c, st + 0x30, [0x3f80_0000, 0, 0, 0]); // chase direction
+                    c.bus.write32(algo + 0x1d0, old.to_bits()); // the old distance
+                    c.bus.write32(algo + 0x1e8, bonus.to_bits()); // the boost bonus
+                    c.bus.write32(algo + 0x1ec, 0); // the last boost
+                },
+                &|c| {
+                    c.f[12] = 150.0f32.to_bits(); // base: the target
+                    c.f[13] = 0; // gain
+                    c.f[14] = 0; // speed offset
+                    c.f[15] = 0; // boost gain
+                    c.f[16] = 1.0f32.to_bits(); // the bonus's fall per update
+                    c.f[17] = 0.8f32.to_bits(); // growing
+                    c.f[18] = 0.9f32.to_bits(); // shrinking
+                },
+                super::apply_follow_distance,
+                &move |c, algo| f32::from_bits(c.bus.read32(algo + if read_bonus { 0x1e8 } else { 0x1d0 })),
+            )
+        };
+        // Shrinking from 300 towards 150 (f18) and growing from 50 (f17), as
+        // `150 + (old - 150) * k`; scaled to the blend helper's 2 -> 1. (The
+        // eye stays over 20 from the look-at: no reset.)
+        assert_blend_follows_the_rate("shrinking", 0.9, &|hz, n| {
+            1.0 + (run(hz, n, 300.0, 0.0, false) - 150.0) / 150.0
+        });
+        assert_blend_follows_the_rate("growing", 0.8, &|hz, n| {
+            1.0 + (150.0 - run(hz, n, 50.0, 0.0, false)) / 100.0
+        });
+        // The bonus falls 1 per 60 Hz update: 10 -> 9 at every rate.
+        for hz in [60u32, 120, 240] {
+            let b = run(hz, hz / 60, 150.0, 10.0, true);
+            assert!((b - 9.0).abs() < 1e-5, "boost bonus at {hz}: {b}");
+        }
     }
 
     /// Make the closing `CheckDistanceReset` take its 34-cycle no-reset

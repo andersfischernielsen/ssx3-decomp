@@ -54,6 +54,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0022_9398, crowd_man2d_remove_all, "CrowdMan2d_RemoveAll"),
     (0x0022_9408, crowd_man2d_remove_by_type, "CrowdMan2d_RemoveByType"),
     (0x0022_9498, crowd_man2d_clear, "CrowdMan2d_Clear"),
+    (0x0022_94c8, crowd_man2d_update, "CrowdMan2d_Update"),
+    (0x0022_9530, crowd_man2d_spawn_sprites, "CrowdMan2d_SpawnSprites"),
     (0x0022_9738, crowd_man_2d_add_sprite, "CrowdMan2d_AddSprite"),
     (0x0022_9788, crowd_man2d_add, "CrowdMan2d_Add"),
     (0x0022_9b90, crowd_man2d_clear_slot, "CrowdMan2d_ClearSlot"),
@@ -1525,6 +1527,274 @@ pub fn crowdman2d_load_state(c: &mut Cpu) {
     })
 }
 
+
+// ---------------------------------------------------------------------------
+// 2D crowd camera flashes.
+
+/// `CrowdMan2d` fields of the flash sprites.
+mod crowd2d {
+    /// Emitter slots (`+8`, 128 words, -1 = free).
+    pub const SLOTS: u32 = 0x8;
+    /// Per-emitter spawn timer (`+0x240`, emitters 0x40 apart; their
+    /// position and spread vectors at `+0x210`, `+0x220`, `+0x230`).
+    pub const TIMER: u32 = 0x240;
+    /// The crowd reaction last applied.
+    pub const REACTION: u32 = 0x2210;
+    /// Flash sprites (`+0x2220`, 40 of 0x20 bytes, lifetime at `+0x10`).
+    pub const LIFETIME: u32 = 0x2230;
+    /// A flash's lifetime in 60 Hz frames.
+    pub const FLASH_FRAMES: u32 = 3;
+}
+
+/// `cCrowdAnim2D_Update` (through the function table).
+const CROWD_ANIM2D_UPDATE: u32 = 0x002d_bac0;
+/// `CrowdAudio_GetInstanceReaction` (through the function table).
+const CROWD_AUDIO_GET_INSTANCE_REACTION: u32 = 0x002a_77c8;
+const CROWD_MAN2D_SPAWN_SPRITES: Callee = Callee { addr: 0x0022_9530, f: ee::s05::CrowdMan2d_SpawnSprites };
+const CROWD_MAN2D_ADD_SPRITE: Callee = Callee { addr: 0x0022_9738, f: ee::s05::CrowdMan2d_AddSprite };
+
+/// `void CrowdMan2d_Update(CrowdMan2d* self)` (0x2294c8): update the crowd
+/// animation, publish its frame (`+0x10`) as a half at `0x536690`, age the
+/// 40 flash sprites by one tick and spawn new flashes.
+///
+/// Tick rate: the lifetimes count ticks; [`crowd_man2d_spawn_sprites`] gives
+/// new flashes 3 60 Hz frames' worth of ticks, so a flash shows as long at
+/// any rate.
+pub fn crowd_man2d_update(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A0][0] = Addr(r32(c, S0)).off(4).lw(c);
+        call_ptr(c, CROWD_ANIM2D_UPDATE, 0x0022_94e0)?;
+        c.g[V0][0] = Addr(r32(c, S0)).off(4).lw(c);
+        c.g[A0][0] = 0x53_0000;
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A2][0] = 0x27;
+        c.g[V1][0] = Addr(r32(c, V0)).off(0x10).lw(c);
+        c.sh(0x0053_6690, c.g[V1][0]);
+        loop {
+            c.cycles += 3;
+            let life = Addr(r32(c, A1)).off(crowd2d::LIFETIME);
+            c.g[V0][0] = life.lw(c);
+            let shown = (c.g[V0][0] as i64) > 0;
+            c.g[V0][0] = sx(r32(c, V0).wrapping_sub(1));
+            if shown {
+                c.cycles += 1;
+                life.sw(c, c.g[V0][0]);
+            }
+            c.cycles += 3;
+            c.g[A2][0] = sx(r32(c, A2).wrapping_sub(1));
+            let more = (c.g[A2][0] as i64) >= 0;
+            c.g[A1][0] = sx(r32(c, A1).wrapping_add(0x20));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0022_94f8);
+            }
+        }
+        c.cycles += 6;
+        c.g[A0][0] = c.g[S0][0];
+        CROWD_MAN2D_SPAWN_SPRITES.call(c, 0x0022_951c)?;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void CrowdMan2d_SpawnSprites(CrowdMan2d* self)` (0x229530): take the
+/// crowd's reaction (`|CrowdAudio_GetInstanceReaction(gp+0x410, 0)|`; when it
+/// changed, store it and give the animation `max(reaction, 1)`), then count
+/// every used emitter's timer down by `reaction * 10 + 4`; an emitter that
+/// runs out adds a flash sprite (3 frames) at its position plus a random
+/// spread in [-1, 1) of its two spread vectors, and reloads 300..599.
+///
+/// Tick rate: the timers count down once per 60 Hz frame of this manager
+/// ([`crate::tick::frame60_due`]) and a flash lives 3 60 Hz frames in ticks
+/// ([`crate::tick::ticks_from_frames60`]), so the flashes per second and
+/// their length match 60 Hz. Unchanged at 60.
+pub fn crowd_man2d_spawn_sprites(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 27;
+        let frame = Frame::open(c, 0x110);
+        c.g[A1][0] = 0;
+        frame.save(c, S1, 0xd0);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0xe0);
+        c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_add(0x410)).lw(c);
+        frame.save(c, S2, 0xc0);
+        frame.save(c, S3, 0xb0);
+        frame.save(c, S4, 0xa0);
+        frame.save(c, S5, 0x90);
+        frame.save(c, S6, 0x80);
+        frame.save(c, S7, 0x70);
+        frame.save(c, FP, 0x60);
+        frame.save_ra(c, 0x50);
+        frame.save_fpr(c, 22, 0x100);
+        frame.save_fpr(c, 21, 0xf8);
+        frame.save_fpr(c, 20, 0xf0);
+        call_ptr(c, CROWD_AUDIO_GET_INSTANCE_REACTION, 0x0022_9578)?;
+        // reaction = |v0|
+        c.g[A2][0] = c.g[V0][0];
+        c.g[V1][0] = (-1i64 < c.g[A2][0] as i64) as u64;
+        c.g[A0][0] = sx(0u32.wrapping_sub(r32(c, A2)));
+        c.g[A2][0] = c.g[A0][0];
+        let this = r32(c, S1);
+        c.g[A1][0] = Addr(this).off(crowd2d::REACTION).lw(c);
+        if c.g[V1][0] != 0 {
+            c.g[A2][0] = c.g[V0][0];
+        }
+        let same = c.g[A2][0] == c.g[A1][0];
+        c.g[V0][0] = 1;
+        if !same {
+            c.cycles += 5;
+            c.g[V1][0] = (0 < c.g[A2][0] as i64) as u64;
+            c.g[A0][0] = Addr(this).off(4).lw(c);
+            if c.g[V1][0] != 0 {
+                c.g[V0][0] = c.g[A2][0];
+            }
+            Addr(this).off(crowd2d::REACTION).sw(c, c.g[A2][0]);
+            Addr(r32(c, A0)).sw(c, c.g[V0][0]);
+        }
+        if crate::tick::frame60_due(c, this.wrapping_add(crowd2d::TIMER), 0) {
+            count_down_emitters(c)?;
+        }
+        c.cycles += 15;
+        frame.restore(c, S0, 0xe0);
+        frame.restore(c, S1, 0xd0);
+        frame.restore(c, S2, 0xc0);
+        frame.restore(c, S3, 0xb0);
+        frame.restore(c, S4, 0xa0);
+        frame.restore(c, S5, 0x90);
+        frame.restore(c, S6, 0x80);
+        frame.restore(c, S7, 0x70);
+        frame.restore(c, FP, 0x60);
+        frame.restore_ra(c, 0x50);
+        frame.restore_fpr(c, 22, 0x100);
+        frame.restore_fpr(c, 21, 0xf8);
+        frame.restore_fpr(c, 20, 0xf0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The emitter loop of [`crowd_man2d_spawn_sprites`] (`s1` = the manager).
+fn count_down_emitters(c: &mut Cpu) -> Flow {
+    let this = r32(c, S1);
+    c.cycles += 18;
+    c.g[V0][0] = Addr(this).off(crowd2d::REACTION).lw(c);
+    c.g[V1][0] = 0xa;
+    c.g[S4][0] = 0xffff_ffff_ffff_0000;
+    c.g[S3][0] = 0x7f_0000;
+    c.mult(0, V0, V0, V1);
+    c.g[AT][0] = 0xffff_ffff_bf80_0000; // -1.0
+    c.mtc1(AT, 22);
+    c.g[AT][0] = 0x3f80_0000; // 1.0
+    c.mtc1(AT, 21);
+    c.g[S4][0] |= 0xffff; // -1: a free slot
+    c.g[S3][0] |= 0xffff; // mantissa mask
+    c.g[S7][0] = 0x3f80_0000;
+    c.g[S6][0] = 300;
+    c.g[S0][0] = c.g[S1][0];
+    c.g[FP][0] = sx(r32(c, V0).wrapping_add(4));
+    c.g[S2][0] = sx(this.wrapping_add(crowd2d::SLOTS));
+    c.g[S5][0] = 0x7f;
+    loop {
+        c.cycles += 3;
+        c.g[V0][0] = Addr(r32(c, S2)).lw(c);
+        if c.g[V0][0] == c.g[S4][0] {
+            c.g[S0][0] = sx(r32(c, S0).wrapping_add(0x40));
+        } else {
+            c.cycles += 4;
+            let timer = Addr(r32(c, S0)).off(crowd2d::TIMER);
+            c.g[V0][0] = timer.lw(c);
+            c.g[V0][0] = sx(r32(c, V0).wrapping_sub(r32(c, FP)));
+            let waiting = (c.g[V0][0] as i64) > 0;
+            timer.sw(c, c.g[V0][0]);
+            if !waiting {
+                spawn_flash(c)?;
+            }
+            c.cycles += 1;
+            c.g[S0][0] = sx(r32(c, S0).wrapping_add(0x40));
+        }
+        c.cycles += 3;
+        c.g[S5][0] = sx(r32(c, S5).wrapping_sub(1));
+        let more = (c.g[S5][0] as i64) >= 0;
+        c.g[S2][0] = sx(r32(c, S2).wrapping_add(4));
+        if !more {
+            return Ok(());
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0022_95f8);
+        }
+    }
+}
+
+/// Emitter `s0` ran out: add a flash at `+0x210 + u * +0x220 + v * +0x230`
+/// (u, v random in [-1, 1)) and reload the timer with 300 + rand % 300.
+fn spawn_flash(c: &mut Cpu) -> Flow {
+    let em = r32(c, S0);
+    c.cycles += 50;
+    call_ptr(c, callee::RAND_NEXT_MAIN, 0x0022_961c)?;
+    // A float in [1, 2) from the random mantissa, then 2 * (x - 1) - 1.
+    c.g[V0][0] &= c.g[S3][0];
+    c.g[V0][0] |= c.g[S7][0];
+    c.mtc1(V0, 0);
+    c.sub_s(20, 0, 21);
+    c.add_s(20, 20, 20);
+    c.add_s(20, 20, 22);
+    call_ptr(c, callee::RAND_NEXT_MAIN, 0x0022_9638)?;
+    c.g[V0][0] &= c.g[S3][0];
+    c.mfc1(A0, 20);
+    c.lqc2(4, em.wrapping_add(0x220));
+    c.qmtc2(A0, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, sp(c).wrapping_add(0x30));
+    c.g[V0][0] |= c.g[S7][0];
+    // The flash's lifetime: 3 frames at 60 Hz, in ticks.
+    c.g[A2][0] = crate::tick::ticks_from_frames60(c, crowd2d::FLASH_FRAMES) as u64;
+    c.mtc1(V0, 1);
+    c.g[A0][0] = c.g[S1][0];
+    c.lq(V0, sp(c).wrapping_add(0x30));
+    c.g[A1][0] = c.g[SP][0];
+    c.sub_s(0, 1, 21);
+    c.sq(V0, sp(c).wrapping_add(0x20));
+    c.lqc2(3, em.wrapping_add(0x210));
+    c.lqc2(4, sp(c).wrapping_add(0x20));
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, sp(c).wrapping_add(0x30));
+    c.add_s(0, 0, 0);
+    c.lq(V0, sp(c).wrapping_add(0x30));
+    c.sq(V0, sp(c).wrapping_add(0x10));
+    c.add_s(0, 0, 22);
+    c.mfc1(V1, 0);
+    c.lqc2(4, em.wrapping_add(0x230));
+    c.qmtc2(V1, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, sp(c).wrapping_add(0x40));
+    c.lq(V0, sp(c).wrapping_add(0x40));
+    c.sq(V0, sp(c).wrapping_add(0x30));
+    c.lqc2(3, sp(c).wrapping_add(0x10));
+    c.lqc2(4, sp(c).wrapping_add(0x30));
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, sp(c).wrapping_add(0x40));
+    c.lq(V0, sp(c).wrapping_add(0x40));
+    c.sq(V0, sp(c));
+    CROWD_MAN2D_ADD_SPRITE.call(c, 0x0022_96c8)?;
+    call_ptr(c, callee::RAND_NEXT_MAIN, 0x0022_96d0)?;
+    c.divu(0, V0, S6);
+    c.cycles += 3;
+    c.g[V1][0] = c.hi[0];
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(300));
+    Addr(r32(c, S0)).off(crowd2d::TIMER).sw(c, c.g[V1][0]);
+    Ok(())
+}
+
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2041,5 +2311,105 @@ pub(crate) mod tests {
                 w(c, SP - 0x250 + 4 * i, 0xffff_ffff);
             }
         });
+    }
+
+
+    /// A `CrowdMan2d` at `man`: its animation takes the short path, the
+    /// crowd reaction is `reaction`, every ninth emitter slot is used (timers
+    /// 0..59) and the 40 flash lifetimes are -2..4.
+    fn crowd_fixture(c: &mut Cpu, r: &mut Rng, seed: u32, man: u32, reaction: i32) {
+        let (anim, clock, audio, table) =
+            (DATA + 0x3_0000, DATA + 0x3_0100, DATA + 0x3_0200, DATA + 0x3_0300);
+        c.bus.write32(man + 4, anim);
+        c.bus.write32(anim + 0x10, r.next_u32());
+        c.bus.write32(anim + 0x14, 0x7fff_ffff);
+        c.bus.write32(anim + 0x18, 0);
+        c.bus.write32(GAME_GP + 0x2a74, clock);
+        c.bus.write32(clock + 0x1c, 100);
+        c.bus.write32(GAME_GP + 0x410, audio);
+        c.bus.write32(audio + 0x14, 1);
+        c.bus.write32(audio + 0x18, table);
+        c.bus.write32(table + 0x18c, reaction as u32);
+        let old = if seed % 3 == 0 { reaction.unsigned_abs() } else { r.next_u32() % 5 };
+        c.bus.write32(man + 0x2210, old);
+        c.bus.write32(man + 0x2214, seed % 40);
+        for i in 0..128u32 {
+            let used = (i + seed) % 9 == 0;
+            c.bus.write32(man + 8 + 4 * i, if used { i } else { 0xffff_ffff });
+            let em = man + 0x40 * i;
+            for k in 0..12 {
+                c.bus.write32(em + 0x210 + 4 * k, r.f32(100.0));
+            }
+            c.bus.write32(em + 0x240, r.next_u32() % 60);
+        }
+        for k in 0..40 {
+            c.bus.write32(man + 0x2230 + 0x20 * k, (r.next_u32() % 7).wrapping_sub(2));
+        }
+    }
+
+
+    #[test]
+    fn crowd_man2d_spawn_sprites_matches() {
+        check(ee::s05::f_00229530__generated, crowd_man2d_spawn_sprites, 200, &|c, seed| {
+            let mut r = machine(c, seed, 0x22_9530, 0);
+            crowd_fixture(c, &mut r, seed, DATA, (seed % 7) as i32 - 3);
+            c.g[A0][0] = DATA as u64;
+        });
+    }
+
+
+    #[test]
+    fn crowd_man2d_update_matches() {
+        check(ee::s05::f_002294c8__generated, crowd_man2d_update, 200, &|c, seed| {
+            let mut r = machine(c, seed, 0x22_94c8, 0);
+            crowd_fixture(c, &mut r, seed, DATA, (seed % 7) as i32 - 3);
+            c.g[A0][0] = DATA as u64;
+        });
+    }
+
+
+    /// Over one second of ticks the crowd flashes (how many, and how long
+    /// they show in total) are the same at 60, 120 and 240 Hz. Each tick ages
+    /// the lifetimes as `CrowdMan2d_Update` does, then spawns.
+    #[test]
+    fn crowd_man2d_flashes_follow_the_rate() {
+        fn second(hz: u32) -> (u32, f64) {
+            let mut c = crate::difftest::fresh();
+            let c = &mut *c;
+            let mut r = machine(c, 3, 0x22_94c9, 0);
+            // (Its own address: frame60_due keeps a clock per manager.)
+            let man = DATA + 0x4_0000 + 0x1_0000 * (hz / 60);
+            crowd_fixture(c, &mut r, 0, man, 10);
+            // After the fixture: `gp+0x2a74` is the app manager pointer.
+            crate::tick::set_for_test(c, hz);
+            c.bus.write32(man + 0x2210, 10);
+            for k in 0..40 {
+                c.bus.write32(man + 0x2230 + 0x20 * k, 0);
+            }
+            let (mut spawned, mut shown) = (0u32, 0u64);
+            for _ in 0..hz {
+                for k in 0..40 {
+                    let life = man + 0x2230 + 0x20 * k;
+                    let v = c.bus.read32(life) as i32;
+                    if v > 0 {
+                        c.bus.write32(life, (v - 1) as u32);
+                    }
+                }
+                let before = c.bus.read32(man + 0x2214);
+                c.g[A0][0] = man as u64;
+                crowd_man2d_spawn_sprites(c);
+                assert_eq!(c.pc, RET);
+                spawned += (c.bus.read32(man + 0x2214) + 40 - before) % 40;
+                shown += (0..40).filter(|k| c.bus.read32(man + 0x2230 + 0x20 * k) as i32 > 0).count() as u64;
+            }
+            (spawned, shown as f64 / hz as f64)
+        }
+        let (n60, t60) = second(60);
+        assert!(n60 > 20, "{n60} flashes");
+        for hz in [120, 240] {
+            let (n, t) = second(hz);
+            assert_eq!(n, n60, "{hz} Hz: {n} flashes vs {n60} at 60");
+            assert!((t - t60).abs() < 1e-9, "{hz} Hz: shown {t} s vs {t60} s at 60");
+        }
     }
 }

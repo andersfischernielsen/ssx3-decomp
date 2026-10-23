@@ -407,9 +407,20 @@ pub fn input_map_eval_bool(c: &mut Cpu) {
 }
 
 
+/// Ticks after an edge during which a button's value is not compared (60 Hz
+/// frames; `slti 3` in the original).
+const SETTLE_FRAMES: u32 = 3;
+/// A held button repeats first after 24 and then every 12 60 Hz frames.
+const REPEAT_DELAY_FRAMES: u32 = 0x18;
+const REPEAT_PERIOD_FRAMES: u32 = 0xc;
+
 /// `void InputPad_Update(sInputPad *self, int n, float *values)`
 /// (0x00321298): resize the button array, then per button store the value,
 /// run the debounce/settle logic and the auto-repeat timer.
+///
+/// Tick rate: the settle length and the repeat delay/period are 60 Hz frame
+/// counts, converted with `tick::ticks_from_frames60` (exact at 60), so the
+/// debounce and the held-direction menu repeat keep their wall-clock times.
 pub fn input_pad_update(c: &mut Cpu) {
     use pad::*;
     guest(c, |c| {
@@ -452,14 +463,17 @@ pub fn input_pad_update(c: &mut Cpu) {
             c.g[T0][0] = 0;
             c.g[T1][0] = sx(off(c.g[S0][0] as u32, 0x10));
             c.g[A0][0] = sx(off(c.g[S0][0] as u32, 0x1c));
-            c.g[T7][0] = 0x18;
-            c.g[T6][0] = 0xc;
+            // Debounce and auto-repeat lengths, authored in 60 Hz frames
+            // (3, 24, 12): the same wall-clock times at any rate.
+            let settle = crate::tick::ticks_from_frames60(c, SETTLE_FRAMES) as i64;
+            c.g[T7][0] = crate::tick::ticks_from_frames60(c, REPEAT_DELAY_FRAMES) as u64;
+            c.g[T6][0] = crate::tick::ticks_from_frames60(c, REPEAT_PERIOD_FRAMES) as u64;
             loop {
                 // value = *values; settle/timer below.
                 c.cycles += 5;
                 c.lwc1(0, c.g[A2][0] as u32);
                 c.g[V1][0] = c.ldw(c.g[A0][0] as u32);
-                c.g[V0][0] = ((c.g[V1][0] as i64) < 3i64) as u64;
+                c.g[V0][0] = ((c.g[V1][0] as i64) < settle) as u64;
                 let settling = c.g[V0][0] != 0;
                 c.swc1(0, (c.g[A0][0] as u32).wrapping_sub(0x18));
                 if settling {
@@ -1046,6 +1060,58 @@ pub(crate) mod tests {
                 }
             },
         );
+    }
+
+
+    /// One held button (value 1.0) through `ticks` updates at rate `hz` from
+    /// state `held` and settle counter `settle`: the ticks (1-based) that set
+    /// the pressed edge (`+4`) and the repeat flag (`+0x10`).
+    fn pad_events(hz: u32, ticks: u32, held: u32, settle: u32) -> (Vec<u32>, Vec<u32>) {
+        let mut c = crate::difftest::fresh();
+        crate::tick::set_for_test(&mut c, hz);
+        let pad = DATA;
+        let b = pad + 4;
+        let vals = DATA + 0x400;
+        c.bus.write32(pad, 1);
+        for (off, v) in [(0u32, 0u32), (4, 0), (8, 0), (0xc, held), (0x10, 0), (0x14, 0), (0x18, settle)] {
+            c.bus.write32(b + off, v);
+        }
+        put_f32(&mut c, vals, 1.0f32.to_bits());
+        let (mut pressed, mut repeats) = (Vec::new(), Vec::new());
+        for t in 1..=ticks {
+            c.g[A0][0] = pad as u64;
+            c.g[A1][0] = 1;
+            c.g[A2][0] = vals as u64;
+            input_pad_update(&mut c);
+            assert_eq!(c.pc, RET, "update did not return");
+            if c.bus.read32(b + 4) != 0 {
+                pressed.push(t);
+            }
+            if c.bus.read32(b + 0x10) != 0 {
+                repeats.push(t);
+            }
+        }
+        (pressed, repeats)
+    }
+
+
+    /// The debounce (3 frames after an edge) and the held-button repeat (first
+    /// after 24 frames, then every 12) keep their wall-clock times: at rate r
+    /// a 60 Hz event on tick i happens on tick (i - 1) * r / 60 + 1.
+    #[test]
+    fn input_pad_update_timers_follow_the_rate() {
+        let (p60, _) = pad_events(60, 60, 0, 0);
+        let (_, r60) = pad_events(60, 60, 1, 100);
+        assert_eq!(p60, vec![4]);
+        assert_eq!(r60, vec![1, 25, 37, 49]);
+        for hz in [120u32, 240] {
+            let q = hz / 60;
+            let scaled = |v: &[u32]| v.iter().map(|&i| (i - 1) * q + 1).collect::<Vec<_>>();
+            let (p, _) = pad_events(hz, 60 * q, 0, 0);
+            let (_, r) = pad_events(hz, 60 * q, 1, 100);
+            assert_eq!(p, scaled(&p60), "{hz} Hz: debounce");
+            assert_eq!(r, scaled(&r60), "{hz} Hz: auto-repeat");
+        }
     }
 
 
