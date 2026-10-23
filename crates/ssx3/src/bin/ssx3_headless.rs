@@ -23,6 +23,7 @@ mod png;
 mod settings;
 
 fn main() {
+    game::init_standalone();
     let args: Vec<String> = std::env::args().collect();
     let frames: u64 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(300);
     let slow_ms: Option<f64> = std::env::var("SSX3_SLOW_FRAME_MS").ok().and_then(|v| v.parse().ok());

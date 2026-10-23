@@ -9,6 +9,48 @@ pub fn repo_root() -> PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
+static STANDALONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// A standalone build (`tools/bundle.py`): the disc comes from the pack in or
+/// next to the executable, and the memory card and settings live in the
+/// user's data folder (unless `SSX3_MEMCARD` / `SSX3_SETTINGS` say otherwise).
+/// Call first thing in `main`. Returns whether a pack was found.
+pub fn init_standalone() -> bool {
+    let Some((path, base)) = ssx3_core::pack::Pack::locate() else {
+        return false;
+    };
+    let shown = path.display().to_string();
+    ssx3_core::iso::set_opener(Box::new(move || {
+        Ok(Box::new(ssx3_core::pack::Pack::open_at(&path, base)?) as Box<dyn ssx3_core::iso::Source>)
+    }));
+    STANDALONE.store(true, std::sync::atomic::Ordering::Relaxed);
+    let dir = data_dir();
+    for (key, file) in [("SSX3_MEMCARD", "ssx3-mc0.ps2"), ("SSX3_SETTINGS", "ssx3-settings.cfg")] {
+        if std::env::var_os(key).is_none() {
+            std::env::set_var(key, dir.join(file));
+        }
+    }
+    eprintln!("[standalone] game data from {shown}; saves in {}", dir.display());
+    true
+}
+
+/// The user's data folder for a standalone build: `%APPDATA%\SSX3` on
+/// Windows, `~/Library/Application Support/SSX3` on macOS,
+/// `$XDG_DATA_HOME/ssx3` (or `~/.local/share/ssx3`) elsewhere.
+fn data_dir() -> PathBuf {
+    let env = |k: &str| std::env::var_os(k).map(PathBuf::from);
+    if cfg!(windows) {
+        env("APPDATA").unwrap_or_else(|| PathBuf::from(".")).join("SSX3")
+    } else if cfg!(target_os = "macos") {
+        env("HOME").unwrap_or_else(|| PathBuf::from(".")).join("Library/Application Support/SSX3")
+    } else {
+        env("XDG_DATA_HOME")
+            .or_else(|| env("HOME").map(|h| h.join(".local/share")))
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("ssx3")
+    }
+}
+
 /// At every VSync: the game rate and the detail distance tables.
 fn vblank(c: &mut Cpu) {
     ssx3_game::tick::on_vblank(c);
@@ -77,8 +119,10 @@ pub fn boot(skip_movies_default: bool) -> Box<Cpu> {
 /// The executable: `orig/SLUS_207.72`, else the one on the disc.
 fn read_elf(c: &mut Cpu) -> Vec<u8> {
     let path = repo_root().join("orig/SLUS_207.72");
-    if let Ok(v) = std::fs::read(&path) {
-        return v;
+    if !STANDALONE.load(std::sync::atomic::Ordering::Relaxed) {
+        if let Ok(v) = std::fs::read(&path) {
+            return v;
+        }
     }
     let d = ssx3_ps2::m!(c).sif.disc.as_mut().unwrap_or_else(|| panic!("{}: missing, and no disc", path.display()));
     let e = d.find("SLUS_207.72").expect("SLUS_207.72 on the disc");

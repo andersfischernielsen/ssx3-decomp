@@ -600,7 +600,9 @@ fn display_aspect(cpu: &Cpu) -> f32 {
 }
 
 fn main() {
-    // First: the settings file fills in the environment.
+    // A standalone build finds its data first (it chooses the settings file).
+    game::init_standalone();
+    // Then: the settings file fills in the environment.
     settings::load();
     env_logger::init();
     let mut cpu = game::boot(false);

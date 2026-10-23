@@ -48,3 +48,7 @@
 /target-agents
 tools/.refindex.json
 tools/.reorg-units.json
+
+# Standalone builds (tools/bundle.py): they contain the game
+/dist/
+/target-*/
