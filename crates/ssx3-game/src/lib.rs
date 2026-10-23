@@ -87,8 +87,6 @@ pub mod world_painter;
 pub mod audio_system;
 #[cfg(feature = "snd_lib")]
 pub mod snd_lib;
-#[cfg(feature = "oc1")]
-pub mod oc1;
 
 /// The configurable tick rate.
 pub mod tick;
@@ -156,8 +154,6 @@ pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     v.extend_from_slice(audio_system::OVERRIDES);
     #[cfg(feature = "snd_lib")]
     v.extend_from_slice(snd_lib::OVERRIDES);
-    #[cfg(feature = "oc1")]
-    v.extend_from_slice(oc1::OVERRIDES);
     v
 }
 
