@@ -5308,5 +5308,7 @@
 0x0012f230    RiderResetSub_Enter
 # Phase 2 wave: oc1
 0x00274a30    InSeq_InstanceUpdate
+# Phase 2 wave: oc2
+0x0018ca10    cFEStateOptionsController_OnWidgetAction
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
