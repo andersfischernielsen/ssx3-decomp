@@ -5340,3 +5340,18 @@
 0x0013c7a8    RiderGroundState_Enter
 0x0013f410    RiderGroundState_Exit
 0x0023b468    GMHandler4_OnRiderFinished
+# tick rate T5: per-tick updates found over all scenarios, ported to convert them
+0x0019bfe8    cFEStateCharEquip_UpdatePreviewCamera
+0x00199a38    cFEStateCharEquip_HandleInput
+0x0019a4e8    cFEStateCharEquip_RequestPreview
+0x00181450    cFEStateCharSelect_HandleInput
+0x001c5c30    cFEPopupConfirm_v07
+0x00178bb0    Post_Race_1ChaseCameraAlgorithm_Update
+0x002d7ef8    Avalanche_UpdateActive
+0x00235080    GameStateReset_OverlayUpdate
+0x00235cc8    GameStateRestartRace_Update
+0x00342d88    Debounce_v15
+0x002f4260    cSplashManager_AddSplashFromPoint
+0x002f2810    cSplashManager_UpdateDrop
+0x002f3030    cSplashManager_UpdateCrystal
+0x0035e850    RollerModifier_Update

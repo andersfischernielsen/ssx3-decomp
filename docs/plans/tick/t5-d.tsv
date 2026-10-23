@@ -1,0 +1,165 @@
+site	function	func_addr	ported	class	kind	constant	reason	conversion
+0x103300	FocusMan_AddObject	0x001032c0	yes	NOT_PER_TICK	COUNTER	+1	focus object list length (append), not time	
+0x1033ec	FocusMan_AddFocusBox	0x001033b0	yes	NOT_PER_TICK	COUNTER	+1	focus box list length (append), not time	
+0x10c390	ComputerActorRider_RollFittedTrick	0x0010c320	no	PER_TICK	CHANCE	30 +0xdfc 70	rand%100 < 30 + 70*skill(+0xdfc). Called via ComputerActorRider_ChooseTrick from ComputerActorRider_ThinkSpin (ported) EVERY tick while the AI is airborne with no trick picked (+0xe0c == -1, height 0.5..+0xe34): a failed roll (or no fitting trick) retries next tick, so at 240 Hz the uber/fitted/random rolls are retried 4x as often and the AI starts its trick earlier/at a lower height	gate the ChooseTrick call in computer_actor_rider_think_spin with tick::frame60_due(c, ai, 0) (one attempt per 60 Hz frame per AI; covers the uber/fitted/random rolls of the cascade at once, exact at 60); per-roll 1-(1-p)^(60/rate) is not equivalent because of the cascade
+0x10cf28	ComputerActorRider_PickFittedTrick	0x0010cd20	no	NOT_PER_TICK	COUNTER	+1	candidate-trick count while filtering the fitted-trick table (loop length)	
+0x1191f4	RiderMetrix_CountTrickRepeats	0x001190f0	no	NOT_PER_TICK	COUNTER	+1	counts repeats of a trick in the trick history (loop), not time	
+0x119c20	RiderMetrix_StartHandplant	0x00119bf0	yes	NOT_PER_TICK	STEP	0.05	+0x14 += 0.05 (gp-0x7a04 = 0x49b6ec) once when a handplant starts (event, 0.000 calls/frame), not every tick	
+0x11be2c	Rider_AddBoltNamesToLoadList	0x0011bd60	no	NOT_PER_TICK	COUNTER	+1	load-list length at load time	
+0x11bf98	Rider_AddBoltFilesToLoadList	0x0011be88	no	NOT_PER_TICK	COUNTER	+1	load-list length at load time	
+0x11c070	Rider_AddBoltFilesToLoadList	0x0011be88	no	NOT_PER_TICK	COUNTER	+1	load-list length at load time	
+0x12f410	RiderResetSub_HandleInput	0x0012f398	no	PER_TICK	STEP	0.025	reset fade progress (sub +4) moves toward 1 by 0.025 * rider time scale (+0x300, rubber-band scale ~1, not dt) per tick; crossing 0.5 snaps the rider back to the AI path, reaching 1 ends the reset (cTransitionMan_Stop, main state 1). Substate handler run once per tick per resetting rider (rider_logic.rs dispatch). 40 ticks = 0.67 s at 60; 0.17 s at 240 Hz	tick::PER_TICK (0x0049_b9d4, 0x3ccc_cccd, PerTick::Step): gp-0x771c, loaded at exactly one site (0x12f3b0 area of RiderResetSub_HandleInput); k*60/rate
+0x14c2f0	Bolts_IndexBoltsByChar	0x0014c2b0	yes	NOT_PER_TICK	COUNTER	+1	index table count at load	
+0x14dbbc	Bolts_FindTable2EntriesByFlag	0x0014db40	no	NOT_PER_TICK	COUNTER	+1	match count over a table (loop)	
+0x16c158	CameraTriggerMan_AddTrigger	0x0016c120	yes	NOT_PER_TICK	COUNTER	+1	trigger stack depth (push)	
+0x16d2c0	CameraTriggerMan_PopTriggerStack	0x0016d260	yes	NOT_PER_TICK	COUNTER	-1	trigger stack depth (pop)	
+0x176ea8	Default_3ChaseCameraAlgorithm_Update	0x00176e10	no	ALREADY	CALLSTEP	ChaseCameraAlgorithm_ApplyFollowDistance f16=1.76684	"boostDecay f16: converted in apply_follow_distance (chase.rs, per_tick_factor/per_tick_step, T4 ""follow distance and its boost fall"")"	
+0x176ec8	Default_3ChaseCameraAlgorithm_Update	0x00176e10	no	NOT_PER_TICK	CALLSTEP	ChaseCameraAlgorithm_ApplyCameraHeight f12=11.6788	gain/offset/boostGain: terms of the target drop (distance units), not per-tick amounts; the smoothing (f16) is converted in apply_camera_height	
+0x176ec8	Default_3ChaseCameraAlgorithm_Update	0x00176e10	no	NOT_PER_TICK	CALLSTEP	ChaseCameraAlgorithm_ApplyCameraHeight f13=31.2256	gain/offset/boostGain: terms of the target drop (distance units), not per-tick amounts; the smoothing (f16) is converted in apply_camera_height	
+0x176ec8	Default_3ChaseCameraAlgorithm_Update	0x00176e10	no	NOT_PER_TICK	CALLSTEP	ChaseCameraAlgorithm_ApplyCameraHeight f14=11.3924	gain/offset/boostGain: terms of the target drop (distance units), not per-tick amounts; the smoothing (f16) is converted in apply_camera_height	
+0x176ec8	Default_3ChaseCameraAlgorithm_Update	0x00176e10	no	ALREADY	CALLSTEP	ChaseCameraAlgorithm_ApplyCameraHeight f16=0.978392	smoothing f16: converted in apply_camera_height (chase.rs, per_tick_factor, T4)	
+0x176f14	Default_3ChaseCameraAlgorithm_Update	0x00176e10	no	PER_TICK	SMOOTH	ChaseCameraAlgorithm_ApplyHandplantHold f17=0.98	handplant extra eye height (+0x2b8) `lift = 0.98*lift + 0.02*height` per tick during a handplant, in apply_handplant_hold (crates/ssx3-game/src/chase.rs, not converted there); the main chase camera (0.616 calls/frame)	in chase.rs apply_handplant_hold: smoothing -> per_tick_factor(c, smoothing) (k^(60/rate)), keep `(1-k)*height` with the converted k; exact at 60
+0x176f14	Default_3ChaseCameraAlgorithm_Update	0x00176e10	no	PER_TICK	DECAY	ChaseCameraAlgorithm_ApplyHandplantHold f18=0.96	handplant extra eye height (+0x2b8) `lift *= 0.96` per tick after a handplant, in apply_handplant_hold (chase.rs, not converted)	in chase.rs apply_handplant_hold: decay -> per_tick_factor(c, decay) (k^(60/rate)); exact at 60
+0x176f34	Default_3ChaseCameraAlgorithm_Update	0x00176e10	no	NOT_PER_TICK	CALLSTEP	ChaseCameraAlgorithm_ApplyTargetHeight f12=31.1026	base/speedGain/slope/boost: terms of the target height (units), not per-tick amounts; the smoothing (f16) is converted in apply_target_height	
+0x176f34	Default_3ChaseCameraAlgorithm_Update	0x00176e10	no	NOT_PER_TICK	CALLSTEP	ChaseCameraAlgorithm_ApplyTargetHeight f13=0.374691	base/speedGain/slope/boost: terms of the target height (units), not per-tick amounts; the smoothing (f16) is converted in apply_target_height	
+0x176f34	Default_3ChaseCameraAlgorithm_Update	0x00176e10	no	NOT_PER_TICK	CALLSTEP	ChaseCameraAlgorithm_ApplyTargetHeight f14=12.3327	base/speedGain/slope/boost: terms of the target height (units), not per-tick amounts; the smoothing (f16) is converted in apply_target_height	
+0x176f34	Default_3ChaseCameraAlgorithm_Update	0x00176e10	no	NOT_PER_TICK	CALLSTEP	ChaseCameraAlgorithm_ApplyTargetHeight f15=10.5891	base/speedGain/slope/boost: terms of the target height (units), not per-tick amounts; the smoothing (f16) is converted in apply_target_height	
+0x176f34	Default_3ChaseCameraAlgorithm_Update	0x00176e10	no	ALREADY	CALLSTEP	ChaseCameraAlgorithm_ApplyTargetHeight f16=0.924191	smoothing f16: converted in apply_target_height (chase.rs, per_tick_factor, T4)	
+0x176f9c	Default_3ChaseCameraAlgorithm_Update	0x00176e10	no	PER_TICK	SMOOTH	ChaseCameraAlgorithm_ApplyRailPullback f15=0.98	rail weight (+0x214) `w = 0.98*w + 0.02*rail` per tick in apply_rail_pullback (chase.rs, not converted): the pull-back/side push while rail sliding eases in 4x faster at 240 Hz	in chase.rs apply_rail_pullback: rate -> per_tick_factor(c, rate) for both the kept share and (1 - k); exact at 60
+0x176fbc	Default_3ChaseCameraAlgorithm_Update	0x00176e10	no	NOT_PER_TICK	CALLSTEP	ChaseCameraAlgorithm_ApplyLowSpeedHold f13=1.5	inTime/outTime in seconds: the hold weight steps by (1/60 .lit4 0x49c7c8/0x49c7cc)/time per tick, which already follows the rate (T1 STEP)	
+0x176fbc	Default_3ChaseCameraAlgorithm_Update	0x00176e10	no	NOT_PER_TICK	CALLSTEP	ChaseCameraAlgorithm_ApplyLowSpeedHold f14=1.5	inTime/outTime in seconds: the hold weight steps by (1/60 .lit4 0x49c7c8/0x49c7cc)/time per tick, which already follows the rate (T1 STEP)	
+0x1948cc	cFEStateTitle_Update	0x001948a8	yes	ALREADY	COUNTER	+1	+0x48 idle counter, attract mode after 1801 frames (30 s); already a wall-clock limit `ticks_from_frames60(1800)` in cfestatetitle_update (crates/ssx3-game/src/game/fe/ovstates.rs, test title_attracts_after)	
+0x199ad4	cFEStateCharEquip_HandleInput	0x00199a38	no	PER_TICK	STEP	3	rider preview yaw (+0xaac, degrees) += stick * 3.0 per call, wrapped to [0,360). The state input handler runs each tick while the stick is deflected on the gear/equip screen (lodge), so the preview spins 4x fast at 240 Hz (the 360 is the wrap, not a step)	port cFEStateCharEquip_HandleInput (generated) and scale: `3.0 * 60/rate` on the non-60 branch (the 3.0 is built inline, lui 0x4040)
+0x199af0	cFEStateCharEquip_HandleInput	0x00199a38	no	PER_TICK	STEP	3 360	rider preview yaw (+0xaac, degrees) += stick * 3.0 per call, wrapped to [0,360). The state input handler runs each tick while the stick is deflected on the gear/equip screen (lodge), so the preview spins 4x fast at 240 Hz (the 360 is the wrap, not a step)	port cFEStateCharEquip_HandleInput (generated) and scale: `3.0 * 60/rate` on the non-60 branch (the 3.0 is built inline, lui 0x4040)
+0x199b2c	cFEStateCharEquip_HandleInput	0x00199a38	no	PER_TICK	STEP	360	rider preview yaw (+0xaac, degrees) += stick * 3.0 per call, wrapped to [0,360). The state input handler runs each tick while the stick is deflected on the gear/equip screen (lodge), so the preview spins 4x fast at 240 Hz (the 360 is the wrap, not a step)	port cFEStateCharEquip_HandleInput (generated) and scale: `3.0 * 60/rate` on the non-60 branch (the 3.0 is built inline, lui 0x4040)
+0x199b94	cFEStateCharEquip_HandleInput	0x00199a38	no	PER_TICK	STEP	-0.1	preview zoom/pitch (+0xaa4 clamped 0..1, +0xaa8 clamped -1..1) += stick * -0.1 (gp-0x59a8 / gp-0x59a4) per call while the stick is held; the -0.1 rows are those clamps/steps	tick::PER_TICK (0x0049_d748, 0xbdcc_cccd, PerTick::Step) and (0x0049_d74c, 0xbdcc_cccd, PerTick::Step): the -0.1 stick steps (gp-0x59a8/-0x59a4), each loaded at exactly one site; k*60/rate
+0x199c00	cFEStateCharEquip_HandleInput	0x00199a38	no	PER_TICK	STEP	-0.1	preview zoom/pitch (+0xaa4 clamped 0..1, +0xaa8 clamped -1..1) += stick * -0.1 (gp-0x59a8 / gp-0x59a4) per call while the stick is held; the -0.1 rows are those clamps/steps	tick::PER_TICK (0x0049_d748, 0xbdcc_cccd, PerTick::Step) and (0x0049_d74c, 0xbdcc_cccd, PerTick::Step): the -0.1 stick steps (gp-0x59a8/-0x59a4), each loaded at exactly one site; k*60/rate
+0x199cd8	cFEStateCharEquip_OnWidgetAction	0x00199c28	no	NOT_PER_TICK	COUNTER	+1	item index/cursor on a widget action (event)	
+0x19b31c	cFEStateCharEquip_BuildItemList	0x0019b180	no	NOT_PER_TICK	COUNTER	+1	item list length while building the list	
+0x19b3fc	cFEStateCharEquip_BuildItemList	0x0019b180	no	NOT_PER_TICK	COUNTER	+1	item list length while building the list	
+0x19fa34	FEModule_RiderPreviewLoadShapeTextures	0x0019f908	yes	NOT_PER_TICK	COUNTER	+1	texture count while loading the preview	
+0x1cc3e4	cKeyboardPopup_PressKey	0x001cc1e0	no	NOT_PER_TICK	COUNTER	-1	text cursor/length on a key press (event)	
+0x1cca0c	cKeyboardPopup_UpdateScrollWindow	0x001cc8d8	no	NOT_PER_TICK	COUNTER	-1	scroll window index adjusted to keep the cursor visible (layout)	
+0x1ccac0	cKeyboardPopup_UpdateScrollWindow	0x001cc8d8	no	NOT_PER_TICK	COUNTER	+1	scroll window index adjusted to keep the cursor visible (layout)	
+0x201cd4	EventSelect_OnWidgetAction	0x002018a8	no	NOT_PER_TICK	COUNTER	-1	selection index on a widget action (event)	
+0x202028	EventSelect_OnWidgetAction	0x002018a8	no	NOT_PER_TICK	COUNTER	-1	selection index on a widget action (event)	
+0x20eafc	HUDMeter_ctor	0x0020eaa0	yes	NOT_PER_TICK	COUNTER	+1	constructor loop/count	
+0x21e8b8	HUD_DrawStretchedPanel	0x0021e7e0	no	NOT_PER_TICK	OTHER	0.5	layout math: 0.5 centres the stretched size, 36/72 are the panel end-cap widths in pixels (draw call, no state kept)	
+0x21e8bc	HUD_DrawStretchedPanel	0x0021e7e0	no	NOT_PER_TICK	OTHER	0.5	layout math: 0.5 centres the stretched size, 36/72 are the panel end-cap widths in pixels (draw call, no state kept)	
+0x21e954	HUD_DrawStretchedPanel	0x0021e7e0	no	NOT_PER_TICK	OTHER	36	layout math: 0.5 centres the stretched size, 36/72 are the panel end-cap widths in pixels (draw call, no state kept)	
+0x21e994	HUD_DrawStretchedPanel	0x0021e7e0	no	NOT_PER_TICK	OTHER	72	layout math: 0.5 centres the stretched size, 36/72 are the panel end-cap widths in pixels (draw call, no state kept)	
+0x22976c	CrowdMan2d_AddSprite	0x00229738	yes	NOT_PER_TICK	COUNTER	+1	crowd sprite list length (append)	
+0x233d24	GameStateFinish_Update	0x00233cd8	no	PER_TICK	COUNTER	-1	+0x14 = 180 (set by GameStateFinish_Enter, ported in festateloadscreen.rs) is taken down by 1 per tick here; at 0 the finish screen opens (GameUI_OpenFinishScreen). 3 s after the finish at 60, 0.75 s at 240 Hz	in game_state_finish_enter (ported) store tick::ticks_from_frames60(c, 180) instead of 0xb4 (exact at 60); or countdowns60 on this+0x14 around the Update body once ported
+0x236530	GameStateEventSelect_Update	0x00236418	no	NOT_PER_TICK	COUNTER	+1	gp-0x69c screen-history stack depth (+1 on open, -1 on close), not time; the ScriptEngine_SetSkipDelay(30) it passes is counted by ScriptEngine_Update, converted in T4	
+0x236580	GameStateEventSelect_Update	0x00236418	no	NOT_PER_TICK	COUNTER	-1	gp-0x69c screen-history stack depth (+1 on open, -1 on close), not time; the ScriptEngine_SetSkipDelay(30) it passes is counted by ScriptEngine_Update, converted in T4	
+0x236ca4	GameStatePreRaceMenu_Exit	0x00236c88	yes	NOT_PER_TICK	COUNTER	-1	screen-history stack pop	
+0x23f5a4	MCManager_State11_Save	0x0023f578	no	NOT_PER_TICK	COUNTER	-1	state/slot index in the memory-card save state machine	
+0x2405ec	MCManager_State21_Load	0x002405d0	yes	NOT_PER_TICK	COUNTER	-1	state/slot index in the memory-card load state machine	
+0x25373c	VidEnginePlayer_StartPlayback	0x002536c8	yes	NOT_PER_TICK	COUNTER	+1	playback/reference count at movie start	
+0x272fa4	InSeq_SpanTrackUpdate	0x00272f28	no	NOT_PER_TICK	COUNTER	-1	+0x28 active-span count (list removal); the track time is a float passed in	
+0x273494	InSeq_EventTrackNextKey	0x00273468	yes	NOT_PER_TICK	COUNTER	+1	key index advance	
+0x2749fc	InSeq_InstancePause	0x002749e8	yes	NOT_PER_TICK	COUNTER	+1	pause nesting count	
+0x277960	ScriptList_NextEntry	0x00277838	no	NOT_PER_TICK	CALLSTEP	cCutSceneTransitionMan_StartOut f12=0.5	cCutSceneTransitionMan_StartOut(0.5): a fade duration in seconds; cTransitionMan_Update advances its fade by 1.0/rate per tick (wall clock), so 0.5 s at any rate	
+0x27a208	ScriptEngine_GetTargetPose	0x0027a0d8	no	NOT_PER_TICK	OTHER	1000	z -= 1000.0: a fixed locator offset in world units (pose query), not time	
+0x27b6e4	ScriptEngine_OnFilterLoaded	0x0027b6b0	yes	NOT_PER_TICK	COUNTER	-1	pending-load count	
+0x280a7c	ScriptAudioObj_Apply	0x002808e8	no	NOT_PER_TICK	COUNTER	+1	audio push-params stack depth (+1 before play)	
+0x280c8c	ScriptAudioObj_Apply	0x002808e8	no	NOT_PER_TICK	COUNTER	+1	audio push-params stack depth (+1 before play)	
+0x28343c	ScriptObj_Activate	0x00283430	yes	NOT_PER_TICK	COUNTER	+1	activation reference count	
+0x28f7a8	SSXAudioSystem_PlayLoadingScreenLoop	0x0028f768	no	NOT_PER_TICK	COUNTER	+1	audio push-params stack depth (+1 before play)	
+0x290a5c	Audio_PlayPushedSound	0x002906b8	no	NOT_PER_TICK	COUNTER	-1	audio push-params stack depth (pop after play)	
+0x290ad4	Audio_PlayPushedSound	0x002906b8	no	NOT_PER_TICK	COUNTER	-1	audio push-params stack depth (pop after play)	
+0x290b48	Audio_PlayPushedSound	0x002906b8	no	NOT_PER_TICK	COUNTER	-1	audio push-params stack depth (pop after play)	
+0x291130	SSXAudioSystem_StartAmbienceLoop	0x002910e0	no	NOT_PER_TICK	COUNTER	+1	audio push-params stack depth (+1 before play)	
+0x2942e4	SSXAudioSystem_PlayTakeoffSound	0x00294170	no	NOT_PER_TICK	COUNTER	+1	audio push-params stack depth (+1 before play)	
+0x29701c	SSXAudioSystem_StartWipeoutLoop2	0x00296e80	no	NOT_PER_TICK	COUNTER	+1	audio push-params stack depth (+1 before play)	
+0x298624	SSXAudioSystem_PlayRiderCollisionSound	0x00298488	no	NOT_PER_TICK	COUNTER	+1	audio push-params stack depth (+1 before play)	
+0x299bd4	SSXAudioSystem_PlayRailChangeSound	0x00299b70	yes	NOT_PER_TICK	COUNTER	+1	audio push-params stack depth (+1 before play)	
+0x29a8a8	SSXAudioSystem_PlayTrickPointsTick	0x0029a7d8	no	NOT_PER_TICK	COUNTER	+1	audio push-params stack depth (+1 before play); the tick sound fires on a points change (param % 100), not per tick	
+0x29cf84	SSXAudioSystem_PlayMultiplierSfx	0x0029ced8	no	NOT_PER_TICK	COUNTER	+1	audio push-params stack depth (+1 before play)	
+0x2a3078	SSXAudioSystem_PlayDJChatter	0x002a2e50	no	NOT_PER_TICK	CHANCE	reg	Audio_Rand picks which unused DJ line to say (bitmask +0x573c); called once per chatter event, not rolled per tick	
+0x2a8494	MIDIBanks_PushPlayParams	0x002a8450	yes	NOT_PER_TICK	COUNTER	+1	MIDI push-params stack depth	
+0x2a8a30	MIDIBanks_Play	0x002a86b8	no	NOT_PER_TICK	COUNTER	-1	MIDI push-params stack pop	
+0x2a8aa4	MIDIBanks_Play	0x002a86b8	no	NOT_PER_TICK	COUNTER	-1	MIDI push-params stack pop	
+0x2a8b18	MIDIBanks_Play	0x002a86b8	no	NOT_PER_TICK	COUNTER	-1	MIDI push-params stack pop	
+0x2ad018	BankMonitor_AddInstance	0x002acfe0	no	NOT_PER_TICK	COUNTER	+1	instance list count / free-slot count	
+0x2ad28c	BankMonitor_AddInstance	0x002acfe0	no	NOT_PER_TICK	COUNTER	-1	instance list count / free-slot count	
+0x2b4fd4	WorldTriggerInstance_Update	0x002b4c38	no	NOT_PER_TICK	COUNTER	+1	audio push-params stack depth (+500 of the audio system, +1 before Audio_PlayPushedSound / CrowdAudio_AddSource), not time	
+0x2b5304	WorldTriggerInstance_Update	0x002b4c38	no	NOT_PER_TICK	COUNTER	+1	audio push-params stack depth (+500 of the audio system, +1 before Audio_PlayPushedSound / CrowdAudio_AddSource), not time	
+0x2c5bfc	cPS2MemCard_Update	0x002c55d8	no	NOT_PER_TICK	COUNTER	+1	+0x28 directory entry index while scanning saves (state machine), not time	
+0x2d823c	Avalanche_Stop	0x002d81b0	no	NOT_PER_TICK	COUNTER	-1	world +0x708 active-avalanche count decremented on stop (event)	
+0x2dcb00	cPS2FogParticleMan_DrawParticles	0x002dc7b0	no	NOT_PER_TICK	COUNTER	+1	draw packet count (SPR stream entries) built per render	
+0x2f327c	cSplashManager_UpdateCrystal	0x002f3030	no	PER_TICK	STEP	120	lens ice crystal velocity (+0x18/+0x1c, pixels per tick) += outward push dir * clamp01((speed - gp+0x1198)/(120 - gp+0x1198)) * random per tick (speed is per second, already rate-scaled by the converted cSplashManager_Update); called per crystal per tick from c_splash_manager_update. 120 is a speed in the ramp, not time	gate the UPDATE_CRYSTAL calls in c_splash_manager_update with tick::frame60_due (one crystal step per 60 Hz frame) and add 0x0049_f7e4 (its 1/60 age/life step) to tick::NOT_A_STEP so the gated step stays 1/60; exact at 60
+0x2f3284	cSplashManager_UpdateCrystal	0x002f3030	no	PER_TICK	STEP	120	lens ice crystal velocity (+0x18/+0x1c, pixels per tick) += outward push dir * clamp01((speed - gp+0x1198)/(120 - gp+0x1198)) * random per tick (speed is per second, already rate-scaled by the converted cSplashManager_Update); called per crystal per tick from c_splash_manager_update. 120 is a speed in the ramp, not time	gate the UPDATE_CRYSTAL calls in c_splash_manager_update with tick::frame60_due (one crystal step per 60 Hz frame) and add 0x0049_f7e4 (its 1/60 age/life step) to tick::NOT_A_STEP so the gated step stays 1/60; exact at 60
+0x2f37fc	cSplashManager_AddDrop	0x002f37a8	no	NOT_PER_TICK	COUNTER	+1	drop list length (append, at most gp+0x117c per crystal)	
+0x3098a0	WScriptMan_PostJumpEvent	0x00309848	yes	NOT_PER_TICK	COUNTER	+1	event queue length (post)	
+0x309a50	WScriptMan_PostResetEvent	0x003099f8	yes	NOT_PER_TICK	COUNTER	+1	event queue length (post)	
+0x314354	AnimSeqList_PushNew	0x003142f8	no	NOT_PER_TICK	COUNTER	+1	sequence list length (push)	
+0x318014	cBXString_ctor_copy	0x00317fe8	yes	NOT_PER_TICK	COUNTER	+1	string length/refcount in a copy constructor	
+0x345818	ParticleModifier_BaseCtor_2	0x003457c8	yes	NOT_PER_TICK	COUNTER	+1	modifier instance/refcount at construction	
+0x345b18	ParticleModifier_dtor	0x00345ad0	yes	NOT_PER_TICK	COUNTER	-1	modifier refcount at destruction	
+0x3461b0	HaloModifier_ctor	0x00346120	no	NOT_PER_TICK	COUNTER	+1	instance count at construction	
+0x34b158	cFlagManager_GroupAddFlag	0x0034b038	no	NOT_PER_TICK	COUNTER	+1	flag group length (append)	
+0x35477c	TypedProcess_ctor	0x00354720	no	NOT_PER_TICK	COUNTER	+1	process instance count at construction	
+0x3581e0	MultiParticle_AddInstance	0x003581b8	yes	NOT_PER_TICK	COUNTER	+1	instance list length (append)	
+0x35956c	SplineModifier_ctor	0x00359460	no	NOT_PER_TICK	CHANCE	0	Rand_FloatRange once in the constructor: random start offset along the spline (+0x3c), not per tick	
+0x359580	SplineModifier_ctor	0x00359460	no	NOT_PER_TICK	CHANCE	+0xe4	Rand_FloatRange once in the constructor: random start offset along the spline (+0x3c), not per tick	
+0x35aaec	MultiSplineModifier_Release	0x0035aae0	yes	NOT_PER_TICK	COUNTER	-1	refcount release	
+0x35e0ec	RollerModifier_ctor_2	0x0035df70	no	NOT_PER_TICK	OTHER	0.5	0.5 scales half-extents/centre of the bounds in the constructor (geometry, once)	
+0x35e0f4	RollerModifier_ctor_2	0x0035df70	no	NOT_PER_TICK	OTHER	0.5	0.5 scales half-extents/centre of the bounds in the constructor (geometry, once)	
+0x35e0f8	RollerModifier_ctor_2	0x0035df70	no	NOT_PER_TICK	OTHER	0.5	0.5 scales half-extents/centre of the bounds in the constructor (geometry, once)	
+0x35e0fc	RollerModifier_ctor_2	0x0035df70	no	NOT_PER_TICK	OTHER	0.5	0.5 scales half-extents/centre of the bounds in the constructor (geometry, once)	
+0x35e100	RollerModifier_ctor_2	0x0035df70	no	NOT_PER_TICK	OTHER	0.5	0.5 scales half-extents/centre of the bounds in the constructor (geometry, once)	
+0x35e104	RollerModifier_ctor_2	0x0035df70	no	NOT_PER_TICK	OTHER	0.5	0.5 scales half-extents/centre of the bounds in the constructor (geometry, once)	
+0x35e108	RollerModifier_ctor_2	0x0035df70	no	NOT_PER_TICK	OTHER	0.5	0.5 scales half-extents/centre of the bounds in the constructor (geometry, once)	
+0x35e10c	RollerModifier_ctor_2	0x0035df70	no	NOT_PER_TICK	OTHER	0.5	0.5 scales half-extents/centre of the bounds in the constructor (geometry, once)	
+0x35e114	RollerModifier_ctor_2	0x0035df70	no	NOT_PER_TICK	OTHER	0.5	0.5 scales half-extents/centre of the bounds in the constructor (geometry, once)	
+0x35ea1c	RollerModifier_Update	0x0035e850	no	PER_TICK	SMOOTH	0.05 0.95	roller energy average +4 = 0.95*old + 0.05*(v.mom terms)/... per tick (0.05 at gp-0x29e8 = 0x4a0708, 0.95 at gp-0x29e4 = 0x4a070c, each loaded at one site); below 10000 (0x4a0710) the roller stops (state 11). RollerModifier_Update runs per tick per active roller (0.087 calls/frame, perpendiculous); at 240 Hz the average reacts 4x faster, so rollers stop sooner	tick::PER_TICK (0x004a_070c, 0x3f73_3333, PerTick::Decay) and 0x004a_0708 (0x3d4c_cccd) set to 1 - k' (needs a new PerTick::Complement(0x004a_070c) kind; both single-site), or port and use k' = 0.95^(60/rate), 1 - k'
+0x3672fc	TexMan_FreeBTexInfo	0x003672c0	yes	NOT_PER_TICK	COUNTER	-1	texture refcount release	
+0x380c34	PS2GraphicsMan_v83	0x003807a0	no	NOT_PER_TICK	COUNTER	+1	render packet/entry count (+1) and qword offset (+16) while building a draw list	
+0x380c84	PS2GraphicsMan_v83	0x003807a0	no	NOT_PER_TICK	COUNTER	+16	render packet/entry count (+1) and qword offset (+16) while building a draw list	
+0x39a49c	UIListBox_AddItemAscii	0x0039a3f8	no	NOT_PER_TICK	COUNTER	+1	list item count (append)	
+0x3a785c	SectionAllocator_FreeAll	0x003a7818	no	NOT_PER_TICK	COUNTER	-1	allocation count while freeing	
+0x3ab548	cPS2ChunkResolve_Release	0x003ab498	no	NOT_PER_TICK	COUNTER	+1	chunk/reference counts while resolving and releasing a chunk	
+0x3ab6bc	cPS2ChunkResolve_Release	0x003ab498	no	NOT_PER_TICK	COUNTER	+1	chunk/reference counts while resolving and releasing a chunk	
+0x3ab80c	cPS2ChunkResolve_Release	0x003ab498	no	NOT_PER_TICK	COUNTER	+1	chunk/reference counts while resolving and releasing a chunk	
+0x3ab994	cPS2ChunkResolve_Release	0x003ab498	no	NOT_PER_TICK	COUNTER	+1	chunk/reference counts while resolving and releasing a chunk	
+0x3abad0	cPS2ChunkResolve_Release	0x003ab498	no	NOT_PER_TICK	COUNTER	+1	chunk/reference counts while resolving and releasing a chunk	
+0x3abc10	cPS2ChunkResolve_Release	0x003ab498	no	NOT_PER_TICK	COUNTER	+1	chunk/reference counts while resolving and releasing a chunk	
+0x3b12e0	MPEG2_Flush_Buffer	0x003b1290	yes	NOT_PER_TICK	COUNTER	+1	buffer index (movie decode)	
+0x3b5e2c	SND_MemAlloc	0x003b5c60	yes	NOT_PER_TICK	COUNTER	-1	free-block count/size bookkeeping in the sound heap	
+0x3b5e3c	SND_MemAlloc	0x003b5c60	yes	NOT_PER_TICK	COUNTER	-8	free-block count/size bookkeeping in the sound heap	
+0x3b5ffc	SND_FireEvents	0x003b5f98	no	NOT_PER_TICK	COUNTER	-1	+0x17 pending-event count drained in a loop	
+0x3b9270	SNDMIDI_ControlChange	0x003b91e0	no	NOT_PER_TICK	COUNTER	-1	MIDI controller nesting/voice counts on a control-change message	
+0x3b92b8	SNDMIDI_ControlChange	0x003b91e0	no	NOT_PER_TICK	COUNTER	+1	MIDI controller nesting/voice counts on a control-change message	
+0x3b9328	SNDMIDI_ControlChange	0x003b91e0	no	NOT_PER_TICK	COUNTER	+1	MIDI controller nesting/voice counts on a control-change message	
+0x3b93a0	SNDMIDI_ControlChange	0x003b91e0	no	NOT_PER_TICK	COUNTER	+1	MIDI controller nesting/voice counts on a control-change message	
+0x3c46b8	SND_SifDmaQueue	0x003c4668	no	NOT_PER_TICK	COUNTER	+1	SIF DMA queue length/index	
+0x3c470c	SND_SifDmaQueue	0x003c4668	no	NOT_PER_TICK	COUNTER	+1	SIF DMA queue length/index	
+0x3c494c	SND_SifDmaComplete	0x003c4918	no	NOT_PER_TICK	COUNTER	-1	SIF DMA queue length on completion	
+0x3c62e4	SND_ListPushBack	0x003c62b8	yes	NOT_PER_TICK	COUNTER	+1	list length (push)	
+0x3d73e0	SPCH_AllocQueueSlot	0x003d72a0	no	NOT_PER_TICK	COUNTER	-1	free-slot count in the speech queue	
+0x3db54c	SPCH_RandNext	0x003db4d0	no	NOT_PER_TICK	COUNTER	+1	multi-word add-with-carry RNG state (lagged sum), called per speech pick, not time	
+0x3db574	SPCH_RandNext	0x003db4d0	no	NOT_PER_TICK	COUNTER	+1	multi-word add-with-carry RNG state (lagged sum), called per speech pick, not time	
+0x3db584	SPCH_RandNext	0x003db4d0	no	NOT_PER_TICK	COUNTER	+1	multi-word add-with-carry RNG state (lagged sum), called per speech pick, not time	
+0x3db594	SPCH_RandNext	0x003db4d0	no	NOT_PER_TICK	COUNTER	+1	multi-word add-with-carry RNG state (lagged sum), called per speech pick, not time	
+0x3db5a4	SPCH_RandNext	0x003db4d0	no	NOT_PER_TICK	COUNTER	+1	multi-word add-with-carry RNG state (lagged sum), called per speech pick, not time	
+0x3db730	SPCH_RandomNoRepeat	0x003db5c0	no	NOT_PER_TICK	COUNTER	+1	retry/index count while picking a non-repeating line	
+0x3de444	EAFile_CompleteRequest	0x003de420	no	NOT_PER_TICK	COUNTER	+1	completed/pending request counts	
+0x3de49c	EAFile_CompleteRequest	0x003de420	no	NOT_PER_TICK	COUNTER	-1	completed/pending request counts	
+0x402f00	libmpeg_GetPictureCommon	0x00402e10	no	NOT_PER_TICK	COUNTER	+1	decoder picture/buffer indices (movie data rate, not the tick)	
+0x402f24	libmpeg_GetPictureCommon	0x00402e10	no	NOT_PER_TICK	COUNTER	+1	decoder picture/buffer indices (movie data rate, not the tick)	
+0x402f44	libmpeg_GetPictureCommon	0x00402e10	no	NOT_PER_TICK	COUNTER	+1	decoder picture/buffer indices (movie data rate, not the tick)	
+0x408604	libmpeg_ComputePts	0x00408530	no	NOT_PER_TICK	COUNTER	+1	decoder frame index for PTS	
+0x41c004	_vfprintf_r	0x0041b728	no	NOT_PER_TICK	COUNTER	+16	libc formatting buffer pointer arithmetic	
+0x41c00c	_vfprintf_r	0x0041b728	no	NOT_PER_TICK	COUNTER	-16	libc formatting buffer pointer arithmetic	
+0x41c1c4	_vfprintf_r	0x0041b728	no	NOT_PER_TICK	COUNTER	+2	libc formatting buffer pointer arithmetic	
+0x41c1cc	_vfprintf_r	0x0041b728	no	NOT_PER_TICK	COUNTER	-2	libc formatting buffer pointer arithmetic	
+0x41c2a4	_vfprintf_r	0x0041b728	no	NOT_PER_TICK	COUNTER	+16	libc formatting buffer pointer arithmetic	
+0x41c2ac	_vfprintf_r	0x0041b728	no	NOT_PER_TICK	COUNTER	-16	libc formatting buffer pointer arithmetic	
+0x41c404	_vfprintf_r	0x0041b728	no	NOT_PER_TICK	COUNTER	+16	libc formatting buffer pointer arithmetic	
+0x41c40c	_vfprintf_r	0x0041b728	no	NOT_PER_TICK	COUNTER	-16	libc formatting buffer pointer arithmetic	
+0x41c604	_vfprintf_r	0x0041b728	no	NOT_PER_TICK	COUNTER	+16	libc formatting buffer pointer arithmetic	
+0x41c60c	_vfprintf_r	0x0041b728	no	NOT_PER_TICK	COUNTER	-16	libc formatting buffer pointer arithmetic	
+0x341618	Boost_Update	0x003415d0	yes	PER_TICK	COUNTER	-1	boost zone window +0x3c, set to the data value +0x38 (an int in 60 Hz frames) by Boost_HandleEvent on event 1 and taken down by 1 per tick here; while it is positive (mode +0x40 != 1) the zone stays active without testing riders, then it goes back to testing riders / disables. World object update, 1.46 calls/frame. Window 4x shorter at 240 Hz	in boost_update (ported, worldsphtree.rs) wrap the decrement with tick::countdowns60(c, &[this+0x3c], ..) or store ticks_from_frames60(+0x38) in boost_handle_event (ported); exact at 60
+0x35eb58	RollerModifier_Update	0x0035e850	no	PER_TICK	DECAY	0.83333	(added) +0x28 *= 0.8333 per tick (gp-0x29dc = 0x4a0714, one site); clamp(+0x28*10, 0..2) scales the velocity damping force (integrated with the 1/60 step 0x4a0718, which follows). At 240 Hz the damping term fades 4x faster	tick::PER_TICK (0x004a_0714, 0x3f55_5555, PerTick::Decay): k^(60/rate)
+0x2f3144	cSplashManager_UpdateCrystal	0x002f3030	no	PER_TICK	STEP	+0x44/+0x48	(added) velocity (+0x18/+0x1c) += random accel (+0x44/+0x48, re-rolled when the +0x40 life timer runs out) per tick, then position (+8/+0xc) += velocity per tick and size (+0x10/+0x14 at 0x2f32bc/0x2f32fc) += random growth per tick: pixel units per tick, so crystals fall, drift and grow 4x fast at 240 Hz	same fix as the CLAMP rows: frame60_due gate on the crystal step in c_splash_manager_update + 0x0049_f7e4 in NOT_A_STEP

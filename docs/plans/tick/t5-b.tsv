@@ -1,0 +1,166 @@
+site	function	func_addr	ported	class	kind	constant	reason	conversion
+0x10c234	ComputerActorRider_RollSkipTricks	0x0010c1d0	no	NOT_PER_TICK	CHANCE	+0xdfc 100	rand%100 >= skill(+0xdfc)*100: decides once per planned air whether the CPU rider skips its tricks; only caller ComputerActorRider_PlanAirTricks (0x10bfa8), run once per jump (0.004 calls/frame), not per tick	
+0x10c754	ComputerActorRider_ApplyDifficulty	0x0010c4f8	yes	NOT_PER_TICK	OTHER	0.01	percent -> fraction (*0.01) of a difficulty parameter; only caller ComputerActorRider_InitDifficulty (0x10c758), once at race setup	
+0x10db8c	ComputerActorRider_ShouldAttackBack	0x0010da10	no	NOT_PER_TICK	CHANCE	25	25% roll to attack back, rolled once per detected attack (opponent in anim 0xd within 200) and then held by the 2 s cooldown +0xf30 (decremented by the 1/60 .lit4 entry 0x49b40c, already follows the rate); the frame%6 poll only changes detection latency (see t4-e 0x10da74)	
+0x115e68	Rider_UpdateIdleLookAnim	0x00115d48	yes	NOT_PER_TICK	CHANCE	90	rand%100 < 90 picks 'look at a rider' over 'look at the scenery' on the tick the idle timer +0x35c (1/60 .lit4 0x49b59c, follows the rate) reaches 1 s; an anim plays as soon as a target qualifies, so it is a choice per look, not a per-tick hazard (the 600-frame per-rider cooldown is converted, t4-e)	
+0x115fc0	Rider_UpdateIdleLookAnim	0x00115d48	yes	NOT_PER_TICK	CHANCE	100	rand%100 < 100 is always true (the second look branch); no rate dependence	
+0x11942c	RiderMetrix_OnKnockdownOpponent	0x00119400	yes	NOT_PER_TICK	COUNTER	+1	metrix knock-down count +1 per knock-down event (stat counter, not time)	
+0x11980c	RiderMetrix_CompleteTrick	0x001197d8	no	NOT_PER_TICK	COUNTER	+1	trick/combo stat counts +1 per completed trick (event counter)	
+0x11982c	RiderMetrix_CompleteTrick	0x001197d8	no	NOT_PER_TICK	COUNTER	+1	trick/combo stat counts +1 per completed trick (event counter)	
+0x119844	RiderMetrix_CompleteTrick	0x001197d8	no	NOT_PER_TICK	COUNTER	+1	trick/combo stat counts +1 per completed trick (event counter)	
+0x119d9c	RiderMetrix_LandTrick	0x00119d40	no	NOT_PER_TICK	STEP	0.13	metrix +0x14 += 0.13 once per landed trick (only if a trick was given); event, not per tick	
+0x12a134	AI_CreateActorRiders	0x00129ff8	no	NOT_PER_TICK	COUNTER	+1	actor-rider creation: loop index / created-rider count at setup	
+0x12a14c	AI_CreateActorRiders	0x00129ff8	no	NOT_PER_TICK	COUNTER	+1	actor-rider creation: loop index / created-rider count at setup	
+0x12c480	RiderGateSub_UpdateLaunch	0x0012c408	yes	ALREADY	STEP	0.015	l	converted in crates/ssx3-game/src/game/ai/ai.rs rider_gate_sub_update_launch (per_tick_60 on the step, T4)
+0x135c80	RiderSpinSub_TryReverse	0x00135be0	no	NOT_PER_TICK	OTHER	3.14159 6.28319	spin angle += pi and wrapped to 2pi once, when Rider_TryAirReverse succeeds (air reverse); one-shot	
+0x14c448	Bolts_IndexTable3ByChar	0x0014c3c8	yes	NOT_PER_TICK	COUNTER	+1	index table build: entry count per character while indexing a bolt table (load time)	
+0x15ca2c	AlgorithmList_Push	0x0015c988	yes	NOT_PER_TICK	COUNTER	+1	algorithm list push: list length +1	
+0x16d080	CameraTriggerMan_UpdateTriggers	0x0016cf48	no	NOT_PER_TICK	COUNTER	+1	+0xa0 += 1 is the spatial hash modification stamp before SpatialKey_FromAABB/SpatialHash_Remove when a camera trigger is toggled (edit counter)	
+0x18ed24	cFEStateProfileLoad_ctor	0x0018eca0	no	NOT_PER_TICK	COUNTER	+1	front-end state ctor: init loop index / count	
+0x194e38	cFEStateMainMenu_Update	0x00194dd0	yes	NOT_PER_TICK	COUNTER	+1	main menu +0x55 = number of controllers/slots answering the per-slot query (loop of 2, reset to 0 each call); a count, not time	
+0x19a66c	cFEStateCharEquip_UpdatePreview	0x0019a638	no	PER_TICK	COUNTER	-1	+0x95c preview-load delay counts down 1 per tick in cFEStateCharEquip_UpdatePreview (runs every tick on the equipment screen); set to 20 by cFEStateCharEquip_RequestPreview (0x19a4e8, li v0,0x14 / sw at 0x19a58c) when the selection changes, so the 3D preview of the item loads after 20 frames of no scrolling (0.33 s; 83 ms at 240 Hz -> more bolt loads while scrolling, barely visible)	at the setter 0x19a58c: store tick::ticks_from_frames60(c, 20) instead of 20 (cFEStateCharEquip_RequestPreview, not ported); UpdatePreview itself unchanged
+0x19daa4	BoltFile_Acquire	0x0019da10	no	NOT_PER_TICK	COUNTER	+1	bolt file reference counts (+1 per acquire)	
+0x19db24	BoltFile_Acquire	0x0019da10	no	NOT_PER_TICK	COUNTER	+1	bolt file reference counts (+1 per acquire)	
+0x19db90	BoltFile_Acquire	0x0019da10	no	NOT_PER_TICK	COUNTER	+1	bolt file reference counts (+1 per acquire)	
+0x19dbb4	BoltFile_Acquire	0x0019da10	no	NOT_PER_TICK	COUNTER	+1	bolt file reference counts (+1 per acquire)	
+0x19dc6c	BoltFile_Release	0x0019dc20	no	NOT_PER_TICK	COUNTER	-1	bolt file reference counts (-1 per release)	
+0x19dccc	BoltFile_Release	0x0019dc20	no	NOT_PER_TICK	COUNTER	-1	bolt file reference counts (-1 per release)	
+0x1c7590	cFEPopupConfirm_LayoutOptions	0x001c7388	no	NOT_PER_TICK	OTHER	10	popup layout: total height +0x264 += 10.0 padding once per layout pass (layout math, called when the popup is built)	
+0x1ec24c	cOVStateHUD1P_v24	0x001ec1f0	no	NOT_PER_TICK	COUNTER	+1	HUD message handler (jump table on the message id): +0x3d8 += 1 / -= 1 (floored at 0) is a show/hide nesting count per message; event, not per tick (0.008 calls/frame)	
+0x1ec260	cOVStateHUD1P_v24	0x001ec1f0	no	NOT_PER_TICK	COUNTER	-1	HUD message handler (jump table on the message id): +0x3d8 += 1 / -= 1 (floored at 0) is a show/hide nesting count per message; event, not per tick (0.008 calls/frame)	
+0x1f88b8	OVScreenPauseFreeride_Update	0x001f8728	no	NOT_PER_TICK	COUNTER	-1	UI state stack depth DAT_004a2a54 -= 1 when the pause overlay closes after the remote pause is released (event)	
+0x20d6b4	OVScreenYNDialog_OnWidgetAction	0x0020d590	no	NOT_PER_TICK	COUNTER	-1	Y/N dialog widget action: UI state-stack depth DAT_004a2a54 -1 when the dialog closes (event)	
+0x20d7d4	OVScreenYNDialog_OnWidgetAction	0x0020d590	no	NOT_PER_TICK	COUNTER	-1	Y/N dialog widget action: UI state-stack depth DAT_004a2a54 -1 when the dialog closes (event)	
+0x20d938	OVScreenYNDialog_OnWidgetAction	0x0020d590	no	NOT_PER_TICK	COUNTER	-1	Y/N dialog widget action: UI state-stack depth DAT_004a2a54 -1 when the dialog closes (event)	
+0x20daac	OVScreenYNDialog_OnWidgetAction	0x0020d590	no	NOT_PER_TICK	COUNTER	-1	Y/N dialog widget action: UI state-stack depth DAT_004a2a54 -1 when the dialog closes (event)	
+0x2240bc	LunoVM_Execute	0x002227d0	no	NOT_PER_TICK	COUNTER	+1	Luno script VM: *s0 += 1 is the VM stack/instruction pointer advance while interpreting (per instruction, not per tick)	
+0x22e3a4	SectionMan_DequeueSection	0x0022e360	yes	NOT_PER_TICK	COUNTER	-1	section manager queue count -1 on dequeue	
+0x232974	cPreGameLoadScreen_Update	0x00232930	no	PER_TICK	STEP	0.0833333	load indicator alpha (LoadIndicator +0x4) fades in by 1/12 per call (0x49df70) or out by 1/12 (0x49df6c), clamped to [0,1]; cPreGameLoadScreen_Update is the app state's update while the pre-race load screen is up, once per tick: the 12-tick (0.2 s) fade is 50 ms at 240 Hz	tick::PER_TICK Step entries (0x0049_df70, 0x3daa_aaab) [loaded only at 0x232978] and (0x0049_df6c, 0x3daa_aaab) [loaded only at 0x232958]
+0x232994	cPreGameLoadScreen_Update	0x00232930	no	PER_TICK	STEP	0.0833333	load indicator alpha (LoadIndicator +0x4) fades in by 1/12 per call (0x49df70) or out by 1/12 (0x49df6c), clamped to [0,1]; cPreGameLoadScreen_Update is the app state's update while the pre-race load screen is up, once per tick: the 12-tick (0.2 s) fade is 50 ms at 240 Hz	same as 0x232974: both entries 0x49df6c/0x49df70 (each loaded at exactly one site)
+0x235cf4	GameStateRestartRace_Update	0x00235cc8	no	PER_TICK	COUNTER	+1	+0x14 += 1 every update of the restart-race game state; in state 2 the restart waits until +0x14 >= 120 (2 s) and the streamer view is clear before skipping the finish script; the 2 s minimum is 0.5 s at 240 Hz (restart shows the load/fade for a shorter minimum time; streaming clearance still gates it)	compare +0x14 with tick::ticks_from_frames60(c, 120) instead of 0x78 (slti v0,v0,0x78 at 0x235e7c in state 2; port GameStateRestartRace_Update first, it is still generated)
+0x23e514	MCManager_State02	0x0023e4f8	yes	ALREADY	COUNTER	-1	memory card state wait +0x108 counts down per MCManager update (60/90/120 frames set by MCManager_v01)	MCManager_Update (crates/ssx3-game/src/game/movie/movieplayer.rs mc_manager_update) runs the state machine only when tick::frame60_due, so the countdown is in 60 Hz frames
+0x23ff20	MCManager_State22_Load	0x0023ff00	yes	ALREADY	COUNTER	-1	memory card state wait +0x108 counts down per MCManager update (60/90/120 frames set by MCManager_v01)	MCManager_Update (crates/ssx3-game/src/game/movie/movieplayer.rs mc_manager_update) runs the state machine only when tick::frame60_due, so the countdown is in 60 Hz frames
+0x2425b8	OcclusionMan_RemoveOccluder	0x00242570	yes	NOT_PER_TICK	COUNTER	-1	occluder count -1 on removal	
+0x269fd0	Path_FindMarkerBoundary	0x00269f18	yes	NOT_PER_TICK	CLAMP	50	search window of 50 markers either side when looking for the path marker boundary (index clamp), geometry/search, not time	
+0x269fd4	Path_FindMarkerBoundary	0x00269f18	yes	NOT_PER_TICK	CLAMP	50	search window of 50 markers either side when looking for the path marker boundary (index clamp), geometry/search, not time	
+0x26e604	SnapshotList_PushBack	0x0026e5d0	yes	NOT_PER_TICK	COUNTER	+1	snapshot list length +1 on push	
+0x27316c	InSeq_SpanTrackNextKey	0x00273140	yes	NOT_PER_TICK	COUNTER	+1	in-sequence span track: key index +1 when the authored key time is passed (track time is in seconds; the index follows time)	
+0x2738f0	InSeq_RampTrackActivateKey	0x00273860	yes	NOT_PER_TICK	COUNTER	+1	in-sequence ramp track: key index +1 on activation (follows the track time)	
+0x2755a4	ScriptAnimBankMan_AddBank	0x00275500	no	NOT_PER_TICK	COUNTER	+1	anim bank count +1 when a bank is added	
+0x278d14	ScriptEngine_UnloadWorldScripts	0x00278cd8	yes	NOT_PER_TICK	COUNTER	-1	script count -1 when unloading world scripts	
+0x27b494	ScriptEngine_UnloadBank	0x0027b410	yes	NOT_PER_TICK	COUNTER	-1	bank refcount -1 on unload	
+0x282640	ScriptEngine_KillProcess	0x00282540	no	NOT_PER_TICK	COUNTER	-1	process count -1 when a script process is killed	
+0x283860	ScriptMovie_Stop	0x00283818	yes	NOT_PER_TICK	COUNTER	-1	movie refcount/active count -1 on stop	
+0x28a5bc	SndLoadQueue_Push	0x0028a558	no	NOT_PER_TICK	COUNTER	+1	sound load queue write index/count +1 per push	
+0x28a618	SndLoadQueue_Push	0x0028a558	no	NOT_PER_TICK	COUNTER	+1	sound load queue write index/count +1 per push	
+0x28a674	SndLoadQueue_Push	0x0028a558	no	NOT_PER_TICK	COUNTER	+1	sound load queue write index/count +1 per push	
+0x28a6b4	SndLoadQueue_Push	0x0028a558	no	NOT_PER_TICK	COUNTER	+1	sound load queue write index/count +1 per push	
+0x28a6f8	SndLoadQueue_Push	0x0028a558	no	NOT_PER_TICK	COUNTER	+1	sound load queue write index/count +1 per push	
+0x2903a8	Audio_OnDelayedSoundPitched	0x00290358	no	NOT_PER_TICK	COUNTER	+1	audio command lock nesting +0x1f4 += 1 around queuing a command (decremented again when the command is flushed)	
+0x291878	SSXAudioSystem_StartBoardBaseLoop	0x002917d0	no	NOT_PER_TICK	COUNTER	+1	audio command lock nesting +0x1f4 += 1 around queuing a command	
+0x291d40	SSXAudioSystem_StartBoardSurfaceLoop	0x00291c88	no	NOT_PER_TICK	COUNTER	+1	audio command lock nesting +0x1f4 += 1 around queuing a command	
+0x292160	SSXAudioSystem_StartBoardSurfaceLoop	0x00291c88	no	NOT_PER_TICK	COUNTER	+1	audio command lock nesting +0x1f4 += 1 around queuing a command	
+0x2959cc	SSXAudioSystem_SetTrackedSoundExpiry	0x00295950	no	NOT_PER_TICK	COUNTER	+1	ring-buffer read/write indices +0x5984/+0x5988 (wrapped at +0x597c) while rewriting the tracked-sound queue; no time	
+0x295a10	SSXAudioSystem_SetTrackedSoundExpiry	0x00295950	no	NOT_PER_TICK	COUNTER	+1	ring-buffer read/write indices +0x5984/+0x5988 (wrapped at +0x597c) while rewriting the tracked-sound queue; no time	
+0x295a54	SSXAudioSystem_SetTrackedSoundExpiry	0x00295950	no	NOT_PER_TICK	COUNTER	+1	ring-buffer read/write indices +0x5984/+0x5988 (wrapped at +0x597c) while rewriting the tracked-sound queue; no time	
+0x295a98	SSXAudioSystem_SetTrackedSoundExpiry	0x00295950	no	NOT_PER_TICK	COUNTER	+1	ring-buffer read/write indices +0x5984/+0x5988 (wrapped at +0x597c) while rewriting the tracked-sound queue; no time	
+0x295b48	SSXAudioSystem_SetTrackedSoundExpiry	0x00295950	no	NOT_PER_TICK	COUNTER	+1	ring-buffer read/write indices +0x5984/+0x5988 (wrapped at +0x597c) while rewriting the tracked-sound queue; no time	
+0x295ba0	SSXAudioSystem_SetTrackedSoundExpiry	0x00295950	no	NOT_PER_TICK	COUNTER	+1	ring-buffer read/write indices +0x5984/+0x5988 (wrapped at +0x597c) while rewriting the tracked-sound queue; no time	
+0x295bf8	SSXAudioSystem_SetTrackedSoundExpiry	0x00295950	no	NOT_PER_TICK	COUNTER	+1	ring-buffer read/write indices +0x5984/+0x5988 (wrapped at +0x597c) while rewriting the tracked-sound queue; no time	
+0x295c50	SSXAudioSystem_SetTrackedSoundExpiry	0x00295950	no	NOT_PER_TICK	COUNTER	+1	ring-buffer read/write indices +0x5984/+0x5988 (wrapped at +0x597c) while rewriting the tracked-sound queue; no time	
+0x295ca8	SSXAudioSystem_SetTrackedSoundExpiry	0x00295950	no	NOT_PER_TICK	COUNTER	+1	ring-buffer read/write indices +0x5984/+0x5988 (wrapped at +0x597c) while rewriting the tracked-sound queue; no time	
+0x2964e8	SSXAudioSystem_PlayWipeoutImpact	0x00296310	no	NOT_PER_TICK	COUNTER	+1	audio command lock nesting +0x1f4 += 1 around queuing a command	
+0x297be8	SSXAudioSystem_StartObjectLoop	0x00297950	no	NOT_PER_TICK	COUNTER	+1	audio command lock nesting +0x1f4 += 1 around queuing a command	
+0x299324	SSXAudioSystem_StopBoostSound	0x002992d8	yes	NOT_PER_TICK	COUNTER	-1	audio command lock nesting / active boost-sound count -1 when the boost sound stops	
+0x29a290	SSXAudioSystem_OnRiderReset	0x0029a220	no	NOT_PER_TICK	COUNTER	+1	audio command lock nesting +0x1f4 += 1 around queuing a command	
+0x29c480	SSXAudioSystem_OnStartLight	0x0029c420	no	NOT_PER_TICK	COUNTER	+1	audio command lock nesting +0x1f4 += 1 around queuing a command	
+0x29dc9c	SSXAudioSystem_PlayHandplantSfx	0x0029dc48	no	NOT_PER_TICK	COUNTER	+1	audio command lock nesting +0x1f4 += 1 around queuing a command	
+0x29df34	SSXAudioSystem_SetAvalancheSound	0x0029def0	no	NOT_PER_TICK	COUNTER	+1	avalanche sound refcount +0x6040 (+1 on start, -1 on stop); event	
+0x29dfe0	SSXAudioSystem_SetAvalancheSound	0x0029def0	no	NOT_PER_TICK	COUNTER	+1	avalanche sound refcount +0x6040 (+1 on start, -1 on stop); event	
+0x29e388	SSXAudioSystem_SetAvalancheSound	0x0029def0	no	NOT_PER_TICK	COUNTER	-1	avalanche sound refcount +0x6040 (+1 on start, -1 on stop); event	
+0x2a7494	CrowdAudio_PushPlayParams	0x002a7468	yes	NOT_PER_TICK	COUNTER	+1	crowd audio parameter queue count +1 per push	
+0x2b35f8	MusicPlayer_PlaySong	0x002b35a0	no	NOT_PER_TICK	COUNTER	+1	audio command lock nesting +0x1f4 (+1 on entry, -1 restored at exit)	
+0x2b3828	MusicPlayer_PlaySong	0x002b35a0	no	NOT_PER_TICK	COUNTER	-1	audio command lock nesting +0x1f4 (+1 on entry, -1 restored at exit)	
+0x2b64bc	WorldTriggerManager_GetTriggerInfo	0x002b63d0	yes	NOT_PER_TICK	CHANCE	reg	Audio_Rand picks one of four weighted sound variants for a type-2 world trigger; rolled once per trigger query (when a trigger fires), not a per-tick chance	
+0x2b64d8	WorldTriggerManager_GetTriggerInfo	0x002b63d0	yes	NOT_PER_TICK	CHANCE	reg	Audio_Rand picks one of four weighted sound variants for a type-2 world trigger; rolled once per trigger query (when a trigger fires), not a per-tick chance	
+0x2b64f8	WorldTriggerManager_GetTriggerInfo	0x002b63d0	yes	NOT_PER_TICK	CHANCE	reg	Audio_Rand picks one of four weighted sound variants for a type-2 world trigger; rolled once per trigger query (when a trigger fires), not a per-tick chance	
+0x2b74b4	cWorldSound_UnlinkEmitter	0x002b7410	no	NOT_PER_TICK	COUNTER	+1	+0xa0 += 1 is the spatial hash modification stamp before SpatialKey_FromAABB/SpatialHash_Remove (an edit counter, not time)	
+0x2d2598	Serialize_ReadU32_2	0x002d2558	yes	NOT_PER_TICK	COUNTER	+4	serializer read cursor +4 per u32 read	
+0x2d9a2c	Avalanche_Start	0x002d97a8	no	NOT_PER_TICK	COUNTER	+1	avalanche start: per-object counter +0x708 += 1 in an init loop of 16	
+0x2d9ed0	Avalanche_LoadState	0x002d9d68	no	NOT_PER_TICK	COUNTER	+1	avalanche state load: read indices +0x10/+0x14 while loading saved state	
+0x2d9f48	Avalanche_LoadState	0x002d9d68	no	NOT_PER_TICK	COUNTER	+1	avalanche state load: read indices +0x10/+0x14 while loading saved state	
+0x2f1978	AttachedEmitterFX_dtor	0x002f1940	yes	NOT_PER_TICK	COUNTER	-1	emitter refcount -1 in dtor	
+0x2f4324	cSplashManager_AddSplashFromPoint	0x002f4260	no	PER_TICK	STEP	0.036 120	cSplashManager +0x1024 lens-splash amount += falloff(dist/450) * speed01((speed*0.036-105)/(120-105)) * 1.1 (DAT_004a427c) per call; the CLAMP constants are the speed mapping. Caller chain cDynamicSprayFX_UpdateEmitter5 (ported, its own steps converted in T4) -> cSplashManager_AddSplashAllViews, every tick while the board spray is in mode 5 and the view has no +0xac4 flag; cSplashManager_Update's decay of +0x1024 is converted (T4), so at 240 Hz the splash builds 4x faster against a 60 Hz-equivalent decay: snow on the lens appears much heavier in deep powder at speed	port cSplashManager_AddSplashFromPoint (0x2f4260, leaf with VU0 macro ops) and on the non-60 branch multiply the added amount by 60/rate (f = f3*f4*1.1; f *= 60/r before the add). DAT_004a427c (1.1) is not a single-site constant (also read by CameraSplashMenu_ctor 0x24c280), so no PER_TICK entry
+0x309980	WScriptMan_PostTrickEvent	0x00309918	yes	NOT_PER_TICK	COUNTER	+1	world script trick-event queue count +1 per posted event	
+0x30db38	RiderModel_LoadVariant	0x0030d8b8	no	NOT_PER_TICK	COUNTER	+1	rider model variant loaded-count +1 at load time	
+0x314648	AnimSeqList_Remove	0x003145f8	yes	NOT_PER_TICK	COUNTER	-1	anim sequence list length -1 on remove	
+0x318294	cBXString_dtor	0x00318260	yes	NOT_PER_TICK	COUNTER	-1	string refcount -1 in dtor	
+0x339600	Cell_GatherType2Recursive	0x00339598	no	NOT_PER_TICK	COUNTER	+1	cell gather: output count +1 per gathered item during a spatial query (reset per query)	
+0x3399f0	Cell_GatherType2Recursive	0x00339598	no	NOT_PER_TICK	COUNTER	+1	cell gather: output count +1 per gathered item during a spatial query (reset per query)	
+0x339b30	Cell_GatherType2Recursive	0x00339598	no	NOT_PER_TICK	COUNTER	+1	cell gather: output count +1 per gathered item during a spatial query (reset per query)	
+0x339c70	Cell_GatherType2Recursive	0x00339598	no	NOT_PER_TICK	COUNTER	+1	cell gather: output count +1 per gathered item during a spatial query (reset per query)	
+0x339db0	Cell_GatherType2Recursive	0x00339598	no	NOT_PER_TICK	COUNTER	+1	cell gather: output count +1 per gathered item during a spatial query (reset per query)	
+0x339ef8	Cell_GatherType2Recursive	0x00339598	no	NOT_PER_TICK	COUNTER	+1	cell gather: output count +1 per gathered item during a spatial query (reset per query)	
+0x33a040	Cell_GatherType2Recursive	0x00339598	no	NOT_PER_TICK	COUNTER	+1	cell gather: output count +1 per gathered item during a spatial query (reset per query)	
+0x33a188	Cell_GatherType2Recursive	0x00339598	no	NOT_PER_TICK	COUNTER	+1	cell gather: output count +1 per gathered item during a spatial query (reset per query)	
+0x33a2d0	Cell_GatherType2Recursive	0x00339598	no	NOT_PER_TICK	COUNTER	+1	cell gather: output count +1 per gathered item during a spatial query (reset per query)	
+0x344994	CrowdMan3d_GroupRemoveSection	0x00344898	no	NOT_PER_TICK	COUNTER	-1	crowd group section count -1 when a section is removed	
+0x345998	ParticleModifier_ctor	0x003458c0	no	NOT_PER_TICK	COUNTER	+1	particle modifier ctor: init loop index / count	
+0x345e7c	DynamicParticleModifier_ctor_2	0x00345d80	no	NOT_PER_TICK	COUNTER	+1	particle modifier ctor: init loop index / count	
+0x346248	HaloModifier_dtor	0x00346228	yes	NOT_PER_TICK	COUNTER	-1	modifier refcount -1 in dtor	
+0x34c750	cFlagManager_Update	0x0034c668	no	NOT_PER_TICK	CHANCE	0	Rand_NextMain picks a new wind target once per second: the accumulator +0x1c advances 1/cAppMan.rate per tick (reads cAppMan+0x10), so the roll and the blend +0x10 = base + delta*+0x1c are already in wall-clock time	
+0x351a88	IntersectInfo_FindKeySegment	0x00351a80	no	NOT_PER_TICK	COUNTER	+1	key segment search index +1 (binary/linear search over spline keys)	
+0x351b20	IntersectInfo_FindKeySegment	0x00351a80	no	NOT_PER_TICK	COUNTER	+1	key segment search index +1 (binary/linear search over spline keys)	
+0x35483c	TypedProcess_dtor	0x00354808	no	NOT_PER_TICK	COUNTER	-1	typed process count -1 in dtor	
+0x35a7e8	MultiSplineModifier_RemoveNodeInstances	0x0035a780	no	NOT_PER_TICK	COUNTER	+1	node instance removal loop index	
+0x35bc3c	RailModifier_ctor_2	0x0035ba88	no	NOT_PER_TICK	COUNTER	+1	rail modifier ctor: init loop count	
+0x36721c	TexMan_FreeNBTexInfo	0x003671c8	yes	NOT_PER_TICK	COUNTER	-1	texture refcount -1 on free	
+0x3747fc	BezierPatchCache_TessellatePatch	0x003747a0	no	NOT_PER_TICK	COUNTER	-1	bezier patch cache LRU/slot counters -1 while tessellating (cache bookkeeping)	
+0x3749d0	BezierPatchCache_TessellatePatch	0x003747a0	no	NOT_PER_TICK	COUNTER	-1	bezier patch cache LRU/slot counters -1 while tessellating (cache bookkeeping)	
+0x381a18	PS2GraphicsMan_v86	0x003816f0	no	NOT_PER_TICK	COUNTER	+1	GS packet builder: entry count +1 and DMA write pointer +16 per packet entry	
+0x381a6c	PS2GraphicsMan_v86	0x003816f0	no	NOT_PER_TICK	COUNTER	+16	GS packet builder: entry count +1 and DMA write pointer +16 per packet entry	
+0x385fa8	cPS2GridMesh_BuildStrips	0x00385eb0	no	NOT_PER_TICK	COUNTER	+1	grid mesh strip build: vertex/strip counts (+1/+2) while building strips	
+0x385fd4	cPS2GridMesh_BuildStrips	0x00385eb0	no	NOT_PER_TICK	COUNTER	+1	grid mesh strip build: vertex/strip counts (+1/+2) while building strips	
+0x385fdc	cPS2GridMesh_BuildStrips	0x00385eb0	no	NOT_PER_TICK	COUNTER	+1	grid mesh strip build: vertex/strip counts (+1/+2) while building strips	
+0x386118	cPS2GridMesh_BuildStrips	0x00385eb0	no	NOT_PER_TICK	COUNTER	+2	grid mesh strip build: vertex/strip counts (+1/+2) while building strips	
+0x386ae4	PS2GraphicsMan_v109	0x003866f0	no	NOT_PER_TICK	COUNTER	+1	graphics packet entry count +1 per draw	
+0x3a7328	cStreamMan_ParseChunks	0x003a7238	no	NOT_PER_TICK	COUNTER	+1	stream chunk parser: chunk counts/cursors +-1 per chunk	
+0x3a733c	cStreamMan_ParseChunks	0x003a7238	no	NOT_PER_TICK	COUNTER	-1	stream chunk parser: chunk counts/cursors +-1 per chunk	
+0x3a7388	cStreamMan_ParseChunks	0x003a7238	no	NOT_PER_TICK	COUNTER	+1	stream chunk parser: chunk counts/cursors +-1 per chunk	
+0x3a73a0	cStreamMan_ParseChunks	0x003a7238	no	NOT_PER_TICK	COUNTER	-1	stream chunk parser: chunk counts/cursors +-1 per chunk	
+0x3a7484	cStreamMan_ParseChunks	0x003a7238	no	NOT_PER_TICK	COUNTER	-1	stream chunk parser: chunk counts/cursors +-1 per chunk	
+0x3a74a0	cStreamMan_ParseChunks	0x003a7238	no	NOT_PER_TICK	COUNTER	-1	stream chunk parser: chunk counts/cursors +-1 per chunk	
+0x3a7554	cStreamMan_ParseChunks	0x003a7238	no	NOT_PER_TICK	COUNTER	+1	stream chunk parser: chunk counts/cursors +-1 per chunk	
+0x3a7780	WorldBlockPool_AllocBlock	0x003a7768	yes	NOT_PER_TICK	COUNTER	-1	world block pool free count -1 on alloc	
+0x3b0c30	PS2_SONY_CODEC_INTERNAL_FeedBitstream	0x003b0b40	no	NOT_PER_TICK	COUNTER	+1	audio codec bitstream feed: block counter +0x14 += 1 per fed block (stream position, follows the data not the tick)	
+0x3b593c	SND_AddTickCallback	0x003b5910	yes	NOT_PER_TICK	COUNTER	+1	sound tick-callback count +1 on registration	
+0x3b8fe8	SNDMIDI_NoteOn	0x003b8f78	no	NOT_PER_TICK	COUNTER	+1	MIDI voice/note counts +1 per note on	
+0x3b90e0	SNDMIDI_NoteOn	0x003b8f78	no	NOT_PER_TICK	COUNTER	+1	MIDI voice/note counts +1 per note on	
+0x3bad1c	SND_ParsePatch	0x003baac0	no	NOT_PER_TICK	COUNTER	+1	patch parser loop counter	
+0x3c4de8	SND_SpuMemFree	0x003c4d78	no	NOT_PER_TICK	COUNTER	-1	SPU memory block count -1 on free	
+0x3c637c	SND_ListRemove	0x003c6320	yes	NOT_PER_TICK	COUNTER	-1	sound list length -1 on remove	
+0x3d75dc	SPCH_QueueEventArgs	0x003d7418	no	NOT_PER_TICK	COUNTER	+1	speech event queue counts +1 per queued event	
+0x3d7684	SPCH_QueueEventArgs	0x003d7418	no	NOT_PER_TICK	COUNTER	+1	speech event queue counts +1 per queued event	
+0x3d9afc	SPCH_SentenceAppend	0x003d9ac8	no	NOT_PER_TICK	COUNTER	+1	speech sentence length +1 per appended word	
+0x3ff428	libpad_SendActDma	0x003ff390	no	NOT_PER_TICK	COUNTER	+1	libpad actuator DMA: buffer index +1 per send (the pad library, not game time)	
+0x40306c	libmpeg_DecodeFramePic	0x00402f80	no	NOT_PER_TICK	COUNTER	+1	MPEG decoder: picture/macroblock counters +1 per decoded frame (movie timing comes from the stream)	
+0x403070	libmpeg_DecodeFramePic	0x00402f80	no	NOT_PER_TICK	COUNTER	+1	MPEG decoder: picture/macroblock counters +1 per decoded frame (movie timing comes from the stream)	
+0x417c68	__svfscanf	0x00417ab8	no	NOT_PER_TICK	COUNTER	+1	libc scanf: width/char counts +-1 while parsing a format string	
+0x417c74	__svfscanf	0x00417ab8	no	NOT_PER_TICK	COUNTER	-1	libc scanf: width/char counts +-1 while parsing a format string	
+0x417e5c	__svfscanf	0x00417ab8	no	NOT_PER_TICK	COUNTER	-1	libc scanf: width/char counts +-1 while parsing a format string	
+0x417e68	__svfscanf	0x00417ab8	no	NOT_PER_TICK	COUNTER	+1	libc scanf: width/char counts +-1 while parsing a format string	
+0x417f98	__svfscanf	0x00417ab8	no	NOT_PER_TICK	COUNTER	+1	libc scanf: width/char counts +-1 while parsing a format string	
+0x417fac	__svfscanf	0x00417ab8	no	NOT_PER_TICK	COUNTER	-1	libc scanf: width/char counts +-1 while parsing a format string	
+0x418014	__svfscanf	0x00417ab8	no	NOT_PER_TICK	COUNTER	-1	libc scanf: width/char counts +-1 while parsing a format string	
+0x418020	__svfscanf	0x00417ab8	no	NOT_PER_TICK	COUNTER	+1	libc scanf: width/char counts +-1 while parsing a format string	
+0x4180b4	__svfscanf	0x00417ab8	no	NOT_PER_TICK	COUNTER	+1	libc scanf: width/char counts +-1 while parsing a format string	
+0x4180c8	__svfscanf	0x00417ab8	no	NOT_PER_TICK	COUNTER	-1	libc scanf: width/char counts +-1 while parsing a format string	
+0x418134	__svfscanf	0x00417ab8	no	NOT_PER_TICK	COUNTER	-1	libc scanf: width/char counts +-1 while parsing a format string	
+0x418140	__svfscanf	0x00417ab8	no	NOT_PER_TICK	COUNTER	+1	libc scanf: width/char counts +-1 while parsing a format string	
+0x418298	__svfscanf	0x00417ab8	no	NOT_PER_TICK	COUNTER	-1	libc scanf: width/char counts +-1 while parsing a format string	
+0x4182a8	__svfscanf	0x00417ab8	no	NOT_PER_TICK	COUNTER	+1	libc scanf: width/char counts +-1 while parsing a format string	
+0x41846c	__svfscanf	0x00417ab8	no	NOT_PER_TICK	COUNTER	-1	libc scanf: width/char counts +-1 while parsing a format string	
+0x41847c	__svfscanf	0x00417ab8	no	NOT_PER_TICK	COUNTER	+1	libc scanf: width/char counts +-1 while parsing a format string	
+0x1f8784	OVScreenPauseFreeride_Update	0x001f8728	no	PER_TICK	STEP	0.05 (0x49dbac, stored into +0xcc by OVScreenPauseFreeride_Init at 0x1f8314)	[scan missed: the step is a field] while the freeride pause overlay (modes 1,2,4) has unread messages (MessageCenter_GetUnreadCount > 0), +0xc8 pulses 0..1 by +0xcc per update and the sign of +0xcc flips at the ends; the value is the alpha of the message indicator object. 20 ticks per half-cycle (0.33 s) -> 83 ms at 240 Hz: a 4x fast blink	tick::PER_TICK Step entry (0x0049_dbac, 0x3d4c_cccd): loaded at exactly one site (lw at 0x1f8314 in OVScreenPauseFreeride_Init), and the step is written into +0xcc at Init, so the rewrite must happen before the overlay opens (it does: PER_TICK is applied at rate setup)
+0x232a50	cPreFELoadScreen_Update	0x00232a08	no	PER_TICK	STEP	1/12 (0x49df78 in, 0x49df74 out)	[scan missed, sibling of cPreGameLoadScreen_Update] same load indicator alpha fade by 1/12 per tick on the pre-front-end load screen	tick::PER_TICK Step entries (0x0049_df78, 0x3daa_aaab) [only at 0x232a50] and (0x0049_df74, 0x3daa_aaab) [only at 0x232a30]
+0x2325b0	InitLoadScreen_Update	0x00232588	no	PER_TICK	STEP	1/12 (0x49df68 in, 0x49df64 out)	[scan missed, sibling of cPreGameLoadScreen_Update] same load indicator alpha fade by 1/12 per tick on the boot load screen	tick::PER_TICK Step entries (0x0049_df68, 0x3daa_aaab) [only at 0x2325d0] and (0x0049_df64, 0x3daa_aaab) [only at 0x2325b0]

@@ -155,6 +155,37 @@ pub const PER_TICK: &[(u32, u32, PerTick)] = &[
     (0x0049_d9dc, 0x3d08_8889, PerTick::Step),
     (0x0049_d9e0, 0x3db4_0d7c, PerTick::Step),
     (0x0049_d9e4, 0x3caa_aaab, PerTick::Step),
+    // RiderFinishLineSub_HandleInput (0x12c678): past the finish line the
+    // velocity (+0x1e0) decays *0.97 (state 0) and *0.93 (state 1) per tick.
+    (0x0049_b908, 0x3f78_51ec, PerTick::Decay),
+    (0x0049_b90c, 0x3f6e_147b, PerTick::Decay),
+    // RiderResetSub_HandleInput (0x12f398): the reset to the path progresses
+    // 0.025 * time scale per tick (at 0.5 the rider is put back).
+    (0x0049_b9d4, 0x3ccc_ccce, PerTick::Step),
+    // cFEStateCharSelect_HandleInput (0x181450) and
+    // cFEStateCharEquip_HandleInput (0x199a38): the preview's zoom and pitch
+    // move stick * -0.1 per update.
+    (0x0049_d6cc, 0xbdcc_cccd, PerTick::Step),
+    (0x0049_d6d0, 0xbdcc_cccd, PerTick::Step),
+    (0x0049_d748, 0xbdcc_cccd, PerTick::Step),
+    (0x0049_d74c, 0xbdcc_cccd, PerTick::Step),
+    // EventSelect_Update (0x202828): the preview fades in 0.1 per update.
+    (0x0049_dbc0, 0x3dcc_cccd, PerTick::Step),
+    // InitLoadScreen_Update (0x232588), cPreGameLoadScreen_Update (0x232930),
+    // cPreFELoadScreen_Update (0x232a08): the load indicator fades in and out
+    // by 1/12 per tick.
+    (0x0049_df64, 0x3daa_aaab, PerTick::Step),
+    (0x0049_df68, 0x3daa_aaab, PerTick::Step),
+    (0x0049_df6c, 0x3daa_aaab, PerTick::Step),
+    (0x0049_df70, 0x3daa_aaab, PerTick::Step),
+    (0x0049_df74, 0x3daa_aaab, PerTick::Step),
+    (0x0049_df78, 0x3daa_aaab, PerTick::Step),
+    // OVScreenPauseFreeride_Init (0x1f8314) copies the unread-messages
+    // indicator's blink step (0.05 per tick) into +0xcc.
+    (0x0049_dbac, 0x3d4c_cccd, PerTick::Step),
+    // RollerModifier_Update (0x35e850): a rolling object's damping decays
+    // *0.8333 per tick.
+    (0x004a_0714, 0x3f55_5555, PerTick::Decay),
 ];
 
 /// The value of [`PER_TICK`] entries at `hz`: (entry, bits) pairs, the
