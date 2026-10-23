@@ -2100,7 +2100,23 @@ pub fn mc_manager_read_save_by_slot(c: &mut Cpu) {
 /// `void MCManager_Update(self)` (0x23d618): the memory card manager's
 /// per-frame update; `+0xb8` selects the update step (0: the state machine,
 /// 1: mode 1, anything else: nothing).
+///
+/// The states wait in 60 Hz frames (`+0x108`: 60, 90, 120 set by
+/// `MCManager_v01`, counted down or up by the state handlers), so above 60 Hz
+/// the update runs once per `rate / 60` ticks (`tick::frame60_due`, one clock
+/// per manager): the boot "Checking for memory card" screen and the save and
+/// load messages stay up as long as at 60. Every call runs at 60.
 pub fn mc_manager_update(c: &mut Cpu) {
+    let self_ = abi::r32(c, A0);
+    if !crate::tick::frame60_due(c, self_, 0) {
+        abi::ret(c);
+        return;
+    }
+    mc_manager_update_step(c);
+}
+
+/// The step of [`mc_manager_update`] (the original).
+fn mc_manager_update_step(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 5;
         let frame = Frame::open(c, 0x10);
@@ -5980,6 +5996,33 @@ pub(crate) mod tests {
             };
             c.bus.write32(this + 0xb8, step);
         });
+    }
+
+
+    /// The manager's update runs 60 times per second at 60, 120, 144 and
+    /// 240 Hz (step 2 does nothing but charge its cycles).
+    #[test]
+    fn mc_manager_update_rate() {
+        let run = |hz: u32, calls: u32| {
+            let mut c = crate::difftest::fresh();
+            crate::tick::set_for_test(&mut c, hz);
+            // One manager per rate: the clocks are kept per address.
+            let this = DATA + 0x100 + hz * 4;
+            c.bus.write32(this + 0xb8, 2);
+            let start = c.cycles;
+            for _ in 0..calls {
+                c.g[A0][0] = sx(this);
+                c.g[RA][0] = crate::difftest::RA as u64;
+                c.pc = 0x0023_d618;
+                mc_manager_update(&mut c);
+            }
+            c.cycles - start
+        };
+        let one = run(60, 1);
+        assert!(one > 0);
+        for hz in [60u32, 120, 144, 240] {
+            assert_eq!(run(hz, hz), 60 * one, "{hz} Hz");
+        }
     }
 
 

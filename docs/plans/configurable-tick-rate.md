@@ -199,7 +199,6 @@ the two runs are in the sequence.
 
 | System | What is wrong | Evidence |
 | --- | --- | --- |
-| Boot memory-card check | the "Checking for memory card" screen ends ~4.5 s early at 240 Hz (its minimum display time counts ticks) | 60 Hz frames 185-460 vs 240 Hz frames 740-1840 of the race replay |
 | Front-end title/attract particles | the title snow flurry runs at the tick rate | `sheet0` rows 1-3 |
 
 **Converted since** (measured on the 240 Hz sheets): the trick-history and
@@ -249,6 +248,19 @@ runs with `speed · 60 / rate` (the instance's own speed restored after,
 and kept on the host for a tick that unwinds), with a rate test. The race
 replay does not show a scripted sequence, so this one is unit-tested only.
 
+### Memory-card manager (done)
+
+The boot "Checking for memory card" screen ended ~4.5 s early at 240 Hz. The
+memory-card manager's states wait in 60 Hz frames (`+0x108`: 60, 90 or 120,
+set by `MCManager_v01`; e.g. `MCManager_State02` polls the card every 90
+frames), and `MCManager_Update` (0x23d618) ran once per tick. It now runs
+once per `rate / 60` ticks of its own (`tick::frame60_due`, keyed by the
+manager), with a rate test; the save and load messages wait as at 60 too.
+Measured (race replay, 60 Hz frame F vs 240 Hz frame 4F): frames 190-430
+now identical (were 175 mean abs diff); the screen leaves ~0.25 s early at
+240 because boot loading creates the manager ~10 frames earlier (not this
+timer).
+
 ### UI animation and screen scripts (done)
 
 `UIAnim_Advance` (0x3974b0) and `UIScreen_RunThreadFrame` (0x39c978, now an
@@ -269,7 +281,7 @@ skipped layout, is why the whole-screen gate (`1ea2b3b`) wrapped the text.
 Measured (race replay, 60 Hz frame F vs 240 Hz frame 4F, mean absolute
 difference): the screen transitions after each button press went from 45-105
 to 0-12; the description text wraps as at 60. Remaining differences are the
-boot memory-card check (above) and the loading/race start.
+loading/race start.
 
 ### Left for a design decision (not converted)
 
