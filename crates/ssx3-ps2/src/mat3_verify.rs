@@ -76,7 +76,9 @@ pub fn begin(vu: &mut Vu, pc: u32, top: u32, itop: u32) -> Option<Pending> {
 pub fn end(mut p: Pending, vu: &Vu) {
     let mut native: Vec<Vec<Qword>> = Vec::new();
     let mut regs = mat3::VuState::default();
-    let implemented = mat3::run(p.entry, p.top, p.itop, &mut p.mem, &mut regs, &mut |k| native.push(k.to_vec()));
+    let implemented = mat3::run(p.entry, p.top, p.itop, &mut p.mem, &mut regs, &mut |k| {
+        native.push(k.to_vec())
+    });
     let mut g = STATE.lock().unwrap();
     let s = g.get_or_insert_with(State::default);
     let c = s.counts.entry((p.entry, p.itop != 0)).or_default();
@@ -110,7 +112,8 @@ pub fn end(mut p: Pending, vu: &Vu) {
         native.len(),
         p.kicks.len()
     );
-    if let Some(i) = (0..native.len().max(p.kicks.len())).find(|&i| native.get(i) != p.kicks.get(i)) {
+    if let Some(i) = (0..native.len().max(p.kicks.len())).find(|&i| native.get(i) != p.kicks.get(i))
+    {
         let (a, b) = (native.get(i), p.kicks.get(i));
         eprintln!(
             "  kick {i}: native {} qw, translated {} qw",
@@ -118,14 +121,26 @@ pub fn end(mut p: Pending, vu: &Vu) {
             b.map_or(0, |k| k.len())
         );
         if let (Some(a), Some(b)) = (a, b) {
-            for (j, (x, y)) in a.iter().zip(b).enumerate().filter(|(_, (x, y))| x != y).take(6) {
+            for (j, (x, y)) in a
+                .iter()
+                .zip(b)
+                .enumerate()
+                .filter(|(_, (x, y))| x != y)
+                .take(6)
+            {
                 eprintln!("    qw {j}: native {x:032x} translated {y:032x}");
             }
         }
     }
-    let diff: Vec<usize> = (0..1024).filter(|q| p.mem[q * 16..q * 16 + 16] != vu.data[q * 16..q * 16 + 16]).collect();
+    let diff: Vec<usize> = (0..1024)
+        .filter(|q| p.mem[q * 16..q * 16 + 16] != vu.data[q * 16..q * 16 + 16])
+        .collect();
     if !diff.is_empty() {
-        eprintln!("  data memory: {} qwords differ, first at {:?}", diff.len(), &diff[..diff.len().min(8)]);
+        eprintln!(
+            "  data memory: {} qwords differ, first at {:?}",
+            diff.len(),
+            &diff[..diff.len().min(8)]
+        );
     }
 }
 

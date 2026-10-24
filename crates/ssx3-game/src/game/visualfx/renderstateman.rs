@@ -2,99 +2,199 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
-use crate::guest::Addr;
-use ssx3_ee_rt::cpu::reg::*;
-use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::Cpu;
 use crate::abi::r32;
+use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Unwound;
+use crate::call::VSlot;
+use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::bx::memblockman::gp_2 as gp_3;
+pub(crate) use crate::game::camera::camera::gp as gp_4;
+pub(crate) use crate::game::fe::feasyncfile::lh_r;
+pub(crate) use crate::game::fe::feasyncfile::low_2 as low;
+pub(crate) use crate::game::fe::feasyncfile::lw_r;
+pub(crate) use crate::game::fe::feasyncfile::sw_r;
+pub(crate) use crate::game::fe::festateloadhint::lqsp;
+pub(crate) use crate::game::fe::festateloadhint::p_3 as p_2;
+pub(crate) use crate::game::fe::festateloadhint::sqsp;
+pub(crate) use crate::game::render::lightman::gp_2;
+pub(crate) use crate::game::render::particle::at as at_2;
+pub(crate) use crate::game::render::particle::this_with_delta;
+pub(crate) use crate::game::visualfx::boardtrailfx::add32;
+pub(crate) use crate::game::visualfx::boardtrailfx::gp;
+pub(crate) use crate::game::visualfx::boardtrailfx::p;
+pub(crate) use crate::game::visualfx::boardtrailfx::shl32_2 as shl32;
+pub(crate) use crate::game::visualfx::boardwakefx::addiu;
+pub(crate) use crate::game::visualfx::boardwakefx::at;
+pub(crate) use crate::game::visualfx::boardwakefx::back_edge;
+pub(crate) use crate::game::visualfx::boardwakefx::copy_quad;
+pub(crate) use crate::game::visualfx::boardwakefx::copy_record;
+pub(crate) use crate::game::visualfx::boardwakefx::draw;
+pub(crate) use crate::game::visualfx::boardwakefx::gfx;
+pub(crate) use crate::game::visualfx::boardwakefx::gfx_method;
+pub(crate) use crate::game::visualfx::boardwakefx::gs_field;
+pub(crate) use crate::game::visualfx::boardwakefx::pop_record;
+pub(crate) use crate::game::visualfx::boardwakefx::streamer_segment;
+pub(crate) use crate::game::visualfx::boardwakefx::streamer_vertex;
+pub(crate) use crate::game::visualfx::boardwakefx::vadd;
+pub(crate) use crate::game::visualfx::boardwakefx::vmul_bc;
+pub(crate) use crate::game::visualfx::boardwakefx::Streamer;
+pub(crate) use crate::game::visualfx::boardwakefx::DRAW;
+pub(crate) use crate::game::visualfx::boardwakefx::GFX_MAN;
+pub(crate) use crate::game::visualfx::boardwakefx::GFX_VTABLE;
+pub(crate) use crate::game::visualfx::boardwakefx::GS_DEFAULT;
+pub(crate) use crate::game::visualfx::boardwakefx::GS_TOP;
+pub(crate) use crate::game::visualfx::boardwakefx::RECORD;
+pub(crate) use crate::game::worldpainter::quadtree::create_with;
+use crate::guest::Addr;
+use crate::ps2f::FpuF32;
+use crate::tick;
 use ssx3_ee as ee;
+use ssx3_ee_rt::cpu::reg::*;
+use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
 use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
-use crate::call::sp;
-use crate::ps2f::FpuF32;
-use crate::call::Unwound;
-use crate::call::VSlot;
-use crate::events::back_edge_unwinds;
-use crate::call;
-use crate::tick;
-pub(crate) use crate::game::visualfx::boardwakefx::GFX_MAN;
-pub(crate) use crate::game::visualfx::boardwakefx::GS_TOP;
-pub(crate) use crate::game::visualfx::boardwakefx::RECORD;
-pub(crate) use crate::game::visualfx::boardwakefx::GS_DEFAULT;
-pub(crate) use crate::game::visualfx::boardwakefx::GFX_VTABLE;
-pub(crate) use crate::game::visualfx::boardwakefx::DRAW;
-pub(crate) use crate::game::visualfx::boardwakefx::at;
-pub(crate) use crate::game::visualfx::boardwakefx::gfx;
-pub(crate) use crate::game::visualfx::boardwakefx::addiu;
-pub(crate) use crate::game::visualfx::boardwakefx::copy_record;
-pub(crate) use crate::game::visualfx::boardwakefx::gs_field;
-pub(crate) use crate::game::visualfx::boardwakefx::gfx_method;
-pub(crate) use crate::game::visualfx::boardwakefx::draw;
-pub(crate) use crate::game::visualfx::boardwakefx::pop_record;
-pub(crate) use crate::game::visualfx::boardwakefx::back_edge;
-pub(crate) use crate::game::visualfx::boardwakefx::vmul_bc;
-pub(crate) use crate::game::visualfx::boardwakefx::vadd;
-pub(crate) use crate::game::visualfx::boardwakefx::copy_quad;
-pub(crate) use crate::game::visualfx::boardwakefx::Streamer;
-pub(crate) use crate::game::visualfx::boardwakefx::streamer_vertex;
-pub(crate) use crate::game::visualfx::boardwakefx::streamer_segment;
-pub(crate) use crate::game::visualfx::boardtrailfx::p;
-pub(crate) use crate::game::visualfx::boardtrailfx::gp;
-pub(crate) use crate::game::visualfx::boardtrailfx::shl32_2 as shl32;
-pub(crate) use crate::game::visualfx::boardtrailfx::add32;
-pub(crate) use crate::game::render::particle::at as at_2;
-pub(crate) use crate::game::render::lightman::gp_2;
-pub(crate) use crate::game::bx::memblockman::gp_2 as gp_3;
-pub(crate) use crate::game::worldpainter::quadtree::create_with;
-pub(crate) use crate::game::camera::camera::gp as gp_4;
-pub(crate) use crate::game::render::particle::this_with_delta;
-pub(crate) use crate::game::fe::festateloadhint::p_3 as p_2;
-pub(crate) use crate::game::fe::festateloadhint::sqsp;
-pub(crate) use crate::game::fe::festateloadhint::lqsp;
-pub(crate) use crate::game::fe::feasyncfile::low_2 as low;
-pub(crate) use crate::game::fe::feasyncfile::lw_r;
-pub(crate) use crate::game::fe::feasyncfile::lh_r;
-pub(crate) use crate::game::fe::feasyncfile::sw_r;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x002e_ea50, world_painter_get_fog18, "WorldPainter_GetFog18"),
-    (0x002e_ea98, world_painter_get_fog20, "WorldPainter_GetFog20"),
-    (0x002e_eae0, world_painter_get_fog28, "WorldPainter_GetFog28"),
-    (0x002e_eb28, world_painter_get_fog30, "WorldPainter_GetFog30"),
-    (0x002e_eb70, world_painter_get_screen_tint_red, "WorldPainter_GetScreenTintRed"),
-    (0x002e_ebd0, world_painter_get_screen_tint_green, "WorldPainter_GetScreenTintGreen"),
-    (0x002e_ec30, world_painter_get_screen_tint_blue, "WorldPainter_GetScreenTintBlue"),
-    (0x002e_ec90, world_painter_get_screen_fill_red, "WorldPainter_GetScreenFillRed"),
-    (0x002e_ecf0, world_painter_get_screen_fill_green, "WorldPainter_GetScreenFillGreen"),
-    (0x002e_ed50, world_painter_get_screen_fill_blue, "WorldPainter_GetScreenFillBlue"),
-    (0x002e_efa8, world_painter_get_lighting30, "WorldPainter_GetLighting30"),
-    (0x002e_eff0, world_painter_get_lighting28, "WorldPainter_GetLighting28"),
-    (0x002e_f0e8, world_painter_get_irradiance_name0, "func_002EF0E8"),
-    (0x002e_f140, world_painter_get_irradiance_name1, "func_002EF140"),
-    (0x002e_f198, world_painter_get_irradiance_name2, "WorldPainter_GetIrradianceName2"),
-    (0x002e_f368, world_painter_set_script_surface_mode, "WorldPainter_SetScriptSurfaceMode"),
-    (0x002e_f378, world_painter_set_irradiance_override, "WorldPainter_SetIrradianceOverride"),
+    (
+        0x002e_ea50,
+        world_painter_get_fog18,
+        "WorldPainter_GetFog18",
+    ),
+    (
+        0x002e_ea98,
+        world_painter_get_fog20,
+        "WorldPainter_GetFog20",
+    ),
+    (
+        0x002e_eae0,
+        world_painter_get_fog28,
+        "WorldPainter_GetFog28",
+    ),
+    (
+        0x002e_eb28,
+        world_painter_get_fog30,
+        "WorldPainter_GetFog30",
+    ),
+    (
+        0x002e_eb70,
+        world_painter_get_screen_tint_red,
+        "WorldPainter_GetScreenTintRed",
+    ),
+    (
+        0x002e_ebd0,
+        world_painter_get_screen_tint_green,
+        "WorldPainter_GetScreenTintGreen",
+    ),
+    (
+        0x002e_ec30,
+        world_painter_get_screen_tint_blue,
+        "WorldPainter_GetScreenTintBlue",
+    ),
+    (
+        0x002e_ec90,
+        world_painter_get_screen_fill_red,
+        "WorldPainter_GetScreenFillRed",
+    ),
+    (
+        0x002e_ecf0,
+        world_painter_get_screen_fill_green,
+        "WorldPainter_GetScreenFillGreen",
+    ),
+    (
+        0x002e_ed50,
+        world_painter_get_screen_fill_blue,
+        "WorldPainter_GetScreenFillBlue",
+    ),
+    (
+        0x002e_efa8,
+        world_painter_get_lighting30,
+        "WorldPainter_GetLighting30",
+    ),
+    (
+        0x002e_eff0,
+        world_painter_get_lighting28,
+        "WorldPainter_GetLighting28",
+    ),
+    (
+        0x002e_f0e8,
+        world_painter_get_irradiance_name0,
+        "func_002EF0E8",
+    ),
+    (
+        0x002e_f140,
+        world_painter_get_irradiance_name1,
+        "func_002EF140",
+    ),
+    (
+        0x002e_f198,
+        world_painter_get_irradiance_name2,
+        "WorldPainter_GetIrradianceName2",
+    ),
+    (
+        0x002e_f368,
+        world_painter_set_script_surface_mode,
+        "WorldPainter_SetScriptSurfaceMode",
+    ),
+    (
+        0x002e_f378,
+        world_painter_set_irradiance_override,
+        "WorldPainter_SetIrradianceOverride",
+    ),
     (0x002e_f6a0, c_air_streamer_fx_reset, "cAirStreamerFX_Reset"),
-    (0x002e_f6d0, c_air_streamer_fx_update, "cAirStreamerFX_Update"),
-    (0x002e_f950, c_air_streamer_fx_render, "cAirStreamerFX_Render"),
-    (0x002f_00a0, ps2_visual_effects_man_apply_world_painter, "PS2VisualEffectsMan_ApplyWorldPainter"),
-    (0x002f_0368, ai_visual_effects_man_ctor, "AIVisualEffectsMan_ctor"),
-    (0x002f_0390, ps2_ai_visual_effects_man_create, "PS2AIVisualEffectsMan_Create"),
-    (0x002f_03c8, ps2_ai_visual_effects_man_ctor, "PS2AIVisualEffectsMan_ctor"),
-    (0x002f_0438, ps2ai_visual_effects_man_dtor, "PS2AIVisualEffectsMan_dtor"),
-    (0x002f_0510, ps2_visual_effects_man_create, "PS2VisualEffectsMan_Create"),
+    (
+        0x002e_f6d0,
+        c_air_streamer_fx_update,
+        "cAirStreamerFX_Update",
+    ),
+    (
+        0x002e_f950,
+        c_air_streamer_fx_render,
+        "cAirStreamerFX_Render",
+    ),
+    (
+        0x002f_00a0,
+        ps2_visual_effects_man_apply_world_painter,
+        "PS2VisualEffectsMan_ApplyWorldPainter",
+    ),
+    (
+        0x002f_0368,
+        ai_visual_effects_man_ctor,
+        "AIVisualEffectsMan_ctor",
+    ),
+    (
+        0x002f_0390,
+        ps2_ai_visual_effects_man_create,
+        "PS2AIVisualEffectsMan_Create",
+    ),
+    (
+        0x002f_03c8,
+        ps2_ai_visual_effects_man_ctor,
+        "PS2AIVisualEffectsMan_ctor",
+    ),
+    (
+        0x002f_0438,
+        ps2ai_visual_effects_man_dtor,
+        "PS2AIVisualEffectsMan_dtor",
+    ),
+    (
+        0x002f_0510,
+        ps2_visual_effects_man_create,
+        "PS2VisualEffectsMan_Create",
+    ),
 ];
 
 /// `cAirStreamerFX` fields.
@@ -177,56 +277,55 @@ pub(crate) mod painter {
 pub(crate) mod callee {
     use super::ee;
     use super::Callee;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::EA_MEM_ALLOC;
+    pub(crate) use crate::game::fe::festaterewards::callee::AI_VISUAL_EFFECTS_MAN_CTOR;
+    pub(crate) use crate::game::fe::festaterewards::callee::CUI_TEXT_SCROLL_SET_NAV_BUTTONS;
+    pub(crate) use crate::game::fe::festaterewards::callee::FE_STATE_CTOR;
+    pub(crate) use crate::game::fe::festaterewards::callee::GET_SEQ_PROCESS_ID;
+    pub(crate) use crate::game::fe::festaterewards::callee::IN_SEQ_INSTANCE_SETUP;
+    pub(crate) use crate::game::fe::festaterewards::callee::LIGHT_MAN_EMPTY_HOOK;
+    pub(crate) use crate::game::fe::festaterewards::callee::MENU_FORMAT_FLOAT;
+    pub(crate) use crate::game::fe::festaterewards::callee::MENU_ITEM_DRAW_ROW;
+    pub(crate) use crate::game::fe::festaterewards::callee::MENU_ITEM_GET_INPUT_CODE;
+    pub(crate) use crate::game::fe::festaterewards::callee::MENU_ITEM_HANDLE_INPUT;
+    pub(crate) use crate::game::fe::festaterewards::callee::MENU_ITEM_IS_DISABLED;
+    pub(crate) use crate::game::fe::festaterewards::callee::MENU_PAGE_VALIDATE_SELECTION;
+    pub(crate) use crate::game::fe::festaterewards::callee::MENU_PUSH_PAGE;
+    pub(crate) use crate::game::fe::festaterewards::callee::REWARD_GALLERY_CTOR;
+    pub(crate) use crate::game::fe::festaterewards::callee::SCRIPT_BINDING_CLEAR_LISTENER;
+    pub(crate) use crate::game::fe::festaterewards::callee::SCRIPT_LIST_ON_SEQ_START;
+    pub(crate) use crate::game::fe::festaterewards::callee::SCRIPT_LIST_ON_SEQ_STOPPED;
+    pub(crate) use crate::game::fe::festaterewards::callee::SEQ_LISTENER_ON_START;
+    pub(crate) use crate::game::fe::festaterewards::callee::SEQ_LISTENER_ON_STOP;
+    pub(crate) use crate::game::fe::festaterewards::callee::UI_LIST_CTOR;
+    pub(crate) use crate::game::fe::festaterewards::callee::UI_OBJECT_CTOR;
+    pub(crate) use crate::game::worldpainter::quadtree::callee::AI_VFX_MAN_CTOR;
     pub(crate) use crate::game::worldpainter::quadtree::callee::BUILTIN_DELETE_2 as BUILTIN_DELETE;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::PS2_SOUND_MANAGER_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::STREAM_BUFFER_SET_FILE;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::STREAM_BUFFER_STOP;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::SPEECH_INSTANCE_STOP_STREAM;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::SONG_GET_STREAM_STATUS;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::SONG_POST_EVENT;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::SONG_FADE_OUT;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::SNDSTRM_GET_REQUEST_STATUS;
+    pub(crate) use crate::game::worldpainter::quadtree::callee::CONSOLE_CONFIG_CTOR;
+    pub(crate) use crate::game::worldpainter::quadtree::callee::EA_MEM_ALLOC;
+    pub(crate) use crate::game::worldpainter::quadtree::callee::EMITTER_RENDER;
+    pub(crate) use crate::game::worldpainter::quadtree::callee::GET_TRANSFORM_BOUNDS;
+    pub(crate) use crate::game::worldpainter::quadtree::callee::GRAPHICS_MAN_CTOR;
+    pub(crate) use crate::game::worldpainter::quadtree::callee::GRAPHICS_ON_VIF1_DMA_END;
+    pub(crate) use crate::game::worldpainter::quadtree::callee::INTC_REMOVE_HANDLER;
     pub(crate) use crate::game::worldpainter::quadtree::callee::MEM_CARD_CTOR;
     pub(crate) use crate::game::worldpainter::quadtree::callee::MEM_CARD_INIT;
     pub(crate) use crate::game::worldpainter::quadtree::callee::MEM_CARD_SET_STATE;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::CONSOLE_CONFIG_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::STRCPY;
     pub(crate) use crate::game::worldpainter::quadtree::callee::MENU_ITEM_MEASURE_ROW;
+    pub(crate) use crate::game::worldpainter::quadtree::callee::MOD_OBJ_CTOR;
+    pub(crate) use crate::game::worldpainter::quadtree::callee::PS2_SOUND_MANAGER_CTOR;
+    pub(crate) use crate::game::worldpainter::quadtree::callee::SNDSTRM_GET_REQUEST_STATUS;
+    pub(crate) use crate::game::worldpainter::quadtree::callee::SONG_FADE_OUT;
+    pub(crate) use crate::game::worldpainter::quadtree::callee::SONG_GET_STREAM_STATUS;
+    pub(crate) use crate::game::worldpainter::quadtree::callee::SONG_POST_EVENT;
+    pub(crate) use crate::game::worldpainter::quadtree::callee::SPEECH_INSTANCE_STOP_STREAM;
     pub(crate) use crate::game::worldpainter::quadtree::callee::STATS_MAN_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::AI_VFX_MAN_CTOR;
+    pub(crate) use crate::game::worldpainter::quadtree::callee::STRCPY;
+    pub(crate) use crate::game::worldpainter::quadtree::callee::STREAM_BUFFER_SET_FILE;
+    pub(crate) use crate::game::worldpainter::quadtree::callee::STREAM_BUFFER_STOP;
     pub(crate) use crate::game::worldpainter::quadtree::callee::VFX_MAN_CTOR;
     pub(crate) use crate::game::worldpainter::quadtree::callee::WORLD_GET_SECTION_SCRIPT_FUNC;
     pub(crate) use crate::game::worldpainter::quadtree::callee::WORLD_OBJ_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::MOD_OBJ_CTOR;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::GET_TRANSFORM_BOUNDS;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::INTC_REMOVE_HANDLER;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::EMITTER_RENDER;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::GRAPHICS_ON_VIF1_DMA_END;
-    pub(crate) use crate::game::worldpainter::quadtree::callee::GRAPHICS_MAN_CTOR;
-    pub(crate) use crate::game::fe::festaterewards::callee::SEQ_LISTENER_ON_START;
-    pub(crate) use crate::game::fe::festaterewards::callee::SEQ_LISTENER_ON_STOP;
-    pub(crate) use crate::game::fe::festaterewards::callee::GET_SEQ_PROCESS_ID;
-    pub(crate) use crate::game::fe::festaterewards::callee::SCRIPT_LIST_ON_SEQ_START;
-    pub(crate) use crate::game::fe::festaterewards::callee::SCRIPT_LIST_ON_SEQ_STOPPED;
-    pub(crate) use crate::game::fe::festaterewards::callee::SCRIPT_BINDING_CLEAR_LISTENER;
-    pub(crate) use crate::game::fe::festaterewards::callee::MENU_ITEM_GET_INPUT_CODE;
-    pub(crate) use crate::game::fe::festaterewards::callee::MENU_ITEM_IS_DISABLED;
-    pub(crate) use crate::game::fe::festaterewards::callee::MENU_ITEM_HANDLE_INPUT;
-    pub(crate) use crate::game::fe::festaterewards::callee::MENU_PAGE_VALIDATE_SELECTION;
-    pub(crate) use crate::game::fe::festaterewards::callee::MENU_PUSH_PAGE;
-    pub(crate) use crate::game::fe::festaterewards::callee::MENU_FORMAT_FLOAT;
-    pub(crate) use crate::game::fe::festaterewards::callee::MENU_ITEM_DRAW_ROW;
-    pub(crate) use crate::game::fe::festaterewards::callee::IN_SEQ_INSTANCE_SETUP;
-    pub(crate) use crate::game::fe::festaterewards::callee::LIGHT_MAN_EMPTY_HOOK;
-    pub(crate) use crate::game::fe::festaterewards::callee::UI_OBJECT_CTOR;
-    pub(crate) use crate::game::fe::festaterewards::callee::UI_LIST_CTOR;
-    pub(crate) use crate::game::fe::festaterewards::callee::CUI_TEXT_SCROLL_SET_NAV_BUTTONS;
-    pub(crate) use crate::game::fe::festaterewards::callee::FE_STATE_CTOR;
-    pub(crate) use crate::game::fe::festaterewards::callee::REWARD_GALLERY_CTOR;
-    pub(crate) use crate::game::fe::festaterewards::callee::AI_VISUAL_EFFECTS_MAN_CTOR;
 }
-
 
 /// `void cAirStreamerFX_Reset(cAirStreamerFX *this)` (0x2ef6a0): reset the
 /// streamer and set its id from the owning rider's id.
@@ -248,7 +347,6 @@ pub fn c_air_streamer_fx_reset(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 // ---------------------------------------------------------------------------
 // Visual effects.
 
@@ -266,9 +364,13 @@ pub fn ai_visual_effects_man_ctor(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
-pub(crate) const AIR: Streamer = Streamer { this: T6, points: air::POINTS, count: air::COUNT, tmp: 0x1380, half: 0x9c0 };
-
+pub(crate) const AIR: Streamer = Streamer {
+    this: T6,
+    points: air::POINTS,
+    count: air::COUNT,
+    tmp: 0x1380,
+    half: 0x9c0,
+};
 
 /// `void cAirStreamerFX_Render(cAirStreamerFX *fx)` (0x2ef950): with at
 /// least two segments, push a GS state (textured with `gfx+0x1044` when
@@ -300,7 +402,6 @@ pub fn c_air_streamer_fx_render(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 pub(crate) fn air_draw(c: &mut Cpu, frame: Frame) -> Flow {
     let sp = r32(c, SP);
@@ -538,7 +639,6 @@ pub(crate) fn air_draw(c: &mut Cpu, frame: Frame) -> Flow {
     Ok(())
 }
 
-
 // ---------------------------------------------------------------------------
 // World-painter irradiance names.
 
@@ -549,13 +649,11 @@ pub fn world_painter_get_irradiance_name0(c: &mut Cpu) {
     world_painter_irradiance_name(c, 0x002e_f128, 0x128, 0x12c);
 }
 
-
 /// `const char* func_002EF140(void)` (0x2ef140): the name of irradiance slot
 /// 1 (see [`world_painter_get_irradiance_name0`]).
 pub fn world_painter_get_irradiance_name1(c: &mut Cpu) {
     world_painter_irradiance_name(c, 0x002e_f180, 0x130, 0x134);
 }
-
 
 /// The shared body of the two name getters: `gp+0xa74` set means "return the
 /// global name", else `vt[slot]` of the object in `D_004FA370`.
@@ -592,7 +690,6 @@ pub(crate) fn world_painter_irradiance_name(c: &mut Cpu, ret: u32, delta_off: u3
     })
 }
 
-
 /// `void cAirStreamerFX_Update(cAirStreamerFX* self)` (0x2ef6d0): append the
 /// rider's wake points to the ribbon (once per other AI frame), keep the live
 /// slot count near two, and advance the texture start by the wake length,
@@ -604,7 +701,6 @@ pub fn c_air_streamer_fx_update(c: &mut Cpu) {
         air_streamer_at(c, frame, c.pc)
     })
 }
-
 
 pub(crate) fn air_streamer_at(c: &mut Cpu, frame: Frame, pc: u32) -> Flow {
     match pc {
@@ -649,7 +745,6 @@ pub(crate) fn air_streamer_at(c: &mut Cpu, frame: Frame, pc: u32) -> Flow {
         }
     }
 }
-
 
 /// 0x2ef6f4: fetch the three bone points of the ribbon (the rider's two wake
 /// bones and their up axis) to the stack, scaled by 90 degrees.
@@ -708,7 +803,6 @@ pub(crate) fn air_build(c: &mut Cpu, frame: Frame) -> Flow {
     air_build_second(c, frame)
 }
 
-
 /// 0x2ef7bc: write the new point and the difference vector into the ribbon,
 /// then let the AI frame counter decide whether to append.
 pub(crate) fn air_build_second(c: &mut Cpu, frame: Frame) -> Flow {
@@ -740,7 +834,11 @@ pub(crate) fn air_build_second(c: &mut Cpu, frame: Frame) -> Flow {
     call_ptr(c, 0x0012_98c8, 0x002e_f820)?;
     let ai_frame = r32(c, V0);
     c.g[V0][0] &= 1;
-    let skip = if tick::rate(c) == 60 { c.g[V0][0] != 0 } else { !air_ring_due(c, ai_frame) };
+    let skip = if tick::rate(c) == 60 {
+        c.g[V0][0] != 0
+    } else {
+        !air_ring_due(c, ai_frame)
+    };
     if skip {
         c.g[V0][0] = Addr(r32(c, S0)).lw(c);
         air_length(c, frame)
@@ -748,7 +846,6 @@ pub(crate) fn air_build_second(c: &mut Cpu, frame: Frame) -> Flow {
         air_step(c, frame)
     }
 }
-
 
 /// Above 60 Hz: whether the air streamer records a point this tick. The
 /// original records on even AI frames (ticks), every other 60 Hz frame: 30
@@ -762,7 +859,6 @@ pub(crate) fn air_ring_due(c: &mut Cpu, ai_frame: u32) -> bool {
     now != frame60(ai_frame.wrapping_sub(1)) && now % 2 == 0
 }
 
-
 /// 0x2ef82c: advance the tail index.
 pub(crate) fn air_step(c: &mut Cpu, frame: Frame) -> Flow {
     c.cycles += 7;
@@ -773,7 +869,6 @@ pub(crate) fn air_step(c: &mut Cpu, frame: Frame) -> Flow {
     c.sw(p(r32(c, S0), air_streamer::HEAD), c.g[V0][0]);
     air_limit(c, frame)
 }
-
 
 /// 0x2ef848: wrap the head index at the limit.
 pub(crate) fn air_limit(c: &mut Cpu, frame: Frame) -> Flow {
@@ -791,7 +886,6 @@ pub(crate) fn air_limit(c: &mut Cpu, frame: Frame) -> Flow {
     }
 }
 
-
 /// 0x2ef860.
 pub(crate) fn air_tail_bump(c: &mut Cpu, frame: Frame) -> Flow {
     c.cycles += 2;
@@ -799,7 +893,6 @@ pub(crate) fn air_tail_bump(c: &mut Cpu, frame: Frame) -> Flow {
     c.sw(p(r32(c, S0), air_streamer::COUNT), c.g[V0][0]);
     air_copy(c, frame)
 }
-
 
 /// 0x2ef868: copy the head point onto the tail point.
 pub(crate) fn air_copy(c: &mut Cpu, frame: Frame) -> Flow {
@@ -816,7 +909,6 @@ pub(crate) fn air_copy(c: &mut Cpu, frame: Frame) -> Flow {
     c.sq(2, p(r32(c, V1), 0x10));
     air_load_owner(c, frame)
 }
-
 
 /// 0x2ef894: `Approach(count, 2)` — the slot count jumps by two when it is
 /// long enough, else falls back to the negative side (0x2ef8a4).
@@ -849,7 +941,6 @@ pub(crate) fn air_approach_count(c: &mut Cpu, frame: Frame) -> Flow {
     air_store_count(c, frame)
 }
 
-
 /// 0x2ef8a4: the negative half of the index adjustment (reached by hand).
 pub(crate) fn air_approach_count_neg(c: &mut Cpu, frame: Frame) -> Flow {
     c.cycles += 4;
@@ -863,7 +954,6 @@ pub(crate) fn air_approach_count_neg(c: &mut Cpu, frame: Frame) -> Flow {
     air_store_count(c, frame)
 }
 
-
 /// 0x2ef8b4.
 pub(crate) fn air_store_count(c: &mut Cpu, frame: Frame) -> Flow {
     c.cycles += 1;
@@ -871,14 +961,12 @@ pub(crate) fn air_store_count(c: &mut Cpu, frame: Frame) -> Flow {
     air_load_owner(c, frame)
 }
 
-
 /// 0x2ef8b8.
 pub(crate) fn air_load_owner(c: &mut Cpu, frame: Frame) -> Flow {
     c.cycles += 1;
     c.g[V0][0] = Addr(r32(c, S0)).lw(c);
     air_length(c, frame)
 }
-
 
 /// 0x2ef8bc: advance the texture start by the wake length (a VU0 dot product
 /// and vsqrt).
@@ -912,7 +1000,6 @@ pub(crate) fn air_length(c: &mut Cpu, frame: Frame) -> Flow {
     }
 }
 
-
 /// 0x2ef908.
 pub(crate) fn air_start_increase(c: &mut Cpu, frame: Frame) -> Flow {
     c.cycles += 4;
@@ -922,7 +1009,6 @@ pub(crate) fn air_start_increase(c: &mut Cpu, frame: Frame) -> Flow {
     c.swc1(0, p(r32(c, S0), air_streamer::START));
     air_start_clamp(c, frame)
 }
-
 
 /// 0x2ef918: wrap the texture start to [0, 1].
 pub(crate) fn air_start_clamp(c: &mut Cpu, frame: Frame) -> Flow {
@@ -939,7 +1025,6 @@ pub(crate) fn air_start_clamp(c: &mut Cpu, frame: Frame) -> Flow {
     air_start_subtract(c, frame)
 }
 
-
 /// 0x2ef934.
 pub(crate) fn air_start_subtract(c: &mut Cpu, frame: Frame) -> Flow {
     c.cycles += 3;
@@ -949,7 +1034,6 @@ pub(crate) fn air_start_subtract(c: &mut Cpu, frame: Frame) -> Flow {
     air_exit(c, frame)
 }
 
-
 /// 0x2ef940: the epilogue.
 pub(crate) fn air_exit(c: &mut Cpu, frame: Frame) -> Flow {
     c.cycles += 3;
@@ -957,9 +1041,8 @@ pub(crate) fn air_exit(c: &mut Cpu, frame: Frame) -> Flow {
     frame.close(c);
     Ok(())
 }
- // the world pointer (D_004A28A8)
+// the world pointer (D_004A28A8)
 pub(crate) const WORLD_PAINTER_TABLE: u32 = 0x004f_a370;
-
 
 // ---------------------------------------------------------------------------
 // World painter.
@@ -1002,7 +1085,6 @@ pub fn world_painter_get_lighting28(c: &mut Cpu) {
     })
 }
 
-
 /// `float WorldPainter_GetLighting30(void* p)` (0x2eefa8): the same through
 /// render-state entry `i`'s object at_2 `+0x1c`, virtual slot 42.
 pub fn world_painter_get_lighting30(c: &mut Cpu) {
@@ -1030,7 +1112,6 @@ pub fn world_painter_get_lighting30(c: &mut Cpu) {
     })
 }
 
-
 /// The table of world-painter view records (`D_004FA370`); each entry is
 /// 0xf0 bytes.
 pub(crate) const WP_VIEWS: u32 = 0x004f_a370;
@@ -1039,7 +1120,6 @@ pub(crate) const WP_ENTRY_SIZE: u32 = 0xf0;
 
 /// The screen tint/fill overrides switch (`D_004A3B60`, `gp+0xa70`).
 pub(crate) const SCREEN_OVERRIDES: u32 = 0xa70;
-
 
 // ---------------------------------------------------------------------------
 // WorldPainter virtual getters.
@@ -1083,7 +1163,6 @@ pub(crate) fn world_painter_virtual_getter(c: &mut Cpu, table_off: u32, vt_off: 
         Ok(())
     })
 }
-
 
 /// The tint/fill family: like [`world_painter_virtual_getter`], but guarded
 /// by the screen-override global (`gp+0xa70`): when it is set the function
@@ -1146,7 +1225,6 @@ pub(crate) fn world_painter_guarded_getter(
     })
 }
 
-
 /// The constant a guarded getter returns when the screen overrides are on.
 #[derive(Clone, Copy)]
 pub(crate) enum GetterDefault {
@@ -1156,30 +1234,25 @@ pub(crate) enum GetterDefault {
     Zero,
 }
 
-
 /// `float WorldPainter_GetFog18(int index)` (0x2eea50): vt slot `+0x48`.
 pub fn world_painter_get_fog18(c: &mut Cpu) {
     world_painter_virtual_getter(c, 0x4, 0x48, 0x002e_ea88);
 }
-
 
 /// `float WorldPainter_GetFog20(int index)` (0x2eea98): vt slot `+0x50`.
 pub fn world_painter_get_fog20(c: &mut Cpu) {
     world_painter_virtual_getter(c, 0x4, 0x50, 0x002e_ead0);
 }
 
-
 /// `float WorldPainter_GetFog28(int index)` (0x2eeae0): vt slot `+0x58`.
 pub fn world_painter_get_fog28(c: &mut Cpu) {
     world_painter_virtual_getter(c, 0x4, 0x58, 0x002e_eb18);
 }
 
-
 /// `float WorldPainter_GetFog30(int index)` (0x2eeb28): vt slot `+0x60`.
 pub fn world_painter_get_fog30(c: &mut Cpu) {
     world_painter_virtual_getter(c, 0x4, 0x60, 0x002e_eb60);
 }
-
 
 /// `float WorldPainter_GetScreenTintRed(int index)` (0x2eeb70): vt slot
 /// `+0xa0`; 1.0f when the screen overrides are on.
@@ -1187,13 +1260,11 @@ pub fn world_painter_get_screen_tint_red(c: &mut Cpu) {
     world_painter_guarded_getter(c, 0xa0, 0x002e_ebc0, GetterDefault::One);
 }
 
-
 /// `float WorldPainter_GetScreenTintGreen(int index)` (0x2eebd0): vt slot
 /// `+0xa8`; 1.0f when the screen overrides are on.
 pub fn world_painter_get_screen_tint_green(c: &mut Cpu) {
     world_painter_guarded_getter(c, 0xa8, 0x002e_ec20, GetterDefault::One);
 }
-
 
 /// `float WorldPainter_GetScreenTintBlue(int index)` (0x2eec30): vt slot
 /// `+0xb0`; 1.0f when the screen overrides are on.
@@ -1201,13 +1272,11 @@ pub fn world_painter_get_screen_tint_blue(c: &mut Cpu) {
     world_painter_guarded_getter(c, 0xb0, 0x002e_ec80, GetterDefault::One);
 }
 
-
 /// `float WorldPainter_GetScreenFillRed(int index)` (0x2eec90): vt slot
 /// `+0xb8`; 0.0f when the screen overrides are on.
 pub fn world_painter_get_screen_fill_red(c: &mut Cpu) {
     world_painter_guarded_getter(c, 0xb8, 0x002e_ecdc, GetterDefault::Zero);
 }
-
 
 /// `float WorldPainter_GetScreenFillGreen(int index)` (0x2eecf0): vt slot
 /// `+0xc0`; 0.0f when the screen overrides are on.
@@ -1215,13 +1284,11 @@ pub fn world_painter_get_screen_fill_green(c: &mut Cpu) {
     world_painter_guarded_getter(c, 0xc0, 0x002e_ed3c, GetterDefault::Zero);
 }
 
-
 /// `float WorldPainter_GetScreenFillBlue(int index)` (0x2eed50): vt slot
 /// `+0xc8`; 0.0f when the screen overrides are on.
 pub fn world_painter_get_screen_fill_blue(c: &mut Cpu) {
     world_painter_guarded_getter(c, 0xc8, 0x002e_ed9c, GetterDefault::Zero);
 }
-
 
 /// One `WorldPainter_Get*` accessor: the painter index goes in a0, the value
 /// comes back in f0.
@@ -1229,7 +1296,6 @@ pub(crate) fn painter_get(c: &mut Cpu, addr: u32, ret: u32, f: GuestFn, index: u
     c.g[A0][0] = index;
     Callee { addr, f }.call(c, ret)
 }
-
 
 /// Store the previous accessor's result at `cache + slot + off` and call the
 /// next accessor (the interleaved store/call pattern of the cache loop).
@@ -1249,7 +1315,6 @@ pub(crate) fn painter_step(
     c.swc1(0, dst);
     Callee { addr, f }.call(c, ret)
 }
-
 
 /// `void PS2VisualEffectsMan_ApplyWorldPainter(cache, int index)` (0x2f00a0):
 /// copy the world painter's parameters for `index` into the effects
@@ -1283,19 +1348,55 @@ pub fn ps2_visual_effects_man_apply_world_painter(c: &mut Cpu) {
             // First use: latch the fog / tint / weather parameters.
             c.cycles += 35;
             c.g[S0][0] = 0x0050_0000;
-            painter_get(c, 0x002e_e9c0, 0x002f_00d8, wp::WorldPainter_GetFog08, index)?;
+            painter_get(
+                c,
+                0x002e_e9c0,
+                0x002f_00d8,
+                wp::WorldPainter_GetFog08,
+                index,
+            )?;
             c.g[V0][0] = 1;
             c.sw(gp_2(c, 0x1244), c.g[V0][0]);
             c.swc1(0, gp_2(c, 0x1248));
-            painter_get(c, 0x002e_ea08, 0x002f_00ec, wp::WorldPainter_GetFog10, index)?;
+            painter_get(
+                c,
+                0x002e_ea08,
+                0x002f_00ec,
+                wp::WorldPainter_GetFog10,
+                index,
+            )?;
             c.swc1(0, gp_2(c, 0x123c));
-            painter_get(c, 0x002e_ea50, 0x002f_00f8, wp::WorldPainter_GetFog18, index)?;
+            painter_get(
+                c,
+                0x002e_ea50,
+                0x002f_00f8,
+                wp::WorldPainter_GetFog18,
+                index,
+            )?;
             c.swc1(0, gp_2(c, 0x1240));
-            painter_get(c, 0x002e_ea98, 0x002f_0104, wp::WorldPainter_GetFog20, index)?;
+            painter_get(
+                c,
+                0x002e_ea98,
+                0x002f_0104,
+                wp::WorldPainter_GetFog20,
+                index,
+            )?;
             c.mov_s(21, 0);
-            painter_get(c, 0x002e_eae0, 0x002f_0110, wp::WorldPainter_GetFog28, index)?;
+            painter_get(
+                c,
+                0x002e_eae0,
+                0x002f_0110,
+                wp::WorldPainter_GetFog28,
+                index,
+            )?;
             c.mov_s(20, 0);
-            painter_get(c, 0x002e_eb28, 0x002f_011c, wp::WorldPainter_GetFog30, index)?;
+            painter_get(
+                c,
+                0x002e_eb28,
+                0x002f_011c,
+                wp::WorldPainter_GetFog30,
+                index,
+            )?;
             c.g[AT][0] = 0x3f80_0000;
             c.mtc1(1, 1);
             c.swc1(21, frame.at(c, 4));
@@ -1322,19 +1423,61 @@ pub fn ps2_visual_effects_man_apply_world_painter(c: &mut Cpu) {
         if !have_tint {
             c.cycles += 29;
             c.g[S0][0] = 0;
-            painter_get(c, 0x002e_eb70, 0x002f_0170, wp::WorldPainter_GetScreenTintRed, index)?;
+            painter_get(
+                c,
+                0x002e_eb70,
+                0x002f_0170,
+                wp::WorldPainter_GetScreenTintRed,
+                index,
+            )?;
             c.swc1(0, gp_2(c, 0x14f4));
-            painter_get(c, 0x002e_ebd0, 0x002f_017c, wp::WorldPainter_GetScreenTintGreen, index)?;
+            painter_get(
+                c,
+                0x002e_ebd0,
+                0x002f_017c,
+                wp::WorldPainter_GetScreenTintGreen,
+                index,
+            )?;
             c.swc1(0, gp_2(c, 0x14f8));
-            painter_get(c, 0x002e_ec30, 0x002f_0188, wp::WorldPainter_GetScreenTintBlue, index)?;
+            painter_get(
+                c,
+                0x002e_ec30,
+                0x002f_0188,
+                wp::WorldPainter_GetScreenTintBlue,
+                index,
+            )?;
             c.swc1(0, gp_2(c, 0x14fc));
-            painter_get(c, 0x002e_ec90, 0x002f_0194, wp::WorldPainter_GetScreenFillRed, index)?;
+            painter_get(
+                c,
+                0x002e_ec90,
+                0x002f_0194,
+                wp::WorldPainter_GetScreenFillRed,
+                index,
+            )?;
             c.swc1(0, gp_2(c, 0x1500));
-            painter_get(c, 0x002e_ecf0, 0x002f_01a0, wp::WorldPainter_GetScreenFillGreen, index)?;
+            painter_get(
+                c,
+                0x002e_ecf0,
+                0x002f_01a0,
+                wp::WorldPainter_GetScreenFillGreen,
+                index,
+            )?;
             c.swc1(0, gp_2(c, 0x1504));
-            painter_get(c, 0x002e_ed50, 0x002f_01ac, wp::WorldPainter_GetScreenFillBlue, index)?;
+            painter_get(
+                c,
+                0x002e_ed50,
+                0x002f_01ac,
+                wp::WorldPainter_GetScreenFillBlue,
+                index,
+            )?;
             c.swc1(0, gp_2(c, 0x1508));
-            painter_get(c, 0x002e_e738, 0x002f_01b8, wp::WorldPainter_GetWeather58, index)?;
+            painter_get(
+                c,
+                0x002e_e738,
+                0x002f_01b8,
+                wp::WorldPainter_GetWeather58,
+                index,
+            )?;
             c.swc1(0, gp_2(c, 0x1524));
             c.g[A0][0] = 1;
             c.g[V0][0] = c.lw(gp_2(c, -0x848));
@@ -1347,8 +1490,11 @@ pub fn ps2_visual_effects_man_apply_world_painter(c: &mut Cpu) {
             } else {
                 c.cycles += 4;
                 c.g[A0][0] = c.g[V1][0];
-                Callee { addr: 0x002f_7be0, f: wp::PS2VisualEffectsMan_IsHandleNull }
-                    .call(c, 0x002f_01e0)?;
+                Callee {
+                    addr: 0x002f_7be0,
+                    f: wp::PS2VisualEffectsMan_IsHandleNull,
+                }
+                .call(c, 0x002f_01e0)?;
                 if c.g[V0][0] == 0 {
                     c.sw(gp_2(c, 0x151c), c.g[S0][0]);
                     store_again = false;
@@ -1371,19 +1517,61 @@ pub fn ps2_visual_effects_man_apply_world_painter(c: &mut Cpu) {
         c.g[S0][0] = sx((c.g[S1][0] as u32) << 2);
         if !have_glow {
             c.cycles += 22;
-            painter_get(c, 0x002e_edb0, 0x002f_0204, wp::WorldPainter_GetLightGlow08, index)?;
+            painter_get(
+                c,
+                0x002e_edb0,
+                0x002f_0204,
+                wp::WorldPainter_GetLightGlow08,
+                index,
+            )?;
             c.swc1(0, gp_2(c, 0x12e4));
-            painter_get(c, 0x002e_edf8, 0x002f_0210, wp::WorldPainter_GetLightGlow10, index)?;
+            painter_get(
+                c,
+                0x002e_edf8,
+                0x002f_0210,
+                wp::WorldPainter_GetLightGlow10,
+                index,
+            )?;
             c.swc1(0, gp_2(c, 0x12e8));
-            painter_get(c, 0x002e_ee40, 0x002f_021c, wp::WorldPainter_GetLightGlow18, index)?;
+            painter_get(
+                c,
+                0x002e_ee40,
+                0x002f_021c,
+                wp::WorldPainter_GetLightGlow18,
+                index,
+            )?;
             c.swc1(0, gp_2(c, 0x12ec));
-            painter_get(c, 0x002e_ee88, 0x002f_0228, wp::WorldPainter_GetLightGlow20, index)?;
+            painter_get(
+                c,
+                0x002e_ee88,
+                0x002f_0228,
+                wp::WorldPainter_GetLightGlow20,
+                index,
+            )?;
             c.swc1(0, gp_2(c, 0x12f0));
-            painter_get(c, 0x002e_eed0, 0x002f_0234, wp::WorldPainter_GetLightGlow28, index)?;
+            painter_get(
+                c,
+                0x002e_eed0,
+                0x002f_0234,
+                wp::WorldPainter_GetLightGlow28,
+                index,
+            )?;
             c.swc1(0, gp_2(c, 0x12f4));
-            painter_get(c, 0x002e_ef18, 0x002f_0240, wp::WorldPainter_GetLightGlow30, index)?;
+            painter_get(
+                c,
+                0x002e_ef18,
+                0x002f_0240,
+                wp::WorldPainter_GetLightGlow30,
+                index,
+            )?;
             c.swc1(0, gp_2(c, 0x1300));
-            painter_get(c, 0x002e_ef60, 0x002f_024c, wp::WorldPainter_GetLightGlow38, index)?;
+            painter_get(
+                c,
+                0x002e_ef60,
+                0x002f_024c,
+                wp::WorldPainter_GetLightGlow38,
+                index,
+            )?;
             c.swc1(0, gp_2(c, 0x1304));
             c.g[S0][0] = sx((c.g[S1][0] as u32) << 2);
         }
@@ -1398,20 +1586,141 @@ pub fn ps2_visual_effects_man_apply_world_painter(c: &mut Cpu) {
         c.g[A0][0] = index;
         let dst = at(c.g[V0][0], 0x8c);
         c.sw(dst, c.g[V1][0]);
-        Callee { addr: 0x002e_f038, f: wp::WorldPainter_GetSurface08 }.call(c, 0x002f_0268)?;
-        painter_step(c, index, cache, slot, 0xac, 0x002e_e3b8, 0x002f_0278, wp::WorldPainter_GetCamera08)?;
-        painter_step(c, index, cache, slot, 0xcc, 0x002e_e9c0, 0x002f_0288, wp::WorldPainter_GetFog08)?;
-        painter_step(c, index, cache, slot, 0xec, 0x002e_ea98, 0x002f_0298, wp::WorldPainter_GetFog20)?;
-        painter_step(c, index, cache, slot, 0x10c, 0x002e_eae0, 0x002f_02a8, wp::WorldPainter_GetFog28)?;
-        painter_step(c, index, cache, slot, 0x12c, 0x002e_eb28, 0x002f_02b8, wp::WorldPainter_GetFog30)?;
-        painter_step(c, index, cache, slot, 0x14c, 0x002e_ea08, 0x002f_02c8, wp::WorldPainter_GetFog10)?;
-        painter_step(c, index, cache, slot, 0x16c, 0x002e_ea50, 0x002f_02d8, wp::WorldPainter_GetFog18)?;
-        painter_step(c, index, cache, slot, 0x18c, 0x002e_eb70, 0x002f_02e8, wp::WorldPainter_GetScreenTintRed)?;
-        painter_step(c, index, cache, slot, 0x1ac, 0x002e_ebd0, 0x002f_02f8, wp::WorldPainter_GetScreenTintGreen)?;
-        painter_step(c, index, cache, slot, 0x1cc, 0x002e_ec30, 0x002f_0308, wp::WorldPainter_GetScreenTintBlue)?;
-        painter_step(c, index, cache, slot, 0x1ec, 0x002e_ec90, 0x002f_0318, wp::WorldPainter_GetScreenFillRed)?;
-        painter_step(c, index, cache, slot, 0x20c, 0x002e_ecf0, 0x002f_0328, wp::WorldPainter_GetScreenFillGreen)?;
-        painter_step(c, index, cache, slot, 0x22c, 0x002e_ed50, 0x002f_0338, wp::WorldPainter_GetScreenFillBlue)?;
+        Callee {
+            addr: 0x002e_f038,
+            f: wp::WorldPainter_GetSurface08,
+        }
+        .call(c, 0x002f_0268)?;
+        painter_step(
+            c,
+            index,
+            cache,
+            slot,
+            0xac,
+            0x002e_e3b8,
+            0x002f_0278,
+            wp::WorldPainter_GetCamera08,
+        )?;
+        painter_step(
+            c,
+            index,
+            cache,
+            slot,
+            0xcc,
+            0x002e_e9c0,
+            0x002f_0288,
+            wp::WorldPainter_GetFog08,
+        )?;
+        painter_step(
+            c,
+            index,
+            cache,
+            slot,
+            0xec,
+            0x002e_ea98,
+            0x002f_0298,
+            wp::WorldPainter_GetFog20,
+        )?;
+        painter_step(
+            c,
+            index,
+            cache,
+            slot,
+            0x10c,
+            0x002e_eae0,
+            0x002f_02a8,
+            wp::WorldPainter_GetFog28,
+        )?;
+        painter_step(
+            c,
+            index,
+            cache,
+            slot,
+            0x12c,
+            0x002e_eb28,
+            0x002f_02b8,
+            wp::WorldPainter_GetFog30,
+        )?;
+        painter_step(
+            c,
+            index,
+            cache,
+            slot,
+            0x14c,
+            0x002e_ea08,
+            0x002f_02c8,
+            wp::WorldPainter_GetFog10,
+        )?;
+        painter_step(
+            c,
+            index,
+            cache,
+            slot,
+            0x16c,
+            0x002e_ea50,
+            0x002f_02d8,
+            wp::WorldPainter_GetFog18,
+        )?;
+        painter_step(
+            c,
+            index,
+            cache,
+            slot,
+            0x18c,
+            0x002e_eb70,
+            0x002f_02e8,
+            wp::WorldPainter_GetScreenTintRed,
+        )?;
+        painter_step(
+            c,
+            index,
+            cache,
+            slot,
+            0x1ac,
+            0x002e_ebd0,
+            0x002f_02f8,
+            wp::WorldPainter_GetScreenTintGreen,
+        )?;
+        painter_step(
+            c,
+            index,
+            cache,
+            slot,
+            0x1cc,
+            0x002e_ec30,
+            0x002f_0308,
+            wp::WorldPainter_GetScreenTintBlue,
+        )?;
+        painter_step(
+            c,
+            index,
+            cache,
+            slot,
+            0x1ec,
+            0x002e_ec90,
+            0x002f_0318,
+            wp::WorldPainter_GetScreenFillRed,
+        )?;
+        painter_step(
+            c,
+            index,
+            cache,
+            slot,
+            0x20c,
+            0x002e_ecf0,
+            0x002f_0328,
+            wp::WorldPainter_GetScreenFillGreen,
+        )?;
+        painter_step(
+            c,
+            index,
+            cache,
+            slot,
+            0x22c,
+            0x002e_ed50,
+            0x002f_0338,
+            wp::WorldPainter_GetScreenFillBlue,
+        )?;
 
         c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[S0][0] as u32)));
         frame.restore(c, S1, 0x30);
@@ -1427,7 +1736,6 @@ pub fn ps2_visual_effects_man_apply_world_painter(c: &mut Cpu) {
     })
 }
 
-
 /// `void WorldPainter_SetScriptSurfaceMode(WorldPainter* p)` (0x2ef368):
 /// remembers the painter (`D_004A3B5C`) and whether it is non-null
 /// (`D_004A4444`, as the 0/1 `v0`).
@@ -1440,7 +1748,6 @@ pub fn world_painter_set_script_surface_mode(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void* PS2AIVisualEffectsMan_Create()` (0x2f0390): allocate the 8-byte AI
 /// effects manager and construct it.
 pub fn ps2_ai_visual_effects_man_create(c: &mut Cpu) {
@@ -1450,7 +1757,6 @@ pub fn ps2_ai_visual_effects_man_create(c: &mut Cpu) {
         })
     })
 }
-
 
 /// `void* PS2VisualEffectsMan_Create()` (0x2f0510): allocate the 0x48-byte
 /// visual effects manager and construct it.
@@ -1462,10 +1768,8 @@ pub fn ps2_visual_effects_man_create(c: &mut Cpu) {
     })
 }
 
-
 /// `strcpy` (0x4166f4) — reached through the function table.
 pub(crate) const STRLEN_AND_STRCPY: u32 = 0x0041_66f4;
-
 
 // ---------------------------------------------------------------------------
 // WorldPainter_SetIrradianceOverride.
@@ -1499,7 +1803,6 @@ pub fn world_painter_set_irradiance_override(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `const char* WorldPainter_GetIrradianceName2(void)` (0x2ef198): the static
 /// fallback name when no world painter is live, else the painter's name.
@@ -1540,7 +1843,6 @@ pub fn world_painter_get_irradiance_name2(c: &mut Cpu) {
     })
 }
 
-
 /// `PS2AIVisualEffectsMan* PS2AIVisualEffectsMan_ctor(PS2AIVisualEffectsMan* m)`
 /// (0x2f03c8): construct the AI visual-effects manager, allocating and
 /// initialising its avalanche effect.
@@ -1576,7 +1878,6 @@ pub fn ps2_ai_visual_effects_man_ctor(c: &mut Cpu) {
         Ok(())
     });
 }
-
 
 // ---------------------------------------------------------------------------
 // Destructors / save methods.
@@ -1636,112 +1937,131 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::driven;
+    use crate::difftest::events::schedule;
+    use crate::difftest::fakes;
+    use crate::difftest::fakes::covered;
+    use crate::difftest::fakes::machine;
+    use crate::difftest::fakes::ptr;
+    use crate::difftest::fakes::vtable;
+    use crate::difftest::fakes::FAKE;
+    use crate::difftest::fakes::LOG_RESULTS;
+    use crate::difftest::fill;
+    use crate::difftest::put_vec;
+    use crate::difftest::put_words;
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::fakes::covered;
-    use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::fill;
-    use crate::difftest::fakes;
-    use crate::difftest::put_words;
-    use ssx3_ee as ee;
-    use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::SP;
-    use crate::difftest::fakes::vtable;
-    use crate::difftest::put_vec;
-    use crate::difftest::events::check_events;
-    use crate::difftest::events::driven;
-    use crate::difftest::events::schedule;
     use crate::difftest::RA as SENTINEL_RA;
-    use crate::difftest::SP as STACK_TOP;
-    use crate::difftest::fakes::ptr;
     use crate::difftest::RA as TEST_RA;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::SEEDS;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::slot;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::delta;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::gfx_fixture;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::streamer_rider;
-    pub(crate) use crate::game::ai::rider::tests::put_world_2 as put_world;
+    use crate::difftest::SP;
+    use crate::difftest::SP as STACK_TOP;
+    pub(crate) use crate::game::ai::ai::tests::slot as slot_2;
+    pub(crate) use crate::game::ai::ai::tests::w16;
     pub(crate) use crate::game::ai::control::handplantcontrol::tests::SEEDS_2;
-    pub(crate) use crate::game::sound::bankmanager::tests::SEEDS as SEEDS_3;
-    pub(crate) use crate::game::sound::bankmanager::tests::rng;
-    pub(crate) use crate::game::worldpainter::quadtree::tests::pool_allocator;
-    pub(crate) use crate::game::worldpainter::quadtree::tests::MEM_HEAP;
-    pub(crate) use crate::game::worldpainter::quadtree::tests::run;
-    pub(crate) use crate::game::worldpainter::quadtree::tests::heap_init;
-    pub(crate) use crate::game::worldpainter::quadtree::tests::alloc_machine;
-    pub(crate) use crate::game::render::particle::tests::SEEDS_7 as SEEDS_4;
-    pub(crate) use crate::game::render::particle::tests::gp_at;
+    pub(crate) use crate::game::ai::rider::tests::put_world_2 as put_world;
+    pub(crate) use crate::game::bx::memblockman::tests::fake_slot;
+    pub(crate) use crate::game::camera::cameracontroller::tests::pool;
+    pub(crate) use crate::game::fe::feasyncfile::tests::be_library_5 as be_library;
+    pub(crate) use crate::game::fe::feasyncfile::tests::h;
+    pub(crate) use crate::game::fe::feasyncfile::tests::slot_3;
+    pub(crate) use crate::game::fe::feasyncfile::tests::w;
+    pub(crate) use crate::game::fe::feasyncfile::tests::world_3 as world;
+    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_8 as SEEDS_6;
+    pub(crate) use crate::game::fe::festateloadhint::tests::w32;
+    pub(crate) use crate::game::fe::festateloadhint::tests::SEEDS_2 as SEEDS_5;
     pub(crate) use crate::game::render::particle::tests::clear;
     pub(crate) use crate::game::render::particle::tests::common;
+    pub(crate) use crate::game::render::particle::tests::gp_at;
     pub(crate) use crate::game::render::particle::tests::vtable_2;
-    pub(crate) use crate::game::fe::festateloadhint::tests::w32;
-    pub(crate) use crate::game::ai::ai::tests::w16;
-    pub(crate) use crate::game::camera::cameracontroller::tests::pool;
-    pub(crate) use crate::game::ai::ai::tests::slot as slot_2;
-    pub(crate) use crate::game::fe::festateloadhint::tests::SEEDS_2 as SEEDS_5;
-    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_8 as SEEDS_6;
-    pub(crate) use crate::game::fe::feasyncfile::tests::w;
-    pub(crate) use crate::game::fe::feasyncfile::tests::h;
-    pub(crate) use crate::game::fe::feasyncfile::tests::be_library_5 as be_library;
-    pub(crate) use crate::game::fe::feasyncfile::tests::world_3 as world;
-    pub(crate) use crate::game::fe::feasyncfile::tests::slot_3;
-    pub(crate) use crate::game::bx::memblockman::tests::fake_slot;
-
+    pub(crate) use crate::game::render::particle::tests::SEEDS_7 as SEEDS_4;
+    pub(crate) use crate::game::sound::bankmanager::tests::rng;
+    pub(crate) use crate::game::sound::bankmanager::tests::SEEDS as SEEDS_3;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::delta;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::gfx_fixture;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::slot;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::streamer_rider;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::SEEDS;
+    pub(crate) use crate::game::worldpainter::quadtree::tests::alloc_machine;
+    pub(crate) use crate::game::worldpainter::quadtree::tests::heap_init;
+    pub(crate) use crate::game::worldpainter::quadtree::tests::pool_allocator;
+    pub(crate) use crate::game::worldpainter::quadtree::tests::run;
+    pub(crate) use crate::game::worldpainter::quadtree::tests::MEM_HEAP;
+    use ssx3_ee as ee;
 
     #[test]
     fn c_air_streamer_fx_reset_matches() {
-        check(ssx3_ee::s09::f_002ef6a0, c_air_streamer_fx_reset, 200, &|c, seed| {
-            let mut r = Rng(0x100e ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.bus.write32(DATA, DATA + 0x100);
-            c.bus.write32(
-                DATA + 0x100 + 0x870,
-                if seed % 2 == 0 { r.next_u32() } else { r.next_u32() | 0x8000_0000 },
-            );
-        });
+        check(
+            ssx3_ee::s09::f_002ef6a0,
+            c_air_streamer_fx_reset,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x100e ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.bus.write32(DATA, DATA + 0x100);
+                c.bus.write32(
+                    DATA + 0x100 + 0x870,
+                    if seed % 2 == 0 {
+                        r.next_u32()
+                    } else {
+                        r.next_u32() | 0x8000_0000
+                    },
+                );
+            },
+        );
     }
-
 
     #[test]
     fn ai_visual_effects_man_ctor_matches() {
-        check(ssx3_ee::s09::f_002f0368, ai_visual_effects_man_ctor, 100, &|c, seed| {
-            let mut r = Rng(0x100f ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            c.g[A0][0] = DATA as u64;
-            c.bus.write32(DATA, r.next_u32());
-        });
+        check(
+            ssx3_ee::s09::f_002f0368,
+            ai_visual_effects_man_ctor,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x100f ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.g[A0][0] = DATA as u64;
+                c.bus.write32(DATA, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn c_air_streamer_fx_render_matches() {
-        covered(ssx3_ee::s09::f_002ef950__generated, c_air_streamer_fx_render, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x2ef9_50, 2);
-            gfx_fixture(c, &mut r);
-            let (this, rider, points) = (DATA, DATA + 0x100, DATA + 0x2000);
-            c.g[A0][0] = sx(this);
-            c.bus.write32(this + air::RIDER, rider);
-            c.bus.write32(this + air::POINTS, points);
-            // Up to 26 segments (52 vertices per strip).
-            let n = if seed % 5 == 0 { r.next_u32() % 2 } else { 2 + r.next_u32() % 25 };
-            c.bus.write32(this + air::COUNT, n);
-            c.bus.write32(this + air::FIRST, r.next_u32() % 0x19);
-            c.bus.write32(this + air::ALPHA, r.f32(1.0));
-            c.bus.write32(this + air::LENGTH, 1 + r.next_u32() % 30);
-            streamer_rider(c, &mut r, rider, 0x89c, 0x8a4);
-            c.bus.write32(rider + 0x2ec, r.f32(10.0));
-            fill(c, &mut r, points, 0x19 * 8);
-            c.bus.write32(GAME_GP + 0x1630, (seed % 3 == 0) as u32);
-            fill(c, &mut r, GAME_GP - 0x3940, 8);
-            c.bus.write32(GAME_GP + 0xa84, r.f32(1.0));
-        });
+        covered(
+            ssx3_ee::s09::f_002ef950__generated,
+            c_air_streamer_fx_render,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2ef9_50, 2);
+                gfx_fixture(c, &mut r);
+                let (this, rider, points) = (DATA, DATA + 0x100, DATA + 0x2000);
+                c.g[A0][0] = sx(this);
+                c.bus.write32(this + air::RIDER, rider);
+                c.bus.write32(this + air::POINTS, points);
+                // Up to 26 segments (52 vertices per strip).
+                let n = if seed % 5 == 0 {
+                    r.next_u32() % 2
+                } else {
+                    2 + r.next_u32() % 25
+                };
+                c.bus.write32(this + air::COUNT, n);
+                c.bus.write32(this + air::FIRST, r.next_u32() % 0x19);
+                c.bus.write32(this + air::ALPHA, r.f32(1.0));
+                c.bus.write32(this + air::LENGTH, 1 + r.next_u32() % 30);
+                streamer_rider(c, &mut r, rider, 0x89c, 0x8a4);
+                c.bus.write32(rider + 0x2ec, r.f32(10.0));
+                fill(c, &mut r, points, 0x19 * 8);
+                c.bus.write32(GAME_GP + 0x1630, (seed % 3 == 0) as u32);
+                fill(c, &mut r, GAME_GP - 0x3940, 8);
+                c.bus.write32(GAME_GP + 0xa84, r.f32(1.0));
+            },
+        );
     }
-
 
     #[test]
     fn world_painter_get_irradiance_name0_matches() {
@@ -1753,7 +2073,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn world_painter_get_irradiance_name1_matches() {
         world_painter_name_matches(
@@ -1763,7 +2082,6 @@ pub(crate) mod tests {
             0x130,
         );
     }
-
 
     /// The two irradiance-name getters differ only in the vtable slot.
     pub(crate) fn world_painter_name_matches(
@@ -1778,7 +2096,8 @@ pub(crate) mod tests {
             let obj = DATA + 0x100;
             let cell = DATA + 0x200;
             // The painter exists: return the built-in name.
-            c.bus.write32(GAME_GP + 0xa74, if seed % 3 == 0 { 0 } else { 1 });
+            c.bus
+                .write32(GAME_GP + 0xa74, if seed % 3 == 0 { 0 } else { 1 });
             if seed % 3 == 0 {
                 return;
             }
@@ -1794,37 +2113,49 @@ pub(crate) mod tests {
         });
     }
 
-
     #[test]
     fn c_air_streamer_fx_update_matches() {
-        check(ee::s09::f_002ef6d0__generated, c_air_streamer_fx_update, 200, &|c, seed| {
-            let mut r = machine(c, seed, 0x2ef6d0, 2);
-            let world = DATA + 0x100;
-            let man = DATA + 0x200;
-            let ctx = DATA + 0x300;
-            put_world(c, world, man, ctx);
-            c.bus.write32(ctx + 8, if seed % 2 == 0 { 0 } else { 1 });
-            let fx = DATA;
-            let owner = DATA + 0x1000;
-            let state = DATA + 0x1400;
-            c.bus.write32(fx, owner);
-            c.bus.write32(owner + 0x77c, state);
-            c.bus.write32(state + 0xde0, [1u32, 0, 2, 3, 1][(seed % 5) as usize]);
-            c.bus.write32(fx + 0x4, DATA + 0x2000); // ring
-            c.bus.write32(fx + 0x8, seed % 0x19); // head
-            c.bus.write32(fx + 0xc, [0u32, 1, 2, 4, 0x20][(seed % 5) as usize]); // count
-            c.bus.write32(fx + 0x14, [1u32, 2, 3][(seed % 3) as usize]); // len
-            c.bus.write32(fx + 0x10, if seed % 2 == 0 { 0xbf80_0000 } else { r.f32(2.0) });
-            c.bus.write32(owner + 0x780, DATA + 0x1800);
-            c.bus.write32(owner + 0x89c, 1);
-            c.bus.write32(owner + 0x8a4, 2);
-            c.bus.write32(owner + 0x1e0, r.next_u32());
-            put_words(c, GAME_GP - 0x393c, &[0x3c88_8889]);
-            c.pc = 0x002e_f6d0;
-            c.g[A0][0] = sx(fx);
-        });
+        check(
+            ee::s09::f_002ef6d0__generated,
+            c_air_streamer_fx_update,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2ef6d0, 2);
+                let world = DATA + 0x100;
+                let man = DATA + 0x200;
+                let ctx = DATA + 0x300;
+                put_world(c, world, man, ctx);
+                c.bus.write32(ctx + 8, if seed % 2 == 0 { 0 } else { 1 });
+                let fx = DATA;
+                let owner = DATA + 0x1000;
+                let state = DATA + 0x1400;
+                c.bus.write32(fx, owner);
+                c.bus.write32(owner + 0x77c, state);
+                c.bus
+                    .write32(state + 0xde0, [1u32, 0, 2, 3, 1][(seed % 5) as usize]);
+                c.bus.write32(fx + 0x4, DATA + 0x2000); // ring
+                c.bus.write32(fx + 0x8, seed % 0x19); // head
+                c.bus
+                    .write32(fx + 0xc, [0u32, 1, 2, 4, 0x20][(seed % 5) as usize]); // count
+                c.bus.write32(fx + 0x14, [1u32, 2, 3][(seed % 3) as usize]); // len
+                c.bus.write32(
+                    fx + 0x10,
+                    if seed % 2 == 0 {
+                        0xbf80_0000
+                    } else {
+                        r.f32(2.0)
+                    },
+                );
+                c.bus.write32(owner + 0x780, DATA + 0x1800);
+                c.bus.write32(owner + 0x89c, 1);
+                c.bus.write32(owner + 0x8a4, 2);
+                c.bus.write32(owner + 0x1e0, r.next_u32());
+                put_words(c, GAME_GP - 0x393c, &[0x3c88_8889]);
+                c.pc = 0x002e_f6d0;
+                c.g[A0][0] = sx(fx);
+            },
+        );
     }
-
 
     /// The air streamer after `ticks` updates at `hz` (the AI frame counter
     /// stepping once per tick): (head, count, texture start). `fx` is a
@@ -1846,7 +2177,8 @@ pub(crate) mod tests {
         c.bus.write32(fx, owner);
         c.bus.write32(fx + air_streamer::RING, DATA + 0x2000);
         c.bus.write32(fx + air_streamer::HEAD, 0);
-        c.bus.write32(fx + air_streamer::COUNT, if airborne { 0 } else { 20 });
+        c.bus
+            .write32(fx + air_streamer::COUNT, if airborne { 0 } else { 20 });
         c.bus.write32(fx + air_streamer::LEN, 25);
         c.bus.write32(fx + air_streamer::START, 0.5f32.to_bits());
         for t in 0..ticks {
@@ -1862,7 +2194,6 @@ pub(crate) mod tests {
         )
     }
 
-
     /// The air streamer records 30 points per second, fades two points per
     /// 60 Hz frame after landing and scrolls at the same speed at 120 and
     /// 240 Hz as at 60.
@@ -1874,21 +2205,33 @@ pub(crate) mod tests {
                 let at60 = air_after(60, frames, fx, airborne);
                 fx += 0x100;
                 if airborne {
-                    assert_eq!((at60.0, at60.1), ((frames + 1) / 2, (frames + 1) / 2), "{at60:?}");
+                    assert_eq!(
+                        (at60.0, at60.1),
+                        ((frames + 1) / 2, (frames + 1) / 2),
+                        "{at60:?}"
+                    );
                 } else {
                     assert_eq!(at60.1, 20 - 2 * frames, "{at60:?}");
                 }
                 for hz in [120u32, 240] {
                     let at = air_after(hz, frames * hz / 60, fx, airborne);
                     fx += 0x100;
-                    assert_eq!((at.0, at.1), (at60.0, at60.1), "{hz} Hz {airborne} {frames}: {at:?} vs {at60:?}");
+                    assert_eq!(
+                        (at.0, at.1),
+                        (at60.0, at60.1),
+                        "{hz} Hz {airborne} {frames}: {at:?} vs {at60:?}"
+                    );
                     let d = (at.2 - at60.2).abs();
-                    assert!(d.min((1.0 - d).abs()) < 1e-4, "{hz} Hz {airborne} {frames}: start {} vs {}", at.2, at60.2);
+                    assert!(
+                        d.min((1.0 - d).abs()) < 1e-4,
+                        "{hz} Hz {airborne} {frames}: start {} vs {}",
+                        at.2,
+                        at60.2
+                    );
                 }
             }
         }
     }
-
 
     // ---------------------------------------------------------- world painter
 
@@ -1896,42 +2239,60 @@ pub(crate) mod tests {
     /// point it at [`FAKE`] so the call lands in the fake-call hook.
     #[test]
     fn world_painter_get_lighting28_matches() {
-        check(ee::s09::f_002eeff0__generated, world_painter_get_lighting28, SEEDS_2, &|c, seed| {
-            let mut r = machine(c, seed, 0xeff0, 0);
-            let index = if seed % 2 == 0 { 1 } else { 1 + r.next_u32() % 0x20 };
-            c.g[A0][0] = index as u64; // entry index (0xf0 bytes each)
-            let entry = 0x004f_a370u32.wrapping_add(index * 0xf0);
-            c.bus.write32(entry + 0x1c, DATA + 0x100); // entry->p1C
-            c.bus.write32(DATA + 0x100, DATA + 0x200); // the object
-            c.bus.write32(DATA + 0x204, DATA + 0x400); // o->vt
-            c.bus.write16(DATA + 0x400 + 0x148, 0xfff8); // slot 41: delta -8
-            c.bus.write32(DATA + 0x400 + 0x14c, FAKE); // slot 41: method
-        });
+        check(
+            ee::s09::f_002eeff0__generated,
+            world_painter_get_lighting28,
+            SEEDS_2,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0xeff0, 0);
+                let index = if seed % 2 == 0 {
+                    1
+                } else {
+                    1 + r.next_u32() % 0x20
+                };
+                c.g[A0][0] = index as u64; // entry index (0xf0 bytes each)
+                let entry = 0x004f_a370u32.wrapping_add(index * 0xf0);
+                c.bus.write32(entry + 0x1c, DATA + 0x100); // entry->p1C
+                c.bus.write32(DATA + 0x100, DATA + 0x200); // the object
+                c.bus.write32(DATA + 0x204, DATA + 0x400); // o->vt
+                c.bus.write16(DATA + 0x400 + 0x148, 0xfff8); // slot 41: delta -8
+                c.bus.write32(DATA + 0x400 + 0x14c, FAKE); // slot 41: method
+            },
+        );
     }
-
 
     #[test]
     fn world_painter_get_lighting30_matches() {
-        covered(ssx3_ee::s09::f_002eefa8__generated, world_painter_get_lighting30, 120, &|c, seed| {
-            let mut r = machine(c, seed, 59, 1);
-            let i = r.next_u32() % 3;
-            let slot = 0x004f_a370 + i * 0xf0;
-            let cell = DATA + 0x400 + i * 0x100;
-            let obj = DATA + 0x800 + i * 0x100;
-            let vt = vtable(c, &mut r, &[0x150]);
-            c.bus.write32(obj, vt);
-            c.bus.write32(cell, obj);
-            c.bus.write32(slot + 0x1c, cell);
-            c.g[A0][0] = sx(i);
-        });
+        covered(
+            ssx3_ee::s09::f_002eefa8__generated,
+            world_painter_get_lighting30,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 59, 1);
+                let i = r.next_u32() % 3;
+                let slot = 0x004f_a370 + i * 0xf0;
+                let cell = DATA + 0x400 + i * 0x100;
+                let obj = DATA + 0x800 + i * 0x100;
+                let vt = vtable(c, &mut r, &[0x150]);
+                c.bus.write32(obj, vt);
+                c.bus.write32(cell, obj);
+                c.bus.write32(slot + 0x1c, cell);
+                c.g[A0][0] = sx(i);
+            },
+        );
     }
-
 
     // ------------------------------------------------------------- fog getters
 
     /// `entry = &D_004FA370[index]`, `holder = entry[table_off/4]`,
     /// `obj = *holder`, `obj->vt = *obj+4`, slot `vt_off` a fake.
-    pub(crate) fn table_getter_setup(c: &mut Cpu, seed: u32, salt: u64, table_off: u32, vt_off: u32) {
+    pub(crate) fn table_getter_setup(
+        c: &mut Cpu,
+        seed: u32,
+        salt: u64,
+        table_off: u32,
+        vt_off: u32,
+    ) {
         let mut r = fakes::machine(c, seed, salt, 1);
         let index = seed % 4;
         c.g[A0][0] = index as u64;
@@ -1947,43 +2308,57 @@ pub(crate) mod tests {
         c.bus.write32(vt.wrapping_add(vt_off).wrapping_add(4), FAKE);
     }
 
-
     pub(crate) fn fog_setup(c: &mut Cpu, seed: u32, vt_off: u32) {
         table_getter_setup(c, seed, 0x0e50_00a1 ^ vt_off as u64, 0x4, vt_off);
     }
 
-
     #[test]
     fn world_painter_get_fog18_matches() {
-        fakes::covered(ee::s09::f_002eea50__generated, world_painter_get_fog18, 200, &|c, seed| {
-            fog_setup(c, seed, 0x48);
-        });
+        fakes::covered(
+            ee::s09::f_002eea50__generated,
+            world_painter_get_fog18,
+            200,
+            &|c, seed| {
+                fog_setup(c, seed, 0x48);
+            },
+        );
     }
-
 
     #[test]
     fn world_painter_get_fog20_matches() {
-        fakes::covered(ee::s09::f_002eea98__generated, world_painter_get_fog20, 200, &|c, seed| {
-            fog_setup(c, seed, 0x50);
-        });
+        fakes::covered(
+            ee::s09::f_002eea98__generated,
+            world_painter_get_fog20,
+            200,
+            &|c, seed| {
+                fog_setup(c, seed, 0x50);
+            },
+        );
     }
-
 
     #[test]
     fn world_painter_get_fog28_matches() {
-        fakes::covered(ee::s09::f_002eeae0__generated, world_painter_get_fog28, 200, &|c, seed| {
-            fog_setup(c, seed, 0x58);
-        });
+        fakes::covered(
+            ee::s09::f_002eeae0__generated,
+            world_painter_get_fog28,
+            200,
+            &|c, seed| {
+                fog_setup(c, seed, 0x58);
+            },
+        );
     }
-
 
     #[test]
     fn world_painter_get_fog30_matches() {
-        fakes::covered(ee::s09::f_002eeb28__generated, world_painter_get_fog30, 200, &|c, seed| {
-            fog_setup(c, seed, 0x60);
-        });
+        fakes::covered(
+            ee::s09::f_002eeb28__generated,
+            world_painter_get_fog30,
+            200,
+            &|c, seed| {
+                fog_setup(c, seed, 0x60);
+            },
+        );
     }
-
 
     // ---------------------------------------------- tint / screen-fill getters
 
@@ -1993,7 +2368,6 @@ pub(crate) mod tests {
         let on = if seed % 3 == 0 { 0 } else { 1 };
         c.bus.write32(GAME_GP.wrapping_add(SCREEN_OVERRIDES), on);
     }
-
 
     #[test]
     fn world_painter_get_screen_tint_red_matches() {
@@ -2005,7 +2379,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn world_painter_get_screen_tint_green_matches() {
         fakes::covered(
@@ -2015,7 +2388,6 @@ pub(crate) mod tests {
             &|c, seed| tint_setup(c, seed, 0xa8),
         );
     }
-
 
     #[test]
     fn world_painter_get_screen_tint_blue_matches() {
@@ -2027,7 +2399,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn world_painter_get_screen_fill_red_matches() {
         fakes::covered(
@@ -2037,7 +2408,6 @@ pub(crate) mod tests {
             &|c, seed| tint_setup(c, seed, 0xb8),
         );
     }
-
 
     #[test]
     fn world_painter_get_screen_fill_green_matches() {
@@ -2049,7 +2419,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn world_painter_get_screen_fill_blue_matches() {
         fakes::covered(
@@ -2059,7 +2428,6 @@ pub(crate) mod tests {
             &|c, seed| tint_setup(c, seed, 0xc8),
         );
     }
-
 
     #[test]
     fn apply_world_painter_matches() {
@@ -2079,11 +2447,14 @@ pub(crate) mod tests {
                 c.bus.write32(g - 0x848, DATA + 0x2000);
                 c.bus.write32(DATA + 0x2000 + 0x84, DATA + 0x2100);
                 c.bus.write32(DATA + 0x2100 + 0x28, DATA + 0x2200);
-                c.bus.write32(DATA + 0x2200, match seed % 4 {
-                    0 => 0,
-                    1 => 1,
-                    _ => r.next_u32() & 1,
-                });
+                c.bus.write32(
+                    DATA + 0x2200,
+                    match seed % 4 {
+                        0 => 0,
+                        1 => 1,
+                        _ => r.next_u32() & 1,
+                    },
+                );
                 c.bus.write32(g + 0x2a90, DATA + 0x4000);
                 // `gp_2 + 0xa70 == 0`: the tint accessors take the 1.0f path.
                 c.bus.write32(g + 0xa70, 0);
@@ -2104,9 +2475,10 @@ pub(crate) mod tests {
                 c.bus.write32(g + 0x14ec, (seed % 5 == 0) as u32);
                 c.bus.write32(g + 0x12dc, (seed % 4 == 1) as u32);
                 c.bus.write32(g + 0xa6c, r.next_u32());
-                for off in [0x1244u32, 0x1248, 0x123c, 0x1240, 0x151c, 0x1524,
-                            0x12e4, 0x12e8, 0x12ec, 0x12f0, 0x12f4, 0x1300,
-                            0x1304, 0x14f4, 0x14f8, 0x14fc, 0x1500, 0x1504, 0x1508] {
+                for off in [
+                    0x1244u32, 0x1248, 0x123c, 0x1240, 0x151c, 0x1524, 0x12e4, 0x12e8, 0x12ec,
+                    0x12f0, 0x12f4, 0x1300, 0x1304, 0x14f4, 0x14f8, 0x14fc, 0x1500, 0x1504, 0x1508,
+                ] {
                     c.bus.write32(g + off, r.next_u32());
                 }
                 for off in (0..0x260u32).step_by(4) {
@@ -2116,39 +2488,50 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn world_painter_set_script_surface_mode_matches() {
-        check(ee::s09::f_002ef368__generated, world_painter_set_script_surface_mode, SEEDS_3, &|c, seed| {
-            let mut r = rng(0x002e_f368, seed);
-            scramble(c, &mut r);
-            c.g[GP][0] = sx(GAME_GP);
-            c.bus.write32(0x004a_3b5c, r.next_u32());
-            c.bus.write32(0x004a_4444, r.next_u32());
-            c.g[A0][0] = match seed % 3 {
-                0 => 0,
-                1 => sx(DATA),
-                _ => (r.next_u32() as u64) << 32 | r.next_u32() as u64,
-            };
-        });
+        check(
+            ee::s09::f_002ef368__generated,
+            world_painter_set_script_surface_mode,
+            SEEDS_3,
+            &|c, seed| {
+                let mut r = rng(0x002e_f368, seed);
+                scramble(c, &mut r);
+                c.g[GP][0] = sx(GAME_GP);
+                c.bus.write32(0x004a_3b5c, r.next_u32());
+                c.bus.write32(0x004a_4444, r.next_u32());
+                c.g[A0][0] = match seed % 3 {
+                    0 => 0,
+                    1 => sx(DATA),
+                    _ => (r.next_u32() as u64) << 32 | r.next_u32() as u64,
+                };
+            },
+        );
     }
-
 
     #[test]
     fn ps2_ai_visual_effects_man_create_matches() {
-        check(ee::s09::f_002f0390__generated, ps2_ai_visual_effects_man_create, 40, &|c, seed| {
-            alloc_machine(c, seed, 0x2f03_90);
-        });
+        check(
+            ee::s09::f_002f0390__generated,
+            ps2_ai_visual_effects_man_create,
+            40,
+            &|c, seed| {
+                alloc_machine(c, seed, 0x2f03_90);
+            },
+        );
     }
-
 
     #[test]
     fn ps2_visual_effects_man_create_matches() {
-        check(ee::s09::f_002f0510__generated, ps2_visual_effects_man_create, 40, &|c, seed| {
-            alloc_machine(c, seed, 0x2f05_10);
-        });
+        check(
+            ee::s09::f_002f0510__generated,
+            ps2_visual_effects_man_create,
+            40,
+            &|c, seed| {
+                alloc_machine(c, seed, 0x2f05_10);
+            },
+        );
     }
-
 
     /// A NUL-terminated `s` at `addr`.
     pub(crate) fn put_str(c: &mut Cpu, addr: u32, s: &str) {
@@ -2158,54 +2541,61 @@ pub(crate) mod tests {
         c.bus.write8(addr + s.len() as u32, 0);
     }
 
-
     // -----------------------------------------------------------------------
     // WorldPainter_SetIrradianceOverride.
 
     #[test]
     fn world_painter_set_irradiance_override_matches() {
-        check(ssx3_ee::s09::f_002ef378__generated, world_painter_set_irradiance_override, 48, &|c, seed| {
-            let mut r = machine(c, seed, 0x2ef3_78, 0);
-            c.g[GP][0] = GAME_GP as u64;
-            if seed % 2 == 0 {
-                c.g[A0][0] = 0;
-            } else {
-                let name = DATA + 0x800;
-                match seed % 3 {
-                    0 => put_str(c, name, ""),
-                    1 => put_str(c, name, "sunset"),
-                    _ => {
-                        c.bus.write32(name, r.next_u32());
-                        c.bus.write8(name + 4, 0);
+        check(
+            ssx3_ee::s09::f_002ef378__generated,
+            world_painter_set_irradiance_override,
+            48,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2ef3_78, 0);
+                c.g[GP][0] = GAME_GP as u64;
+                if seed % 2 == 0 {
+                    c.g[A0][0] = 0;
+                } else {
+                    let name = DATA + 0x800;
+                    match seed % 3 {
+                        0 => put_str(c, name, ""),
+                        1 => put_str(c, name, "sunset"),
+                        _ => {
+                            c.bus.write32(name, r.next_u32());
+                            c.bus.write8(name + 4, 0);
+                        }
                     }
+                    c.g[A0][0] = name as u64;
                 }
-                c.g[A0][0] = name as u64;
-            }
-            c.bus.write32(GAME_GP + 0xa74, r.next_u32());
-        });
+                c.bus.write32(GAME_GP + 0xa74, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn world_painter_get_irradiance_name2_matches() {
-        check(ee::s09::f_002ef198__generated, world_painter_get_irradiance_name2, SEEDS_4, &|c, seed| {
-            let mut r = common(c, seed, 0x2ef198, 1);
-            let painter = DATA + 0x100;
-            let obj = DATA + 0x200;
-            let vt = DATA + 0x300;
-            clear(c, painter, 0x200);
-            clear(c, obj, 0x200);
-            clear(c, vt, 0x200);
-            c.bus.write32(0x004f_a47c, painter);
-            c.bus.write32(painter + 0x1c, obj);
-            c.bus.write32(obj + 4, vt);
-            vtable_2(c, vt, &[(0x138, 0, FAKE)]);
-            c.bus.write32(gp_at(0xa74), ((seed % 2) as u32) * 1);
-            c.g[A0][0] = r.next_u32() as u64;
-            c.g[A1][0] = r.next_u32() as u64;
-        });
+        check(
+            ee::s09::f_002ef198__generated,
+            world_painter_get_irradiance_name2,
+            SEEDS_4,
+            &|c, seed| {
+                let mut r = common(c, seed, 0x2ef198, 1);
+                let painter = DATA + 0x100;
+                let obj = DATA + 0x200;
+                let vt = DATA + 0x300;
+                clear(c, painter, 0x200);
+                clear(c, obj, 0x200);
+                clear(c, vt, 0x200);
+                c.bus.write32(0x004f_a47c, painter);
+                c.bus.write32(painter + 0x1c, obj);
+                c.bus.write32(obj + 4, vt);
+                vtable_2(c, vt, &[(0x138, 0, FAKE)]);
+                c.bus.write32(gp_at(0xa74), ((seed % 2) as u32) * 1);
+                c.g[A0][0] = r.next_u32() as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+            },
+        );
     }
-
 
     #[test]
     fn ps2_ai_visual_effects_man_ctor_matches() {
@@ -2222,7 +2612,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn ps2ai_visual_effects_man_dtor_matches() {

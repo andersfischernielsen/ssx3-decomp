@@ -109,7 +109,10 @@ fn report(s: &mut State, msg: String) {
 /// `SignalSema(id)` from the EE: if it is the kick semaphore, check the
 /// frame just published.
 pub fn on_signal_sema(c: &Cpu, id: i32) {
-    let mem = EeMem { ram: &c.bus.ram, spr: &c.bus.spr };
+    let mem = EeMem {
+        ram: &c.bus.ram,
+        spr: &c.bus.spr,
+    };
     let g = frame::word(&mem, frame::addr::GM_PTR);
     if g == 0 || frame::word(&mem, g + frame::gm::KICK_SEMA) as i32 != id {
         return;
@@ -123,15 +126,26 @@ fn check(s: &mut State, m: &EeMem, g: u32) {
     let b = frame::build(m, g, &s.carry);
     let fr = &b.frame;
     let draws: Vec<&frame::Draw> = fr.draws().collect();
-    let race = draws.iter().any(|d| matches!(d.state.material, Material::Bezier1 | Material::Bezier2));
+    let race = draws
+        .iter()
+        .any(|d| matches!(d.state.material, Material::Bezier1 | Material::Bezier2));
     let defer = fr.defer;
 
     // Emitter end state vs memory (+0x69cc0 / +0x69cbc); the first frame's
     // start values are unknown.
-    let (mm, mp) = (frame::word(m, defer + frame::dm::CUR_MATRIX) as i32, frame::word(m, defer + frame::dm::EMIT_MATERIAL));
+    let (mm, mp) = (
+        frame::word(m, defer + frame::dm::CUR_MATRIX) as i32,
+        frame::word(m, defer + frame::dm::EMIT_MATERIAL),
+    );
     if s.started && (b.emitter.matrix != mm || b.emitter.material_param != mp) {
         s.emitter_bad += 1;
-        report(s, format!("emitter end matrix/param {}/{:#x}, memory {mm}/{mp:#x}", b.emitter.matrix, b.emitter.material_param));
+        report(
+            s,
+            format!(
+                "emitter end matrix/param {}/{:#x}, memory {mm}/{mp:#x}",
+                b.emitter.matrix, b.emitter.material_param
+            ),
+        );
     }
 
     for i in &b.issues {
@@ -145,13 +159,50 @@ fn check(s: &mut State, m: &EeMem, g: u32) {
         let mut asr = [0u32; 2];
         chain::walk(m, head, false, true, 0, &mut asr, &mut |q| v.write(q));
     }
-    let ref_calls: Vec<_> = v.events.iter().filter_map(|e| if let Event::Call(c) = e { Some(c) } else { None }).collect();
-    let ref_directs = v.events.iter().filter(|e| matches!(e, Event::Direct(_))).count();
-    let ours: Vec<_> = b.events.iter().filter_map(|(o, e)| if let Event::Call(c) = e { Some((*o, c)) } else { None }).collect();
-    let our_directs = b.events.iter().filter(|(_, e)| matches!(e, Event::Direct(_))).count();
+    let ref_calls: Vec<_> = v
+        .events
+        .iter()
+        .filter_map(|e| {
+            if let Event::Call(c) = e {
+                Some(c)
+            } else {
+                None
+            }
+        })
+        .collect();
+    let ref_directs = v
+        .events
+        .iter()
+        .filter(|e| matches!(e, Event::Direct(_)))
+        .count();
+    let ours: Vec<_> = b
+        .events
+        .iter()
+        .filter_map(|(o, e)| {
+            if let Event::Call(c) = e {
+                Some((*o, c))
+            } else {
+                None
+            }
+        })
+        .collect();
+    let our_directs = b
+        .events
+        .iter()
+        .filter(|(_, e)| matches!(e, Event::Direct(_)))
+        .count();
     if ref_calls.len() != ours.len() || ref_directs != our_directs {
         s.issues += 1;
-        report(s, format!("walker calls/directs {}/{} vs frame {}/{}", ref_calls.len(), ref_directs, ours.len(), our_directs));
+        report(
+            s,
+            format!(
+                "walker calls/directs {}/{} vs frame {}/{}",
+                ref_calls.len(),
+                ref_directs,
+                ours.len(),
+                our_directs
+            ),
+        );
     }
     for (k, (o, c)) in ours.iter().enumerate() {
         let same = ref_calls.get(k).is_some_and(|r| *r == *c);
@@ -170,7 +221,13 @@ fn check(s: &mut State, m: &EeMem, g: u32) {
             s.calls_ok += 1;
         } else {
             s.calls_bad += 1;
-            report(s, format!("call {k} entry {:?}: same as walker {same}, owner {o:?}", c.entry));
+            report(
+                s,
+                format!(
+                    "call {k} entry {:?}: same as walker {same}, owner {o:?}",
+                    c.entry
+                ),
+            );
         }
     }
     s.calls_bad += ref_calls.len().saturating_sub(ours.len()) as u64;
@@ -196,7 +253,10 @@ fn check(s: &mut State, m: &EeMem, g: u32) {
         }
         if !o.ret_at_end {
             s.issues += 1;
-            report(s, format!("draw {i}: RET not at bucket end {:#x}", d.packets.end));
+            report(
+                s,
+                format!("draw {i}: RET not at bucket end {:#x}", d.packets.end),
+            );
         }
         let mut bad = Vec::new();
         for (k, &r) in GsRegs::REGS.iter().enumerate() {
@@ -211,7 +271,15 @@ fn check(s: &mut State, m: &EeMem, g: u32) {
         }
         if !bad.is_empty() && flagged < 3 {
             flagged += 1;
-            report(s, format!("draw {i} (sorted {}, state {:x?}): {}", d.sorted, d.state.raw, bad.join(", ")));
+            report(
+                s,
+                format!(
+                    "draw {i} (sorted {}, state {:x?}): {}",
+                    d.sorted,
+                    d.state.raw,
+                    bad.join(", ")
+                ),
+            );
         }
         {
             // Which draws write state registers from their payload
@@ -276,7 +344,10 @@ fn check(s: &mut State, m: &EeMem, g: u32) {
         }
         let Owner::Payload(i) = o else { continue };
         let d = draws[*i];
-        if !matches!(d.state.material, Material::Bezier1 | Material::Bezier2 | Material::General | Material::Skinned) {
+        if !matches!(
+            d.state.material,
+            Material::Bezier1 | Material::Bezier2 | Material::General | Material::Skinned
+        ) {
             continue;
         }
         let hdr = |mi: i32| fr.matrices.get(mi as usize).map(|r| r.header_qwords());
@@ -322,7 +393,13 @@ fn check(s: &mut State, m: &EeMem, g: u32) {
             .passes
             .iter()
             .map(|p| match p {
-                ssx3_render::frame::Pass::Draws(d) => format!("Draws[{} layers {:?}]", d.len(), d.iter().map(|x| x.state.layer).collect::<std::collections::BTreeSet<_>>()),
+                ssx3_render::frame::Pass::Draws(d) => format!(
+                    "Draws[{} layers {:?}]",
+                    d.len(),
+                    d.iter()
+                        .map(|x| x.state.layer)
+                        .collect::<std::collections::BTreeSet<_>>()
+                ),
                 ssx3_render::frame::Pass::DefaultState(v) => format!("Default({})", v.len()),
                 ssx3_render::frame::Pass::PostChain(v) => format!("Post({})", v.len()),
                 ssx3_render::frame::Pass::DepthFog { view, .. } => format!("DepthFog({view})"),
@@ -338,7 +415,11 @@ fn check(s: &mut State, m: &EeMem, g: u32) {
     k.calls += ours.len() as u64;
     k.directs += our_directs as u64;
 
-    s.carry = Carry { regs: b.regs_end, matrix: b.emitter.matrix, material_param: b.emitter.material_param };
+    s.carry = Carry {
+        regs: b.regs_end,
+        matrix: b.emitter.matrix,
+        material_param: b.emitter.material_param,
+    };
     s.started = true;
 }
 

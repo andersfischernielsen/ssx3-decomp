@@ -29,7 +29,9 @@ impl Rng {
     }
 }
 
-const FB_PSMS: &[u32] = &[PSMCT32, PSMCT32, PSMCT32, PSMCT24, PSMCT16, PSMCT16S, PSMZ32];
+const FB_PSMS: &[u32] = &[
+    PSMCT32, PSMCT32, PSMCT32, PSMCT24, PSMCT16, PSMCT16S, PSMZ32,
+];
 const TEX_PSMS: &[u32] = &[
     PSMCT32, PSMCT24, PSMCT16, PSMCT16S, PSMT8, PSMT8, PSMT4, PSMT4, PSMT8H, PSMT4HL, PSMT4HH,
     PSMZ32, PSMZ16,
@@ -79,10 +81,17 @@ pub(super) fn random_state(r: &mut Rng, gs: &mut Gs, fbp: u64, fbw: u64) {
         gs.write_reg(0x08 + c, clamp);
         let tex1 = r.below(2) | r.below(8) << 5 | r.below(4) << 19 | r.below(0x1000) << 32;
         gs.write_reg(0x14 + c, tex1);
-        gs.write_reg(0x18 + c, r.pick(&[0u64, 8 << 4 | 16 << 36, 2048 << 4 | 2048 << 36]));
+        gs.write_reg(
+            0x18 + c,
+            r.pick(&[0u64, 8 << 4 | 16 << 36, 2048 << 4 | 2048 << 36]),
+        );
         let w = fbw as u32 * 64;
         let sx0 = r.below(64);
-        let sx1 = if r.chance(10) { w + 40 } else { w - 1 - r.below(32) as u32 } as u64;
+        let sx1 = if r.chance(10) {
+            w + 40
+        } else {
+            w - 1 - r.below(32) as u32
+        } as u64;
         let sy0 = r.below(64);
         let sy1 = 200 + r.below(300);
         gs.write_reg(0x40 + c, sx0 | sx1 << 16 | sy0 << 32 | sy1 << 48);
@@ -115,7 +124,11 @@ pub(super) fn random_vertex(r: &mut Rng, w: u32) -> Vertex {
         ],
         s: r.f32_in(-1.0, 2.0),
         t: r.f32_in(-1.0, 2.0),
-        q: if r.chance(10) { r.f32_in(-1.0, 1.0) } else { r.f32_in(0.2, 2.0) },
+        q: if r.chance(10) {
+            r.f32_in(-1.0, 1.0)
+        } else {
+            r.f32_in(0.2, 2.0)
+        },
         u: r.below(0x4000) as u32,
         v: r.below(0x4000) as u32,
     }

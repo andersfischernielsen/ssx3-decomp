@@ -73,27 +73,59 @@ pub struct FrameBuilder {
 impl FrameBuilder {
     /// The typed frame published by the GraphicsMan at `gm`, and the carry
     /// it was built with (for [`dump_frame`]).
-    pub fn build(&mut self, gm: u32, mem: &dyn Mem, direct: std::sync::Arc<Vec<ssx3_render::direct::Recorded>>) -> (Built, Carry) {
+    pub fn build(
+        &mut self,
+        gm: u32,
+        mem: &dyn Mem,
+        direct: std::sync::Arc<Vec<ssx3_render::direct::Recorded>>,
+    ) -> (Built, Carry) {
         let t = web_time::Instant::now();
         let carry = self.carry.clone();
-        let mut b = if native_frame(&direct) { frame::build_native(mem, gm, &carry, &mut self.cache, direct) } else { frame::build_cached(mem, gm, &carry, &mut self.cache, direct) };
+        let mut b = if native_frame(&direct) {
+            frame::build_native(mem, gm, &carry, &mut self.cache, direct)
+        } else {
+            frame::build_cached(mem, gm, &carry, &mut self.cache, direct)
+        };
         if ssx3_render::world_casters::enabled() {
             b.casters = self.casters.update(mem);
         }
         static CHECK: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         if *CHECK.get_or_init(|| std::env::var_os("SSX3_CHAIN_CACHE_CHECK").is_some()) {
-            let bad = b.issues.iter().filter(|i| i.starts_with("chain cache")).count();
+            let bad = b
+                .issues
+                .iter()
+                .filter(|i| i.starts_with("chain cache"))
+                .count();
             if bad > 0 || self.frames % 600 == 0 {
-                eprintln!("[chain-cache] frame {}: hits/misses {:?}, {bad} replay mismatches", self.frames, self.cache.stats);
+                eprintln!(
+                    "[chain-cache] frame {}: hits/misses {:?}, {bad} replay mismatches",
+                    self.frames, self.cache.stats
+                );
             }
         }
         // `SSX3_FRAME_ISSUES=1`: what the build could not match (packets
         // without a capture, chain shapes it did not expect).
         static ISSUES: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        if *ISSUES.get_or_init(|| std::env::var_os("SSX3_FRAME_ISSUES").is_some()) && !b.issues.is_empty() {
-            eprintln!("[frame-issues] frame {}: {} issues: {}", self.frames, b.issues.len(), b.issues.iter().take(4).cloned().collect::<Vec<_>>().join("; "));
+        if *ISSUES.get_or_init(|| std::env::var_os("SSX3_FRAME_ISSUES").is_some())
+            && !b.issues.is_empty()
+        {
+            eprintln!(
+                "[frame-issues] frame {}: {} issues: {}",
+                self.frames,
+                b.issues.len(),
+                b.issues
+                    .iter()
+                    .take(4)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            );
         }
-        self.carry = Carry { regs: b.regs_end, matrix: b.emitter.matrix, material_param: b.emitter.material_param };
+        self.carry = Carry {
+            regs: b.regs_end,
+            matrix: b.emitter.matrix,
+            material_param: b.emitter.material_param,
+        };
         self.ms += t.elapsed().as_secs_f64() * 1e3;
         self.frames += 1;
         (b, carry)
@@ -105,7 +137,10 @@ static ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(fa
 
 /// Install the renderer that receives every frame from now on.
 pub fn install(sink: Box<dyn FrameSink>) {
-    *SINK.lock().unwrap() = Some(Sink { sink, builder: FrameBuilder::default() });
+    *SINK.lock().unwrap() = Some(Sink {
+        sink,
+        builder: FrameBuilder::default(),
+    });
     ON.store(true, std::sync::atomic::Ordering::Release);
     // The game's draw functions record their draws for the sink.
     ssx3_render::direct::set_active(true);
@@ -137,7 +172,12 @@ pub fn timing_report() -> String {
         0 => String::new(),
         k => format!("; {k} reads outside the frame's memory"),
     };
-    format!("frame sink: {:.2} ms per frame on the game thread, typed frame {:.2} ms ({} frames){miss}", t.2 / n, t.1 / n, t.0)
+    format!(
+        "frame sink: {:.2} ms per frame on the game thread, typed frame {:.2} ms ({} frames){miss}",
+        t.2 / n,
+        t.1 / n,
+        t.0
+    )
 }
 
 static NATIVE: AtomicBool = AtomicBool::new(false);
@@ -157,11 +197,16 @@ pub fn skip_chain(vif: bool, tadr: u32) -> bool {
     static RUN: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     // (Any chain of a frame the sink drew, even while the game publishes
     // frames only now and then, as on loading screens.)
-    if !native() || tadr == 0 || *RUN.get_or_init(|| std::env::var_os("SSX3_NATIVE_RUN_CHAINS").is_some()) {
+    if !native()
+        || tadr == 0
+        || *RUN.get_or_init(|| std::env::var_os("SSX3_NATIVE_RUN_CHAINS").is_some())
+    {
         return false;
     }
     let k = if vif { 0 } else { 2 };
-    HEADS[k..k + 2].iter().any(|h| h.load(Ordering::Acquire) == tadr as u64)
+    HEADS[k..k + 2]
+        .iter()
+        .any(|h| h.load(Ordering::Acquire) == tadr as u64)
 }
 
 /// The sink's latest depth (after the 3D phase).
@@ -213,7 +258,11 @@ fn apply_view(c: &mut Cpu, gm: u32) {
         return;
     }
     // The game renders for 4:3 at x 1.0 (and 16:9 anamorphic at x 0.75).
-    let x = if aspect > 0.0 { (4.0 / 3.0) / aspect } else { 1.0 } / fov;
+    let x = if aspect > 0.0 {
+        (4.0 / 3.0) / aspect
+    } else {
+        1.0
+    } / fov;
     c.bus.write32(gm + view::MODE, 2);
     c.bus.write32(gm + view::Y_OFFSET, 0);
     c.bus.write32(gm + view::X_SCALE2, 1.0f32.to_bits());
@@ -266,7 +315,10 @@ impl Mem for EeMem<'_> {
 /// `SignalSema(id)` from the EE: if it is the kick semaphore, the frame was
 /// just published.
 pub fn on_signal_sema(c: &mut Cpu, id: i32) {
-    let mem = EeMem { ram: &c.bus.ram, spr: &c.bus.spr };
+    let mem = EeMem {
+        ram: &c.bus.ram,
+        spr: &c.bus.spr,
+    };
     let g = frame::word(&mem, frame::addr::GM_PTR);
     if g == 0 || frame::word(&mem, g + frame::gm::KICK_SEMA) as i32 != id {
         return;
@@ -277,9 +329,19 @@ pub fn on_signal_sema(c: &mut Cpu, id: i32) {
         return;
     };
     let t0 = web_time::Instant::now();
-    let heads = [frame::gm::QUEUED_VIF1, frame::gm::QUEUED_VIF2, frame::gm::QUEUED_GIF1, frame::gm::QUEUED_GIF2].map(|o| frame::word(&mem, g + o));
+    let heads = [
+        frame::gm::QUEUED_VIF1,
+        frame::gm::QUEUED_VIF2,
+        frame::gm::QUEUED_GIF1,
+        frame::gm::QUEUED_GIF2,
+    ]
+    .map(|o| frame::word(&mem, g + o));
     let snap_id = advance_pages(c.bus.ram.len());
-    let live = LiveMem { ram: &c.bus.ram, spr: &c.bus.spr, snap: snap_id };
+    let live = LiveMem {
+        ram: &c.bus.ram,
+        spr: &c.bus.spr,
+        snap: snap_id,
+    };
     let direct = std::sync::Arc::new(ssx3_render::direct::take());
     let (built, carry) = s.builder.build(g, &live, direct.clone());
     let t_built = t0.elapsed().as_secs_f64() * 1e3;
@@ -290,14 +352,28 @@ pub fn on_signal_sema(c: &mut Cpu, id: i32) {
     frame::texture_ranges(&live, &built.frame, &mut ranges);
     let mut fm = FrameMem::from_store(&c.bus.ram, &ranges, snap_id);
     if dump_keep().is_some() || full_snapshot() {
-        let mut snap = POOL.lock().unwrap().pop().unwrap_or_else(|| Box::new(DumpMem { ram: Vec::new(), spr: Vec::new(), vu1: Vec::new(), id: usize::MAX, direct: Default::default(), snap: 0 }));
+        let mut snap = POOL.lock().unwrap().pop().unwrap_or_else(|| {
+            Box::new(DumpMem {
+                ram: Vec::new(),
+                spr: Vec::new(),
+                vu1: Vec::new(),
+                id: usize::MAX,
+                direct: Default::default(),
+                snap: 0,
+            })
+        });
         snapshot_ram(&mut snap, &c.bus.ram, snap_id);
         snap.direct = direct;
         snap.spr.clear();
         snap.spr.extend_from_slice(&c.bus.spr);
         fm.full = Some(snap);
     }
-    s.sink.frame(Published { gm: g, built, carry, mem: fm });
+    s.sink.frame(Published {
+        gm: g,
+        built,
+        carry,
+        mem: fm,
+    });
     // For the next frame (this one's projection is already built).
     apply_view(c, g);
     {
@@ -316,11 +392,12 @@ pub fn on_signal_sema(c: &mut Cpu, id: i32) {
         // SSX3_DEPTH_SYNC=0: the latest instead.)
         static SYNC: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         let n = PUBLISHED.fetch_add(1, Ordering::Relaxed);
-        let depth = if *SYNC.get_or_init(|| std::env::var("SSX3_DEPTH_SYNC").map_or(true, |v| v != "0")) {
-            n.checked_sub(2).and_then(|f| s.sink.depth_of(f))
-        } else {
-            s.sink.depth()
-        };
+        let depth =
+            if *SYNC.get_or_init(|| std::env::var("SSX3_DEPTH_SYNC").map_or(true, |v| v != "0")) {
+                n.checked_sub(2).and_then(|f| s.sink.depth_of(f))
+            } else {
+                s.sink.depth()
+            };
         drop(guard);
         LAST_PUBLISH.store(crate::mr!(c).sched.frames.max(1), Ordering::Release);
         if let Some(d) = depth {
@@ -335,21 +412,41 @@ pub fn on_signal_sema(c: &mut Cpu, id: i32) {
 // be run on them offline (`gfx_replay`). They contain game data: keep them
 // out of the repository.
 
-static RING: Mutex<std::collections::VecDeque<Vec<u8>>> = Mutex::new(std::collections::VecDeque::new());
+static RING: Mutex<std::collections::VecDeque<Vec<u8>>> =
+    Mutex::new(std::collections::VecDeque::new());
 
 const DUMP_MAGIC: &[u8; 8] = b"SSX3FRM1";
 
 fn dump_keep() -> Option<usize> {
     static K: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
-    *K.get_or_init(|| std::env::var("SSX3_FRAME_DUMP").ok().and_then(|v| v.parse().ok()).filter(|&n| n > 0))
+    *K.get_or_init(|| {
+        std::env::var("SSX3_FRAME_DUMP")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .filter(|&n| n > 0)
+    })
 }
 
-fn encode(carry: &Carry, ram: &[u8], spr: &[u8], vu1: &[u8], direct: &[ssx3_render::direct::Recorded]) -> Vec<u8> {
+fn encode(
+    carry: &Carry,
+    ram: &[u8],
+    spr: &[u8],
+    vu1: &[u8],
+    direct: &[ssx3_render::direct::Recorded],
+) -> Vec<u8> {
     let r = &carry.regs;
     let mut words = vec![r.cycle, r.mode, r.mask];
     words.extend(r.row);
     words.extend(r.col);
-    words.extend([r.base, r.ofst, r.tops, r.itops, r.dbf as u32, carry.matrix as u32, carry.material_param]);
+    words.extend([
+        r.base,
+        r.ofst,
+        r.tops,
+        r.itops,
+        r.dbf as u32,
+        carry.matrix as u32,
+        carry.material_param,
+    ]);
     let mut out = Vec::with_capacity(16 + words.len() * 4 + ram.len() + spr.len());
     out.extend_from_slice(DUMP_MAGIC);
     out.extend_from_slice(&(words.len() as u32).to_le_bytes());
@@ -422,9 +519,15 @@ fn snapshot_ram(snap: &mut DumpMem, ram: &[u8], snap_id: u64) {
     }
     static CHECK: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     if *CHECK.get_or_init(|| std::env::var_os("SSX3_SNAPSHOT_CHECK").is_some()) {
-        let bad: Vec<usize> = (0..pages).filter(|&p| snap.ram[p * 4096..(p + 1) * 4096] != ram[p * 4096..(p + 1) * 4096]).collect();
+        let bad: Vec<usize> = (0..pages)
+            .filter(|&p| snap.ram[p * 4096..(p + 1) * 4096] != ram[p * 4096..(p + 1) * 4096])
+            .collect();
         if !bad.is_empty() {
-            eprintln!("[snapshot-check] {} stale pages, first at {:#x}", bad.len(), bad[0] * 4096);
+            eprintln!(
+                "[snapshot-check] {} stale pages, first at {:#x}",
+                bad.len(),
+                bad[0] * 4096
+            );
             // (Copy them so the check reports each miss once.)
             for p in bad {
                 let r = p * 4096..(p + 1) * 4096;
@@ -463,13 +566,22 @@ fn advance_pages(ram_len: usize) -> u64 {
 
 /// `Mem::unchanged` over the page generations.
 fn pages_unchanged(a: u32, b: u32, since: u64) -> bool {
-    let Some(gens) = PAGE_GEN.get() else { return false };
+    let Some(gens) = PAGE_GEN.get() else {
+        return false;
+    };
     if since == 0 || a & 0x8000_0000 != 0 || b <= a {
         return false;
     }
     // (RAM mirrors: the low 32 MiB.)
-    let (pa, pb) = ((a & 0x01ff_ffff) as usize / 4096, ((b - 1) & 0x01ff_ffff) as usize / 4096);
-    pa <= pb && (pa..=pb).all(|p| gens.get(p).is_some_and(|g| g.load(Ordering::Relaxed) <= since))
+    let (pa, pb) = (
+        (a & 0x01ff_ffff) as usize / 4096,
+        ((b - 1) & 0x01ff_ffff) as usize / 4096,
+    );
+    pa <= pb
+        && (pa..=pb).all(|p| {
+            gens.get(p)
+                .is_some_and(|g| g.load(Ordering::Relaxed) <= since)
+        })
 }
 
 fn full_snapshot() -> bool {
@@ -507,7 +619,11 @@ fn read_ram_qwords(m: &dyn Mem, ram: &[u8], addr: u32, n: u32, out: &mut Vec<u12
     let end = o + 16 * n as usize;
     // (RAM in one piece: a straight copy; else qword by qword.)
     if addr & 0x8000_0000 == 0 && addr >> 28 != 7 && end <= ram.len() {
-        out.extend(ram[o..end].chunks_exact(16).map(|b| u128::from_le_bytes(b.try_into().unwrap())));
+        out.extend(
+            ram[o..end]
+                .chunks_exact(16)
+                .map(|b| u128::from_le_bytes(b.try_into().unwrap())),
+        );
     } else {
         out.extend((0..n).map(|i| m.qword(addr + 16 * i)));
     }
@@ -544,16 +660,22 @@ impl FrameMem {
             if a & 0x8000_0000 != 0 || b <= a {
                 continue;
             }
-            let (pa, pb) = ((a & 0x01ff_ffff) as usize / 4096, ((b - 1) & 0x01ff_ffff) as usize / 4096);
+            let (pa, pb) = (
+                (a & 0x01ff_ffff) as usize / 4096,
+                ((b - 1) & 0x01ff_ffff) as usize / 4096,
+            );
             for p in pa..=pb.min(npages - 1) {
                 if pages.contains_key(&(p as u32)) {
                     continue;
                 }
-                let gen = gens.and_then(|g| g.get(p)).map_or(u64::MAX, |g| g.load(Ordering::Relaxed));
+                let gen = gens
+                    .and_then(|g| g.get(p))
+                    .map_or(u64::MAX, |g| g.load(Ordering::Relaxed));
                 let page = match &store[p] {
                     Some((pg, at)) if gen <= *at => pg.clone(),
                     _ => {
-                        let pg: std::sync::Arc<Page> = std::sync::Arc::new(ram[p * 4096..(p + 1) * 4096].try_into().unwrap());
+                        let pg: std::sync::Arc<Page> =
+                            std::sync::Arc::new(ram[p * 4096..(p + 1) * 4096].try_into().unwrap());
                         store[p] = Some((pg.clone(), snap));
                         pg
                     }
@@ -561,7 +683,11 @@ impl FrameMem {
                 pages.insert(p as u32, page);
             }
         }
-        FrameMem { pages, snap, full: None }
+        FrameMem {
+            pages,
+            snap,
+            full: None,
+        }
     }
 
     /// The pages covering `ranges`, copied from `ram` (no store; frame
@@ -573,12 +699,21 @@ impl FrameMem {
             if a & 0x8000_0000 != 0 || b <= a {
                 continue;
             }
-            let (pa, pb) = ((a & 0x01ff_ffff) as usize / 4096, ((b - 1) & 0x01ff_ffff) as usize / 4096);
+            let (pa, pb) = (
+                (a & 0x01ff_ffff) as usize / 4096,
+                ((b - 1) & 0x01ff_ffff) as usize / 4096,
+            );
             for p in pa..=pb.min(npages - 1) {
-                pages.entry(p as u32).or_insert_with(|| std::sync::Arc::new(ram[p * 4096..(p + 1) * 4096].try_into().unwrap()));
+                pages.entry(p as u32).or_insert_with(|| {
+                    std::sync::Arc::new(ram[p * 4096..(p + 1) * 4096].try_into().unwrap())
+                });
             }
         }
-        FrameMem { pages, snap: 0, full: None }
+        FrameMem {
+            pages,
+            snap: 0,
+            full: None,
+        }
     }
 
     /// Pages held.
@@ -599,8 +734,13 @@ impl Mem for FrameMem {
                 return u128::from_le_bytes(p[o..o + 16].try_into().unwrap());
             }
         }
-        if MISSES.fetch_add(1, Ordering::Relaxed) < 3 && std::env::var_os("SSX3_FRAME_MEM_LOG").is_some() {
-            eprintln!("[frame-mem] read at {addr:#x} outside the frame's pages\n{}", std::backtrace::Backtrace::force_capture());
+        if MISSES.fetch_add(1, Ordering::Relaxed) < 3
+            && std::env::var_os("SSX3_FRAME_MEM_LOG").is_some()
+        {
+            eprintln!(
+                "[frame-mem] read at {addr:#x} outside the frame's pages\n{}",
+                std::backtrace::Backtrace::force_capture()
+            );
         }
         0
     }
@@ -698,13 +838,31 @@ pub fn load_dump(bytes: &[u8]) -> Result<(DumpMem, Carry), String> {
     regs.tops = w[13];
     regs.itops = w[14];
     regs.dbf = w[15] != 0;
-    let carry = Carry { regs, matrix: w[16] as i32, material_param: w[17] };
-    let vu1 = bytes.get(o + nram + 0x4000..o + nram + 0x8000).map_or_else(Vec::new, |v| v.to_vec());
+    let carry = Carry {
+        regs,
+        matrix: w[16] as i32,
+        material_param: w[17],
+    };
+    let vu1 = bytes
+        .get(o + nram + 0x4000..o + nram + 0x8000)
+        .map_or_else(Vec::new, |v| v.to_vec());
     let direct = match bytes.get(o + nram + 0x8000..) {
-        Some(b) if !b.is_empty() => ssx3_render::direct::decode(b).ok_or("malformed captured draws")?,
+        Some(b) if !b.is_empty() => {
+            ssx3_render::direct::decode(b).ok_or("malformed captured draws")?
+        }
         _ => Vec::new(),
     };
-    Ok((DumpMem { ram: bytes[o..o + nram].to_vec(), spr: bytes[o + nram..o + nram + 0x4000].to_vec(), vu1, id: usize::MAX, direct: std::sync::Arc::new(direct), snap: 0 }, carry))
+    Ok((
+        DumpMem {
+            ram: bytes[o..o + nram].to_vec(),
+            spr: bytes[o + nram..o + nram + 0x4000].to_vec(),
+            vu1,
+            id: usize::MAX,
+            direct: std::sync::Arc::new(direct),
+            snap: 0,
+        },
+        carry,
+    ))
 }
 
 /// Build the typed frame from a dump's memory.
@@ -715,12 +873,20 @@ pub fn build_dump(mem: &DumpMem, carry: &Carry) -> Option<Built> {
 /// [`build_dump`] with a sub-chain cache carried across dumps.
 /// `SSX3_NATIVE_FRAME=1`: built from the buckets and captures, not the
 /// chains (`frame::build_native`).
-pub fn build_dump_cached(mem: &DumpMem, carry: &Carry, cache: &mut frame::ChainCache) -> Option<Built> {
+pub fn build_dump_cached(
+    mem: &DumpMem,
+    carry: &Carry,
+    cache: &mut frame::ChainCache,
+) -> Option<Built> {
     let g = frame::word(mem, frame::addr::GM_PTR);
     if g == 0 {
         return None;
     }
-    Some(if native_frame(&mem.direct) { frame::build_native(mem, g, carry, cache, mem.direct.clone()) } else { frame::build_cached(mem, g, carry, cache, mem.direct.clone()) })
+    Some(if native_frame(&mem.direct) {
+        frame::build_native(mem, g, carry, cache, mem.direct.clone())
+    } else {
+        frame::build_cached(mem, g, carry, cache, mem.direct.clone())
+    })
 }
 
 /// Frames are built from the buckets and the captured draws without
@@ -728,5 +894,6 @@ pub fn build_dump_cached(mem: &DumpMem, carry: &Carry, cache: &mut frame::ChainC
 /// captures (`SSX3_DIRECT=0`, older frame dumps).
 pub fn native_frame(direct: &[ssx3_render::direct::Recorded]) -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("SSX3_NATIVE_FRAME").map_or(true, |v| v != "0")) && !direct.is_empty()
+    *ON.get_or_init(|| std::env::var("SSX3_NATIVE_FRAME").map_or(true, |v| v != "0"))
+        && !direct.is_empty()
 }

@@ -1,46 +1,82 @@
 //! `src/fe/messagecenter.cpp`: hand-written replacements (moved from the
 //! batch modules by `tools/reorg_modules.py`).
 
+use crate::abi;
+use crate::abi::r32;
+use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::VSlot;
+use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::fe::feasyncfile::a;
+pub(crate) use crate::game::fe::feasyncfile::lw as lw_2;
+pub(crate) use crate::game::fe::feasyncfile::p;
+pub(crate) use crate::game::fe::feasyncfile::sw_6 as sw;
+pub(crate) use crate::game::fe::ovstatepause::lw;
+pub(crate) use crate::game::sound::soundsys::gp_4 as gp;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::Cpu;
-use crate::abi;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
 use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
-use crate::call::call_ptr;
-use crate::abi::r32;
-use crate::call::Flow;
-use crate::events::back_edge_unwinds;
-pub(crate) use crate::game::fe::ovstatepause::lw;
-pub(crate) use crate::game::fe::feasyncfile::p;
-pub(crate) use crate::game::sound::soundsys::gp_4 as gp;
-pub(crate) use crate::game::fe::feasyncfile::lw as lw_2;
-pub(crate) use crate::game::fe::feasyncfile::sw_6 as sw;
-pub(crate) use crate::game::fe::feasyncfile::a;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0019_79d8, cfestate_request_line_on_child_event, "cFEStateRequestLine_OnChildEvent"),
-    (0x0019_7ad8, cfe_state_request_line_sort_song_list, "cFEStateRequestLine_SortSongList"),
-    (0x0019_7bc8, cfestaterequestline_update_song_names, "cFEStateRequestLine_UpdateSongNames"),
-    (0x0019_8118, cfestaterequestline_update_song_count, "cFEStateRequestLine_UpdateSongCount"),
-    (0x0019_85b0, c_fe_state_request_line_update_money, "cFEStateRequestLine_UpdateMoney"),
-    (0x0019_85f0, cfestaterequestline_update_slot_icons, "cFEStateRequestLine_UpdateSlotIcons"),
-    (0x0019_88d8, cfe_request_line_buy_song, "cFEStateRequestLine_BuySong"),
-    (0x0019_8988, cfestate_request_line_open_buy_popup, "cFEStateRequestLine_OpenBuyPopup"),
-    (0x0019_8da0, cfe_state_char_equip_compare_items, "cFEStateCharEquip_CompareItems"),
+    (
+        0x0019_79d8,
+        cfestate_request_line_on_child_event,
+        "cFEStateRequestLine_OnChildEvent",
+    ),
+    (
+        0x0019_7ad8,
+        cfe_state_request_line_sort_song_list,
+        "cFEStateRequestLine_SortSongList",
+    ),
+    (
+        0x0019_7bc8,
+        cfestaterequestline_update_song_names,
+        "cFEStateRequestLine_UpdateSongNames",
+    ),
+    (
+        0x0019_8118,
+        cfestaterequestline_update_song_count,
+        "cFEStateRequestLine_UpdateSongCount",
+    ),
+    (
+        0x0019_85b0,
+        c_fe_state_request_line_update_money,
+        "cFEStateRequestLine_UpdateMoney",
+    ),
+    (
+        0x0019_85f0,
+        cfestaterequestline_update_slot_icons,
+        "cFEStateRequestLine_UpdateSlotIcons",
+    ),
+    (
+        0x0019_88d8,
+        cfe_request_line_buy_song,
+        "cFEStateRequestLine_BuySong",
+    ),
+    (
+        0x0019_8988,
+        cfestate_request_line_open_buy_popup,
+        "cFEStateRequestLine_OpenBuyPopup",
+    ),
+    (
+        0x0019_8da0,
+        cfe_state_char_equip_compare_items,
+        "cFEStateCharEquip_CompareItems",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -50,55 +86,54 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 pub(crate) mod callee {
     use super::ee;
     use super::Callee;
-    pub(crate) use crate::game::fe::ovstatepause::callee::MPEG2_SHOW_BITS;
-    pub(crate) use crate::game::fe::ovstatepause::callee::MPEG2_FLUSH_BUFFER;
-    pub(crate) use crate::game::fe::ovstatepause::callee::AI_DESTROY_MISSION_RIDERS;
     pub(crate) use crate::game::fe::ovstatepause::callee::AI_CREATE_COMPUTER_RIDERS;
+    pub(crate) use crate::game::fe::ovstatepause::callee::AI_DESTROY_MISSION_RIDERS;
     pub(crate) use crate::game::fe::ovstatepause::callee::ANIM_CONTROLLER_GET_LAYER_ANIM_ENTRY;
     pub(crate) use crate::game::fe::ovstatepause::callee::BE_NEW_PLAYER_INT_GET_SLOT;
     pub(crate) use crate::game::fe::ovstatepause::callee::BE_REWARD_INT_COUNT_SET_BITS;
-    pub(crate) use crate::game::fe::ovstatepause::callee::CHASE_CAMERA_ALGORITHM_CTOR;
     pub(crate) use crate::game::fe::ovstatepause::callee::BUILTIN_DELETE;
-    pub(crate) use crate::game::fe::ovstatepause::callee::RIDER_METRIX_CLEAR_PEAK_A4;
-    pub(crate) use crate::game::fe::ovstatepause::callee::EA_MEM_SET;
-    pub(crate) use crate::game::fe::ovstatepause::callee::MC_MANAGER_GET;
-    pub(crate) use crate::game::fe::ovstatepause::callee::MC_MANAGER_BEGIN_LOAD;
-    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_CTOR;
-    pub(crate) use crate::game::fe::ovstatepause::callee::FE_FORMAT_MONEY;
-    pub(crate) use crate::game::fe::ovstatepause::callee::UI_TEXT_SET_STRING;
-    pub(crate) use crate::game::fe::ovstatepause::callee::FE_MODULE_RIDER_PREVIEW_UNLOAD;
-    pub(crate) use crate::game::fe::ovstatepause::callee::FE_MODULE_RIDER_PREVIEW_UPDATE;
+    pub(crate) use crate::game::fe::ovstatepause::callee::CHASE_CAMERA_ALGORITHM_CTOR;
     pub(crate) use crate::game::fe::ovstatepause::callee::CHECK_ACCOUNT_NAME;
     pub(crate) use crate::game::fe::ovstatepause::callee::CHECK_PASSWORD;
-    pub(crate) use crate::game::fe::ovstatepause::callee::NET_FE_STATE_ON_CHILD_EVENT;
-    pub(crate) use crate::game::fe::ovstatepause::callee::NET_FE_STATE_CTOR_2 as NET_FE_STATE_CTOR;
+    pub(crate) use crate::game::fe::ovstatepause::callee::C_FE_STATE_ON_ACTIVATE;
+    pub(crate) use crate::game::fe::ovstatepause::callee::C_OV_STATE_OVERLAY_SHUTDOWN;
+    pub(crate) use crate::game::fe::ovstatepause::callee::C_OV_STATE_OVERLAY_UPDATE;
+    pub(crate) use crate::game::fe::ovstatepause::callee::EA_MEM_SET;
+    pub(crate) use crate::game::fe::ovstatepause::callee::EVENT_SELECT_POST_INPUT;
+    pub(crate) use crate::game::fe::ovstatepause::callee::FE_ASYNC_MANAGER_CANCEL;
+    pub(crate) use crate::game::fe::ovstatepause::callee::FE_FORMAT_MONEY;
+    pub(crate) use crate::game::fe::ovstatepause::callee::FE_MODULE_RIDER_PREVIEW_UNLOAD;
+    pub(crate) use crate::game::fe::ovstatepause::callee::FE_MODULE_RIDER_PREVIEW_UPDATE;
     pub(crate) use crate::game::fe::ovstatepause::callee::KEYBOARD_POPUP_IS_KEY_ENABLED;
     pub(crate) use crate::game::fe::ovstatepause::callee::KEYBOARD_POPUP_MOVE_DOWN;
-    pub(crate) use crate::game::fe::ovstatepause::callee::EVENT_SELECT_POST_INPUT;
-    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_POST_INPUT;
-    pub(crate) use crate::game::fe::ovstatepause::callee::STR_HASH;
-    pub(crate) use crate::game::fe::ovstatepause::callee::UI_TEXTURE_SET_FIND;
-    pub(crate) use crate::game::fe::ovstatepause::callee::VID_ENGINE_PLAYER_RENDER;
-    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_RENDER;
-    pub(crate) use crate::game::fe::ovstatepause::callee::SSX_AUDIO_SYSTEM_GET_INSTANCE;
-    pub(crate) use crate::game::fe::ovstatepause::callee::MUSIC_PLAYER_RESUME;
-    pub(crate) use crate::game::fe::ovstatepause::callee::MOUNTAIN_ROOM_POLL_IMAGE_LOAD;
-    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_UPDATE_2 as UI_STATE_UPDATE;
-    pub(crate) use crate::game::fe::ovstatepause::callee::C_FE_STATE_ON_ACTIVATE;
-    pub(crate) use crate::game::fe::ovstatepause::callee::C_OV_STATE_OVERLAY_UPDATE;
-    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_ON_ACTIVATE_2 as UI_STATE_ON_ACTIVATE;
-    pub(crate) use crate::game::fe::ovstatepause::callee::PLAY_FE_SOUND;
+    pub(crate) use crate::game::fe::ovstatepause::callee::MC_MANAGER_BEGIN_LOAD;
+    pub(crate) use crate::game::fe::ovstatepause::callee::MC_MANAGER_GET;
     pub(crate) use crate::game::fe::ovstatepause::callee::MEM_CARD_STATE_BASE_CTOR_2;
-    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_MGR_CLOSE_TOP_STATE_AND_POPUPS;
-    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_MGR_CLOSE_TOP_STATES;
+    pub(crate) use crate::game::fe::ovstatepause::callee::MOUNTAIN_ROOM_POLL_IMAGE_LOAD;
+    pub(crate) use crate::game::fe::ovstatepause::callee::MPEG2_FLUSH_BUFFER;
+    pub(crate) use crate::game::fe::ovstatepause::callee::MPEG2_SHOW_BITS;
+    pub(crate) use crate::game::fe::ovstatepause::callee::MUSIC_PLAYER_RESUME;
+    pub(crate) use crate::game::fe::ovstatepause::callee::NET_FE_STATE_CTOR_2 as NET_FE_STATE_CTOR;
+    pub(crate) use crate::game::fe::ovstatepause::callee::NET_FE_STATE_ON_CHILD_EVENT;
     pub(crate) use crate::game::fe::ovstatepause::callee::OV_SCREEN_SESSION_DESTROY_INDICATORS;
-    pub(crate) use crate::game::fe::ovstatepause::callee::C_OV_STATE_OVERLAY_SHUTDOWN;
-    pub(crate) use crate::game::fe::ovstatepause::callee::FE_ASYNC_MANAGER_CANCEL;
+    pub(crate) use crate::game::fe::ovstatepause::callee::PLAY_FE_SOUND;
+    pub(crate) use crate::game::fe::ovstatepause::callee::RIDER_METRIX_CLEAR_PEAK_A4;
     pub(crate) use crate::game::fe::ovstatepause::callee::SECTION_MAN_REQUEST_ACTIVATE;
+    pub(crate) use crate::game::fe::ovstatepause::callee::SSX_AUDIO_SYSTEM_GET_INSTANCE;
     pub(crate) use crate::game::fe::ovstatepause::callee::STRCPY;
     pub(crate) use crate::game::fe::ovstatepause::callee::STRLEN;
+    pub(crate) use crate::game::fe::ovstatepause::callee::STR_HASH;
+    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_CTOR;
+    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_MGR_CLOSE_TOP_STATES;
+    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_MGR_CLOSE_TOP_STATE_AND_POPUPS;
+    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_ON_ACTIVATE_2 as UI_STATE_ON_ACTIVATE;
+    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_POST_INPUT;
+    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_RENDER;
+    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_UPDATE_2 as UI_STATE_UPDATE;
+    pub(crate) use crate::game::fe::ovstatepause::callee::UI_TEXTURE_SET_FIND;
+    pub(crate) use crate::game::fe::ovstatepause::callee::UI_TEXT_SET_STRING;
+    pub(crate) use crate::game::fe::ovstatepause::callee::VID_ENGINE_PLAYER_RENDER;
 }
-
 
 // ---------------------------------------------------------------------------
 // Money / cash text hooks: format the value and hand the string to a text.
@@ -133,7 +168,6 @@ pub fn c_fe_state_request_line_update_money(c: &mut Cpu) {
     })
 }
 
-
 /// `int cFEStateCharEquip_CompareItems(Item** a, Item** b)` (0x00198da0):
 /// the list order is the signed short sort key at +0xa of each item.
 pub fn cfe_state_char_equip_compare_items(c: &mut Cpu) {
@@ -145,7 +179,6 @@ pub fn cfe_state_char_equip_compare_items(c: &mut Cpu) {
     c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[V0][0] as u32));
     abi::ret(c);
 }
-
 
 // ---------------------------------------------------------------------------
 // `cFEStateRequestLine_SortSongList` (0x197ad8): stable-partition the song
@@ -225,7 +258,6 @@ pub fn cfe_state_request_line_sort_song_list(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void cFEStateRequestLine_BuySong(self, int songIndex)` (0x1988d8): mark
 /// the song bought (only once at least six songs are owned) and refresh the
 /// store's owned/bought bitmaps.
@@ -288,7 +320,6 @@ pub fn cfe_request_line_buy_song(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Front end: request line.
@@ -371,7 +402,6 @@ pub fn cfestaterequestline_update_song_names(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Request line: song count / slot icons.
 
@@ -451,7 +481,6 @@ pub fn cfestaterequestline_update_song_count(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void cFEStateRequestLine_UpdateSlotIcons(self)` (0x1985f0): show the
 /// icons for the slots the bit mask selects, hide the rest.
@@ -561,16 +590,19 @@ pub fn cfestaterequestline_update_slot_icons(c: &mut Cpu) {
     })
 }
 
-
 /// `cFEStateRequestLine_OnChildEvent(self, arg, event)` (0x1979d8): the
 /// request-line screen's child events: event 0x15 clears the "selected"
 /// flag, event 0x16 sets it and refreshes the list when the child is the
 /// current song.
 pub fn cfestate_request_line_on_child_event(c: &mut Cpu) {
-    const REFRESH_LIST: Callee =
-        Callee { addr: 0x0019_7b88, f: ee::s02::cFEStateRequestLine_RefreshList };
-    const UPDATE_HELP: Callee =
-        Callee { addr: 0x0019_81f8, f: ee::s02::cFEStateRequestLine_UpdateHelpText };
+    const REFRESH_LIST: Callee = Callee {
+        addr: 0x0019_7b88,
+        f: ee::s02::cFEStateRequestLine_RefreshList,
+    };
+    const UPDATE_HELP: Callee = Callee {
+        addr: 0x0019_81f8,
+        f: ee::s02::cFEStateRequestLine_UpdateHelpText,
+    };
     const GET_ROW_VALUE: u32 = 0x0019_88d8;
     const SET_ROW_SELECTED: u32 = 0x0019_86d0;
     const UPDATE_ARROWS: u32 = 0x0019_85b0;
@@ -694,17 +726,20 @@ pub fn cfestate_request_line_on_child_event(c: &mut Cpu) {
     })
 }
 
-
 /// `cFEStateRequestLine_OpenBuyPopup(self, song)` (0x198988): allocate and
 /// construct the buy popup for `song`, count the song's credits, fill the
 /// title/price line, and push the popup on the UI state stack.
 pub fn cfestate_request_line_open_buy_popup(c: &mut Cpu) {
     const MEM_ALLOC: u32 = 0x0031_7d70;
     const POPUP_CTOR: u32 = 0x001c_aba8;
-    const GET_SONG_TITLE: Callee =
-        Callee { addr: 0x0019_8a88, f: ee::s03::cFEStateRequestLine_GetSongTitle };
-    const GET_SONG_PRICE: Callee =
-        Callee { addr: 0x0019_8ae8, f: ee::s03::cFEStateRequestLine_GetSongPrice };
+    const GET_SONG_TITLE: Callee = Callee {
+        addr: 0x0019_8a88,
+        f: ee::s03::cFEStateRequestLine_GetSongTitle,
+    };
+    const GET_SONG_PRICE: Callee = Callee {
+        addr: 0x0019_8ae8,
+        f: ee::s03::cFEStateRequestLine_GetSongPrice,
+    };
     const SET_TRACK: u32 = 0x001c_a980;
     const SET_CREDIT: u32 = 0x001c_a900;
     const PUSH_POPUP: u32 = 0x0039_f290;
@@ -797,52 +832,51 @@ pub fn cfestate_request_line_open_buy_popup(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::difftest::check;
+    use crate::difftest::check_lohi;
+    use crate::difftest::compare;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::vtable;
-    use crate::difftest::check;
+    use crate::difftest::fakes::FAKE;
+    use crate::difftest::fakes::LOG_UNWIND_AT;
+    use crate::difftest::fill;
+    use crate::difftest::put_vec;
     use crate::difftest::put_words;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::check_lohi;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::fill;
     use crate::difftest::RA as SENTINEL;
-    use ssx3_ee as ee;
-    use crate::difftest::put_vec;
     use crate::difftest::SP;
-    use crate::difftest::fakes::LOG_UNWIND_AT;
-    use crate::difftest::compare;
-    pub(crate) use crate::game::fe::festatecharequip2::tests::money_text_test;
-    pub(crate) use crate::game::world::worldview::tests::SEEDS_5 as SEEDS;
-    pub(crate) use crate::game::world::worldview::tests::word;
-    pub(crate) use crate::game::bx::bxstring2::tests::W_2 as W;
-    pub(crate) use crate::game::bx::bxstring2::tests::RM;
-    pub(crate) use crate::game::bx::bxstring2::tests::RIDERS;
+    pub(crate) use crate::game::ai::rider::tests::clear_2 as clear;
+    pub(crate) use crate::game::bx::bxstring2::tests::base_3 as base;
+    pub(crate) use crate::game::bx::bxstring2::tests::gp_at;
     pub(crate) use crate::game::bx::bxstring2::tests::BE_2 as BE;
     pub(crate) use crate::game::bx::bxstring2::tests::DB;
+    pub(crate) use crate::game::bx::bxstring2::tests::RIDERS;
+    pub(crate) use crate::game::bx::bxstring2::tests::RM;
     pub(crate) use crate::game::bx::bxstring2::tests::VTS;
-    pub(crate) use crate::game::bx::bxstring2::tests::gp_at;
-    pub(crate) use crate::game::bx::bxstring2::tests::base_3 as base;
-    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_4 as OBJ;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE as BE_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_6 as WORLD;
-    pub(crate) use crate::game::fe::feasyncfile::tests::w;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_11 as globals;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_9 as pool;
+    pub(crate) use crate::game::bx::bxstring2::tests::W_2 as W;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as base_2;
-    pub(crate) use crate::game::sound::soundsys::tests::BE as BE_3;
-    pub(crate) use crate::game::ai::rider::tests::clear_2 as clear;
-    pub(crate) use crate::game::sound::soundsys::tests::pool_7 as pool_2;
-    pub(crate) use crate::game::sound::soundsys::tests::load_2 as load;
-    pub(crate) use crate::game::sound::soundsys::tests::alloc_ready;
-    pub(crate) use crate::game::sound::soundsys::tests::base_9 as base_3;
-    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_17 as SEEDS_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::strict_2 as strict;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_18 as base_4;
+    pub(crate) use crate::game::fe::feasyncfile::tests::globals_11 as globals;
     pub(crate) use crate::game::fe::feasyncfile::tests::globals_13 as globals_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::pool_11 as pool_3;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_18 as base_4;
-
+    pub(crate) use crate::game::fe::feasyncfile::tests::pool_9 as pool;
+    pub(crate) use crate::game::fe::feasyncfile::tests::strict_2 as strict;
+    pub(crate) use crate::game::fe::feasyncfile::tests::w;
+    pub(crate) use crate::game::fe::feasyncfile::tests::BE as BE_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_4 as OBJ;
+    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_17 as SEEDS_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_6 as WORLD;
+    pub(crate) use crate::game::fe::festatecharequip2::tests::money_text_test;
+    pub(crate) use crate::game::sound::soundsys::tests::alloc_ready;
+    pub(crate) use crate::game::sound::soundsys::tests::base_9 as base_3;
+    pub(crate) use crate::game::sound::soundsys::tests::load_2 as load;
+    pub(crate) use crate::game::sound::soundsys::tests::pool_7 as pool_2;
+    pub(crate) use crate::game::sound::soundsys::tests::BE as BE_3;
+    pub(crate) use crate::game::world::worldview::tests::word;
+    pub(crate) use crate::game::world::worldview::tests::SEEDS_5 as SEEDS;
+    use ssx3_ee as ee;
 
     #[test]
     fn c_fe_state_request_line_update_money_matches() {
@@ -855,20 +889,23 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn cfe_state_char_equip_compare_items_matches() {
-        check(ssx3_ee::s03::f_00198da0__generated, cfe_state_char_equip_compare_items, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x198da0, 0);
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = sx(DATA + 4);
-            word(c, DATA, DATA + 0x100);
-            word(c, DATA + 4, DATA + 0x200);
-            c.bus.write16(DATA + 0x10a, (r.next_u32() & 0xffff) as u16);
-            c.bus.write16(DATA + 0x20a, (r.next_u32() & 0xffff) as u16);
-        });
+        check(
+            ssx3_ee::s03::f_00198da0__generated,
+            cfe_state_char_equip_compare_items,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x198da0, 0);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 4);
+                word(c, DATA, DATA + 0x100);
+                word(c, DATA + 4, DATA + 0x200);
+                c.bus.write16(DATA + 0x10a, (r.next_u32() & 0xffff) as u16);
+                c.bus.write16(DATA + 0x20a, (r.next_u32() & 0xffff) as u16);
+            },
+        );
     }
-
 
     #[test]
     fn cfe_state_request_line_sort_song_list_matches() {
@@ -886,7 +923,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn cfe_request_line_buy_song_matches() {
@@ -910,7 +946,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn cfestaterequestline_update_song_count_matches() {
@@ -936,7 +971,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn cfestaterequestline_update_slot_icons_matches() {
@@ -964,7 +998,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn cfestaterequestline_update_song_names_matches() {
         check(
@@ -989,8 +1022,7 @@ pub(crate) mod tests {
         );
     }
 
-
-            #[test]
+    #[test]
     fn cfestate_request_line_on_child_event_matches() {
         strict(
             ssx3_ee::s02::f_001979d8__generated,
@@ -1003,7 +1035,11 @@ pub(crate) mod tests {
                 w(c, this + 0x1c, r.next_u32());
                 w(c, this + 0x170, DATA + 0x3000);
                 w(c, this + 0x150, 0);
-                w(c, child + 0xc, if seed % 2 == 0 { 7 } else { r.next_u32() % 16 });
+                w(
+                    c,
+                    child + 0xc,
+                    if seed % 2 == 0 { 7 } else { r.next_u32() % 16 },
+                );
                 w(c, child + 0x6c, 0);
                 c.g[A0][0] = sx(this);
                 c.g[A1][0] = sx(child);
@@ -1015,7 +1051,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn cfestate_request_line_open_buy_popup_matches() {

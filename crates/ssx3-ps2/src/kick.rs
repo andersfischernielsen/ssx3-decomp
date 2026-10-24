@@ -50,7 +50,8 @@ static PENDING: AtomicU32 = AtomicU32::new(0);
 
 fn on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    crate::frame_sink::native() && *ON.get_or_init(|| std::env::var("SSX3_NATIVE_KICK").map_or(true, |v| v != "0"))
+    crate::frame_sink::native()
+        && *ON.get_or_init(|| std::env::var("SSX3_NATIVE_KICK").map_or(true, |v| v != "0"))
 }
 
 /// The GraphicsMan if `id` is its kick semaphore and the kick is native.
@@ -65,7 +66,9 @@ fn kick_gm(c: &mut Cpu, id: i32) -> Option<u32> {
 /// `SignalSema` / `iSignalSema(id)`: true if this took the signal (the kick
 /// semaphore, native mode).
 pub fn on_signal(c: &mut Cpu, id: i32, interrupt: bool) -> bool {
-    let Some(g) = kick_gm(c, id) else { return false };
+    let Some(g) = kick_gm(c, id) else {
+        return false;
+    };
     if interrupt {
         PENDING.fetch_add(1, Ordering::Relaxed);
     } else {

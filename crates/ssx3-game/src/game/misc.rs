@@ -14,17 +14,20 @@ use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
-pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-];
-
+pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[];
 
 // ---------------------------------------------------------------------------
 // Misc newlib: allocator glue and the cache-range loops.
 
-pub(crate) const MALLOC_R: Callee = Callee { addr: 0x0041_dbf8, f: ssx3_ee::s15::f_0041dbf8 };
+pub(crate) const MALLOC_R: Callee = Callee {
+    addr: 0x0041_dbf8,
+    f: ssx3_ee::s15::f_0041dbf8,
+};
 
-pub(crate) const MEMSET: Callee = Callee { addr: 0x0041_6210, f: ssx3_ee::s15::f_00416210 };
-
+pub(crate) const MEMSET: Callee = Callee {
+    addr: 0x0041_6210,
+    f: ssx3_ee::s15::f_00416210,
+};
 
 /// `struct glue *_sfmoreglue(struct _reent *r, int n)` (0x41ff98): allocate
 /// `n * 0x58 + 0xc` for a `FILE` glue record and zero its data area.
@@ -67,7 +70,6 @@ pub fn sfmoreglue(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void *_calloc_r(struct _reent *r, size_t n, size_t size)` (0x4224a0):
 /// `malloc(n * size)` then zero it (inline for small blocks, `memset`

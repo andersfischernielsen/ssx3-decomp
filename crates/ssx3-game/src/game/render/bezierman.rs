@@ -8,8 +8,12 @@ use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Frame;
+use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::be::bestate2::ea;
+pub(crate) use crate::game::fe::debugfe::at as at_2;
+pub(crate) use crate::game::fe::festateload::at;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
@@ -18,16 +22,16 @@ use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::Cpu;
-use crate::events::back_edge_unwinds;
-pub(crate) use crate::game::fe::festateload::at;
-pub(crate) use crate::game::be::bestate2::ea;
-pub(crate) use crate::game::fe::debugfe::at as at_2;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0038_b190, ps2_bezier_man_v22, "PS2BezierMan_v22"),
     (0x0038_b338, ps2bezier_man_v21, "PS2BezierMan_v21"),
-    (0x0038_ca08, ps2bezier_man_test_patch_bounds, "PS2BezierMan_TestPatchBounds"),
+    (
+        0x0038_ca08,
+        ps2bezier_man_test_patch_bounds,
+        "PS2BezierMan_TestPatchBounds",
+    ),
     (0x0038_d638, ps2_bezier_man_call_v17, "PS2BezierMan_CallV17"),
 ];
 
@@ -37,7 +41,6 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 pub(crate) mod callee {
     use super::ee;
     use super::Callee;
-
 
     /// `PS2GraphicsMan_CullAgainstLights`.
     pub const CULL_AGAINST_LIGHTS: Callee = Callee {
@@ -50,7 +53,6 @@ pub(crate) mod callee {
         addr: 0x0021_0820,
         f: ee::s05::RaceProgress_ProjectRider,
     };
-
 
     // Cross-shard calls the generator emitted as `call_indirect`.
     pub const RIDER_GET_DIST_TO_FINISH: u32 = 0x0011_3128;
@@ -78,14 +80,13 @@ pub(crate) mod callee {
 
 /// `gp`-relative globals used here.
 pub(crate) mod g {
-    pub(crate) use crate::game::fe::festateload::g::WORLD_TRIGGER_MANAGER;
+    pub(crate) use crate::game::fe::festateload::g::BE_OPTION_SINGLETON;
+    pub(crate) use crate::game::fe::festateload::g::BOLT_FILE_CACHE;
+    pub(crate) use crate::game::fe::festateload::g::FE_BASE_BACK;
     pub(crate) use crate::game::fe::festateload::g::SAVE_BUFFER;
     pub(crate) use crate::game::fe::festateload::g::SAVE_BUFFER_END;
-    pub(crate) use crate::game::fe::festateload::g::BE_OPTION_SINGLETON;
-    pub(crate) use crate::game::fe::festateload::g::FE_BASE_BACK;
-    pub(crate) use crate::game::fe::festateload::g::BOLT_FILE_CACHE;
+    pub(crate) use crate::game::fe::festateload::g::WORLD_TRIGGER_MANAGER;
 }
-
 
 // ---------------------------------------------------------------------------
 // Register and memory helpers.
@@ -96,14 +97,12 @@ pub(crate) fn gp(c: &Cpu, off: i32) -> u32 {
     r32(c, GP).wrapping_add(off as u32)
 }
 
-
 /// A float's bit pattern (test fixtures).
 #[inline(always)]
 #[cfg(test)]
 pub(crate) fn f(x: f32) -> u32 {
     x.to_bits()
 }
-
 
 // ---------------------------------------------------------------------------
 // PS2BezierMan_v21.
@@ -137,7 +136,6 @@ pub fn ps2bezier_man_v21(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // PS2BezierMan_TestPatchBounds.
@@ -180,7 +178,6 @@ pub fn ps2bezier_man_test_patch_bounds(c: &mut Cpu) {
     })
 }
 
-
 /// `void PS2BezierMan_CallV17(PS2BezierMan* self)` (0x38d638): call slot 0x11
 /// (`+0x88` delta, `+0x8c` method) of the object at `self->+0x4`.
 pub fn ps2_bezier_man_call_v17(c: &mut Cpu) {
@@ -200,7 +197,6 @@ pub fn ps2_bezier_man_call_v17(c: &mut Cpu) {
         Ok(())
     });
 }
-
 
 /// `void PS2BezierMan_v22(PS2BezierMan* self, void* obj, u8* types, void*
 /// extra)` (0x38B190): queue a bezier patch. Four equal type bytes go to the
@@ -407,7 +403,6 @@ pub fn ps2_bezier_man_v22(c: &mut Cpu) {
     }
 }
 
-
 /// `void PS2BezierMan_FreeCaches(PS2BezierMan* man)` (0x38b0f8): free the
 /// renderer's three cache blocks.
 pub fn ps2_bezier_man_free_caches(c: &mut Cpu) {
@@ -456,40 +451,38 @@ pub fn ps2_bezier_man_free_caches(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::difftest::check;
+    use crate::difftest::check_lohi;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::vtable;
     use crate::difftest::fakes::FAKE;
-    use crate::difftest::check;
     use crate::difftest::put_vec;
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::check_lohi;
-    use ssx3_ee::s01;
-    use ssx3_ee::s03;
+    pub(crate) use crate::game::be::beintoption::tests::slot;
+    pub(crate) use crate::game::be::beintoption::tests::VT;
+    pub(crate) use crate::game::be::bestate2::tests::belib;
+    pub(crate) use crate::game::be::bestate2::tests::w;
+    pub(crate) use crate::game::fe::festateload::tests::clear;
+    pub(crate) use crate::game::fe::festateload::tests::OBJ;
+    pub(crate) use crate::game::object::railmodifier::tests::h;
     use ssx3_ee::s00;
+    use ssx3_ee::s01;
     use ssx3_ee::s02;
+    use ssx3_ee::s03;
     use ssx3_ee::s08;
     use ssx3_ee::s09;
     use ssx3_ee::s10;
     use ssx3_ee::s11;
     use ssx3_ee::s12;
     use ssx3_ee::s13;
-    pub(crate) use crate::game::fe::festateload::tests::OBJ;
-    pub(crate) use crate::game::be::beintoption::tests::VT;
-    pub(crate) use crate::game::be::beintoption::tests::slot;
-    pub(crate) use crate::game::fe::festateload::tests::clear;
-    pub(crate) use crate::game::be::bestate2::tests::w;
-    pub(crate) use crate::game::object::railmodifier::tests::h;
-    pub(crate) use crate::game::be::bestate2::tests::belib;
-
 
     // PS2BezierMan_v21 -----------------------------------------------------
 
     pub(crate) const BEZIER: u32 = DATA;
-
 
     #[test]
     fn ps2bezier_man_v21_matches() {
@@ -508,7 +501,6 @@ pub(crate) mod tests {
         );
     }
 
-
     // PS2BezierMan_TestPatchBounds ----------------------------------------
 
     pub(crate) const PATCH: u32 = DATA + 0x2000;
@@ -516,7 +508,6 @@ pub(crate) mod tests {
     pub(crate) const GMAN: u32 = DATA + 0x4000;
 
     pub(crate) const LIGHT_VT: u32 = DATA + 0x5000;
-
 
     #[test]
     fn ps2bezier_man_test_patch_bounds_matches() {
@@ -544,61 +535,68 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn ps2_bezier_man_call_v17_matches() {
-        covered(s12::f_0038d638__generated, ps2_bezier_man_call_v17, 120, &|c, seed| {
-            machine(c, seed, 0x38d638, 1);
-            clear(c, OBJ, 0x40);
-            clear(c, VT, 0x200);
-            slot(c, VT, 0x88);
-            c.bus.write32(OBJ + 4, VT);
-            c.g[A0][0] = sx(OBJ);
-            let _ = seed;
-        });
+        covered(
+            s12::f_0038d638__generated,
+            ps2_bezier_man_call_v17,
+            120,
+            &|c, seed| {
+                machine(c, seed, 0x38d638, 1);
+                clear(c, OBJ, 0x40);
+                clear(c, VT, 0x200);
+                slot(c, VT, 0x88);
+                c.bus.write32(OBJ + 4, VT);
+                c.g[A0][0] = sx(OBJ);
+                let _ = seed;
+            },
+        );
     }
-
 
     pub(crate) fn b(c: &mut Cpu, a: u32, v: u8) {
         c.bus.write8(a, v);
     }
 
-
     #[test]
     fn ps2_bezier_man_v22_matches() {
-        check(ee::s12::f_0038b190__generated, ps2_bezier_man_v22, 100, &|c, seed| {
-            machine(c, seed, 0x0038_b190, 0);
-            belib(c);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = (DATA + 0x1000) as u64;
-            c.g[A2][0] = (DATA + 0x2000) as u64;
-            c.g[T0][0] = (DATA + 0x3000) as u64;
-            let types: [u8; 4] = match seed % 6 {
-                0 => [4, 4, 4, 4],
-                1 => [6, 6, 6, 6],
-                2 => [8, 8, 8, 8],
-                3 => [1, 2, 8, 3],
-                4 => [1, 2, 3, 4],
-                _ => [2, 2, 2, 2],
-            };
-            for (i, t) in types.into_iter().enumerate() {
-                b(c, DATA + 0x2000 + i as u32, t);
-            }
-            h(c, DATA + 0x1000 + 0x1a6, 0x11);
-            h(c, DATA + 0x1000 + 0x1a8, 0x22);
-            h(c, DATA + 0x1000 + 0x1aa, 0x33);
-            match seed % 4 {
-                1 => w(c, DATA + 0x3c9c, 220), // 6-list full
-                2 => {
-                    w(c, DATA + 0x458, 900); // 4-list full
-                    w(c, DATA + 0x4d84, 75); // mix list full
+        check(
+            ee::s12::f_0038b190__generated,
+            ps2_bezier_man_v22,
+            100,
+            &|c, seed| {
+                machine(c, seed, 0x0038_b190, 0);
+                belib(c);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (DATA + 0x1000) as u64;
+                c.g[A2][0] = (DATA + 0x2000) as u64;
+                c.g[T0][0] = (DATA + 0x3000) as u64;
+                let types: [u8; 4] = match seed % 6 {
+                    0 => [4, 4, 4, 4],
+                    1 => [6, 6, 6, 6],
+                    2 => [8, 8, 8, 8],
+                    3 => [1, 2, 8, 3],
+                    4 => [1, 2, 3, 4],
+                    _ => [2, 2, 2, 2],
+                };
+                for (i, t) in types.into_iter().enumerate() {
+                    b(c, DATA + 0x2000 + i as u32, t);
                 }
-                3 => {
-                    w(c, DATA + 0x4a60, 50); // 8-list full
-                    w(c, DATA + 0x3c9c, 220);
+                h(c, DATA + 0x1000 + 0x1a6, 0x11);
+                h(c, DATA + 0x1000 + 0x1a8, 0x22);
+                h(c, DATA + 0x1000 + 0x1aa, 0x33);
+                match seed % 4 {
+                    1 => w(c, DATA + 0x3c9c, 220), // 6-list full
+                    2 => {
+                        w(c, DATA + 0x458, 900); // 4-list full
+                        w(c, DATA + 0x4d84, 75); // mix list full
+                    }
+                    3 => {
+                        w(c, DATA + 0x4a60, 50); // 8-list full
+                        w(c, DATA + 0x3c9c, 220);
+                    }
+                    _ => {}
                 }
-                _ => {}
-            }
-        });
+            },
+        );
     }
 }

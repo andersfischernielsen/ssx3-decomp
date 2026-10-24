@@ -38,7 +38,10 @@ pub enum Cmd {
     /// `entry` (0x3a08, or 0x3a00 once after their flag was set). Per
     /// program start, the qwords its input holds (offset from TOP, value):
     /// the strip tag, the counts and alpha ramp, edge A, edge B.
-    Ribbon { entry: u32, calls: Vec<Vec<(u16, u128)>> },
+    Ribbon {
+        entry: u32,
+        calls: Vec<Vec<(u16, u128)>>,
+    },
     /// What a packet does to VU1, in order, without its encoding: the frame
     /// build applies it to its VIF state as the packet would have
     /// (`crate::vif::Vif1::native`), so its program starts become ordinary
@@ -48,7 +51,11 @@ pub enum Cmd {
     /// one view): the GIF data it queued for PATH3 and the PATH3 windows it
     /// put into the VIF chain (each runs the queued data up to the next
     /// EOP). `start..end` is its stretch of the VIF chain.
-    Post { kind: PostKind, gif: Vec<u128>, windows: u32 },
+    Post {
+        kind: PostKind,
+        gif: Vec<u128>,
+        windows: u32,
+    },
     /// A bucket's link, recorded at a packet's end: the bucket's next packet
     /// starts at this address (what `DeferMan_AppendPacket`'s NEXT tag there
     /// would hold; packetless, no tag is written).
@@ -68,7 +75,11 @@ pub enum PostKind {
 pub enum Step {
     /// Quadwords stored from `addr` (relative to TOPS when `rel`, as UNPACK
     /// with FLG), as VU memory holds them afterwards.
-    Write { addr: u16, rel: bool, data: Vec<u128> },
+    Write {
+        addr: u16,
+        rel: bool,
+        data: Vec<u128>,
+    },
     /// STCYCL, ITOP, STMOD, STMASK.
     Cycle(u32),
     Itop(u32),
@@ -220,7 +231,11 @@ pub fn tops(mut regs: VifRegs, n: u32) -> Vec<u32> {
     (0..n)
         .map(|_| {
             let top = regs.tops & 0x3ff;
-            regs.tops = if regs.dbf { regs.base } else { regs.base + regs.ofst };
+            regs.tops = if regs.dbf {
+                regs.base
+            } else {
+                regs.base + regs.ofst
+            };
             regs.dbf = !regs.dbf;
             top
         })
@@ -247,7 +262,12 @@ pub fn decode(b: &[u8]) -> Option<Vec<Recorded>> {
     let mut list = Vec::with_capacity(n as usize);
     for _ in 0..n {
         let (start, end, first_tag) = (r.u32()?, r.u32()?, r.u128()?);
-        list.push(Recorded { start, end, first_tag, cmd: decode_cmd(&mut r)? });
+        list.push(Recorded {
+            start,
+            end,
+            first_tag,
+            cmd: decode_cmd(&mut r)?,
+        });
     }
     Some(list)
 }
@@ -451,20 +471,65 @@ mod tests {
         assert_eq!(strip_batches(72).collect::<Vec<_>>(), vec![0..72]);
         assert_eq!(strip_batches(73).collect::<Vec<_>>(), vec![0..72, 70..73]);
         assert_eq!(strip_batches(142).collect::<Vec<_>>(), vec![0..72, 70..142]);
-        assert_eq!(strip_batches(143).collect::<Vec<_>>(), vec![0..72, 70..142, 140..143]);
+        assert_eq!(
+            strip_batches(143).collect::<Vec<_>>(),
+            vec![0..72, 70..142, 140..143]
+        );
     }
 
     #[test]
     fn encode_decode_round_trip() {
         let list = vec![
-            Recorded { start: 0x10_0000, end: 0x10_0400, first_tag: 7 << 100 | 3, cmd: Cmd::Strip { entry: 0x12b8, prim: 0x5c, verts: vec![[1, 2, 3], [4, 5, u128::MAX]] } },
-            Recorded { start: 0x10_0410, end: 0x10_0500, first_tag: 9, cmd: Cmd::Strip { entry: 0x12b0, prim: 0x4c, verts: Vec::new() } },
-            Recorded { start: 0x10_0500, end: 0x10_0600, first_tag: 3, cmd: Cmd::Ribbon { entry: 0x3a08, calls: vec![vec![(0, 5), (2, u128::MAX)], vec![]] } },
+            Recorded {
+                start: 0x10_0000,
+                end: 0x10_0400,
+                first_tag: 7 << 100 | 3,
+                cmd: Cmd::Strip {
+                    entry: 0x12b8,
+                    prim: 0x5c,
+                    verts: vec![[1, 2, 3], [4, 5, u128::MAX]],
+                },
+            },
+            Recorded {
+                start: 0x10_0410,
+                end: 0x10_0500,
+                first_tag: 9,
+                cmd: Cmd::Strip {
+                    entry: 0x12b0,
+                    prim: 0x4c,
+                    verts: Vec::new(),
+                },
+            },
+            Recorded {
+                start: 0x10_0500,
+                end: 0x10_0600,
+                first_tag: 3,
+                cmd: Cmd::Ribbon {
+                    entry: 0x3a08,
+                    calls: vec![vec![(0, 5), (2, u128::MAX)], vec![]],
+                },
+            },
             Recorded {
                 start: 0x10_0700,
                 end: 0x10_0800,
                 first_tag: 4,
-                cmd: Cmd::Vu(vec![Step::Cycle(0x101), Step::Write { addr: 0x11, rel: false, data: vec![1, 2] }, Step::Write { addr: 0, rel: true, data: vec![3] }, Step::Itop(1), Step::Mode(0), Step::Mask(7), Step::Start(0x80)]),
+                cmd: Cmd::Vu(vec![
+                    Step::Cycle(0x101),
+                    Step::Write {
+                        addr: 0x11,
+                        rel: false,
+                        data: vec![1, 2],
+                    },
+                    Step::Write {
+                        addr: 0,
+                        rel: true,
+                        data: vec![3],
+                    },
+                    Step::Itop(1),
+                    Step::Mode(0),
+                    Step::Mask(7),
+                    Step::Start(0x80),
+                ]),
             },
         ];
         let mut b = Vec::new();
@@ -474,7 +539,13 @@ mod tests {
 
     #[test]
     fn tops_alternate_like_mscal() {
-        let regs = VifRegs { base: 0x10, ofst: 0x200, tops: 0x210, dbf: true, ..Default::default() };
+        let regs = VifRegs {
+            base: 0x10,
+            ofst: 0x200,
+            tops: 0x210,
+            dbf: true,
+            ..Default::default()
+        };
         assert_eq!(tops(regs, 3), vec![0x210, 0x10, 0x210]);
     }
 }

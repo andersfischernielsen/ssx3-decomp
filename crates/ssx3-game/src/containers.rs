@@ -23,7 +23,7 @@
 
 use crate::abi::{self, addu};
 use crate::call::{call_ptr, guest, Callee, Frame};
-use crate::events::{Resume, back_edge_unwinds, deliver_event_here, event_due};
+use crate::events::{back_edge_unwinds, deliver_event_here, event_due, Resume};
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::{reg::*, sx};
@@ -33,11 +33,23 @@ use ssx3_ee_rt::Cpu;
 /// Replacements in this package: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0026_fa50, replay_stop_recording, "Replay_StopRecording"),
-    (0x0027_0628, replay_cancel_instant_replay, "Replay_CancelInstantReplay"),
+    (
+        0x0027_0628,
+        replay_cancel_instant_replay,
+        "Replay_CancelInstantReplay",
+    ),
     (0x0026_d740, replay_add_snapshot, "Replay_AddSnapshot"),
     (0x0026_e9d0, replay_stream_write, "ReplayStream_Write"),
-    (0x0030_c820, wscript_event_queue_pop, "WScriptMan_EventQueuePop"),
-    (0x0030_c870, wscript_event_queue_peek, "WScriptMan_EventQueuePeek"),
+    (
+        0x0030_c820,
+        wscript_event_queue_pop,
+        "WScriptMan_EventQueuePop",
+    ),
+    (
+        0x0030_c870,
+        wscript_event_queue_peek,
+        "WScriptMan_EventQueuePeek",
+    ),
     (0x003e_6220, ea_mem_zero, "EA_MemZero"),
     (0x0025_23a8, mem_free, "MEM_Free"),
     (0x0031_7e98, ea_mem_free, "EA_MemFree"),
@@ -45,14 +57,34 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0031_9a90, mem_alloc_internal, "MEM_AllocInternal"),
     (0x003e_5700, ea_mutex_lock, "EAMutex_Lock"),
     (0x003e_5760, ea_mutex_unlock, "EAMutex_Unlock"),
-    (0x0036_5fe8, vram_heap_pop_spare_node, "VramHeap_PopSpareNode"),
+    (
+        0x0036_5fe8,
+        vram_heap_pop_spare_node,
+        "VramHeap_PopSpareNode",
+    ),
     (0x0036_6008, vram_heap_remove_node, "VramHeap_RemoveNode"),
-    (0x0036_6238, vram_heap_unlink_size_list, "VramHeap_UnlinkSizeList"),
-    (0x0036_60a8, vram_heap_link_free_block, "VramHeap_LinkFreeBlock"),
-    (0x0036_67f8, vram_heap_find_free_block, "VramHeap_FindFreeBlock"),
+    (
+        0x0036_6238,
+        vram_heap_unlink_size_list,
+        "VramHeap_UnlinkSizeList",
+    ),
+    (
+        0x0036_60a8,
+        vram_heap_link_free_block,
+        "VramHeap_LinkFreeBlock",
+    ),
+    (
+        0x0036_67f8,
+        vram_heap_find_free_block,
+        "VramHeap_FindFreeBlock",
+    ),
     (0x0036_62d0, vram_heap_split_block, "VramHeap_SplitBlock"),
     (0x0036_63d8, vram_heap_free_block, "VramHeap_FreeBlock"),
-    (0x0036_68f8, vram_heap_evict_cheapest_block, "VramHeap_EvictCheapestBlock"),
+    (
+        0x0036_68f8,
+        vram_heap_evict_cheapest_block,
+        "VramHeap_EvictCheapestBlock",
+    ),
     (0x0036_6ce0, vram_heap_alloc, "VramHeap_Alloc"),
 ];
 
@@ -78,16 +110,42 @@ fn r(c: &Cpu, reg: usize) -> u32 {
 mod callee {
     use super::{ee, Callee};
 
-    pub const SNAPSHOT_LIST_PUSH_BACK: Callee = Callee { addr: 0x0026_e5d0, f: ee::s07::SnapshotList_PushBack };
-    pub const EA_MEM_SET: Callee = Callee { addr: 0x003e_6448, f: ee::s14::EA_MemSet };
-    pub const MEM_FREE_INTERNAL: Callee = Callee { addr: 0x0031_9b48, f: ee::s10::MEM_FreeInternal };
-    pub const MEM_IS_POOL_POINTER: Callee = Callee { addr: 0x0031_a088, f: ee::s10::MEM_IsPoolPointer };
-    pub const MEM_POOL_FREE: Callee = Callee { addr: 0x0031_9f68, f: ee::s10::MEM_PoolFree };
-    pub const MEM_HEAP_FREE: Callee = Callee { addr: 0x0032_00c0, f: ee::s10::MEM_HeapFree };
-    pub const MEM_POOL_ALLOC: Callee = Callee { addr: 0x0031_9e48, f: ee::s10::MEM_PoolAlloc };
-    pub const MEM_HEAP_MEMALIGN_OFFSET: Callee =
-        Callee { addr: 0x0032_0078, f: ee::s10::MEM_HeapMemalignOffset };
-    pub const MEM_HEAP_MEMALIGN: Callee = Callee { addr: 0x0032_0058, f: ee::s10::MEM_HeapMemalign };
+    pub const SNAPSHOT_LIST_PUSH_BACK: Callee = Callee {
+        addr: 0x0026_e5d0,
+        f: ee::s07::SnapshotList_PushBack,
+    };
+    pub const EA_MEM_SET: Callee = Callee {
+        addr: 0x003e_6448,
+        f: ee::s14::EA_MemSet,
+    };
+    pub const MEM_FREE_INTERNAL: Callee = Callee {
+        addr: 0x0031_9b48,
+        f: ee::s10::MEM_FreeInternal,
+    };
+    pub const MEM_IS_POOL_POINTER: Callee = Callee {
+        addr: 0x0031_a088,
+        f: ee::s10::MEM_IsPoolPointer,
+    };
+    pub const MEM_POOL_FREE: Callee = Callee {
+        addr: 0x0031_9f68,
+        f: ee::s10::MEM_PoolFree,
+    };
+    pub const MEM_HEAP_FREE: Callee = Callee {
+        addr: 0x0032_00c0,
+        f: ee::s10::MEM_HeapFree,
+    };
+    pub const MEM_POOL_ALLOC: Callee = Callee {
+        addr: 0x0031_9e48,
+        f: ee::s10::MEM_PoolAlloc,
+    };
+    pub const MEM_HEAP_MEMALIGN_OFFSET: Callee = Callee {
+        addr: 0x0032_0078,
+        f: ee::s10::MEM_HeapMemalignOffset,
+    };
+    pub const MEM_HEAP_MEMALIGN: Callee = Callee {
+        addr: 0x0032_0058,
+        f: ee::s10::MEM_HeapMemalign,
+    };
 }
 
 /// Cross-shard direct calls the generator emitted as `call_indirect` (they
@@ -253,7 +311,11 @@ pub fn wscript_event_queue_pop(c: &mut Cpu) {
     // `(head + 1) % 16` as gcc computes a signed remainder.
     let non_negative = (next as i64) > -1;
     c.g[A0][0] = non_negative as u64;
-    let biased = if non_negative { next } else { sx((head as u32).wrapping_add(0x10)) };
+    let biased = if non_negative {
+        next
+    } else {
+        sx((head as u32).wrapping_add(0x10))
+    };
     let floor = sx((((biased as u32) as i32 >> 4) as u32) << 4);
     c.g[V1][0] = floor;
     let wrapped = sx((next as u32).wrapping_sub(floor as u32));
@@ -686,7 +748,11 @@ fn link_target(c: &mut Cpu, heap: u32, link: u64, nodes: u64, scaled: u64) -> u3
     let used = link & TAG_MASK == TAG_USED;
     c.cycles += 6;
     let scaled = scale(c, V0, link & TAG_INDEX);
-    let base = if used { VramHeap::USED_LISTS } else { VramHeap::FREE_LISTS };
+    let base = if used {
+        VramHeap::USED_LISTS
+    } else {
+        VramHeap::FREE_LISTS
+    };
     let off = addu(scaled, base as u64);
     c.g[V0][0] = off;
     let a = addu(heap as u64, off);
@@ -1015,7 +1081,11 @@ fn link_insert_before(c: &mut Cpu) -> Resume<LinkStage> {
         c.g[V0][0] = prev & c.g[T3][0];
         c.cycles += 4;
         let scaled = scale(c, V0, c.g[V0][0]);
-        let base = if used { VramHeap::USED_LISTS } else { VramHeap::FREE_LISTS };
+        let base = if used {
+            VramHeap::USED_LISTS
+        } else {
+            VramHeap::FREE_LISTS
+        };
         let off = addu(scaled, base as u64);
         let a = addu(h as u64, off);
         c.g[V0][0] = a;
@@ -1115,16 +1185,42 @@ pub fn vram_heap_find_free_block(c: &mut Cpu) {
 mod vram_callee {
     use super::{ee, Callee};
 
-    pub const UNLINK_SIZE_LIST: Callee = Callee { addr: 0x0036_6238, f: ee::s12::VramHeap_UnlinkSizeList };
-    pub const POP_SPARE_NODE: Callee = Callee { addr: 0x0036_5fe8, f: ee::s12::VramHeap_PopSpareNode };
-    pub const LINK_FREE_BLOCK: Callee = Callee { addr: 0x0036_60a8, f: ee::s12::VramHeap_LinkFreeBlock };
-    pub const REMOVE_NODE: Callee = Callee { addr: 0x0036_6008, f: ee::s12::VramHeap_RemoveNode };
-    pub const FREE_BLOCK: Callee = Callee { addr: 0x0036_63d8, f: ee::s12::VramHeap_FreeBlock };
-    pub const FIND_FREE_BLOCK: Callee = Callee { addr: 0x0036_67f8, f: ee::s12::VramHeap_FindFreeBlock };
-    pub const EVICT_CHEAPEST_BLOCK: Callee =
-        Callee { addr: 0x0036_68f8, f: ee::s12::VramHeap_EvictCheapestBlock };
-    pub const EVICT_RANGE: Callee = Callee { addr: 0x0036_69f0, f: ee::s12::VramHeap_EvictRange };
-    pub const SPLIT_BLOCK: Callee = Callee { addr: 0x0036_62d0, f: ee::s12::VramHeap_SplitBlock };
+    pub const UNLINK_SIZE_LIST: Callee = Callee {
+        addr: 0x0036_6238,
+        f: ee::s12::VramHeap_UnlinkSizeList,
+    };
+    pub const POP_SPARE_NODE: Callee = Callee {
+        addr: 0x0036_5fe8,
+        f: ee::s12::VramHeap_PopSpareNode,
+    };
+    pub const LINK_FREE_BLOCK: Callee = Callee {
+        addr: 0x0036_60a8,
+        f: ee::s12::VramHeap_LinkFreeBlock,
+    };
+    pub const REMOVE_NODE: Callee = Callee {
+        addr: 0x0036_6008,
+        f: ee::s12::VramHeap_RemoveNode,
+    };
+    pub const FREE_BLOCK: Callee = Callee {
+        addr: 0x0036_63d8,
+        f: ee::s12::VramHeap_FreeBlock,
+    };
+    pub const FIND_FREE_BLOCK: Callee = Callee {
+        addr: 0x0036_67f8,
+        f: ee::s12::VramHeap_FindFreeBlock,
+    };
+    pub const EVICT_CHEAPEST_BLOCK: Callee = Callee {
+        addr: 0x0036_68f8,
+        f: ee::s12::VramHeap_EvictCheapestBlock,
+    };
+    pub const EVICT_RANGE: Callee = Callee {
+        addr: 0x0036_69f0,
+        f: ee::s12::VramHeap_EvictRange,
+    };
+    pub const SPLIT_BLOCK: Callee = Callee {
+        addr: 0x0036_62d0,
+        f: ee::s12::VramHeap_SplitBlock,
+    };
 }
 
 /// `void VramHeap_SplitBlock(VramHeap* h, int idx, int size)` (0x3662d0):
@@ -1546,7 +1642,8 @@ pub fn vram_heap_alloc(c: &mut Cpu) {
             c.g[S1][0] = 0x100;
         }
         c.g[A0][0] = c.g[S2][0];
-        let (h, size, owner, keep, now) = (c.g[S2][0], c.g[S1][0], c.g[S3][0], c.g[S5][0], c.g[S4][0]);
+        let (h, size, owner, keep, now) =
+            (c.g[S2][0], c.g[S1][0], c.g[S3][0], c.g[S5][0], c.g[S4][0]);
         let idx = loop {
             c.cycles += 5;
             c.g[A1][0] = size;
@@ -1607,7 +1704,9 @@ pub fn vram_heap_alloc(c: &mut Cpu) {
 mod tests {
     use super::*;
     use crate::difftest::fakes::*;
-    use crate::difftest::{check, check_lohi, check_paths, check_paths_lohi, fill, Rng, DATA, GAME_GP};
+    use crate::difftest::{
+        check, check_lohi, check_paths, check_paths_lohi, fill, Rng, DATA, GAME_GP,
+    };
 
     const SEEDS: u32 = 300;
 
@@ -1615,74 +1714,111 @@ mod tests {
 
     #[test]
     fn replay_stop_recording_matches() {
-        check_paths(ssx3_ee::s07::f_0026fa50__generated, replay_stop_recording, SEEDS, &[8, 9], &|c, seed| {
-            let mut r = machine(c, seed, 0x801, 0);
-            let rp = ptr(&mut r);
-            c.g[A0][0] = rp as u64;
-            let state = match r.next_u32() % 3 {
-                0 => 0xd + r.next_u32() % 4,
-                1 => r.next_u32() % 0x20,
-                _ => r.next_u32(),
-            };
-            c.bus.write32(rp, state);
-        });
+        check_paths(
+            ssx3_ee::s07::f_0026fa50__generated,
+            replay_stop_recording,
+            SEEDS,
+            &[8, 9],
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x801, 0);
+                let rp = ptr(&mut r);
+                c.g[A0][0] = rp as u64;
+                let state = match r.next_u32() % 3 {
+                    0 => 0xd + r.next_u32() % 4,
+                    1 => r.next_u32() % 0x20,
+                    _ => r.next_u32(),
+                };
+                c.bus.write32(rp, state);
+            },
+        );
     }
 
     #[test]
     fn replay_cancel_instant_replay_matches() {
-        check_paths(ssx3_ee::s07::f_00270628__generated, replay_cancel_instant_replay, SEEDS, &[6, 12], &|c, seed| {
-            let mut r = machine(c, seed, 0x802, 0);
-            let rp = ptr(&mut r);
-            c.g[A0][0] = rp as u64;
-            let pending = if r.next_u32() % 3 == 0 { 0 } else { r.next_u32() };
-            c.bus.write32(rp + 0x3d4, pending);
-            let (m, a, b) = (ptr(&mut r), ptr(&mut r), ptr(&mut r));
-            c.bus.write32(GAME_GP - 0x848, m);
-            c.bus.write32(m + 0x84, a);
-            c.bus.write32(a + 0xc, b);
-            let flag = match r.next_u32() % 3 {
-                0 => 1,
-                1 => r.next_u32() % 3,
-                _ => r.next_u32(),
-            };
-            c.bus.write32(b + 0x7c, flag);
-        });
+        check_paths(
+            ssx3_ee::s07::f_00270628__generated,
+            replay_cancel_instant_replay,
+            SEEDS,
+            &[6, 12],
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x802, 0);
+                let rp = ptr(&mut r);
+                c.g[A0][0] = rp as u64;
+                let pending = if r.next_u32() % 3 == 0 {
+                    0
+                } else {
+                    r.next_u32()
+                };
+                c.bus.write32(rp + 0x3d4, pending);
+                let (m, a, b) = (ptr(&mut r), ptr(&mut r), ptr(&mut r));
+                c.bus.write32(GAME_GP - 0x848, m);
+                c.bus.write32(m + 0x84, a);
+                c.bus.write32(a + 0xc, b);
+                let flag = match r.next_u32() % 3 {
+                    0 => 1,
+                    1 => r.next_u32() % 3,
+                    _ => r.next_u32(),
+                };
+                c.bus.write32(b + 0x7c, flag);
+            },
+        );
     }
 
     #[test]
     fn replay_add_snapshot_matches() {
-        check(ssx3_ee::s07::f_0026d740__generated, replay_add_snapshot, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x803, 0);
-            let rp = ptr(&mut r);
-            let node = ptr(&mut r);
-            c.g[A0][0] = rp as u64;
-            c.g[A1][0] = node as u64;
-            let list = rp + 0x3b0;
-            let tail = if r.next_u32() % 3 == 0 { 0 } else { ptr(&mut r) };
-            c.bus.write32(list + 4, tail);
-            c.bus.write32(list, if r.next_u32() % 3 == 0 { 0 } else { ptr(&mut r) });
-            c.bus.write32(list + 8, r.next_u32() % 50);
-        });
+        check(
+            ssx3_ee::s07::f_0026d740__generated,
+            replay_add_snapshot,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x803, 0);
+                let rp = ptr(&mut r);
+                let node = ptr(&mut r);
+                c.g[A0][0] = rp as u64;
+                c.g[A1][0] = node as u64;
+                let list = rp + 0x3b0;
+                let tail = if r.next_u32() % 3 == 0 {
+                    0
+                } else {
+                    ptr(&mut r)
+                };
+                c.bus.write32(list + 4, tail);
+                c.bus.write32(
+                    list,
+                    if r.next_u32() % 3 == 0 {
+                        0
+                    } else {
+                        ptr(&mut r)
+                    },
+                );
+                c.bus.write32(list + 8, r.next_u32() % 50);
+            },
+        );
     }
 
     #[test]
     fn replay_stream_write_matches() {
-        check(ssx3_ee::s07::f_0026e9d0__generated, replay_stream_write, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x804, 0);
-            fill(c, &mut r, DATA, 0x800);
-            let s = DATA + 0x4000 + 0x10 * (r.next_u32() % 16);
-            c.g[A0][0] = s as u64;
-            c.bus.write32(s + 8, DATA + 0x6000 + r.next_u32() % 64);
-            c.bus.write32(s + 0x10, r.next_u32());
-            c.g[A1][0] = (DATA + r.next_u32() % 0x100) as u64;
-            let n = match r.next_u32() % 4 {
-                0 => 0,
-                1 => r.next_u32() % 16,
-                2 => r.next_u32() % 0x400,
-                _ => 0u32.wrapping_sub(r.next_u32() % 4),
-            };
-            c.g[A2][0] = sx(n);
-        });
+        check(
+            ssx3_ee::s07::f_0026e9d0__generated,
+            replay_stream_write,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x804, 0);
+                fill(c, &mut r, DATA, 0x800);
+                let s = DATA + 0x4000 + 0x10 * (r.next_u32() % 16);
+                c.g[A0][0] = s as u64;
+                c.bus.write32(s + 8, DATA + 0x6000 + r.next_u32() % 64);
+                c.bus.write32(s + 0x10, r.next_u32());
+                c.g[A1][0] = (DATA + r.next_u32() % 0x100) as u64;
+                let n = match r.next_u32() % 4 {
+                    0 => 0,
+                    1 => r.next_u32() % 16,
+                    2 => r.next_u32() % 0x400,
+                    _ => 0u32.wrapping_sub(r.next_u32() % 4),
+                };
+                c.g[A2][0] = sx(n);
+            },
+        );
     }
 
     // ------------------------------------------------------------ event ring
@@ -1698,23 +1834,35 @@ mod tests {
             2 => 0u32.wrapping_sub(r.next_u32() % 20),
             _ => r.next_u32(),
         };
-        let tail = if r.next_u32() % 3 == 0 { head } else { r.next_u32() % 16 };
+        let tail = if r.next_u32() % 3 == 0 {
+            head
+        } else {
+            r.next_u32() % 16
+        };
         c.bus.write32(q, head);
         c.bus.write32(q + 4, tail);
     }
 
     #[test]
     fn wscript_event_queue_pop_matches() {
-        check_paths_lohi(ssx3_ee::s10::f_0030c820__generated, wscript_event_queue_pop, SEEDS, &[7, 18], &|c, seed| {
-            ring_setup(c, seed, 0x805)
-        });
+        check_paths_lohi(
+            ssx3_ee::s10::f_0030c820__generated,
+            wscript_event_queue_pop,
+            SEEDS,
+            &[7, 18],
+            &|c, seed| ring_setup(c, seed, 0x805),
+        );
     }
 
     #[test]
     fn wscript_event_queue_peek_matches() {
-        check_paths_lohi(ssx3_ee::s10::f_0030c870__generated, wscript_event_queue_peek, SEEDS, &[6, 8], &|c, seed| {
-            ring_setup(c, seed, 0x806)
-        });
+        check_paths_lohi(
+            ssx3_ee::s10::f_0030c870__generated,
+            wscript_event_queue_peek,
+            SEEDS,
+            &[6, 8],
+            &|c, seed| ring_setup(c, seed, 0x806),
+        );
     }
 
     // ------------------------------------------------------------ memory
@@ -1727,7 +1875,11 @@ mod tests {
         c.g[RA][0] = crate::difftest::RA as u64;
         c.pc = addr;
         f(c);
-        assert_eq!(c.pc, crate::difftest::RA, "setup call {addr:#x} did not return");
+        assert_eq!(
+            c.pc,
+            crate::difftest::RA,
+            "setup call {addr:#x} did not return"
+        );
         c.g[V0][0]
     }
 
@@ -1735,11 +1887,21 @@ mod tests {
     /// live blocks; returns them.
     fn mem_heap(c: &mut Cpu, r: &mut Rng) -> Vec<u32> {
         c.g[GP][0] = GAME_GP as u64;
-        run(c, 0x0031_ff60, ssx3_ee::s10::DLHeap_InitArena, &[super::MEM_HEAP as u64, (DATA + 0x40000) as u64, 0x40000]);
+        run(
+            c,
+            0x0031_ff60,
+            ssx3_ee::s10::DLHeap_InitArena,
+            &[super::MEM_HEAP as u64, (DATA + 0x40000) as u64, 0x40000],
+        );
         let mut blocks = Vec::new();
         for _ in 0..r.next_u32() % 6 {
             let size = 8 + r.next_u32() % 0x2000;
-            let b = run(c, 0x0032_0058, ssx3_ee::s10::MEM_HeapMemalign, &[super::MEM_HEAP as u64, 16, size as u64]);
+            let b = run(
+                c,
+                0x0032_0058,
+                ssx3_ee::s10::MEM_HeapMemalign,
+                &[super::MEM_HEAP as u64, 16, size as u64],
+            );
             blocks.push(b as u32);
         }
         blocks
@@ -1747,16 +1909,21 @@ mod tests {
 
     #[test]
     fn ea_mem_zero_matches() {
-        check(ssx3_ee::s14::f_003e6220__generated, ea_mem_zero, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x807, 0);
-            fill(c, &mut r, DATA, 0x400);
-            c.g[A0][0] = (DATA + r.next_u32() % 0x100) as u64;
-            c.g[A1][0] = match r.next_u32() % 3 {
-                0 => 0,
-                1 => (r.next_u32() % 0x300) as u64,
-                _ => sx(0u32.wrapping_sub(r.next_u32() % 4)),
-            };
-        });
+        check(
+            ssx3_ee::s14::f_003e6220__generated,
+            ea_mem_zero,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x807, 0);
+                fill(c, &mut r, DATA, 0x400);
+                c.g[A0][0] = (DATA + r.next_u32() % 0x100) as u64;
+                c.g[A1][0] = match r.next_u32() % 3 {
+                    0 => 0,
+                    1 => (r.next_u32() % 0x300) as u64,
+                    _ => sx(0u32.wrapping_sub(r.next_u32() % 4)),
+                };
+            },
+        );
     }
 
     /// The allocator mutex: sometimes held by "this thread" (the first fake
@@ -1779,27 +1946,44 @@ mod tests {
             }
         }
         c.bus.write32(m + 0xc, r.next_u32() % 64);
-        c.bus.write32(super::IN_INTERRUPT, if r.next_u32() % 2 == 0 { 0 } else { r.next_u32() });
+        c.bus.write32(
+            super::IN_INTERRUPT,
+            if r.next_u32() % 2 == 0 {
+                0
+            } else {
+                r.next_u32()
+            },
+        );
     }
 
     #[test]
     fn ea_mutex_lock_matches() {
-        covered(ssx3_ee::s14::f_003e5700__generated, ea_mutex_lock, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x808, 3);
-            let m = ptr(&mut r);
-            c.g[A0][0] = m as u64;
-            mutex_state(c, &mut r, m);
-        });
+        covered(
+            ssx3_ee::s14::f_003e5700__generated,
+            ea_mutex_lock,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x808, 3);
+                let m = ptr(&mut r);
+                c.g[A0][0] = m as u64;
+                mutex_state(c, &mut r, m);
+            },
+        );
     }
 
     #[test]
     fn ea_mutex_unlock_matches() {
-        covered(ssx3_ee::s14::f_003e5760__generated, ea_mutex_unlock, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x809, 2);
-            let m = ptr(&mut r);
-            c.g[A0][0] = m as u64;
-            mutex_state(c, &mut r, m);
-        });
+        covered(
+            ssx3_ee::s14::f_003e5760__generated,
+            ea_mutex_unlock,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x809, 2);
+                let m = ptr(&mut r);
+                c.g[A0][0] = m as u64;
+                mutex_state(c, &mut r, m);
+            },
+        );
     }
 
     /// A pointer to free: null, a pool pointer (the pools' bases are 0 in
@@ -1817,17 +2001,26 @@ mod tests {
 
     #[test]
     fn mem_free_internal_matches() {
-        check(ssx3_ee::s10::f_00319b48__generated, mem_free_internal, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x80a, 0);
-            let p = free_target(c, &mut r);
-            c.g[A0][0] = p;
-        });
+        check(
+            ssx3_ee::s10::f_00319b48__generated,
+            mem_free_internal,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x80a, 0);
+                let p = free_target(c, &mut r);
+                c.g[A0][0] = p;
+            },
+        );
     }
 
     #[test]
     fn ea_mem_free_and_mem_free_match() {
         for (gen, hand, salt) in [
-            (ssx3_ee::s10::f_00317e98__generated as fn(&mut Cpu), ea_mem_free as fn(&mut Cpu), 0x80b),
+            (
+                ssx3_ee::s10::f_00317e98__generated as fn(&mut Cpu),
+                ea_mem_free as fn(&mut Cpu),
+                0x80b,
+            ),
             (ssx3_ee::s06::f_002523a8__generated, mem_free, 0x80c),
         ] {
             covered(gen, hand, SEEDS, &|c, seed| {
@@ -1841,20 +2034,33 @@ mod tests {
 
     #[test]
     fn mem_alloc_internal_matches() {
-        check(ssx3_ee::s10::f_00319a90__generated, mem_alloc_internal, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x80d, 0);
-            mem_heap(c, &mut r);
-            c.g[A0][0] = match r.next_u32() % 5 {
-                0 => 0,
-                1 => (r.next_u32() % 0x210) as u64,
-                2 => 0x200 + (r.next_u32() % 3) as u64,
-                3 => (r.next_u32() % 0x8000) as u64,
-                _ => (r.next_u32() % 0x80000) as u64,
-            };
-            c.g[A1][0] = [0, 4, 8, 16, 32, 64, 128][(r.next_u32() % 7) as usize];
-            c.g[A2][0] = if r.next_u32() % 2 == 0 { sx(0x8000_0000 | r.next_u32()) } else { (r.next_u32() >> 1) as u64 };
-            c.g[A3][0] = if r.next_u32() % 2 == 0 { 0 } else { (r.next_u32() % 64) as u64 };
-        });
+        check(
+            ssx3_ee::s10::f_00319a90__generated,
+            mem_alloc_internal,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x80d, 0);
+                mem_heap(c, &mut r);
+                c.g[A0][0] = match r.next_u32() % 5 {
+                    0 => 0,
+                    1 => (r.next_u32() % 0x210) as u64,
+                    2 => 0x200 + (r.next_u32() % 3) as u64,
+                    3 => (r.next_u32() % 0x8000) as u64,
+                    _ => (r.next_u32() % 0x80000) as u64,
+                };
+                c.g[A1][0] = [0, 4, 8, 16, 32, 64, 128][(r.next_u32() % 7) as usize];
+                c.g[A2][0] = if r.next_u32() % 2 == 0 {
+                    sx(0x8000_0000 | r.next_u32())
+                } else {
+                    (r.next_u32() >> 1) as u64
+                };
+                c.g[A3][0] = if r.next_u32() % 2 == 0 {
+                    0
+                } else {
+                    (r.next_u32() % 64) as u64
+                };
+            },
+        );
     }
 
     // ------------------------------------------------------------ VRAM heap
@@ -1886,14 +2092,27 @@ mod tests {
         c.g[GP][0] = GAME_GP as u64;
         c.bus.write32(HEAP + 0x1ff0, NODES);
         for i in 0..16 {
-            c.bus.write32(OWNER_TABLE + 4 * i, OWNER_TABLE + 0x100 + 0x40 * i);
+            c.bus
+                .write32(OWNER_TABLE + 4 * i, OWNER_TABLE + 0x100 + 0x40 * i);
         }
         for i in 0..8 {
-            c.bus.write32(super::VRAM_OWNER_STATS + 8 * i, r.next_u32() % 100);
-            c.bus.write32(super::VRAM_OWNER_STATS + 8 * i + 4, r.next_u32() % 8);
+            c.bus
+                .write32(super::VRAM_OWNER_STATS + 8 * i, r.next_u32() % 100);
+            c.bus
+                .write32(super::VRAM_OWNER_STATS + 8 * i + 4, r.next_u32() % 8);
         }
         let base = 0x1000 * (r.next_u32() % 4);
-        run(c, 0x0036_5e40, ssx3_ee::s12::VramHeap_Init, &[HEAP as u64, base as u64, HEAP_SIZE as u64, OWNER_TABLE as u64]);
+        run(
+            c,
+            0x0036_5e40,
+            ssx3_ee::s12::VramHeap_Init,
+            &[
+                HEAP as u64,
+                base as u64,
+                HEAP_SIZE as u64,
+                OWNER_TABLE as u64,
+            ],
+        );
         let mut used = Vec::new();
         let mut total = 0u32;
         for _ in 0..r.next_u32() % if full { 800 } else { 60 } {
@@ -1902,18 +2121,36 @@ mod tests {
                 // (Skip blocks an allocation already evicted.)
                 let n = NODES + i as u32 * 0x1c;
                 if c.bus.read32(n) & 1 != 0 && c.bus.read32(n + 8) != u32::MAX {
-                    run(c, 0x0036_63d8, ssx3_ee::s12::VramHeap_FreeBlock, &[HEAP as u64, i]);
+                    run(
+                        c,
+                        0x0036_63d8,
+                        ssx3_ee::s12::VramHeap_FreeBlock,
+                        &[HEAP as u64, i],
+                    );
                 }
                 total -= s;
                 continue;
             }
             let size = 0x100 * (1 + r.next_u32() % [4, 32, 256][(r.next_u32() % 3) as usize]);
-            let limit = if full { HEAP_SIZE - HEAP_SIZE / 16 } else { HEAP_SIZE / 2 };
+            let limit = if full {
+                HEAP_SIZE - HEAP_SIZE / 16
+            } else {
+                HEAP_SIZE / 2
+            };
             if total + size > limit {
                 continue;
             }
-            let owner = if r.next_u32() % 5 == 0 { 0x7fff_ffff } else { r.next_u32() % 7 };
-            let i = run(c, 0x0036_6ce0, ssx3_ee::s12::VramHeap_Alloc, &[HEAP as u64, size as u64, owner as u64, 7, 50, 0]);
+            let owner = if r.next_u32() % 5 == 0 {
+                0x7fff_ffff
+            } else {
+                r.next_u32() % 7
+            };
+            let i = run(
+                c,
+                0x0036_6ce0,
+                ssx3_ee::s12::VramHeap_Alloc,
+                &[HEAP as u64, size as u64, owner as u64, 7, 50, 0],
+            );
             let s = c.bus.read32(NODES + i as u32 * 0x1c + 4);
             used.push((i, s));
             total += s;
@@ -1932,7 +2169,11 @@ mod tests {
 
     /// Indices of free / used nodes.
     fn pick(c: &mut Cpu, r: &mut Rng, used: bool) -> Option<u32> {
-        let b: Vec<u32> = blocks(c).into_iter().filter(|b| (b.1 & 1 != 0) == used).map(|b| b.0).collect();
+        let b: Vec<u32> = blocks(c)
+            .into_iter()
+            .filter(|b| (b.1 & 1 != 0) == used)
+            .map(|b| b.0)
+            .collect();
         if b.is_empty() {
             None
         } else {
@@ -1941,7 +2182,12 @@ mod tests {
     }
 
     /// `check_events` plus LO/HI (`check_lohi`) on the same setups.
-    fn check_vram(gen: fn(&mut Cpu), hand: fn(&mut Cpu), seeds: u32, setup: &dyn Fn(&mut Cpu, u32) -> Events) {
+    fn check_vram(
+        gen: fn(&mut Cpu),
+        hand: fn(&mut Cpu),
+        seeds: u32,
+        setup: &dyn Fn(&mut Cpu, u32) -> Events,
+    ) {
         check_events(gen, hand, seeds, setup);
         check_lohi(gen, hand, seeds, &|c, s| {
             setup(c, s);
@@ -1965,33 +2211,53 @@ mod tests {
 
     #[test]
     fn vram_heap_pop_spare_node_matches() {
-        check_lohi(ssx3_ee::s12::f_00365fe8__generated, vram_heap_pop_spare_node, SEEDS, &|c, seed| {
-            vram_machine(c, seed, 1);
-        });
+        check_lohi(
+            ssx3_ee::s12::f_00365fe8__generated,
+            vram_heap_pop_spare_node,
+            SEEDS,
+            &|c, seed| {
+                vram_machine(c, seed, 1);
+            },
+        );
     }
 
     #[test]
     fn vram_heap_remove_node_matches() {
-        check_lohi(ssx3_ee::s12::f_00366008__generated, vram_heap_remove_node, SEEDS, &|c, seed| {
-            let mut r = vram_machine(c, seed, 2);
-            let b = blocks(c);
-            let i = b[(r.next_u32() as usize) % b.len()].0;
-            c.g[A1][0] = i as u64;
-            if r.next_u32() % 4 == 0 {
-                // A tagged head reference as `prev` (both tables).
-                let tag = if r.next_u32() % 2 == 0 { 0x9000_0000u32 } else { 0xa000_0000 };
-                c.bus.write32(NODES + i * 0x1c + 0xc, tag | (r.next_u32() % 17));
-            }
-        });
+        check_lohi(
+            ssx3_ee::s12::f_00366008__generated,
+            vram_heap_remove_node,
+            SEEDS,
+            &|c, seed| {
+                let mut r = vram_machine(c, seed, 2);
+                let b = blocks(c);
+                let i = b[(r.next_u32() as usize) % b.len()].0;
+                c.g[A1][0] = i as u64;
+                if r.next_u32() % 4 == 0 {
+                    // A tagged head reference as `prev` (both tables).
+                    let tag = if r.next_u32() % 2 == 0 {
+                        0x9000_0000u32
+                    } else {
+                        0xa000_0000
+                    };
+                    c.bus
+                        .write32(NODES + i * 0x1c + 0xc, tag | (r.next_u32() % 17));
+                }
+            },
+        );
     }
 
     #[test]
     fn vram_heap_unlink_size_list_matches() {
-        check_lohi(ssx3_ee::s12::f_00366238__generated, vram_heap_unlink_size_list, SEEDS, &|c, seed| {
-            let mut r = vram_machine(c, seed, 3);
-            let b = blocks(c);
-            c.g[A1][0] = b[(r.next_u32() as usize) % b.len()].0 as u64;
-        });
+        check_lohi(
+            ssx3_ee::s12::f_00366238__generated,
+            vram_heap_unlink_size_list,
+            SEEDS,
+            &|c, seed| {
+                let mut r = vram_machine(c, seed, 3);
+                let b = blocks(c);
+                c.g[A1][0] = b[(r.next_u32() as usize) % b.len()].0 as u64;
+            },
+        );
     }
 
     driven!(gen_link, ssx3_ee::s12::f_003660a8__generated);
@@ -2003,7 +2269,12 @@ mod tests {
             let mut r = vram_machine(c, seed, 4);
             let b = blocks(c);
             let i = b[(r.next_u32() as usize) % b.len()].0;
-            run(c, 0x0036_6238, ssx3_ee::s12::VramHeap_UnlinkSizeList, &[HEAP as u64, i as u64]);
+            run(
+                c,
+                0x0036_6238,
+                ssx3_ee::s12::VramHeap_UnlinkSizeList,
+                &[HEAP as u64, i as u64],
+            );
             let n = NODES + i * 0x1c;
             if r.next_u32() % 3 == 0 {
                 let w = c.bus.read32(n);
@@ -2026,78 +2297,111 @@ mod tests {
 
     #[test]
     fn vram_heap_find_free_block_matches() {
-        check_vram(ssx3_ee::s12::f_003667f8__generated, vram_heap_find_free_block, 400, &|c, seed| {
-            let mut r = vram_machine(c, seed, 5);
-            c.g[A1][0] = match r.next_u32() % 5 {
-                0 => (0x100 * (1 + r.next_u32() % 64)) as u64,
-                1 => (r.next_u32() % 0x40_0000) as u64,
-                2 => (0x40u32 << (r.next_u32() % 26)) as u64,
-                3 => HEAP_SIZE as u64,
-                _ => r.next_u32() as u64 | (r.next_u32() as u64) << 32,
-            };
-            schedule(c, &mut r, seed, 0x0036_67f8)
-        });
+        check_vram(
+            ssx3_ee::s12::f_003667f8__generated,
+            vram_heap_find_free_block,
+            400,
+            &|c, seed| {
+                let mut r = vram_machine(c, seed, 5);
+                c.g[A1][0] = match r.next_u32() % 5 {
+                    0 => (0x100 * (1 + r.next_u32() % 64)) as u64,
+                    1 => (r.next_u32() % 0x40_0000) as u64,
+                    2 => (0x40u32 << (r.next_u32() % 26)) as u64,
+                    3 => HEAP_SIZE as u64,
+                    _ => r.next_u32() as u64 | (r.next_u32() as u64) << 32,
+                };
+                schedule(c, &mut r, seed, 0x0036_67f8)
+            },
+        );
     }
 
     #[test]
     fn vram_heap_split_block_matches() {
-        check_vram(ssx3_ee::s12::f_003662d0__generated, vram_heap_split_block, 400, &|c, seed| {
-            let mut r = vram_machine(c, seed, 6);
-            let i = pick(c, &mut r, false).unwrap_or(0);
-            let size = c.bus.read32(NODES + i * 0x1c + 4);
-            c.g[A1][0] = i as u64;
-            c.g[A2][0] = match r.next_u32() % 3 {
-                0 => size as u64,
-                _ => (0x100 * (1 + r.next_u32() % (size / 0x100).max(1))).min(size) as u64,
-            };
-            if r.next_u32() % 5 == 0 {
-                c.bus.write32(HEAP + 0x23dc, u32::MAX);
-            }
-            schedule(c, &mut r, seed, 0x0036_62d0)
-        });
+        check_vram(
+            ssx3_ee::s12::f_003662d0__generated,
+            vram_heap_split_block,
+            400,
+            &|c, seed| {
+                let mut r = vram_machine(c, seed, 6);
+                let i = pick(c, &mut r, false).unwrap_or(0);
+                let size = c.bus.read32(NODES + i * 0x1c + 4);
+                c.g[A1][0] = i as u64;
+                c.g[A2][0] = match r.next_u32() % 3 {
+                    0 => size as u64,
+                    _ => (0x100 * (1 + r.next_u32() % (size / 0x100).max(1))).min(size) as u64,
+                };
+                if r.next_u32() % 5 == 0 {
+                    c.bus.write32(HEAP + 0x23dc, u32::MAX);
+                }
+                schedule(c, &mut r, seed, 0x0036_62d0)
+            },
+        );
     }
 
     #[test]
     fn vram_heap_free_block_matches() {
-        check_vram(ssx3_ee::s12::f_003663d8__generated, vram_heap_free_block, 400, &|c, seed| {
-            let mut r = vram_machine(c, seed, 7);
-            let i = pick(c, &mut r, true).unwrap_or(0);
-            c.g[A1][0] = i as u64;
-            schedule(c, &mut r, seed, 0x0036_63d8)
-        });
+        check_vram(
+            ssx3_ee::s12::f_003663d8__generated,
+            vram_heap_free_block,
+            400,
+            &|c, seed| {
+                let mut r = vram_machine(c, seed, 7);
+                let i = pick(c, &mut r, true).unwrap_or(0);
+                c.g[A1][0] = i as u64;
+                schedule(c, &mut r, seed, 0x0036_63d8)
+            },
+        );
     }
 
     #[test]
     fn vram_heap_evict_cheapest_block_matches() {
-        check_vram(ssx3_ee::s12::f_003668f8__generated, vram_heap_evict_cheapest_block, 400, &|c, seed| {
-            let mut r = vram_machine(c, seed, 8);
-            c.g[A1][0] = match r.next_u32() % 3 {
-                0 => (0x100 * (1 + r.next_u32() % 64)) as u64,
-                1 => (0x100 * (1 + r.next_u32() % 4)) as u64,
-                _ => (0x100 << (r.next_u32() % 12)) as u64,
-            };
-            c.g[A2][0] = (r.next_u32() % 8) as u64;
-            c.g[A3][0] = if r.next_u32() % 2 == 0 { 0x7fff_ffff } else { (r.next_u32() % 8) as u64 };
-            c.g[T0][0] = (r.next_u32() % 100) as u64;
-            schedule(c, &mut r, seed, 0x0036_68f8)
-        });
+        check_vram(
+            ssx3_ee::s12::f_003668f8__generated,
+            vram_heap_evict_cheapest_block,
+            400,
+            &|c, seed| {
+                let mut r = vram_machine(c, seed, 8);
+                c.g[A1][0] = match r.next_u32() % 3 {
+                    0 => (0x100 * (1 + r.next_u32() % 64)) as u64,
+                    1 => (0x100 * (1 + r.next_u32() % 4)) as u64,
+                    _ => (0x100 << (r.next_u32() % 12)) as u64,
+                };
+                c.g[A2][0] = (r.next_u32() % 8) as u64;
+                c.g[A3][0] = if r.next_u32() % 2 == 0 {
+                    0x7fff_ffff
+                } else {
+                    (r.next_u32() % 8) as u64
+                };
+                c.g[T0][0] = (r.next_u32() % 100) as u64;
+                schedule(c, &mut r, seed, 0x0036_68f8)
+            },
+        );
     }
 
     #[test]
     fn vram_heap_alloc_matches() {
-        check_vram(ssx3_ee::s12::f_00366ce0__generated, vram_heap_alloc, 400, &|c, seed| {
-            let mut r = vram_machine_full(c, seed, 9, seed % 4 < 3);
-            c.g[A1][0] = match r.next_u32() % 4 {
-                0 => (r.next_u32() % 0x300) as u64,
-                1 => (0x100 * (1 + r.next_u32() % 64)) as u64,
-                2 => (HEAP_SIZE / 16 + r.next_u32() % (HEAP_SIZE / 4)) as u64,
-                _ => (r.next_u32() % 0x8_0000) as u64,
-            };
-            c.g[A2][0] = (r.next_u32() % 8) as u64;
-            c.g[A3][0] = 7;
-            c.g[T0][0] = (r.next_u32() % 100) as u64;
-            c.g[T1][0] = if r.next_u32() % 2 == 0 { 0 } else { r.next_u32() as u64 };
-            schedule(c, &mut r, seed, 0x0036_6ce0)
-        });
+        check_vram(
+            ssx3_ee::s12::f_00366ce0__generated,
+            vram_heap_alloc,
+            400,
+            &|c, seed| {
+                let mut r = vram_machine_full(c, seed, 9, seed % 4 < 3);
+                c.g[A1][0] = match r.next_u32() % 4 {
+                    0 => (r.next_u32() % 0x300) as u64,
+                    1 => (0x100 * (1 + r.next_u32() % 64)) as u64,
+                    2 => (HEAP_SIZE / 16 + r.next_u32() % (HEAP_SIZE / 4)) as u64,
+                    _ => (r.next_u32() % 0x8_0000) as u64,
+                };
+                c.g[A2][0] = (r.next_u32() % 8) as u64;
+                c.g[A3][0] = 7;
+                c.g[T0][0] = (r.next_u32() % 100) as u64;
+                c.g[T1][0] = if r.next_u32() % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64
+                };
+                schedule(c, &mut r, seed, 0x0036_6ce0)
+            },
+        );
     }
 }

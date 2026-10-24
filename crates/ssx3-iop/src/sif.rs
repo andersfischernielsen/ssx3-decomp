@@ -106,7 +106,11 @@ pub fn service(c: &mut Iop) {
                     eprintln!("[iop-sif] call to unregistered server {sid:#x}");
                     continue;
                 };
-                c.sif.requests.entry(s.qd).or_default().push_back(Request { words, data });
+                c.sif
+                    .requests
+                    .entry(s.qd)
+                    .or_default()
+                    .push_back(Request { words, data });
                 // The queue's thread is woken like iWakeupThread does.
                 if let Some(&tid) = c.sif.queues.get(&s.qd) {
                     wakeup(c, tid);
@@ -125,18 +129,42 @@ fn answer_bind(c: &mut Iop, w: [u32; 14], since: u64) {
         return;
     }
     if c.trace || !found {
-        eprintln!("[iop-sif] bind {sid:#010x}: {}", if found { "ok" } else { "no such server" });
+        eprintln!(
+            "[iop-sif] bind {sid:#010x}: {}",
+            if found { "ok" } else { "no such server" }
+        );
     }
     // The server field is the server's id XOR a constant: call packets carry
     // it back and the host maps it to the server again.
-    let (server, buf, cbuf) = if found { (sid ^ SERVER_XOR, 0xDEAD_BEF0, 0xDEAD_CAFE) } else { (0, 0, 0) };
-    let r = [48u32, w[1], CMD_REND, 0, w[4], w[5], w[6], w[7], 0x8000_0009, server, buf, cbuf];
-    c.out.packets.push(r.iter().flat_map(|v| v.to_le_bytes()).collect());
+    let (server, buf, cbuf) = if found {
+        (sid ^ SERVER_XOR, 0xDEAD_BEF0, 0xDEAD_CAFE)
+    } else {
+        (0, 0, 0)
+    };
+    let r = [
+        48u32,
+        w[1],
+        CMD_REND,
+        0,
+        w[4],
+        w[5],
+        w[6],
+        w[7],
+        0x8000_0009,
+        server,
+        buf,
+        cbuf,
+    ];
+    c.out
+        .packets
+        .push(r.iter().flat_map(|v| v.to_le_bytes()).collect());
 }
 
 /// `WakeupThread` semantics: wake a sleeping thread or count a wakeup.
 pub fn wakeup(c: &mut Iop, tid: i32) {
-    let Some(t) = c.k.threads.get_mut(&tid) else { return };
+    let Some(t) = c.k.threads.get_mut(&tid) else {
+        return;
+    };
     if t.status == Status::Wait && t.wait == Wait::Sleep {
         c.k.wake(tid, 0);
     } else {
@@ -145,7 +173,9 @@ pub fn wakeup(c: &mut Iop, tid: i32) {
 }
 
 fn rend(dest: u32, words: &[u32; 14], command: u32) -> Vec<u8> {
-    let w = [48u32, dest, CMD_REND, 0, words[4], words[5], words[6], words[7], command, 0, 0, 0];
+    let w = [
+        48u32, dest, CMD_REND, 0, words[4], words[5], words[6], words[7], command, 0, 0, 0,
+    ];
     w.iter().flat_map(|v| v.to_le_bytes()).collect()
 }
 
@@ -161,7 +191,9 @@ pub fn register_rpc(c: &mut Iop) {
     c.set_ram32(sd + 20, cbuf);
     c.set_ram32(sd + 64, qd);
     c.sif.servers.insert(sid, Server { sd, func, buf, qd });
-    eprintln!("[iop-sif] server {sid:#010x} registered (func {func:#x} buf {buf:#x} queue {qd:#x})");
+    eprintln!(
+        "[iop-sif] server {sid:#010x} registered (func {func:#x} buf {buf:#x} queue {qd:#x})"
+    );
     c.r[2] = 0;
 }
 
@@ -342,8 +374,15 @@ pub fn send_cmd(c: &mut Iop) {
     bytes[4..8].copy_from_slice(&dst.to_le_bytes());
     bytes[8..12].copy_from_slice(&cid.to_le_bytes());
     if c.trace {
-        let w: Vec<String> = bytes.chunks(4).take(8).map(|b| format!("{:08x}", u32::from_le_bytes(b.try_into().unwrap()))).collect();
-        eprintln!("[iop-sif] send cmd {cid:#x}: {} (+{size} bytes -> {dst:#x})", w.join(" "));
+        let w: Vec<String> = bytes
+            .chunks(4)
+            .take(8)
+            .map(|b| format!("{:08x}", u32::from_le_bytes(b.try_into().unwrap())))
+            .collect();
+        eprintln!(
+            "[iop-sif] send cmd {cid:#x}: {} (+{size} bytes -> {dst:#x})",
+            w.join(" ")
+        );
     }
     c.out.packets.push(bytes);
     c.sif.sent_cmds += 1;

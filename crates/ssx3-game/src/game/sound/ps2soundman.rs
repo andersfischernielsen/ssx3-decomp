@@ -11,18 +11,17 @@ use crate::call::Flow;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::be::belibrary::EA_MEM_FREE;
+pub(crate) use crate::game::fe::festateriderbio::SOUND_MANAGER_REF_DTOR;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
-pub(crate) use crate::game::be::belibrary::EA_MEM_FREE;
-pub(crate) use crate::game::fe::festateriderbio::SOUND_MANAGER_REF_DTOR;
 
 /// Replacements in this unit: (address, function, name).
-pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-];
+pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[];
 
 /// Direct calls through the generated function (which dispatches into the
 /// replacement when one is installed).
@@ -35,13 +34,11 @@ pub(crate) mod callee {
 
 pub(crate) const BUILTIN_DELETE: u32 = 0x0031_7e50;
 
-
 /// The pointer members [`snd_play_params_dtor`] releases, in the original's
 /// order (the first is `+0x20`, each block then re-loads the next one).
 pub(crate) const SND_PARAM_PTRS: [u32; 14] = [
     0x20, 0x34, 0x38, 0x3c, 0x60, 0x64, 0x68, 0x6c, 0x70, 0x74, 0x78, 0x7c, 0x80, 0x84,
 ];
-
 
 /// `void SndPlayParams_dtor(SndPlayParams *p, int flags)` (0x2a97c0): free the
 /// parameter's pointer members, then (per `flags`) the sound-manager reference

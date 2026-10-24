@@ -32,7 +32,7 @@
 
 use std::sync::Arc;
 
-use super::raster::{self, Pages, Decoded, Draw, Mem, Prim, Rows};
+use super::raster::{self, Decoded, Draw, Mem, Pages, Prim, Rows};
 use super::region::Region;
 use super::swizzle::Surface;
 use super::{Gs, Vertex};
@@ -115,7 +115,11 @@ impl Batch {
                 return;
             }
             let key = raster::surf_key(&surf);
-            match self.surfs.iter_mut().find(|(s, _)| raster::surf_key(s) == key) {
+            match self
+                .surfs
+                .iter_mut()
+                .find(|(s, _)| raster::surf_key(s) == key)
+            {
                 Some((_, p)) => p.union(&pages),
                 None => self.surfs.push((surf, pages)),
             }
@@ -193,7 +197,11 @@ impl Gs {
         self.flush();
         self.wait_inflight();
         let d = self.draw.clone().expect("draw setup");
-        let attr = if self.regs.prmodecont & 1 != 0 { self.regs.prim } else { (self.regs.prim & 7) | (self.regs.prmode & !7) };
+        let attr = if self.regs.prmodecont & 1 != 0 {
+            self.regs.prim
+        } else {
+            (self.regs.prim & 7) | (self.regs.prmode & !7)
+        };
         let ctx = &self.regs.ctx[((attr >> 9) & 1) as usize];
         let mut e = super::DrawLog {
             prim: attr,
@@ -234,7 +242,12 @@ impl Gs {
             if e.prims == 0 {
                 e.bbox = [p.x0, p.y0, p.x1, p.y1];
             } else {
-                e.bbox = [e.bbox[0].min(p.x0), e.bbox[1].min(p.y0), e.bbox[2].max(p.x1), e.bbox[3].max(p.y1)];
+                e.bbox = [
+                    e.bbox[0].min(p.x0),
+                    e.bbox[1].min(p.y0),
+                    e.bbox[2].max(p.x1),
+                    e.bbox[3].max(p.y1),
+                ];
             }
             e.prims += 1;
         }
@@ -378,7 +391,11 @@ impl Gs {
             let ts = *d.tex_surface().expect("textured");
             let key = raster::surf_key(&ts);
             b.local_read.union(&b.prim_tex);
-            match b.local_reads.iter_mut().find(|(s, _)| raster::surf_key(s) == key) {
+            match b
+                .local_reads
+                .iter_mut()
+                .find(|(s, _)| raster::surf_key(s) == key)
+            {
                 Some((_, r)) => r.union(&b.prim_tex),
                 None => b.local_reads.push((ts, b.prim_tex.clone())),
             }
@@ -416,7 +433,11 @@ impl Gs {
     /// run; Z is left out when the draw does not use it.
     fn n3_surfaces(&self) -> super::gpu::NativeSurfaces {
         let r = &self.regs;
-        let attr = if r.prmodecont & 1 != 0 { r.prim } else { (r.prim & 7) | (r.prmode & !7) };
+        let attr = if r.prmodecont & 1 != 0 {
+            r.prim
+        } else {
+            (r.prim & 7) | (r.prmode & !7)
+        };
         let c = &r.ctx[((attr >> 9) & 1) as usize];
         let mut s = super::gpu::NativeSurfaces::from_regs(c.frame, c.zbuf, c.scissor);
         let z_used = self.draw.as_ref().is_some_and(|d| d.z_used);
@@ -508,10 +529,7 @@ impl Gs {
         } else {
             self.batch.stats.parallel_flushes += 1;
             let j = job.clone();
-            let ticket = pool.spawn(
-                UNITS as usize,
-                Arc::new(move |u| j.draw_unit(u)),
-            );
+            let ticket = pool.spawn(UNITS as usize, Arc::new(move |u| j.draw_unit(u)));
             let b = &mut self.batch;
             b.inflight = Some(InFlight {
                 ticket,
@@ -601,7 +619,12 @@ impl Gs {
         if !self.batch.is_empty() && self.batch.write.hits(&r) {
             self.batch.stats.clut_flushes += 1;
             self.flush_wait();
-        } else if self.batch.inflight.as_mut().is_some_and(|f| f.write.hits(&r)) {
+        } else if self
+            .batch
+            .inflight
+            .as_mut()
+            .is_some_and(|f| f.write.hits(&r))
+        {
             self.wait_inflight();
         }
     }

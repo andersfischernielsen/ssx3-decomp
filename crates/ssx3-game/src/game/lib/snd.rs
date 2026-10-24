@@ -2,11 +2,6 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
-use crate::guest::Addr;
-use ssx3_ee_rt::cpu::reg::*;
-use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::Cpu;
 use crate::abi::addu;
 use crate::abi::r32;
 use crate::abi::reg;
@@ -21,13 +16,18 @@ use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 use crate::events::Resume;
+use crate::guest::Addr;
 use crate::ps2f::FpuF32;
+use ssx3_ee as ee;
+use ssx3_ee_rt::cpu::reg::*;
+use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
 use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
-use ssx3_ee as ee;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -37,20 +37,48 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003b_5bd0, snd_mem_init_heap, "SND_MemInitHeap"),
     (0x003b_c5c8, snd_random, "SND_Random"),
     (0x003b_c930, sndenc_install_dts, "SNDENC_InstallDts"),
-    (0x003c_0c18, snd_get_group_voice_range, "SND_GetGroupVoiceRange"),
+    (
+        0x003c_0c18,
+        snd_get_group_voice_range,
+        "SND_GetGroupVoiceRange",
+    ),
     (0x003c_2438, snd_tick_stub, "SND_TickStub"),
-    (0x003c_25e0, snd_channel_apply_pitch, "SND_ChannelApplyPitch"),
-    (0x003c_2a50, snd_channel_apply_volume, "SND_ChannelApplyVolume"),
+    (
+        0x003c_25e0,
+        snd_channel_apply_pitch,
+        "SND_ChannelApplyPitch",
+    ),
+    (
+        0x003c_2a50,
+        snd_channel_apply_volume,
+        "SND_ChannelApplyVolume",
+    ),
     (0x003c_3500, snd_set_spu_reverb_mode, "SND_SetSpuReverbMode"),
     (0x003c_36c8, snd_set_spu_fx_volume, "SND_SetSpuFxVolume"),
     (0x003c_4af8, snd_spu_mem_clamp_block, "SND_SpuMemClampBlock"),
     (0x003c_4e50, sndi_spu_mem_set_base, "SNDI_SpuMemSetBase"),
-    (0x003c_6ce0, sndstrm_stop_slot_unsupported, "SNDSTRM_StopSlotUnsupported"),
-    (0x003c_b538, snd_dsp_resample_set_rate, "SND_DspResample_SetRate"),
-    (0x003c_b540, snd_dsp_resample_process, "SND_DspResample_Process"),
+    (
+        0x003c_6ce0,
+        sndstrm_stop_slot_unsupported,
+        "SNDSTRM_StopSlotUnsupported",
+    ),
+    (
+        0x003c_b538,
+        snd_dsp_resample_set_rate,
+        "SND_DspResample_SetRate",
+    ),
+    (
+        0x003c_b540,
+        snd_dsp_resample_process,
+        "SND_DspResample_Process",
+    ),
     (0x003c_ca08, snd_eaxa_decode_blocks, "SND_EaxaDecodeBlocks"),
     (0x003c_d190, snd_eaxa_set_history, "SND_EaxaSetHistory"),
-    (0x003c_d2b0, snd_utk_decode_excitation, "SND_UtkDecodeExcitation"),
+    (
+        0x003c_d2b0,
+        snd_utk_decode_excitation,
+        "SND_UtkDecodeExcitation",
+    ),
     (0x003c_e0d8, snd_utk_set_mode, "SND_UtkSetMode"),
     (0x003c_e410, snd_utk_lpc_filter, "SND_UtkLpcFilter"),
 ];
@@ -178,7 +206,6 @@ pub(crate) mod eaxa {
     pub const OUTPUT: u32 = 0x10;
 }
 
-
 // ---------------------------------------------------------------------------
 // Sound library (SND_*).
 
@@ -207,7 +234,6 @@ pub fn snd_add_tick_callback(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void SND_AddEventCallback(void (*cb)())` (0x3b5a28): append `cb` to the
 /// per-event callback table at 0x50a8e8.
 pub fn snd_add_event_callback(c: &mut Cpu) {
@@ -233,7 +259,6 @@ pub fn snd_add_event_callback(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void SND_MemClampBlock(uint* addr, uint* size)` (0x3b5ba0): clamp `size`
 /// so that `addr + size` does not pass the heap end.
 pub fn snd_mem_clamp_block(c: &mut Cpu) {
@@ -258,7 +283,6 @@ pub fn snd_mem_clamp_block(c: &mut Cpu) {
     c.cycles += 2;
     abi::ret(c);
 }
-
 
 /// `void SND_MemInitHeap(uintptr_t base, uint size)` (0x3b5bd0): carve a block
 /// header out of `[base, base+size)` and link it into the heap list.
@@ -295,7 +319,6 @@ pub fn snd_mem_init_heap(c: &mut Cpu) {
     c.sw((c.g[V0][0] as u32).wrapping_add(0x10), c.g[A1][0]);
     abi::ret(c);
 }
-
 
 /// `uint SND_Random(void)` (0x3bc5c8): xorshift-style PRNG state update at
 /// 0x50ac50; returns the new state.
@@ -401,7 +424,6 @@ pub fn snd_random(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void SNDENC_InstallDts(void)` (0x3bc930): publish the three default DTS
 /// callbacks into the SND globals.
 pub fn sndenc_install_dts(c: &mut Cpu) {
@@ -420,7 +442,6 @@ pub fn sndenc_install_dts(c: &mut Cpu) {
     c.sw((c.g[A3][0] as u32).wrapping_sub(0x37b8), c.g[A0][0]);
     abi::ret(c);
 }
-
 
 /// `void SND_GetGroupVoiceRange(int group, int* lo, int* hi)` (0x3c0c18):
 /// report the voice range of a group, or the global range for group 0.
@@ -474,7 +495,6 @@ pub fn snd_get_group_voice_range(c: &mut Cpu) {
     c.cycles += 2;
     abi::ret(c);
 }
-
 
 /// `void SND_SetSpuReverbMode(int mode)` (0x3c3500): map an API reverb mode to
 /// the SPU's internal reverb preset and program it.
@@ -613,7 +633,6 @@ pub fn snd_set_spu_reverb_mode(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void SND_SetSpuFxVolume(int flags)` (0x3c36c8): scale and store the SPU
 /// effect volume (only when the global volume pointer is set and the effect
 /// bit is present).
@@ -655,7 +674,6 @@ pub fn snd_set_spu_fx_volume(c: &mut Cpu) {
     c.cycles += 2;
     abi::ret(c);
 }
-
 
 /// `void SND_SpuMemClampBlock(uint* addr, uint* size)` (0x3c4af8): clamp the
 /// requested SPU-memory block against the three size limits, adjusting both
@@ -713,7 +731,6 @@ pub fn snd_spu_mem_clamp_block(c: &mut Cpu) {
     c.cycles += 2;
     abi::ret(c);
 }
-
 
 /// `void SNDI_SpuMemSetBase(int base, int end)` (0x3c4e50): program the SPU
 /// memory window, deriving the clamped base from the requested address.
@@ -784,7 +801,6 @@ pub fn sndi_spu_mem_set_base(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 // ---------------------------------------------------------------------------
 // Sound driver globals.
 
@@ -796,7 +812,6 @@ pub(crate) const STATE: u32 = 0x0050_a8e8;
 
 /// The driver's second global block (`0x510000 - 0x5300`).
 pub(crate) const SYNC: u32 = 0x0050_ad00;
-
 
 /// `SND_EeVoiceSetPitch(voice, rate)` (function table, cross-shard).
 pub(crate) const EE_VOICE_SET_PITCH: u32 = 0x003c_8a88;
@@ -810,7 +825,6 @@ pub(crate) const VOL_SCALE: FpuF32 = FpuF32(0x42fe_0000);
 /// 1/127.
 pub(crate) const INV_127: FpuF32 = FpuF32(0x3c01_0204);
 
-
 // ---------------------------------------------------------------------------
 // Register arithmetic as the compiled code does it.
 
@@ -820,13 +834,11 @@ pub(crate) fn addiu(a: u64, imm: i32) -> u64 {
     sx((a as u32).wrapping_add(imm as u32))
 }
 
-
 /// `subu`.
 #[inline(always)]
 pub(crate) fn subu(a: u64, b: u64) -> u64 {
     sx((a as u32).wrapping_sub(b as u32))
 }
-
 
 /// `sll`.
 #[inline(always)]
@@ -834,13 +846,11 @@ pub(crate) fn sll(v: u64, n: u32) -> u64 {
     sx((v as u32) << n)
 }
 
-
 /// `slt` on whole registers.
 #[inline(always)]
 pub(crate) fn slt(a: u64, b: u64) -> u64 {
     ((a as i64) < (b as i64)) as u64
 }
-
 
 /// The address `base + off` (32-bit).
 #[inline(always)]
@@ -848,20 +858,17 @@ pub(crate) fn at(base: u64, off: u32) -> Addr {
     Addr((base as u32).wrapping_add(off))
 }
 
-
 /// An FPU register.
 #[inline(always)]
 pub(crate) fn fpr(c: &Cpu, r: usize) -> FpuF32 {
     FpuF32(c.f[r])
 }
 
-
 /// `cvt.w.s` then `mfc1`: the integer bits.
 #[inline(always)]
 pub(crate) fn cvt_w(v: FpuF32) -> u32 {
     v.to_i32() as u32
 }
-
 
 /// The channel `index` (`STATE->channels + index * 0x8c`); the product is
 /// a `mult` (LO/HI set) whose low word lands in a0.
@@ -871,7 +878,6 @@ pub(crate) fn channel_at(c: &mut Cpu) -> u64 {
     set_reg(c, A0, sx(offset));
     offset as u64
 }
-
 
 // ---------------------------------------------------------------------------
 // SND_ChannelApplyPitch.
@@ -922,7 +928,6 @@ pub fn snd_channel_apply_pitch(c: &mut Cpu) {
     })
 }
 
-
 /// `pitch << 12 / rate_base * scale` as the original computes it (`div`
 /// then `mult`, LO/HI left by the `mult`); leaves the scale in a0 and the
 /// product in v0, returns the product's low word.
@@ -936,7 +941,6 @@ pub(crate) fn pitch_ratio(c: &mut Cpu, ch: u64, rate_base: u64) -> u32 {
     set_reg(c, V0, sx(product));
     product
 }
-
 
 /// SPU voices: the rate goes into each voice's parameter block.
 pub(crate) fn pitch_spu(c: &mut Cpu, frame: Frame, ch: u64) -> Flow {
@@ -991,7 +995,6 @@ pub(crate) fn pitch_spu(c: &mut Cpu, frame: Frame, ch: u64) -> Flow {
     }
 }
 
-
 /// `params + voice * 8` (left in v1).
 pub(crate) fn spu_voice_params(c: &mut Cpu, voice: u64) -> u64 {
     let params = Addr(SYNC).off(sync::VOICE_PARAMS).lw(c);
@@ -999,7 +1002,6 @@ pub(crate) fn spu_voice_params(c: &mut Cpu, voice: u64) -> u64 {
     set_reg(c, V1, entry);
     entry
 }
-
 
 /// IOP DSP voices: the rate goes into the DSP block at +0x1a4.
 pub(crate) fn pitch_iop(c: &mut Cpu, frame: Frame, ch: u64) -> Flow {
@@ -1044,7 +1046,6 @@ pub(crate) fn pitch_iop(c: &mut Cpu, frame: Frame, ch: u64) -> Flow {
         }
     }
 }
-
 
 /// EE software voices: `SND_EeVoiceSetPitch(voice, rate)` per voice.
 pub(crate) fn pitch_ee(c: &mut Cpu, frame: Frame, ch: u64) -> Flow {
@@ -1092,14 +1093,12 @@ pub(crate) fn pitch_ee(c: &mut Cpu, frame: Frame, ch: u64) -> Flow {
     }
 }
 
-
 /// The early exit (`lq s0` in its own block).
 pub(crate) fn pitch_exit_early(c: &mut Cpu, frame: Frame) -> Flow {
     c.cycles += 1;
     frame.restore(c, S0, 0x50);
     pitch_exit(c, frame)
 }
-
 
 /// The epilogue: return 0.
 pub(crate) fn pitch_exit(c: &mut Cpu, frame: Frame) -> Flow {
@@ -1114,15 +1113,20 @@ pub(crate) fn pitch_exit(c: &mut Cpu, frame: Frame) -> Flow {
     Ok(())
 }
 
-
 // ---------------------------------------------------------------------------
 // SND_ChannelApplyVolume.
 
 /// Callee-saved GPRs of `SND_ChannelApplyVolume`'s frame (s0 is restored
 /// separately, in the exit blocks).
-pub(crate) const VOLUME_SAVES: [(usize, u32); 7] =
-    [(S2, 0x70), (S3, 0x60), (S4, 0x50), (S5, 0x40), (S6, 0x30), (S7, 0x20), (FP, 0x10)];
-
+pub(crate) const VOLUME_SAVES: [(usize, u32); 7] = [
+    (S2, 0x70),
+    (S3, 0x60),
+    (S4, 0x50),
+    (S5, 0x40),
+    (S6, 0x30),
+    (S7, 0x20),
+    (FP, 0x10),
+];
 
 /// `void SND_ChannelApplyVolume(int channel)` (0x3c2a50): push the
 /// channel's volume to its voices.
@@ -1193,7 +1197,6 @@ pub fn snd_channel_apply_volume(c: &mut Cpu) {
     })
 }
 
-
 /// SPU voices: 7-bit levels into the voice parameter blocks.
 pub(crate) fn volume_spu(c: &mut Cpu, frame: Frame, ch: u64) -> Flow {
     c.cycles += 3;
@@ -1258,7 +1261,6 @@ pub(crate) fn volume_spu(c: &mut Cpu, frame: Frame, ch: u64) -> Flow {
     }
 }
 
-
 /// One SPU level: `params[voice + upper].byte = (int)(gain[voice][column] *
 /// volume * 127)` (registers as the original leaves them: v1 the entry
 /// offset, a0 the entry, v0 the level, f0 the float level, f1 its bits).
@@ -1267,7 +1269,9 @@ pub(crate) fn spu_level(c: &mut Cpu, ch: u64, column: u32, upper: i32, byte: u32
     let voice = at(slot, 0).lh(c);
     let volume = at(ch, chan::VOLUME).read_fpu(c);
     let params = Addr(SYNC).off(sync::VOICE_PARAMS).lw(c);
-    let gain = Addr(SYNC + sync::GAINS + column).off((voice as u32) << 5).read_fpu(c);
+    let gain = Addr(SYNC + sync::GAINS + column)
+        .off((voice as u32) << 5)
+        .read_fpu(c);
     let entry_off = sll(addiu(voice, upper), 3);
     set_reg(c, V1, entry_off);
     let entry = addu(params, entry_off);
@@ -1279,7 +1283,6 @@ pub(crate) fn spu_level(c: &mut Cpu, ch: u64, column: u32, upper: i32, byte: u32
     set_reg(c, V0, sx(bits));
     at(entry, byte).sb(c, sx(bits));
 }
-
 
 /// IOP DSP voices: a level per output into the DSP block (+0x1a6).
 pub(crate) fn volume_iop(c: &mut Cpu, frame: Frame, ch: u64) -> Flow {
@@ -1357,7 +1360,6 @@ pub(crate) fn volume_iop(c: &mut Cpu, frame: Frame, ch: u64) -> Flow {
     }
 }
 
-
 /// EE software voices: `SND_EeVoiceSetVolume(voice, k, g * gain[v][k])` per
 /// voice and output.
 pub(crate) fn volume_ee(c: &mut Cpu, frame: Frame, ch: u64) -> Flow {
@@ -1431,14 +1433,12 @@ pub(crate) fn volume_ee(c: &mut Cpu, frame: Frame, ch: u64) -> Flow {
     }
 }
 
-
 /// The early exit (`lq s0` in its own block).
 pub(crate) fn volume_exit_early(c: &mut Cpu, frame: Frame) -> Flow {
     c.cycles += 1;
     frame.restore(c, S0, 0x90);
     volume_exit(c, frame)
 }
-
 
 /// The epilogue.
 pub(crate) fn volume_exit(c: &mut Cpu, frame: Frame) -> Flow {
@@ -1452,7 +1452,6 @@ pub(crate) fn volume_exit(c: &mut Cpu, frame: Frame) -> Flow {
     frame.close(c);
     Ok(())
 }
-
 
 // ---------------------------------------------------------------------------
 // UTK synthesis filter.
@@ -1531,21 +1530,24 @@ pub fn snd_utk_lpc_filter(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 // ---------------------------------------------------------------------------
 // UTK excitation.
 
 /// `SND_UtkReadBits(BitReader*, n)` / `SND_UtkSkipBits(BitReader*, n)`.
-pub(crate) const UTK_READ_BITS: Callee = Callee { addr: 0x003c_d1f8, f: ee::s14::SND_UtkReadBits };
+pub(crate) const UTK_READ_BITS: Callee = Callee {
+    addr: 0x003c_d1f8,
+    f: ee::s14::SND_UtkReadBits,
+};
 
-pub(crate) const UTK_SKIP_BITS: Callee = Callee { addr: 0x003c_d260, f: ee::s14::SND_UtkSkipBits };
-
+pub(crate) const UTK_SKIP_BITS: Callee = Callee {
+    addr: 0x003c_d260,
+    f: ee::s14::SND_UtkSkipBits,
+};
 
 /// `SND_UtkDecodeExcitation`'s frame: 0xb0 (s0 +0x90, s1 +0x80, s2 +0x70,
 /// s3 +0x60, s4 +0x50, s5 +0x40, s6 +0x30, s7 +0x20, fp +0x10, ra +0, f21
 /// +0xa8, f20 +0xa0).
 pub(crate) const EXC_FRAME: Frame = Frame { size: 0xb0 };
-
 
 /// Stages of `SND_UtkDecodeExcitation` (blocks of the original; the state
 /// is in the registers throughout).
@@ -1562,7 +1564,6 @@ pub(crate) enum Exc {
     Pulse,
     Exit,
 }
-
 
 /// `void SND_UtkDecodeExcitation(BitReader* br, int huffman, float* out,
 /// int stride)` (0x3cd2b0): decode the 108-sample excitation of a UTK
@@ -1634,7 +1635,6 @@ pub fn snd_utk_decode_excitation(c: &mut Cpu) {
     }
 }
 
-
 /// The prologue and the mode set-up.
 pub(crate) fn exc_enter(c: &mut Cpu) -> Exc {
     let frame = EXC_FRAME;
@@ -1683,7 +1683,6 @@ pub(crate) fn exc_enter(c: &mut Cpu) -> Exc {
     }
 }
 
-
 /// Decode one symbol (loop head 0x3cd310).
 pub(crate) fn exc_symbol(c: &mut Cpu) -> Resume<Exc> {
     c.cycles += 17;
@@ -1728,9 +1727,12 @@ pub(crate) fn exc_symbol(c: &mut Cpu) -> Resume<Exc> {
     }
     c.cycles += 2;
     set_reg(c, S0, 7);
-    Resume::Go(if sym < 2 { Exc::EscapeStart } else { Exc::ZeroRunStart })
+    Resume::Go(if sym < 2 {
+        Exc::EscapeStart
+    } else {
+        Exc::ZeroRunStart
+    })
 }
-
 
 /// A run of zeros: read its length, clip it to the frame.
 pub(crate) fn exc_zero_run_start(c: &mut Cpu) -> Resume<Exc> {
@@ -1772,7 +1774,6 @@ pub(crate) fn exc_zero_run_start(c: &mut Cpu) -> Resume<Exc> {
     Resume::Go(Exc::ZeroRun)
 }
 
-
 /// One zero of a run (loop head 0x3cd3d0: v1 the output, a1 the byte
 /// stride, a0 the run, s0 the count).
 pub(crate) fn exc_zero_run(c: &mut Cpu) -> Resume<Exc> {
@@ -1797,7 +1798,6 @@ pub(crate) fn exc_zero_run(c: &mut Cpu) -> Resume<Exc> {
     set_reg(c, V0, slt(pos, exc::SAMPLES));
     Resume::Go(Exc::Tail)
 }
-
 
 /// An escape value: count 1 bits onto the magnitude in s0, then the sign.
 pub(crate) fn exc_escape_read(c: &mut Cpu) -> Resume<Exc> {
@@ -1844,7 +1844,6 @@ pub(crate) fn exc_escape_read(c: &mut Cpu) -> Resume<Exc> {
     Resume::Go(Exc::Next)
 }
 
-
 /// The Huffman loop's back edge (v0: more samples to go).
 pub(crate) fn exc_tail(c: &mut Cpu) -> Resume<Exc> {
     c.cycles += 2;
@@ -1861,7 +1860,6 @@ pub(crate) fn exc_tail(c: &mut Cpu) -> Resume<Exc> {
     EXC_FRAME.restore(c, S0, 0x90);
     Resume::Go(Exc::Exit)
 }
-
 
 /// One pulse-mode sample (loop head 0x3cd488: s1 the output, s0 the
 /// position).
@@ -1913,7 +1911,6 @@ pub(crate) fn exc_pulse(c: &mut Cpu) -> Resume<Exc> {
     Resume::Go(Exc::Exit)
 }
 
-
 /// The epilogue (s0 already restored).
 pub(crate) fn exc_exit(c: &mut Cpu) {
     let frame = EXC_FRAME;
@@ -1932,12 +1929,14 @@ pub(crate) fn exc_exit(c: &mut Cpu) {
     frame.close(c);
 }
 
-
 // ---------------------------------------------------------------------------
 // EA-XA.
 
 /// `SND_EaxaDecodeRawBlock(EaxaState*)`: an uncompressed (0xee) block.
-pub(crate) const EAXA_DECODE_RAW_BLOCK: Callee = Callee { addr: 0x003c_c938, f: ee::s14::SND_EaxaDecodeRawBlock };
+pub(crate) const EAXA_DECODE_RAW_BLOCK: Callee = Callee {
+    addr: 0x003c_c938,
+    f: ee::s14::SND_EaxaDecodeRawBlock,
+};
 
 /// The predictor coefficient table (`float c0[4..]`, `c1 = c0 + 4`;
 /// `0x450000 - 0x1760`).
@@ -1945,7 +1944,6 @@ pub(crate) const EAXA_COEFS: u32 = 0x0044_e8a0;
 
 /// Samples per block.
 pub(crate) const EAXA_BLOCK_SAMPLES: i32 = 0x1c;
-
 
 /// `void SND_EaxaDecodeBlocks(EaxaState* s)` (0x3cca08): decode 28-sample
 /// blocks while `s->left > 0`. A block is a header byte (high nibble: the
@@ -2019,10 +2017,15 @@ pub fn snd_eaxa_decode_blocks(c: &mut Cpu) {
     })
 }
 
-
 /// The nibbles of input byte `p` as the original shifts them (t4 the high
 /// sample, t3 the low one; returned converted to float).
-pub(crate) fn eaxa_nibbles(c: &mut Cpu, input: u64, p: u32, hi_shift: u64, lo_shift: u64) -> (FpuF32, FpuF32) {
+pub(crate) fn eaxa_nibbles(
+    c: &mut Cpu,
+    input: u64,
+    p: u32,
+    hi_shift: u64,
+    lo_shift: u64,
+) -> (FpuF32, FpuF32) {
     let b = at(input, p).lb(c);
     let hi = sx(((b as u32) as i32 >> 4) as u32);
     let lo = sx((b as u32) << 28);
@@ -2030,9 +2033,11 @@ pub(crate) fn eaxa_nibbles(c: &mut Cpu, input: u64, p: u32, hi_shift: u64, lo_sh
     let lo = sx(((lo as u32) as i32 >> ((lo_shift as u32) & 31)) as u32);
     set_reg(c, T4, hi);
     set_reg(c, T3, lo);
-    (FpuF32::from_i32(hi as u32 as i32), FpuF32::from_i32(lo as u32 as i32))
+    (
+        FpuF32::from_i32(hi as u32 as i32),
+        FpuF32::from_i32(lo as u32 as i32),
+    )
 }
-
 
 /// One compressed block (256 cycles).
 pub(crate) fn eaxa_decode_block(c: &mut Cpu) {
@@ -2053,7 +2058,10 @@ pub(crate) fn eaxa_decode_block(c: &mut Cpu) {
     let zero = FpuF32::ZERO;
     // The nibble pair of byte p + 1 is in (f2, f3) for even p, (f4, f5)
     // for odd p.
-    let mut pairs = [eaxa_nibbles(c, input, 1, hi_shift, lo_shift), (fpr(c, 4), fpr(c, 5))];
+    let mut pairs = [
+        eaxa_nibbles(c, input, 1, hi_shift, lo_shift),
+        (fpr(c, 4), fpr(c, 5)),
+    ];
     let mut h1 = fpr(c, 10);
     let mut h2 = fpr(c, 11);
     let mut acc = FpuF32::ZERO;
@@ -2061,7 +2069,11 @@ pub(crate) fn eaxa_decode_block(c: &mut Cpu) {
         let (hi, lo) = pairs[(p % 2) as usize];
         acc = FpuF32::madd(hi + zero, h1, c0);
         h2 = FpuF32::madd(acc, h2, c1);
-        let next = if p < 13 { Some(eaxa_nibbles(c, input, p + 2, hi_shift, lo_shift)) } else { None };
+        let next = if p < 13 {
+            Some(eaxa_nibbles(c, input, p + 2, hi_shift, lo_shift))
+        } else {
+            None
+        };
         at(out, 8 * p).write_fpu(c, h2);
         acc = FpuF32::madd(lo + zero, h2, c0);
         h1 = FpuF32::madd(acc, h1, c1);
@@ -2090,12 +2102,19 @@ pub(crate) fn eaxa_decode_block(c: &mut Cpu) {
     at(st, eaxa::OUTPUT).sw(c, out);
 }
 
-
 /// Registers `SND_EaxaDecodeBlocks` keeps in a 0x30 frame across the raw
 /// block call.
-pub(crate) const EAXA_RAW_SAVES: [(u32, usize); 9] =
-    [(0x20, A0), (0x1c, A1), (0x18, A2), (0x14, A3), (0x10, T0), (0xc, T1), (0x8, T2), (0x4, T3), (0x0, T4)];
-
+pub(crate) const EAXA_RAW_SAVES: [(u32, usize); 9] = [
+    (0x20, A0),
+    (0x1c, A1),
+    (0x18, A2),
+    (0x14, A3),
+    (0x10, T0),
+    (0xc, T1),
+    (0x8, T2),
+    (0x4, T3),
+    (0x0, T4),
+];
 
 /// A raw block: `SND_EaxaDecodeRawBlock(s)`, then reload the state.
 pub(crate) fn eaxa_raw_block(c: &mut Cpu) -> Flow {
@@ -2122,14 +2141,12 @@ pub(crate) fn eaxa_raw_block(c: &mut Cpu) -> Flow {
     Ok(())
 }
 
-
 /// `void SND_TickStub(void)` (0x3c2438): the audio system's per-frame tick
 /// when no sequencer is installed.
 pub fn snd_tick_stub(c: &mut Cpu) {
     c.cycles += 2;
     abi::ret(c);
 }
-
 
 /// `void SND_DspResample_SetRate(SND_DspResample* r, int rate)` (0x3cb538):
 /// store the resample rate at +0x1c.
@@ -2141,7 +2158,6 @@ pub fn snd_dsp_resample_set_rate(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void SND_UtkSetMode(SND_Utk* u, int mode)` (0x3ce0d8): store the mode word
 /// at +0xd64.
 pub fn snd_utk_set_mode(c: &mut Cpu) {
@@ -2152,7 +2168,6 @@ pub fn snd_utk_set_mode(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `int SNDSTRM_StopSlotUnsupported(void)` (0x3c6ce0): -15, the "not supported"
 /// error.
 pub fn sndstrm_stop_slot_unsupported(c: &mut Cpu) {
@@ -2160,7 +2175,6 @@ pub fn sndstrm_stop_slot_unsupported(c: &mut Cpu) {
     c.g[V0][0] = sx((-15i32) as u32);
     abi::ret(c);
 }
-
 
 /// `void SND_EaxaSetHistory(SND_Eaxa* e, float* history)` (0x3cd190): copy the
 /// first two history floats into the EAXA object.
@@ -2175,7 +2189,6 @@ pub fn snd_eaxa_set_history(c: &mut Cpu) {
     c.swc1(1, a);
     abi::ret(c);
 }
-
 
 // ---------------------------------------------------------------------------
 // SND_DspResample_Process: the hand-written EE DSP resampler.
@@ -2669,7 +2682,6 @@ pub fn snd_dsp_resample_process(c: &mut Cpu) {
     })
 }
 
-
 /// The shared return: restore the callee-saved registers, drop the frame, go
 /// back to `ra`. (The `v0` the caller reads is whatever the path left there.)
 pub(crate) fn epilogue(c: &mut Cpu) -> crate::call::Flow {
@@ -2696,87 +2708,112 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
-    use crate::difftest::scramble;
-    use crate::difftest::Rng;
-    use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
     use crate::difftest::elf_image;
-    use crate::difftest::fill;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::vtable;
     use crate::difftest::fakes::LOG_UNWIND_AT;
-    use crate::difftest::put_words;
-    use crate::difftest::SP as STACK;
+    use crate::difftest::fill;
     use crate::difftest::put_vec;
-    pub(crate) use crate::game::lib::sif::tests::SEEDS;
-    pub(crate) use crate::game::ai::ai::tests::rng;
-    pub(crate) use crate::game::ai::ai::tests::leaf_setup;
+    use crate::difftest::put_words;
+    use crate::difftest::scramble;
+    use crate::difftest::Rng;
+    use crate::difftest::DATA;
+    use crate::difftest::GAME_GP;
+    use crate::difftest::SP as STACK;
     pub(crate) use crate::game::ai::ai::tests::leaf;
-
+    pub(crate) use crate::game::ai::ai::tests::leaf_setup;
+    pub(crate) use crate::game::ai::ai::tests::rng;
+    pub(crate) use crate::game::lib::sif::tests::SEEDS;
 
     #[test]
     fn snd_add_tick_callback_matches() {
-        check(ssx3_ee::s13::f_003b5910, snd_add_tick_callback, 200, &|c, seed| {
-            let mut r = Rng(0x1001 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = ((r.next_u32() as u64) << 32) | r.next_u32() as u64;
-            let base = 0x0050_a8e8u32;
-            c.bus.write8(base + 0x174, if seed % 3 == 0 { 0 } else { 1 });
-            let idx = if seed % 2 == 0 { r.next_u32() & 0x1f } else { r.next_u32() | 0x80 };
-            c.bus.write8(base + 0x177, idx as u8);
-        });
+        check(
+            ssx3_ee::s13::f_003b5910,
+            snd_add_tick_callback,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x1001 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = ((r.next_u32() as u64) << 32) | r.next_u32() as u64;
+                let base = 0x0050_a8e8u32;
+                c.bus
+                    .write8(base + 0x174, if seed % 3 == 0 { 0 } else { 1 });
+                let idx = if seed % 2 == 0 {
+                    r.next_u32() & 0x1f
+                } else {
+                    r.next_u32() | 0x80
+                };
+                c.bus.write8(base + 0x177, idx as u8);
+            },
+        );
     }
-
 
     #[test]
     fn snd_add_event_callback_matches() {
-        check(ssx3_ee::s13::f_003b5a28, snd_add_event_callback, 200, &|c, seed| {
-            let mut r = Rng(0x1002 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = ((r.next_u32() as u64) << 32) | r.next_u32() as u64;
-            let base = 0x0050_a8e8u32;
-            c.bus.write8(base + 0x174, if seed % 3 == 0 { 0 } else { 1 });
-            let idx = if seed % 2 == 0 { r.next_u32() & 0x1f } else { r.next_u32() | 0x80 };
-            c.bus.write8(base + 0x179, idx as u8);
-        });
+        check(
+            ssx3_ee::s13::f_003b5a28,
+            snd_add_event_callback,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x1002 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = ((r.next_u32() as u64) << 32) | r.next_u32() as u64;
+                let base = 0x0050_a8e8u32;
+                c.bus
+                    .write8(base + 0x174, if seed % 3 == 0 { 0 } else { 1 });
+                let idx = if seed % 2 == 0 {
+                    r.next_u32() & 0x1f
+                } else {
+                    r.next_u32() | 0x80
+                };
+                c.bus.write8(base + 0x179, idx as u8);
+            },
+        );
     }
-
 
     #[test]
     fn snd_mem_clamp_block_matches() {
-        check(ssx3_ee::s13::f_003b5ba0, snd_mem_clamp_block, 200, &|c, seed| {
-            let mut r = Rng(0x1003 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = (DATA + 4) as u64;
-            let a0 = r.next_u32() & 0x7fff_ffff;
-            let sz = r.next_u32() & 0x7fff_ffff;
-            c.bus.write32(DATA, a0);
-            c.bus.write32(DATA + 4, sz);
-            let st = DATA + 0x100;
-            c.bus.write32(0x0050_ab1c, st);
-            let lim = if seed % 2 == 0 {
-                a0.wrapping_add(sz).wrapping_sub(1)
-            } else {
-                a0.wrapping_add(sz).wrapping_add(1)
-            };
-            c.bus.write32(st + 0xc, lim);
-        });
+        check(
+            ssx3_ee::s13::f_003b5ba0,
+            snd_mem_clamp_block,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x1003 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (DATA + 4) as u64;
+                let a0 = r.next_u32() & 0x7fff_ffff;
+                let sz = r.next_u32() & 0x7fff_ffff;
+                c.bus.write32(DATA, a0);
+                c.bus.write32(DATA + 4, sz);
+                let st = DATA + 0x100;
+                c.bus.write32(0x0050_ab1c, st);
+                let lim = if seed % 2 == 0 {
+                    a0.wrapping_add(sz).wrapping_sub(1)
+                } else {
+                    a0.wrapping_add(sz).wrapping_add(1)
+                };
+                c.bus.write32(st + 0xc, lim);
+            },
+        );
     }
-
 
     #[test]
     fn snd_mem_init_heap_matches() {
-        check(ssx3_ee::s13::f_003b5bd0, snd_mem_init_heap, 200, &|c, seed| {
-            let mut r = Rng(0x1004 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = (DATA + 0x200) as u64;
-            c.g[A1][0] = (r.next_u32() % 0x1000) as u64;
-            c.bus.write32(0x0050_ab1c, DATA + 0x400);
-        });
+        check(
+            ssx3_ee::s13::f_003b5bd0,
+            snd_mem_init_heap,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x1004 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = (DATA + 0x200) as u64;
+                c.g[A1][0] = (r.next_u32() % 0x1000) as u64;
+                c.bus.write32(0x0050_ab1c, DATA + 0x400);
+            },
+        );
     }
-
 
     #[test]
     fn snd_random_matches() {
@@ -2802,124 +2839,151 @@ pub(crate) mod tests {
         });
     }
 
-
     #[test]
     fn sndenc_install_dts_matches() {
-        check(ssx3_ee::s13::f_003bc930, sndenc_install_dts, 50, &|c, seed| {
-            let mut r = Rng(0x1006 ^ seed as u64);
-            scramble(c, &mut r);
-        });
+        check(
+            ssx3_ee::s13::f_003bc930,
+            sndenc_install_dts,
+            50,
+            &|c, seed| {
+                let mut r = Rng(0x1006 ^ seed as u64);
+                scramble(c, &mut r);
+            },
+        );
     }
-
 
     #[test]
     fn snd_get_group_voice_range_matches() {
-        check(ssx3_ee::s13::f_003c0c18, snd_get_group_voice_range, 200, &|c, seed| {
-            let mut r = Rng(0x1007 ^ seed as u64);
-            scramble(c, &mut r);
-            let group = match seed % 8 {
-                0 => 0u32,
-                1 => 8,
-                2 => 4,
-                3 => 0x100,
-                4 => 0x104,
-                5 => 0x108,
-                6 => 0x10c,
-                _ => r.next_u32(),
-            };
-            c.g[A0][0] = group as u64;
-            c.g[A1][0] = (DATA + 0x300) as u64;
-            c.g[A2][0] = (DATA + 0x304) as u64;
-            let base = 0x0050_a8e8u32;
-            c.bus.write8(base + 0x2f, r.next_u32() as u8);
-            c.bus.write8(base + 0x30, r.next_u32() as u8);
-            c.bus.write16(base + 0x17e, r.next_u32() as u16);
-            c.bus.write8(0x0050_a918, r.next_u32() as u8);
-        });
+        check(
+            ssx3_ee::s13::f_003c0c18,
+            snd_get_group_voice_range,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x1007 ^ seed as u64);
+                scramble(c, &mut r);
+                let group = match seed % 8 {
+                    0 => 0u32,
+                    1 => 8,
+                    2 => 4,
+                    3 => 0x100,
+                    4 => 0x104,
+                    5 => 0x108,
+                    6 => 0x10c,
+                    _ => r.next_u32(),
+                };
+                c.g[A0][0] = group as u64;
+                c.g[A1][0] = (DATA + 0x300) as u64;
+                c.g[A2][0] = (DATA + 0x304) as u64;
+                let base = 0x0050_a8e8u32;
+                c.bus.write8(base + 0x2f, r.next_u32() as u8);
+                c.bus.write8(base + 0x30, r.next_u32() as u8);
+                c.bus.write16(base + 0x17e, r.next_u32() as u16);
+                c.bus.write8(0x0050_a918, r.next_u32() as u8);
+            },
+        );
     }
-
 
     #[test]
     fn snd_set_spu_reverb_mode_matches() {
-        check(ssx3_ee::s13::f_003c3500, snd_set_spu_reverb_mode, 200, &|c, seed| {
-            let mut r = Rng(0x1008 ^ seed as u64);
-            scramble(c, &mut r);
-            let mode = [0u32, 1, 5, 10, 20, 30, 40, 50, 100, 110, 120, 7, 99][(seed % 13) as usize];
-            c.g[A0][0] = mode as u64;
-            for k in 0..130u32 {
-                c.bus.write32(0x0044_dd48 + k * 4, r.next_u32());
-            }
-            c.bus.write32(0x0050_b9b0, DATA + 0x400);
-            c.bus.write8(0x0050_a8e8 + 0x224, r.next_u32() as u8);
-            c.bus.write8(0x0050_a8e8 + 0x228, r.next_u32() as u8);
-            c.bus.write16(0x0050_ad00 + 0x1a9e, r.next_u32() as u16);
-        });
+        check(
+            ssx3_ee::s13::f_003c3500,
+            snd_set_spu_reverb_mode,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x1008 ^ seed as u64);
+                scramble(c, &mut r);
+                let mode =
+                    [0u32, 1, 5, 10, 20, 30, 40, 50, 100, 110, 120, 7, 99][(seed % 13) as usize];
+                c.g[A0][0] = mode as u64;
+                for k in 0..130u32 {
+                    c.bus.write32(0x0044_dd48 + k * 4, r.next_u32());
+                }
+                c.bus.write32(0x0050_b9b0, DATA + 0x400);
+                c.bus.write8(0x0050_a8e8 + 0x224, r.next_u32() as u8);
+                c.bus.write8(0x0050_a8e8 + 0x228, r.next_u32() as u8);
+                c.bus.write16(0x0050_ad00 + 0x1a9e, r.next_u32() as u16);
+            },
+        );
     }
-
 
     #[test]
     fn snd_set_spu_fx_volume_matches() {
-        check(ssx3_ee::s13::f_003c36c8, snd_set_spu_fx_volume, 200, &|c, seed| {
-            let mut r = Rng(0x1009 ^ seed as u64);
-            scramble(c, &mut r);
-            let flags = if seed % 3 == 0 { r.next_u32() & !8 } else { r.next_u32() | 8 };
-            c.g[A1][0] = flags as u64;
-            let ptr = if seed % 5 == 0 { 0 } else { DATA + 0x400 };
-            c.bus.write32(0x0050_b9b0, ptr);
-            c.bus.write32(0x0050_ab08 + 0xc, r.edge_f32());
-            c.bus.write32(0x0050_ab08 + 0x10, r.edge_f32());
-        });
+        check(
+            ssx3_ee::s13::f_003c36c8,
+            snd_set_spu_fx_volume,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x1009 ^ seed as u64);
+                scramble(c, &mut r);
+                let flags = if seed % 3 == 0 {
+                    r.next_u32() & !8
+                } else {
+                    r.next_u32() | 8
+                };
+                c.g[A1][0] = flags as u64;
+                let ptr = if seed % 5 == 0 { 0 } else { DATA + 0x400 };
+                c.bus.write32(0x0050_b9b0, ptr);
+                c.bus.write32(0x0050_ab08 + 0xc, r.edge_f32());
+                c.bus.write32(0x0050_ab08 + 0x10, r.edge_f32());
+            },
+        );
     }
-
 
     #[test]
     fn snd_spu_mem_clamp_block_matches() {
-        check(ssx3_ee::s13::f_003c4af8, snd_spu_mem_clamp_block, 200, &|c, seed| {
-            let mut r = Rng(0x100a ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = (DATA + 4) as u64;
-            let a0 = r.next_u32() & 0xffff;
-            let sz = r.next_u32() & 0xffff;
-            c.bus.write32(DATA, a0);
-            c.bus.write32(DATA + 4, sz);
-            c.bus.write16(0x0050_ad00 + 0x1a9a, r.next_u32() as u16);
-            c.bus.write16(0x0050_ad00 + 0x1a9c, r.next_u32() as u16);
-            c.bus.write16(0x0050_ad00 + 0x1a9e, r.next_u32() as u16);
-        });
+        check(
+            ssx3_ee::s13::f_003c4af8,
+            snd_spu_mem_clamp_block,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x100a ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (DATA + 4) as u64;
+                let a0 = r.next_u32() & 0xffff;
+                let sz = r.next_u32() & 0xffff;
+                c.bus.write32(DATA, a0);
+                c.bus.write32(DATA + 4, sz);
+                c.bus.write16(0x0050_ad00 + 0x1a9a, r.next_u32() as u16);
+                c.bus.write16(0x0050_ad00 + 0x1a9c, r.next_u32() as u16);
+                c.bus.write16(0x0050_ad00 + 0x1a9e, r.next_u32() as u16);
+            },
+        );
     }
-
 
     #[test]
     fn sndi_spu_mem_set_base_matches() {
-        check(ssx3_ee::s13::f_003c4e50, sndi_spu_mem_set_base, 200, &|c, seed| {
-            let mut r = Rng(0x100b ^ seed as u64);
-            scramble(c, &mut r);
-            let a0 = match seed % 5 {
-                0 => 0xffff_ffff_ffff_ffffu64,
-                1 => 0,
-                2 => 0x1234,
-                3 => 0x7fff,
-                _ => (r.next_u32() as u64) | ((r.next_u32() as u64) << 32),
-            };
-            c.g[A0][0] = a0;
-            let a1 = match seed % 4 {
-                0 => 0xffff_ffff_ffff_ffffu64,
-                1 => 0,
-                2 => 0x1_0000,
-                _ => (r.next_u32() as u64) | ((r.next_u32() as u64) << 32),
-            };
-            c.g[A1][0] = a1;
-            c.bus.write16(0x0050_ad00 + 0x1a9a, r.next_u32() as u16);
-            c.bus.write16(0x0050_ad00 + 0x1a9c, r.next_u32() as u16);
-        });
+        check(
+            ssx3_ee::s13::f_003c4e50,
+            sndi_spu_mem_set_base,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x100b ^ seed as u64);
+                scramble(c, &mut r);
+                let a0 = match seed % 5 {
+                    0 => 0xffff_ffff_ffff_ffffu64,
+                    1 => 0,
+                    2 => 0x1234,
+                    3 => 0x7fff,
+                    _ => (r.next_u32() as u64) | ((r.next_u32() as u64) << 32),
+                };
+                c.g[A0][0] = a0;
+                let a1 = match seed % 4 {
+                    0 => 0xffff_ffff_ffff_ffffu64,
+                    1 => 0,
+                    2 => 0x1_0000,
+                    _ => (r.next_u32() as u64) | ((r.next_u32() as u64) << 32),
+                };
+                c.g[A1][0] = a1;
+                c.bus.write16(0x0050_ad00 + 0x1a9a, r.next_u32() as u16);
+                c.bus.write16(0x0050_ad00 + 0x1a9c, r.next_u32() as u16);
+            },
+        );
     }
-
 
     /// `SND_EeVoiceSetPitch`/`SetVolume`'s voice array pointer (`0x515b40 +
     /// 0x1dc`).
     pub(crate) const EE_VOICES_PTR: u32 = 0x0051_5d1c;
-
 
     /// A channel with `flags` and the driver globals the channel functions
     /// read (voice numbers 6..23, so every voice index stays positive).
@@ -2931,23 +2995,43 @@ pub(crate) mod tests {
         c.bus.write16(ch + chan::FLAGS, flags);
         c.bus.write16(ch + chan::PITCH, r.next_u32() as u16);
         c.bus.write16(ch + chan::PITCH_SCALE, r.next_u32() as u16);
-        c.bus.write8(ch + chan::VOICE_COUNT, ((seed / 12) % 5) as u8);
+        c.bus
+            .write8(ch + chan::VOICE_COUNT, ((seed / 12) % 5) as u8);
         for i in 0..4 {
-            c.bus.write16(ch + chan::VOICES + 2 * i, (6 + r.next_u32() % 18) as u16);
+            c.bus
+                .write16(ch + chan::VOICES + 2 * i, (6 + r.next_u32() % 18) as u16);
         }
-        let volume = if seed % 9 == 0 { r.edge_f32() } else { r.f32(2.0) };
+        let volume = if seed % 9 == 0 {
+            r.edge_f32()
+        } else {
+            r.f32(2.0)
+        };
         c.bus.write32(ch + chan::VOLUME, volume);
         c.bus.write8(ch + chan::PAN, r.next_u32() as u8);
-        let mode = if seed % 2 == 0 { 2 } else { r.next_u32() as u8 | 1 };
+        let mode = if seed % 2 == 0 {
+            2
+        } else {
+            r.next_u32() as u8 | 1
+        };
         c.bus.write8(STATE + state::OUTPUT_MODE, mode);
-        c.bus.write8(STATE + state::SPEAKERS, if seed % 4 < 2 { 4 } else { 2 });
-        c.bus.write8(STATE + state::AUX_SENDS, (r.next_u32() % 3) as u8);
-        let rate = |r: &mut Rng| if seed % 7 == 0 { 0 } else { r.next_u32() as u16 };
+        c.bus
+            .write8(STATE + state::SPEAKERS, if seed % 4 < 2 { 4 } else { 2 });
+        c.bus
+            .write8(STATE + state::AUX_SENDS, (r.next_u32() % 3) as u8);
+        let rate = |r: &mut Rng| {
+            if seed % 7 == 0 {
+                0
+            } else {
+                r.next_u32() as u16
+            }
+        };
         let (iop, ee_rate) = (rate(r), rate(r));
         c.bus.write16(STATE + state::IOP_RATE, iop);
         c.bus.write16(STATE + state::EE_RATE, ee_rate);
-        c.bus.write8(STATE + state::VOICE_BASE, (r.next_u32() % 4) as u8);
-        c.bus.write8(STATE + state::EE_VOICE_BASE, (r.next_u32() % 3) as u8);
+        c.bus
+            .write8(STATE + state::VOICE_BASE, (r.next_u32() % 4) as u8);
+        c.bus
+            .write8(STATE + state::EE_VOICE_BASE, (r.next_u32() % 3) as u8);
         c.bus.write32(SYNC + sync::VOICE_PARAMS, DATA + 0x1_0000);
         for i in 0..32 * 8 {
             c.bus.write32(SYNC + sync::GAINS + 4 * i, r.f32(1.0));
@@ -2956,10 +3040,12 @@ pub(crate) mod tests {
         // SetRate path).
         c.bus.write32(EE_VOICES_PTR, DATA + 0x2_0000);
         for v in 0..32 {
-            c.bus.write32(DATA + 0x2_0000 + v * 0x60 + 0x50, DATA + 0x3_0000 + v * 0x40);
+            c.bus.write32(
+                DATA + 0x2_0000 + v * 0x60 + 0x50,
+                DATA + 0x3_0000 + v * 0x40,
+            );
         }
     }
-
 
     /// Flags selecting the SPU / IOP / EE path by `seed % 3`, other bits
     /// random.
@@ -2972,140 +3058,174 @@ pub(crate) mod tests {
         }
     }
 
-
     #[test]
     fn snd_channel_apply_pitch_matches() {
-        check(ee::s13::f_003c25e0__generated, snd_channel_apply_pitch, 240, &|c, seed| {
-            let mut r = Rng(0x7a11_0001 ^ (seed as u64) << 8);
-            scramble(c, &mut r);
-            let flags = channel_flags(&mut r, seed);
-            setup_channel(c, &mut r, seed, flags);
-        });
+        check(
+            ee::s13::f_003c25e0__generated,
+            snd_channel_apply_pitch,
+            240,
+            &|c, seed| {
+                let mut r = Rng(0x7a11_0001 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                let flags = channel_flags(&mut r, seed);
+                setup_channel(c, &mut r, seed, flags);
+            },
+        );
     }
-
 
     #[test]
     fn snd_channel_apply_volume_matches() {
-        check(ee::s13::f_003c2a50__generated, snd_channel_apply_volume, 240, &|c, seed| {
-            let mut r = Rng(0x7a11_0002 ^ (seed as u64) << 8);
-            scramble(c, &mut r);
-            let flags = channel_flags(&mut r, seed);
-            setup_channel(c, &mut r, seed, flags);
-        });
+        check(
+            ee::s13::f_003c2a50__generated,
+            snd_channel_apply_volume,
+            240,
+            &|c, seed| {
+                let mut r = Rng(0x7a11_0002 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                let flags = channel_flags(&mut r, seed);
+                setup_channel(c, &mut r, seed, flags);
+            },
+        );
     }
-
 
     #[test]
     fn snd_utk_lpc_filter_matches() {
-        check(ee::s14::f_003ce410__generated, snd_utk_lpc_filter, 200, &|c, seed| {
-            let mut r = Rng(0x7a11_0003 ^ (seed as u64) << 8);
-            scramble(c, &mut r);
-            let blocks = (seed % 4) as i32 - (seed % 9 == 0) as i32;
-            c.g[A0][0] = sx(blocks as u32);
-            c.g[A1][0] = sx(DATA);
-            c.g[A2][0] = sx(DATA + 0x100);
-            c.g[A3][0] = sx(DATA + 0x200);
-            let edge = seed % 5 == 0;
-            for i in 0..12 {
-                let v = if edge { r.edge_f32() } else { r.f32(0.5) };
-                c.bus.write32(DATA + 4 * i, v);
-                let h = if edge { r.edge_f32() } else { r.f32(1000.0) };
-                c.bus.write32(DATA + 0x100 + 4 * i, h);
-            }
-            for i in 0..48 {
-                let x = if edge { r.edge_f32() } else { r.f32(1000.0) };
-                c.bus.write32(DATA + 0x200 + 4 * i, x);
-            }
-        });
+        check(
+            ee::s14::f_003ce410__generated,
+            snd_utk_lpc_filter,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x7a11_0003 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                let blocks = (seed % 4) as i32 - (seed % 9 == 0) as i32;
+                c.g[A0][0] = sx(blocks as u32);
+                c.g[A1][0] = sx(DATA);
+                c.g[A2][0] = sx(DATA + 0x100);
+                c.g[A3][0] = sx(DATA + 0x200);
+                let edge = seed % 5 == 0;
+                for i in 0..12 {
+                    let v = if edge { r.edge_f32() } else { r.f32(0.5) };
+                    c.bus.write32(DATA + 4 * i, v);
+                    let h = if edge { r.edge_f32() } else { r.f32(1000.0) };
+                    c.bus.write32(DATA + 0x100 + 4 * i, h);
+                }
+                for i in 0..48 {
+                    let x = if edge { r.edge_f32() } else { r.f32(1000.0) };
+                    c.bus.write32(DATA + 0x200 + 4 * i, x);
+                }
+            },
+        );
     }
-
 
     #[test]
     fn snd_utk_decode_excitation_matches() {
-        check(ee::s14::f_003cd2b0__generated, snd_utk_decode_excitation, 200, &|c, seed| {
-            let mut r = Rng(0x7a11_0004 ^ (seed as u64) << 8);
-            scramble(c, &mut r);
-            elf_image(c);
-            c.pc = exc::START;
-            let reader = DATA;
-            let input = DATA + 0x100;
-            fill(c, &mut r, input, 0x100);
-            c.bus.write32(reader, input);
-            let buf = r.next_u32();
-            c.bus.write32(reader + 4, buf);
-            c.bus.write32(reader + 8, 8 + r.next_u32() % 24);
-            c.g[A0][0] = sx(reader);
-            c.g[A1][0] = if seed % 3 == 0 { 0 } else { r.next_u32() as u64 | 1 };
-            c.g[A2][0] = sx(DATA + 0x1000);
-            c.g[A3][0] = 1 + (seed % 3) as u64;
-        });
+        check(
+            ee::s14::f_003cd2b0__generated,
+            snd_utk_decode_excitation,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x7a11_0004 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                elf_image(c);
+                c.pc = exc::START;
+                let reader = DATA;
+                let input = DATA + 0x100;
+                fill(c, &mut r, input, 0x100);
+                c.bus.write32(reader, input);
+                let buf = r.next_u32();
+                c.bus.write32(reader + 4, buf);
+                c.bus.write32(reader + 8, 8 + r.next_u32() % 24);
+                c.g[A0][0] = sx(reader);
+                c.g[A1][0] = if seed % 3 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64 | 1
+                };
+                c.g[A2][0] = sx(DATA + 0x1000);
+                c.g[A3][0] = 1 + (seed % 3) as u64;
+            },
+        );
     }
-
 
     #[test]
     fn snd_eaxa_decode_blocks_matches() {
-        check(ee::s14::f_003cca08__generated, snd_eaxa_decode_blocks, 240, &|c, seed| {
-            let mut r = Rng(0x7a11_0005 ^ (seed as u64) << 8);
-            scramble(c, &mut r);
-            for i in 0..20 {
-                c.bus.write32(EAXA_COEFS + 4 * i, r.f32(2.0));
-            }
-            let st = DATA;
-            c.g[A0][0] = sx(st);
-            let blocks = (seed % 4) as i32;
-            let left = blocks * EAXA_BLOCK_SAMPLES - 3 * (seed % 5 == 0) as i32;
-            c.bus.write32(st + eaxa::LEFT, left as u32);
-            let (h1, h2) = if seed % 7 == 0 { (r.edge_f32(), r.edge_f32()) } else { (r.f32(30000.0), r.f32(30000.0)) };
-            c.bus.write32(st + eaxa::HIST1, h1);
-            c.bus.write32(st + eaxa::HIST2, h2);
-            let input = DATA + 0x100;
-            fill(c, &mut r, input, 0x100);
-            c.bus.write32(st + eaxa::INPUT, input);
-            c.bus.write32(st + eaxa::OUTPUT, DATA + 0x1000);
-            let mut p = input;
-            for b in 0..4 {
-                if (seed / 4 + b) % 3 == 0 {
-                    c.bus.write8(p, 0xee);
-                    p += 61;
-                } else {
-                    let h = r.next_u32() as u8;
-                    c.bus.write8(p, if h == 0xee { 0x12 } else { h });
-                    p += 15;
+        check(
+            ee::s14::f_003cca08__generated,
+            snd_eaxa_decode_blocks,
+            240,
+            &|c, seed| {
+                let mut r = Rng(0x7a11_0005 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                for i in 0..20 {
+                    c.bus.write32(EAXA_COEFS + 4 * i, r.f32(2.0));
                 }
-            }
-        });
+                let st = DATA;
+                c.g[A0][0] = sx(st);
+                let blocks = (seed % 4) as i32;
+                let left = blocks * EAXA_BLOCK_SAMPLES - 3 * (seed % 5 == 0) as i32;
+                c.bus.write32(st + eaxa::LEFT, left as u32);
+                let (h1, h2) = if seed % 7 == 0 {
+                    (r.edge_f32(), r.edge_f32())
+                } else {
+                    (r.f32(30000.0), r.f32(30000.0))
+                };
+                c.bus.write32(st + eaxa::HIST1, h1);
+                c.bus.write32(st + eaxa::HIST2, h2);
+                let input = DATA + 0x100;
+                fill(c, &mut r, input, 0x100);
+                c.bus.write32(st + eaxa::INPUT, input);
+                c.bus.write32(st + eaxa::OUTPUT, DATA + 0x1000);
+                let mut p = input;
+                for b in 0..4 {
+                    if (seed / 4 + b) % 3 == 0 {
+                        c.bus.write8(p, 0xee);
+                        p += 61;
+                    } else {
+                        let h = r.next_u32() as u8;
+                        c.bus.write8(p, if h == 0xee { 0x12 } else { h });
+                        p += 15;
+                    }
+                }
+            },
+        );
     }
-
 
     #[test]
     fn snd_tick_stub_matches() {
         leaf(ssx3_ee::s13::f_003c2438__generated, snd_tick_stub, 4);
     }
 
-
     #[test]
     fn snd_dsp_resample_set_rate_matches() {
-        leaf(ssx3_ee::s14::f_003cb538__generated, snd_dsp_resample_set_rate, 25);
+        leaf(
+            ssx3_ee::s14::f_003cb538__generated,
+            snd_dsp_resample_set_rate,
+            25,
+        );
     }
-
 
     #[test]
     fn snd_utk_set_mode_matches() {
         leaf(ssx3_ee::s14::f_003ce0d8__generated, snd_utk_set_mode, 26);
     }
 
-
     #[test]
     fn sndstrm_stop_slot_unsupported_matches() {
-        leaf(ssx3_ee::s13::f_003c6ce0__generated, sndstrm_stop_slot_unsupported, 27);
+        leaf(
+            ssx3_ee::s13::f_003c6ce0__generated,
+            sndstrm_stop_slot_unsupported,
+            27,
+        );
     }
-
 
     #[test]
     fn snd_eaxa_set_history_matches() {
-        leaf(ssx3_ee::s14::f_003cd190__generated, snd_eaxa_set_history, 28);
+        leaf(
+            ssx3_ee::s14::f_003cd190__generated,
+            snd_eaxa_set_history,
+            28,
+        );
     }
-
 
     #[test]
     fn snd_dsp_resample_process_matches() {
@@ -3120,7 +3240,8 @@ pub(crate) mod tests {
                 // Format at +0x1c selects the pass-through half (0x10000) or
                 // the resampling half (anything else).
                 let fast = seed % 2 == 0;
-                c.bus.write32(o + 0x1c, if fast { 0x1_0000 } else { 0x2_0000 });
+                c.bus
+                    .write32(o + 0x1c, if fast { 0x1_0000 } else { 0x2_0000 });
                 c.bus.write16(o + 0x24, if seed % 4 == 0 { 1 } else { 0 });
                 c.bus.write16(o + 0x26, (seed % 3) as u16);
                 c.bus.write32(o + 0x20, 0x1_0000);

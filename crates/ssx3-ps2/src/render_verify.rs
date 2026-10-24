@@ -63,7 +63,17 @@ fn regs_of(v: &Vif) -> VifRegs {
 /// A VIF1 chain DMA starts at `tadr` (after `pending` quadwords of a
 /// previous transfer). Walk it at the EE level and queue the calls.
 #[allow(clippy::too_many_arguments)]
-pub fn chain_start(vif1: &Vif, ram: &[u8], spr: &[u8], pending: &[u128], tadr: u32, tte: bool, tie: bool, asp: u32, asr: [u32; 2]) {
+pub fn chain_start(
+    vif1: &Vif,
+    ram: &[u8],
+    spr: &[u8],
+    pending: &[u128],
+    tadr: u32,
+    tte: bool,
+    tie: bool,
+    asp: u32,
+    asr: [u32; 2],
+) {
     let mut w = Vif1::new(regs_of(vif1));
     if !pending.is_empty() {
         w.write(pending);
@@ -97,7 +107,10 @@ pub fn program_start(pc: Option<u32>, top: u32, itop: u32, mem: &[u8]) {
         bad.push(format!("entry {:?} vs {:?}", exp.entry, pc));
     }
     if exp.top != top || exp.itop != itop {
-        bad.push(format!("top/itop {:#x}/{:#x} vs {top:#x}/{itop:#x}", exp.top, exp.itop));
+        bad.push(format!(
+            "top/itop {:#x}/{:#x} vs {top:#x}/{itop:#x}",
+            exp.top, exp.itop
+        ));
     }
     let mut wrong = 0;
     for (a, v) in exp.writes() {
@@ -111,7 +124,10 @@ pub fn program_start(pc: Option<u32>, top: u32, itop: u32, mem: &[u8]) {
         }
     }
     if wrong > 0 {
-        bad.push(format!("{wrong}/{} input qwords differ", exp.writes().count()));
+        bad.push(format!(
+            "{wrong}/{} input qwords differ",
+            exp.writes().count()
+        ));
     }
     if bad.is_empty() {
         s.calls_ok += 1;
@@ -119,7 +135,11 @@ pub fn program_start(pc: Option<u32>, top: u32, itop: u32, mem: &[u8]) {
         s.mismatches += 1;
         if s.reported < 20 {
             s.reported += 1;
-            eprintln!("[vucall-verify] mismatch at call {} (pc {pc:?}): {}", s.calls_ok + s.mismatches, bad.join("; "));
+            eprintln!(
+                "[vucall-verify] mismatch at call {} (pc {pc:?}): {}",
+                s.calls_ok + s.mismatches,
+                bad.join("; ")
+            );
         }
     }
 }

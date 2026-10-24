@@ -9,10 +9,8 @@ use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
-pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x003b_3d00, shps_get_entry_name, "SHPS_GetEntryName"),
-];
-
+pub const OVERRIDES: &[(u32, GuestFn, &str)] =
+    &[(0x003b_3d00, shps_get_entry_name, "SHPS_GetEntryName")];
 
 /// `char* SHPS_GetEntryName(SHPSheet* sheet, int index, char* out)`
 /// (0x3b3d00): copy the entry's name pointer (or "" when out of range) into
@@ -53,21 +51,25 @@ pub(crate) mod tests {
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
 
-
     #[test]
     fn shps_get_entry_name_matches() {
-        check(ssx3_ee::s13::f_003b3d00, shps_get_entry_name, 200, &|c, seed| {
-            let mut r = Rng(0xf006 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            let index = (r.next_u32() % 8) as u32;
-            c.g[A1][0] = index as u64;
-            let count = r.next_u32() % 8;
-            c.bus.write32(DATA + 8, count);
-            c.bus.write32(DATA + index * 8 + 0x10, r.next_u32());
-            let out = DATA + 0x300 + (seed % 4);
-            c.g[A2][0] = out as u64;
-            c.bus.write32(out & !3, r.next_u32());
-        });
+        check(
+            ssx3_ee::s13::f_003b3d00,
+            shps_get_entry_name,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0xf006 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                let index = (r.next_u32() % 8) as u32;
+                c.g[A1][0] = index as u64;
+                let count = r.next_u32() % 8;
+                c.bus.write32(DATA + 8, count);
+                c.bus.write32(DATA + index * 8 + 0x10, r.next_u32());
+                let out = DATA + 0x300 + (seed % 4);
+                c.g[A2][0] = out as u64;
+                c.bus.write32(out & !3, r.next_u32());
+            },
+        );
     }
 }

@@ -37,12 +37,16 @@ pub fn get() -> &'static Dbg {
             trace: var("SSX3_GFX_TRACE").and_then(|v| v.parse().ok()),
             trace_out: var("SSX3_GFX_TRACE_OUT").unwrap_or_else(|| "/tmp/gfx-trace.txt".into()),
             no_flip: var("SSX3_GFX_FLIP").is_some_and(|v| v == "0"),
-            path3: var("SSX3_GFX_PATH3").and_then(|v| v.parse().ok()).unwrap_or(3),
+            path3: var("SSX3_GFX_PATH3")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(3),
             skip: var("SSX3_GFX_SKIP")
                 .map(|v| {
                     v.split(',')
                         .flat_map(|x| match x.split_once('-') {
-                            Some((a, b)) => a.parse().unwrap_or(1)..b.parse::<usize>().map_or(0, |b| b + 1),
+                            Some((a, b)) => {
+                                a.parse().unwrap_or(1)..b.parse::<usize>().map_or(0, |b| b + 1)
+                            }
                             None => x.parse().map_or(0..0, |a: usize| a..a + 1),
                         })
                         .collect()
@@ -53,13 +57,26 @@ pub fn get() -> &'static Dbg {
                 .map(|v| {
                     v.split(',')
                         .filter_map(|x| {
-                            let m = x.as_bytes().last().copied().filter(|c| matches!(c, b'c' | b'a' | b'z')).unwrap_or(0);
-                            u64::from_str_radix(x.trim_start_matches("0x").trim_end_matches(['a', 'c', 'z']), 16).ok().map(|t| (t, m))
+                            let m = x
+                                .as_bytes()
+                                .last()
+                                .copied()
+                                .filter(|c| matches!(c, b'c' | b'a' | b'z'))
+                                .unwrap_or(0);
+                            u64::from_str_radix(
+                                x.trim_start_matches("0x").trim_end_matches(['a', 'c', 'z']),
+                                16,
+                            )
+                            .ok()
+                            .map(|t| (t, m))
                         })
                         .collect()
                 })
                 .unwrap_or_default(),
-            probe: var("SSX3_GFX_PROBE").and_then(|v| v.split_once(',').and_then(|(x, y)| Some((x.parse().ok()?, y.parse().ok()?)))),
+            probe: var("SSX3_GFX_PROBE").and_then(|v| {
+                v.split_once(',')
+                    .and_then(|(x, y)| Some((x.parse().ok()?, y.parse().ok()?)))
+            }),
             texlog: var("SSX3_GFX_TEXLOG").and_then(|v| v.parse().ok()),
             planlog: var("SSX3_GFX_PLANLOG").and_then(|v| u64::from_str_radix(&v, 16).ok()),
             vucheck: var("SSX3_GFX_VUCHECK").is_some(),

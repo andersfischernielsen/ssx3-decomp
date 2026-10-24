@@ -55,7 +55,15 @@ fn read_ref(path: &str) -> BTreeMap<u32, Out> {
         let end = read_arch(&mut r);
         let data = r.bytes().unwrap();
         let pairs = r.u64().unwrap();
-        m.insert(idx, Out { kicks, end, data, pairs });
+        m.insert(
+            idx,
+            Out {
+                kicks,
+                end,
+                data,
+                pairs,
+            },
+        );
     }
     m
 }
@@ -87,7 +95,11 @@ fn read_arch(r: &mut Reader) -> ArchState {
 
 fn ulp(a: u32, b: u32) -> u32 {
     if (a ^ b) & 0x8000_0000 != 0 {
-        return if (a | b) & 0x7fff_ffff == 0 { 0 } else { u32::MAX };
+        return if (a | b) & 0x7fff_ffff == 0 {
+            0
+        } else {
+            u32::MAX
+        };
     }
     (a as i64 - b as i64).unsigned_abs() as u32
 }
@@ -96,7 +108,10 @@ fn ulp(a: u32, b: u32) -> u32 {
 fn compare(a: &Out, b: &Out, start: &ArchState) -> Vec<(String, String)> {
     let mut d = Vec::new();
     if a.kicks.len() != b.kicks.len() {
-        d.push(("kick-count".into(), format!("ours {} ref {}", a.kicks.len(), b.kicks.len())));
+        d.push((
+            "kick-count".into(),
+            format!("ours {} ref {}", a.kicks.len(), b.kicks.len()),
+        ));
     }
     for (k, (x, y)) in a.kicks.iter().zip(&b.kicks).enumerate() {
         if x != y {
@@ -138,21 +153,33 @@ fn compare(a: &Out, b: &Out, start: &ArchState) -> Vec<(String, String)> {
         if a.end.vi[r] != b.end.vi[r] {
             d.push((
                 format!("vi"),
-                format!("vi{r}: ours {:#06x} ref {:#06x} (start {:#06x})", a.end.vi[r], b.end.vi[r], start.vi[r]),
+                format!(
+                    "vi{r}: ours {:#06x} ref {:#06x} (start {:#06x})",
+                    a.end.vi[r], b.end.vi[r], start.vi[r]
+                ),
             ));
         }
     }
     for r in 0..32 {
         if a.end.vf[r] != b.end.vf[r] {
-            let m = (0..4).map(|l| ulp(a.end.vf[r][l], b.end.vf[r][l])).max().unwrap();
+            let m = (0..4)
+                .map(|l| ulp(a.end.vf[r][l], b.end.vf[r][l]))
+                .max()
+                .unwrap();
             d.push((
                 if m <= 4 { "vf-ulp" } else { "vf" }.into(),
-                format!("vf{r}: ours {:08x?} ref {:08x?} (max ulp {m})", a.end.vf[r], b.end.vf[r]),
+                format!(
+                    "vf{r}: ours {:08x?} ref {:08x?} (max ulp {m})",
+                    a.end.vf[r], b.end.vf[r]
+                ),
             ));
         }
     }
     if a.end.acc != b.end.acc {
-        let m = (0..4).map(|l| ulp(a.end.acc[l], b.end.acc[l])).max().unwrap();
+        let m = (0..4)
+            .map(|l| ulp(a.end.acc[l], b.end.acc[l]))
+            .max()
+            .unwrap();
         d.push((
             if m <= 4 { "acc-ulp" } else { "acc" }.into(),
             format!("acc: ours {:08x?} ref {:08x?}", a.end.acc, b.end.acc),
@@ -169,7 +196,11 @@ fn compare(a: &Out, b: &Out, start: &ArchState) -> Vec<(String, String)> {
         ("tpc", a.end.tpc, b.end.tpc),
     ] {
         if x != y {
-            let cat = if (n == "q" || n == "p") && ulp(x, y) <= 4 { format!("{n}-ulp") } else { n.to_string() };
+            let cat = if (n == "q" || n == "p") && ulp(x, y) <= 4 {
+                format!("{n}-ulp")
+            } else {
+                n.to_string()
+            };
             d.push((cat, format!("{n}: ours {x:#010x} ref {y:#010x}")));
         }
     }
@@ -192,11 +223,17 @@ fn compare(a: &Out, b: &Out, start: &ArchState) -> Vec<(String, String)> {
     if nq > 0 {
         d.push((
             if maxulp <= 4 { "mem-ulp" } else { "mem" }.into(),
-            format!("data: {nq} qwords differ, first {:#x}, max ulp {maxulp}", first.unwrap()),
+            format!(
+                "data: {nq} qwords differ, first {:#x}, max ulp {maxulp}",
+                first.unwrap()
+            ),
         ));
     }
     if a.pairs != b.pairs {
-        d.push(("pairs".into(), format!("pairs: ours {} ref {}", a.pairs, b.pairs)));
+        d.push((
+            "pairs".into(),
+            format!("pairs: ours {} ref {}", a.pairs, b.pairs),
+        ));
     }
     d
 }
@@ -222,15 +259,17 @@ impl Rng {
                 _ => self.next() % 0x400,
             };
         }
-        const F: [f32; 12] = [1.0, 0.5, -2.0, 3.25, 100.0, -0.125, 7.0, 0.0, 1e30, -3e38, 1e-30, -0.3];
+        const F: [f32; 12] = [
+            1.0, 0.5, -2.0, 3.25, 100.0, -0.125, 7.0, 0.0, 1e30, -3e38, 1e-30, -0.3,
+        ];
         match self.next() % 6 {
             0 => self.next() % 8,
             1 | 4 => F[(self.next() % 12) as usize].to_bits(),
             2 => (self.next() % 64) | 0x8000,
             3 => self.next() % 0x400,
             _ => match self.next() % 4 {
-                0 => self.next() & 0x807f_ffff,      // denormal
-                1 => self.next() | 0x7f80_0000,      // exponent 255
+                0 => self.next() & 0x807f_ffff,                 // denormal
+                1 => self.next() | 0x7f80_0000,                 // exponent 255
                 _ => (self.next() & 0x8fff_ffff) + 0x3000_0000, // random normal
             },
         }
@@ -276,7 +315,10 @@ fn synth(out: &str, seeds: u64, sane: bool) {
         }
         for (k, &pc) in entries.iter().enumerate() {
             for seed in 0..seeds {
-                let mut r = Rng((hash ^ (k as u64) << 20 ^ seed.wrapping_mul(0x9e37_79b9)) | 1, sane);
+                let mut r = Rng(
+                    (hash ^ (k as u64) << 20 ^ seed.wrapping_mul(0x9e37_79b9)) | 1,
+                    sane,
+                );
                 let mut vu = Vu::new(unit);
                 vu.write_code(s.addr, &s.bytes);
                 for i in 0..vu.data.len() / 4 {
@@ -314,7 +356,13 @@ fn synth(out: &str, seeds: u64, sane: bool) {
                     ..Default::default()
                 };
                 let (o, _) = replay(&rec);
-                let rec = Record { kicks: o.kicks, end: o.end, data_out: o.data, pairs: o.pairs, ..rec };
+                let rec = Record {
+                    kicks: o.kicks,
+                    end: o.end,
+                    data_out: o.data,
+                    pairs: o.pairs,
+                    ..rec
+                };
                 rec.write(&mut buf);
                 n += 1;
             }
@@ -358,7 +406,19 @@ fn digest(r: &Record, pair_q_stall: bool) -> (u64, u64, u64, u64) {
     for x in e.vi {
         eat(&mut h, &x.to_le_bytes());
     }
-    for x in [e.q, e.p, e.i, e.r, e.mac, e.status, e.clip, e.tpc, vu.vis_mac, vu.vis_status, vu.vis_clip] {
+    for x in [
+        e.q,
+        e.p,
+        e.i,
+        e.r,
+        e.mac,
+        e.status,
+        e.clip,
+        e.tpc,
+        vu.vis_mac,
+        vu.vis_status,
+        vu.vis_clip,
+    ] {
         eat(&mut h, &x.to_le_bytes());
     }
     eat(&mut h, &vu.data);
@@ -447,7 +507,9 @@ fn main() {
                         prev.copy_from_slice(&v.data);
                     }
                     let pc = pc & mask;
-                    let w = |o: u32| u32::from_le_bytes(v.code[o as usize..o as usize + 4].try_into().unwrap());
+                    let w = |o: u32| {
+                        u32::from_le_bytes(v.code[o as usize..o as usize + 4].try_into().unwrap())
+                    };
                     let (lo, hi) = (w(pc), w(pc + 4));
                     if hi & 0x8000_0000 == 0 {
                         if let Lower::Xgkick { is } = decode_lower(lo) {
@@ -488,7 +550,10 @@ fn main() {
             v.sort_by(|a, b| b.1.cmp(&a.1));
             let n: usize = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(60);
             for ((h, pc), c) in v.iter().take(n) {
-                println!("{h:016x} {pc:#06x} {c:9} {:5.2}%", 100.0 * *c as f64 / total as f64);
+                println!(
+                    "{h:016x} {pc:#06x} {c:9} {:5.2}%",
+                    100.0 * *c as f64 / total as f64
+                );
             }
         }
         "cover" => {
@@ -503,9 +568,11 @@ fn main() {
                 });
             }
             for e in ssx3_ps2::vu::generated::PROGRAMS {
-                let n = hit
-                    .get(&e.hash)
-                    .map_or(0, |s| s.iter().filter(|&&pc| pc >= e.start && pc < e.start + e.len).count());
+                let n = hit.get(&e.hash).map_or(0, |s| {
+                    s.iter()
+                        .filter(|&&pc| pc >= e.start && pc < e.start + e.len)
+                        .count()
+                });
                 println!("{:016x}: {n} / {} pairs executed", e.hash, e.len / 8);
             }
         }
@@ -517,7 +584,10 @@ fn main() {
                 for (k, p) in r.kicks.iter().enumerate() {
                     for (j, q) in p.iter().enumerate() {
                         if (0..4).any(|l| (*q >> (32 * l)) as u32 == w) {
-                            println!("#{i} vu{} pc {:#06x} hash {:016x} kick {k} qword {j}", r.unit, r.pc, r.hash);
+                            println!(
+                                "#{i} vu{} pc {:#06x} hash {:016x} kick {k} qword {j}",
+                                r.unit, r.pc, r.hash
+                            );
                         }
                     }
                 }
@@ -586,7 +656,11 @@ fn main() {
                     }
                 }
                 if verbose && (q + t > 0 || h1 != h0) {
-                    println!("record {i} pc {:#06x}: q-read stalls {q}, other stalls {t}, changed {}", r.pc, h1 != h0);
+                    println!(
+                        "record {i} pc {:#06x}: q-read stalls {q}, other stalls {t}, changed {}",
+                        r.pc,
+                        h1 != h0
+                    );
                 }
             }
             println!("{n} records: {same} identical, {cyc_only} cycles only, {val} values");
@@ -648,7 +722,10 @@ fn main() {
                     println!("#{i}: {d:?}");
                 }
             }
-            println!("{} records, {bad} differ from the in-game result", recs.len());
+            println!(
+                "{} records, {bad} differ from the in-game result",
+                recs.len()
+            );
         }
         "cmp" => {
             let refs = read_ref(&args[3]);
@@ -657,7 +734,9 @@ fn main() {
             let mut per_prog: BTreeMap<(u32, u64, u32), (usize, usize)> = BTreeMap::new();
             let mut clean = 0;
             for (i, r) in recs.iter().enumerate() {
-                let Some(b) = refs.get(&(i as u32)) else { continue };
+                let Some(b) = refs.get(&(i as u32)) else {
+                    continue;
+                };
                 let (o, _) = replay(r);
                 let d = compare(&o, b, &r.start);
                 let e = per_prog.entry((r.unit, r.hash, r.pc)).or_default();
@@ -674,7 +753,10 @@ fn main() {
                     }
                 }
                 if verbose {
-                    println!("#{i} vu{} pc {:#06x} hash {:016x} frame {}:", r.unit, r.pc, r.hash, r.frame);
+                    println!(
+                        "#{i} vu{} pc {:#06x} hash {:016x} frame {}:",
+                        r.unit, r.pc, r.hash, r.frame
+                    );
                     for (c, s) in d.iter().take(24) {
                         println!("    [{c}] {s}");
                     }
@@ -682,7 +764,11 @@ fn main() {
             }
             println!("{} records compared, {clean} identical", refs.len());
             for (c, v) in &cats {
-                println!("  {c:12} {:4} records, e.g. {:?}", v.len(), &v[..v.len().min(8)]);
+                println!(
+                    "  {c:12} {:4} records, e.g. {:?}",
+                    v.len(),
+                    &v[..v.len().min(8)]
+                );
             }
             println!("per program (unit, hash, pc): records / differing");
             for ((u, h, pc), (n, bad)) in &per_prog {
@@ -694,7 +780,9 @@ fn main() {
             use ssx3_ps2::vu::decode::{decode_lower, decode_upper};
             let r = &recs[args[3].parse::<usize>().unwrap()];
             let hex = |i: usize, d: u32| {
-                args.get(i).map_or(d, |s| u32::from_str_radix(s.trim_start_matches("0x"), 16).unwrap())
+                args.get(i).map_or(d, |s| {
+                    u32::from_str_radix(s.trim_start_matches("0x"), 16).unwrap()
+                })
             };
             let (from, to) = (hex(4, 0), hex(5, r.code.len() as u32));
             for pc in (from..to.min(r.code.len() as u32)).step_by(8) {
@@ -732,7 +820,10 @@ fn main() {
                 );
                 for k in 1..32 {
                     let f = v.vf[k];
-                    println!("  vf{k:02} {:08x} {:08x} {:08x} {:08x}", f[0], f[1], f[2], f[3]);
+                    println!(
+                        "  vf{k:02} {:08x} {:08x} {:08x} {:08x}",
+                        f[0], f[1], f[2], f[3]
+                    );
                 }
                 let a = v.acc;
                 println!("  acc  {:08x} {:08x} {:08x} {:08x}", a[0], a[1], a[2], a[3]);

@@ -33,7 +33,11 @@ pub fn drive(c: &mut Cpu, f: GuestFn) {
         if c.pc == RA {
             return;
         }
-        assert!(c.pc & UNWIND != 0, "stopped at {:#x} without an unwind", c.pc);
+        assert!(
+            c.pc & UNWIND != 0,
+            "stopped at {:#x} without an unwind",
+            c.pc
+        );
         c.pc &= !UNWIND;
         if event_due(c) && c.event() {
             continue;
@@ -41,7 +45,10 @@ pub fn drive(c: &mut Cpu, f: GuestFn) {
         RESUMES.with(|r| *r.borrow_mut().entry(c.pc).or_default() += 1);
         f(c);
     }
-    panic!("no return after 10000 re-entries (pc {:#x}, cycles {}, next {})", c.pc, c.cycles, c.next_event);
+    panic!(
+        "no return after 10000 re-entries (pc {:#x}, cycles {}, next {})",
+        c.pc, c.cycles, c.next_event
+    );
 }
 
 /// Wrap a function in [`drive`] (difftest takes plain `fn`s).
@@ -83,7 +90,9 @@ pub fn schedule(c: &mut Cpu, r: &mut Rng, seed: u32, entry: u32) -> Events {
             Events::Unwind
         }
         _ => {
-            ssx3_ps2::platform::machine_of(&mut c.bus.plat).sched.next_vblank = 1 << 40;
+            ssx3_ps2::platform::machine_of(&mut c.bus.plat)
+                .sched
+                .next_vblank = 1 << 40;
             c.next_event = c.cycles + k;
             Events::Deliver
         }
@@ -131,7 +140,11 @@ pub fn check_events(
     // The generated side runs as the trampoline runs it (an unwind at a
     // loop head is re-entered there); `drive` is a no-op without unwinds.
     DRIVEN.with(|d| d.set(Some(generated)));
-    let gen_fn: GuestFn = if cfg!(feature = "ee-unwind") { drive_generated } else { generated };
+    let gen_fn: GuestFn = if cfg!(feature = "ee-unwind") {
+        drive_generated
+    } else {
+        generated
+    };
     for seed in 0..super::seed_count(seeds) {
         let r = compare(gen_fn, hand, &|c| {
             setup(c, seed);
@@ -140,7 +153,11 @@ pub fn check_events(
         // Temporaries too: the replacements reproduce every register. VU0
         // status/MAC/clip flags (ctrl 16-18) stay report-only, as in `check`:
         // they can't be written through the VU0 interface.
-        let soft: Vec<&String> = r.soft.iter().filter(|m| !m.starts_with("vu0 ctrl 1")).collect();
+        let soft: Vec<&String> = r
+            .soft
+            .iter()
+            .filter(|m| !m.starts_with("vu0 ctrl 1"))
+            .collect();
         assert!(soft.is_empty(), "seed {seed} (soft): {:#?}", soft);
         let mut c = fresh();
         let mode = setup(&mut c, seed);

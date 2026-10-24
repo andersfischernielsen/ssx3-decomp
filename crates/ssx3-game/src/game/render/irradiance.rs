@@ -8,36 +8,33 @@ use crate::call::Frame;
 use crate::call::Unwound;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::fe::feasyncfile::lw_8 as lw;
+pub(crate) use crate::game::fe::feasyncfile::p;
+pub(crate) use crate::game::fe::feasyncfile::sub;
+pub(crate) use crate::game::fe::feasyncfile::sw_5 as sw;
 use crate::guest::Addr;
+use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
-use ssx3_ee as ee;
-pub(crate) use crate::game::fe::feasyncfile::p;
-pub(crate) use crate::game::fe::feasyncfile::sub;
-pub(crate) use crate::game::fe::feasyncfile::lw_8 as lw;
-pub(crate) use crate::game::fe::feasyncfile::sw_5 as sw;
 
 /// Replacements in this unit: (address, function, name).
-pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0038_adb0, irradiance_free, "Irradiance_Free"),
-];
+pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[(0x0038_adb0, irradiance_free, "Irradiance_Free")];
 
 // ---------------------------------------------------------------------------
 // Callees the generator emits as `call_indirect` (cross-shard or indirect).
 
 pub(crate) mod addr {
-    pub(crate) use crate::game::fe::feasyncfile::addr::STR_HASH;
-    pub(crate) use crate::game::fe::feasyncfile::addr::OPERATOR_NEW_NAMED;
-    pub(crate) use crate::game::fe::feasyncfile::addr::MEM_FREE;
-    pub(crate) use crate::game::fe::feasyncfile::addr::MEMCPY;
     pub(crate) use crate::game::fe::feasyncfile::addr::FILE_LOAD;
+    pub(crate) use crate::game::fe::feasyncfile::addr::MEMCPY;
+    pub(crate) use crate::game::fe::feasyncfile::addr::MEM_FREE;
+    pub(crate) use crate::game::fe::feasyncfile::addr::OPERATOR_NEW_NAMED;
+    pub(crate) use crate::game::fe::feasyncfile::addr::STR_HASH;
     pub(crate) use crate::game::fe::feasyncfile::addr::UI_TEXT_SET_ASCII;
     pub(crate) use crate::game::fe::feasyncfile::addr::UI_TEXT_SET_UNICODE;
     pub(crate) use crate::game::fe::feasyncfile::addr::USTR_LENGTH;
 }
-
 
 // ---------------------------------------------------------------------------
 // Render / FE.
@@ -78,7 +75,6 @@ pub fn irradiance_free(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Irradiance_Load (0x0038acd0).
@@ -158,25 +154,29 @@ pub fn irradiance_load(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::difftest::check;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::FAKE;
-    use crate::difftest::check;
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
     use ssx3_ee as ee;
 
-
     #[test]
     fn irradiance_free_matches() {
-        check(ee::s12::f_0038adb0__generated, irradiance_free, 24, &|c, seed| {
-            let mut r = machine(c, seed, 0x0038_adb0, 1);
-            c.g[A0][0] = DATA as u64;
-            c.bus
-                .write32(DATA + 4, if seed % 3 == 0 { 0 } else { r.next_u32() | 1 });
-            c.bus.write32(DATA + 8, 0);
-            c.bus.write32(DATA + 0xc, 0);
-        });
+        check(
+            ee::s12::f_0038adb0__generated,
+            irradiance_free,
+            24,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0038_adb0, 1);
+                c.g[A0][0] = DATA as u64;
+                c.bus
+                    .write32(DATA + 4, if seed % 3 == 0 { 0 } else { r.next_u32() | 1 });
+                c.bus.write32(DATA + 8, 0);
+                c.bus.write32(DATA + 0xc, 0);
+            },
+        );
     }
 }

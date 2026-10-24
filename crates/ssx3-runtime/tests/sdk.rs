@@ -58,9 +58,7 @@ fn note_syscall_is_bounded() {
 #[test]
 fn exit_stops_and_unwinds() {
     let mut c = Cpu::new();
-    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        sdk::exit(&mut c, 7)
-    }));
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| sdk::exit(&mut c, 7)));
     assert!(r.is_err(), "exit should unwind via ExitReached");
     assert!(c.trap.is_some());
 }

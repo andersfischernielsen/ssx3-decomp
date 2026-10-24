@@ -54,7 +54,12 @@ pub fn draw_indexed_triangles(c: &mut Cpu) {
     let gm = c.g[A0][0] as u32;
     let n = c.g[A1][0] as i32;
     // (t1, the UVs, is read only by textured vertices, which are not built.)
-    let (idx, pos, col, off) = (c.g[A3][0] as u32, c.g[T0][0] as u32, c.g[T2][0] as u32, c.g[T3][0] as u32);
+    let (idx, pos, col, off) = (
+        c.g[A3][0] as u32,
+        c.g[T0][0] as u32,
+        c.g[T2][0] as u32,
+        c.g[T3][0] as u32,
+    );
     let st = r32(c, gm + gmf::CUR_STATE);
     state_word(c, st, 0, !0x3c0, 0xc0);
     let st = r32(c, gm + gmf::CUR_STATE);
@@ -107,7 +112,10 @@ pub fn draw_indexed_triangles(c: &mut Cpu) {
         n == 0
     };
     let start = empty_packet(c, gm);
-    record(start, Cmd::Vu(if ok { vec![Step::Gif(gif)] } else { Vec::new() }));
+    record(
+        start,
+        Cmd::Vu(if ok { vec![Step::Gif(gif)] } else { Vec::new() }),
+    );
     add_record(c, gm, start, start, false);
     ret(c, cycles);
 }
@@ -262,7 +270,12 @@ impl Seg {
         let dx = p0[0] - p1[0];
         let dz = p0[2] - p1[2];
         let dw = p0[3] - p1[3];
-        let o: V = [(p0[0] - t * dx).0, y.0, (p0[2] - t * dz).0, (p0[3] - t * dw).0];
+        let o: V = [
+            (p0[0] - t * dx).0,
+            y.0,
+            (p0[2] - t * dz).0,
+            (p0[3] - t * dw).0,
+        ];
         self.p[i] = o;
         self.lerp(i, t);
         self.code[i] = b.code_xy(&o, false);
@@ -277,7 +290,12 @@ impl Seg {
         let dy = p0[1] - p1[1];
         let dz = p0[2] - p1[2];
         let dw = p0[3] - p1[3];
-        let o: V = [x.0, (p0[1] - t * dy).0, (p0[2] - t * dz).0, (p0[3] - t * dw).0];
+        let o: V = [
+            x.0,
+            (p0[1] - t * dy).0,
+            (p0[2] - t * dz).0,
+            (p0[3] - t * dw).0,
+        ];
         self.p[i] = o;
         self.lerp(i, t);
         self.code[i] = 0;
@@ -340,7 +358,11 @@ impl Strips {
             return;
         }
         let q = FpuF32(s[3]);
-        let rgbaq = v[4] as u64 | (v[5] as u64) << 8 | (v[6] as u64) << 16 | (v[7] as u64) << 24 | (s[3] as u64) << 32;
+        let rgbaq = v[4] as u64
+            | (v[5] as u64) << 8
+            | (v[6] as u64) << 16
+            | (v[7] as u64) << 24
+            | (s[3] as u64) << 32;
         let stq = sx64((FpuF32(v[0]) * q).0) | ((FpuF32(v[1]) * q).0 as u64) << 32;
         let xyz = int(FpuF32(s[0])) | int(FpuF32(s[1])) << 16 | int(FpuF32(s[2]) * q) << 32;
         self.data.extend([rgbaq, stq, xyz]);
@@ -391,7 +413,11 @@ pub fn draw_line_strip(c: &mut Cpu) {
     ensure_view_matrices(c, gm, 0x0038_1b18);
     let b = Bounds::read(c, gm);
     let m = qm(c, gm + 0x6b30);
-    let mut ls = Strips { data: Vec::new(), header: None, count: 0 };
+    let mut ls = Strips {
+        data: Vec::new(),
+        header: None,
+        count: 0,
+    };
     let mut prev_code = u32::MAX;
     let mut prev_s: V = [0; 4];
     let mut v = verts;
@@ -409,19 +435,31 @@ pub fn draw_line_strip(c: &mut Cpu) {
             } else {
                 // Entering: the clipped previous end begins a strip (the
                 // clip's result is not looked at).
-                let mut seg = Seg { v: [vert(c, v.wrapping_sub(0x30)), cur], p: [prev_s, s], code: [prev_code, 0] };
+                let mut seg = Seg {
+                    v: [vert(c, v.wrapping_sub(0x30)), cur],
+                    p: [prev_s, s],
+                    code: [prev_code, 0],
+                };
                 seg.clip(&b);
                 ls.begin(&seg.v[0], &seg.p[0]);
                 ls.add(&cur, &s);
             }
         } else if prev_code == 0 {
             // Leaving: the clipped end (the result not looked at).
-            let mut seg = Seg { v: [vert(c, v.wrapping_sub(0x30)), cur], p: [prev_s, s], code: [0, code] };
+            let mut seg = Seg {
+                v: [vert(c, v.wrapping_sub(0x30)), cur],
+                p: [prev_s, s],
+                code: [0, code],
+            };
             seg.clip(&b);
             ls.add(&seg.v[1], &seg.p[1]);
         } else if prev_code & code == 0 {
             // Both out, maybe crossing: a strip of the clipped segment.
-            let mut seg = Seg { v: [vert(c, v.wrapping_sub(0x30)), cur], p: [prev_s, s], code: [prev_code, code] };
+            let mut seg = Seg {
+                v: [vert(c, v.wrapping_sub(0x30)), cur],
+                p: [prev_s, s],
+                code: [prev_code, code],
+            };
             if seg.clip(&b) {
                 ls.begin(&seg.v[0], &seg.p[0]);
                 ls.add(&seg.v[1], &seg.p[1]);
@@ -444,7 +482,12 @@ pub fn draw_line_strip(c: &mut Cpu) {
 /// debug paths): a line shape through the type 3 program at 0x3bf0: its
 /// GIF tags, colour (× 128), the matrix and the count to VU1 0.
 pub fn draw_line_shape(c: &mut Cpu) {
-    let (gm, matrix, argb, n) = (c.g[A0][0] as u32, c.g[A1][0] as u32, c.g[A2][0] as u32, c.g[A3][0]);
+    let (gm, matrix, argb, n) = (
+        c.g[A0][0] as u32,
+        c.g[A1][0] as u32,
+        c.g[A2][0] as u32,
+        c.g[A3][0],
+    );
     let st = r32(c, gm + gmf::CUR_STATE);
     state_word(c, st, 0, !0x3c0, 0xc0);
     state_word(c, st, 3, 0xc000_0000, 0);
@@ -453,11 +496,25 @@ pub fn draw_line_shape(c: &mut Cpu) {
     let ch = |c: &mut Cpu, o: u32| (FpuF32(r32(c, argb + o)) * k).to_i32() as i64 as u64;
     let (r, g, b, a) = (ch(c, 4), ch(c, 8), ch(c, 0xc), ch(c, 0));
     let rgbaq = r | g << 8 | b << 16 | a << 24 | 0x3f80_0000_0000_0000;
-    let mut data = vec![0x1001_4000_0000_0001 | 0xe << 64, rgbaq as u128 | 1 << 64, (n | 0x1001_4000_0000_8000) as u128 | 4 << 64];
+    let mut data = vec![
+        0x1001_4000_0000_0001 | 0xe << 64,
+        rgbaq as u128 | 1 << 64,
+        (n | 0x1001_4000_0000_8000) as u128 | 4 << 64,
+    ];
     data.extend(qwords(c, matrix, 4));
     data.push(n as u128);
     let start = empty_packet(c, gm);
-    record(start, Cmd::Vu(vec![Step::Write { addr: 0, rel: true, data }, Step::Start(0x3bf0)]));
+    record(
+        start,
+        Cmd::Vu(vec![
+            Step::Write {
+                addr: 0,
+                rel: true,
+                data,
+            },
+            Step::Start(0x3bf0),
+        ]),
+    );
     add_record(c, gm, start, start, false);
     ret(c, 80);
 }

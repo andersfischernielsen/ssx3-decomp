@@ -54,14 +54,14 @@ use super::swizzle::{self, Kind, Surface};
 use super::Vertex;
 
 pub(crate) mod hires;
-mod submit;
 mod native;
 mod native3;
-pub use native3::{diag_knob as native3_diag, Fallback as N3Fallback, N3Stats};
+mod submit;
 pub use native::{
-    NativeError, NativeRecord, NativeStats, NativeSurface, NativeSurfaces, NativeTargets, COLOR_FORMAT, DEPTH_FORMAT,
-    DEPTH_SCALE,
+    NativeError, NativeRecord, NativeStats, NativeSurface, NativeSurfaces, NativeTargets,
+    COLOR_FORMAT, DEPTH_FORMAT, DEPTH_SCALE,
 };
+pub use native3::{diag_knob as native3_diag, Fallback as N3Fallback, N3Stats};
 
 const SHADER: &str = include_str!("gs.wgsl");
 
@@ -190,28 +190,71 @@ pub struct GpuStats {
 
 enum Cmd {
     /// Copy `n` pages of the data buffer (from word `src`) to VRAM page `page`.
-    Upload { page: u32, n: u32, src: u32 },
+    Upload {
+        page: u32,
+        n: u32,
+        src: u32,
+    },
     /// Copy VRAM words `lo..hi` into the snapshot buffer.
-    Snapshot { lo: u32, hi: u32 },
-    Raster { slot: u32, tiles: u32 },
+    Snapshot {
+        lo: u32,
+        hi: u32,
+    },
+    Raster {
+        slot: u32,
+        tiles: u32,
+    },
     /// Write `n` host->local pixels (see `pixel_write`).
-    Pixels { slot: u32, n: u32 },
+    Pixels {
+        slot: u32,
+        n: u32,
+    },
     /// Decode `n` texels of a texture level into the decoded buffer.
-    Decode { slot: u32, n: u32 },
-    Display { slot: u32, w: u32, h: u32 },
+    Decode {
+        slot: u32,
+        n: u32,
+    },
+    Display {
+        slot: u32,
+        w: u32,
+        h: u32,
+    },
     /// Native run `run`: unswizzle its surfaces into the targets.
-    NativeBegin { run: u32, slot: u32 },
+    NativeBegin {
+        run: u32,
+        slot: u32,
+    },
     /// Native run `run`: recorded passes `rec`.
-    NativePass { run: u32, rec: u32 },
+    NativePass {
+        run: u32,
+        rec: u32,
+    },
     /// Native run `run`: swizzle the targets back into VRAM.
-    NativeEnd { run: u32, slot: u32 },
+    NativeEnd {
+        run: u32,
+        slot: u32,
+    },
     /// Mirror a local->local transfer between N× copies (`hires`):
     /// rectangle at (sx, sy) of `src` to (dx, dy) of `dst`, `w` x `h`
     /// GS pixels.
-    HiresCopy { src: hires::Key, dst: hires::Key, sx: u32, sy: u32, dx: u32, dy: u32, w: u32, h: u32 },
+    HiresCopy {
+        src: hires::Key,
+        dst: hires::Key,
+        sx: u32,
+        sy: u32,
+        dx: u32,
+        dy: u32,
+        w: u32,
+        h: u32,
+    },
     /// `Display` at N× output size from the circuits' N× copies (`None`:
     /// that circuit reads VRAM).
-    DisplayHires { slot: u32, w: u32, h: u32, keys: [Option<hires::Key>; 2] },
+    DisplayHires {
+        slot: u32,
+        w: u32,
+        h: u32,
+        keys: [Option<hires::Key>; 2],
+    },
 }
 
 #[derive(Clone, Copy)]
@@ -331,7 +374,9 @@ fn storage_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
 fn swizzle_tables() -> Vec<u32> {
     let t = swizzle::tables();
     let mut v = Vec::with_capacity(45056);
-    for part in [&t.t32, &t.z32, &t.t16, &t.t16s, &t.z16, &t.z16s, &t.t8, &t.t4] {
+    for part in [
+        &t.t32, &t.z32, &t.t16, &t.t16s, &t.z16, &t.z16s, &t.t8, &t.t4,
+    ] {
         v.extend(part.iter().map(|&x| x as u32));
     }
     debug_assert_eq!(v.len(), 45056);
@@ -460,7 +505,11 @@ impl GpuGs {
             })
         };
         use wgpu::BufferUsages as U;
-        let vram = mk("gs-vram", VRAM_BYTES, U::STORAGE | U::COPY_DST | U::COPY_SRC);
+        let vram = mk(
+            "gs-vram",
+            VRAM_BYTES,
+            U::STORAGE | U::COPY_DST | U::COPY_SRC,
+        );
         let snap = mk("gs-snapshot", VRAM_BYTES, U::STORAGE | U::COPY_DST);
         let tab = swizzle_tables();
         let tables = mk("gs-tables", tab.len() as u64 * 4, U::STORAGE | U::COPY_DST);
@@ -496,7 +545,9 @@ impl GpuGs {
             label: Some("gs.wgsl"),
             // SSX3_GS_WGSL=path overrides the built-in shader (development).
             source: wgpu::ShaderSource::Wgsl(match std::env::var("SSX3_GS_WGSL") {
-                Ok(p) => std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("{p}: {e}")).into(),
+                Ok(p) => std::fs::read_to_string(&p)
+                    .unwrap_or_else(|e| panic!("{p}: {e}"))
+                    .into(),
                 Err(_) => SHADER.into(),
             }),
         };
@@ -510,7 +561,9 @@ impl GpuGs {
             dev.create_shader_module(desc)
         } else {
             // SAFETY: see above; the shader never indexes out of bounds.
-            unsafe { dev.create_shader_module_trusted(desc, wgpu::ShaderRuntimeChecks::unchecked()) }
+            unsafe {
+                dev.create_shader_module_trusted(desc, wgpu::ShaderRuntimeChecks::unchecked())
+            }
         };
         let layout = dev.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("gs-layout"),
@@ -531,7 +584,11 @@ impl GpuGs {
         let display_pipe = pipe("display");
         let decode_pipe = pipe("decode");
         let pixels_pipe = pipe("pixels");
-        let bind_group = Self::make_bind_group(dev, &bgl, [&vram, &tables, &data, &params, &snap, &out, &dec]);
+        let bind_group = Self::make_bind_group(
+            dev,
+            &bgl,
+            [&vram, &tables, &data, &params, &snap, &out, &dec],
+        );
         Some(GpuGs {
             n3: native3::N3::default(),
             hires_pending: Vec::new(),
@@ -581,21 +638,35 @@ impl GpuGs {
                 pending: None,
                 want: Pages::default(),
             },
-            prof: (profiling() && dev.features().contains(wgpu::Features::TIMESTAMP_QUERY)).then(|| Prof {
-                qs: dev.create_query_set(&wgpu::QuerySetDescriptor {
-                    label: Some("gs-timestamps"),
-                    ty: wgpu::QueryType::Timestamp,
-                    count: PROF_PASSES * 2,
-                }),
-                resolve: mk("gs-ts-resolve", PROF_PASSES as u64 * 16, U::QUERY_RESOLVE | U::COPY_SRC),
-                read: mk("gs-ts-read", PROF_PASSES as u64 * 16, U::MAP_READ | U::COPY_DST),
-            }),
+            prof: (profiling() && dev.features().contains(wgpu::Features::TIMESTAMP_QUERY)).then(
+                || Prof {
+                    qs: dev.create_query_set(&wgpu::QuerySetDescriptor {
+                        label: Some("gs-timestamps"),
+                        ty: wgpu::QueryType::Timestamp,
+                        count: PROF_PASSES * 2,
+                    }),
+                    resolve: mk(
+                        "gs-ts-resolve",
+                        PROF_PASSES as u64 * 16,
+                        U::QUERY_RESOLVE | U::COPY_SRC,
+                    ),
+                    read: mk(
+                        "gs-ts-read",
+                        PROF_PASSES as u64 * 16,
+                        U::MAP_READ | U::COPY_DST,
+                    ),
+                },
+            ),
         })
     }
 
     /// Bindings: vram, tables, data, params (dynamic uniform), snapshot,
     /// display output, decoded textures.
-    fn make_bind_group(dev: &wgpu::Device, bgl: &wgpu::BindGroupLayout, b: [&wgpu::Buffer; 7]) -> wgpu::BindGroup {
+    fn make_bind_group(
+        dev: &wgpu::Device,
+        bgl: &wgpu::BindGroupLayout,
+        b: [&wgpu::Buffer; 7],
+    ) -> wgpu::BindGroup {
         let entries: Vec<wgpu::BindGroupEntry> = b
             .iter()
             .enumerate()
@@ -748,7 +819,14 @@ impl GpuGs {
 
     /// Queue a set-up primitive. `vram` is the CPU mirror (for uploads when
     /// a batch closes).
-    pub(crate) fn push(&mut self, d: &Arc<Draw>, p: &Prim, prim: u32, verts: &[Vertex], vram: &[u32]) {
+    pub(crate) fn push(
+        &mut self,
+        d: &Arc<Draw>,
+        p: &Prim,
+        prim: u32,
+        verts: &[Vertex],
+        vram: &[u32],
+    ) {
         // Native triangles queued before this primitive draw before it.
         self.n3_flush_why(vram, 0);
         let (x0, y0, x1, y1) = (p.x0 as u32, p.y0 as u32, p.x1 as u32, p.y1 as u32);
@@ -765,7 +843,9 @@ impl GpuGs {
         let isolate = p.x1 >= d.fb_width
             || (d.z_used && p.x1 >= d.zb_width)
             || fb_pages == Pages::ALL
-            || (d.z_used && raster::surf_key(&d.fb) != raster::surf_key(&d.zb) && fb_pages.hits(&zb_pages));
+            || (d.z_used
+                && raster::surf_key(&d.fb) != raster::surf_key(&d.zb)
+                && fb_pages.hits(&zb_pages));
         if isolate {
             self.stats.isolated += 1;
             self.close(vram);
@@ -773,7 +853,10 @@ impl GpuGs {
         // Different mapping of pages the batch draws to.
         if self.batch.prims > 0 {
             // (No heap allocation: this runs for every primitive.)
-            let both = [(raster::surf_key(&d.fb), fb_pages), (raster::surf_key(&d.zb), zb_pages)];
+            let both = [
+                (raster::surf_key(&d.fb), fb_pages),
+                (raster::surf_key(&d.zb), zb_pages),
+            ];
             let mine = &both[..if d.z_used { 2 } else { 1 }];
             let alias = mine.iter().any(|(k, pg)| {
                 self.batch
@@ -857,7 +940,10 @@ impl GpuGs {
             Shape::Line { .. } => 2,
             Shape::Point { .. } => 3,
         };
-        let tiles: u64 = self.batch.spans[n0..].iter().map(|s| (s.tx1 - s.tx0 + 1) as u64).sum();
+        let tiles: u64 = self.batch.spans[n0..]
+            .iter()
+            .map(|s| (s.tx1 - s.tx0 + 1) as u64)
+            .sum();
         self.stats.kind_prims[kind] += 1;
         self.stats.kind_entries[kind] += tiles;
     }
@@ -878,11 +964,15 @@ impl GpuGs {
                 // Narrow each tile row to the triangle's extent in it.
                 for ty in ty0..=ty1 {
                     let ja = ((ty as i32) << TILE_SHIFT).max(p.y0) - t.by0;
-                    let jb = (((ty as i32) << TILE_SHIFT) + (1 << TILE_SHIFT) - 1).min(p.y1) - t.by0;
+                    let jb =
+                        (((ty as i32) << TILE_SHIFT) + (1 << TILE_SHIFT) - 1).min(p.y1) - t.by0;
                     let w = (p.x1 - t.bx0) as i64;
                     let (mut lo, mut hi) = (0i64, w);
                     for k in 0..3 {
-                        let (ea, eb) = (t.e0[k] + t.edy[k] * ja as i64, t.e0[k] + t.edy[k] * jb as i64);
+                        let (ea, eb) = (
+                            t.e0[k] + t.edy[k] * ja as i64,
+                            t.e0[k] + t.edy[k] * jb as i64,
+                        );
                         // The most permissive end of the slab for this edge.
                         let e = if t.edx[k] > 0 { ea.max(eb) } else { ea.max(eb) };
                         raster::edge_span(e, t.edx[k], &mut lo, &mut hi);
@@ -892,13 +982,23 @@ impl GpuGs {
                     }
                     let a = ((t.bx0 as i64 + lo) >> TILE_SHIFT) as u16;
                     let b = ((t.bx0 as i64 + hi) >> TILE_SHIFT) as u16;
-                    self.batch.spans.push(Span { prim: off, ty, tx0: a, tx1: b });
+                    self.batch.spans.push(Span {
+                        prim: off,
+                        ty,
+                        tx0: a,
+                        tx1: b,
+                    });
                 }
                 return;
             }
         }
         for ty in ty0..=ty1 {
-            self.batch.spans.push(Span { prim: off, ty, tx0, tx1 });
+            self.batch.spans.push(Span {
+                prim: off,
+                ty,
+                tx0,
+                tx1,
+            });
         }
     }
 
@@ -1160,7 +1260,8 @@ impl GpuGs {
             tiles: ntiles as u32,
         });
         if self.prof.is_some() {
-            self.prof_info.push((self.batch.prims as u32, ntiles as u32, entries as u32));
+            self.prof_info
+                .push((self.batch.prims as u32, ntiles as u32, entries as u32));
         }
         self.stats.batches += 1;
         self.stats.tiles += ntiles as u64;
@@ -1189,7 +1290,9 @@ impl GpuGs {
         let uses = std::mem::take(&mut self.batch.tex_use);
         for (st, d, fetches) in &uses {
             for (l, t) in d.tex_levels().into_iter().enumerate().take(7) {
-                let Some(rect) = raster::decode_rect(t) else { continue };
+                let Some(rect) = raster::decode_rect(t) else {
+                    continue;
+                };
                 let [u0, v0, u1, v1] = rect;
                 let (w, h) = (u1 - u0 + 1, v1 - v0 + 1);
                 let texels = w * h;
@@ -1237,7 +1340,8 @@ impl GpuGs {
 
     /// Whether the open batch reads or writes blocks of `r`.
     pub(crate) fn batch_touches(&mut self, r: &Region) -> bool {
-        self.n3_writes(&r.pages) || self.batch.prims > 0 && (r.pages.hits(&self.batch.read) || self.batch.write.hits(r))
+        self.n3_writes(&r.pages)
+            || self.batch.prims > 0 && (r.pages.hits(&self.batch.read) || self.batch.write.hits(r))
     }
 
     /// Host->local data for `r` in a partial-word format: when those pages
@@ -1288,26 +1392,56 @@ impl GpuGs {
         }
         let pending = std::mem::take(&mut self.hires_pending);
         let dev = &self.ctx.device;
-        let Some(h) = self.native.as_mut().and_then(|n| n.hires.as_mut()) else { return };
+        let Some(h) = self.native.as_mut().and_then(|n| n.hires.as_mut()) else {
+            return;
+        };
         for p in pending {
             let [sbp, sbw, spsm, sx, sy, dbp, dbw, dpsm, dx, dy, w, hh] = p;
-            if w == 0 || hh == 0 || sx + w > 2048 || dx + w > 2048 || sy + hh > 2048 || dy + hh > 2048 {
+            if w == 0
+                || hh == 0
+                || sx + w > 2048
+                || dx + w > 2048
+                || sy + hh > 2048
+                || dy + hh > 2048
+            {
                 continue;
             }
-            let src = hires::Key { bp: sbp, bw: sbw, psm: spsm, depth: false };
-            let dst = hires::Key { bp: dbp, bw: dbw, psm: dpsm, depth: false };
+            let src = hires::Key {
+                bp: sbp,
+                bw: sbw,
+                psm: spsm,
+                depth: false,
+            };
+            let dst = hires::Key {
+                bp: dbp,
+                bw: dbw,
+                psm: dpsm,
+                depth: false,
+            };
             let ss = swizzle::Surface::new(spsm, sbp, sbw);
             let sp = raster::Pages::rect(&ss, sx, sy, sx + w - 1, sy + hh - 1);
             if !h.is_current(&src, &sp) {
                 if std::env::var_os("SSX3_HIRES_DEBUG").is_some() {
-                    eprintln!("[hires] l2l source not current: {src:?} (exists {})", h.surfs.contains_key(&src));
+                    eprintln!(
+                        "[hires] l2l source not current: {src:?} (exists {})",
+                        h.surfs.contains_key(&src)
+                    );
                 }
                 continue;
             }
             let ds = swizzle::Surface::new(dpsm, dbp, dbw);
             let dp = raster::Pages::rect(&ds, dx, dy, dx + w - 1, dy + hh - 1);
             h.acquire(dev, dst, &dp);
-            self.cmds.push(Cmd::HiresCopy { src, dst, sx, sy, dx, dy, w, h: hh });
+            self.cmds.push(Cmd::HiresCopy {
+                src,
+                dst,
+                sx,
+                sy,
+                dx,
+                dy,
+                w,
+                h: hh,
+            });
             // A copy of the whole buffer width makes the destination current.
             if dx == 0 && dy == 0 && w >= dbw * 64 {
                 h.mark_current(dst);
@@ -1339,7 +1473,10 @@ impl GpuGs {
         self.arena.extend_from_slice(vals);
         let sw = surf_words(s);
         if trace_readback() {
-            eprintln!("[gs-gpu] pixel write {} px at {pos:?} surf {sw:x?}", vals.len());
+            eprintln!(
+                "[gs-gpu] pixel write {} px at {pos:?} surf {sw:x?}",
+                vals.len()
+            );
         }
         let mut p = [0u32; 16];
         p[..4].copy_from_slice(&[sw[0], sw[1], sw[2], vals.len() as u32]);
@@ -1374,7 +1511,9 @@ impl GpuGs {
             self.data = dev.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("gs-data"),
                 size,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
                 mapped_at_creation: false,
             });
             rebind = true;
@@ -1409,7 +1548,15 @@ impl GpuGs {
         self.bind_group = Self::make_bind_group(
             &self.ctx.device,
             &self.bgl,
-            [&self.vram, &self.tables, &self.data, &self.params, &self.snap, &self.out, &self.dec],
+            [
+                &self.vram,
+                &self.tables,
+                &self.data,
+                &self.params,
+                &self.snap,
+                &self.out,
+                &self.dec,
+            ],
         );
     }
 
@@ -1473,15 +1620,19 @@ impl GpuGs {
                     (hi - lo) as u64 * 4,
                 ),
                 Cmd::Raster { slot, tiles } => {
-                    let ts = self.prof.as_ref().filter(|_| passes < PROF_PASSES).map(|p| {
-                        passes += 1;
-                        native_pass.push(false);
-                        wgpu::ComputePassTimestampWrites {
-                            query_set: &p.qs,
-                            beginning_of_pass_write_index: Some(2 * passes - 2),
-                            end_of_pass_write_index: Some(2 * passes - 1),
-                        }
-                    });
+                    let ts = self
+                        .prof
+                        .as_ref()
+                        .filter(|_| passes < PROF_PASSES)
+                        .map(|p| {
+                            passes += 1;
+                            native_pass.push(false);
+                            wgpu::ComputePassTimestampWrites {
+                                query_set: &p.qs,
+                                beginning_of_pass_write_index: Some(2 * passes - 2),
+                                end_of_pass_write_index: Some(2 * passes - 1),
+                            }
+                        });
                     let mut pass = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
                         label: Some("gs-raster"),
                         timestamp_writes: ts,
@@ -1522,15 +1673,29 @@ impl GpuGs {
                 Cmd::DisplayHires { slot, w, h, keys } => {
                     let dev = &self.ctx.device;
                     let (pipe, bgl) = self.hires_display.as_ref().expect("hires display pipeline");
-                    let hr = self.native.as_ref().and_then(|n| n.hires.as_ref()).expect("hires");
+                    let hr = self
+                        .native
+                        .as_ref()
+                        .and_then(|n| n.hires.as_ref())
+                        .expect("hires");
                     let dummy = hr.dummy_color.as_ref().expect("hires size");
-                    let view = |k: Option<hires::Key>| k.and_then(|k| hr.surfs.get(&k)).map(|s| &s.view).unwrap_or(dummy);
+                    let view = |k: Option<hires::Key>| {
+                        k.and_then(|k| hr.surfs.get(&k))
+                            .map(|s| &s.view)
+                            .unwrap_or(dummy)
+                    };
                     let bg = dev.create_bind_group(&wgpu::BindGroupDescriptor {
                         label: Some("gs-display-hires"),
                         layout: bgl,
                         entries: &[
-                            wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(view(keys[0])) },
-                            wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(view(keys[1])) },
+                            wgpu::BindGroupEntry {
+                                binding: 2,
+                                resource: wgpu::BindingResource::TextureView(view(keys[0])),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 3,
+                                resource: wgpu::BindingResource::TextureView(view(keys[1])),
+                            },
                         ],
                     });
                     let mut pass = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -1542,18 +1707,45 @@ impl GpuGs {
                     pass.set_bind_group(1, &bg, &[]);
                     pass.dispatch_workgroups(w.div_ceil(8), h.div_ceil(8), 1);
                 }
-                Cmd::HiresCopy { src, dst, sx, sy, dx, dy, w, h } => {
+                Cmd::HiresCopy {
+                    src,
+                    dst,
+                    sx,
+                    sy,
+                    dx,
+                    dy,
+                    w,
+                    h,
+                } => {
                     if let Some(hr) = self.native.as_ref().and_then(|n| n.hires.as_ref()) {
                         if let (Some(a), Some(b)) = (hr.surfs.get(&src), hr.surfs.get(&dst)) {
                             let k = hr.scale;
                             let (sx, sy, dx, dy) = (sx * k, sy * k, dx * k, dy * k);
-                            let w = (w * k).min(hr.w.saturating_sub(sx)).min(hr.w.saturating_sub(dx));
-                            let h = (h * k).min(hr.h.saturating_sub(sy)).min(hr.h.saturating_sub(dy));
+                            let w = (w * k)
+                                .min(hr.w.saturating_sub(sx))
+                                .min(hr.w.saturating_sub(dx));
+                            let h = (h * k)
+                                .min(hr.h.saturating_sub(sy))
+                                .min(hr.h.saturating_sub(dy));
                             if w > 0 && h > 0 && src != dst {
                                 enc.copy_texture_to_texture(
-                                    wgpu::TexelCopyTextureInfo { texture: a.view.texture(), mip_level: 0, origin: wgpu::Origin3d { x: sx, y: sy, z: 0 }, aspect: wgpu::TextureAspect::All },
-                                    wgpu::TexelCopyTextureInfo { texture: b.view.texture(), mip_level: 0, origin: wgpu::Origin3d { x: dx, y: dy, z: 0 }, aspect: wgpu::TextureAspect::All },
-                                    wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+                                    wgpu::TexelCopyTextureInfo {
+                                        texture: a.view.texture(),
+                                        mip_level: 0,
+                                        origin: wgpu::Origin3d { x: sx, y: sy, z: 0 },
+                                        aspect: wgpu::TextureAspect::All,
+                                    },
+                                    wgpu::TexelCopyTextureInfo {
+                                        texture: b.view.texture(),
+                                        mip_level: 0,
+                                        origin: wgpu::Origin3d { x: dx, y: dy, z: 0 },
+                                        aspect: wgpu::TextureAspect::All,
+                                    },
+                                    wgpu::Extent3d {
+                                        width: w,
+                                        height: h,
+                                        depth_or_array_layers: 1,
+                                    },
                                 );
                             }
                         }
@@ -1561,11 +1753,15 @@ impl GpuGs {
                 }
                 Cmd::NativeBegin { .. } | Cmd::NativePass { .. } | Cmd::NativeEnd { .. } => {
                     let timed = !matches!(c, Cmd::NativePass { .. });
-                    let idx = self.prof.as_ref().filter(|_| timed && passes < PROF_PASSES).map(|p| {
-                        passes += 1;
-                        native_pass.push(true);
-                        (p, 2 * passes - 2)
-                    });
+                    let idx = self
+                        .prof
+                        .as_ref()
+                        .filter(|_| timed && passes < PROF_PASSES)
+                        .map(|p| {
+                            passes += 1;
+                            native_pass.push(true);
+                            (p, 2 * passes - 2)
+                        });
                     let ts_r = idx.map(|(p, i)| wgpu::RenderPassTimestampWrites {
                         query_set: &p.qs,
                         beginning_of_pass_write_index: Some(i),
@@ -1592,7 +1788,15 @@ impl GpuGs {
                 (self.data.clone(), std::mem::replace(&mut self.arena, spare))
             });
             let after = self.after_submit_hook.take();
-            self.submitter.as_mut().expect("submitter").submit(submit::Job { enc, data, params, after });
+            self.submitter
+                .as_mut()
+                .expect("submitter")
+                .submit(submit::Job {
+                    enc,
+                    data,
+                    params,
+                    after,
+                });
             self.after_submit();
             return;
         }
@@ -1609,7 +1813,10 @@ impl GpuGs {
             let period = q.get_timestamp_period() as f64;
             {
                 let v = slice.get_mapped_range().expect("timestamps");
-                let t: Vec<u64> = v.chunks_exact(8).map(|c| u64::from_le_bytes(c.try_into().unwrap())).collect();
+                let t: Vec<u64> = v
+                    .chunks_exact(8)
+                    .map(|c| u64::from_le_bytes(c.try_into().unwrap()))
+                    .collect();
                 let verbose = std::env::var("SSX3_GS_PROFILE").is_ok_and(|v| v == "2");
                 let mut raster_i = 0;
                 for (i, pair) in t.chunks_exact(2).enumerate() {
@@ -1617,14 +1824,21 @@ impl GpuGs {
                     if native_pass[i] {
                         self.stats.native.gpu_ns += ns;
                         if verbose {
-                            eprintln!("[gs-prof] pass {i}: {:.3} ms, native round trip", ns as f64 / 1e6);
+                            eprintln!(
+                                "[gs-prof] pass {i}: {:.3} ms, native round trip",
+                                ns as f64 / 1e6
+                            );
                         }
                         continue;
                     }
                     self.stats.gpu_raster_ns += ns;
                     if verbose {
-                        let (pr, ti, en) = self.prof_info.get(raster_i).copied().unwrap_or_default();
-                        eprintln!("[gs-prof] pass {i}: {:.3} ms, {pr} prims, {ti} tiles, {en} entries", ns as f64 / 1e6);
+                        let (pr, ti, en) =
+                            self.prof_info.get(raster_i).copied().unwrap_or_default();
+                        eprintln!(
+                            "[gs-prof] pass {i}: {:.3} ms, {pr} prims, {ti} tiles, {en} entries",
+                            ns as f64 / 1e6
+                        );
                     }
                     raster_i += 1;
                 }
@@ -1690,7 +1904,13 @@ impl GpuGs {
             self.submit_with(|s, enc| {
                 for &(a, b) in &runs {
                     let off = a as u64 * bpp;
-                    enc.copy_buffer_to_buffer(&s.vram, off, &s.latent.buf, off, (b - a) as u64 * bpp);
+                    enc.copy_buffer_to_buffer(
+                        &s.vram,
+                        off,
+                        &s.latent.buf,
+                        off,
+                        (b - a) as u64 * bpp,
+                    );
                 }
             });
             self.latent.pending = Some(want);
@@ -1712,7 +1932,9 @@ impl GpuGs {
     pub(crate) fn latent_read(&mut self, pages: &Pages, vram: &mut [u32]) {
         self.latent.want.union(pages);
         self.stats.latent_reads += 1;
-        let Some(have) = self.latent.pending else { return };
+        let Some(have) = self.latent.pending else {
+            return;
+        };
         let _ = self.ctx.device.poll(wgpu::PollType::Poll);
         if !self.latent.ready.load(std::sync::atomic::Ordering::Acquire) {
             // Wait for the previous frame's copy rather than skipping it:
@@ -1725,7 +1947,10 @@ impl GpuGs {
                 }
                 std::thread::yield_now();
             };
-            let _ = self.ctx.device.poll(wgpu::PollType::Wait { submission_index: Some(idx), timeout: None });
+            let _ = self.ctx.device.poll(wgpu::PollType::Wait {
+                submission_index: Some(idx),
+                timeout: None,
+            });
             if !self.latent.ready.load(std::sync::atomic::Ordering::Acquire) {
                 let _ = self.ctx.device.poll(wgpu::PollType::wait_indefinitely());
             }
@@ -1736,12 +1961,20 @@ impl GpuGs {
             }
         }
         {
-            let view = self.latent.buf.slice(..).get_mapped_range().expect("latent map");
+            let view = self
+                .latent
+                .buf
+                .slice(..)
+                .get_mapped_range()
+                .expect("latent map");
             // Only pages the GPU drew: the others are current in the mirror.
             let pg = pages_and(&have, &self.gpu_dirty);
             for (a, b) in page_runs(&pg) {
                 let (wa, wb) = (a as usize * PAGE_WORDS, b as usize * PAGE_WORDS);
-                for (d, c) in vram[wa..wb].iter_mut().zip(view[wa * 4..wb * 4].chunks_exact(4)) {
+                for (d, c) in vram[wa..wb]
+                    .iter_mut()
+                    .zip(view[wa * 4..wb * 4].chunks_exact(4))
+                {
                     *d = u32::from_le_bytes([c[0], c[1], c[2], c[3]]);
                 }
             }
@@ -1749,7 +1982,6 @@ impl GpuGs {
         self.latent.buf.unmap();
         self.latent.pending = None;
     }
-
 
     /// Wait until the GPU has finished everything submitted.
     pub(crate) fn wait_idle(&mut self) {
@@ -1794,9 +2026,15 @@ impl GpuGs {
         // light for its flares), and each readback waits for the GPU.
         let all = self.gpu_dirty;
         if trace_readback() {
-            eprintln!("[gs-gpu] readback ({why}): pages {:?}, all dirty {:?}", page_span(&want), page_span(&all));
+            eprintln!(
+                "[gs-gpu] readback ({why}): pages {:?}, all dirty {:?}",
+                page_span(&want),
+                page_span(&all)
+            );
         }
-        let Some((_, hi)) = page_span(&all) else { return };
+        let Some((_, hi)) = page_span(&all) else {
+            return;
+        };
         let mut runs = Vec::new();
         let mut pg = 0;
         while pg < hi {
@@ -1814,13 +2052,22 @@ impl GpuGs {
         self.submit_with(|s, enc| {
             for &(a, b) in &runs {
                 let off = a as u64 * bytes_per_page;
-                enc.copy_buffer_to_buffer(&s.vram, off, &s.staging, off, (b - a) as u64 * bytes_per_page);
+                enc.copy_buffer_to_buffer(
+                    &s.vram,
+                    off,
+                    &s.staging,
+                    off,
+                    (b - a) as u64 * bytes_per_page,
+                );
             }
         });
         self.read_staging(hi as u64 * bytes_per_page, |bytes| {
             for &(a, b) in &runs {
                 let (wa, wb) = (a as usize * PAGE_WORDS, b as usize * PAGE_WORDS);
-                for (d, c) in vram[wa..wb].iter_mut().zip(bytes[wa * 4..wb * 4].chunks_exact(4)) {
+                for (d, c) in vram[wa..wb]
+                    .iter_mut()
+                    .zip(bytes[wa * 4..wb * 4].chunks_exact(4))
+                {
                     *d = u32::from_le_bytes([c[0], c[1], c[2], c[3]]);
                 }
             }
@@ -1837,9 +2084,18 @@ impl GpuGs {
     /// Queue the display circuits into the output buffer; `hires` shows
     /// the N× copies when there are any (`SSX3_RENDER_SCALE`). Returns the
     /// output size.
-    pub(crate) fn queue_display(&mut self, d: &DisplaySetup, vram: &[u32], hires: bool) -> (u32, u32) {
+    pub(crate) fn queue_display(
+        &mut self,
+        d: &DisplaySetup,
+        vram: &[u32],
+        hires: bool,
+    ) -> (u32, u32) {
         self.close(vram);
-        let (k, keys) = if hires { self.hires_display_plan(d) } else { (1, [None; 2]) };
+        let (k, keys) = if hires {
+            self.hires_display_plan(d)
+        } else {
+            (1, [None; 2])
+        };
         let (w, h) = (d.w * k, d.h * k);
         self.ensure_out(w as u64 * h as u64);
         let at = self.arena.len() as u32;
@@ -1849,7 +2105,11 @@ impl GpuGs {
         let use_ = (keys[0].is_some() as u32) << 8 | (keys[1].is_some() as u32) << 9;
         s[..8].copy_from_slice(&[w, h, d.row_div, d.flags, d.alp, d.bg, at, k | use_]);
         self.slots.push(s);
-        self.cmds.push(if k > 1 { Cmd::DisplayHires { slot, w, h, keys } } else { Cmd::Display { slot, w, h } });
+        self.cmds.push(if k > 1 {
+            Cmd::DisplayHires { slot, w, h, keys }
+        } else {
+            Cmd::Display { slot, w, h }
+        });
         (w, h)
     }
 
@@ -1857,7 +2117,9 @@ impl GpuGs {
     /// (one that covers the displayed rectangle and is current); scale 1
     /// until a native run made the copies.
     fn hires_display_plan(&mut self, d: &DisplaySetup) -> (u32, [Option<hires::Key>; 2]) {
-        let Some(hr) = self.native.as_ref().and_then(|n| n.hires.as_ref()) else { return (1, [None; 2]) };
+        let Some(hr) = self.native.as_ref().and_then(|n| n.hires.as_ref()) else {
+            return (1, [None; 2]);
+        };
         if hr.dummy_color.is_none() {
             return (1, [None; 2]);
         }
@@ -1883,7 +2145,10 @@ impl GpuGs {
                 },
                 count: None,
             };
-            let bgl = dev.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("gs-display-hires"), entries: &[tex(2), tex(3)] });
+            let bgl = dev.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("gs-display-hires"),
+                entries: &[tex(2), tex(3)],
+            });
             let layout = dev.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("gs-display-hires"),
                 bind_group_layouts: &[Some(&self.bgl), Some(&bgl)],
@@ -1930,7 +2195,11 @@ impl GpuGs {
         self.submit_with(|s, enc| enc.copy_buffer_to_buffer(&f.buffer, 0, &s.staging, 0, len));
         let mut out = Vec::new();
         self.read_staging(len, |bytes| {
-            out.extend(bytes.chunks_exact(4).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])));
+            out.extend(
+                bytes
+                    .chunks_exact(4)
+                    .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])),
+            );
         });
         out
     }
@@ -1950,7 +2219,11 @@ impl GpuGs {
         self.submit_with(|s, enc| enc.copy_buffer_to_buffer(&s.out, 0, &s.staging, 0, len));
         out.clear();
         self.read_staging(len, |bytes| {
-            out.extend(bytes.chunks_exact(4).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])));
+            out.extend(
+                bytes
+                    .chunks_exact(4)
+                    .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])),
+            );
         });
     }
 }
@@ -1970,7 +2243,14 @@ pub(crate) struct DisplaySetup {
     pub hires: [Option<(hires::Key, Pages)>; 2],
 }
 
-pub(crate) fn circuit_words(s: &Surface, is16: bool, dbx: u32, dby: u32, w: u32, h: u32) -> [u32; 8] {
+pub(crate) fn circuit_words(
+    s: &Surface,
+    is16: bool,
+    dbx: u32,
+    dby: u32,
+    w: u32,
+    h: u32,
+) -> [u32; 8] {
     let sw = surf_words(s);
     [sw[0], sw[1], sw[2], is16 as u32, dbx, dby, w, h]
 }

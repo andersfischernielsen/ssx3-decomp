@@ -25,16 +25,44 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0015_d928, update_matrices, "CameraBase_UpdateMatrices"),
     (0x0015_d698, camera_base_ctor, "CameraBase_ctor"),
     (0x0016_73a0, chase_get_view, "ChaseCameraAlgorithm_GetView"),
-    (0x0016_2b80, chase_set_look_at_from_rider, "ChaseCameraAlgorithm_SetLookAtFromRider"),
-    (0x0016_2138, chase_controller_reset_state, "ChaseCamController_ResetState"),
+    (
+        0x0016_2b80,
+        chase_set_look_at_from_rider,
+        "ChaseCameraAlgorithm_SetLookAtFromRider",
+    ),
+    (
+        0x0016_2138,
+        chase_controller_reset_state,
+        "ChaseCamController_ResetState",
+    ),
     (0x0015_e360, add_shake, "GameCamera_AddShake"),
     (0x0015_dfd8, set_controller, "GameCamera_SetController"),
-    (0x0015_e2a8, init_shake_presets, "GameCamera_InitShakePresets"),
+    (
+        0x0015_e2a8,
+        init_shake_presets,
+        "GameCamera_InitShakePresets",
+    ),
     (0x0016_03f0, wobble_angle, "CameraWobble_GetAngle"),
-    (0x0016_2310, rider_algo_set_target, "RiderCameraAlgorithm_SetTarget"),
-    (0x0016_94b0, script_algo_get_script_obj, "ScriptCameraAlgo_GetScriptObj"),
-    (0x0016_94a8, script_algo_set_script_obj, "ScriptCameraAlgo_SetScriptObj"),
-    (0x0016_c390, trigger_man_reset_header, "CameraTriggerMan_ResetHeader"),
+    (
+        0x0016_2310,
+        rider_algo_set_target,
+        "RiderCameraAlgorithm_SetTarget",
+    ),
+    (
+        0x0016_94b0,
+        script_algo_get_script_obj,
+        "ScriptCameraAlgo_GetScriptObj",
+    ),
+    (
+        0x0016_94a8,
+        script_algo_set_script_obj,
+        "ScriptCameraAlgo_SetScriptObj",
+    ),
+    (
+        0x0016_c390,
+        trigger_man_reset_header,
+        "CameraTriggerMan_ResetHeader",
+    ),
 ];
 
 // ---------------------------------------------------------------- globals
@@ -256,7 +284,12 @@ fn lanes(v: Vec4) -> [VuF32; 4] {
 }
 
 fn vec4(l: [VuF32; 4]) -> Vec4 {
-    Vec4 { x: l[0], y: l[1], z: l[2], w: l[3] }
+    Vec4 {
+        x: l[0],
+        y: l[1],
+        z: l[2],
+        w: l[3],
+    }
 }
 
 /// Row vector times matrix as the VU0 chain MULA/MADDA/MADDA/MADD:
@@ -307,7 +340,12 @@ fn quat_rows(q: Vec4) -> [Vec4; 3] {
 }
 
 /// VU0's constant register vf0.
-const VF0: Vec4 = Vec4 { x: VuF32::ZERO, y: VuF32::ZERO, z: VuF32::ZERO, w: VuF32::ONE };
+const VF0: Vec4 = Vec4 {
+    x: VuF32::ZERO,
+    y: VuF32::ZERO,
+    z: VuF32::ZERO,
+    w: VuF32::ONE,
+};
 
 fn read_mat(c: &mut Cpu, a: Addr) -> [Vec4; 4] {
     std::array::from_fn(|i| a.off(0x10 * i as u32).read_vec4(c))
@@ -376,7 +414,12 @@ pub fn update_matrices(c: &mut Cpu) {
     // Scratch state as the original leaves it (its earlier intermediates in
     // vf4..vf8 were overwritten by the reloads).
     let rows = read_mat(c, frame);
-    let ones = Vec4 { x: VuF32::ONE, y: VuF32::ONE, z: VuF32::ONE, w: remap[0].w };
+    let ones = Vec4 {
+        x: VuF32::ONE,
+        y: VuF32::ONE,
+        z: VuF32::ONE,
+        w: remap[0].w,
+    };
     vu0_scratch::set_vf(c, 1, 0b1111, ones);
     vu0_scratch::set_vf(c, 2, 0b1111, remap[1]);
     vu0_scratch::set_vf(c, 3, 0b1111, remap[2]);
@@ -394,7 +437,16 @@ pub fn update_matrices(c: &mut Cpu) {
             VuF32::madd(a, lane(i, m[2]), neg_eye.z)
         })
         .collect();
-    vu0_scratch::set_acc(c, 0b1111, Vec4 { x: acc[0], y: acc[1], z: acc[2], w: acc[3] });
+    vu0_scratch::set_acc(
+        c,
+        0b1111,
+        Vec4 {
+            x: acc[0],
+            y: acc[1],
+            z: acc[2],
+            w: acc[3],
+        },
+    );
     vu0_scratch::set_vf(c, 9, 0b1111, rows[1]);
     vu0_scratch::set_vf(c, 10, 0b1111, rows[2]);
     vu0_scratch::set_vf(c, 11, 0b1111, rows[3]);
@@ -639,7 +691,9 @@ pub fn init_shake_presets(c: &mut Cpu) {
     ];
     for (i, entry) in table.iter().enumerate() {
         for (j, w) in entry.iter().enumerate() {
-            SHAKE_PRESETS.off(0x10 * i as u32 + 4 * j as u32).write_u32(c, *w);
+            SHAKE_PRESETS
+                .off(0x10 * i as u32 + 4 * j as u32)
+                .write_u32(c, *w);
         }
     }
     for (i, flag) in [0u32, 1, 1, 1, 1].iter().enumerate() {
@@ -647,7 +701,20 @@ pub fn init_shake_presets(c: &mut Cpu) {
     }
     // FPU/GPR scratch: f0 = -1.0, f1..f12 hold the constants.
     c.f[0] = no_range;
-    let f_of = [(3, 0), (2, 1), (1, 2), (6, 3), (4, 4), (5, 5), (7, 6), (8, 7), (9, 8), (10, 9), (11, 10), (12, 11)];
+    let f_of = [
+        (3, 0),
+        (2, 1),
+        (1, 2),
+        (6, 3),
+        (4, 4),
+        (5, 5),
+        (7, 6),
+        (8, 7),
+        (9, 8),
+        (10, 9),
+        (11, 10),
+        (12, 11),
+    ];
     for (f, i) in f_of {
         c.f[f] = d[i];
     }
@@ -761,161 +828,239 @@ mod tests {
 
     #[test]
     fn update_matrices() {
-        check(ssx3_ee::s01::f_0015d928__generated, super::update_matrices, 400, &|c, seed| {
-            let mut r = rng(seed, 1);
-            scramble(c, &mut r);
-            c.g[4][0] = DATA as u64;
-            fill(c, &mut r, SP - 0x80, 0x20);
-            fill(c, &mut r, DATA, 0x40);
-            let range = if seed % 4 == 0 { 1e30 } else { 2.0 };
-            for i in 0..4 {
-                put_vec(c, 0x4c53a0 + 16 * i, [r.f32(range), r.f32(range), r.f32(range), r.f32(range)]);
-            }
-            let e = if seed % 3 == 0 { 0.0 } else { 1e5 };
-            put_vec(c, DATA + 0x20, [r.f32(e), r.f32(e), r.f32(e), r.next_u32()]);
-            put_vec(c, DATA + 0x30, [r.f32(1.0), r.f32(1.0), r.f32(1.0), r.f32(1.0)]);
-        });
+        check(
+            ssx3_ee::s01::f_0015d928__generated,
+            super::update_matrices,
+            400,
+            &|c, seed| {
+                let mut r = rng(seed, 1);
+                scramble(c, &mut r);
+                c.g[4][0] = DATA as u64;
+                fill(c, &mut r, SP - 0x80, 0x20);
+                fill(c, &mut r, DATA, 0x40);
+                let range = if seed % 4 == 0 { 1e30 } else { 2.0 };
+                for i in 0..4 {
+                    put_vec(
+                        c,
+                        0x4c53a0 + 16 * i,
+                        [r.f32(range), r.f32(range), r.f32(range), r.f32(range)],
+                    );
+                }
+                let e = if seed % 3 == 0 { 0.0 } else { 1e5 };
+                put_vec(c, DATA + 0x20, [r.f32(e), r.f32(e), r.f32(e), r.next_u32()]);
+                put_vec(
+                    c,
+                    DATA + 0x30,
+                    [r.f32(1.0), r.f32(1.0), r.f32(1.0), r.f32(1.0)],
+                );
+            },
+        );
     }
 
     #[test]
     fn camera_base_ctor() {
-        check(ssx3_ee::s01::f_0015d698__generated, super::camera_base_ctor, 200, &|c, seed| {
-            let mut r = rng(seed, 2);
-            scramble(c, &mut r);
-            c.g[4][0] = DATA as u64;
-            fill(c, &mut r, SP - 0x20, 0x10);
-            fill(c, &mut r, DATA, 0x30);
-            fill(c, &mut r, 0x4ff140, 4);
-        });
+        check(
+            ssx3_ee::s01::f_0015d698__generated,
+            super::camera_base_ctor,
+            200,
+            &|c, seed| {
+                let mut r = rng(seed, 2);
+                scramble(c, &mut r);
+                c.g[4][0] = DATA as u64;
+                fill(c, &mut r, SP - 0x20, 0x10);
+                fill(c, &mut r, DATA, 0x30);
+                fill(c, &mut r, 0x4ff140, 4);
+            },
+        );
     }
 
     #[test]
     fn chase_get_view() {
-        check(ssx3_ee::s02::f_001673a0__generated, super::chase_get_view, 200, &|c, seed| {
-            let mut r = rng(seed, 3);
-            scramble(c, &mut r);
-            c.g[4][0] = DATA as u64;
-            c.g[5][0] = (DATA + 0x100) as u64;
-            fill(c, &mut r, DATA, 0x80);
-        });
+        check(
+            ssx3_ee::s02::f_001673a0__generated,
+            super::chase_get_view,
+            200,
+            &|c, seed| {
+                let mut r = rng(seed, 3);
+                scramble(c, &mut r);
+                c.g[4][0] = DATA as u64;
+                c.g[5][0] = (DATA + 0x100) as u64;
+                fill(c, &mut r, DATA, 0x80);
+            },
+        );
     }
 
     #[test]
     fn chase_set_look_at_from_rider() {
-        check(ssx3_ee::s01::f_00162b80__generated, super::chase_set_look_at_from_rider, 200, &|c, seed| {
-            let mut r = rng(seed, 4);
-            scramble(c, &mut r);
-            c.g[4][0] = DATA as u64;
-            c.g[5][0] = (DATA + 0x100) as u64;
-            fill(c, &mut r, DATA, 0x80);
-        });
+        check(
+            ssx3_ee::s01::f_00162b80__generated,
+            super::chase_set_look_at_from_rider,
+            200,
+            &|c, seed| {
+                let mut r = rng(seed, 4);
+                scramble(c, &mut r);
+                c.g[4][0] = DATA as u64;
+                c.g[5][0] = (DATA + 0x100) as u64;
+                fill(c, &mut r, DATA, 0x80);
+            },
+        );
     }
 
     #[test]
     fn chase_controller_reset_state() {
-        check(ssx3_ee::s01::f_00162138__generated, super::chase_controller_reset_state, 200, &|c, seed| {
-            let mut r = rng(seed, 5);
-            scramble(c, &mut r);
-            c.g[4][0] = DATA as u64;
-            fill(c, &mut r, DATA, 0x20);
-        });
+        check(
+            ssx3_ee::s01::f_00162138__generated,
+            super::chase_controller_reset_state,
+            200,
+            &|c, seed| {
+                let mut r = rng(seed, 5);
+                scramble(c, &mut r);
+                c.g[4][0] = DATA as u64;
+                fill(c, &mut r, DATA, 0x20);
+            },
+        );
     }
 
     #[test]
     fn add_shake() {
-        check(ssx3_ee::s01::f_0015e360__generated, super::add_shake, 2000, &|c, seed| {
-            let mut r = rng(seed, 6);
-            scramble(c, &mut r);
-            let cam = DATA;
-            let (module, view_man, state) = (DATA + 0x1000, DATA + 0x1100, DATA + 0x1200);
-            c.g[4][0] = cam as u64;
-            fill(c, &mut r, cam + 0x440, 8);
-            c.bus.write32(0x4a28a8, module);
-            c.bus.write32(module + 0x84, view_man);
-            c.bus.write32(view_man + 0x28, state);
-            let states = [0, 1, 5, 9, 10, 11, -1, r.next_u32() as i32];
-            c.bus.write32(state, states[(seed % 8) as usize] as u32);
-            let preset = [-2i64, -1, 0, 1, 2, 3, 4, 5, 6, 0x1_0000_0002][(seed / 8 % 10) as usize];
-            c.g[5][0] = preset as u64;
-            fill(c, &mut r, 0x4c53d0, 0x40);
-            // Ranges: positive (fade), zero/negative (no fade); distances
-            // around the fade window, zero or negative.
-            for i in 0..8u32 {
-                let a = 0x4c53e0 + 16 * i;
-                c.bus.write32(a + 8, r.f32(4.0));
-                let range = match r.next_u32() % 4 {
-                    0 => 0.0f32.to_bits(),
-                    1 => r.f32(100.0),
-                    _ => r.f32(100.0) & 0x7fff_ffff,
+        check(
+            ssx3_ee::s01::f_0015e360__generated,
+            super::add_shake,
+            2000,
+            &|c, seed| {
+                let mut r = rng(seed, 6);
+                scramble(c, &mut r);
+                let cam = DATA;
+                let (module, view_man, state) = (DATA + 0x1000, DATA + 0x1100, DATA + 0x1200);
+                c.g[4][0] = cam as u64;
+                fill(c, &mut r, cam + 0x440, 8);
+                c.bus.write32(0x4a28a8, module);
+                c.bus.write32(module + 0x84, view_man);
+                c.bus.write32(view_man + 0x28, state);
+                let states = [0, 1, 5, 9, 10, 11, -1, r.next_u32() as i32];
+                c.bus.write32(state, states[(seed % 8) as usize] as u32);
+                let preset =
+                    [-2i64, -1, 0, 1, 2, 3, 4, 5, 6, 0x1_0000_0002][(seed / 8 % 10) as usize];
+                c.g[5][0] = preset as u64;
+                fill(c, &mut r, 0x4c53d0, 0x40);
+                // Ranges: positive (fade), zero/negative (no fade); distances
+                // around the fade window, zero or negative.
+                for i in 0..8u32 {
+                    let a = 0x4c53e0 + 16 * i;
+                    c.bus.write32(a + 8, r.f32(4.0));
+                    let range = match r.next_u32() % 4 {
+                        0 => 0.0f32.to_bits(),
+                        1 => r.f32(100.0),
+                        _ => r.f32(100.0) & 0x7fff_ffff,
+                    };
+                    c.bus.write32(a + 0xc, range);
+                }
+                let range_at = 0x4c53ec_u32.wrapping_add((preset as u32) << 4);
+                let range = f32::from_bits(c.bus.read32(range_at)).abs().max(1.0);
+                c.f[12] = r.f32(3.0);
+                c.f[13] = match r.next_u32() % 4 {
+                    0 => 0,
+                    1 => r.f32(100.0) | 0x8000_0000,
+                    _ => (f32::from_bits(r.f32(1.0)).abs() * 1.5 * range).to_bits(),
                 };
-                c.bus.write32(a + 0xc, range);
-            }
-            let range_at = 0x4c53ec_u32.wrapping_add((preset as u32) << 4);
-            let range = f32::from_bits(c.bus.read32(range_at)).abs().max(1.0);
-            c.f[12] = r.f32(3.0);
-            c.f[13] = match r.next_u32() % 4 {
-                0 => 0,
-                1 => r.f32(100.0) | 0x8000_0000,
-                _ => (f32::from_bits(r.f32(1.0)).abs() * 1.5 * range).to_bits(),
-            };
-            c.bus.write32(cam + 0x454, if seed % 5 == 0 { 0 } else { r.f32(4.0) });
-        });
+                c.bus
+                    .write32(cam + 0x454, if seed % 5 == 0 { 0 } else { r.f32(4.0) });
+            },
+        );
     }
 
     #[test]
     fn set_controller() {
-        check(ssx3_ee::s01::f_0015dfd8__generated, super::set_controller, 400, &|c, seed| {
-            let mut r = rng(seed, 7);
-            scramble(c, &mut r);
-            c.g[4][0] = DATA as u64;
-            fill(c, &mut r, DATA + 0xa0, 4);
-            let modes = [-1i64, 0, 1, 2, 3, 4, 7, 0x1_0000_0002, 0x1_0000_0001, -0x1_0000_0000 + 3];
-            c.g[5][0] = modes[(seed % 10) as usize] as u64;
-        });
+        check(
+            ssx3_ee::s01::f_0015dfd8__generated,
+            super::set_controller,
+            400,
+            &|c, seed| {
+                let mut r = rng(seed, 7);
+                scramble(c, &mut r);
+                c.g[4][0] = DATA as u64;
+                fill(c, &mut r, DATA + 0xa0, 4);
+                let modes = [
+                    -1i64,
+                    0,
+                    1,
+                    2,
+                    3,
+                    4,
+                    7,
+                    0x1_0000_0002,
+                    0x1_0000_0001,
+                    -0x1_0000_0000 + 3,
+                ];
+                c.g[5][0] = modes[(seed % 10) as usize] as u64;
+            },
+        );
     }
 
     #[test]
     fn init_shake_presets() {
-        check(ssx3_ee::s01::f_0015e2a8__generated, super::init_shake_presets, 200, &|c, seed| {
-            let mut r = rng(seed, 8);
-            scramble(c, &mut r);
-            fill(c, &mut r, 0x49c440, 12);
-            fill(c, &mut r, 0x4c53d0, 0x30);
-        });
+        check(
+            ssx3_ee::s01::f_0015e2a8__generated,
+            super::init_shake_presets,
+            200,
+            &|c, seed| {
+                let mut r = rng(seed, 8);
+                scramble(c, &mut r);
+                fill(c, &mut r, 0x49c440, 12);
+                fill(c, &mut r, 0x4c53d0, 0x30);
+            },
+        );
     }
 
     #[test]
     fn wobble_angle() {
-        check(ssx3_ee::s01::f_001603f0__generated, super::wobble_angle, 600, &|c, seed| {
-            let mut r = rng(seed, 9);
-            scramble(c, &mut r);
-            c.g[4][0] = DATA as u64;
-            fill(c, &mut r, DATA, 0x10);
-            for o in [0x08, 0x14, 0x24, 0x2c] {
-                c.bus.write32(DATA + o, r.f32(100.0));
-            }
-            let amp = match seed % 5 {
-                0 => 0,
-                1 => 0x8000_0000,
-                2 => 0x0000_1234, // denormal: compares equal to 0
-                _ => r.f32(10.0),
-            };
-            c.bus.write32(DATA + 0x1c, amp);
-            if seed % 7 == 0 {
-                c.bus.write32(DATA + 0x2c, 0);
-            }
-            c.bus.write32(0x49c4d4, r.f32(1.0));
-        });
+        check(
+            ssx3_ee::s01::f_001603f0__generated,
+            super::wobble_angle,
+            600,
+            &|c, seed| {
+                let mut r = rng(seed, 9);
+                scramble(c, &mut r);
+                c.g[4][0] = DATA as u64;
+                fill(c, &mut r, DATA, 0x10);
+                for o in [0x08, 0x14, 0x24, 0x2c] {
+                    c.bus.write32(DATA + o, r.f32(100.0));
+                }
+                let amp = match seed % 5 {
+                    0 => 0,
+                    1 => 0x8000_0000,
+                    2 => 0x0000_1234, // denormal: compares equal to 0
+                    _ => r.f32(10.0),
+                };
+                c.bus.write32(DATA + 0x1c, amp);
+                if seed % 7 == 0 {
+                    c.bus.write32(DATA + 0x2c, 0);
+                }
+                c.bus.write32(0x49c4d4, r.f32(1.0));
+            },
+        );
     }
 
     #[test]
     fn small_accessors() {
         type F = ssx3_ee_rt::funcs::GuestFn;
         let pairs: [(F, F); 4] = [
-            (ssx3_ee::s01::f_00162310__generated, super::rider_algo_set_target),
-            (ssx3_ee::s02::f_001694b0__generated, super::script_algo_get_script_obj),
-            (ssx3_ee::s02::f_001694a8__generated, super::script_algo_set_script_obj),
-            (ssx3_ee::s02::f_0016c390__generated, super::trigger_man_reset_header),
+            (
+                ssx3_ee::s01::f_00162310__generated,
+                super::rider_algo_set_target,
+            ),
+            (
+                ssx3_ee::s02::f_001694b0__generated,
+                super::script_algo_get_script_obj,
+            ),
+            (
+                ssx3_ee::s02::f_001694a8__generated,
+                super::script_algo_set_script_obj,
+            ),
+            (
+                ssx3_ee::s02::f_0016c390__generated,
+                super::trigger_man_reset_header,
+            ),
         ];
         for (k, (g, h)) in pairs.into_iter().enumerate() {
             check(g, h, 200, &|c, seed| {

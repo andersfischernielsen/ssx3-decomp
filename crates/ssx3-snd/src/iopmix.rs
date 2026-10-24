@@ -176,10 +176,10 @@ fn unpackxafresidual(cnt: i32, buf: &mut [i32], n: i32, out: &mut [i32], dst: &m
 struct XaF {
     p1: i32,
     p2: i32,
-    base: u32,  // +0x30
-    total: i32, // +0x34
-    pos: i32,   // +0x38 (frames decoded so far, the reported frame)
-    resid_n: i32, // +0x3c
+    base: u32,        // +0x30
+    total: i32,       // +0x34
+    pos: i32,         // +0x38 (frames decoded so far, the reported frame)
+    resid_n: i32,     // +0x3c
     resid: [i32; 28], // +0x40
 }
 
@@ -203,7 +203,15 @@ impl XaF {
             let take = if n2 < avail { n2 } else { avail };
             let mut count = take;
             let mut src = xa_src(self.base, self.pos);
-            decxa16c(&mut count, &mut self.p1, &mut self.p2, &mut src, ram, out, &mut d);
+            decxa16c(
+                &mut count,
+                &mut self.p1,
+                &mut self.p2,
+                &mut src,
+                ram,
+                out,
+                &mut d,
+            );
             let newpos = self.pos + take - count;
             self.pos = newpos;
             if avail == take {
@@ -253,13 +261,13 @@ struct XaLF {
     section: bool,
     p1: i32,
     p2: i32,
-    base: u32,       // +0x30
-    pos: i32,        // +0x38
-    loop_start: i32, // +0x3c
-    loop_end: i32,   // +0x40 (inclusive)
-    resid_n: i32,    // +0x44
-    saved_p1: i32,   // +0x48 (decoder state at the loop start block)
-    saved_p2: i32,   // +0x4c
+    base: u32,        // +0x30
+    pos: i32,         // +0x38
+    loop_start: i32,  // +0x3c
+    loop_end: i32,    // +0x40 (inclusive)
+    resid_n: i32,     // +0x44
+    saved_p1: i32,    // +0x48 (decoder state at the loop start block)
+    saved_p2: i32,    // +0x4c
     resid: [i32; 56], // +0x58
 }
 
@@ -290,7 +298,15 @@ impl XaLF {
             }
             let mut count = take;
             let mut src = xa_src(self.base, self.pos);
-            decxa16c(&mut count, &mut self.p1, &mut self.p2, &mut src, ram, out, &mut d);
+            decxa16c(
+                &mut count,
+                &mut self.p1,
+                &mut self.p2,
+                &mut src,
+                ram,
+                out,
+                &mut d,
+            );
             self.pos = self.pos + take - count;
             let mut k = 0usize;
             let mut i = count;
@@ -334,7 +350,15 @@ impl XaLF {
                 if self.pos + 0x1b < self.loop_end {
                     let mut count = 0x1c;
                     let mut src = xa_src(self.base, self.pos);
-                    decxa16c(&mut count, &mut self.p1, &mut self.p2, &mut src, ram, out, &mut d);
+                    decxa16c(
+                        &mut count,
+                        &mut self.p1,
+                        &mut self.p2,
+                        &mut src,
+                        ram,
+                        out,
+                        &mut d,
+                    );
                     n -= 0x1c;
                     self.pos += 0x1c;
                 } else {
@@ -343,7 +367,15 @@ impl XaLF {
                     let mut count = 0x1c;
                     let mut src = xa_src(self.base, self.pos);
                     let mut rd = 0usize;
-                    decxa16c(&mut count, &mut self.p1, &mut self.p2, &mut src, ram, &mut self.resid, &mut rd);
+                    decxa16c(
+                        &mut count,
+                        &mut self.p1,
+                        &mut self.p2,
+                        &mut src,
+                        ram,
+                        &mut self.resid,
+                        &mut rd,
+                    );
                     let ls = self.loop_start;
                     self.pos += 0x1c;
                     self.resid_n = 0x1d - (self.pos - self.loop_end);
@@ -355,7 +387,15 @@ impl XaLF {
                         let mut count = 0x1c;
                         let mut src = xa_src(self.base, self.pos);
                         let mut sd = 0usize;
-                        decxa16c(&mut count, &mut self.p1, &mut self.p2, &mut src, ram, &mut stack, &mut sd);
+                        decxa16c(
+                            &mut count,
+                            &mut self.p1,
+                            &mut self.p2,
+                            &mut src,
+                            ram,
+                            &mut stack,
+                            &mut sd,
+                        );
                         self.pos += 0x1c;
                         let k = self.pos - ls;
                         for i in 0..k.max(0) {
@@ -407,7 +447,11 @@ impl UnpackF {
         }
         let n = n as u32;
         self.pos = p.wrapping_add(n);
-        let k = if p.wrapping_add(n) < self.count { n } else { self.count - p };
+        let k = if p.wrapping_add(n) < self.count {
+            n
+        } else {
+            self.count - p
+        };
         if self.is16 {
             decode16to32(k, self.base.wrapping_add(p.wrapping_mul(2)), ram, out);
         } else {
@@ -436,7 +480,9 @@ impl UnpackLF {
     fn process(&mut self, mut n: i32, ram: &[u8], out: &mut [i32]) -> i32 {
         let mut d = 0usize;
         while n > 0 {
-            let mut c = (self.loop_end as i32).wrapping_sub(self.pos as i32).wrapping_add(1);
+            let mut c = (self.loop_end as i32)
+                .wrapping_sub(self.pos as i32)
+                .wrapping_add(1);
             if n < c {
                 c = n;
             }
@@ -451,7 +497,12 @@ impl UnpackLF {
             }
             let o = out.get_mut(d..).unwrap_or(&mut []);
             if self.is16 {
-                decode16to32(c as u32, self.base.wrapping_add(self.pos.wrapping_mul(2)), ram, o);
+                decode16to32(
+                    c as u32,
+                    self.base.wrapping_add(self.pos.wrapping_mul(2)),
+                    ram,
+                    o,
+                );
             } else {
                 decode8to32(c as u32, self.base.wrapping_add(self.pos), ram, o);
             }
@@ -501,15 +552,15 @@ impl Decoder {
 /// `SFILTER_rsinit` and is folded out.
 #[derive(Clone, Debug)]
 struct Rs {
-    p1: i32,     // +0x20 pitch (16.16)
-    p2: i32,     // +0x24
-    p3: i32,     // +0x28
-    p4: i32,     // +0x2c
-    phase: u32,  // +0x30
-    primed: bool, // +0x34
-    nhist: usize, // +0x36: 2 linear, 1 nearest
+    p1: i32,        // +0x20 pitch (16.16)
+    p2: i32,        // +0x24
+    p3: i32,        // +0x28
+    p4: i32,        // +0x2c
+    phase: u32,     // +0x30
+    primed: bool,   // +0x34
+    nhist: usize,   // +0x36: 2 linear, 1 nearest
     hist: [i32; 2], // +0x38
-    linear: bool, // +0x1c
+    linear: bool,   // +0x1c
 }
 
 impl Rs {
@@ -561,9 +612,21 @@ impl Rs {
         let mut o = 0i32;
         loop {
             put(out, o as usize, get(inp, (ph >> 16) as usize));
-            put(out, o as usize + 1, get(inp, (ph.wrapping_add(self.p1 as u32) >> 16) as usize));
-            put(out, o as usize + 2, get(inp, (ph.wrapping_add(self.p2 as u32) >> 16) as usize));
-            put(out, o as usize + 3, get(inp, (ph.wrapping_add(self.p3 as u32) >> 16) as usize));
+            put(
+                out,
+                o as usize + 1,
+                get(inp, (ph.wrapping_add(self.p1 as u32) >> 16) as usize),
+            );
+            put(
+                out,
+                o as usize + 2,
+                get(inp, (ph.wrapping_add(self.p2 as u32) >> 16) as usize),
+            );
+            put(
+                out,
+                o as usize + 3,
+                get(inp, (ph.wrapping_add(self.p3 as u32) >> 16) as usize),
+            );
             ph = ph.wrapping_add(self.p4 as u32);
             o += 4;
             if o >= n {
@@ -729,7 +792,12 @@ impl IopMixer {
         vo.dec = None;
         vo.rs = None;
         let dec = match (codec, looped) {
-            (8 | 9, false) => Some(Decoder::Unpack(UnpackF { base: data, pos: 0, count, is16: codec == 8 })),
+            (8 | 9, false) => Some(Decoder::Unpack(UnpackF {
+                base: data,
+                pos: 0,
+                count,
+                is16: codec == 8,
+            })),
             (8 | 9, true) => Some(Decoder::UnpackLoop(UnpackLF {
                 base: data,
                 pos: 0,
@@ -793,9 +861,12 @@ impl IopMixer {
             vo.cur_wet = vo.tgt_wet;
             vo.cur_dry[..ch].copy_from_slice(&vo.tgt_dry[..ch]);
         }
-        self.wet_resid = self.wet_resid.wrapping_add((vo.cur_wet >> 8).wrapping_mul(vo.last) >> 7);
+        self.wet_resid = self
+            .wet_resid
+            .wrapping_add((vo.cur_wet >> 8).wrapping_mul(vo.last) >> 7);
         for k in 0..ch {
-            self.resid[k] = self.resid[k].wrapping_add((vo.cur_dry[k] >> 8).wrapping_mul(vo.last) >> 7);
+            self.resid[k] =
+                self.resid[k].wrapping_add((vo.cur_dry[k] >> 8).wrapping_mul(vo.last) >> 7);
         }
         vo.chain_dec = false;
         vo.chain_rs = false;
@@ -860,7 +931,10 @@ impl IopMixer {
         let vo = &mut self.voices[v];
         let dec = if vo.chain_dec { vo.dec.as_mut() } else { None };
         if vo.chain_rs {
-            vo.rs.as_mut().unwrap().process(dec, n, ram, &mut self.buf_a, &mut self.buf_b)
+            vo.rs
+                .as_mut()
+                .unwrap()
+                .process(dec, n, ram, &mut self.buf_a, &mut self.buf_b)
         } else if let Some(d) = dec {
             d.process(n, ram, &mut self.buf_b)
         } else {
@@ -884,7 +958,9 @@ impl IopMixer {
         for k in 0..ch {
             let cur = vo.cur_dry[k];
             let tgt = vo.tgt_dry[k];
-            let Some(bus) = buses.get_mut(k) else { continue };
+            let Some(bus) = buses.get_mut(k) else {
+                continue;
+            };
             if cur == tgt {
                 if cur != 0 {
                     mixiop(16, cur, &self.buf_b, bus);
@@ -909,7 +985,9 @@ impl IopMixer {
             }
         }
         for k in 0..self.channels {
-            let Some(bus) = buses.get_mut(k) else { continue };
+            let Some(bus) = buses.get_mut(k) else {
+                continue;
+            };
             let m = frames.min(bus.len());
             bus[..m].iter_mut().for_each(|x| *x = 0);
             if self.resid[k] != 0 {
@@ -1045,13 +1123,22 @@ mod tests {
         // 8-bit, frames 0..6 = 1..=6, loop 2..=5.
         let data: Vec<u8> = (1..=6).collect();
         let ram = ram_with(9, 2, 5, 6, &data);
-        let mut d = Decoder::UnpackLoop(UnpackLF { base: HDR + 16, pos: 0, loop_start: 2, loop_end: 5, is16: false });
+        let mut d = Decoder::UnpackLoop(UnpackLF {
+            base: HDR + 16,
+            pos: 0,
+            loop_start: 2,
+            loop_end: 5,
+            is16: false,
+        });
         let mut out = vec![0i32; 16];
         assert_eq!(d.process(10, &ram, &mut out), 1);
-        let want: Vec<i32> = [1, 2, 3, 4, 5, 6, 3, 4, 5, 6].iter().map(|x| x << 8).collect();
+        let want: Vec<i32> = [1, 2, 3, 4, 5, 6, 3, 4, 5, 6]
+            .iter()
+            .map(|x| x << 8)
+            .collect();
         assert_eq!(&out[..10], &want[..]);
         assert_eq!(d.frame(), 2); // wrapped twice: 6 -> 2
-        // Through the mixer: header loop end > 0 selects the looped node.
+                                  // Through the mixer: header loop end > 0 selects the looped node.
         let mut m = IopMixer::new(1, 2);
         m.play(0, HDR, &ram);
         assert!(matches!(m.voices[0].dec, Some(Decoder::UnpackLoop(_))));
@@ -1060,7 +1147,12 @@ mod tests {
     #[test]
     fn unpackf_end_semantics() {
         let ram = ram_with(8, 0, 0, 5, &pcm16(&[1, 2, 3, 4, 5]));
-        let mut d = UnpackF { base: HDR + 16, pos: 0, count: 5, is16: true };
+        let mut d = UnpackF {
+            base: HDR + 16,
+            pos: 0,
+            count: 5,
+            is16: true,
+        };
         let mut out = vec![9i32; 8];
         assert_eq!(d.process(3, &ram, &mut out), 1);
         assert_eq!(&out[..3], &[1, 2, 3]);
@@ -1153,7 +1245,10 @@ mod tests {
     /// Reference EA-XA decoder written from the format, not the port.
     fn xa_ref(block: &[u8], p1: &mut i32, p2: &mut i32) -> Vec<i32> {
         let coef = [[0, 0], [240, 0], [460, -208], [392, -220]];
-        let (c1, c2) = (coef[(block[0] >> 4) as usize][0], coef[(block[0] >> 4) as usize][1]);
+        let (c1, c2) = (
+            coef[(block[0] >> 4) as usize][0],
+            coef[(block[0] >> 4) as usize][1],
+        );
         let sh = (block[0] & 15) as u32 + 8;
         let mut v = vec![];
         for &by in &block[1..15] {
@@ -1190,7 +1285,9 @@ mod tests {
         let mut count = 28;
         let mut out = vec![0; 28];
         let mut d = 0;
-        decxa16c(&mut count, &mut p1, &mut p2, &mut src, &blk, &mut out, &mut d);
+        decxa16c(
+            &mut count, &mut p1, &mut p2, &mut src, &blk, &mut out, &mut d,
+        );
         assert_eq!(count, 0);
         assert_eq!(d, 28);
         // s0 = (7<<28 >> 12) >> 8 = 0x70000 >> 8 = 1792
@@ -1213,7 +1310,15 @@ mod tests {
         for b in 0..4 {
             want.extend(xa_ref(&data[b * 15..b * 15 + 15], &mut p1, &mut p2));
         }
-        let mut d = XaF { p1: 0, p2: 0, base: HDR + 16, total: 100, pos: 0, resid_n: 0, resid: [0; 28] };
+        let mut d = XaF {
+            p1: 0,
+            p2: 0,
+            base: HDR + 16,
+            total: 100,
+            pos: 0,
+            resid_n: 0,
+            resid: [0; 28],
+        };
         let mut got = vec![];
         let mut out = vec![0; 64];
         // 10 frames: one block decoded, 18 kept as residual, frame = 28.

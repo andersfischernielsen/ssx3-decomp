@@ -30,28 +30,88 @@ use ssx3_vu::vu::vu0lib;
 
 /// Replacements in this package: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0035_50a0, process_list_render_priority, "ProcessList_RenderPriority"),
-    (0x0035_4f98, process_list_update_priority, "ProcessList_UpdatePriority"),
-    (0x0035_5028, process_list_post_update_priority, "ProcessList_PostUpdatePriority"),
+    (
+        0x0035_50a0,
+        process_list_render_priority,
+        "ProcessList_RenderPriority",
+    ),
+    (
+        0x0035_4f98,
+        process_list_update_priority,
+        "ProcessList_UpdatePriority",
+    ),
+    (
+        0x0035_5028,
+        process_list_post_update_priority,
+        "ProcessList_PostUpdatePriority",
+    ),
     (0x0035_4ef8, process_list_next, "ProcessList_Next"),
-    (0x0035_4f48, process_list_pending_first, "ProcessList_PendingFirst"),
-    (0x0035_4c98, process_list_merge_pending, "ProcessList_MergePending"),
-    (0x0023_0640, game_module_render_process_lists, "GameModule_RenderProcessLists"),
-    (0x0022_c078, game_module_render_models, "GameModule_RenderModels"),
-    (0x0022_c620, game_module_render_bezier_patches, "GameModule_RenderBezierPatches"),
-    (0x0022_c3b8, game_module_end_bezier_pass, "GameModule_EndBezierPass"),
+    (
+        0x0035_4f48,
+        process_list_pending_first,
+        "ProcessList_PendingFirst",
+    ),
+    (
+        0x0035_4c98,
+        process_list_merge_pending,
+        "ProcessList_MergePending",
+    ),
+    (
+        0x0023_0640,
+        game_module_render_process_lists,
+        "GameModule_RenderProcessLists",
+    ),
+    (
+        0x0022_c078,
+        game_module_render_models,
+        "GameModule_RenderModels",
+    ),
+    (
+        0x0022_c620,
+        game_module_render_bezier_patches,
+        "GameModule_RenderBezierPatches",
+    ),
+    (
+        0x0022_c3b8,
+        game_module_end_bezier_pass,
+        "GameModule_EndBezierPass",
+    ),
     (0x0035_2dd0, modifier_block_render, "ModifierBlock_Render"),
-    (0x0035_2d20, modifier_block_post_update, "ModifierBlock_PostUpdate"),
+    (
+        0x0035_2d20,
+        modifier_block_post_update,
+        "ModifierBlock_PostUpdate",
+    ),
     (0x0035_2c70, modifier_block_update, "ModifierBlock_Update"),
-    (0x0035_2b88, modifier_block_get_transform_bounds, "ModifierBlock_GetTransformBounds"),
+    (
+        0x0035_2b88,
+        modifier_block_get_transform_bounds,
+        "ModifierBlock_GetTransformBounds",
+    ),
     (0x0035_6198, mod_obj_update, "ModObj_Update"),
-    (0x0035_5748, mod_obj_post_update_modifiers, "ModObj_PostUpdateModifiers"),
-    (0x0035_56f8, mod_obj_update_modifiers, "ModObj_UpdateModifiers"),
+    (
+        0x0035_5748,
+        mod_obj_post_update_modifiers,
+        "ModObj_PostUpdateModifiers",
+    ),
+    (
+        0x0035_56f8,
+        mod_obj_update_modifiers,
+        "ModObj_UpdateModifiers",
+    ),
     (0x003a_6928, world_update, "World_Update"),
     (0x003a_8290, c_world_cache_update, "cWorldCache_Update"),
     (0x002d_1be0, world_get_nash, "World_GetNash"),
-    (0x002d_1c70, world_get_seconds_per_tick, "World_GetSecondsPerTick"),
-    (0x0022_e0e0, section_man_find_logical_section, "SectionMan_FindLogicalSection"),
+    (
+        0x002d_1c70,
+        world_get_seconds_per_tick,
+        "World_GetSecondsPerTick",
+    ),
+    (
+        0x0022_e0e0,
+        section_man_find_logical_section,
+        "SectionMan_FindLogicalSection",
+    ),
     (0x002c_1cd8, quad_tree_find_leaf, "QuadTree_FindLeaf"),
     (0x002d_1928, noise_fractal_1d, "Noise_Fractal1D"),
     (0x0022_a5a0, nash_collect_instances, "Nash_CollectInstances"),
@@ -91,47 +151,103 @@ fn virtual_call(c: &mut Cpu, obj: u64, vt: u64, slot: u32, func_reg: usize, ret:
 mod callee {
     use super::{ee, Callee};
 
-    pub const PROCESS_LIST_FIRST: Callee = Callee { addr: 0x0035_4ea8, f: ee::s11::ProcessList_First };
-    pub const PROCESS_LIST_LAST: Callee = Callee { addr: 0x0035_4ed0, f: ee::s11::ProcessList_Last };
-    pub const PROCESS_LIST_NEXT: Callee = Callee { addr: 0x0035_4ef8, f: ee::s11::ProcessList_Next };
-    pub const PROCESS_LIST_PREV: Callee = Callee { addr: 0x0035_4f20, f: ee::s11::ProcessList_Prev };
-    pub const PROCESS_LIST_PENDING_FIRST: Callee =
-        Callee { addr: 0x0035_4f48, f: ee::s11::ProcessList_PendingFirst };
-    pub const PROCESS_LIST_PENDING_NEXT: Callee =
-        Callee { addr: 0x0035_4f70, f: ee::s11::ProcessList_PendingNext };
+    pub const PROCESS_LIST_FIRST: Callee = Callee {
+        addr: 0x0035_4ea8,
+        f: ee::s11::ProcessList_First,
+    };
+    pub const PROCESS_LIST_LAST: Callee = Callee {
+        addr: 0x0035_4ed0,
+        f: ee::s11::ProcessList_Last,
+    };
+    pub const PROCESS_LIST_NEXT: Callee = Callee {
+        addr: 0x0035_4ef8,
+        f: ee::s11::ProcessList_Next,
+    };
+    pub const PROCESS_LIST_PREV: Callee = Callee {
+        addr: 0x0035_4f20,
+        f: ee::s11::ProcessList_Prev,
+    };
+    pub const PROCESS_LIST_PENDING_FIRST: Callee = Callee {
+        addr: 0x0035_4f48,
+        f: ee::s11::ProcessList_PendingFirst,
+    };
+    pub const PROCESS_LIST_PENDING_NEXT: Callee = Callee {
+        addr: 0x0035_4f70,
+        f: ee::s11::ProcessList_PendingNext,
+    };
 
-    pub const MODIFIER_BLOCK_UPDATE: Callee = Callee { addr: 0x0035_2c70, f: ee::s11::ModifierBlock_Update };
-    pub const MODIFIER_BLOCK_POST_UPDATE: Callee =
-        Callee { addr: 0x0035_2d20, f: ee::s11::ModifierBlock_PostUpdate };
-    pub const MODIFIER_BLOCK_HAS_TRANSFORM_CHANGED: Callee =
-        Callee { addr: 0x0035_2e50, f: ee::s11::ModifierBlock_HasTransformChanged };
-    pub const MODIFIER_BLOCK_IS_TRANSFORM_FINISHED: Callee =
-        Callee { addr: 0x0035_2ed0, f: ee::s11::ModifierBlock_IsTransformFinished };
-    pub const MODIFIER_BLOCK_CLEAR_TRANSFORM_FINISHED: Callee =
-        Callee { addr: 0x0035_2f08, f: ee::s11::ModifierBlock_ClearTransformFinished };
-    pub const MODIFIER_BLOCK_FREE_BOOST: Callee =
-        Callee { addr: 0x0035_3188, f: ee::s11::ModifierBlock_FreeBoost };
-    pub const MOD_OBJ_UPDATE_MODIFIERS: Callee = Callee { addr: 0x0035_56f8, f: ee::s11::ModObj_UpdateModifiers };
-    pub const MOD_OBJ_POST_UPDATE_MODIFIERS: Callee =
-        Callee { addr: 0x0035_5748, f: ee::s11::ModObj_PostUpdateModifiers };
+    pub const MODIFIER_BLOCK_UPDATE: Callee = Callee {
+        addr: 0x0035_2c70,
+        f: ee::s11::ModifierBlock_Update,
+    };
+    pub const MODIFIER_BLOCK_POST_UPDATE: Callee = Callee {
+        addr: 0x0035_2d20,
+        f: ee::s11::ModifierBlock_PostUpdate,
+    };
+    pub const MODIFIER_BLOCK_HAS_TRANSFORM_CHANGED: Callee = Callee {
+        addr: 0x0035_2e50,
+        f: ee::s11::ModifierBlock_HasTransformChanged,
+    };
+    pub const MODIFIER_BLOCK_IS_TRANSFORM_FINISHED: Callee = Callee {
+        addr: 0x0035_2ed0,
+        f: ee::s11::ModifierBlock_IsTransformFinished,
+    };
+    pub const MODIFIER_BLOCK_CLEAR_TRANSFORM_FINISHED: Callee = Callee {
+        addr: 0x0035_2f08,
+        f: ee::s11::ModifierBlock_ClearTransformFinished,
+    };
+    pub const MODIFIER_BLOCK_FREE_BOOST: Callee = Callee {
+        addr: 0x0035_3188,
+        f: ee::s11::ModifierBlock_FreeBoost,
+    };
+    pub const MOD_OBJ_UPDATE_MODIFIERS: Callee = Callee {
+        addr: 0x0035_56f8,
+        f: ee::s11::ModObj_UpdateModifiers,
+    };
+    pub const MOD_OBJ_POST_UPDATE_MODIFIERS: Callee = Callee {
+        addr: 0x0035_5748,
+        f: ee::s11::ModObj_PostUpdateModifiers,
+    };
     /// Unnamed `ModObj` test at 0x34fce0 (non-zero skips the modifiers).
-    pub const MOD_OBJ_34FCE0: Callee = Callee { addr: 0x0034_fce0, f: ee::s11::f_0034fce0 };
+    pub const MOD_OBJ_34FCE0: Callee = Callee {
+        addr: 0x0034_fce0,
+        f: ee::s11::f_0034fce0,
+    };
 
-    pub const C_WORLD_CACHE_UPDATE: Callee = Callee { addr: 0x003a_8290, f: ee::s13::cWorldCache_Update };
-    pub const C_WORLD_CACHE_STREAMER_UPDATE: Callee =
-        Callee { addr: 0x003a_9258, f: ee::s13::cWorldCache_StreamerUpdate };
-    pub const C_WORLD_CACHE_UPDATE_HULL_LRU: Callee =
-        Callee { addr: 0x003a_8668, f: ee::s13::cWorldCache_UpdateHullLRU };
-    pub const C_STREAM_MAN_UPDATE: Callee = Callee { addr: 0x003a_7098, f: ee::s13::cStreamMan_Update };
+    pub const C_WORLD_CACHE_UPDATE: Callee = Callee {
+        addr: 0x003a_8290,
+        f: ee::s13::cWorldCache_Update,
+    };
+    pub const C_WORLD_CACHE_STREAMER_UPDATE: Callee = Callee {
+        addr: 0x003a_9258,
+        f: ee::s13::cWorldCache_StreamerUpdate,
+    };
+    pub const C_WORLD_CACHE_UPDATE_HULL_LRU: Callee = Callee {
+        addr: 0x003a_8668,
+        f: ee::s13::cWorldCache_UpdateHullLRU,
+    };
+    pub const C_STREAM_MAN_UPDATE: Callee = Callee {
+        addr: 0x003a_7098,
+        f: ee::s13::cStreamMan_Update,
+    };
 
-    pub const GAME_MODULE_BEGIN_BEZIER_PASS: Callee =
-        Callee { addr: 0x0022_c1b0, f: ee::s05::GameModule_BeginBezierPass };
-    pub const GAME_MODULE_DRAW_BEZIER_PATCH: Callee =
-        Callee { addr: 0x0022_c410, f: ee::s05::GameModule_DrawBezierPatch };
-    pub const GAME_MODULE_END_BEZIER_PASS: Callee =
-        Callee { addr: 0x0022_c3b8, f: ee::s05::GameModule_EndBezierPass };
+    pub const GAME_MODULE_BEGIN_BEZIER_PASS: Callee = Callee {
+        addr: 0x0022_c1b0,
+        f: ee::s05::GameModule_BeginBezierPass,
+    };
+    pub const GAME_MODULE_DRAW_BEZIER_PATCH: Callee = Callee {
+        addr: 0x0022_c410,
+        f: ee::s05::GameModule_DrawBezierPatch,
+    };
+    pub const GAME_MODULE_END_BEZIER_PASS: Callee = Callee {
+        addr: 0x0022_c3b8,
+        f: ee::s05::GameModule_EndBezierPass,
+    };
 
-    pub const NOISE_SAMPLE_1D: Callee = Callee { addr: 0x002d_18b0, f: ee::s09::Noise_Sample1D };
+    pub const NOISE_SAMPLE_1D: Callee = Callee {
+        addr: 0x002d_18b0,
+        f: ee::s09::Noise_Sample1D,
+    };
 }
 
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
@@ -297,7 +413,12 @@ pub fn process_list_post_update_priority(c: &mut Cpu) {
         call_on_each_process(
             c,
             game_process::SLOT_POST_UPDATE,
-            &PassAddrs { after_first: 0x0035_5048, after_method: 0x0035_5068, after_next: 0x0035_5078, head: 0x0035_5058 },
+            &PassAddrs {
+                after_first: 0x0035_5048,
+                after_method: 0x0035_5068,
+                after_next: 0x0035_5078,
+                head: 0x0035_5058,
+            },
         )
     })
 }
@@ -309,7 +430,12 @@ pub fn process_list_render_priority(c: &mut Cpu) {
         call_on_each_process(
             c,
             game_process::SLOT_RENDER,
-            &PassAddrs { after_first: 0x0035_50c0, after_method: 0x0035_50e0, after_next: 0x0035_50f0, head: 0x0035_50d0 },
+            &PassAddrs {
+                after_first: 0x0035_50c0,
+                after_method: 0x0035_50e0,
+                after_next: 0x0035_50f0,
+                head: 0x0035_50d0,
+            },
         )
     })
 }
@@ -408,7 +534,7 @@ pub fn process_list_merge_pending(c: &mut Cpu) {
                 c.g[A1][0] = c.g[S1][0];
                 callee::PROCESS_LIST_PENDING_NEXT.call(c, 0x0035_4ce4)?;
                 c.g[S5][0] = c.g[V0][0]; // the next pending process
-                // Unlink p from the pending list.
+                                         // Unlink p from the pending list.
                 let prev = lw(c, at(c, S1, PREV));
                 c.g[A2][0] = prev;
                 let next = lw(c, at(c, S1, NEXT));
@@ -651,7 +777,9 @@ pub fn world_get_seconds_per_tick(c: &mut Cpu) {
     c.cycles += 3;
     let app = lw(c, gp_minus(c, APP_GP));
     c.g[V0][0] = app;
-    c.f[0] = c.bus.read32((app as u32).wrapping_add(APP_SECONDS_PER_TICK));
+    c.f[0] = c
+        .bus
+        .read32((app as u32).wrapping_add(APP_SECONDS_PER_TICK));
     ret(c);
 }
 
@@ -875,7 +1003,10 @@ pub fn nash_cull_node(c: &mut Cpu) {
 const OCCLUDER_HEAD: u32 = 0x0022_aa10;
 
 fn cull_node(c: &mut Cpu) -> Flow {
-    const CULL_NODE: Callee = Callee { addr: 0x0022_a830, f: ee::s05::Nash_CullNode };
+    const CULL_NODE: Callee = Callee {
+        addr: 0x0022_a830,
+        f: ee::s05::Nash_CullNode,
+    };
     c.cycles += 10;
     c.g[SP][0] = sx(r32(c, SP).wrapping_sub(0x70));
     c.g[T1][0] = c.g[A0][0];
@@ -937,13 +1068,29 @@ fn cull_node(c: &mut Cpu) -> Flow {
     c.cycles += 2;
     c.g[V0][0] = 2;
     let (count, list, inside, cycles, rets): (u32, u32, u64, u64, [u32; 8]) = if c.g[T4][0] == 0 {
-        (0x94, 0x98, 1, 26, [0x22ab50, 0x22ab70, 0x22ab90, 0x22abb0, 0x22abd0, 0x22abf0, 0x22ac10, 0x22ac30])
+        (
+            0x94,
+            0x98,
+            1,
+            26,
+            [
+                0x22ab50, 0x22ab70, 0x22ab90, 0x22abb0, 0x22abd0, 0x22abf0, 0x22ac10, 0x22ac30,
+            ],
+        )
     } else {
         c.cycles += 2;
         if c.g[T4][0] != c.g[V0][0] {
             return Ok(epilogue(c, 0));
         }
-        (0x1098, 0x109c, 0, 25, [0x22ace8, 0x22ad08, 0x22ad28, 0x22ad48, 0x22ad68, 0x22ad88, 0x22ada8, 0x22adc8])
+        (
+            0x1098,
+            0x109c,
+            0,
+            25,
+            [
+                0x22ace8, 0x22ad08, 0x22ad28, 0x22ad48, 0x22ad68, 0x22ad88, 0x22ada8, 0x22adc8,
+            ],
+        )
     };
     c.cycles += cycles;
     append(c, count, list, inside);
@@ -959,7 +1106,11 @@ fn cull_node(c: &mut Cpu) -> Flow {
 /// occluders, mask, `inside`). Leaves the level in a1 for the level-11
 /// test (against a3 = 11 on the visible path, a2 on the partial one).
 fn append(c: &mut Cpu, count: u32, list: u32, inside: u64) {
-    let (base, idx_reg, lim_reg) = if inside == 1 { (A0, V1, A3) } else { (V1, A0, A2) };
+    let (base, idx_reg, lim_reg) = if inside == 1 {
+        (A0, V1, A3)
+    } else {
+        (V1, A0, A2)
+    };
     if inside == 1 {
         c.g[A0][0] = lw(c, r32(c, T1));
         c.g[A2][0] = 1;
@@ -1026,8 +1177,15 @@ fn children(c: &mut Cpu, callee: Callee, rets: [u32; 8], visible: bool) -> Flow 
         callee.call(c, rets[0])?;
     }
     // (cell word stepped, by, child slot)
-    const STEPS: [(u32, i32, u32); 7] =
-        [(0x34, 1, 0x10), (0x38, 1, 0x18), (0x34, -1, 0x08), (0x3c, 1, 0x0c), (0x34, 1, 0x1c), (0x38, -1, 0x14), (0x34, -1, 0x04)];
+    const STEPS: [(u32, i32, u32); 7] = [
+        (0x34, 1, 0x10),
+        (0x38, 1, 0x18),
+        (0x34, -1, 0x08),
+        (0x3c, 1, 0x0c),
+        (0x34, 1, 0x1c),
+        (0x38, -1, 0x14),
+        (0x34, -1, 0x04),
+    ];
     for (k, &(word, by, slot)) in STEPS.iter().enumerate() {
         let last = k == 6;
         c.cycles += 5;
@@ -1125,7 +1283,13 @@ fn view_box_test(c: &mut Cpu) {
     // VCALLMS 0x570.
     let v = c.vu0();
     let clip = v.read_ctrl(18);
-    let r = vu0lib::box_clip_typed(v.vf(15), v.vf(16), [v.vf(10), v.vf(11), v.vf(12), v.vf(13)], v.vf(0), clip);
+    let r = vu0lib::box_clip_typed(
+        v.vf(15),
+        v.vf(16),
+        [v.vf(10), v.vf(11), v.vf(12), v.vf(13)],
+        v.vf(0),
+        clip,
+    );
     for (k, p) in r.corners.into_iter().enumerate() {
         v.set_vf(1 + k, p);
     }
@@ -1754,7 +1918,11 @@ pub fn game_module_render_models(c: &mut Cpu) {
 /// to s1/s0), `DrawModelSimple(model, 0, 0, s3 | extra)` per entry.
 fn draw_models(c: &mut Cpu, extra_flags: u64, ret_addr: u32, head: u32) -> Flow {
     c.g[S1][0] = c.g[T1][0];
-    c.g[S0][0] = if extra_flags == 0 { c.g[A1][0] } else { c.g[V0][0] };
+    c.g[S0][0] = if extra_flags == 0 {
+        c.g[A1][0]
+    } else {
+        c.g[V0][0]
+    };
     c.g[T1][0] = lw(c, gp_minus(c, GRAPHICS_GP));
     loop {
         c.cycles += 13;
@@ -1894,7 +2062,9 @@ pub fn game_module_end_bezier_pass(c: &mut Cpu) {
 mod tests {
     use crate::difftest::events::{check_events, schedule, Events};
     use crate::difftest::fakes::{covered, fake_call, machine, FAKE, LOG_COUNT, LOG_START};
-    use crate::difftest::{check, check_lohi, fill, fresh, require_paths, scramble, Rng, DATA, GAME_GP};
+    use crate::difftest::{
+        check, check_lohi, fill, fresh, require_paths, scramble, Rng, DATA, GAME_GP,
+    };
     use ssx3_ee_rt::cpu::{reg::*, sx};
     use ssx3_ee_rt::funcs::GuestFn;
     use ssx3_ee_rt::Cpu;
@@ -1943,7 +2113,10 @@ mod tests {
             }
         }
         for s in sites {
-            assert!(seen.contains(s), "call site returning to {s:#x} never reached (seen {seen:x?})");
+            assert!(
+                seen.contains(s),
+                "call site returning to {s:#x} never reached (seen {seen:x?})"
+            );
         }
     }
 
@@ -2003,7 +2176,14 @@ mod tests {
     /// A 9-priority list at `list` (buckets at BUCKETS) with `active` and
     /// `pending` processes in priority `pri`; the others empty. Returns the
     /// active processes then the pending ones.
-    fn process_lists(c: &mut Cpu, r: &mut Rng, list: u32, pri: u32, active: u32, pending: u32) -> Vec<u32> {
+    fn process_lists(
+        c: &mut Cpu,
+        r: &mut Rng,
+        list: u32,
+        pri: u32,
+        active: u32,
+        pending: u32,
+    ) -> Vec<u32> {
         put_vtable(c, r);
         c.bus.write32(list, 9);
         c.bus.write32(list + 4, BUCKETS);
@@ -2036,29 +2216,39 @@ mod tests {
 
     #[test]
     fn process_list_next() {
-        check_lohi(ssx3_ee::s11::f_00354ef8__generated, super::process_list_next, SEEDS, &|c, seed| {
-            let mut r = Rng(0x6e65_7874 ^ (seed as u64) << 20);
-            scramble(c, &mut r);
-            let pri = r.next_u32() % 9;
-            let n = 1 + r.next_u32() % 4;
-            let procs = process_lists(c, &mut r, LIST, pri, n, 0);
-            c.g[A0][0] = LIST as u64;
-            c.g[A1][0] = procs[(r.next_u32() % n) as usize] as u64;
-            c.g[A2][0] = pri_arg(&mut r, pri);
-        });
+        check_lohi(
+            ssx3_ee::s11::f_00354ef8__generated,
+            super::process_list_next,
+            SEEDS,
+            &|c, seed| {
+                let mut r = Rng(0x6e65_7874 ^ (seed as u64) << 20);
+                scramble(c, &mut r);
+                let pri = r.next_u32() % 9;
+                let n = 1 + r.next_u32() % 4;
+                let procs = process_lists(c, &mut r, LIST, pri, n, 0);
+                c.g[A0][0] = LIST as u64;
+                c.g[A1][0] = procs[(r.next_u32() % n) as usize] as u64;
+                c.g[A2][0] = pri_arg(&mut r, pri);
+            },
+        );
     }
 
     #[test]
     fn process_list_pending_first() {
-        check_lohi(ssx3_ee::s11::f_00354f48__generated, super::process_list_pending_first, SEEDS, &|c, seed| {
-            let mut r = Rng(0x7066_6972 ^ (seed as u64) << 20);
-            scramble(c, &mut r);
-            let pri = r.next_u32() % 9;
-            let (a, p) = (r.next_u32() % 2, r.next_u32() % 3);
-            process_lists(c, &mut r, LIST, pri, a, p);
-            c.g[A0][0] = LIST as u64;
-            c.g[A1][0] = pri_arg(&mut r, pri);
-        });
+        check_lohi(
+            ssx3_ee::s11::f_00354f48__generated,
+            super::process_list_pending_first,
+            SEEDS,
+            &|c, seed| {
+                let mut r = Rng(0x7066_6972 ^ (seed as u64) << 20);
+                scramble(c, &mut r);
+                let pri = r.next_u32() % 9;
+                let (a, p) = (r.next_u32() % 2, r.next_u32() % 3);
+                process_lists(c, &mut r, LIST, pri, a, p);
+                c.g[A0][0] = LIST as u64;
+                c.g[A1][0] = pri_arg(&mut r, pri);
+            },
+        );
     }
 
     /// Setup for the per-priority passes: 0..12 active processes.
@@ -2144,7 +2334,11 @@ mod tests {
                 let pri = r.next_u32() % 9;
                 process_lists(c, r, list, pri, [0, 1, 3][(seed % 3) as usize], 0);
                 for i in 0..6 {
-                    let p = if r.next_u32() % 2 == 0 { pri } else { r.next_u32() % 9 };
+                    let p = if r.next_u32() % 2 == 0 {
+                        pri
+                    } else {
+                        r.next_u32() % 9
+                    };
                     c.bus.write32(super::RENDER_PRIORITIES + 4 * i, p);
                 }
             },
@@ -2156,8 +2350,14 @@ mod tests {
     #[test]
     fn world_get_nash_and_seconds_per_tick() {
         for (gen, hand) in [
-            (ssx3_ee::s09::f_002d1be0__generated as GuestFn, super::world_get_nash as GuestFn),
-            (ssx3_ee::s09::f_002d1c70__generated, super::world_get_seconds_per_tick),
+            (
+                ssx3_ee::s09::f_002d1be0__generated as GuestFn,
+                super::world_get_nash as GuestFn,
+            ),
+            (
+                ssx3_ee::s09::f_002d1c70__generated,
+                super::world_get_seconds_per_tick,
+            ),
         ] {
             check(gen, hand, SEEDS, &|c, seed| {
                 let mut r = Rng(0x6e61_7368 ^ (seed as u64) << 20);
@@ -2178,11 +2378,16 @@ mod tests {
             scramble(c, r);
             for i in 0..50 {
                 // Small values so that some repeat.
-                c.bus.write32(super::LOGICAL_SECTIONS + 4 + 0x10 * i, r.next_u32() % 80);
+                c.bus
+                    .write32(super::LOGICAL_SECTIONS + 4 + 0x10 * i, r.next_u32() % 80);
             }
             let v = r.next_u32() % 100;
             // Upper bits: sign extension (can match) or garbage (cannot).
-            c.g[A1][0] = if r.next_u32() % 4 == 0 { (r.next_u32() as u64) << 32 | v as u64 } else { v as u64 };
+            c.g[A1][0] = if r.next_u32() % 4 == 0 {
+                (r.next_u32() as u64) << 32 | v as u64
+            } else {
+                v as u64
+            };
         };
         let gen = ssx3_ee::s05::f_0022e0e0__generated;
         let hand = super::section_man_find_logical_section;
@@ -2214,9 +2419,14 @@ mod tests {
         c.bus.write32(tree + 0x20, nodes);
         for k in 0..count {
             for e in 0..4 {
-                let child = if k + 1 < count { k + 1 + r.next_u32() % (count - k - 1).min(3) } else { k };
+                let child = if k + 1 < count {
+                    k + 1 + r.next_u32() % (count - k - 1).min(3)
+                } else {
+                    k
+                };
                 let branch = k + 4 < count && r.next_u32() % 10 < 9;
-                c.bus.write16(nodes + 8 * k + 2 * e, (child << 1 | branch as u32) as u16);
+                c.bus
+                    .write16(nodes + 8 * k + 2 * e, (child << 1 | branch as u32) as u16);
             }
         }
         // Points: cells mostly in range, sometimes outside on either axis.
@@ -2258,7 +2468,8 @@ mod tests {
         let setup = |c: &mut Cpu, r: &mut Rng| {
             scramble(c, r);
             c.g[GP][0] = GAME_GP as u64;
-            let octaves = [0u64, 1, 2, 4, 7, sx(0xffff_fffe), 3 | 0xffff_0000_0000_0000][(r.next_u32() % 7) as usize];
+            let octaves = [0u64, 1, 2, 4, 7, sx(0xffff_fffe), 3 | 0xffff_0000_0000_0000]
+                [(r.next_u32() % 7) as usize];
             c.g[A0][0] = octaves;
             c.f[12] = r.f32(100.0);
             // Noise_Sample1D's sample table (0x445ab0; negative x reads
@@ -2283,8 +2494,10 @@ mod tests {
     fn put_cull_microprogram(c: &mut Cpu) {
         // Hand-written microcode has no translation: run it on the
         // reference interpreter.
-        ssx3_ps2::platform::machine_of(&mut c.bus.plat).hw.vu0.fallback =
-            Some(ssx3_ps2::vu::reference::run_program);
+        ssx3_ps2::platform::machine_of(&mut c.bus.plat)
+            .hw
+            .vu0
+            .fallback = Some(ssx3_ps2::vu::reference::run_program);
         let at = 0x1100_0000 + 0xef0;
         c.bus.write32(at, 0x8000_7070); // IADD vi1, vi14, vi0
         c.bus.write32(at + 4, 0x4000_02ff); // NOP, E bit
@@ -2301,11 +2514,25 @@ mod tests {
         c.bus.write32(this + 0x90, DATA + 0x100);
         c.bus.write32(DATA + 0x100, tables);
         for s in 0..16 {
-            c.bus.write32(tables + 8 * s + 0x24, if r.next_u32() % 2 == 0 { 6 } else { r.next_u32() % 8 });
+            c.bus.write32(
+                tables + 8 * s + 0x24,
+                if r.next_u32() % 2 == 0 {
+                    6
+                } else {
+                    r.next_u32() % 8
+                },
+            );
         }
         for l in 0..32u32 {
             let e = tables.wrapping_add((l as i32 - 8) as u32 * 0x18);
-            c.bus.write32(e + 0x3f0, if r.next_u32() % 2 == 0 { 3 } else { r.next_u32() % 8 });
+            c.bus.write32(
+                e + 0x3f0,
+                if r.next_u32() % 2 == 0 {
+                    3
+                } else {
+                    r.next_u32() % 8
+                },
+            );
         }
         c.bus.write32(this + 0x209c, r.next_u32() % 10);
         let pairs = DATA + 0x200;
@@ -2313,7 +2540,10 @@ mod tests {
         for i in 0..nodes {
             let node = DATA + 0x8000 + 0x40 * i;
             c.bus.write32(pairs + 8 * i, node);
-            c.bus.write32(pairs + 8 * i + 4, [0, 1, 2, 2, r.next_u32()][(r.next_u32() % 5) as usize]);
+            c.bus.write32(
+                pairs + 8 * i + 4,
+                [0, 1, 2, 2, r.next_u32()][(r.next_u32() % 5) as usize],
+            );
             let n = r.next_u32() % (per_node + 1);
             let mut head = 0;
             for _ in 0..n {
@@ -2322,8 +2552,16 @@ mod tests {
                 if r.next_u32() % 2 == 0 {
                     c.bus.write32(inst + 8, r.next_u32() | 3);
                 }
-                c.bus.write8(inst + 0x7d, if r.next_u32() % 3 == 0 { 0xff } else { (r.next_u32() % 16) as u8 });
-                c.bus.write16(inst + 0x7e, ((r.next_u32() % 32) as i32 - 8) as u16);
+                c.bus.write8(
+                    inst + 0x7d,
+                    if r.next_u32() % 3 == 0 {
+                        0xff
+                    } else {
+                        (r.next_u32() % 16) as u8
+                    },
+                );
+                c.bus
+                    .write16(inst + 0x7e, ((r.next_u32() % 32) as i32 - 8) as u16);
                 head = inst;
                 inst += 0x100;
             }
@@ -2331,7 +2569,11 @@ mod tests {
         }
         c.g[A0][0] = this as u64;
         c.g[A1][0] = pairs as u64;
-        c.g[A2][0] = if nodes == 0 && r.next_u32() % 2 == 0 { sx(0xffff_fff0) } else { nodes as u64 };
+        c.g[A2][0] = if nodes == 0 && r.next_u32() % 2 == 0 {
+            sx(0xffff_fff0)
+        } else {
+            nodes as u64
+        };
         this
     }
 
@@ -2368,7 +2610,10 @@ mod tests {
     /// 11..13 (each child present with probability 1/2). Generated code
     /// runs the hand-written VU0 routines (`vu0lib`).
     fn cull_setup(c: &mut Cpu, r: &mut Rng) -> u32 {
-        ssx3_ps2::platform::machine_of(&mut c.bus.plat).hw.vu0.fallback = Some(ssx3_vu::vu::vu0lib::run);
+        ssx3_ps2::platform::machine_of(&mut c.bus.plat)
+            .hw
+            .vu0
+            .fallback = Some(ssx3_vu::vu::vu0lib::run);
         c.g[GP][0] = GAME_GP as u64;
         let f = |x: f32| x.to_bits();
         let unit = |r: &mut Rng| (r.next_u32() % 2001) as f32 / 1000.0 - 1.0;
@@ -2380,7 +2625,11 @@ mod tests {
         // View: x' = X / (size · k) + t, w = 1.
         for row in 0..3u32 {
             for lane in 0..4u32 {
-                let v = if lane == row { 1.0 / (size * (1 + r.next_u32() % 4) as f32) } else { 0.0 };
+                let v = if lane == row {
+                    1.0 / (size * (1 + r.next_u32() % 4) as f32)
+                } else {
+                    0.0
+                };
                 c.bus.write32(world + 0x10 + 0x10 * row + 4 * lane, f(v));
             }
         }
@@ -2389,8 +2638,12 @@ mod tests {
         }
         c.bus.write32(world + 0x4c, f(1.0));
         for lane in 0..4u32 {
-            c.bus.write32(0x0044_2130 + 4 * lane, f(-0.1 * (r.next_u32() % 3) as f32));
-            c.bus.write32(0x0044_2140 + 4 * lane, f(1.0 + 0.1 * (r.next_u32() % 3) as f32));
+            c.bus
+                .write32(0x0044_2130 + 4 * lane, f(-0.1 * (r.next_u32() % 3) as f32));
+            c.bus.write32(
+                0x0044_2140 + 4 * lane,
+                f(1.0 + 0.1 * (r.next_u32() % 3) as f32),
+            );
         }
         c.bus.write32(GAME_GP - 0x51ec, f(0.5 + unit(r).abs()));
         c.bus.write32(GAME_GP - 0x51e8, f(0.5 + unit(r).abs()));
@@ -2405,7 +2658,10 @@ mod tests {
                 let axis = r.next_u32() % 3;
                 let sign = if r.next_u32() % 2 == 0 { 1.0 } else { -1.0 };
                 for lane in 0..3u32 {
-                    c.bus.write32(o + 0x50 + 0x10 * k + 4 * lane, f(if lane == axis { sign } else { 0.0 }));
+                    c.bus.write32(
+                        o + 0x50 + 0x10 * k + 4 * lane,
+                        f(if lane == axis { sign } else { 0.0 }),
+                    );
                 }
                 c.bus.write32(o + 0x5c + 0x10 * k, f(size * 6.0 * unit(r)));
             }
@@ -2416,7 +2672,11 @@ mod tests {
             let node = *next;
             *next += 0x20;
             for k in 0..8 {
-                let child = if depth > 0 && r.next_u32() % 2 == 0 { tree(c, r, next, depth - 1) } else { 0 };
+                let child = if depth > 0 && r.next_u32() % 2 == 0 {
+                    tree(c, r, next, depth - 1)
+                } else {
+                    0
+                };
                 c.bus.write32(node + 4 * k, child);
             }
             node
@@ -2430,7 +2690,8 @@ mod tests {
         let cell = DATA + 0x180;
         c.bus.write32(cell, level);
         for k in 1..4u32 {
-            c.bus.write32(cell + 4 * k, ((r.next_u32() % 9) as i32 - 4) as u32);
+            c.bus
+                .write32(cell + 4 * k, ((r.next_u32() % 9) as i32 - 4) as u32);
         }
         c.g[A0][0] = ctx as u64;
         c.g[A1][0] = root as u64;
@@ -2457,7 +2718,10 @@ mod tests {
             let world = cull_setup(&mut c, &mut r);
             let before = (c.bus.read32(world + 0x94), c.bus.read32(world + 0x1098));
             hand(&mut c);
-            seen.insert((c.bus.read32(world + 0x94) - before.0).min(3) * 4 + (c.bus.read32(world + 0x1098) - before.1).min(3));
+            seen.insert(
+                (c.bus.read32(world + 0x94) - before.0).min(3) * 4
+                    + (c.bus.read32(world + 0x1098) - before.1).min(3),
+            );
         }
         assert!(seen.len() >= 8, "outcomes seen: {seen:?}");
     }
@@ -2491,7 +2755,10 @@ mod tests {
             let p = obj(c, r, vptr_at);
             c.bus.write32(BLOCK + field, if present { p } else { 0 });
         }
-        for (field, n) in [(0x10u32, [0, 1, 3, 6][(seed % 4) as usize]), (0x1c, [0, 2, 1, 4][(seed / 4 % 4) as usize])] {
+        for (field, n) in [
+            (0x10u32, [0, 1, 3, 6][(seed % 4) as usize]),
+            (0x1c, [0, 2, 1, 4][(seed / 4 % 4) as usize]),
+        ] {
             let mut head = 0;
             for _ in 0..n {
                 let p = obj(c, r, Some(8));
@@ -2573,8 +2840,10 @@ mod tests {
         fill(c, r, obj, 0x10);
         c.bus.write32(obj + 0xc, VT);
         c.bus.write32(obj + 0x18, DATA + 0x6000);
-        c.bus.write32(obj + 0x1c, if r.next_u32() % 5 == 0 { 0 } else { block });
-        c.bus.write32(obj + 0x20, (r.next_u32() % 5) as i32 as u32 - 2);
+        c.bus
+            .write32(obj + 0x1c, if r.next_u32() % 5 == 0 { 0 } else { block });
+        c.bus
+            .write32(obj + 0x20, (r.next_u32() % 5) as i32 as u32 - 2);
         obj
     }
 
@@ -2618,7 +2887,13 @@ mod tests {
             None,
             0x4d51,
             10,
-            &[0x0035_61cc, 0x0035_61e8, 0x0035_6214, 0x0035_6238, 0x0035_6284],
+            &[
+                0x0035_61cc,
+                0x0035_61e8,
+                0x0035_6214,
+                0x0035_6238,
+                0x0035_6284,
+            ],
             &|c, r, seed| {
                 c.g[GP][0] = GAME_GP as u64;
                 c.g[A0][0] = mod_obj(c, r, seed) as u64;
@@ -2631,8 +2906,16 @@ mod tests {
     #[test]
     fn world_update() {
         for (gen, hand, is_world) in [
-            (ssx3_ee::s13::f_003a6928__generated as GuestFn, super::world_update as GuestFn, true),
-            (ssx3_ee::s13::f_003a8290__generated, super::c_world_cache_update, false),
+            (
+                ssx3_ee::s13::f_003a6928__generated as GuestFn,
+                super::world_update as GuestFn,
+                true,
+            ),
+            (
+                ssx3_ee::s13::f_003a8290__generated,
+                super::c_world_cache_update,
+                false,
+            ),
         ] {
             check(gen, hand, SEEDS, &|c, seed| {
                 machine(c, seed, 0x776f, 0);
@@ -2672,7 +2955,14 @@ mod tests {
                 let lists = DATA + 0x20000;
                 let n1 = [0u32, 1, 3, 9][(seed % 4) as usize];
                 let n2 = [0u32, 2, 1, 7][(seed / 4 % 4) as usize];
-                c.bus.write32(lists + 0x209c, if n1 == 0 && r.next_u32() % 2 == 0 { -1i32 as u32 } else { n1 });
+                c.bus.write32(
+                    lists + 0x209c,
+                    if n1 == 0 && r.next_u32() % 2 == 0 {
+                        -1i32 as u32
+                    } else {
+                        n1
+                    },
+                );
                 c.bus.write32(lists + 0x40a0, n2);
                 fill(c, r, lists + 0x20a0, 16);
                 fill(c, r, lists + 0x40a4, 16);
@@ -2729,8 +3019,10 @@ mod tests {
                 c.bus.write32(lists + 0x50a8, n1);
                 c.bus.write32(lists + 0x70ac, n2);
                 for i in 0..4 {
-                    c.bus.write32(lists + 0x50ac + 4 * i, DATA + 0x30000 + 0x200 * i);
-                    c.bus.write32(lists + 0x70b0 + 4 * i, DATA + 0x31000 + 0x200 * i);
+                    c.bus
+                        .write32(lists + 0x50ac + 4 * i, DATA + 0x30000 + 0x200 * i);
+                    c.bus
+                        .write32(lists + 0x70b0 + 4 * i, DATA + 0x31000 + 0x200 * i);
                 }
                 c.g[A0][0] = this as u64;
                 c.g[A1][0] = lists as u64;

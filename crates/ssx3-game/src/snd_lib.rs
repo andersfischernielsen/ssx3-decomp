@@ -61,21 +61,66 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 mod callee {
     use super::{ee, Callee};
 
-    pub const SND_HANDLE_TO_CHANNEL: Callee = Callee { addr: 0x003b_a6e8, f: ee::s13::SND_HandleToChannel };
-    pub const SND_NEXT_HANDLE_CHANNEL: Callee = Callee { addr: 0x003b_aa00, f: ee::s13::SND_NextHandleChannel };
-    pub const SND_CHANNEL_STOP_VOICES: Callee = Callee { addr: 0x003c_2440, f: ee::s13::SND_ChannelStopVoices };
-    pub const SND_SIF_DMA_COMPLETE: Callee = Callee { addr: 0x003c_4918, f: ee::s13::SND_SifDmaComplete };
-    pub const SND_MEM_CLAMP_BLOCK: Callee = Callee { addr: 0x003b_5ba0, f: ee::s13::SND_MemClampBlock };
-    pub const SND_UTK_RC_TO_LPC: Callee = Callee { addr: 0x003c_d590, f: ee::s14::SND_UtkRcToLpc };
-    pub const SND_UTK_LPC_FILTER: Callee = Callee { addr: 0x003c_e410, f: ee::s14::SND_UtkLpcFilter };
-    pub const SND_UTK_DECODE: Callee = Callee { addr: 0x003c_de68, f: ee::s14::SND_UtkDecode };
-    pub const SND_UTK_SET_STATE: Callee = Callee { addr: 0x003c_e0b8, f: ee::s14::SND_UtkSetState };
-    pub const SND_UTK_SET_INPUT: Callee = Callee { addr: 0x003c_dde8, f: ee::s14::SND_UtkSetInput };
-    pub const SND_UTK_DECODE_FRAME: Callee = Callee { addr: 0x003c_d878, f: ee::s14::SND_UtkDecodeFrame };
-    pub const SND_EE_MIX_BLOCK: Callee = Callee { addr: 0x003c_85d0, f: ee::s14::SND_EeMixBlock };
-    pub const SND_EAXA_DECODE_BLOCKS: Callee = Callee { addr: 0x003c_ca08, f: ee::s14::SND_EaxaDecodeBlocks };
-    pub const SND_EAXA_SET_INPUT: Callee = Callee { addr: 0x003c_cf60, f: ee::s14::SND_EaxaSetInput };
-    pub const SND_EAXA_SET_HISTORY: Callee = Callee { addr: 0x003c_d190, f: ee::s14::SND_EaxaSetHistory };
+    pub const SND_HANDLE_TO_CHANNEL: Callee = Callee {
+        addr: 0x003b_a6e8,
+        f: ee::s13::SND_HandleToChannel,
+    };
+    pub const SND_NEXT_HANDLE_CHANNEL: Callee = Callee {
+        addr: 0x003b_aa00,
+        f: ee::s13::SND_NextHandleChannel,
+    };
+    pub const SND_CHANNEL_STOP_VOICES: Callee = Callee {
+        addr: 0x003c_2440,
+        f: ee::s13::SND_ChannelStopVoices,
+    };
+    pub const SND_SIF_DMA_COMPLETE: Callee = Callee {
+        addr: 0x003c_4918,
+        f: ee::s13::SND_SifDmaComplete,
+    };
+    pub const SND_MEM_CLAMP_BLOCK: Callee = Callee {
+        addr: 0x003b_5ba0,
+        f: ee::s13::SND_MemClampBlock,
+    };
+    pub const SND_UTK_RC_TO_LPC: Callee = Callee {
+        addr: 0x003c_d590,
+        f: ee::s14::SND_UtkRcToLpc,
+    };
+    pub const SND_UTK_LPC_FILTER: Callee = Callee {
+        addr: 0x003c_e410,
+        f: ee::s14::SND_UtkLpcFilter,
+    };
+    pub const SND_UTK_DECODE: Callee = Callee {
+        addr: 0x003c_de68,
+        f: ee::s14::SND_UtkDecode,
+    };
+    pub const SND_UTK_SET_STATE: Callee = Callee {
+        addr: 0x003c_e0b8,
+        f: ee::s14::SND_UtkSetState,
+    };
+    pub const SND_UTK_SET_INPUT: Callee = Callee {
+        addr: 0x003c_dde8,
+        f: ee::s14::SND_UtkSetInput,
+    };
+    pub const SND_UTK_DECODE_FRAME: Callee = Callee {
+        addr: 0x003c_d878,
+        f: ee::s14::SND_UtkDecodeFrame,
+    };
+    pub const SND_EE_MIX_BLOCK: Callee = Callee {
+        addr: 0x003c_85d0,
+        f: ee::s14::SND_EeMixBlock,
+    };
+    pub const SND_EAXA_DECODE_BLOCKS: Callee = Callee {
+        addr: 0x003c_ca08,
+        f: ee::s14::SND_EaxaDecodeBlocks,
+    };
+    pub const SND_EAXA_SET_INPUT: Callee = Callee {
+        addr: 0x003c_cf60,
+        f: ee::s14::SND_EaxaSetInput,
+    };
+    pub const SND_EAXA_SET_HISTORY: Callee = Callee {
+        addr: 0x003c_d190,
+        f: ee::s14::SND_EaxaSetHistory,
+    };
 }
 
 /// Cross-shard calls the compiler emitted as `call_indirect` (function table).
@@ -1528,7 +1573,9 @@ mod tests {
     use super::*;
     use crate::difftest::events::{check_events, driven, schedule, Events};
     use crate::difftest::fakes::{covered, machine, ptr, FAKE, LOG_RESULTS};
-    use crate::difftest::{check, check_lohi, check_paths, fill, require_paths, Rng, DATA, GAME_GP};
+    use crate::difftest::{
+        check, check_lohi, check_paths, fill, require_paths, Rng, DATA, GAME_GP,
+    };
     use ssx3_ee::{s13, s14};
 
     const SEEDS: u32 = 150;
@@ -1561,9 +1608,17 @@ mod tests {
             let ch = CHANNELS + i * snd::CHANNEL_SIZE;
             fill(c, r, ch, snd::CHANNEL_SIZE / 4);
             c.bus.write8(ch + 0x26, (r.next_u32() % 3) as u8);
-            let alloc = if r.next_u32() % 4 != 0 { 1 } else { r.next_u32() as u8 % 3 };
+            let alloc = if r.next_u32() % 4 != 0 {
+                1
+            } else {
+                r.next_u32() as u8 % 3
+            };
             c.bus.write8(ch + 0x69, alloc);
-            let h = if r.next_u32() % 5 != 0 { (r.next_u32() << 8 | i) & 0x7fff_ffff } else { r.next_u32() };
+            let h = if r.next_u32() % 5 != 0 {
+                (r.next_u32() << 8 | i) & 0x7fff_ffff
+            } else {
+                r.next_u32()
+            };
             c.bus.write32(ch, h);
             // No voices (StopVoices / ApplyPitch loops are tested elsewhere).
             c.bus.write8(ch + 0x23, 0);
@@ -1574,7 +1629,8 @@ mod tests {
     /// A handle: mostly the handle of one of the channels.
     fn handle(c: &mut Cpu, r: &mut Rng, n: u32) -> u32 {
         if n > 0 && r.next_u32() % 5 != 0 {
-            c.bus.read32(CHANNELS + (r.next_u32() % n) * snd::CHANNEL_SIZE)
+            c.bus
+                .read32(CHANNELS + (r.next_u32() % n) * snd::CHANNEL_SIZE)
         } else {
             r.next_u32()
         }
@@ -1637,13 +1693,19 @@ mod tests {
 
     #[test]
     fn save_vu0_context() {
-        check_paths(s13::f_003c0858, snd_save_vu0_context, SEEDS, &[40], &|c, seed| {
-            let mut r = machine(c, seed, 5, 0);
-            for reg in 16..19 {
-                c.bus.plat.write_ctrl(reg, r.next_u32());
-            }
-            c.g[A0][0] = r64!(&mut r, ptr(&mut r));
-        });
+        check_paths(
+            s13::f_003c0858,
+            snd_save_vu0_context,
+            SEEDS,
+            &[40],
+            &|c, seed| {
+                let mut r = machine(c, seed, 5, 0);
+                for reg in 16..19 {
+                    c.bus.plat.write_ctrl(reg, r.next_u32());
+                }
+                c.g[A0][0] = r64!(&mut r, ptr(&mut r));
+            },
+        );
     }
 
     fn dsp_chain(c: &mut Cpu, r: &mut Rng) {
@@ -1660,7 +1722,8 @@ mod tests {
             c.bus.write16(nd + 0x18, prio);
             prio += (r.next_u32() % 3) as u16;
             c.bus.write32(nd + 0x10, prev);
-            c.bus.write32(nd + 0x8, nodes.get(i + 1).copied().unwrap_or(0));
+            c.bus
+                .write32(nd + 0x8, nodes.get(i + 1).copied().unwrap_or(0));
             prev = nd;
         }
         let node = DATA + 0x30_0000;
@@ -1700,14 +1763,26 @@ mod tests {
 
     #[test]
     fn utk_read_and_skip_bits() {
-        check_paths(s14::f_003cd1f8, snd_utk_read_bits, SEEDS, &[17, 26], &|c, seed| {
-            let mut r = machine(c, seed, 8, 0);
-            bit_reader(c, &mut r);
-        });
-        check_paths(s14::f_003cd260, snd_utk_skip_bits, SEEDS, &[11, 20], &|c, seed| {
-            let mut r = machine(c, seed, 9, 0);
-            bit_reader(c, &mut r);
-        });
+        check_paths(
+            s14::f_003cd1f8,
+            snd_utk_read_bits,
+            SEEDS,
+            &[17, 26],
+            &|c, seed| {
+                let mut r = machine(c, seed, 8, 0);
+                bit_reader(c, &mut r);
+            },
+        );
+        check_paths(
+            s14::f_003cd260,
+            snd_utk_skip_bits,
+            SEEDS,
+            &[11, 20],
+            &|c, seed| {
+                let mut r = machine(c, seed, 9, 0);
+                bit_reader(c, &mut r);
+            },
+        );
     }
 
     #[test]
@@ -1755,22 +1830,27 @@ mod tests {
 
     #[test]
     fn dec_utk_decode_mem() {
-        check(s14::f_003c9360, snd_dec_utk_decode_mem, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 21, 0);
-            let d = DATA + 0x1000;
-            fill(c, &mut r, d, 0x30);
-            let out = DATA + 0x8000;
-            fill(c, &mut r, out, 0x40);
-            // `d->pos < d->remaining` makes it decode; otherwise it returns -1.
-            let less = seed % 4 != 0;
-            c.bus.write32(d + 0x1c, if less { 0x1000 } else { 0 });
-            c.bus.write32(d + 0x20, if less { 0 } else { 0x2000 });
-            c.bus.write32(d + 0x28, out);
-            c.g[A0][0] = r64!(&mut r, d);
-            c.g[A1][0] = r64!(&mut r, r.next_u32() % 0x100);
-            c.g[A2][0] = r64!(&mut r, r.next_u32());
-            c.g[A3][0] = r64!(&mut r, r.next_u32());
-        });
+        check(
+            s14::f_003c9360,
+            snd_dec_utk_decode_mem,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 21, 0);
+                let d = DATA + 0x1000;
+                fill(c, &mut r, d, 0x30);
+                let out = DATA + 0x8000;
+                fill(c, &mut r, out, 0x40);
+                // `d->pos < d->remaining` makes it decode; otherwise it returns -1.
+                let less = seed % 4 != 0;
+                c.bus.write32(d + 0x1c, if less { 0x1000 } else { 0 });
+                c.bus.write32(d + 0x20, if less { 0 } else { 0x2000 });
+                c.bus.write32(d + 0x28, out);
+                c.g[A0][0] = r64!(&mut r, d);
+                c.g[A1][0] = r64!(&mut r, r.next_u32() % 0x100);
+                c.g[A2][0] = r64!(&mut r, r.next_u32());
+                c.g[A3][0] = r64!(&mut r, r.next_u32());
+            },
+        );
     }
 
     // --- allocator ---------------------------------------------------------
@@ -1784,19 +1864,33 @@ mod tests {
         c.bus.write32(snd::STATE.0 + heap::PTR, h);
         let k = r.next_u32() % 7;
         let mut offs = Vec::new();
-        let mut at = if r.next_u32() % 3 == 0 { 0 } else { 16 * (r.next_u32() % 8) };
+        let mut at = if r.next_u32() % 3 == 0 {
+            0
+        } else {
+            16 * (r.next_u32() % 8)
+        };
         for i in 0..k {
             let size = 16 * (1 + r.next_u32() % 8);
             let e = table.wrapping_sub(8 * i);
             c.bus.write32(e, at);
             c.bus.write32(e + 4, size);
             offs.push(at);
-            at += size + if r.next_u32() % 2 == 0 { 0 } else { 16 * (r.next_u32() % 6) };
+            at += size
+                + if r.next_u32() % 2 == 0 {
+                    0
+                } else {
+                    16 * (r.next_u32() % 6)
+                };
         }
-        let lowest = if r.next_u32() % 20 == 0 { r.next_u32() % 3 } else { (k as u32).wrapping_neg() };
+        let lowest = if r.next_u32() % 20 == 0 {
+            r.next_u32() % 3
+        } else {
+            (k as u32).wrapping_neg()
+        };
         c.bus.write32(h + heap::BASE, base);
         c.bus.write32(h + heap::BLOCKS, table);
-        c.bus.write32(h + heap::LIMIT, at + 16 * (r.next_u32() % 12));
+        c.bus
+            .write32(h + heap::LIMIT, at + 16 * (r.next_u32() % 12));
         c.bus.write32(h + heap::LOW_WATER, r.next_u32() % 0x100);
         c.bus.write32(h + heap::LOWEST, lowest);
         (base, offs)
@@ -1857,8 +1951,16 @@ mod tests {
     fn mem_copy_setup(c: &mut Cpu, r: &mut Rng) {
         let src = DATA + 0x1000 + r.next_u32() % 64;
         let dst = DATA + 0x8000 + r.next_u32() % 64;
-        let dst = if r.next_u32() % 3 == 0 { dst & !0xf } else { dst };
-        let src = if r.next_u32() % 2 == 0 { (src & !0xf) | (dst & 0xf) } else { src };
+        let dst = if r.next_u32() % 3 == 0 {
+            dst & !0xf
+        } else {
+            dst
+        };
+        let src = if r.next_u32() % 2 == 0 {
+            (src & !0xf) | (dst & 0xf)
+        } else {
+            src
+        };
         fill(c, r, DATA + 0x1000, 0x200);
         let n = match r.next_u32() % 5 {
             0 => r.next_u32() % 20,
@@ -1896,16 +1998,37 @@ mod tests {
         let leader = r.next_u32() % n;
         for i in 0..n {
             let ch = CHANNELS + i * snd::CHANNEL_SIZE;
-            c.bus.write8(ch + chan::GROUP, if r.next_u32() % 4 == 0 { 0 } else { 1 + r.next_u32() % 2 } as u8);
-            c.bus.write8(ch + chan::LEADER, (i == leader || r.next_u32() % 8 == 0) as u8);
+            c.bus.write8(
+                ch + chan::GROUP,
+                if r.next_u32() % 4 == 0 {
+                    0
+                } else {
+                    1 + r.next_u32() % 2
+                } as u8,
+            );
+            c.bus.write8(
+                ch + chan::LEADER,
+                (i == leader || r.next_u32() % 8 == 0) as u8,
+            );
             let a = match r.next_u32() % 4 {
                 0 => 0,
                 1 => 2,
                 _ => 1,
             };
-            c.bus.write8(ch + chan::ALLOCATED, if i == leader && r.next_u32() % 2 == 0 { 2 } else { a });
+            c.bus.write8(
+                ch + chan::ALLOCATED,
+                if i == leader && r.next_u32() % 2 == 0 {
+                    2
+                } else {
+                    a
+                },
+            );
         }
-        let i = if r.next_u32() % 3 == 0 { leader } else { r.next_u32() % n };
+        let i = if r.next_u32() % 3 == 0 {
+            leader
+        } else {
+            r.next_u32() % n
+        };
         c.g[A0][0] = r64!(r, i);
     }
 

@@ -52,9 +52,9 @@
 //! would run pass 2 "flag 0"; anything else is not implemented.
 
 use crate::bezier::{
-    add, bc, emit_strip, gpu, msub, mul, project_xy, rewrite_st, sub, xform, ClipFlags, Mem, Raster, Rgba, Vertex, V,
-    COLOUR, EOP, FAN_TAG_A, FAN_TAG_B, FAN_TAG_CTX1, FAN_TAG_CTX2, FAN_TOGGLE, LAST_TOP, PACKET_A, PACKET_B,
-    RETURN_SAVE, STRIP_TAG_CTX1, STRIP_TAG_CTX2,
+    add, bc, emit_strip, gpu, msub, mul, project_xy, rewrite_st, sub, xform, ClipFlags, Mem,
+    Raster, Rgba, Vertex, COLOUR, EOP, FAN_TAG_A, FAN_TAG_B, FAN_TAG_CTX1, FAN_TAG_CTX2,
+    FAN_TOGGLE, LAST_TOP, PACKET_A, PACKET_B, RETURN_SAVE, STRIP_TAG_CTX1, STRIP_TAG_CTX2, V,
 };
 use ssx3_vu::vu::float;
 
@@ -134,12 +134,21 @@ pub fn variant(entry: u32, top: u32, mem: &[u8; 16384]) -> u32 {
         _ => (top & 0x3ff) as u16,
     };
     let l = Lods::read(&m, patch).0;
-    l.iter().enumerate().map(|(i, &v)| (v as u32 & 0xf) << (4 * i)).sum()
+    l.iter()
+        .enumerate()
+        .map(|(i, &v)| (v as u32 & 0xf) << (4 * i))
+        .sum()
 }
 
 /// [`variant`] as text.
 pub fn describe_variant(v: u32) -> String {
-    format!("L x{} y{} z{} w{}", v & 0xf, (v >> 4) & 0xf, (v >> 8) & 0xf, v >> 12)
+    format!(
+        "L x{} y{} z{} w{}",
+        v & 0xf,
+        (v >> 4) & 0xf,
+        (v >> 8) & 0xf,
+        v >> 12
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -156,10 +165,30 @@ struct Edge {
     stride: u16,
 }
 
-const EDGE_Z: Edge = Edge { lod: Z, inner: 0x09, outer: 0x00, stride: 8 };
-const EDGE_Y: Edge = Edge { lod: Y, inner: 0x31, outer: 0x38, stride: 1 };
-const EDGE_W: Edge = Edge { lod: W, inner: 0x0e, outer: 0x07, stride: 8 };
-const EDGE_X: Edge = Edge { lod: X, inner: 0x09, outer: 0x00, stride: 1 };
+const EDGE_Z: Edge = Edge {
+    lod: Z,
+    inner: 0x09,
+    outer: 0x00,
+    stride: 8,
+};
+const EDGE_Y: Edge = Edge {
+    lod: Y,
+    inner: 0x31,
+    outer: 0x38,
+    stride: 1,
+};
+const EDGE_W: Edge = Edge {
+    lod: W,
+    inner: 0x0e,
+    outer: 0x07,
+    stride: 8,
+};
+const EDGE_X: Edge = Edge {
+    lod: X,
+    inner: 0x09,
+    outer: 0x00,
+    stride: 1,
+};
 
 /// One strip of the packet: grid offsets in vertex order, and whether it is
 /// a zipper (whose clip handlers save a mark at qw511.w).
@@ -173,7 +202,10 @@ struct Strip {
 fn interior(first: u16, count: u16) -> impl Iterator<Item = Strip> {
     (0..count).map(move |s| {
         let a = first + 8 * s;
-        Strip { offsets: (0..12).map(|i| a + (i % 2) * 8 + i / 2).collect(), short: None }
+        Strip {
+            offsets: (0..12).map(|i| a + (i % 2) * 8 + i / 2).collect(),
+            short: None,
+        }
     })
 }
 
@@ -183,7 +215,11 @@ fn zipper(e: &Edge, lods: Lods) -> Strip {
     let l = lods.0[e.lod];
     let inner: Vec<u16> = (0..6).map(|k| e.inner + k * e.stride).collect();
     let outer: Vec<u16> = (0..l).map(|k| e.outer + k * e.stride).collect();
-    let (long, short) = if 6 > l { (inner, outer) } else { (outer, inner) };
+    let (long, short) = if 6 > l {
+        (inner, outer)
+    } else {
+        (outer, inner)
+    };
     let mut offsets = Vec::new();
     for k in 0..short.len() {
         offsets.push(long[k]);
@@ -193,7 +229,10 @@ fn zipper(e: &Edge, lods: Lods) -> Strip {
         offsets.push(long[short.len()]);
         offsets.push(long[short.len() + 1]);
     }
-    Strip { offsets, short: Some(short.len()) }
+    Strip {
+        offsets,
+        short: Some(short.len()),
+    }
 }
 
 /// The two packets: (slot, NLOOP, strips).
@@ -205,7 +244,10 @@ fn packets(lods: Lods) -> [(u16, u16, Vec<Strip>); 2] {
     let mut b: Vec<Strip> = interior(0x21, 2).collect();
     b.push(zipper(&EDGE_W, lods));
     b.push(zipper(&EDGE_X, lods));
-    [(PACKET_A, l[Z] + 0x30 + l[Y], a), (PACKET_B, l[W] + 0x24 + l[X], b)]
+    [
+        (PACKET_A, l[Z] + 0x30 + l[Y], a),
+        (PACKET_B, l[W] + 0x24 + l[X], b),
+    ]
 }
 
 /// The mark a zipper clip handler saves at qw511.w for vertex `i`.
@@ -245,13 +287,24 @@ type Gpu<'a> = Option<&'a mut Vec<crate::gpu::GpuCall>>;
 /// rewrites as [`crate::bezier::gpu`] draws. `None` (memory untouched) for
 /// what the CPU program keeps: what [`run`] does not implement and patches
 /// in the way of the packets.
-pub fn plan_gpu(entry: u32, top: u32, _itop: u32, mem: &mut [u8; 16384]) -> Option<Vec<crate::gpu::GpuCall>> {
+pub fn plan_gpu(
+    entry: u32,
+    top: u32,
+    _itop: u32,
+    mem: &mut [u8; 16384],
+) -> Option<Vec<crate::gpu::GpuCall>> {
     let mut out = Vec::new();
     exec(entry, top, mem, &mut |_| {}, Some(&mut out)).then_some(out)
 }
 
 /// [`run`], or with `gpu` [`plan_gpu`].
-fn exec(entry: u32, top: u32, mem: &mut [u8; 16384], kick: &mut dyn FnMut(&[u128]), mut gpu: Gpu) -> bool {
+fn exec(
+    entry: u32,
+    top: u32,
+    mem: &mut [u8; 16384],
+    kick: &mut dyn FnMut(&[u128]),
+    mut gpu: Gpu,
+) -> bool {
     let top = (top & 0x3ff) as u16;
     let mut m = Mem(mem);
     let tags = |m: &mut Mem, strip: u16, fan: Option<u16>| {
@@ -275,20 +328,36 @@ fn exec(entry: u32, top: u32, mem: &mut [u8; 16384], kick: &mut dyn FnMut(&[u128
             m.isw(LAST_TOP, 0, top);
             // The first draw's BAL: 0x09d0 / 0x0a80.
             let bal = if entry == 0x09a0 { 0x09d0 } else { 0x0a80 };
-            draw_patch(&mut m, top, top.wrapping_add(UV), ret(bal), kick, gpu.as_deref_mut());
+            draw_patch(
+                &mut m,
+                top,
+                top.wrapping_add(UV),
+                ret(bal),
+                kick,
+                gpu.as_deref_mut(),
+            );
             if entry == 0x09a0 {
                 tags(&mut m, STRIP_TAG_CTX2, None);
                 pass2_st(&mut m, top, ret(0x0a10), kick, gpu.as_deref_mut());
             } else {
                 tags(&mut m, STRIP_TAG_CTX2, Some(FAN_TAG_CTX2));
                 m.isw(LAST_TOP, 0, top);
-                draw_patch(&mut m, top, top.wrapping_add(UV2), ret(0x0ad8), kick, gpu.as_deref_mut());
+                draw_patch(
+                    &mut m,
+                    top,
+                    top.wrapping_add(UV2),
+                    ret(0x0ad8),
+                    kick,
+                    gpu.as_deref_mut(),
+                );
             }
         }
         0x0c48 | 0x0cf0 => {
             let last = m.ilw(LAST_TOP, 0);
             let back = m.ilw(RETURN_SAVE, 0);
-            if !Lods::read(&m, last).valid() || !matches!(back, RET_09A0_PASS2 | RET_09A0_END | RET_0A38_END) {
+            if !Lods::read(&m, last).valid()
+                || !matches!(back, RET_09A0_PASS2 | RET_09A0_END | RET_0A38_END)
+            {
                 return false;
             }
             if gpu.is_some() && !(gpu::region_ok(last) && gpu::region_ok(top)) {
@@ -300,7 +369,11 @@ fn exec(entry: u32, top: u32, mem: &mut [u8; 16384], kick: &mut dyn FnMut(&[u128
             m.isw(RETURN_SAVE, 1, ret(entry + 0x20));
             border_normals(&mut m, last, top);
             let mat = m.matrix(top.wrapping_add(0x80));
-            let src = if entry == 0x0c48 { last } else { top.wrapping_add(NORMALS) };
+            let src = if entry == 0x0c48 {
+                last
+            } else {
+                top.wrapping_add(NORMALS)
+            };
             project_xy(&mut m, &mat, src, uv2, 0x40);
             draw(&mut m, last, uv2, kick, gpu.as_deref_mut());
             // The draw returns through qw511.x (the previous call's).
@@ -327,7 +400,11 @@ fn draw_patch(m: &mut Mem, patch: u16, uv: u16, ret: u16, kick: &mut dyn FnMut(&
             let basis = m.ilw(BASIS + l - 4, 0);
             for (k, (u, v)) in edge_params(e, l).enumerate() {
                 let p = bezier(&c, m.ld(basis.wrapping_add(u)), m.ld(basis.wrapping_add(v)));
-                m.st_mask(patch.wrapping_add(e.outer + (k as u16 + 1) * e.stride), p, 0b1110);
+                m.st_mask(
+                    patch.wrapping_add(e.outer + (k as u16 + 1) * e.stride),
+                    p,
+                    0b1110,
+                );
             }
         }
     }
@@ -355,7 +432,8 @@ fn coefficients(m: &Mem, patch: u16) -> [V; 16] {
 /// The bicubic at basis rows `u`, `v`: `R_j = C[4j..4j+4]·u`, `P = R·v`
 /// (0x2338).
 fn bezier(c: &[V; 16], u: V, v: V) -> V {
-    let r: [V; 4] = std::array::from_fn(|j| xform(&[c[4 * j], c[4 * j + 1], c[4 * j + 2], c[4 * j + 3]], u));
+    let r: [V; 4] =
+        std::array::from_fn(|j| xform(&[c[4 * j], c[4 * j + 1], c[4 * j + 2], c[4 * j + 3]], u));
     xform(&r, v)
 }
 
@@ -409,7 +487,11 @@ fn border_normals(m: &mut Mem, last: u16, top: u16) {
             let n = msub(acc, [e1[1], e1[2], e1[0], 0], [p[2], p[0], p[1], 0]);
             let n = [n[0], n[1], n[2], p[3]];
             // ERLENG: 1/|n| on the EFU (double precision, then rounded).
-            let (x, y, z) = (float::to_f64(n[0]), float::to_f64(n[1]), float::to_f64(n[2]));
+            let (x, y, z) = (
+                float::to_f64(n[0]),
+                float::to_f64(n[1]),
+                float::to_f64(n[2]),
+            );
             let r = float::efu(1.0 / (x * x + y * y + z * z).sqrt());
             m.st_mask(out(k), mul(n, bc(r)), 0b1110);
         }
@@ -432,8 +514,14 @@ fn draw(m: &mut Mem, pos: u16, uv: u16, kick: &mut dyn FnMut(&[u128]), gpu: Gpu)
             m.isw(*slot, 0, nloop | EOP);
             strips.packet(*slot);
             for s in ss {
-                let verts: Vec<Vertex> =
-                    s.offsets.iter().map(|&o| Vertex { pos: pos.wrapping_add(o), uv: uv.wrapping_add(o) }).collect();
+                let verts: Vec<Vertex> = s
+                    .offsets
+                    .iter()
+                    .map(|&o| Vertex {
+                        pos: pos.wrapping_add(o),
+                        uv: uv.wrapping_add(o),
+                    })
+                    .collect();
                 strips.strip(&verts);
             }
         }
@@ -459,8 +547,14 @@ fn draw(m: &mut Mem, pos: u16, uv: u16, kick: &mut dyn FnMut(&[u128]), gpu: Gpu)
     for (slot, _, strips) in &packets {
         let mut out = slot + 1;
         for s in strips {
-            let verts: Vec<Vertex> =
-                s.offsets.iter().map(|&o| Vertex { pos: pos.wrapping_add(o), uv: uv.wrapping_add(o) }).collect();
+            let verts: Vec<Vertex> = s
+                .offsets
+                .iter()
+                .map(|&o| Vertex {
+                    pos: pos.wrapping_add(o),
+                    uv: uv.wrapping_add(o),
+                })
+                .collect();
             let mark = |i: usize| s.short.map(|short| zipper_mark(short, i));
             emit_strip(m, &r, &mut clip, &verts, &mut out, Rgba::Keep, &mark, kick);
         }
@@ -481,7 +575,14 @@ fn pass2_st(m: &mut Mem, top: u16, ret: u16, kick: &mut dyn FnMut(&[u128]), gpu:
         for (slot, _, ss) in packets(lods) {
             strips.packet(slot);
             for s in &ss {
-                let verts: Vec<Vertex> = s.offsets.iter().map(|&o| Vertex { pos: 0, uv: uv2.wrapping_add(o) }).collect();
+                let verts: Vec<Vertex> = s
+                    .offsets
+                    .iter()
+                    .map(|&o| Vertex {
+                        pos: 0,
+                        uv: uv2.wrapping_add(o),
+                    })
+                    .collect();
                 strips.strip(&verts);
             }
         }
@@ -489,7 +590,12 @@ fn pass2_st(m: &mut Mem, top: u16, ret: u16, kick: &mut dyn FnMut(&[u128]), gpu:
         return;
     }
     for (slot, _, strips) in packets(lods) {
-        let addrs = strips.iter().flat_map(|s| s.offsets.iter().map(|&o| uv2.wrapping_add(o)).collect::<Vec<_>>());
+        let addrs = strips.iter().flat_map(|s| {
+            s.offsets
+                .iter()
+                .map(|&o| uv2.wrapping_add(o))
+                .collect::<Vec<_>>()
+        });
         rewrite_st(m, slot + 1, addrs);
         kick(&m.gif_packet(slot));
     }
@@ -502,6 +608,8 @@ mod tests {
     /// Replays sampled calls (`BEZIER_DUMP`, from `SSX3_VERIFY_BEZIER_DUMP`).
     #[test]
     fn dumped_calls() {
-        crate::bezier::dump::replay(1, &|e, t, i, m, k| run(e, t, i, m, &mut VuState::default(), k));
+        crate::bezier::dump::replay(1, &|e, t, i, m, k| {
+            run(e, t, i, m, &mut VuState::default(), k)
+        });
     }
 }

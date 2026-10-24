@@ -58,7 +58,10 @@ impl Source for BlobSource {
 
     fn read_at(&mut self, off: u64, buf: &mut [u8]) -> std::io::Result<()> {
         let err = |e: JsValue| std::io::Error::other(format!("{e:?}"));
-        let part = self.blob.slice_with_f64_and_f64(off as f64, (off + buf.len() as u64) as f64).map_err(err)?;
+        let part = self
+            .blob
+            .slice_with_f64_and_f64(off as f64, (off + buf.len() as u64) as f64)
+            .map_err(err)?;
         let ab = self.reader.read_as_array_buffer(&part).map_err(err)?;
         let a = js_sys::Uint8Array::new(&ab);
         if a.length() as usize != buf.len() {
@@ -119,7 +122,12 @@ mod vu_pool {
             i32.set_index(4, (HEADER + INPUTS + STORE) as i32);
             i32.set_index(5, ARENA as i32);
             i32.set_index(8, (HEADER + INPUTS) as i32);
-            Some(Pool { sab, i32, u8, store: Default::default() })
+            Some(Pool {
+                sab,
+                i32,
+                u8,
+                store: Default::default(),
+            })
         }
 
         /// [`ssx3_render::vujob::SharedStore`]: data under `key`, appended
@@ -141,7 +149,9 @@ mod vu_pool {
                 self.i32.set_index(6, s.generation);
             }
             let o = s.bytes.len() as u32;
-            self.u8.subarray(HEADER + INPUTS + o, HEADER + INPUTS + o + b.len() as u32).copy_from(&b);
+            self.u8
+                .subarray(HEADER + INPUTS + o, HEADER + INPUTS + o + b.len() as u32)
+                .copy_from(&b);
             s.bytes.extend_from_slice(&b);
             s.at.insert(key, o);
             self.i32.set_index(7, s.bytes.len() as i32);
@@ -236,7 +246,11 @@ mod vu_pool {
 /// The largest 4:3 box in a `w`×`h` canvas (whole pixels).
 fn box43(w: u32, h: u32) -> (f32, f32) {
     let (w, h) = (w as f32, h as f32);
-    let (bw, bh) = if w / h > 4.0 / 3.0 { (h * 4.0 / 3.0, h) } else { (w, w * 3.0 / 4.0) };
+    let (bw, bh) = if w / h > 4.0 / 3.0 {
+        (h * 4.0 / 3.0, h)
+    } else {
+        (w, w * 3.0 / 4.0)
+    };
     (bw.floor().max(64.0), bh.floor().max(64.0))
 }
 
@@ -283,14 +297,24 @@ fn now_ms() -> f64 {
 /// the number of VU helper workers the page will start (0: none; needs
 /// cross-origin isolation for the shared buffer).
 #[wasm_bindgen]
-pub async fn start(canvas: web_sys::OffscreenCanvas, iso: web_sys::Blob, helpers: u32) -> Result<Game, JsValue> {
+pub async fn start(
+    canvas: web_sys::OffscreenCanvas,
+    iso: web_sys::Blob,
+    helpers: u32,
+) -> Result<Game, JsValue> {
     console_error_panic_hook::set_once();
     let blob = Arc::new(SendBlob(iso));
     iso::set_opener(Box::new(move || {
-        let reader = web_sys::FileReaderSync::new().map_err(|e| std::io::Error::other(format!("FileReaderSync: {e:?}")))?;
-        Ok(Box::new(BlobSource { blob: blob.0.clone(), reader }) as Box<dyn Source>)
+        let reader = web_sys::FileReaderSync::new()
+            .map_err(|e| std::io::Error::other(format!("FileReaderSync: {e:?}")))?;
+        Ok(Box::new(BlobSource {
+            blob: blob.0.clone(),
+            reader,
+        }) as Box<dyn Source>)
     }));
-    let ctx = ssx3_ps2::gpu::init_context().await.ok_or("WebGPU is not available")?;
+    let ctx = ssx3_ps2::gpu::init_context()
+        .await
+        .ok_or("WebGPU is not available")?;
     let (w, h) = (canvas.width().max(64), canvas.height().max(64));
     let surface = ctx
         .instance
@@ -311,23 +335,35 @@ pub async fn start(canvas: web_sys::OffscreenCanvas, iso: web_sys::Blob, helpers
         color_space: Default::default(),
     };
     surface.configure(&ctx.device, &config);
-    let shader = ctx.device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("blit"), source: wgpu::ShaderSource::Wgsl(BLIT.into()) });
-    let pipeline = ctx.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("blit"),
-        layout: None,
-        vertex: wgpu::VertexState { module: &shader, entry_point: Some("vs"), buffers: &[], compilation_options: Default::default() },
-        fragment: Some(wgpu::FragmentState {
-            module: &shader,
-            entry_point: Some("fs"),
-            targets: &[Some(view_format.into())],
-            compilation_options: Default::default(),
-        }),
-        primitive: Default::default(),
-        depth_stencil: None,
-        multisample: Default::default(),
-        multiview_mask: None,
-        cache: None,
-    });
+    let shader = ctx
+        .device
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("blit"),
+            source: wgpu::ShaderSource::Wgsl(BLIT.into()),
+        });
+    let pipeline = ctx
+        .device
+        .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("blit"),
+            layout: None,
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs"),
+                targets: &[Some(view_format.into())],
+                compilation_options: Default::default(),
+            }),
+            primitive: Default::default(),
+            depth_stencil: None,
+            multisample: Default::default(),
+            multiview_mask: None,
+            cache: None,
+        });
     let sampler = ctx.device.create_sampler(&wgpu::SamplerDescriptor {
         mag_filter: wgpu::FilterMode::Linear,
         min_filter: wgpu::FilterMode::Linear,
@@ -399,7 +435,11 @@ impl Game {
         self.ms_frame += now_ms() - t0;
         let frames = ssx3_ps2::m!(self.cpu).sched.frames;
         if frames % 300 == 0 {
-            log(&format!("[{:6.1}s] {}", (now_ms() - self.started) / 1e3, game::status(&self.cpu)));
+            log(&format!(
+                "[{:6.1}s] {}",
+                (now_ms() - self.started) / 1e3,
+                game::status(&self.cpu)
+            ));
             log(&format!(
                 "  last 300 frames: {:.2} ms per frame in run_frame, {:.2} ms in present; {}; {}",
                 self.ms_frame / 300.0,
@@ -411,7 +451,10 @@ impl Game {
             self.ms_present = 0.0;
         }
         if !alive {
-            log(&format!("halted: {:?}", ssx3_ps2::m!(self.cpu).kernel.halted));
+            log(&format!(
+                "halted: {:?}",
+                ssx3_ps2::m!(self.cpu).kernel.halted
+            ));
         }
         alive
     }
@@ -431,21 +474,33 @@ impl Game {
     }
 
     fn present_image(&mut self) {
-        let Some((view, _, _)) = self.gfx.present_view() else { return };
+        let Some((view, _, _)) = self.gfx.present_view() else {
+            return;
+        };
         let frame = match self.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(f) | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
+            wgpu::CurrentSurfaceTexture::Success(f)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
             _ => {
                 self.surface.configure(&self.device, &self.config);
                 return;
             }
         };
-        let target = frame.texture.create_view(&wgpu::TextureViewDescriptor { format: Some(self.view_format), ..Default::default() });
+        let target = frame.texture.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(self.view_format),
+            ..Default::default()
+        });
         let bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("blit"),
             layout: &self.pipeline.get_bind_group_layout(0),
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
             ],
         });
         let mut enc = self.device.create_command_encoder(&Default::default());
@@ -456,7 +511,10 @@ impl Game {
                     view: &target,
                     depth_slice: None,
                     resolve_target: None,
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Store },
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
                 })],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
@@ -466,7 +524,14 @@ impl Game {
             // The 4:3 image, as large as fits, centred.
             let (cw, ch) = (self.config.width as f32, self.config.height as f32);
             let (w, h) = box43(self.config.width, self.config.height);
-            pass.set_viewport(((cw - w) / 2.0).floor(), ((ch - h) / 2.0).floor(), w, h, 0.0, 1.0);
+            pass.set_viewport(
+                ((cw - w) / 2.0).floor(),
+                ((ch - h) / 2.0).floor(),
+                w,
+                h,
+                0.0,
+                1.0,
+            );
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &bg, &[]);
             pass.draw(0..3, 0..1);

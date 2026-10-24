@@ -864,7 +864,9 @@ fn mip_setup(gs: &mut Gs) {
     setup_frame(gs);
     for (l, base) in [0x2000u32, 0x2100, 0x2200].into_iter().enumerate() {
         let n = 16 >> l;
-        let data: Vec<u8> = (0..n * n).flat_map(|_| MIP_COLORS[l].to_le_bytes()).collect();
+        let data: Vec<u8> = (0..n * n)
+            .flat_map(|_| MIP_COLORS[l].to_le_bytes())
+            .collect();
         upload(gs, base, 1, PSMCT32, 0, 0, n, n, &data);
     }
     let miptbp1 = 0x2100u64 | 1 << 14 | 0x2200u64 << 20 | 1 << 34;
@@ -911,19 +913,34 @@ fn mipmap_level_selection_lcm() {
     let mut gs = Gs::new();
     mip_setup(&mut gs);
     // NEAREST_MIPMAP_NEAREST, LOD = K.
-    assert_eq!(mip_sprite(&mut gs, tex1(true, 2, 2, 0, 16), 1.0, true), MIP_COLORS[1]);
-    assert_eq!(mip_sprite(&mut gs, tex1(true, 2, 2, 0, 24), 1.0, true), MIP_COLORS[2]);
+    assert_eq!(
+        mip_sprite(&mut gs, tex1(true, 2, 2, 0, 16), 1.0, true),
+        MIP_COLORS[1]
+    );
+    assert_eq!(
+        mip_sprite(&mut gs, tex1(true, 2, 2, 0, 24), 1.0, true),
+        MIP_COLORS[2]
+    );
     // LOD clamps to MXL.
-    assert_eq!(mip_sprite(&mut gs, tex1(true, 1, 2, 0, 80), 1.0, true), MIP_COLORS[1]);
+    assert_eq!(
+        mip_sprite(&mut gs, tex1(true, 1, 2, 0, 80), 1.0, true),
+        MIP_COLORS[1]
+    );
     // LOD <= 0 magnifies level 0.
-    assert_eq!(mip_sprite(&mut gs, tex1(true, 2, 2, 0, -16), 1.0, true), MIP_COLORS[0]);
+    assert_eq!(
+        mip_sprite(&mut gs, tex1(true, 2, 2, 0, -16), 1.0, true),
+        MIP_COLORS[0]
+    );
     // MIPMAP_LINEAR blends floor(LOD) and the next level by the fraction.
     let got = mip_sprite(&mut gs, tex1(true, 2, 3, 0, 8), 1.0, true);
     assert_eq!(got, mix(MIP_COLORS[0], MIP_COLORS[1], 128));
     let got = mip_sprite(&mut gs, tex1(true, 2, 5, 0, 20), 1.0, true);
     assert_eq!(got, mix(MIP_COLORS[1], MIP_COLORS[2], 64));
     // Without a mipmap filter (MMIN 1) level 0 is used whatever the LOD.
-    assert_eq!(mip_sprite(&mut gs, tex1(true, 2, 1, 0, 32), 1.0, true), MIP_COLORS[0]);
+    assert_eq!(
+        mip_sprite(&mut gs, tex1(true, 2, 1, 0, 32), 1.0, true),
+        MIP_COLORS[0]
+    );
 }
 
 #[test]
@@ -931,10 +948,22 @@ fn mipmap_lod_from_q() {
     let mut gs = Gs::new();
     mip_setup(&mut gs);
     // LOD = log2(1/Q) << L + K: Q = 1/4 -> 2; Q = 1/2, L = 1 -> 2; K shifts.
-    assert_eq!(mip_sprite(&mut gs, tex1(false, 2, 2, 0, 0), 0.25, false), MIP_COLORS[2]);
-    assert_eq!(mip_sprite(&mut gs, tex1(false, 2, 2, 1, 0), 0.5, false), MIP_COLORS[2]);
-    assert_eq!(mip_sprite(&mut gs, tex1(false, 2, 2, 0, -16), 0.25, false), MIP_COLORS[1]);
-    assert_eq!(mip_sprite(&mut gs, tex1(false, 2, 2, 0, 0), 1.0, false), MIP_COLORS[0]);
+    assert_eq!(
+        mip_sprite(&mut gs, tex1(false, 2, 2, 0, 0), 0.25, false),
+        MIP_COLORS[2]
+    );
+    assert_eq!(
+        mip_sprite(&mut gs, tex1(false, 2, 2, 1, 0), 0.5, false),
+        MIP_COLORS[2]
+    );
+    assert_eq!(
+        mip_sprite(&mut gs, tex1(false, 2, 2, 0, -16), 0.25, false),
+        MIP_COLORS[1]
+    );
+    assert_eq!(
+        mip_sprite(&mut gs, tex1(false, 2, 2, 0, 0), 1.0, false),
+        MIP_COLORS[0]
+    );
 }
 
 #[test]
@@ -1025,10 +1054,18 @@ fn path3_unmask_pulse_releases_one_packet() {
     assert_eq!(texel(&gs, 0x100), 0);
     gs.set_path3_mask(false);
     gs.set_path3_mask(true);
-    assert_eq!(texel(&gs, 0x100), 0x6666_6666, "first texture for the first batch");
+    assert_eq!(
+        texel(&gs, 0x100),
+        0x6666_6666,
+        "first texture for the first batch"
+    );
     gs.set_path3_mask(false);
     gs.set_path3_mask(true);
-    assert_eq!(texel(&gs, 0x100), 0x7777_7777, "second texture for the next batch");
+    assert_eq!(
+        texel(&gs, 0x100),
+        0x7777_7777,
+        "second texture for the next batch"
+    );
     assert_eq!(gs.path3_pending(), 0);
     // Left unmasked, the VIF moving on lets everything flow.
     gs.path3_dma(&upload_packets(0x100, 0x1234_5678));

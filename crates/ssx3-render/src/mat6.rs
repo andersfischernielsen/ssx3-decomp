@@ -102,7 +102,21 @@ pub struct VuState {}
 pub fn implemented(entry: u32) -> bool {
     matches!(
         entry,
-        0x00 | 0x398 | 0x10 | 0x258 | 0x20 | 0xcb8 | 0x30 | 0xb58 | 0x40 | 0x7d8 | 0x50 | 0x7f8 | 0x60 | 0x80 | 0x70 | 0x1150
+        0x00 | 0x398
+            | 0x10
+            | 0x258
+            | 0x20
+            | 0xcb8
+            | 0x30
+            | 0xb58
+            | 0x40
+            | 0x7d8
+            | 0x50
+            | 0x7f8
+            | 0x60
+            | 0x80
+            | 0x70
+            | 0x1150
     )
 }
 
@@ -152,7 +166,9 @@ impl Mem<'_> {
     }
     fn ld(&self, a: u16) -> V {
         let o = Self::off(a);
-        std::array::from_fn(|l| u32::from_le_bytes(self.0[o + 4 * l..o + 4 * l + 4].try_into().unwrap()))
+        std::array::from_fn(|l| {
+            u32::from_le_bytes(self.0[o + 4 * l..o + 4 * l + 4].try_into().unwrap())
+        })
     }
     /// Store the lanes of `v` selected by `mask` (bit 3 = x .. bit 0 = w).
     fn st_mask(&mut self, a: u16, v: V, mask: u8) {
@@ -176,7 +192,13 @@ impl Mem<'_> {
         let n = 1024u32;
         let mut q = a as u32 & (n - 1);
         let mut out = Vec::new();
-        let read = |q: u32| -> u128 { u128::from_le_bytes(self.0[q as usize * 16..q as usize * 16 + 16].try_into().unwrap()) };
+        let read = |q: u32| -> u128 {
+            u128::from_le_bytes(
+                self.0[q as usize * 16..q as usize * 16 + 16]
+                    .try_into()
+                    .unwrap(),
+            )
+        };
         loop {
             let tag = read(q);
             out.push(tag);
@@ -302,17 +324,29 @@ impl Batch {
     fn read(m: &Mem, top: u16) -> Self {
         let n_sub = m.ilw(top.wrapping_add(1), 0);
         let subs = top.wrapping_add(2);
-        Batch { subs, n_sub, verts: subs.wrapping_add(n_sub) }
+        Batch {
+            subs,
+            n_sub,
+            verts: subs.wrapping_add(n_sub),
+        }
     }
     /// The sub-strip vertex counts, or None when the original loops would
     /// not end (no sub-strips, a strip shorter than `min`) or the output
     /// (`qw_per_vertex` per vertex after the tag at TOP+0xb4) would overlap
     /// the input (`in_per_vertex` qwords per vertex).
-    fn counts(&self, m: &Mem, min: u16, in_per_vertex: u32, qw_per_vertex: u32) -> Option<Vec<u16>> {
+    fn counts(
+        &self,
+        m: &Mem,
+        min: u16,
+        in_per_vertex: u32,
+        qw_per_vertex: u32,
+    ) -> Option<Vec<u16>> {
         if self.n_sub == 0 || self.n_sub > OUT {
             return None;
         }
-        let counts: Vec<u16> = (0..self.n_sub).map(|i| m.ilw(self.subs.wrapping_add(i), 0)).collect();
+        let counts: Vec<u16> = (0..self.n_sub)
+            .map(|i| m.ilw(self.subs.wrapping_add(i), 0))
+            .collect();
         if counts.iter().any(|&c| c < min || c > 0x3ff) {
             return None;
         }
@@ -361,7 +395,11 @@ impl Lit {
         let l = &self.lights;
         let sq = mul(n, n);
         // OPMULA n, n then MADD.xyz + vf0·vf0: (yz, zx, xy).
-        let cross = madd(mul([n[1], n[2], n[0], 0], [n[2], n[0], n[1], 0]), ZERO, ZERO);
+        let cross = madd(
+            mul([n[1], n[2], n[0], 0], [n[2], n[0], n[1], 0]),
+            ZERO,
+            ZERO,
+        );
         let mut acc = mul(l[0], bc(ONE));
         acc = madd(acc, l[1], bc(sq[0]));
         acc = madd(acc, l[2], bc(sq[1]));
@@ -432,7 +470,10 @@ fn draw(m: &mut Mem, top: u16, skin: Skin, kick: &mut dyn FnMut(&[u128])) -> boo
             hist = ((hist << 6) | judged) & 0xff_ffff;
             m.st(dst, stq);
             m.st(dst.wrapping_add(1), rgba);
-            m.st(dst.wrapping_add(2), [xyz[0], xyz[1], xyz[2], adc_word(hist & 0x3_ffff != 0)]);
+            m.st(
+                dst.wrapping_add(2),
+                [xyz[0], xyz[1], xyz[2], adc_word(hist & 0x3_ffff != 0)],
+            );
             src = src.wrapping_add(3);
             dst = dst.wrapping_add(3);
         }
@@ -467,7 +508,11 @@ fn env_pass(m: &mut Mem, top: u16, kick: &mut dyn FnMut(&[u128])) -> bool {
         // from ENV_ROT.
         let er = rot.wrapping_add(ENV_ROT.wrapping_sub(RAW_ROT));
         let er: [V; 3] = std::array::from_fn(|i| m.ld(er.wrapping_add(i as u16)));
-        let st = madd(xform3(&er, itof15(m.ld(v.wrapping_add(1)))), bc(ONE), bc(HALF));
+        let st = madd(
+            xform3(&er, itof15(m.ld(v.wrapping_add(1)))),
+            bc(ONE),
+            bc(HALF),
+        );
         let stq = out.wrapping_add(1 + 3 * k);
         let q = m.ld(stq)[3];
         m.st_mask(stq, mul(st, bc(q)), 0b1100);
@@ -534,7 +579,9 @@ fn morph(m: &mut Mem, top: u16) -> bool {
     }
     let h = m.ld(top.wrapping_add(MORPH));
     let w = mul(h, bc(h[1]))[0];
-    let first_pos = top.wrapping_add(m.ilw(top.wrapping_add(1), 0)).wrapping_add(4);
+    let first_pos = top
+        .wrapping_add(m.ilw(top.wrapping_add(1), 0))
+        .wrapping_add(4);
     let entries = top.wrapping_add(MORPH + 2);
     // The original loads entry k's target before it stores entry k-1's
     // result: keep one result pending.
@@ -665,7 +712,11 @@ fn tag_regs_are(t: V, nreg: u32, regs: u64) -> bool {
     let r = t[2] as u64 | (t[3] as u64) << 32;
     let mask = (1u64 << (4 * (nreg - 1))) - 1;
     let last = (r >> (4 * (nreg - 1))) & 0xf;
-    n == nreg && (t[1] >> 26) & 3 == 0 && r & mask == regs && r >> (4 * nreg) == 0 && matches!(last, 4 | 5)
+    n == nreg
+        && (t[1] >> 26) & 3 == 0
+        && r & mask == regs
+        && r >> (4 * nreg) == 0
+        && matches!(last, 4 | 5)
 }
 
 /// Triangles of the strips with `counts` vertices, as a triangle list (the
@@ -691,7 +742,13 @@ fn culled_strip_indices(counts: &[u16]) -> (Vec<u32>, u32) {
 /// not handle (XYZF2 tags).
 /// `kept`: the renderer keeps a draw's vertex records (`GpuCall::split`):
 /// they are left out.
-pub fn plan_gpu(entry: u32, top: u32, _itop: u32, kept: bool, mem: &mut [u8; 16384]) -> Option<Vec<crate::gpu::GpuCall>> {
+pub fn plan_gpu(
+    entry: u32,
+    top: u32,
+    _itop: u32,
+    kept: bool,
+    mem: &mut [u8; 16384],
+) -> Option<Vec<crate::gpu::GpuCall>> {
     let top = (top & 0x3ff) as u16;
     let mut m = Mem(mem);
     match entry {
@@ -703,8 +760,28 @@ pub fn plan_gpu(entry: u32, top: u32, _itop: u32, kept: bool, mem: &mut [u8; 163
     }
 }
 
-fn gpu_call(program: crate::gpu::Program, tag: u128, u: [[u32; 4]; crate::gpu::UNIFORM_QWORDS], data: Vec<[u32; 4]>, (indices, index_mode): (Vec<u32>, u32), alpha_max: f32, link: crate::gpu::Link) -> crate::gpu::GpuCall {
-    crate::gpu::GpuCall { program, pre: Vec::new(), tag, uniforms: u, data, indices, index_mode, alpha_max, link, split: None, mesh_key: None }
+fn gpu_call(
+    program: crate::gpu::Program,
+    tag: u128,
+    u: [[u32; 4]; crate::gpu::UNIFORM_QWORDS],
+    data: Vec<[u32; 4]>,
+    (indices, index_mode): (Vec<u32>, u32),
+    alpha_max: f32,
+    link: crate::gpu::Link,
+) -> crate::gpu::GpuCall {
+    crate::gpu::GpuCall {
+        program,
+        pre: Vec::new(),
+        tag,
+        uniforms: u,
+        data,
+        indices,
+        index_mode,
+        alpha_max,
+        link,
+        split: None,
+        mesh_key: None,
+    }
 }
 
 fn plan_draw(m: &mut Mem, top: u16, skin: Skin, kept: bool) -> Option<Vec<crate::gpu::GpuCall>> {
@@ -731,7 +808,9 @@ fn plan_draw(m: &mut Mem, top: u16, skin: Skin, kept: bool) -> Option<Vec<crate:
     data.extend((0..4 * nb).map(|i| m.ld(BONES + i)));
     data.extend((0..3 * nb).map(|i| m.ld(RAW_ROT + i)));
     if !kept {
-        let in_window = |bone: u16, rot: u16| bone.wrapping_sub(BONES) < 4 * nb && rot.wrapping_sub(RAW_ROT) < 3 * nb;
+        let in_window = |bone: u16, rot: u16| {
+            bone.wrapping_sub(BONES) < 4 * nb && rot.wrapping_sub(RAW_ROT) < 3 * nb
+        };
         let mut src = batch.verts;
         for j in counts.iter().flat_map(|&n| 0..n) {
             let uv = m.ld(src);
@@ -754,13 +833,25 @@ fn plan_draw(m: &mut Mem, top: u16, skin: Skin, kept: bool) -> Option<Vec<crate:
     // Alpha: the SH sum's .w, clamped (|n| ≈ 1: each term at most |L|).
     let l = |i: u16| f32::from_bits(m.ld(LIGHTS + i)[3]);
     let bound = l(0) + (1..10).map(|i| l(i).abs()).sum::<f32>() * 1.25;
-    let alpha_max = if bound.is_finite() { bound.clamp(0.0, 255.0).floor() } else { 255.0 };
+    let alpha_max = if bound.is_finite() {
+        bound.clamp(0.0, 255.0).floor()
+    } else {
+        255.0
+    };
     let out = top.wrapping_add(OUT);
     m.st(out, [GPU_DRAW_MARK, total, tag[0], 0]);
     let mut u = [[0u32; 4]; crate::gpu::UNIFORM_QWORDS];
     u[gpu_skin::VERTS] = [first, total, rot_off, 0];
     let link = crate::gpu::Link::Source(out as u32);
-    let mut call = gpu_call(crate::gpu::Program::Mat6Skin, tag_u128(tag), u, data, culled_strip_indices(&counts), alpha_max, link);
+    let mut call = gpu_call(
+        crate::gpu::Program::Mat6Skin,
+        tag_u128(tag),
+        u,
+        data,
+        culled_strip_indices(&counts),
+        alpha_max,
+        link,
+    );
     // (The vertex records are the input's as it came.)
     call.split = Some(first);
     call.mesh_key = Some(0);
@@ -777,8 +868,15 @@ fn plan_env(m: &mut Mem, top: u16) -> Option<Vec<crate::gpu::GpuCall>> {
     let (n_sub, total) = (header[0] as u16, header[3] as u16);
     let batch = Batch::read(m, top);
     // (The draw's strips: still the input at TOP.)
-    let counts: Option<Vec<u16>> = (n_sub <= OUT).then(|| (0..n_sub).map(|i| m.ilw(batch.subs.wrapping_add(i), 0)).collect());
-    let ok = counts.as_ref().is_some_and(|c| c.iter().map(|&c| c as u32).sum::<u32>() == total as u32) && mark[1] == total as u32;
+    let counts: Option<Vec<u16>> = (n_sub <= OUT).then(|| {
+        (0..n_sub)
+            .map(|i| m.ilw(batch.subs.wrapping_add(i), 0))
+            .collect()
+    });
+    let ok = counts
+        .as_ref()
+        .is_some_and(|c| c.iter().map(|&c| c as u32).sum::<u32>() == total as u32)
+        && mark[1] == total as u32;
     let Some(counts) = counts.filter(|_| ok && total >= 3) else {
         // Not the draw this mark is from (never seen): draw nothing rather
         // than let the CPU pass read a GPU draw's missing output.
@@ -801,7 +899,15 @@ fn plan_env(m: &mut Mem, top: u16) -> Option<Vec<crate::gpu::GpuCall>> {
     u[gpu_skin::INFO] = [1, data.len() as u32, 0, 0];
     data.extend_from_slice(&offs);
     let link = crate::gpu::Link::Reuse(out as u32);
-    Some(vec![gpu_call(crate::gpu::Program::Mat6Skin, tag_u128(tag), u, data, culled_strip_indices(&counts), 0.0, link)])
+    Some(vec![gpu_call(
+        crate::gpu::Program::Mat6Skin,
+        tag_u128(tag),
+        u,
+        data,
+        culled_strip_indices(&counts),
+        0.0,
+        link,
+    )])
 }
 
 fn plan_shadow(m: &mut Mem, top: u16) -> Option<Vec<crate::gpu::GpuCall>> {
@@ -838,7 +944,15 @@ fn plan_shadow(m: &mut Mem, top: u16) -> Option<Vec<crate::gpu::GpuCall>> {
     m.st(top.wrapping_add(OUT), tag);
     let u = [[0u32; 4]; crate::gpu::UNIFORM_QWORDS];
     // (The colour is the GS's RGBAQ register: its alpha is not known here.)
-    Some(vec![gpu_call(crate::gpu::Program::Mat6Shadow, tag_u128(tag), u, data, (indices, 0), 255.0, crate::gpu::Link::None)])
+    Some(vec![gpu_call(
+        crate::gpu::Program::Mat6Shadow,
+        tag_u128(tag),
+        u,
+        data,
+        (indices, 0),
+        255.0,
+        crate::gpu::Link::None,
+    )])
 }
 
 /// Debug (`crate::gpu::check`): the shaders' formulas (`vs_mat6_skin`,
@@ -854,16 +968,28 @@ pub fn check_gpu(call: &crate::gpu::GpuCall, gif: &[u128]) -> Option<String> {
     let d = &call.data;
     let fv = |i: u32| -> [f32; 4] { d[i as usize].map(f32::from_bits) };
     let shadow = call.program == Program::Mat6Shadow;
-    let info = if shadow { d[0] } else { call.uniforms[gpu_skin::VERTS] };
+    let info = if shadow {
+        d[0]
+    } else {
+        call.uniforms[gpu_skin::VERTS]
+    };
     let first = info[0];
     let per = if shadow { 1 } else { 3 };
     let n = info[1] as usize;
     if gif.len() != 1 + per * n {
-        return Some(format!("mat6: kick of {} qwords for {n} vertices", gif.len()));
+        return Some(format!(
+            "mat6: kick of {} qwords for {n} vertices",
+            gif.len()
+        ));
     }
     let lane = |q: u128, l: u32| (q >> (32 * l)) as u32;
     let xform = |cols: u32, p: [f32; 4]| -> [f32; 4] {
-        std::array::from_fn(|l| fv(cols)[l] * p[0] + fv(cols + 1)[l] * p[1] + fv(cols + 2)[l] * p[2] + fv(cols + 3)[l] * p[3])
+        std::array::from_fn(|l| {
+            fv(cols)[l] * p[0]
+                + fv(cols + 1)[l] * p[1]
+                + fv(cols + 2)[l] * p[2]
+                + fv(cols + 3)[l] * p[3]
+        })
     };
     let clip = |k: u32| -> [f32; 4] {
         if shadow {
@@ -872,14 +998,21 @@ pub fn check_gpu(call: &crate::gpu::GpuCall, gif: &[u128]) -> Option<String> {
             xform(d[v as usize][3] & 0x7fff_ffff, [p[0], p[1], p[2], 1.0])
         } else {
             let v = first + 3 * k;
-            xform(gpu_skin::D_TABLES as u32 + d[v as usize][2] - BONES as u32, fv(v + 2))
+            xform(
+                gpu_skin::D_TABLES as u32 + d[v as usize][2] - BONES as u32,
+                fv(v + 2),
+            )
         }
     };
     let inside = |c: [f32; 4]| {
         let q = 1.0 / c[3];
         (0..3).all(|l| (c[l] * q).abs() <= (c[3] * q).abs())
     };
-    let (scale, off) = if shadow { (fv(1), fv(2)) } else { (fv(11), fv(12)) };
+    let (scale, off) = if shadow {
+        (fv(1), fv(2))
+    } else {
+        (fv(11), fv(12))
+    };
     let mut bad = Vec::new();
     let mut note = |s: String| {
         if bad.len() < 3 {
@@ -888,12 +1021,22 @@ pub fn check_gpu(call: &crate::gpu::GpuCall, gif: &[u128]) -> Option<String> {
     };
     let mut checked = vec![false; n];
     for t in call.expanded_indices().chunks(3) {
-        let (k, corners) = if shadow { (t[2], [t[0], t[1], t[2]]) } else { (t[0] >> 2, [(t[0] >> 2) - 2, (t[0] >> 2) - 1, t[0] >> 2]) };
+        let (k, corners) = if shadow {
+            (t[2], [t[0], t[1], t[2]])
+        } else {
+            (t[0] >> 2, [(t[0] >> 2) - 2, (t[0] >> 2) - 1, t[0] >> 2])
+        };
         let kept = shadow || corners.iter().all(|&v| inside(clip(v)));
         let xyz_w = lane(gif[per * k as usize + per], 3);
-        let adc = if shadow { xyz_w != 0 } else { xyz_w == 0xffff_8000 };
+        let adc = if shadow {
+            xyz_w != 0
+        } else {
+            xyz_w == 0xffff_8000
+        };
         if kept == adc {
-            note(format!("triangle at v{k}: shader draws {kept}, program ADC {adc}"));
+            note(format!(
+                "triangle at v{k}: shader draws {kept}, program ADC {adc}"
+            ));
         }
         if !kept {
             continue;
@@ -905,12 +1048,27 @@ pub fn check_gpu(call: &crate::gpu::GpuCall, gif: &[u128]) -> Option<String> {
             let c = clip(v);
             let q = 1.0 / c[3];
             // (FTOI4 saturates.)
-            let sx: [f32; 3] = std::array::from_fn(|l| ((off[l] * c[3] + scale[l] * c[l]) * q * 16.0).clamp(-2147483648.0, 2147483647.0));
+            let sx: [f32; 3] = std::array::from_fn(|l| {
+                ((off[l] * c[3] + scale[l] * c[l]) * q * 16.0).clamp(-2147483648.0, 2147483647.0)
+            });
             let o = 1 + per * v as usize;
             let xyz = gif[o + per - 1];
-            let want = [lane(xyz, 0) as i32 as f32, lane(xyz, 1) as i32 as f32, lane(xyz, 2) as i32 as f32];
+            let want = [
+                lane(xyz, 0) as i32 as f32,
+                lane(xyz, 1) as i32 as f32,
+                lane(xyz, 2) as i32 as f32,
+            ];
             // (z = offset·w + scale·z cancels: rounding at the offset's scale.)
-            let ok_xy = (0..3).all(|l| (sx[l] - want[l]).abs() <= 2.0 + 1e-4 * want[l].abs() + if l == 2 { 16.0 * off[2].abs() * 2.5e-7 } else { 0.0 });
+            let ok_xy = (0..3).all(|l| {
+                (sx[l] - want[l]).abs()
+                    <= 2.0
+                        + 1e-4 * want[l].abs()
+                        + if l == 2 {
+                            16.0 * off[2].abs() * 2.5e-7
+                        } else {
+                            0.0
+                        }
+            });
             if !ok_xy {
                 note(format!("v{v}: xyz {sx:?} want {want:?}"));
             }
@@ -919,17 +1077,49 @@ pub fn check_gpu(call: &crate::gpu::GpuCall, gif: &[u128]) -> Option<String> {
             }
             let a = first + 3 * v;
             let uv = d[a as usize];
-            let nr: [f32; 3] = std::array::from_fn(|l| d[a as usize + 1][l] as i32 as f32 / 32768.0);
+            let nr: [f32; 3] =
+                std::array::from_fn(|l| d[a as usize + 1][l] as i32 as f32 / 32768.0);
             let r = info[2] + uv[3] - RAW_ROT as u32;
-            let nn: [f32; 3] = std::array::from_fn(|l| fv(r)[l] * nr[0] + fv(r + 1)[l] * nr[1] + fv(r + 2)[l] * nr[2]);
-            let terms = [1.0, nn[0] * nn[0], nn[1] * nn[1], nn[2] * nn[2], nn[0] * nn[1], nn[2] * nn[0], nn[1] * nn[2], nn[0], nn[1], nn[2]];
-            let col: [f32; 4] = std::array::from_fn(|l| (0..10).map(|i| fv(1 + i)[l] * terms[i as usize]).sum::<f32>().clamp(0.0, 255.0).floor());
-            let st = [uv[0] as i32 as f32 / 4096.0 * q, uv[1] as i32 as f32 / 4096.0 * q, q];
-            let got_st = [f32::from_bits(lane(gif[o], 0)), f32::from_bits(lane(gif[o], 1)), f32::from_bits(lane(gif[o], 3))];
+            let nn: [f32; 3] = std::array::from_fn(|l| {
+                fv(r)[l] * nr[0] + fv(r + 1)[l] * nr[1] + fv(r + 2)[l] * nr[2]
+            });
+            let terms = [
+                1.0,
+                nn[0] * nn[0],
+                nn[1] * nn[1],
+                nn[2] * nn[2],
+                nn[0] * nn[1],
+                nn[2] * nn[0],
+                nn[1] * nn[2],
+                nn[0],
+                nn[1],
+                nn[2],
+            ];
+            let col: [f32; 4] = std::array::from_fn(|l| {
+                (0..10)
+                    .map(|i| fv(1 + i)[l] * terms[i as usize])
+                    .sum::<f32>()
+                    .clamp(0.0, 255.0)
+                    .floor()
+            });
+            let st = [
+                uv[0] as i32 as f32 / 4096.0 * q,
+                uv[1] as i32 as f32 / 4096.0 * q,
+                q,
+            ];
+            let got_st = [
+                f32::from_bits(lane(gif[o], 0)),
+                f32::from_bits(lane(gif[o], 1)),
+                f32::from_bits(lane(gif[o], 3)),
+            ];
             let got_col: [f32; 4] = std::array::from_fn(|l| lane(gif[o + 1], l as u32) as f32);
             let close = |a: f32, b: f32| (a - b).abs() <= 1e-3 * (1.0 + b.abs());
-            if !(0..3).all(|l| close(st[l], got_st[l])) || !(0..4).all(|l| (col[l] - got_col[l]).abs() <= 2.0) {
-                note(format!("v{v}: stq {st:?} want {got_st:?} | rgba {col:?} want {got_col:?}"));
+            if !(0..3).all(|l| close(st[l], got_st[l]))
+                || !(0..4).all(|l| (col[l] - got_col[l]).abs() <= 2.0)
+            {
+                note(format!(
+                    "v{v}: stq {st:?} want {got_st:?} | rgba {col:?} want {got_col:?}"
+                ));
             }
         }
     }
@@ -950,7 +1140,14 @@ mod tests {
         let mut mem = Box::new([0u8; 16384]);
         Mem(&mut mem).st(LIGHTS, [f(1.0), f(0.5), f(-2.0), f(0.0)]);
         Mem(&mut mem).st(LIGHTS + 9, [f(0.25), 0, 0, f(1.0)]);
-        assert!(run(0x1150, 0, 0, &mut mem, &mut VuState::default(), &mut |_| panic!("no kick")));
+        assert!(run(
+            0x1150,
+            0,
+            0,
+            &mut mem,
+            &mut VuState::default(),
+            &mut |_| panic!("no kick")
+        ));
         let m = Mem(&mut mem);
         assert_eq!(m.ld(LIGHTS), [f(255.0), f(127.5), f(-510.0), 0]);
         assert_eq!(m.ld(LIGHTS + 9), [f(63.75), 0, 0, f(255.0)]);
@@ -990,17 +1187,33 @@ mod tests {
     fn draw_one_strip() {
         let (mut mem, top) = draw_input();
         let mut kicks = Vec::new();
-        assert!(run(0x398, top as u32, 0, &mut mem, &mut VuState::default(), &mut |p| kicks.push(p.to_vec())));
+        assert!(run(
+            0x398,
+            top as u32,
+            0,
+            &mut mem,
+            &mut VuState::default(),
+            &mut |p| kicks.push(p.to_vec())
+        ));
         assert_eq!(kicks.len(), 1);
         let k = &kicks[0];
         assert_eq!(k.len(), 10);
         let lane = |v: u128, l: u32| (v >> (32 * l)) as u32;
         // ADC on the first two vertices only.
-        assert_eq!((lane(k[3], 3), lane(k[6], 3), lane(k[9], 3)), (0xffff_8000, 0xffff_8000, 0x7fff));
+        assert_eq!(
+            (lane(k[3], 3), lane(k[6], 3), lane(k[9], 3)),
+            (0xffff_8000, 0xffff_8000, 0x7fff)
+        );
         // STQ = (0.5, 1.0, 1, 1) · q with q = 1.
-        assert_eq!((lane(k[1], 0), lane(k[1], 1), lane(k[1], 3)), (f(0.5), f(1.0), f(1.0)));
+        assert_eq!(
+            (lane(k[1], 0), lane(k[1], 1), lane(k[1], 3)),
+            (f(0.5), f(1.0), f(1.0))
+        );
         // RGBA: L0 clamped to 0..255.
-        assert_eq!((lane(k[2], 0), lane(k[2], 1), lane(k[2], 2), lane(k[2], 3)), (100, 255, 0, 128));
+        assert_eq!(
+            (lane(k[2], 0), lane(k[2], 1), lane(k[2], 2), lane(k[2], 3)),
+            (100, 255, 0, 128)
+        );
         // XY of vertex 0: (0 · 320 + 2368, 0.5 · -224 + 2272) in 12.4.
         assert_eq!((lane(k[3], 0), lane(k[3], 1)), (2368 * 16, 2160 * 16));
         // The same strip through the per-batch entry (bone/rotation from the
@@ -1008,7 +1221,14 @@ mod tests {
         let (mut mem2, top) = draw_input();
         Mem(&mut mem2).st(top + 1, [1, BONES as u32, RAW_ROT as u32, 3]);
         let mut kicks2 = Vec::new();
-        assert!(run(0x50, top as u32, 0, &mut mem2, &mut VuState::default(), &mut |p| kicks2.push(p.to_vec())));
+        assert!(run(
+            0x50,
+            top as u32,
+            0,
+            &mut mem2,
+            &mut VuState::default(),
+            &mut |p| kicks2.push(p.to_vec())
+        ));
         assert_eq!(kicks2[0][1..], kicks[0][1..]);
     }
 
@@ -1032,11 +1252,18 @@ mod tests {
                 if j < 3 {
                     c[j as usize] = f(0.8 + 0.4 * rnd());
                 }
-                c[3] = f(if j == 3 { 1.0 + rnd() } else { (rnd() - 0.5) * 0.2 });
+                c[3] = f(if j == 3 {
+                    1.0 + rnd()
+                } else {
+                    (rnd() - 0.5) * 0.2
+                });
                 m.st(BONES + 4 * i + j, c);
                 if j < 3 {
                     m.st(RAW_ROT + 3 * i + j, c);
-                    m.st(ENV_ROT + 3 * i + j, std::array::from_fn(|l| if l < 3 { f((rnd() - 0.5) * 0.8) } else { 0 }));
+                    m.st(
+                        ENV_ROT + 3 * i + j,
+                        std::array::from_fn(|l| if l < 3 { f((rnd() - 0.5) * 0.8) } else { 0 }),
+                    );
                 }
             }
         }
@@ -1045,28 +1272,60 @@ mod tests {
         // (The bone count the setup left, as the packet uploads it.)
         m.st(BONE_COUNT, [bones as u32, 0, 0, 0]);
         for i in 0..10 {
-            m.st(LIGHTS + i, std::array::from_fn(|_| f(if i == 0 { 60.0 + 80.0 * rnd() } else { (rnd() - 0.5) * 120.0 })));
+            m.st(
+                LIGHTS + i,
+                std::array::from_fn(|_| {
+                    f(if i == 0 {
+                        60.0 + 80.0 * rnd()
+                    } else {
+                        (rnd() - 0.5) * 120.0
+                    })
+                }),
+            );
         }
         m.st(CTX2_TAG, [3 | 0x8000, 0x302e_4000, 0x412, 0]);
         let top = 0x100u16;
-        let counts: Vec<u16> = (0..1 + (rnd() * 4.0) as u16).map(|_| 3 + (rnd() * 7.0) as u16).collect();
+        let counts: Vec<u16> = (0..1 + (rnd() * 4.0) as u16)
+            .map(|_| 3 + (rnd() * 7.0) as u16)
+            .collect();
         let total: u16 = counts.iter().sum();
-        let tag = if shadow { [total as u32 | 0x8000, 0x1022_4000, 4, 0] } else { [total as u32 | 0x8000, 0x302e_4000, 0x412, 0] };
+        let tag = if shadow {
+            [total as u32 | 0x8000, 0x1022_4000, 4, 0]
+        } else {
+            [total as u32 | 0x8000, 0x302e_4000, 0x412, 0]
+        };
         m.st(top, tag);
-        m.st(top + 1, [counts.len() as u32, (BONES + 4) as u32, (RAW_ROT + 3) as u32, total as u32]);
+        m.st(
+            top + 1,
+            [
+                counts.len() as u32,
+                (BONES + 4) as u32,
+                (RAW_ROT + 3) as u32,
+                total as u32,
+            ],
+        );
         for (i, &c) in counts.iter().enumerate() {
             m.st(top + 2 + i as u16, [c as u32, 0, 0, 0]);
         }
         let verts = top + 2 + counts.len() as u16;
         for k in 0..total {
             let b = (rnd() * bones as f32) as u16;
-            let p: [u32; 4] = std::array::from_fn(|l| f(if l == 3 { 1.0 } else { (rnd() - 0.5) * 2.6 }));
+            let p: [u32; 4] =
+                std::array::from_fn(|l| f(if l == 3 { 1.0 } else { (rnd() - 0.5) * 2.6 }));
             if shadow {
                 m.st(verts + k, [p[0], p[1], p[2], (BONES + 4 * b) as u32]);
             } else {
                 let a = verts + 3 * k;
                 let uv = |x: f32| ((x * 4096.0) as i32) as u32;
-                m.st(a, [uv(rnd() * 2.0), uv(rnd() * 2.0 - 1.0), (BONES + 4 * b) as u32, (RAW_ROT + 3 * b) as u32]);
+                m.st(
+                    a,
+                    [
+                        uv(rnd() * 2.0),
+                        uv(rnd() * 2.0 - 1.0),
+                        (BONES + 4 * b) as u32,
+                        (RAW_ROT + 3 * b) as u32,
+                    ],
+                );
                 let n: [u32; 4] = std::array::from_fn(|_| ((rnd() - 0.5) * 60000.0) as i32 as u32);
                 m.st(a + 1, n);
                 m.st(a + 2, p);
@@ -1085,7 +1344,14 @@ mod tests {
                 let (mem, top, counts) = random_batch(seed * 7919, shadow);
                 let mut cpu = mem.clone();
                 let mut gif = Vec::new();
-                assert!(run(entry, top as u32, 0, &mut cpu, &mut VuState::default(), &mut |p| gif.extend_from_slice(p)));
+                assert!(run(
+                    entry,
+                    top as u32,
+                    0,
+                    &mut cpu,
+                    &mut VuState::default(),
+                    &mut |p| gif.extend_from_slice(p)
+                ));
                 let mut gpu = mem.clone();
                 let calls = plan_gpu(entry, top as u32, 0, false, &mut gpu).expect("planned");
                 assert_eq!(calls.len(), 1);
@@ -1093,7 +1359,10 @@ mod tests {
                 let tris: usize = counts.iter().map(|&c| c as usize - 2).sum();
                 assert_eq!(calls[0].draw_len(), 3 * tris);
                 if !shadow {
-                    culled += tris - (0..total).filter(|k| (gif[3 + 3 * k] >> 96) as u32 == 0x7fff).count();
+                    culled += tris
+                        - (0..total)
+                            .filter(|k| (gif[3 + 3 * k] >> 96) as u32 == 0x7fff)
+                            .count();
                 }
                 if let Some(e) = check_gpu(&calls[0], &gif) {
                     panic!("seed {seed} entry {entry:#x}: {e}");
@@ -1124,7 +1393,14 @@ mod tests {
         let (mem, top, _) = random_batch(5, false);
         let mut cpu = mem.clone();
         let mut gif = Vec::new();
-        assert!(run(0x398, top as u32, 0, &mut cpu, &mut VuState::default(), &mut |p| gif.extend_from_slice(p)));
+        assert!(run(
+            0x398,
+            top as u32,
+            0,
+            &mut cpu,
+            &mut VuState::default(),
+            &mut |p| gif.extend_from_slice(p)
+        ));
         let mut gpu = mem.clone();
         let mut calls = plan_gpu(0x398, top as u32, 0, false, &mut gpu).unwrap();
         let v = calls[0].uniforms[gpu_skin::VERTS][0] as usize;
@@ -1138,7 +1414,14 @@ mod tests {
     #[test]
     fn env_pass_without_gpu_draw_is_not_planned() {
         let (mut mem, top, _) = random_batch(9, false);
-        assert!(run(0x398, top as u32, 0, &mut mem, &mut VuState::default(), &mut |_| {}));
+        assert!(run(
+            0x398,
+            top as u32,
+            0,
+            &mut mem,
+            &mut VuState::default(),
+            &mut |_| {}
+        ));
         let before = mem.clone();
         assert!(plan_gpu(0x30, top as u32, 0, false, &mut mem).is_none());
         assert_eq!(mem[..], before[..]);
@@ -1149,7 +1432,14 @@ mod tests {
         let (mut mem, top) = draw_input();
         Mem(&mut mem).st(top + 2, [2, 0, 0, 0]);
         let before = mem.clone();
-        assert!(!run(0x398, top as u32, 0, &mut mem, &mut VuState::default(), &mut |_| {}));
+        assert!(!run(
+            0x398,
+            top as u32,
+            0,
+            &mut mem,
+            &mut VuState::default(),
+            &mut |_| {}
+        ));
         assert_eq!(mem[..], before[..]);
     }
 
@@ -1199,18 +1489,25 @@ mod tests {
             seed ^= seed << 17;
             seed
         };
-        let rd = |d: &[u8], q: usize, l: usize| u32::from_le_bytes(d[q * 16 + 4 * l..q * 16 + 4 * l + 4].try_into().unwrap());
+        let rd = |d: &[u8], q: usize, l: usize| {
+            u32::from_le_bytes(d[q * 16 + 4 * l..q * 16 + 4 * l + 4].try_into().unwrap())
+        };
         let (mut ok, mut bad, mut ni, mut adc) = (0, 0, 0, 0);
         let mut shown = 0;
         for path in paths.split(',') {
             let bytes = std::fs::read(path).unwrap();
             for r in Record::read_all(&bytes) {
-                if r.hash != HASH || r.unit != 1 || !matches!(r.pc, 0x00 | 0x398 | 0x50 | 0x7f8 | 0x20 | 0xcb8) {
+                if r.hash != HASH
+                    || r.unit != 1
+                    || !matches!(r.pc, 0x00 | 0x398 | 0x50 | 0x7f8 | 0x20 | 0xcb8)
+                {
                     continue;
                 }
                 let top = r.top as usize & 0x3ff;
                 let n_sub = rd(&r.data_in, top + 1, 0) as usize & 0xffff;
-                let total: usize = (0..n_sub).map(|i| rd(&r.data_in, top + 2 + i, 0) as usize & 0xffff).sum();
+                let total: usize = (0..n_sub)
+                    .map(|i| rd(&r.data_in, top + 2 + i, 0) as usize & 0xffff)
+                    .sum();
                 let shadow = matches!(r.pc, 0x20 | 0xcb8);
                 let (stride, pos) = if shadow { (1, 0) } else { (3, 2) };
                 if total == 0 {
@@ -1241,7 +1538,9 @@ mod tests {
                         let mut vu = rr.setup();
                         vu.run(5_000_000, &mut |_| {});
                         let out = &vu.data;
-                        adc += (0..total).filter(|k| rd(out, (top + 0xb4 + 3 + 3 * k) & 0x3ff, 3) == 0xffff_8000).count();
+                        adc += (0..total)
+                            .filter(|k| rd(out, (top + 0xb4 + 3 + 3 * k) & 0x3ff, 3) == 0xffff_8000)
+                            .count();
                         let mut r2 = rr.clone();
                         r2.data_in = vu.data.clone();
                         r2.start = ssx3_vu::vu::capture::ArchState::of(&vu);
@@ -1278,7 +1577,14 @@ mod tests {
         }
         let mut mem: Box<[u8; 16384]> = r.data_in.clone().into_boxed_slice().try_into().unwrap();
         let mut kicks: Vec<Vec<u128>> = Vec::new();
-        if !run(r.pc, r.top, r.itop, &mut mem, &mut VuState::default(), &mut |p| kicks.push(p.to_vec())) {
+        if !run(
+            r.pc,
+            r.top,
+            r.itop,
+            &mut mem,
+            &mut VuState::default(),
+            &mut |p| kicks.push(p.to_vec()),
+        ) {
             return None;
         }
         let ok = kicks == ref_kicks && mem[..] == vu.data[..];
@@ -1289,23 +1595,48 @@ mod tests {
         Some(ok)
     }
 
-    fn report(r: &Record, ref_kicks: &[Vec<u128>], ref_mem: &[u8], kicks: &[Vec<u128>], mem: &[u8]) {
-        eprintln!("--- mismatch: entry {:#06x} top {:#x} frame {} seq {}", r.pc, r.top, r.frame, r.seq);
+    fn report(
+        r: &Record,
+        ref_kicks: &[Vec<u128>],
+        ref_mem: &[u8],
+        kicks: &[Vec<u128>],
+        mem: &[u8],
+    ) {
+        eprintln!(
+            "--- mismatch: entry {:#06x} top {:#x} frame {} seq {}",
+            r.pc, r.top, r.frame, r.seq
+        );
         if kicks.len() != ref_kicks.len() {
-            eprintln!("  kick count native {} translated {}", kicks.len(), ref_kicks.len());
+            eprintln!(
+                "  kick count native {} translated {}",
+                kicks.len(),
+                ref_kicks.len()
+            );
         }
         for (i, (a, b)) in kicks.iter().zip(ref_kicks).enumerate() {
             if a != b {
                 eprintln!("  kick {i}: len native {} translated {}", a.len(), b.len());
-                for (j, (x, y)) in a.iter().zip(b).enumerate().filter(|(_, (x, y))| x != y).take(8) {
+                for (j, (x, y)) in a
+                    .iter()
+                    .zip(b)
+                    .enumerate()
+                    .filter(|(_, (x, y))| x != y)
+                    .take(8)
+                {
                     eprintln!("    qw {j}: native {x:032x} translated {y:032x}");
                 }
                 break;
             }
         }
-        let diff: Vec<usize> = (0..1024).filter(|q| mem[q * 16..q * 16 + 16] != ref_mem[q * 16..q * 16 + 16]).collect();
+        let diff: Vec<usize> = (0..1024)
+            .filter(|q| mem[q * 16..q * 16 + 16] != ref_mem[q * 16..q * 16 + 16])
+            .collect();
         for &q in diff.iter().take(8) {
-            eprintln!("  mem qw {q:#05x}: native {:02x?} translated {:02x?}", &mem[q * 16..q * 16 + 16], &ref_mem[q * 16..q * 16 + 16]);
+            eprintln!(
+                "  mem qw {q:#05x}: native {:02x?} translated {:02x?}",
+                &mem[q * 16..q * 16 + 16],
+                &ref_mem[q * 16..q * 16 + 16]
+            );
         }
         if !diff.is_empty() {
             eprintln!("  {} qwords of data memory differ", diff.len());

@@ -41,8 +41,15 @@ fn ad_block(writes: &[(u8, Option<u64>)]) -> Option<Event> {
         return None;
     }
     let mut q = vec![writes.len() as u128 | 0x1000_0000_0000_8000 | 0xe << 64];
-    q.extend(writes.iter().map(|&(r, v)| v.unwrap_or(0) as u128 | (r as u128) << 64));
-    Some(Event::Direct(crate::vif::Direct { qwords: q, native: true }))
+    q.extend(
+        writes
+            .iter()
+            .map(|&(r, v)| v.unwrap_or(0) as u128 | (r as u128) << 64),
+    );
+    Some(Event::Direct(crate::vif::Direct {
+        qwords: q,
+        native: true,
+    }))
 }
 
 /// `{0, 0, 0, UNPACK V4-32 n at addr}` (absolute) and its data.
@@ -100,7 +107,10 @@ impl Native<'_> {
 
     /// The matrix record `i`'s qword at `off`.
     fn rec(&self, i: i32, off: u32) -> u128 {
-        qw(self.m, self.defer + dm::MATRICES + 0x180 * i.max(0) as u32 + off)
+        qw(
+            self.m,
+            self.defer + dm::MATRICES + 0x180 * i.max(0) as u32 + off,
+        )
     }
 
     /// A CALL of a w3 packet (slot 124 lighting, slot 101 shadow header).
@@ -124,9 +134,22 @@ impl Native<'_> {
     fn material_setup(&mut self, d: &Draw, cache: &mut ChainCache) {
         let ty = d.state.material.type_id();
         let w3 = d.state.raw[3] & 0x3fff_ffff;
-        let mode = if d.setup.program { 0 } else if d.setup.matrix { 1 } else if d.setup.param { 2 } else { return };
+        let mode = if d.setup.program {
+            0
+        } else if d.setup.matrix {
+            1
+        } else if d.setup.param {
+            2
+        } else {
+            return;
+        };
         let mi = d.matrix as i32;
-        let set_a = |n: &Self| -> Vec<u128> { [0x80, 0x90, 0xa0, 0xb0, 0xc0, 0xd0].iter().map(|&o| n.rec(mi, o)).collect() };
+        let set_a = |n: &Self| -> Vec<u128> {
+            [0x80, 0x90, 0xa0, 0xb0, 0xc0, 0xd0]
+                .iter()
+                .map(|&o| n.rec(mi, o))
+                .collect()
+        };
         if mode == 0 {
             // The program chain: STCYCL 4,4; STMASK 0; STMOD 0; BASE;
             // OFFSET; MPG (not modelled).
@@ -165,7 +188,12 @@ impl Native<'_> {
             (2, 0) => {
                 let mut d11 = set_a(self);
                 d11.push(0x80 | 0x80 << 32 | 0x80 << 64 | 0x80 << 96);
-                d11.extend([0x302e_4000_0000_8000 | 0x412 << 64, S2, 0x302e_c000_0000_8000 | 0x412 << 64, 0x312e_c000_0000_8000 | 0x412 << 64]);
+                d11.extend([
+                    0x302e_4000_0000_8000 | 0x412 << 64,
+                    S2,
+                    0x302e_c000_0000_8000 | 0x412 << 64,
+                    0x312e_c000_0000_8000 | 0x412 << 64,
+                ]);
                 self.vif.write(&unpack(0, &d11));
                 let x = word(self.m, 0x004a_30f0 + 0x1158);
                 let mut blk: Vec<u128> = Vec::new();
@@ -177,7 +205,14 @@ impl Native<'_> {
                 let r3 = f(0x28a8);
                 let r5 = f(0x28a4);
                 let r7 = f(0x28a0);
-                blk.extend([k(0x200, 0x212), r3 | r3 << 32 | r3 << 64 | r3 << 96, k(0x204, 0x216), r5 | r5 << 32 | r5 << 64 | r5 << 96, k(0x20a, 0x21c), r7 | r7 << 32 | r7 << 64 | r7 << 96]);
+                blk.extend([
+                    k(0x200, 0x212),
+                    r3 | r3 << 32 | r3 << 64 | r3 << 96,
+                    k(0x204, 0x216),
+                    r5 | r5 << 32 | r5 << 64 | r5 << 96,
+                    k(0x20a, 0x21c),
+                    r7 | r7 << 32 | r7 << 64 | r7 << 96,
+                ]);
                 self.vif.write(&unpack(0x200, &blk));
             }
             (3, 0) => {
@@ -192,7 +227,10 @@ impl Native<'_> {
                 self.vif.write(&unpack(0, &a));
             }
             (4, 0) => {
-                let mut a: Vec<u128> = [0x80, 0x90, 0xa0, 0xb0].iter().map(|&o| self.rec(mi, o)).collect();
+                let mut a: Vec<u128> = [0x80, 0x90, 0xa0, 0xb0]
+                    .iter()
+                    .map(|&o| self.rec(mi, o))
+                    .collect();
                 a.push(z16(self.rec(mi, 0xc0)));
                 a.push(z16(self.rec(mi, 0xd0)));
                 let (x, y) = (self.rec(mi, 0x40) as u32, (self.rec(mi, 0x50) >> 32) as u32);
@@ -200,7 +238,10 @@ impl Native<'_> {
                 self.vif.write(&unpack(0, &a));
             }
             (4, 1) => {
-                let mut a: Vec<u128> = [0x120, 0x130, 0x140, 0x150].iter().map(|&o| self.rec(mi, o)).collect();
+                let mut a: Vec<u128> = [0x120, 0x130, 0x140, 0x150]
+                    .iter()
+                    .map(|&o| self.rec(mi, o))
+                    .collect();
                 a.push(z16(self.rec(mi, 0x160)));
                 a.push(z16(self.rec(mi, 0x170)));
                 let (x, y) = (self.rec(mi, 0xe0) as u32, (self.rec(mi, 0xf0) >> 32) as u32);
@@ -209,14 +250,19 @@ impl Native<'_> {
             }
             (5, 0 | 1) => {
                 let (x, y) = (self.rec(mi, 0xe0) as u32, (self.rec(mi, 0xf0) >> 32) as u32);
-                let a = [z16(self.rec(mi, 0x160)), z16(self.rec(mi, 0x170)), x as u128 | (y as u128) << 32];
+                let a = [
+                    z16(self.rec(mi, 0x160)),
+                    z16(self.rec(mi, 0x170)),
+                    x as u128 | (y as u128) << 32,
+                ];
                 self.vif.write(&unpack(0, &a));
             }
             (6, 0 | 1) => {
                 let a = set_a(self);
                 self.vif.write(&unpack(0, &a));
                 // Env rows: C (0x4ffb80) times the world matrix rows.
-                let c: [crate::mat4::V; 4] = std::array::from_fn(|i| v4(qw(self.m, 0x004f_fb80 + 16 * i as u32)));
+                let c: [crate::mat4::V; 4] =
+                    std::array::from_fn(|i| v4(qw(self.m, 0x004f_fb80 + 16 * i as u32)));
                 let mut rows = vec![S2];
                 for i in 0..3 {
                     let w = v4(self.rec(mi, 16 * i));
@@ -248,7 +294,8 @@ impl Native<'_> {
             let Some(id) = d.tex[ctx] else { continue };
             let id = id as i32;
             let info = word(self.m, tm + 8 + 4 * id as u32);
-            let tex0 = |n: &Self| word(n.m, info + 0x38) as u64 | (word(n.m, info + 0x3c) as u64) << 32;
+            let tex0 =
+                |n: &Self| word(n.m, info + 0x38) as u64 | (word(n.m, info + 0x3c) as u64) << 32;
             let cbp = word(self.m, info + 0x2c) as i32;
             if self.bound[ctx] == id {
                 if self.clut != id && cbp >= 0 {
@@ -290,14 +337,30 @@ impl Native<'_> {
                 let t1 = tbp + page(tw, th);
                 let t2 = t1 + page(tw >> 1, th >> 1);
                 let t3 = t2 + page(tw >> 2, th >> 2);
-                let mip1 = word(self.m, info + 0x48) as u64 | (word(self.m, info + 0x4c) as u64) << 32;
-                w.push((0x34 + ctx as u8, Some(mip1 | t1 as i64 as u64 | (t2 as i64 as u64) << 20 | (t3 as i64 as u64) << 40)));
+                let mip1 =
+                    word(self.m, info + 0x48) as u64 | (word(self.m, info + 0x4c) as u64) << 32;
+                w.push((
+                    0x34 + ctx as u8,
+                    Some(
+                        mip1 | t1 as i64 as u64
+                            | (t2 as i64 as u64) << 20
+                            | (t3 as i64 as u64) << 40,
+                    ),
+                ));
                 if mips > 3 {
                     let t4 = t3 + page(tw >> 3, th >> 3);
                     let t5 = t4 + page(tw >> 4, th >> 4);
                     let t6 = t5 + page(tw >> 5, th >> 5);
-                    let mip2 = word(self.m, info + 0x50) as u64 | (word(self.m, info + 0x54) as u64) << 32;
-                    w.push((0x36 + ctx as u8, Some(mip2 | t4 as i64 as u64 | (t5 as i64 as u64) << 20 | (t6 as i64 as u64) << 40)));
+                    let mip2 =
+                        word(self.m, info + 0x50) as u64 | (word(self.m, info + 0x54) as u64) << 32;
+                    w.push((
+                        0x36 + ctx as u8,
+                        Some(
+                            mip2 | t4 as i64 as u64
+                                | (t5 as i64 as u64) << 20
+                                | (t6 as i64 as u64) << 40,
+                        ),
+                    ));
                 }
             }
             let tex1 = word(self.m, info + 0x40) as u64 | (word(self.m, info + 0x44) as u64) << 32;
@@ -339,9 +402,18 @@ impl Native<'_> {
             }
             Cmd::Post { .. } => return None,
             cmd => {
-                let header = std::array::from_fn(|i| u128::from_le_bytes(self.vif.mem[16 * i..16 * i + 16].try_into().unwrap()));
+                let header = std::array::from_fn(|i| {
+                    u128::from_le_bytes(self.vif.mem[16 * i..16 * i + 16].try_into().unwrap())
+                });
                 let starts = cmd.starts();
-                self.push(owner, Event::Native { index: k as u32, regs: self.vif.regs, header });
+                self.push(
+                    owner,
+                    Event::Native {
+                        index: k as u32,
+                        regs: self.vif.regs,
+                        header,
+                    },
+                );
                 self.vif.skip_starts(starts);
             }
         }
@@ -378,7 +450,8 @@ impl Native<'_> {
                 2 => t = ((tag >> 32) & 0x7fff_fff0) as u32,
                 6 => return,
                 id => {
-                    self.issues.push(format!("packet end {end:#x}: tag id {id}"));
+                    self.issues
+                        .push(format!("packet end {end:#x}: tag id {id}"));
                     return;
                 }
             }
@@ -394,13 +467,20 @@ impl Native<'_> {
             return;
         };
         self.next_post[i] += 1;
-        let Cmd::Post { gif, windows, .. } = &self.direct[k].cmd else { return };
+        let Cmd::Post { gif, windows, .. } = &self.direct[k].cmd else {
+            return;
+        };
         let (gif, windows) = (gif.clone(), *windows);
         let packets = split_gif(&gif);
         self.path3_post[self.phase].extend(packets.iter().map(|_| Some(kind)));
         self.path3[self.phase].extend(packets);
         for _ in 0..windows {
-            let d = || Event::Direct(crate::vif::Direct { qwords: vec![EMPTY_TAG], native: true });
+            let d = || {
+                Event::Direct(crate::vif::Direct {
+                    qwords: vec![EMPTY_TAG],
+                    native: true,
+                })
+            };
             self.push(Owner::Post, d());
             self.push(Owner::Post, Event::MaskPath3(false));
             self.push(Owner::Post, Event::MaskPath3(true));
@@ -414,7 +494,9 @@ fn v4(q: u128) -> crate::mat4::V {
 }
 
 fn q4(v: crate::mat4::V) -> u128 {
-    v.iter().enumerate().fold(0u128, |q, (l, &x)| q | (x as u128) << (32 * l))
+    v.iter()
+        .enumerate()
+        .fold(0u128, |q, (l, &x)| q | (x as u128) << (32 * l))
 }
 
 /// GIF data as packets, each up to a tag with EOP.
@@ -442,13 +524,20 @@ fn split_gif(q: &[u128]) -> Vec<Vec<u128>> {
     out
 }
 
-
 /// Build the frame from the buckets and the captures (see the module).
-pub(super) fn build(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, direct: Arc<Vec<Recorded>>) -> Built {
+pub(super) fn build(
+    m: &dyn Mem,
+    g: u32,
+    carry: &Carry,
+    cache: &mut ChainCache,
+    direct: Arc<Vec<Recorded>>,
+) -> Built {
     let defer = word(m, g + gm::DEFER);
     let mut issues = Vec::new();
     let nm = word(m, defer + dm::NUM_MATRICES).min(dm::MAX_MATRICES);
-    let matrices: Vec<_> = (0..nm).map(|i| MatrixRecord::read(m, defer + dm::MATRICES + i * 0x180)).collect();
+    let matrices: Vec<_> = (0..nm)
+        .map(|i| MatrixRecord::read(m, defer + dm::MATRICES + i * 0x180))
+        .collect();
     let ns = word(m, defer + dm::NUM_SCISSORS).min(32);
     let scissors: Vec<[i16; 4]> = (0..32)
         .map(|i| {
@@ -493,10 +582,21 @@ pub(super) fn build(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
         issues: Vec::new(),
     };
     let default = [0u32, 4, 8, 12, 16].map(|o| word(m, addr::DEFAULT_STATE + o));
-    let mut e0 = Emitter { state: default, scissor: -1, matrix: -1, material_param: 0, regs: GsRegs::default(), zbp: word(m, g + gm::ZBP), zpsm: word(m, g + gm::ZPSM), writes: Vec::new() };
+    let mut e0 = Emitter {
+        state: default,
+        scissor: -1,
+        matrix: -1,
+        material_param: 0,
+        regs: GsRegs::default(),
+        zbp: word(m, g + gm::ZBP),
+        zpsm: word(m, g + gm::ZPSM),
+        writes: Vec::new(),
+    };
     e0.default_state(default);
     let default_writes = e0.writes;
-    let views = |base: u32, stride: u32| -> Vec<u32> { (0..num_views).map(|v| g + base + v * stride).collect() };
+    let views = |base: u32, stride: u32| -> Vec<u32> {
+        (0..num_views).map(|v| g + base + v * stride).collect()
+    };
     let mut passes: Vec<Pass> = Vec::new();
     let mut cur: Vec<Draw> = Vec::new();
     let mut phase2 = 0;
@@ -526,12 +626,19 @@ pub(super) fn build(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
                 if plan.thresholds[1] == 9 {
                     for (v, a) in views(gm::BLOOM, 0x1c).into_iter().enumerate() {
                         n.post(PostKind::Bloom);
-                        passes.push(Pass::Bloom { view: v as u8, params: core::array::from_fn(|k| word(m, a + 4 * k as u32)) });
+                        passes.push(Pass::Bloom {
+                            view: v as u8,
+                            params: core::array::from_fn(|k| word(m, a + 4 * k as u32)),
+                        });
                     }
                     for (v, a) in views(gm::COLOR_FILTER, 0x18).into_iter().enumerate() {
                         n.post(PostKind::ColorFilter);
                         let f = |k: u32| f32_at(m, a + 4 * k);
-                        passes.push(Pass::ColorFilter { view: v as u8, scale: [f(0), f(1), f(2)], offset: [f(3), f(4), f(5)] });
+                        passes.push(Pass::ColorFilter {
+                            view: v as u8,
+                            scale: [f(0), f(1), f(2)],
+                            offset: [f(3), f(4), f(5)],
+                        });
                     }
                     default_block(&mut n, &mut passes, &mut cur);
                 }
@@ -557,7 +664,10 @@ pub(super) fn build(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
                 }
                 for (v, a) in views(gm::DEPTH_FOG, 0x20).into_iter().enumerate() {
                     n.post(PostKind::DepthFog);
-                    passes.push(Pass::DepthFog { view: v as u8, params: core::array::from_fn(|k| word(m, a + 4 * k as u32)) });
+                    passes.push(Pass::DepthFog {
+                        view: v as u8,
+                        params: core::array::from_fn(|k| word(m, a + 4 * k as u32)),
+                    });
                 }
                 default_block(&mut n, &mut passes, &mut cur);
             }
@@ -575,16 +685,35 @@ pub(super) fn build(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
         zbp: word(m, g + gm::ZBP),
         zpsm: word(m, g + gm::ZPSM),
         blit: word(m, g + gm::BLIT) != 0,
-        brightness_rgba: core::array::from_fn(|k| word(m, g + gm::BRIGHTNESS_RGBA + 4 * k as u32) as i32),
+        brightness_rgba: core::array::from_fn(|k| {
+            word(m, g + gm::BRIGHTNESS_RGBA + 4 * k as u32) as i32
+        }),
         brightness: f32_at(m, g + gm::BRIGHTNESS),
-        screen_offset: [f32_at(m, g + gm::SCREEN_OFFSET), f32_at(m, g + gm::SCREEN_OFFSET + 4)],
+        screen_offset: [
+            f32_at(m, g + gm::SCREEN_OFFSET),
+            f32_at(m, g + gm::SCREEN_OFFSET + 4),
+        ],
     };
-    let views = (0..num_views).map(|v| View { screen: mat4(m, g + gm::VIEW_MATRICES + v * 0x40) }).collect();
+    let views = (0..num_views)
+        .map(|v| View {
+            screen: mat4(m, g + gm::VIEW_MATRICES + v * 0x40),
+        })
+        .collect();
     let n_draws = draws.len();
     let path3 = std::mem::take(&mut n.path3);
     let path3_post = std::mem::take(&mut n.path3_post);
     Built {
-        frame: Frame { gm: g, defer, vif_heads, gif_heads, views, matrices, scissors: scissors[..ns.max(1) as usize].to_vec(), passes, display },
+        frame: Frame {
+            gm: g,
+            defer,
+            vif_heads,
+            gif_heads,
+            views,
+            matrices,
+            scissors: scissors[..ns.max(1) as usize].to_vec(),
+            passes,
+            display,
+        },
         events: n.events,
         obs: vec![ChainObs::default(); n_draws],
         issues,
@@ -624,7 +753,10 @@ pub fn compare(walked: &Built, native: &Built, max: usize) -> Vec<String> {
                         *x &= !(0x3fffu128 | 0x3fffu128 << 20 | 0x3fffu128 << 40);
                     }
                 }
-                Event::Direct(crate::vif::Direct { qwords: q, native: false })
+                Event::Direct(crate::vif::Direct {
+                    qwords: q,
+                    native: false,
+                })
             }
             e => e.clone(),
         }
@@ -632,7 +764,13 @@ pub fn compare(walked: &Built, native: &Built, max: usize) -> Vec<String> {
     let mut out = Vec::new();
     for (i, (x, y)) in a.iter().zip(&b).enumerate() {
         if x.0 != y.0 || tex(&x.1) != tex(&y.1) {
-            out.push(format!("event {i}: walked {:?} {} / native {:?} {}", x.0, short(&x.1), y.0, short(&y.1)));
+            out.push(format!(
+                "event {i}: walked {:?} {} / native {:?} {}",
+                x.0,
+                short(&x.1),
+                y.0,
+                short(&y.1)
+            ));
             if out.len() >= max {
                 break;
             }
@@ -646,7 +784,14 @@ pub fn compare(walked: &Built, native: &Built, max: usize) -> Vec<String> {
 
 fn short(e: &Event) -> String {
     match e {
-        Event::Call(c) => format!("call {:x?} top {:#x} itop {} in {}+{}", c.entry, c.top, c.itop, c.input.len(), c.shared.as_ref().map_or(0, |s| s.len())),
+        Event::Call(c) => format!(
+            "call {:x?} top {:#x} itop {} in {}+{}",
+            c.entry,
+            c.top,
+            c.itop,
+            c.input.len(),
+            c.shared.as_ref().map_or(0, |s| s.len())
+        ),
         Event::Direct(d) => format!("gif {:x?}", &d.qwords[..d.qwords.len().min(4)]),
         e => format!("{e:?}").chars().take(80).collect(),
     }

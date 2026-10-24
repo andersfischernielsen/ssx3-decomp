@@ -28,7 +28,15 @@ fn f(c: &mut Cpu, a: u32) -> FpuF32 {
 /// `ClipTestBox` (graphics-manager slot 93): the box `min..max` (w = 1)
 /// against `matrix`: 0 inside, 1 outside, 2 straddling. The box goes on
 /// the guest stack.
-fn clip_test_box(c: &mut Cpu, gm: u32, min: u32, max: u32, matrix: Option<M>, matrix_at: u32, ret: u32) -> u32 {
+fn clip_test_box(
+    c: &mut Cpu,
+    gm: u32,
+    min: u32,
+    max: u32,
+    matrix: Option<M>,
+    matrix_at: u32,
+    ret: u32,
+) -> u32 {
     let sp = c.g[SP][0] as u32;
     let frame = sp - 0x80;
     c.g[SP][0] = frame as i32 as i64 as u64;
@@ -119,17 +127,38 @@ pub fn draw_model(c: &mut Cpu) {
     if r32(c, gp + 0x1400) != 0 || alpha.0 & 0x7fff_ffff == 0 {
         return ret(c, 10);
     }
-    let (gm, inst, textab, world) = (c.g[A0][0] as u32, c.g[A1][0] as u32, c.g[A2][0] as u32, c.g[A3][0] as u32);
+    let (gm, inst, textab, world) = (
+        c.g[A0][0] as u32,
+        c.g[A1][0] as u32,
+        c.g[A2][0] as u32,
+        c.g[A3][0] as u32,
+    );
     let (node_arg, mat2_arg, mut flags) = (c.g[T0][0] as u32, c.g[T1][0] as u32, c.g[T2][0] as u32);
     let mut groups_drawn = 0u64;
     ensure_view_matrices(c, gm, 0x0037_e2bc);
     if flags & 0x400 == 0 {
-        let mut r = clip_test_box(c, gm, inst + 0x60, inst + 0x6c, None, gm + 0x58a0, 0x0037_e330);
+        let mut r = clip_test_box(
+            c,
+            gm,
+            inst + 0x60,
+            inst + 0x6c,
+            None,
+            gm + 0x58a0,
+            0x0037_e330,
+        );
         if r == 1 {
             return ret(c, 60);
         }
         if r == 2 {
-            r = clip_test_box(c, gm, inst + 0x60, inst + 0x6c, None, gm + 0x5800, 0x0037_e3a0);
+            r = clip_test_box(
+                c,
+                gm,
+                inst + 0x60,
+                inst + 0x6c,
+                None,
+                gm + 0x5800,
+                0x0037_e3a0,
+            );
         }
         if r != 0 {
             flags |= 0x20;
@@ -147,12 +176,21 @@ pub fn draw_model(c: &mut Cpu) {
     let s = r32(c, gp + 0x2a94);
     let row = |i: u32| s + 0x10 * i;
     let desc = r32(c, inst + 0x80);
-    let chain_base = if lit { r32(c, desc + 0x24) } else { r32(c, inst + 0x98) };
+    let chain_base = if lit {
+        r32(c, desc + 0x24)
+    } else {
+        r32(c, inst + 0x98)
+    };
     let st = r32(c, gm + gmf::CUR_STATE);
     state_word(c, st, 0, !0x3c0, 0xc0);
     state_word(c, st, 3, 0xc000_0000, 0);
     let sc = f(c, inst + 0x84);
-    let scale: V = [(f(c, desc + 0x18) * sc).0, (f(c, desc + 0x1c) * sc).0, (f(c, desc + 0x20) * sc).0, vu0::ONE];
+    let scale: V = [
+        (f(c, desc + 0x18) * sc).0,
+        (f(c, desc + 0x1c) * sc).0,
+        (f(c, desc + 0x20) * sc).0,
+        vu0::ONE,
+    ];
     wv(c, row(4), &scale);
     let w = qm(c, world);
     wm(c, row(0x6c), &w);
@@ -178,8 +216,17 @@ pub fn draw_model(c: &mut Cpu) {
                 let parent = r32(c, node) as i32;
                 let local = r32(c, node + 0xc);
                 let mut l = qm(c, local);
-                l[3] = [(FpuF32(l[3][0]) * sc).0, (FpuF32(l[3][1]) * sc).0, (FpuF32(l[3][2]) * sc).0, (FpuF32(l[3][3]) * FpuF32(vu0::ONE)).0];
-                let m = if parent == -1 { l } else { vu0::mul_m(&qm(c, row(8 + 4 * parent as u32)), &l) };
+                l[3] = [
+                    (FpuF32(l[3][0]) * sc).0,
+                    (FpuF32(l[3][1]) * sc).0,
+                    (FpuF32(l[3][2]) * sc).0,
+                    (FpuF32(l[3][3]) * FpuF32(vu0::ONE)).0,
+                ];
+                let m = if parent == -1 {
+                    l
+                } else {
+                    vu0::mul_m(&qm(c, row(8 + 4 * parent as u32)), &l)
+                };
                 wm(c, row(8 + 4 * i), &m);
             }
             node_mats = row(8);
@@ -203,7 +250,8 @@ pub fn draw_model(c: &mut Cpu) {
     if env {
         // A rotation facing the model's centre (in the matrix-stack top's
         // space) from the eye.
-        let corner = |c: &mut Cpu, a: u32| -> V { [r32(c, a), r32(c, a + 4), r32(c, a + 8), vu0::ONE] };
+        let corner =
+            |c: &mut Cpu, a: u32| -> V { [r32(c, a), r32(c, a + 4), r32(c, a + 8), vu0::ONE] };
         let (lo, hi) = (corner(c, inst + 0x60), corner(c, inst + 0x6c));
         let centre = vu0::mul(&vu0::add(&lo, &hi), &[0x3f00_0000; 4]);
         let p = vu0::xform(&s74, &centre);
@@ -348,13 +396,33 @@ pub fn draw_model(c: &mut Cpu) {
             // mesh chain.
             let mut header = qwords(c, s, 4);
             header.push(q4([0, 0, 0, fl]));
-            let mut steps = vec![Step::Mask(0), Step::Cycle(0x0101), Step::Write { addr: 0, rel: true, data: header }];
+            let mut steps = vec![
+                Step::Mask(0),
+                Step::Cycle(0x0101),
+                Step::Write {
+                    addr: 0,
+                    rel: true,
+                    data: header,
+                },
+            ];
             if mat2 != 0 {
-                steps.push(Step::Write { addr: 5, rel: true, data: qwords(c, mat2, 4) });
+                steps.push(Step::Write {
+                    addr: 5,
+                    rel: true,
+                    data: qwords(c, mat2, 4),
+                });
             }
             if fl & 1 != 0 {
-                steps.push(Step::Write { addr: 9, rel: true, data: qwords(c, row(0x68), 3) });
-                steps.push(Step::Write { addr: 0xf, rel: true, data: qwords(c, light, 10) });
+                steps.push(Step::Write {
+                    addr: 9,
+                    rel: true,
+                    data: qwords(c, row(0x68), 3),
+                });
+                steps.push(Step::Write {
+                    addr: 0xf,
+                    rel: true,
+                    data: qwords(c, light, 10),
+                });
             }
             steps.push(Step::Chain(chain_base.wrapping_add(r32(c, g + 4))));
             let start = empty_packet(c, gm);
@@ -383,7 +451,8 @@ pub fn draw_model(c: &mut Cpu) {
                 state_word(c, st, 1, 0xfe7f_ffff, 0x80_0000);
                 state_word(c, st, 1, 0xffcf_ffff, 0);
                 state_word(c, st, 1, 0xfff0_0fff, 0x1_4000);
-                let fix = ((alpha * FpuF32::from_f32(128.0)).to_i32() as u32 & 0xff) << 12 & 0xf_f000;
+                let fix =
+                    ((alpha * FpuF32::from_f32(128.0)).to_i32() as u32 & 0xff) << 12 & 0xf_f000;
                 state_word(c, st, 0, 0xfff0_0fff, fix);
                 state_word(c, st, 1, 0xffff_ff83, 0x2c);
                 add_record(c, gm, start, start, true);
@@ -408,7 +477,8 @@ fn fast_bucket(c: &mut Cpu, gm: u32, base: u32, start: u32) {
     w32(c, base + 8, w2);
     let matrix = r32(c, dm + dmf::MATRIX);
     let k = base ^ (t0 as i16 as i32 as u32 | ((t1 as i16 as i32 + 2) as u32) << 16);
-    let mix = |sh: u32| -> u32 { ((((k as i32 >> sh) as u32) << 5).wrapping_add(k) as i32 >> sh) as u32 };
+    let mix =
+        |sh: u32| -> u32 { ((((k as i32 >> sh) as u32) << 5).wrapping_add(k) as i32 >> sh) as u32 };
     let hash = ((k << 5).wrapping_add(k) ^ mix(8) ^ mix(16) ^ mix(24)) & 0xff;
     let mut bucket = guest_call(c, FIND_BUCKET, &[dm, base, tex, hash, matrix], 0x0037_fe84);
     if bucket == 0 {
@@ -439,7 +509,12 @@ fn fast_bucket(c: &mut Cpu, gm: u32, base: u32, start: u32) {
 /// matrix (rows scaled by `this+0x194`), matrix 2 when given, then the
 /// active copy of its double-buffered chain.
 pub fn grid_mesh_draw(c: &mut Cpu) {
-    let (this, matrix, tex, mat2) = (c.g[A0][0] as u32, c.g[A1][0] as u32, c.g[A2][0] as u16, c.g[A3][0] as u32);
+    let (this, matrix, tex, mat2) = (
+        c.g[A0][0] as u32,
+        c.g[A1][0] as u32,
+        c.g[A2][0] as u16,
+        c.g[A3][0] as u32,
+    );
     if r32(c, this + 0x1a4) != 0 {
         w32(c, this + 0x1a4, 0);
         let b = r32(c, this + 0x1a0).wrapping_add(1) & 1;
@@ -456,9 +531,21 @@ pub fn grid_mesh_draw(c: &mut Cpu) {
     let flags = if mat2 == 0 { 0x20 } else { 0x22 };
     let mut header: Vec<u128> = m.iter().map(|r| q4(*r)).collect();
     header.push(q4([0, 0, 0, flags]));
-    let mut steps = vec![Step::Mask(0), Step::Cycle(0x0101), Step::Write { addr: 0, rel: true, data: header }];
+    let mut steps = vec![
+        Step::Mask(0),
+        Step::Cycle(0x0101),
+        Step::Write {
+            addr: 0,
+            rel: true,
+            data: header,
+        },
+    ];
     if mat2 != 0 {
-        steps.push(Step::Write { addr: 5, rel: true, data: qwords(c, mat2, 4) });
+        steps.push(Step::Write {
+            addr: 5,
+            rel: true,
+            data: qwords(c, mat2, 4),
+        });
     }
     let active = r32(c, this + 0x1a0);
     let chain = r32(c, this + 0x1ac + 4 * active);

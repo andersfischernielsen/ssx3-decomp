@@ -17,9 +17,9 @@
 
 use crate::abi;
 use crate::call::{call_ptr, guest, Callee, Frame};
+use crate::game::ai::rider::{rate_step_60, smoothing_60};
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
-use crate::game::ai::rider::{rate_step_60, smoothing_60};
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
@@ -27,9 +27,21 @@ use ssx3_ee_rt::Cpu;
 
 /// Replacements in this package: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x002f_6ac8, rider_base_record_cheat_code_input, "RiderBase_RecordCheatCodeInput"),
-    (0x0011_7400, rider_metrix_is_hud_message_active, "RiderMetrix_IsHUDMessageActive"),
-    (0x0011_7838, rider_metrix_reset_trick, "RiderMetrix_ResetTrick"),
+    (
+        0x002f_6ac8,
+        rider_base_record_cheat_code_input,
+        "RiderBase_RecordCheatCodeInput",
+    ),
+    (
+        0x0011_7400,
+        rider_metrix_is_hud_message_active,
+        "RiderMetrix_IsHUDMessageActive",
+    ),
+    (
+        0x0011_7838,
+        rider_metrix_reset_trick,
+        "RiderMetrix_ResetTrick",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -156,11 +168,19 @@ mod seq_field {
 mod callee {
     use super::{ee, Callee};
 
-    pub const RIDER_BUILD_WORLD_MATRIX: Callee =
-        Callee { addr: 0x0011_e098, f: ee::s00::Rider_BuildWorldMatrix };
+    pub const RIDER_BUILD_WORLD_MATRIX: Callee = Callee {
+        addr: 0x0011_e098,
+        f: ee::s00::Rider_BuildWorldMatrix,
+    };
     /// `FUN_0010e028` (proposed `Rider_SetHudMessage(rider, id)`).
-    pub const RIDER_SET_HUD_MESSAGE: Callee = Callee { addr: 0x0010_e028, f: ee::s00::f_0010e028 };
-    pub const RIDER_TOGGLE_STANCE: Callee = Callee { addr: 0x0011_5168, f: ee::s00::Rider_ToggleStance };
+    pub const RIDER_SET_HUD_MESSAGE: Callee = Callee {
+        addr: 0x0010_e028,
+        f: ee::s00::f_0010e028,
+    };
+    pub const RIDER_TOGGLE_STANCE: Callee = Callee {
+        addr: 0x0011_5168,
+        f: ee::s00::Rider_ToggleStance,
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -185,7 +205,14 @@ type Case = (u32, Option<(u32, Handler)>);
 /// the epilogue (`+2`, after `+1` when falling out of the last case or the
 /// switch). An entry that isn't a case label leaves the function
 /// (`jump_out`), as the generated code does.
-fn state_switch(c: &mut Cpu, this_reg: usize, field: u32, jump_table: u32, cases: &[Case], range: (u32, u32)) {
+fn state_switch(
+    c: &mut Cpu,
+    this_reg: usize,
+    field: u32,
+    jump_table: u32,
+    cases: &[Case],
+    range: (u32, u32),
+) {
     guest(c, |c| {
         c.cycles += 7;
         let frame = Frame::open(c, 0x10);
@@ -208,7 +235,8 @@ fn state_switch(c: &mut Cpu, this_reg: usize, field: u32, jump_table: u32, cases
                 return Ok(());
             };
             if let Some((obj, handler)) = case {
-                let last = cases.iter().rposition(|(_, h)| h.is_some()) == cases.iter().position(|(l, _)| *l == target as u32);
+                let last = cases.iter().rposition(|(_, h)| h.is_some())
+                    == cases.iter().position(|(l, _)| *l == target as u32);
                 c.cycles += if last { 2 } else { 4 };
                 // The call returns to the instruction after its delay slot.
                 let ret = target as u32 + 8;
@@ -242,7 +270,14 @@ pub fn rider_base_update_main_state(c: &mut Cpu) {
         (0x0011_147c, Some((0x0b0, Table(0x0013_af28)))), // Railslide
         (0x0011_148c, Some((0x110, Table(0x0013_91a8)))), // Handplant
     ];
-    state_switch(c, A1, base::MAIN_STATE, 0x0045_6b50, CASES, (0x0011_1408, 0x0011_14a0))
+    state_switch(
+        c,
+        A1,
+        base::MAIN_STATE,
+        0x0045_6b50,
+        CASES,
+        (0x0011_1408, 0x0011_14a0),
+    )
 }
 
 /// `RiderBase_PostUpdateMainState(base)` (0x1114a0): the main state's
@@ -257,34 +292,78 @@ pub fn rider_base_post_update_main_state(c: &mut Cpu) {
         (0x0011_1514, Some((0x0b0, Table(0x0013_bfa8)))), // Railslide
         (0x0011_1524, Some((0x110, Table(0x0013_9528)))), // Handplant
     ];
-    state_switch(c, A1, base::MAIN_STATE, 0x0045_6b70, CASES, (0x0011_14a0, 0x0011_1538))
+    state_switch(
+        c,
+        A1,
+        base::MAIN_STATE,
+        0x0045_6b70,
+        CASES,
+        (0x0011_14a0, 0x0011_1538),
+    )
 }
 
 /// `RiderBase_HandleSubStateInput(base, input)` (0x111728): the sub state's
 /// HandleInput with the control-input record (a1 passes through).
 pub fn rider_base_handle_sub_state_input(c: &mut Cpu) {
-    use Handler::{Direct, Table};
     use ee::s00 as s;
+    use Handler::{Direct, Table};
     const fn d(addr: u32, f: GuestFn) -> Handler {
         Direct(Callee { addr, f })
     }
     const CASES: &[Case] = &[
-        (0x0011_175c, Some((0x1c0, d(0x0013_1620, s::RiderCruiseSub_HandleInput)))),
-        (0x0011_176c, Some((0x1d0, d(0x0012_fc80, s::RiderBoardPressSub_HandleInput)))),
-        (0x0011_177c, Some((0x1f0, d(0x0012_e9b8, s::RiderPrewindSub_HandleInput)))),
-        (0x0011_178c, Some((0x200, d(0x0012_e778, s::RiderBumpSub_HandleInput)))),
-        (0x0011_179c, Some((0x210, d(0x0012_f730, s::RiderNaturalAirSub_HandleInput)))),
+        (
+            0x0011_175c,
+            Some((0x1c0, d(0x0013_1620, s::RiderCruiseSub_HandleInput))),
+        ),
+        (
+            0x0011_176c,
+            Some((0x1d0, d(0x0012_fc80, s::RiderBoardPressSub_HandleInput))),
+        ),
+        (
+            0x0011_177c,
+            Some((0x1f0, d(0x0012_e9b8, s::RiderPrewindSub_HandleInput))),
+        ),
+        (
+            0x0011_178c,
+            Some((0x200, d(0x0012_e778, s::RiderBumpSub_HandleInput))),
+        ),
+        (
+            0x0011_179c,
+            Some((0x210, d(0x0012_f730, s::RiderNaturalAirSub_HandleInput))),
+        ),
         (0x0011_17ac, Some((0x230, Table(0x0013_3308)))), // Spin
-        (0x0011_17bc, Some((0x290, d(0x0012_bf68, s::RiderGateSub_HandleInput)))),
-        (0x0011_17cc, Some((0x2b0, d(0x0013_1d30, s::RiderRailslideSub_HandleInput)))),
-        (0x0011_17dc, Some((0x2c0, d(0x0012_cb68, s::RiderWipeoutSub_HandleInput)))),
-        (0x0011_17ec, Some((0x350, d(0x0012_f398, s::RiderResetSub_HandleInput)))),
-        (0x0011_17fc, Some((0x360, d(0x0012_c678, s::RiderFinishLineSub_HandleInput)))),
+        (
+            0x0011_17bc,
+            Some((0x290, d(0x0012_bf68, s::RiderGateSub_HandleInput))),
+        ),
+        (
+            0x0011_17cc,
+            Some((0x2b0, d(0x0013_1d30, s::RiderRailslideSub_HandleInput))),
+        ),
+        (
+            0x0011_17dc,
+            Some((0x2c0, d(0x0012_cb68, s::RiderWipeoutSub_HandleInput))),
+        ),
+        (
+            0x0011_17ec,
+            Some((0x350, d(0x0012_f398, s::RiderResetSub_HandleInput))),
+        ),
+        (
+            0x0011_17fc,
+            Some((0x360, d(0x0012_c678, s::RiderFinishLineSub_HandleInput))),
+        ),
         (0x0011_180c, Some((0x370, Table(0x0013_2a30)))), // Handplant
         (0x0011_181c, Some((0x390, Table(0x0013_6508)))), // UberGrind
-        (0x0011_1824, None),                               // Void
+        (0x0011_1824, None),                              // Void
     ];
-    state_switch(c, A2, base::SUB_STATE, 0x0045_6c10, CASES, (0x0011_1728, 0x0011_1830))
+    state_switch(
+        c,
+        A2,
+        base::SUB_STATE,
+        0x0045_6c10,
+        CASES,
+        (0x0011_1728, 0x0011_1830),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -381,7 +460,8 @@ pub fn rider_metrix_is_hud_message_active(c: &mut Cpu) {
                     c.cycles += 6;
                     let mask = sx(1u32 << (msg as u32 & 31));
                     c.g[A0][0] = mask;
-                    let word = sx((bits as u32).wrapping_add(((msg as u32 & !31) as i32 >> 3) as u32));
+                    let word =
+                        sx((bits as u32).wrapping_add(((msg as u32 & !31) as i32 >> 3) as u32));
                     c.g[V0][0] = word;
                     let v = Addr(word as u32).lw(c) | mask;
                     c.g[V1][0] = v;
@@ -603,7 +683,12 @@ mod vu {
     /// A VF register.
     pub fn vf(c: &Cpu, reg: usize) -> Vec4 {
         let v = c.bus.plat.vf(reg);
-        Vec4 { x: VuF32(v[0]), y: VuF32(v[1]), z: VuF32(v[2]), w: VuF32(v[3]) }
+        Vec4 {
+            x: VuF32(v[0]),
+            y: VuF32(v[1]),
+            z: VuF32(v[2]),
+            w: VuF32(v[3]),
+        }
     }
 
     /// `lqc2 vf, addr`: load and leave the register set.
@@ -615,7 +700,12 @@ mod vu {
 
     /// Lane-wise `vmul`.
     pub fn mul(a: Vec4, b: Vec4) -> Vec4 {
-        Vec4 { x: a.x * b.x, y: a.y * b.y, z: a.z * b.z, w: a.w * b.w }
+        Vec4 {
+            x: a.x * b.x,
+            y: a.y * b.y,
+            z: a.z * b.z,
+            w: a.w * b.w,
+        }
     }
 
     /// The four-lane dot product idiom with the operands in vf3/vf5:
@@ -625,12 +715,27 @@ mod vu {
     /// Writes vf4, vf6.x and ACC.x; returns the vf4 image.
     pub fn dot4(c: &mut Cpu, a: Vec4, b: Vec4) -> Vec4 {
         let one = VuF32::ZERO + VuF32::ONE;
-        vu0_scratch::set_vf(c, 6, X, Vec4 { x: one, ..Vec4::default() });
+        vu0_scratch::set_vf(
+            c,
+            6,
+            X,
+            Vec4 {
+                x: one,
+                ..Vec4::default()
+            },
+        );
         let p = mul(a, b);
         let acc = p.x + p.y;
         let acc = VuF32::madd(acc, one, p.z);
         let sum = VuF32::madd(acc, one, p.w);
-        vu0_scratch::set_acc(c, X, Vec4 { x: acc, ..Vec4::default() });
+        vu0_scratch::set_acc(
+            c,
+            X,
+            Vec4 {
+                x: acc,
+                ..Vec4::default()
+            },
+        );
         let vf4 = Vec4 { x: sum, ..p };
         vu0_scratch::set_vf(c, 4, XYZW, vf4);
         vf4
@@ -1372,7 +1477,12 @@ pub fn rider_add_boost(c: &mut Cpu) {
                     level = sx((level as u32).wrapping_sub(1));
                 } else {
                     c.cycles += 4;
-                    sw(c, rider, rider::UBER_LEVEL, sx((level as u32).wrapping_add(1)));
+                    sw(
+                        c,
+                        rider,
+                        rider::UBER_LEVEL,
+                        sx((level as u32).wrapping_add(1)),
+                    );
                     level = sx((lw(c, rider, rider::UBER_LEVEL) as u32).wrapping_sub(1));
                 }
                 c.g[V0][0] = level;
@@ -1442,7 +1552,14 @@ mod tests {
 
     /// `check`, plus how many seeds reached a fake and how many unwound
     /// (asserted against the minimums given).
-    fn run(name: &str, gen: fn(&mut Cpu), hand: fn(&mut Cpu), seeds: u32, min: (u32, u32), setup: &dyn Fn(&mut Cpu, u32)) {
+    fn run(
+        name: &str,
+        gen: fn(&mut Cpu),
+        hand: fn(&mut Cpu),
+        seeds: u32,
+        min: (u32, u32),
+        setup: &dyn Fn(&mut Cpu, u32),
+    ) {
         check(gen, hand, seeds, setup);
         let (mut reached, mut unwound) = (0, 0);
         for seed in 0..seeds {
@@ -1453,7 +1570,10 @@ mod tests {
             unwound += (c.pc != RA) as u32;
         }
         eprintln!("{name}: {seeds} seeds, {reached} reached a fake, {unwound} unwound");
-        assert!(reached >= min.0 && unwound >= min.1, "{name}: reached {reached}, unwound {unwound}");
+        assert!(
+            reached >= min.0 && unwound >= min.1,
+            "{name}: reached {reached}, unwound {unwound}"
+        );
     }
 
     /// The game image plus a back-end library whose interfaces are fakes
@@ -1493,7 +1613,10 @@ mod tests {
         c.g[A1][0] = ptr(&mut r) as u64;
         c.bus.write32(base + field, state);
         let rider = ptr(&mut r);
-        for vb in [0x18, 0x24, 0x70, 0xa0, 0x100, 0x1b0, 0x1c0, 0x1e4, 0x1f0, 0x200, 0x224, 0x288, 0x2a4, 0x2b8, 0x340, 0x358, 0x364, 0x384, 0x398] {
+        for vb in [
+            0x18, 0x24, 0x70, 0xa0, 0x100, 0x1b0, 0x1c0, 0x1e4, 0x1f0, 0x200, 0x224, 0x288, 0x2a4,
+            0x2b8, 0x340, 0x358, 0x364, 0x384, 0x398,
+        ] {
             c.bus.write32(base + vb, rider);
         }
         c.bus.write32(rider + 0x77c, base);
@@ -1520,9 +1643,30 @@ mod tests {
     #[test]
     fn state_dispatchers() {
         for (name, gen, hand, start, field, n) in [
-            ("update_main_state", ssx3_ee::s00::f_00111408 as fn(&mut Cpu), super::rider_base_update_main_state as fn(&mut Cpu), 0x0011_1408, 0xde0, 6),
-            ("post_update_main_state", ssx3_ee::s00::f_001114a0, super::rider_base_post_update_main_state, 0x0011_14a0, 0xde0, 6),
-            ("handle_sub_state_input", ssx3_ee::s00::f_00111728, super::rider_base_handle_sub_state_input, 0x0011_1728, 0xde4, 14),
+            (
+                "update_main_state",
+                ssx3_ee::s00::f_00111408 as fn(&mut Cpu),
+                super::rider_base_update_main_state as fn(&mut Cpu),
+                0x0011_1408,
+                0xde0,
+                6,
+            ),
+            (
+                "post_update_main_state",
+                ssx3_ee::s00::f_001114a0,
+                super::rider_base_post_update_main_state,
+                0x0011_14a0,
+                0xde0,
+                6,
+            ),
+            (
+                "handle_sub_state_input",
+                ssx3_ee::s00::f_00111728,
+                super::rider_base_handle_sub_state_input,
+                0x0011_1728,
+                0xde4,
+                14,
+            ),
         ] {
             // Every state id (and out-of-range ones); seeds whose handler
             // never finishes on the test rider fall back to state 0.
@@ -1541,21 +1685,32 @@ mod tests {
                 })
                 .collect();
             eprintln!("{name}: {skipped} seeds fell back to state 0");
-            run(name, gen, hand, seeds, (seeds / 5, 10), &|c, seed| rider_base(c, seed, start, field, states[seed as usize]));
+            run(name, gen, hand, seeds, (seeds / 5, 10), &|c, seed| {
+                rider_base(c, seed, start, field, states[seed as usize])
+            });
         }
     }
 
     #[test]
     fn jump_table_miss() {
         // A corrupted jump table entry leaves through `jump_out`.
-        check(ssx3_ee::s00::f_00111408, super::rider_base_update_main_state, 50, &|c, seed| {
-            let mut r = machine(c, seed, 0x12, 1);
-            c.pc = 0x0011_1408;
-            let base = ptr(&mut r);
-            c.g[A0][0] = base as u64;
-            c.bus.write32(base + 0xde0, seed % 6);
-            put_words(c, 0x0045_6b50, &[[0x0011_1440, 0x0011_1444, 0x0011_1448, 0x0011_1450][(seed % 4) as usize]; 6]);
-        });
+        check(
+            ssx3_ee::s00::f_00111408,
+            super::rider_base_update_main_state,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x12, 1);
+                c.pc = 0x0011_1408;
+                let base = ptr(&mut r);
+                c.g[A0][0] = base as u64;
+                c.bus.write32(base + 0xde0, seed % 6);
+                put_words(
+                    c,
+                    0x0045_6b50,
+                    &[[0x0011_1440, 0x0011_1444, 0x0011_1448, 0x0011_1450][(seed % 4) as usize]; 6],
+                );
+            },
+        );
     }
 
     #[test]
@@ -1582,73 +1737,112 @@ mod tests {
 
     #[test]
     fn hud_message_active() {
-        check_events(ssx3_ee::s00::f_00117400, super::rider_metrix_is_hud_message_active, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x14, 0);
-            let m = ptr(&mut r);
-            let mode = schedule(c, &mut r, seed, 0x0011_7400);
-            c.g[A0][0] = m as u64;
-            c.g[A1][0] = (r.next_u32() % 64) as u64;
-            let n = if seed % 7 == 0 { 0 } else { r.next_u32() % 12 };
-            let list = if seed % 11 == 0 { 0 } else { ptr(&mut r) };
-            c.bus.write32(m + 0x1b0, list);
-            c.bus.write32(m + 0x1b4, if seed % 13 == 0 { (r.next_u32() | 0x8000_0000) & !0xff } else { n });
-            c.bus.write32(m + 0x1b8, r.next_u32() & r.next_u32());
-            c.bus.write32(m + 0x1bc, r.next_u32() & r.next_u32());
-            c.bus.write32(m + 0x1c0, if seed % 5 == 0 { 0 } else { r.next_u32() | 1 });
-            for i in 0..n {
-                let id = if r.next_u32() % 4 == 0 { 0x34 } else { r.next_u32() % 64 };
-                c.bus.write32(list + 0x9c * i, id);
-            }
-            mode
-        });
+        check_events(
+            ssx3_ee::s00::f_00117400,
+            super::rider_metrix_is_hud_message_active,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x14, 0);
+                let m = ptr(&mut r);
+                let mode = schedule(c, &mut r, seed, 0x0011_7400);
+                c.g[A0][0] = m as u64;
+                c.g[A1][0] = (r.next_u32() % 64) as u64;
+                let n = if seed % 7 == 0 { 0 } else { r.next_u32() % 12 };
+                let list = if seed % 11 == 0 { 0 } else { ptr(&mut r) };
+                c.bus.write32(m + 0x1b0, list);
+                c.bus.write32(
+                    m + 0x1b4,
+                    if seed % 13 == 0 {
+                        (r.next_u32() | 0x8000_0000) & !0xff
+                    } else {
+                        n
+                    },
+                );
+                c.bus.write32(m + 0x1b8, r.next_u32() & r.next_u32());
+                c.bus.write32(m + 0x1bc, r.next_u32() & r.next_u32());
+                c.bus
+                    .write32(m + 0x1c0, if seed % 5 == 0 { 0 } else { r.next_u32() | 1 });
+                for i in 0..n {
+                    let id = if r.next_u32() % 4 == 0 {
+                        0x34
+                    } else {
+                        r.next_u32() % 64
+                    };
+                    c.bus.write32(list + 0x9c * i, id);
+                }
+                mode
+            },
+        );
     }
 
     #[test]
     fn reset_trick() {
-        run("reset_trick", ssx3_ee::s00::f_00117838, super::rider_metrix_reset_trick, SEEDS, (0, 0), &|c, seed| {
-            let mut r = machine(c, seed, 0x15, 1);
-            let m = ptr(&mut r);
-            crate::difftest::fill(c, &mut r, m, 0x30);
-            c.g[A0][0] = m as u64;
-        });
+        run(
+            "reset_trick",
+            ssx3_ee::s00::f_00117838,
+            super::rider_metrix_reset_trick,
+            SEEDS,
+            (0, 0),
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x15, 1);
+                let m = ptr(&mut r);
+                crate::difftest::fill(c, &mut r, m, 0x30);
+                c.g[A0][0] = m as u64;
+            },
+        );
     }
 
     #[test]
     fn find_bone() {
-        check_events(ssx3_ee::s10::f_00310c48, super::rider_model_find_bone, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x16, 0);
-            elf_image(c);
-            let mode = schedule(c, &mut r, seed, 0x0031_0c48);
-            let model = ptr(&mut r);
-            let sets = ptr(&mut r);
-            let offsets = ptr(&mut r);
-            c.g[A0][0] = model as u64;
-            let set = r.next_u32() % 4;
-            c.g[A1][0] = set as u64 | (r.next_u32() as u64) << 32;
-            c.bus.write32(model + 0xc, sets);
-            c.bus.write32(model + 0x1c, offsets);
-            c.bus.write32(offsets + 4 * set, set * 3);
-            let rec = sets + set * 3 * 0x58;
-            let n = if seed % 9 == 0 { 0 } else { 1 + r.next_u32() % 8 };
-            let names = ptr(&mut r);
-            c.bus.write32(rec + 0x38, names);
-            c.bus.write32(rec + 0x44, n);
-            c.bus.write32(rec + 4, r.next_u32() % 40);
-            let words = [b"hips\0".as_slice(), b"head\0", b"handleft\0", b"footright\0", b"board_rootg\0"];
-            for i in 0..n {
+        check_events(
+            ssx3_ee::s10::f_00310c48,
+            super::rider_model_find_bone,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x16, 0);
+                elf_image(c);
+                let mode = schedule(c, &mut r, seed, 0x0031_0c48);
+                let model = ptr(&mut r);
+                let sets = ptr(&mut r);
+                let offsets = ptr(&mut r);
+                c.g[A0][0] = model as u64;
+                let set = r.next_u32() % 4;
+                c.g[A1][0] = set as u64 | (r.next_u32() as u64) << 32;
+                c.bus.write32(model + 0xc, sets);
+                c.bus.write32(model + 0x1c, offsets);
+                c.bus.write32(offsets + 4 * set, set * 3);
+                let rec = sets + set * 3 * 0x58;
+                let n = if seed % 9 == 0 {
+                    0
+                } else {
+                    1 + r.next_u32() % 8
+                };
+                let names = ptr(&mut r);
+                c.bus.write32(rec + 0x38, names);
+                c.bus.write32(rec + 0x44, n);
+                c.bus.write32(rec + 4, r.next_u32() % 40);
+                let words = [
+                    b"hips\0".as_slice(),
+                    b"head\0",
+                    b"handleft\0",
+                    b"footright\0",
+                    b"board_rootg\0",
+                ];
+                for i in 0..n {
+                    let w = words[(r.next_u32() % 5) as usize];
+                    for (k, b) in w.iter().enumerate() {
+                        c.bus.write8(names + 0x50 * i + k as u32, *b);
+                    }
+                }
+                let name = ptr(&mut r) + 0x8;
                 let w = words[(r.next_u32() % 5) as usize];
                 for (k, b) in w.iter().enumerate() {
-                    c.bus.write8(names + 0x50 * i + k as u32, *b);
+                    c.bus.write8(name + k as u32, *b);
                 }
-            }
-            let name = ptr(&mut r) + 0x8;
-            let w = words[(r.next_u32() % 5) as usize];
-            for (k, b) in w.iter().enumerate() {
-                c.bus.write8(name + k as u32, *b);
-            }
-            c.g[A2][0] = name as u64;
-            mode
-        });
+                c.g[A2][0] = name as u64;
+                mode
+            },
+        );
     }
 
     /// A rider with random slews, velocity, ground frame and surface type,
@@ -1666,10 +1860,20 @@ mod tests {
             c.bus.write32(p + off, v);
         }
         for i in 0..4 {
-            c.bus.write32(p + 0x1e0 + 4 * i, if seed % 5 == 0 { r.edge_f32() } else { r.f32(3000.0) });
+            c.bus.write32(
+                p + 0x1e0 + 4 * i,
+                if seed % 5 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(3000.0)
+                },
+            );
             c.bus.write32(p + 0x3a0 + 4 * i, r.f32(1.0));
         }
-        c.bus.write32(p + 0x438, [0, 1, 2, 3, 0xd, 0xe, r.next_u32()][(r.next_u32() % 7) as usize]);
+        c.bus.write32(
+            p + 0x438,
+            [0, 1, 2, 3, 0xd, 0xe, r.next_u32()][(r.next_u32() % 7) as usize],
+        );
         p
     }
 
@@ -1684,11 +1888,16 @@ mod tests {
 
     #[test]
     fn set_slew0_target() {
-        check(ssx3_ee::s00::f_00113e80, super::rider_set_slew0_target, 2000, &|c, seed| {
-            let mut r = machine(c, seed, 0x17, 0);
-            slew_rider(c, &mut r, seed);
-            c.f[12] = axis(&mut r);
-        });
+        check(
+            ssx3_ee::s00::f_00113e80,
+            super::rider_set_slew0_target,
+            2000,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x17, 0);
+                slew_rider(c, &mut r, seed);
+                c.f[12] = axis(&mut r);
+            },
+        );
     }
 
     #[test]
@@ -1703,7 +1912,12 @@ mod tests {
             })
             .collect();
         eprintln!("set_slew3_and4_targets paths: {paths:?}");
-        check(ssx3_ee::s00::f_00113f88, super::rider_set_slew3_and4_targets, 3000, &|c, seed| slew_setup(c, seed));
+        check(
+            ssx3_ee::s00::f_00113f88,
+            super::rider_set_slew3_and4_targets,
+            3000,
+            &|c, seed| slew_setup(c, seed),
+        );
     }
 
     /// `Rider_SetCrouchBrakeTargets`'s (0x113f88) slew steps are per tick: the
@@ -1724,33 +1938,34 @@ mod tests {
         // The crouch (`+0x220`) and brake (`+0x214`) `maxStep` the function
         // writes for a crouch request, a brake request, and the two "clear the
         // other slew" cases.
-        let steps = |hz: u32, crouch: f32, brake: f32, crouch_cur: f32, brake_cur: f32| -> (u32, u32) {
-            let mut c = fresh();
-            c.g[GP][0] = GAME_GP as u64;
-            let p = 0x0080_0000u32;
-            c.g[A0][0] = p as u64;
-            c.bus.write32(p + 0x1f0, 0); // slew #0 (steer) cur
-            c.bus.write32(p + 0x214, brake_cur.to_bits());
-            c.bus.write32(p + 0x220, crouch_cur.to_bits());
-            for (off, bits) in [
-                (0x7c20u32, K),
-                (0x7c1c, A),
-                (0x7c18, TENTH),
-                (0x7c14, A),
-                (0x7c10, FLOOR),
-                (0x7c0c, TENTH),
-                (0x7c08, MINUS_TENTH),
-                (0x7c04, TENTH),
-                (0x7c00, K),
-            ] {
-                c.bus.write32(GAME_GP.wrapping_sub(off), bits);
-            }
-            c.f[12] = crouch.to_bits();
-            c.f[13] = brake.to_bits();
-            tick::set_for_test(&mut c, hz);
-            super::rider_set_slew3_and4_targets(&mut c);
-            (c.bus.read32(p + 0x224), c.bus.read32(p + 0x218))
-        };
+        let steps =
+            |hz: u32, crouch: f32, brake: f32, crouch_cur: f32, brake_cur: f32| -> (u32, u32) {
+                let mut c = fresh();
+                c.g[GP][0] = GAME_GP as u64;
+                let p = 0x0080_0000u32;
+                c.g[A0][0] = p as u64;
+                c.bus.write32(p + 0x1f0, 0); // slew #0 (steer) cur
+                c.bus.write32(p + 0x214, brake_cur.to_bits());
+                c.bus.write32(p + 0x220, crouch_cur.to_bits());
+                for (off, bits) in [
+                    (0x7c20u32, K),
+                    (0x7c1c, A),
+                    (0x7c18, TENTH),
+                    (0x7c14, A),
+                    (0x7c10, FLOOR),
+                    (0x7c0c, TENTH),
+                    (0x7c08, MINUS_TENTH),
+                    (0x7c04, TENTH),
+                    (0x7c00, K),
+                ] {
+                    c.bus.write32(GAME_GP.wrapping_sub(off), bits);
+                }
+                c.f[12] = crouch.to_bits();
+                c.f[13] = brake.to_bits();
+                tick::set_for_test(&mut c, hz);
+                super::rider_set_slew3_and4_targets(&mut c);
+                (c.bus.read32(p + 0x224), c.bus.read32(p + 0x218))
+            };
         // 60 Hz: the entries as stored.
         assert_eq!(steps(60, 1.0, 0.0, 0.0, 0.0).0, A, "crouch step");
         assert_eq!(steps(60, 0.0, 1.0, 0.0, 0.0).1, K, "brake step");
@@ -1761,7 +1976,10 @@ mod tests {
             let a = 1.0f32 - (1.0f32 - f32::from_bits(A)).powf(frac);
             let k = 1.0f32 - (1.0f32 - f32::from_bits(K)).powf(frac);
             let crouch = f32::from_bits(steps(hz, 1.0, 0.0, 0.0, 0.0).0);
-            assert!((crouch - a).abs() < 1e-7, "{hz} Hz crouch {crouch}, want {a}");
+            assert!(
+                (crouch - a).abs() < 1e-7,
+                "{hz} Hz crouch {crouch}, want {a}"
+            );
             let brake = f32::from_bits(steps(hz, 0.0, 1.0, 0.0, 0.0).1);
             assert!((brake - k).abs() < 1e-7, "{hz} Hz brake {brake}, want {k}");
             assert_eq!(
@@ -1816,47 +2034,80 @@ mod tests {
             c.bus.write32(at, other);
             at = other + 200;
         }
-        c.f[12] = if seed % 4 == 0 { r.edge_f32() } else { r.f32(0.05) };
+        c.f[12] = if seed % 4 == 0 {
+            r.edge_f32()
+        } else {
+            r.f32(0.05)
+        };
     }
 
     #[test]
     fn seq_type07() {
-        run("seq_type07", ssx3_ee::s00::f_00104358, super::rider_anim_update_seq_type07, SEEDS, (0, 0), &|c, seed| {
-            let mut r = machine(c, seed, 0x19, 0);
-            seq_setup(c, &mut r, seed);
-            let anim = ptr(&mut r);
-            let rider = ptr(&mut r);
-            c.g[A0][0] = anim as u64;
-            c.bus.write32(anim + 0x60, rider);
-            c.bus.write32(rider + 0x2a4, r.edge_f32());
-            c.bus.write32(rider + 0x2b0, r.edge_f32());
-        });
+        run(
+            "seq_type07",
+            ssx3_ee::s00::f_00104358,
+            super::rider_anim_update_seq_type07,
+            SEEDS,
+            (0, 0),
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x19, 0);
+                seq_setup(c, &mut r, seed);
+                let anim = ptr(&mut r);
+                let rider = ptr(&mut r);
+                c.g[A0][0] = anim as u64;
+                c.bus.write32(anim + 0x60, rider);
+                c.bus.write32(rider + 0x2a4, r.edge_f32());
+                c.bus.write32(rider + 0x2b0, r.edge_f32());
+            },
+        );
     }
 
     #[test]
     fn seq_type02() {
-        run("seq_type02", ssx3_ee::s00::f_001049c0, super::rider_anim_update_seq_type02, SEEDS, (0, 0), &|c, seed| {
-            let mut r = machine(c, seed, 0x1a, 0);
-            seq_setup(c, &mut r, seed);
-        });
+        run(
+            "seq_type02",
+            ssx3_ee::s00::f_001049c0,
+            super::rider_anim_update_seq_type02,
+            SEEDS,
+            (0, 0),
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1a, 0);
+                seq_setup(c, &mut r, seed);
+            },
+        );
     }
 
     #[test]
     fn turn_around_if_backward() {
-        run("turn_around", ssx3_ee::s00::f_00114cc0, super::rider_turn_around_if_backward, 600, (0, 0), &|c, seed| {
-            let mut r = machine(c, seed, 0x1b, 0);
-            let p = slew_rider(c, &mut r, seed);
-            if seed % 3 != 0 {
-                c.bus.write32(p + 0x214, if seed % 7 == 0 { 0x8000_0000 } else { 0 });
-            }
-            for i in 0..4 {
-                c.bus.write32(p + 0x110 + 4 * i, r.f32(1e5));
-                c.bus.write32(p + 0x120 + 4 * i, r.f32(1.0));
-                c.bus.write32(p + 0x1c0 + 4 * i, if seed % 11 == 0 { r.edge_f32() } else { r.f32(1.0) });
-            }
-            let owner = ptr(&mut r);
-            c.bus.write32(p + 0x77c, owner);
-        });
+        run(
+            "turn_around",
+            ssx3_ee::s00::f_00114cc0,
+            super::rider_turn_around_if_backward,
+            600,
+            (0, 0),
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1b, 0);
+                let p = slew_rider(c, &mut r, seed);
+                if seed % 3 != 0 {
+                    c.bus
+                        .write32(p + 0x214, if seed % 7 == 0 { 0x8000_0000 } else { 0 });
+                }
+                for i in 0..4 {
+                    c.bus.write32(p + 0x110 + 4 * i, r.f32(1e5));
+                    c.bus.write32(p + 0x120 + 4 * i, r.f32(1.0));
+                    c.bus.write32(
+                        p + 0x1c0 + 4 * i,
+                        if seed % 11 == 0 {
+                            r.edge_f32()
+                        } else {
+                            r.f32(1.0)
+                        },
+                    );
+                }
+                let owner = ptr(&mut r);
+                c.bus.write32(p + 0x77c, owner);
+            },
+        );
     }
 
     /// A rider with random boost state (not human, so the sound calls stay
@@ -1881,19 +2132,37 @@ mod tests {
         if seed % 3 == 0 {
             c.bus.write32(p + 0x2e8, 0);
         }
-        c.bus.write32(p + 0x2f4, [0, 5, 9, 10, 11, r.next_u32()][(r.next_u32() % 6) as usize]);
+        c.bus.write32(
+            p + 0x2f4,
+            [0, 5, 9, 10, 11, r.next_u32()][(r.next_u32() % 6) as usize],
+        );
         c.bus.write32(p + 0x304, r.next_u32() % 4);
         p
     }
 
     #[test]
     fn handle_boost_input() {
-        run("handle_boost_input", ssx3_ee::s00::f_00114130, super::rider_handle_boost_input, 2000, (0, 0), &|c, seed| {
-            let mut r = machine(c, seed, 0x1c, 0);
-            boost_rider(c, &mut r, seed);
-            c.g[A1][0] = if seed % 4 == 0 { 0 } else { r.next_u32() as u64 | 1 };
-            c.g[A2][0] = if seed % 5 < 2 { 0 } else { r.next_u32() as u64 | 1 };
-        });
+        run(
+            "handle_boost_input",
+            ssx3_ee::s00::f_00114130,
+            super::rider_handle_boost_input,
+            2000,
+            (0, 0),
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1c, 0);
+                boost_rider(c, &mut r, seed);
+                c.g[A1][0] = if seed % 4 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64 | 1
+                };
+                c.g[A2][0] = if seed % 5 < 2 {
+                    0
+                } else {
+                    r.next_u32() as u64 | 1
+                };
+            },
+        );
     }
 
     /// The boost meter drain (`Rider_HandleBoostInput`, 0x114130; the load and
@@ -1938,25 +2207,39 @@ mod tests {
 
     #[test]
     fn add_boost() {
-        run("add_boost", ssx3_ee::s00::f_0010e098, super::rider_add_boost, 2000, (100, 10), &|c, seed| {
-            let mut r = machine(c, seed, 0x1d, 4);
-            let p = boost_rider(c, &mut r, seed);
-            c.bus.write32(p + 0x86c, r.next_u32() % 6);
-            c.bus.write32(p + 0xb34, r.next_u32() % 4);
-            c.bus.write32(p + 0xb28, if seed % 7 == 0 { 0 } else { r.next_u32() | 1 });
-            c.bus.write32(p + 0xb2c, r.next_u32() & 1);
-            c.bus.write32(p + 0x2f4, [0, 0, 1, 5, 9, 10, 11, r.next_u32()][(r.next_u32() % 8) as usize]);
-            if seed % 3 == 0 {
-                c.bus.write32(p + 0x2f0, 0);
-            }
-            c.bus.write32(p + 0x2f8, [0x3f80_0000, 0x3f7f_0000, r.f32(1.0)][(r.next_u32() % 3) as usize]);
-            c.f[12] = match seed % 6 {
-                0 => 0,
-                1 => r.edge_f32(),
-                2 => r.f32(0.3) | 0x8000_0000,
-                _ => r.f32(1.0) & 0x7fff_ffff,
-            };
-            c.g[A1][0] = [1, 4, 0x10, r.next_u32() as u64][(r.next_u32() % 4) as usize];
-        });
+        run(
+            "add_boost",
+            ssx3_ee::s00::f_0010e098,
+            super::rider_add_boost,
+            2000,
+            (100, 10),
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1d, 4);
+                let p = boost_rider(c, &mut r, seed);
+                c.bus.write32(p + 0x86c, r.next_u32() % 6);
+                c.bus.write32(p + 0xb34, r.next_u32() % 4);
+                c.bus
+                    .write32(p + 0xb28, if seed % 7 == 0 { 0 } else { r.next_u32() | 1 });
+                c.bus.write32(p + 0xb2c, r.next_u32() & 1);
+                c.bus.write32(
+                    p + 0x2f4,
+                    [0, 0, 1, 5, 9, 10, 11, r.next_u32()][(r.next_u32() % 8) as usize],
+                );
+                if seed % 3 == 0 {
+                    c.bus.write32(p + 0x2f0, 0);
+                }
+                c.bus.write32(
+                    p + 0x2f8,
+                    [0x3f80_0000, 0x3f7f_0000, r.f32(1.0)][(r.next_u32() % 3) as usize],
+                );
+                c.f[12] = match seed % 6 {
+                    0 => 0,
+                    1 => r.edge_f32(),
+                    2 => r.f32(0.3) | 0x8000_0000,
+                    _ => r.f32(1.0) & 0x7fff_ffff,
+                };
+                c.g[A1][0] = [1, 4, 0x10, r.next_u32() as u64][(r.next_u32() % 4) as usize];
+            },
+        );
     }
 }

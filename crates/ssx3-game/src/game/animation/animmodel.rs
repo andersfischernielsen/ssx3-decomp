@@ -2,62 +2,102 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
-use crate::guest::Addr;
-use ssx3_ee_rt::cpu::reg::*;
-use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::Cpu;
+use crate::abi::r32;
 use crate::call;
 use crate::call::call_ptr;
+use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Unwound;
+use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
-use ssx3_ee as ee;
-use crate::call::guest;
-use crate::call::Unwound;
+pub(crate) use crate::game::ai::aianimeventmap::BUILTIN_DELETE;
+pub(crate) use crate::game::fe::feasyncfile::lw_3 as lw_2;
+pub(crate) use crate::game::fe::feasyncfile::p_5 as p_2;
+pub(crate) use crate::game::visualfx::boardwakefx::gp;
+pub(crate) use crate::game::visualfx::boardwakefx::ldf_2 as ldf;
+pub(crate) use crate::game::visualfx::boardwakefx::lh;
+pub(crate) use crate::game::visualfx::boardwakefx::lw;
+pub(crate) use crate::game::visualfx::boardwakefx::p;
+pub(crate) use crate::game::wscript::wscriptman::sw;
+use crate::guest::Addr;
 use crate::ps2f::FpuF32;
-use crate::abi::r32;
+use ssx3_ee as ee;
+use ssx3_ee_rt::cpu::reg::*;
+use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::funcs::call_indirect;
+use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
 use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
-use crate::call::VSlot;
-use crate::call::sp;
-use ssx3_ee_rt::funcs::call_indirect;
-pub(crate) use crate::game::ai::aianimeventmap::BUILTIN_DELETE;
-pub(crate) use crate::game::visualfx::boardwakefx::p;
-pub(crate) use crate::game::visualfx::boardwakefx::gp;
-pub(crate) use crate::game::visualfx::boardwakefx::ldf_2 as ldf;
-pub(crate) use crate::game::visualfx::boardwakefx::lw;
-pub(crate) use crate::game::visualfx::boardwakefx::lh;
-pub(crate) use crate::game::fe::feasyncfile::p_5 as p_2;
-pub(crate) use crate::game::fe::feasyncfile::lw_3 as lw_2;
-pub(crate) use crate::game::wscript::wscriptman::sw;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0030_db90, rider_model_compare_int, "RiderModel_CompareInt"),
-    (0x0030_dba0, rider_model_set_color_scale, "RiderModel_SetColorScale"),
+    (
+        0x0030_db90,
+        rider_model_compare_int,
+        "RiderModel_CompareInt",
+    ),
+    (
+        0x0030_dba0,
+        rider_model_set_color_scale,
+        "RiderModel_SetColorScale",
+    ),
     (0x0030_e9e0, rider_model_show_part, "RiderModel_ShowPart"),
     (0x0030_ea80, rider_model_hide_part, "RiderModel_HidePart"),
-    (0x0030_eb60, rider_model_hide_all_parts, "RiderModel_HideAllParts"),
-    (0x0030_ebc0, rider_model_is_part_visible, "RiderModel_IsPartVisible"),
-    (0x0030_ec18, rider_model_show_part_variant, "RiderModel_ShowPartVariant"),
+    (
+        0x0030_eb60,
+        rider_model_hide_all_parts,
+        "RiderModel_HideAllParts",
+    ),
+    (
+        0x0030_ebc0,
+        rider_model_is_part_visible,
+        "RiderModel_IsPartVisible",
+    ),
+    (
+        0x0030_ec18,
+        rider_model_show_part_variant,
+        "RiderModel_ShowPartVariant",
+    ),
     (0x0030_eca0, rider_model_lock_part, "RiderModel_LockPart"),
-    (0x0030_f2b0, rider_model_blend_anim_pose, "RiderModel_BlendAnimPose"),
+    (
+        0x0030_f2b0,
+        rider_model_blend_anim_pose,
+        "RiderModel_BlendAnimPose",
+    ),
     (0x0031_0640, rider_model_render, "RiderModel_Render"),
-    (0x0031_0948, rider_model_render_shadow, "RiderModel_RenderShadow"),
+    (
+        0x0031_0948,
+        rider_model_render_shadow,
+        "RiderModel_RenderShadow",
+    ),
     (0x0031_0ee0, rider_model_load_state, "RiderModel_LoadState"),
     (0x0031_1048, anim_data_base_ctor, "AnimDataBase_ctor"),
     (0x0031_1088, anim_data_base_dtor, "AnimDataBase_dtor"),
-    (0x0031_10d0, anim_data_base_reset_chan_cache_table, "AnimDataBase_ResetChanCacheTable"),
-    (0x0031_1290, adf_data_source_set_data, "AdfDataSource_SetData"),
+    (
+        0x0031_10d0,
+        anim_data_base_reset_chan_cache_table,
+        "AnimDataBase_ResetChanCacheTable",
+    ),
+    (
+        0x0031_1290,
+        adf_data_source_set_data,
+        "AdfDataSource_SetData",
+    ),
     (0x0031_12c8, adf_data_source_dtor, "AdfDataSource_dtor"),
-    (0x0031_1318, anim_data_base_sample_channel, "AnimDataBase_SampleChannel"),
+    (
+        0x0031_1318,
+        anim_data_base_sample_channel,
+        "AnimDataBase_SampleChannel",
+    ),
 ];
 
 // ---------------------------------------------------------------- AnimSequence
@@ -67,27 +107,40 @@ pub(crate) mod anim_callee {
     use super::Callee;
     use ssx3_ee::s10 as ee;
 
+    pub const FIRE_TRIGGERS_AT_TIME: Callee = Callee {
+        addr: 0x0031_3938,
+        f: ee::AnimSequence_FireTriggersAtTime,
+    };
 
-    pub const FIRE_TRIGGERS_AT_TIME: Callee =
-        Callee { addr: 0x0031_3938, f: ee::AnimSequence_FireTriggersAtTime };
+    pub const FIRE_END_TRIGGERS: Callee = Callee {
+        addr: 0x0031_39a8,
+        f: ee::AnimSequence_FireEndTriggers,
+    };
 
-    pub const FIRE_END_TRIGGERS: Callee =
-        Callee { addr: 0x0031_39a8, f: ee::AnimSequence_FireEndTriggers };
+    pub const FIRE_TRIGGERS_IN_RANGE: Callee = Callee {
+        addr: 0x0031_3868,
+        f: ee::AnimSequence_FireTriggersInRange,
+    };
 
-    pub const FIRE_TRIGGERS_IN_RANGE: Callee =
-        Callee { addr: 0x0031_3868, f: ee::AnimSequence_FireTriggersInRange };
+    pub const GET_TRACK_BLEND_WEIGHT: Callee = Callee {
+        addr: 0x0031_3d70,
+        f: ee::AnimSequence_GetTrackBlendWeight,
+    };
 
-    pub const GET_TRACK_BLEND_WEIGHT: Callee =
-        Callee { addr: 0x0031_3d70, f: ee::AnimSequence_GetTrackBlendWeight };
+    pub const ALLOC_CHAN_CACHE: Callee = Callee {
+        addr: 0x0031_0f18,
+        f: ee::AnimDataBase_AllocChanCache,
+    };
 
-    pub const ALLOC_CHAN_CACHE: Callee =
-        Callee { addr: 0x0031_0f18, f: ee::AnimDataBase_AllocChanCache };
+    pub const DECODE_CHAN_CACHE: Callee = Callee {
+        addr: 0x0031_30a8,
+        f: ee::AnimDataBase_DecodeChanCache,
+    };
 
-    pub const DECODE_CHAN_CACHE: Callee =
-        Callee { addr: 0x0031_30a8, f: ee::AnimDataBase_DecodeChanCache };
-
-    pub const EVAL_CHAN_CURVES: Callee =
-        Callee { addr: 0x0031_2c20, f: ee::AnimDataBase_EvalChanCurves };
+    pub const EVAL_CHAN_CURVES: Callee = Callee {
+        addr: 0x0031_2c20,
+        f: ee::AnimDataBase_EvalChanCurves,
+    };
 }
 
 // ---------------------------------------------------------------- AnimDataBase
@@ -140,13 +193,29 @@ pub(crate) mod eval {
     pub const KEY_TABLE_AT: u32 = 0x0048_a560;
 
     pub const LERP_TABLE: [u32; 10] = [
-        0x0031_2d4c, 0x0031_2d54, 0x0031_2d60, 0x0031_2d78, 0x0031_2d9c, 0x0031_2dcc, 0x0031_2e08,
-        0x0031_2e4c, 0x0031_2e90, 0x0031_2ed8,
+        0x0031_2d4c,
+        0x0031_2d54,
+        0x0031_2d60,
+        0x0031_2d78,
+        0x0031_2d9c,
+        0x0031_2dcc,
+        0x0031_2e08,
+        0x0031_2e4c,
+        0x0031_2e90,
+        0x0031_2ed8,
     ];
 
     pub const KEY_TABLE: [u32; 10] = [
-        0x0031_2f3c, 0x0031_2f44, 0x0031_2f4c, 0x0031_2f60, 0x0031_2f80, 0x0031_2fac, 0x0031_2fec,
-        0x0031_3014, 0x0031_303c, 0x0031_3068,
+        0x0031_2f3c,
+        0x0031_2f44,
+        0x0031_2f4c,
+        0x0031_2f60,
+        0x0031_2f80,
+        0x0031_2fac,
+        0x0031_2fec,
+        0x0031_3014,
+        0x0031_303c,
+        0x0031_3068,
     ];
 
     /// Curve record (0x14 bytes): +0 kind, +4.. coefficients / scale, bias
@@ -159,27 +228,27 @@ pub(crate) mod eval {
 /// texture-id table (`+0xf50`).
 #[allow(dead_code)]
 pub(crate) mod ctx {
-    pub(crate) use crate::game::visualfx::boardwakefx::ctx::VTABLE;
-    pub(crate) use crate::game::visualfx::boardwakefx::ctx::TOP;
     pub(crate) use crate::game::visualfx::boardwakefx::ctx::TEX_IDS;
+    pub(crate) use crate::game::visualfx::boardwakefx::ctx::TOP;
+    pub(crate) use crate::game::visualfx::boardwakefx::ctx::VTABLE;
 }
 
 /// `RiderModel` (an `sAnimModel`): the two bone tables, the parts array and
 /// the per-part LOD info.
 #[allow(dead_code)]
 pub(crate) mod model {
-    pub(crate) use crate::game::ai::rider::model::NUM_PARTS;
-    pub(crate) use crate::game::ai::rider::model::PARTS;
-    pub(crate) use crate::game::ai::rider::model::NUM_BONES;
-    pub(crate) use crate::game::ai::rider::model::HAS_PARTS;
     pub(crate) use crate::game::ai::rider::model::BONE_TABLE_A;
     pub(crate) use crate::game::ai::rider::model::BONE_TABLE_A_SHADOW;
     pub(crate) use crate::game::ai::rider::model::BONE_TABLE_B;
+    pub(crate) use crate::game::ai::rider::model::HAS_PARTS;
     pub(crate) use crate::game::ai::rider::model::LOD_INFO;
-    pub(crate) use crate::game::ai::rider::model::SCALE_Y;
-    pub(crate) use crate::game::ai::rider::model::PART_STRIDE;
+    pub(crate) use crate::game::ai::rider::model::NUM_BONES;
+    pub(crate) use crate::game::ai::rider::model::NUM_PARTS;
+    pub(crate) use crate::game::ai::rider::model::PARTS;
     pub(crate) use crate::game::ai::rider::model::PART_LODS;
     pub(crate) use crate::game::ai::rider::model::PART_REF_INDEX;
+    pub(crate) use crate::game::ai::rider::model::PART_STRIDE;
+    pub(crate) use crate::game::ai::rider::model::SCALE_Y;
 }
 
 // ---------------------------------------------------------------------------
@@ -188,57 +257,56 @@ pub(crate) mod model {
 pub(crate) mod callee {
     use super::ee;
     use super::Callee;
-    pub(crate) use crate::game::sound::bankmonitor::callee::GAME_STATE_GOTO_NEXT_2 as GAME_STATE_GOTO_NEXT;
-    pub(crate) use crate::game::sound::bankmonitor::callee::PS2_MEMCARD_CREATE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::LOBBY_LIST_GET_AT;
-    pub(crate) use crate::game::sound::bankmonitor::callee::BUDDY_MAN_CONNECT;
-    pub(crate) use crate::game::sound::bankmonitor::callee::STR_CASE_CMP;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SLOGIN_MC_GET_PORT_SLOT;
-    pub(crate) use crate::game::sound::bankmonitor::callee::MEMCARD_REQUEST_GET_INFO_NOW;
-    pub(crate) use crate::game::sound::bankmonitor::callee::PATH_DATA_READ_INT;
-    pub(crate) use crate::game::sound::bankmonitor::callee::PATH_DATA_READ_VEC3;
-    pub(crate) use crate::game::sound::bankmonitor::callee::PATH_DATA_READ_FLOAT_2 as PATH_DATA_READ_FLOAT;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SCRIPT_LIST_ADD_CHOICE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SCRIPT_ENGINE_POLL_ASYNC_LOADS;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SSX_AUDIO_SYSTEM_GET_INSTANCE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SSX_AUDIO_SYSTEM_END_SCRIPT_MUSIC;
-    pub(crate) use crate::game::sound::bankmonitor::callee::WORLD_PAINTER_SET_SCRIPT_SURFACE_MODE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SCRIPT_BINDING_CTOR;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SCRIPT_ENGINE_GET_INSTANCE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SND_BANK_MAN_UNLOAD_MEMORY_BANK;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SND_BANK_MAN_UNLOAD_BANK;
-    pub(crate) use crate::game::sound::bankmonitor::callee::MUSIC_PLAYER_GET_SONG_TAG;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SPEECH_SYSTEM_STOP_INSTANCE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::BANK_MONITOR_TIMER_KILL;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SNDSTRM_SET_PREBUFFER;
+    pub(crate) use crate::game::sound::bankmonitor::callee::ADF_DATA_SOURCE_SET_DATA;
     pub(crate) use crate::game::sound::bankmonitor::callee::AUDIO_RAND;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SONG_INSTANCE_GET_REQUEST_STATUS;
-    pub(crate) use crate::game::sound::bankmonitor::callee::USTR_TO_ASCII;
-    pub(crate) use crate::game::sound::bankmonitor::callee::MENU_SYS_ITEM_DRAW_ROW;
-    pub(crate) use crate::game::sound::bankmonitor::callee::WSCRIPT_MAN_CALL_TASK_FUNC;
-    pub(crate) use crate::game::sound::bankmonitor::callee::WSCRIPT_PROCESS_LIST_REMOVE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::WSCRIPT_PROCESS_LIST_PUSH_FRONT;
+    pub(crate) use crate::game::sound::bankmonitor::callee::BANK_MONITOR_TIMER_KILL;
+    pub(crate) use crate::game::sound::bankmonitor::callee::BE_GET_EVENT_RECORD_INDEX;
     pub(crate) use crate::game::sound::bankmonitor::callee::BE_LIBRARY_GET_INSTANCE_3 as BE_LIBRARY_GET_INSTANCE;
     pub(crate) use crate::game::sound::bankmonitor::callee::BE_LIBRARY_GET_INTERFACE;
     pub(crate) use crate::game::sound::bankmonitor::callee::BE_MISSION_INT_GET_COLLECTED_COUNT;
-    pub(crate) use crate::game::sound::bankmonitor::callee::ADF_DATA_SOURCE_SET_DATA;
+    pub(crate) use crate::game::sound::bankmonitor::callee::BOLTS_FREE_DB;
+    pub(crate) use crate::game::sound::bankmonitor::callee::BUDDY_MAN_CONNECT;
+    pub(crate) use crate::game::sound::bankmonitor::callee::BUILTIN_DELETE_4 as BUILTIN_DELETE;
+    pub(crate) use crate::game::sound::bankmonitor::callee::CROWD_MAN3D_GROUP_CREATE_MESHES;
     pub(crate) use crate::game::sound::bankmonitor::callee::EA_FILE_LOAD_DECOMPRESSED;
     pub(crate) use crate::game::sound::bankmonitor::callee::GAME_ANIM_MAP_FIND_HASH;
+    pub(crate) use crate::game::sound::bankmonitor::callee::GAME_STATE_GOTO_NEXT_2 as GAME_STATE_GOTO_NEXT;
+    pub(crate) use crate::game::sound::bankmonitor::callee::LOBBY_LIST_GET_AT;
+    pub(crate) use crate::game::sound::bankmonitor::callee::MEMCARD_REQUEST_GET_INFO_NOW;
     pub(crate) use crate::game::sound::bankmonitor::callee::MEMSET_2 as MEMSET;
-    pub(crate) use crate::game::sound::bankmonitor::callee::CROWD_MAN3D_GROUP_CREATE_MESHES;
+    pub(crate) use crate::game::sound::bankmonitor::callee::MENU_SYS_ITEM_DRAW_ROW;
+    pub(crate) use crate::game::sound::bankmonitor::callee::MUSIC_PLAYER_GET_SONG_TAG;
+    pub(crate) use crate::game::sound::bankmonitor::callee::PATH_DATA_READ_FLOAT_2 as PATH_DATA_READ_FLOAT;
+    pub(crate) use crate::game::sound::bankmonitor::callee::PATH_DATA_READ_INT;
+    pub(crate) use crate::game::sound::bankmonitor::callee::PATH_DATA_READ_VEC3;
+    pub(crate) use crate::game::sound::bankmonitor::callee::PS2_MEMCARD_CREATE;
+    pub(crate) use crate::game::sound::bankmonitor::callee::RIDER_METRIX_CLEAR_PEAK_A4;
+    pub(crate) use crate::game::sound::bankmonitor::callee::RIDER_METRIX_SHOW_HUD_NUMBER;
+    pub(crate) use crate::game::sound::bankmonitor::callee::SCRIPT_BINDING_CTOR;
+    pub(crate) use crate::game::sound::bankmonitor::callee::SCRIPT_ENGINE_GET_INSTANCE;
+    pub(crate) use crate::game::sound::bankmonitor::callee::SCRIPT_ENGINE_POLL_ASYNC_LOADS;
+    pub(crate) use crate::game::sound::bankmonitor::callee::SCRIPT_LIST_ADD_CHOICE;
+    pub(crate) use crate::game::sound::bankmonitor::callee::SECTION_ALLOCATOR_DTOR;
+    pub(crate) use crate::game::sound::bankmonitor::callee::SLOGIN_MC_GET_PORT_SLOT;
+    pub(crate) use crate::game::sound::bankmonitor::callee::SNDSTRM_SET_PREBUFFER;
+    pub(crate) use crate::game::sound::bankmonitor::callee::SND_BANK_MAN_UNLOAD_BANK;
+    pub(crate) use crate::game::sound::bankmonitor::callee::SND_BANK_MAN_UNLOAD_MEMORY_BANK;
+    pub(crate) use crate::game::sound::bankmonitor::callee::SONG_INSTANCE_GET_REQUEST_STATUS;
+    pub(crate) use crate::game::sound::bankmonitor::callee::SPEECH_SYSTEM_STOP_INSTANCE;
+    pub(crate) use crate::game::sound::bankmonitor::callee::SSX_AUDIO_SYSTEM_END_SCRIPT_MUSIC;
+    pub(crate) use crate::game::sound::bankmonitor::callee::SSX_AUDIO_SYSTEM_GET_INSTANCE;
+    pub(crate) use crate::game::sound::bankmonitor::callee::STREAM_FILE_RELEASE_CHUNK;
+    pub(crate) use crate::game::sound::bankmonitor::callee::STR_CASE_CMP;
     pub(crate) use crate::game::sound::bankmonitor::callee::TEX_MAN_FREE_TEXTURE;
     pub(crate) use crate::game::sound::bankmonitor::callee::UI_LIST_COUNT;
     pub(crate) use crate::game::sound::bankmonitor::callee::UI_MENU_SET_NAV_BUTTONS;
     pub(crate) use crate::game::sound::bankmonitor::callee::UI_OBJECT_LOAD;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SECTION_ALLOCATOR_DTOR;
-    pub(crate) use crate::game::sound::bankmonitor::callee::STREAM_FILE_RELEASE_CHUNK;
-    pub(crate) use crate::game::sound::bankmonitor::callee::BUILTIN_DELETE_4 as BUILTIN_DELETE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::RIDER_METRIX_SHOW_HUD_NUMBER;
-    pub(crate) use crate::game::sound::bankmonitor::callee::RIDER_METRIX_CLEAR_PEAK_A4;
-    pub(crate) use crate::game::sound::bankmonitor::callee::BE_GET_EVENT_RECORD_INDEX;
-    pub(crate) use crate::game::sound::bankmonitor::callee::BOLTS_FREE_DB;
+    pub(crate) use crate::game::sound::bankmonitor::callee::USTR_TO_ASCII;
+    pub(crate) use crate::game::sound::bankmonitor::callee::WORLD_PAINTER_SET_SCRIPT_SURFACE_MODE;
+    pub(crate) use crate::game::sound::bankmonitor::callee::WSCRIPT_MAN_CALL_TASK_FUNC;
+    pub(crate) use crate::game::sound::bankmonitor::callee::WSCRIPT_PROCESS_LIST_PUSH_FRONT;
+    pub(crate) use crate::game::sound::bankmonitor::callee::WSCRIPT_PROCESS_LIST_REMOVE;
 }
-
 
 // ---------------------------------------------------------------------------
 // Rider models.
@@ -261,7 +329,6 @@ pub fn rider_model_set_color_scale(c: &mut Cpu) {
     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
     abi::ret(c);
 }
-
 
 /// `int RiderModel_IsPartVisible(RiderModel *model, int part, int sub)`
 /// (0x30ebc0): resolve `model->parts[part]` and return the visible entry for
@@ -309,7 +376,6 @@ pub fn rider_model_is_part_visible(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 // ---------------------------------------------------------------------------
 // Container / animation helpers.
 
@@ -334,19 +400,27 @@ pub fn adf_data_source_set_data(c: &mut Cpu) {
     abi::ret(c);
 }
 
-pub(crate) const ADF_DATA_SOURCE_SET_DATA: Callee = Callee { addr: 0x0031_1290, f: ee::s10::f_00311290 };
+pub(crate) const ADF_DATA_SOURCE_SET_DATA: Callee = Callee {
+    addr: 0x0031_1290,
+    f: ee::s10::f_00311290,
+};
 
 pub(crate) const MEMSET_ADDR: u32 = 0x0041_6210;
 
-pub(crate) const ANIM_DATA_BASE_RESET: Callee = Callee { addr: 0x0031_10d0, f: ee::s10::f_003110d0 };
+pub(crate) const ANIM_DATA_BASE_RESET: Callee = Callee {
+    addr: 0x0031_10d0,
+    f: ee::s10::f_003110d0,
+};
 
-pub(crate) const ANIM_DATA_BASE_FREE: Callee = Callee { addr: 0x0031_1110, f: ee::s10::f_00311110 };
+pub(crate) const ANIM_DATA_BASE_FREE: Callee = Callee {
+    addr: 0x0031_1110,
+    f: ee::s10::f_00311110,
+};
 
 /// `EAFile_LoadDecompressedThunk`, cross-shard (through the function table).
 pub(crate) const EA_FILE_LOAD_DECOMPRESSED_THUNK: u32 = 0x003e_22f0;
 
 pub(crate) const EA_MEM_FREE_ADDR: u32 = 0x0031_7e98;
-
 
 /// `void AnimDataBase_ResetChanCacheTable(void)` (0x3110d0): clear two
 /// 48-entry tables at 0x4fe7a0 and 0x4fe860.
@@ -376,7 +450,6 @@ pub fn anim_data_base_reset_chan_cache_table(c: &mut Cpu) {
     }
 }
 
-
 // ---------------------------------------------------------------------------
 // AnimDataBase.
 
@@ -403,7 +476,6 @@ pub fn anim_data_base_ctor(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void AnimDataBase_dtor(AnimDataBase *this, uint flags)` (0x311088): clear
 /// the global at `gp + 0xd08`, free the channel caches and, when `flags & 1`,
@@ -436,7 +508,6 @@ pub fn anim_data_base_dtor(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // ADF data source and animation combo.
 
@@ -464,7 +535,6 @@ pub fn adf_data_source_ctor(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `AdfDataSource_dtor(AdfDataSource *this, uint flags)` (0x3112c8): free the
 /// loaded data (+0) and, when `flags & 1`, delete `this`.
@@ -500,7 +570,6 @@ pub fn adf_data_source_dtor(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void AnimDataBase_SampleChannel(AnimDataBase* db, float* out,
 /// AnimRef* anim, int channel, int firstCurve, int maxCurves)` (0x311318):
@@ -700,7 +769,6 @@ pub fn anim_data_base_sample_channel(c: &mut Cpu) {
     }
 }
 
-
 /// `out = lhs * rhs` for two 4x4 matrices through VU0 (vf4..7 = lhs,
 /// vf8..11 = rhs, result rows in vf12..15), as the model renderers issue it.
 pub(crate) fn concat_matrix(c: &mut Cpu, lhs: u32, rhs: u32, out: u32) {
@@ -735,7 +803,6 @@ pub(crate) fn concat_matrix(c: &mut Cpu, lhs: u32, rhs: u32, out: u32) {
     c.sqc2(15, p(out, 0x30));
 }
 
-
 // ---------------------------------------------------------------------------
 // RiderModel_Render / RiderModel_RenderShadow.
 
@@ -761,7 +828,6 @@ pub(crate) fn bone_matrix(c: &mut Cpu, a: u32, b: u32, scratch: u32, stack: u32,
     c.sqc2(3, p(out, 0x20));
     c.sqc2(4, p(out, 0x30));
 }
-
 
 /// `void RiderModel_Render(RiderModel* m, int lod, int x, int y)` (0x310640):
 /// concatenate the per-bone rotation (`+0x34`) and translation (`+0x38`)
@@ -802,227 +868,227 @@ pub fn rider_model_render(c: &mut Cpu) {
     }
     guest(c, |c| {
         'body: {
-        // Bone matrices.
-        'bones: {
-            c.cycles += 3;
-            let bones = lw(c, p(model, model::NUM_BONES));
-            c.g[V0][0] = bones;
-            let none = (bones as i64) <= 0;
-            c.g[A2][0] = 0;
-            if none {
-                break 'bones;
-            }
-            c.cycles += 5;
-            c.g[V0][0] = sx(0x50_0000);
-            c.g[A3][0] = sx(frame.at(c, 0x40));
-            c.g[T0][0] = sx(0x50_0000u32.wrapping_sub(0x3be0));
-            c.g[T1][0] = c.g[SP][0];
-            loop {
-                c.cycles += 54;
-                c.g[V1][0] = lw(c, p(model, model::BONE_TABLE_A));
-                c.g[V0][0] = sx(r32(c, A2) << 6);
-                c.g[A0][0] = lw(c, p(model, model::BONE_TABLE_B));
-                c.g[V1][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
-                c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
-                bone_matrix(
-                    c,
-                    r32(c, V1),
-                    r32(c, V0),
-                    r32(c, A3),
-                    r32(c, T1),
-                    r32(c, T0),
-                );
-                c.g[V0][0] = lw(c, p(model, model::NUM_BONES));
-                c.g[A2][0] = sx(r32(c, A2).wrapping_add(1));
-                c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[V0][0] as i64)) as u64;
-                let more = c.g[V0][0] != 0;
-                c.g[T0][0] = sx(r32(c, T0).wrapping_add(0x40));
-                if more {
-                    if event_due(c) {
-                        deliver_event_here(c, 0x0031_06b8);
-                    }
-                    continue;
+            // Bone matrices.
+            'bones: {
+                c.cycles += 3;
+                let bones = lw(c, p(model, model::NUM_BONES));
+                c.g[V0][0] = bones;
+                let none = (bones as i64) <= 0;
+                c.g[A2][0] = 0;
+                if none {
+                    break 'bones;
                 }
-                break;
+                c.cycles += 5;
+                c.g[V0][0] = sx(0x50_0000);
+                c.g[A3][0] = sx(frame.at(c, 0x40));
+                c.g[T0][0] = sx(0x50_0000u32.wrapping_sub(0x3be0));
+                c.g[T1][0] = c.g[SP][0];
+                loop {
+                    c.cycles += 54;
+                    c.g[V1][0] = lw(c, p(model, model::BONE_TABLE_A));
+                    c.g[V0][0] = sx(r32(c, A2) << 6);
+                    c.g[A0][0] = lw(c, p(model, model::BONE_TABLE_B));
+                    c.g[V1][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+                    bone_matrix(
+                        c,
+                        r32(c, V1),
+                        r32(c, V0),
+                        r32(c, A3),
+                        r32(c, T1),
+                        r32(c, T0),
+                    );
+                    c.g[V0][0] = lw(c, p(model, model::NUM_BONES));
+                    c.g[A2][0] = sx(r32(c, A2).wrapping_add(1));
+                    c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let more = c.g[V0][0] != 0;
+                    c.g[T0][0] = sx(r32(c, T0).wrapping_add(0x40));
+                    if more {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0031_06b8);
+                        }
+                        continue;
+                    }
+                    break;
+                }
             }
-        }
-        // Parts.
-        'parts: {
-            c.cycles += 3;
-            let has_parts = lw(c, p(model, model::HAS_PARTS));
-            c.g[V0][0] = has_parts;
-            let plain = has_parts == 0;
-            c.g[V0][0] = sx(r32(c, A1) << 3);
-            if plain {
-                break 'parts;
+            // Parts.
+            'parts: {
+                c.cycles += 3;
+                let has_parts = lw(c, p(model, model::HAS_PARTS));
+                c.g[V0][0] = has_parts;
+                let plain = has_parts == 0;
+                c.g[V0][0] = sx(r32(c, A1) << 3);
+                if plain {
+                    break 'parts;
+                }
+                c.cycles += 3;
+                let count = lw(c, p(model, model::NUM_PARTS));
+                c.g[V0][0] = count;
+                let none = (count as i64) <= 0;
+                c.g[S4][0] = 0;
+                if none {
+                    c.cycles += 1;
+                    break 'body;
+                }
+                c.cycles += 4;
+                c.g[S5][0] = sx(r32(c, A1) << 3);
+                c.g[FP][0] = sx(0x50_0000);
+                c.g[S3][0] = 0;
+                loop {
+                    'part: {
+                        c.cycles += 6;
+                        c.g[V0][0] = lw(c, p(model, model::PARTS));
+                        c.g[A0][0] = sx(r32(c, S3).wrapping_add(r32(c, V0)));
+                        c.g[V1][0] = sx(r32(c, A0).wrapping_add(r32(c, S5)));
+                        c.g[V0][0] = lw(c, p(r32(c, V1), model::PART_LODS));
+                        let unused = c.g[V0][0] == 0;
+                        c.g[V0][0] = sx(r32(c, A0).wrapping_add(r32(c, S5)));
+                        if unused {
+                            break 'part;
+                        }
+                        c.cycles += 7;
+                        c.g[V1][0] = lw(c, p(r32(c, A0), model::PART_REF_INDEX));
+                        c.g[A0][0] = lw(c, p(r32(c, V0), 0x1c));
+                        c.g[V1][0] = sx(r32(c, V1) << 4);
+                        let r = r32(c, A0).wrapping_add(r32(c, V1));
+                        c.g[S0][0] = sx(r);
+                        c.g[V0][0] = lw(c, p(r, 0));
+                        let no_ref = c.g[V0][0] == 0;
+                        c.g[A1][0] = sx(0x50_0000u32.wrapping_sub(0x3be0));
+                        if no_ref {
+                            break 'part;
+                        }
+                        c.cycles += 24;
+                        // vt[111](ctx, mats, 0, ref->unk_0C, ref->unk_08, 0)
+                        c.g[V0][0] = lw(c, p(context as u32, ctx::VTABLE));
+                        c.g[A3][0] = lw(c, p(r, 0xc));
+                        c.g[A2][0] = 0;
+                        c.g[A0][0] = lh(c, p(r32(c, V0), 0x378));
+                        c.g[T1][0] = 0;
+                        c.g[V1][0] = lw(c, p(r32(c, V0), 0x37c));
+                        c.g[T0][0] = lw(c, p(r, 8));
+                        let f = c.g[V1][0] as u32;
+                        c.g[RA][0] = sx(0x0031_0810);
+                        c.g[A0][0] = sx((context as u32).wrapping_add(r32(c, A0)));
+                        call_ptr(c, f, 0x0031_0810)?;
+                        // vt[99](ctx, ref->part, ref->data, id == 2 ? x : y, 0, scale.y)
+                        c.g[V0][0] = lw(c, p(model, model::PARTS));
+                        c.g[A3][0] = c.g[S7][0];
+                        c.g[A1][0] = lw(c, p(context as u32, ctx::VTABLE));
+                        c.g[T0][0] = 0;
+                        c.g[V0][0] = sx(r32(c, S3).wrapping_add(r32(c, V0)));
+                        c.g[A2][0] = lw(c, p(r, 4));
+                        c.g[V1][0] = lw(c, p(r32(c, V0), 0));
+                        c.g[A0][0] = lh(c, p(r32(c, A1), 0x318));
+                        c.g[V0][0] = lw(c, p(r32(c, A1), 0x31c));
+                        c.g[V1][0] = c.g[V1][0] ^ 0x2;
+                        c.g[A1][0] = lw(c, p(r, 0));
+                        c.g[A0][0] = sx((context as u32).wrapping_add(r32(c, A0)));
+                        ldf(c, 12, p(model, model::SCALE_Y));
+                        let f = c.g[V0][0] as u32;
+                        c.g[RA][0] = sx(0x0031_084c);
+                        if c.g[V1][0] != 0 {
+                            c.g[A3][0] = c.g[S6][0];
+                        }
+                        call_ptr(c, f, 0x0031_084c)?;
+                    }
+                    c.cycles += 5;
+                    c.g[V0][0] = lw(c, p(model, model::NUM_PARTS));
+                    c.g[S4][0] = sx(r32(c, S4).wrapping_add(1));
+                    c.g[V0][0] = ((c.g[S4][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let more = c.g[V0][0] != 0;
+                    c.g[S3][0] = sx(r32(c, S3).wrapping_add(0x58));
+                    if more {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0031_07b8);
+                        }
+                        continue;
+                    }
+                    c.cycles += 2;
+                    break 'body;
+                }
             }
-            c.cycles += 3;
+            // No per-part references: one matrix set for the whole LOD.
+            c.cycles += 17;
+            c.g[V1][0] = lw(c, p(context as u32, ctx::VTABLE));
+            c.g[A2][0] = sx(model.wrapping_add(r32(c, V0)));
+            c.g[S4][0] = c.g[V0][0];
+            c.g[V0][0] = c.g[A2][0];
+            c.g[A0][0] = lh(c, p(r32(c, V1), 0x378));
+            c.g[A3][0] = lw(c, p(r32(c, A2), 0x44));
+            c.g[A1][0] = sx(0x50_0000);
+            c.g[T0][0] = lw(c, p(r32(c, V0), 0x40));
+            c.g[A0][0] = sx((context as u32).wrapping_add(r32(c, A0)));
+            c.g[T2][0] = lw(c, p(r32(c, V1), 0x37c));
+            c.g[A1][0] = sx(0x50_0000u32.wrapping_sub(0x3be0));
+            c.g[A2][0] = 0;
+            let f = c.g[T2][0] as u32;
+            c.g[RA][0] = sx(0x0031_08a0);
+            c.g[T1][0] = 0;
+            call_ptr(c, f, 0x0031_08a0)?;
             let count = lw(c, p(model, model::NUM_PARTS));
             c.g[V0][0] = count;
             let none = (count as i64) <= 0;
-            c.g[S4][0] = 0;
+            c.g[S0][0] = 0;
             if none {
                 c.cycles += 1;
                 break 'body;
             }
-            c.cycles += 4;
-            c.g[S5][0] = sx(r32(c, A1) << 3);
-            c.g[FP][0] = sx(0x50_0000);
+            c.cycles += 1;
             c.g[S3][0] = 0;
             loop {
                 'part: {
                     c.cycles += 6;
                     c.g[V0][0] = lw(c, p(model, model::PARTS));
                     c.g[A0][0] = sx(r32(c, S3).wrapping_add(r32(c, V0)));
-                    c.g[V1][0] = sx(r32(c, A0).wrapping_add(r32(c, S5)));
+                    c.g[V1][0] = sx(r32(c, A0).wrapping_add(r32(c, S4)));
                     c.g[V0][0] = lw(c, p(r32(c, V1), model::PART_LODS));
                     let unused = c.g[V0][0] == 0;
-                    c.g[V0][0] = sx(r32(c, A0).wrapping_add(r32(c, S5)));
+                    c.g[V0][0] = c.g[V1][0];
                     if unused {
                         break 'part;
                     }
-                    c.cycles += 7;
-                    c.g[V1][0] = lw(c, p(r32(c, A0), model::PART_REF_INDEX));
-                    c.g[A0][0] = lw(c, p(r32(c, V0), 0x1c));
-                    c.g[V1][0] = sx(r32(c, V1) << 4);
-                    let r = r32(c, A0).wrapping_add(r32(c, V1));
-                    c.g[S0][0] = sx(r);
-                    c.g[V0][0] = lw(c, p(r, 0));
-                    let no_ref = c.g[V0][0] == 0;
-                    c.g[A1][0] = sx(0x50_0000u32.wrapping_sub(0x3be0));
+                    c.cycles += 4;
+                    c.g[A2][0] = lw(c, p(r32(c, V0), 0x1c));
+                    c.g[A1][0] = lw(c, p(r32(c, A2), 0));
+                    let no_ref = c.g[A1][0] == 0;
+                    c.g[T0][0] = 0;
                     if no_ref {
                         break 'part;
                     }
-                    c.cycles += 24;
-                    // vt[111](ctx, mats, 0, ref->unk_0C, ref->unk_08, 0)
-                    c.g[V0][0] = lw(c, p(context as u32, ctx::VTABLE));
-                    c.g[A3][0] = lw(c, p(r, 0xc));
-                    c.g[A2][0] = 0;
-                    c.g[A0][0] = lh(c, p(r32(c, V0), 0x378));
-                    c.g[T1][0] = 0;
-                    c.g[V1][0] = lw(c, p(r32(c, V0), 0x37c));
-                    c.g[T0][0] = lw(c, p(r, 8));
-                    let f = c.g[V1][0] as u32;
-                    c.g[RA][0] = sx(0x0031_0810);
-                    c.g[A0][0] = sx((context as u32).wrapping_add(r32(c, A0)));
-                    call_ptr(c, f, 0x0031_0810)?;
-                    // vt[99](ctx, ref->part, ref->data, id == 2 ? x : y, 0, scale.y)
-                    c.g[V0][0] = lw(c, p(model, model::PARTS));
+                    c.cycles += 11;
+                    c.g[V1][0] = lw(c, p(context as u32, ctx::VTABLE));
                     c.g[A3][0] = c.g[S7][0];
-                    c.g[A1][0] = lw(c, p(context as u32, ctx::VTABLE));
-                    c.g[T0][0] = 0;
-                    c.g[V0][0] = sx(r32(c, S3).wrapping_add(r32(c, V0)));
-                    c.g[A2][0] = lw(c, p(r, 4));
-                    c.g[V1][0] = lw(c, p(r32(c, V0), 0));
-                    c.g[A0][0] = lh(c, p(r32(c, A1), 0x318));
-                    c.g[V0][0] = lw(c, p(r32(c, A1), 0x31c));
-                    c.g[V1][0] = c.g[V1][0] ^ 0x2;
-                    c.g[A1][0] = lw(c, p(r, 0));
+                    c.g[V0][0] = lw(c, p(r32(c, A0), 0));
+                    c.g[A0][0] = lh(c, p(r32(c, V1), 0x318));
+                    c.g[V0][0] = c.g[V0][0] ^ 0x2;
+                    c.g[T1][0] = lw(c, p(r32(c, V1), 0x31c));
+                    c.g[A2][0] = lw(c, p(r32(c, A2), 4));
                     c.g[A0][0] = sx((context as u32).wrapping_add(r32(c, A0)));
                     ldf(c, 12, p(model, model::SCALE_Y));
-                    let f = c.g[V0][0] as u32;
-                    c.g[RA][0] = sx(0x0031_084c);
-                    if c.g[V1][0] != 0 {
+                    let f = c.g[T1][0] as u32;
+                    c.g[RA][0] = sx(0x0031_0904);
+                    if c.g[V0][0] != 0 {
                         c.g[A3][0] = c.g[S6][0];
                     }
-                    call_ptr(c, f, 0x0031_084c)?;
+                    call_ptr(c, f, 0x0031_0904)?;
                 }
                 c.cycles += 5;
                 c.g[V0][0] = lw(c, p(model, model::NUM_PARTS));
-                c.g[S4][0] = sx(r32(c, S4).wrapping_add(1));
-                c.g[V0][0] = ((c.g[S4][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+                c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
                 let more = c.g[V0][0] != 0;
                 c.g[S3][0] = sx(r32(c, S3).wrapping_add(0x58));
                 if more {
                     if event_due(c) {
-                        deliver_event_here(c, 0x0031_07b8);
+                        deliver_event_here(c, 0x0031_08b0);
                     }
                     continue;
                 }
-                c.cycles += 2;
-                break 'body;
+                break;
             }
-        }
-        // No per-part references: one matrix set for the whole LOD.
-        c.cycles += 17;
-        c.g[V1][0] = lw(c, p(context as u32, ctx::VTABLE));
-        c.g[A2][0] = sx(model.wrapping_add(r32(c, V0)));
-        c.g[S4][0] = c.g[V0][0];
-        c.g[V0][0] = c.g[A2][0];
-        c.g[A0][0] = lh(c, p(r32(c, V1), 0x378));
-        c.g[A3][0] = lw(c, p(r32(c, A2), 0x44));
-        c.g[A1][0] = sx(0x50_0000);
-        c.g[T0][0] = lw(c, p(r32(c, V0), 0x40));
-        c.g[A0][0] = sx((context as u32).wrapping_add(r32(c, A0)));
-        c.g[T2][0] = lw(c, p(r32(c, V1), 0x37c));
-        c.g[A1][0] = sx(0x50_0000u32.wrapping_sub(0x3be0));
-        c.g[A2][0] = 0;
-        let f = c.g[T2][0] as u32;
-        c.g[RA][0] = sx(0x0031_08a0);
-        c.g[T1][0] = 0;
-        call_ptr(c, f, 0x0031_08a0)?;
-        let count = lw(c, p(model, model::NUM_PARTS));
-        c.g[V0][0] = count;
-        let none = (count as i64) <= 0;
-        c.g[S0][0] = 0;
-        if none {
             c.cycles += 1;
-            break 'body;
-        }
-        c.cycles += 1;
-        c.g[S3][0] = 0;
-        loop {
-            'part: {
-                c.cycles += 6;
-                c.g[V0][0] = lw(c, p(model, model::PARTS));
-                c.g[A0][0] = sx(r32(c, S3).wrapping_add(r32(c, V0)));
-                c.g[V1][0] = sx(r32(c, A0).wrapping_add(r32(c, S4)));
-                c.g[V0][0] = lw(c, p(r32(c, V1), model::PART_LODS));
-                let unused = c.g[V0][0] == 0;
-                c.g[V0][0] = c.g[V1][0];
-                if unused {
-                    break 'part;
-                }
-                c.cycles += 4;
-                c.g[A2][0] = lw(c, p(r32(c, V0), 0x1c));
-                c.g[A1][0] = lw(c, p(r32(c, A2), 0));
-                let no_ref = c.g[A1][0] == 0;
-                c.g[T0][0] = 0;
-                if no_ref {
-                    break 'part;
-                }
-                c.cycles += 11;
-                c.g[V1][0] = lw(c, p(context as u32, ctx::VTABLE));
-                c.g[A3][0] = c.g[S7][0];
-                c.g[V0][0] = lw(c, p(r32(c, A0), 0));
-                c.g[A0][0] = lh(c, p(r32(c, V1), 0x318));
-                c.g[V0][0] = c.g[V0][0] ^ 0x2;
-                c.g[T1][0] = lw(c, p(r32(c, V1), 0x31c));
-                c.g[A2][0] = lw(c, p(r32(c, A2), 4));
-                c.g[A0][0] = sx((context as u32).wrapping_add(r32(c, A0)));
-                ldf(c, 12, p(model, model::SCALE_Y));
-                let f = c.g[T1][0] as u32;
-                c.g[RA][0] = sx(0x0031_0904);
-                if c.g[V0][0] != 0 {
-                    c.g[A3][0] = c.g[S6][0];
-                }
-                call_ptr(c, f, 0x0031_0904)?;
-            }
-            c.cycles += 5;
-            c.g[V0][0] = lw(c, p(model, model::NUM_PARTS));
-            c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
-            c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
-            let more = c.g[V0][0] != 0;
-            c.g[S3][0] = sx(r32(c, S3).wrapping_add(0x58));
-            if more {
-                if event_due(c) {
-                    deliver_event_here(c, 0x0031_08b0);
-                }
-                continue;
-            }
-            break;
-        }
-        c.cycles += 1;
         }
         c.cycles += 11;
         frame.restore(c, S0, 0x110);
@@ -1039,7 +1105,6 @@ pub fn rider_model_render(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void RiderModel_RenderShadow(RiderModel* m, int lod, Vec4* a, Vec4* b)`
 /// (0x310948): as [`rider_model_render`] but with the shadow bone rotation
@@ -1078,227 +1143,227 @@ pub fn rider_model_render_shadow(c: &mut Cpu) {
     }
     guest(c, |c| {
         'body: {
-        'bones: {
-            c.cycles += 4;
-            let bones = lw(c, p(model, model::NUM_BONES));
-            c.g[V0][0] = bones;
-            let none = (bones as i64) <= 0;
-            c.g[A2][0] = 0;
-            if none {
-                break 'bones;
+            'bones: {
+                c.cycles += 4;
+                let bones = lw(c, p(model, model::NUM_BONES));
+                c.g[V0][0] = bones;
+                let none = (bones as i64) <= 0;
+                c.g[A2][0] = 0;
+                if none {
+                    break 'bones;
+                }
+                c.cycles += 4;
+                c.g[V0][0] = sx(0x50_0000);
+                c.g[A3][0] = sx(frame.at(c, 0x40));
+                c.g[T0][0] = sx(0x50_0000u32.wrapping_sub(0x2be0));
+                c.g[T1][0] = c.g[SP][0];
+                loop {
+                    c.cycles += 54;
+                    c.g[V1][0] = lw(c, p(model, model::BONE_TABLE_A_SHADOW));
+                    c.g[V0][0] = sx(r32(c, A2) << 6);
+                    c.g[A0][0] = lw(c, p(model, model::BONE_TABLE_B));
+                    c.g[V1][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+                    bone_matrix(
+                        c,
+                        r32(c, V1),
+                        r32(c, V0),
+                        r32(c, A3),
+                        r32(c, T1),
+                        r32(c, T0),
+                    );
+                    c.g[V0][0] = lw(c, p(model, model::NUM_BONES));
+                    c.g[A2][0] = sx(r32(c, A2).wrapping_add(1));
+                    c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let more = c.g[V0][0] != 0;
+                    c.g[T0][0] = sx(r32(c, T0).wrapping_add(0x40));
+                    if more {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0031_09b8);
+                        }
+                        continue;
+                    }
+                    break;
+                }
             }
-            c.cycles += 4;
-            c.g[V0][0] = sx(0x50_0000);
-            c.g[A3][0] = sx(frame.at(c, 0x40));
-            c.g[T0][0] = sx(0x50_0000u32.wrapping_sub(0x2be0));
-            c.g[T1][0] = c.g[SP][0];
+            'parts: {
+                c.cycles += 3;
+                let has_parts = lw(c, p(model, model::HAS_PARTS));
+                c.g[V0][0] = has_parts;
+                let plain = has_parts == 0;
+                c.g[V0][0] = sx(r32(c, A1) << 3);
+                if plain {
+                    break 'parts;
+                }
+                c.cycles += 3;
+                let count = lw(c, p(model, model::NUM_PARTS));
+                c.g[V0][0] = count;
+                let none = (count as i64) <= 0;
+                c.g[S4][0] = 0;
+                if none {
+                    c.cycles += 1;
+                    break 'body;
+                }
+                c.cycles += 4;
+                c.g[S5][0] = sx(r32(c, A1) << 3);
+                c.g[FP][0] = sx(0x50_0000);
+                c.g[S3][0] = 0;
+                loop {
+                    'part: {
+                        c.cycles += 6;
+                        c.g[V0][0] = lw(c, p(model, model::PARTS));
+                        c.g[A0][0] = sx(r32(c, S3).wrapping_add(r32(c, V0)));
+                        c.g[V1][0] = sx(r32(c, A0).wrapping_add(r32(c, S5)));
+                        c.g[V0][0] = lw(c, p(r32(c, V1), model::PART_LODS));
+                        let unused = c.g[V0][0] == 0;
+                        c.g[V0][0] = sx(r32(c, A0).wrapping_add(r32(c, S5)));
+                        if unused {
+                            break 'part;
+                        }
+                        c.cycles += 7;
+                        c.g[V1][0] = lw(c, p(r32(c, A0), model::PART_REF_INDEX));
+                        c.g[A0][0] = lw(c, p(r32(c, V0), 0x1c));
+                        c.g[V1][0] = sx(r32(c, V1) << 4);
+                        let r = r32(c, A0).wrapping_add(r32(c, V1));
+                        c.g[S0][0] = sx(r);
+                        c.g[V0][0] = lw(c, p(r, 0));
+                        let no_ref = c.g[V0][0] == 0;
+                        c.g[A1][0] = sx(0x50_0000u32.wrapping_sub(0x2be0));
+                        if no_ref {
+                            break 'part;
+                        }
+                        c.cycles += 23;
+                        c.g[V0][0] = lw(c, p(context as u32, ctx::VTABLE));
+                        c.g[A3][0] = lw(c, p(r, 0xc));
+                        c.g[A2][0] = 0;
+                        c.g[A0][0] = lh(c, p(r32(c, V0), 0x378));
+                        c.g[T1][0] = 0;
+                        c.g[V1][0] = lw(c, p(r32(c, V0), 0x37c));
+                        c.g[T0][0] = lw(c, p(r, 8));
+                        let f = c.g[V1][0] as u32;
+                        c.g[RA][0] = sx(0x0031_0b10);
+                        c.g[A0][0] = sx((context as u32).wrapping_add(r32(c, A0)));
+                        call_ptr(c, f, 0x0031_0b10)?;
+                        // vt[100](ctx, ref->part, ref->data, m)
+                        c.g[V0][0] = lw(c, p(model, model::PARTS));
+                        c.g[A3][0] = c.g[S7][0];
+                        c.g[A1][0] = lw(c, p(context as u32, ctx::VTABLE));
+                        c.g[V0][0] = sx(r32(c, S3).wrapping_add(r32(c, V0)));
+                        c.g[A2][0] = lw(c, p(r, 4));
+                        c.g[V1][0] = lw(c, p(r32(c, V0), 0));
+                        c.g[A0][0] = lh(c, p(r32(c, A1), 0x320));
+                        c.g[V1][0] = sx(r32(c, V1).wrapping_sub(1));
+                        c.g[V0][0] = lw(c, p(r32(c, A1), 0x324));
+                        c.g[V1][0] = (c.g[V1][0] < 0x2u64) as u64;
+                        c.g[A1][0] = lw(c, p(r, 0));
+                        c.g[A0][0] = sx((context as u32).wrapping_add(r32(c, A0)));
+                        let f = c.g[V0][0] as u32;
+                        c.g[RA][0] = sx(0x0031_0b48);
+                        if c.g[V1][0] == 0 {
+                            c.g[A3][0] = c.g[S6][0];
+                        }
+                        call_ptr(c, f, 0x0031_0b48)?;
+                    }
+                    c.cycles += 5;
+                    c.g[V0][0] = lw(c, p(model, model::NUM_PARTS));
+                    c.g[S4][0] = sx(r32(c, S4).wrapping_add(1));
+                    c.g[V0][0] = ((c.g[S4][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let more = c.g[V0][0] != 0;
+                    c.g[S3][0] = sx(r32(c, S3).wrapping_add(0x58));
+                    if more {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0031_0ab8);
+                        }
+                        continue;
+                    }
+                    c.cycles += 2;
+                    break 'body;
+                }
+            }
+            // No per-part references: one matrix set for the whole LOD.
+            c.cycles += 17;
+            c.g[V1][0] = lw(c, p(context as u32, ctx::VTABLE));
+            c.g[A2][0] = sx(model.wrapping_add(r32(c, V0)));
+            c.g[S4][0] = c.g[V0][0];
+            c.g[V0][0] = c.g[A2][0];
+            c.g[A0][0] = lh(c, p(r32(c, V1), 0x378));
+            c.g[A3][0] = lw(c, p(r32(c, A2), 0x44));
+            c.g[A1][0] = sx(0x50_0000);
+            c.g[T0][0] = lw(c, p(r32(c, V0), 0x40));
+            c.g[A0][0] = sx((context as u32).wrapping_add(r32(c, A0)));
+            c.g[T2][0] = lw(c, p(r32(c, V1), 0x37c));
+            c.g[A1][0] = sx(0x50_0000u32.wrapping_sub(0x2be0));
+            c.g[A2][0] = 0;
+            let f = c.g[T2][0] as u32;
+            c.g[RA][0] = sx(0x0031_0b9c);
+            c.g[T1][0] = 0;
+            call_ptr(c, f, 0x0031_0b9c)?;
+            let count = lw(c, p(model, model::NUM_PARTS));
+            c.g[V0][0] = count;
+            let none = (count as i64) <= 0;
+            c.g[S0][0] = 0;
+            if none {
+                c.cycles += 1;
+                break 'body;
+            }
+            c.cycles += 2;
+            c.g[S3][0] = 0;
             loop {
-                c.cycles += 54;
-                c.g[V1][0] = lw(c, p(model, model::BONE_TABLE_A_SHADOW));
-                c.g[V0][0] = sx(r32(c, A2) << 6);
-                c.g[A0][0] = lw(c, p(model, model::BONE_TABLE_B));
-                c.g[V1][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
-                c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
-                bone_matrix(
-                    c,
-                    r32(c, V1),
-                    r32(c, V0),
-                    r32(c, A3),
-                    r32(c, T1),
-                    r32(c, T0),
-                );
-                c.g[V0][0] = lw(c, p(model, model::NUM_BONES));
-                c.g[A2][0] = sx(r32(c, A2).wrapping_add(1));
-                c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let mut no_ref_tail = false;
+                'part: {
+                    c.cycles += 6;
+                    c.g[V0][0] = lw(c, p(model, model::PARTS));
+                    c.g[A0][0] = sx(r32(c, S3).wrapping_add(r32(c, V0)));
+                    c.g[V1][0] = sx(r32(c, A0).wrapping_add(r32(c, S4)));
+                    c.g[V0][0] = lw(c, p(r32(c, V1), model::PART_LODS));
+                    let unused = c.g[V0][0] == 0;
+                    c.g[V0][0] = c.g[V1][0];
+                    if unused {
+                        break 'part;
+                    }
+                    c.cycles += 4;
+                    c.g[V1][0] = lw(c, p(r32(c, V0), 0x1c));
+                    c.g[A1][0] = lw(c, p(r32(c, V1), 0));
+                    if c.g[A1][0] == 0 {
+                        c.g[V0][0] = lw(c, p(model, model::NUM_PARTS));
+                        no_ref_tail = true;
+                        break 'part;
+                    }
+                    c.cycles += 11;
+                    c.g[A3][0] = lw(c, p(context as u32, ctx::VTABLE));
+                    c.g[V0][0] = lw(c, p(r32(c, A0), 0));
+                    c.g[A2][0] = lw(c, p(r32(c, V1), 4));
+                    c.g[A0][0] = lh(c, p(r32(c, A3), 0x320));
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_sub(1));
+                    c.g[V1][0] = lw(c, p(r32(c, A3), 0x324));
+                    c.g[V0][0] = (c.g[V0][0] < 0x2u64) as u64;
+                    c.g[A3][0] = c.g[S7][0];
+                    c.g[A0][0] = sx((context as u32).wrapping_add(r32(c, A0)));
+                    let f = c.g[V1][0] as u32;
+                    c.g[RA][0] = sx(0x0031_0c04);
+                    if c.g[V0][0] == 0 {
+                        c.g[A3][0] = c.g[S6][0];
+                    }
+                    call_ptr(c, f, 0x0031_0c04)?;
+                }
+                if !no_ref_tail {
+                    c.cycles += 1;
+                    c.g[V0][0] = lw(c, p(model, model::NUM_PARTS));
+                }
+                c.cycles += 4;
+                c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+                c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
                 let more = c.g[V0][0] != 0;
-                c.g[T0][0] = sx(r32(c, T0).wrapping_add(0x40));
+                c.g[S3][0] = sx(r32(c, S3).wrapping_add(0x58));
                 if more {
                     if event_due(c) {
-                        deliver_event_here(c, 0x0031_09b8);
+                        deliver_event_here(c, 0x0031_0bb0);
                     }
                     continue;
                 }
                 break;
             }
-        }
-        'parts: {
-            c.cycles += 3;
-            let has_parts = lw(c, p(model, model::HAS_PARTS));
-            c.g[V0][0] = has_parts;
-            let plain = has_parts == 0;
-            c.g[V0][0] = sx(r32(c, A1) << 3);
-            if plain {
-                break 'parts;
-            }
-            c.cycles += 3;
-            let count = lw(c, p(model, model::NUM_PARTS));
-            c.g[V0][0] = count;
-            let none = (count as i64) <= 0;
-            c.g[S4][0] = 0;
-            if none {
-                c.cycles += 1;
-                break 'body;
-            }
-            c.cycles += 4;
-            c.g[S5][0] = sx(r32(c, A1) << 3);
-            c.g[FP][0] = sx(0x50_0000);
-            c.g[S3][0] = 0;
-            loop {
-                'part: {
-                    c.cycles += 6;
-                    c.g[V0][0] = lw(c, p(model, model::PARTS));
-                    c.g[A0][0] = sx(r32(c, S3).wrapping_add(r32(c, V0)));
-                    c.g[V1][0] = sx(r32(c, A0).wrapping_add(r32(c, S5)));
-                    c.g[V0][0] = lw(c, p(r32(c, V1), model::PART_LODS));
-                    let unused = c.g[V0][0] == 0;
-                    c.g[V0][0] = sx(r32(c, A0).wrapping_add(r32(c, S5)));
-                    if unused {
-                        break 'part;
-                    }
-                    c.cycles += 7;
-                    c.g[V1][0] = lw(c, p(r32(c, A0), model::PART_REF_INDEX));
-                    c.g[A0][0] = lw(c, p(r32(c, V0), 0x1c));
-                    c.g[V1][0] = sx(r32(c, V1) << 4);
-                    let r = r32(c, A0).wrapping_add(r32(c, V1));
-                    c.g[S0][0] = sx(r);
-                    c.g[V0][0] = lw(c, p(r, 0));
-                    let no_ref = c.g[V0][0] == 0;
-                    c.g[A1][0] = sx(0x50_0000u32.wrapping_sub(0x2be0));
-                    if no_ref {
-                        break 'part;
-                    }
-                    c.cycles += 23;
-                    c.g[V0][0] = lw(c, p(context as u32, ctx::VTABLE));
-                    c.g[A3][0] = lw(c, p(r, 0xc));
-                    c.g[A2][0] = 0;
-                    c.g[A0][0] = lh(c, p(r32(c, V0), 0x378));
-                    c.g[T1][0] = 0;
-                    c.g[V1][0] = lw(c, p(r32(c, V0), 0x37c));
-                    c.g[T0][0] = lw(c, p(r, 8));
-                    let f = c.g[V1][0] as u32;
-                    c.g[RA][0] = sx(0x0031_0b10);
-                    c.g[A0][0] = sx((context as u32).wrapping_add(r32(c, A0)));
-                    call_ptr(c, f, 0x0031_0b10)?;
-                    // vt[100](ctx, ref->part, ref->data, m)
-                    c.g[V0][0] = lw(c, p(model, model::PARTS));
-                    c.g[A3][0] = c.g[S7][0];
-                    c.g[A1][0] = lw(c, p(context as u32, ctx::VTABLE));
-                    c.g[V0][0] = sx(r32(c, S3).wrapping_add(r32(c, V0)));
-                    c.g[A2][0] = lw(c, p(r, 4));
-                    c.g[V1][0] = lw(c, p(r32(c, V0), 0));
-                    c.g[A0][0] = lh(c, p(r32(c, A1), 0x320));
-                    c.g[V1][0] = sx(r32(c, V1).wrapping_sub(1));
-                    c.g[V0][0] = lw(c, p(r32(c, A1), 0x324));
-                    c.g[V1][0] = (c.g[V1][0] < 0x2u64) as u64;
-                    c.g[A1][0] = lw(c, p(r, 0));
-                    c.g[A0][0] = sx((context as u32).wrapping_add(r32(c, A0)));
-                    let f = c.g[V0][0] as u32;
-                    c.g[RA][0] = sx(0x0031_0b48);
-                    if c.g[V1][0] == 0 {
-                        c.g[A3][0] = c.g[S6][0];
-                    }
-                    call_ptr(c, f, 0x0031_0b48)?;
-                }
-                c.cycles += 5;
-                c.g[V0][0] = lw(c, p(model, model::NUM_PARTS));
-                c.g[S4][0] = sx(r32(c, S4).wrapping_add(1));
-                c.g[V0][0] = ((c.g[S4][0] as i64) < (c.g[V0][0] as i64)) as u64;
-                let more = c.g[V0][0] != 0;
-                c.g[S3][0] = sx(r32(c, S3).wrapping_add(0x58));
-                if more {
-                    if event_due(c) {
-                        deliver_event_here(c, 0x0031_0ab8);
-                    }
-                    continue;
-                }
-                c.cycles += 2;
-                break 'body;
-            }
-        }
-        // No per-part references: one matrix set for the whole LOD.
-        c.cycles += 17;
-        c.g[V1][0] = lw(c, p(context as u32, ctx::VTABLE));
-        c.g[A2][0] = sx(model.wrapping_add(r32(c, V0)));
-        c.g[S4][0] = c.g[V0][0];
-        c.g[V0][0] = c.g[A2][0];
-        c.g[A0][0] = lh(c, p(r32(c, V1), 0x378));
-        c.g[A3][0] = lw(c, p(r32(c, A2), 0x44));
-        c.g[A1][0] = sx(0x50_0000);
-        c.g[T0][0] = lw(c, p(r32(c, V0), 0x40));
-        c.g[A0][0] = sx((context as u32).wrapping_add(r32(c, A0)));
-        c.g[T2][0] = lw(c, p(r32(c, V1), 0x37c));
-        c.g[A1][0] = sx(0x50_0000u32.wrapping_sub(0x2be0));
-        c.g[A2][0] = 0;
-        let f = c.g[T2][0] as u32;
-        c.g[RA][0] = sx(0x0031_0b9c);
-        c.g[T1][0] = 0;
-        call_ptr(c, f, 0x0031_0b9c)?;
-        let count = lw(c, p(model, model::NUM_PARTS));
-        c.g[V0][0] = count;
-        let none = (count as i64) <= 0;
-        c.g[S0][0] = 0;
-        if none {
             c.cycles += 1;
-            break 'body;
-        }
-        c.cycles += 2;
-        c.g[S3][0] = 0;
-        loop {
-            let mut no_ref_tail = false;
-            'part: {
-                c.cycles += 6;
-                c.g[V0][0] = lw(c, p(model, model::PARTS));
-                c.g[A0][0] = sx(r32(c, S3).wrapping_add(r32(c, V0)));
-                c.g[V1][0] = sx(r32(c, A0).wrapping_add(r32(c, S4)));
-                c.g[V0][0] = lw(c, p(r32(c, V1), model::PART_LODS));
-                let unused = c.g[V0][0] == 0;
-                c.g[V0][0] = c.g[V1][0];
-                if unused {
-                    break 'part;
-                }
-                c.cycles += 4;
-                c.g[V1][0] = lw(c, p(r32(c, V0), 0x1c));
-                c.g[A1][0] = lw(c, p(r32(c, V1), 0));
-                if c.g[A1][0] == 0 {
-                    c.g[V0][0] = lw(c, p(model, model::NUM_PARTS));
-                    no_ref_tail = true;
-                    break 'part;
-                }
-                c.cycles += 11;
-                c.g[A3][0] = lw(c, p(context as u32, ctx::VTABLE));
-                c.g[V0][0] = lw(c, p(r32(c, A0), 0));
-                c.g[A2][0] = lw(c, p(r32(c, V1), 4));
-                c.g[A0][0] = lh(c, p(r32(c, A3), 0x320));
-                c.g[V0][0] = sx(r32(c, V0).wrapping_sub(1));
-                c.g[V1][0] = lw(c, p(r32(c, A3), 0x324));
-                c.g[V0][0] = (c.g[V0][0] < 0x2u64) as u64;
-                c.g[A3][0] = c.g[S7][0];
-                c.g[A0][0] = sx((context as u32).wrapping_add(r32(c, A0)));
-                let f = c.g[V1][0] as u32;
-                c.g[RA][0] = sx(0x0031_0c04);
-                if c.g[V0][0] == 0 {
-                    c.g[A3][0] = c.g[S6][0];
-                }
-                call_ptr(c, f, 0x0031_0c04)?;
-            }
-            if !no_ref_tail {
-                c.cycles += 1;
-                c.g[V0][0] = lw(c, p(model, model::NUM_PARTS));
-            }
-            c.cycles += 4;
-            c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
-            c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
-            let more = c.g[V0][0] != 0;
-            c.g[S3][0] = sx(r32(c, S3).wrapping_add(0x58));
-            if more {
-                if event_due(c) {
-                    deliver_event_here(c, 0x0031_0bb0);
-                }
-                continue;
-            }
-            break;
-        }
-        c.cycles += 1;
         }
         c.cycles += 11;
         frame.restore(c, S0, 0x110);
@@ -1315,7 +1380,6 @@ pub fn rider_model_render_shadow(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void RiderModel_LockPart(RiderModel* model, int i)` (0x30eca0): OR the
 /// mask of part `partIndex[i]` into the model's locked-part mask.
@@ -1336,7 +1400,6 @@ pub fn rider_model_lock_part(c: &mut Cpu) {
     c.sd(model.wrapping_add(0x158), c.g[A3][0]);
     abi::ret(c);
 }
-
 
 // ---------------------------------------------------------------------------
 // RiderModel_LoadState.
@@ -1366,7 +1429,6 @@ pub fn rider_model_load_state(c: &mut Cpu) {
     })
 }
 
-
 /// `AdfDataSource* AdfDataSource_ctor(AdfDataSource* self, const char* src
 /// /*a1*/)` (0x311250): load the compressed source and adopt the data.
 pub fn adf_data_source_ctor_2(c: &mut Cpu) {
@@ -1391,7 +1453,6 @@ pub fn adf_data_source_ctor_2(c: &mut Cpu) {
     })
 }
 
-
 /// `int RiderModel_CompareInt(int** a, int** b)` (0x0030db90):
 /// `*a - *b`.
 pub fn rider_model_compare_int(c: &mut Cpu) {
@@ -1401,7 +1462,6 @@ pub fn rider_model_compare_int(c: &mut Cpu) {
     c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
     abi::ret(c);
 }
-
 
 /// `void RiderModel_HideAllParts(RiderModel* self)` (0x30eb60): clear the
 /// `used` flag of every LOD of every part and the model's visibility mask.
@@ -3349,7 +3409,6 @@ pub fn rider_model_blend_anim_pose(c: &mut Cpu) {
     })
 }
 
-
 /// `void RiderModel_ShowPartVariant(RiderModel* self, int part, void* value)`
 /// (0x30ec18): store `value` in the part's variant slot, OR the part's mask
 /// bit and mark the three variant words.
@@ -3409,7 +3468,6 @@ pub fn rider_model_show_part_variant(c: &mut Cpu) {
     c.cycles += 2;
     abi::ret(c);
 }
-
 
 // ---------------------------------------------------------------------------
 // Rider model.
@@ -3479,7 +3537,6 @@ pub fn rider_model_show_part(c: &mut Cpu) {
     c.cycles += 2;
     abi::ret(c);
 }
-
 
 // ---------------------------------------------------------------------------
 // Rider model.
@@ -3688,167 +3745,196 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
-    use crate::difftest::scramble;
-    use crate::difftest::Rng;
-    use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
+    use crate::difftest::elf_image;
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::driven;
+    use crate::difftest::events::schedule;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::ptr;
     use crate::difftest::fakes::vtable;
+    use crate::difftest::fakes::FAKE;
     use crate::difftest::fakes::LOG_RESULTS;
     use crate::difftest::fill;
-    use crate::difftest::put_words;
-    use ssx3_ee as ee;
-    use crate::difftest::fakes::FAKE;
     use crate::difftest::put_vec;
-    use crate::difftest::events::check_events;
-    use crate::difftest::events::driven;
-    use crate::difftest::events::schedule;
+    use crate::difftest::put_words;
+    use crate::difftest::scramble;
+    use crate::difftest::Rng;
+    use crate::difftest::DATA;
+    use crate::difftest::GAME_GP;
     use crate::difftest::RA as SENTINEL_RA;
-    use crate::difftest::SP as STACK_TOP;
     use crate::difftest::RA as TEST_RA;
-    use crate::difftest::elf_image;
+    use crate::difftest::SP as STACK_TOP;
     use crate::difftest::SP;
-    pub(crate) use crate::game::world::wscriptcache::tests::SEEDS;
-    pub(crate) use crate::game::ai::aianimeventmap::tests::MEM_MUTEX;
     pub(crate) use crate::game::ai::aianimeventmap::tests::alloc_setup;
-    pub(crate) use crate::game::visualfx::worldlightman::tests::f;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::SEEDS_3 as SEEDS_2;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::CTX;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::TOP;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::TEX;
-    pub(crate) use crate::game::ai::rider::tests::MODEL_2 as MODEL;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::uf;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::ctx_at;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::put_ctx;
-    pub(crate) use crate::game::world::worldview::tests::SEEDS_5 as SEEDS_3;
-    pub(crate) use crate::game::world::worldview::tests::word;
-    pub(crate) use crate::game::fe::feasyncfile::tests::gp_at;
-    pub(crate) use crate::game::fe::feasyncfile::tests::clear_4 as clear;
-    pub(crate) use crate::game::fe::feasyncfile::tests::w_2 as w;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_2 as base;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_allocator_5 as pool_allocator;
-    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_11 as SEEDS_5;
-    pub(crate) use crate::game::fe::feasyncfile::tests::w as w_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::be_library_7 as be_library;
-    pub(crate) use crate::game::fe::feasyncfile::tests::world_4 as world;
-    pub(crate) use crate::game::wscript::wscriptman::tests::w as w_3;
-    pub(crate) use crate::game::wscript::wscriptman::tests::clear_5 as clear_2;
-    pub(crate) use crate::game::wscript::wscriptman::tests::BE_3 as BE;
-    pub(crate) use crate::game::wscript::wscriptman::tests::WORLD_3 as WORLD;
-    pub(crate) use crate::game::wscript::wscriptman::tests::GAME;
-    pub(crate) use crate::game::wscript::wscriptman::tests::globals_3 as globals;
-    pub(crate) use crate::game::wscript::wscriptman::tests::base_6 as base_2;
-    pub(crate) use crate::game::sound::soundsys::tests::BE as BE_2;
-    pub(crate) use crate::game::sound::soundsys::tests::WORLD as WORLD_2;
-    pub(crate) use crate::game::sound::soundsys::tests::w as w_4;
+    pub(crate) use crate::game::ai::aianimeventmap::tests::MEM_MUTEX;
     pub(crate) use crate::game::ai::rider::tests::clear_2 as clear_3;
-    pub(crate) use crate::game::sound::soundsys::tests::globals_7 as globals_2;
-    pub(crate) use crate::game::sound::soundsys::tests::pool_7 as pool;
-    pub(crate) use crate::game::sound::soundsys::tests::load_2 as load;
+    pub(crate) use crate::game::ai::rider::tests::MODEL_2 as MODEL;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_2 as base;
+    pub(crate) use crate::game::fe::feasyncfile::tests::be_library_7 as be_library;
+    pub(crate) use crate::game::fe::feasyncfile::tests::clear_4 as clear;
+    pub(crate) use crate::game::fe::feasyncfile::tests::gp_at;
+    pub(crate) use crate::game::fe::feasyncfile::tests::pool_allocator_5 as pool_allocator;
+    pub(crate) use crate::game::fe::feasyncfile::tests::w as w_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::w_2 as w;
+    pub(crate) use crate::game::fe::feasyncfile::tests::world_4 as world;
+    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_11 as SEEDS_5;
     pub(crate) use crate::game::sound::soundsys::tests::alloc_ready;
     pub(crate) use crate::game::sound::soundsys::tests::base_9 as base_3;
-
+    pub(crate) use crate::game::sound::soundsys::tests::globals_7 as globals_2;
+    pub(crate) use crate::game::sound::soundsys::tests::load_2 as load;
+    pub(crate) use crate::game::sound::soundsys::tests::pool_7 as pool;
+    pub(crate) use crate::game::sound::soundsys::tests::w as w_4;
+    pub(crate) use crate::game::sound::soundsys::tests::BE as BE_2;
+    pub(crate) use crate::game::sound::soundsys::tests::WORLD as WORLD_2;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::ctx_at;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::put_ctx;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::uf;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::CTX;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::SEEDS_3 as SEEDS_2;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::TEX;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::TOP;
+    pub(crate) use crate::game::visualfx::worldlightman::tests::f;
+    pub(crate) use crate::game::world::worldview::tests::word;
+    pub(crate) use crate::game::world::worldview::tests::SEEDS_5 as SEEDS_3;
+    pub(crate) use crate::game::world::wscriptcache::tests::SEEDS;
+    pub(crate) use crate::game::wscript::wscriptman::tests::base_6 as base_2;
+    pub(crate) use crate::game::wscript::wscriptman::tests::clear_5 as clear_2;
+    pub(crate) use crate::game::wscript::wscriptman::tests::globals_3 as globals;
+    pub(crate) use crate::game::wscript::wscriptman::tests::w as w_3;
+    pub(crate) use crate::game::wscript::wscriptman::tests::BE_3 as BE;
+    pub(crate) use crate::game::wscript::wscriptman::tests::GAME;
+    pub(crate) use crate::game::wscript::wscriptman::tests::WORLD_3 as WORLD;
+    use ssx3_ee as ee;
 
     #[test]
     fn rider_model_set_color_scale_matches() {
-        check(ssx3_ee::s10::f_0030dba0, rider_model_set_color_scale, 200, &|c, seed| {
-            let mut r = Rng(0x200a ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.f[12] = r.edge_f32();
-            c.f[13] = r.edge_f32();
-            c.bus.write32(DATA + 0x140, r.next_u32());
-        });
+        check(
+            ssx3_ee::s10::f_0030dba0,
+            rider_model_set_color_scale,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x200a ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.f[12] = r.edge_f32();
+                c.f[13] = r.edge_f32();
+                c.bus.write32(DATA + 0x140, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn rider_model_is_part_visible_matches() {
-        check_lohi(ssx3_ee::s10::f_0030ebc0, rider_model_is_part_visible, 300, &|c, seed| {
-            let mut r = Rng(0x200b ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            let idx = seed % 4;
-            c.g[A1][0] = idx as u64;
-            c.g[A2][0] = (seed % 8) as u64;
-            c.bus.write32(DATA + 0x14, if seed % 3 == 0 { idx } else { 0x10 });
-            let arr = if seed % 5 == 0 { 0 } else { DATA + 0x200 };
-            c.bus.write32(DATA + 0x1c, arr);
-            c.bus.write32(DATA + 0xc, DATA + 0x300);
-            let entry = match seed % 6 {
-                0 => 0u32,
-                1 => 0x8000_0000,
-                _ => (seed % 64) as u32,
-            };
-            c.bus.write32(arr.wrapping_add(idx * 4), entry);
-            for i in 0..8 {
-                c.bus.write32(DATA + 0x300 + i * 4, r.next_u32());
-            }
-        });
+        check_lohi(
+            ssx3_ee::s10::f_0030ebc0,
+            rider_model_is_part_visible,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x200b ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                let idx = seed % 4;
+                c.g[A1][0] = idx as u64;
+                c.g[A2][0] = (seed % 8) as u64;
+                c.bus
+                    .write32(DATA + 0x14, if seed % 3 == 0 { idx } else { 0x10 });
+                let arr = if seed % 5 == 0 { 0 } else { DATA + 0x200 };
+                c.bus.write32(DATA + 0x1c, arr);
+                c.bus.write32(DATA + 0xc, DATA + 0x300);
+                let entry = match seed % 6 {
+                    0 => 0u32,
+                    1 => 0x8000_0000,
+                    _ => (seed % 64) as u32,
+                };
+                c.bus.write32(arr.wrapping_add(idx * 4), entry);
+                for i in 0..8 {
+                    c.bus.write32(DATA + 0x300 + i * 4, r.next_u32());
+                }
+            },
+        );
     }
-
 
     #[test]
     fn adf_data_source_set_data_matches() {
-        check(ssx3_ee::s10::f_00311290, adf_data_source_set_data, 200, &|c, seed| {
-            let mut r = Rng(0x200c ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = (DATA + 0x100) as u64;
-            for i in 0..4 {
-                c.bus.write32(DATA + 0x100 + i * 4, r.next_u32());
-            }
-        });
+        check(
+            ssx3_ee::s10::f_00311290,
+            adf_data_source_set_data,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x200c ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (DATA + 0x100) as u64;
+                for i in 0..4 {
+                    c.bus.write32(DATA + 0x100 + i * 4, r.next_u32());
+                }
+            },
+        );
     }
-
 
     #[test]
     fn anim_data_base_ctor_matches() {
-        check(ee::s10::f_00311048, anim_data_base_ctor, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x1048, 0);
-            c.g[A0][0] = DATA as u64;
-            crate::difftest::fill(c, &mut r, DATA, 0x3fc / 4);
-        });
+        check(
+            ee::s10::f_00311048,
+            anim_data_base_ctor,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1048, 0);
+                c.g[A0][0] = DATA as u64;
+                crate::difftest::fill(c, &mut r, DATA, 0x3fc / 4);
+            },
+        );
     }
-
 
     #[test]
     fn anim_data_base_dtor_matches() {
-        check(ee::s10::f_00311088, anim_data_base_dtor, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x1088, 0);
-            alloc_setup(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = (seed % 2) as u64;
-        });
+        check(
+            ee::s10::f_00311088,
+            anim_data_base_dtor,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1088, 0);
+                alloc_setup(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (seed % 2) as u64;
+            },
+        );
     }
-
 
     // -------------------------------- ADF data source / animation combo
 
     #[test]
     fn adf_data_source_dtor_matches() {
-        check(ee::s10::f_003112c8, adf_data_source_dtor, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x12c8, 0);
-            alloc_setup(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = (seed % 2) as u64;
-            c.bus.write32(DATA, if seed % 3 == 0 { 0 } else { DATA + 0x100 });
-        });
+        check(
+            ee::s10::f_003112c8,
+            adf_data_source_dtor,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x12c8, 0);
+                alloc_setup(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (seed % 2) as u64;
+                c.bus
+                    .write32(DATA, if seed % 3 == 0 { 0 } else { DATA + 0x100 });
+            },
+        );
     }
-
 
     #[test]
     fn anim_data_base_reset_chan_cache_table_matches() {
-        check(ee::s10::f_003110d0, anim_data_base_reset_chan_cache_table, SEEDS, &|c, seed| {
-            let mut r = Rng(0x3110d0 ^ seed as u64);
-            scramble(c, &mut r);
-            c.bus.write32(0x4fe7a0, r.next_u32());
-            c.bus.write32(0x4fe860, r.next_u32());
-        });
+        check(
+            ee::s10::f_003110d0,
+            anim_data_base_reset_chan_cache_table,
+            SEEDS,
+            &|c, seed| {
+                let mut r = Rng(0x3110d0 ^ seed as u64);
+                scramble(c, &mut r);
+                c.bus.write32(0x4fe7a0, r.next_u32());
+                c.bus.write32(0x4fe860, r.next_u32());
+            },
+        );
     }
-
 
     // ------------------------------------------------------------ AnimDataBase
 
@@ -3859,7 +3945,6 @@ pub(crate) mod tests {
         put_words(c, eval::KEY_TABLE_AT, &eval::KEY_TABLE);
         c.bus.write32(GAME_GP - 0x3228, f(0.01));
     }
-
 
     /// Curve records at `recs` (kinds 0..10, 10 = none) and keys at `keys`.
     pub(crate) fn curves(c: &mut Cpu, r: &mut Rng, recs: u32, keys: u32, n: u32) {
@@ -3880,7 +3965,6 @@ pub(crate) mod tests {
         }
     }
 
-
     /// A decoded channel at `ch`: records at `recs`, key tables in `keys`.
     pub(crate) fn channel(c: &mut Cpu, r: &mut Rng, ch: u32, recs: u32, keys: u32) {
         c.bus.write32(ch, recs);
@@ -3894,7 +3978,6 @@ pub(crate) mod tests {
         fill(c, r, keys, 0x100);
     }
 
-
     /// A clip, chunk descriptors, compressed chunk data and two cache banks
     /// (four entries each in a random LRU order) for
     /// `AnimDataBase_SampleChannel`. Case (seed % 5): 0 the cached entry is
@@ -3904,7 +3987,8 @@ pub(crate) mod tests {
         let mut r = Rng(0x5a3b_1e00 ^ (seed as u64) << 12);
         scramble(c, &mut r);
         eval_constants(c);
-        let (db, anim, clips, table, data) = (DATA, DATA + 0x80, DATA + 0x100, DATA + 0x200, DATA + 0x2000);
+        let (db, anim, clips, table, data) =
+            (DATA, DATA + 0x80, DATA + 0x100, DATA + 0x200, DATA + 0x2000);
         let (recs, keys, out) = (DATA + 0x6000, DATA + 0x7000, DATA + 0x9000);
         c.bus.write32(db + 0x8, clips);
         c.bus.write32(db + 0xc, table);
@@ -3968,12 +4052,15 @@ pub(crate) mod tests {
         c.g[T1][0] = (1 + r.next_u32() % 6) as u64;
     }
 
-
     #[test]
     fn anim_data_base_sample_channel_matches() {
-        check(ee::s10::f_00311318__generated, anim_data_base_sample_channel, 300, &sample_setup);
+        check(
+            ee::s10::f_00311318__generated,
+            anim_data_base_sample_channel,
+            300,
+            &sample_setup,
+        );
     }
-
 
     /// A `RiderModel` for the two model renderers: bone tables, optional parts
     /// with their LOD references, and the LOD info words.
@@ -3982,17 +4069,24 @@ pub(crate) mod tests {
         let parts = if seed % 4 == 0 { 0 } else { 2 };
         c.bus.write32(base + model::NUM_BONES, bones);
         c.bus.write32(base + model::NUM_PARTS, parts);
-        c.bus.write32(base + model::HAS_PARTS, (seed % 5 != 0) as u32);
+        c.bus
+            .write32(base + model::HAS_PARTS, (seed % 5 != 0) as u32);
         c.bus.write32(base + model::PARTS, base + 0x8000);
         c.bus.write32(base + model::SCALE_Y, uf(r, 0.5, 2.0));
         for lod in 0..2u32 {
-            c.bus.write32(base + model::LOD_INFO + 8 * lod, r.next_u32());
-            c.bus.write32(base + model::LOD_INFO + 8 * lod + 4, r.next_u32());
+            c.bus
+                .write32(base + model::LOD_INFO + 8 * lod, r.next_u32());
+            c.bus
+                .write32(base + model::LOD_INFO + 8 * lod + 4, r.next_u32());
         }
         let a = base + 0x1000;
         let b = base + 0x2000;
         c.bus.write32(
-            base + if shadow { model::BONE_TABLE_A_SHADOW } else { model::BONE_TABLE_A },
+            base + if shadow {
+                model::BONE_TABLE_A_SHADOW
+            } else {
+                model::BONE_TABLE_A
+            },
             a,
         );
         c.bus.write32(base + model::BONE_TABLE_B, b);
@@ -4013,7 +4107,8 @@ pub(crate) mod tests {
             c.bus.write32(part, (seed + i) % 4); // part id
             for k in 0..2u32 {
                 let rec = refs + 16 * k;
-                c.bus.write32(rec, if (seed + k) % 3 == 0 { 0 } else { r.next_u32() });
+                c.bus
+                    .write32(rec, if (seed + k) % 3 == 0 { 0 } else { r.next_u32() });
                 c.bus.write32(rec + 4, r.next_u32());
                 c.bus.write32(rec + 8, r.next_u32());
                 c.bus.write32(rec + 0xc, r.next_u32());
@@ -4021,58 +4116,69 @@ pub(crate) mod tests {
         }
     }
 
-
     #[test]
     fn rider_model_render_matches() {
-        check(ee::s10::f_00310640__generated, rider_model_render, SEEDS_2, &|c, seed| {
-            let mut r = machine(c, seed, 0x0640, 3);
-            put_ctx(c, &mut r, &[0x378, 0x318]);
-            c.bus.write32(GAME_GP + 0x2858, (seed % 6 == 0) as u32);
-            let m = MODEL;
-            put_render_model(c, &mut r, m, seed, false);
-            c.g[A0][0] = sx(m);
-            c.g[A1][0] = sx(seed % 2);
-            c.g[A2][0] = sx(1 + seed % 3);
-            c.g[A3][0] = sx(4 + seed % 5);
-        });
+        check(
+            ee::s10::f_00310640__generated,
+            rider_model_render,
+            SEEDS_2,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0640, 3);
+                put_ctx(c, &mut r, &[0x378, 0x318]);
+                c.bus.write32(GAME_GP + 0x2858, (seed % 6 == 0) as u32);
+                let m = MODEL;
+                put_render_model(c, &mut r, m, seed, false);
+                c.g[A0][0] = sx(m);
+                c.g[A1][0] = sx(seed % 2);
+                c.g[A2][0] = sx(1 + seed % 3);
+                c.g[A3][0] = sx(4 + seed % 5);
+            },
+        );
     }
-
 
     #[test]
     fn rider_model_render_shadow_matches() {
-        check(ee::s10::f_00310948__generated, rider_model_render_shadow, SEEDS_2, &|c, seed| {
-            let mut r = machine(c, seed, 0x0948, 3);
-            put_ctx(c, &mut r, &[0x378, 0x320]);
-            c.bus.write32(GAME_GP + 0x285c, (seed % 6 == 0) as u32);
-            let m = MODEL;
-            put_render_model(c, &mut r, m, seed, true);
-            c.g[A0][0] = sx(m);
-            c.g[A1][0] = sx(seed % 2);
-            c.g[A2][0] = sx(1 + seed % 3);
-            c.g[A3][0] = sx(4 + seed % 5);
-        });
+        check(
+            ee::s10::f_00310948__generated,
+            rider_model_render_shadow,
+            SEEDS_2,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0948, 3);
+                put_ctx(c, &mut r, &[0x378, 0x320]);
+                c.bus.write32(GAME_GP + 0x285c, (seed % 6 == 0) as u32);
+                let m = MODEL;
+                put_render_model(c, &mut r, m, seed, true);
+                c.g[A0][0] = sx(m);
+                c.g[A1][0] = sx(seed % 2);
+                c.g[A2][0] = sx(1 + seed % 3);
+                c.g[A3][0] = sx(4 + seed % 5);
+            },
+        );
     }
-
 
     #[test]
     fn rider_model_lock_part_matches() {
-        check(ee::s10::f_0030eca0__generated, rider_model_lock_part, 200, &|c, seed| {
-            let mut r = machine(c, seed, 0x30ec_a0, 0);
-            let model = DATA + 0x100;
-            let parts = DATA + 0x1000;
-            let indices = DATA + 0x2000;
-            c.g[A0][0] = sx(model);
-            c.g[A1][0] = sx(seed % 8);
-            c.bus.write32(model + 0x1c, parts);
-            c.bus.write32(model + 0xc, DATA + 0x3000);
-            c.bus.write64(model + 0x158, r.next_u32() as u64);
-            for i in 0..8u32 {
-                c.bus.write32(indices + 4 * i, r.next_u32() % 6);
-            }
-            fill(c, &mut r, parts, 6 * 0x58 / 4);
-        });
+        check(
+            ee::s10::f_0030eca0__generated,
+            rider_model_lock_part,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x30ec_a0, 0);
+                let model = DATA + 0x100;
+                let parts = DATA + 0x1000;
+                let indices = DATA + 0x2000;
+                c.g[A0][0] = sx(model);
+                c.g[A1][0] = sx(seed % 8);
+                c.bus.write32(model + 0x1c, parts);
+                c.bus.write32(model + 0xc, DATA + 0x3000);
+                c.bus.write64(model + 0x158, r.next_u32() as u64);
+                for i in 0..8u32 {
+                    c.bus.write32(indices + 4 * i, r.next_u32() % 6);
+                }
+                fill(c, &mut r, parts, 6 * 0x58 / 4);
+            },
+        );
     }
-
 
     // -----------------------------------------------------------------------
     // RiderModel_LoadState.
@@ -4092,71 +4198,87 @@ pub(crate) mod tests {
             c.bus.write32(this + 0x10, r.next_u32() % 8);
             c.bus.write32(this + 0x2c, ptr(&mut r));
         };
-        check(ssx3_ee::s10::f_00310ee0__generated, rider_model_load_state, 64, &setup);
-        crate::difftest::fakes::covered(ssx3_ee::s10::f_00310ee0__generated, rider_model_load_state, 64, &setup);
+        check(
+            ssx3_ee::s10::f_00310ee0__generated,
+            rider_model_load_state,
+            64,
+            &setup,
+        );
+        crate::difftest::fakes::covered(
+            ssx3_ee::s10::f_00310ee0__generated,
+            rider_model_load_state,
+            64,
+            &setup,
+        );
     }
-
 
     #[test]
     fn rider_model_compare_int_matches() {
-        check(ssx3_ee::s10::f_0030db90__generated, rider_model_compare_int, SEEDS_3, &|c, seed| {
-            let mut r = machine(c, seed, 0x30db90, 0);
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = sx(DATA + 4);
-            word(c, DATA, r.next_u32());
-            word(c, DATA + 4, r.next_u32());
-        });
+        check(
+            ssx3_ee::s10::f_0030db90__generated,
+            rider_model_compare_int,
+            SEEDS_3,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x30db90, 0);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 4);
+                word(c, DATA, r.next_u32());
+                word(c, DATA + 4, r.next_u32());
+            },
+        );
     }
-
 
     pub(crate) const SEEDS_4: u32 = 60;
 
-
     #[test]
     fn rider_model_hide_all_parts_matches() {
-        check_lohi(ee::s10::f_0030eb60__generated, rider_model_hide_all_parts, SEEDS_4, &|c, seed| {
-            let _ = base(c, seed, 0x30eb_60);
-            let s = DATA + 0x100;
-            clear(c, s, 0x200);
-            let np = (seed % 4) as u32;
-            let parts = DATA + 0x400;
-            clear(c, parts, 0x200);
-            w(c, s + 8, np);
-            w(c, s + 0xc, parts as u32);
-            for j in 0..np {
-                for k in 0..4 {
-                    w(c, parts + 0x58 * j + 0x18 + 8 * k, 1);
+        check_lohi(
+            ee::s10::f_0030eb60__generated,
+            rider_model_hide_all_parts,
+            SEEDS_4,
+            &|c, seed| {
+                let _ = base(c, seed, 0x30eb_60);
+                let s = DATA + 0x100;
+                clear(c, s, 0x200);
+                let np = (seed % 4) as u32;
+                let parts = DATA + 0x400;
+                clear(c, parts, 0x200);
+                w(c, s + 8, np);
+                w(c, s + 0xc, parts as u32);
+                for j in 0..np {
+                    for k in 0..4 {
+                        w(c, parts + 0x58 * j + 0x18 + 8 * k, 1);
+                    }
                 }
-            }
-            c.g[A0][0] = sx(s);
-            c.g[A3][0] = if seed % 2 == 0 { 0 } else { 0x40 };
-        });
+                c.g[A0][0] = sx(s);
+                c.g[A3][0] = if seed % 2 == 0 { 0 } else { 0x40 };
+            },
+        );
     }
-
 
     // Fixture objects, all inside RAM below the test stack.
     pub(crate) const MODEL_2: u32 = DATA;
- // the rider model
+    // the rider model
     pub(crate) const STATES: u32 = DATA + 0x2000;
- // `sAnimState` per bone, 0x50 apart
+    // `sAnimState` per bone, 0x50 apart
     pub(crate) const BONES: u32 = DATA + 0x4000;
- // the model's bone list, 0x50 apart
+    // the model's bone list, 0x50 apart
     pub(crate) const CHANS: u32 = DATA + 0x5000;
- // global animation-channel table
+    // global animation-channel table
     pub(crate) const WORDS: u32 = DATA + 0x6000;
- // model+0x1c
+    // model+0x1c
     pub(crate) const FLOATS: u32 = DATA + 0x6400;
- // model+0x20
+    // model+0x20
     pub(crate) const VEC_A: u32 = DATA + 0x6800;
- // model+0x24
+    // model+0x24
     pub(crate) const VEC_B: u32 = DATA + 0x6c00;
- // model+0x28
+    // model+0x28
     pub(crate) const MATS: u32 = DATA + 0x7000;
- // model+0x3c
+    // model+0x3c
     pub(crate) const AUX: u32 = DATA + 0x7800;
- // *(bone+0x38)
+    // *(bone+0x38)
     pub(crate) const IDX: u32 = DATA + 0x7c00;
- // *(bone+0x40)
+    // *(bone+0x40)
 
     #[test]
     fn rider_model_blend_anim_pose_matches() {
@@ -4264,67 +4386,86 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn rider_model_show_part_variant_matches() {
-        check(ssx3_ee::s10::f_0030ec18__generated, rider_model_show_part_variant, SEEDS_5, &|c, seed| {
-            let mut r = machine(c, seed, 0x30ec18, 0);
-            be_library(c);
-            world(c);
-            let model = DATA + 0x100;
-            c.g[A0][0] = model as u64;
-            let part = (r.next_u32() % 4) as u32;
-            c.g[A1][0] = part as u64;
-            c.g[A2][0] = r.next_u32() as u64;
-            w_2(c, model + 0x14, (r.next_u32() % 8) as u32);
-            if seed % 5 == 0 {
-                w_2(c, model + 0x1c, 0);
-            } else {
-                let arr = DATA + 0x200;
-                w_2(c, model + 0x1c, arr);
-                for i in 0..4 {
-                    // A negative id is a "no variant" slot.
-                    let id = if seed % 3 == 0 && i == 1 {
-                        0xffff_ffffu32
-                    } else {
-                        i
-                    };
-                    w_2(c, arr + 4 * i, id);
+        check(
+            ssx3_ee::s10::f_0030ec18__generated,
+            rider_model_show_part_variant,
+            SEEDS_5,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x30ec18, 0);
+                be_library(c);
+                world(c);
+                let model = DATA + 0x100;
+                c.g[A0][0] = model as u64;
+                let part = (r.next_u32() % 4) as u32;
+                c.g[A1][0] = part as u64;
+                c.g[A2][0] = r.next_u32() as u64;
+                w_2(c, model + 0x14, (r.next_u32() % 8) as u32);
+                if seed % 5 == 0 {
+                    w_2(c, model + 0x1c, 0);
+                } else {
+                    let arr = DATA + 0x200;
+                    w_2(c, model + 0x1c, arr);
+                    for i in 0..4 {
+                        // A negative id is a "no variant" slot.
+                        let id = if seed % 3 == 0 && i == 1 {
+                            0xffff_ffffu32
+                        } else {
+                            i
+                        };
+                        w_2(c, arr + 4 * i, id);
+                    }
+                    w_2(c, model + 0xc, DATA + 0x300);
+                    c.bus.write64(model + 0x150, r.next_u32() as u64);
                 }
-                w_2(c, model + 0xc, DATA + 0x300);
-                c.bus.write64(model + 0x150, r.next_u32() as u64);
-            }
-        });
+            },
+        );
     }
-
 
     // ----------------------------------------------------------- rider model
 
     #[test]
     fn rider_model_show_part_matches() {
-        check(ssx3_ee::s10::f_0030e9e0__generated, rider_model_show_part, 24, &|c, seed| {
-            let mut r = base_2(c, seed, 0x0030_e9e0);
-            let model = DATA + 0x100;
-            let table = DATA + 0x2000;
-            let parts = DATA + 0x3000;
-            clear_2(c, model, 0x160);
-            clear_2(c, table, 0x80);
-            clear_2(c, parts, 0x400);
-            let part = (seed % 8) as u32;
-            w_3(c, model + 0x14, if seed % 6 == 0 { part } else { 8 });
-            w_3(c, model + 0x1c, table);
-            w_3(c, model + 0xc, parts);
-            for i in 0..8 {
-                w_3(c, table + 4 * i, if (seed as u32 + i) % 4 == 0 { 0xffff_ffff } else { i });
-            }
-            w_3(c, model + 0x150, r.next_u32());
-            w_3(c, model + 0x154, r.next_u32());
-            c.g[A0][0] = sx(model);
-            c.g[A1][0] = part as u64;
-            c.g[A2][0] = if seed % 3 == 0 { 0xffff_ffff_ffff_ffff } else { (seed % 4) as u64 };
-        });
+        check(
+            ssx3_ee::s10::f_0030e9e0__generated,
+            rider_model_show_part,
+            24,
+            &|c, seed| {
+                let mut r = base_2(c, seed, 0x0030_e9e0);
+                let model = DATA + 0x100;
+                let table = DATA + 0x2000;
+                let parts = DATA + 0x3000;
+                clear_2(c, model, 0x160);
+                clear_2(c, table, 0x80);
+                clear_2(c, parts, 0x400);
+                let part = (seed % 8) as u32;
+                w_3(c, model + 0x14, if seed % 6 == 0 { part } else { 8 });
+                w_3(c, model + 0x1c, table);
+                w_3(c, model + 0xc, parts);
+                for i in 0..8 {
+                    w_3(
+                        c,
+                        table + 4 * i,
+                        if (seed as u32 + i) % 4 == 0 {
+                            0xffff_ffff
+                        } else {
+                            i
+                        },
+                    );
+                }
+                w_3(c, model + 0x150, r.next_u32());
+                w_3(c, model + 0x154, r.next_u32());
+                c.g[A0][0] = sx(model);
+                c.g[A1][0] = part as u64;
+                c.g[A2][0] = if seed % 3 == 0 {
+                    0xffff_ffff_ffff_ffff
+                } else {
+                    (seed % 4) as u64
+                };
+            },
+        );
     }
-
 
     #[test]
     fn rider_model_hide_part_matches() {

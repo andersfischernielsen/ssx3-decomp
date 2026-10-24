@@ -9,31 +9,32 @@ use crate::call::Flow;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::object::flexrailnode::at_3 as at;
+pub(crate) use crate::game::object::flexrailnode::r32v;
+pub(crate) use crate::game::object::flexrailnode::spa;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::X;
-use ssx3_ee_rt::Cpu;
 use ssx3_ee_rt::vu0::W;
+use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
-pub(crate) use crate::game::object::flexrailnode::at_3 as at;
-pub(crate) use crate::game::object::flexrailnode::r32v;
-pub(crate) use crate::game::object::flexrailnode::spa;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
-pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0015_2460, be_record_char_profile_event_score, "BE_RecordCharProfileEventScore"),
-];
+pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[(
+    0x0015_2460,
+    be_record_char_profile_event_score,
+    "BE_RecordCharProfileEventScore",
+)];
 
 /// Direct-call targets (dossier callees, found by address in `generated/ee`).
 pub(crate) mod callee {
     use super::ee;
     use super::Callee;
-
 
     pub const BE_GET_EVENT_RECORD_INDEX: Callee = Callee {
         addr: 0x0014_ab68,
@@ -70,7 +71,6 @@ pub(crate) mod callee {
         f: ee::s11::ClosestPointOnSegment,
     };
 }
-
 
 /// `int BE_RecordCharProfileEventScore(self, event, rank, score)` (0x152460):
 /// record a profile event score when it beats the stored one.
@@ -223,7 +223,6 @@ pub fn be_record_char_profile_event_score(c: &mut Cpu) {
     })
 }
 
-
 /// `int BE_RecordCharProfileEventPlace(Profile* p, int event, int place,
 /// int value)` (0x152528): record that `event` happened at `place` with
 /// `value` in the character profile — bump the per-place counter, keep the
@@ -362,26 +361,30 @@ pub fn be_record_char_profile_event_place(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::difftest::check;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::FAKE;
     use crate::difftest::Rng;
-    use crate::difftest::check;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
     use crate::difftest::RA as SENTINEL;
-    use ssx3_ee as ee;
-    pub(crate) use crate::game::fe::feasyncfile::tests::W_7 as W;
-    pub(crate) use crate::game::fe::feasyncfile::tests::RM_3 as RM;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE_10 as BE;
-    pub(crate) use crate::game::fe::feasyncfile::tests::gp_at;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_17 as base;
-
+    pub(crate) use crate::game::fe::feasyncfile::tests::gp_at;
+    pub(crate) use crate::game::fe::feasyncfile::tests::BE_10 as BE;
+    pub(crate) use crate::game::fe::feasyncfile::tests::RM_3 as RM;
+    pub(crate) use crate::game::fe::feasyncfile::tests::W_7 as W;
+    use ssx3_ee as ee;
 
     /// A strict differential run: every GPR (including caller-saved scratch),
     /// every FPR and LO/HI must match. Call sites are visible to the fake
     /// callees, so scratch registers matter even where `check` would ignore
     /// them.
-    pub(crate) fn strict(generated: GuestFn, hand: GuestFn, seeds: u32, setup: &dyn Fn(&mut Cpu, u32)) {
+    pub(crate) fn strict(
+        generated: GuestFn,
+        hand: GuestFn,
+        seeds: u32,
+        setup: &dyn Fn(&mut Cpu, u32),
+    ) {
         for seed in 0..seeds {
             let r = crate::difftest::compare(generated, hand, &|c| setup(c, seed));
             assert!(r.hard.is_empty(), "seed {seed} hard: {:#?}", r.hard);
@@ -389,7 +392,6 @@ pub(crate) mod tests {
             assert!(r.lohi.is_empty(), "seed {seed} lohi: {:#?}", r.lohi);
         }
     }
-
 
     #[test]
     fn be_record_char_profile_event_score_matches() {

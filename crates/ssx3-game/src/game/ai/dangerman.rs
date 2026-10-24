@@ -13,9 +13,12 @@ use ssx3_ee_rt::Cpu;
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0010_13a8, danger_man_update, "DangerMan_Update"),
-    (0x0010_1a10, danger_man_get_rider_danger, "DangerMan_GetRiderDanger"),
+    (
+        0x0010_1a10,
+        danger_man_get_rider_danger,
+        "DangerMan_GetRiderDanger",
+    ),
 ];
-
 
 // ---------------------------------------------------------------------------
 // Danger manager.
@@ -59,10 +62,15 @@ pub(crate) mod danger {
 }
 
 /// `DangerMan_ReleaseDanger(man, source)` (0x1441a0).
-const RELEASE_DANGER: Callee = Callee { addr: 0x0014_41a0, f: ssx3_ee::s01::DangerMan_ReleaseDanger };
+const RELEASE_DANGER: Callee = Callee {
+    addr: 0x0014_41a0,
+    f: ssx3_ee::s01::DangerMan_ReleaseDanger,
+};
 /// `int DangerMan_GetRiderDangerLevel(man, rider)` (0x1441b8).
-const GET_RIDER_DANGER_LEVEL: Callee =
-    Callee { addr: 0x0014_41b8, f: ssx3_ee::s01::DangerMan_GetRiderDangerLevel };
+const GET_RIDER_DANGER_LEVEL: Callee = Callee {
+    addr: 0x0014_41b8,
+    f: ssx3_ee::s01::DangerMan_GetRiderDangerLevel,
+};
 
 /// `void DangerMan_Update(DangerMan *man)` (0x1013a8), once per tick:
 ///
@@ -396,26 +404,29 @@ fn follow_source(c: &mut Cpu, src: u32) -> crate::call::Flow {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
+    use crate::difftest::check_lohi;
+    use crate::difftest::fakes::{self, machine, FAKE};
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::check_lohi;
-    use crate::difftest::fakes::{self, machine, FAKE};
-
 
     #[test]
     fn danger_man_get_rider_danger_matches() {
-        check(ssx3_ee::s00::f_00101a10__generated, danger_man_get_rider_danger, 200, &|c, seed| {
-            let mut r = Rng(0x2718_2818 ^ seed as u64);
-            scramble(c, &mut r);
-            let rider = seed % 5;
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = rider as u64;
-            c.bus.write32(DATA + rider * 12 + 0x710, r.next_u32());
-        });
+        check(
+            ssx3_ee::s00::f_00101a10__generated,
+            danger_man_get_rider_danger,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x2718_2818 ^ seed as u64);
+                scramble(c, &mut r);
+                let rider = seed % 5;
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = rider as u64;
+                c.bus.write32(DATA + rider * 12 + 0x710, r.next_u32());
+            },
+        );
     }
-
 
     // ------------------------------------------------------ DangerMan_Update
 
@@ -464,9 +475,18 @@ pub(crate) mod tests {
             c.bus.write32(WORLD + 0x28 + 4 * i, rd);
             c.bus.write32(rd + 0x6c0, RIDER_VT);
         }
-        c.bus.write16(RIDER_VT + 0x18, (r.next_u32() % 4 * 4) as u16);
-        c.bus.write32(RIDER_VT + 0x1c, if r.next_u32() % 3 == 0 { FAKE_ZERO } else { FAKE + 0x10 });
-        c.bus.write16(RIDER_VT + 0x28, (r.next_u32() % 4 * 4) as u16);
+        c.bus
+            .write16(RIDER_VT + 0x18, (r.next_u32() % 4 * 4) as u16);
+        c.bus.write32(
+            RIDER_VT + 0x1c,
+            if r.next_u32() % 3 == 0 {
+                FAKE_ZERO
+            } else {
+                FAKE + 0x10
+            },
+        );
+        c.bus
+            .write16(RIDER_VT + 0x28, (r.next_u32() % 4 * 4) as u16);
         c.bus.write32(RIDER_VT + 0x2c, FAKE + 0x20);
         // Handles: gp + 0x16c8 -> p, *p + 8 -> per-type tables.
         c.bus.write32(GAME_GP + 0x16c8, HANDLES);
@@ -479,8 +499,19 @@ pub(crate) mod tests {
         }
         for o in 0..4u32 {
             let obj = OBJ + 0x100 * o;
-            c.bus.write32(OBJECTS + 4 * o, if o == 3 { r.next_u32() & 0xff } else { (obj >> 2) << 8 | r.next_u32() & 0xff });
-            let sub = if r.next_u32() % 4 == 0 { 0 } else { SUB + 0x100 * o };
+            c.bus.write32(
+                OBJECTS + 4 * o,
+                if o == 3 {
+                    r.next_u32() & 0xff
+                } else {
+                    (obj >> 2) << 8 | r.next_u32() & 0xff
+                },
+            );
+            let sub = if r.next_u32() % 4 == 0 {
+                0
+            } else {
+                SUB + 0x100 * o
+            };
             c.bus.write32(obj + 0xc, sub);
             if sub != 0 {
                 let vt = SUB_VT + 0x100 * (r.next_u32() % 2);
@@ -489,7 +520,8 @@ pub(crate) mod tests {
         }
         for (k, vt) in [SUB_VT, SUB_VT + 0x100].into_iter().enumerate() {
             c.bus.write16(vt + 0x88, (r.next_u32() % 4 * 4) as u16);
-            c.bus.write32(vt + 0x8c, if k == 0 { FAKE_ZERO } else { FAKE + 0x30 });
+            c.bus
+                .write32(vt + 0x8c, if k == 0 { FAKE_ZERO } else { FAKE + 0x30 });
             c.bus.write16(vt + 0xc0, (r.next_u32() % 4 * 4) as u16);
             c.bus.write32(vt + 0xc4, FAKE + 0x40);
         }
@@ -499,16 +531,24 @@ pub(crate) mod tests {
         for i in 0..nodes {
             let n = NODES + 0x10 * i;
             c.bus.write32(n, handle(r));
-            c.bus.write32(n + 4, [0u32, 1, 2, 3, 0xffff_ffff][(r.next_u32() % 5) as usize]);
-            c.bus.write32(n + 0xc, if i + 1 < nodes { n + 0x10 } else { 0 });
+            c.bus.write32(
+                n + 4,
+                [0u32, 1, 2, 3, 0xffff_ffff][(r.next_u32() % 5) as usize],
+            );
+            c.bus
+                .write32(n + 0xc, if i + 1 < nodes { n + 0x10 } else { 0 });
         }
         c.bus.write32(MAN + 0xb5c, r.next_u32() % 6);
         // Rider slots.
         for i in 0..6 {
             let s = MAN + 0x70c + 0xc * i;
-            c.bus.write32(s, [0u32, 1, 2, 3][(r.next_u32() % 4) as usize]);
+            c.bus
+                .write32(s, [0u32, 1, 2, 3][(r.next_u32() % 4) as usize]);
             c.bus.write32(s + 4, r.next_u32() % 4);
-            c.bus.write32(s + 8, [0u32, 1, 2, 60, 0xffff_ffff][(r.next_u32() % 5) as usize]);
+            c.bus.write32(
+                s + 8,
+                [0u32, 1, 2, 60, 0xffff_ffff][(r.next_u32() % 5) as usize],
+            );
         }
         // Danger sources: the first eight random, the rest released.
         c.bus.write32(MAN + 0x704, active);
@@ -525,12 +565,17 @@ pub(crate) mod tests {
 
     #[test]
     fn danger_man_update_matches() {
-        check_lohi(ssx3_ee::s00::f_001013a8__generated, danger_man_update, 300, &|c, seed| {
-            let mut r = machine(c, seed, 0x0010_13a8, 8);
-            c.g[A0][0] = sx(MAN);
-            let active = [0u32, 1, 2, 3, 9][(seed % 5) as usize];
-            danger_world(c, &mut r, seed % 4 != 0, active);
-        });
+        check_lohi(
+            ssx3_ee::s00::f_001013a8__generated,
+            danger_man_update,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0010_13a8, 8);
+                c.g[A0][0] = sx(MAN);
+                let active = [0u32, 1, 2, 3, 9][(seed % 5) as usize];
+                danger_world(c, &mut r, seed % 4 != 0, active);
+            },
+        );
     }
 
     /// Updates after a danger is seen (one update with the watch list, then

@@ -20,7 +20,10 @@ pub fn flip_packet(mem: &dyn Mem) -> Vec<u128> {
         let lo = tag as u64;
         let nloop = (lo & 0x7fff) as usize;
         let flg = (lo >> 58) & 3;
-        let nreg = match (lo >> 60) as usize { 0 => 16, n => n };
+        let nreg = match (lo >> 60) as usize {
+            0 => 16,
+            n => n,
+        };
         let n = match flg {
             0 => nloop * nreg,
             1 => (nloop * nreg).div_ceil(2),
@@ -155,7 +158,10 @@ pub fn texture_ranges(m: &dyn Mem, frame: &Frame, out: &mut Vec<(u32, u32)>) {
             continue;
         }
         let t0 = word(m, info + ti::TEX0) as u64 | (word(m, info + ti::TEX0 + 4) as u64) << 32;
-        let (w, h) = (1u32 << ((t0 >> 26) & 15).min(10), 1u32 << ((t0 >> 30) & 15).min(10));
+        let (w, h) = (
+            1u32 << ((t0 >> 26) & 15).min(10),
+            1u32 << ((t0 >> 30) & 15).min(10),
+        );
         let pixels = word(m, info + ti::PIXELS);
         if pixels != 0 {
             out.push((pixels, pixels.saturating_add(w * h * 4 + 16)));

@@ -73,7 +73,11 @@ impl GifReader {
                         _ => nloop,
                     };
                     if qwords > 0 {
-                        self.mode = if flg == 0 { Mode::Packed { left: qwords, k: 0 } } else { Mode::Skip { left: qwords } };
+                        self.mode = if flg == 0 {
+                            Mode::Packed { left: qwords, k: 0 }
+                        } else {
+                            Mode::Skip { left: qwords }
+                        };
                     }
                 }
                 Mode::Packed { left, k } => {
@@ -82,10 +86,18 @@ impl GifReader {
                         out(((q >> 64) & 0xff) as u8, q as u64);
                     }
                     let k = if k + 1 == self.nreg { 0 } else { k + 1 };
-                    self.mode = if left > 1 { Mode::Packed { left: left - 1, k } } else { Mode::Tag };
+                    self.mode = if left > 1 {
+                        Mode::Packed { left: left - 1, k }
+                    } else {
+                        Mode::Tag
+                    };
                 }
                 Mode::Skip { left } => {
-                    self.mode = if left > 1 { Mode::Skip { left: left - 1 } } else { Mode::Tag };
+                    self.mode = if left > 1 {
+                        Mode::Skip { left: left - 1 }
+                    } else {
+                        Mode::Tag
+                    };
                 }
             }
         }
@@ -102,7 +114,11 @@ mod tests {
     use super::*;
 
     fn tag(nloop: u32, flg: u32, nreg: u32, regs: u64) -> u128 {
-        nloop as u128 | (1u128 << 15) | (flg as u128) << 58 | (nreg as u128) << 60 | (regs as u128) << 64
+        nloop as u128
+            | (1u128 << 15)
+            | (flg as u128) << 58
+            | (nreg as u128) << 60
+            | (regs as u128) << 64
     }
 
     #[test]
@@ -110,8 +126,14 @@ mod tests {
         let mut g = GifReader::default();
         let mut seen = Vec::new();
         // REGLIST 3 x 1 reg = 2 qwords to skip, then A+D x2 split over two feeds.
-        g.feed(&[tag(3, 1, 1, 0x5), 0x47 << 64 | 0xdead, 0x1234], &mut |r, v| seen.push((r, v)));
-        g.feed(&[tag(2, 0, 1, 0xe), (0x47u128 << 64) | 0x5_0001], &mut |r, v| seen.push((r, v)));
+        g.feed(
+            &[tag(3, 1, 1, 0x5), 0x47 << 64 | 0xdead, 0x1234],
+            &mut |r, v| seen.push((r, v)),
+        );
+        g.feed(
+            &[tag(2, 0, 1, 0xe), (0x47u128 << 64) | 0x5_0001],
+            &mut |r, v| seen.push((r, v)),
+        );
         assert!(!g.at_tag());
         g.feed(&[(0x06u128 << 64) | 0x99], &mut |r, v| seen.push((r, v)));
         assert!(g.at_tag());
@@ -123,7 +145,16 @@ mod tests {
         let mut g = GifReader::default();
         let mut seen = Vec::new();
         // NLOOP 2, NREG 2: {PRIM, A+D}.
-        g.feed(&[tag(2, 0, 2, 0xe0), 1, (0x42u128 << 64) | 0x44, 2, (0x43u128 << 64) | 0x48], &mut |r, v| seen.push((r, v)));
+        g.feed(
+            &[
+                tag(2, 0, 2, 0xe0),
+                1,
+                (0x42u128 << 64) | 0x44,
+                2,
+                (0x43u128 << 64) | 0x48,
+            ],
+            &mut |r, v| seen.push((r, v)),
+        );
         assert_eq!(seen, vec![(0x42, 0x44), (0x43, 0x48)]);
         // IMAGE: NLOOP qwords of data.
         g.feed(&[tag(2, 2, 0, 0), 5, 6], &mut |r, v| seen.push((r, v)));

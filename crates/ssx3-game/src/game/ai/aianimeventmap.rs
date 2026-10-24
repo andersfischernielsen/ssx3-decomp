@@ -20,20 +20,35 @@ use ssx3_ee_rt::Cpu;
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0031_15e0, ai_anim_event_map_ctor, "AIAnimEventMap_ctor"),
-    (0x0031_1870, ai_anim_event_map_create, "AIAnimEventMap_Create"),
-    (0x0031_18a8, ai_anim_event_map_destroy, "AIAnimEventMap_Destroy"),
+    (
+        0x0031_1870,
+        ai_anim_event_map_create,
+        "AIAnimEventMap_Create",
+    ),
+    (
+        0x0031_18a8,
+        ai_anim_event_map_destroy,
+        "AIAnimEventMap_Destroy",
+    ),
 ];
-
 
 // ---------------------------------------------------------------------------
 // Direct-call targets.
 
-pub(crate) const EA_MEM_ALLOC_NAMED: Callee = Callee { addr: 0x0031_7d70, f: ee::s10::EA_MemAllocNamed };
+pub(crate) const EA_MEM_ALLOC_NAMED: Callee = Callee {
+    addr: 0x0031_7d70,
+    f: ee::s10::EA_MemAllocNamed,
+};
 
-pub(crate) const BUILTIN_DELETE: Callee = Callee { addr: 0x0031_7e50, f: ee::s10::__builtin_delete };
+pub(crate) const BUILTIN_DELETE: Callee = Callee {
+    addr: 0x0031_7e50,
+    f: ee::s10::__builtin_delete,
+};
 
-pub(crate) const AI_ANIM_EVENT_MAP_CTOR: Callee = Callee { addr: 0x0031_15e0, f: ee::s10::f_003115e0 };
-
+pub(crate) const AI_ANIM_EVENT_MAP_CTOR: Callee = Callee {
+    addr: 0x0031_15e0,
+    f: ee::s10::f_003115e0,
+};
 
 // ---------------------------------------------------------------------------
 // AI animation event map.
@@ -144,7 +159,6 @@ pub fn ai_anim_event_map_ctor(c: &mut Cpu) {
     }
 }
 
-
 /// `AIAnimEventMap *AIAnimEventMap_Create(void)` (0x311870): allocate 0x6d4
 /// bytes, store the map in the global at `gp + 0xd0c`, and construct it.
 pub fn ai_anim_event_map_create(c: &mut Cpu) {
@@ -167,7 +181,6 @@ pub fn ai_anim_event_map_create(c: &mut Cpu) {
     })
 }
 
-
 /// `void AIAnimEventMap_Destroy(void)` (0x3118a8): delete the global map
 /// (`gp + 0xd0c`) and clear the slot.
 pub fn ai_anim_event_map_destroy(c: &mut Cpu) {
@@ -187,25 +200,23 @@ pub fn ai_anim_event_map_destroy(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::difftest::check;
+    use crate::difftest::check_lohi;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::ptr;
     use crate::difftest::fakes::vtable;
     use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::check;
-    use crate::difftest::check_lohi;
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
     pub(crate) use crate::game::world::wscriptcache::tests::SEEDS;
 
-
     /// The allocator mutex (`gp`-relative globals); marked as held by "this
     /// thread" (fake `GetThreadId` result 0x42) so the real allocator entry
     /// points take their fast path.
     pub(crate) const MEM_MUTEX: u32 = 0x0053_8b00;
-
 
     pub(crate) fn alloc_setup(c: &mut Cpu, r: &mut Rng) {
         c.bus.write32(MEM_MUTEX + 4, 0x42);
@@ -213,40 +224,59 @@ pub(crate) mod tests {
         c.bus.write32(MEM_MUTEX + 8, r.next_u32() % 4);
     }
 
-
     #[test]
     fn ai_anim_event_map_ctor_matches() {
-        check(ee::s10::f_003115e0, ai_anim_event_map_ctor, SEEDS, &|c, seed| {
-            let mut r = Rng(0x0031_15e0 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            // The event table copied onto the stack: values are small ids so
-            // the stores land in RAM; some equal 0x1b6 to hit the skip branch.
-            for i in 0..472u32 {
-                let v = if (i + seed) % 7 == 0 { 0x1b6 } else { (r.next_u32() % 0x1b6) };
-                c.bus.write32(0x489d60 + i * 4, v);
-            }
-            c.bus.write32(DATA, r.next_u32());
-        });
+        check(
+            ee::s10::f_003115e0,
+            ai_anim_event_map_ctor,
+            SEEDS,
+            &|c, seed| {
+                let mut r = Rng(0x0031_15e0 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                // The event table copied onto the stack: values are small ids so
+                // the stores land in RAM; some equal 0x1b6 to hit the skip branch.
+                for i in 0..472u32 {
+                    let v = if (i + seed) % 7 == 0 {
+                        0x1b6
+                    } else {
+                        (r.next_u32() % 0x1b6)
+                    };
+                    c.bus.write32(0x489d60 + i * 4, v);
+                }
+                c.bus.write32(DATA, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn ai_anim_event_map_create_matches() {
-        check(ee::s10::f_00311870, ai_anim_event_map_create, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x1870, 0);
-            alloc_setup(c, &mut r);
-        });
+        check(
+            ee::s10::f_00311870,
+            ai_anim_event_map_create,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1870, 0);
+                alloc_setup(c, &mut r);
+            },
+        );
     }
-
 
     #[test]
     fn ai_anim_event_map_destroy_matches() {
-        check(ee::s10::f_003118a8, ai_anim_event_map_destroy, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x18a8, 0);
-            alloc_setup(c, &mut r);
-            // Non-null so `__builtin_delete` really runs.
-            c.bus.write32(GAME_GP.wrapping_add(0xd0c), if seed % 4 == 0 { 0 } else { DATA + 0x100 });
-        });
+        check(
+            ee::s10::f_003118a8,
+            ai_anim_event_map_destroy,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x18a8, 0);
+                alloc_setup(c, &mut r);
+                // Non-null so `__builtin_delete` really runs.
+                c.bus.write32(
+                    GAME_GP.wrapping_add(0xd0c),
+                    if seed % 4 == 0 { 0 } else { DATA + 0x100 },
+                );
+            },
+        );
     }
 }

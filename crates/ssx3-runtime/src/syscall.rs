@@ -52,7 +52,10 @@ impl Cpu {
             0x64 => { /* FlushCache */ }
             0x74 => { /* SetSyscall */ }
             0x79 | 0x7a | 0x7e | 0x7f => { /* OSD config: leave the buffer zeroed */ }
-            0x83 => { /* FindAddress */ self.set_reg(2, 0); }
+            0x83 => {
+                /* FindAddress */
+                self.set_reg(2, 0);
+            }
             0x85 => {
                 // SetMemoryMode(mode) -> previous mode.
                 let prev = self.memory_mode;

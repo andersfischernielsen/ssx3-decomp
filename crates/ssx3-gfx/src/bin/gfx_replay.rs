@@ -40,7 +40,8 @@ fn main() {
         .iter()
         .map(|path| {
             let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("{path}: {e}"));
-            let (mut mem, carry) = frame_sink::load_dump(&bytes).unwrap_or_else(|e| panic!("{path}: {e}"));
+            let (mut mem, carry) =
+                frame_sink::load_dump(&bytes).unwrap_or_else(|e| panic!("{path}: {e}"));
             // SSX3_DIRECT=0: decode every packet (the captured draws unused).
             if std::env::var("SSX3_DIRECT").is_ok_and(|v| v == "0") {
                 mem.direct = Default::default();
@@ -48,10 +49,16 @@ fn main() {
             (mem, carry)
         })
         .collect();
-    if let Some((w, h)) = std::env::var("SSX3_RENDER_SIZE").ok().and_then(|v| v.split_once('x').and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?)))) {
+    if let Some((w, h)) = std::env::var("SSX3_RENDER_SIZE").ok().and_then(|v| {
+        v.split_once('x')
+            .and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?)))
+    }) {
         r.set_output_size(Some((w, h)));
     }
-    if let Some(n) = std::env::var("SSX3_RENDER_SCALE").ok().and_then(|v| v.parse::<u32>().ok()) {
+    if let Some(n) = std::env::var("SSX3_RENDER_SCALE")
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
+    {
         r.set_scale(n);
     }
     if std::env::var_os("SSX3_REPLAY_DEPTH").is_some() {
@@ -71,15 +78,41 @@ fn main() {
             // SSX3_VIF_STATS: decoded (not replayed) VU input qwords per
             // material and calls.
             if std::env::var_os("SSX3_VIF_STATS").is_some() {
-                let mut by: std::collections::BTreeMap<String, (usize, usize, usize)> = Default::default();
+                let mut by: std::collections::BTreeMap<String, (usize, usize, usize)> =
+                    Default::default();
                 let draws: Vec<_> = built.frame.draws().collect();
                 for (o, e) in &built.events {
-                    let ssx3_render::frame::Owner::Payload(n) = o else { continue };
+                    let ssx3_render::frame::Owner::Payload(n) = o else {
+                        continue;
+                    };
                     let Some(d) = draws.get(*n) else { continue };
                     let (key, inp, sh) = match e {
-                        ssx3_render::vif::Event::Call(c) => (format!("{:?} L{} {:x?}{}", d.state.material, d.state.layer, c.entry, if c.native { " native" } else { "" }), c.input.len(), c.shared.as_ref().map_or(0, |s| s.len())),
-                        ssx3_render::vif::Event::Direct(g) => (format!("{:?} L{} gif{}", d.state.material, d.state.layer, if g.native { " native" } else { "" }), g.qwords.len(), 0),
-                        ssx3_render::vif::Event::Native { .. } => (format!("{:?} L{} native", d.state.material, d.state.layer), 0, 0),
+                        ssx3_render::vif::Event::Call(c) => (
+                            format!(
+                                "{:?} L{} {:x?}{}",
+                                d.state.material,
+                                d.state.layer,
+                                c.entry,
+                                if c.native { " native" } else { "" }
+                            ),
+                            c.input.len(),
+                            c.shared.as_ref().map_or(0, |s| s.len()),
+                        ),
+                        ssx3_render::vif::Event::Direct(g) => (
+                            format!(
+                                "{:?} L{} gif{}",
+                                d.state.material,
+                                d.state.layer,
+                                if g.native { " native" } else { "" }
+                            ),
+                            g.qwords.len(),
+                            0,
+                        ),
+                        ssx3_render::vif::Event::Native { .. } => (
+                            format!("{:?} L{} native", d.state.material, d.state.layer),
+                            0,
+                            0,
+                        ),
                         _ => continue,
                     };
                     let e = by.entry(key).or_default();
@@ -98,9 +131,24 @@ fn main() {
                 let mut out = String::new();
                 for (k, (o, e)) in built.events.iter().enumerate() {
                     let d = match e {
-                        ssx3_render::vif::Event::Call(c) => format!("call {:x?} top {:#x} itop {} in {} sh {} {}", c.entry, c.top, c.itop, c.input.len(), c.shared.as_ref().map_or(0, |s| s.len()), if c.native { "N" } else { "" }),
-                        ssx3_render::vif::Event::Direct(g) => format!("gif {} {:x?}{}", g.qwords.len(), &g.qwords[..g.qwords.len().min(4)], if g.native { " N" } else { "" }),
-                        ssx3_render::vif::Event::Microcode { addr, bytes } => format!("mpg {addr:#x} {bytes:#x}"),
+                        ssx3_render::vif::Event::Call(c) => format!(
+                            "call {:x?} top {:#x} itop {} in {} sh {} {}",
+                            c.entry,
+                            c.top,
+                            c.itop,
+                            c.input.len(),
+                            c.shared.as_ref().map_or(0, |s| s.len()),
+                            if c.native { "N" } else { "" }
+                        ),
+                        ssx3_render::vif::Event::Direct(g) => format!(
+                            "gif {} {:x?}{}",
+                            g.qwords.len(),
+                            &g.qwords[..g.qwords.len().min(4)],
+                            if g.native { " N" } else { "" }
+                        ),
+                        ssx3_render::vif::Event::Microcode { addr, bytes } => {
+                            format!("mpg {addr:#x} {bytes:#x}")
+                        }
                         ssx3_render::vif::Event::MaskPath3(m) => format!("mskpath3 {m}"),
                         ssx3_render::vif::Event::Native { index, .. } => format!("native {index}"),
                     };
@@ -113,10 +161,26 @@ fn main() {
             if std::env::var_os("SSX3_NATIVE_FRAME_CHECK").is_some() {
                 let g = ssx3_render::frame::word(mem, ssx3_render::frame::addr::GM_PTR);
                 let t0 = std::time::Instant::now();
-                let walked = ssx3_render::frame::build_cached(mem, g, carry, &mut chains, mem.direct.clone());
+                let walked = ssx3_render::frame::build_cached(
+                    mem,
+                    g,
+                    carry,
+                    &mut chains,
+                    mem.direct.clone(),
+                );
                 let t1 = std::time::Instant::now();
-                let native = ssx3_render::frame::build_native(mem, g, carry, &mut chains, mem.direct.clone());
-                eprintln!("[native-frame] frame {i}: built walked {:.3} ms, native {:.3} ms", (t1 - t0).as_secs_f64() * 1e3, t1.elapsed().as_secs_f64() * 1e3);
+                let native = ssx3_render::frame::build_native(
+                    mem,
+                    g,
+                    carry,
+                    &mut chains,
+                    mem.direct.clone(),
+                );
+                eprintln!(
+                    "[native-frame] frame {i}: built walked {:.3} ms, native {:.3} ms",
+                    (t1 - t0).as_secs_f64() * 1e3,
+                    t1.elapsed().as_secs_f64() * 1e3
+                );
                 for d in ssx3_render::frame::compare_native(&walked, &native, 8) {
                     eprintln!("[native-frame] frame {i}: {d}");
                 }
@@ -125,13 +189,25 @@ fn main() {
                 }
             }
             if std::env::var_os("SSX3_DIRECT_CHECK").is_some() {
-                for e in built.issues.iter().filter(|i| i.starts_with("capture")).take(8) {
+                for e in built
+                    .issues
+                    .iter()
+                    .filter(|i| i.starts_with("capture"))
+                    .take(8)
+                {
                     eprintln!("[direct-check] frame {i}: {e}");
                 }
             }
             if std::env::var_os("SSX3_CHAIN_CACHE_CHECK").is_some() {
-                let bad = built.issues.iter().filter(|i| i.starts_with("chain cache")).count();
-                eprintln!("[chain-cache] frame {i}: hits/misses so far {:?}, {bad} replay mismatches", chains.stats);
+                let bad = built
+                    .issues
+                    .iter()
+                    .filter(|i| i.starts_with("chain cache"))
+                    .count();
+                eprintln!(
+                    "[chain-cache] frame {i}: hits/misses so far {:?}, {bad} replay mismatches",
+                    chains.stats
+                );
             }
             let t1 = std::time::Instant::now();
             let mut g = r.0.lock().unwrap();
@@ -148,14 +224,21 @@ fn main() {
                 g.render(&built, &frame_sink::FrameMem::from_ram(&mem.ram, &ranges));
             }
             if rep > 0 {
-                times.push(((t1 - t0).as_secs_f64() * 1e3, t1.elapsed().as_secs_f64() * 1e3));
+                times.push((
+                    (t1 - t0).as_secs_f64() * 1e3,
+                    t1.elapsed().as_secs_f64() * 1e3,
+                ));
             }
         }
     }
     if !times.is_empty() {
         let n = times.len() as f64;
         let (b, rr) = times.iter().fold((0.0, 0.0), |a, t| (a.0 + t.0, a.1 + t.1));
-        eprintln!("steady state: frame build {:.2} ms, render {:.2} ms per frame", b / n, rr / n);
+        eprintln!(
+            "steady state: frame build {:.2} ms, render {:.2} ms per frame",
+            b / n,
+            rr / n
+        );
         eprintln!("{}", r.0.lock().unwrap().timing_report());
     }
     if std::env::var_os("SSX3_GPU_STATS").is_some() {
@@ -166,7 +249,10 @@ fn main() {
         }
     }
     if frame_sink::frame_mem_misses() > 0 {
-        eprintln!("[frame-mem] {} reads outside the frames' texture pages", frame_sink::frame_mem_misses());
+        eprintln!(
+            "[frame-mem] {} reads outside the frames' texture pages",
+            frame_sink::frame_mem_misses()
+        );
     }
     let dumps = &dumps[..];
     let (w, h, px) = r.read_image().expect("image");
@@ -179,9 +265,19 @@ fn main() {
         for (fbp, w, h, px) in r.read_rts() {
             let rgb: Vec<u32> = px.iter().map(|p| p | 0xFF00_0000).collect();
             std::fs::write(format!("{dir}/rt{fbp}.png"), png::encode(w, h, &rgb)).unwrap();
-            let a: Vec<u32> = px.iter().map(|p| { let a = p >> 24; a | a << 8 | a << 16 | 0xFF00_0000 }).collect();
+            let a: Vec<u32> = px
+                .iter()
+                .map(|p| {
+                    let a = p >> 24;
+                    a | a << 8 | a << 16 | 0xFF00_0000
+                })
+                .collect();
             std::fs::write(format!("{dir}/rt{fbp}-a.png"), png::encode(w, h, &a)).unwrap();
         }
     }
-    eprintln!("{} frames in {:.0} ms -> {out} ({w}x{h})", dumps.len(), t.elapsed().as_secs_f64() * 1e3);
+    eprintln!(
+        "{} frames in {:.0} ms -> {out} ({w}x{h})",
+        dumps.len(),
+        t.elapsed().as_secs_f64() * 1e3
+    );
 }

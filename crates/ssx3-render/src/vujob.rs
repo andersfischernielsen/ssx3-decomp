@@ -50,17 +50,30 @@ fn check_gpu() -> bool {
 /// program. None: no native program for it. `kept`: the renderer keeps the
 /// call's mesh data (`crate::gpu::mesh_key` of `src`), with this alpha
 /// maximum: the plan leaves the data out.
-pub fn run_call(hash: u64, entry: u32, top: u32, itop: u32, src: Option<u64>, kept: Option<f32>, mem: &mut [u8; MEM]) -> Option<CallOut> {
+pub fn run_call(
+    hash: u64,
+    entry: u32,
+    top: u32,
+    itop: u32,
+    src: Option<u64>,
+    kept: Option<f32>,
+    mem: &mut [u8; MEM],
+) -> Option<CallOut> {
     if crate::gpu::enabled() {
         let before = check_gpu().then(|| *mem);
         let kept = kept.filter(|_| src.is_some() && before.is_none());
         if let Some(mut g) = crate::gpu::plan(hash, entry, top, itop, kept, mem) {
             for c in g.iter_mut() {
-                c.mesh_key = c.mesh_key.and(src).map(|s| crate::gpu::mesh_key(s, c.program));
+                c.mesh_key = c
+                    .mesh_key
+                    .and(src)
+                    .map(|s| crate::gpu::mesh_key(s, c.program));
             }
             if let Some(mut m) = before {
                 let mut gif = Vec::new();
-                if crate::run_native(hash, entry, top, itop, &mut m, &mut |p: &[u128]| gif.extend_from_slice(p)) {
+                if crate::run_native(hash, entry, top, itop, &mut m, &mut |p: &[u128]| {
+                    gif.extend_from_slice(p)
+                }) {
                     if let Some(d) = crate::gpu::check(hash, &g, &gif) {
                         eprintln!("[gpu-check] entry {entry:#x} top {top:#x} itop {itop:#x}: {d}");
                     }
@@ -70,7 +83,10 @@ pub fn run_call(hash: u64, entry: u32, top: u32, itop: u32, src: Option<u64>, ke
         }
     }
     let mut out = Vec::new();
-    crate::run_native(hash, entry, top, itop, mem, &mut |p: &[u128]| out.extend_from_slice(p)).then_some(CallOut::Gif(out))
+    crate::run_native(hash, entry, top, itop, mem, &mut |p: &[u128]| {
+        out.extend_from_slice(p)
+    })
+    .then_some(CallOut::Gif(out))
 }
 
 struct Reader<'a>(&'a [u8]);
@@ -105,7 +121,12 @@ pub type JobCall<'a> = (usize, &'a VuCall, Option<u64>, Option<f32>);
 #[derive(Clone, Copy)]
 pub enum JobItem<'a> {
     Call(JobCall<'a>),
-    Native { event: usize, cmd: &'a crate::direct::Cmd, regs: crate::vif::VifRegs, header: &'a [u128; 6] },
+    Native {
+        event: usize,
+        cmd: &'a crate::direct::Cmd,
+        regs: crate::vif::VifRegs,
+        header: &'a [u128; 6],
+    },
 }
 
 impl JobItem<'_> {
@@ -126,13 +147,32 @@ impl JobItem<'_> {
                 }
                 run_call(hash?, c.entry?, c.top, c.itop, c.src, kept, mem)
             }
-            JobItem::Native { cmd, regs, header, .. } => Some(CallOut::Native(crate::direct::plan(cmd, regs, header, mem))),
+            JobItem::Native {
+                cmd, regs, header, ..
+            } => Some(CallOut::Native(crate::direct::plan(cmd, regs, header, mem))),
         }
     }
 }
 
 fn put_regs(w: &mut Vec<u8>, r: &crate::vif::VifRegs) {
-    let words = [r.cycle, r.mode, r.mask, r.row[0], r.row[1], r.row[2], r.row[3], r.col[0], r.col[1], r.col[2], r.col[3], r.base, r.ofst, r.tops, r.itops, r.dbf as u32];
+    let words = [
+        r.cycle,
+        r.mode,
+        r.mask,
+        r.row[0],
+        r.row[1],
+        r.row[2],
+        r.row[3],
+        r.col[0],
+        r.col[1],
+        r.col[2],
+        r.col[3],
+        r.base,
+        r.ofst,
+        r.tops,
+        r.itops,
+        r.dbf as u32,
+    ];
     for x in words {
         w.extend_from_slice(&x.to_le_bytes());
     }
@@ -143,7 +183,18 @@ fn get_regs(r: &mut Reader) -> crate::vif::VifRegs {
     for v in x.iter_mut() {
         *v = r.u32();
     }
-    crate::vif::VifRegs { cycle: x[0], mode: x[1], mask: x[2], row: [x[3], x[4], x[5], x[6]], col: [x[7], x[8], x[9], x[10]], base: x[11], ofst: x[12], tops: x[13], itops: x[14], dbf: x[15] != 0 }
+    crate::vif::VifRegs {
+        cycle: x[0],
+        mode: x[1],
+        mask: x[2],
+        row: [x[3], x[4], x[5], x[6]],
+        col: [x[7], x[8], x[9], x[10]],
+        base: x[11],
+        ofst: x[12],
+        tops: x[13],
+        itops: x[14],
+        dbf: x[15] != 0,
+    }
 }
 
 /// Where the shared input of replayed calls (`VuCall::shared`, the same
@@ -168,15 +219,33 @@ pub fn encode(mem: &[u8; MEM], items: &[JobItem]) -> Vec<u8> {
 }
 
 /// [`encode`], keeping shared input in `store`.
-pub fn encode_with(mem: &[u8; MEM], items: &[JobItem], mut store: Option<&mut dyn SharedStore>) -> Vec<u8> {
-    let n: usize = items.iter().map(|it| if let JobItem::Call((_, c, _, _)) = it { 41 + 18 * c.writes().count() } else { 256 }).sum();
+pub fn encode_with(
+    mem: &[u8; MEM],
+    items: &[JobItem],
+    mut store: Option<&mut dyn SharedStore>,
+) -> Vec<u8> {
+    let n: usize = items
+        .iter()
+        .map(|it| {
+            if let JobItem::Call((_, c, _, _)) = it {
+                41 + 18 * c.writes().count()
+            } else {
+                256
+            }
+        })
+        .sum();
     let mut w = Vec::with_capacity(MEM + 4 + n);
     w.extend_from_slice(mem);
     w.extend_from_slice(&(items.len() as u32).to_le_bytes());
     for it in items {
         let &(i, c, h, kept) = match it {
             JobItem::Call(c) => c,
-            JobItem::Native { event, cmd, regs, header } => {
+            JobItem::Native {
+                event,
+                cmd,
+                regs,
+                header,
+            } => {
                 w.push(1);
                 w.extend_from_slice(&(*event as u32).to_le_bytes());
                 put_regs(&mut w, regs);
@@ -241,7 +310,10 @@ pub fn run(job: &[u8], store: &[u8]) -> Vec<u8> {
             let cmd = crate::direct::decode_cmd(&mut b).expect("job command");
             r.0 = b.0;
             out.extend_from_slice(&i.to_le_bytes());
-            put_out(&mut out, CallOut::Native(crate::direct::plan(&cmd, regs, &header, &mem)));
+            put_out(
+                &mut out,
+                CallOut::Native(crate::direct::plan(&cmd, regs, &header, &mem)),
+            );
             ran += 1;
             continue;
         }
@@ -265,7 +337,9 @@ pub fn run(job: &[u8], store: &[u8]) -> Vec<u8> {
         if hash == 0 || entry == u32::MAX {
             continue;
         }
-        let Some(o) = run_call(hash, entry, top, itop, src, kept, &mut mem) else { continue };
+        let Some(o) = run_call(hash, entry, top, itop, src, kept, &mut mem) else {
+            continue;
+        };
         out.extend_from_slice(&i.to_le_bytes());
         put_out(&mut out, o);
         ran += 1;
@@ -383,13 +457,31 @@ mod tests {
                 entry: (k != 2).then_some(if k % 2 == 0 { 0x40 } else { 0x1150 }),
                 top: (next() % 1024) as u32,
                 itop: (next() % 64) as u32,
-                input: (0..8).map(|_| ((next() % 1024) as u16, next() as u128 | (next() as u128) << 64)).collect(),
+                input: (0..8)
+                    .map(|_| {
+                        (
+                            (next() % 1024) as u16,
+                            next() as u128 | (next() as u128) << 64,
+                        )
+                    })
+                    .collect(),
                 shared: (k == 1).then(|| vec![((next() % 1024) as u16, next() as u128)].into()),
                 src: (k == 3).then_some(42),
                 native: false,
             })
             .collect();
-        let refs: Vec<JobCall> = calls.iter().enumerate().map(|(k, c)| (k * 3, c, (k != 4).then_some(crate::mat6::HASH), (k == 3).then_some(64.0))).collect();
+        let refs: Vec<JobCall> = calls
+            .iter()
+            .enumerate()
+            .map(|(k, c)| {
+                (
+                    k * 3,
+                    c,
+                    (k != 4).then_some(crate::mat6::HASH),
+                    (k == 3).then_some(64.0),
+                )
+            })
+            .collect();
         let items: Vec<JobItem> = refs.iter().map(|&c| JobItem::Call(c)).collect();
         let (outs, end) = decode(&run(&encode(&mem, &items), &[]));
 
@@ -400,12 +492,18 @@ mod tests {
                 let a = (a as usize & 1023) * 16;
                 direct[a..a + 16].copy_from_slice(&v.to_le_bytes());
             }
-            let (Some(e), Some(h)) = (c.entry, h) else { continue };
+            let (Some(e), Some(h)) = (c.entry, h) else {
+                continue;
+            };
             if let Some(o) = run_call(h, e, c.top, c.itop, c.src, kept, &mut direct) {
                 want.push((i, o));
             }
         }
-        assert!(want.iter().any(|(_, o)| matches!(o, CallOut::Gif(q) if !q.is_empty())), "no program output to compare");
+        assert!(
+            want.iter()
+                .any(|(_, o)| matches!(o, CallOut::Gif(q) if !q.is_empty())),
+            "no program output to compare"
+        );
         assert_eq!(outs, want);
         assert_eq!(end, direct);
     }
@@ -414,14 +512,51 @@ mod tests {
     /// of 5 vertices in front of an identity header).
     #[test]
     fn native_item_round_trip() {
-        let f = |v: [f32; 4]| v.iter().enumerate().fold(0u128, |q, (l, x)| q | (x.to_bits() as u128) << (32 * l));
-        let i = |v: [u32; 4]| v.iter().enumerate().fold(0u128, |q, (l, x)| q | (*x as u128) << (32 * l));
-        let verts: Vec<[u128; 3]> = (0..5).map(|k| [f([0.1 * k as f32, 0.5, 1.0, 0.0]), i([200, 100, 50, 128]), f([k as f32, (k % 2) as f32, 5.0, 1.0])]).collect();
-        let cmd = crate::direct::Cmd::Strip { entry: 0x12b8, prim: 0x5c, verts };
-        let header = [f([1.0, 0.0, 0.0, 0.0]), f([0.0, 1.0, 0.0, 0.0]), f([0.0, 0.0, 1.0, 0.0]), f([0.0, 0.0, 0.0, 1.0]), f([320.0, -224.0, 1000.0, 0.0]), f([2048.0, 2048.0, 1000.0, 0.0])];
-        let regs = crate::vif::VifRegs { base: 0x10, ofst: 0x1f0, tops: 0x10, ..Default::default() };
+        let f = |v: [f32; 4]| {
+            v.iter()
+                .enumerate()
+                .fold(0u128, |q, (l, x)| q | (x.to_bits() as u128) << (32 * l))
+        };
+        let i = |v: [u32; 4]| {
+            v.iter()
+                .enumerate()
+                .fold(0u128, |q, (l, x)| q | (*x as u128) << (32 * l))
+        };
+        let verts: Vec<[u128; 3]> = (0..5)
+            .map(|k| {
+                [
+                    f([0.1 * k as f32, 0.5, 1.0, 0.0]),
+                    i([200, 100, 50, 128]),
+                    f([k as f32, (k % 2) as f32, 5.0, 1.0]),
+                ]
+            })
+            .collect();
+        let cmd = crate::direct::Cmd::Strip {
+            entry: 0x12b8,
+            prim: 0x5c,
+            verts,
+        };
+        let header = [
+            f([1.0, 0.0, 0.0, 0.0]),
+            f([0.0, 1.0, 0.0, 0.0]),
+            f([0.0, 0.0, 1.0, 0.0]),
+            f([0.0, 0.0, 0.0, 1.0]),
+            f([320.0, -224.0, 1000.0, 0.0]),
+            f([2048.0, 2048.0, 1000.0, 0.0]),
+        ];
+        let regs = crate::vif::VifRegs {
+            base: 0x10,
+            ofst: 0x1f0,
+            tops: 0x10,
+            ..Default::default()
+        };
         let mem = [0u8; MEM];
-        let items = [JobItem::Native { event: 7, cmd: &cmd, regs, header: &header }];
+        let items = [JobItem::Native {
+            event: 7,
+            cmd: &cmd,
+            regs,
+            header: &header,
+        }];
         let (outs, _) = decode(&run(&encode(&mem, &items), &[]));
         let want = crate::direct::plan(&cmd, regs, &header, &mem);
         assert!(!want.is_empty());
@@ -447,11 +582,25 @@ mod tests {
         for (i, b) in mem.iter_mut().enumerate() {
             *b = (i * 7) as u8;
         }
-        let shared: std::sync::Arc<[(u16, u128)]> = (0..40u16).map(|k| (0x200 + k, (k as u128) << 90 | 0x3f80_0000)).collect::<Vec<_>>().into();
+        let shared: std::sync::Arc<[(u16, u128)]> = (0..40u16)
+            .map(|k| (0x200 + k, (k as u128) << 90 | 0x3f80_0000))
+            .collect::<Vec<_>>()
+            .into();
         let calls: Vec<VuCall> = (0..3)
-            .map(|k| VuCall { entry: Some(0x1150), top: 0, itop: 0, input: vec![(0x10 + k, 99)], shared: Some(shared.clone()), src: Some(5 << 16 | k as u64), native: false })
+            .map(|k| VuCall {
+                entry: Some(0x1150),
+                top: 0,
+                itop: 0,
+                input: vec![(0x10 + k, 99)],
+                shared: Some(shared.clone()),
+                src: Some(5 << 16 | k as u64),
+                native: false,
+            })
             .collect();
-        let items: Vec<JobItem> = calls.iter().map(|c| JobItem::Call((1, c, Some(crate::mat6::HASH), None))).collect();
+        let items: Vec<JobItem> = calls
+            .iter()
+            .map(|c| JobItem::Call((1, c, Some(crate::mat6::HASH), None)))
+            .collect();
         let inline = run(&encode(&mem, &items), &[]);
         let mut st = Store(Vec::new(), Default::default());
         let job = encode_with(&mem, &items, Some(&mut st));

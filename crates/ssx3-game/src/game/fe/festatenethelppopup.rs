@@ -11,10 +11,17 @@ use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x001d_a510, c_fe_state_net_help_popup_set_button_help, "cFEStateNetHelpPopup_SetButtonHelp"),
-    (0x001d_a530, c_fe_state_net_help_popup_set_body_text, "cFEStateNetHelpPopup_SetBodyText"),
+    (
+        0x001d_a510,
+        c_fe_state_net_help_popup_set_button_help,
+        "cFEStateNetHelpPopup_SetButtonHelp",
+    ),
+    (
+        0x001d_a530,
+        c_fe_state_net_help_popup_set_body_text,
+        "cFEStateNetHelpPopup_SetBodyText",
+    ),
 ];
-
 
 // ---------------------------------------------------------------------------
 // Net-help popup.
@@ -35,7 +42,6 @@ pub fn c_fe_state_net_help_popup_set_button_help(c: &mut Cpu) {
     Addr(c.g[A0][0] as u32).off(0x84).sw(c, help2);
     abi::ret(c);
 }
-
 
 /// `void cFEStateNetHelpPopup_SetBodyText(cFEStateNetHelpPopup *this, int index, uint text)`
 /// (0x1da530): stores `text` at `this + index*4 + 0x58`.
@@ -60,7 +66,6 @@ pub(crate) mod tests {
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
 
-
     #[test]
     fn c_fe_state_net_help_popup_set_button_help_matches() {
         check(
@@ -77,7 +82,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn c_fe_state_net_help_popup_set_body_text_matches() {

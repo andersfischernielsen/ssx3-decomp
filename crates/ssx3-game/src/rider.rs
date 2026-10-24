@@ -45,7 +45,12 @@ pub fn build_world_matrix(c: &mut Cpu) {
     let (xx, yy, zz, ww) = (q.x * q.x, q.y * q.y, q.z * q.z, q.w * q.w);
     let len2 = VuF32::madd(VuF32::madd(xx + yy, one, zz), one, ww);
     let inv = VuF32::rsqrt(one, len2);
-    let n = Vec4 { x: q.x * inv, y: q.y * inv, z: q.z * inv, w: q.w * inv };
+    let n = Vec4 {
+        x: q.x * inv,
+        y: q.y * inv,
+        z: q.z * inv,
+        w: q.w * inv,
+    };
     rider.rotation().write_vec4(c, n);
 
     let pos = rider.position().read_vec4(c);

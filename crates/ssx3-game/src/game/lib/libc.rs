@@ -2,23 +2,23 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::call;
+use crate::call::guest;
+use crate::call::Callee;
+use crate::call::Frame;
+use crate::events::back_edge_unwinds;
+use crate::events::deliver_event_here;
+use crate::events::event_due;
+pub(crate) use crate::game::lib::gcc::frame_ld;
+pub(crate) use crate::game::lib::gcc::frame_sd;
+pub(crate) use crate::game::lib::gcc::MULDF3;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
+use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
-use crate::call;
-use crate::call::Callee;
-use crate::call::Frame;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
-use crate::call::guest;
-use ssx3_ee as ee;
-use crate::events::back_edge_unwinds;
-pub(crate) use crate::game::lib::gcc::frame_sd;
-pub(crate) use crate::game::lib::gcc::frame_ld;
-pub(crate) use crate::game::lib::gcc::MULDF3;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -49,21 +49,20 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 pub(crate) mod callee {
     use super::ee;
     use super::Callee;
+    pub(crate) use crate::game::ai::computer::callee::EA_MEM_SET;
+    pub(crate) use crate::game::ai::computer::callee::GET_SUB_STATE_2 as GET_SUB_STATE;
     pub(crate) use crate::game::ai::computer::callee::RUBBER_BAND;
     pub(crate) use crate::game::ai::computer::callee::SET_ANIM_TIME_SCALE;
-    pub(crate) use crate::game::ai::computer::callee::GET_SUB_STATE_2 as GET_SUB_STATE;
-    pub(crate) use crate::game::ai::computer::callee::THINK_CRUISE;
     pub(crate) use crate::game::ai::computer::callee::THINK_BOARD_PRESS;
-    pub(crate) use crate::game::ai::computer::callee::THINK_PREWIND;
-    pub(crate) use crate::game::ai::computer::callee::THINK_NATURAL_AIR;
-    pub(crate) use crate::game::ai::computer::callee::THINK_SPIN;
+    pub(crate) use crate::game::ai::computer::callee::THINK_CRUISE;
     pub(crate) use crate::game::ai::computer::callee::THINK_GATE;
+    pub(crate) use crate::game::ai::computer::callee::THINK_NATURAL_AIR;
+    pub(crate) use crate::game::ai::computer::callee::THINK_PREWIND;
     pub(crate) use crate::game::ai::computer::callee::THINK_RAILSLIDE;
+    pub(crate) use crate::game::ai::computer::callee::THINK_SPIN;
     pub(crate) use crate::game::ai::computer::callee::THINK_WIPEOUT;
-    pub(crate) use crate::game::ai::computer::callee::VFPRINTF_R;
     pub(crate) use crate::game::ai::computer::callee::VFIPRINTF_R;
-    pub(crate) use crate::game::ai::computer::callee::EA_MEM_SET;
-
+    pub(crate) use crate::game::ai::computer::callee::VFPRINTF_R;
 
     /// `size_t strlen(const char*)` (`a0` in, `v0` out).
     pub const STRLEN: Callee = Callee {
@@ -76,7 +75,6 @@ pub(crate) mod callee {
         addr: 0x0041_65a8,
         f: ee::s15::strcmp,
     };
-
 
     /// Converts one multibyte character of the format (`wc`, `mbstate`).
     pub const MBTOWC_R: Callee = Callee {
@@ -310,7 +308,6 @@ pub(crate) mod l {
     pub const EPILOGUE: u32 = 0x0041_8c84;
 }
 
-
 // ---------------------------------------------------------------------------
 // Date / time.
 
@@ -340,7 +337,6 @@ pub fn date_is_leap_year(c: &mut Cpu) {
     c.g[V0][0] = c.g[A0][0];
     abi::ret(c);
 }
-
 
 /// `void Time_AddSeconds(int* hours, int* minutes, int* seconds, int extra,
 /// int carry)` (0x2c7328): fold a second count back into wall-clock fields.
@@ -389,10 +385,15 @@ pub fn time_add_seconds(c: &mut Cpu) {
     abi::ret(c);
 }
 
-pub(crate) const FWALK: Callee = Callee { addr: 0x0041_7418, f: ssx3_ee::s15::_fwalk };
+pub(crate) const FWALK: Callee = Callee {
+    addr: 0x0041_7418,
+    f: ssx3_ee::s15::_fwalk,
+};
 
-pub(crate) const CLEANUP_R: Callee = Callee { addr: 0x0041_6fc0, f: ssx3_ee::s15::_cleanup_r };
-
+pub(crate) const CLEANUP_R: Callee = Callee {
+    addr: 0x0041_6fc0,
+    f: ssx3_ee::s15::_cleanup_r,
+};
 
 /// `void _cleanup_r(struct _reent *ptr)` (0x416fc0): `_fwalk(ptr,
 /// _cleanup_r)`-style flush of all open streams; here it walks with the
@@ -411,7 +412,6 @@ pub fn cleanup_r(c: &mut Cpu) {
     });
 }
 
-
 /// `void _cleanup(void)` (0x416fe0): `_cleanup_r(_REENT)`.
 pub fn cleanup(c: &mut Cpu) {
     call::guest(c, |c| {
@@ -427,7 +427,6 @@ pub fn cleanup(c: &mut Cpu) {
     });
 }
 
-
 // ---------------------------------------------------------------------------
 // Leaves.
 
@@ -438,7 +437,6 @@ pub fn localeconv_r(c: &mut Cpu) {
     c.g[V0][0] = sx(0x0049_a790);
     abi::ret(c);
 }
-
 
 /// `int _fstat(int fd, struct stat *st)` (0x424558): the stub used when the
 /// kernel's `fstat` isn't wired up: zero the size field and mark `st` as a
@@ -452,7 +450,6 @@ pub fn fstat(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 // ---------------------------------------------------------------------------
 // Reentrant (newlib `_r`) I/O wrappers. Each shifts the arguments (dropping
 // the leading `struct _reent *`), clears the reent errno at 0x4a5bb8, calls
@@ -462,27 +459,52 @@ pub fn fstat(c: &mut Cpu) {
 /// The reentrant struct's `_errno` word (at `0x4a0000 + 0x5bb8`).
 pub(crate) const REENT_ERRNO: u32 = 0x004a_0000 + 0x5bb8;
 
-
 /// The newlib syscall stubs the wrappers call.
-pub(crate) const CLOSE: Callee = Callee { addr: 0x0042_4488, f: ssx3_ee::s15::f_00424488 };
+pub(crate) const CLOSE: Callee = Callee {
+    addr: 0x0042_4488,
+    f: ssx3_ee::s15::f_00424488,
+};
 
-pub(crate) const OPEN: Callee = Callee { addr: 0x0042_4460, f: ssx3_ee::s15::f_00424460 };
+pub(crate) const OPEN: Callee = Callee {
+    addr: 0x0042_4460,
+    f: ssx3_ee::s15::f_00424460,
+};
 
-pub(crate) const READ: Callee = Callee { addr: 0x0042_43e8, f: ssx3_ee::s15::f_004243e8 };
+pub(crate) const READ: Callee = Callee {
+    addr: 0x0042_43e8,
+    f: ssx3_ee::s15::f_004243e8,
+};
 
-pub(crate) const WRITE: Callee = Callee { addr: 0x0042_4368, f: ssx3_ee::s15::f_00424368 };
+pub(crate) const WRITE: Callee = Callee {
+    addr: 0x0042_4368,
+    f: ssx3_ee::s15::f_00424368,
+};
 
-pub(crate) const LSEEK: Callee = Callee { addr: 0x0042_4498, f: ssx3_ee::s15::f_00424498 };
+pub(crate) const LSEEK: Callee = Callee {
+    addr: 0x0042_4498,
+    f: ssx3_ee::s15::f_00424498,
+};
 
-pub(crate) const SBRK: Callee = Callee { addr: 0x0042_44a0, f: ssx3_ee::s15::f_004244a0 };
+pub(crate) const SBRK: Callee = Callee {
+    addr: 0x0042_44a0,
+    f: ssx3_ee::s15::f_004244a0,
+};
 
-pub(crate) const FSTAT_C: Callee = Callee { addr: 0x0042_4558, f: ssx3_ee::s15::f_00424558 };
-
+pub(crate) const FSTAT_C: Callee = Callee {
+    addr: 0x0042_4558,
+    f: ssx3_ee::s15::f_00424558,
+};
 
 /// The shared body: open a 0x30 frame (s0 = reent, s1 = 0x4a0000, ra),
 /// shift `shift` arguments off the front, clear the errno, call `target`.
 /// `-1` results read the errno back into `v0` and store it through `reent`.
-pub(crate) fn reentrant_io(c: &mut Cpu, target: Callee, shift: usize, ret: u32, first: u64) -> call::Flow {
+pub(crate) fn reentrant_io(
+    c: &mut Cpu,
+    target: Callee,
+    shift: usize,
+    ret: u32,
+    first: u64,
+) -> call::Flow {
     c.cycles += first;
     let frame = Frame::open(c, 0x30);
     frame.save(c, S0, 0x20);
@@ -519,24 +541,20 @@ pub(crate) fn reentrant_io(c: &mut Cpu, target: Callee, shift: usize, ret: u32, 
     Ok(())
 }
 
-
 /// `int _close_r(struct _reent *r, int fd)` (0x41fb98).
 pub fn close_r(c: &mut Cpu) {
     call::guest(c, |c| reentrant_io(c, CLOSE, 1, 0x0041_fbbc, 13))
 }
-
 
 /// `int _fstat_r(struct _reent *r, int fd, struct stat *st)` (0x41fbf0).
 pub fn fstat_r(c: &mut Cpu) {
     call::guest(c, |c| reentrant_io(c, FSTAT_C, 2, 0x0041_fc18, 14))
 }
 
-
 /// `int _lseek_r(struct _reent *r, int fd, int off, int whence)` (0x41fc50).
 pub fn lseek_r(c: &mut Cpu) {
     call::guest(c, |c| reentrant_io(c, LSEEK, 3, 0x0041_fc7c, 15))
 }
-
 
 /// `int _open_r(struct _reent *r, const char *path, int flags, int mode)`
 /// (0x41fcb0).
@@ -544,18 +562,15 @@ pub fn open_r(c: &mut Cpu) {
     call::guest(c, |c| reentrant_io(c, OPEN, 3, 0x0041_fcdc, 15))
 }
 
-
 /// `int _read_r(struct _reent *r, int fd, void *buf, int n)` (0x41fd10).
 pub fn read_r(c: &mut Cpu) {
     call::guest(c, |c| reentrant_io(c, READ, 3, 0x0041_fd3c, 15))
 }
 
-
 /// `void *_sbrk_r(struct _reent *r, int incr)` (0x41fd70).
 pub fn sbrk_r(c: &mut Cpu) {
     call::guest(c, |c| reentrant_io(c, SBRK, 1, 0x0041_fd94, 14))
 }
-
 
 /// `int _write_r(struct _reent *r, int fd, const void *buf, int n)`
 /// (0x41fdd0).
@@ -563,8 +578,10 @@ pub fn write_r(c: &mut Cpu) {
     call::guest(c, |c| reentrant_io(c, WRITE, 3, 0x0041_fdfc, 15))
 }
 
-pub(crate) const LIB_EXIT: Callee = Callee { addr: 0x0042_c6e8, f: ssx3_ee::s15::f_0042c6e8 };
-
+pub(crate) const LIB_EXIT: Callee = Callee {
+    addr: 0x0042_c6e8,
+    f: ssx3_ee::s15::f_0042c6e8,
+};
 
 /// `int _kill(int pid, int sig)` (0x424578): pid 1 exits the process; any
 /// other pid reports success (the stub can't signal).
@@ -587,7 +604,6 @@ pub fn kill(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void _Bfree(struct _reent *r, struct _Bigint *p)` (0x4205b8): push `p`
 /// onto the free-list bucket `r->freelist[p->k]` (at `r + 0x4c`, `k` at
@@ -612,7 +628,6 @@ pub fn bfree(c: &mut Cpu) {
     c.cycles += 2;
     abi::ret(c);
 }
-
 
 /// `double _mprec_log10(int exp)` (0x4214c0): 10^exp via a table for
 /// `0 < exp < 24`, else repeated multiplication (1.0 for `exp <= 0`).
@@ -664,7 +679,6 @@ pub fn mprec_log10(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // vfprintf_dispatch (0x0041b658)
 
@@ -673,16 +687,14 @@ pub fn mprec_log10(c: &mut Cpu) {
 pub(crate) const SPEC_TABLE: u32 = 0x0045_6a30;
 
 pub(crate) const SPEC_FIRST: u32 = 0x45;
- // 'E'
+// 'E'
 pub(crate) const SPEC_COUNT: u64 = 0x23;
-
 
 /// The two handler blocks of the table: the float-capable formatter and
 /// "keep scanning".
 pub(crate) const HANDLER_VFPRINTF: u32 = 0x0041_b6e8;
 
 pub(crate) const HANDLER_CONTINUE: u32 = 0x0041_b6fc;
-
 
 /// `int vfprintf(FILE* fp, const char* fmt, va_list ap)` (0x0041b658): choose
 /// between `_vfprintf_r` (a float conversion is present) and
@@ -796,7 +808,6 @@ pub fn vfprintf_dispatch(c: &mut Cpu) {
     });
 }
 
-
 // ---------------------------------------------------------------------------
 // The game image's locale names and C-JIS tables.
 
@@ -813,7 +824,6 @@ pub const LOCALE_JIS: u32 = 0x0049_a210;
 /// (`0x4a0000 - 0x5e00`); the other two are derived from it.
 pub(crate) const STR_BASE: u32 = 0x004a_0000;
 
-
 /// `[state][class]` action index table (`0x450000 + 0x4af8`, indexed at
 /// `+0x24` by the class and by `state * 9 * 4`).
 pub const JIS_ACTIONS: u32 = 0x0045_4af8;
@@ -821,18 +831,15 @@ pub const JIS_ACTIONS: u32 = 0x0045_4af8;
 /// `[state][class]` next-state table (`0x450000 + 0x4948`, same indexing).
 pub const JIS_STATES: u32 = 0x0045_4948;
 
-
 /// The original's entry and end (for the out-of-range `pc` hook).
 pub(crate) const START: u32 = l::ENTRY;
 
 pub(crate) const END: u32 = 0x0041_8ca4;
 
-
 #[inline(always)]
 pub(crate) fn a(c: &Cpu, r: usize) -> u32 {
     c.g[r][0] as u32
 }
-
 
 /// `int _mbtowc_r(_reent* r, wchar_t* pwc, const char* s, size_t n,
 ///                mbstate_t* state)` (0x418958): decode the next character of
@@ -1446,28 +1453,27 @@ pub fn mbtowc_r(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Format flags (the original keeps them in `s2`; the bit numbers are this
 // build's, not upstream newlib's).
 
 pub(crate) const ALT: u64 = 0x0001;
- // '#'  alternate form (0x/0X/leading 0)
+// '#'  alternate form (0x/0X/leading 0)
 pub(crate) const HASHX: u64 = 0x0002;
- // internal: the base prefix is to be emitted
+// internal: the base prefix is to be emitted
 pub(crate) const LEFT: u64 = 0x0004;
- // '-'  left justify
+// '-'  left justify
 pub(crate) const LONGINT: u64 = 0x0010;
- // 'l'  long
+// 'l'  long
 pub(crate) const LONGLONG: u64 = 0x0020;
- // 'll', 'q'  long long
+// 'll', 'q'  long long
 pub(crate) const SHORTINT: u64 = 0x0040;
- // 'h'  short
+// 'h'  short
 pub(crate) const ZEROPAD: u64 = 0x0080;
- // '0'  pad with zeroes (dropped when a
-                             //      precision is given)
+// '0'  pad with zeroes (dropped when a
+//      precision is given)
 pub(crate) const GROUP: u64 = 0x0200;
- // '\'' insert thousands separators
+// '\'' insert thousands separators
 
 /// The specifier jump table (`0x450000 - 0x59e0`, 89 entries, `' '`..`'x'`),
 /// listing the arm each conversion character reaches:
@@ -1488,33 +1494,33 @@ pub(crate) const GROUP: u64 = 0x0200;
 // Frame slots of the original (offsets from `sp`, see the module docs).
 
 pub(crate) const NUMBUF: u32 = 0x28;
- // digits are built backwards from here
+// digits are built backwards from here
 pub(crate) const PREFIXBUF: u32 = 0x30;
- // "0x"/"0X"/"0" prefix (2 bytes)
+// "0x"/"0X"/"0" prefix (2 bytes)
 pub(crate) const WC: u32 = 0x40;
- // wchar_t converted from the format
+// wchar_t converted from the format
 pub(crate) const SIGN: u32 = 0x42;
- // sign character: '-', '+', ' ' or 0
+// sign character: '-', '+', ' ' or 0
 pub(crate) const MBSTATE: u32 = 0x44;
- // mbstate_t for _mbtowc_r
+// mbstate_t for _mbtowc_r
 pub(crate) const LEN: u32 = 0x48;
- // length of the digits / string to write
+// length of the digits / string to write
 pub(crate) const WRITTEN: u32 = 0x4c;
- // characters written so far
+// characters written so far
 pub(crate) const WIDTH: u32 = 0x50;
- // field width (0 when absent)
+// field width (0 when absent)
 pub(crate) const PREC: u32 = 0x54;
- // precision (-1 when absent)
+// precision (-1 when absent)
 pub(crate) const PAD: u32 = 0x58;
- // width of the whole field (digits + sign/prefix)
+// width of the whole field (digits + sign/prefix)
 pub(crate) const BASE: u32 = 0x5c;
- // digit table of a hex conversion
+// digit table of a hex conversion
 pub(crate) const PWC: u32 = 0x60;
- // &WC
+// &WC
 pub(crate) const PMBSTATE: u32 = 0x64;
- // &MBSTATE
+// &MBSTATE
 pub(crate) const GROUP_FLAG: u32 = 0x68;
- // flags & LEFT, saved for the padding writer
+// flags & LEFT, saved for the padding writer
 
 /// `int _vfiprintf_r(struct _reent *r, FILE *fp, const char *fmt, va_list ap)`
 /// (0x0041ca70): formats `fmt` with the varargs behind `ap` and writes the
@@ -3679,72 +3685,77 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
-    use crate::difftest::scramble;
-    use crate::difftest::Rng;
-    use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
+    use crate::difftest::compare;
+    use crate::difftest::elf_image;
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::schedule;
+    use crate::difftest::events::Events;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::FAKE;
     use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::events::check_events;
-    use crate::difftest::events::schedule;
-    use crate::difftest::events::Events;
     use crate::difftest::fill;
-    use crate::difftest::elf_image;
     use crate::difftest::put_vec;
     use crate::difftest::put_words;
-    use crate::difftest::compare;
+    use crate::difftest::scramble;
     use crate::difftest::seed_count;
-    pub(crate) use crate::game::lib::gcc::tests::SEEDS;
-    pub(crate) use crate::game::lib::gcc::tests::plain;
+    use crate::difftest::Rng;
+    use crate::difftest::DATA;
+    use crate::difftest::GAME_GP;
     pub(crate) use crate::game::ai::computer::tests::SEEDS_3 as SEEDS_2;
-
+    pub(crate) use crate::game::lib::gcc::tests::plain;
+    pub(crate) use crate::game::lib::gcc::tests::SEEDS;
 
     #[test]
     fn date_is_leap_year_matches() {
-        check_lohi(ssx3_ee::s08::f_002c71c0, date_is_leap_year, 300, &|c, seed| {
-            let mut r = Rng(0x71c0 ^ seed as u64);
-            scramble(c, &mut r);
-            let year = match seed % 5 {
-                0 => (r.next_u32() % 1000).wrapping_mul(4).wrapping_add(1),
-                1 => (r.next_u32() % 1000).wrapping_mul(4),
-                2 => (r.next_u32() % 100).wrapping_mul(100),
-                3 => (r.next_u32() % 100).wrapping_mul(400),
-                _ => r.next_u32(),
-            };
-            c.g[A1][0] = ((r.next_u32() as u64) << 32) | year as u64;
-        });
+        check_lohi(
+            ssx3_ee::s08::f_002c71c0,
+            date_is_leap_year,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x71c0 ^ seed as u64);
+                scramble(c, &mut r);
+                let year = match seed % 5 {
+                    0 => (r.next_u32() % 1000).wrapping_mul(4).wrapping_add(1),
+                    1 => (r.next_u32() % 1000).wrapping_mul(4),
+                    2 => (r.next_u32() % 100).wrapping_mul(100),
+                    3 => (r.next_u32() % 100).wrapping_mul(400),
+                    _ => r.next_u32(),
+                };
+                c.g[A1][0] = ((r.next_u32() as u64) << 32) | year as u64;
+            },
+        );
     }
-
 
     #[test]
     fn time_add_seconds_matches() {
-        check_lohi(ssx3_ee::s08::f_002c7328, time_add_seconds, 200, &|c, seed| {
-            let mut r = Rng(0x7328 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A1][0] = (DATA + 0x100) as u64;
-            c.g[A2][0] = (DATA + 0x200) as u64;
-            c.g[A3][0] = (DATA + 0x300) as u64;
-            c.g[T0][0] = ((r.next_u32() as u64) << 32) | r.next_u32() as u64;
-            c.bus.write32(DATA + 0x100, r.next_u32());
-            c.bus.write32(DATA + 0x200, r.next_u32());
-            c.bus.write32(DATA + 0x300, r.next_u32());
-        });
+        check_lohi(
+            ssx3_ee::s08::f_002c7328,
+            time_add_seconds,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x7328 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A1][0] = (DATA + 0x100) as u64;
+                c.g[A2][0] = (DATA + 0x200) as u64;
+                c.g[A3][0] = (DATA + 0x300) as u64;
+                c.g[T0][0] = ((r.next_u32() as u64) << 32) | r.next_u32() as u64;
+                c.bus.write32(DATA + 0x100, r.next_u32());
+                c.bus.write32(DATA + 0x200, r.next_u32());
+                c.bus.write32(DATA + 0x300, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn cleanup_r_matches() {
         plain(ssx3_ee::s15::f_00416fc0, cleanup_r, 0x162);
     }
 
-
     #[test]
     fn cleanup_matches() {
         plain(ssx3_ee::s15::f_00416fe0, cleanup, 0x163);
     }
-
 
     // ------------------------------------------------------------ leaves
 
@@ -3755,7 +3766,6 @@ pub(crate) mod tests {
             scramble(c, &mut r);
         });
     }
-
 
     // ------------------------------------------------- reentrant wrappers
 
@@ -3769,14 +3779,12 @@ pub(crate) mod tests {
         r
     }
 
-
     #[test]
     fn close_r_matches() {
         check(ssx3_ee::s15::f_0041fb98, close_r, SEEDS, &|c, seed| {
             reent_args(c, seed, 20, 1);
         });
     }
-
 
     #[test]
     fn fstat_r_matches() {
@@ -3786,14 +3794,12 @@ pub(crate) mod tests {
         });
     }
 
-
     #[test]
     fn lseek_r_matches() {
         check(ssx3_ee::s15::f_0041fc50, lseek_r, SEEDS, &|c, seed| {
             reent_args(c, seed, 22, 3);
         });
     }
-
 
     #[test]
     fn open_r_matches() {
@@ -3802,7 +3808,6 @@ pub(crate) mod tests {
             c.g[A1][0] = (DATA + 0x100) as u64; // path
         });
     }
-
 
     #[test]
     fn read_r_matches() {
@@ -3814,17 +3819,19 @@ pub(crate) mod tests {
         });
     }
 
-
     #[test]
     fn write_r_matches() {
         check(ssx3_ee::s15::f_0041fdd0, write_r, SEEDS, &|c, seed| {
             let mut r = reent_args(c, seed, 25, 3);
             // fd 0 or >= 3 keeps `_write` off the tty path.
-            c.g[A1][0] = if seed % 2 == 0 { 0 } else { (3 + r.next_u32() % 8) as u64 };
+            c.g[A1][0] = if seed % 2 == 0 {
+                0
+            } else {
+                (3 + r.next_u32() % 8) as u64
+            };
             c.g[A2][0] = (DATA + 0x1000) as u64; // buffer
         });
     }
-
 
     #[test]
     fn sbrk_r_matches() {
@@ -3835,7 +3842,6 @@ pub(crate) mod tests {
         };
         covered(ssx3_ee::s15::f_0041fd70, sbrk_r, SEEDS, &setup);
     }
-
 
     // ---------------------------------------------------------------- kill
 
@@ -3850,7 +3856,6 @@ pub(crate) mod tests {
         });
     }
 
-
     // --------------------------------------------------- bignum / bit helpers
 
     #[test]
@@ -3861,7 +3866,11 @@ pub(crate) mod tests {
             let bucket = DATA + 0x1000;
             c.g[A0][0] = reent as u64;
             c.bus.write32(reent + 0x4c, bucket);
-            let p = if seed % 5 == 0 { 0 } else { (DATA + 0x500) as u64 };
+            let p = if seed % 5 == 0 {
+                0
+            } else {
+                (DATA + 0x500) as u64
+            };
             c.g[A1][0] = p;
             if p != 0 {
                 c.bus.write32(p as u32 + 0x4, seed % 4);
@@ -3869,7 +3878,6 @@ pub(crate) mod tests {
             }
         });
     }
-
 
     #[test]
     fn mprec_log10_matches() {
@@ -3887,7 +3895,6 @@ pub(crate) mod tests {
         check_events(ssx3_ee::s15::f_004214c0, mprec_log10, SEEDS, &setup);
     }
 
-
     #[test]
     fn fstat_matches() {
         check(ssx3_ee::s15::f_00424558, fstat, SEEDS, &|c, seed| {
@@ -3897,7 +3904,6 @@ pub(crate) mod tests {
             c.g[A1][0] = (DATA + (r.next_u32() & 0xfff0)) as u64;
         });
     }
-
 
     // -------------------------------------------------------------- vfprintf
 
@@ -3911,13 +3917,11 @@ pub(crate) mod tests {
         b"", b"%", b"a%", b"a%K", b"%1K", b"%M%K", b"%K", b"%%K", b"%L",
     ];
 
-
     /// The specifier table word for `c` (the original indexes it by
     /// `c - 'E'`).
     pub(crate) fn spec_slot(ch: u8) -> u32 {
         SPEC_TABLE + (ch as u32 - SPEC_FIRST) * 4
     }
-
 
     pub(crate) fn printf_setup(c: &mut Cpu, seed: u32) {
         let _r = machine(c, seed, 0x106, 0);
@@ -3942,7 +3946,6 @@ pub(crate) mod tests {
         c.pc = 0x0041_b658;
     }
 
-
     #[test]
     fn vfprintf_dispatch_matches() {
         check(
@@ -3953,9 +3956,7 @@ pub(crate) mod tests {
         );
     }
 
-
     pub(crate) const SEEDS_3: u32 = 300;
-
 
     pub(crate) const REENT: u32 = DATA + 0x1000;
 
@@ -3970,11 +3971,15 @@ pub(crate) mod tests {
 
     pub(crate) const OTHER: u32 = DATA + 0x1410;
 
-
     /// Hard, soft and LO/HI must all match: the original keeps every
     /// intermediate in guest registers (and runs one `mult`), so a caller
     /// could observe them.
-    pub(crate) fn check_strict(generated: GuestFn, hand: GuestFn, seeds: u32, setup: &dyn Fn(&mut Cpu, u32)) {
+    pub(crate) fn check_strict(
+        generated: GuestFn,
+        hand: GuestFn,
+        seeds: u32,
+        setup: &dyn Fn(&mut Cpu, u32),
+    ) {
         for seed in 0..seed_count(seeds) {
             let r = compare(generated, hand, &|c| setup(c, seed));
             assert!(r.hard.is_empty(), "seed {seed}: {:#?}", r.hard);
@@ -3983,7 +3988,6 @@ pub(crate) mod tests {
         }
     }
 
-
     /// Bytes that land in every class of the three decoders: NUL, a plain
     /// ASCII letter, ESC, `$`, `(`, `)`, `@`, `B`, `J`, `]`, an SJIS lead, a
     /// high SJIS lead, an EUC lead/trail, and the ends of both trail ranges.
@@ -3991,7 +3995,6 @@ pub(crate) mod tests {
         0x00, 0x41, 0x1b, 0x24, 0x28, 0x29, 0x40, 0x42, 0x4a, 0x5d, 0x81, 0x9f, 0xa1, 0xe0, 0xef,
         0xfc,
     ];
-
 
     pub(crate) fn setup(c: &mut Cpu, seed: u32) {
         let _r = machine(c, seed, 0x4189_58, 0);
@@ -4037,14 +4040,15 @@ pub(crate) mod tests {
         c.pc = START;
     }
 
-
     #[test]
     fn mbtowc_r_matches() {
-        check_strict(ssx3_ee::s15::f_00418958__generated, mbtowc_r, SEEDS_3, &|c, seed| {
-            setup(c, seed)
-        });
+        check_strict(
+            ssx3_ee::s15::f_00418958__generated,
+            mbtowc_r,
+            SEEDS_3,
+            &|c, seed| setup(c, seed),
+        );
     }
-
 
     /// The `__sFILE` the formatter writes through (`_p` at +0, `_w` at +8,
     /// `_flags`/`_file` at +0xc/+0xe, `_bf` at +0x10, `_data` at +0x54).
@@ -4068,7 +4072,6 @@ pub(crate) mod tests {
     /// `fp->_p`: the write buffer the inlined copy path fills.
     pub(crate) const OUT: u32 = DATA + 0x4000;
 
-
     /// What kind of argument a conversion takes (the value is made from the
     /// seed in [`printf_setup_2`]).
     #[derive(Clone, Copy, PartialEq)]
@@ -4087,12 +4090,10 @@ pub(crate) mod tests {
         Prec,
     }
 
-
     pub(crate) struct Case {
         fmt: &'static [u8],
         args: &'static [Kind],
     }
-
 
     /// Formats that reach every handler of the specifier table, every flag,
     /// both padding writers and both write paths. `%e`/`%f`/`%g` cannot occur
@@ -4156,7 +4157,6 @@ pub(crate) mod tests {
         Case { fmt: b"a %s b %d c", args: &[Kind::Str, Kind::Int] },
         Case { fmt: b"%08.3d",      args: &[Kind::Int] },
     ];
-
 
     /// The formatter's inputs: the game's own image (locale, `_mbtowc_r`,
     /// digit tables, the `vfiprintf_BufferedWrite` log buffer), a writeable
@@ -4243,7 +4243,6 @@ pub(crate) mod tests {
         c.g[A3][0] = ARGS as u64;
         c.pc = 0x0041_ca70;
     }
-
 
     /// Strict comparison: hard state, caller-saved state *and* LO/HI (the
     /// decimal/octal/hex digit loops use `mult`, and `__udivdi3` leaves its

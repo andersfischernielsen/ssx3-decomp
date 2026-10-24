@@ -2,44 +2,76 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
-use crate::guest::Addr;
-use ssx3_ee_rt::cpu::reg::*;
-use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::Cpu;
+use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::VSlot;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::visualfx::boardwakefx::addiu;
+pub(crate) use crate::game::visualfx::boardwakefx::at;
+pub(crate) use crate::game::visualfx::boardwakefx::back_edge;
+pub(crate) use crate::game::visualfx::boardwakefx::copy_quad;
+pub(crate) use crate::game::visualfx::boardwakefx::vadd;
+pub(crate) use crate::game::visualfx::boardwakefx::vmul_bc;
+use crate::guest::Addr;
 use crate::ps2f::FpuF32;
-use crate::abi::r32;
-use crate::call::Flow;
 use ssx3_ee as ee;
+use ssx3_ee_rt::cpu::reg::*;
+use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
 use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
-pub(crate) use crate::game::visualfx::boardwakefx::at;
-pub(crate) use crate::game::visualfx::boardwakefx::addiu;
-pub(crate) use crate::game::visualfx::boardwakefx::back_edge;
-pub(crate) use crate::game::visualfx::boardwakefx::vmul_bc;
-pub(crate) use crate::game::visualfx::boardwakefx::vadd;
-pub(crate) use crate::game::visualfx::boardwakefx::copy_quad;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x002f_1810, attached_emitter_fx_free_type_data, "AttachedEmitterFX_FreeTypeData"),
-    (0x002f_1850, attached_emitter_fx_ctor, "AttachedEmitterFX_ctor"),
-    (0x002f_1890, attached_emitter_fx_ctor_2, "AttachedEmitterFX_ctor_2"),
-    (0x002f_18d8, attached_emitter_fx_init, "AttachedEmitterFX_Init"),
-    (0x002f_1940, attached_emitter_fx_dtor, "AttachedEmitterFX_dtor"),
-    (0x002f_19f0, attached_emitter_fx_set_model, "AttachedEmitterFX_SetModel"),
-    (0x002f_1a08, attached_emitter_fx_update, "AttachedEmitterFX_Update"),
-    (0x002f_2218, attached_emitter_fx_destroy_emitter, "AttachedEmitterFX_DestroyEmitter"),
+    (
+        0x002f_1810,
+        attached_emitter_fx_free_type_data,
+        "AttachedEmitterFX_FreeTypeData",
+    ),
+    (
+        0x002f_1850,
+        attached_emitter_fx_ctor,
+        "AttachedEmitterFX_ctor",
+    ),
+    (
+        0x002f_1890,
+        attached_emitter_fx_ctor_2,
+        "AttachedEmitterFX_ctor_2",
+    ),
+    (
+        0x002f_18d8,
+        attached_emitter_fx_init,
+        "AttachedEmitterFX_Init",
+    ),
+    (
+        0x002f_1940,
+        attached_emitter_fx_dtor,
+        "AttachedEmitterFX_dtor",
+    ),
+    (
+        0x002f_19f0,
+        attached_emitter_fx_set_model,
+        "AttachedEmitterFX_SetModel",
+    ),
+    (
+        0x002f_1a08,
+        attached_emitter_fx_update,
+        "AttachedEmitterFX_Update",
+    ),
+    (
+        0x002f_2218,
+        attached_emitter_fx_destroy_emitter,
+        "AttachedEmitterFX_DestroyEmitter",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -86,11 +118,16 @@ pub(crate) mod attached_callee {
     use super::ee;
     use super::Callee;
 
-    pub const FIND_BONES: Callee = Callee { addr: 0x002f_22c8, f: ee::s09::AttachedEmitterFX_FindBones };
+    pub const FIND_BONES: Callee = Callee {
+        addr: 0x002f_22c8,
+        f: ee::s09::AttachedEmitterFX_FindBones,
+    };
 
-    pub const NOISE: Callee = Callee { addr: 0x002d_1928, f: ee::s09::Noise_Fractal1D };
+    pub const NOISE: Callee = Callee {
+        addr: 0x002d_1928,
+        f: ee::s09::Noise_Fractal1D,
+    };
 }
-
 
 /// `void AttachedEmitterFX_SetModel(AttachedEmitterFX *this, void *model)`
 /// (0x2f19f0): store the model at +0x94 and clear the active flag.
@@ -102,22 +139,30 @@ pub fn attached_emitter_fx_set_model(c: &mut Cpu) {
     abi::ret(c);
 }
 
+pub(crate) const ATTACHED_EMITTER_FX_FREE_TYPE_DATA: Callee = Callee {
+    addr: 0x002f_1810,
+    f: ssx3_ee::s09::f_002f1810,
+};
 
-pub(crate) const ATTACHED_EMITTER_FX_FREE_TYPE_DATA: Callee =
-    Callee { addr: 0x002f_1810, f: ssx3_ee::s09::f_002f1810 };
+pub(crate) const ATTACHED_EMITTER_FX_LOAD_TYPE_DATA: Callee = Callee {
+    addr: 0x002f_17d0,
+    f: ssx3_ee::s09::f_002f17d0,
+};
 
+pub(crate) const ATTACHED_EMITTER_FX_INIT: Callee = Callee {
+    addr: 0x002f_18d8,
+    f: ssx3_ee::s09::f_002f18d8,
+};
 
-pub(crate) const ATTACHED_EMITTER_FX_LOAD_TYPE_DATA: Callee =
-    Callee { addr: 0x002f_17d0, f: ssx3_ee::s09::f_002f17d0 };
+pub(crate) const ATTACHED_EMITTER_FX_RESET: Callee = Callee {
+    addr: 0x002f_1a00,
+    f: ssx3_ee::s09::f_002f1a00,
+};
 
-pub(crate) const ATTACHED_EMITTER_FX_INIT: Callee =
-    Callee { addr: 0x002f_18d8, f: ssx3_ee::s09::f_002f18d8 };
-
-pub(crate) const ATTACHED_EMITTER_FX_RESET: Callee =
-    Callee { addr: 0x002f_1a00, f: ssx3_ee::s09::f_002f1a00 };
-
-pub(crate) const RETURN_TRIVIAL: Callee = Callee { addr: 0x002f_8ff8, f: ssx3_ee::s09::f_002f8ff8 };
-
+pub(crate) const RETURN_TRIVIAL: Callee = Callee {
+    addr: 0x002f_8ff8,
+    f: ssx3_ee::s09::f_002f8ff8,
+};
 
 // ---------------------------------------------------------------------------
 // Attached emitter FX.
@@ -159,7 +204,6 @@ pub fn attached_emitter_fx_destroy_emitter(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // AttachedEmitterFX type data / constructors.
 
@@ -190,7 +234,6 @@ pub fn attached_emitter_fx_free_type_data(c: &mut Cpu) {
     })
 }
 
-
 /// `AttachedEmitterFX *AttachedEmitterFX_ctor(AttachedEmitterFX *this,
 /// void *type)` (0x2f1850): set the vtable, store `type` at +0x98, and run
 /// `AttachedEmitterFX_Init`; returns `this`.
@@ -219,7 +262,6 @@ pub fn attached_emitter_fx_ctor(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `AttachedEmitterFX *AttachedEmitterFX_ctor_2(AttachedEmitterFX *this,
 /// int index, void *type)` (0x2f1890): as the ctor but store `index` at +0x9c
@@ -253,7 +295,6 @@ pub fn attached_emitter_fx_ctor_2(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void AttachedEmitterFX_Init(AttachedEmitterFX *this)` (0x2f18d8): if the
 /// global type data (`gp+0xac4`) is absent, load it; then bump the type
@@ -307,7 +348,6 @@ pub fn attached_emitter_fx_init(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // AttachedEmitterFX destructor.
@@ -400,7 +440,6 @@ pub fn attached_emitter_fx_dtor(c: &mut Cpu) {
     })
 }
 
-
 /// The global random seed (`seed = (seed * 0x18fcd + 0xe9507c)`, the float
 /// `1.0 | seed & 0x7fffff` in [1, 2)).
 pub(crate) const RAND_SEED: u32 = 0xa0c;
@@ -409,7 +448,6 @@ pub(crate) const RAND_SEED: u32 = 0xa0c;
 pub(crate) const ORIGIN: u32 = 0x004f_f120;
 
 pub(crate) const DYNAMIC_EMITTER_SPAWN: u32 = 0x0037_10d0;
-
 
 /// `|*src|` on VU0 as the original issues it (`vf4 = vf3 * vf3`, the sum
 /// through ACC, `vsqrt`); Q goes through `gpr` to f`f`.
@@ -425,7 +463,6 @@ pub(crate) fn vu0_length(c: &mut Cpu, src: u32, gpr: usize, f: usize) {
     c.cfc2(gpr, 22);
     c.mtc1(gpr, f);
 }
-
 
 /// The emitter's bone matrix (`model->bones[this->bones[em->point]]`, the
 /// emitter in v1, the bone table base in t0) copied to s3 through vf1-vf4,
@@ -451,7 +488,6 @@ pub(crate) fn attached_bone(c: &mut Cpu, sp: u32, origin_reg: usize) {
     copy_quad(c, ORIGIN, sp.wrapping_add(0x70));
 }
 
-
 /// `vf12 = M * *p` with M's rows at s3 (vf4-vf7), stored to `out`.
 pub(crate) fn attached_transform(c: &mut Cpu, p: u32, out: u32) {
     let s3 = r32(c, S3);
@@ -466,7 +502,6 @@ pub(crate) fn attached_transform(c: &mut Cpu, p: u32, out: u32) {
     c.sqc2(12, out);
 }
 
-
 /// One step of the global random seed (in v0) into v0 as the original
 /// does it through registers: `rd = v0 * k`, `v0 = (rd + add) & mask |
 /// one` (k = 0x18fcd, add = 0xe9507c, mask = 0x7fffff, one = 1.0f).
@@ -476,7 +511,6 @@ pub(crate) fn rand_step(c: &mut Cpu, rd: usize, k: usize, add: usize, mask: usiz
     c.g[V0][0] &= c.g[mask][0];
     c.g[V0][0] |= c.g[one][0];
 }
-
 
 /// `void AttachedEmitterFX_Update(AttachedEmitterFX *fx)` (0x2f1a08): look
 /// up the attachment bones once, then for each of the ten emitters decide
@@ -509,7 +543,14 @@ pub fn attached_emitter_fx_update(c: &mut Cpu) {
         frame.save(c, S7, 0xd0);
         frame.save(c, FP, 0xc0);
         frame.save_ra(c, 0xb0);
-        for (f, off) in [(25, 0x178), (24, 0x170), (23, 0x168), (22, 0x160), (21, 0x158), (20, 0x150)] {
+        for (f, off) in [
+            (25, 0x178),
+            (24, 0x170),
+            (23, 0x168),
+            (22, 0x160),
+            (21, 0x158),
+            (20, 0x150),
+        ] {
             frame.save_fpr(c, f, off);
         }
         let found = c.lw(at(c.g[S2][0], attached::BONES_FOUND));
@@ -589,14 +630,20 @@ pub fn attached_emitter_fx_update(c: &mut Cpu) {
         frame.restore(c, S7, 0xd0);
         frame.restore(c, FP, 0xc0);
         frame.restore_ra(c, 0xb0);
-        for (f, off) in [(25, 0x178), (24, 0x170), (23, 0x168), (22, 0x160), (21, 0x158), (20, 0x150)] {
+        for (f, off) in [
+            (25, 0x178),
+            (24, 0x170),
+            (23, 0x168),
+            (22, 0x160),
+            (21, 0x158),
+            (20, 0x150),
+        ] {
             frame.restore_fpr(c, f, off);
         }
         frame.close(c);
         Ok(())
     })
 }
-
 
 /// One emitter (loop body at 0x2f1b30; the emitter in v1, its slot at s1,
 /// advanced by 4).
@@ -934,33 +981,36 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::schedule;
+    use crate::difftest::events::Events;
+    use crate::difftest::fakes::covered;
+    use crate::difftest::fakes::machine;
+    use crate::difftest::fakes::FAKE;
+    use crate::difftest::fakes::*;
+    use crate::difftest::fill;
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::events::check_events;
-    use crate::difftest::events::schedule;
-    use crate::difftest::events::Events;
-    use crate::difftest::fakes::*;
-    use crate::difftest::fakes::covered;
-    use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::fill;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::SEEDS;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::slot;
     pub(crate) use crate::game::visualfx::boardwakefx::tests::delta;
-
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::slot;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::SEEDS;
 
     #[test]
     fn attached_emitter_fx_set_model_matches() {
-        check(ssx3_ee::s09::f_002f19f0, attached_emitter_fx_set_model, 100, &|c, seed| {
-            let mut r = Rng(0x1010 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = ((r.next_u32() as u64) << 32) | r.next_u32() as u64;
-        });
+        check(
+            ssx3_ee::s09::f_002f19f0,
+            attached_emitter_fx_set_model,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x1010 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = ((r.next_u32() as u64) << 32) | r.next_u32() as u64;
+            },
+        );
     }
-
 
     #[test]
     fn attached_emitter_fx_destroy_emitter_matches() {
@@ -974,7 +1024,11 @@ pub(crate) mod tests {
                 c.g[A0][0] = this as u64;
                 let idx = r.next_u32() % 8;
                 c.g[A1][0] = idx as u64;
-                let obj = if r.next_u32() % 4 == 0 { 0 } else { ptr(&mut r) };
+                let obj = if r.next_u32() % 4 == 0 {
+                    0
+                } else {
+                    ptr(&mut r)
+                };
                 c.bus.write32(this + 0x6c + idx * 4, obj);
                 if obj != 0 {
                     let vt = vtable(c, &mut r, &[0x20]);
@@ -984,84 +1038,100 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn attached_emitter_fx_free_type_data_matches() {
-        check(ssx3_ee::s09::f_002f1810, attached_emitter_fx_free_type_data, 40, &|c, seed| {
-            let mut r = Rng(0x2f18_1000 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[GP][0] = crate::difftest::GAME_GP as u64;
-            let data = if seed % 2 == 0 { 0 } else { DATA + 0x100 };
-            c.bus.write32(crate::difftest::GAME_GP + 0xac0, data);
-        });
+        check(
+            ssx3_ee::s09::f_002f1810,
+            attached_emitter_fx_free_type_data,
+            40,
+            &|c, seed| {
+                let mut r = Rng(0x2f18_1000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = crate::difftest::GAME_GP as u64;
+                let data = if seed % 2 == 0 { 0 } else { DATA + 0x100 };
+                c.bus.write32(crate::difftest::GAME_GP + 0xac0, data);
+            },
+        );
     }
-
 
     /// Shared setup for the AttachedEmitterFX constructors: a global type
     /// data pointer already present, so `Init` skips loading it.
     #[test]
     fn attached_emitter_fx_ctor_matches() {
-        check_events(ssx3_ee::s09::f_002f1850, attached_emitter_fx_ctor, 40, &|c, seed| {
-            let mut r = Rng(0x2f18_5000 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = ((r.next_u32() as u64) << 32) | r.next_u32() as u64;
-            c.g[GP][0] = crate::difftest::GAME_GP as u64;
-            c.bus.write32(crate::difftest::GAME_GP + 0xac4, 1);
-            for i in 0..0x40 / 4 {
-                c.bus.write32(DATA + 4 * i, r.next_u32());
-            }
-            let mode = schedule(c, &mut r, seed, 0x002f_1850);
-            if mode != Events::Off {
-                c.next_event = c.cycles;
-            }
-            mode
-        });
+        check_events(
+            ssx3_ee::s09::f_002f1850,
+            attached_emitter_fx_ctor,
+            40,
+            &|c, seed| {
+                let mut r = Rng(0x2f18_5000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = ((r.next_u32() as u64) << 32) | r.next_u32() as u64;
+                c.g[GP][0] = crate::difftest::GAME_GP as u64;
+                c.bus.write32(crate::difftest::GAME_GP + 0xac4, 1);
+                for i in 0..0x40 / 4 {
+                    c.bus.write32(DATA + 4 * i, r.next_u32());
+                }
+                let mode = schedule(c, &mut r, seed, 0x002f_1850);
+                if mode != Events::Off {
+                    c.next_event = c.cycles;
+                }
+                mode
+            },
+        );
     }
-
 
     #[test]
     fn attached_emitter_fx_ctor_2_matches() {
-        check_events(ssx3_ee::s09::f_002f1890, attached_emitter_fx_ctor_2, 40, &|c, seed| {
-            let mut r = Rng(0x2f18_9000 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = (r.next_u32() % 8) as u64;
-            c.g[A2][0] = ((r.next_u32() as u64) << 32) | r.next_u32() as u64;
-            c.g[GP][0] = crate::difftest::GAME_GP as u64;
-            c.bus.write32(crate::difftest::GAME_GP + 0xac4, 1);
-            for i in 0..0x40 / 4 {
-                c.bus.write32(DATA + 4 * i, r.next_u32());
-            }
-            let mode = schedule(c, &mut r, seed, 0x002f_1890);
-            if mode != Events::Off {
-                c.next_event = c.cycles;
-            }
-            mode
-        });
+        check_events(
+            ssx3_ee::s09::f_002f1890,
+            attached_emitter_fx_ctor_2,
+            40,
+            &|c, seed| {
+                let mut r = Rng(0x2f18_9000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (r.next_u32() % 8) as u64;
+                c.g[A2][0] = ((r.next_u32() as u64) << 32) | r.next_u32() as u64;
+                c.g[GP][0] = crate::difftest::GAME_GP as u64;
+                c.bus.write32(crate::difftest::GAME_GP + 0xac4, 1);
+                for i in 0..0x40 / 4 {
+                    c.bus.write32(DATA + 4 * i, r.next_u32());
+                }
+                let mode = schedule(c, &mut r, seed, 0x002f_1890);
+                if mode != Events::Off {
+                    c.next_event = c.cycles;
+                }
+                mode
+            },
+        );
     }
-
 
     #[test]
     fn attached_emitter_fx_init_matches() {
-        check_events(ssx3_ee::s09::f_002f18d8, attached_emitter_fx_init, 40, &|c, seed| {
-            let mut r = Rng(0x2f18_d800 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.g[GP][0] = crate::difftest::GAME_GP as u64;
-            c.bus.write32(crate::difftest::GAME_GP + 0xac4, 1);
-            c.bus.write32(crate::difftest::GAME_GP + 0xac0, DATA + 0x400);
-            for i in 0..0x40 / 4 {
-                c.bus.write32(DATA + 4 * i, r.next_u32());
-            }
-            let mode = schedule(c, &mut r, seed, 0x002f_18d8);
-            if mode != Events::Off {
-                c.next_event = c.cycles;
-            }
-            mode
-        });
+        check_events(
+            ssx3_ee::s09::f_002f18d8,
+            attached_emitter_fx_init,
+            40,
+            &|c, seed| {
+                let mut r = Rng(0x2f18_d800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.g[GP][0] = crate::difftest::GAME_GP as u64;
+                c.bus.write32(crate::difftest::GAME_GP + 0xac4, 1);
+                c.bus
+                    .write32(crate::difftest::GAME_GP + 0xac0, DATA + 0x400);
+                for i in 0..0x40 / 4 {
+                    c.bus.write32(DATA + 4 * i, r.next_u32());
+                }
+                let mode = schedule(c, &mut r, seed, 0x002f_18d8);
+                if mode != Events::Off {
+                    c.next_event = c.cycles;
+                }
+                mode
+            },
+        );
     }
-
 
     #[test]
     fn attached_emitter_fx_dtor_matches() {
@@ -1076,7 +1146,11 @@ pub(crate) mod tests {
                 c.g[A1][0] = (r.next_u32() & !1) as u64; // do not free
                 c.bus.write32(crate::difftest::GAME_GP + 0xac4, 2); // keep type data
                 for i in 0..10 {
-                    let obj = if r.next_u32() % 4 == 0 { 0 } else { ptr(&mut r) };
+                    let obj = if r.next_u32() % 4 == 0 {
+                        0
+                    } else {
+                        ptr(&mut r)
+                    };
                     c.bus.write32(this + 0x6c + 4 * i, obj);
                     if obj != 0 {
                         let vt = vtable(c, &mut r, &[0x20]);
@@ -1087,69 +1161,83 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn attached_emitter_fx_update_matches() {
-        covered(ssx3_ee::s09::f_002f1a08__generated, attached_emitter_fx_update, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x2f1a_08, 1);
-            let (fx, model, rider, rider_vt) = (DATA, DATA + 0x8000, DATA + 0xa000, DATA + 0xa800);
-            let (bones, lods, lod) = (DATA + 0x9100, DATA + 0x8100, DATA + 0x8200);
-            c.g[A0][0] = sx(fx);
-            // Bones looked up already, or not (then FindBones finds none:
-            // every RiderModel_FindBone answers -1).
-            c.bus.write32(fx + attached::BONES_FOUND, (seed % 5 != 0) as u32);
-            for i in 0..0x1a {
-                c.bus.write32(fx + attached::BONES + 4 * i, r.next_u32() % 4);
-            }
-            c.bus.write32(fx + attached::MODEL, model);
-            c.bus.write32(model + 0x30, bones);
-            fill(c, &mut r, bones - 0x100, 0x100);
-            c.bus.write32(model + 0x1c, lods);
-            c.bus.write32(model + 0xc, lod);
-            c.bus.write32(lod + 0x44, 0);
-            for (i, off) in [0x140, 0x144, 0x148].into_iter().enumerate() {
-                let zero = (seed >> i) % 3 == 0;
-                c.bus.write32(model + off, if zero { 0 } else { r.f32(2.0) });
-            }
-            c.bus.write32(fx + attached::RIDER, if seed % 4 == 3 { 0 } else { rider });
-            c.bus.write32(rider + 0x6c0, rider_vt);
-            slot(c, rider_vt, 0x10, delta(&mut r), FAKE);
-            fill(c, &mut r, rider + 0x370, 4);
-            // The emitters: attachment points 0x17-0x19 or random, always-on
-            // or not, idle spawns (DynamicEmitter_Spawn returns at once).
-            for k in 0..10u32 {
-                let (em, desc) = (DATA + 0x1000 + 0x300 * k, DATA + 0x5000 + 0x200 * k);
-                let used = r.next_u32() % 4 != 0;
-                c.bus.write32(fx + attached::EMITTERS + 4 * k, if used { em } else { 0 });
-                let point = match r.next_u32() % 5 {
-                    0 => 0x17,
-                    1 => 0x18,
-                    2 => 0x19,
-                    _ => r.next_u32() % 0x19,
-                };
-                c.bus.write32(em + emitter::POINT, point);
-                c.bus.write32(em + emitter::ALWAYS, (r.next_u32() % 3 == 0) as u32);
-                c.bus.write32(em + emitter::PHASE, ((r.next_u32() % 64) as f32 / 8.0).to_bits());
-                c.bus.write32(em + emitter::DESC, desc);
-                c.bus.write32(em + 0x174, 0);
-                for off in (0xd8..0x110).step_by(4) {
-                    c.bus.write32(desc + off, r.f32(4.0));
+        covered(
+            ssx3_ee::s09::f_002f1a08__generated,
+            attached_emitter_fx_update,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2f1a_08, 1);
+                let (fx, model, rider, rider_vt) =
+                    (DATA, DATA + 0x8000, DATA + 0xa000, DATA + 0xa800);
+                let (bones, lods, lod) = (DATA + 0x9100, DATA + 0x8100, DATA + 0x8200);
+                c.g[A0][0] = sx(fx);
+                // Bones looked up already, or not (then FindBones finds none:
+                // every RiderModel_FindBone answers -1).
+                c.bus
+                    .write32(fx + attached::BONES_FOUND, (seed % 5 != 0) as u32);
+                for i in 0..0x1a {
+                    c.bus
+                        .write32(fx + attached::BONES + 4 * i, r.next_u32() % 4);
                 }
-                for off in [0xf0, 0xf4, 0xf8] {
-                    if r.next_u32() % 3 == 0 {
-                        c.bus.write32(desc + off, 0);
+                c.bus.write32(fx + attached::MODEL, model);
+                c.bus.write32(model + 0x30, bones);
+                fill(c, &mut r, bones - 0x100, 0x100);
+                c.bus.write32(model + 0x1c, lods);
+                c.bus.write32(model + 0xc, lod);
+                c.bus.write32(lod + 0x44, 0);
+                for (i, off) in [0x140, 0x144, 0x148].into_iter().enumerate() {
+                    let zero = (seed >> i) % 3 == 0;
+                    c.bus
+                        .write32(model + off, if zero { 0 } else { r.f32(2.0) });
+                }
+                c.bus
+                    .write32(fx + attached::RIDER, if seed % 4 == 3 { 0 } else { rider });
+                c.bus.write32(rider + 0x6c0, rider_vt);
+                slot(c, rider_vt, 0x10, delta(&mut r), FAKE);
+                fill(c, &mut r, rider + 0x370, 4);
+                // The emitters: attachment points 0x17-0x19 or random, always-on
+                // or not, idle spawns (DynamicEmitter_Spawn returns at once).
+                for k in 0..10u32 {
+                    let (em, desc) = (DATA + 0x1000 + 0x300 * k, DATA + 0x5000 + 0x200 * k);
+                    let used = r.next_u32() % 4 != 0;
+                    c.bus
+                        .write32(fx + attached::EMITTERS + 4 * k, if used { em } else { 0 });
+                    let point = match r.next_u32() % 5 {
+                        0 => 0x17,
+                        1 => 0x18,
+                        2 => 0x19,
+                        _ => r.next_u32() % 0x19,
+                    };
+                    c.bus.write32(em + emitter::POINT, point);
+                    c.bus
+                        .write32(em + emitter::ALWAYS, (r.next_u32() % 3 == 0) as u32);
+                    c.bus.write32(
+                        em + emitter::PHASE,
+                        ((r.next_u32() % 64) as f32 / 8.0).to_bits(),
+                    );
+                    c.bus.write32(em + emitter::DESC, desc);
+                    c.bus.write32(em + 0x174, 0);
+                    for off in (0xd8..0x110).step_by(4) {
+                        c.bus.write32(desc + off, r.f32(4.0));
+                    }
+                    for off in [0xf0, 0xf4, 0xf8] {
+                        if r.next_u32() % 3 == 0 {
+                            c.bus.write32(desc + off, 0);
+                        }
                     }
                 }
-            }
-            c.bus.write32(GAME_GP + RAND_SEED, r.next_u32());
-            for off in [0x392c, 0x3928, 0x3924, 0x3920, 0x391c] {
-                c.bus.write32(GAME_GP - off, r.f32(2.0));
-            }
-            fill(c, &mut r, ORIGIN, 4);
-            // Noise_Sample1D's table (0xa0 floats; negative indices too).
-            for i in 0..0x140u32 {
-                c.bus.write32(0x0044_5ab0 - 0x280 + 4 * i, r.f32(1.0));
-            }
-        });
+                c.bus.write32(GAME_GP + RAND_SEED, r.next_u32());
+                for off in [0x392c, 0x3928, 0x3924, 0x3920, 0x391c] {
+                    c.bus.write32(GAME_GP - off, r.f32(2.0));
+                }
+                fill(c, &mut r, ORIGIN, 4);
+                // Noise_Sample1D's table (0xa0 floats; negative indices too).
+                for i in 0..0x140u32 {
+                    c.bus.write32(0x0044_5ab0 - 0x280 + 4 * i, r.f32(1.0));
+                }
+            },
+        );
     }
 }

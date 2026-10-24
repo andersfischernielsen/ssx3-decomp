@@ -58,7 +58,13 @@ fn reset_emit(c: &mut Cpu, dm: u32, tm: u32) {
 
 /// `RenderFrame(dm, &vifCursor, &phase2Vif, &gifCursor, &phase2Gif)`.
 pub fn render_frame(c: &mut Cpu) {
-    let (dm, vif, vif2, gif, gif2) = (c.g[A0][0] as u32, c.g[A1][0] as u32, c.g[A2][0] as u32, c.g[A3][0] as u32, c.g[T0][0] as u32);
+    let (dm, vif, vif2, gif, gif2) = (
+        c.g[A0][0] as u32,
+        c.g[A1][0] as u32,
+        c.g[A2][0] as u32,
+        c.g[A3][0] as u32,
+        c.g[T0][0] as u32,
+    );
     let gp = c.g[GP][0] as u32;
     let gm = r32(c, gp + 0x2a90);
     guest_call(c, BUILD_BUCKETS, &[dm], 0x0036_34d4);
@@ -128,7 +134,8 @@ pub fn render_frame(c: &mut Cpu) {
 /// 0; else the generated body.
 pub(crate) fn dispatch_render_frame(c: &mut Cpu, generated: fn(&mut Cpu)) {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    let on = *ON.get_or_init(|| std::env::var("SSX3_NATIVE_RENDER_FRAME").map_or(true, |v| v != "0"));
+    let on =
+        *ON.get_or_init(|| std::env::var("SSX3_NATIVE_RENDER_FRAME").map_or(true, |v| v != "0"));
     if on && direct::packetless() {
         render_frame(c)
     } else {

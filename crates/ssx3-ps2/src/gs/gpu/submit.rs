@@ -54,18 +54,31 @@ impl Submitter {
             return None;
         }
         let (tx, rx) = sync_channel::<Job>(MAX_QUEUED);
-        let done = Arc::new(Done { count: Mutex::new(0), cv: Condvar::new(), spare: Mutex::new(Vec::new()) });
+        let done = Arc::new(Done {
+            count: Mutex::new(0),
+            cv: Condvar::new(),
+            spare: Mutex::new(Vec::new()),
+        });
         let (dev, q, d) = (device.clone(), queue.clone(), done.clone());
         let thread = std::thread::Builder::new()
             .name("gs-submit".into())
             .spawn(move || run(rx, dev, q, d))
             .expect("gs submit thread");
-        Some(Submitter { tx: Some(tx), done, sent: 0, thread: Some(thread) })
+        Some(Submitter {
+            tx: Some(tx),
+            done,
+            sent: 0,
+            thread: Some(thread),
+        })
     }
 
     pub fn submit(&mut self, job: Job) {
         self.sent += 1;
-        self.tx.as_ref().expect("submit thread").send(job).expect("gs submit thread gone");
+        self.tx
+            .as_ref()
+            .expect("submit thread")
+            .send(job)
+            .expect("gs submit thread gone");
     }
 
     /// Wait until every job handed over so far is submitted.
@@ -95,7 +108,8 @@ fn run(rx: Receiver<Job>, dev: wgpu::Device, q: wgpu::Queue, done: Arc<Done>) {
     let mut inflight: VecDeque<wgpu::SubmissionIndex> = VecDeque::new();
     // SSX3_GS_WAITS: (GPU busy time, last completion), reported at exit.
     type Busy = Arc<Mutex<(std::time::Duration, Option<web_time::Instant>)>>;
-    let busy: Option<Busy> = std::env::var_os("SSX3_GS_WAITS").map(|_| Arc::new(Mutex::new((std::time::Duration::ZERO, None))));
+    let busy: Option<Busy> = std::env::var_os("SSX3_GS_WAITS")
+        .map(|_| Arc::new(Mutex::new((std::time::Duration::ZERO, None))));
     let t0 = web_time::Instant::now();
     // Completion callbacks run in `poll`: poll often while measuring.
     let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -137,7 +151,10 @@ fn run(rx: Receiver<Job>, dev: wgpu::Device, q: wgpu::Queue, done: Arc<Done>) {
         inflight.push_back(idx);
         while inflight.len() > MAX_INFLIGHT {
             let old = inflight.pop_front().expect("inflight");
-            let _ = dev.poll(wgpu::PollType::Wait { submission_index: Some(old), timeout: None });
+            let _ = dev.poll(wgpu::PollType::Wait {
+                submission_index: Some(old),
+                timeout: None,
+            });
         }
         if let Some(mut w) = back {
             w.clear();
@@ -153,7 +170,11 @@ fn run(rx: Receiver<Job>, dev: wgpu::Device, q: wgpu::Queue, done: Arc<Done>) {
     if let Some(b) = busy {
         let _ = dev.poll(wgpu::PollType::wait_indefinitely());
         let g = b.lock().unwrap();
-        eprintln!("[gs-waits] GPU busy {:.1} s of {:.1} s", g.0.as_secs_f64(), t0.elapsed().as_secs_f64());
+        eprintln!(
+            "[gs-waits] GPU busy {:.1} s of {:.1} s",
+            g.0.as_secs_f64(),
+            t0.elapsed().as_secs_f64()
+        );
     }
 }
 

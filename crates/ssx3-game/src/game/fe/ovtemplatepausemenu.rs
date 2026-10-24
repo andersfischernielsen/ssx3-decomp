@@ -2,55 +2,90 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
+use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::ai::computer::lh_2 as lh;
+pub(crate) use crate::game::ai::computer::sd;
+pub(crate) use crate::game::fe::debugfe::at;
+pub(crate) use crate::game::fe::feasyncfile::lbu;
+pub(crate) use crate::game::fe::fepopup::at as at_2;
+pub(crate) use crate::game::fe::fepopup::ld;
+pub(crate) use crate::game::fe::fepopup::lq;
+pub(crate) use crate::game::fe::fepopup::lw_9 as lw_3;
+pub(crate) use crate::game::fe::fepopup::sq;
+pub(crate) use crate::game::fe::festatebonusmaterial::WIDGET_ACTIVATED;
+pub(crate) use crate::game::fe::festatebonusmaterial::WIDGET_IGNORED;
+pub(crate) use crate::game::wscript::wscriptman::gp;
+pub(crate) use crate::game::wscript::wscriptman::lw_4 as lw_2;
+pub(crate) use crate::game::wscript::wscriptman::sw as sw_2;
+use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::Cpu;
-use crate::events::back_edge_unwinds;
-use crate::guest::Addr;
 use ssx3_ee_rt::vu0::Src;
-use crate::call::sp;
-use crate::call::Flow;
-use crate::abi::r32;
 use ssx3_ee_rt::vu0::W;
 use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
-pub(crate) use crate::game::fe::festatebonusmaterial::WIDGET_IGNORED;
-pub(crate) use crate::game::fe::festatebonusmaterial::WIDGET_ACTIVATED;
-pub(crate) use crate::game::fe::debugfe::at;
-pub(crate) use crate::game::wscript::wscriptman::gp;
-pub(crate) use crate::game::wscript::wscriptman::lw_4 as lw_2;
-pub(crate) use crate::game::wscript::wscriptman::sw as sw_2;
-pub(crate) use crate::game::fe::fepopup::at as at_2;
-pub(crate) use crate::game::fe::fepopup::lw_9 as lw_3;
-pub(crate) use crate::game::ai::computer::lh_2 as lh;
-pub(crate) use crate::game::fe::feasyncfile::lbu;
-pub(crate) use crate::game::fe::fepopup::ld;
-pub(crate) use crate::game::ai::computer::sd;
-pub(crate) use crate::game::fe::fepopup::lq;
-pub(crate) use crate::game::fe::fepopup::sq;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x001f_85c0, ov_screen_pause_freeride_on_activate, "OVScreenPauseFreeride_OnActivate"),
-    (0x001f_8908, ov_screen_pause_freeride_on_widget_notify, "OVScreenPauseFreeride_OnWidgetNotify"),
-    (0x001f_8ee0, ov_screen_pause_freeride_init_mode1, "OVScreenPauseFreeride_InitMode1"),
-    (0x001f_8f48, ov_screen_pause_freeride_init_mode2, "OVScreenPauseFreeride_InitMode2"),
-    (0x001f_8fb0, ov_screen_pause_freeride_init_mode3, "OVScreenPauseFreeride_InitMode3"),
-    (0x001f_9018, ov_screen_pause_freeride_init_mode4, "OVScreenPauseFreeride_InitMode4"),
-    (0x001f_9080, ov_screen_pause_freeride_init_mode5, "OVScreenPauseFreeride_InitMode5"),
-    (0x001f_90e8, ov_screen_pause_freeride_init_mode_6, "OVScreenPauseFreeride_InitMode6"),
-    (0x0028_9bb8, ssx_audio_system_resume_game_audio, "SSXAudioSystem_ResumeGameAudio"),
+    (
+        0x001f_85c0,
+        ov_screen_pause_freeride_on_activate,
+        "OVScreenPauseFreeride_OnActivate",
+    ),
+    (
+        0x001f_8908,
+        ov_screen_pause_freeride_on_widget_notify,
+        "OVScreenPauseFreeride_OnWidgetNotify",
+    ),
+    (
+        0x001f_8ee0,
+        ov_screen_pause_freeride_init_mode1,
+        "OVScreenPauseFreeride_InitMode1",
+    ),
+    (
+        0x001f_8f48,
+        ov_screen_pause_freeride_init_mode2,
+        "OVScreenPauseFreeride_InitMode2",
+    ),
+    (
+        0x001f_8fb0,
+        ov_screen_pause_freeride_init_mode3,
+        "OVScreenPauseFreeride_InitMode3",
+    ),
+    (
+        0x001f_9018,
+        ov_screen_pause_freeride_init_mode4,
+        "OVScreenPauseFreeride_InitMode4",
+    ),
+    (
+        0x001f_9080,
+        ov_screen_pause_freeride_init_mode5,
+        "OVScreenPauseFreeride_InitMode5",
+    ),
+    (
+        0x001f_90e8,
+        ov_screen_pause_freeride_init_mode_6,
+        "OVScreenPauseFreeride_InitMode6",
+    ),
+    (
+        0x0028_9bb8,
+        ssx_audio_system_resume_game_audio,
+        "SSXAudioSystem_ResumeGameAudio",
+    ),
 ];
-
 
 /// `int OVScreenPauseFreeride_OnWidgetNotify(...)` (0x1F8908): `Resume`
 /// (6) answers 0, `Restart`/`Quit` (8, 9) answer 0x100, anything else
@@ -97,7 +132,6 @@ pub fn ov_screen_pause_freeride_on_widget_notify(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void SSXAudioSystem_ResumeGameAudio(SSXAudioSystem* audio)` (0x289bb8):
 /// resume the paused game-audio streams and clear their pause flags.
 pub fn ssx_audio_system_resume_game_audio(c: &mut Cpu) {
@@ -139,7 +173,6 @@ pub fn ssx_audio_system_resume_game_audio(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Memory helpers.
 
@@ -149,18 +182,15 @@ pub(crate) fn p(a: u32, off: u32) -> u32 {
     a.wrapping_add(off)
 }
 
-
 #[inline(always)]
 pub(crate) fn lw(c: &mut Cpu, a: u32) -> u64 {
     Addr(a).lw(c)
 }
 
-
 #[inline(always)]
 pub(crate) fn sw(c: &mut Cpu, a: u32, v: u64) {
     Addr(a).sw(c, v);
 }
-
 
 // ---------------------------------------------------------------------------
 // Pause-menu template initialisers (five modes, same shape).
@@ -210,14 +240,12 @@ pub(crate) fn pause_freeride_init(
     }
 }
 
-
 /// `OVScreenPauseFreeride_InitMode1(OVScreenPauseFreeride* self)` (0x1f8ee0).
 pub fn ov_screen_pause_freeride_init_mode1(c: &mut Cpu) {
     guest(c, |c| {
         pause_freeride_init(c, 6, 0x0047_8160, 1, 0x001f_8f08, 0x001f_8f38)
     })
 }
-
 
 /// `OVScreenPauseFreeride_InitMode2(OVScreenPauseFreeride* self)` (0x1f8f48).
 pub fn ov_screen_pause_freeride_init_mode2(c: &mut Cpu) {
@@ -226,14 +254,12 @@ pub fn ov_screen_pause_freeride_init_mode2(c: &mut Cpu) {
     })
 }
 
-
 /// `OVScreenPauseFreeride_InitMode3(OVScreenPauseFreeride* self)` (0x1f8fb0).
 pub fn ov_screen_pause_freeride_init_mode3(c: &mut Cpu) {
     guest(c, |c| {
         pause_freeride_init(c, 7, 0x0047_8140, 3, 0x001f_8fd8, 0x001f_9008)
     })
 }
-
 
 /// `OVScreenPauseFreeride_InitMode4(OVScreenPauseFreeride* self)` (0x1f9018).
 pub fn ov_screen_pause_freeride_init_mode4(c: &mut Cpu) {
@@ -242,14 +268,12 @@ pub fn ov_screen_pause_freeride_init_mode4(c: &mut Cpu) {
     })
 }
 
-
 /// `OVScreenPauseFreeride_InitMode5(OVScreenPauseFreeride* self)` (0x1f9080).
 pub fn ov_screen_pause_freeride_init_mode5(c: &mut Cpu) {
     guest(c, |c| {
         pause_freeride_init(c, 5, 0x0047_81a8, 5, 0x001f_90a8, 0x001f_90d8)
     })
 }
-
 
 /// `void OVScreenPauseFreeride_InitMode6(OVScreenPauseFreeride* self)`
 /// (0x1f90e8): pick the item table (two when a restart is possible), copy it
@@ -316,7 +340,6 @@ pub fn ov_screen_pause_freeride_init_mode_6(c: &mut Cpu) {
         Ok(())
     });
 }
-
 
 /// `void func_001F85C0(void* self, void* a1)` (0x1f85c0): activate the pause
 /// menu's freeride variant: for each of the eight entries at_2 `+0xd8`, pick the
@@ -449,7 +472,7 @@ pub fn ov_screen_pause_freeride_on_activate(c: &mut Cpu) {
                 c.g[RA][0] = sx(0x001f8678);
                 c.g[A0][0] = sx(r32(c, A2).wrapping_add(r32(c, A0)));
                 if call_ptr(c, t, 0x001f8678).is_err() {
-                return;
+                    return;
                 }
                 let t = true;
                 c.g[S0][0] = sx(at_2(c, S0, 0x4));
@@ -470,7 +493,7 @@ pub fn ov_screen_pause_freeride_on_activate(c: &mut Cpu) {
                 c.g[RA][0] = sx(0x001f8698);
                 c.g[A0][0] = sx(r32(c, A2).wrapping_add(r32(c, A0)));
                 if call_ptr(c, t, 0x001f8698).is_err() {
-                return;
+                    return;
                 }
                 pc = 0x001f8698;
                 continue;
@@ -506,19 +529,19 @@ pub fn ov_screen_pause_freeride_on_activate(c: &mut Cpu) {
                 c.g[RA][0] = sx(0x001f86bc);
                 c.g[A1][0] = sx(at_2(c, V0, 0x2138));
                 if call_ptr(c, 0x00417828, 0x001f86bc).is_err() {
-                return;
-}
+                    return;
+                }
                 c.g[RA][0] = sx(0x001f86c4);
                 c.g[A0][0] = c.g[SP][0];
                 if call_ptr(c, 0x00317670, 0x001f86c4).is_err() {
-                return;
-}
+                    return;
+                }
                 c.g[A0][0] = lw_3(c, at_2(c, S1, 0xc0));
                 c.g[RA][0] = sx(0x001f86d0);
                 c.g[A1][0] = c.g[V0][0];
                 if call_ptr(c, 0x0039d860, 0x001f86d0).is_err() {
-                return;
-}
+                    return;
+                }
                 c.g[A2][0] = c.g[V0][0];
                 c.g[V0][0] = lw_3(c, at_2(c, S1, 0xbc));
                 c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
@@ -540,8 +563,8 @@ pub fn ov_screen_pause_freeride_on_activate(c: &mut Cpu) {
                 c.g[RA][0] = sx(0x001f86f0);
                 c.g[A1][0] = c.g[S4][0];
                 if call_ptr(c, 0x0039e4c0, 0x001f86f0).is_err() {
-                return;
-}
+                    return;
+                }
                 lq(c, 16, at_2(c, SP, 0xb0));
                 lq(c, 17, at_2(c, SP, 0xa0));
                 lq(c, 18, at_2(c, SP, 0x90));
@@ -568,43 +591,42 @@ pub fn ov_screen_pause_freeride_on_activate(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::difftest::check;
+    use crate::difftest::check_lohi;
+    use crate::difftest::compare;
+    use crate::difftest::elf_image;
+    use crate::difftest::fakes;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::vtable;
-    use crate::difftest::check;
-    use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
-    use crate::difftest::check_lohi;
-    use crate::difftest::fakes;
-    use crate::difftest::fill;
-    use crate::difftest::put_vec;
-    use crate::difftest::Rng;
-    use crate::difftest::elf_image;
     use crate::difftest::fakes::FAKE;
     use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::compare;
+    use crate::difftest::fill;
+    use crate::difftest::put_vec;
     use crate::difftest::put_words;
-    use ssx3_ee_rt::funcs::GuestFn;
-    pub(crate) use crate::game::be::bestate2::tests::SEEDS;
-    pub(crate) use crate::game::be::bestate2::tests::w;
+    use crate::difftest::Rng;
+    use crate::difftest::DATA;
+    use crate::difftest::GAME_GP;
     pub(crate) use crate::game::be::bestate2::tests::belib;
-    pub(crate) use crate::game::fe::debugfe::tests::OBJ;
-    pub(crate) use crate::game::fe::debugfe::tests::w as w_2;
-    pub(crate) use crate::game::wscript::wscriptman::tests::clear_5 as clear;
-    pub(crate) use crate::game::wscript::wscriptman::tests::BE_3 as BE;
-    pub(crate) use crate::game::wscript::wscriptman::tests::WORLD_3 as WORLD;
-    pub(crate) use crate::game::wscript::wscriptman::tests::GAME;
-    pub(crate) use crate::game::wscript::wscriptman::tests::globals_3 as globals;
-    pub(crate) use crate::game::wscript::wscriptman::tests::base_6 as base;
+    pub(crate) use crate::game::be::bestate2::tests::w;
+    pub(crate) use crate::game::be::bestate2::tests::SEEDS;
     pub(crate) use crate::game::bx::bxstring::tests::heap;
     pub(crate) use crate::game::dirtysock::tags2::tests::pool_7 as pool;
-    pub(crate) use crate::game::fe::fepopup::tests::BEL;
+    pub(crate) use crate::game::fe::debugfe::tests::w as w_2;
+    pub(crate) use crate::game::fe::debugfe::tests::OBJ;
+    pub(crate) use crate::game::fe::fepopup::tests::base_14 as base_2;
+    pub(crate) use crate::game::fe::fepopup::tests::check_all_3 as check_all;
     pub(crate) use crate::game::fe::fepopup::tests::AUX;
-    pub(crate) use crate::game::fe::fepopup::tests::SYS;
+    pub(crate) use crate::game::fe::fepopup::tests::BEL;
     pub(crate) use crate::game::fe::fepopup::tests::RACE;
     pub(crate) use crate::game::fe::fepopup::tests::RMAN_2 as RMAN;
-    pub(crate) use crate::game::fe::fepopup::tests::check_all_3 as check_all;
-    pub(crate) use crate::game::fe::fepopup::tests::base_14 as base_2;
-
+    pub(crate) use crate::game::fe::fepopup::tests::SYS;
+    pub(crate) use crate::game::wscript::wscriptman::tests::base_6 as base;
+    pub(crate) use crate::game::wscript::wscriptman::tests::clear_5 as clear;
+    pub(crate) use crate::game::wscript::wscriptman::tests::globals_3 as globals;
+    pub(crate) use crate::game::wscript::wscriptman::tests::BE_3 as BE;
+    pub(crate) use crate::game::wscript::wscriptman::tests::GAME;
+    pub(crate) use crate::game::wscript::wscriptman::tests::WORLD_3 as WORLD;
+    use ssx3_ee_rt::funcs::GuestFn;
 
     #[test]
     fn ov_screen_pause_freeride_on_widget_notify_matches() {
@@ -621,7 +643,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn ssx_audio_system_resume_game_audio_matches() {
         check(
@@ -637,13 +658,11 @@ pub(crate) mod tests {
         );
     }
 
-
     /// `D_0048DCD4`: the immutable empty `cBXString` buffer.
     pub(crate) const EMPTY: u32 = 0x0048_dcd4;
 
     /// `D_004A3E90`: the global empty-`cBXString` pointer (`gp+0xda0`).
     pub(crate) const EMPTY_PTR: u32 = 0x004a_3e90;
-
 
     /// Scrambled registers, fake hooks, a game-like `gp`, the BELibrary dummy
     /// and the static empty string the string code compares against.
@@ -657,7 +676,6 @@ pub(crate) mod tests {
         c.bus.write32(EMPTY, 0);
         r
     }
-
 
     // -------------------------------------------------------- pause-menu modes
 
@@ -682,12 +700,12 @@ pub(crate) mod tests {
         c.bus.write32(DATA + 0xbc, seed % 3);
     }
 
-
     #[test]
     fn ov_screen_pause_freeride_init_mode1_matches() {
         check(
             ssx3_ee::s04::f_001f8ee0__generated,
-            ov_screen_pause_freeride_init_mode1, 8 ,
+            ov_screen_pause_freeride_init_mode1,
+            8,
             &|c, seed| {
                 let _r = setup(c, seed, 0x1f8ee0);
                 pause_screen(c, seed);
@@ -695,12 +713,12 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn ov_screen_pause_freeride_init_mode2_matches() {
         check(
             ssx3_ee::s04::f_001f8f48__generated,
-            ov_screen_pause_freeride_init_mode2, 8 ,
+            ov_screen_pause_freeride_init_mode2,
+            8,
             &|c, seed| {
                 let _r = setup(c, seed, 0x1f8f48);
                 pause_screen(c, seed);
@@ -708,12 +726,12 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn ov_screen_pause_freeride_init_mode3_matches() {
         check(
             ssx3_ee::s04::f_001f8fb0__generated,
-            ov_screen_pause_freeride_init_mode3, 8 ,
+            ov_screen_pause_freeride_init_mode3,
+            8,
             &|c, seed| {
                 let _r = setup(c, seed, 0x1f8fb0);
                 pause_screen(c, seed);
@@ -721,12 +739,12 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn ov_screen_pause_freeride_init_mode4_matches() {
         check(
             ssx3_ee::s04::f_001f9018__generated,
-            ov_screen_pause_freeride_init_mode4, 8 ,
+            ov_screen_pause_freeride_init_mode4,
+            8,
             &|c, seed| {
                 let _r = setup(c, seed, 0x1f9018);
                 pause_screen(c, seed);
@@ -734,19 +752,18 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn ov_screen_pause_freeride_init_mode5_matches() {
         check(
             ssx3_ee::s04::f_001f9080__generated,
-            ov_screen_pause_freeride_init_mode5, 8 ,
+            ov_screen_pause_freeride_init_mode5,
+            8,
             &|c, seed| {
                 let _r = setup(c, seed, 0x1f9080);
                 pause_screen(c, seed);
             },
         );
     }
-
 
     #[test]
     fn ov_screen_pause_freeride_init_mode_6_matches() {
@@ -770,13 +787,11 @@ pub(crate) mod tests {
         );
     }
 
-
     pub(crate) const PAUSE_MENU: u32 = DATA + 0x1_0000;
 
     pub(crate) const PAUSE_ENTRY: u32 = DATA + 0x1_1000;
 
     pub(crate) const PAUSE_TEXT: u32 = DATA + 0x1_2000;
-
 
     #[test]
     fn ov_screen_pause_freeride_on_activate_matches() {

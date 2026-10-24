@@ -1,17 +1,60 @@
 //! `src/ai/control/handplantcontrol.cpp`: hand-written replacements (moved from the
 //! batch modules by `tools/reorg_modules.py`).
 
+use crate::abi;
+use crate::abi::r32;
+use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
+use crate::call::Frame;
 use crate::call::Unwound;
+use crate::call::VSlot;
+use crate::events;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::ai::ai::virtual_call_slot;
+pub(crate) use crate::game::ai::computer::fr_2 as fr;
+pub(crate) use crate::game::ai::computer::gp_2 as gp_3;
+pub(crate) use crate::game::ai::computer::ldf_2 as ldf;
+pub(crate) use crate::game::ai::computer::li_f;
+pub(crate) use crate::game::ai::computer::lt_2 as lt;
+pub(crate) use crate::game::ai::computer::lw;
+pub(crate) use crate::game::ai::computer::setf_2 as setf;
+pub(crate) use crate::game::ai::rider::at;
+pub(crate) use crate::game::ai::rider::copy_contact;
+pub(crate) use crate::game::ai::rider::epilogue;
+pub(crate) use crate::game::ai::rider::gp_2 as gp;
+pub(crate) use crate::game::ai::rider::p;
+pub(crate) use crate::game::ai::rider::prologue;
+pub(crate) use crate::game::ai::rider::r;
+pub(crate) use crate::game::ai::rider::rate_step_60;
+pub(crate) use crate::game::ai::rider::slt;
+pub(crate) use crate::game::ai::rider::sp_2;
+pub(crate) use crate::game::ai::rider::vcall;
+pub(crate) use crate::game::ai::rider::Ops;
+pub(crate) use crate::game::ai::rider::RODATA_NORMAL2;
+pub(crate) use crate::game::ai::rider::RODATA_UP;
+pub(crate) use crate::game::fe::feasyncfile::at as at_3;
+pub(crate) use crate::game::fe::feasyncfile::gp as gp_8;
+pub(crate) use crate::game::fe::feasyncfile::lw_5 as lw_2;
+pub(crate) use crate::game::fe::feasyncfile::sw_4 as sw;
+pub(crate) use crate::game::fe::festateload::at as at_2;
+pub(crate) use crate::game::fe::festateloadhint::gp as gp_7;
+pub(crate) use crate::game::fe::festateloadhint::lqsp;
+pub(crate) use crate::game::fe::festateloadhint::p_3 as p_2;
+pub(crate) use crate::game::fe::festateloadhint::sqsp;
+pub(crate) use crate::game::intersect::worldsphtree::sp_2 as sp_3;
+pub(crate) use crate::game::movie::movieplayer::gp as gp_5;
+use crate::guest::Addr;
+use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::funcs::call_indirect;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
@@ -19,67 +62,76 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
-use crate::call::Frame;
-use crate::events;
-use crate::guest::Addr;
-use crate::abi;
-use crate::abi::r32;
-use crate::call::sp;
-use crate::ps2f::FpuF32;
-use crate::call::VSlot;
-use crate::call;
-use ssx3_ee_rt::funcs::call_indirect;
-pub(crate) use crate::game::ai::rider::r;
-pub(crate) use crate::game::ai::rider::p;
-pub(crate) use crate::game::ai::rider::at;
-pub(crate) use crate::game::ai::rider::gp_2 as gp;
-pub(crate) use crate::game::ai::rider::rate_step_60;
-pub(crate) use crate::game::ai::rider::sp_2;
-pub(crate) use crate::game::ai::rider::slt;
-pub(crate) use crate::game::ai::rider::Ops;
-pub(crate) use crate::game::ai::rider::epilogue;
-pub(crate) use crate::game::ai::rider::prologue;
-pub(crate) use crate::game::ai::rider::vcall;
-pub(crate) use crate::game::ai::rider::RODATA_UP;
-pub(crate) use crate::game::ai::rider::RODATA_NORMAL2;
-pub(crate) use crate::game::ai::rider::copy_contact;
-pub(crate) use crate::game::intersect::worldsphtree::sp_2 as sp_3;
-pub(crate) use crate::game::ai::computer::gp_2 as gp_3;
-pub(crate) use crate::game::ai::computer::lw;
-pub(crate) use crate::game::ai::computer::fr_2 as fr;
-pub(crate) use crate::game::ai::computer::setf_2 as setf;
-pub(crate) use crate::game::ai::computer::ldf_2 as ldf;
-pub(crate) use crate::game::ai::computer::li_f;
-pub(crate) use crate::game::ai::computer::lt_2 as lt;
-pub(crate) use crate::game::movie::movieplayer::gp as gp_5;
-pub(crate) use crate::game::fe::festateload::at as at_2;
-pub(crate) use crate::game::ai::ai::virtual_call_slot;
-pub(crate) use crate::game::fe::festateloadhint::p_3 as p_2;
-pub(crate) use crate::game::fe::festateloadhint::sqsp;
-pub(crate) use crate::game::fe::festateloadhint::lqsp;
-pub(crate) use crate::game::fe::festateloadhint::gp as gp_7;
-pub(crate) use crate::game::fe::feasyncfile::at as at_3;
-pub(crate) use crate::game::fe::feasyncfile::gp as gp_8;
-pub(crate) use crate::game::fe::feasyncfile::lw_5 as lw_2;
-pub(crate) use crate::game::fe::feasyncfile::sw_4 as sw;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0013_99a8, rider_handplant_state_load_state, "RiderHandplantState_LoadState"),
+    (
+        0x0013_99a8,
+        rider_handplant_state_load_state,
+        "RiderHandplantState_LoadState",
+    ),
     (0x0013_9a18, rider_air_state_exit, "RiderAirState_Exit"),
     (0x0013_9a20, rider_air_state_update, "RiderAirState_Update"),
-    (0x0013_a7b0, rider_air_state_cast_board_ray, "RiderAirState_CastBoardRay"),
-    (0x0013_a8f8, rider_air_state_play_land_anim, "RiderAirState_PlayLandAnim"),
-    (0x0013_ace8, rider_air_state_load_state, "RiderAirState_LoadState"),
-    (0x0013_ad20, rider_railslide_state_enter, "RiderRailslideState_Enter"),
-    (0x0013_c618, rider_railslide_state_load_state, "RiderRailslideState_LoadState"),
-    (0x0013_c7a8, rider_ground_state_enter, "RiderGroundState_Enter"),
-    (0x0013_c878, rider_ground_state_compute_friction_accel, "RiderGroundState_ComputeFrictionAccel"),
-    (0x0013_d028, rider_ground_state_compute_carve_accel, "RiderGroundState_ComputeCarveAccel"),
-    (0x0013_d1b8, rider_ground_state_probe_ground, "RiderGroundState_ProbeGround"),
-    (0x0013_d818, rider_ground_state_update, "RiderGroundState_Update"),
-    (0x0013_f410, rider_ground_state_exit, "RiderGroundState_Exit"),
-    (0x0013_f880, rider_ground_state_load_state, "RiderGroundState_LoadState"),
+    (
+        0x0013_a7b0,
+        rider_air_state_cast_board_ray,
+        "RiderAirState_CastBoardRay",
+    ),
+    (
+        0x0013_a8f8,
+        rider_air_state_play_land_anim,
+        "RiderAirState_PlayLandAnim",
+    ),
+    (
+        0x0013_ace8,
+        rider_air_state_load_state,
+        "RiderAirState_LoadState",
+    ),
+    (
+        0x0013_ad20,
+        rider_railslide_state_enter,
+        "RiderRailslideState_Enter",
+    ),
+    (
+        0x0013_c618,
+        rider_railslide_state_load_state,
+        "RiderRailslideState_LoadState",
+    ),
+    (
+        0x0013_c7a8,
+        rider_ground_state_enter,
+        "RiderGroundState_Enter",
+    ),
+    (
+        0x0013_c878,
+        rider_ground_state_compute_friction_accel,
+        "RiderGroundState_ComputeFrictionAccel",
+    ),
+    (
+        0x0013_d028,
+        rider_ground_state_compute_carve_accel,
+        "RiderGroundState_ComputeCarveAccel",
+    ),
+    (
+        0x0013_d1b8,
+        rider_ground_state_probe_ground,
+        "RiderGroundState_ProbeGround",
+    ),
+    (
+        0x0013_d818,
+        rider_ground_state_update,
+        "RiderGroundState_Update",
+    ),
+    (
+        0x0013_f410,
+        rider_ground_state_exit,
+        "RiderGroundState_Exit",
+    ),
+    (
+        0x0013_f880,
+        rider_ground_state_load_state,
+        "RiderGroundState_LoadState",
+    ),
     (0x0014_0738, rider_init_data, "Rider_InitData"),
     (0x0014_0bc8, rider_is_computer, "Rider_IsComputer"),
     (0x0014_4670, flags64_move_to_second, "Flags64_MoveToSecond"),
@@ -93,85 +145,84 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 pub(crate) mod callee {
     use super::ee;
     use super::Callee;
-    pub(crate) use crate::game::ai::rider::callee::GET_MAIN_STATE;
-    pub(crate) use crate::game::ai::rider::callee::SET_MAIN_STATE;
-    pub(crate) use crate::game::ai::rider::callee::GET_SUB_STATE;
-    pub(crate) use crate::game::ai::rider::callee::SET_SUB_STATE;
-    pub(crate) use crate::game::ai::rider::callee::IS_ON_GROUND;
-    pub(crate) use crate::game::ai::rider::callee::HANDLE_WALL_RAIL_CONTACT;
-    pub(crate) use crate::game::ai::rider::callee::FIND_WALL_CONTACT;
-    pub(crate) use crate::game::ai::rider::callee::BOUNCE_OFF_WALL;
-    pub(crate) use crate::game::ai::rider::callee::FIND_RAIL;
-    pub(crate) use crate::game::ai::rider::callee::TRANSLATE;
-    pub(crate) use crate::game::ai::rider::callee::DEFLECT_ALONG_WALL;
-    pub(crate) use crate::game::ai::rider::callee::BUILD_WORLD_MATRIX;
-    pub(crate) use crate::game::ai::rider::callee::HANDLE_IMPACT;
-    pub(crate) use crate::game::ai::rider::callee::BANK_TRICK_BOOST;
-    pub(crate) use crate::game::ai::rider::callee::LAND_TRICK;
-    pub(crate) use crate::game::ai::rider::callee::ADD_BOOST;
-    pub(crate) use crate::game::ai::rider::callee::ALIGN_STANCE_TO_RAIL;
-    pub(crate) use crate::game::ai::rider::callee::ROTATE_AROUND_AXIS;
-    pub(crate) use crate::game::ai::rider::callee::GET_BUMP_STRENGTH;
-    pub(crate) use crate::game::ai::rider::callee::AI_GET_FRAME_COUNTER_2 as AI_GET_FRAME_COUNTER;
-    pub(crate) use crate::game::ai::rider::callee::RESOLVE_RIDER_COLLISION;
-    pub(crate) use crate::game::ai::rider::callee::COLL_SEGMENT_CTOR;
-    pub(crate) use crate::game::ai::rider::callee::COLL_HULL_CTOR;
-    pub(crate) use crate::game::ai::rider::callee::COLL_HULL_DTOR;
-    pub(crate) use crate::game::ai::rider::callee::OVERLAP_LIST_COLLIDE_VOLUME;
-    pub(crate) use crate::game::ai::rider::callee::OVERLAP_LIST_COLLIDE_OBJECTS;
-    pub(crate) use crate::game::ai::rider::callee::OVERLAP_LIST_FIND_NEAREST_RAIL;
-    pub(crate) use crate::game::ai::rider::callee::CAMERA_TRIGGER_UPDATE_FOR_RIDER;
-    pub(crate) use crate::game::ai::rider::callee::PLAY_WALL_HIT_SOUND;
-    pub(crate) use crate::game::ai::rider::callee::MATH_ATAN;
-    pub(crate) use crate::game::ai::rider::callee::MATH_SIN_COS;
-    pub(crate) use crate::game::ai::rider::callee::ANIM_PLAY_ANIM;
-    pub(crate) use crate::game::ai::rider::callee::ANIM_ROTATE_ROOTS;
-    pub(crate) use crate::game::ai::rider::callee::ANIM_LAYER_ANIM_ENTRY;
-    pub(crate) use crate::game::ai::rider::callee::ANIM_LAYER_SEQUENCE;
-    pub(crate) use crate::game::ai::rider::callee::FLAGS64_TEST;
-    pub(crate) use crate::game::ai::rider::callee::RAILSLIDE_PLAY_ENTER_ANIM;
-    pub(crate) use crate::game::ai::rider::callee::RAILSLIDE_COMPUTE_ENTRY_ANGLE;
-    pub(crate) use crate::game::ai::rider::callee::BE_LIBRARY_GET_INSTANCE;
-    pub(crate) use crate::game::ai::rider::callee::BE_LIBRARY_GET_INTERFACE;
-    pub(crate) use crate::game::ai::rider::callee::BE_CHAR_ATTRIB5_FACTOR;
-    pub(crate) use crate::game::ai::rider::callee::SPHERE_TREE_INTERSECT;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::WP_DATA_FIND_CELL_INDEX;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::INPUT_VM_READ_BUILTIN;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::INPUT_VM_READ_PAD_CHANNEL;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::FOCUS_MAN_COLLECT_OCTREE_NODE;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::ANIM_OBJECT_GET_NODE_INTERSECT_MATRIX;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::COLLIDE_VOLUME_OBJECT_2 as COLLIDE_VOLUME_OBJECT;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::RAIL_MODIFIER_FIND_CLOSEST_POINT;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::FLEX_RAIL_FIND_CLOSEST_POINT;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::RAIL_FIND_NEAREST_POINT;
+    pub(crate) use crate::game::ai::computer::callee::BE_LIBRARY_GET_INSTANCE as BE_LIBRARY_GET_INSTANCE_2;
     pub(crate) use crate::game::ai::computer::callee::GET_MAIN_STATE as GET_MAIN_STATE_2;
     pub(crate) use crate::game::ai::computer::callee::GET_SUB_STATE as GET_SUB_STATE_2;
-    pub(crate) use crate::game::ai::computer::callee::BE_LIBRARY_GET_INSTANCE as BE_LIBRARY_GET_INSTANCE_2;
-    pub(crate) use crate::game::movie::movieplayer::callee::POOL8_FREE;
-    pub(crate) use crate::game::movie::movieplayer::callee::POOL16_FREE;
-    pub(crate) use crate::game::movie::movieplayer::callee::POOL32_FREE;
-    pub(crate) use crate::game::movie::movieplayer::callee::POOL64_FREE;
-    pub(crate) use crate::game::movie::movieplayer::callee::POOL128_FREE;
-    pub(crate) use crate::game::movie::movieplayer::callee::POOL256_FREE;
-    pub(crate) use crate::game::movie::movieplayer::callee::POOL512_FREE;
-    pub(crate) use crate::game::movie::movieplayer::callee::REMOVE_HUD_MESSAGE;
-    pub(crate) use crate::game::movie::movieplayer::callee::SET_TIMED_EVENT;
-    pub(crate) use crate::game::movie::movieplayer::callee::PACK_POSITION;
-    pub(crate) use crate::game::movie::movieplayer::callee::BUILD_OCCLUDER_PLANES;
-    pub(crate) use crate::game::movie::movieplayer::callee::MATH_DET3X3;
-    pub(crate) use crate::game::movie::movieplayer::callee::SHOW_HUD_NUMBER;
-    pub(crate) use crate::game::movie::movieplayer::callee::BE_CHAR_ATTRIB_FACTOR;
-    pub(crate) use crate::game::movie::movieplayer::callee::AUDIO_GET_INSTANCE;
-    pub(crate) use crate::game::movie::movieplayer::callee::AUDIO_RESET_BOOST_PITCH;
-    pub(crate) use crate::game::movie::movieplayer::callee::QSORT;
-    pub(crate) use crate::game::movie::movieplayer::callee::VU0_UPLOAD_OCCLUDER;
+    pub(crate) use crate::game::ai::rider::callee::ADD_BOOST;
+    pub(crate) use crate::game::ai::rider::callee::AI_GET_FRAME_COUNTER_2 as AI_GET_FRAME_COUNTER;
+    pub(crate) use crate::game::ai::rider::callee::ALIGN_STANCE_TO_RAIL;
+    pub(crate) use crate::game::ai::rider::callee::ANIM_LAYER_ANIM_ENTRY;
+    pub(crate) use crate::game::ai::rider::callee::ANIM_LAYER_SEQUENCE;
+    pub(crate) use crate::game::ai::rider::callee::ANIM_PLAY_ANIM;
+    pub(crate) use crate::game::ai::rider::callee::ANIM_ROTATE_ROOTS;
+    pub(crate) use crate::game::ai::rider::callee::BANK_TRICK_BOOST;
+    pub(crate) use crate::game::ai::rider::callee::BE_CHAR_ATTRIB5_FACTOR;
+    pub(crate) use crate::game::ai::rider::callee::BE_LIBRARY_GET_INSTANCE;
+    pub(crate) use crate::game::ai::rider::callee::BE_LIBRARY_GET_INTERFACE;
+    pub(crate) use crate::game::ai::rider::callee::BOUNCE_OFF_WALL;
+    pub(crate) use crate::game::ai::rider::callee::BUILD_WORLD_MATRIX;
+    pub(crate) use crate::game::ai::rider::callee::CAMERA_TRIGGER_UPDATE_FOR_RIDER;
+    pub(crate) use crate::game::ai::rider::callee::COLL_HULL_CTOR;
+    pub(crate) use crate::game::ai::rider::callee::COLL_HULL_DTOR;
+    pub(crate) use crate::game::ai::rider::callee::COLL_SEGMENT_CTOR;
+    pub(crate) use crate::game::ai::rider::callee::DEFLECT_ALONG_WALL;
+    pub(crate) use crate::game::ai::rider::callee::FIND_RAIL;
+    pub(crate) use crate::game::ai::rider::callee::FIND_WALL_CONTACT;
+    pub(crate) use crate::game::ai::rider::callee::FLAGS64_TEST;
+    pub(crate) use crate::game::ai::rider::callee::GET_BUMP_STRENGTH;
+    pub(crate) use crate::game::ai::rider::callee::GET_MAIN_STATE;
+    pub(crate) use crate::game::ai::rider::callee::GET_SUB_STATE;
+    pub(crate) use crate::game::ai::rider::callee::HANDLE_IMPACT;
+    pub(crate) use crate::game::ai::rider::callee::HANDLE_WALL_RAIL_CONTACT;
+    pub(crate) use crate::game::ai::rider::callee::IS_ON_GROUND;
+    pub(crate) use crate::game::ai::rider::callee::LAND_TRICK;
+    pub(crate) use crate::game::ai::rider::callee::MATH_ATAN;
+    pub(crate) use crate::game::ai::rider::callee::MATH_SIN_COS;
+    pub(crate) use crate::game::ai::rider::callee::OVERLAP_LIST_COLLIDE_OBJECTS;
+    pub(crate) use crate::game::ai::rider::callee::OVERLAP_LIST_COLLIDE_VOLUME;
+    pub(crate) use crate::game::ai::rider::callee::OVERLAP_LIST_FIND_NEAREST_RAIL;
+    pub(crate) use crate::game::ai::rider::callee::PLAY_WALL_HIT_SOUND;
+    pub(crate) use crate::game::ai::rider::callee::RAILSLIDE_COMPUTE_ENTRY_ANGLE;
+    pub(crate) use crate::game::ai::rider::callee::RAILSLIDE_PLAY_ENTER_ANIM;
+    pub(crate) use crate::game::ai::rider::callee::RESOLVE_RIDER_COLLISION;
+    pub(crate) use crate::game::ai::rider::callee::ROTATE_AROUND_AXIS;
+    pub(crate) use crate::game::ai::rider::callee::SET_MAIN_STATE;
+    pub(crate) use crate::game::ai::rider::callee::SET_SUB_STATE;
+    pub(crate) use crate::game::ai::rider::callee::SPHERE_TREE_INTERSECT;
+    pub(crate) use crate::game::ai::rider::callee::TRANSLATE;
+    pub(crate) use crate::game::intersect::worldsphtree::callee::ANIM_OBJECT_GET_NODE_INTERSECT_MATRIX;
+    pub(crate) use crate::game::intersect::worldsphtree::callee::COLLIDE_VOLUME_OBJECT_2 as COLLIDE_VOLUME_OBJECT;
+    pub(crate) use crate::game::intersect::worldsphtree::callee::FLEX_RAIL_FIND_CLOSEST_POINT;
+    pub(crate) use crate::game::intersect::worldsphtree::callee::FOCUS_MAN_COLLECT_OCTREE_NODE;
+    pub(crate) use crate::game::intersect::worldsphtree::callee::INPUT_VM_READ_BUILTIN;
+    pub(crate) use crate::game::intersect::worldsphtree::callee::INPUT_VM_READ_PAD_CHANNEL;
+    pub(crate) use crate::game::intersect::worldsphtree::callee::RAIL_FIND_NEAREST_POINT;
+    pub(crate) use crate::game::intersect::worldsphtree::callee::RAIL_MODIFIER_FIND_CLOSEST_POINT;
+    pub(crate) use crate::game::intersect::worldsphtree::callee::WP_DATA_FIND_CELL_INDEX;
     pub(crate) use crate::game::movie::movieplayer::callee::AIR_APPLY_WIND;
     pub(crate) use crate::game::movie::movieplayer::callee::AIR_PREDICTOR_UPDATE;
-    pub(crate) use crate::game::movie::movieplayer::callee::RIDER_GET_SUBSTATE;
-    pub(crate) use crate::game::movie::movieplayer::callee::RIDER_UPDATE_ORIENTATION;
-    pub(crate) use crate::game::movie::movieplayer::callee::RIDER_ORIENTATION_IMPLICIT;
+    pub(crate) use crate::game::movie::movieplayer::callee::AUDIO_GET_INSTANCE;
+    pub(crate) use crate::game::movie::movieplayer::callee::AUDIO_RESET_BOOST_PITCH;
+    pub(crate) use crate::game::movie::movieplayer::callee::BE_CHAR_ATTRIB_FACTOR;
+    pub(crate) use crate::game::movie::movieplayer::callee::BUILD_OCCLUDER_PLANES;
+    pub(crate) use crate::game::movie::movieplayer::callee::MATH_DET3X3;
     pub(crate) use crate::game::movie::movieplayer::callee::OVERLAP_LIST_FIND_CLOSEST;
-
+    pub(crate) use crate::game::movie::movieplayer::callee::PACK_POSITION;
+    pub(crate) use crate::game::movie::movieplayer::callee::POOL128_FREE;
+    pub(crate) use crate::game::movie::movieplayer::callee::POOL16_FREE;
+    pub(crate) use crate::game::movie::movieplayer::callee::POOL256_FREE;
+    pub(crate) use crate::game::movie::movieplayer::callee::POOL32_FREE;
+    pub(crate) use crate::game::movie::movieplayer::callee::POOL512_FREE;
+    pub(crate) use crate::game::movie::movieplayer::callee::POOL64_FREE;
+    pub(crate) use crate::game::movie::movieplayer::callee::POOL8_FREE;
+    pub(crate) use crate::game::movie::movieplayer::callee::QSORT;
+    pub(crate) use crate::game::movie::movieplayer::callee::REMOVE_HUD_MESSAGE;
+    pub(crate) use crate::game::movie::movieplayer::callee::RIDER_GET_SUBSTATE;
+    pub(crate) use crate::game::movie::movieplayer::callee::RIDER_ORIENTATION_IMPLICIT;
+    pub(crate) use crate::game::movie::movieplayer::callee::RIDER_UPDATE_ORIENTATION;
+    pub(crate) use crate::game::movie::movieplayer::callee::SET_TIMED_EVENT;
+    pub(crate) use crate::game::movie::movieplayer::callee::SHOW_HUD_NUMBER;
+    pub(crate) use crate::game::movie::movieplayer::callee::VU0_UPLOAD_OCCLUDER;
 
     pub const CAST_BOARD_RAY: Callee = Callee {
         addr: 0x0013_a7b0,
@@ -217,7 +268,6 @@ pub(crate) mod callee {
         addr: 0x0014_9120,
         f: ee::s01::BECharInt_GetAttrib6Factor,
     };
-
 
     pub const RIDER_GROUND_STATE_COMPUTE_FRICTION_ACCEL: Callee = Callee {
         addr: 0x0013_c878,
@@ -265,48 +315,48 @@ pub(crate) mod callee {
 
 /// `Contact` records (0x80 bytes) as the collision queries fill them.
 pub(crate) mod contact {
-    pub(crate) use crate::game::ai::rider::contact::SIZE;
-    pub(crate) use crate::game::ai::rider::contact::NORMAL;
     pub(crate) use crate::game::ai::rider::contact::DEPTH;
-    pub(crate) use crate::game::ai::rider::contact::SURFACE;
     pub(crate) use crate::game::ai::rider::contact::INSTANCE;
     pub(crate) use crate::game::ai::rider::contact::MATERIAL;
+    pub(crate) use crate::game::ai::rider::contact::NORMAL;
+    pub(crate) use crate::game::ai::rider::contact::SIZE;
+    pub(crate) use crate::game::ai::rider::contact::SURFACE;
 }
 
 /// Rider fields this function reads or writes.
 pub(crate) mod rider {
-    pub(crate) use crate::game::ai::rider::rider::VEL;
-    pub(crate) use crate::game::ai::rider::rider::FWD_REF;
-    pub(crate) use crate::game::ai::rider::rider::POS;
-    pub(crate) use crate::game::ai::rider::rider::UP;
-    pub(crate) use crate::game::ai::rider::rider::UP_PREV;
+    pub(crate) use crate::game::ai::computer::rider::AIR_PREDICTOR;
+    pub(crate) use crate::game::ai::computer::rider::ATTRIB_VALUE;
+    pub(crate) use crate::game::ai::computer::rider::BASE_2 as BASE;
+    pub(crate) use crate::game::ai::computer::rider::BOOST_2 as BOOST;
+    pub(crate) use crate::game::ai::computer::rider::BOOST_COUNT;
+    pub(crate) use crate::game::ai::computer::rider::BOOST_FLAG;
+    pub(crate) use crate::game::ai::computer::rider::BOOST_MASK;
+    pub(crate) use crate::game::ai::computer::rider::BOOST_STATE;
+    pub(crate) use crate::game::ai::computer::rider::BOOST_TIMER;
+    pub(crate) use crate::game::ai::computer::rider::CHAR_COMP;
+    pub(crate) use crate::game::ai::computer::rider::CHAR_ID;
+    pub(crate) use crate::game::ai::computer::rider::HEADING_2 as HEADING;
+    pub(crate) use crate::game::ai::computer::rider::METRIC_SCALE;
+    pub(crate) use crate::game::ai::computer::rider::PLAYER;
+    pub(crate) use crate::game::ai::computer::rider::SPEED;
+    pub(crate) use crate::game::ai::computer::rider::SPEED_FACTOR;
+    pub(crate) use crate::game::ai::computer::rider::VELOCITY_2 as VELOCITY;
     pub(crate) use crate::game::ai::rider::rider::FRAME_FWD;
     pub(crate) use crate::game::ai::rider::rider::FRAME_SIDE;
-    pub(crate) use crate::game::ai::rider::rider::GROUND_NORMAL2;
+    pub(crate) use crate::game::ai::rider::rider::FWD_REF;
+    pub(crate) use crate::game::ai::rider::rider::GROUND_HEIGHT;
     pub(crate) use crate::game::ai::rider::rider::GROUND_ID;
     pub(crate) use crate::game::ai::rider::rider::GROUND_MATERIAL;
-    pub(crate) use crate::game::ai::rider::rider::GROUND_HEIGHT;
+    pub(crate) use crate::game::ai::rider::rider::GROUND_NORMAL2;
     pub(crate) use crate::game::ai::rider::rider::GROUND_POINT;
-    pub(crate) use crate::game::ai::rider::rider::OVERLAP_LIST;
     pub(crate) use crate::game::ai::rider::rider::OVERLAP_HINT;
+    pub(crate) use crate::game::ai::rider::rider::OVERLAP_LIST;
+    pub(crate) use crate::game::ai::rider::rider::POS;
     pub(crate) use crate::game::ai::rider::rider::SPHERE_TREE;
-    pub(crate) use crate::game::ai::computer::rider::VELOCITY_2 as VELOCITY;
-    pub(crate) use crate::game::ai::computer::rider::SPEED;
-    pub(crate) use crate::game::ai::computer::rider::HEADING_2 as HEADING;
-    pub(crate) use crate::game::ai::computer::rider::BASE_2 as BASE;
-    pub(crate) use crate::game::ai::computer::rider::AIR_PREDICTOR;
-    pub(crate) use crate::game::ai::computer::rider::PLAYER;
-    pub(crate) use crate::game::ai::computer::rider::ATTRIB_VALUE;
-    pub(crate) use crate::game::ai::computer::rider::SPEED_FACTOR;
-    pub(crate) use crate::game::ai::computer::rider::BOOST_2 as BOOST;
-    pub(crate) use crate::game::ai::computer::rider::BOOST_TIMER;
-    pub(crate) use crate::game::ai::computer::rider::BOOST_COUNT;
-    pub(crate) use crate::game::ai::computer::rider::BOOST_STATE;
-    pub(crate) use crate::game::ai::computer::rider::BOOST_MASK;
-    pub(crate) use crate::game::ai::computer::rider::BOOST_FLAG;
-    pub(crate) use crate::game::ai::computer::rider::CHAR_ID;
-    pub(crate) use crate::game::ai::computer::rider::CHAR_COMP;
-    pub(crate) use crate::game::ai::computer::rider::METRIC_SCALE;
+    pub(crate) use crate::game::ai::rider::rider::UP;
+    pub(crate) use crate::game::ai::rider::rider::UP_PREV;
+    pub(crate) use crate::game::ai::rider::rider::VEL;
 
     pub const ANIM: u32 = 0x784;
 
@@ -345,8 +395,8 @@ pub(crate) mod global {
 
 /// The computer rider's AI bookkeeping.
 pub(crate) mod computer {
-    pub(crate) use crate::game::ai::computer::computer::RIDER;
     pub(crate) use crate::game::ai::computer::computer::DIR;
+    pub(crate) use crate::game::ai::computer::computer::RIDER;
     pub(crate) use crate::game::ai::computer::computer::STUCK_TIME;
     pub(crate) use crate::game::ai::computer::computer::WRONG_TIME;
 }
@@ -458,12 +508,12 @@ pub(crate) mod anim {
 
 /// `gp`-relative globals used here.
 pub(crate) mod g {
-    pub(crate) use crate::game::fe::festateload::g::WORLD_TRIGGER_MANAGER;
+    pub(crate) use crate::game::fe::festateload::g::BE_OPTION_SINGLETON;
+    pub(crate) use crate::game::fe::festateload::g::BOLT_FILE_CACHE;
+    pub(crate) use crate::game::fe::festateload::g::FE_BASE_BACK;
     pub(crate) use crate::game::fe::festateload::g::SAVE_BUFFER;
     pub(crate) use crate::game::fe::festateload::g::SAVE_BUFFER_END;
-    pub(crate) use crate::game::fe::festateload::g::BE_OPTION_SINGLETON;
-    pub(crate) use crate::game::fe::festateload::g::FE_BASE_BACK;
-    pub(crate) use crate::game::fe::festateload::g::BOLT_FILE_CACHE;
+    pub(crate) use crate::game::fe::festateload::g::WORLD_TRIGGER_MANAGER;
 }
 
 /// Calls the generator emitted as `call_indirect` (cross-shard `jal`).
@@ -519,13 +569,11 @@ pub(crate) mod target {
     pub const AIR_CAMERA: u32 = 0x0010_7888;
 }
 
-
 pub(crate) const PG_FILL: u32 = 0x0013_d2f0;
 
 pub(crate) const PG_PICK: u32 = 0x0013_d4a0;
 
 pub(crate) const PG_COPY: u32 = 0x0013_d5a8;
-
 
 /// `rider = state->rider` (`lw reg, 0x18(s1)`).
 #[inline(always)]
@@ -533,7 +581,6 @@ pub(crate) fn ground_rider(c: &mut Cpu, reg: usize) -> u32 {
     c.lw_r(reg, at(c, S1, 0x18));
     r(c, reg)
 }
-
 
 /// Re-orthonormalise the rider frame on its up vector (`a1 = rider`):
 /// `fwd = normalize(ref - up * dot(ref, up))`, `side = up x fwd`.
@@ -559,7 +606,6 @@ pub(crate) fn rebuild_rider_frame(c: &mut Cpu) {
     c.vu0().sub(0b0001, 6, 6, Src::Vec(6));
     c.vstore(6, p(s, 0x40), V1, &[p(s, 0x30), p(rd, rider::FRAME_SIDE)]);
 }
-
 
 /// `bool RiderGroundState_ProbeGround(RiderGroundState* g, Contact* out,
 /// float* height)` (0x13d1b8): casts a segment along the rider's up axis
@@ -677,7 +723,6 @@ pub fn rider_ground_state_probe_ground(c: &mut Cpu) {
     })
 }
 
-
 /// No ground: default up and ground normal, frame rebuilt, `*height = 0`.
 pub(crate) fn probe_ground_miss(c: &mut Cpu) {
     c.cycles += 65;
@@ -698,7 +743,6 @@ pub(crate) fn probe_ground_miss(c: &mut Cpu) {
     let out = r(c, S3);
     c.sw(out, 0);
 }
-
 
 /// Pick the best contact into t1 (t3 contacts at `sp_2+0x100`, v1 = rider).
 pub(crate) fn probe_ground_pick(c: &mut Cpu) {
@@ -798,7 +842,6 @@ pub(crate) fn probe_ground_pick(c: &mut Cpu) {
     }
 }
 
-
 /// Equal-score tie break between the current contact (`cur_reg`) and the
 /// best one (`v0 = best << 7`, records at `sp_2 + base`): leaves v0 = 1 when
 /// the current one wins (it has a surface and the best has none, or a
@@ -837,7 +880,6 @@ pub(crate) fn contact_tie_break(c: &mut Cpu, cur_reg: usize, base: u32) {
     c.lw_r(V0, at(c, A0, 0x150));
     c.g[V0][0] = (c.g[V0][0] < c.g[A1][0]) as u64;
 }
-
 
 /// The best contact (t1) to `out`, ground id / UV / flags / material,
 /// owner notified, up vector and frame from it, height above it.
@@ -936,13 +978,11 @@ pub(crate) fn probe_ground_hit(c: &mut Cpu) -> Flow {
     Ok(())
 }
 
-
 /// A `gp_2`-relative global address.
 #[inline(always)]
 pub(crate) fn gp_2(c: &Cpu, off: i32) -> u32 {
     (c.g[GP][0] as u32).wrapping_add(off as u32)
 }
-
 
 // ---------------------------------------------------------------------------
 // Focus manager octree.
@@ -1185,7 +1225,6 @@ pub fn focus_man_collect_octree_node(c: &mut Cpu) {
     })
 }
 
-
 /// The recursive child visit of [`focus_man_collect_octree_node`]:
 /// `FocusMan_CollectOctreeNode(self, child, key)`, returning to `ret`.
 #[inline(always)]
@@ -1207,15 +1246,14 @@ pub(crate) const SPEED_CURVE: u32 = 0x004a_1140;
 /// The back-end's phase-interface table (`BELibrary_GetInterface`).
 pub(crate) const BE_PHASE_INTERFACES: u32 = 0x0053_08a8;
 
-
 /// The carve curve's `x = |b| * 0.036` scale, the edging stat's reciprocal
 /// scale, and the pointer variable holding the curve.
 pub(crate) const CURVE_SPEED_SCALE: i32 = -0x7070;
- // 0.036
+// 0.036
 pub(crate) const STAT_SPEED_SCALE: i32 = -0x706c;
- // 4.0086374
+// 4.0086374
 pub(crate) const SPEED_CURVE_PTR: i32 = -0x1fb0;
- // `D_004A1140`
+// `D_004A1140`
 
 /// `float RiderGroundState_ComputeCarveAccel(ground, const Vec4* v, float a,
 /// float b, float c)` (0x13d028): when the lateral speed `a` and the carve
@@ -1372,7 +1410,6 @@ pub fn rider_ground_state_compute_carve_accel(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Flags64_Test.
 
@@ -1387,9 +1424,8 @@ pub fn flags64_test(c: &mut Cpu) {
     c.g[V0][0] = (0u64 < c.g[V0][0]) as u64;
     abi::ret(c);
 }
- // 0.9250819683074951f
+// 0.9250819683074951f
 pub(crate) const FRICTION_SLOPE: i32 = -0x70e8;
-
 
 // ---------------------------------------------------------------------------
 // Register and memory helpers.
@@ -1399,7 +1435,6 @@ pub(crate) const FRICTION_SLOPE: i32 = -0x70e8;
 pub(crate) fn gp_4(c: &Cpu, off: i32) -> u32 {
     (c.g[GP][0] as u32).wrapping_add(off as u32)
 }
-
 
 /// `float RiderGroundState_ComputeFrictionAccel(RiderGroundState *gs,
 /// const float *p, float a, float b)` (0x13c878): the hand-plant ground
@@ -1523,7 +1558,6 @@ pub fn rider_ground_state_compute_friction_accel(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 // ---------------------------------------------------------------------------
 // Riders.
 
@@ -1538,12 +1572,10 @@ pub fn rider_is_control_mode3(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// World / race manager offsets used to find the rider's section record.
 pub(crate) const WORLD: i32 = -0x848;
 
 pub(crate) const SECTIONS: u32 = 0x44;
-
 
 /// The fraction of the remaining air-turn angle a *last partial* tick applies
 /// (`RiderAirState_Update`, 0x139a30): the original `dt * 59.999996` (the
@@ -1558,7 +1590,6 @@ pub(crate) fn air_last_turn_fraction(c: &mut Cpu, dt: FpuF32, fallback: FpuF32) 
         FpuF32::ONE
     }
 }
-
 
 /// `void RiderAirState_Update(RiderAirState* self)` (0x139a20): the rider's
 /// air-state tick: wind force, one air-prediction step, then (in the air)
@@ -1706,7 +1737,9 @@ pub fn rider_air_state_update(c: &mut Cpu) {
                                 c.mov_s(13, 21);
                                 c.cycles += 4;
                                 c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x20));
-                                if call_ptr(c, callee::RIDER_UPDATE_ORIENTATION, 0x0013_9c50).is_err() {
+                                if call_ptr(c, callee::RIDER_UPDATE_ORIENTATION, 0x0013_9c50)
+                                    .is_err()
+                                {
                                     return;
                                 }
                                 break 'body;
@@ -1730,7 +1763,9 @@ pub fn rider_air_state_update(c: &mut Cpu) {
                                 c.cycles += 3;
                                 c.mov_s(12, 20);
                                 c.mov_s(13, 21);
-                                if call_ptr(c, callee::RIDER_UPDATE_ORIENTATION, 0x0013_9c64).is_err() {
+                                if call_ptr(c, callee::RIDER_UPDATE_ORIENTATION, 0x0013_9c64)
+                                    .is_err()
+                                {
                                     return;
                                 }
                                 break 'body;
@@ -1756,15 +1791,15 @@ pub fn rider_air_state_update(c: &mut Cpu) {
                         if !c.fcc() {
                             c.g[A0][0] = c.lw(p(this, air::RIDER));
                         } else {
-                        c.cycles += 8;
-                        c.g[AT][0] = 0xffff_ffff_bf80_0000;
-                        c.mtc1(1, 0);
-                        c.mfc1(2, 0);
-                        c.lqc2(4, sp(c));
-                        c.qmtc2(2, 3);
-                        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
-                        c.sqc2(5, sp(c));
-                        c.g[A0][0] = c.lw(p(this, air::RIDER));
+                            c.cycles += 8;
+                            c.g[AT][0] = 0xffff_ffff_bf80_0000;
+                            c.mtc1(1, 0);
+                            c.mfc1(2, 0);
+                            c.lqc2(4, sp(c));
+                            c.qmtc2(2, 3);
+                            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                            c.sqc2(5, sp(c));
+                            c.g[A0][0] = c.lw(p(this, air::RIDER));
                         }
                         c.cycles += 4;
                         c.mov_s(12, 20);
@@ -1793,8 +1828,6 @@ pub fn rider_air_state_update(c: &mut Cpu) {
     frame.restore_fpr(c, 20, 0x50);
     frame.close(c);
 }
-
-
 
 // ---------------------------------------------------------------------------
 // Board ray.
@@ -1910,7 +1943,6 @@ pub fn rider_air_state_cast_board_ray(c: &mut Cpu) {
     frame.close(c);
 }
 
-
 /// `bool Flags64_TestSecond(u64* flags, int bit)` (0x1446b8): bit `bit` of the
 /// 64-bit flag word at +8, non-zero as a 0/1 (and `v1` keeps the mask).
 pub fn flags64_test_second(c: &mut Cpu) {
@@ -1923,7 +1955,6 @@ pub fn flags64_test_second(c: &mut Cpu) {
     c.g[V0][0] = (0 < c.g[V0][0]) as u64;
     abi::ret(c);
 }
-
 
 /// `void Flags64_MoveToSecond(Flags64* f, int bit)` (0x144670): clear `bit` in
 /// the first word (moving it into the second word's same bit).
@@ -1945,30 +1976,25 @@ pub fn flags64_move_to_second(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `RiderHandplantState_LoadState(self, iface)` (0x1399a8): `0xa0`.
 pub fn rider_handplant_state_load_state(c: &mut Cpu) {
     guest(c, |c| virtual_call_slot(c, 0x0013_99d0, Some(0xa0)))
 }
-
 
 /// `RiderAirState_LoadState(self, iface)` (0x13ace8): `0x4`.
 pub fn rider_air_state_load_state(c: &mut Cpu) {
     guest(c, |c| virtual_call_slot(c, 0x0013_ad10, Some(0x4)))
 }
 
-
 /// `RiderRailslideState_LoadState(self, iface)` (0x13c618): `0x50`.
 pub fn rider_railslide_state_load_state(c: &mut Cpu) {
     guest(c, |c| virtual_call_slot(c, 0x0013_c640, Some(0x50)))
 }
 
-
 /// `RiderGroundState_LoadState(self, iface)` (0x13f880): `0x18`.
 pub fn rider_ground_state_load_state(c: &mut Cpu) {
     guest(c, |c| virtual_call_slot(c, 0x0013_f8a8, Some(0x18)))
 }
-
 
 // ---------------------------------------------------------------------------
 // Rider and game-state predicates.
@@ -1982,7 +2008,6 @@ pub fn rider_is_computer(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void RiderAirState_Exit(RiderAirState* s)` (0x139a18): the air state has
 /// nothing to tear down.
 pub fn rider_air_state_exit(c: &mut Cpu) {
@@ -1990,10 +2015,8 @@ pub fn rider_air_state_exit(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// The rider pointer inside the air state.
 pub(crate) const RIDER: u32 = 0x4;
-
 
 /// A `gp_6`-relative global.
 #[inline(always)]
@@ -2001,13 +2024,11 @@ pub(crate) fn gp_6(c: &Cpu, off: i32) -> u32 {
     r32(c, GP).wrapping_add(off as u32)
 }
 
-
 /// The low 32 bits of a GPR (what the generated `as u32` reads).
 #[inline(always)]
 pub(crate) fn g(c: &Cpu, r: usize) -> u32 {
     c.g[r][0] as u32
 }
-
 
 /// `*motion->rider`, read from `s0` exactly as the original does (the
 /// pointer is not cached in a local: a callee that perturbs `s0` must move
@@ -2018,7 +2039,6 @@ pub(crate) fn rider(c: &mut Cpu) -> u64 {
     Addr(p(motion, RIDER)).lw(c)
 }
 
-
 /// `lq r, src; sq r, dst` (a quadword moved through a GPR).
 #[inline(always)]
 pub(crate) fn qcopy(c: &mut Cpu, r: usize, src: u32, dst: u32) {
@@ -2026,14 +2046,12 @@ pub(crate) fn qcopy(c: &mut Cpu, r: usize, src: u32, dst: u32) {
     c.sq(r, dst);
 }
 
-
 /// The `sw a, src` of the original.
 #[inline(always)]
 pub(crate) fn st(c: &mut Cpu, a: u32, src: usize) {
     let v = c.g[src][0];
     c.sw(a, v);
 }
-
 
 // ---------------------------------------------------------------------------
 // VU0 sequences (macro mode), exactly as the original issues them.
@@ -2048,7 +2066,6 @@ pub(crate) fn dot_tail(c: &mut Cpu) {
     vu.madd(0b1000, 4, 6, Src::Bc(4, W));
 }
 
-
 /// `vf4.x = v · v` (`vf3 = v`).
 #[inline(always)]
 pub(crate) fn dot_self(c: &mut Cpu, v: u32) {
@@ -2057,7 +2074,6 @@ pub(crate) fn dot_self(c: &mut Cpu, v: u32) {
     c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
     dot_tail(c);
 }
-
 
 /// `vf4.x = a · b` (`vf3 = a`, `vf5 = b`).
 #[inline(always)]
@@ -2069,7 +2085,6 @@ pub(crate) fn dot_ab(c: &mut Cpu, a: u32, b: u32) {
     dot_tail(c);
 }
 
-
 /// `f[dst] = |v|` through Q (`vsqrt`, `cfc2`, `mtc1`).
 #[inline(always)]
 pub(crate) fn v_length(c: &mut Cpu, v: u32, via: usize, dst: usize) {
@@ -2079,7 +2094,6 @@ pub(crate) fn v_length(c: &mut Cpu, v: u32, via: usize, dst: usize) {
     c.cfc2(via, 22);
     c.mtc1(via, dst);
 }
-
 
 /// `out = v / |v|` (`vrsqrt`).
 #[inline(always)]
@@ -2091,7 +2105,6 @@ pub(crate) fn v_normalize(c: &mut Cpu, v: u32, out: u32) {
     c.sqc2(5, out);
 }
 
-
 /// `out = a - b` (`vf3`, `vf4` → `vf5`).
 #[inline(always)]
 pub(crate) fn v_sub(c: &mut Cpu, a: u32, b: u32, out: u32) {
@@ -2101,7 +2114,6 @@ pub(crate) fn v_sub(c: &mut Cpu, a: u32, b: u32, out: u32) {
     c.sqc2(5, out);
 }
 
-
 /// `out = a + b` (`vf3`, `vf4` → `vf5`).
 #[inline(always)]
 pub(crate) fn v_add(c: &mut Cpu, a: u32, b: u32, out: u32) {
@@ -2110,7 +2122,6 @@ pub(crate) fn v_add(c: &mut Cpu, a: u32, b: u32, out: u32) {
     c.vu0().add(0b1111, 5, 3, Src::Vec(4));
     c.sqc2(5, out);
 }
-
 
 // ---------------------------------------------------------------------------
 // RiderAirState_PostUpdate.
@@ -3015,7 +3026,6 @@ pub fn rider_air_state_post_update(c: &mut Cpu) {
     })
 }
 
-
 /// `void RiderAirState_PlayLandAnim(Rider* r, float v)` (0x13a8f8): play the
 /// hard-landing animation (0x41) and clear the landing flag when `v` is below
 /// −2222.22, otherwise the soft landing (0x40).
@@ -3059,7 +3069,6 @@ pub fn rider_air_state_play_land_anim(c: &mut Cpu) {
         Ok(())
     });
 }
-
 
 /// `void RiderRailslideState_Enter(self)` (0x13ad20): lean pose, orientation,
 /// clear the railslide's balance/impulse accumulators and seed the state.
@@ -3111,7 +3120,6 @@ pub fn rider_railslide_state_enter(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // RiderGroundState_Enter / _Exit.
@@ -3260,7 +3268,6 @@ pub fn rider_ground_state_exit(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Rider_InitData.
 
@@ -3303,7 +3310,6 @@ pub fn rider_init_data(c: &mut Cpu) {
         }
     }
 }
-
 
 // Rider / ground-state layout used below (byte offsets):
 //
@@ -6145,92 +6151,91 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::abi;
+    use crate::difftest::check;
+    use crate::difftest::check_lohi;
+    use crate::difftest::compare;
+    use crate::difftest::elf_image;
     use crate::difftest::events::check_events;
     use crate::difftest::events::driven;
     use crate::difftest::events::schedule;
+    use crate::difftest::fakes;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::fake_call;
     use crate::difftest::fakes::machine;
+    use crate::difftest::fakes::ptr;
+    use crate::difftest::fakes::vtable;
     use crate::difftest::fakes::FAKE;
-    use crate::difftest::check;
+    use crate::difftest::fakes::LOG_RESULTS;
+    use crate::difftest::fakes::LOG_UNWIND_AT;
+    use crate::difftest::fill;
+    use crate::difftest::put_vec;
+    use crate::difftest::put_words;
+    use crate::difftest::scramble;
+    use crate::difftest::seed_count;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
     use crate::difftest::SP as STACK;
-    use crate::difftest::fakes;
-    use crate::difftest::put_vec;
-    use crate::difftest::put_words;
-    use crate::difftest::scramble;
-    use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::fill;
     use crate::difftest::SP;
-    use crate::difftest::fakes::vtable;
-    use crate::difftest::check_lohi;
+    pub(crate) use crate::game::ai::ai::tests::leaf;
+    pub(crate) use crate::game::ai::ai::tests::leaf_setup;
+    pub(crate) use crate::game::ai::ai::tests::rng as rng_3;
+    pub(crate) use crate::game::ai::ai::tests::slot;
+    pub(crate) use crate::game::ai::ai::tests::w16;
+    pub(crate) use crate::game::ai::ai::tests::LOAD_B0;
+    pub(crate) use crate::game::ai::computer::tests::literals;
+    pub(crate) use crate::game::ai::rider::tests::f;
+    pub(crate) use crate::game::ai::rider::tests::fake_varied;
+    pub(crate) use crate::game::ai::rider::tests::gp_f32;
+    pub(crate) use crate::game::ai::rider::tests::put_contacts;
+    pub(crate) use crate::game::ai::rider::tests::put_list;
+    pub(crate) use crate::game::ai::rider::tests::put_rider;
+    pub(crate) use crate::game::ai::rider::tests::put_slot;
+    pub(crate) use crate::game::ai::rider::tests::put_v;
+    pub(crate) use crate::game::ai::rider::tests::rand_v;
+    pub(crate) use crate::game::ai::rider::tests::setup_machine;
+    pub(crate) use crate::game::ai::rider::tests::uf_2 as uf;
+    pub(crate) use crate::game::ai::rider::tests::BASE;
+    pub(crate) use crate::game::ai::rider::tests::INSTS;
+    pub(crate) use crate::game::ai::rider::tests::LIST;
+    pub(crate) use crate::game::ai::rider::tests::MATS;
+    pub(crate) use crate::game::ai::rider::tests::OBJS;
+    pub(crate) use crate::game::ai::rider::tests::OWNER;
+    pub(crate) use crate::game::ai::rider::tests::PARAMS;
+    pub(crate) use crate::game::ai::rider::tests::RIDER_2 as RIDER;
+    pub(crate) use crate::game::ai::rider::tests::SEEDS;
+    pub(crate) use crate::game::ai::rider::tests::SURFS;
+    pub(crate) use crate::game::ai::rider::tests::TREE;
+    pub(crate) use crate::game::ai::rider::tests::VT_HULL;
+    pub(crate) use crate::game::ai::rider::tests::VT_OWNER;
+    pub(crate) use crate::game::ai::rider::tests::VT_SUB;
+    pub(crate) use crate::game::ai::rider::tests::VT_VOL;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_11 as base;
+    pub(crate) use crate::game::fe::feasyncfile::tests::globals_9 as globals_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_9 as heap_init;
+    pub(crate) use crate::game::fe::feasyncfile::tests::pool_7 as pool;
+    pub(crate) use crate::game::fe::feasyncfile::tests::w_4 as w_2;
+    pub(crate) use crate::game::fe::festateload::tests::OBJ;
+    pub(crate) use crate::game::fe::festateloadhint::tests::w32;
+    pub(crate) use crate::game::fe::festateloadhint::tests::SEEDS_2 as SEEDS_5;
+    pub(crate) use crate::game::fe::festateoptions::tests::rng as rng_2;
+    pub(crate) use crate::game::fe::festateoptions::tests::setup;
+    pub(crate) use crate::game::fe::festateoptions::tests::AUX;
+    pub(crate) use crate::game::lib::sif::tests::SEEDS as SEEDS_4;
+    pub(crate) use crate::game::sound::bankmanager::tests::rng;
+    pub(crate) use crate::game::sound::bankmanager::tests::SEEDS as SEEDS_3;
     use ssx3_ee as ee;
-    use ssx3_ee::s01;
-    use ssx3_ee::s03;
     use ssx3_ee::s00;
+    use ssx3_ee::s01;
     use ssx3_ee::s02;
+    use ssx3_ee::s03;
     use ssx3_ee::s08;
     use ssx3_ee::s09;
     use ssx3_ee::s10;
     use ssx3_ee::s11;
     use ssx3_ee::s12;
     use ssx3_ee::s13;
-    use crate::difftest::fakes::LOG_UNWIND_AT;
-    use crate::difftest::elf_image;
-    use crate::abi;
-    use crate::difftest::compare;
-    use crate::difftest::seed_count;
-    use crate::difftest::fakes::ptr;
-    pub(crate) use crate::game::ai::rider::tests::SEEDS;
-    pub(crate) use crate::game::ai::rider::tests::f;
-    pub(crate) use crate::game::ai::rider::tests::uf_2 as uf;
-    pub(crate) use crate::game::ai::rider::tests::put_v;
-    pub(crate) use crate::game::ai::rider::tests::rand_v;
-    pub(crate) use crate::game::ai::rider::tests::gp_f32;
-    pub(crate) use crate::game::ai::rider::tests::VT_SUB;
-    pub(crate) use crate::game::ai::rider::tests::VT_OWNER;
-    pub(crate) use crate::game::ai::rider::tests::VT_VOL;
-    pub(crate) use crate::game::ai::rider::tests::VT_HULL;
-    pub(crate) use crate::game::ai::rider::tests::OWNER;
-    pub(crate) use crate::game::ai::rider::tests::SURFS;
-    pub(crate) use crate::game::ai::rider::tests::MATS;
-    pub(crate) use crate::game::ai::rider::tests::INSTS;
-    pub(crate) use crate::game::ai::rider::tests::LIST;
-    pub(crate) use crate::game::ai::rider::tests::OBJS;
-    pub(crate) use crate::game::ai::rider::tests::RIDER_2 as RIDER;
-    pub(crate) use crate::game::ai::rider::tests::BASE;
-    pub(crate) use crate::game::ai::rider::tests::PARAMS;
-    pub(crate) use crate::game::ai::rider::tests::TREE;
-    pub(crate) use crate::game::ai::rider::tests::fake_varied;
-    pub(crate) use crate::game::ai::rider::tests::put_slot;
-    pub(crate) use crate::game::ai::rider::tests::setup_machine;
-    pub(crate) use crate::game::ai::rider::tests::put_contacts;
-    pub(crate) use crate::game::ai::rider::tests::put_list;
-    pub(crate) use crate::game::ai::rider::tests::put_rider;
-    pub(crate) use crate::game::ai::computer::tests::literals;
-    pub(crate) use crate::game::sound::bankmanager::tests::SEEDS as SEEDS_3;
-    pub(crate) use crate::game::sound::bankmanager::tests::rng;
-    pub(crate) use crate::game::fe::festateload::tests::OBJ;
-    pub(crate) use crate::game::fe::festateoptions::tests::AUX;
-    pub(crate) use crate::game::fe::festateoptions::tests::rng as rng_2;
-    pub(crate) use crate::game::fe::festateoptions::tests::setup;
-    pub(crate) use crate::game::lib::sif::tests::SEEDS as SEEDS_4;
-    pub(crate) use crate::game::ai::ai::tests::rng as rng_3;
-    pub(crate) use crate::game::ai::ai::tests::leaf_setup;
-    pub(crate) use crate::game::ai::ai::tests::leaf;
-    pub(crate) use crate::game::ai::ai::tests::LOAD_B0;
-    pub(crate) use crate::game::fe::festateloadhint::tests::w32;
-    pub(crate) use crate::game::ai::ai::tests::w16;
-    pub(crate) use crate::game::ai::ai::tests::slot;
-    pub(crate) use crate::game::fe::festateloadhint::tests::SEEDS_2 as SEEDS_5;
-    pub(crate) use crate::game::fe::feasyncfile::tests::w_4 as w_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_9 as globals_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_7 as pool;
-    pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_9 as heap_init;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_11 as base;
-
 
     // -----------------------------------------------------------------
     // Ground probe.
@@ -6257,71 +6262,91 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn rider_ground_state_compute_carve_accel_matches() {
-        check(ssx3_ee::s01::f_0013d028__generated, rider_ground_state_compute_carve_accel, 300, &|c, seed| {
-            let mut r = fakes::machine(c, seed, 0x0013_d028, 0);
-            literals(c);
-            let ground = DATA;
-            let rider = DATA + 0x200;
-            let v = DATA + 0x300;
-            c.g[A0][0] = ground as u64;
-            c.g[A1][0] = v as u64;
-            c.bus.write32(ground + computer::RIDER, rider);
-            // The edging stat chain (`BECharInt_GetAttrib3Factor_2`): the
-            // player's record has a profile, character 0, no fixed flag.
-            c.bus.write32(rider + rider::PLAYER, 0);
-            c.bus.write32(rider + rider::ATTRIB_VALUE, r.next_u32() % 400);
-            c.bus.write32(rider + rider::SPEED_FACTOR, if seed % 3 == 0 { 0 } else { r.edge_f32() });
-            c.bus.write8(0x0053_5538 + 3, (r.next_u32() % 250) as u8);
-            c.bus.write8(0x0053_08d8 + 8 + 3, 1 + (r.next_u32() % 250) as u8);
-            put_vec(c, v, [r.f32(10.0), r.f32(10.0), r.f32(10.0), r.f32(1.0)]);
-            // The speed curve: four ascending points.
-            let curve = DATA + 0x800;
-            c.bus.write32(SPEED_CURVE, curve);
-            let mut x = 0i32;
-            for i in 0..4u32 {
-                x += 1 + (r.next_u32() % 20) as i32;
-                c.bus.write32(curve + 8 * i, x as u32);
-                c.bus.write32(curve + 8 * i + 4, r.f32(1000.0));
-            }
-            // The back-end singleton and the interface's vtable (a fake: the
-            // interface value is not used by the attrib chain).
-            c.bus.write32(GAME_GP - global::BE_LIBRARY, DATA + 0x600);
-            c.bus.write32(GAME_GP - global::BE_LIBRARY_INDEX, 0);
-            c.bus.write32(BE_PHASE_INTERFACES, DATA + 0x700);
-            c.bus.write16(DATA + 0x908, 0); // vtable slot 1's delta (at vt+8)
-            c.bus.write32(DATA + 0x90c, fakes::FAKE); // ... and its function
-            c.bus.write32(DATA + 0x704, DATA + 0x900); // lib->vtable
-            // Arguments: a, b, c in f12-f14.
-            c.f[12] = if seed % 4 == 0 { r.edge_f32() | 0x8000_0000 } else { r.edge_f32() };
-            c.f[13] = r.edge_f32();
-            c.f[14] = match seed % 4 {
-                0 => r.edge_f32() | 0x8000_0000,
-                1 => 0,
-                _ => r.edge_f32(),
-            };
-        });
+        check(
+            ssx3_ee::s01::f_0013d028__generated,
+            rider_ground_state_compute_carve_accel,
+            300,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x0013_d028, 0);
+                literals(c);
+                let ground = DATA;
+                let rider = DATA + 0x200;
+                let v = DATA + 0x300;
+                c.g[A0][0] = ground as u64;
+                c.g[A1][0] = v as u64;
+                c.bus.write32(ground + computer::RIDER, rider);
+                // The edging stat chain (`BECharInt_GetAttrib3Factor_2`): the
+                // player's record has a profile, character 0, no fixed flag.
+                c.bus.write32(rider + rider::PLAYER, 0);
+                c.bus
+                    .write32(rider + rider::ATTRIB_VALUE, r.next_u32() % 400);
+                c.bus.write32(
+                    rider + rider::SPEED_FACTOR,
+                    if seed % 3 == 0 { 0 } else { r.edge_f32() },
+                );
+                c.bus.write8(0x0053_5538 + 3, (r.next_u32() % 250) as u8);
+                c.bus
+                    .write8(0x0053_08d8 + 8 + 3, 1 + (r.next_u32() % 250) as u8);
+                put_vec(c, v, [r.f32(10.0), r.f32(10.0), r.f32(10.0), r.f32(1.0)]);
+                // The speed curve: four ascending points.
+                let curve = DATA + 0x800;
+                c.bus.write32(SPEED_CURVE, curve);
+                let mut x = 0i32;
+                for i in 0..4u32 {
+                    x += 1 + (r.next_u32() % 20) as i32;
+                    c.bus.write32(curve + 8 * i, x as u32);
+                    c.bus.write32(curve + 8 * i + 4, r.f32(1000.0));
+                }
+                // The back-end singleton and the interface's vtable (a fake: the
+                // interface value is not used by the attrib chain).
+                c.bus.write32(GAME_GP - global::BE_LIBRARY, DATA + 0x600);
+                c.bus.write32(GAME_GP - global::BE_LIBRARY_INDEX, 0);
+                c.bus.write32(BE_PHASE_INTERFACES, DATA + 0x700);
+                c.bus.write16(DATA + 0x908, 0); // vtable slot 1's delta (at vt+8)
+                c.bus.write32(DATA + 0x90c, fakes::FAKE); // ... and its function
+                c.bus.write32(DATA + 0x704, DATA + 0x900); // lib->vtable
+                                                           // Arguments: a, b, c in f12-f14.
+                c.f[12] = if seed % 4 == 0 {
+                    r.edge_f32() | 0x8000_0000
+                } else {
+                    r.edge_f32()
+                };
+                c.f[13] = r.edge_f32();
+                c.f[14] = match seed % 4 {
+                    0 => r.edge_f32() | 0x8000_0000,
+                    1 => 0,
+                    _ => r.edge_f32(),
+                };
+            },
+        );
     }
-
 
     #[test]
     fn flags64_test_matches() {
-        check(ssx3_ee::s01::f_001446a0__generated, flags64_test, 200, &|c, seed| {
-            let mut r = Rng(0x51ed_2701 ^ seed as u64);
-            scramble(c, &mut r);
-            let at = DATA + (seed % 8) * 0x10;
-            c.g[A0][0] = sx(at);
-            c.bus.write64(at, ((r.next_u32() as u64) << 32) | r.next_u32() as u64);
-            // 0..63, plus out-of-range shifts (masked to 0..63).
-            c.g[A1][0] = if seed % 5 == 0 { 64 + (seed % 9) as u64 } else { (r.next_u32() % 64) as u64 };
-        });
+        check(
+            ssx3_ee::s01::f_001446a0__generated,
+            flags64_test,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x51ed_2701 ^ seed as u64);
+                scramble(c, &mut r);
+                let at = DATA + (seed % 8) * 0x10;
+                c.g[A0][0] = sx(at);
+                c.bus
+                    .write64(at, ((r.next_u32() as u64) << 32) | r.next_u32() as u64);
+                // 0..63, plus out-of-range shifts (masked to 0..63).
+                c.g[A1][0] = if seed % 5 == 0 {
+                    64 + (seed % 9) as u64
+                } else {
+                    (r.next_u32() % 64) as u64
+                };
+            },
+        );
     }
 
-
     pub(crate) const SEEDS_2: u32 = 200;
-
 
     /// `RiderGroundState_ComputeFrictionAccel` publishes a slip value and
     /// leaves caller-saved FPU registers that the race's caller may spill, so
@@ -6340,7 +6365,6 @@ pub(crate) mod tests {
         }
     }
 
-
     pub(crate) fn friction_setup(c: &mut Cpu, seed: u32) {
         let _r = machine(c, seed, 0xc878, 0);
         let gs = DATA + 0x1000;
@@ -6356,96 +6380,122 @@ pub(crate) mod tests {
         c.bus.write32(gs + 0x18, DATA + 0x1200); // mRider
         c.bus.write32(p, p0.to_bits()); // p[0]
         c.bus.write32(p + 0x1c, p7.to_bits()); // p[7]
-        c.bus.write32(GAME_GP.wrapping_sub(0x70e8), (-1.0f32 / 30.0).to_bits());
+        c.bus
+            .write32(GAME_GP.wrapping_sub(0x70e8), (-1.0f32 / 30.0).to_bits());
         let (a, b): (f32, f32) = match seed % 5 {
-            0 => (2.0 * m4, 0.5), // a > 0, b > 0
-            1 => (2.0 * m4, -0.5), // a > 0, b <= 0
-            2 => (-0.5 * m4, 0.5), // -m4 < a <= 0
+            0 => (2.0 * m4, 0.5),   // a > 0, b > 0
+            1 => (2.0 * m4, -0.5),  // a > 0, b <= 0
+            2 => (-0.5 * m4, 0.5),  // -m4 < a <= 0
             3 => (-1.5 * m4, -0.5), // a <= -m4, clamp inactive
-            _ => (-3.0 * m8, 1.0), // a <= -m8, clamp to -m8
+            _ => (-3.0 * m8, 1.0),  // a <= -m8, clamp to -m8
         };
         c.f[12] = a.to_bits();
         c.f[13] = b.to_bits();
     }
 
-
     #[test]
     fn rider_is_control_mode3_matches() {
-        check(ssx3_ee::s01::f_001448a8__generated, rider_is_control_mode3, 300, &|c, seed| {
-            let mut r = Rng(0x1234_5678 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = sx(DATA);
-            // 3 and not-3, plus values whose sign extension matters.
-            let mode = match seed % 4 {
-                0 => 3,
-                1 => 0,
-                2 => r.next_u32(),
-                _ => 0x8000_0003,
-            };
-            c.bus.write32(DATA + 0x70, mode);
-        });
+        check(
+            ssx3_ee::s01::f_001448a8__generated,
+            rider_is_control_mode3,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x1234_5678 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = sx(DATA);
+                // 3 and not-3, plus values whose sign extension matters.
+                let mode = match seed % 4 {
+                    0 => 3,
+                    1 => 0,
+                    2 => r.next_u32(),
+                    _ => 0x8000_0003,
+                };
+                c.bus.write32(DATA + 0x70, mode);
+            },
+        );
     }
 
     #[test]
     fn rider_air_state_update_matches() {
-        check(ee::s01::f_00139a20__generated, rider_air_state_update, 160, &|c, seed| {
-            let mut r = Rng(0x139a_20 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            let this = DATA;
-            let rider = DATA + 0x100;
-            let anim = DATA + 0x8000;
-            c.g[A0][0] = sx(this);
-            c.bus.write32(this + air::RIDER, rider);
-            c.bus.write32(this, 0);
-            for k in 0..4 {
-                c.bus.write32(rider + air::UP + k * 4, r.f32(1.0));
-                c.bus.write32(rider + air::ORIENT + k * 4, r.f32(1.0));
-            }
-            c.bus.write32(rider + air::DT, 0.016f32.to_bits());
-            c.bus.write32(rider + air::ANIM, anim);
-            c.bus.write32(rider + air::SUB, DATA + 0x500);
-            c.bus.write32(rider + air::WIND, 0);
-            let angle = if seed % 4 == 2 { 0.5f32 } else { 0.001f32 };
-            c.bus.write32(DATA + 0x500 + anim::ANGLE, angle.to_bits());
-            // world -> +0x84 -> +0x44: the race manager's section records.
-            let world = DATA + 0x600;
-            let mgr = DATA + 0x620;
-            c.bus.write32((GAME_GP as i32 + super::WORLD) as u32, world);
-            c.bus.write32(world + 0x84, mgr);
-            c.bus.write32(mgr + SECTIONS, DATA + 0x640);
-            c.bus.write32(DATA + 0x640 + 0xb0 + SECTIONS, 0);
-            // Animation / predictor state.
-            let state = match seed % 4 { 0 => 2u32, 1 => 3, 2 => 1, _ => 3 };
-            c.bus.write32(anim + anim::STATE, state);
-            c.bus.write32(anim + anim::SECTION, 1);
-            c.bus.write16(anim + anim::FLAGS, 8);
-            c.bus.write32(anim + anim::T0, 2.0f32.to_bits());
-            c.bus.write32(anim + anim::T1, 0.0f32.to_bits());
-            c.bus.write32(anim + 0x58, 0.0f32.to_bits());
-            c.bus.write32(anim + 0xa4, 0.0f32.to_bits());
-            c.bus.write32(anim + 0xa8, 1.0f32.to_bits());
-            let thin = if seed % 8 == 3 { 0.5f32 } else { 0.1f32 };
-            c.bus.write32(anim + anim::THIN, thin.to_bits());
-            for k in 0..4 {
-                c.bus.write32(anim + anim::ORIENT + k * 4, r.f32(1.0));
-            }
-            let sub = if seed % 4 == 2 { 5u32 } else { 0 };
-            c.bus.write32(DATA + 0x500 + 0xde4, sub);
-            // The float constants the state reads through gp_5.
-            c.bus.write32((GAME_GP as i32 - 0x71d4) as u32, (1.0f32 / 60.0).to_bits());
-            c.bus.write32((GAME_GP as i32 - 0x71d0) as u32, (1.0f32 / 60.0).to_bits());
-            c.bus.write32((GAME_GP as i32 - 0x71cc) as u32, 60.0f32.to_bits());
-            c.bus.write32((GAME_GP as i32 - 0x71c8) as u32, 1.396f32.to_bits());
-            c.bus.write32((GAME_GP as i32 - 0x71c4) as u32, 0.0872f32.to_bits());
-            c.bus.write32((GAME_GP as i32 - 0x71c0) as u32, 0.3f32.to_bits());
-            // The predictor's internal step budget and rates.
-            c.bus.write32((GAME_GP as i32 - 0x7c5c) as u32, (1.0f32 / 60.0).to_bits());
-            c.bus.write32((GAME_GP as i32 - 0x7c74) as u32, 2.0f32.to_bits());
-            c.bus.write32((GAME_GP as i32 - 0x7c70) as u32, 1.0f32.to_bits());
-            c.bus.write32((GAME_GP as i32 - 0x7c6c) as u32, 1.0f32.to_bits());
-            c.bus.write32((GAME_GP as i32 - 0x7c60) as u32, 0.0f32.to_bits());
-        });
+        check(
+            ee::s01::f_00139a20__generated,
+            rider_air_state_update,
+            160,
+            &|c, seed| {
+                let mut r = Rng(0x139a_20 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                let this = DATA;
+                let rider = DATA + 0x100;
+                let anim = DATA + 0x8000;
+                c.g[A0][0] = sx(this);
+                c.bus.write32(this + air::RIDER, rider);
+                c.bus.write32(this, 0);
+                for k in 0..4 {
+                    c.bus.write32(rider + air::UP + k * 4, r.f32(1.0));
+                    c.bus.write32(rider + air::ORIENT + k * 4, r.f32(1.0));
+                }
+                c.bus.write32(rider + air::DT, 0.016f32.to_bits());
+                c.bus.write32(rider + air::ANIM, anim);
+                c.bus.write32(rider + air::SUB, DATA + 0x500);
+                c.bus.write32(rider + air::WIND, 0);
+                let angle = if seed % 4 == 2 { 0.5f32 } else { 0.001f32 };
+                c.bus.write32(DATA + 0x500 + anim::ANGLE, angle.to_bits());
+                // world -> +0x84 -> +0x44: the race manager's section records.
+                let world = DATA + 0x600;
+                let mgr = DATA + 0x620;
+                c.bus.write32((GAME_GP as i32 + super::WORLD) as u32, world);
+                c.bus.write32(world + 0x84, mgr);
+                c.bus.write32(mgr + SECTIONS, DATA + 0x640);
+                c.bus.write32(DATA + 0x640 + 0xb0 + SECTIONS, 0);
+                // Animation / predictor state.
+                let state = match seed % 4 {
+                    0 => 2u32,
+                    1 => 3,
+                    2 => 1,
+                    _ => 3,
+                };
+                c.bus.write32(anim + anim::STATE, state);
+                c.bus.write32(anim + anim::SECTION, 1);
+                c.bus.write16(anim + anim::FLAGS, 8);
+                c.bus.write32(anim + anim::T0, 2.0f32.to_bits());
+                c.bus.write32(anim + anim::T1, 0.0f32.to_bits());
+                c.bus.write32(anim + 0x58, 0.0f32.to_bits());
+                c.bus.write32(anim + 0xa4, 0.0f32.to_bits());
+                c.bus.write32(anim + 0xa8, 1.0f32.to_bits());
+                let thin = if seed % 8 == 3 { 0.5f32 } else { 0.1f32 };
+                c.bus.write32(anim + anim::THIN, thin.to_bits());
+                for k in 0..4 {
+                    c.bus.write32(anim + anim::ORIENT + k * 4, r.f32(1.0));
+                }
+                let sub = if seed % 4 == 2 { 5u32 } else { 0 };
+                c.bus.write32(DATA + 0x500 + 0xde4, sub);
+                // The float constants the state reads through gp_5.
+                c.bus
+                    .write32((GAME_GP as i32 - 0x71d4) as u32, (1.0f32 / 60.0).to_bits());
+                c.bus
+                    .write32((GAME_GP as i32 - 0x71d0) as u32, (1.0f32 / 60.0).to_bits());
+                c.bus
+                    .write32((GAME_GP as i32 - 0x71cc) as u32, 60.0f32.to_bits());
+                c.bus
+                    .write32((GAME_GP as i32 - 0x71c8) as u32, 1.396f32.to_bits());
+                c.bus
+                    .write32((GAME_GP as i32 - 0x71c4) as u32, 0.0872f32.to_bits());
+                c.bus
+                    .write32((GAME_GP as i32 - 0x71c0) as u32, 0.3f32.to_bits());
+                // The predictor's internal step budget and rates.
+                c.bus
+                    .write32((GAME_GP as i32 - 0x7c5c) as u32, (1.0f32 / 60.0).to_bits());
+                c.bus
+                    .write32((GAME_GP as i32 - 0x7c74) as u32, 2.0f32.to_bits());
+                c.bus
+                    .write32((GAME_GP as i32 - 0x7c70) as u32, 1.0f32.to_bits());
+                c.bus
+                    .write32((GAME_GP as i32 - 0x7c6c) as u32, 1.0f32.to_bits());
+                c.bus
+                    .write32((GAME_GP as i32 - 0x7c60) as u32, 0.0f32.to_bits());
+            },
+        );
     }
 
     /// `RiderAirState_Update`'s last-partial-tick turn: the original
@@ -6477,78 +6527,109 @@ pub(crate) mod tests {
 
     #[test]
     fn rider_air_state_cast_board_ray_matches() {
-        check(ee::s01::f_0013a7b0__generated, rider_air_state_cast_board_ray, 120, &|c, seed| {
-            let mut r = Rng(0x13a7_b0 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            let this = DATA;
-            let rider = DATA + 0x100;
-            c.g[A0][0] = sx(this);
-            c.g[A1][0] = sx(DATA + 0x600);
-            c.bus.write32(this + 0x4, rider);
-            c.bus.write32(rider + 0x780, DATA + 0x200);
-            c.bus.write32(DATA + 0x200 + 0x2c, DATA + 0x300);
-            c.bus.write32(rider + 0x8a0, 0);
-            c.bus.write32(rider + 0x860, 0);
-            c.bus.write32(rider + 0x864, 0x40);
-            for k in 0..4 {
-                c.bus.write32(rider + 0x180 + k * 4, r.f32(1.0));
-                c.bus.write32(DATA + 0x300 + k * 4, r.f32(10.0));
-            }
-            c.bus.write32((GAME_GP as i32 - 0x71a4) as u32, 0.575f32.to_bits());
-        });
+        check(
+            ee::s01::f_0013a7b0__generated,
+            rider_air_state_cast_board_ray,
+            120,
+            &|c, seed| {
+                let mut r = Rng(0x13a7_b0 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                let this = DATA;
+                let rider = DATA + 0x100;
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(DATA + 0x600);
+                c.bus.write32(this + 0x4, rider);
+                c.bus.write32(rider + 0x780, DATA + 0x200);
+                c.bus.write32(DATA + 0x200 + 0x2c, DATA + 0x300);
+                c.bus.write32(rider + 0x8a0, 0);
+                c.bus.write32(rider + 0x860, 0);
+                c.bus.write32(rider + 0x864, 0x40);
+                for k in 0..4 {
+                    c.bus.write32(rider + 0x180 + k * 4, r.f32(1.0));
+                    c.bus.write32(DATA + 0x300 + k * 4, r.f32(10.0));
+                }
+                c.bus
+                    .write32((GAME_GP as i32 - 0x71a4) as u32, 0.575f32.to_bits());
+            },
+        );
     }
-
 
     #[test]
     fn flags64_test_second_matches() {
-        check(ee::s01::f_001446b8__generated, flags64_test_second, SEEDS_3, &|c, seed| {
-            let mut r = rng(0x0014_46b8, seed);
-            scramble(c, &mut r);
-            c.g[A0][0] = sx(DATA);
-            let flags = (r.next_u32() as u64) << 32 | r.next_u32() as u64;
-            c.bus.write64(DATA + 8, flags);
-            c.g[A1][0] = sx((seed % 70) as u32);
-        });
+        check(
+            ee::s01::f_001446b8__generated,
+            flags64_test_second,
+            SEEDS_3,
+            &|c, seed| {
+                let mut r = rng(0x0014_46b8, seed);
+                scramble(c, &mut r);
+                c.g[A0][0] = sx(DATA);
+                let flags = (r.next_u32() as u64) << 32 | r.next_u32() as u64;
+                c.bus.write64(DATA + 8, flags);
+                c.g[A1][0] = sx((seed % 70) as u32);
+            },
+        );
     }
-
 
     #[test]
     fn flags64_move_to_second_matches() {
-        check(s01::f_00144670__generated, flags64_move_to_second, 200, &|c, seed| {
-            let mut r = Rng(0x1446_70aa ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = sx(OBJ);
-            c.g[A1][0] = sx(seed);
-            c.bus.write64(OBJ, r.next_u32() as u64 | (r.next_u32() as u64) << 32);
-            c.bus.write64(OBJ + 8, r.next_u32() as u64 | (r.next_u32() as u64) << 32);
-        });
+        check(
+            s01::f_00144670__generated,
+            flags64_move_to_second,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x1446_70aa ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = sx(OBJ);
+                c.g[A1][0] = sx(seed);
+                c.bus
+                    .write64(OBJ, r.next_u32() as u64 | (r.next_u32() as u64) << 32);
+                c.bus
+                    .write64(OBJ + 8, r.next_u32() as u64 | (r.next_u32() as u64) << 32);
+            },
+        );
     }
-
 
     pub(crate) fn put(c: &mut Cpu, a: u32, v: u32) {
         c.bus.write32(a, v);
     }
-
 
     // ------------------------------------------------------------------
     // State predicates.
 
     #[test]
     fn rider_is_computer_matches() {
-        check(ee::s01::f_00140bc8__generated, rider_is_computer, 200, &|c, seed| {
-            let mut r = setup(c, seed, 18);
-            c.g[A0][0] = AUX as u64;
-            put(c, AUX + 0x874, if seed % 3 == 0 { 0 } else if seed % 3 == 1 { 1 } else { r.next_u32() });
-        });
+        check(
+            ee::s01::f_00140bc8__generated,
+            rider_is_computer,
+            200,
+            &|c, seed| {
+                let mut r = setup(c, seed, 18);
+                c.g[A0][0] = AUX as u64;
+                put(
+                    c,
+                    AUX + 0x874,
+                    if seed % 3 == 0 {
+                        0
+                    } else if seed % 3 == 1 {
+                        1
+                    } else {
+                        r.next_u32()
+                    },
+                );
+            },
+        );
     }
-
 
     #[test]
     fn rider_air_state_exit_matches() {
-        leaf(ssx3_ee::s01::f_00139a18__generated, rider_air_state_exit, 11);
+        leaf(
+            ssx3_ee::s01::f_00139a18__generated,
+            rider_air_state_exit,
+            11,
+        );
     }
-
 
     /// The rider.
     pub(crate) const RIDER_2: u32 = DATA + 0x1000;
@@ -6600,17 +6681,20 @@ pub(crate) mod tests {
     /// The dummy world (no geometry, no riders).
     pub(crate) const WORLD: u32 = DATA + 0x8_0000;
 
-
     pub(crate) fn w(c: &mut Cpu, a: u32, v: u32) {
         c.bus.write32(a, v);
     }
-
 
     /// `difftest::check`, but requiring the caller-saved scratch state and
     /// LO/HI to match as well (`check` only fails on the ABI-preserved half).
     /// The game's hand-written callees may read registers the ABI lets them
     /// ignore, and a fake callee logs every register.
-    pub(crate) fn check_strict(generated: GuestFn, hand: GuestFn, seeds: u32, setup: &dyn Fn(&mut Cpu, u32)) {
+    pub(crate) fn check_strict(
+        generated: GuestFn,
+        hand: GuestFn,
+        seeds: u32,
+        setup: &dyn Fn(&mut Cpu, u32),
+    ) {
         for seed in 0..seed_count(seeds) {
             let r = compare(generated, hand, &|c| setup(c, seed));
             assert!(r.hard.is_empty(), "seed {seed}: {:#?}", r.hard);
@@ -6623,7 +6707,6 @@ pub(crate) mod tests {
         }
     }
 
-
     /// The BE singleton, the world with its module and race manager (no
     /// riders), and the wall flag `RiderAirState_CollideWalls` writes.
     pub(crate) fn globals(c: &mut Cpu) {
@@ -6634,7 +6717,6 @@ pub(crate) mod tests {
         w(c, WORLD + 0x2000 + 0x7c, 0);
         w(c, GAME_GP.wrapping_sub(0x1fd0), 0x10);
     }
-
 
     /// The rider with its air state, model and board, and the objects the arm
     /// dereferences (all zeroed dummies, never raw addresses).
@@ -6676,7 +6758,6 @@ pub(crate) mod tests {
         put_vec(c, BOARD, q(r));
     }
 
-
     /// The air path: `RiderAirState_CastBoardRay` runs for real against a
     /// zeroed collision object, finds no geometry, returns -1, and the body
     /// goes straight to the bounds/wall/camera tail.
@@ -6694,7 +6775,6 @@ pub(crate) mod tests {
         // No trigger/animation object in the ray's out struct.
         w(c, SEEDWORD, 0x1);
     }
-
 
     /// A stand-in for `RiderAirState_CastBoardRay` (0x13a7b0), driven by the
     /// fixture's [`SEEDWORD`]: bit 0 picks a miss (`f0 = -1`, the real
@@ -6722,12 +6802,10 @@ pub(crate) mod tests {
         abi::ret(c);
     }
 
-
     /// Puts the `CastBoardRay` override slot back (the generated body is its
     /// default: the game's own replacement is installed by
     /// `ssx3_game::install`, which the tests do not run).
     pub(crate) struct RaySlot;
-
 
     impl Drop for RaySlot {
         fn drop(&mut self) {
@@ -6736,7 +6814,6 @@ pub(crate) mod tests {
             }
         }
     }
-
 
     /// The board-contact arm, which the real function cannot reach in a test
     /// machine (no level geometry): the fake reports a hit and the objects the
@@ -6761,7 +6838,6 @@ pub(crate) mod tests {
         );
         w(c, RIDER_2 + 0x864, 0);
     }
-
 
     /// The same arm with every field it reads randomized (pointers stay on
     /// zeroed dummies), and the fake's hit/miss and object selection random:
@@ -6795,7 +6871,6 @@ pub(crate) mod tests {
         w(c, RIDER_2 + 0x378, r.edge_f32());
     }
 
-
     #[test]
     fn rider_air_state_post_update_matches() {
         check_strict(
@@ -6805,7 +6880,6 @@ pub(crate) mod tests {
             &|c, seed| setup_air(c, seed),
         );
     }
-
 
     /// The board-contact arm: the ray hit, the trigger callback, the
     /// animation-object and landing-chain branches, all driven by the fake.
@@ -6823,7 +6897,6 @@ pub(crate) mod tests {
         );
     }
 
-
     /// A randomized sweep over everything the function reads.
     #[test]
     fn rider_air_state_post_update_fuzz_matches() {
@@ -6839,47 +6912,58 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn rider_air_state_play_land_anim_matches() {
-        check(ssx3_ee::s01::f_0013a8f8__generated, rider_air_state_play_land_anim, SEEDS_5, &|c, seed| {
-            let mut r = machine(c, seed, 0x13a8f8, 0);
-            let rider = DATA + 0x1000;
-            let model = DATA + 0x3000;
-            let anim = DATA + 0x4000;
-            c.g[A0][0] = rider as u64;
-            w32(c, GAME_GP.wrapping_sub(0x71a0), (-2222.222_2f32).to_bits());
-            c.f[12] = if seed % 2 == 0 {
-                (-2222.3f32 + (seed % 5) as f32).to_bits()
-            } else {
-                r.f32(3000.0)
-            };
-            w32(c, rider + 4, model);
-            w32(c, model + 0x784, anim);
-            let vt = DATA + 0x5000;
-            w32(c, anim + 0x58, vt);
-            slot(c, vt, 0x20, 0, LOAD_B0);
-            w32(c, anim + 0xb0, 0x207);
-            w32(c, model + 0x2dc, r.next_u32());
-        });
+        check(
+            ssx3_ee::s01::f_0013a8f8__generated,
+            rider_air_state_play_land_anim,
+            SEEDS_5,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x13a8f8, 0);
+                let rider = DATA + 0x1000;
+                let model = DATA + 0x3000;
+                let anim = DATA + 0x4000;
+                c.g[A0][0] = rider as u64;
+                w32(c, GAME_GP.wrapping_sub(0x71a0), (-2222.222_2f32).to_bits());
+                c.f[12] = if seed % 2 == 0 {
+                    (-2222.3f32 + (seed % 5) as f32).to_bits()
+                } else {
+                    r.f32(3000.0)
+                };
+                w32(c, rider + 4, model);
+                w32(c, model + 0x784, anim);
+                let vt = DATA + 0x5000;
+                w32(c, anim + 0x58, vt);
+                slot(c, vt, 0x20, 0, LOAD_B0);
+                w32(c, anim + 0xb0, 0x207);
+                w32(c, model + 0x2dc, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn rider_railslide_state_enter_matches() {
-        check(ssx3_ee::s01::f_0013ad20__generated, rider_railslide_state_enter, 8, &|c, seed| {
-            let _r = base(c, seed, 0x13ad20, 2);
-            let this = DATA + 0x1000;
-            let rider = DATA + 0x4000;
-            c.g[A0][0] = this as u64;
-            w_2(c, this + 0x50, rider);
-            put_vec(c, rider + 0x110, [1.0f32.to_bits(), 2.0f32.to_bits(), 3.0f32.to_bits(), 0]);
-            w_2(c, rider + 0x10, 0);
-            w_2(c, rider + 0x770, 0);
-            w_2(c, GAME_GP.wrapping_sub(0x7184), 0.05f32.to_bits());
-        });
+        check(
+            ssx3_ee::s01::f_0013ad20__generated,
+            rider_railslide_state_enter,
+            8,
+            &|c, seed| {
+                let _r = base(c, seed, 0x13ad20, 2);
+                let this = DATA + 0x1000;
+                let rider = DATA + 0x4000;
+                c.g[A0][0] = this as u64;
+                w_2(c, this + 0x50, rider);
+                put_vec(
+                    c,
+                    rider + 0x110,
+                    [1.0f32.to_bits(), 2.0f32.to_bits(), 3.0f32.to_bits(), 0],
+                );
+                w_2(c, rider + 0x10, 0);
+                w_2(c, rider + 0x770, 0);
+                w_2(c, GAME_GP.wrapping_sub(0x7184), 0.05f32.to_bits());
+            },
+        );
     }
-
 
     /// `RiderRailslideState_Enter` seeds the rail-value slew's step (`+0x260`)
     /// with 0.05 per tick: at 120/240 Hz the step is halved/quartered, so the
@@ -6910,7 +6994,6 @@ pub(crate) mod tests {
         assert_eq!(step(120), 0x3ccc_ccce, "120 Hz step");
         assert_eq!(step(240), 0x3c4c_ccce, "240 Hz step");
     }
-
 
     // -----------------------------------------------------------------
     // RiderGroundState_Enter / _Exit.
@@ -6944,11 +7027,22 @@ pub(crate) mod tests {
         c.bus.write32(GSE_SECT + idx * 0xb0 + 0x18, r.f32(2.0));
         c.bus.write32(GSE_RIDER + 0x780, GSE_MODEL);
         c.bus.write32(GSE_MODEL + 0x140, r.f32(2.0));
-        put_vec(c, GSE_RIDER + 0x370, [r.f32(100.0), r.f32(100.0), r.f32(100.0), r.f32(1.0)]);
-        put_vec(c, GSE_RIDER + 0x1e0, [r.f32(50.0), r.f32(50.0), r.f32(50.0), r.f32(1.0)]);
-        c.bus.write32(GAME_GP.wrapping_sub(0x70f4), 0.01f32.to_bits());
-        c.bus.write32(GAME_GP.wrapping_sub(0x70f0), 0.7f32.to_bits());
-        c.bus.write32(GAME_GP.wrapping_sub(0x70ec), 0.7f32.to_bits());
+        put_vec(
+            c,
+            GSE_RIDER + 0x370,
+            [r.f32(100.0), r.f32(100.0), r.f32(100.0), r.f32(1.0)],
+        );
+        put_vec(
+            c,
+            GSE_RIDER + 0x1e0,
+            [r.f32(50.0), r.f32(50.0), r.f32(50.0), r.f32(1.0)],
+        );
+        c.bus
+            .write32(GAME_GP.wrapping_sub(0x70f4), 0.01f32.to_bits());
+        c.bus
+            .write32(GAME_GP.wrapping_sub(0x70f0), 0.7f32.to_bits());
+        c.bus
+            .write32(GAME_GP.wrapping_sub(0x70ec), 0.7f32.to_bits());
         c.bus.write32(GAME_GP.wrapping_sub(0x6fa8), r.f32(1.0));
         c.bus.write32(GAME_GP.wrapping_sub(0x6fa4), r.f32(1.0));
         c.g[A0][0] = sx(GSE_THIS);
@@ -6957,32 +7051,42 @@ pub(crate) mod tests {
 
     #[test]
     fn rider_ground_state_enter_matches() {
-        check_lohi(ee::s01::f_0013c7a8__generated, rider_ground_state_enter, 200, &|c, seed| {
-            let mut r = Rng(0x13c7_a8 ^ seed as u64);
-            let now = 1000 + r.next_u32() % 100_000;
-            // Air time: short, the ramp, clamped to 1, negative, the 40/41 edge.
-            let air: i32 = match seed % 5 {
-                0 => (r.next_u32() % 41) as i32,
-                1 => 41 + (r.next_u32() % 30) as i32,
-                2 => 71 + (r.next_u32() % 2000) as i32,
-                3 => -1 - (r.next_u32() % 500) as i32,
-                _ => 40 + (seed / 5 % 2) as i32,
-            };
-            let _ = ground_enter_exit_fixture(c, seed, now, now.wrapping_sub(air as u32));
-        });
+        check_lohi(
+            ee::s01::f_0013c7a8__generated,
+            rider_ground_state_enter,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x13c7_a8 ^ seed as u64);
+                let now = 1000 + r.next_u32() % 100_000;
+                // Air time: short, the ramp, clamped to 1, negative, the 40/41 edge.
+                let air: i32 = match seed % 5 {
+                    0 => (r.next_u32() % 41) as i32,
+                    1 => 41 + (r.next_u32() % 30) as i32,
+                    2 => 71 + (r.next_u32() % 2000) as i32,
+                    3 => -1 - (r.next_u32() % 500) as i32,
+                    _ => 40 + (seed / 5 % 2) as i32,
+                };
+                let _ = ground_enter_exit_fixture(c, seed, now, now.wrapping_sub(air as u32));
+            },
+        );
     }
 
     #[test]
     fn rider_ground_state_exit_matches() {
-        check(ee::s01::f_0013f410__generated, rider_ground_state_exit, 100, &|c, seed| {
-            let mut r = Rng(0x13f4_10 ^ seed as u64);
-            let now = r.next_u32() % 100_000;
-            let stamp = match seed % 3 {
-                0 | 1 => u32::MAX,
-                _ => r.next_u32(),
-            };
-            let _ = ground_enter_exit_fixture(c, seed, now, stamp);
-        });
+        check(
+            ee::s01::f_0013f410__generated,
+            rider_ground_state_exit,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x13f4_10 ^ seed as u64);
+                let now = r.next_u32() % 100_000;
+                let stamp = match seed % 3 {
+                    0 | 1 => u32::MAX,
+                    _ => r.next_u32(),
+                };
+                let _ = ground_enter_exit_fixture(c, seed, now, stamp);
+            },
+        );
     }
 
     /// `RiderGroundState_Enter`'s landing speed factor follows the air time in
@@ -6996,7 +7100,16 @@ pub(crate) mod tests {
             let mut c = crate::difftest::fresh();
             let now = 50_000u32;
             let _ = ground_enter_exit_fixture(&mut c, 7, now, now - ticks);
-            put_vec(&mut c, GSE_RIDER + 0x1e0, [1.0f32.to_bits(), 2.0f32.to_bits(), (-3.0f32).to_bits(), 1.0f32.to_bits()]);
+            put_vec(
+                &mut c,
+                GSE_RIDER + 0x1e0,
+                [
+                    1.0f32.to_bits(),
+                    2.0f32.to_bits(),
+                    (-3.0f32).to_bits(),
+                    1.0f32.to_bits(),
+                ],
+            );
             tick::set_for_test(&mut c, hz);
             rider_ground_state_enter(&mut c);
             assert_eq!(c.bus.read32(GSE_THIS + 0x10), now, "{hz} Hz: landing stamp");
@@ -7034,18 +7147,20 @@ pub(crate) mod tests {
         }
     }
 
-
     #[test]
     fn rider_init_data_matches() {
-        check(ee::s01::f_00140738__generated, rider_init_data, 60, &|c, seed| {
-            let _ = machine(c, seed, 0x14_0738, 0);
-            c.g[A0][0] = DATA as u64;
-        });
+        check(
+            ee::s01::f_00140738__generated,
+            rider_init_data,
+            60,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x14_0738, 0);
+                c.g[A0][0] = DATA as u64;
+            },
+        );
     }
 
-
     pub(crate) const SEEDS_6: u32 = 200;
-
 
     /// The function's argument (`GroundState*`).
     pub(crate) const GS: u32 = DATA + 0x1000;
@@ -7076,7 +7191,6 @@ pub(crate) mod tests {
 
     /// `(&DAT_005308a8)[i]`, the BE interface array indexed by `gp-0x1efc`.
     pub(crate) const IFACE_ARRAY: u32 = 0x0053_08a8;
-
 
     /// The per-frame ground-state update, with the world/race/ground tables,
     /// the rider's model/animation/state objects, the BE library interface
@@ -7127,7 +7241,7 @@ pub(crate) mod tests {
         c.bus.write32(ANIM_2 + 8, 0x1b6); // "no entry" -> the anim-table call is skipped
         fill(c, &mut r, STATE_2, 0xe00 / 4);
         c.bus.write32(STATE_2 + 0xde4, seed % 5); // sub-state
-                                                // World -> race manager -> the ground segments.
+                                                  // World -> race manager -> the ground segments.
         c.bus.write32(GAME_GP - 0x848, WORLD_2);
         c.bus.write32(WORLD_2 + 0x84, RACE);
         c.bus.write32(RACE + 0x44, GROUND);
@@ -7158,13 +7272,14 @@ pub(crate) mod tests {
         c.bus.write32(VT + 0xc, 0x7000_0000);
     }
 
-
     #[test]
     fn rider_ground_state_update_matches() {
         for seed in 0..SEEDS {
-            let r = compare(ee::s01::f_0013d818__generated, rider_ground_state_update, &|c| {
-                setup_2(c, seed)
-            });
+            let r = compare(
+                ee::s01::f_0013d818__generated,
+                rider_ground_state_update,
+                &|c| setup_2(c, seed),
+            );
             assert!(r.hard.is_empty(), "seed {seed} hard: {:#?}", r.hard);
             assert!(r.soft.is_empty(), "seed {seed} soft: {:#?}", r.soft);
             assert!(r.lohi.is_empty(), "seed {seed} lo/hi: {:#?}", r.lohi);

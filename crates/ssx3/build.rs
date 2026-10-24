@@ -4,7 +4,9 @@
 
 fn main() {
     println!("cargo:rerun-if-env-changed=SSX3_ICON");
-    let Ok(ico) = std::env::var("SSX3_ICON") else { return };
+    let Ok(ico) = std::env::var("SSX3_ICON") else {
+        return;
+    };
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
     }
@@ -12,5 +14,7 @@ fn main() {
     let out = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
     let rc = out.join("ssx3.rc");
     std::fs::write(&rc, format!("1 ICON \"{}\"\n", ico.replace('\\', "/"))).unwrap();
-    embed_resource::compile_for(&rc, ["ssx3"], embed_resource::NONE).manifest_required().unwrap();
+    embed_resource::compile_for(&rc, ["ssx3"], embed_resource::NONE)
+        .manifest_required()
+        .unwrap();
 }

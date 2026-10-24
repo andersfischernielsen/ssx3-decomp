@@ -90,13 +90,23 @@ pub fn begin(vu: &mut Vu, pc: u32, top: u32, itop: u32) -> Option<Pending> {
 /// column has w != 0 besides the translation); the mode-0 header has the
 /// guard scale (1024) and M = worldView (affine: w row = 0, 0, 0, 1).
 fn header_kind(mem: &[u8; 16384]) -> (u32, u32, bool) {
-    let f = |qw: usize, lane: usize| u32::from_le_bytes(mem[qw * 16 + lane * 4..qw * 16 + lane * 4 + 4].try_into().unwrap());
+    let f = |qw: usize, lane: usize| {
+        u32::from_le_bytes(
+            mem[qw * 16 + lane * 4..qw * 16 + lane * 4 + 4]
+                .try_into()
+                .unwrap(),
+        )
+    };
     let affine = f(0, 3) == 0 && f(1, 3) == 0 && f(2, 3) == 0 && f(3, 3) == 0x3f80_0000;
     (f(4, 0), f(6, 0), affine)
 }
 
 fn sprites(kicks: &[Vec<Qword>]) -> u64 {
-    kicks.iter().filter_map(|k| k.first()).map(|t| *t as u64 & 0x7fff).sum()
+    kicks
+        .iter()
+        .filter_map(|k| k.first())
+        .map(|t| *t as u64 & 0x7fff)
+        .sum()
 }
 
 /// After the translated program finished: run the native one and compare.
@@ -104,9 +114,23 @@ pub fn end(mut p: Pending, vu: &Vu) {
     let mut native: Vec<Vec<Qword>> = Vec::new();
     let header = header_kind(&p.mem);
     let implemented = if p.program == 4 {
-        mat4::run(p.entry, p.top, p.itop, &mut p.mem, &mut mat4::VuState::default(), &mut |k| native.push(k.to_vec()))
+        mat4::run(
+            p.entry,
+            p.top,
+            p.itop,
+            &mut p.mem,
+            &mut mat4::VuState::default(),
+            &mut |k| native.push(k.to_vec()),
+        )
     } else {
-        mat5::run(p.entry, p.top, p.itop, &mut p.mem, &mut mat5::VuState::default(), &mut |k| native.push(k.to_vec()))
+        mat5::run(
+            p.entry,
+            p.top,
+            p.itop,
+            &mut p.mem,
+            &mut mat5::VuState::default(),
+            &mut |k| native.push(k.to_vec()),
+        )
     };
     let mut g = STATE.lock().unwrap();
     let s = g.get_or_insert_with(State::default);
@@ -141,7 +165,8 @@ pub fn end(mut p: Pending, vu: &Vu) {
         native.len(),
         p.kicks.len()
     );
-    if let Some(i) = (0..native.len().max(p.kicks.len())).find(|&i| native.get(i) != p.kicks.get(i)) {
+    if let Some(i) = (0..native.len().max(p.kicks.len())).find(|&i| native.get(i) != p.kicks.get(i))
+    {
         let (a, b) = (native.get(i), p.kicks.get(i));
         eprintln!(
             "  kick {i}: native {} qw, translated {} qw",
@@ -149,14 +174,26 @@ pub fn end(mut p: Pending, vu: &Vu) {
             b.map_or(0, |k| k.len())
         );
         if let (Some(a), Some(b)) = (a, b) {
-            for (j, (x, y)) in a.iter().zip(b).enumerate().filter(|(_, (x, y))| x != y).take(6) {
+            for (j, (x, y)) in a
+                .iter()
+                .zip(b)
+                .enumerate()
+                .filter(|(_, (x, y))| x != y)
+                .take(6)
+            {
                 eprintln!("    qw {j}: native {x:032x} translated {y:032x}");
             }
         }
     }
-    let diff: Vec<usize> = (0..1024).filter(|q| p.mem[q * 16..q * 16 + 16] != vu.data[q * 16..q * 16 + 16]).collect();
+    let diff: Vec<usize> = (0..1024)
+        .filter(|q| p.mem[q * 16..q * 16 + 16] != vu.data[q * 16..q * 16 + 16])
+        .collect();
     if !diff.is_empty() {
-        eprintln!("  data memory: {} qwords differ, first at {:?}", diff.len(), &diff[..diff.len().min(8)]);
+        eprintln!(
+            "  data memory: {} qwords differ, first at {:?}",
+            diff.len(),
+            &diff[..diff.len().min(8)]
+        );
     }
 }
 
@@ -184,10 +221,19 @@ pub fn summary() -> Option<String> {
     out += "\n  type 4 headers (qw4.x scale: 256 screen / 1024 guard; M affine = worldView, else worldClip):";
     let mut kinds: Vec<_> = s.headers.iter().collect();
     kinds.sort_by_key(|(_, n)| std::cmp::Reverse(**n));
-    let affine: u64 = kinds.iter().filter(|((_, _, a), _)| *a).map(|(_, n)| **n).sum();
+    let affine: u64 = kinds
+        .iter()
+        .filter(|((_, _, a), _)| *a)
+        .map(|(_, n)| **n)
+        .sum();
     out += &format!(" {} kinds, {affine} calls with affine M", kinds.len());
     for (&(x, p, a), n) in kinds.iter().take(8) {
-        out += &format!("\n    scale {} proj.x {} M {}: {n}", f32::from_bits(x), f32::from_bits(p), if a { "affine" } else { "perspective" });
+        out += &format!(
+            "\n    scale {} proj.x {} M {}: {n}",
+            f32::from_bits(x),
+            f32::from_bits(p),
+            if a { "affine" } else { "perspective" }
+        );
     }
     Some(out)
 }

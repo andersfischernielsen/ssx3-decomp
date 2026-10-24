@@ -247,11 +247,22 @@ fn patch_per_tick(c: &mut Cpu, hz: u32) {
         .iter()
         .filter(|&&(a, bits, _)| {
             let cur = c.bus.read32(a);
-            let known = [60, 120, 144, 180, 240, 300, 360, APPLIED.load(Ordering::Relaxed)]
-                .iter()
-                .any(|&h| h != 0 && per_tick_values(h).iter().any(|&(e, v)| e == a && v == cur));
+            let known = [
+                60,
+                120,
+                144,
+                180,
+                240,
+                300,
+                360,
+                APPLIED.load(Ordering::Relaxed),
+            ]
+            .iter()
+            .any(|&h| h != 0 && per_tick_values(h).iter().any(|&(e, v)| e == a && v == cur));
             if cur != bits && !known {
-                eprintln!("[tick] per-tick constant at {a:#x} holds {cur:#x}, not {bits:#x}: left alone");
+                eprintln!(
+                    "[tick] per-tick constant at {a:#x} holds {cur:#x}, not {bits:#x}: left alone"
+                );
             }
             cur == bits || known
         })
@@ -291,7 +302,10 @@ pub fn step_bits(hz: u32) -> u32 {
 
 /// Read `SSX3_TICK_HZ` at boot; returns the configured rate.
 pub fn install() -> u32 {
-    if let Some(hz) = std::env::var("SSX3_TICK_HZ").ok().and_then(|v| v.parse::<u32>().ok()) {
+    if let Some(hz) = std::env::var("SSX3_TICK_HZ")
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
+    {
         set(hz);
     }
     configured()
@@ -455,7 +469,10 @@ impl Pacer {
             // Back well before the next refresh: the display does not wait
             // for our images (a hidden window, startup). Wait on the clock.
             if self.shown.is_some_and(|t| now - t < 0.5 * self.display) {
-                return Plan { vsyncs: 0, updates_per_vsync: 0 };
+                return Plan {
+                    vsyncs: 0,
+                    updates_per_vsync: 0,
+                };
             }
             self.shown = Some(now);
         }
@@ -489,11 +506,18 @@ impl Pacer {
                 self.repeats += 1;
                 self.repeat = true;
             }
-            return Plan { vsyncs: 0, updates_per_vsync: 0 };
+            return Plan {
+                vsyncs: 0,
+                updates_per_vsync: 0,
+            };
         }
         self.note_frame(now);
         let vsyncs = n.min(max_vsyncs.max(1));
-        let per = if catch_up { n.div_ceil(vsyncs).min(Self::MAX_UPDATES_PER_VSYNC) } else { 1 };
+        let per = if catch_up {
+            n.div_ceil(vsyncs).min(Self::MAX_UPDATES_PER_VSYNC)
+        } else {
+            1
+        };
         let delivered = (vsyncs * per) as f64;
         if per > 1 {
             self.doubled += vsyncs as u64;
@@ -503,7 +527,10 @@ impl Pacer {
             // More than the caps can repay: slow down instead of carrying it.
             self.done += owed - delivered;
         }
-        Plan { vsyncs, updates_per_vsync: per }
+        Plan {
+            vsyncs,
+            updates_per_vsync: per,
+        }
     }
 
     /// For a front end that runs exactly one VSync per frame (headless):
@@ -546,7 +573,13 @@ impl Pacer {
 
     /// Start over (e.g. after a pause); the display lock stays.
     pub fn reset(&mut self) {
-        *self = Self { step: self.step, display: self.display, repeats: self.repeats, doubled: self.doubled, ..Self::default() };
+        *self = Self {
+            step: self.step,
+            display: self.display,
+            repeats: self.repeats,
+            doubled: self.doubled,
+            ..Self::default()
+        };
     }
 
     /// Follow the display's cadence when the game rate is (within 1%) a
@@ -738,7 +771,10 @@ fn patch_pool(c: &mut Cpu, hz: u32) {
     for &a in pool.iter() {
         c.bus.write32(a, bits);
     }
-    eprintln!("[tick] {hz} Hz: step 1/{hz} in the app manager and {} .lit4 entries", pool.len());
+    eprintln!(
+        "[tick] {hz} Hz: step 1/{hz} in the app manager and {} .lit4 entries",
+        pool.len()
+    );
 }
 
 /// Write the tick count for each 60 Hz frame count in [`FRAME_COUNTS`].
@@ -805,7 +841,9 @@ mod tests {
 
     #[test]
     fn per_tick_constants_follow_the_rate() {
-        let f = |v: &[(u32, u32)], a: u32| f32::from_bits(v.iter().find(|e| e.0 == a).unwrap().1) as f64;
+        let f = |v: &[(u32, u32)], a: u32| {
+            f32::from_bits(v.iter().find(|e| e.0 == a).unwrap().1) as f64
+        };
         let v60 = per_tick_values(60);
         // At 60 the executable's values, untouched.
         for &(a, bits, _) in PER_TICK {
@@ -816,7 +854,10 @@ mod tests {
             let v = per_tick_values(hz);
             // A step: q ticks move as far as one at 60.
             let boost = f(&v, 0x0049_b4fc);
-            assert!((boost * q - f(&v60, 0x0049_b4fc)).abs() < 1e-9, "{hz}: boost {boost}");
+            assert!(
+                (boost * q - f(&v60, 0x0049_b4fc)).abs() < 1e-9,
+                "{hz}: boost {boost}"
+            );
             // A decay: q ticks keep as much as one at 60.
             let k = f(&v, 0x0049_b7d8);
             assert!((k.powf(q) - 0.956).abs() < 1e-6, "{hz}: {k}");
@@ -837,7 +878,10 @@ mod tests {
         c.bus.write32(0x0049_b4fc, 0x1234_5678);
         patch_per_tick(&mut c, 240);
         assert_eq!(c.bus.read32(0x0049_b4fc), 0x1234_5678);
-        assert_eq!(c.bus.read32(0x0049_b7d8), (0.956f64.powf(0.25) as f32).to_bits());
+        assert_eq!(
+            c.bus.read32(0x0049_b7d8),
+            (0.956f64.powf(0.25) as f32).to_bits()
+        );
         patch_per_tick(&mut c, 60);
         assert_eq!(c.bus.read32(0x0049_b7d8), 0x3f74_bc6a);
         assert_eq!(c.bus.read32(0x0049_b894), 0x4194_25ed);
@@ -851,7 +895,13 @@ mod tests {
 
     /// Runs a front end for `secs`: images every `image` s (the display or
     /// the host), returns (updates delivered, VSyncs run).
-    fn simulate(game_hz: f64, image: f64, max_vsyncs: u32, catch_up: bool, secs: f64) -> (u32, u32) {
+    fn simulate(
+        game_hz: f64,
+        image: f64,
+        max_vsyncs: u32,
+        catch_up: bool,
+        secs: f64,
+    ) -> (u32, u32) {
         let p = 1.0 / game_hz;
         let mut k = Pacer::default();
         let (mut t, mut updates, mut vsyncs) = (0.0, 0, 0);
@@ -872,10 +922,19 @@ mod tests {
     fn pacer_runs_the_game_at_its_rate_whatever_the_display() {
         // 60 Hz game, 60 Hz display; 120 Hz game on 60 Hz (2 VSyncs per
         // image); 60 Hz game on 144 Hz (waits); 240 Hz game on 60 Hz.
-        for (game, display) in [(60.0, 60.0), (120.0, 60.0), (60.0, 144.0), (240.0, 60.0), (144.0, 60.0)] {
+        for (game, display) in [
+            (60.0, 60.0),
+            (120.0, 60.0),
+            (60.0, 144.0),
+            (240.0, 60.0),
+            (144.0, 60.0),
+        ] {
             let maxv = (game / display as f64).ceil() as u32;
             let (u, v) = simulate(game, 1.0 / display, maxv, true, 10.0);
-            assert!((u as f64 - 10.0 * game).abs() <= 3.0, "{game} on {display}: {u} updates");
+            assert!(
+                (u as f64 - 10.0 * game).abs() <= 3.0,
+                "{game} on {display}: {u} updates"
+            );
             // The emulated clock is real time too: one VSync per update.
             assert_eq!(u, v, "{game} on {display}");
         }
@@ -897,7 +956,13 @@ mod tests {
     /// A VSync'd display at `display_hz` with presentation jitter (s, ±):
     /// returns (repeated images, images with extra updates, updates) over
     /// `secs`.
-    fn simulate_vsync(game_hz: f64, display_hz: f64, jitter: f64, lock: bool, secs: f64) -> (u32, u32, u32) {
+    fn simulate_vsync(
+        game_hz: f64,
+        display_hz: f64,
+        jitter: f64,
+        lock: bool,
+        secs: f64,
+    ) -> (u32, u32, u32) {
         let p = 1.001 / (game_hz.round());
         let d = 1.0 / display_hz;
         let mut k = Pacer::default();
@@ -922,7 +987,9 @@ mod tests {
                     updates += plan.vsyncs * plan.updates_per_vsync;
                 }
             } else {
-                if plan.vsyncs * plan.updates_per_vsync > (game_hz / display_hz).round().max(1.0) as u32 {
+                if plan.vsyncs * plan.updates_per_vsync
+                    > (game_hz / display_hz).round().max(1.0) as u32
+                {
                     extra += 1;
                 }
                 updates += plan.vsyncs * plan.updates_per_vsync;
@@ -981,7 +1048,14 @@ mod tests {
         let mut t = 0.0;
         for i in 0..600 {
             let plan = k.plan(t, p, 1, true);
-            assert_eq!(plan, Plan { vsyncs: 1, updates_per_vsync: 1 }, "image {i}");
+            assert_eq!(
+                plan,
+                Plan {
+                    vsyncs: 1,
+                    updates_per_vsync: 1
+                },
+                "image {i}"
+            );
             t += p * if i % 2 == 0 { 0.9 } else { 1.1 };
         }
         // A one-second pause is forgotten, not repaid.

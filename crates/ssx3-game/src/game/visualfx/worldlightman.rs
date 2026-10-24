@@ -2,86 +2,174 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::r32;
 use crate::call;
+use crate::call::call_ptr;
+use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::Target;
-use crate::guest::Addr;
-use crate::ps2f::FpuF32;
-use ssx3_ee_rt::cpu::reg::*;
-use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::Cpu;
-use crate::call::call_ptr;
-use crate::call::Flow;
+use crate::call::Unwound;
+use crate::call::VSlot;
+use crate::events;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::animation::rideranimbase::sw as sw_2;
+pub(crate) use crate::game::be::bedbreward::BUILTIN_DELETE_ADDR;
+pub(crate) use crate::game::camera::trigger::cameratriggerfactory::r;
+pub(crate) use crate::game::fe::feasyncfile::lw_7 as lw_2;
+pub(crate) use crate::game::fe::feasyncfile::lw_9 as lw_3;
+pub(crate) use crate::game::fe::feasyncfile::p_7 as p_2;
+pub(crate) use crate::game::fe::feasyncfile::sw_7 as sw_3;
+pub(crate) use crate::game::intersect::worldsphtree::forward_to_arg_vtable;
+pub(crate) use crate::game::render::graphicsman::RegMem;
+pub(crate) use crate::game::render::lightman::addu;
+pub(crate) use crate::game::render::lightman::off;
+pub(crate) use crate::game::render::lightman::Oc49Mem;
+pub(crate) use crate::game::render::particle::at;
+pub(crate) use crate::game::render::particle::eq;
+pub(crate) use crate::game::render::particle::fconst;
+pub(crate) use crate::game::render::particle::ldf;
+pub(crate) use crate::game::render::particle::lt;
+pub(crate) use crate::game::render::particle::p;
+pub(crate) use crate::game::render::particle::setf;
+pub(crate) use crate::game::wscript::wscriptman::lw_4 as lw;
+pub(crate) use crate::game::wscript::wscriptman::sw;
+use crate::guest::Addr;
+use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
-use crate::call::guest;
-use crate::call::Unwound;
-use crate::abi::r32;
-use crate::call::sp;
+use ssx3_ee_rt::cpu::reg::*;
+use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::funcs::call_indirect;
+use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
 use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
-use crate::events;
-use crate::call::VSlot;
-use ssx3_ee_rt::funcs::call_indirect;
-pub(crate) use crate::game::be::bedbreward::BUILTIN_DELETE_ADDR;
-pub(crate) use crate::game::render::particle::p;
-pub(crate) use crate::game::render::particle::at;
-pub(crate) use crate::game::render::particle::ldf;
-pub(crate) use crate::game::render::particle::setf;
-pub(crate) use crate::game::render::particle::fconst;
-pub(crate) use crate::game::render::particle::lt;
-pub(crate) use crate::game::render::particle::eq;
-pub(crate) use crate::game::render::lightman::off;
-pub(crate) use crate::game::render::lightman::Oc49Mem;
-pub(crate) use crate::game::render::lightman::addu;
-pub(crate) use crate::game::camera::trigger::cameratriggerfactory::r;
-pub(crate) use crate::game::intersect::worldsphtree::forward_to_arg_vtable;
-pub(crate) use crate::game::wscript::wscriptman::lw_4 as lw;
-pub(crate) use crate::game::wscript::wscriptman::sw;
-pub(crate) use crate::game::fe::feasyncfile::lw_7 as lw_2;
-pub(crate) use crate::game::animation::rideranimbase::sw as sw_2;
-pub(crate) use crate::game::fe::feasyncfile::p_7 as p_2;
-pub(crate) use crate::game::fe::feasyncfile::lw_9 as lw_3;
-pub(crate) use crate::game::fe::feasyncfile::sw_7 as sw_3;
-pub(crate) use crate::game::render::graphicsman::RegMem;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0011_1830, rider_base_get_main_state_name, "RiderBase_GetMainStateName"),
-    (0x0011_1860, rider_base_get_sub_state_name, "RiderBase_GetSubStateName"),
+    (
+        0x0011_1830,
+        rider_base_get_main_state_name,
+        "RiderBase_GetMainStateName",
+    ),
+    (
+        0x0011_1860,
+        rider_base_get_sub_state_name,
+        "RiderBase_GetSubStateName",
+    ),
     (0x002d_9b40, avalanche_destroy_all, "Avalanche_DestroyAll"),
     (0x002d_aa78, c_board_spark_fx_reset, "cBoardSparkFX_Reset"),
-    (0x002d_bf80, c_ps2_fog_particle_man_base_ctor, "cPS2FogParticleMan_BaseCtor"),
+    (
+        0x002d_bf80,
+        c_ps2_fog_particle_man_base_ctor,
+        "cPS2FogParticleMan_BaseCtor",
+    ),
     (0x002e_8560, c_board_trail_fx_reset, "cBoardTrailFX_Reset"),
-    (0x002f_53b0, world_light_man_free_overlap_lists, "WorldLightMan_FreeOverlapLists"),
-    (0x002f_5998, world_light_man_reset_regions, "WorldLightMan_ResetRegions"),
-    (0x002f_59d0, world_light_man_evict_oldest_instance, "WorldLightMan_EvictOldestInstance"),
-    (0x002f_5b68, world_light_man_find_strongest_lights, "WorldLightMan_FindStrongestLights"),
-    (0x002f_5d30, world_light_man_light_contribution, "WorldLightMan_LightContribution"),
-    (0x002f_6168, world_light_man_light_distance, "WorldLightMan_LightDistance"),
-    (0x002f_6908, rider_base_render_cheat_code, "RiderBase_RenderCheatCode"),
-    (0x002f_6a90, rider_base_load_cheat_code, "RiderBase_LoadCheatCode"),
-    (0x002f_6b28, rider_base_clear_cheat_code_events, "RiderBase_ClearCheatCodeEvents"),
-    (0x002f_6b38, rider_base_get_cheat_code_events, "RiderBase_GetCheatCodeEvents"),
-    (0x002f_7a68, board_spark_emitter_ctor, "BoardSparkEmitter_ctor"),
-    (0x002f_7be0, ps2_visual_effects_man_is_handle_null, "PS2VisualEffectsMan_IsHandleNull"),
+    (
+        0x002f_53b0,
+        world_light_man_free_overlap_lists,
+        "WorldLightMan_FreeOverlapLists",
+    ),
+    (
+        0x002f_5998,
+        world_light_man_reset_regions,
+        "WorldLightMan_ResetRegions",
+    ),
+    (
+        0x002f_59d0,
+        world_light_man_evict_oldest_instance,
+        "WorldLightMan_EvictOldestInstance",
+    ),
+    (
+        0x002f_5b68,
+        world_light_man_find_strongest_lights,
+        "WorldLightMan_FindStrongestLights",
+    ),
+    (
+        0x002f_5d30,
+        world_light_man_light_contribution,
+        "WorldLightMan_LightContribution",
+    ),
+    (
+        0x002f_6168,
+        world_light_man_light_distance,
+        "WorldLightMan_LightDistance",
+    ),
+    (
+        0x002f_6908,
+        rider_base_render_cheat_code,
+        "RiderBase_RenderCheatCode",
+    ),
+    (
+        0x002f_6a90,
+        rider_base_load_cheat_code,
+        "RiderBase_LoadCheatCode",
+    ),
+    (
+        0x002f_6b28,
+        rider_base_clear_cheat_code_events,
+        "RiderBase_ClearCheatCodeEvents",
+    ),
+    (
+        0x002f_6b38,
+        rider_base_get_cheat_code_events,
+        "RiderBase_GetCheatCodeEvents",
+    ),
+    (
+        0x002f_7a68,
+        board_spark_emitter_ctor,
+        "BoardSparkEmitter_ctor",
+    ),
+    (
+        0x002f_7be0,
+        ps2_visual_effects_man_is_handle_null,
+        "PS2VisualEffectsMan_IsHandleNull",
+    ),
     (0x002f_7bf0, vfx_component_dtor, "VfxComponent_dtor"),
-    (0x002f_7f00, vfx_power_up_fx_toggles_dtor, "VfxPowerUpFXToggles_dtor"),
-    (0x002f_7f30, c_ps2_fog_particle_man_base_dtor, "cPS2FogParticleMan_BaseDtor"),
-    (0x002f_7f60, c_ps2_fog_particle_man_dtor, "cPS2FogParticleMan_dtor"),
-    (0x002f_7f90, vfx_splash_toggles_dtor, "VfxSplashToggles_dtor"),
+    (
+        0x002f_7f00,
+        vfx_power_up_fx_toggles_dtor,
+        "VfxPowerUpFXToggles_dtor",
+    ),
+    (
+        0x002f_7f30,
+        c_ps2_fog_particle_man_base_dtor,
+        "cPS2FogParticleMan_BaseDtor",
+    ),
+    (
+        0x002f_7f60,
+        c_ps2_fog_particle_man_dtor,
+        "cPS2FogParticleMan_dtor",
+    ),
+    (
+        0x002f_7f90,
+        vfx_splash_toggles_dtor,
+        "VfxSplashToggles_dtor",
+    ),
     (0x002f_8000, transition_effect_dtor, "TransitionEffect_dtor"),
-    (0x002f_8030, transition_effect_fade_dtor, "TransitionEffect_FadeDtor"),
+    (
+        0x002f_8030,
+        transition_effect_fade_dtor,
+        "TransitionEffect_FadeDtor",
+    ),
     (0x002f_80d8, transition_wipe_dtor, "TransitionWipe_dtor"),
-    (0x002f_8108, transition_effect_random_dtor, "TransitionEffect_RandomDtor"),
-    (0x002f_8138, vfx_snow_fall_toggles_dtor, "VfxSnowfallToggles_dtor"),
+    (
+        0x002f_8108,
+        transition_effect_random_dtor,
+        "TransitionEffect_RandomDtor",
+    ),
+    (
+        0x002f_8138,
+        vfx_snow_fall_toggles_dtor,
+        "VfxSnowfallToggles_dtor",
+    ),
     (0x002f_8188, vfx_board_trail_dtor, "VfxBoardTrail_dtor"),
     (0x002f_81f0, vfx_light_glow_dtor, "VfxLightGlow_dtor"),
     (0x002f_8220, vfx_depth_fog_dtor, "VfxDepthFog_dtor"),
@@ -89,8 +177,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x002f_8280, vfx_shadow_dtor, "VfxShadow_dtor"),
     (0x002f_82b0, vfx_snow_surface_dtor, "VfxSnowSurface_dtor"),
     (0x002f_82e0, vfx_flags_dtor, "VfxFlags_dtor"),
-    (0x002f_8310, visual_effects_man_dtor, "VisualEffectsMan_dtor"),
-    (0x002f_8340, aivisual_effects_man_dtor, "AIVisualEffectsMan_dtor"),
+    (
+        0x002f_8310,
+        visual_effects_man_dtor,
+        "VisualEffectsMan_dtor",
+    ),
+    (
+        0x002f_8340,
+        aivisual_effects_man_dtor,
+        "AIVisualEffectsMan_dtor",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -98,9 +194,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 
 /// Point light fields read by `WorldLightMan_LightDistance`.
 pub(crate) mod light {
-    pub(crate) use crate::game::render::particle::light::RADIUS;
     pub(crate) use crate::game::render::particle::light::DIR;
     pub(crate) use crate::game::render::particle::light::POS;
+    pub(crate) use crate::game::render::particle::light::RADIUS;
 
     pub const ENTRY: u32 = 0x002f_5d30;
 
@@ -135,10 +231,21 @@ pub(crate) mod light {
 
     pub const PENUMBRA_TABLE_AT: u32 = 0x0048_7d10;
 
-    pub const INNER_TABLE: [u32; 5] = [0x002f_5eb8, 0x002f_5ec8, 0x002f_5ed4, 0x002f_5ee0, 0x002f_5ef0];
+    pub const INNER_TABLE: [u32; 5] = [
+        0x002f_5eb8,
+        0x002f_5ec8,
+        0x002f_5ed4,
+        0x002f_5ee0,
+        0x002f_5ef0,
+    ];
 
-    pub const PENUMBRA_TABLE: [u32; 5] =
-        [0x002f_5f90, 0x002f_5fa4, 0x002f_5fa0, 0x002f_5fac, 0x002f_5fbc];
+    pub const PENUMBRA_TABLE: [u32; 5] = [
+        0x002f_5f90,
+        0x002f_5fa4,
+        0x002f_5fa0,
+        0x002f_5fac,
+        0x002f_5fbc,
+    ];
 }
 
 // ---------------------------------------------------------------------------
@@ -147,21 +254,21 @@ pub(crate) mod light {
 pub(crate) mod callee {
     use super::ee;
     use super::Callee;
-    pub(crate) use crate::game::render::lightman::callee::LUNO_TABLE_DTOR;
-    pub(crate) use crate::game::render::lightman::callee::WORLD_GET_FLAG_MANAGER;
-    pub(crate) use crate::game::render::lightman::callee::WORLD_GET_AI_FRAME_COUNT;
-    pub(crate) use crate::game::render::lightman::callee::WORLD_GET_NASH;
-    pub(crate) use crate::game::render::lightman::callee::LIGHT_CONTRIBUTION;
-    pub(crate) use crate::game::render::lightman::callee::MATH_SIN_COS;
-    pub(crate) use crate::game::render::lightman::callee::SPATIAL_HASH_UPDATE;
-    pub(crate) use crate::game::render::lightman::callee::FLAG_MANAGER_GROUP_COMPUTE_VERTS;
-    pub(crate) use crate::game::render::lightman::callee::INTERSECT_INFO_EVALUATE;
-    pub(crate) use crate::game::render::lightman::callee::TYPED_PROCESS_SAVE;
-    pub(crate) use crate::game::render::lightman::callee::SYNC_PROCESS_SAVE;
-    pub(crate) use crate::game::render::lightman::callee::MULTI_SPLINE_MODIFIER_DEBUG_DRAW_PATH;
-    pub(crate) use crate::game::render::lightman::callee::EA_MEMSET;
     pub(crate) use crate::game::render::lightman::callee::DMA_WAIT_FROM_SCRATCHPAD;
     pub(crate) use crate::game::render::lightman::callee::DMA_WAIT_TO_SCRATCHPAD;
+    pub(crate) use crate::game::render::lightman::callee::EA_MEMSET;
+    pub(crate) use crate::game::render::lightman::callee::FLAG_MANAGER_GROUP_COMPUTE_VERTS;
+    pub(crate) use crate::game::render::lightman::callee::INTERSECT_INFO_EVALUATE;
+    pub(crate) use crate::game::render::lightman::callee::LIGHT_CONTRIBUTION;
+    pub(crate) use crate::game::render::lightman::callee::LUNO_TABLE_DTOR;
+    pub(crate) use crate::game::render::lightman::callee::MATH_SIN_COS;
+    pub(crate) use crate::game::render::lightman::callee::MULTI_SPLINE_MODIFIER_DEBUG_DRAW_PATH;
+    pub(crate) use crate::game::render::lightman::callee::SPATIAL_HASH_UPDATE;
+    pub(crate) use crate::game::render::lightman::callee::SYNC_PROCESS_SAVE;
+    pub(crate) use crate::game::render::lightman::callee::TYPED_PROCESS_SAVE;
+    pub(crate) use crate::game::render::lightman::callee::WORLD_GET_AI_FRAME_COUNT;
+    pub(crate) use crate::game::render::lightman::callee::WORLD_GET_FLAG_MANAGER;
+    pub(crate) use crate::game::render::lightman::callee::WORLD_GET_NASH;
 }
 
 /// `WorldLightMan` fields.
@@ -174,7 +281,6 @@ pub(crate) mod lights {
     /// `sLight`: type at +8, intensity at +0x18.
     pub const TYPE: u32 = 0x8;
 }
-
 
 // ---------------------------------------------------------------------------
 // Rider base state names.
@@ -205,7 +311,6 @@ pub fn rider_base_get_main_state_name(c: &mut Cpu) {
     }
 }
 
-
 /// `const char *RiderBase_GetSubStateName(RiderBase *self)` (0x111860):
 /// index `self->+0xde4` into the 15-entry sub-state name table, or a default.
 pub fn rider_base_get_sub_state_name(c: &mut Cpu) {
@@ -232,7 +337,6 @@ pub fn rider_base_get_sub_state_name(c: &mut Cpu) {
     }
 }
 
-
 /// `void cPS2FogParticleMan_BaseCtor(cPS2FogParticleMan *this)` (0x2dbf80):
 /// clear the first word and install the vtable at +4.
 pub fn c_ps2_fog_particle_man_base_ctor(c: &mut Cpu) {
@@ -245,7 +349,6 @@ pub fn c_ps2_fog_particle_man_base_ctor(c: &mut Cpu) {
     Addr(this).off(0x4).sw(c, c.g[V1][0]);
     abi::ret(c);
 }
-
 
 // ---------------------------------------------------------------------------
 // Rider cheat events.
@@ -261,7 +364,6 @@ pub fn rider_base_clear_cheat_code_events(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `int RiderBase_GetCheatCodeEvents(Rider *rider)` (0x2f6b38): the high
 /// cheat-event bits of the byte at +7.
 pub fn rider_base_get_cheat_code_events(c: &mut Cpu) {
@@ -270,7 +372,6 @@ pub fn rider_base_get_cheat_code_events(c: &mut Cpu) {
     c.g[V0][0] = c.g[V0][0] & 0x70;
     abi::ret(c);
 }
-
 
 /// `void AIVisualEffectsMan_dtor(AIVisualEffectsMan *this, uint flags)`
 /// (0x2f8340): set the vtable at +4 to 0x487d78 and, when `flags & 1`, delete
@@ -296,17 +397,17 @@ pub fn aivisual_effects_man_dtor(c: &mut Cpu) {
     })
 }
 
-
 /// `WorldLightMan_LightDistance` (0x2f6168, s09).
-pub(crate) const LIGHT_DISTANCE: Callee = Callee { addr: 0x002f_6168, f: ssx3_ee::s09::WorldLightMan_LightDistance };
-
+pub(crate) const LIGHT_DISTANCE: Callee = Callee {
+    addr: 0x002f_6168,
+    f: ssx3_ee::s09::WorldLightMan_LightDistance,
+};
 
 /// An FPU register as a float.
 #[inline]
 pub(crate) fn fr(c: &Cpu, r: usize) -> FpuF32 {
     FpuF32(c.f[r])
 }
-
 
 /// `float WorldLightMan_LightContribution(WorldLightMan* m, Vec3* point,
 /// Light* light)` (0x2f5d30): the light's intensity at a point. Ambient
@@ -345,7 +446,6 @@ pub fn world_light_man_light_contribution(c: &mut Cpu) {
         }
     })
 }
-
 
 /// The body from the entry: false results end in `f0 = 0`.
 pub(crate) fn light_contribution(c: &mut Cpu) -> Flow {
@@ -391,7 +491,6 @@ pub(crate) fn light_contribution(c: &mut Cpu) -> Flow {
     Ok(())
 }
 
-
 /// 0x2f6154: restore s0 and ra, return.
 pub(crate) fn light_epilogue(c: &mut Cpu) {
     c.cycles += 4;
@@ -400,7 +499,6 @@ pub(crate) fn light_epilogue(c: &mut Cpu) {
     frame.restore_ra(c, 0x10);
     frame.close(c);
 }
-
 
 /// `WorldLightMan_LightDistance(m, point, light, &dist, &invDist,
 /// cosOut)` with the outputs in the frame (sp, sp|4, `cos_at`).
@@ -413,7 +511,6 @@ pub(crate) fn light_distance(c: &mut Cpu, cos_at: u64, ret: u32) -> Flow {
     c.g[T1][0] = cos_at;
     LIGHT_DISTANCE.call(c, ret)
 }
-
 
 /// Distance attenuation into f4: 1 when the light's range (+0x1c) is
 /// below the threshold at gp-`at[0]` or the distance (sp+0) is within
@@ -471,7 +568,6 @@ pub(crate) fn light_attenuation(c: &mut Cpu, l: Addr, at: [u32; 3]) -> bool {
     c.g[V1][0] = l.off(light::FALLOFF).lb(c);
     near
 }
-
 
 /// Type 1: a cone light. False when outside the cone or out of reach.
 pub(crate) fn cone_light(c: &mut Cpu, l: Addr) -> Result<bool, Unwound> {
@@ -619,7 +715,11 @@ pub(crate) fn cone_light(c: &mut Cpu, l: Addr) -> Result<bool, Unwound> {
         if exponent < 5 {
             c.cycles += 6;
             let e = exponent as usize;
-            abi::set_word(c, V1, ((e as u32) << 2).wrapping_add(light::PENUMBRA_TABLE_AT));
+            abi::set_word(
+                c,
+                V1,
+                ((e as u32) << 2).wrapping_add(light::PENUMBRA_TABLE_AT),
+            );
             abi::set_word(c, V0, light::PENUMBRA_TABLE_AT);
             abi::set_word(c, A0, light::PENUMBRA_TABLE[e]);
             match e {
@@ -675,7 +775,6 @@ pub(crate) fn cone_light(c: &mut Cpu, l: Addr) -> Result<bool, Unwound> {
     Ok(true)
 }
 
-
 /// Before a `^exp` loop (exponent in v1, base register `base`, not 0): a
 /// negative exponent inverts the base (f0 = 1 / base, v1 = -v1); the
 /// accumulator `acc` = 1, f4 = the light's scale.
@@ -694,7 +793,6 @@ pub(crate) fn powi_setup(c: &mut Cpu, base: usize, acc: usize, l: Addr) -> Flow 
     c.f[4] = l.off(light::SCALE).read_u32(c);
     Ok(())
 }
-
 
 /// The `^exp` loop by squaring (head 0x2f5f48 / 0x2f6018): `acc *= f0`
 /// for each set bit of v1, `f0 *= f0`, `v1 >>= 1` until v1 is 0. Err when
@@ -721,14 +819,12 @@ pub(crate) fn light_powi(c: &mut Cpu, acc: usize, head: u32) -> Flow {
     }
 }
 
-
 /// 0x2f5f60: inside the inner cone, f2 *= cone (f1); then the result.
 pub(crate) fn inner_cone_finish(c: &mut Cpu) {
     c.cycles += 2;
     c.f[2] = (fr(c, 2) * fr(c, 1)).0;
     spot_finish(c);
 }
-
 
 /// 0x2f6038: in the penumbra, f2 *= inner^exp (f3) * (cos - outer) /
 /// (inner - outer); then the result.
@@ -744,13 +840,11 @@ pub(crate) fn penumbra_finish(c: &mut Cpu) {
     spot_finish(c);
 }
 
-
 /// 0x2f604c: f0 = scale (f4) * f2.
 pub(crate) fn spot_finish(c: &mut Cpu) {
     c.cycles += 2;
     c.f[0] = (fr(c, 4) * fr(c, 2)).0;
 }
-
 
 /// Type 2: no cone. False when out of reach.
 pub(crate) fn plain_light(c: &mut Cpu, l: Addr) -> Result<bool, Unwound> {
@@ -811,7 +905,6 @@ pub(crate) fn plain_light(c: &mut Cpu, l: Addr) -> Result<bool, Unwound> {
     c.f[0] = (scale * lit).0;
     Ok(true)
 }
-
 
 /// `bool WorldLightMan_LightDistance(this, const Vec3* pos, const Light*
 /// light, float* dist, float* inv_dist /*t0*/, float* facing /*t1*/)`
@@ -890,7 +983,6 @@ pub fn world_light_man_light_distance(c: &mut Cpu) {
     c.swc1(4, abi::arg(c, 4));
     abi::ret(c);
 }
-
 
 /// `int WorldLightMan_FindStrongestLights(a, b, sLightMgr *mgr,
 /// sLight **out, int max)` (0x002f5b68): clear the output, then insert each
@@ -1088,7 +1180,6 @@ pub fn world_light_man_find_strongest_lights(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Handle tests.
 
@@ -1102,13 +1193,11 @@ pub fn ps2_visual_effects_man_is_handle_null(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `operator delete` (`__builtin_delete`, 0x317e50).
 pub(crate) const DELETE: u32 = 0x0031_7e50;
 
 /// `TransitionEffect_FreeData` (0x2e4d30).
 pub(crate) const FREE_DATA: u32 = 0x002e_4d30;
-
 
 // ---------------------------------------------------------------------------
 // Deleting destructors.
@@ -1139,7 +1228,6 @@ pub(crate) fn deleting_dtor(c: &mut Cpu, off: u32, vtable: u32, ret: u32) {
     })
 }
 
-
 /// The same, for the `TransitionEffect` classes: bit 0 calls
 /// `TransitionEffect_FreeData(this)` (which unregisters the effect's data
 /// block) instead of freeing the object.
@@ -1165,42 +1253,35 @@ pub(crate) fn free_effect_data_dtor(c: &mut Cpu, ret: u32) {
     })
 }
 
-
 /// `VfxComponent_dtor` (0x2f7bf0): vtable at `+0`.
 pub fn vfx_component_dtor(c: &mut Cpu) {
     deleting_dtor(c, 0, 0x0048_8680, 0x002f_7c14);
 }
-
 
 /// `VfxPowerUpFXToggles_dtor` (0x2f7f00): vtable at `+0`.
 pub fn vfx_power_up_fx_toggles_dtor(c: &mut Cpu) {
     deleting_dtor(c, 0, 0x0048_8680, 0x002f_7f24);
 }
 
-
 /// `cPS2FogParticleMan_BaseDtor` (0x2f7f30): vtable at `+0x4`.
 pub fn c_ps2_fog_particle_man_base_dtor(c: &mut Cpu) {
     deleting_dtor(c, 0x4, 0x0048_8308, 0x002f_7f54);
 }
-
 
 /// `cPS2FogParticleMan_dtor` (0x2f7f60): vtable at `+0x4`.
 pub fn c_ps2_fog_particle_man_dtor(c: &mut Cpu) {
     deleting_dtor(c, 0x4, 0x0048_8308, 0x002f_7f84);
 }
 
-
 /// `VfxSplashToggles_dtor` (0x2f7f90): vtable at `+0`.
 pub fn vfx_splash_toggles_dtor(c: &mut Cpu) {
     deleting_dtor(c, 0, 0x0048_8680, 0x002f_7fb4);
 }
 
-
 /// `TransitionEffect_dtor` (0x2f8000): vtable at `+0`, frees the effect data.
 pub fn transition_effect_dtor(c: &mut Cpu) {
     free_effect_data_dtor(c, 0x002f_8024);
 }
-
 
 /// `TransitionEffect_FadeDtor` (0x2f8030): vtable at `+0`, frees the effect
 /// data.
@@ -1208,12 +1289,10 @@ pub fn transition_effect_fade_dtor(c: &mut Cpu) {
     free_effect_data_dtor(c, 0x002f_8054);
 }
 
-
 /// `TransitionWipe_dtor` (0x2f80d8): vtable at `+0`, frees the effect data.
 pub fn transition_wipe_dtor(c: &mut Cpu) {
     free_effect_data_dtor(c, 0x002f_80fc);
 }
-
 
 /// `TransitionEffect_RandomDtor` (0x2f8108): vtable at `+0`, frees the effect
 /// data.
@@ -1221,60 +1300,50 @@ pub fn transition_effect_random_dtor(c: &mut Cpu) {
     free_effect_data_dtor(c, 0x002f_812c);
 }
 
-
 /// `VfxSnowfallToggles_dtor` (0x2f8138): vtable at `+0`.
 pub fn vfx_snow_fall_toggles_dtor(c: &mut Cpu) {
     deleting_dtor(c, 0, 0x0048_8680, 0x002f_815c);
 }
-
 
 /// `VfxBoardTrail_dtor` (0x2f8188): vtable at `+0`.
 pub fn vfx_board_trail_dtor(c: &mut Cpu) {
     deleting_dtor(c, 0, 0x0048_8680, 0x002f_81ac);
 }
 
-
 /// `VfxLightGlow_dtor` (0x2f81f0): vtable at `+0`.
 pub fn vfx_light_glow_dtor(c: &mut Cpu) {
     deleting_dtor(c, 0, 0x0048_8680, 0x002f_8214);
 }
-
 
 /// `VfxDepthFog_dtor` (0x2f8220): vtable at `+0`.
 pub fn vfx_depth_fog_dtor(c: &mut Cpu) {
     deleting_dtor(c, 0, 0x0048_8680, 0x002f_8244);
 }
 
-
 /// `VfxHeightFog_dtor` (0x2f8250): vtable at `+0`.
 pub fn vfx_height_fog_dtor(c: &mut Cpu) {
     deleting_dtor(c, 0, 0x0048_8680, 0x002f_8274);
 }
-
 
 /// `VfxShadow_dtor` (0x2f8280): vtable at `+0`.
 pub fn vfx_shadow_dtor(c: &mut Cpu) {
     deleting_dtor(c, 0, 0x0048_8680, 0x002f_82a4);
 }
 
-
 /// `VfxSnowSurface_dtor` (0x2f82b0): vtable at `+0`.
 pub fn vfx_snow_surface_dtor(c: &mut Cpu) {
     deleting_dtor(c, 0, 0x0048_8680, 0x002f_82d4);
 }
-
 
 /// `VfxFlags_dtor` (0x2f82e0): vtable at `+0`.
 pub fn vfx_flags_dtor(c: &mut Cpu) {
     deleting_dtor(c, 0, 0x0048_8680, 0x002f_8304);
 }
 
-
 /// `VisualEffectsMan_dtor` (0x2f8310): vtable at `+0x44`.
 pub fn visual_effects_man_dtor(c: &mut Cpu) {
     deleting_dtor(c, 0x44, 0x0048_7da0, 0x002f_8334);
 }
-
 
 /// `void WorldLightMan_ResetRegions(WorldLightMan* man)` (0x2f5998): set the
 /// eight region records to -1.
@@ -1303,13 +1372,13 @@ pub fn world_light_man_reset_regions(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void RiderBase_LoadCheatCode(RiderBase* self, const sCheatCode* code)`
 /// (0x2f6a90): read the code's 4-byte entries into `self + 4`.
 pub fn rider_base_load_cheat_code(c: &mut Cpu) {
-    guest(c, |c| forward_to_arg_vtable(c, 0x002f_6ab8, 0x10, 4, Some(4)))
+    guest(c, |c| {
+        forward_to_arg_vtable(c, 0x002f_6ab8, 0x10, 4, Some(4))
+    })
 }
-
 
 /// `void WorldLightMan_FreeOverlapLists(WorldLightMan* self)` (0x2f53b0):
 /// release the 8 overlap lists at `+0x40`, 0x40 bytes apart.
@@ -1346,7 +1415,6 @@ pub fn world_light_man_free_overlap_lists(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Leaves: empty hooks.
 
@@ -1357,7 +1425,6 @@ pub fn rider_base_render_cheat_code(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void* BoardSparkEmitter_ctor(BoardSparkEmitter* e)` (0x2f7a68): the
 /// constructor returns its argument (the base member is initialised inline).
 pub fn board_spark_emitter_ctor(c: &mut Cpu) {
@@ -1365,7 +1432,6 @@ pub fn board_spark_emitter_ctor(c: &mut Cpu) {
     c.g[V0][0] = c.g[A0][0];
     abi::ret(c);
 }
-
 
 // ---------------------------------------------------------------------------
 // World light manager.
@@ -1449,7 +1515,6 @@ pub fn world_light_man_evict_oldest_instance(c: &mut Cpu) {
     }
 }
 
-
 // ---------------------------------------------------------------------------
 // `Avalanche_DestroyAll` (0x002d9b40).
 //
@@ -1458,101 +1523,104 @@ pub fn world_light_man_evict_oldest_instance(c: &mut Cpu) {
 
 pub fn avalanche_destroy_all(c: &mut Cpu) {
     guest(c, |c| {
-
         'b_2d9ba8: {
-        c.cycles += 10;
-        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
-        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
-        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
-        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-        c.sd((c.g[SP][0] as u32), c.g[RA][0]);
-        c.g[RA][0] = sx(0x002d9b5c);
-        call_ptr(c, 0x002d9a80, 0x002d9b5c)?;
-        c.g[S1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x9c0));
-        let t = c.g[S1][0] == 0u64;
-        c.g[A0][0] = 0x540000;
-        if t {
-        break 'b_2d9ba8;
-        } else {
-        c.cycles += 2;
-        c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
-        'l_2d9b70: loop {
-        'b_2d9b90: {
-        c.cycles += 2;
-        let t = c.g[S0][0] == 0u64;
-        c.g[S2][0] = c.g[S1][0];
-        if t {
-        break 'b_2d9b90;
-        } else {
-        c.cycles += 2;
-        c.g[A0][0] = c.g[S0][0];
-        'l_2d9b80: loop {
-        c.cycles += 4;
-        c.g[RA][0] = sx(0x002d9b88);
-        c.g[S0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xf4));
-        call_ptr(c, 0x00317e50, 0x002d9b88)?;
-        let t = c.g[S0][0] != 0u64;
-        c.g[A0][0] = c.g[S0][0];
-        if t {
-        if crate::events::event_due(c) { crate::events::deliver_event_here(c, 0x002d9b80); }
-        continue 'l_2d9b80;
-        } else {
-        break 'b_2d9b90;
-        }
-        }
-        }
-        }
-        c.cycles += 5;
-        c.g[S1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
-        c.g[RA][0] = sx(0x002d9b9c);
-        c.g[A0][0] = c.g[S2][0];
-        call_ptr(c, 0x00317e50, 0x002d9b9c)?;
-        if c.g[S1][0] != 0u64 {
-        c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
-        if crate::events::event_due(c) { crate::events::deliver_event_here(c, 0x002d9b70); }
-        continue 'l_2d9b70;
-        } else {
-        c.cycles += 1;
-        c.g[A0][0] = 0x540000;
-        break 'b_2d9ba8;
-        }
-        }
-        }
+            c.cycles += 10;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+            c.g[RA][0] = sx(0x002d9b5c);
+            call_ptr(c, 0x002d9a80, 0x002d9b5c)?;
+            c.g[S1][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x9c0));
+            let t = c.g[S1][0] == 0u64;
+            c.g[A0][0] = 0x540000;
+            if t {
+                break 'b_2d9ba8;
+            } else {
+                c.cycles += 2;
+                c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                'l_2d9b70: loop {
+                    'b_2d9b90: {
+                        c.cycles += 2;
+                        let t = c.g[S0][0] == 0u64;
+                        c.g[S2][0] = c.g[S1][0];
+                        if t {
+                            break 'b_2d9b90;
+                        } else {
+                            c.cycles += 2;
+                            c.g[A0][0] = c.g[S0][0];
+                            'l_2d9b80: loop {
+                                c.cycles += 4;
+                                c.g[RA][0] = sx(0x002d9b88);
+                                c.g[S0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xf4));
+                                call_ptr(c, 0x00317e50, 0x002d9b88)?;
+                                let t = c.g[S0][0] != 0u64;
+                                c.g[A0][0] = c.g[S0][0];
+                                if t {
+                                    if crate::events::event_due(c) {
+                                        crate::events::deliver_event_here(c, 0x002d9b80);
+                                    }
+                                    continue 'l_2d9b80;
+                                } else {
+                                    break 'b_2d9b90;
+                                }
+                            }
+                        }
+                    }
+                    c.cycles += 5;
+                    c.g[S1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                    c.g[RA][0] = sx(0x002d9b9c);
+                    c.g[A0][0] = c.g[S2][0];
+                    call_ptr(c, 0x00317e50, 0x002d9b9c)?;
+                    if c.g[S1][0] != 0u64 {
+                        c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+                        if crate::events::event_due(c) {
+                            crate::events::deliver_event_here(c, 0x002d9b70);
+                        }
+                        continue 'l_2d9b70;
+                    } else {
+                        c.cycles += 1;
+                        c.g[A0][0] = 0x540000;
+                        break 'b_2d9ba8;
+                    }
+                }
+            }
         }
         'b_2d9be8: {
-        'b_2d9be4: {
-        c.cycles += 9;
-        c.sw((c.g[GP][0] as u32).wrapping_add(0x9c0), 0u64);
-        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x7bb0));
-        c.sw((c.g[GP][0] as u32).wrapping_add(0x9d0), 0u64);
-        c.g[A1][0] = 0u64;
-        c.g[RA][0] = sx(0x002d9bc0);
-        c.g[A2][0] = 0x400;
-        call_ptr(c, 0x00416210, 0x002d9bc0)?;
-        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x9c4));
-        let t = c.g[A0][0] == 0u64;
-        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x9c8));
-        if t {
-        break 'b_2d9be4;
-        } else {
-        c.cycles += 2;
-        let t = c.g[V0][0] == 0u64;
-        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
-        if t {
-        break 'b_2d9be8;
-        } else {
-        c.cycles += 4;
-        c.g[RA][0] = sx(0x002d9bdc);
-        call_ptr(c, 0x00317e98, 0x002d9bdc)?;
-        c.sw((c.g[GP][0] as u32).wrapping_add(0x9c4), 0u64);
-        c.sw((c.g[GP][0] as u32).wrapping_add(0x9c8), 0u64);
-        break 'b_2d9be4;
-        }
-        }
-        }
-        c.cycles += 1;
-        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
-        break 'b_2d9be8;
+            'b_2d9be4: {
+                c.cycles += 9;
+                c.sw((c.g[GP][0] as u32).wrapping_add(0x9c0), 0u64);
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x7bb0));
+                c.sw((c.g[GP][0] as u32).wrapping_add(0x9d0), 0u64);
+                c.g[A1][0] = 0u64;
+                c.g[RA][0] = sx(0x002d9bc0);
+                c.g[A2][0] = 0x400;
+                call_ptr(c, 0x00416210, 0x002d9bc0)?;
+                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x9c4));
+                let t = c.g[A0][0] == 0u64;
+                c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x9c8));
+                if t {
+                    break 'b_2d9be4;
+                } else {
+                    c.cycles += 2;
+                    let t = c.g[V0][0] == 0u64;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    if t {
+                        break 'b_2d9be8;
+                    } else {
+                        c.cycles += 4;
+                        c.g[RA][0] = sx(0x002d9bdc);
+                        call_ptr(c, 0x00317e98, 0x002d9bdc)?;
+                        c.sw((c.g[GP][0] as u32).wrapping_add(0x9c4), 0u64);
+                        c.sw((c.g[GP][0] as u32).wrapping_add(0x9c8), 0u64);
+                        break 'b_2d9be4;
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+            break 'b_2d9be8;
         }
         c.cycles += 6;
         c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
@@ -1561,12 +1629,12 @@ pub fn avalanche_destroy_all(c: &mut Cpu) {
         c.sw((c.g[GP][0] as u32).wrapping_add(0x9cc), 0u64);
         let t = c.g[RA][0] as u32;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
-        c.pc = t; return Ok(());
+        c.pc = t;
+        return Ok(());
 
         Ok(())
     })
 }
-
 
 /// `WorldLightMan_AllocOverlapList(self)` (0x002f5298): build the eight
 /// 0x40-byte overlap-list headers of the world light manager, each with an
@@ -1674,7 +1742,6 @@ pub fn world_light_man_alloc_overlap_list(c: &mut Cpu) {
     })
 }
 
-
 /// `void cBoardSparkFX_Reset(SparkFx* self)` (0x2daa78): reset a board spark
 
 /// effect: the default position (`D_004FF130`), three zeroed words and two
@@ -1769,7 +1836,6 @@ pub fn c_board_spark_fx_reset(c: &mut Cpu) {
     c.pc = ra;
     return;
 }
-
 
 /// `cBoardTrailFX_Reset` (0x002e8560): reinitialise a board-trail effect:
 /// clear the fade/alpha words, install the two default colours, and fill the
@@ -1896,243 +1962,300 @@ pub fn c_board_trail_fx_reset(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::scramble;
-    use crate::difftest::Rng;
-    use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
     use crate::difftest::check_lohi;
-    use crate::difftest::fakes::covered;
-    use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::ptr;
-    use crate::difftest::fakes::vtable;
-    use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::fill;
-    use crate::difftest::put_words;
-    use ssx3_ee as ee;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::SP as TEST_SP;
+    use crate::difftest::compare;
+    use crate::difftest::elf_image;
     use crate::difftest::events::check_events;
     use crate::difftest::events::driven;
     use crate::difftest::events::schedule;
     use crate::difftest::events::Events;
-    use crate::difftest::put_vec;
-    use crate::difftest::RA as SENTINEL_RA;
-    use crate::difftest::SP as STACK_TOP;
-    use crate::difftest::RA as TEST_RA;
+    use crate::difftest::fakes::covered;
+    use crate::difftest::fakes::machine;
+    use crate::difftest::fakes::ptr;
+    use crate::difftest::fakes::vtable;
+    use crate::difftest::fakes::FAKE;
+    use crate::difftest::fakes::LOG_RESULTS;
     use crate::difftest::fakes::LOG_UNWIND_AT;
-    use crate::difftest::elf_image;
-    use crate::difftest::SP as STACK;
-    use crate::difftest::compare;
+    use crate::difftest::fill;
+    use crate::difftest::put_vec;
+    use crate::difftest::put_words;
+    use crate::difftest::scramble;
     use crate::difftest::seed_count;
-    pub(crate) use crate::game::world::wscriptcache::tests::SEEDS;
-    pub(crate) use crate::game::ai::aianimeventmap::tests::MEM_MUTEX;
-    pub(crate) use crate::game::ai::aianimeventmap::tests::alloc_setup;
-    pub(crate) use crate::game::render::particle::tests::SEEDS as SEEDS_2;
-    pub(crate) use crate::game::render::particle::tests::uf;
-    pub(crate) use crate::game::render::particle::tests::base;
-    pub(crate) use crate::game::render::particle::tests::put_vec3;
-    pub(crate) use crate::game::input::inputmap::tests::put_f32;
-    pub(crate) use crate::game::worldpainter::quadtree::tests::put_vtable;
-    pub(crate) use crate::game::intersect::worldsphtree::tests::forward_setup;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::SEEDS_4 as SEEDS_3;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::clear;
-    pub(crate) use crate::game::bx::bxstring::tests::step;
-    pub(crate) use crate::game::bx::bxstring::tests::alloc_ready;
-    pub(crate) use crate::game::lib::sif::tests::SEEDS as SEEDS_4;
-    pub(crate) use crate::game::ai::ai::tests::rng;
-    pub(crate) use crate::game::ai::ai::tests::leaf_setup;
+    use crate::difftest::Rng;
+    use crate::difftest::DATA;
+    use crate::difftest::GAME_GP;
+    use crate::difftest::RA as SENTINEL_RA;
+    use crate::difftest::RA as TEST_RA;
+    use crate::difftest::SP as TEST_SP;
+    use crate::difftest::SP as STACK_TOP;
+    use crate::difftest::SP as STACK;
     pub(crate) use crate::game::ai::ai::tests::leaf;
-    pub(crate) use crate::game::wscript::wscriptman::tests::w;
-    pub(crate) use crate::game::wscript::wscriptman::tests::clear_5 as clear_2;
-    pub(crate) use crate::game::wscript::wscriptman::tests::BE_3 as BE;
-    pub(crate) use crate::game::wscript::wscriptman::tests::WORLD_3 as WORLD;
-    pub(crate) use crate::game::wscript::wscriptman::tests::GAME;
-    pub(crate) use crate::game::wscript::wscriptman::tests::globals_3 as globals;
-    pub(crate) use crate::game::wscript::wscriptman::tests::base_6 as base_2;
-    pub(crate) use crate::game::ui::uiengine::tests::POOL0;
+    pub(crate) use crate::game::ai::ai::tests::leaf_setup;
+    pub(crate) use crate::game::ai::ai::tests::rng;
+    pub(crate) use crate::game::ai::aianimeventmap::tests::alloc_setup;
+    pub(crate) use crate::game::ai::aianimeventmap::tests::MEM_MUTEX;
+    pub(crate) use crate::game::bx::bxstring::tests::alloc_ready;
+    pub(crate) use crate::game::bx::bxstring::tests::step;
     pub(crate) use crate::game::dirtysock::tags2::tests::pool8;
     pub(crate) use crate::game::dirtysock::tags2::tests::slot_8 as slot;
     pub(crate) use crate::game::fe::feasyncfile::tests::strict;
-    pub(crate) use crate::game::render::graphicsman::tests::same;
-    pub(crate) use crate::game::world::worldcache::tests::check_all;
     pub(crate) use crate::game::fe::fepopup::tests::f_2;
-
+    pub(crate) use crate::game::input::inputmap::tests::put_f32;
+    pub(crate) use crate::game::intersect::worldsphtree::tests::forward_setup;
+    pub(crate) use crate::game::lib::sif::tests::SEEDS as SEEDS_4;
+    pub(crate) use crate::game::render::graphicsman::tests::same;
+    pub(crate) use crate::game::render::particle::tests::base;
+    pub(crate) use crate::game::render::particle::tests::put_vec3;
+    pub(crate) use crate::game::render::particle::tests::uf;
+    pub(crate) use crate::game::render::particle::tests::SEEDS as SEEDS_2;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::clear;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::SEEDS_4 as SEEDS_3;
+    pub(crate) use crate::game::ui::uiengine::tests::POOL0;
+    pub(crate) use crate::game::world::worldcache::tests::check_all;
+    pub(crate) use crate::game::world::wscriptcache::tests::SEEDS;
+    pub(crate) use crate::game::worldpainter::quadtree::tests::put_vtable;
+    pub(crate) use crate::game::wscript::wscriptman::tests::base_6 as base_2;
+    pub(crate) use crate::game::wscript::wscriptman::tests::clear_5 as clear_2;
+    pub(crate) use crate::game::wscript::wscriptman::tests::globals_3 as globals;
+    pub(crate) use crate::game::wscript::wscriptman::tests::w;
+    pub(crate) use crate::game::wscript::wscriptman::tests::BE_3 as BE;
+    pub(crate) use crate::game::wscript::wscriptman::tests::GAME;
+    pub(crate) use crate::game::wscript::wscriptman::tests::WORLD_3 as WORLD;
+    use ssx3_ee as ee;
 
     #[test]
     fn rider_base_get_main_state_name_matches() {
-        check(ssx3_ee::s00::f_00111830, rider_base_get_main_state_name, 200, &|c, seed| {
-            let mut r = Rng(0x1118_3000 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            let state = match seed % 5 {
-                0 => 0,
-                1 => 6,
-                2 => 7,
-                3 => 0xffff_ffff,
-                _ => r.next_u32(),
-            };
-            c.bus.write32(DATA + 0xde0, state);
-            for i in 0..7 {
-                c.bus.write32(0x0045_9d70 + i * 4, r.next_u32());
-            }
-            c.bus.write32(0x0045_6c48, r.next_u32());
-        });
+        check(
+            ssx3_ee::s00::f_00111830,
+            rider_base_get_main_state_name,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x1118_3000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                let state = match seed % 5 {
+                    0 => 0,
+                    1 => 6,
+                    2 => 7,
+                    3 => 0xffff_ffff,
+                    _ => r.next_u32(),
+                };
+                c.bus.write32(DATA + 0xde0, state);
+                for i in 0..7 {
+                    c.bus.write32(0x0045_9d70 + i * 4, r.next_u32());
+                }
+                c.bus.write32(0x0045_6c48, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn rider_base_get_sub_state_name_matches() {
-        check(ssx3_ee::s00::f_00111860, rider_base_get_sub_state_name, 200, &|c, seed| {
-            let mut r = Rng(0x1118_6000 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            let state = match seed % 5 {
-                0 => 0,
-                1 => 14,
-                2 => 15,
-                3 => 0xffff_ffff,
-                _ => r.next_u32(),
-            };
-            c.bus.write32(DATA + 0xde4, state);
-            for i in 0..15 {
-                c.bus.write32(0x0045_9dc8 + i * 4, r.next_u32());
-            }
-            c.bus.write32(0x0045_6c48, r.next_u32());
-        });
+        check(
+            ssx3_ee::s00::f_00111860,
+            rider_base_get_sub_state_name,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x1118_6000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                let state = match seed % 5 {
+                    0 => 0,
+                    1 => 14,
+                    2 => 15,
+                    3 => 0xffff_ffff,
+                    _ => r.next_u32(),
+                };
+                c.bus.write32(DATA + 0xde4, state);
+                for i in 0..15 {
+                    c.bus.write32(0x0045_9dc8 + i * 4, r.next_u32());
+                }
+                c.bus.write32(0x0045_6c48, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn c_ps2_fog_particle_man_base_ctor_matches() {
-        check(ssx3_ee::s09::f_002dbf80, c_ps2_fog_particle_man_base_ctor, 100, &|c, seed| {
-            let mut r = Rng(0x1005 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.bus.write32(DATA, r.next_u32());
-        });
+        check(
+            ssx3_ee::s09::f_002dbf80,
+            c_ps2_fog_particle_man_base_ctor,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x1005 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.bus.write32(DATA, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn rider_base_clear_cheat_code_events_matches() {
-        check(ssx3_ee::s09::f_002f6b28, rider_base_clear_cheat_code_events, 200, &|c, seed| {
-            let mut r = Rng(0x1013 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.bus.write8(DATA + 7, (r.next_u32() & 0xff) as u8);
-        });
+        check(
+            ssx3_ee::s09::f_002f6b28,
+            rider_base_clear_cheat_code_events,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x1013 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.bus.write8(DATA + 7, (r.next_u32() & 0xff) as u8);
+            },
+        );
     }
-
 
     #[test]
     fn rider_base_get_cheat_code_events_matches() {
-        check(ssx3_ee::s09::f_002f6b38, rider_base_get_cheat_code_events, 200, &|c, seed| {
-            let mut r = Rng(0x1014 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.bus.write8(DATA + 7, (r.next_u32() & 0xff) as u8);
-        });
+        check(
+            ssx3_ee::s09::f_002f6b38,
+            rider_base_get_cheat_code_events,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x1014 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.bus.write8(DATA + 7, (r.next_u32() & 0xff) as u8);
+            },
+        );
     }
-
 
     #[test]
     fn aivisual_effects_man_dtor_matches() {
-        check(ee::s09::f_002f8340, aivisual_effects_man_dtor, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x8340, 0);
-            alloc_setup(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = (seed % 2) as u64;
-        });
+        check(
+            ee::s09::f_002f8340,
+            aivisual_effects_man_dtor,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x8340, 0);
+                alloc_setup(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (seed % 2) as u64;
+            },
+        );
     }
-
 
     pub(crate) fn f(x: f32) -> u32 {
         x.to_bits()
     }
 
-
     pub(crate) fn pick<T: Copy>(r: &mut Rng, xs: &[T]) -> T {
         xs[r.next_u32() as usize % xs.len()]
     }
-
 
     // ------------------------------------------------------------ lights
 
     #[test]
     fn world_light_man_light_contribution_matches() {
-        check(ee::s09::f_002f5d30__generated, world_light_man_light_contribution, 500, &|c, seed| {
-            let mut r = Rng(0x0119_4700 ^ (seed as u64) << 12);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            put_words(c, light::INNER_TABLE_AT, &light::INNER_TABLE);
-            put_words(c, light::PENUMBRA_TABLE_AT, &light::PENUMBRA_TABLE);
-            // range threshold, attenuation start and slope (both light types)
-            for (at, v) in [(0x38b0, 1.0f32), (0x38ac, 2.0), (0x38a8, 0.1), (0x38a4, 1.0), (0x38a0, 2.0), (0x389c, 0.1)] {
-                c.bus.write32(GAME_GP - at, f(v));
-            }
-            let (point, l) = (DATA, DATA + 0x100);
-            fill(c, &mut r, l, 0x20);
-            c.bus.write32(l + 0x10, pick(&mut r, &[0u32, 1, 1, 1, 1, 2, 2, 3, 0xffff_ffff]));
-            c.bus.write32(l + 0x14, r.f32(2.0));
-            c.bus.write32(l + 0x18, r.f32(2.0));
-            // ranges up to 1000: distances above 100 make the falloff term
-            // (100 / d) drop below 1
-            c.bus.write32(l + 0x1c, f(pick(&mut r, &[0.5f32, 5.0, 100.0, 40.0, 1000.0, 1000.0])));
-            // the light at the origin pointing along -z or +z; the point
-            // on the z axis or off it
-            let dir = pick(&mut r, &[-1.0f32, 1.0]);
-            for (i, v) in [0.0f32, 0.0, dir].iter().enumerate() {
-                c.bus.write32(l + 0x2c + 4 * i as u32, f(*v));
-                c.bus.write32(l + 0x38 + 4 * i as u32, 0);
-            }
-            let dist = pick(&mut r, &[0.0f32, 0.5, 1.5, 3.0, 10.0, 60.0, 150.0, 400.0, 250.0]);
-            let side = pick(&mut r, &[0.0f32, 0.0, 0.3, 1.0, 5.0]);
-            c.bus.write32(point, f(side));
-            c.bus.write32(point + 4, 0);
-            c.bus.write32(point + 8, f(dist * pick(&mut r, &[1.0f32, -1.0])));
-            c.bus.write32(l + 0x5c, f(pick(&mut r, &[0.95f32, 0.5, 0.0, -0.2])));
-            c.bus.write32(l + 0x60, f(pick(&mut r, &[0.7f32, 0.2, -1.0, 0.99])));
-            c.bus.write8(l + 0x64, pick(&mut r, &[0xffu8, 0, 1, 2, 3, 4]));
-            c.bus.write8(l + 0x65, pick(&mut r, &[0xfdu8, 0xff, 0, 1, 2, 3, 4, 5, 7, 12, 0x80]));
-            c.g[A0][0] = sx(DATA + 0x200);
-            c.g[A1][0] = sx(point);
-            c.g[A2][0] = sx(l);
-            c.pc = light::ENTRY;
-            if seed % 6 == 5 {
-                // re-entry at a `^exp` loop head after an unwind
-                c.pc = if seed % 4 == 1 { light::POWI_INNER } else { light::POWI_PENUMBRA };
-                c.g[SP][0] = sx(crate::difftest::SP - 0x30);
-                c.g[S0][0] = sx(l);
-                c.g[V1][0] = (1 + r.next_u32() % 40) as u64;
-                for i in 0..7 {
-                    c.f[i] = r.f32(1.5);
+        check(
+            ee::s09::f_002f5d30__generated,
+            world_light_man_light_contribution,
+            500,
+            &|c, seed| {
+                let mut r = Rng(0x0119_4700 ^ (seed as u64) << 12);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                put_words(c, light::INNER_TABLE_AT, &light::INNER_TABLE);
+                put_words(c, light::PENUMBRA_TABLE_AT, &light::PENUMBRA_TABLE);
+                // range threshold, attenuation start and slope (both light types)
+                for (at, v) in [
+                    (0x38b0, 1.0f32),
+                    (0x38ac, 2.0),
+                    (0x38a8, 0.1),
+                    (0x38a4, 1.0),
+                    (0x38a0, 2.0),
+                    (0x389c, 0.1),
+                ] {
+                    c.bus.write32(GAME_GP - at, f(v));
                 }
-            }
-        });
+                let (point, l) = (DATA, DATA + 0x100);
+                fill(c, &mut r, l, 0x20);
+                c.bus.write32(
+                    l + 0x10,
+                    pick(&mut r, &[0u32, 1, 1, 1, 1, 2, 2, 3, 0xffff_ffff]),
+                );
+                c.bus.write32(l + 0x14, r.f32(2.0));
+                c.bus.write32(l + 0x18, r.f32(2.0));
+                // ranges up to 1000: distances above 100 make the falloff term
+                // (100 / d) drop below 1
+                c.bus.write32(
+                    l + 0x1c,
+                    f(pick(&mut r, &[0.5f32, 5.0, 100.0, 40.0, 1000.0, 1000.0])),
+                );
+                // the light at the origin pointing along -z or +z; the point
+                // on the z axis or off it
+                let dir = pick(&mut r, &[-1.0f32, 1.0]);
+                for (i, v) in [0.0f32, 0.0, dir].iter().enumerate() {
+                    c.bus.write32(l + 0x2c + 4 * i as u32, f(*v));
+                    c.bus.write32(l + 0x38 + 4 * i as u32, 0);
+                }
+                let dist = pick(
+                    &mut r,
+                    &[0.0f32, 0.5, 1.5, 3.0, 10.0, 60.0, 150.0, 400.0, 250.0],
+                );
+                let side = pick(&mut r, &[0.0f32, 0.0, 0.3, 1.0, 5.0]);
+                c.bus.write32(point, f(side));
+                c.bus.write32(point + 4, 0);
+                c.bus
+                    .write32(point + 8, f(dist * pick(&mut r, &[1.0f32, -1.0])));
+                c.bus
+                    .write32(l + 0x5c, f(pick(&mut r, &[0.95f32, 0.5, 0.0, -0.2])));
+                c.bus
+                    .write32(l + 0x60, f(pick(&mut r, &[0.7f32, 0.2, -1.0, 0.99])));
+                c.bus
+                    .write8(l + 0x64, pick(&mut r, &[0xffu8, 0, 1, 2, 3, 4]));
+                c.bus.write8(
+                    l + 0x65,
+                    pick(&mut r, &[0xfdu8, 0xff, 0, 1, 2, 3, 4, 5, 7, 12, 0x80]),
+                );
+                c.g[A0][0] = sx(DATA + 0x200);
+                c.g[A1][0] = sx(point);
+                c.g[A2][0] = sx(l);
+                c.pc = light::ENTRY;
+                if seed % 6 == 5 {
+                    // re-entry at a `^exp` loop head after an unwind
+                    c.pc = if seed % 4 == 1 {
+                        light::POWI_INNER
+                    } else {
+                        light::POWI_PENUMBRA
+                    };
+                    c.g[SP][0] = sx(crate::difftest::SP - 0x30);
+                    c.g[S0][0] = sx(l);
+                    c.g[V1][0] = (1 + r.next_u32() % 40) as u64;
+                    for i in 0..7 {
+                        c.f[i] = r.f32(1.5);
+                    }
+                }
+            },
+        );
     }
-
 
     #[test]
     fn world_light_man_light_distance_matches() {
-        check(ee::s09::f_002f6168__generated, world_light_man_light_distance, SEEDS_2, &|c, seed| {
-            let mut r = base(c, seed, 0x2f61);
-            let (pos, light, out) = (DATA, DATA + 0x100, DATA + 0x200);
-            let spread = [0.0f32, 40.0, 3.0, 8.0][(seed % 4) as usize];
-            for k in 0..3 {
-                let l = uf(&mut r, -50.0, 50.0);
-                c.bus.write32(light + 0x38 + 4 * k, f(l));
-                c.bus.write32(pos + 4 * k, f(l + uf(&mut r, -spread, spread)));
-            }
-            c.bus.write32(light + 0x1c, f(uf(&mut r, 2.0, 20.0)));
-            put_vec3(c, &mut r, light + 0x2c, -1.0, 1.0);
-            c.g[A1][0] = sx(pos);
-            c.g[A2][0] = sx(light);
-            c.g[A3][0] = sx(out);
-            c.g[T0][0] = sx(out + 4);
-            c.g[T1][0] = if seed % 3 == 0 { 0 } else { sx(out + 8) };
-        });
+        check(
+            ee::s09::f_002f6168__generated,
+            world_light_man_light_distance,
+            SEEDS_2,
+            &|c, seed| {
+                let mut r = base(c, seed, 0x2f61);
+                let (pos, light, out) = (DATA, DATA + 0x100, DATA + 0x200);
+                let spread = [0.0f32, 40.0, 3.0, 8.0][(seed % 4) as usize];
+                for k in 0..3 {
+                    let l = uf(&mut r, -50.0, 50.0);
+                    c.bus.write32(light + 0x38 + 4 * k, f(l));
+                    c.bus
+                        .write32(pos + 4 * k, f(l + uf(&mut r, -spread, spread)));
+                }
+                c.bus.write32(light + 0x1c, f(uf(&mut r, 2.0, 20.0)));
+                put_vec3(c, &mut r, light + 0x2c, -1.0, 1.0);
+                c.g[A1][0] = sx(pos);
+                c.g[A2][0] = sx(light);
+                c.g[A3][0] = sx(out);
+                c.g[T0][0] = sx(out + 4);
+                c.g[T1][0] = if seed % 3 == 0 { 0 } else { sx(out + 8) };
+            },
+        );
     }
-
 
     #[test]
     fn world_light_man_find_strongest_lights_matches() {
@@ -2172,7 +2295,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn ps2_visual_effects_man_is_handle_null_matches() {
         check(
@@ -2190,7 +2312,6 @@ pub(crate) mod tests {
         );
     }
 
-
     /// A deleting-destructor case: a random object pointer, both values of the
     /// delete flag, and a real `operator delete` (with the allocator mutex
     /// taken) that may unwind at the fake's call index.
@@ -2203,133 +2324,178 @@ pub(crate) mod tests {
         });
     }
 
-
     #[test]
     fn vfx_component_dtor_matches() {
         dtor_case(ee::s09::f_002f7bf0__generated, vfx_component_dtor, 0x2f7bf0);
     }
 
-
     #[test]
     fn vfx_power_up_fx_toggles_dtor_matches() {
-        dtor_case(ee::s09::f_002f7f00__generated, vfx_power_up_fx_toggles_dtor, 0x2f7f00);
+        dtor_case(
+            ee::s09::f_002f7f00__generated,
+            vfx_power_up_fx_toggles_dtor,
+            0x2f7f00,
+        );
     }
-
 
     #[test]
     fn c_ps2_fog_particle_man_base_dtor_matches() {
-        dtor_case(ee::s09::f_002f7f30__generated, c_ps2_fog_particle_man_base_dtor, 0x2f7f30);
+        dtor_case(
+            ee::s09::f_002f7f30__generated,
+            c_ps2_fog_particle_man_base_dtor,
+            0x2f7f30,
+        );
     }
-
 
     #[test]
     fn c_ps2_fog_particle_man_dtor_matches() {
-        dtor_case(ee::s09::f_002f7f60__generated, c_ps2_fog_particle_man_dtor, 0x2f7f60);
+        dtor_case(
+            ee::s09::f_002f7f60__generated,
+            c_ps2_fog_particle_man_dtor,
+            0x2f7f60,
+        );
     }
-
 
     #[test]
     fn vfx_splash_toggles_dtor_matches() {
-        dtor_case(ee::s09::f_002f7f90__generated, vfx_splash_toggles_dtor, 0x2f7f90);
+        dtor_case(
+            ee::s09::f_002f7f90__generated,
+            vfx_splash_toggles_dtor,
+            0x2f7f90,
+        );
     }
-
 
     #[test]
     fn transition_effect_dtor_matches() {
-        dtor_case(ee::s09::f_002f8000__generated, transition_effect_dtor, 0x2f8000);
+        dtor_case(
+            ee::s09::f_002f8000__generated,
+            transition_effect_dtor,
+            0x2f8000,
+        );
     }
-
 
     #[test]
     fn transition_effect_fade_dtor_matches() {
-        dtor_case(ee::s09::f_002f8030__generated, transition_effect_fade_dtor, 0x2f8030);
+        dtor_case(
+            ee::s09::f_002f8030__generated,
+            transition_effect_fade_dtor,
+            0x2f8030,
+        );
     }
-
 
     #[test]
     fn transition_wipe_dtor_matches() {
-        dtor_case(ee::s09::f_002f80d8__generated, transition_wipe_dtor, 0x2f80d8);
+        dtor_case(
+            ee::s09::f_002f80d8__generated,
+            transition_wipe_dtor,
+            0x2f80d8,
+        );
     }
-
 
     #[test]
     fn transition_effect_random_dtor_matches() {
-        dtor_case(ee::s09::f_002f8108__generated, transition_effect_random_dtor, 0x2f8108);
+        dtor_case(
+            ee::s09::f_002f8108__generated,
+            transition_effect_random_dtor,
+            0x2f8108,
+        );
     }
-
 
     #[test]
     fn vfx_snow_fall_toggles_dtor_matches() {
-        dtor_case(ee::s09::f_002f8138__generated, vfx_snow_fall_toggles_dtor, 0x2f8138);
+        dtor_case(
+            ee::s09::f_002f8138__generated,
+            vfx_snow_fall_toggles_dtor,
+            0x2f8138,
+        );
     }
-
 
     #[test]
     fn vfx_board_trail_dtor_matches() {
-        dtor_case(ee::s09::f_002f8188__generated, vfx_board_trail_dtor, 0x2f8188);
+        dtor_case(
+            ee::s09::f_002f8188__generated,
+            vfx_board_trail_dtor,
+            0x2f8188,
+        );
     }
-
 
     #[test]
     fn vfx_light_glow_dtor_matches() {
-        dtor_case(ee::s09::f_002f81f0__generated, vfx_light_glow_dtor, 0x2f81f0);
+        dtor_case(
+            ee::s09::f_002f81f0__generated,
+            vfx_light_glow_dtor,
+            0x2f81f0,
+        );
     }
-
 
     #[test]
     fn vfx_depth_fog_dtor_matches() {
         dtor_case(ee::s09::f_002f8220__generated, vfx_depth_fog_dtor, 0x2f8220);
     }
 
-
     #[test]
     fn vfx_height_fog_dtor_matches() {
-        dtor_case(ee::s09::f_002f8250__generated, vfx_height_fog_dtor, 0x2f8250);
+        dtor_case(
+            ee::s09::f_002f8250__generated,
+            vfx_height_fog_dtor,
+            0x2f8250,
+        );
     }
-
 
     #[test]
     fn vfx_shadow_dtor_matches() {
         dtor_case(ee::s09::f_002f8280__generated, vfx_shadow_dtor, 0x2f8280);
     }
 
-
     #[test]
     fn vfx_snow_surface_dtor_matches() {
-        dtor_case(ee::s09::f_002f82b0__generated, vfx_snow_surface_dtor, 0x2f82b0);
+        dtor_case(
+            ee::s09::f_002f82b0__generated,
+            vfx_snow_surface_dtor,
+            0x2f82b0,
+        );
     }
-
 
     #[test]
     fn vfx_flags_dtor_matches() {
         dtor_case(ee::s09::f_002f82e0__generated, vfx_flags_dtor, 0x2f82e0);
     }
 
-
     #[test]
     fn visual_effects_man_dtor_matches() {
-        dtor_case(ee::s09::f_002f8310__generated, visual_effects_man_dtor, 0x2f8310);
+        dtor_case(
+            ee::s09::f_002f8310__generated,
+            visual_effects_man_dtor,
+            0x2f8310,
+        );
     }
-
 
     #[test]
     fn world_light_man_reset_regions_matches() {
-        check(ee::s09::f_002f5998__generated, world_light_man_reset_regions, 60, &|c, seed| {
-            let mut r = machine(c, seed, 0x2f59_98, 0);
-            let man = DATA + 0x100;
-            c.g[A0][0] = sx(man);
-            fill(c, &mut r, man, 0x240);
-        });
+        check(
+            ee::s09::f_002f5998__generated,
+            world_light_man_reset_regions,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2f59_98, 0);
+                let man = DATA + 0x100;
+                c.g[A0][0] = sx(man);
+                fill(c, &mut r, man, 0x240);
+            },
+        );
     }
-
 
     #[test]
     fn rider_base_load_cheat_code_matches() {
-        check(ee::s09::f_002f6a90__generated, rider_base_load_cheat_code, 120, &|c, seed| {
-            forward_setup(c, seed, 0x2f6a_90, 0x10);
-        });
+        check(
+            ee::s09::f_002f6a90__generated,
+            rider_base_load_cheat_code,
+            120,
+            &|c, seed| {
+                forward_setup(c, seed, 0x2f6a_90, 0x10);
+            },
+        );
     }
-
 
     #[test]
     fn world_light_man_free_overlap_lists_matches() {
@@ -2344,27 +2510,39 @@ pub(crate) mod tests {
                 clear(c, this, 0x300);
                 for i in 0..8u32 {
                     let slot = this + 0x40 + 0x40 * i;
-                    c.bus.write32(slot, if seed % 3 == 0 { 0 } else { DATA + 0x1_4000 + 0x10 * i });
+                    c.bus.write32(
+                        slot,
+                        if seed % 3 == 0 {
+                            0
+                        } else {
+                            DATA + 0x1_4000 + 0x10 * i
+                        },
+                    );
                 }
                 c.g[A0][0] = sx(this);
             },
         );
     }
 
-
     // ------------------------------------------------------------- leaves
 
     #[test]
     fn rider_base_render_cheat_code_matches() {
-        leaf(ssx3_ee::s09::f_002f6908__generated, rider_base_render_cheat_code, 1);
+        leaf(
+            ssx3_ee::s09::f_002f6908__generated,
+            rider_base_render_cheat_code,
+            1,
+        );
     }
-
 
     #[test]
     fn board_spark_emitter_ctor_matches() {
-        leaf(ssx3_ee::s09::f_002f7a68__generated, board_spark_emitter_ctor, 21);
+        leaf(
+            ssx3_ee::s09::f_002f7a68__generated,
+            board_spark_emitter_ctor,
+            21,
+        );
     }
-
 
     // ----------------------------------------------------------- world light
 
@@ -2385,7 +2563,15 @@ pub(crate) mod tests {
                 for i in 0..32u32 {
                     let node = man + 0x210 + 0x180 * i;
                     w(c, node, r.next_u32());
-                    w(c, node + 4, if seed % 4 == 0 { 0x1000 } else { r.next_u32() % 64 });
+                    w(
+                        c,
+                        node + 4,
+                        if seed % 4 == 0 {
+                            0x1000
+                        } else {
+                            r.next_u32() % 64
+                        },
+                    );
                     let prev = match seed % 3 {
                         0 => 0,
                         1 => scratch,
@@ -2399,25 +2585,35 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn avalanche_destroy_all_matches() {
-        strict(ee::s09::f_002d9b40__generated, avalanche_destroy_all, 30, &|c, seed| {
-            let mut r = machine(c, seed, 0x2d9b, 10);
-            pool8(c, POOL0);
-            for k in 0..16 {
-                c.bus.write32(DATA + 0x1c * k, (r.next_u32() % 2) as u32);
-            }
-            c.bus.write32(GAME_GP + 0x9c0, if seed % 3 == 0 { 0 } else { POOL0 + 0x600 });
-            c.bus.write32(POOL0 + 0x600 + 4, POOL0 + 0x100);
-            c.bus.write32(POOL0 + 0x100 + 0xf4, 0);
-            c.bus.write32(GAME_GP + 0x9c4, if seed % 2 == 0 { 0 } else { POOL0 + 0x200 });
-            c.bus.write32(GAME_GP + 0x9c8, if seed % 2 == 0 { 0 } else { 1 });
-            c.bus.write32(GAME_GP + 0x9cc, r.next_u32());
-            c.g[A0][0] = sx(DATA);
-        });
+        strict(
+            ee::s09::f_002d9b40__generated,
+            avalanche_destroy_all,
+            30,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2d9b, 10);
+                pool8(c, POOL0);
+                for k in 0..16 {
+                    c.bus.write32(DATA + 0x1c * k, (r.next_u32() % 2) as u32);
+                }
+                c.bus.write32(
+                    GAME_GP + 0x9c0,
+                    if seed % 3 == 0 { 0 } else { POOL0 + 0x600 },
+                );
+                c.bus.write32(POOL0 + 0x600 + 4, POOL0 + 0x100);
+                c.bus.write32(POOL0 + 0x100 + 0xf4, 0);
+                c.bus.write32(
+                    GAME_GP + 0x9c4,
+                    if seed % 2 == 0 { 0 } else { POOL0 + 0x200 },
+                );
+                c.bus
+                    .write32(GAME_GP + 0x9c8, if seed % 2 == 0 { 0 } else { 1 });
+                c.bus.write32(GAME_GP + 0x9cc, r.next_u32());
+                c.g[A0][0] = sx(DATA);
+            },
+        );
     }
-
 
     #[test]
     fn c_board_spark_fx_reset_matches() {
@@ -2450,7 +2646,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn c_board_trail_fx_reset_matches() {

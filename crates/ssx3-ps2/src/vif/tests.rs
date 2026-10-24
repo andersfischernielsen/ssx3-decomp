@@ -337,7 +337,12 @@ fn unpack_plain_path_matches_general() {
                     vif.write(&pack(&s), &mut vu, &mut gs);
                     vu.data.clone()
                 };
-                assert!(run(false) == run(true), "V{}-{} usn {usn}", vn + 1, 32 >> vl);
+                assert!(
+                    run(false) == run(true),
+                    "V{}-{} usn {usn}",
+                    vn + 1,
+                    32 >> vl
+                );
             }
         }
     }

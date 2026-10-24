@@ -39,29 +39,113 @@ use ssx3_ee_rt::Cpu;
 /// Replacements in this package: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0028_5bf8, ssx_audio_update, "SSXAudioSystem_Update"),
-    (0x002a_c868, bank_monitor_instance_update_3d, "BankMonitorInstance_Update3D"),
-    (0x0029_2ef8, ssx_audio_update_board_surface_loop_remote, "SSXAudioSystem_UpdateBoardSurfaceLoopRemote"),
-    (0x002a_ba40, bank_monitor_instance_is_done, "BankMonitorInstance_IsDone"),
-    (0x0028_5d98, ssx_audio_find_rider, "SSXAudioSystem_FindRider"),
-    (0x0029_3538, ssx_audio_calc_surface_loop_group0, "SSXAudioSystem_CalcSurfaceLoopGroup0"),
+    (
+        0x002a_c868,
+        bank_monitor_instance_update_3d,
+        "BankMonitorInstance_Update3D",
+    ),
+    (
+        0x0029_2ef8,
+        ssx_audio_update_board_surface_loop_remote,
+        "SSXAudioSystem_UpdateBoardSurfaceLoopRemote",
+    ),
+    (
+        0x002a_ba40,
+        bank_monitor_instance_is_done,
+        "BankMonitorInstance_IsDone",
+    ),
+    (
+        0x0028_5d98,
+        ssx_audio_find_rider,
+        "SSXAudioSystem_FindRider",
+    ),
+    (
+        0x0029_3538,
+        ssx_audio_calc_surface_loop_group0,
+        "SSXAudioSystem_CalcSurfaceLoopGroup0",
+    ),
     (0x002b_21e0, song_instance_update, "SongInstance_Update"),
-    (0x0028_98a8, ssx_audio_update_rider_world_paint, "SSXAudioSystem_UpdateRiderWorldPaint"),
-    (0x0028_9c98, ssx_audio_apply_mix_paint, "SSXAudioSystem_ApplyMixPaint"),
-    (0x0029_3350, ssx_audio_calc_surface_loop_params_remote, "SSXAudioSystem_CalcSurfaceLoopParamsRemote"),
+    (
+        0x0028_98a8,
+        ssx_audio_update_rider_world_paint,
+        "SSXAudioSystem_UpdateRiderWorldPaint",
+    ),
+    (
+        0x0028_9c98,
+        ssx_audio_apply_mix_paint,
+        "SSXAudioSystem_ApplyMixPaint",
+    ),
+    (
+        0x0029_3350,
+        ssx_audio_calc_surface_loop_params_remote,
+        "SSXAudioSystem_CalcSurfaceLoopParamsRemote",
+    ),
     (0x002a_fc88, speech_instance_update, "SpeechInstance_Update"),
-    (0x0029_92d8, ssx_audio_stop_boost_sound, "SSXAudioSystem_StopBoostSound"),
-    (0x002a_bf60, bank_monitor_instance_set_volume, "BankMonitorInstance_SetVolume"),
-    (0x0028_f000, ssx_audio_update_music_fade_in, "SSXAudioSystem_UpdateMusicFadeIn"),
-    (0x0029_3168, ssx_audio_calc_board_base_loop_params, "SSXAudioSystem_CalcBoardBaseLoopParams"),
-    (0x0029_3290, ssx_audio_calc_surface_loop_params, "SSXAudioSystem_CalcSurfaceLoopParams"),
-    (0x0029_3410, ssx_audio_calc_edge_loop_params, "SSXAudioSystem_CalcEdgeLoopParams"),
-    (0x0029_3bb0, ssx_audio_calc_edge_loop_group0, "SSXAudioSystem_CalcEdgeLoopGroup0"),
-    (0x0029_cca8, ssx_audio_update_countdown_beeps, "SSXAudioSystem_UpdateCountdownBeeps"),
-    (0x002a_b828, bank_monitor_timer_update, "BankMonitor_TimerUpdate"),
-    (0x002a_bd90, bank_monitor_instance_set_pan, "BankMonitorInstance_SetPan"),
-    (0x0029_2cb8, ssx_audio_update_board_base_loop, "SSXAudioSystem_UpdateBoardBaseLoop"),
-    (0x0029_2da0, ssx_audio_update_board_surface_loop, "SSXAudioSystem_UpdateBoardSurfaceLoop"),
-    (0x0029_3018, ssx_audio_update_board_edge_loop, "SSXAudioSystem_UpdateBoardEdgeLoop"),
+    (
+        0x0029_92d8,
+        ssx_audio_stop_boost_sound,
+        "SSXAudioSystem_StopBoostSound",
+    ),
+    (
+        0x002a_bf60,
+        bank_monitor_instance_set_volume,
+        "BankMonitorInstance_SetVolume",
+    ),
+    (
+        0x0028_f000,
+        ssx_audio_update_music_fade_in,
+        "SSXAudioSystem_UpdateMusicFadeIn",
+    ),
+    (
+        0x0029_3168,
+        ssx_audio_calc_board_base_loop_params,
+        "SSXAudioSystem_CalcBoardBaseLoopParams",
+    ),
+    (
+        0x0029_3290,
+        ssx_audio_calc_surface_loop_params,
+        "SSXAudioSystem_CalcSurfaceLoopParams",
+    ),
+    (
+        0x0029_3410,
+        ssx_audio_calc_edge_loop_params,
+        "SSXAudioSystem_CalcEdgeLoopParams",
+    ),
+    (
+        0x0029_3bb0,
+        ssx_audio_calc_edge_loop_group0,
+        "SSXAudioSystem_CalcEdgeLoopGroup0",
+    ),
+    (
+        0x0029_cca8,
+        ssx_audio_update_countdown_beeps,
+        "SSXAudioSystem_UpdateCountdownBeeps",
+    ),
+    (
+        0x002a_b828,
+        bank_monitor_timer_update,
+        "BankMonitor_TimerUpdate",
+    ),
+    (
+        0x002a_bd90,
+        bank_monitor_instance_set_pan,
+        "BankMonitorInstance_SetPan",
+    ),
+    (
+        0x0029_2cb8,
+        ssx_audio_update_board_base_loop,
+        "SSXAudioSystem_UpdateBoardBaseLoop",
+    ),
+    (
+        0x0029_2da0,
+        ssx_audio_update_board_surface_loop,
+        "SSXAudioSystem_UpdateBoardSurfaceLoop",
+    ),
+    (
+        0x0029_3018,
+        ssx_audio_update_board_edge_loop,
+        "SSXAudioSystem_UpdateBoardEdgeLoop",
+    ),
     (0x002a_dca0, bank_monitor_add_timer, "BankMonitor_AddTimer"),
 ];
 
@@ -73,91 +157,269 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 mod callee {
     use super::{ee, Callee};
 
-    pub const FIND_FREE_TIMER: Callee = Callee { addr: 0x002a_dc30, f: ee::s08::BankMonitor_FindFreeTimer };
-    pub const TIMER_SET: Callee = Callee { addr: 0x002a_d888, f: ee::s08::BankMonitor_TimerSet };
-    pub const TIMER_KILL: Callee = Callee { addr: 0x002a_d940, f: ee::s08::BankMonitor_TimerKill };
-    pub const STOP_HANDLE: Callee = Callee { addr: 0x002a_d5f0, f: ee::s08::BankMonitor_StopHandle };
-    pub const CALC_DOPPLER_PITCH: Callee = Callee { addr: 0x002a_bca0, f: ee::s08::BankMonitor_CalcDopplerPitch };
-    pub const BMI_UPDATE_RANGE: Callee = Callee { addr: 0x002a_c7f0, f: ee::s08::BankMonitorInstance_UpdateRange };
-    pub const BMI_SET_PAN: Callee = Callee { addr: 0x002a_bd90, f: ee::s08::BankMonitorInstance_SetPan };
-    pub const BMI_SET_PITCH: Callee = Callee { addr: 0x002a_be78, f: ee::s08::BankMonitorInstance_SetPitch };
-    pub const BMI_SET_VOLUME: Callee = Callee { addr: 0x002a_bf60, f: ee::s08::BankMonitorInstance_SetVolume };
-    pub const BMI_GET_FALLOFF_VOLUME: Callee =
-        Callee { addr: 0x002a_bc80, f: ee::s08::BankMonitorInstance_GetFalloffVolume };
-    pub const BMI_IS_DONE: Callee = Callee { addr: 0x002a_ba40, f: ee::s08::BankMonitorInstance_IsDone };
-    pub const STREAM_BUFFER_SET_PAN: Callee = Callee { addr: 0x002a_9ed8, f: ee::s08::StreamBuffer_SetPan };
-    pub const STREAM_BUFFER_SET_VOLUME: Callee = Callee { addr: 0x002a_9f30, f: ee::s08::f_002a9f30 };
-    pub const STREAM_BUFFER_STOP: Callee = Callee { addr: 0x002a_a408, f: ee::s08::StreamBuffer_Stop };
-    pub const SPEECH_INSTANCE_POLL: Callee = Callee { addr: 0x002b_0290, f: ee::s08::f_002b0290 };
-    pub const MUSIC_IS_SONG_DATA_LOADED: Callee =
-        Callee { addr: 0x002b_4aa0, f: ee::s08::MusicPlayer_IsSongDataLoaded };
-    pub const MUSIC_GET_SONG_DATA_BUFFER: Callee =
-        Callee { addr: 0x002b_4ae8, f: ee::s08::MusicPlayer_GetSongDataBuffer };
-    pub const SONG_POST_EVENT: Callee = Callee { addr: 0x002b_20c8, f: ee::s08::SongInstance_PostEvent };
-    pub const SONG_SET_VOLUME: Callee = Callee { addr: 0x002b_2160, f: ee::s08::SongInstance_SetVolume };
-    pub const SONG_GET_STREAM_HANDLE: Callee =
-        Callee { addr: 0x002b_2488, f: ee::s08::SongInstance_GetStreamHandle };
-    pub const ADD_TIMER: Callee = Callee { addr: 0x002a_dca0, f: ee::s08::BankMonitor_AddTimer };
+    pub const FIND_FREE_TIMER: Callee = Callee {
+        addr: 0x002a_dc30,
+        f: ee::s08::BankMonitor_FindFreeTimer,
+    };
+    pub const TIMER_SET: Callee = Callee {
+        addr: 0x002a_d888,
+        f: ee::s08::BankMonitor_TimerSet,
+    };
+    pub const TIMER_KILL: Callee = Callee {
+        addr: 0x002a_d940,
+        f: ee::s08::BankMonitor_TimerKill,
+    };
+    pub const STOP_HANDLE: Callee = Callee {
+        addr: 0x002a_d5f0,
+        f: ee::s08::BankMonitor_StopHandle,
+    };
+    pub const CALC_DOPPLER_PITCH: Callee = Callee {
+        addr: 0x002a_bca0,
+        f: ee::s08::BankMonitor_CalcDopplerPitch,
+    };
+    pub const BMI_UPDATE_RANGE: Callee = Callee {
+        addr: 0x002a_c7f0,
+        f: ee::s08::BankMonitorInstance_UpdateRange,
+    };
+    pub const BMI_SET_PAN: Callee = Callee {
+        addr: 0x002a_bd90,
+        f: ee::s08::BankMonitorInstance_SetPan,
+    };
+    pub const BMI_SET_PITCH: Callee = Callee {
+        addr: 0x002a_be78,
+        f: ee::s08::BankMonitorInstance_SetPitch,
+    };
+    pub const BMI_SET_VOLUME: Callee = Callee {
+        addr: 0x002a_bf60,
+        f: ee::s08::BankMonitorInstance_SetVolume,
+    };
+    pub const BMI_GET_FALLOFF_VOLUME: Callee = Callee {
+        addr: 0x002a_bc80,
+        f: ee::s08::BankMonitorInstance_GetFalloffVolume,
+    };
+    pub const BMI_IS_DONE: Callee = Callee {
+        addr: 0x002a_ba40,
+        f: ee::s08::BankMonitorInstance_IsDone,
+    };
+    pub const STREAM_BUFFER_SET_PAN: Callee = Callee {
+        addr: 0x002a_9ed8,
+        f: ee::s08::StreamBuffer_SetPan,
+    };
+    pub const STREAM_BUFFER_SET_VOLUME: Callee = Callee {
+        addr: 0x002a_9f30,
+        f: ee::s08::f_002a9f30,
+    };
+    pub const STREAM_BUFFER_STOP: Callee = Callee {
+        addr: 0x002a_a408,
+        f: ee::s08::StreamBuffer_Stop,
+    };
+    pub const SPEECH_INSTANCE_POLL: Callee = Callee {
+        addr: 0x002b_0290,
+        f: ee::s08::f_002b0290,
+    };
+    pub const MUSIC_IS_SONG_DATA_LOADED: Callee = Callee {
+        addr: 0x002b_4aa0,
+        f: ee::s08::MusicPlayer_IsSongDataLoaded,
+    };
+    pub const MUSIC_GET_SONG_DATA_BUFFER: Callee = Callee {
+        addr: 0x002b_4ae8,
+        f: ee::s08::MusicPlayer_GetSongDataBuffer,
+    };
+    pub const SONG_POST_EVENT: Callee = Callee {
+        addr: 0x002b_20c8,
+        f: ee::s08::SongInstance_PostEvent,
+    };
+    pub const SONG_SET_VOLUME: Callee = Callee {
+        addr: 0x002b_2160,
+        f: ee::s08::SongInstance_SetVolume,
+    };
+    pub const SONG_GET_STREAM_HANDLE: Callee = Callee {
+        addr: 0x002b_2488,
+        f: ee::s08::SongInstance_GetStreamHandle,
+    };
+    pub const ADD_TIMER: Callee = Callee {
+        addr: 0x002a_dca0,
+        f: ee::s08::BankMonitor_AddTimer,
+    };
 
-    pub const GET_INSTANCE: Callee = Callee { addr: 0x0028_b180, f: ee::s07::SSXAudioSystem_GetInstance };
-    pub const GET_APP: Callee = Callee { addr: 0x0028_b1c0, f: ee::s07::SSXAudioSystem_GetApp };
-    pub const GET_GAME_MODULE: Callee = Callee { addr: 0x0028_b1c8, f: ee::s07::SSXAudioSystem_GetGameModule };
-    pub const GET_RACE_MAN: Callee = Callee { addr: 0x0028_b1d8, f: ee::s07::SSXAudioSystem_GetRaceMan };
-    pub const IS_REPLAY_PLAYING: Callee =
-        Callee { addr: 0x0028_8ae0, f: ee::s07::SSXAudioSystem_IsReplayPlaying };
-    pub const FIND_RIDER: Callee = Callee { addr: 0x0028_5d98, f: ee::s07::SSXAudioSystem_FindRider };
-    pub const SET_MIX_PRESET: Callee = Callee { addr: 0x0028_83b0, f: ee::s07::SSXAudioSystem_SetMixPreset };
-    pub const APPLY_MIX_PAINT: Callee = Callee { addr: 0x0028_9c98, f: ee::s07::SSXAudioSystem_ApplyMixPaint };
-    pub const UPDATE_FADE: Callee = Callee { addr: 0x0028_7c48, f: ee::s07::SSXAudioSystem_UpdateFade };
-    pub const UPDATE_MIX_RAMP: Callee = Callee { addr: 0x0028_87f8, f: ee::s07::SSXAudioSystem_UpdateMixRamp };
-    pub const UPDATE_MUSIC_FADE_IN: Callee =
-        Callee { addr: 0x0028_f000, f: ee::s07::SSXAudioSystem_UpdateMusicFadeIn };
-    pub const UPDATE_PEAK_MUSIC: Callee = Callee { addr: 0x0028_e100, f: ee::s07::SSXAudioSystem_UpdatePeakMusic };
-    pub const RESUME_GAME_AUDIO: Callee =
-        Callee { addr: 0x0028_9bb8, f: ee::s07::SSXAudioSystem_ResumeGameAudio };
-    pub const START_FADE: Callee = Callee { addr: 0x0028_7f00, f: ee::s07::f_00287f00 };
-    pub const TINT_FLASH_SOUND: Callee = Callee { addr: 0x0029_1438, f: ee::s07::f_00291438 };
-    pub const UPDATE_STATE_FLAGS: Callee = Callee { addr: 0x0028_c8c8, f: ee::s07::f_0028c8c8 };
-    pub const UPDATE_RACE_MUSIC_A: Callee = Callee { addr: 0x0029_47b0, f: ee::s07::f_002947b0 };
-    pub const UPDATE_RACE_MUSIC_B: Callee = Callee { addr: 0x0029_48a0, f: ee::s07::f_002948a0 };
-    pub const UPDATE_END: Callee = Callee { addr: 0x0028_9688, f: ee::s07::f_00289688 };
-    pub const RIDER_PAINT_CHANGED: Callee = Callee { addr: 0x0028_d960, f: ee::s07::f_0028d960 };
-    pub const RIDER_PAINT_SET: Callee = Callee { addr: 0x0028_d988, f: ee::s07::f_0028d988 };
-    pub const RIDER_PAINT2_CHANGED: Callee = Callee { addr: 0x0028_99e8, f: ee::s07::f_002899e8 };
-    pub const RIDER_PAINT2_SET: Callee = Callee { addr: 0x0028_99f8, f: ee::s07::f_002899f8 };
-    pub const RIDER_MUSIC_STATE: Callee = Callee { addr: 0x0028_9c18, f: ee::s07::f_00289c18 };
-    pub const REPLAY_IS_PAUSED: Callee = Callee { addr: 0x0027_0280, f: ee::s07::f_00270280 };
-    pub const SURFACE_GROUP: Callee = Callee { addr: 0x0029_34d0, f: ee::s07::f_002934d0 };
-    pub const GET_SURFACE_SOUND_TYPE: Callee =
-        Callee { addr: 0x0029_1710, f: ee::s07::SSXAudioSystem_GetSurfaceSoundType };
-    pub const START_BOARD_SURFACE_LOOP: Callee =
-        Callee { addr: 0x0029_1c88, f: ee::s07::SSXAudioSystem_StartBoardSurfaceLoop };
-    pub const START_BOARD_EDGE_LOOP: Callee =
-        Callee { addr: 0x0029_2508, f: ee::s07::SSXAudioSystem_StartBoardEdgeLoop };
-    pub const CALC_BOARD_BASE_LOOP_PARAMS: Callee =
-        Callee { addr: 0x0029_3168, f: ee::s07::SSXAudioSystem_CalcBoardBaseLoopParams };
-    pub const CALC_SURFACE_LOOP_PARAMS: Callee =
-        Callee { addr: 0x0029_3290, f: ee::s07::SSXAudioSystem_CalcSurfaceLoopParams };
-    pub const CALC_SURFACE_LOOP_PARAMS_REMOTE: Callee =
-        Callee { addr: 0x0029_3350, f: ee::s07::SSXAudioSystem_CalcSurfaceLoopParamsRemote };
-    pub const CALC_EDGE_LOOP_PARAMS: Callee =
-        Callee { addr: 0x0029_3410, f: ee::s07::SSXAudioSystem_CalcEdgeLoopParams };
+    pub const GET_INSTANCE: Callee = Callee {
+        addr: 0x0028_b180,
+        f: ee::s07::SSXAudioSystem_GetInstance,
+    };
+    pub const GET_APP: Callee = Callee {
+        addr: 0x0028_b1c0,
+        f: ee::s07::SSXAudioSystem_GetApp,
+    };
+    pub const GET_GAME_MODULE: Callee = Callee {
+        addr: 0x0028_b1c8,
+        f: ee::s07::SSXAudioSystem_GetGameModule,
+    };
+    pub const GET_RACE_MAN: Callee = Callee {
+        addr: 0x0028_b1d8,
+        f: ee::s07::SSXAudioSystem_GetRaceMan,
+    };
+    pub const IS_REPLAY_PLAYING: Callee = Callee {
+        addr: 0x0028_8ae0,
+        f: ee::s07::SSXAudioSystem_IsReplayPlaying,
+    };
+    pub const FIND_RIDER: Callee = Callee {
+        addr: 0x0028_5d98,
+        f: ee::s07::SSXAudioSystem_FindRider,
+    };
+    pub const SET_MIX_PRESET: Callee = Callee {
+        addr: 0x0028_83b0,
+        f: ee::s07::SSXAudioSystem_SetMixPreset,
+    };
+    pub const APPLY_MIX_PAINT: Callee = Callee {
+        addr: 0x0028_9c98,
+        f: ee::s07::SSXAudioSystem_ApplyMixPaint,
+    };
+    pub const UPDATE_FADE: Callee = Callee {
+        addr: 0x0028_7c48,
+        f: ee::s07::SSXAudioSystem_UpdateFade,
+    };
+    pub const UPDATE_MIX_RAMP: Callee = Callee {
+        addr: 0x0028_87f8,
+        f: ee::s07::SSXAudioSystem_UpdateMixRamp,
+    };
+    pub const UPDATE_MUSIC_FADE_IN: Callee = Callee {
+        addr: 0x0028_f000,
+        f: ee::s07::SSXAudioSystem_UpdateMusicFadeIn,
+    };
+    pub const UPDATE_PEAK_MUSIC: Callee = Callee {
+        addr: 0x0028_e100,
+        f: ee::s07::SSXAudioSystem_UpdatePeakMusic,
+    };
+    pub const RESUME_GAME_AUDIO: Callee = Callee {
+        addr: 0x0028_9bb8,
+        f: ee::s07::SSXAudioSystem_ResumeGameAudio,
+    };
+    pub const START_FADE: Callee = Callee {
+        addr: 0x0028_7f00,
+        f: ee::s07::f_00287f00,
+    };
+    pub const TINT_FLASH_SOUND: Callee = Callee {
+        addr: 0x0029_1438,
+        f: ee::s07::f_00291438,
+    };
+    pub const UPDATE_STATE_FLAGS: Callee = Callee {
+        addr: 0x0028_c8c8,
+        f: ee::s07::f_0028c8c8,
+    };
+    pub const UPDATE_RACE_MUSIC_A: Callee = Callee {
+        addr: 0x0029_47b0,
+        f: ee::s07::f_002947b0,
+    };
+    pub const UPDATE_RACE_MUSIC_B: Callee = Callee {
+        addr: 0x0029_48a0,
+        f: ee::s07::f_002948a0,
+    };
+    pub const UPDATE_END: Callee = Callee {
+        addr: 0x0028_9688,
+        f: ee::s07::f_00289688,
+    };
+    pub const RIDER_PAINT_CHANGED: Callee = Callee {
+        addr: 0x0028_d960,
+        f: ee::s07::f_0028d960,
+    };
+    pub const RIDER_PAINT_SET: Callee = Callee {
+        addr: 0x0028_d988,
+        f: ee::s07::f_0028d988,
+    };
+    pub const RIDER_PAINT2_CHANGED: Callee = Callee {
+        addr: 0x0028_99e8,
+        f: ee::s07::f_002899e8,
+    };
+    pub const RIDER_PAINT2_SET: Callee = Callee {
+        addr: 0x0028_99f8,
+        f: ee::s07::f_002899f8,
+    };
+    pub const RIDER_MUSIC_STATE: Callee = Callee {
+        addr: 0x0028_9c18,
+        f: ee::s07::f_00289c18,
+    };
+    pub const REPLAY_IS_PAUSED: Callee = Callee {
+        addr: 0x0027_0280,
+        f: ee::s07::f_00270280,
+    };
+    pub const SURFACE_GROUP: Callee = Callee {
+        addr: 0x0029_34d0,
+        f: ee::s07::f_002934d0,
+    };
+    pub const GET_SURFACE_SOUND_TYPE: Callee = Callee {
+        addr: 0x0029_1710,
+        f: ee::s07::SSXAudioSystem_GetSurfaceSoundType,
+    };
+    pub const START_BOARD_SURFACE_LOOP: Callee = Callee {
+        addr: 0x0029_1c88,
+        f: ee::s07::SSXAudioSystem_StartBoardSurfaceLoop,
+    };
+    pub const START_BOARD_EDGE_LOOP: Callee = Callee {
+        addr: 0x0029_2508,
+        f: ee::s07::SSXAudioSystem_StartBoardEdgeLoop,
+    };
+    pub const CALC_BOARD_BASE_LOOP_PARAMS: Callee = Callee {
+        addr: 0x0029_3168,
+        f: ee::s07::SSXAudioSystem_CalcBoardBaseLoopParams,
+    };
+    pub const CALC_SURFACE_LOOP_PARAMS: Callee = Callee {
+        addr: 0x0029_3290,
+        f: ee::s07::SSXAudioSystem_CalcSurfaceLoopParams,
+    };
+    pub const CALC_SURFACE_LOOP_PARAMS_REMOTE: Callee = Callee {
+        addr: 0x0029_3350,
+        f: ee::s07::SSXAudioSystem_CalcSurfaceLoopParamsRemote,
+    };
+    pub const CALC_EDGE_LOOP_PARAMS: Callee = Callee {
+        addr: 0x0029_3410,
+        f: ee::s07::SSXAudioSystem_CalcEdgeLoopParams,
+    };
     pub const SURFACE_GROUPS: [Callee; 3] = [
-        Callee { addr: 0x0029_3538, f: ee::s07::SSXAudioSystem_CalcSurfaceLoopGroup0 },
-        Callee { addr: 0x0029_3740, f: ee::s07::SSXAudioSystem_CalcSurfaceLoopGroup1 },
-        Callee { addr: 0x0029_3948, f: ee::s07::SSXAudioSystem_CalcSurfaceLoopGroup2 },
+        Callee {
+            addr: 0x0029_3538,
+            f: ee::s07::SSXAudioSystem_CalcSurfaceLoopGroup0,
+        },
+        Callee {
+            addr: 0x0029_3740,
+            f: ee::s07::SSXAudioSystem_CalcSurfaceLoopGroup1,
+        },
+        Callee {
+            addr: 0x0029_3948,
+            f: ee::s07::SSXAudioSystem_CalcSurfaceLoopGroup2,
+        },
     ];
     pub const SURFACE_REMOTE_GROUPS: [Callee; 3] = [
-        Callee { addr: 0x0029_3b50, f: ee::s07::SSXAudioSystem_CalcSurfaceLoopRemoteGroup0 },
-        Callee { addr: 0x0029_3b70, f: ee::s07::SSXAudioSystem_CalcSurfaceLoopRemoteGroup1 },
-        Callee { addr: 0x0029_3b90, f: ee::s07::SSXAudioSystem_CalcSurfaceLoopRemoteGroup2 },
+        Callee {
+            addr: 0x0029_3b50,
+            f: ee::s07::SSXAudioSystem_CalcSurfaceLoopRemoteGroup0,
+        },
+        Callee {
+            addr: 0x0029_3b70,
+            f: ee::s07::SSXAudioSystem_CalcSurfaceLoopRemoteGroup1,
+        },
+        Callee {
+            addr: 0x0029_3b90,
+            f: ee::s07::SSXAudioSystem_CalcSurfaceLoopRemoteGroup2,
+        },
     ];
     pub const EDGE_GROUPS: [Callee; 3] = [
-        Callee { addr: 0x0029_3bb0, f: ee::s07::SSXAudioSystem_CalcEdgeLoopGroup0 },
-        Callee { addr: 0x0029_3dc0, f: ee::s07::SSXAudioSystem_CalcEdgeLoopGroup1 },
-        Callee { addr: 0x0029_3fc8, f: ee::s07::SSXAudioSystem_CalcEdgeLoopGroup2 },
+        Callee {
+            addr: 0x0029_3bb0,
+            f: ee::s07::SSXAudioSystem_CalcEdgeLoopGroup0,
+        },
+        Callee {
+            addr: 0x0029_3dc0,
+            f: ee::s07::SSXAudioSystem_CalcEdgeLoopGroup1,
+        },
+        Callee {
+            addr: 0x0029_3fc8,
+            f: ee::s07::SSXAudioSystem_CalcEdgeLoopGroup2,
+        },
     ];
-    pub const EVAL_CURVE5: Callee = Callee { addr: 0x0029_0b58, f: ee::s07::Audio_EvalCurve5 };
+    pub const EVAL_CURVE5: Callee = Callee {
+        addr: 0x0029_0b58,
+        f: ee::s07::Audio_EvalCurve5,
+    };
 }
 
 /// Calls the compiler emitted as `call_indirect` (cross-shard `jal`s,
@@ -443,8 +705,16 @@ fn copy_curve(c: &mut Cpu, src: u32, dst: u32, regs: [usize; 3]) {
 /// again afterwards. Returns the slot, or a negative value when none was
 /// free.
 pub fn bank_monitor_add_timer(c: &mut Cpu) {
-    const SAVED: [(usize, u32); 8] =
-        [(S0, 0x90), (S1, 0x80), (S2, 0x70), (S3, 0x60), (S4, 0x50), (S5, 0x40), (S6, 0x30), (S7, 0x20)];
+    const SAVED: [(usize, u32); 8] = [
+        (S0, 0x90),
+        (S1, 0x80),
+        (S2, 0x70),
+        (S3, 0x60),
+        (S4, 0x50),
+        (S5, 0x40),
+        (S6, 0x30),
+        (S7, 0x20),
+    ];
     guest(c, |c| {
         c.cycles += 27;
         let frame = Frame::open(c, 0xa0);
@@ -898,7 +1168,14 @@ pub fn ssx_audio_calc_edge_loop_params(c: &mut Cpu) {
 /// `flags` is the gp word the caller already loaded into v0; `rets` are the
 /// return addresses of `GetGameModule`, `f_00270280` and `SetPitch`, and
 /// `extra` the cycles of the store block (11 or 12).
-fn board_loop_finish(c: &mut Cpu, frame: Frame, inst: u64, flags: u64, rets: [u32; 3], extra: u64) -> Flow {
+fn board_loop_finish(
+    c: &mut Cpu,
+    frame: Frame,
+    inst: u64,
+    flags: u64,
+    rets: [u32; 3],
+    extra: u64,
+) -> Flow {
     let paused = flags & 1;
     set_reg(c, V0, paused);
     set_reg(c, S0, 0);
@@ -997,7 +1274,14 @@ pub fn ssx_audio_update_board_base_loop(c: &mut Cpu) {
         }
         c.cycles += 4;
         let flags = gp_lw(c, -(gp::PAUSE_FLAGS as i32));
-        board_loop_finish(c, frame, inst, flags, [0x0029_2d54, 0x0029_2d5c, 0x0029_2d84], 11)?;
+        board_loop_finish(
+            c,
+            frame,
+            inst,
+            flags,
+            [0x0029_2d54, 0x0029_2d5c, 0x0029_2d84],
+            11,
+        )?;
         restore_regs(c, frame, &SAVED);
         frame.restore_ra(c, 0x10);
         frame.close(c);
@@ -1007,7 +1291,15 @@ pub fn ssx_audio_update_board_base_loop(c: &mut Cpu) {
 
 /// `GetSurfaceSoundType` then the loop parameters
 /// (`params(sys, type, rider, &volume, &pitch)`). `cyc` cycles first.
-fn loop_params(c: &mut Cpu, frame: Frame, sys: u64, rider: u64, params: Callee, cyc: u64, rets: [u32; 2]) -> Flow {
+fn loop_params(
+    c: &mut Cpu,
+    frame: Frame,
+    sys: u64,
+    rider: u64,
+    params: Callee,
+    cyc: u64,
+    rets: [u32; 2],
+) -> Flow {
     c.cycles += cyc;
     set_reg(c, A1, rider);
     callee::GET_SURFACE_SOUND_TYPE.call(c, rets[0])?;
@@ -1089,7 +1381,15 @@ pub fn ssx_audio_update_board_surface_loop(c: &mut Cpu) {
             set_reg(c, V0, current);
             set_reg(c, A0, sys);
             if kind == current {
-                loop_params(c, frame, sys, rider, callee::CALC_SURFACE_LOOP_PARAMS, 8, [0x0029_2e64, 0x0029_2e7c])?;
+                loop_params(
+                    c,
+                    frame,
+                    sys,
+                    rider,
+                    callee::CALC_SURFACE_LOOP_PARAMS,
+                    8,
+                    [0x0029_2e64, 0x0029_2e7c],
+                )?;
             } else {
                 c.cycles += 9;
                 sw_at(c, rider, rider::SURFACE_SOUND, kind);
@@ -1104,7 +1404,14 @@ pub fn ssx_audio_update_board_surface_loop(c: &mut Cpu) {
         mute_in_state_2(c, frame, rider, 0x0029_2e84)?;
         c.cycles += 4;
         let flags = gp_lw(c, -(gp::PAUSE_FLAGS as i32));
-        board_loop_finish(c, frame, inst, flags, [0x0029_2ea8, 0x0029_2eb0, 0x0029_2ed8], 12)?;
+        board_loop_finish(
+            c,
+            frame,
+            inst,
+            flags,
+            [0x0029_2ea8, 0x0029_2eb0, 0x0029_2ed8],
+            12,
+        )?;
         restore_regs(c, frame, &SAVED);
         frame.restore_ra(c, 0x10);
         frame.close(c);
@@ -1183,7 +1490,14 @@ pub fn ssx_audio_update_board_surface_loop_remote(c: &mut Cpu) {
             gp_lw(c, -(gp::PAUSE_FLAGS as i32))
         };
         c.cycles += 3;
-        board_loop_finish(c, frame, inst, flags, [0x0029_2fcc, 0x0029_2fd4, 0x0029_2ffc], 11)?;
+        board_loop_finish(
+            c,
+            frame,
+            inst,
+            flags,
+            [0x0029_2fcc, 0x0029_2fd4, 0x0029_2ffc],
+            11,
+        )?;
         restore_regs(c, frame, &SAVED);
         frame.restore_ra(c, 0x10);
         frame.close(c);
@@ -1226,13 +1540,28 @@ pub fn ssx_audio_update_board_edge_loop(c: &mut Cpu) {
         } else {
             let changed = edge_type_changed(c, sys, inst, rider)?;
             if !changed {
-                loop_params(c, frame, sys, rider, callee::CALC_EDGE_LOOP_PARAMS, 8, [0x0029_30d8, 0x0029_30f0])?;
+                loop_params(
+                    c,
+                    frame,
+                    sys,
+                    rider,
+                    callee::CALC_EDGE_LOOP_PARAMS,
+                    8,
+                    [0x0029_30d8, 0x0029_30f0],
+                )?;
             }
         }
         mute_in_state_2(c, frame, rider, 0x0029_30f8)?;
         c.cycles += 4;
         let flags = gp_lw(c, -(gp::PAUSE_FLAGS as i32));
-        board_loop_finish(c, frame, inst, flags, [0x0029_311c, 0x0029_3124, 0x0029_314c], 11)?;
+        board_loop_finish(
+            c,
+            frame,
+            inst,
+            flags,
+            [0x0029_311c, 0x0029_3124, 0x0029_314c],
+            11,
+        )?;
         restore_regs(c, frame, &SAVED);
         frame.restore_ra(c, 0x10);
         frame.close(c);
@@ -2030,7 +2359,13 @@ mod curves {
 /// `volume`, then the pitch curve (at `sp+0x30`, pointer kept in s0) at
 /// `x_pitch` times 4096 as an int at `pitch`. The curve copies happen
 /// before (`copy_curve`); `rets` are the two return addresses.
-fn eval_curves(c: &mut Cpu, x_volume: usize, x_pitch: usize, volume: u64, rets: [u32; 2]) -> Result<FpuF32, Unwound> {
+fn eval_curves(
+    c: &mut Cpu,
+    x_volume: usize,
+    x_pitch: usize,
+    volume: u64,
+    rets: [u32; 2],
+) -> Result<FpuF32, Unwound> {
     c.f[12] = c.f[x_volume];
     callee::EVAL_CURVE5.call(c, rets[0])?;
     let v = to_int_via(c, 1, fr(c, 0));
@@ -2097,7 +2432,15 @@ fn player_index(c: &mut Cpu, rider: u64, ret: u32) -> Result<u64, Unwound> {
 /// (both blocks are shared by the surface and edge groups). `diff` is the
 /// FPU register holding `prev - target`; `v_leftover` the register and
 /// value the original rewrites in the delay slots.
-fn ease(c: &mut Cpu, target: FpuF32, prev: FpuF32, up: u32, down: u32, diff: usize, leftover: (usize, u64)) -> FpuF32 {
+fn ease(
+    c: &mut Cpu,
+    target: FpuF32,
+    prev: FpuF32,
+    up: u32,
+    down: u32,
+    diff: usize,
+    leftover: (usize, u64),
+) -> FpuF32 {
     let d = fr(c, diff);
     c.cycles += 3;
     if abi::c_lt_s(c, target, prev) {
@@ -2186,7 +2529,15 @@ pub fn ssx_audio_calc_surface_loop_group0(c: &mut Cpu) {
         let far = abi::c_lt_s(c, limit, d.abs());
         set_reg(c, V1, 0x0048_0000);
         if far {
-            target = ease(c, target, prev, 0x3e80_0000, 0x3e80_0000, 1, (V1, 0x0048_0000));
+            target = ease(
+                c,
+                target,
+                prev,
+                0x3e80_0000,
+                0x3e80_0000,
+                1,
+                (V1, 0x0048_0000),
+            );
             abi::set_fpr(c, 20, target);
         }
         c.cycles += 68;
@@ -2469,7 +2820,11 @@ fn positional_volume(c: &mut Cpu, frame: Frame, inst: u64, bm: u64) -> Result<u6
         c.cycles += 5;
         set_reg(c, AT, 0xffff_ffff_bf80_0000);
         abi::set_fpr(c, 0, FpuF32(0xbf80_0000));
-        let unknown = { let e = last.eq_s(FpuF32(0xbf80_0000)); abi::set_fcc(c, e); e };
+        let unknown = {
+            let e = last.eq_s(FpuF32(0xbf80_0000));
+            abi::set_fcc(c, e);
+            e
+        };
         let mut doppler = false;
         if !unknown {
             c.cycles += 3;
@@ -2517,7 +2872,11 @@ fn positional_volume(c: &mut Cpu, frame: Frame, inst: u64, bm: u64) -> Result<u6
             abi::set_fpr(c, 13, radius);
             c.cycles += 5;
             c.f[0] = 0;
-            let zero = { let e = radius.eq_s(FpuF32::ZERO); abi::set_fcc(c, e); e };
+            let zero = {
+                let e = radius.eq_s(FpuF32::ZERO);
+                abi::set_fcc(c, e);
+                e
+            };
             set_reg(c, A0, inst);
             if zero {
                 c.cycles += 4;
@@ -3196,7 +3555,11 @@ mod tests {
         c.bus.write32(LOCK_HOOK, FAKE + 0x100);
         c.bus.write32(LOCK_HOOK + 4, FAKE + 0x110);
         for i in 0..8 {
-            let v = if r.next_u32() % 2 == 0 { 0 } else { 1 + r.next_u32() % 3 };
+            let v = if r.next_u32() % 2 == 0 {
+                0
+            } else {
+                1 + r.next_u32() % 3
+            };
             c.bus.write32(LOG_RESULTS + 4 * i, v);
         }
         r
@@ -3207,20 +3570,33 @@ mod tests {
     fn world(c: &mut Cpu, r: &mut Rng) {
         // Game chain: gp-0x848 -> game; +0x84 module; +0x28 replay; +0xc race man.
         c.bus.write32(GAME_GP - gp::GAME, GAME);
-        c.bus.write32(GAME + 0x84, if r.next_u32() % 6 == 0 { 0 } else { MODULE });
-        c.bus.write32(MODULE + 0x28, if r.next_u32() % 3 == 0 { 0 } else { REPLAY });
+        c.bus
+            .write32(GAME + 0x84, if r.next_u32() % 6 == 0 { 0 } else { MODULE });
+        c.bus.write32(
+            MODULE + 0x28,
+            if r.next_u32() % 3 == 0 { 0 } else { REPLAY },
+        );
         c.bus.write32(MODULE + 0xc, RACE_MAN);
         c.bus.write32(MODULE + 0x214, pick(r, &[0, 4, 4, 2]));
         c.bus.write32(REPLAY, pick(r, &[0, 1, 5, 12, 20]));
         c.bus.write32(GAME_GP - gp::PAUSE_FLAGS, r.next_u32() % 4);
         // The rider.
         c.bus.write32(RIDER + 0x77c, STATE_OBJ);
-        c.bus.write32(STATE_OBJ + 0xde0, pick(r, &[0, 0, 1, 2, 4, 5, 3]));
-        c.bus.write32(RIDER + 0x438, (r.next_u32() % 24).wrapping_sub(2));
-        c.bus.write32(SYS + 0x598c, (r.next_u32() % 24).wrapping_sub(2));
+        c.bus
+            .write32(STATE_OBJ + 0xde0, pick(r, &[0, 0, 1, 2, 4, 5, 3]));
+        c.bus
+            .write32(RIDER + 0x438, (r.next_u32() % 24).wrapping_sub(2));
+        c.bus
+            .write32(SYS + 0x598c, (r.next_u32() % 24).wrapping_sub(2));
         c.bus.write32(RIDER + rider::AUDIO_STATE, r.next_u32() % 3);
-        c.bus.write32(RIDER + rider::SURFACE_SOUND, (r.next_u32() % 24).wrapping_sub(2));
-        c.bus.write32(RIDER + rider::EDGE_SOUND, (r.next_u32() % 24).wrapping_sub(2));
+        c.bus.write32(
+            RIDER + rider::SURFACE_SOUND,
+            (r.next_u32() % 24).wrapping_sub(2),
+        );
+        c.bus.write32(
+            RIDER + rider::EDGE_SOUND,
+            (r.next_u32() % 24).wrapping_sub(2),
+        );
         for off in [rider::SPEED_A, rider::SPEED_B, rider::SPEED_C] {
             c.bus.write32(RIDER + off, float(r, 1.0));
         }
@@ -3231,11 +3607,13 @@ mod tests {
         c.bus.write32(RIDER + rider::CONTROLLER, VTABLES);
         for (i, off) in [0x28u32, 0x38].into_iter().enumerate() {
             c.bus.write16(VTABLES + off, (r.next_u32() % 4 * 4) as u16);
-            c.bus.write32(VTABLES + off + 4, FAKE + 0x200 + 0x10 * i as u32);
+            c.bus
+                .write32(VTABLES + off + 4, FAKE + 0x200 + 0x10 * i as u32);
         }
         // Per-player smoothed speeds.
         for i in 0..4 {
-            c.bus.write32(SYS + sys::SURFACE_SPEED + 4 * i, float(r, 1.0));
+            c.bus
+                .write32(SYS + sys::SURFACE_SPEED + 4 * i, float(r, 1.0));
             c.bus.write32(SYS + sys::EDGE_SPEED + 4 * i, float(r, 2.0));
         }
         // The instance.
@@ -3250,53 +3628,70 @@ mod tests {
 
     #[test]
     fn add_timer() {
-        check_lohi(s08::f_002adca0, bank_monitor_add_timer, SEEDS, &|c, seed| {
-            let mut r = base(c, seed, 1, 0);
-            let bm = BM;
-            c.bus.write32(bm + bank_monitor::TIMER_COUNT, r.next_u32() % 4);
-            let all_busy = r.next_u32() % 4 == 0;
-            for i in 0..48 {
-                let t = bm + bank_monitor::TIMERS + i * bank_monitor::TIMER_SIZE;
-                c.bus.write32(t, (all_busy || r.next_u32() % 2 == 0) as u32);
-            }
-            c.g[A0][0] = sx(bm);
-            let d = r.next_u32() % 1000;
-            c.g[A1][0] = r64(&mut r, d);
-            c.g[A2][0] = (r.next_u32() as u64) << 32 | r.next_u32() as u64;
-        });
+        check_lohi(
+            s08::f_002adca0,
+            bank_monitor_add_timer,
+            SEEDS,
+            &|c, seed| {
+                let mut r = base(c, seed, 1, 0);
+                let bm = BM;
+                c.bus
+                    .write32(bm + bank_monitor::TIMER_COUNT, r.next_u32() % 4);
+                let all_busy = r.next_u32() % 4 == 0;
+                for i in 0..48 {
+                    let t = bm + bank_monitor::TIMERS + i * bank_monitor::TIMER_SIZE;
+                    c.bus.write32(t, (all_busy || r.next_u32() % 2 == 0) as u32);
+                }
+                c.g[A0][0] = sx(bm);
+                let d = r.next_u32() % 1000;
+                c.g[A1][0] = r64(&mut r, d);
+                c.g[A2][0] = (r.next_u32() as u64) << 32 | r.next_u32() as u64;
+            },
+        );
     }
 
     #[test]
     fn timer_update() {
-        covered(s08::f_002ab828, bank_monitor_timer_update, 150, &|c, seed| {
-            let mut r = base(c, seed, 2, 2);
-            let t = INST;
-            let owner = SYS;
-            c.bus.write32(t + timer::ACTIVE, (r.next_u32() % 4 != 0) as u32);
-            c.bus.write32(t + timer::PERIOD, r.next_u32() % 100);
-            c.bus.write32(t + timer::LEFT, (r.next_u32() % 30).wrapping_sub(5));
-            // A plain function (a fake, or GetGameModule returning 0 here) or
-            // a virtual one.
-            let delta = (r.next_u32() % 8 * 4) as u16;
-            c.bus.write16(t + timer::PMF, delta);
-            if r.next_u32() % 2 == 0 {
-                c.bus.write16(t + timer::PMF + 2, 0xffff);
-                let f = if r.next_u32() % 2 == 0 { FAKE + 0x300 } else { 0x0028_b1c8 };
-                c.bus.write32(t + timer::PMF + 4, f);
-                c.bus.write32(GAME_GP - gp::GAME, 0);
-            } else {
-                let index = 1 + r.next_u32() % 3;
-                let vptr_off = r.next_u32() % 16 * 4;
-                c.bus.write16(t + timer::PMF + 2, index as u16);
-                c.bus.write16(t + timer::PMF + 4, vptr_off as u16);
-                c.bus.write32(owner + vptr_off, VTABLES);
-                let entry = VTABLES + (index - 1) * 8;
-                c.bus.write32(entry, r.next_u32());
-                c.bus.write32(entry + 4, FAKE + 0x310);
-            }
-            c.g[A0][0] = sx(t);
-            c.g[A1][0] = sx(owner);
-        });
+        covered(
+            s08::f_002ab828,
+            bank_monitor_timer_update,
+            150,
+            &|c, seed| {
+                let mut r = base(c, seed, 2, 2);
+                let t = INST;
+                let owner = SYS;
+                c.bus
+                    .write32(t + timer::ACTIVE, (r.next_u32() % 4 != 0) as u32);
+                c.bus.write32(t + timer::PERIOD, r.next_u32() % 100);
+                c.bus
+                    .write32(t + timer::LEFT, (r.next_u32() % 30).wrapping_sub(5));
+                // A plain function (a fake, or GetGameModule returning 0 here) or
+                // a virtual one.
+                let delta = (r.next_u32() % 8 * 4) as u16;
+                c.bus.write16(t + timer::PMF, delta);
+                if r.next_u32() % 2 == 0 {
+                    c.bus.write16(t + timer::PMF + 2, 0xffff);
+                    let f = if r.next_u32() % 2 == 0 {
+                        FAKE + 0x300
+                    } else {
+                        0x0028_b1c8
+                    };
+                    c.bus.write32(t + timer::PMF + 4, f);
+                    c.bus.write32(GAME_GP - gp::GAME, 0);
+                } else {
+                    let index = 1 + r.next_u32() % 3;
+                    let vptr_off = r.next_u32() % 16 * 4;
+                    c.bus.write16(t + timer::PMF + 2, index as u16);
+                    c.bus.write16(t + timer::PMF + 4, vptr_off as u16);
+                    c.bus.write32(owner + vptr_off, VTABLES);
+                    let entry = VTABLES + (index - 1) * 8;
+                    c.bus.write32(entry, r.next_u32());
+                    c.bus.write32(entry + 4, FAKE + 0x310);
+                }
+                c.g[A0][0] = sx(t);
+                c.g[A1][0] = sx(owner);
+            },
+        );
     }
 
     // --- BankMonitorInstance --------------------------------------------------
@@ -3311,45 +3706,75 @@ mod tests {
 
     #[test]
     fn is_done() {
-        covered(s08::f_002aba40, bank_monitor_instance_is_done, 150, &|c, seed| {
-            let mut r = base(c, seed, 3, 3);
-            instance(c, &mut r);
-            for i in 0..8 {
-                let v = pick(&mut r, &[0, 1, 2, 3, 0xffff_ffff]);
-                c.bus.write32(LOG_RESULTS + 4 * i, v);
-            }
-        });
+        covered(
+            s08::f_002aba40,
+            bank_monitor_instance_is_done,
+            150,
+            &|c, seed| {
+                let mut r = base(c, seed, 3, 3);
+                instance(c, &mut r);
+                for i in 0..8 {
+                    let v = pick(&mut r, &[0, 1, 2, 3, 0xffff_ffff]);
+                    c.bus.write32(LOG_RESULTS + 4 * i, v);
+                }
+            },
+        );
     }
 
     #[test]
     fn set_pan() {
-        covered(s08::f_002abd90, bank_monitor_instance_set_pan, 150, &|c, seed| {
-            let mut r = base(c, seed, 4, 3);
-            instance(c, &mut r);
-            let last = r.next_u32() % 0x800;
-            c.bus.write32(INST + bmi::LAST_PAN, last);
-            let pan = if r.next_u32() % 3 == 0 { last.wrapping_add(r.next_u32() % 0x400).wrapping_sub(0x200) } else { r.next_u32() % 0x1000 };
-            c.g[A1][0] = r64(&mut r, pan);
-            let sp = r.next_u32() % 0x8000;
-            c.g[A2][0] = r64(&mut r, sp);
-        });
+        covered(
+            s08::f_002abd90,
+            bank_monitor_instance_set_pan,
+            150,
+            &|c, seed| {
+                let mut r = base(c, seed, 4, 3);
+                instance(c, &mut r);
+                let last = r.next_u32() % 0x800;
+                c.bus.write32(INST + bmi::LAST_PAN, last);
+                let pan = if r.next_u32() % 3 == 0 {
+                    last.wrapping_add(r.next_u32() % 0x400).wrapping_sub(0x200)
+                } else {
+                    r.next_u32() % 0x1000
+                };
+                c.g[A1][0] = r64(&mut r, pan);
+                let sp = r.next_u32() % 0x8000;
+                c.g[A2][0] = r64(&mut r, sp);
+            },
+        );
     }
 
     #[test]
     fn set_volume() {
-        covered(s08::f_002abf60, bank_monitor_instance_set_volume, 120, &|c, seed| {
-            let mut r = base(c, seed, 5, 3);
-            instance(c, &mut r);
-            c.bus.write32(INST + bmi::GAIN, if r.next_u32() % 4 == 0 { r.edge_f32() } else { r.f32(2.0) });
-            let last = pick(&mut r, &[0xffff_ffff, 0, 64, 127]);
-            c.bus.write32(INST + bmi::LAST_VOLUME, last);
-            let v = match r.next_u32() % 4 {
-                0 => 0xffff_ffff,
-                1 => r.next_u32(),
-                _ => (last.wrapping_add(r.next_u32() % 16)).wrapping_sub(8),
-            };
-            c.g[A1][0] = if v == u32::MAX && r.next_u32() % 2 == 0 { u64::MAX >> 1 } else { r64(&mut r, v) };
-        });
+        covered(
+            s08::f_002abf60,
+            bank_monitor_instance_set_volume,
+            120,
+            &|c, seed| {
+                let mut r = base(c, seed, 5, 3);
+                instance(c, &mut r);
+                c.bus.write32(
+                    INST + bmi::GAIN,
+                    if r.next_u32() % 4 == 0 {
+                        r.edge_f32()
+                    } else {
+                        r.f32(2.0)
+                    },
+                );
+                let last = pick(&mut r, &[0xffff_ffff, 0, 64, 127]);
+                c.bus.write32(INST + bmi::LAST_VOLUME, last);
+                let v = match r.next_u32() % 4 {
+                    0 => 0xffff_ffff,
+                    1 => r.next_u32(),
+                    _ => (last.wrapping_add(r.next_u32() % 16)).wrapping_sub(8),
+                };
+                c.g[A1][0] = if v == u32::MAX && r.next_u32() % 2 == 0 {
+                    u64::MAX >> 1
+                } else {
+                    r64(&mut r, v)
+                };
+            },
+        );
     }
 
     // --- shared world extensions ------------------------------------------
@@ -3369,15 +3794,24 @@ mod tests {
     fn audio_globals(c: &mut Cpu, r: &mut Rng) {
         c.bus.write32(GAME_GP + gp::MUSIC_PLAYER, MP);
         c.bus.write32(GAME_GP + gp::SPEECH_LISTENER, SPK);
-        c.bus.write32(MP + 0x408, if r.next_u32() % 3 == 0 { 0 } else { MP + 0x1000 });
+        c.bus.write32(
+            MP + 0x408,
+            if r.next_u32() % 3 == 0 {
+                0
+            } else {
+                MP + 0x1000
+            },
+        );
         c.bus.write32(MP + 0x418, r.next_u32() % 2);
         c.bus.write32(MP + 0x58, r.next_u32() % 4);
         c.bus.write32(MP + 0x5434, r.next_u32());
-        c.bus.write32(MP + 0x5438, if r.next_u32() % 2 == 0 { 0 } else { LAYER });
+        c.bus
+            .write32(MP + 0x5438, if r.next_u32() % 2 == 0 { 0 } else { LAYER });
         c.bus.write32(SPK + 0x1bc, VTABLES);
         for (i, off) in [0x10u32, 0x18, 0x20, 0x30].into_iter().enumerate() {
             c.bus.write16(VTABLES + off, (r.next_u32() % 4 * 4) as u16);
-            c.bus.write32(VTABLES + off + 4, FAKE + 0x400 + 0x10 * i as u32);
+            c.bus
+                .write32(VTABLES + off + 4, FAKE + 0x400 + 0x10 * i as u32);
         }
     }
 
@@ -3388,18 +3822,25 @@ mod tests {
         c.bus.write32(GAME + 0x84, MODULE);
         c.bus.write32(MODULE + 0xc, RACE_MAN);
         let replay = r.next_u32() % 3 != 0;
-        c.bus.write32(MODULE + 0x28, if replay { REPLAY } else { 0 });
+        c.bus
+            .write32(MODULE + 0x28, if replay { REPLAY } else { 0 });
         c.bus.write32(REPLAY, pick(r, &[0, 1, 2, 5, 9, 12]));
-        c.bus.write32(RACE_MAN + 0x40, if r.next_u32() % 4 == 0 { 0 } else { REPLAY });
+        c.bus.write32(
+            RACE_MAN + 0x40,
+            if r.next_u32() % 4 == 0 { 0 } else { REPLAY },
+        );
         c.bus.write32(REPLAY + 0x18, RIDERS);
         c.bus.write32(RACE_MAN + 0x7c, r.next_u32() % 5);
         c.bus.write32(RACE_MAN + 0x78, r.next_u32() % 5);
         for i in 0..4 {
             let rd = RIDERS + i * 0x1000;
             c.bus.write32(RACE_MAN + 0x28 + 4 * i, rd);
-            c.bus.write32(rd + rider::HUMAN, if r.next_u32() % 2 == 0 { 0 } else { 1 });
-            c.bus.write32(rd + rider::LOCAL, if r.next_u32() % 2 == 0 { 0 } else { 1 });
-            c.bus.write32(rd + rider::RANK, (r.next_u32() % 8).wrapping_sub(1));
+            c.bus
+                .write32(rd + rider::HUMAN, if r.next_u32() % 2 == 0 { 0 } else { 1 });
+            c.bus
+                .write32(rd + rider::LOCAL, if r.next_u32() % 2 == 0 { 0 } else { 1 });
+            c.bus
+                .write32(rd + rider::RANK, (r.next_u32() % 8).wrapping_sub(1));
             c.bus.write32(rd + rider::ID, r.next_u32() % 4);
         }
     }
@@ -3408,7 +3849,10 @@ mod tests {
 
     fn calc_params(c: &mut Cpu, r: &mut Rng) {
         c.g[A0][0] = sx(SYS);
-        c.g[A1][0] = { let v = r.next_u32() % 20; r64(r, v) };
+        c.g[A1][0] = {
+            let v = r.next_u32() % 20;
+            r64(r, v)
+        };
         c.g[A2][0] = sx(RIDER);
         c.g[A3][0] = sx(DATA + 0x10);
         c.g[T0][0] = sx(DATA + 0x14);
@@ -3416,289 +3860,425 @@ mod tests {
 
     #[test]
     fn calc_surface_loop_params() {
-        check(ssx3_ee::s07::f_00293290, ssx_audio_calc_surface_loop_params, 150, &|c, seed| {
-            let mut r = base(c, seed, 0x20, 4);
-            world(c, &mut r);
-            audio_globals(c, &mut r);
-            calc_params(c, &mut r);
-            c.pc = 0x0029_3290;
-        });
+        check(
+            ssx3_ee::s07::f_00293290,
+            ssx_audio_calc_surface_loop_params,
+            150,
+            &|c, seed| {
+                let mut r = base(c, seed, 0x20, 4);
+                world(c, &mut r);
+                audio_globals(c, &mut r);
+                calc_params(c, &mut r);
+                c.pc = 0x0029_3290;
+            },
+        );
     }
 
     #[test]
     fn calc_surface_loop_params_remote() {
-        check(ssx3_ee::s07::f_00293350, ssx_audio_calc_surface_loop_params_remote, 150, &|c, seed| {
-            let mut r = base(c, seed, 0x21, 4);
-            world(c, &mut r);
-            audio_globals(c, &mut r);
-            calc_params(c, &mut r);
-        });
+        check(
+            ssx3_ee::s07::f_00293350,
+            ssx_audio_calc_surface_loop_params_remote,
+            150,
+            &|c, seed| {
+                let mut r = base(c, seed, 0x21, 4);
+                world(c, &mut r);
+                audio_globals(c, &mut r);
+                calc_params(c, &mut r);
+            },
+        );
     }
 
     #[test]
     fn calc_edge_loop_params() {
-        check(ssx3_ee::s07::f_00293410, ssx_audio_calc_edge_loop_params, 150, &|c, seed| {
-            let mut r = base(c, seed, 0x22, 4);
-            world(c, &mut r);
-            audio_globals(c, &mut r);
-            calc_params(c, &mut r);
-        });
+        check(
+            ssx3_ee::s07::f_00293410,
+            ssx_audio_calc_edge_loop_params,
+            150,
+            &|c, seed| {
+                let mut r = base(c, seed, 0x22, 4);
+                world(c, &mut r);
+                audio_globals(c, &mut r);
+                calc_params(c, &mut r);
+            },
+        );
     }
 
     #[test]
     fn calc_board_base_loop_params() {
-        check(ssx3_ee::s07::f_00293168, ssx_audio_calc_board_base_loop_params, 150, &|c, seed| {
-            let mut r = base(c, seed, 0x23, 0);
-            world(c, &mut r);
-            audio_globals(c, &mut r);
-            c.g[A0][0] = sx(SYS);
-            c.g[A1][0] = sx(RIDER);
-            c.g[A2][0] = sx(DATA + 0x10);
-            c.g[A3][0] = sx(DATA + 0x14);
-            c.pc = 0x0029_3168;
-        });
+        check(
+            ssx3_ee::s07::f_00293168,
+            ssx_audio_calc_board_base_loop_params,
+            150,
+            &|c, seed| {
+                let mut r = base(c, seed, 0x23, 0);
+                world(c, &mut r);
+                audio_globals(c, &mut r);
+                c.g[A0][0] = sx(SYS);
+                c.g[A1][0] = sx(RIDER);
+                c.g[A2][0] = sx(DATA + 0x10);
+                c.g[A3][0] = sx(DATA + 0x14);
+                c.pc = 0x0029_3168;
+            },
+        );
     }
 
     #[test]
     fn calc_surface_loop_group0() {
-        covered(ssx3_ee::s07::f_00293538, ssx_audio_calc_surface_loop_group0, 150, &|c, seed| {
-            let mut r = base(c, seed, 0x24, 2);
-            world(c, &mut r);
-            audio_globals(c, &mut r);
-            c.g[A0][0] = sx(SYS);
-            c.g[A1][0] = sx(RIDER);
-            c.g[A2][0] = sx(DATA + 0x10);
-            c.g[A3][0] = sx(DATA + 0x14);
-        });
+        covered(
+            ssx3_ee::s07::f_00293538,
+            ssx_audio_calc_surface_loop_group0,
+            150,
+            &|c, seed| {
+                let mut r = base(c, seed, 0x24, 2);
+                world(c, &mut r);
+                audio_globals(c, &mut r);
+                c.g[A0][0] = sx(SYS);
+                c.g[A1][0] = sx(RIDER);
+                c.g[A2][0] = sx(DATA + 0x10);
+                c.g[A3][0] = sx(DATA + 0x14);
+            },
+        );
     }
 
     #[test]
     fn calc_edge_loop_group0() {
-        covered(ssx3_ee::s07::f_00293bb0, ssx_audio_calc_edge_loop_group0, 150, &|c, seed| {
-            let mut r = base(c, seed, 0x25, 2);
-            world(c, &mut r);
-            audio_globals(c, &mut r);
-            c.g[A0][0] = sx(SYS);
-            c.g[A1][0] = sx(RIDER);
-            c.g[A2][0] = sx(DATA + 0x10);
-            c.g[A3][0] = sx(DATA + 0x14);
-        });
+        covered(
+            ssx3_ee::s07::f_00293bb0,
+            ssx_audio_calc_edge_loop_group0,
+            150,
+            &|c, seed| {
+                let mut r = base(c, seed, 0x25, 2);
+                world(c, &mut r);
+                audio_globals(c, &mut r);
+                c.g[A0][0] = sx(SYS);
+                c.g[A1][0] = sx(RIDER);
+                c.g[A2][0] = sx(DATA + 0x10);
+                c.g[A3][0] = sx(DATA + 0x14);
+            },
+        );
     }
 
     // --- board loops -------------------------------------------------------
 
     #[test]
     fn board_base_loop() {
-        check(ssx3_ee::s07::f_00292cb8, ssx_audio_update_board_base_loop, 150, &|c, seed| {
-            let mut r = base(c, seed, 0x26, 3);
-            world(c, &mut r);
-            audio_globals(c, &mut r);
-            c.g[A0][0] = sx(SYS);
-            c.g[A1][0] = sx(INST);
-        });
+        check(
+            ssx3_ee::s07::f_00292cb8,
+            ssx_audio_update_board_base_loop,
+            150,
+            &|c, seed| {
+                let mut r = base(c, seed, 0x26, 3);
+                world(c, &mut r);
+                audio_globals(c, &mut r);
+                c.g[A0][0] = sx(SYS);
+                c.g[A1][0] = sx(INST);
+            },
+        );
     }
 
     #[test]
     fn board_surface_loop() {
-        check(ssx3_ee::s07::f_00292da0, ssx_audio_update_board_surface_loop, 150, &|c, seed| {
-            let mut r = base(c, seed, 0x27, 4);
-            world(c, &mut r);
-            audio_globals(c, &mut r);
-            c.g[A0][0] = sx(SYS);
-            c.g[A1][0] = sx(INST);
-        });
+        check(
+            ssx3_ee::s07::f_00292da0,
+            ssx_audio_update_board_surface_loop,
+            150,
+            &|c, seed| {
+                let mut r = base(c, seed, 0x27, 4);
+                world(c, &mut r);
+                audio_globals(c, &mut r);
+                c.g[A0][0] = sx(SYS);
+                c.g[A1][0] = sx(INST);
+            },
+        );
     }
 
     #[test]
     fn board_surface_loop_remote() {
-        check(ssx3_ee::s07::f_00292ef8, ssx_audio_update_board_surface_loop_remote, 150, &|c, seed| {
-            let mut r = base(c, seed, 0x28, 4);
-            world(c, &mut r);
-            audio_globals(c, &mut r);
-            c.g[A0][0] = sx(SYS);
-            c.g[A1][0] = sx(INST);
-        });
+        check(
+            ssx3_ee::s07::f_00292ef8,
+            ssx_audio_update_board_surface_loop_remote,
+            150,
+            &|c, seed| {
+                let mut r = base(c, seed, 0x28, 4);
+                world(c, &mut r);
+                audio_globals(c, &mut r);
+                c.g[A0][0] = sx(SYS);
+                c.g[A1][0] = sx(INST);
+            },
+        );
     }
 
     #[test]
     fn board_edge_loop() {
-        check(ssx3_ee::s07::f_00293018, ssx_audio_update_board_edge_loop, 150, &|c, seed| {
-            let mut r = base(c, seed, 0x29, 4);
-            world(c, &mut r);
-            audio_globals(c, &mut r);
-            c.g[A0][0] = sx(SYS);
-            c.g[A1][0] = sx(INST);
-            c.pc = 0x0029_3018;
-        });
+        check(
+            ssx3_ee::s07::f_00293018,
+            ssx_audio_update_board_edge_loop,
+            150,
+            &|c, seed| {
+                let mut r = base(c, seed, 0x29, 4);
+                world(c, &mut r);
+                audio_globals(c, &mut r);
+                c.g[A0][0] = sx(SYS);
+                c.g[A1][0] = sx(INST);
+                c.pc = 0x0029_3018;
+            },
+        );
     }
 
     // --- FindRider / paint -------------------------------------------------
 
     #[test]
     fn find_rider() {
-        check(ssx3_ee::s07::f_00285d98, ssx_audio_find_rider, 150, &|c, seed| {
-            let mut r = base(c, seed, 0x2a, 0);
-            find_rider_world(c, &mut r);
-            c.g[A0][0] = sx(SYS);
-            c.g[A1][0] = { let v = pick(&mut r, &[0xffff_ffff, 0xffff_fffe, 0, 1, 2, 3, 7]); r64(&mut r, v) };
-            c.pc = 0x0028_5d98;
-        });
+        check(
+            ssx3_ee::s07::f_00285d98,
+            ssx_audio_find_rider,
+            150,
+            &|c, seed| {
+                let mut r = base(c, seed, 0x2a, 0);
+                find_rider_world(c, &mut r);
+                c.g[A0][0] = sx(SYS);
+                c.g[A1][0] = {
+                    let v = pick(&mut r, &[0xffff_ffff, 0xffff_fffe, 0, 1, 2, 3, 7]);
+                    r64(&mut r, v)
+                };
+                c.pc = 0x0028_5d98;
+            },
+        );
     }
 
     #[test]
     fn apply_mix_paint() {
-        covered(ssx3_ee::s07::f_00289c98, ssx_audio_apply_mix_paint, 150, &|c, seed| {
-            let mut r = base(c, seed, 0x2b, 2);
-            find_rider_world(c, &mut r);
-            audio_globals(c, &mut r);
-            c.bus.write32(LAYER + 4, VTABLES);
-            c.g[A0][0] = sx(SYS);
-            c.g[A1][0] = sx(RIDERS);
-            let paint = if r.next_u32() % 3 == 0 { 0 } else { LAYER };
-            c.g[A2][0] = r64(&mut r, paint);
-        });
+        covered(
+            ssx3_ee::s07::f_00289c98,
+            ssx_audio_apply_mix_paint,
+            150,
+            &|c, seed| {
+                let mut r = base(c, seed, 0x2b, 2);
+                find_rider_world(c, &mut r);
+                audio_globals(c, &mut r);
+                c.bus.write32(LAYER + 4, VTABLES);
+                c.g[A0][0] = sx(SYS);
+                c.g[A1][0] = sx(RIDERS);
+                let paint = if r.next_u32() % 3 == 0 { 0 } else { LAYER };
+                c.g[A2][0] = r64(&mut r, paint);
+            },
+        );
     }
 
     #[test]
     fn update_rider_world_paint() {
-        covered(ssx3_ee::s07::f_002898a8, ssx_audio_update_rider_world_paint, 150, &|c, seed| {
-            let mut r = base(c, seed, 0x2c, 4);
-            world(c, &mut r);
-            audio_globals(c, &mut r);
-            c.bus.write32(RIDER + rider::ID, r.next_u32() % 4);
-            for i in 0..2 {
-                let base = SYS + 4 * i;
-                for off in [sys::PAINT_A, sys::PAINT_B, sys::PAINT_C] {
-                    c.bus.write32(base + off, if r.next_u32() % 4 == 0 { 0 } else { LAYER });
+        covered(
+            ssx3_ee::s07::f_002898a8,
+            ssx_audio_update_rider_world_paint,
+            150,
+            &|c, seed| {
+                let mut r = base(c, seed, 0x2c, 4);
+                world(c, &mut r);
+                audio_globals(c, &mut r);
+                c.bus.write32(RIDER + rider::ID, r.next_u32() % 4);
+                for i in 0..2 {
+                    let base = SYS + 4 * i;
+                    for off in [sys::PAINT_A, sys::PAINT_B, sys::PAINT_C] {
+                        c.bus
+                            .write32(base + off, if r.next_u32() % 4 == 0 { 0 } else { LAYER });
+                    }
                 }
-            }
-            c.bus.write32(LAYER + 4, VTABLES);
-            c.bus.write32(SYS + 0x608c, pick(&mut r, &[0, 1, 2, 3, 4]));
-            c.g[A0][0] = sx(SYS);
-            c.g[A1][0] = sx(RIDER);
-        });
+                c.bus.write32(LAYER + 4, VTABLES);
+                c.bus.write32(SYS + 0x608c, pick(&mut r, &[0, 1, 2, 3, 4]));
+                c.g[A0][0] = sx(SYS);
+                c.g[A1][0] = sx(RIDER);
+            },
+        );
     }
 
     // --- bank monitor instance 3D -----------------------------------------
 
     #[test]
     fn update_3d() {
-        covered(ssx3_ee::s08::f_002ac868, bank_monitor_instance_update_3d, 120, &|c, seed| {
-            let mut r = base(c, seed, 0x2d, 5);
-            world(c, &mut r);
-            audio_globals(c, &mut r);
-            fill(c, &mut r, INST, 0x30);
-            c.bus.write32(INST + bmi::RIDER, RIDER);
-            c.bus.write32(INST + bmi::STATE, r.next_u32() % 5);
-            c.bus.write32(INST + bmi::HANDLE, r.next_u32());
-            c.bus.write32(INST + bmi::STREAM, DATA + 0x5_0000);
-            c.bus.write32(INST + bmi::DISTANCE, float(&mut r, 50.0));
-            c.bus.write32(INST + bmi::GAIN_PTR, if r.next_u32() % 3 == 0 { 0 } else { DATA + 0x10 });
-            c.bus.write32(INST + bmi::RADIUS, float(&mut r, 40.0));
-            c.bus.write32(INST + bmi::VOLUME_SCALE, pick(&mut r, &[0x7f, 0x40, 0, 200]));
-            c.bus.write32(INST + bmi::FIXED, r.next_u32() % 2);
-            c.bus.write32(INST + bmi::POSITIONAL, r.next_u32() % 2);
-            c.bus.write32(BM + bank_monitor::LISTENER, VTABLES);
-            c.bus.write32(BM + bank_monitor::DOPPLER, r.next_u32() % 2);
-            c.bus.write32(BM + bank_monitor::ENABLE_3D, r.next_u32() % 2);
-            c.f[12] = float(&mut r, 0.1);
-            c.g[A0][0] = sx(INST);
-            c.g[A1][0] = sx(BM);
-        });
+        covered(
+            ssx3_ee::s08::f_002ac868,
+            bank_monitor_instance_update_3d,
+            120,
+            &|c, seed| {
+                let mut r = base(c, seed, 0x2d, 5);
+                world(c, &mut r);
+                audio_globals(c, &mut r);
+                fill(c, &mut r, INST, 0x30);
+                c.bus.write32(INST + bmi::RIDER, RIDER);
+                c.bus.write32(INST + bmi::STATE, r.next_u32() % 5);
+                c.bus.write32(INST + bmi::HANDLE, r.next_u32());
+                c.bus.write32(INST + bmi::STREAM, DATA + 0x5_0000);
+                c.bus.write32(INST + bmi::DISTANCE, float(&mut r, 50.0));
+                c.bus.write32(
+                    INST + bmi::GAIN_PTR,
+                    if r.next_u32() % 3 == 0 {
+                        0
+                    } else {
+                        DATA + 0x10
+                    },
+                );
+                c.bus.write32(INST + bmi::RADIUS, float(&mut r, 40.0));
+                c.bus.write32(
+                    INST + bmi::VOLUME_SCALE,
+                    pick(&mut r, &[0x7f, 0x40, 0, 200]),
+                );
+                c.bus.write32(INST + bmi::FIXED, r.next_u32() % 2);
+                c.bus.write32(INST + bmi::POSITIONAL, r.next_u32() % 2);
+                c.bus.write32(BM + bank_monitor::LISTENER, VTABLES);
+                c.bus.write32(BM + bank_monitor::DOPPLER, r.next_u32() % 2);
+                c.bus
+                    .write32(BM + bank_monitor::ENABLE_3D, r.next_u32() % 2);
+                c.f[12] = float(&mut r, 0.1);
+                c.g[A0][0] = sx(INST);
+                c.g[A1][0] = sx(BM);
+            },
+        );
     }
 
     // --- per-frame update --------------------------------------------------
 
     #[test]
     fn update() {
-        covered(ssx3_ee::s07::f_00285bf8, ssx_audio_update, 150, &|c, seed| {
-            let mut r = base(c, seed, 0x2e, 6);
-            world(c, &mut r);
-            audio_globals(c, &mut r);
-            c.bus.write32(SYS + sys::PAUSE_FADE_STATE, pick(&mut r, &[0, 1, 2, 3]));
-            c.bus.write32(SYS + sys::STREAMS_PLAYING, r.next_u32() % 2);
-            c.bus.write32(SYS + sys::MODE, pick(&mut r, &[0, 6, 6, 2]));
-            c.bus.write32(SYS + sys::MUSIC_STARTED, r.next_u32() % 2);
-            c.bus.write32(SYS + sys::MUSIC_FADE_STATE, r.next_u32() % 3);
-            c.bus.write32(SYS + sys::MUSIC_FADE_FRAMES, r.next_u32() % 1200);
-            c.bus.write32(SYS + sys::BOOST_STOP_DELAY, r.next_u32() % 3);
-            c.bus.write32(RACE_MAN + 0xc, r.f32(100.0));
-            c.f[12] = float(&mut r, 0.05);
-            c.g[A0][0] = sx(SYS);
-        });
+        covered(
+            ssx3_ee::s07::f_00285bf8,
+            ssx_audio_update,
+            150,
+            &|c, seed| {
+                let mut r = base(c, seed, 0x2e, 6);
+                world(c, &mut r);
+                audio_globals(c, &mut r);
+                c.bus
+                    .write32(SYS + sys::PAUSE_FADE_STATE, pick(&mut r, &[0, 1, 2, 3]));
+                c.bus.write32(SYS + sys::STREAMS_PLAYING, r.next_u32() % 2);
+                c.bus.write32(SYS + sys::MODE, pick(&mut r, &[0, 6, 6, 2]));
+                c.bus.write32(SYS + sys::MUSIC_STARTED, r.next_u32() % 2);
+                c.bus.write32(SYS + sys::MUSIC_FADE_STATE, r.next_u32() % 3);
+                c.bus
+                    .write32(SYS + sys::MUSIC_FADE_FRAMES, r.next_u32() % 1200);
+                c.bus.write32(SYS + sys::BOOST_STOP_DELAY, r.next_u32() % 3);
+                c.bus.write32(RACE_MAN + 0xc, r.f32(100.0));
+                c.f[12] = float(&mut r, 0.05);
+                c.g[A0][0] = sx(SYS);
+            },
+        );
     }
 
     // --- boost / speech / song --------------------------------------------
 
     #[test]
     fn stop_boost_sound() {
-        check(ssx3_ee::s08::f_002992d8, ssx_audio_stop_boost_sound, 150, &|c, seed| {
-            let mut r = base(c, seed, 0x2f, 3);
-            find_rider_world(c, &mut r);
-            c.bus.write32(RIDER + rider::HUMAN, r.next_u32() % 2);
-            c.bus.write32(RIDER + rider::LOCAL, r.next_u32() % 2);
-            c.bus.write32(SYS + sys::ROOT, ROOT);
-            c.bus.write32(ROOT, SND);
-            c.bus.write32(SYS + sys::BOOST_HANDLE, r.next_u32());
-            // Covers the exactly-zero stop and the "never negative" clamp.
-            c.bus.write32(SYS + sys::BOOST_STOP_DELAY, (r.next_u32() % 3).wrapping_sub(1));
-            c.g[A0][0] = sx(SYS);
-            c.g[A1][0] = sx(RIDER);
-        });
+        check(
+            ssx3_ee::s08::f_002992d8,
+            ssx_audio_stop_boost_sound,
+            150,
+            &|c, seed| {
+                let mut r = base(c, seed, 0x2f, 3);
+                find_rider_world(c, &mut r);
+                c.bus.write32(RIDER + rider::HUMAN, r.next_u32() % 2);
+                c.bus.write32(RIDER + rider::LOCAL, r.next_u32() % 2);
+                c.bus.write32(SYS + sys::ROOT, ROOT);
+                c.bus.write32(ROOT, SND);
+                c.bus.write32(SYS + sys::BOOST_HANDLE, r.next_u32());
+                // Covers the exactly-zero stop and the "never negative" clamp.
+                c.bus.write32(
+                    SYS + sys::BOOST_STOP_DELAY,
+                    (r.next_u32() % 3).wrapping_sub(1),
+                );
+                c.g[A0][0] = sx(SYS);
+                c.g[A1][0] = sx(RIDER);
+            },
+        );
     }
 
     #[test]
     fn speech_instance_update_matches() {
-        check(ssx3_ee::s08::f_002afc88, speech_instance_update, 150, &|c, seed| {
-            let mut r = base(c, seed, 0x30, 2);
-            audio_globals(c, &mut r);
-            c.bus.write32(INST + 0x4, r.next_u32());
-            c.bus.write32(INST + 0x900, r.next_u32() % 3);
-            c.g[A0][0] = sx(INST);
-            c.g[A1][0] = sx(DATA + 0x5_0000);
-        });
+        check(
+            ssx3_ee::s08::f_002afc88,
+            speech_instance_update,
+            150,
+            &|c, seed| {
+                let mut r = base(c, seed, 0x30, 2);
+                audio_globals(c, &mut r);
+                c.bus.write32(INST + 0x4, r.next_u32());
+                c.bus.write32(INST + 0x900, r.next_u32() % 3);
+                c.g[A0][0] = sx(INST);
+                c.g[A1][0] = sx(DATA + 0x5_0000);
+            },
+        );
     }
 
     #[test]
     fn song_instance_update_matches() {
-        check(ssx3_ee::s08::f_002b21e0, song_instance_update, 150, &|c, seed| {
-            let mut r = base(c, seed, 0x31, 3);
-            audio_globals(c, &mut r);
-            c.bus.write32(SONG + 0x2c, r.next_u32() % 2);
-            c.bus.write32(SONG + 0, SONG_DATA);
-            c.bus.write32(SONG + 0x48, r.next_u32() % 2);
-            c.bus.write32(SONG + 0x54, r.next_u32() % 2);
-            c.bus.write32(SONG + 0x3c, if r.next_u32() % 3 == 0 { 0 } else { SONG_DATA + 0x100 });
-            c.bus.write32(SONG + 0x40, pick(&mut r, &[0x40, 0x3f, 0x7f]));
-            c.bus.write32(SONG + 0x30, pick(&mut r, &[0xffff_ffff, 0, 3]));
-            c.bus.write32(SONG + 0x1c, r.next_u32());
-            c.bus.write32(SONG + 0x20, r.next_u32());
-            c.bus.write32(SONG_DATA + 0x9c, r.next_u32() % 128);
-            c.bus.write32(SONG_DATA + 0x88, float(&mut r, 1.0));
-            c.bus.write32(SONG_DATA + 0x40, r.next_u32() % 2);
-            fill(c, &mut r, SONG_DATA + 0x20, 0x10);
-            // Force the "song data loaded" answer (`MusicPlayer_IsSongDataLoaded`
-            // returns 1 when a1 is 0).
-            let arg = if seed % 2 == 0 { 0 } else { let v = r.next_u32(); r64(&mut r, v) };
-            c.g[A1][0] = arg;
-            c.g[A0][0] = sx(SONG);
-        });
+        check(
+            ssx3_ee::s08::f_002b21e0,
+            song_instance_update,
+            150,
+            &|c, seed| {
+                let mut r = base(c, seed, 0x31, 3);
+                audio_globals(c, &mut r);
+                c.bus.write32(SONG + 0x2c, r.next_u32() % 2);
+                c.bus.write32(SONG + 0, SONG_DATA);
+                c.bus.write32(SONG + 0x48, r.next_u32() % 2);
+                c.bus.write32(SONG + 0x54, r.next_u32() % 2);
+                c.bus.write32(
+                    SONG + 0x3c,
+                    if r.next_u32() % 3 == 0 {
+                        0
+                    } else {
+                        SONG_DATA + 0x100
+                    },
+                );
+                c.bus
+                    .write32(SONG + 0x40, pick(&mut r, &[0x40, 0x3f, 0x7f]));
+                c.bus
+                    .write32(SONG + 0x30, pick(&mut r, &[0xffff_ffff, 0, 3]));
+                c.bus.write32(SONG + 0x1c, r.next_u32());
+                c.bus.write32(SONG + 0x20, r.next_u32());
+                c.bus.write32(SONG_DATA + 0x9c, r.next_u32() % 128);
+                c.bus.write32(SONG_DATA + 0x88, float(&mut r, 1.0));
+                c.bus.write32(SONG_DATA + 0x40, r.next_u32() % 2);
+                fill(c, &mut r, SONG_DATA + 0x20, 0x10);
+                // Force the "song data loaded" answer (`MusicPlayer_IsSongDataLoaded`
+                // returns 1 when a1 is 0).
+                let arg = if seed % 2 == 0 {
+                    0
+                } else {
+                    let v = r.next_u32();
+                    r64(&mut r, v)
+                };
+                c.g[A1][0] = arg;
+                c.g[A0][0] = sx(SONG);
+            },
+        );
     }
 
     #[test]
     fn update_music_fade_in() {
-        check(ssx3_ee::s07::f_0028f000, ssx_audio_update_music_fade_in, 150, &|c, seed| {
-            let mut r = base(c, seed, 0x32, 2);
-            find_rider_world(c, &mut r);
-            audio_globals(c, &mut r);
-            // `sys + 0x118` is the embedded music player.
-            c.bus.write32(SYS + sys::ROOT + 0x408, if r.next_u32() % 3 == 0 { 0 } else { MP });
-            c.bus.write32(SYS + sys::ROOT + 0x418, r.next_u32() % 2);
-            c.bus.write32(SYS + sys::ROOT + 0x58, r.next_u32() % 4);
-            c.bus.write32(SYS + sys::MUSIC_FADE_STATE, pick(&mut r, &[0, 2, 2]));
-            c.bus.write32(SYS + sys::MUSIC_FADE_FRAMES, pick(&mut r, &[0, 5, 799, 800, 1200, 1600]));
-            c.g[A0][0] = sx(SYS);
-        });
+        check(
+            ssx3_ee::s07::f_0028f000,
+            ssx_audio_update_music_fade_in,
+            150,
+            &|c, seed| {
+                let mut r = base(c, seed, 0x32, 2);
+                find_rider_world(c, &mut r);
+                audio_globals(c, &mut r);
+                // `sys + 0x118` is the embedded music player.
+                c.bus.write32(
+                    SYS + sys::ROOT + 0x408,
+                    if r.next_u32() % 3 == 0 { 0 } else { MP },
+                );
+                c.bus.write32(SYS + sys::ROOT + 0x418, r.next_u32() % 2);
+                c.bus.write32(SYS + sys::ROOT + 0x58, r.next_u32() % 4);
+                c.bus
+                    .write32(SYS + sys::MUSIC_FADE_STATE, pick(&mut r, &[0, 2, 2]));
+                c.bus.write32(
+                    SYS + sys::MUSIC_FADE_FRAMES,
+                    pick(&mut r, &[0, 5, 799, 800, 1200, 1600]),
+                );
+                c.g[A0][0] = sx(SYS);
+            },
+        );
     }
 
     /// `SSXAudioSystem_UpdateMusicFadeIn` on the differential fixture of
@@ -3710,7 +4290,10 @@ mod tests {
         let mut r = base(c, seed, 0x32, 2);
         find_rider_world(c, &mut r);
         audio_globals(c, &mut r);
-        c.bus.write32(SYS + sys::ROOT + 0x408, if r.next_u32() % 3 == 0 { 0 } else { MP });
+        c.bus.write32(
+            SYS + sys::ROOT + 0x408,
+            if r.next_u32() % 3 == 0 { 0 } else { MP },
+        );
         c.bus.write32(SYS + sys::ROOT + 0x418, r.next_u32() % 2);
         c.bus.write32(SYS + sys::ROOT + 0x58, r.next_u32() % 4);
         c.bus.write32(SYS + sys::MUSIC_FADE_STATE, 2);
@@ -3742,11 +4325,23 @@ mod tests {
         assert!([800, 1000, 1200].contains(&length), "length {length}");
         for hz in [120u32, 240] {
             let q = hz / 60;
-            assert_eq!(fade_count(hz, seed, 100_000, 1), Some(length * q), "{hz} Hz: length");
-            assert_eq!(fade_count(hz, seed, length * q - 1, 2), Some(length * q), "{hz} Hz: stops");
+            assert_eq!(
+                fade_count(hz, seed, 100_000, 1),
+                Some(length * q),
+                "{hz} Hz: length"
+            );
+            assert_eq!(
+                fade_count(hz, seed, length * q - 1, 2),
+                Some(length * q),
+                "{hz} Hz: stops"
+            );
             for t in [0u32, 100, length / 2] {
                 let at60 = fade_count(60, seed, t, 1).unwrap();
-                assert_eq!(fade_count(hz, seed, t * q, q), Some(at60 * q), "{hz} Hz: from {t}");
+                assert_eq!(
+                    fade_count(hz, seed, t * q, q),
+                    Some(at60 * q),
+                    "{hz} Hz: from {t}"
+                );
             }
         }
     }
@@ -3755,19 +4350,29 @@ mod tests {
 
     #[test]
     fn update_countdown_beeps() {
-        check(ssx3_ee::s08::f_0029cca8, ssx_audio_update_countdown_beeps, 150, &|c, seed| {
-            let mut r = base(c, seed, 0x33, 4);
-            find_rider_world(c, &mut r);
-            audio_globals(c, &mut r);
-            c.bus.write32(SYS + sys::ROOT, ROOT);
-            c.bus.write32(ROOT, SND);
-            c.bus.write32(GAME + 0xc0, if r.next_u32() % 5 == 0 { 0 } else { CD });
-            c.bus.write32(CD + 0x88, r.next_u32() % 2);
-            c.bus.write32(CD + 0x78, r.next_u32() % 40);
-            c.bus.write32(RACE_MAN + 0xc, r.f32(30.0));
-            c.bus.write32(0x0053_08d0, pick(&mut r, &[0, 0x200, 0x400, 0x800]));
-            c.bus.write32(SYS + sys::COUNTDOWN_LAST, pick(&mut r, &[0, 1, 4, 6, 8, 10, 12]));
-            c.g[A0][0] = sx(SYS);
-        });
+        check(
+            ssx3_ee::s08::f_0029cca8,
+            ssx_audio_update_countdown_beeps,
+            150,
+            &|c, seed| {
+                let mut r = base(c, seed, 0x33, 4);
+                find_rider_world(c, &mut r);
+                audio_globals(c, &mut r);
+                c.bus.write32(SYS + sys::ROOT, ROOT);
+                c.bus.write32(ROOT, SND);
+                c.bus
+                    .write32(GAME + 0xc0, if r.next_u32() % 5 == 0 { 0 } else { CD });
+                c.bus.write32(CD + 0x88, r.next_u32() % 2);
+                c.bus.write32(CD + 0x78, r.next_u32() % 40);
+                c.bus.write32(RACE_MAN + 0xc, r.f32(30.0));
+                c.bus
+                    .write32(0x0053_08d0, pick(&mut r, &[0, 0x200, 0x400, 0x800]));
+                c.bus.write32(
+                    SYS + sys::COUNTDOWN_LAST,
+                    pick(&mut r, &[0, 1, 4, 6, 8, 10, 12]),
+                );
+                c.g[A0][0] = sx(SYS);
+            },
+        );
     }
 }

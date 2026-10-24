@@ -10,10 +10,11 @@ use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
-pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0025_8330, c_game_comm_update_max_latency, "cGameComm_UpdateMaxLatency"),
-];
-
+pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[(
+    0x0025_8330,
+    c_game_comm_update_max_latency,
+    "cGameComm_UpdateMaxLatency",
+)];
 
 // ---------------------------------------------------------------------------
 // Game comm.
@@ -51,26 +52,30 @@ pub(crate) mod tests {
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
 
-
     #[test]
     fn c_game_comm_update_max_latency_matches() {
-        check(ssx3_ee::s06::f_00258330, c_game_comm_update_max_latency, 300, &|c, seed| {
-            let mut r = Rng(0x2583_3000 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            c.g[A0][0] = DATA as u64;
-            let world = DATA + 0x400;
-            c.bus.write32(GAME_GP - 0x848, world);
-            // Seeds 0 and 1 force the FPU compare both ways; the rest fuzz.
-            let (a, b, limit) = match seed % 3 {
-                0 => (1.0f32.to_bits(), 2.0f32.to_bits(), 3.0f32.to_bits()),
-                1 => (5.0f32.to_bits(), 4.0f32.to_bits(), 1.0f32.to_bits()),
-                _ => (r.edge_f32(), r.edge_f32(), r.edge_f32()),
-            };
-            c.bus.write32(DATA + 0x114, a);
-            c.bus.write32(DATA + 0x118, b);
-            c.bus.write32(world + 0x14, limit);
-            c.bus.write32(DATA + 0x11c, r.next_u32());
-        });
+        check(
+            ssx3_ee::s06::f_00258330,
+            c_game_comm_update_max_latency,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x2583_3000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.g[A0][0] = DATA as u64;
+                let world = DATA + 0x400;
+                c.bus.write32(GAME_GP - 0x848, world);
+                // Seeds 0 and 1 force the FPU compare both ways; the rest fuzz.
+                let (a, b, limit) = match seed % 3 {
+                    0 => (1.0f32.to_bits(), 2.0f32.to_bits(), 3.0f32.to_bits()),
+                    1 => (5.0f32.to_bits(), 4.0f32.to_bits(), 1.0f32.to_bits()),
+                    _ => (r.edge_f32(), r.edge_f32(), r.edge_f32()),
+                };
+                c.bus.write32(DATA + 0x114, a);
+                c.bus.write32(DATA + 0x118, b);
+                c.bus.write32(world + 0x14, limit);
+                c.bus.write32(DATA + 0x11c, r.next_u32());
+            },
+        );
     }
 }

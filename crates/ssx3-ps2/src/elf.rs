@@ -30,7 +30,8 @@ pub fn load(c: &mut Cpu, elf: &[u8]) -> Result<u32, String> {
         let data = elf.get(off..off + filesz).ok_or("segment out of range")?;
         c.bus.write_bytes(vaddr, data);
         if memsz > filesz {
-            c.bus.write_bytes(vaddr + filesz as u32, &vec![0; memsz - filesz]);
+            c.bus
+                .write_bytes(vaddr + filesz as u32, &vec![0; memsz - filesz]);
         }
     }
     Ok(entry)

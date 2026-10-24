@@ -47,7 +47,11 @@ pub fn set_render_target_texture(c: &mut Cpu) {
     let (x1, y1) = (sx(pow2(tw) as u32 - 1), sx(pow2(th) as u32 - 1));
     let ofx = sx((0x800u32.wrapping_sub((pow2(tw) as i32 >> 1) as u32)) << 4);
     let ofy = sx((0x800u32.wrapping_sub((pow2(th) as i32 >> 1) as u32)) << 4);
-    let steps = vec![gif_ad(&[(frame, 0x4c), (x1 << 16 | y1 << 48, 0x40), (ofx | ofy << 32, 0x18)])];
+    let steps = vec![gif_ad(&[
+        (frame, 0x4c),
+        (x1 << 16 | y1 << 48, 0x40),
+        (ofx | ofy << 32, 0x18),
+    ])];
     let start = empty_packet(c, gm);
     record(start, Cmd::Vu(steps));
     add_record(c, gm, start, start, false);
@@ -60,14 +64,29 @@ pub fn set_render_target_texture(c: &mut Cpu) {
 /// both contexts, the XYOFFSET for the frame size; a continuation record.
 pub fn restore_render_target(c: &mut Cpu) {
     let gm = c.g[A0][0] as u32;
-    let frame = r32(c, gm + 0x5a84) as u64 | (r32(c, gm + 0x5a50) as u64) << 16 | (r32(c, gm + 0x5a3c) as u64) << 24;
+    let frame = r32(c, gm + 0x5a84) as u64
+        | (r32(c, gm + 0x5a50) as u64) << 16
+        | (r32(c, gm + 0x5a3c) as u64) << 24;
     let h16 = |c: &mut Cpu, o: u32| c.bus.read16(gm + o) as u32;
-    let (x0, y0, w, h) = (h16(c, 0x5900), h16(c, 0x5902), h16(c, 0x5904), h16(c, 0x5906));
-    let scissor = x0 as u64 | sx(x0.wrapping_sub(1).wrapping_add(w)) << 16 | (y0 as u64) << 32 | sx(y0.wrapping_sub(1).wrapping_add(h)) << 48;
+    let (x0, y0, w, h) = (
+        h16(c, 0x5900),
+        h16(c, 0x5902),
+        h16(c, 0x5904),
+        h16(c, 0x5906),
+    );
+    let scissor = x0 as u64
+        | sx(x0.wrapping_sub(1).wrapping_add(w)) << 16
+        | (y0 as u64) << 32
+        | sx(y0.wrapping_sub(1).wrapping_add(h)) << 48;
     let (fw, fh) = (r32(c, gm + 0x5a30), r32(c, gm + 0x5a34));
     let ofx = (0x800u32.wrapping_sub(fw >> 1) << 4) as u64;
     let ofy = (0x800u32.wrapping_sub(fh >> 1) << 4) as u64;
-    let steps = vec![gif_ad(&[(frame, 0x4c), (scissor, 0x40), (scissor, 0x41), (ofx | ofy << 32, 0x18)])];
+    let steps = vec![gif_ad(&[
+        (frame, 0x4c),
+        (scissor, 0x40),
+        (scissor, 0x41),
+        (ofx | ofy << 32, 0x18),
+    ])];
     let start = empty_packet(c, gm);
     record(start, Cmd::Vu(steps));
     add_record(c, gm, start, start, true);

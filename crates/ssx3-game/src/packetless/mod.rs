@@ -32,24 +32,26 @@ mod lines;
 mod misc2d;
 mod model;
 mod post;
-mod rider;
 mod ribbon;
+mod rider;
 mod sprites;
 mod target;
 mod vu0;
 
 pub use bezier::end_pass as bezier_end_pass;
-pub(crate) use frame::dispatch_render_frame;
-pub use model::{draw_model, grid_mesh_draw};
 pub use fog::render_depth_fog;
+pub(crate) use frame::dispatch_render_frame;
 pub use glyphs::{draw_glyphs, draw_glyphs_w};
 pub use lines::{draw_indexed_triangles, draw_line_shape, draw_line_strip};
 pub use misc2d::{draw_transition, fog_particles};
+pub use model::{draw_model, grid_mesh_draw};
 pub use post::{render_bloom, render_color_filter};
 pub use ribbon::{draw_board_wake, draw_shadow_volume};
+pub use rider::{
+    draw_skinned_model, draw_skinned_model_shadow, emit_lighting_packet, set_shadow_header,
+};
 pub use sprites::{draw_rotated_sprites, draw_sprite_3d};
 pub use target::{fill_render_target, restore_render_target, set_render_target_texture};
-pub use rider::{draw_skinned_model, draw_skinned_model_shadow, emit_lighting_packet, set_shadow_header};
 
 /// PS2GraphicsMan fields (`structs/render.md`).
 mod gmf {
@@ -129,7 +131,12 @@ fn empty_packet(c: &mut Cpu, gm: u32) -> u32 {
 }
 
 fn record(start: u32, cmd: Cmd) {
-    direct::record(Recorded { start, end: start, first_tag: 0, cmd });
+    direct::record(Recorded {
+        start,
+        end: start,
+        first_tag: 0,
+        cmd,
+    });
 }
 
 /// `PS2GraphicsMan_UpdateViewMatrices(gm)` when the view matrices are not
@@ -171,7 +178,11 @@ fn clear_type(c: &mut Cpu, gm: u32) {
 pub fn draw_tri_strip(c: &mut Cpu) {
     let (gm, n, verts) = (c.g[A0][0] as u32, c.g[A1][0] as i64, c.g[A2][0] as u32);
     let gp = c.g[GP][0] as u32;
-    let entry = if r32(c, gp + 0x1290) == 0 { 0x12b8 } else { 0x12b0 };
+    let entry = if r32(c, gp + 0x1290) == 0 {
+        0x12b8
+    } else {
+        0x12b0
+    };
     w32(c, gp + 0x1290, 0);
     let st = r32(c, gm + gmf::CUR_STATE);
     let w0 = r32(c, st) & !0x3c0 | 0xc0;
@@ -180,11 +191,28 @@ pub fn draw_tri_strip(c: &mut Cpu) {
     w32(c, st + 0xc, w3);
     ensure_view_matrices(c, gm, 0x0037_98fc);
     let st = r32(c, gm + gmf::CUR_STATE);
-    let prim = if (c.bus.read16(st + 0x10) as i16) < 0 { 0x4c } else { 0x5c };
+    let prim = if (c.bus.read16(st + 0x10) as i16) < 0 {
+        0x4c
+    } else {
+        0x5c
+    };
     let n = if n > 2 { n as u32 } else { 0 };
-    let v: Vec<[u128; 3]> = (0..n).map(|i| std::array::from_fn(|k| c.bus.read128(verts + 48 * i + 16 * k as u32))).collect();
+    let v: Vec<[u128; 3]> = (0..n)
+        .map(|i| std::array::from_fn(|k| c.bus.read128(verts + 48 * i + 16 * k as u32)))
+        .collect();
     let start = empty_packet(c, gm);
-    record(start, if v.is_empty() { Cmd::Vu(Vec::new()) } else { Cmd::Strip { entry, prim, verts: v } });
+    record(
+        start,
+        if v.is_empty() {
+            Cmd::Vu(Vec::new())
+        } else {
+            Cmd::Strip {
+                entry,
+                prim,
+                verts: v,
+            }
+        },
+    );
     add_record(c, gm, start, start, false);
     clear_type(c, gm);
     ret(c, 60 + 20 * n as u64);
@@ -202,7 +230,11 @@ static OPEN_STRIP: std::sync::Mutex<Option<(u32, u32, u32, u32)>> = std::sync::M
 pub fn begin_tri_strip(c: &mut Cpu) {
     let (gm, n) = (c.g[A0][0] as u32, c.g[A1][0] as u32);
     let gp = c.g[GP][0] as u32;
-    let entry = if r32(c, gp + 0x1290) == 0 { 0x12b8 } else { 0x12b0 };
+    let entry = if r32(c, gp + 0x1290) == 0 {
+        0x12b8
+    } else {
+        0x12b0
+    };
     w32(c, gp + 0x1290, 0);
     let st = r32(c, gm + gmf::CUR_STATE);
     let w0 = r32(c, st) & !0x3c0 | 0xc0;
@@ -211,7 +243,11 @@ pub fn begin_tri_strip(c: &mut Cpu) {
     w32(c, st + 0xc, w3);
     ensure_view_matrices(c, gm, 0x0037_a2e8);
     let st = r32(c, gm + gmf::CUR_STATE);
-    let prim = if (c.bus.read16(st + 0x10) as i16) < 0 { 0x4c } else { 0x5c };
+    let prim = if (c.bus.read16(st + 0x10) as i16) < 0 {
+        0x4c
+    } else {
+        0x5c
+    };
     let cursor = r32(c, gm + gmf::VIF_CURSOR);
     w32(c, gm + gmf::STRIP_START, cursor);
     let spr = r32(c, gp + 0x1384);
@@ -232,7 +268,9 @@ pub fn end_tri_strip(c: &mut Cpu) {
     let cmd = match open {
         // (One batch: the strip program takes at most 72 vertices.)
         Some((entry, prim, n, at)) if (3..=STRIP_BATCH as u32).contains(&n) => {
-            let verts = (0..n).map(|i| std::array::from_fn(|k| c.bus.read128(at + 48 * i + 16 * k as u32))).collect();
+            let verts = (0..n)
+                .map(|i| std::array::from_fn(|k| c.bus.read128(at + 48 * i + 16 * k as u32)))
+                .collect();
             Cmd::Strip { entry, prim, verts }
         }
         _ => Cmd::Vu(Vec::new()),
@@ -293,14 +331,21 @@ pub(crate) fn guest_call(c: &mut Cpu, target: u32, args: &[u32], ret: u32) -> u3
     c.no_unwind = no_unwind;
     if c.pc != ret {
         static ONCE: std::sync::Once = std::sync::Once::new();
-        ONCE.call_once(|| eprintln!("[packetless] guest call {target:#x} came back at {:#x}, not {ret:#x}", c.pc));
+        ONCE.call_once(|| {
+            eprintln!(
+                "[packetless] guest call {target:#x} came back at {:#x}, not {ret:#x}",
+                c.pc
+            )
+        });
     }
     c.g[RA] = ra;
     c.g[V0][0] as u32
 }
 
 fn q4(v: [u32; 4]) -> u128 {
-    v.iter().enumerate().fold(0u128, |q, (l, &x)| q | (x as u128) << (32 * l))
+    v.iter()
+        .enumerate()
+        .fold(0u128, |q, (l, &x)| q | (x as u128) << (32 * l))
 }
 
 fn v4(q: u128) -> [u32; 4] {
@@ -339,7 +384,14 @@ fn state_word(c: &mut Cpu, st: u32, k: u32, keep: u32, set: u32) {
 /// start; its record.
 fn vu_draw(c: &mut Cpu, gm: u32, writes: Vec<(u16, Vec<u128>)>, entry: u32) {
     let start = empty_packet(c, gm);
-    let mut steps: Vec<Step> = writes.into_iter().map(|(addr, data)| Step::Write { addr, rel: true, data }).collect();
+    let mut steps: Vec<Step> = writes
+        .into_iter()
+        .map(|(addr, data)| Step::Write {
+            addr,
+            rel: true,
+            data,
+        })
+        .collect();
     steps.push(Step::Start(entry));
     record(start, Cmd::Vu(steps));
     add_record(c, gm, start, start, false);
@@ -393,8 +445,18 @@ fn ring_batches(c: &mut Cpu, e: u32, per: i32, batches: i32) -> Vec<RingBatch> {
         done += count;
         let wrap = (i1 + count - size).max(0);
         let first = count.min(size - i1);
-        let end = if done < size { (done + base) % size } else { (done - 1 + base) % size };
-        out.push(RingBatch { count, first, wrap, i1, end });
+        let end = if done < size {
+            (done + base) % size
+        } else {
+            (done - 1 + base) % size
+        };
+        out.push(RingBatch {
+            count,
+            first,
+            wrap,
+            i1,
+            end,
+        });
     }
     out
 }
@@ -477,10 +539,15 @@ pub fn draw_m_emitter(c: &mut Cpu) {
         a.extend(ring_part(c, ra, &b));
         let bq = ring_part(c, rb, &b);
         // Colours, one word each (V4-8: a byte per lane).
-        let mut cols: Vec<u32> = (0..b.first.max(0) as u32).map(|i| r32(c, rc + 4 * (b.i1 as u32 + i))).collect();
+        let mut cols: Vec<u32> = (0..b.first.max(0) as u32)
+            .map(|i| r32(c, rc + 4 * (b.i1 as u32 + i)))
+            .collect();
         cols.extend((0..b.wrap.max(0) as u32).map(|i| r32(c, rc + 4 * i)));
         cols.push(r32(c, rc + 4 * b.end as u32));
-        let cq = cols.iter().map(|&w| q4(std::array::from_fn(|l| (w >> (8 * l)) & 0xff))).collect();
+        let cq = cols
+            .iter()
+            .map(|&w| q4(std::array::from_fn(|l| (w >> (8 * l)) & 0xff)))
+            .collect();
         vu_draw(c, gm, vec![(0, a), (22 + 44, bq), (0x6e, cq)], entry);
         n += 1;
     }
@@ -536,7 +603,12 @@ pub fn draw_trail_b(c: &mut Cpu) {
 /// BezierMan's 4 matrix qwords at +0x3e0 and 2 at +0x420 (the count
 /// written into +0x43c first). The cursor is the caller's.
 pub fn draw_patch_fx(c: &mut Cpu) {
-    let (bm, patch, lod, cursor) = (c.g[A0][0] as u32, c.g[A1][0] as u32, c.g[A2][0] as u32, c.g[A3][0] as u32);
+    let (bm, patch, lod, cursor) = (
+        c.g[A0][0] as u32,
+        c.g[A1][0] as u32,
+        c.g[A2][0] as u32,
+        c.g[A3][0] as u32,
+    );
     let gp = c.g[GP][0] as u32;
     let gm = r32(c, gp + 0x2a90);
     if r32(c, patch + 0xc) & 0x80_0000 == 0 {
@@ -561,7 +633,17 @@ pub fn draw_patch_fx(c: &mut Cpu) {
     data.extend(qwords(c, bm + 0x420, 2));
     let start = r32(c, cursor);
     w32(c, cursor, start + 0x10);
-    record(start, Cmd::Vu(vec![Step::Write { addr: 0, rel: true, data }, Step::Start(0x1460)]));
+    record(
+        start,
+        Cmd::Vu(vec![
+            Step::Write {
+                addr: 0,
+                rel: true,
+                data,
+            },
+            Step::Start(0x1460),
+        ]),
+    );
     add_record(c, gm, start, start, false);
     ret(c, 120);
 }
@@ -575,7 +657,8 @@ pub(crate) fn dispatch_patch_fx(c: &mut Cpu, packets: fn(&mut Cpu)) {
         let gm = r32(c, c.g[GP][0] as u32 + 0x2a90);
         let (bm, cursor) = (c.g[A0][0] as u32, c.g[A3][0] as u32);
         let mut w = record_watch(c, gm, 1);
-        w.ranges.extend([(cursor, cursor + 4), (bm + 0x43c, bm + 0x440)]);
+        w.ranges
+            .extend([(cursor, cursor + 4), (bm + 0x43c, bm + 0x440)]);
         w.ignore.push(cursor);
         checked(c, "DrawPatchFX", w, draw_patch_fx, packets);
     } else {
@@ -599,14 +682,16 @@ pub(crate) fn check_on() -> bool {
 /// Per checked function: calls, mismatches.
 /// Per checked function: calls, mismatches, packet qwords the native form
 /// does not write (stale words past a batch's count).
-static STATS: std::sync::Mutex<Vec<(&'static str, u64, u64, u64)>> = std::sync::Mutex::new(Vec::new());
+static STATS: std::sync::Mutex<Vec<(&'static str, u64, u64, u64)>> =
+    std::sync::Mutex::new(Vec::new());
 
 /// Calls whose `v0` differs between the native and generated runs, per
 /// function (void functions leave scratch there; a function that returns
 /// something must match).
 /// With the return addresses of those calls (for a scan of what the
 /// callers do with `v0`).
-static V0_DIFF: std::sync::Mutex<Vec<(&'static str, u64, std::collections::BTreeSet<u32>)>> = std::sync::Mutex::new(Vec::new());
+static V0_DIFF: std::sync::Mutex<Vec<(&'static str, u64, std::collections::BTreeSet<u32>)>> =
+    std::sync::Mutex::new(Vec::new());
 
 fn note_v0(name: &'static str, ra: u32, native: u64, packets: u64) {
     if native as u32 == packets as u32 {
@@ -637,7 +722,15 @@ pub(crate) fn record_watch(c: &mut Cpu, gm: u32, records: u32) -> Watch {
     let rec = dm + dmf::RECORDS + count * 0x80;
     let cursor = gm + gmf::VIF_CURSOR;
     let cur = gm + gmf::CUR_STATE;
-    let mut w = Watch { ranges: vec![(st, st + 0x28), (dm, dm + 4), (cursor, cursor + 4), (cur, cur + 4)], ignore: vec![cursor] };
+    let mut w = Watch {
+        ranges: vec![
+            (st, st + 0x28),
+            (dm, dm + 4),
+            (cursor, cursor + 4),
+            (cur, cur + 4),
+        ],
+        ignore: vec![cursor],
+    };
     for k in 0..records {
         let r = rec + 0x80 * k;
         w.ranges.push((r, r + 0x20));
@@ -650,24 +743,44 @@ pub(crate) fn record_watch(c: &mut Cpu, gm: u32, records: u32) -> Watch {
 /// (bisecting).
 fn skipped(name: &str) -> bool {
     static SKIP: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
-    SKIP.get_or_init(|| std::env::var("SSX3_PACKETLESS_SKIP").map(|v| v.split(',').map(str::to_string).collect()).unwrap_or_default()).iter().any(|s| s == name)
+    SKIP.get_or_init(|| {
+        std::env::var("SSX3_PACKETLESS_SKIP")
+            .map(|v| v.split(',').map(str::to_string).collect())
+            .unwrap_or_default()
+    })
+    .iter()
+    .any(|s| s == name)
 }
 
 /// A draw function's override: its native form while packetless (checked
 /// against the generated one with `SSX3_DRAW_CHECK=1`), else `packets`
 /// (the generated body with its capture).
-pub(crate) fn dispatch(c: &mut Cpu, name: &'static str, records: u32, native: fn(&mut Cpu), packets: fn(&mut Cpu)) {
+pub(crate) fn dispatch(
+    c: &mut Cpu,
+    name: &'static str,
+    records: u32,
+    native: fn(&mut Cpu),
+    packets: fn(&mut Cpu),
+) {
     dispatch_with(c, name, records, &[], native, packets)
 }
 
 /// [`dispatch`] with more `gm` fields watched (offsets).
-pub(crate) fn dispatch_with(c: &mut Cpu, name: &'static str, records: u32, gm_fields: &[u32], native: fn(&mut Cpu), packets: fn(&mut Cpu)) {
+pub(crate) fn dispatch_with(
+    c: &mut Cpu,
+    name: &'static str,
+    records: u32,
+    gm_fields: &[u32],
+    native: fn(&mut Cpu),
+    packets: fn(&mut Cpu),
+) {
     if !direct::packetless() || skipped(name) {
         packets(c);
     } else if check_on() {
         let gm = c.g[A0][0] as u32;
         let mut w = record_watch(c, gm, records);
-        w.ranges.extend(gm_fields.iter().map(|&o| (gm + o, gm + o + 4)));
+        w.ranges
+            .extend(gm_fields.iter().map(|&o| (gm + o, gm + o + 4)));
         checked(c, name, w, native, packets);
     } else {
         native(c);
@@ -678,13 +791,25 @@ pub(crate) fn dispatch_with(c: &mut Cpu, name: &'static str, records: u32, gm_fi
 /// (functions that write beyond their records: buckets, hash chains,
 /// link tags): every `SSX3_DRAW_CHECK_EVERY`-th call (default 8) runs
 /// both from a copy of memory and compares the pages either wrote.
-pub(crate) fn dispatch_ram(c: &mut Cpu, name: &'static str, native: fn(&mut Cpu), packets: fn(&mut Cpu)) {
+pub(crate) fn dispatch_ram(
+    c: &mut Cpu,
+    name: &'static str,
+    native: fn(&mut Cpu),
+    packets: fn(&mut Cpu),
+) {
     if !direct::packetless() || skipped(name) {
         packets(c);
     } else if check_on() {
         static EVERY: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
-        let every = *EVERY.get_or_init(|| std::env::var("SSX3_DRAW_CHECK_EVERY").ok().and_then(|v| v.parse().ok()).unwrap_or(8).max(1));
-        static CALLS: std::sync::Mutex<Vec<(&'static str, u64)>> = std::sync::Mutex::new(Vec::new());
+        let every = *EVERY.get_or_init(|| {
+            std::env::var("SSX3_DRAW_CHECK_EVERY")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(8)
+                .max(1)
+        });
+        static CALLS: std::sync::Mutex<Vec<(&'static str, u64)>> =
+            std::sync::Mutex::new(Vec::new());
         let n = {
             let mut calls = CALLS.lock().unwrap();
             let i = calls.iter().position(|x| x.0 == name).unwrap_or_else(|| {
@@ -724,7 +849,9 @@ fn packet_word(c: &mut Cpu, gm: u32, a: u32) -> bool {
     }
     let dm = r32(c, gm + gmf::DEFER);
     let recs = dm + dmf::RECORDS;
-    if (recs..recs + 0x80 * dmf::MAX as u32).contains(&a) && matches!((a - recs) % 0x80, 0x14 | 0x18) {
+    if (recs..recs + 0x80 * dmf::MAX as u32).contains(&a)
+        && matches!((a - recs) % 0x80, 0x14 | 0x18)
+    {
         return true;
     }
     let buckets = dm + 0x57498;
@@ -750,8 +877,15 @@ fn checked_ram(c: &mut Cpu, name: &'static str, native: fn(&mut Cpu), packets: f
     let v0 = c.g[V0][0];
     let mut wn = vec![0u64; pending.len()];
     ssx3_ee_rt::bus::take_written(&mut wn);
-    let bits = |b: &[u64]| -> Vec<usize> { (0..pages).filter(|&p| b[p >> 6] >> (p & 63) & 1 != 0).collect() };
-    let native_pages: Vec<(usize, Vec<u8>)> = bits(&wn).into_iter().map(|p| (p, c.bus.ram[p * 4096..(p + 1) * 4096].to_vec())).collect();
+    let bits = |b: &[u64]| -> Vec<usize> {
+        (0..pages)
+            .filter(|&p| b[p >> 6] >> (p & 63) & 1 != 0)
+            .collect()
+    };
+    let native_pages: Vec<(usize, Vec<u8>)> = bits(&wn)
+        .into_iter()
+        .map(|p| (p, c.bus.ram[p * 4096..(p + 1) * 4096].to_vec()))
+        .collect();
     let native_s = c.bus.spr[0x3800..0x4000].to_vec();
     let rec_native = direct::split_off(m);
     for (p, _) in &native_pages {
@@ -762,7 +896,11 @@ fn checked_ram(c: &mut Cpu, name: &'static str, native: fn(&mut Cpu), packets: f
     c.next_event = u64::MAX;
     packets(c);
     note_v0(name, ra, v0, c.g[V0][0]);
-    c.next_event = if c.next_event == u64::MAX { next } else { c.next_event.min(next) };
+    c.next_event = if c.next_event == u64::MAX {
+        next
+    } else {
+        c.next_event.min(next)
+    };
     let mut wp = vec![0u64; pending.len()];
     ssx3_ee_rt::bus::take_written(&mut wp);
     let mut bad = Vec::new();
@@ -771,11 +909,18 @@ fn checked_ram(c: &mut Cpu, name: &'static str, native: fn(&mut Cpu), packets: f
     all.sort_unstable();
     all.dedup();
     for p in all {
-        let nat = native_pages.iter().find(|x| x.0 == p).map_or(&pre[p * 4096..(p + 1) * 4096], |x| &x.1[..]);
+        let nat = native_pages
+            .iter()
+            .find(|x| x.0 == p)
+            .map_or(&pre[p * 4096..(p + 1) * 4096], |x| &x.1[..]);
         for o in (0..4096).step_by(4) {
             let a = (p * 4096 + o) as u32;
             let x = u32::from_le_bytes(nat[o..o + 4].try_into().unwrap());
-            let y = u32::from_le_bytes(c.bus.ram[p * 4096 + o..p * 4096 + o + 4].try_into().unwrap());
+            let y = u32::from_le_bytes(
+                c.bus.ram[p * 4096 + o..p * 4096 + o + 4]
+                    .try_into()
+                    .unwrap(),
+            );
             // (Stack scratch below `sp` differs: the frames differ.)
             if x != y && !(sp.wrapping_sub(0x1000)..sp).contains(&a) && !packet_word(c, gm, a) {
                 bad.push(format!("{a:#x}: native {x:#x}, packets {y:#x}"));
@@ -792,7 +937,10 @@ fn checked_ram(c: &mut Cpu, name: &'static str, native: fn(&mut Cpu), packets: f
         let x = u32::from_le_bytes(native_s[o..o + 4].try_into().unwrap());
         let y = u32::from_le_bytes(c.bus.spr[0x3800 + o..0x3800 + o + 4].try_into().unwrap());
         if x != y {
-            bad.push(format!("spr {:#x}: native {x:#x}, packets {y:#x}", 0x7000_3800 + o));
+            bad.push(format!(
+                "spr {:#x}: native {x:#x}, packets {y:#x}",
+                0x7000_3800 + o
+            ));
         }
     }
     for b in [&pending, &wn, &wp] {
@@ -806,26 +954,45 @@ fn checked_ram(c: &mut Cpu, name: &'static str, native: fn(&mut Cpu), packets: f
     // the widest capture at a start stands, nested ones go.)
     let filt = |r: &[Recorded]| -> Vec<Cmd> {
         // (Bucket links hold packet addresses, which differ by design.)
-        let mut r: Vec<&Recorded> = r.iter().filter(|x| !matches!(x.cmd, Cmd::Link(_))).collect();
+        let mut r: Vec<&Recorded> = r
+            .iter()
+            .filter(|x| !matches!(x.cmd, Cmd::Link(_)))
+            .collect();
         r.sort_by_key(|x| (x.start, std::cmp::Reverse(x.end)));
         let mut out: Vec<&Recorded> = Vec::new();
         for x in r {
-            if out.last().is_some_and(|l| x.start == l.start || x.start < l.end) {
+            if out
+                .last()
+                .is_some_and(|l| x.start == l.start || x.start < l.end)
+            {
                 continue;
             }
             out.push(x);
         }
-        out.into_iter().map(|x| x.cmd.clone()).filter(|c| !matches!(c, Cmd::Vu(v) if v.is_empty())).collect()
+        out.into_iter()
+            .map(|x| x.cmd.clone())
+            .filter(|c| !matches!(c, Cmd::Vu(v) if v.is_empty()))
+            .collect()
     };
     let (a, b) = (filt(&rec_native), filt(&rec_packets));
     let uncovered: u64 = a.iter().zip(&b).map(|(x, y)| uncovered(x, y)).sum();
     if a.len() != b.len() || a.iter().zip(&b).any(|(x, y)| !same_draw(x, y)) {
-        bad.push(format!("draws: native {:?} / packets {:?}", short(&rec_native), short(&rec_packets)));
+        bad.push(format!(
+            "draws: native {:?} / packets {:?}",
+            short(&rec_native),
+            short(&rec_packets)
+        ));
         if let Some((x, y)) = a.iter().zip(&b).find(|(x, y)| !same_draw(x, y)) {
-            bad.push(format!("first: native {:.1500} / packets {:.1500}", format!("{x:x?}"), format!("{y:x?}")));
+            bad.push(format!(
+                "first: native {:.1500} / packets {:.1500}",
+                format!("{x:x?}"),
+                format!("{y:x?}")
+            ));
         }
     }
-    let mut nat = rec_native.iter().filter(|x| !matches!(&x.cmd, Cmd::Vu(v) if v.is_empty()));
+    let mut nat = rec_native
+        .iter()
+        .filter(|x| !matches!(&x.cmd, Cmd::Vu(v) if v.is_empty()));
     for x in &rec_packets {
         let mut x = x.clone();
         if keep_native() {
@@ -856,7 +1023,11 @@ fn report(name: &'static str, bad: Vec<String>, uncovered: u64) {
             let n = bad.len();
             let mut bad = bad;
             bad.truncate(12);
-            eprintln!("[draw-check] {name} call {}: {n} differences: {}", s.1, bad.join("; "));
+            eprintln!(
+                "[draw-check] {name} call {}: {n} differences: {}",
+                s.1,
+                bad.join("; ")
+            );
         }
     }
 }
@@ -864,11 +1035,21 @@ fn report(name: &'static str, bad: Vec<String>, uncovered: u64) {
 /// Run `native` and `packets` from the same registers and watched memory;
 /// report differences in the watched words and the recorded draws. The
 /// generated run's state and captures stay.
-pub(crate) fn checked(c: &mut Cpu, name: &'static str, mut watch: Watch, native: fn(&mut Cpu), packets: fn(&mut Cpu)) {
+pub(crate) fn checked(
+    c: &mut Cpu,
+    name: &'static str,
+    mut watch: Watch,
+    native: fn(&mut Cpu),
+    packets: fn(&mut Cpu),
+) {
     let gp = c.g[GP][0] as u32;
     watch.ranges.push((gp + 0x1290, gp + 0x1294));
     let words = |c: &mut Cpu, w: &Watch| -> Vec<(u32, u32)> {
-        w.ranges.iter().flat_map(|&(a, b)| (a..b).step_by(4)).map(|a| (a, c.bus.read32(a))).collect()
+        w.ranges
+            .iter()
+            .flat_map(|&(a, b)| (a..b).step_by(4))
+            .map(|a| (a, c.bus.read32(a)))
+            .collect()
     };
     let (g, f, pc, cycles) = (c.g, c.f, c.pc, c.cycles);
     let before = words(c, &watch);
@@ -890,7 +1071,9 @@ pub(crate) fn checked(c: &mut Cpu, name: &'static str, mut watch: Watch, native:
     // game runs exactly as generated.)
     let rec_packets: Vec<Recorded> = {
         let r = direct::split_off(m);
-        let mut nat = rec_native.iter().filter(|x| !matches!(&x.cmd, Cmd::Vu(v) if v.is_empty()));
+        let mut nat = rec_native
+            .iter()
+            .filter(|x| !matches!(&x.cmd, Cmd::Vu(v) if v.is_empty()));
         for x in &r {
             let mut x = x.clone();
             if keep_native() {
@@ -910,11 +1093,20 @@ pub(crate) fn checked(c: &mut Cpu, name: &'static str, mut watch: Watch, native:
     }
     // (A native draw of nothing records an empty command; the capture of
     // an empty packet records none.)
-    let cmds = |r: &[Recorded]| -> Vec<Cmd> { r.iter().map(|x| x.cmd.clone()).filter(|c| !matches!(c, Cmd::Vu(v) if v.is_empty())).collect() };
+    let cmds = |r: &[Recorded]| -> Vec<Cmd> {
+        r.iter()
+            .map(|x| x.cmd.clone())
+            .filter(|c| !matches!(c, Cmd::Vu(v) if v.is_empty()))
+            .collect()
+    };
     let (a, b) = (cmds(&rec_native), cmds(&rec_packets));
     let uncovered: u64 = a.iter().zip(&b).map(|(x, y)| uncovered(x, y)).sum();
     if a.len() != b.len() || a.iter().zip(&b).any(|(x, y)| !same_draw(x, y)) {
-        bad.push(format!("draws: native {:?} / packets {:?}", short(&rec_native), short(&rec_packets)));
+        bad.push(format!(
+            "draws: native {:?} / packets {:?}",
+            short(&rec_native),
+            short(&rec_packets)
+        ));
     }
     let mut stats = STATS.lock().unwrap();
     let i = match stats.iter().position(|s| s.0 == name) {
@@ -957,7 +1149,9 @@ pub fn check_report() -> Vec<String> {
 /// same values (a packet also uploads stale words the programs never
 /// read: scratchpad and stack left-overs past a batch's count).
 fn same_draw(native: &Cmd, packets: &Cmd) -> bool {
-    let (Cmd::Vu(a), Cmd::Vu(b)) = (native, packets) else { return native == packets };
+    let (Cmd::Vu(a), Cmd::Vu(b)) = (native, packets) else {
+        return native == packets;
+    };
     type Seg = (std::collections::HashMap<(bool, u32), u128>, Option<Step>);
     let segs = |s: &[Step]| -> Vec<Seg> {
         let mut out = Vec::new();
@@ -976,18 +1170,26 @@ fn same_draw(native: &Cmd, packets: &Cmd) -> bool {
         out
     };
     let (sa, sb) = (segs(a), segs(b));
-    sa.len() == sb.len() && sa.iter().zip(&sb).all(|((ma, ta), (mb, tb))| ta == tb && ma.iter().all(|(k, v)| mb.get(k) == Some(v)))
+    sa.len() == sb.len()
+        && sa
+            .iter()
+            .zip(&sb)
+            .all(|((ma, ta), (mb, tb))| ta == tb && ma.iter().all(|(k, v)| mb.get(k) == Some(v)))
 }
 
 /// VU input qwords of `packets` that `native` does not write.
 fn uncovered(native: &Cmd, packets: &Cmd) -> u64 {
-    let (Cmd::Vu(a), Cmd::Vu(b)) = (native, packets) else { return 0 };
+    let (Cmd::Vu(a), Cmd::Vu(b)) = (native, packets) else {
+        return 0;
+    };
     let keys = |s: &[Step]| -> std::collections::HashSet<(usize, bool, u32)> {
         let mut seg = 0;
         let mut k = std::collections::HashSet::new();
         for st in s {
             match st {
-                Step::Write { addr, rel, data } => k.extend((0..data.len() as u32).map(|i| (seg, *rel, *addr as u32 + i))),
+                Step::Write { addr, rel, data } => {
+                    k.extend((0..data.len() as u32).map(|i| (seg, *rel, *addr as u32 + i)))
+                }
                 _ => seg += 1,
             }
         }

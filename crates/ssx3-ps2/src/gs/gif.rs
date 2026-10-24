@@ -38,7 +38,12 @@ impl GifPath {
         if !self.active {
             return (0, self.eop);
         }
-        let (nloop, loop_, nreg, reg) = (self.nloop as u64, self.loop_ as u64, self.nreg as u64, self.reg as u64);
+        let (nloop, loop_, nreg, reg) = (
+            self.nloop as u64,
+            self.loop_ as u64,
+            self.nreg as u64,
+            self.reg as u64,
+        );
         let n = match self.flg {
             0 => (nloop - loop_) * nreg - reg,
             1 => {
@@ -83,7 +88,11 @@ impl GifPath {
             let total = nloop * nreg;
             match self.flg {
                 0 => {
-                    let mask = if nreg >= 16 { u64::MAX } else { (1u64 << (nreg * 4)) - 1 };
+                    let mask = if nreg >= 16 {
+                        u64::MAX
+                    } else {
+                        (1u64 << (nreg * 4)) - 1
+                    };
                     // Any descriptor in use equal to 0xE (A+D)? Flip the low
                     // bit of each nibble: 0xE becomes 0xF.
                     let y = self.regs ^ 0x1111_1111_1111_1111;
@@ -132,8 +141,18 @@ impl GifPath {
 
     /// Field-wise equality (the MTGS consistency check).
     pub(crate) fn same(&self, o: &GifPath) -> bool {
-        (self.active, self.nloop, self.loop_, self.nreg, self.reg, self.flg, self.regs, self.eop)
-            == (o.active, o.nloop, o.loop_, o.nreg, o.reg, o.flg, o.regs, o.eop)
+        (
+            self.active,
+            self.nloop,
+            self.loop_,
+            self.nreg,
+            self.reg,
+            self.flg,
+            self.regs,
+            self.eop,
+        ) == (
+            o.active, o.nloop, o.loop_, o.nreg, o.reg, o.flg, o.regs, o.eop,
+        )
     }
 
     #[inline]
@@ -176,7 +195,10 @@ impl Gs {
             p.reg = 0;
             p.active = p.nloop != 0;
             if crate::trace_path3() && path != 1 {
-                eprintln!("[p3]   tag path {path} nloop {} flg {} nreg {} eop {}", p.nloop, p.flg, p.nreg, p.eop);
+                eprintln!(
+                    "[p3]   tag path {path} nloop {} flg {} nreg {} eop {}",
+                    p.nloop, p.flg, p.nreg, p.eop
+                );
             }
             let pre = (lo >> 46) & 1 != 0;
             let flg = p.flg;

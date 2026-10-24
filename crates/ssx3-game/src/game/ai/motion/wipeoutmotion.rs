@@ -1,48 +1,58 @@
 //! `src/ai/motion/wipeoutmotion.cpp`: hand-written replacements (moved from the
 //! batch modules by `tools/reorg_modules.py`).
 
+use crate::abi;
 use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::VSlot;
+use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::ai::ai::virtual_call_slot;
+pub(crate) use crate::game::wscript::wscriptman::frame_at;
+pub(crate) use crate::game::wscript::wscriptman::lw_4 as lw;
+pub(crate) use crate::game::wscript::wscriptman::p;
+pub(crate) use crate::game::wscript::wscriptman::sw;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::Cpu;
-use crate::abi;
-use crate::call::sp;
-use crate::events::back_edge_unwinds;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
 use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
-pub(crate) use crate::game::ai::ai::virtual_call_slot;
-pub(crate) use crate::game::wscript::wscriptman::p;
-pub(crate) use crate::game::wscript::wscriptman::frame_at;
-pub(crate) use crate::game::wscript::wscriptman::lw_4 as lw;
-pub(crate) use crate::game::wscript::wscriptman::sw;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0013_6d40, rider_wipeout_state_enable_root_pose_override, "RiderWipeoutState_EnableRootPoseOverride"),
-    (0x0013_6f28, rider_wipeout_state_exit, "RiderWipeoutState_Exit"),
-    (0x0013_8b10, rider_wipeout_state_load_state, "RiderWipeoutState_LoadState"),
+    (
+        0x0013_6d40,
+        rider_wipeout_state_enable_root_pose_override,
+        "RiderWipeoutState_EnableRootPoseOverride",
+    ),
+    (
+        0x0013_6f28,
+        rider_wipeout_state_exit,
+        "RiderWipeoutState_Exit",
+    ),
+    (
+        0x0013_8b10,
+        rider_wipeout_state_load_state,
+        "RiderWipeoutState_LoadState",
+    ),
 ];
-
 
 /// `RiderWipeoutState_LoadState(self, iface)` (0x138b10): `0x40`.
 pub fn rider_wipeout_state_load_state(c: &mut Cpu) {
     guest(c, |c| virtual_call_slot(c, 0x0013_8b38, Some(0x40)))
 }
-
 
 /// `void RiderWipeoutState_Exit(RiderWipeoutState* s)` (0x136f28): nothing to
 /// tear down.
@@ -50,7 +60,6 @@ pub fn rider_wipeout_state_exit(c: &mut Cpu) {
     c.cycles += 2;
     abi::ret(c);
 }
-
 
 // ---------------------------------------------------------------------------
 // Rider wipeout.
@@ -109,36 +118,38 @@ pub fn rider_wipeout_state_enable_root_pose_override(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::difftest::check;
+    use crate::difftest::elf_image;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::vtable;
     use crate::difftest::fakes::LOG_UNWIND_AT;
-    use crate::difftest::check;
-    use crate::difftest::elf_image;
     use crate::difftest::put_words;
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
     use crate::difftest::SP as STACK;
-    pub(crate) use crate::game::lib::sif::tests::SEEDS;
-    pub(crate) use crate::game::ai::ai::tests::rng;
-    pub(crate) use crate::game::ai::ai::tests::leaf_setup;
     pub(crate) use crate::game::ai::ai::tests::leaf;
-    pub(crate) use crate::game::wscript::wscriptman::tests::w;
-    pub(crate) use crate::game::wscript::wscriptman::tests::clear_5 as clear;
-    pub(crate) use crate::game::wscript::wscriptman::tests::BE_3 as BE;
-    pub(crate) use crate::game::wscript::wscriptman::tests::WORLD_3 as WORLD;
-    pub(crate) use crate::game::wscript::wscriptman::tests::GAME;
-    pub(crate) use crate::game::wscript::wscriptman::tests::globals_3 as globals;
+    pub(crate) use crate::game::ai::ai::tests::leaf_setup;
+    pub(crate) use crate::game::ai::ai::tests::rng;
+    pub(crate) use crate::game::lib::sif::tests::SEEDS;
     pub(crate) use crate::game::wscript::wscriptman::tests::base_6 as base;
-
+    pub(crate) use crate::game::wscript::wscriptman::tests::clear_5 as clear;
+    pub(crate) use crate::game::wscript::wscriptman::tests::globals_3 as globals;
+    pub(crate) use crate::game::wscript::wscriptman::tests::w;
+    pub(crate) use crate::game::wscript::wscriptman::tests::BE_3 as BE;
+    pub(crate) use crate::game::wscript::wscriptman::tests::GAME;
+    pub(crate) use crate::game::wscript::wscriptman::tests::WORLD_3 as WORLD;
 
     #[test]
     fn rider_wipeout_state_exit_matches() {
-        leaf(ssx3_ee::s01::f_00136f28__generated, rider_wipeout_state_exit, 15);
+        leaf(
+            ssx3_ee::s01::f_00136f28__generated,
+            rider_wipeout_state_exit,
+            15,
+        );
     }
-
 
     // ------------------------------------------------------ rider wipeout
 

@@ -23,28 +23,161 @@ pub struct Item {
 }
 
 pub const ITEMS: &[Item] = &[
-    Item { key: "SSX3_TICK_HZ", label: "Game rate", choices: &[("", "60 Hz"), ("120", "120 Hz (exp.)"), ("144", "144 Hz (exp.)"), ("240", "240 Hz (exp.)")], live: false },
-    Item { key: "SSX3_CATCHUP", label: "Keep speed when slow", choices: &[("", "On"), ("0", "Off")], live: true },
-    Item { key: "SSX3_FOV", label: "Field of view", choices: &[("0.9", "-10%"), ("", "Standard"), ("1.1", "+10%"), ("1.2", "+20%"), ("1.3", "+30%"), ("1.4", "+40%"), ("1.5", "+50%")], live: true },
-    Item { key: "SSX3_ASPECT", label: "Aspect ratio", choices: &[("", "Fill window"), ("16:9", "16:9"), ("4:3", "4:3 (original)")], live: true },
-    Item { key: "SSX3_RESOLUTION", label: "Resolution", choices: &[("", "100%"), ("75", "75%"), ("50", "50%")], live: true },
-    Item { key: "SSX3_ANISO", label: "Anisotropic filter", choices: &[("1", "Off"), ("2", "2x"), ("4", "4x"), ("8", "8x"), ("", "16x")], live: true },
-    Item { key: "SSX3_FULLSCREEN", label: "Fullscreen", choices: &[("", "Off"), ("1", "On")], live: true },
+    Item {
+        key: "SSX3_TICK_HZ",
+        label: "Game rate",
+        choices: &[
+            ("", "60 Hz"),
+            ("120", "120 Hz (exp.)"),
+            ("144", "144 Hz (exp.)"),
+            ("240", "240 Hz (exp.)"),
+        ],
+        live: false,
+    },
+    Item {
+        key: "SSX3_CATCHUP",
+        label: "Keep speed when slow",
+        choices: &[("", "On"), ("0", "Off")],
+        live: true,
+    },
+    Item {
+        key: "SSX3_FOV",
+        label: "Field of view",
+        choices: &[
+            ("0.9", "-10%"),
+            ("", "Standard"),
+            ("1.1", "+10%"),
+            ("1.2", "+20%"),
+            ("1.3", "+30%"),
+            ("1.4", "+40%"),
+            ("1.5", "+50%"),
+        ],
+        live: true,
+    },
+    Item {
+        key: "SSX3_ASPECT",
+        label: "Aspect ratio",
+        choices: &[
+            ("", "Fill window"),
+            ("16:9", "16:9"),
+            ("4:3", "4:3 (original)"),
+        ],
+        live: true,
+    },
+    Item {
+        key: "SSX3_RESOLUTION",
+        label: "Resolution",
+        choices: &[("", "100%"), ("75", "75%"), ("50", "50%")],
+        live: true,
+    },
+    Item {
+        key: "SSX3_ANISO",
+        label: "Anisotropic filter",
+        choices: &[
+            ("1", "Off"),
+            ("2", "2x"),
+            ("4", "4x"),
+            ("8", "8x"),
+            ("", "16x"),
+        ],
+        live: true,
+    },
+    Item {
+        key: "SSX3_FULLSCREEN",
+        label: "Fullscreen",
+        choices: &[("", "Off"), ("1", "On")],
+        live: true,
+    },
     // Modern graphics (all off/original by default: the game as it was).
-    Item { key: "SSX3_AA", label: "Anti-aliasing", choices: &[("", "Off"), ("fxaa", "FXAA")], live: true },
-    Item { key: "SSX3_MIPMAPS", label: "Texture mipmaps", choices: &[("", "Off"), ("1", "On")], live: true },
-    Item { key: "SSX3_LOD_BIAS", label: "Texture sharpness", choices: &[("0.5", "Soft"), ("", "Standard"), ("-0.5", "Sharp"), ("-1", "Sharper")], live: true },
-    Item { key: "SSX3_TERRAIN", label: "Terrain detail", choices: &[("", "Original"), ("2", "2x"), ("4", "4x")], live: true },
-    Item { key: "SSX3_DRAW_DIST", label: "Rider detail dist.", choices: &[("", "Original"), ("1.5", "1.5x"), ("2", "2x"), ("3", "3x")], live: true },
-    Item { key: "SSX3_AO", label: "Ambient occlusion", choices: &[("", "Off"), ("1", "On")], live: true },
-    Item { key: "SSX3_SHADOWS", label: "Sun shadows", choices: &[("", "Off"), ("1", "On")], live: true },
-    Item { key: "SSX3_BLOOM", label: "Bloom", choices: &[("", "Original"), ("modern", "Modern"), ("off", "Off")], live: true },
-    Item { key: "SSX3_SNOW", label: "Snow sparkle", choices: &[("", "Off"), ("1", "On")], live: true },
-    Item { key: "SSX3_RENDER", label: "Renderer", choices: &[("", "Native (wgpu)"), ("emu", "Emulated GS")], live: false },
-    Item { key: "SSX3_SND", label: "Sound", choices: &[("", "Native mixer"), ("iop", "Emulated IOP")], live: false },
-    Item { key: "SSX3_IOP_SIO2", label: "Pads & memory card", choices: &[("", "Native"), ("1", "Emulated IOP")], live: false },
-    Item { key: "SSX3_NATIVE_FILES", label: "Game files", choices: &[("", "Native"), ("0", "Emulated CD")], live: false },
-    Item { key: "SSX3_SKIP_MOVIES", label: "Intro movies", choices: &[("", "Play"), ("1", "Skip")], live: false },
+    Item {
+        key: "SSX3_AA",
+        label: "Anti-aliasing",
+        choices: &[("", "Off"), ("fxaa", "FXAA")],
+        live: true,
+    },
+    Item {
+        key: "SSX3_MIPMAPS",
+        label: "Texture mipmaps",
+        choices: &[("", "Off"), ("1", "On")],
+        live: true,
+    },
+    Item {
+        key: "SSX3_LOD_BIAS",
+        label: "Texture sharpness",
+        choices: &[
+            ("0.5", "Soft"),
+            ("", "Standard"),
+            ("-0.5", "Sharp"),
+            ("-1", "Sharper"),
+        ],
+        live: true,
+    },
+    Item {
+        key: "SSX3_TERRAIN",
+        label: "Terrain detail",
+        choices: &[("", "Original"), ("2", "2x"), ("4", "4x")],
+        live: true,
+    },
+    Item {
+        key: "SSX3_DRAW_DIST",
+        label: "Rider detail dist.",
+        choices: &[("", "Original"), ("1.5", "1.5x"), ("2", "2x"), ("3", "3x")],
+        live: true,
+    },
+    Item {
+        key: "SSX3_AO",
+        label: "Ambient occlusion",
+        choices: &[("", "Off"), ("1", "On")],
+        live: true,
+    },
+    Item {
+        key: "SSX3_SHADOWS",
+        label: "Sun shadows",
+        choices: &[("", "Off"), ("1", "On")],
+        live: true,
+    },
+    Item {
+        key: "SSX3_BLOOM",
+        label: "Bloom",
+        choices: &[("", "Original"), ("modern", "Modern"), ("off", "Off")],
+        live: true,
+    },
+    Item {
+        key: "SSX3_SNOW",
+        label: "Snow sparkle",
+        choices: &[("", "Off"), ("1", "On")],
+        live: true,
+    },
+    Item {
+        key: "SSX3_RENDER",
+        label: "Renderer",
+        choices: &[("", "Native (wgpu)"), ("emu", "Emulated GS")],
+        live: false,
+    },
+    Item {
+        key: "SSX3_SND",
+        label: "Sound",
+        choices: &[("", "Native mixer"), ("iop", "Emulated IOP")],
+        live: false,
+    },
+    Item {
+        key: "SSX3_IOP_SIO2",
+        label: "Pads & memory card",
+        choices: &[("", "Native"), ("1", "Emulated IOP")],
+        live: false,
+    },
+    Item {
+        key: "SSX3_NATIVE_FILES",
+        label: "Game files",
+        choices: &[("", "Native"), ("0", "Emulated CD")],
+        live: false,
+    },
+    Item {
+        key: "SSX3_SKIP_MOVIES",
+        label: "Intro movies",
+        choices: &[("", "Play"), ("1", "Skip")],
+        live: false,
+    },
 ];
 
 struct State {
@@ -57,7 +190,9 @@ struct State {
 static STATE: RwLock<Option<State>> = RwLock::new(None);
 
 fn path() -> PathBuf {
-    std::env::var_os("SSX3_SETTINGS").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("saves/ssx3-settings.cfg"))
+    std::env::var_os("SSX3_SETTINGS")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("saves/ssx3-settings.cfg"))
 }
 
 fn parse(text: &str) -> BTreeMap<String, String> {
@@ -78,7 +213,9 @@ fn parse(text: &str) -> BTreeMap<String, String> {
 /// the environment has none. Call first thing in `main`, before any thread
 /// starts.
 pub fn load() {
-    let mut values = std::fs::read_to_string(path()).map(|t| parse(&t)).unwrap_or_default();
+    let mut values = std::fs::read_to_string(path())
+        .map(|t| parse(&t))
+        .unwrap_or_default();
     let mut from_env = Vec::new();
     for item in ITEMS {
         match std::env::var(item.key) {
@@ -107,13 +244,20 @@ pub fn get(key: &str) -> Option<String> {
 
 /// Whether the environment set `key` at startup.
 pub fn from_env(key: &str) -> bool {
-    STATE.read().unwrap().as_ref().is_some_and(|s| s.from_env.iter().any(|k| k == key))
+    STATE
+        .read()
+        .unwrap()
+        .as_ref()
+        .is_some_and(|s| s.from_env.iter().any(|k| k == key))
 }
 
 /// Change a setting and save the file.
 pub fn set(key: &str, value: &str) {
     let mut g = STATE.write().unwrap();
-    let s = g.get_or_insert_with(|| State { values: BTreeMap::new(), from_env: Vec::new() });
+    let s = g.get_or_insert_with(|| State {
+        values: BTreeMap::new(),
+        from_env: Vec::new(),
+    });
     s.values.insert(key.to_string(), value.to_string());
     let mut text = String::from("# SSX 3 settings (edited by the settings overlay, F10). The SSX3_* environment\n# variables of the same names override these.\n");
     for item in ITEMS {
@@ -133,7 +277,15 @@ pub fn set(key: &str, value: &str) {
 /// The index of a setting's current value among its choices.
 pub fn choice(item: &Item) -> usize {
     let v = get(item.key).unwrap_or_default();
-    item.choices.iter().position(|(c, _)| *c == v).unwrap_or_else(|| item.choices.iter().position(|(c, _)| c.is_empty()).unwrap_or(0))
+    item.choices
+        .iter()
+        .position(|(c, _)| *c == v)
+        .unwrap_or_else(|| {
+            item.choices
+                .iter()
+                .position(|(c, _)| c.is_empty())
+                .unwrap_or(0)
+        })
 }
 
 /// Step a setting to the next (`+1`) or previous (`-1`) choice; returns its
@@ -188,14 +340,25 @@ pub fn draw(sel: usize, restart_pending: bool) -> (u32, u32, Vec<u32>) {
             y += ROW;
             continue;
         };
-        let label = if item.live { item.label.to_string() } else { format!("{}*", item.label) };
+        let label = if item.live {
+            item.label.to_string()
+        } else {
+            format!("{}*", item.label)
+        };
         text(&mut img, W, 10, y, &label, c);
         let mut value = item.choices[choice(item)].1.to_string();
         if from_env(item.key) {
             value += " (env)";
         }
         let vx = W - 10 - 8 * value.len() as u32;
-        text(&mut img, W, vx, y, &value, if selected { orange } else { white });
+        text(
+            &mut img,
+            W,
+            vx,
+            y,
+            &value,
+            if selected { orange } else { white },
+        );
         if selected {
             text(&mut img, W, vx - 12, y, "<", orange);
         }
@@ -208,8 +371,19 @@ pub fn draw(sel: usize, restart_pending: bool) -> (u32, u32, Vec<u32>) {
     if top + shown < total {
         text(&mut img, W, W / 2 - 4, y - 2, "v", orange);
     }
-    let note = if restart_pending { "* changed: applies after a restart" } else { "* applies after a restart" };
-    text(&mut img, W, 10, h - 16, note, if restart_pending { orange } else { grey });
+    let note = if restart_pending {
+        "* changed: applies after a restart"
+    } else {
+        "* applies after a restart"
+    };
+    text(
+        &mut img,
+        W,
+        10,
+        h - 16,
+        note,
+        if restart_pending { orange } else { grey },
+    );
     (W, h, img)
 }
 
@@ -223,7 +397,9 @@ fn rgba(r: u8, g: u8, b: u8, a: u8) -> u32 {
 fn text(img: &mut [u32], w: u32, x: u32, y: u32, s: &str, c: u32) {
     use font8x8::UnicodeFonts;
     for (k, ch) in s.chars().enumerate() {
-        let Some(glyph) = font8x8::BASIC_FONTS.get(ch) else { continue };
+        let Some(glyph) = font8x8::BASIC_FONTS.get(ch) else {
+            continue;
+        };
         for (gy, row) in glyph.iter().enumerate() {
             for gx in 0..8 {
                 if row & (1 << gx) != 0 {

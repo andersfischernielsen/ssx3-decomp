@@ -40,30 +40,114 @@ use ssx3_ee_rt::Cpu;
 
 /// Replacements in this package: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0016_8150, check_distance_reset, "ChaseCameraAlgorithm_CheckDistanceReset"),
-    (0x0016_6550, init_from_rider, "ChaseCameraAlgorithm_InitFromRider"),
+    (
+        0x0016_8150,
+        check_distance_reset,
+        "ChaseCameraAlgorithm_CheckDistanceReset",
+    ),
+    (
+        0x0016_6550,
+        init_from_rider,
+        "ChaseCameraAlgorithm_InitFromRider",
+    ),
     (0x0015_d880, camera_base_get_pitch, "CameraBase_GetPitch"),
-    (0x0016_3010, apply_follow_distance, "ChaseCameraAlgorithm_ApplyFollowDistance"),
-    (0x0016_2b90, apply_target_height, "ChaseCameraAlgorithm_ApplyTargetHeight"),
-    (0x0016_3270, apply_camera_height, "ChaseCameraAlgorithm_ApplyCameraHeight"),
+    (
+        0x0016_3010,
+        apply_follow_distance,
+        "ChaseCameraAlgorithm_ApplyFollowDistance",
+    ),
+    (
+        0x0016_2b90,
+        apply_target_height,
+        "ChaseCameraAlgorithm_ApplyTargetHeight",
+    ),
+    (
+        0x0016_3270,
+        apply_camera_height,
+        "ChaseCameraAlgorithm_ApplyCameraHeight",
+    ),
     (0x0016_33b0, apply_fov, "ChaseCameraAlgorithm_ApplyFov"),
-    (0x0016_3450, apply_handplant_hold, "ChaseCameraAlgorithm_ApplyHandplantHold"),
-    (0x0016_2998, update_handplant_fade, "ChaseCameraAlgorithm_UpdateHandplantFade"),
-    (0x0015_d020, is_script_camera_active, "ChaseCamController_IsScriptCameraActive"),
-    (0x0016_2060, set_override_algorithm, "ChaseCamController_SetOverrideAlgorithm"),
-    (0x0022_e840, game_view_man_update_cameras, "GameViewMan_UpdateCameras"),
-    (0x0022_e920, game_view_man_all_views_ready, "GameViewMan_AllViewsReady"),
-    (0x0015_e030, game_camera_reset_default_chase, "GameCamera_ResetDefaultChase"),
-    (0x0016_3158, apply_side_offset, "ChaseCameraAlgorithm_ApplySideOffset"),
-    (0x0016_41c0, apply_rail_pullback, "ChaseCameraAlgorithm_ApplyRailPullback"),
-    (0x0016_46a0, apply_rail_align, "ChaseCameraAlgorithm_ApplyRailAlign"),
-    (0x0016_43a8, apply_low_speed_hold, "ChaseCameraAlgorithm_ApplyLowSpeedHold"),
-    (0x0016_2a20, update_air_transitions, "ChaseCameraAlgorithm_UpdateAirTransitions"),
-    (0x0016_6640, compute_angles, "ChaseCameraAlgorithm_ComputeAngles"),
+    (
+        0x0016_3450,
+        apply_handplant_hold,
+        "ChaseCameraAlgorithm_ApplyHandplantHold",
+    ),
+    (
+        0x0016_2998,
+        update_handplant_fade,
+        "ChaseCameraAlgorithm_UpdateHandplantFade",
+    ),
+    (
+        0x0015_d020,
+        is_script_camera_active,
+        "ChaseCamController_IsScriptCameraActive",
+    ),
+    (
+        0x0016_2060,
+        set_override_algorithm,
+        "ChaseCamController_SetOverrideAlgorithm",
+    ),
+    (
+        0x0022_e840,
+        game_view_man_update_cameras,
+        "GameViewMan_UpdateCameras",
+    ),
+    (
+        0x0022_e920,
+        game_view_man_all_views_ready,
+        "GameViewMan_AllViewsReady",
+    ),
+    (
+        0x0015_e030,
+        game_camera_reset_default_chase,
+        "GameCamera_ResetDefaultChase",
+    ),
+    (
+        0x0016_3158,
+        apply_side_offset,
+        "ChaseCameraAlgorithm_ApplySideOffset",
+    ),
+    (
+        0x0016_41c0,
+        apply_rail_pullback,
+        "ChaseCameraAlgorithm_ApplyRailPullback",
+    ),
+    (
+        0x0016_46a0,
+        apply_rail_align,
+        "ChaseCameraAlgorithm_ApplyRailAlign",
+    ),
+    (
+        0x0016_43a8,
+        apply_low_speed_hold,
+        "ChaseCameraAlgorithm_ApplyLowSpeedHold",
+    ),
+    (
+        0x0016_2a20,
+        update_air_transitions,
+        "ChaseCameraAlgorithm_UpdateAirTransitions",
+    ),
+    (
+        0x0016_6640,
+        compute_angles,
+        "ChaseCameraAlgorithm_ComputeAngles",
+    ),
     (0x0016_6228, post_update, "ChaseCameraAlgorithm_PostUpdate"),
-    (0x0016_1ab0, update_auto_mode, "ChaseCamController_UpdateAutoMode"),
-    (0x0015_e460, game_camera_update_shake, "GameCamera_UpdateShake"),
-    (0x0016_1bb8, chase_cam_controller_update, "ChaseCamController_Update"),
+    (
+        0x0016_1ab0,
+        update_auto_mode,
+        "ChaseCamController_UpdateAutoMode",
+    ),
+    (
+        0x0015_e460,
+        game_camera_update_shake,
+        "GameCamera_UpdateShake",
+    ),
+    (
+        0x0016_1bb8,
+        chase_cam_controller_update,
+        "ChaseCamController_Update",
+    ),
 ];
 
 // ---------------------------------------------------------------- VU0 helpers
@@ -75,7 +159,12 @@ pub const XYZW: u8 = 0b1111;
 /// All four lanes set to `v` (a broadcast operand `ft.field`).
 #[inline]
 pub fn splat(v: VuF32) -> Vec4 {
-    Vec4 { x: v, y: v, z: v, w: v }
+    Vec4 {
+        x: v,
+        y: v,
+        z: v,
+        w: v,
+    }
 }
 
 #[inline]
@@ -85,7 +174,12 @@ fn lanes(v: Vec4) -> [VuF32; 4] {
 
 #[inline]
 fn from_lanes(l: [VuF32; 4]) -> Vec4 {
-    Vec4 { x: l[0], y: l[1], z: l[2], w: l[3] }
+    Vec4 {
+        x: l[0],
+        y: l[1],
+        z: l[2],
+        w: l[3],
+    }
 }
 
 /// Lane-wise `f(a, b)`.
@@ -113,14 +207,25 @@ pub fn vmul(a: Vec4, b: Vec4) -> Vec4 {
 #[inline]
 pub fn masked(old: Vec4, new: Vec4, dest: u8) -> Vec4 {
     let (o, n) = (lanes(old), lanes(new));
-    from_lanes(std::array::from_fn(|i| if dest & (8 >> i) != 0 { n[i] } else { o[i] }))
+    from_lanes(std::array::from_fn(|i| {
+        if dest & (8 >> i) != 0 {
+            n[i]
+        } else {
+            o[i]
+        }
+    }))
 }
 
 /// A VF register's current value.
 #[inline]
 pub fn vf(c: &Cpu, reg: usize) -> Vec4 {
     let v = c.bus.plat.vf(reg);
-    Vec4 { x: VuF32(v[0]), y: VuF32(v[1]), z: VuF32(v[2]), w: VuF32(v[3]) }
+    Vec4 {
+        x: VuF32(v[0]),
+        y: VuF32(v[1]),
+        z: VuF32(v[2]),
+        w: VuF32(v[3]),
+    }
 }
 
 /// `qmtc2 gpr, vf`: the 128-bit GPR image as four lanes.
@@ -141,7 +246,12 @@ impl Acc {
     /// The machine's ACC.
     pub fn load(c: &Cpu) -> Acc {
         let v = c.bus.plat.acc();
-        Acc(Vec4 { x: VuF32(v[0]), y: VuF32(v[1]), z: VuF32(v[2]), w: VuF32(v[3]) })
+        Acc(Vec4 {
+            x: VuF32(v[0]),
+            y: VuF32(v[1]),
+            z: VuF32(v[2]),
+            w: VuF32(v[3]),
+        })
     }
     /// Write all four lanes back.
     pub fn store(self, c: &mut Cpu) {
@@ -348,29 +458,63 @@ fn lw(c: &mut Cpu, a: Addr) -> u64 {
 mod callee {
     use super::{ee, Callee};
 
-    pub const CHASE_CAM_CONTROLLER_SET_ALGORITHM: Callee =
-        Callee { addr: 0x0015_d078, f: ee::s01::ChaseCamController_SetAlgorithm };
-    pub const SET_DEFAULT_ALGORITHM: Callee =
-        Callee { addr: 0x0016_1ef0, f: ee::s01::ChaseCamController_SetDefaultAlgorithm };
-    pub const ENTER_SPOKE_MODE: Callee =
-        Callee { addr: 0x0016_21a8, f: ee::s01::ChaseCamController_EnterSpokeMode };
-    pub const EXIT_SPOKE_MODE: Callee =
-        Callee { addr: 0x0016_2218, f: ee::s01::ChaseCamController_ExitSpokeMode };
-    pub const GAME_CAMERA_ADD_SHAKE: Callee = Callee { addr: 0x0015_e360, f: ee::s01::GameCamera_AddShake };
-    pub const START_SHAKE: Callee = Callee { addr: 0x0016_56b0, f: ee::s01::ChaseCameraAlgorithm_StartShake };
-    pub const APPLY_SHAKE: Callee = Callee { addr: 0x0016_5938, f: ee::s01::ChaseCameraAlgorithm_ApplyShake };
-    pub const UPDATE_AUTO_MODE: Callee =
-        Callee { addr: 0x0016_1ab0, f: ee::s01::ChaseCamController_UpdateAutoMode };
-    pub const ALGORITHM_LIST_REMOVE: Callee = Callee { addr: 0x0015_ca50, f: ee::s01::AlgorithmList_Remove };
-    pub const SET_OVERRIDE_ALGORITHM: Callee =
-        Callee { addr: 0x0016_2060, f: ee::s01::ChaseCamController_SetOverrideAlgorithm };
-    pub const COMPUTE_ANGLES: Callee =
-        Callee { addr: 0x0016_6640, f: ee::s02::ChaseCameraAlgorithm_ComputeAngles };
+    pub const CHASE_CAM_CONTROLLER_SET_ALGORITHM: Callee = Callee {
+        addr: 0x0015_d078,
+        f: ee::s01::ChaseCamController_SetAlgorithm,
+    };
+    pub const SET_DEFAULT_ALGORITHM: Callee = Callee {
+        addr: 0x0016_1ef0,
+        f: ee::s01::ChaseCamController_SetDefaultAlgorithm,
+    };
+    pub const ENTER_SPOKE_MODE: Callee = Callee {
+        addr: 0x0016_21a8,
+        f: ee::s01::ChaseCamController_EnterSpokeMode,
+    };
+    pub const EXIT_SPOKE_MODE: Callee = Callee {
+        addr: 0x0016_2218,
+        f: ee::s01::ChaseCamController_ExitSpokeMode,
+    };
+    pub const GAME_CAMERA_ADD_SHAKE: Callee = Callee {
+        addr: 0x0015_e360,
+        f: ee::s01::GameCamera_AddShake,
+    };
+    pub const START_SHAKE: Callee = Callee {
+        addr: 0x0016_56b0,
+        f: ee::s01::ChaseCameraAlgorithm_StartShake,
+    };
+    pub const APPLY_SHAKE: Callee = Callee {
+        addr: 0x0016_5938,
+        f: ee::s01::ChaseCameraAlgorithm_ApplyShake,
+    };
+    pub const UPDATE_AUTO_MODE: Callee = Callee {
+        addr: 0x0016_1ab0,
+        f: ee::s01::ChaseCamController_UpdateAutoMode,
+    };
+    pub const ALGORITHM_LIST_REMOVE: Callee = Callee {
+        addr: 0x0015_ca50,
+        f: ee::s01::AlgorithmList_Remove,
+    };
+    pub const SET_OVERRIDE_ALGORITHM: Callee = Callee {
+        addr: 0x0016_2060,
+        f: ee::s01::ChaseCamController_SetOverrideAlgorithm,
+    };
+    pub const COMPUTE_ANGLES: Callee = Callee {
+        addr: 0x0016_6640,
+        f: ee::s02::ChaseCameraAlgorithm_ComputeAngles,
+    };
     /// `FUN_001662a0(algo, f12..f15)`: applies the four tuning floats.
-    pub const APPLY_TUNING: Callee = Callee { addr: 0x0016_62a0, f: ee::s02::f_001662a0 };
-    pub const FUN_00166530: Callee = Callee { addr: 0x0016_6530, f: ee::s02::f_00166530 };
-    pub const BUILD_OUTPUT_VIEW: Callee =
-        Callee { addr: 0x0016_6f90, f: ee::s02::ChaseCameraAlgorithm_BuildOutputView };
+    pub const APPLY_TUNING: Callee = Callee {
+        addr: 0x0016_62a0,
+        f: ee::s02::f_001662a0,
+    };
+    pub const FUN_00166530: Callee = Callee {
+        addr: 0x0016_6530,
+        f: ee::s02::f_00166530,
+    };
+    pub const BUILD_OUTPUT_VIEW: Callee = Callee {
+        addr: 0x0016_6f90,
+        f: ee::s02::ChaseCameraAlgorithm_BuildOutputView,
+    };
 }
 
 /// Calls the generated code makes through the function table.
@@ -576,7 +720,12 @@ pub fn camera_base_get_pitch(c: &mut Cpu) {
         c.g[AT][0] = one.0 as u64;
         frame.save_ra(c, 0x10);
         let q = Addr(abi::arg(c, 0)).off(0x30);
-        let (x, y, z, w) = (q.read_fpu(c), q.off(4).read_fpu(c), q.off(8).read_fpu(c), q.off(0xc).read_fpu(c));
+        let (x, y, z, w) = (
+            q.read_fpu(c),
+            q.off(4).read_fpu(c),
+            q.off(8).read_fpu(c),
+            q.off(0xc).read_fpu(c),
+        );
         let zz = z * z;
         let xx = x * x;
         let yz = y * z;
@@ -596,7 +745,17 @@ pub fn camera_base_get_pitch(c: &mut Cpu) {
         sp.off(4).write_fpu(c, fwd);
         sp.write_fpu(c, side);
         // FPU registers as the original leaves them.
-        for (f, v) in [(0, side), (1, up), (2, x), (3, wz), (4, zz_xx2), (5, z), (6, wx), (7, fwd), (8, xx)] {
+        for (f, v) in [
+            (0, side),
+            (1, up),
+            (2, x),
+            (3, wz),
+            (4, zz_xx2),
+            (5, z),
+            (6, wx),
+            (7, fwd),
+            (8, xx),
+        ] {
             c.f[f] = v.0;
         }
 
@@ -989,8 +1148,13 @@ pub fn apply_target_height(c: &mut Cpu) {
         };
 
         c.cycles += 35;
-        let (base, speed_gain, slope_gain, boost_gain, smoothing) =
-            (abi::farg(c, 0), abi::farg(c, 1), abi::farg(c, 2), abi::farg(c, 3), abi::farg(c, 4));
+        let (base, speed_gain, slope_gain, boost_gain, smoothing) = (
+            abi::farg(c, 0),
+            abi::farg(c, 1),
+            abi::farg(c, 2),
+            abi::farg(c, 3),
+            abi::farg(c, 4),
+        );
         // The caller's weight (f16) is the kept share per update: at another
         // rate the same share per unit of wall-clock time (`k^(60/rate)`).
         // At 60 the argument is used unchanged (f16 itself is not written).
@@ -1011,7 +1175,13 @@ pub fn apply_target_height(c: &mut Cpu) {
         let new_part = keep * lift;
         let height = old_part + new_part;
         algo.look_at_height().write_fpu(c, height);
-        for (f, v) in [(0, height), (1, lift), (2, boost_lift), (3, new_part), (4, slope_lift)] {
+        for (f, v) in [
+            (0, height),
+            (1, lift),
+            (2, boost_lift),
+            (3, new_part),
+            (4, slope_lift),
+        ] {
             c.f[f] = v.0;
         }
         c.g[V1][0] = abi::mfc1(height);
@@ -1078,7 +1248,11 @@ pub fn apply_fov(c: &mut Cpu) {
         // another rate `k^(60/rate)` (the other paths set f15 above: 1.0 in
         // Air, the already converted 0.999 elsewhere). f15 itself is left as
         // the caller passed it; unchanged at 60.
-        let smoothing = if state == 0 { per_tick_factor(c, smoothing) } else { smoothing };
+        let smoothing = if state == 0 {
+            per_tick_factor(c, smoothing)
+        } else {
+            smoothing
+        };
         c.g[A0][0] = c.g[V1][0];
         let old = algo.fov_scale().read_fpu(c);
         let keep = one - smoothing;
@@ -1223,7 +1397,15 @@ pub fn apply_follow_distance(c: &mut Cpu) {
         vu0_scratch::set_vf(c, 3, XYZW, look);
         vu0_scratch::set_vf(c, 4, XYZW, back);
         vu0_scratch::set_vf(c, 5, XYZW, eye);
-        for (f, v) in [(0, new_part), (1, follow), (2, k), (3, s), (4, old), (6, zero), (12, dist)] {
+        for (f, v) in [
+            (0, new_part),
+            (1, follow),
+            (2, k),
+            (3, s),
+            (4, old),
+            (6, zero),
+            (12, dist),
+        ] {
             c.f[f] = v.0;
         }
         check_distance(c, 0x0016_314c)?;
@@ -1314,7 +1496,12 @@ pub fn apply_camera_height(c: &mut Cpu) {
         let one = FpuF32::ONE;
         c.g[AT][0] = one.0 as u64;
         let boost_root = st.boost().read_fpu(c).sqrt();
-        let (gain, offset, boost_gain, smoothing) = (abi::farg(c, 0), abi::farg(c, 1), abi::farg(c, 2), abi::farg(c, 4));
+        let (gain, offset, boost_gain, smoothing) = (
+            abi::farg(c, 0),
+            abi::farg(c, 1),
+            abi::farg(c, 2),
+            abi::farg(c, 4),
+        );
         // f16 is the kept share per update: `k^(60/rate)` at another rate,
         // unchanged at 60 (f16 itself is not written).
         let smoothing = per_tick_factor(c, smoothing);
@@ -1331,7 +1518,14 @@ pub fn apply_camera_height(c: &mut Cpu) {
         let new_part = keep * drop;
         let eye_drop = old_part + new_part;
         algo.eye_drop().write_fpu(c, eye_drop);
-        for (f, v) in [(0, bonus), (1, eye_drop), (2, drop), (3, new_part), (4, root), (5, over)] {
+        for (f, v) in [
+            (0, bonus),
+            (1, eye_drop),
+            (2, drop),
+            (3, new_part),
+            (4, root),
+            (5, over),
+        ] {
             c.f[f] = v.0;
         }
         c.g[V1][0] = abi::mfc1(eye_drop);
@@ -1611,7 +1805,10 @@ pub fn apply_side_offset(c: &mut Cpu) {
         let mut acc = Acc::load(c);
         acc.opmula(up, d);
         let old6 = vf(c, 6);
-        let cross = Vec4 { w: old6.w - old6.w, ..acc.opmsub(d, up) };
+        let cross = Vec4 {
+            w: old6.w - old6.w,
+            ..acc.opmsub(d, up)
+        };
         acc.store(c);
         sp.off(0x20).write_vec4(c, cross);
         sp.off(0x10).write_vec4(c, cross);
@@ -1670,7 +1867,12 @@ pub fn apply_rail_pullback(c: &mut Cpu) {
         for (f, off) in [(23, 0x88), (22, 0x80), (21, 0x78), (20, 0x70)] {
             sp.off(off).write_u32(c, c.f[f]);
         }
-        let (side, back, up_push, rate) = (abi::farg(c, 0), abi::farg(c, 1), abi::farg(c, 2), abi::farg(c, 3));
+        let (side, back, up_push, rate) = (
+            abi::farg(c, 0),
+            abi::farg(c, 1),
+            abi::farg(c, 2),
+            abi::farg(c, 3),
+        );
         c.f[23] = side.0;
         c.f[22] = up_push.0;
         c.f[21] = back.0;
@@ -1732,7 +1934,10 @@ pub fn apply_rail_pullback(c: &mut Cpu) {
         let mut acc = Acc::load(c);
         acc.opmula(up, o);
         let old6 = vf(c, 6);
-        let cross = Vec4 { w: old6.w - old6.w, ..acc.opmsub(o, up) };
+        let cross = Vec4 {
+            w: old6.w - old6.w,
+            ..acc.opmsub(o, up)
+        };
         acc.store(c);
         vu0_scratch::set_vf(c, 6, XYZW, cross);
         sp.off(0x30).write_vec4(c, cross);
@@ -1876,7 +2081,10 @@ pub fn apply_rail_align(c: &mut Cpu) {
         // the original at 60 (f13 itself is left as the caller set it).
         let smoothing = abi::farg(c, 1);
         let smoothing = per_tick_factor(c, smoothing);
-        let kept = vmul(rail_align_offset(algo).read_vec4(c), splat(VuF32(smoothing.0)));
+        let kept = vmul(
+            rail_align_offset(algo).read_vec4(c),
+            splat(VuF32(smoothing.0)),
+        );
         sp.off(0x60).write_vec4(c, kept);
         let rest = one - smoothing;
         sp.off(0x50).write_vec4(c, kept);
@@ -2793,7 +3001,11 @@ pub fn game_camera_update_shake(c: &mut Cpu) {
 /// Shake strength from the rider's speed (target slot 3, four-lane VU0
 /// length × scale): 0 below 60, (v − 60) / 60 up to 120, 1 above
 /// (blocks 0x15e4c4..0x15e554).
-fn shake_speed_factor(c: &mut Cpu, target: RiderCameraTarget, sp: Addr) -> Result<FpuF32, crate::call::Unwound> {
+fn shake_speed_factor(
+    c: &mut Cpu,
+    target: RiderCameraTarget,
+    sp: Addr,
+) -> Result<FpuF32, crate::call::Unwound> {
     c.cycles += 22;
     let vt = lw(c, target.vptr());
     c.g[V0][0] = vt;
@@ -2840,7 +3052,11 @@ fn shake_speed_factor(c: &mut Cpu, target: RiderCameraTarget, sp: Addr) -> Resul
 /// 2 / 1 by boost level (blocks 0x15e558..0x15e5b0). Returns whether the
 /// preset reload of block 0x15e5b4 follows (preset 1), else the original
 /// reloaded it in the call's block.
-fn request_boost_shake(c: &mut Cpu, cam: Addr, boost: FpuF32) -> Result<bool, crate::call::Unwound> {
+fn request_boost_shake(
+    c: &mut Cpu,
+    cam: Addr,
+    boost: FpuF32,
+) -> Result<bool, crate::call::Unwound> {
     c.cycles += 5;
     let level_3 = gp_const(c, BOOST_SHAKE_3_GP);
     c.f[0] = level_3.0;
@@ -3269,8 +3485,21 @@ mod tests {
             _ => max + (r.next_u32() % 1000) as f32,
         } / 2.0;
         let l = |i: usize| f32::from_bits(look[i]);
-        let eye = [(l(0) + d).to_bits(), (l(1) - d).to_bits(), (l(2) + d).to_bits(), (l(3) - d).to_bits()];
-        put_vec(c, algo + 0x40, if seed % 17 == 0 { vec(&mut r, 1e30) } else { eye });
+        let eye = [
+            (l(0) + d).to_bits(),
+            (l(1) - d).to_bits(),
+            (l(2) + d).to_bits(),
+            (l(3) - d).to_bits(),
+        ];
+        put_vec(
+            c,
+            algo + 0x40,
+            if seed % 17 == 0 {
+                vec(&mut r, 1e30)
+            } else {
+                eye
+            },
+        );
     }
 
     #[test]
@@ -3297,43 +3526,63 @@ mod tests {
 
     #[test]
     fn camera_base_get_pitch() {
-        check(ssx3_ee::s01::f_0015d880__generated, super::camera_base_get_pitch, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0xd303, 0);
-            let cam = ptr(&mut r);
-            c.g[A0][0] = cam as u64;
-            let q = if seed % 4 == 0 { vec(&mut r, 2.0) } else { [r.f32(1.0), r.f32(1.0), r.f32(1.0), r.f32(1.0)] };
-            put_vec(c, cam + 0x30, q);
-        });
+        check(
+            ssx3_ee::s01::f_0015d880__generated,
+            super::camera_base_get_pitch,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0xd303, 0);
+                let cam = ptr(&mut r);
+                c.g[A0][0] = cam as u64;
+                let q = if seed % 4 == 0 {
+                    vec(&mut r, 2.0)
+                } else {
+                    [r.f32(1.0), r.f32(1.0), r.f32(1.0), r.f32(1.0)]
+                };
+                put_vec(c, cam + 0x30, q);
+            },
+        );
     }
 
     #[test]
     fn game_camera_reset_default_chase() {
-        covered(ssx3_ee::s01::f_0015e030__generated, super::game_camera_reset_default_chase, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0xd304, 2);
-            let cam = ptr(&mut r);
-            c.g[A0][0] = cam as u64;
-            let algo = cam + 0xc0;
-            // What ChaseCameraAlgorithm_Reset reads (see dispatch tests).
-            let vt = ptr(&mut r);
-            c.bus.write16(vt + 0x18, (r.next_u32() as i16 & !3) as u16);
-            c.bus.write32(vt + 0x1c, FAKE + 0x20);
-            c.bus.write32(algo + 0x10, vt);
-            let (_, rider) = target(c, &mut r, algo, &[]);
-            let ivt = vtable(c, &mut r, &[0x38]);
-            c.bus.write32(rider + 0x6c0, ivt);
-        });
+        covered(
+            ssx3_ee::s01::f_0015e030__generated,
+            super::game_camera_reset_default_chase,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0xd304, 2);
+                let cam = ptr(&mut r);
+                c.g[A0][0] = cam as u64;
+                let algo = cam + 0xc0;
+                // What ChaseCameraAlgorithm_Reset reads (see dispatch tests).
+                let vt = ptr(&mut r);
+                c.bus.write16(vt + 0x18, (r.next_u32() as i16 & !3) as u16);
+                c.bus.write32(vt + 0x1c, FAKE + 0x20);
+                c.bus.write32(algo + 0x10, vt);
+                let (_, rider) = target(c, &mut r, algo, &[]);
+                let ivt = vtable(c, &mut r, &[0x38]);
+                c.bus.write32(rider + 0x6c0, ivt);
+            },
+        );
     }
 
     #[test]
     fn is_script_camera_active() {
-        check_paths(ssx3_ee::s01::f_0015d020__generated, super::is_script_camera_active, SEEDS, &[6, 10, 11], &|c, seed| {
-            let mut r = machine(c, seed, 0xd305, 0);
-            let ctl = ptr(&mut r);
-            c.g[A0][0] = ctl as u64;
-            c.bus.write32(ctl + 0x30, r.next_u32());
-            let ids = [0x5d, 0x3c, 0x3d, r.next_u32(), 0xffff_ff3c];
-            c.bus.write32(ctl + 0x2c, ids[(seed % 5) as usize]);
-        });
+        check_paths(
+            ssx3_ee::s01::f_0015d020__generated,
+            super::is_script_camera_active,
+            SEEDS,
+            &[6, 10, 11],
+            &|c, seed| {
+                let mut r = machine(c, seed, 0xd305, 0);
+                let ctl = ptr(&mut r);
+                c.g[A0][0] = ctl as u64;
+                c.bus.write32(ctl + 0x30, r.next_u32());
+                let ids = [0x5d, 0x3c, 0x3d, r.next_u32(), 0xffff_ff3c];
+                c.bus.write32(ctl + 0x2c, ids[(seed % 5) as usize]);
+            },
+        );
     }
 
     fn set_override_setup(c: &mut Cpu, seed: u32) {
@@ -3378,34 +3627,51 @@ mod tests {
             let cam = crate::difftest::DATA + 0x5_0000 + 0x100 * i + 0x10 * (r.next_u32() % 8);
             c.bus.write32(vm + 4 + 4 * i, cam);
             c.bus.write32(cam + 0x90, vt);
-            c.bus.write32(cam + 0xb4, if r.next_u32() % 25 == 0 { 0 } else { r.next_u32() | 1 });
+            c.bus.write32(
+                cam + 0xb4,
+                if r.next_u32() % 25 == 0 {
+                    0
+                } else {
+                    r.next_u32() | 1
+                },
+            );
         }
         vm
     }
 
     #[test]
     fn game_view_man_all_views_ready() {
-        check_events(gen_all_views_ready, hand_all_views_ready, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0xd307, 0);
-            let vm = views(c, &mut r, seed);
-            c.g[A0][0] = vm as u64;
-            let mode = schedule(c, &mut r, seed, 0x0022_e920);
-            // The loop is short (at most two back edges): make events due early.
-            if mode != Events::Off {
-                c.next_event = c.cycles + (r.next_u32() % 12) as u64;
-            }
-            mode
-        });
+        check_events(
+            gen_all_views_ready,
+            hand_all_views_ready,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0xd307, 0);
+                let vm = views(c, &mut r, seed);
+                c.g[A0][0] = vm as u64;
+                let mode = schedule(c, &mut r, seed, 0x0022_e920);
+                // The loop is short (at most two back edges): make events due early.
+                if mode != Events::Off {
+                    c.next_event = c.cycles + (r.next_u32() % 12) as u64;
+                }
+                mode
+            },
+        );
     }
 
     #[test]
     fn game_view_man_update_cameras() {
-        check_events(gen_update_cameras, hand_update_cameras, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0xd308, 0);
-            let vm = views(c, &mut r, seed);
-            c.g[A0][0] = vm as u64;
-            schedule(c, &mut r, seed, 0x0022_e840)
-        });
+        check_events(
+            gen_update_cameras,
+            hand_update_cameras,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0xd308, 0);
+                let vm = views(c, &mut r, seed);
+                c.g[A0][0] = vm as u64;
+                schedule(c, &mut r, seed, 0x0022_e840)
+            },
+        );
     }
 
     /// An algorithm the real `CheckDistanceReset` can run on (target with
@@ -3417,7 +3683,10 @@ mod tests {
         let (_, rider) = target(c, r, algo, &[0x8]);
         put_vec(c, rider + 0x1b0, vec(r, 1.0));
         fill(c, r, 0x4ff140, 12);
-        c.bus.write32(GAME_GP - 0x6778, (300.0 + (r.next_u32() % 400) as f32).to_bits());
+        c.bus.write32(
+            GAME_GP - 0x6778,
+            (300.0 + (r.next_u32() % 400) as f32).to_bits(),
+        );
         fill(c, r, algo, 0xf0);
         put_vec(c, algo + 0x20, vec(r, 300.0));
         put_vec(c, algo + 0x40, vec(r, 300.0));
@@ -3436,7 +3705,14 @@ mod tests {
             c.bus.write32(st + o, f(r, 2.0));
         }
         for o in [0x58, 0x5c, 0x60, 0x64] {
-            c.bus.write32(st + o, if r.next_u32() % 2 == 0 { 0 } else { r.next_u32() % 3 });
+            c.bus.write32(
+                st + o,
+                if r.next_u32() % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() % 3
+                },
+            );
         }
         for i in 0..8 {
             c.f[12 + i] = f(r, 100.0);
@@ -3469,7 +3745,8 @@ mod tests {
         let setup = |c: &mut Cpu, seed: u32| {
             let mut r = machine(c, seed, 0xd311, 1);
             let (_, st) = step_setup(c, &mut r);
-            c.bus.write32(st + 0x40, [0, 1, 2, 5, 0xffff_ffff][(seed % 5) as usize]);
+            c.bus
+                .write32(st + 0x40, [0, 1, 2, 5, 0xffff_ffff][(seed % 5) as usize]);
         };
         covered(g, super::apply_fov, SEEDS, &setup);
     }
@@ -3485,10 +3762,10 @@ mod tests {
             crate::tick::set_for_test(&mut c, hz);
             let (algo, st) = (DATA, DATA + 0x1000);
             for (off, v) in [
-                (0x6ab0u32, 1e-7f32),                   // speed² gain
-                (0x6aac, 0.999),                        // the per-update smoothing
-                (0x6aa8, std::f32::consts::FRAC_PI_4),  // π/4
-                (0x6778, 1e30),                         // the reset distance limit
+                (0x6ab0u32, 1e-7f32),                  // speed² gain
+                (0x6aac, 0.999),                       // the per-update smoothing
+                (0x6aa8, std::f32::consts::FRAC_PI_4), // π/4
+                (0x6778, 1e30),                        // the reset distance limit
             ] {
                 c.bus.write32(GAME_GP.wrapping_sub(off), v.to_bits());
             }
@@ -3541,7 +3818,8 @@ mod tests {
         machine(c, 1, 0xd319, 0);
         crate::tick::set_for_test(c, hz);
         let (algo, st) = (DATA, DATA + 0x1000);
-        c.bus.write32(GAME_GP.wrapping_sub(0x6778), 1e30f32.to_bits());
+        c.bus
+            .write32(GAME_GP.wrapping_sub(0x6778), 1e30f32.to_bits());
         for off in [0x40u32, 0x44, 0x48, 0x4c, 0x54, 0x58, 0x5c, 0x60, 0x64] {
             c.bus.write32(st + off, 0);
         }
@@ -3563,12 +3841,22 @@ mod tests {
     /// `1 + k`); unconverted, the faster rate would leave `1 + k^(hz/60)`.
     fn assert_blend_follows_the_rate(name: &str, k: f32, run: &dyn Fn(u32, u32) -> f32) {
         let at_60 = run(60, 1);
-        assert!((at_60 - (1.0 + k)).abs() < 1e-5, "{name} at 60: {at_60}, want {}", 1.0 + k);
+        assert!(
+            (at_60 - (1.0 + k)).abs() < 1e-5,
+            "{name} at 60: {at_60}, want {}",
+            1.0 + k
+        );
         for hz in [120u32, 240] {
             let n = hz / 60;
             let fast = run(hz, n);
-            assert!((fast - at_60).abs() < 1e-4, "{name} at {hz}: {fast}, at 60: {at_60}");
-            assert!(fast > 1.0 + k.powi(n as i32) + 1e-3, "{name} at {hz}: {fast} (unconverted)");
+            assert!(
+                (fast - at_60).abs() < 1e-4,
+                "{name} at {hz}: {fast}, at 60: {at_60}"
+            );
+            assert!(
+                fast > 1.0 + k.powi(n as i32) + 1e-3,
+                "{name} at {hz}: {fast} (unconverted)"
+            );
         }
     }
 
@@ -3580,8 +3868,10 @@ mod tests {
                 hz,
                 ticks,
                 &|c, algo, _| {
-                    c.bus.write32(GAME_GP.wrapping_sub(0x6ae8), 1388.9f32.to_bits());
-                    c.bus.write32(GAME_GP.wrapping_sub(0x6ae4), 5.15e-4f32.to_bits());
+                    c.bus
+                        .write32(GAME_GP.wrapping_sub(0x6ae8), 1388.9f32.to_bits());
+                    c.bus
+                        .write32(GAME_GP.wrapping_sub(0x6ae4), 5.15e-4f32.to_bits());
                     c.bus.write32(algo + 0x1e4, 2.0f32.to_bits()); // the old lift
                 },
                 &|c| {
@@ -3606,7 +3896,12 @@ mod tests {
                 hz,
                 ticks,
                 &|c, algo, _| {
-                    for (off, v) in [(0x6ac0u32, 1388.9f32), (0x6abc, 833.3), (0x6ab8, 1666.7), (0x6ab4, 1e-4)] {
+                    for (off, v) in [
+                        (0x6ac0u32, 1388.9f32),
+                        (0x6abc, 833.3),
+                        (0x6ab8, 1666.7),
+                        (0x6ab4, 1e-4),
+                    ] {
                         c.bus.write32(GAME_GP.wrapping_sub(off), v.to_bits());
                     }
                     c.bus.write32(algo + 0x1d4, 2.0f32.to_bits()); // the old drop
@@ -3633,7 +3928,11 @@ mod tests {
                 hz,
                 ticks,
                 &|c, algo, st| {
-                    for (off, v) in [(0x6ab0u32, 1e-7f32), (0x6aac, 0.999), (0x6aa8, std::f32::consts::FRAC_PI_4)] {
+                    for (off, v) in [
+                        (0x6ab0u32, 1e-7f32),
+                        (0x6aac, 0.999),
+                        (0x6aa8, std::f32::consts::FRAC_PI_4),
+                    ] {
                         c.bus.write32(GAME_GP.wrapping_sub(off), v.to_bits());
                     }
                     c.bus.write32(st + 0x40, 0); // Ground
@@ -3662,7 +3961,8 @@ mod tests {
                 hz,
                 ticks,
                 &|c, algo, st| {
-                    c.bus.write32(GAME_GP.wrapping_sub(0x6ac4), 1e-4f32.to_bits());
+                    c.bus
+                        .write32(GAME_GP.wrapping_sub(0x6ac4), 1e-4f32.to_bits());
                     put_vec(c, st + 0x30, [0x3f80_0000, 0, 0, 0]); // chase direction
                     c.bus.write32(algo + 0x1d0, old.to_bits()); // the old distance
                     c.bus.write32(algo + 0x1e8, bonus.to_bits()); // the boost bonus
@@ -3678,7 +3978,9 @@ mod tests {
                     c.f[18] = 0.9f32.to_bits(); // shrinking
                 },
                 super::apply_follow_distance,
-                &move |c, algo| f32::from_bits(c.bus.read32(algo + if read_bonus { 0x1e8 } else { 0x1d0 })),
+                &move |c, algo| {
+                    f32::from_bits(c.bus.read32(algo + if read_bonus { 0x1e8 } else { 0x1d0 }))
+                },
             )
         };
         // Shrinking from 300 towards 150 (f18) and growing from 50 (f17), as
@@ -3707,7 +4009,8 @@ mod tests {
                 hz,
                 ticks,
                 &move |c, algo, st| {
-                    c.bus.write32(GAME_GP.wrapping_sub(0x6aa4), (1.0f32 / 60.0).to_bits());
+                    c.bus
+                        .write32(GAME_GP.wrapping_sub(0x6aa4), (1.0f32 / 60.0).to_bits());
                     c.bus.write32(st + 0x5c, handplant as u32);
                     c.bus.write32(algo + 0x1e0, 5.0f32.to_bits()); // no eye blend
                     c.bus.write32(algo + 0x2b8, old.to_bits());
@@ -3806,7 +4109,8 @@ mod tests {
         c.f[16] = r.f32(3.0);
         c.f[17] = r.f32(1.0) & 0x7fff_ffff;
         c.f[18] = r.f32(1.0) & 0x7fff_ffff;
-        c.bus.write32(algo + 0x1d0, (r.f32(800.0) & 0x7fff_ffff) | 0x4300_0000);
+        c.bus
+            .write32(algo + 0x1d0, (r.f32(800.0) & 0x7fff_ffff) | 0x4300_0000);
         c.bus.write32(st + 0x4c, r.f32(2.0) & 0x7fff_ffff);
         c.bus.write32(algo + 0x1ec, r.f32(2.0) & 0x7fff_ffff);
         c.bus.write32(algo + 0x1e8, r.f32(10.0));
@@ -3825,7 +4129,12 @@ mod tests {
     fn camera_height_setup(c: &mut Cpu, seed: u32) {
         let mut r = machine(c, seed, 0xd313, 1);
         step_setup(c, &mut r);
-        for (off, v) in [(0x6ac0, 1388.9f32), (0x6abc, 833.3), (0x6ab8, 1666.7), (0x6ab4, 1e-4)] {
+        for (off, v) in [
+            (0x6ac0, 1388.9f32),
+            (0x6abc, 833.3),
+            (0x6ab8, 1666.7),
+            (0x6ab4, 1e-4),
+        ] {
             c.bus.write32(GAME_GP - off, v.to_bits());
         }
         let st = c.g[A1][0] as u32;
@@ -3847,16 +4156,42 @@ mod tests {
     #[test]
     fn update_handplant_fade() {
         let g = ssx3_ee::s01::f_00162998__generated;
-        check_paths(g, super::update_handplant_fade, SEEDS, &[8, 21, 28, 29, 30], &|c, seed| {
-            let mut r = machine(c, seed, 0xd314, 0);
-            let (algo, st) = (ptr(&mut r), ptr(&mut r) + 0x10_0000);
-            c.g[A0][0] = algo as u64;
-            c.g[A1][0] = st as u64;
-            c.bus.write32(st + 0x5c, if seed % 4 == 0 { r.next_u32() | 1 } else { 0 });
-            let frames = [0, 119, 120, 500, 819, 820, 821, 5000, 0xffff_fff0, r.next_u32()];
-            c.bus.write32(algo + 0x2c0, frames[(seed / 4 % 10) as usize]);
-            c.bus.write32(GAME_GP - 0x6af4, if seed % 3 == 0 { r.f32(0.01) } else { (1.0f32 / 700.0).to_bits() });
-        });
+        check_paths(
+            g,
+            super::update_handplant_fade,
+            SEEDS,
+            &[8, 21, 28, 29, 30],
+            &|c, seed| {
+                let mut r = machine(c, seed, 0xd314, 0);
+                let (algo, st) = (ptr(&mut r), ptr(&mut r) + 0x10_0000);
+                c.g[A0][0] = algo as u64;
+                c.g[A1][0] = st as u64;
+                c.bus
+                    .write32(st + 0x5c, if seed % 4 == 0 { r.next_u32() | 1 } else { 0 });
+                let frames = [
+                    0,
+                    119,
+                    120,
+                    500,
+                    819,
+                    820,
+                    821,
+                    5000,
+                    0xffff_fff0,
+                    r.next_u32(),
+                ];
+                c.bus
+                    .write32(algo + 0x2c0, frames[(seed / 4 % 10) as usize]);
+                c.bus.write32(
+                    GAME_GP - 0x6af4,
+                    if seed % 3 == 0 {
+                        r.f32(0.01)
+                    } else {
+                        (1.0f32 / 700.0).to_bits()
+                    },
+                );
+            },
+        );
     }
 
     /// The handplant fade is frame-counted: the 120-frame hold and the 1/700
@@ -3869,7 +4204,8 @@ mod tests {
             machine(&mut c, 1, 0xd314, 0);
             crate::tick::set_for_test(&mut c, hz);
             let (algo, st) = (DATA, DATA + 0x1000);
-            c.bus.write32(GAME_GP.wrapping_sub(0x6af4), (1.0f32 / 700.0).to_bits());
+            c.bus
+                .write32(GAME_GP.wrapping_sub(0x6af4), (1.0f32 / 700.0).to_bits());
             c.bus.write32(st + 0x5c, 0); // not a handplant
             c.bus.write32(algo + 0x2c0, 0); // frames since the last handplant
             for _ in 0..ticks {
@@ -3887,12 +4223,19 @@ mod tests {
         let at_120 = fade_after(120, 360);
         let want = 1.0f32 - 60.0f32 / 700.0f32;
         assert!((at_60 - want).abs() < 1e-6, "at 60: {at_60}, want {want}");
-        assert!((at_120 - at_60).abs() < 1e-6, "at 120: {at_120}, at 60: {at_60}");
+        assert!(
+            (at_120 - at_60).abs() < 1e-6,
+            "at 120: {at_120}, at 60: {at_60}"
+        );
         // Unconverted, 360 ticks at 120 would have dropped 240/700.
         assert!(at_120 > 0.8, "at 120: {at_120}");
         // The 820-frame cap: the fade reaches 0 at both rates.
         assert!(fade_after(60, 900) < 1e-6, "at 60: {}", fade_after(60, 900));
-        assert!(fade_after(120, 1800) < 1e-6, "at 120: {}", fade_after(120, 1800));
+        assert!(
+            fade_after(120, 1800) < 1e-6,
+            "at 120: {}",
+            fade_after(120, 1800)
+        );
     }
 
     fn handplant_hold_setup(c: &mut Cpu, seed: u32) {
@@ -3949,7 +4292,8 @@ mod tests {
         let vt = c.bus.read32(t);
         c.bus.write16(vt + 0xc0, (r.next_u32() as i16 & !3) as u16);
         c.bus.write32(vt + 0xc4, FAKE + 0x40);
-        c.bus.write32(LOG_RESULTS, if seed % 2 == 0 { 0 } else { 1 });
+        c.bus
+            .write32(LOG_RESULTS, if seed % 2 == 0 { 0 } else { 1 });
         if seed % 5 == 0 {
             // o parallel to up: |s| = 0.
             put_vec(c, 0x4ff160, [0, 0, 0x3f80_0000, 0]);
@@ -3992,19 +4336,29 @@ mod tests {
     fn low_speed_setup(c: &mut Cpu, seed: u32) {
         let mut r = machine(c, seed, 0xd319, 1);
         let (algo, st) = step_setup(c, &mut r);
-        for (off, v) in [(0x692c, 0.036f32), (0x6928, 1.0 / 60.0), (0x6924, 1.0 / 60.0)] {
+        for (off, v) in [
+            (0x692c, 0.036f32),
+            (0x6928, 1.0 / 60.0),
+            (0x6924, 1.0 / 60.0),
+        ] {
             c.bus.write32(GAME_GP - off, v.to_bits());
         }
         c.f[12] = 15.0f32.to_bits();
         c.f[13] = [1.5f32, 0.01, 0.5][(seed % 3) as usize].to_bits();
         c.f[14] = [1.5f32, 0.02, 0.5][(seed / 3 % 3) as usize].to_bits();
-        let speed = if seed % 2 == 0 { r.f32(400.0) & 0x7fff_ffff } else { r.f32(4000.0) };
+        let speed = if seed % 2 == 0 {
+            r.f32(400.0) & 0x7fff_ffff
+        } else {
+            r.f32(4000.0)
+        };
         c.bus.write32(st + 0x44, speed);
         c.bus.write32(st + 0x60, (r.next_u32() % 4 == 0) as u32);
         c.bus.write32(st + 0x5c, (r.next_u32() % 4 == 0) as u32);
-        c.bus.write32(algo + 0x300, [0, 1, 2, 3, 3, 7][(seed / 9 % 6) as usize]);
+        c.bus
+            .write32(algo + 0x300, [0, 1, 2, 3, 3, 7][(seed / 9 % 6) as usize]);
         let w = [0.0f32, 1.0, 0.995, 0.005, 0.5];
-        c.bus.write32(algo + 0x248, w[(r.next_u32() % 5) as usize].to_bits());
+        c.bus
+            .write32(algo + 0x248, w[(r.next_u32() % 5) as usize].to_bits());
         put_vec(c, algo + 0x1a0, vec(&mut r, 300.0));
     }
 
@@ -4047,10 +4401,20 @@ mod tests {
     #[test]
     fn update_air_transitions() {
         let g = ssx3_ee::s01::f_00162a20__generated;
-        covered(g, super::update_air_transitions, SEEDS, &air_transitions_setup);
+        covered(
+            g,
+            super::update_air_transitions,
+            SEEDS,
+            &air_transitions_setup,
+        );
         // Ground (19, 23), airborne (26), takeoff without / with a moving
         // check (50, 73) + countdown (2, 4).
-        paths_no_unwind(g, SEEDS, &[19, 23, 26, 50, 52, 54, 73, 75, 77], &air_transitions_setup);
+        paths_no_unwind(
+            g,
+            SEEDS,
+            &[19, 23, 26, 50, 52, 54, 73, 75, 77],
+            &air_transitions_setup,
+        );
     }
 
     /// The takeoff kick waits for a long ground run, measured on the AI frame
@@ -4068,7 +4432,7 @@ mod tests {
             c.bus.write32(algo + 0x2e0, 0); // no air-arc curve
             c.bus.write32(st + 0x44, 100.0f32.to_bits()); // speed > 0
             put_vec(&mut c, st + 0x20, [0x3f80_0000, 0, 0, 0]); // dir z = 0: not a drop
-            // The AI frame counter: *(gp-0x848) -> +0x84 -> +0x0c -> +0x08.
+                                                                // The AI frame counter: *(gp-0x848) -> +0x84 -> +0x0c -> +0x08.
             let (module, x, ai) = (DATA + 0xa_0000, DATA + 0xa_0100, DATA + 0xa_0200);
             c.bus.write32(GAME_GP.wrapping_sub(0x848), module);
             c.bus.write32(module + 0x84, x);
@@ -4106,7 +4470,9 @@ mod tests {
             _ => vec(&mut r, 500.0),
         };
         put_vec(c, algo + 0x40, eye);
-        let axes = if seed % 4 == 0 { [vec(&mut r, 1.0), vec(&mut r, 1.0)] } else {
+        let axes = if seed % 4 == 0 {
+            [vec(&mut r, 1.0), vec(&mut r, 1.0)]
+        } else {
             [[0x3f80_0000, 0, 0, 0], [0, 0x3f80_0000, 0, 0]]
         };
         put_vec(c, 0x4ff140, axes[0]);
@@ -4141,7 +4507,11 @@ mod tests {
     /// `machine`'s unwind index and RNG without re-scrambling.
     fn machine_keep(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
         let mut r = Rng(0x9e37_79b9_7f4a_7c15 ^ (seed as u64) << 8 ^ salt);
-        let unwind = if calls > 0 && r.next_u32() % 3 == 0 { r.next_u32() % calls } else { u32::MAX };
+        let unwind = if calls > 0 && r.next_u32() % 3 == 0 {
+            r.next_u32() % calls
+        } else {
+            u32::MAX
+        };
         c.bus.write32(LOG_UNWIND_AT, unwind);
         r
     }
@@ -4157,10 +4527,13 @@ mod tests {
         let ctl = ptr(&mut r);
         c.g[A0][0] = ctl as u64;
         fill(c, &mut r, ctl, 0x11);
-        c.bus.write32(ctl + 0x1c, [0x3d, 0x3d, 0x10, 0x4a][(seed % 4) as usize]);
-        c.bus.write32(ctl + 0x18, [0x4a, 0x3d, 0x10][(seed / 4 % 3) as usize]);
+        c.bus
+            .write32(ctl + 0x1c, [0x3d, 0x3d, 0x10, 0x4a][(seed % 4) as usize]);
+        c.bus
+            .write32(ctl + 0x18, [0x4a, 0x3d, 0x10][(seed / 4 % 3) as usize]);
         // Flags: override/script/spoke bits mostly set (no immediate switch).
-        c.bus.write32(ctl + 0x30, r.next_u32() | if seed % 8 == 0 { 0 } else { 1 });
+        c.bus
+            .write32(ctl + 0x30, r.next_u32() | if seed % 8 == 0 { 0 } else { 1 });
         c.bus.write32(ctl + 0x3c, (seed / 12 % 2) as u32);
         let (t, rider, st) = (ptr(&mut r), ptr(&mut r), DATA + 0xc_0000);
         c.bus.write32(ctl + 0x20, t);
@@ -4168,7 +4541,14 @@ mod tests {
         let vt = vtable(c, &mut r, &[0x18]);
         c.bus.write32(t, vt);
         c.bus.write32(rider + 0x77c, st);
-        c.bus.write32(st + 0xde0, if r.next_u32() % 2 == 0 { 5 } else { r.next_u32() % 8 });
+        c.bus.write32(
+            st + 0xde0,
+            if r.next_u32() % 2 == 0 {
+                5
+            } else {
+                r.next_u32() % 8
+            },
+        );
         c.bus.write32(rider + 0x870, r.next_u32() % 4);
         c.bus.write32(GAME_GP - 0x6b28, 0.036f32.to_bits());
         c.bus.write32(GAME_GP - 0x6b20, r.f32(10.0));
@@ -4217,7 +4597,12 @@ mod tests {
     #[test]
     fn game_camera_update_shake() {
         let g = ssx3_ee::s01::f_0015e460__generated;
-        covered(g, super::game_camera_update_shake, SEEDS, &update_shake_setup);
+        covered(
+            g,
+            super::game_camera_update_shake,
+            SEEDS,
+            &update_shake_setup,
+        );
     }
 
     driven!(gen_controller_update, ssx3_ee::s01::f_00161bb8__generated);
@@ -4253,8 +4638,10 @@ mod tests {
             c.bus.write32(node + 4, w.to_bits());
             c.bus.write32(node + 8, rate.to_bits());
             c.bus.write32(node + 0xc, r.f32(1.0));
-            c.bus.write32(node + 0x14, if i + 1 < n { node + 0x40 } else { 0 });
-            c.bus.write32(algo + 0xc, if r.next_u32() % 4 == 0 { 0x4a } else { 0x3d });
+            c.bus
+                .write32(node + 0x14, if i + 1 < n { node + 0x40 } else { 0 });
+            c.bus
+                .write32(algo + 0xc, if r.next_u32() % 4 == 0 { 0x4a } else { 0x3d });
             c.bus.write32(algo + 0x10, vt);
         }
         // Race state: GameModule -> +0x84 -> +0x28 -> state, +0x484.
@@ -4263,12 +4650,33 @@ mod tests {
         c.bus.write32(module + 0x84, vm);
         c.bus.write32(vm + 0x28, race);
         let states = [0, 1, 5, 10, 0xffff_ffff];
-        c.bus.write32(race, if expire { 5 } else { states[(r.next_u32() % 5) as usize] });
+        c.bus.write32(
+            race,
+            if expire {
+                5
+            } else {
+                states[(r.next_u32() % 5) as usize]
+            },
+        );
         c.bus.write32(race + 0x484, (r.next_u32() % 2) as u32);
-        c.bus.write32(ctl + 0x2c, if expire || seed % 2 == 0 { 0x5d } else { 0x3d });
+        c.bus.write32(
+            ctl + 0x2c,
+            if expire || seed % 2 == 0 { 0x5d } else { 0x3d },
+        );
         let current = c.bus.read32(ctl + 0x18);
-        c.bus.write32(ctl + 0x24, if !expire && r.next_u32() % 4 == 0 { current } else { 0x10 });
-        let timer = if expire { 12.0f32 } else { [9.0f32, 0.0][(r.next_u32() % 2) as usize] };
+        c.bus.write32(
+            ctl + 0x24,
+            if !expire && r.next_u32() % 4 == 0 {
+                current
+            } else {
+                0x10
+            },
+        );
+        let timer = if expire {
+            12.0f32
+        } else {
+            [9.0f32, 0.0][(r.next_u32() % 2) as usize]
+        };
         c.bus.write32(ctl + 0x38, timer.to_bits());
         c.bus.write32(GAME_GP - 0x6b24, (1.0f32 / 60.0).to_bits());
         schedule(c, &mut r, seed, 0x0016_1bb8)
@@ -4282,14 +4690,22 @@ mod tests {
 
     #[test]
     fn chase_cam_controller_update() {
-        check_events(gen_controller_update, hand_controller_update, SEEDS, &|c, seed| {
-            controller_update_setup(c, seed, false)
-        });
+        check_events(
+            gen_controller_update,
+            hand_controller_update,
+            SEEDS,
+            &|c, seed| controller_update_setup(c, seed, false),
+        );
         // The override timeout and its SetOverrideAlgorithm call.
-        check(ssx3_ee::s01::f_00161bb8__generated, super::chase_cam_controller_update, 200, &|c, seed| {
-            controller_update_setup(c, seed * 11 + 1, true);
-            c.hooks.jump_out = stop_at_jump;
-            c.next_event = u64::MAX;
-        });
+        check(
+            ssx3_ee::s01::f_00161bb8__generated,
+            super::chase_cam_controller_update,
+            200,
+            &|c, seed| {
+                controller_update_setup(c, seed * 11 + 1, true);
+                c.hooks.jump_out = stop_at_jump;
+                c.next_event = u64::MAX;
+            },
+        );
     }
 }

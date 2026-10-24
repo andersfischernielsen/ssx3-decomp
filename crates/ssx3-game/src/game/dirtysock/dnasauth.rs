@@ -10,10 +10,7 @@ use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
-pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0025_6228, dnasauth_init, "DNASAuth_Init"),
-];
-
+pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[(0x0025_6228, dnasauth_init, "DNASAuth_Init")];
 
 /// `void DNASAuth_Init(DNASAuth *self)` (0x256228): clear the auth state and
 /// set the handle fields to -1.
@@ -39,7 +36,6 @@ pub(crate) mod tests {
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-
 
     #[test]
     fn dnasauth_init_matches() {

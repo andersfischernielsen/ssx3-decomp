@@ -34,9 +34,9 @@
 //! qwords A, B}.
 
 use crate::bezier::{
-    emit_strip, gpu, project_xy, rewrite_st, ClipFlags, Mem, Raster, Rgba, Vertex, COLOUR, EOP, FAN_TAG_A, FAN_TAG_B,
-    FAN_TAG_CTX1, FAN_TAG_CTX2, FAN_TOGGLE, LAST_TOP, PACKET_A, PACKET_B, RETURN_SAVE, STRIP_TAG_CTX1,
-    STRIP_TAG_CTX2,
+    emit_strip, gpu, project_xy, rewrite_st, ClipFlags, Mem, Raster, Rgba, Vertex, COLOUR, EOP,
+    FAN_TAG_A, FAN_TAG_B, FAN_TAG_CTX1, FAN_TAG_CTX2, FAN_TOGGLE, LAST_TOP, PACKET_A, PACKET_B,
+    RETURN_SAVE, STRIP_TAG_CTX1, STRIP_TAG_CTX2,
 };
 
 /// Hash of the program this module implements.
@@ -89,8 +89,8 @@ enum First {
 fn entry_kind(entry: u32) -> Option<(First, Pass2)> {
     let n = |base: u32| -> u16 {
         match (entry - base) / 0x38 {
-        0 => 4,
-        1 => 6,
+            0 => 4,
+            1 => 6,
             _ => 8,
         }
     };
@@ -115,7 +115,10 @@ struct Grid {
 
 impl Grid {
     fn read(m: &Mem) -> Grid {
-        Grid { n: m.ilw(GRID, 0), table: m.ilw(GRID, 1) }
+        Grid {
+            n: m.ilw(GRID, 0),
+            table: m.ilw(GRID, 1),
+        }
     }
     /// The 0x0000 / 0x0048 / 0x0090 setup for n = 4 / 6 / 8.
     fn setup(m: &mut Mem, n: u16, top: u16) -> Grid {
@@ -128,7 +131,11 @@ impl Grid {
     }
     fn strips(&self, m: &Mem) -> V2 {
         let t = m.ld(STRIP_TABLE + self.table);
-        V2 { a: t[0] as u16, b: t[1] as u16, b_offset: t[3] as u16 }
+        V2 {
+            a: t[0] as u16,
+            b: t[1] as u16,
+            b_offset: t[3] as u16,
+        }
     }
     fn packets(&self, m: &Mem) -> [u16; 4] {
         let t = m.ld(PACKET_TABLE + self.table);
@@ -151,7 +158,10 @@ fn grid_strips(n: u16, strips: u16, pos: u16, uv: u16) -> Vec<Vec<Vertex>> {
             (0..2 * n)
                 .map(|i| {
                     let off = (s + i % 2) * n + i / 2;
-                    Vertex { pos: pos.wrapping_add(off), uv: uv.wrapping_add(off) }
+                    Vertex {
+                        pos: pos.wrapping_add(off),
+                        uv: uv.wrapping_add(off),
+                    }
                 })
                 .collect()
         })
@@ -184,13 +194,24 @@ pub fn run(
 /// (memory untouched) for what the CPU program keeps: what [`run`] does
 /// not implement, strip tables that do not match the grid, patches in the
 /// way of the packets, and a pass-2 ST rewrite of packets the CPU drew.
-pub fn plan_gpu(entry: u32, top: u32, _itop: u32, mem: &mut [u8; 16384]) -> Option<Vec<crate::gpu::GpuCall>> {
+pub fn plan_gpu(
+    entry: u32,
+    top: u32,
+    _itop: u32,
+    mem: &mut [u8; 16384],
+) -> Option<Vec<crate::gpu::GpuCall>> {
     let mut out = Vec::new();
     exec(entry, top, mem, &mut |_| {}, Some(&mut out)).then_some(out)
 }
 
 /// [`run`], or with `gpu` [`plan_gpu`].
-fn exec(entry: u32, top: u32, mem: &mut [u8; 16384], kick: &mut dyn FnMut(&[u128]), mut gpu: Option<&mut Vec<crate::gpu::GpuCall>>) -> bool {
+fn exec(
+    entry: u32,
+    top: u32,
+    mem: &mut [u8; 16384],
+    kick: &mut dyn FnMut(&[u128]),
+    mut gpu: Option<&mut Vec<crate::gpu::GpuCall>>,
+) -> bool {
     let Some((first, pass2)) = entry_kind(entry) else {
         return false;
     };
@@ -209,7 +230,14 @@ fn exec(entry: u32, top: u32, mem: &mut [u8; 16384], kick: &mut dyn FnMut(&[u128
     if !(1..=8).contains(&s.a) || !(1..=8).contains(&s.b) {
         return false;
     }
-    if matches!(pass2, Pass2::St) && (pk[2] == 0 || pk[2] % 12 != 0 || pk[3] == 0 || pk[3] % 12 != 0 || pk[2] > 0x200 || pk[3] > 0x200) {
+    if matches!(pass2, Pass2::St)
+        && (pk[2] == 0
+            || pk[2] % 12 != 0
+            || pk[3] == 0
+            || pk[3] % 12 != 0
+            || pk[2] > 0x200
+            || pk[3] > 0x200)
+    {
         return false;
     }
     if matches!(first, First::Projector | First::Shine) && (pk[0] < 4 || pk[0] % 4 != 0) {
@@ -223,7 +251,15 @@ fn exec(entry: u32, top: u32, mem: &mut [u8; 16384], kick: &mut dyn FnMut(&[u128
         First::Draw(n) => {
             let g = Grid::setup(&mut m, n, top);
             m.isw(RETURN_SAVE, 0, ret(entry + 0x10));
-            draw(&mut m, g, top, top.wrapping_add(UV), true, kick, gpu.as_deref_mut());
+            draw(
+                &mut m,
+                g,
+                top,
+                top.wrapping_add(UV),
+                true,
+                kick,
+                gpu.as_deref_mut(),
+            );
         }
         First::Projector | First::Shine => {
             // 0x0b60 / 0x0bc8 (BAL vi14: nothing saved).
@@ -247,11 +283,24 @@ fn exec(entry: u32, top: u32, mem: &mut [u8; 16384], kick: &mut dyn FnMut(&[u128
         }
         Pass2::Full => {
             m.isw(RETURN_SAVE, 0, ret(pass2_bal));
-            for (slot, tag) in [(PACKET_A, STRIP_TAG_CTX2), (PACKET_B, STRIP_TAG_CTX2), (FAN_TAG_A, FAN_TAG_CTX2), (FAN_TAG_B, FAN_TAG_CTX2)] {
+            for (slot, tag) in [
+                (PACKET_A, STRIP_TAG_CTX2),
+                (PACKET_B, STRIP_TAG_CTX2),
+                (FAN_TAG_A, FAN_TAG_CTX2),
+                (FAN_TAG_B, FAN_TAG_CTX2),
+            ] {
                 m.st_mask(slot, m.ld(tag), 0b0111);
             }
             let pos = m.ilw(LAST_TOP, 0);
-            draw(&mut m, grid, pos, top.wrapping_add(UV2), false, kick, gpu.as_deref_mut());
+            draw(
+                &mut m,
+                grid,
+                pos,
+                top.wrapping_add(UV2),
+                false,
+                kick,
+                gpu.as_deref_mut(),
+            );
         }
     }
     true
@@ -265,7 +314,8 @@ fn gpu_ok(m: &Mem, first: First, pass2: Pass2, g: Grid, top: u16) -> bool {
     let s = g.strips(m);
     let pk = g.packets(m);
     let row = 2 * g.n;
-    let tables = pk[0] == row * s.a && pk[1] == row * s.b && pk[2] == 3 * pk[0] && pk[3] == 3 * pk[1];
+    let tables =
+        pk[0] == row * s.a && pk[1] == row * s.b && pk[2] == 3 * pk[0] && pk[3] == 3 * pk[1];
     let rows = s.b_offset % g.n == 0 && s.b_offset / g.n + s.b < g.n && s.a < g.n;
     let pos = match first {
         First::Draw(_) => top,
@@ -292,7 +342,15 @@ fn fine_ok(g: Grid, s: &V2) -> bool {
 /// first row, packet B from row `b_offset`, both kicked from fixed slots.
 /// `ctx1` also writes the tags (NLOOP from the table, ctx1 PRIM) and resets
 /// the fan toggle.
-fn draw(m: &mut Mem, g: Grid, pos: u16, uv: u16, ctx1: bool, kick: &mut dyn FnMut(&[u128]), gpu: Option<&mut Vec<crate::gpu::GpuCall>>) {
+fn draw(
+    m: &mut Mem,
+    g: Grid,
+    pos: u16,
+    uv: u16,
+    ctx1: bool,
+    kick: &mut dyn FnMut(&[u128]),
+    gpu: Option<&mut Vec<crate::gpu::GpuCall>>,
+) {
     let s = g.strips(m);
     if ctx1 {
         let pk = g.packets(m);
@@ -343,7 +401,13 @@ fn draw(m: &mut Mem, g: Grid, pos: u16, uv: u16, ctx1: bool, kick: &mut dyn FnMu
 
 /// Pass 2 "flag 0" (0x0c30): ctx2 strip tags, ST := UV2·q in both packets
 /// (the vertex order of the strips: rows k, k+1 alternating), re-kick.
-fn pass2_st(m: &mut Mem, g: Grid, top: u16, kick: &mut dyn FnMut(&[u128]), gpu: Option<&mut Vec<crate::gpu::GpuCall>>) {
+fn pass2_st(
+    m: &mut Mem,
+    g: Grid,
+    top: u16,
+    kick: &mut dyn FnMut(&[u128]),
+    gpu: Option<&mut Vec<crate::gpu::GpuCall>>,
+) {
     m.st_mask(PACKET_A, m.ld(STRIP_TAG_CTX2), 0b0111);
     m.st_mask(PACKET_B, m.ld(STRIP_TAG_CTX2), 0b0111);
     let s = g.strips(m);
@@ -387,7 +451,9 @@ mod tests {
     /// Replays sampled calls (`BEZIER_DUMP`, from `SSX3_VERIFY_BEZIER_DUMP`).
     #[test]
     fn dumped_calls() {
-        crate::bezier::dump::replay(0, &|e, t, i, m, k| run(e, t, i, m, &mut VuState::default(), k));
+        crate::bezier::dump::replay(0, &|e, t, i, m, k| {
+            run(e, t, i, m, &mut VuState::default(), k)
+        });
     }
 
     /// A 4×4 grid in a simple perspective (w = z), some of it outside the
@@ -418,7 +484,10 @@ mod tests {
         for k in 0..16u16 {
             let (x, y) = ((k % 4) as f32 - 1.5, (k / 4) as f32 - 1.5);
             let z = 0.3 + 2.0 * rnd();
-            m.st(top + k, [f(x * (0.5 + rnd())), f(y * (0.5 + rnd())), f(z), f(1.0)]);
+            m.st(
+                top + k,
+                [f(x * (0.5 + rnd())), f(y * (0.5 + rnd())), f(z), f(1.0)],
+            );
             m.st(top + UV + k, [f(x), f(y), f(1.0), f(1.0)]);
             m.st(top + UV2 + k, [f(rnd()), f(rnd()), f(1.0), f(1.0)]);
         }
@@ -435,16 +504,32 @@ mod tests {
             for entry in [0x0610, 0x06b8, 0x0790] {
                 let mut cpu = grid_input(seed);
                 let mut gif = Vec::new();
-                assert!(run(entry, 0x250, 0, &mut cpu, &mut VuState::default(), &mut |p| gif.extend_from_slice(p)));
+                assert!(run(
+                    entry,
+                    0x250,
+                    0,
+                    &mut cpu,
+                    &mut VuState::default(),
+                    &mut |p| gif.extend_from_slice(p)
+                ));
                 let mut gpu_mem = grid_input(seed);
                 let calls = plan_gpu(entry, 0x250, 0, &mut gpu_mem).expect("planned");
-                assert_eq!(crate::gpu::check(HASH, &calls, &gif), None, "seed {seed} entry {entry:#x}");
+                assert_eq!(
+                    crate::gpu::check(HASH, &calls, &gif),
+                    None,
+                    "seed {seed} entry {entry:#x}"
+                );
                 // (Strip packets alone: 1 + 48 and 1 + 24 qwords.)
                 clipped += (entry == 0x0610 && gif.len() > 74) as u32;
                 let strip_code = 0x2a..0x1fd;
-                for q in (0..1024).filter(|q| !strip_code.contains(q) && *q != FAN_TOGGLE as usize) {
+                for q in (0..1024).filter(|q| !strip_code.contains(q) && *q != FAN_TOGGLE as usize)
+                {
                     let lanes = if q == RETURN_SAVE as usize { 3 } else { 4 };
-                    assert_eq!(cpu[16 * q..16 * q + 4 * lanes], gpu_mem[16 * q..16 * q + 4 * lanes], "qw {q:#x}");
+                    assert_eq!(
+                        cpu[16 * q..16 * q + 4 * lanes],
+                        gpu_mem[16 * q..16 * q + 4 * lanes],
+                        "qw {q:#x}"
+                    );
                 }
             }
         }

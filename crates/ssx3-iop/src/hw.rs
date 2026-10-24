@@ -33,7 +33,16 @@ pub struct Hw {
 
 impl Default for Hw {
     fn default() -> Self {
-        Self { istat: 0, imask: 0, ictrl: 1, dicr: 0, dicr2: 0, dpcr: 0, dpcr2: 0, dma: [DmaChan::default(); 14] }
+        Self {
+            istat: 0,
+            imask: 0,
+            ictrl: 1,
+            dicr: 0,
+            dicr2: 0,
+            dpcr: 0,
+            dpcr2: 0,
+            dma: [DmaChan::default(); 14],
+        }
     }
 }
 
@@ -58,7 +67,11 @@ impl Hw {
             self.dicr |= 0x80_0000;
             self.dicr2 |= 0x80_0000;
         }
-        let (reg, bit) = if line < 39 { (&mut self.dicr, 1 << (16 + line - 32)) } else { (&mut self.dicr2, 1 << (16 + line - 40)) };
+        let (reg, bit) = if line < 39 {
+            (&mut self.dicr, 1 << (16 + line - 32))
+        } else {
+            (&mut self.dicr2, 1 << (16 + line - 40))
+        };
         if on {
             *reg |= bit;
         } else {
@@ -105,9 +118,13 @@ pub fn deliver_interrupts(c: &mut Iop) {
         return;
     }
     for _ in 0..64 {
-        let Some(line) = c.hw.next_pending() else { return };
+        let Some(line) = c.hw.next_pending() else {
+            return;
+        };
         c.hw.acknowledge(line);
-        let Some(h) = c.k.intr.get(&line).copied() else { continue };
+        let Some(h) = c.k.intr.get(&line).copied() else {
+            continue;
+        };
         if h.handler == 0 {
             continue;
         }
@@ -147,10 +164,20 @@ fn start_dma(c: &mut Iop, ch: usize) {
     let blocks = (d.bcr >> 16).max(1);
     let words = (d.bcr & 0xFFFF) * blocks;
     if c.trace {
-        eprintln!("[iop-dma] ch {ch} madr {:#x} bcr {:#x} chcr {:#x}", d.madr, d.bcr, d.chcr);
+        eprintln!(
+            "[iop-dma] ch {ch} madr {:#x} bcr {:#x} chcr {:#x}",
+            d.madr, d.bcr, d.chcr
+        );
     }
     if ch == 4 || ch == 7 {
-        crate::spu2::dma(c, if ch == 4 { 0 } else { 1 }, d.madr, words, d.chcr & 1 != 0, ch as u32);
+        crate::spu2::dma(
+            c,
+            if ch == 4 { 0 } else { 1 },
+            d.madr,
+            words,
+            d.chcr & 1 != 0,
+            ch as u32,
+        );
         return;
     }
     if ch == 11 || ch == 12 {
@@ -158,7 +185,10 @@ fn start_dma(c: &mut Iop, ch: usize) {
         let block = ((d.bcr & 0xFFFF) * 4) as usize;
         let bytes = (words * 4) as usize;
         if c.sio2.trace {
-            eprintln!("[sio2] dma ch {ch} madr {:#x} bcr {:#x} chcr {:#x}", d.madr, d.bcr, d.chcr);
+            eprintln!(
+                "[sio2] dma ch {ch} madr {:#x} bcr {:#x} chcr {:#x}",
+                d.madr, d.bcr, d.chcr
+            );
         }
         if ch == 11 {
             let data = c.read_bytes(d.madr, bytes);
@@ -172,7 +202,10 @@ fn start_dma(c: &mut Iop, ch: usize) {
         c.k.schedule(at, Timed::DmaDone(ch as u32));
         return;
     }
-    eprintln!("[iop-dma] channel {ch} not emulated (madr {:#x} bcr {:#x} chcr {:#x})", d.madr, d.bcr, d.chcr);
+    eprintln!(
+        "[iop-dma] channel {ch} not emulated (madr {:#x} bcr {:#x} chcr {:#x})",
+        d.madr, d.bcr, d.chcr
+    );
     let at = c.cycles + 64;
     c.k.schedule(at, Timed::DmaDone(ch as u32));
 }
@@ -241,13 +274,23 @@ pub fn write(c: &mut Iop, a: u32, v: u32, size: u32) -> bool {
         0x1F80_1074 => c.hw.imask = v,
         0x1F80_1078 => c.hw.ictrl = v & 1,
         0x1F80_10F0 => c.hw.dpcr = v,
-        0x1F80_10F4 => c.hw.dicr = (c.hw.dicr & 0x7F00_0000 & !(v & 0x7F00_0000)) | (v & 0x00FF_FFFF),
+        0x1F80_10F4 => {
+            c.hw.dicr = (c.hw.dicr & 0x7F00_0000 & !(v & 0x7F00_0000)) | (v & 0x00FF_FFFF)
+        }
         0x1F80_1570 => c.hw.dpcr2 = v,
-        0x1F80_1574 => c.hw.dicr2 = (c.hw.dicr2 & 0x7F00_0000 & !(v & 0x7F00_0000)) | (v & 0x00FF_FFFF),
+        0x1F80_1574 => {
+            c.hw.dicr2 = (c.hw.dicr2 & 0x7F00_0000 & !(v & 0x7F00_0000)) | (v & 0x00FF_FFFF)
+        }
         _ => {
-            let Some((ch, reg)) = dma_channel(a & !3) else { return false };
+            let Some((ch, reg)) = dma_channel(a & !3) else {
+                return false;
+            };
             let shift = (a & 3) * 8;
-            let mask = if size >= 4 { u32::MAX } else { ((1u32 << (size * 8)) - 1) << shift };
+            let mask = if size >= 4 {
+                u32::MAX
+            } else {
+                ((1u32 << (size * 8)) - 1) << shift
+            };
             let d = &mut c.hw.dma[ch];
             let t = match reg {
                 0 => &mut d.madr,

@@ -72,7 +72,9 @@ impl Mem<'_> {
     }
     pub fn ld(&self, a: u16) -> V {
         let o = Self::off(a);
-        std::array::from_fn(|l| u32::from_le_bytes(self.0[o + 4 * l..o + 4 * l + 4].try_into().unwrap()))
+        std::array::from_fn(|l| {
+            u32::from_le_bytes(self.0[o + 4 * l..o + 4 * l + 4].try_into().unwrap())
+        })
     }
     /// Store the lanes of `v` selected by `mask` (bit 3 = x .. bit 0 = w).
     pub fn st_mask(&mut self, a: u16, v: V, mask: u8) {
@@ -103,7 +105,13 @@ impl Mem<'_> {
         let n = 1024u32;
         let mut q = a as u32 & (n - 1);
         let mut out = Vec::new();
-        let read = |q: u32| -> u128 { u128::from_le_bytes(self.0[q as usize * 16..q as usize * 16 + 16].try_into().unwrap()) };
+        let read = |q: u32| -> u128 {
+            u128::from_le_bytes(
+                self.0[q as usize * 16..q as usize * 16 + 16]
+                    .try_into()
+                    .unwrap(),
+            )
+        };
         loop {
             let tag = read(q);
             out.push(tag);
@@ -233,7 +241,11 @@ pub struct Raster {
 
 impl Raster {
     pub fn load(m: &Mem) -> Raster {
-        Raster { mat: m.matrix(MATRIX), gs: m.ld(GUARD_SCALE), go: m.ld(GUARD_OFFSET) }
+        Raster {
+            mat: m.matrix(MATRIX),
+            gs: m.ld(GUARD_SCALE),
+            go: m.ld(GUARD_OFFSET),
+        }
     }
     /// Screen position (before FTOI4): `gO·1 + (c·q)·gS`.
     fn screen(&self, cq: V) -> V {
@@ -387,11 +399,26 @@ impl Plane {
 
 /// Plane order of the original: z-, x-, x+, y+, y-.
 const PLANES: [Plane; 5] = [
-    Plane { lane: 2, minus: true },
-    Plane { lane: 0, minus: true },
-    Plane { lane: 0, minus: false },
-    Plane { lane: 1, minus: false },
-    Plane { lane: 1, minus: true },
+    Plane {
+        lane: 2,
+        minus: true,
+    },
+    Plane {
+        lane: 0,
+        minus: true,
+    },
+    Plane {
+        lane: 0,
+        minus: false,
+    },
+    Plane {
+        lane: 1,
+        minus: false,
+    },
+    Plane {
+        lane: 1,
+        minus: true,
+    },
 ];
 
 /// Clip the triangle `tri` (3 × {clip-space pos, raw ST, RGBA as float})
@@ -404,7 +431,13 @@ const PLANES: [Plane; 5] = [
 /// emit `a ∓ (a-b)·t(a)`; entering (a out) → emit `b ∓ (a-b)·t(b)`, then b.
 /// ST: b's z, w are forced to 1 when b is emitted or interpolated from; the
 /// leaving intersection keeps a's z, w. RGBA is interpolated as float.
-pub fn clip_triangle(m: &mut Mem, clip: &mut ClipFlags, r: &Raster, tri: [V; 9], kick: &mut dyn FnMut(&[u128])) {
+pub fn clip_triangle(
+    m: &mut Mem,
+    clip: &mut ClipFlags,
+    r: &Raster,
+    tri: [V; 9],
+    kick: &mut dyn FnMut(&[u128]),
+) {
     for (i, v) in tri.iter().enumerate() {
         m.st(CLIP_BUF_A + i as u16, *v);
     }
@@ -490,7 +523,11 @@ pub fn clip_triangle(m: &mut Mem, clip: &mut ClipFlags, r: &Raster, tri: [V; 9],
 /// fan packet not used last time: STQ = ST·q, RGBA = FTOI0, XYZF2 = FTOI4
 /// (gO + p·q·gS) with q = 1/p.w.
 fn emit_fan(m: &mut Mem, buf: u16, qw: u16, r: &Raster, kick: &mut dyn FnMut(&[u128])) {
-    let tag = if m.ilw(FAN_TOGGLE, 0) == FAN_TAG_A { FAN_TAG_B } else { FAN_TAG_A };
+    let tag = if m.ilw(FAN_TOGGLE, 0) == FAN_TAG_A {
+        FAN_TAG_B
+    } else {
+        FAN_TAG_A
+    };
     m.isw(FAN_TOGGLE, 0, tag);
     let mut o = tag.wrapping_add(1);
     let mut n = 0u16;
@@ -640,7 +677,10 @@ pub mod gpu {
     /// primitive (PRE) with the strip's register list.
     fn fans_draw(strip: V, fan: V) -> bool {
         let prim = (fan[1] >> 15) & 7;
-        fan[1] & (1 << 14) != 0 && (3..=5).contains(&prim) && fan[1] >> 26 == strip[1] >> 26 && fan[2..] == strip[2..]
+        fan[1] & (1 << 14) != 0
+            && (3..=5).contains(&prim)
+            && fan[1] >> 26 == strip[1] >> 26
+            && fan[2..] == strip[2..]
     }
 
     fn uniforms(r: &Raster, colour: V, info: [u32; 4]) -> [[u32; 4]; UNIFORM_QWORDS] {
@@ -658,7 +698,11 @@ pub mod gpu {
     /// the mark in the packet (the tags keep their NLOOP: a type-1 re-draw
     /// on the CPU kicks with them).
     pub fn draw(m: &mut Mem, s: &Strips, colour: V, n: u16, program: u32, out: &mut Vec<GpuCall>) {
-        let data = s.verts.iter().flat_map(|v| [m.ld(v.pos), m.ld(v.uv)]).collect::<Vec<_>>();
+        let data = s
+            .verts
+            .iter()
+            .flat_map(|v| [m.ld(v.pos), m.ld(v.uv)])
+            .collect::<Vec<_>>();
         let nv = s.verts.len() as u32;
         draw_data(m, s, data, nv, colour, n, program, out);
     }
@@ -666,31 +710,41 @@ pub mod gpu {
     /// [`draw`] with the vertex data given ({position, UV} per strip
     /// vertex), and the vertex count the mark records (the program's).
     #[allow(clippy::too_many_arguments)]
-    pub fn draw_data(m: &mut Mem, s: &Strips, data: Vec<[u32; 4]>, mark_nv: u32, colour: V, n: u16, program: u32, out: &mut Vec<GpuCall>) {
+    pub fn draw_data(
+        m: &mut Mem,
+        s: &Strips,
+        data: Vec<[u32; 4]>,
+        mark_nv: u32,
+        colour: V,
+        n: u16,
+        program: u32,
+        out: &mut Vec<GpuCall>,
+    ) {
         let r = Raster::load(m);
         let nv = s.verts.len() as u32;
         let mut data = Some(data);
         let alpha_max = colour[3] as i32 as f32;
         let fan = m.ld(FAN_TAG_A);
-        let mut call = |mode: u32, t: V, (indices, index_mode): (Vec<u32>, u32), out: &mut Vec<GpuCall>| {
-            let (data, link, reuse) = match data.take() {
-                Some(d) => (d, Link::Source(KEY), 0),
-                None => (Vec::new(), Link::Reuse(KEY), 1),
+        let mut call =
+            |mode: u32, t: V, (indices, index_mode): (Vec<u32>, u32), out: &mut Vec<GpuCall>| {
+                let (data, link, reuse) = match data.take() {
+                    Some(d) => (d, Link::Source(KEY), 0),
+                    None => (Vec::new(), Link::Reuse(KEY), 1),
+                };
+                out.push(GpuCall {
+                    program: Program::Bezier,
+                    pre: Vec::new(),
+                    tag: tag(t),
+                    uniforms: uniforms(&r, colour, [mode, 0, nv, reuse]),
+                    data,
+                    indices,
+                    index_mode,
+                    alpha_max,
+                    link,
+                    split: None,
+                    mesh_key: None,
+                });
             };
-            out.push(GpuCall {
-                program: Program::Bezier,
-                pre: Vec::new(),
-                tag: tag(t),
-                uniforms: uniforms(&r, colour, [mode, 0, nv, reuse]),
-                data,
-                indices,
-                index_mode,
-                alpha_max,
-                link,
-                split: None,
-                mesh_key: None,
-            });
-        };
         for (t, ps) in s.runs(m) {
             // A fan slot holding another program's data (the program does
             // not always write its fan tags) would make the GS read that
@@ -701,7 +755,10 @@ pub mod gpu {
             let fan = if fans_draw(t, fan) {
                 Some(fan)
             } else {
-                [m.ld(FAN_TAG_CTX1), m.ld(FAN_TAG_CTX2)].into_iter().find(|&f| fans_draw(t, f)).map(|f| [fan[0], f[1], f[2], f[3]])
+                [m.ld(FAN_TAG_CTX1), m.ld(FAN_TAG_CTX2)]
+                    .into_iter()
+                    .find(|&f| fans_draw(t, f))
+                    .map(|f| [fan[0], f[1], f[2], f[3]])
             };
             if let Some(fan) = fan {
                 call(FANS, fan, fan_indices(s.triangles(ps.clone())), out);
@@ -786,14 +843,29 @@ pub mod gpu {
         // Lagrange weights at parameter t (nodes 0..n-1).
         let weights = |t: f64| -> Vec<f64> {
             (0..n)
-                .map(|a| (0..n).filter(|&b| b != a).map(|b| (t - b as f64) / (a as f64 - b as f64)).product())
+                .map(|a| {
+                    (0..n)
+                        .filter(|&b| b != a)
+                        .map(|b| (t - b as f64) / (a as f64 - b as f64))
+                        .product()
+                })
                 .collect()
         };
         // Straight between the two border samples around t.
         let linear = |t: f64| -> Vec<f64> {
             let a = (t.floor() as usize).min(n - 2);
             let w = t - a as f64;
-            (0..n).map(|b| if b == a { 1.0 - w } else if b == a + 1 { w } else { 0.0 }).collect()
+            (0..n)
+                .map(|b| {
+                    if b == a {
+                        1.0 - w
+                    } else if b == a + 1 {
+                        w
+                    } else {
+                        0.0
+                    }
+                })
+                .collect()
         };
         let mut out = Vec::with_capacity(k * k);
         for qi in 0..k {
@@ -801,8 +873,16 @@ pub mod gpu {
                 let (u, v) = ((qi as f64) / f as f64, (qj as f64) / f as f64);
                 let edge_i = qi == 0 || qi == k - 1;
                 let edge_j = qj == 0 || qj == k - 1;
-                let wu = if edge_j && !edge_i { linear(u) } else { weights(u) };
-                let wv = if edge_i && !edge_j { linear(v) } else { weights(v) };
+                let wu = if edge_j && !edge_i {
+                    linear(u)
+                } else {
+                    weights(u)
+                };
+                let wv = if edge_i && !edge_j {
+                    linear(v)
+                } else {
+                    weights(v)
+                };
                 let mut acc = [0f64; 4];
                 for (i, &a) in wu.iter().enumerate() {
                     if a == 0.0 {
@@ -818,8 +898,17 @@ pub mod gpu {
                         }
                     }
                 }
-                let near = at(((u + 0.5) as usize).min(n - 1), ((v + 0.5) as usize).min(n - 1));
-                out.push(std::array::from_fn(|l| if l < lanes { (acc[l] as f32).to_bits() } else { near[l] }));
+                let near = at(
+                    ((u + 0.5) as usize).min(n - 1),
+                    ((v + 0.5) as usize).min(n - 1),
+                );
+                out.push(std::array::from_fn(|l| {
+                    if l < lanes {
+                        (acc[l] as f32).to_bits()
+                    } else {
+                        near[l]
+                    }
+                }));
             }
         }
         out
@@ -828,7 +917,12 @@ pub mod gpu {
     /// The strips of a k-wide fine grid: rows r, r+1 alternating; packet A
     /// rows `0..rows_a`, packet B the rest (to `k - 1`). With `data` per
     /// grid point, the per-strip-vertex data.
-    pub fn fine_strips(k: usize, rows_a: usize, grid: &[[u32; 4]], per_vertex: usize) -> (Strips, Vec<[u32; 4]>) {
+    pub fn fine_strips(
+        k: usize,
+        rows_a: usize,
+        grid: &[[u32; 4]],
+        per_vertex: usize,
+    ) -> (Strips, Vec<[u32; 4]>) {
         let mut s = Strips::default();
         let mut data = Vec::new();
         for (packet, rows) in [(PACKET_A, 0..rows_a), (PACKET_B, rows_a..k - 1)] {
@@ -872,7 +966,9 @@ pub mod gpu {
     /// CLIP judgement bits (+x -x +y -y +z -z) against |w|.
     pub fn flags(c: F4) -> u32 {
         let a = c[3].abs();
-        (0..3).map(|l| ((c[l] > a) as u32) << (2 * l) | ((c[l] < -a) as u32) << (2 * l + 1)).sum()
+        (0..3)
+            .map(|l| ((c[l] > a) as u32) << (2 * l) | ((c[l] < -a) as u32) << (2 * l + 1))
+            .sum()
     }
 
     /// The program's clipper ([`clip_triangle`]) in IEEE floats, as the
@@ -888,7 +984,13 @@ pub mod gpu {
             let num = |v: F4| if minus { v[l] + v[3] } else { v[l] - v[3] };
             let den = |d: F4| if minus { d[3] + d[l] } else { d[3] - d[l] };
             let lerp = |from: F4, d: F4, t: f32| -> F4 {
-                std::array::from_fn(|k| if minus { from[k] - d[k] * t } else { from[k] + d[k] * t })
+                std::array::from_fn(|k| {
+                    if minus {
+                        from[k] - d[k] * t
+                    } else {
+                        from[k] + d[k] * t
+                    }
+                })
             };
             let n = poly.len();
             let mut next = Vec::with_capacity(9);
@@ -946,7 +1048,9 @@ pub mod gpu {
         let nv = info[2] as usize;
         let h = |v: usize| -> F4 {
             let p = src[2 * v].map(f32::from_bits);
-            std::array::from_fn(|l| m[0][l] * p[0] + m[1][l] * p[1] + m[2][l] * p[2] + m[3][l] * p[3])
+            std::array::from_fn(|l| {
+                m[0][l] * p[0] + m[1][l] * p[1] + m[2][l] * p[2] + m[3][l] * p[3]
+            })
         };
         let uv = |v: usize| -> F4 { src[2 * v + 1].map(f32::from_bits) };
         let screen = |c: F4| -> [f32; 3] {
@@ -966,10 +1070,16 @@ pub mod gpu {
                     [uv[0] * q, uv[1] * q, uv[2] * q]
                 };
                 let xyz = screen(c);
-                [stq[0], stq[1], stq[2], col[0], col[1], col[2], col[3], xyz[0], xyz[1], xyz[2]]
+                [
+                    stq[0], stq[1], stq[2], col[0], col[1], col[2], col[3], xyz[0], xyz[1], xyz[2],
+                ]
             })
             .collect();
-        let step = if info[0] == FANS { 3 * FAN_TRIS as usize } else { 3 };
+        let step = if info[0] == FANS {
+            3 * FAN_TRIS as usize
+        } else {
+            3
+        };
         let shift = if info[0] == FANS { 5 } else { 2 };
         let (mut strips, mut fans) = (Vec::new(), Vec::new());
         for t in call.expanded_indices().chunks(step) {
@@ -997,7 +1107,11 @@ pub mod gpu {
                 }
             }
         }
-        Eval { verts, strips, fans }
+        Eval {
+            verts,
+            strips,
+            fans,
+        }
     }
 
     /// `crate::gpu::check` for both programs: the program's output (`gif`,
@@ -1008,7 +1122,9 @@ pub mod gpu {
     /// packets are not checked.
     pub fn check(calls: &[GpuCall], gif: &[u128]) -> Option<String> {
         let words = |v: &[u128]| -> Vec<[u32; 12]> {
-            v.chunks(3).map(|v| std::array::from_fn(|i| (v[i / 4] >> (32 * (i % 4))) as u32)).collect()
+            v.chunks(3)
+                .map(|v| std::array::from_fn(|i| (v[i / 4] >> (32 * (i % 4))) as u32))
+                .collect()
         };
         // The program's passes: (strip vertices, fans).
         let mut passes: Vec<(Vec<[u32; 12]>, Vec<Vec<[u32; 12]>>)> = Vec::new();
@@ -1040,21 +1156,29 @@ pub mod gpu {
             if source {
                 src = Some(&c.data);
             }
-            let new = planned.last().is_none_or(|(_, l)| source || st != (l[0].uniforms[uni::INFO][1] != 0));
+            let new = planned
+                .last()
+                .is_none_or(|(_, l)| source || st != (l[0].uniforms[uni::INFO][1] != 0));
             if new {
                 planned.push((src, Vec::new()));
             }
             planned.last_mut().unwrap().1.push(c);
         }
         if planned.len() != passes.len() {
-            return Some(format!("bezier: {} planned passes, the program kicked {}", planned.len(), passes.len()));
+            return Some(format!(
+                "bezier: {} planned passes, the program kicked {}",
+                planned.len(),
+                passes.len()
+            ));
         }
         let mut bad = Vec::new();
         let close = |a: f32, b: f32, tol: f32| (a - b).abs() <= tol * (1.0 + b.abs());
         // Screen XYZ against FTOI4 (z: gO.z + gS.z·z/w cancels, the PS2's
         // rounding shows there).
         let xyz_ok = |g: &[f32], w: &[u32]| {
-            let xy = (0..2).all(|l| (g[l] * 16.0 - w[l] as i32 as f32).abs() <= 2.0 + 1e-4 * (w[l] as i32 as f32).abs());
+            let xy = (0..2).all(|l| {
+                (g[l] * 16.0 - w[l] as i32 as f32).abs() <= 2.0 + 1e-4 * (w[l] as i32 as f32).abs()
+            });
             let z = w[2] as i32 as f32;
             xy && (g[2] * 16.0 - z).abs() <= 16.0 * 256.0 + 1e-3 * z.abs()
         };
@@ -1063,29 +1187,64 @@ pub mod gpu {
             let evals: Vec<Eval> = cs.iter().map(|c| eval(c, src)).collect();
             let v = &evals[0].verts;
             if v.len() != want.len() {
-                bad.push(format!("pass {k}: {} vertices, the program {}", v.len(), want.len()));
+                bad.push(format!(
+                    "pass {k}: {} vertices, the program {}",
+                    v.len(),
+                    want.len()
+                ));
                 continue;
             }
-            let mut strip_tris: Vec<u32> = evals.iter().flat_map(|e| e.strips.iter().copied()).collect();
+            let mut strip_tris: Vec<u32> = evals
+                .iter()
+                .flat_map(|e| e.strips.iter().copied())
+                .collect();
             strip_tris.sort();
             // The program's strip triangles: no ADC on the last vertex.
-            let prog: Vec<u32> = (0..want.len() as u32).filter(|&i| want[i as usize][11] >> 15 & 1 == 0).collect();
+            let prog: Vec<u32> = (0..want.len() as u32)
+                .filter(|&i| want[i as usize][11] >> 15 & 1 == 0)
+                .collect();
             if prog != strip_tris {
-                let d: Vec<_> = prog.iter().filter(|i| !strip_tris.contains(i)).chain(strip_tris.iter().filter(|i| !prog.contains(i))).take(4).collect();
-                bad.push(format!("pass {k}: {} strip triangles, the program {} (differ at {d:?})", strip_tris.len(), prog.len()));
+                let d: Vec<_> = prog
+                    .iter()
+                    .filter(|i| !strip_tris.contains(i))
+                    .chain(strip_tris.iter().filter(|i| !prog.contains(i)))
+                    .take(4)
+                    .collect();
+                bad.push(format!(
+                    "pass {k}: {} strip triangles, the program {} (differ at {d:?})",
+                    strip_tris.len(),
+                    prog.len()
+                ));
             }
             if cs.iter().any(|c| c.uniforms[uni::INFO][0] == FANS) {
-                let fans: Vec<&(u32, Vec<[f32; 6]>)> = evals.iter().flat_map(|e| e.fans.iter()).collect();
+                let fans: Vec<&(u32, Vec<[f32; 6]>)> =
+                    evals.iter().flat_map(|e| e.fans.iter()).collect();
                 if fans.len() != want_fans.len() {
-                    bad.push(format!("pass {k}: {} fans, the program {}", fans.len(), want_fans.len()));
+                    bad.push(format!(
+                        "pass {k}: {} fans, the program {}",
+                        fans.len(),
+                        want_fans.len()
+                    ));
                 }
                 for ((i, g), w) in fans.iter().zip(want_fans) {
                     let ok = g.len() == w.len()
                         && g.iter().zip(w).all(|(g, w)| {
-                            (0..3).all(|l| close(g[l], f32::from_bits(w[l]), 1e-2)) && xyz_ok(&g[3..], &w[8..11])
+                            (0..3).all(|l| close(g[l], f32::from_bits(w[l]), 1e-2))
+                                && xyz_ok(&g[3..], &w[8..11])
                         });
                     if !ok && bad.len() < 4 {
-                        let ws: Vec<_> = w.iter().map(|w| (w[0..3].iter().map(|&x| f32::from_bits(x)).collect::<Vec<_>>(), &w[8..11])).collect();
+                        let ws: Vec<_> = w
+                            .iter()
+                            .map(|w| {
+                                (
+                                    w[0..3]
+                                        .iter()
+                                        .map(|&x| f32::from_bits(x))
+                                        .collect::<Vec<_>>(),
+                                    &w[8..11],
+                                )
+                            })
+                            .collect();
                         bad.push(format!("pass {k} fan of {i}: {g:?} want {ws:?}"));
                     }
                 }
@@ -1132,18 +1291,40 @@ pub mod dump {
             let top = u32_at(&mut p);
             let itop = u32_at(&mut p);
             let program = u32_at(&mut p);
-            let input: Box<[u8; 16384]> = b[p..p + 16384].to_vec().into_boxed_slice().try_into().unwrap();
+            let input: Box<[u8; 16384]> = b[p..p + 16384]
+                .to_vec()
+                .into_boxed_slice()
+                .try_into()
+                .unwrap();
             p += 16384;
-            let output: Box<[u8; 16384]> = b[p..p + 16384].to_vec().into_boxed_slice().try_into().unwrap();
+            let output: Box<[u8; 16384]> = b[p..p + 16384]
+                .to_vec()
+                .into_boxed_slice()
+                .try_into()
+                .unwrap();
             p += 16384;
             let nk = u32_at(&mut p);
             let mut kicks = Vec::new();
             for _ in 0..nk {
                 let n = u32_at(&mut p) as usize;
-                kicks.push((0..n).map(|i| u128::from_le_bytes(b[p + 16 * i..p + 16 * i + 16].try_into().unwrap())).collect());
+                kicks.push(
+                    (0..n)
+                        .map(|i| {
+                            u128::from_le_bytes(b[p + 16 * i..p + 16 * i + 16].try_into().unwrap())
+                        })
+                        .collect(),
+                );
                 p += 16 * n;
             }
-            out.push(Call { entry, top, itop, program, input, output, kicks });
+            out.push(Call {
+                entry,
+                top,
+                itop,
+                program,
+                input,
+                output,
+                kicks,
+            });
         }
         out
     }
@@ -1163,7 +1344,9 @@ pub mod dump {
             for c in read(path).into_iter().filter(|c| c.program == program) {
                 let mut mem = c.input.clone();
                 let mut kicks = Vec::new();
-                let ok = run(c.entry, c.top, c.itop, &mut mem, &mut |k| kicks.push(k.to_vec()));
+                let ok = run(c.entry, c.top, c.itop, &mut mem, &mut |k| {
+                    kicks.push(k.to_vec())
+                });
                 let e = stats.entry(c.entry).or_default();
                 if !ok {
                     e.2 += 1;
@@ -1176,20 +1359,47 @@ pub mod dump {
                 e.1 += 1;
                 if shown < 5 {
                     shown += 1;
-                    eprintln!("mismatch: entry {:#06x} top {:#x}: kicks native {} translated {}", c.entry, c.top, kicks.len(), c.kicks.len());
-                    if let Some(i) = (0..kicks.len().max(c.kicks.len())).find(|&i| kicks.get(i) != c.kicks.get(i)) {
+                    eprintln!(
+                        "mismatch: entry {:#06x} top {:#x}: kicks native {} translated {}",
+                        c.entry,
+                        c.top,
+                        kicks.len(),
+                        c.kicks.len()
+                    );
+                    if let Some(i) = (0..kicks.len().max(c.kicks.len()))
+                        .find(|&i| kicks.get(i) != c.kicks.get(i))
+                    {
                         let (a, b) = (kicks.get(i), c.kicks.get(i));
-                        eprintln!("  kick {i}: native {} qw, translated {} qw", a.map_or(0, |k| k.len()), b.map_or(0, |k| k.len()));
+                        eprintln!(
+                            "  kick {i}: native {} qw, translated {} qw",
+                            a.map_or(0, |k| k.len()),
+                            b.map_or(0, |k| k.len())
+                        );
                         if let (Some(a), Some(b)) = (a, b) {
-                            for (j, (x, y)) in a.iter().zip(b).enumerate().filter(|(_, (x, y))| x != y).take(6) {
+                            for (j, (x, y)) in a
+                                .iter()
+                                .zip(b)
+                                .enumerate()
+                                .filter(|(_, (x, y))| x != y)
+                                .take(6)
+                            {
                                 eprintln!("    qw {j}: native {x:032x} translated {y:032x}");
                             }
                         }
                     }
-                    let diff: Vec<usize> = (0..1024).filter(|q| mem[q * 16..q * 16 + 16] != c.output[q * 16..q * 16 + 16]).collect();
+                    let diff: Vec<usize> = (0..1024)
+                        .filter(|q| mem[q * 16..q * 16 + 16] != c.output[q * 16..q * 16 + 16])
+                        .collect();
                     for &q in diff.iter().take(6) {
-                        let rd = |m: &[u8], q: usize| u128::from_le_bytes(m[q * 16..q * 16 + 16].try_into().unwrap());
-                        eprintln!("  mem qw {q:#05x}: in {:032x} native {:032x} translated {:032x}", rd(&c.input[..], q), rd(&mem[..], q), rd(&c.output[..], q));
+                        let rd = |m: &[u8], q: usize| {
+                            u128::from_le_bytes(m[q * 16..q * 16 + 16].try_into().unwrap())
+                        };
+                        eprintln!(
+                            "  mem qw {q:#05x}: in {:032x} native {:032x} translated {:032x}",
+                            rd(&c.input[..], q),
+                            rd(&mem[..], q),
+                            rd(&c.output[..], q)
+                        );
                     }
                     if !diff.is_empty() {
                         eprintln!("  data memory: {} qwords differ", diff.len());

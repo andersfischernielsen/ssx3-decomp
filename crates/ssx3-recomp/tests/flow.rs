@@ -18,7 +18,10 @@ fn open_program() -> Option<Program> {
 }
 
 fn ours_within(f: &ssx3_recomp::Function, d: &flow::Disasm) -> BTreeSet<u32> {
-    d.instructions.range(f.address..f.end).map(|(a, _)| *a).collect()
+    d.instructions
+        .range(f.address..f.end)
+        .map(|(a, _)| *a)
+        .collect()
 }
 
 #[test]
@@ -28,7 +31,10 @@ fn entry_matches_ghidra_exactly() {
     let d = flow::disassemble(&p.elf, f.address, 4096);
     let runs = boundaries().runs(f.address).unwrap();
     let ours = ours_within(f, &d);
-    let gh: BTreeSet<u32> = runs.iter().flat_map(|&(lo, hi)| (lo..hi).step_by(4)).collect();
+    let gh: BTreeSet<u32> = runs
+        .iter()
+        .flat_map(|&(lo, hi)| (lo..hi).step_by(4))
+        .collect();
     assert_eq!(ours, gh, "entry boundaries differ from Ghidra");
 }
 
@@ -41,7 +47,10 @@ fn recursive_descent_does_not_walk_into_embedded_data() {
     let d = flow::disassemble(&p.elf, f.address, (f.len() as usize / 4) + 64);
     let ours = ours_within(f, &d);
     for hole in [0x0042_d584u32, 0x0042_d5ec, 0x0042_d864] {
-        assert!(!ours.contains(&hole), "{hole:08x} is data, not an instruction");
+        assert!(
+            !ours.contains(&hole),
+            "{hole:08x} is data, not an instruction"
+        );
     }
 }
 
@@ -52,11 +61,16 @@ fn recursive_descent_agrees_with_ghidra_broadly() {
     let mut exact = 0usize;
     let mut total = 0usize;
     for f in p.functions() {
-        let Some(runs) = b.runs(f.address) else { continue };
+        let Some(runs) = b.runs(f.address) else {
+            continue;
+        };
         total += 1;
         let d = flow::disassemble(&p.elf, f.address, (f.len() as usize / 4) + 64);
         let ours = ours_within(f, &d);
-        let gh: BTreeSet<u32> = runs.iter().flat_map(|&(lo, hi)| (lo..hi).step_by(4)).collect();
+        let gh: BTreeSet<u32> = runs
+            .iter()
+            .flat_map(|&(lo, hi)| (lo..hi).step_by(4))
+            .collect();
         if ours == gh {
             exact += 1;
         }

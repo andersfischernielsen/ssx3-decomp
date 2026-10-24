@@ -53,7 +53,10 @@ const COMPLETE_REQUEST: u32 = 0x003d_e420;
 const HOST_READ_SERVICE: u32 = 0x003e_33b0;
 
 /// `EAFile_CompleteRequest(ok)`, through its slot (so the read log sees it).
-const CALL_COMPLETE_REQUEST: Callee = Callee { addr: COMPLETE_REQUEST, f: ssx3_ee::s14::f_003de420 };
+const CALL_COMPLETE_REQUEST: Callee = Callee {
+    addr: COMPLETE_REQUEST,
+    f: ssx3_ee::s14::f_003de420,
+};
 /// Where `EAFile_PlatformRead` returns from its `EAFile_CdRead` call. The
 /// native read uses the same frame (0x10, ra at 0) and return address, so a
 /// guest thread switched out inside the completion callback resumes in the
@@ -114,7 +117,10 @@ pub fn install() -> bool {
         match File::create(&p) {
             Ok(f) => {
                 *LOG.lock().unwrap() = Some(f);
-                assert!(ssx3_ee::set_override(COMPLETE_REQUEST, complete_request_logged));
+                assert!(ssx3_ee::set_override(
+                    COMPLETE_REQUEST,
+                    complete_request_logged
+                ));
             }
             Err(e) => eprintln!("SSX3_FILE_LOG {p}: {e}"),
         }
@@ -127,7 +133,10 @@ pub fn install() -> bool {
         Some(d) => {
             let d = PathBuf::from(d);
             if !d.is_dir() {
-                eprintln!("native files: SSX3_DATA_DIR {} is not a directory; keeping the emulated CD", d.display());
+                eprintln!(
+                    "native files: SSX3_DATA_DIR {} is not a directory; keeping the emulated CD",
+                    d.display()
+                );
                 return false;
             }
             Source::Dir(d)
@@ -139,14 +148,23 @@ pub fn install() -> bool {
             match Disc::open(&iso) {
                 Ok(d) => Source::Iso(d),
                 Err(e) => {
-                    eprintln!("native files: cannot open {}: {e}; keeping the emulated CD", iso.display());
+                    eprintln!(
+                        "native files: cannot open {}: {e}; keeping the emulated CD",
+                        iso.display()
+                    );
                     return false;
                 }
             }
         }
     };
-    *STATE.lock().unwrap() =
-        Some(State { src, files: Vec::new(), found: HashMap::new(), pending: None, stranded: None, busy: false });
+    *STATE.lock().unwrap() = Some(State {
+        src,
+        files: Vec::new(),
+        found: HashMap::new(),
+        pending: None,
+        stranded: None,
+        busy: false,
+    });
     for (addr, f) in [
         (PLATFORM_OPEN, platform_open as fn(&mut Cpu)),
         (PLATFORM_READ, platform_read),
@@ -154,7 +172,10 @@ pub fn install() -> bool {
         (PLATFORM_GET_SIZE, platform_get_size),
         (HOST_READ_SERVICE, host_read_service),
     ] {
-        assert!(ssx3_ee::set_override(addr, f), "{addr:#x}: no override slot (overrides.txt)");
+        assert!(
+            ssx3_ee::set_override(addr, f),
+            "{addr:#x}: no override slot (overrides.txt)"
+        );
     }
     true
 }
@@ -201,22 +222,34 @@ impl State {
         match &mut self.src {
             Source::Iso(disc) => {
                 let hit = *self.found.entry(name.to_string()).or_insert_with(|| {
-                    disc.find(name).filter(|e| !e.dir).map(|e| (e.sector, e.size))
+                    disc.find(name)
+                        .filter(|e| !e.dir)
+                        .map(|e| (e.sector, e.size))
                 });
                 let (sector, size) = hit?;
-                Some(OpenFile { name: name.to_string(), size, loc: Loc::Sector(sector) })
+                Some(OpenFile {
+                    name: name.to_string(),
+                    size,
+                    loc: Loc::Sector(sector),
+                })
             }
             Source::Dir(root) => {
                 let path = find_ci(root, name)?;
                 let f = File::open(&path).ok()?;
                 let size = f.metadata().ok()?.len() as u32;
-                Some(OpenFile { name: name.to_string(), size, loc: Loc::Host(f) })
+                Some(OpenFile {
+                    name: name.to_string(),
+                    size,
+                    loc: Loc::Host(f),
+                })
             }
         }
     }
 
     fn read(&mut self, idx: usize, off: u32, out: &mut [u8]) -> bool {
-        let Some(Some(f)) = self.files.get_mut(idx) else { return false };
+        let Some(Some(f)) = self.files.get_mut(idx) else {
+            return false;
+        };
         match (&mut f.loc, &mut self.src) {
             (Loc::Sector(s), Source::Iso(disc)) => {
                 // Whole sectors around [off, off + len).
@@ -227,7 +260,9 @@ impl State {
                 out.copy_from_slice(&buf[skip..skip + out.len()]);
                 true
             }
-            (Loc::Host(file), _) => file.seek(SeekFrom::Start(off as u64)).is_ok() && file.read_exact(out).is_ok(),
+            (Loc::Host(file), _) => {
+                file.seek(SeekFrom::Start(off as u64)).is_ok() && file.read_exact(out).is_ok()
+            }
             _ => false,
         }
     }
@@ -370,9 +405,16 @@ pub fn host_read_service(c: &mut Cpu) {
 
 /// Copy `size` bytes at `off` of a native file into guest memory.
 fn read_into(c: &mut Cpu, handle: u32, buf: u32, off: u32, size: u32) -> bool {
-    let Some(idx) = native_idx(handle) else { return false };
+    let Some(idx) = native_idx(handle) else {
+        return false;
+    };
     let mut data = vec![0u8; size as usize];
-    let ok = STATE.lock().unwrap().as_mut().unwrap().read(idx, off, &mut data);
+    let ok = STATE
+        .lock()
+        .unwrap()
+        .as_mut()
+        .unwrap()
+        .read(idx, off, &mut data);
     if ok {
         c.bus.write_bytes(buf, &data);
     }
@@ -396,7 +438,15 @@ pub fn platform_get_size(c: &mut Cpu) {
     let Some(idx) = native_idx(abi::arg(c, 0)) else {
         return ssx3_ee::s14::f_003e34e8__generated(c);
     };
-    let size = STATE.lock().unwrap().as_ref().unwrap().files.get(idx).and_then(|f| f.as_ref()).map_or(0, |f| f.size);
+    let size = STATE
+        .lock()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .files
+        .get(idx)
+        .and_then(|f| f.as_ref())
+        .map_or(0, |f| f.size);
     abi::set_ret(c, size);
     abi::ret(c);
 }

@@ -2,12 +2,6 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
-use crate::guest::Addr;
-use crate::ps2f::FpuF32;
-use ssx3_ee_rt::cpu::reg::*;
-use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::Cpu;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::Callee;
@@ -16,15 +10,28 @@ use crate::call::Frame;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
-use ssx3_ee as ee;
 pub(crate) use crate::game::be::bedbreward::BUILTIN_DELETE_ADDR;
+use crate::guest::Addr;
+use crate::ps2f::FpuF32;
+use ssx3_ee as ee;
+use ssx3_ee_rt::cpu::reg::*;
+use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::funcs::GuestFn;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0016_c5d0, active_camera_trigger_list_ctor, "ActiveCameraTriggerList_ctor"),
-    (0x0016_c5e0, active_camera_trigger_list_dtor, "ActiveCameraTriggerList_dtor"),
+    (
+        0x0016_c5d0,
+        active_camera_trigger_list_ctor,
+        "ActiveCameraTriggerList_ctor",
+    ),
+    (
+        0x0016_c5e0,
+        active_camera_trigger_list_dtor,
+        "ActiveCameraTriggerList_dtor",
+    ),
 ];
-
 
 /// `ActiveCameraTriggerList* ActiveCameraTriggerList_ctor(ActiveCameraTriggerList *self)`
 /// (0x16c5d0): clear the head and return `self`.
@@ -36,9 +43,10 @@ pub fn active_camera_trigger_list_ctor(c: &mut Cpu) {
     abi::ret(c);
 }
 
-pub(crate) const ACTIVE_CAMERA_TRIGGER_LIST_CLEAR: Callee =
-    Callee { addr: 0x0016_c628, f: ee::s02::f_0016c628 };
-
+pub(crate) const ACTIVE_CAMERA_TRIGGER_LIST_CLEAR: Callee = Callee {
+    addr: 0x0016_c628,
+    f: ee::s02::f_0016c628,
+};
 
 /// `void ActiveCameraTriggerList_dtor(ActiveCameraTriggerList *list, uint flags)`
 /// (0x16c5e0): clear the list, then delete it when `flags & 1`.
@@ -74,29 +82,32 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
-    use crate::difftest::scramble;
-    use crate::difftest::Rng;
-    use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::ptr;
     use crate::difftest::fakes::vtable;
     use crate::difftest::fakes::LOG_RESULTS;
-    pub(crate) use crate::game::world::wscriptcache::tests::SEEDS;
-    pub(crate) use crate::game::ai::aianimeventmap::tests::MEM_MUTEX;
+    use crate::difftest::scramble;
+    use crate::difftest::Rng;
+    use crate::difftest::DATA;
+    use crate::difftest::GAME_GP;
     pub(crate) use crate::game::ai::aianimeventmap::tests::alloc_setup;
-
+    pub(crate) use crate::game::ai::aianimeventmap::tests::MEM_MUTEX;
+    pub(crate) use crate::game::world::wscriptcache::tests::SEEDS;
 
     #[test]
     fn active_camera_trigger_list_ctor_matches() {
-        check(ssx3_ee::s02::f_0016c5d0, active_camera_trigger_list_ctor, 64, &|c, seed| {
-            let mut r = Rng(0x16c5 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-        });
+        check(
+            ssx3_ee::s02::f_0016c5d0,
+            active_camera_trigger_list_ctor,
+            64,
+            &|c, seed| {
+                let mut r = Rng(0x16c5 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+            },
+        );
     }
-
 
     // ---------------------------------------------- active camera trigger list
 
@@ -109,7 +120,11 @@ pub(crate) mod tests {
         }
         let base = DATA + 0x1000;
         for i in 0..nodes {
-            let next = if i + 1 < nodes { base + (i + 1) * 0x10 } else { 0 };
+            let next = if i + 1 < nodes {
+                base + (i + 1) * 0x10
+            } else {
+                0
+            };
             c.bus.write32(base + i * 0x10, r.next_u32() % 8);
             c.bus.write32(base + i * 0x10 + 4, next);
             c.bus.write32(base + i * 0x10 + 8, r.next_u32());
@@ -119,15 +134,19 @@ pub(crate) mod tests {
         base
     }
 
-
     #[test]
     fn active_camera_trigger_list_dtor_matches() {
-        check(ee::s02::f_0016c5e0, active_camera_trigger_list_dtor, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0xc5e0, 0);
-            alloc_setup(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = (seed % 3) as u64;
-            build_list(c, &mut r, DATA, seed % 2);
-        });
+        check(
+            ee::s02::f_0016c5e0,
+            active_camera_trigger_list_dtor,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0xc5e0, 0);
+                alloc_setup(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (seed % 3) as u64;
+                build_list(c, &mut r, DATA, seed % 2);
+            },
+        );
     }
 }

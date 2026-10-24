@@ -17,7 +17,9 @@
 //! one picture is ready in display order and asks its [`Feed`] for more
 //! bitstream whenever it runs out (libmpeg's "no data" callback).
 
-use crate::{csc, dequantise, idct, luts, tables, DctLookup, Lookup, DEFAULT_INTRA, NON_LINEAR_SCALE};
+use crate::{
+    csc, dequantise, idct, luts, tables, DctLookup, Lookup, DEFAULT_INTRA, NON_LINEAR_SCALE,
+};
 
 /// Where more bitstream comes from.
 pub trait Feed {
@@ -35,7 +37,11 @@ pub struct Frame {
 
 impl Frame {
     fn new(w: usize, h: usize) -> Self {
-        Frame { y: vec![0; w * h], cb: vec![0; w * h / 4], cr: vec![0; w * h / 4] }
+        Frame {
+            y: vec![0; w * h],
+            cb: vec![0; w * h / 4],
+            cr: vec![0; w * h / 4],
+        }
     }
 }
 
@@ -227,7 +233,13 @@ impl Decoder {
                 return Some(d[3]);
             }
             // (Skip quickly over a run of non-zero bytes.)
-            self.bit += if d[2] > 1 { 24 } else if d[1] > 1 { 16 } else { 8 };
+            self.bit += if d[2] > 1 {
+                24
+            } else if d[1] > 1 {
+                16
+            } else {
+                8
+            };
         }
     }
 
@@ -384,7 +396,9 @@ impl Decoder {
             }
         };
         let kind = self.pic.kind;
-        if kind == 2 && self.newer.is_none() || kind == 3 && (self.older.is_none() || self.newer.is_none()) {
+        if kind == 2 && self.newer.is_none()
+            || kind == 3 && (self.older.is_none() || self.newer.is_none())
+        {
             // (A predicted picture with no reference: skipped.)
             self.errors += 1;
             return None;
@@ -402,7 +416,9 @@ impl Decoder {
         let pic = std::mem::replace(&mut self.cur, Frame::new(0, 0));
         if kind == 3 {
             let old = self.out.replace(pic);
-            self.cur = old.filter(|f| f.y.len() == w * h).unwrap_or_else(|| Frame::new(w, h));
+            self.cur = old
+                .filter(|f| f.y.len() == w * h)
+                .unwrap_or_else(|| Frame::new(w, h));
             self.pictures += 1;
             return Some(Got::Picture);
         }
@@ -440,7 +456,9 @@ impl Decoder {
                 raw[320 + y * 8..320 + y * 8 + 8].copy_from_slice(&f.cr[row..row + 8]);
             }
             let rgb = csc::ycbcr_to_rgb32(&raw, 0, 0, false);
-            let Some(dst) = out.get_mut(mb * 1024..mb * 1024 + 1024) else { return };
+            let Some(dst) = out.get_mut(mb * 1024..mb * 1024 + 1024) else {
+                return;
+            };
             for (i, p) in rgb.iter().enumerate() {
                 dst[i * 4..i * 4 + 4].copy_from_slice(&p.to_le_bytes());
             }
@@ -520,7 +538,8 @@ impl Decoder {
                 self.errors += 1;
                 return;
             };
-            let (intra, pattern, bwd, fwd, quant) = (t & 1 != 0, t & 2 != 0, t & 4 != 0, t & 8 != 0, t & 16 != 0);
+            let (intra, pattern, bwd, fwd, quant) =
+                (t & 1 != 0, t & 2 != 0, t & 4 != 0, t & 8 != 0, t & 16 != 0);
             if quant {
                 qsc = self.get(5, feed);
             }
@@ -588,7 +607,11 @@ impl Decoder {
         }
         let (w, h, mbw) = (self.width, self.height, self.mbw);
         let (mx, my) = (mb % mbw, mb / mbw);
-        let fwd_ref = if self.pic.kind == 2 { self.newer.as_ref() } else { self.older.as_ref() };
+        let fwd_ref = if self.pic.kind == 2 {
+            self.newer.as_ref()
+        } else {
+            self.older.as_ref()
+        };
         let bwd_ref = self.newer.as_ref();
         let mut parts: Vec<(&Frame, [i32; 2])> = Vec::with_capacity(2);
         if fwd {
@@ -619,7 +642,17 @@ impl Decoder {
             let mut acc = [[0u16; 256]; 2];
             for (k, (f, mv)) in parts.iter().enumerate() {
                 let src = if plane == 0 { &f.cb } else { &f.cr };
-                pred(src, cw, ch, mx * 8, my * 8, mv[0] / 2, mv[1] / 2, 8, &mut acc[k]);
+                pred(
+                    src,
+                    cw,
+                    ch,
+                    mx * 8,
+                    my * 8,
+                    mv[0] / 2,
+                    mv[1] / 2,
+                    8,
+                    &mut acc[k],
+                );
             }
             let dst = if plane == 0 { &mut cur.cb } else { &mut cur.cr };
             put(dst, cw, mx * 8, my * 8, 8, &acc, parts.len());
@@ -636,7 +669,12 @@ impl Decoder {
                 continue;
             }
             let (plane, stride, x0, y0) = match b {
-                0..=3 => (&mut self.cur.y, w, mx * 16 + (b & 1) * 8, my * 16 + (b >> 1) * 8),
+                0..=3 => (
+                    &mut self.cur.y,
+                    w,
+                    mx * 16 + (b & 1) * 8,
+                    my * 16 + (b >> 1) * 8,
+                ),
                 4 => (&mut self.cur.cb, w / 2, mx * 8, my * 8),
                 _ => (&mut self.cur.cr, w / 2, mx * 8, my * 8),
             };
@@ -644,7 +682,11 @@ impl Decoder {
                 let row = &mut plane[(y0 + y) * stride + x0..(y0 + y) * stride + x0 + 8];
                 for (x, p) in row.iter_mut().enumerate() {
                     let r = blk[y * 8 + x] as i32;
-                    *p = if add { (*p as i32 + r).clamp(0, 255) } else { r.clamp(0, 255) } as u8;
+                    *p = if add {
+                        (*p as i32 + r).clamp(0, 255)
+                    } else {
+                        r.clamp(0, 255)
+                    } as u8;
                 }
             }
         }
@@ -688,14 +730,31 @@ impl Decoder {
 
     /// One 8x8 block: coefficients, dequantisation, IDCT. `dc`: the intra
     /// DC predictor of the block's component (None: non-intra).
-    fn block(&mut self, out: &mut [i16; 64], dc: Option<(&mut i32, bool)>, qsc: u32, feed: &mut dyn Feed) -> bool {
+    fn block(
+        &mut self,
+        out: &mut [i16; 64],
+        dc: Option<(&mut i32, bool)>,
+        qsc: u32,
+        feed: &mut dyn Feed,
+    ) -> bool {
         let intra = dc.is_some();
         let mut coef = [0i32; 64];
         let mut index = 0usize;
         let table_one = intra && self.pic.intra_vlc;
-        let l: &DctLookup = if table_one { &luts().dct1 } else { &luts().dct0 };
+        let l: &DctLookup = if table_one {
+            &luts().dct1
+        } else {
+            &luts().dct0
+        };
         if let Some((dc, chroma)) = dc {
-            let size = match self.vlc(if chroma { &luts().dc_chroma } else { &luts().dc_luma }, feed) {
+            let size = match self.vlc(
+                if chroma {
+                    &luts().dc_chroma
+                } else {
+                    &luts().dc_luma
+                },
+                feed,
+            ) {
                 Some(v) => v & 0xffff,
                 None => {
                     self.errors += 1;
@@ -721,7 +780,11 @@ impl Decoder {
         }
         loop {
             if index > 0 {
-                let eob = if table_one { self.peek(4, feed) == 0b0110 } else { self.peek(2, feed) == 0b10 };
+                let eob = if table_one {
+                    self.peek(4, feed) == 0b0110
+                } else {
+                    self.peek(2, feed) == 0b10
+                };
                 if eob {
                     self.skip(if table_one { 4 } else { 2 });
                     break;
@@ -740,7 +803,14 @@ impl Decoder {
                 (run, if v & 0x800 != 0 { v - 0x1000 } else { v })
             } else {
                 let level = level as i32;
-                (run as usize, if self.get(1, feed) != 0 { -level } else { level })
+                (
+                    run as usize,
+                    if self.get(1, feed) != 0 {
+                        -level
+                    } else {
+                        level
+                    },
+                )
             };
             index += run;
             if index >= 64 {
@@ -750,10 +820,30 @@ impl Decoder {
             coef[index] = level;
             index += 1;
         }
-        let scan = if self.pic.alternate_scan { &tables::ALTERNATE } else { &tables::ZIGZAG };
-        let weights = if intra { &self.intra_q } else { &self.nonintra_q };
-        let scale = if self.pic.q_scale_type { NON_LINEAR_SCALE[(qsc & 31) as usize] as i32 } else { qsc as i32 * 2 };
-        let f = dequantise(&coef, scan, weights, intra, scale, 8 >> self.pic.dc_precision, false);
+        let scan = if self.pic.alternate_scan {
+            &tables::ALTERNATE
+        } else {
+            &tables::ZIGZAG
+        };
+        let weights = if intra {
+            &self.intra_q
+        } else {
+            &self.nonintra_q
+        };
+        let scale = if self.pic.q_scale_type {
+            NON_LINEAR_SCALE[(qsc & 31) as usize] as i32
+        } else {
+            qsc as i32 * 2
+        };
+        let f = dequantise(
+            &coef,
+            scan,
+            weights,
+            intra,
+            scale,
+            8 >> self.pic.dc_precision,
+            false,
+        );
         idct::idct(&f, out);
         true
     }
@@ -763,7 +853,17 @@ impl Decoder {
 /// moved by the half-pel vector (`mvx`, `mvy`), into `out` (row-major) at
 /// four times the pixel scale (rounded by [`put`]).
 #[allow(clippy::too_many_arguments)]
-fn pred(src: &[u8], w: usize, h: usize, x: usize, y: usize, mvx: i32, mvy: i32, n: usize, out: &mut [u16; 256]) {
+fn pred(
+    src: &[u8],
+    w: usize,
+    h: usize,
+    x: usize,
+    y: usize,
+    mvx: i32,
+    mvy: i32,
+    n: usize,
+    out: &mut [u16; 256],
+) {
     let (hx, hy) = ((mvx & 1) as usize, (mvy & 1) as usize);
     let sx = (x as i32 + (mvx >> 1)).clamp(0, (w - n - hx) as i32) as usize;
     let sy = (y as i32 + (mvy >> 1)).clamp(0, (h - n - hy) as i32) as usize;
@@ -787,13 +887,25 @@ fn pred(src: &[u8], w: usize, h: usize, x: usize, y: usize, mvx: i32, mvy: i32, 
 /// up. (The emulated path, libmpeg over the IPU model, differs by 1-2 in a
 /// few bidirectional macroblocks whose backward vector is diagonal; its
 /// arithmetic is the same, so the difference is in what it fetches.)
-fn put(dst: &mut [u8], w: usize, x: usize, y: usize, n: usize, acc: &[[u16; 256]; 2], parts: usize) {
+fn put(
+    dst: &mut [u8],
+    w: usize,
+    x: usize,
+    y: usize,
+    n: usize,
+    acc: &[[u16; 256]; 2],
+    parts: usize,
+) {
     for j in 0..n {
         let row = &mut dst[(y + j) * w + x..(y + j) * w + x + n];
         for (i, p) in row.iter_mut().enumerate() {
             let k = j * n + i;
             let f = (acc[0][k] + 2) >> 2;
-            *p = if parts == 2 { (f + ((acc[1][k] + 2) >> 2) + 1) >> 1 } else { f } as u8;
+            *p = if parts == 2 {
+                (f + ((acc[1][k] + 2) >> 2) + 1) >> 1
+            } else {
+                f
+            } as u8;
         }
     }
 }

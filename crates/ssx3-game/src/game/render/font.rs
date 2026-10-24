@@ -6,11 +6,29 @@ use crate::abi::addu;
 use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Unwound;
 use crate::call::VSlot;
+use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::dirtysock::tags2::p as p_2;
+pub(crate) use crate::game::fe::feasyncfile::gp_7 as gp;
+pub(crate) use crate::game::fe::feasyncfile::gp_8 as gp_2;
+pub(crate) use crate::game::fe::feasyncfile::p as p_4;
+pub(crate) use crate::game::fe::feasyncfile::p as p_5;
+pub(crate) use crate::game::fe::feasyncfile::p as p_6;
+pub(crate) use crate::game::fe::feasyncfile::p as p_7;
+pub(crate) use crate::game::fe::festateload::at;
+pub(crate) use crate::game::object::railmodifier::reset_vtable_and_delete;
+pub(crate) use crate::game::object::railmodifier::DELETE;
+pub(crate) use crate::game::render::graphicsman::RegMem;
+pub(crate) use crate::game::render::particle::copy_mat;
+pub(crate) use crate::game::render::particle::p_2 as p;
+pub(crate) use crate::game::wscript::wscriptman::p as p_3;
 use crate::guest::Addr;
 use crate::ps2f::vu0_scratch;
 use crate::ps2f::FpuF32;
@@ -18,73 +36,139 @@ use crate::ps2f::Vec4;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::funcs::call_indirect;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::Cpu;
-use crate::call::sp;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
 use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
-use crate::call::Flow;
-use crate::events::back_edge_unwinds;
-use crate::call::Unwound;
-use ssx3_ee_rt::funcs::call_indirect;
-pub(crate) use crate::game::render::particle::p_2 as p;
-pub(crate) use crate::game::render::particle::copy_mat;
-pub(crate) use crate::game::fe::festateload::at;
-pub(crate) use crate::game::object::railmodifier::DELETE;
-pub(crate) use crate::game::object::railmodifier::reset_vtable_and_delete;
-pub(crate) use crate::game::dirtysock::tags2::p as p_2;
-pub(crate) use crate::game::wscript::wscriptman::p as p_3;
-pub(crate) use crate::game::fe::feasyncfile::p as p_4;
-pub(crate) use crate::game::fe::feasyncfile::p as p_5;
-pub(crate) use crate::game::fe::feasyncfile::gp_7 as gp;
-pub(crate) use crate::game::fe::feasyncfile::p as p_6;
-pub(crate) use crate::game::fe::feasyncfile::gp_8 as gp_2;
-pub(crate) use crate::game::fe::feasyncfile::p as p_7;
-pub(crate) use crate::game::render::graphicsman::RegMem;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0039_1c48, font_draw_text_f, "Font_DrawTextF"),
-    (0x0039_29f8, font_draw_text_centered_f, "Font_DrawTextCenteredF"),
+    (
+        0x0039_29f8,
+        font_draw_text_centered_f,
+        "Font_DrawTextCenteredF",
+    ),
     (0x0039_2a60, font_draw_text_right, "Font_DrawTextRight"),
     (0x0039_2b40, font_draw_text_right_f, "Font_DrawTextRightF"),
     (0x0039_2ba8, font_get_char_width, "Font_GetCharWidth"),
     (0x0039_2c60, font_get_char_width_w, "Font_GetCharWidthW"),
     (0x0039_2d18, fx_trail_reset, "FXTrail_Reset"),
     (0x0039_2d90, fxtrail_add_point, "FXTrail_AddPoint"),
-    (0x0039_2df0, renderer_build_sine_table, "Renderer_BuildSineTable"),
-    (0x0039_3fb8, graphics_man_set_screen_offset, "GraphicsMan_SetScreenOffset"),
-    (0x0039_3fd8, graphics_man_get_screen_offset_x, "GraphicsMan_GetScreenOffsetX"),
-    (0x0039_3ff0, graphics_man_get_screen_offset_y, "GraphicsMan_GetScreenOffsetY"),
+    (
+        0x0039_2df0,
+        renderer_build_sine_table,
+        "Renderer_BuildSineTable",
+    ),
+    (
+        0x0039_3fb8,
+        graphics_man_set_screen_offset,
+        "GraphicsMan_SetScreenOffset",
+    ),
+    (
+        0x0039_3fd8,
+        graphics_man_get_screen_offset_x,
+        "GraphicsMan_GetScreenOffsetX",
+    ),
+    (
+        0x0039_3ff0,
+        graphics_man_get_screen_offset_y,
+        "GraphicsMan_GetScreenOffsetY",
+    ),
     (0x0039_42a0, graphics_man_v58, "GraphicsMan_v58"),
-    (0x0039_4b38, grid_mesh_base_base_dtor, "GridMeshBase_BaseDtor"),
+    (
+        0x0039_4b38,
+        grid_mesh_base_base_dtor,
+        "GridMeshBase_BaseDtor",
+    ),
     (0x0039_4b98, grid_mesh_base_call_v22, "GridMeshBase_CallV22"),
-    (0x0039_4c98, light_man_init_instances, "LightMan_InitInstances"),
-    (0x0039_4ce8, light_man_free_instances, "LightMan_FreeInstances"),
+    (
+        0x0039_4c98,
+        light_man_init_instances,
+        "LightMan_InitInstances",
+    ),
+    (
+        0x0039_4ce8,
+        light_man_free_instances,
+        "LightMan_FreeInstances",
+    ),
     (0x0039_4d18, light_man_next_id, "LightMan_NextId"),
     (0x0039_4ed0, defer_man_intern_state, "DeferMan_InternState"),
     (0x0039_5000, defer_man_find_bucket, "DeferMan_FindBucket"),
-    (0x0039_50c0, ps2_graphics_man_copy_view_state, "PS2GraphicsMan_CopyViewState"),
-    (0x0039_5330, ps2_graphics_man_get_screen_width, "PS2GraphicsMan_GetScreenWidth"),
-    (0x0039_5350, ps2_graphics_man_get_screen_height, "PS2GraphicsMan_GetScreenHeight"),
-    (0x0039_54d0, ps2_graphics_man_set_lighting, "PS2GraphicsMan_SetLighting"),
-    (0x0039_56e8, ps2_graphics_man_push_matrix, "PS2GraphicsMan_PushMatrix"),
-    (0x0039_5c38, ps2_graphics_man_load_matrix, "PS2GraphicsMan_LoadMatrix"),
-    (0x0039_5c70, ps2_graphics_man_mult_matrix, "PS2GraphicsMan_MultMatrix"),
-    (0x0039_5cf0, ps2_graphics_man_load_identity, "PS2GraphicsMan_LoadIdentity"),
-    (0x0039_5d28, ps2_graphics_man_translate, "PS2GraphicsMan_Translate"),
-    (0x0039_5d60, ps2_graphics_man_rotate_axis, "PS2GraphicsMan_RotateAxis"),
-    (0x0039_6110, c_ps2_grid_mesh_set_scale, "cPS2GridMesh_SetScale"),
-    (0x0039_61a8, vfx_render_toggles_dtor, "VfxRenderToggles_dtor"),
+    (
+        0x0039_50c0,
+        ps2_graphics_man_copy_view_state,
+        "PS2GraphicsMan_CopyViewState",
+    ),
+    (
+        0x0039_5330,
+        ps2_graphics_man_get_screen_width,
+        "PS2GraphicsMan_GetScreenWidth",
+    ),
+    (
+        0x0039_5350,
+        ps2_graphics_man_get_screen_height,
+        "PS2GraphicsMan_GetScreenHeight",
+    ),
+    (
+        0x0039_54d0,
+        ps2_graphics_man_set_lighting,
+        "PS2GraphicsMan_SetLighting",
+    ),
+    (
+        0x0039_56e8,
+        ps2_graphics_man_push_matrix,
+        "PS2GraphicsMan_PushMatrix",
+    ),
+    (
+        0x0039_5c38,
+        ps2_graphics_man_load_matrix,
+        "PS2GraphicsMan_LoadMatrix",
+    ),
+    (
+        0x0039_5c70,
+        ps2_graphics_man_mult_matrix,
+        "PS2GraphicsMan_MultMatrix",
+    ),
+    (
+        0x0039_5cf0,
+        ps2_graphics_man_load_identity,
+        "PS2GraphicsMan_LoadIdentity",
+    ),
+    (
+        0x0039_5d28,
+        ps2_graphics_man_translate,
+        "PS2GraphicsMan_Translate",
+    ),
+    (
+        0x0039_5d60,
+        ps2_graphics_man_rotate_axis,
+        "PS2GraphicsMan_RotateAxis",
+    ),
+    (
+        0x0039_6110,
+        c_ps2_grid_mesh_set_scale,
+        "cPS2GridMesh_SetScale",
+    ),
+    (
+        0x0039_61a8,
+        vfx_render_toggles_dtor,
+        "VfxRenderToggles_dtor",
+    ),
     (0x0039_64c8, vfx_plants_dtor, "VfxPlants_dtor"),
     (0x0039_6838, vfx_tube_dtor, "VfxTube_dtor"),
     (0x0039_68d0, rail_tube_set_point, "RailTube_SetPoint"),
     (0x0039_68e8, path_arrow_v01, "PathArrow_v01"),
     (0x0039_6928, detail_system_v01, "DetailSystem_v01"),
-    (0x0039_6a00, vfx_visual_effects_test_dtor, "VfxVisualEffectsTest_dtor"),
+    (
+        0x0039_6a00,
+        vfx_visual_effects_test_dtor,
+        "VfxVisualEffectsTest_dtor",
+    ),
     (0x0039_6d30, vfx_screen_tint_dtor, "VfxScreenTint_dtor"),
 ];
 
@@ -121,21 +205,21 @@ pub(crate) mod vw {
     pub(crate) use crate::game::render::particle::vw::F24;
     pub(crate) use crate::game::render::particle::vw::F28;
     pub(crate) use crate::game::render::particle::vw::F2C;
-    pub(crate) use crate::game::render::particle::vw::Q30;
-    pub(crate) use crate::game::render::particle::vw::Q40;
-    pub(crate) use crate::game::render::particle::vw::Q50;
+    pub(crate) use crate::game::render::particle::vw::KEY;
+    pub(crate) use crate::game::render::particle::vw::M120;
+    pub(crate) use crate::game::render::particle::vw::M180;
+    pub(crate) use crate::game::render::particle::vw::M1C0;
     pub(crate) use crate::game::render::particle::vw::M60;
     pub(crate) use crate::game::render::particle::vw::MA0;
     pub(crate) use crate::game::render::particle::vw::ME0;
-    pub(crate) use crate::game::render::particle::vw::M120;
     pub(crate) use crate::game::render::particle::vw::Q160;
     pub(crate) use crate::game::render::particle::vw::Q170;
-    pub(crate) use crate::game::render::particle::vw::M180;
-    pub(crate) use crate::game::render::particle::vw::M1C0;
     pub(crate) use crate::game::render::particle::vw::Q200;
     pub(crate) use crate::game::render::particle::vw::Q210;
+    pub(crate) use crate::game::render::particle::vw::Q30;
+    pub(crate) use crate::game::render::particle::vw::Q40;
+    pub(crate) use crate::game::render::particle::vw::Q50;
     pub(crate) use crate::game::render::particle::vw::SCISSOR;
-    pub(crate) use crate::game::render::particle::vw::KEY;
 }
 
 /// `FXTrail` (font flash trail) fields: the count, the `{x,y,z}` cursor, and
@@ -155,48 +239,47 @@ pub(crate) mod trail {
 pub(crate) mod callee {
     use super::ee;
     use super::Callee;
-    pub(crate) use crate::game::fe::festateload::callee::SONG_INSTANCE_PAUSE;
-    pub(crate) use crate::game::fe::festateload::callee::SONG_INSTANCE_RESUME;
-    pub(crate) use crate::game::fe::festateload::callee::WORLD_TRIGGER_MANAGER_DTOR;
-    pub(crate) use crate::game::fe::festateload::callee::MENU_SYS_PAGE_VALIDATE_SELECTION;
-    pub(crate) use crate::game::fe::festateload::callee::MENU_SYS_ITEM_ON_FOCUS;
-    pub(crate) use crate::game::fe::festateload::callee::WSCRIPT_PROCESS_JUMP_TO_TASK;
-    pub(crate) use crate::game::fe::festateload::callee::WSCRIPT_PROCESS_GOTO_TASK;
-    pub(crate) use crate::game::fe::festateload::callee::WSCRIPT_MAN_RESET_COMMAND_QUEUE;
-    pub(crate) use crate::game::fe::festateload::callee::MODIFIER_BLOCK_FORWARD_V43;
-    pub(crate) use crate::game::fe::festateload::callee::MODIFIER_BLOCK_FORWARD_V42;
-    pub(crate) use crate::game::fe::festateload::callee::MODIFIER_BLOCK_HANDLE_EVENT;
-    pub(crate) use crate::game::fe::festateload::callee::WSCRIPT_CACHE_SET_DATA;
-    pub(crate) use crate::game::fe::festateload::callee::CHAR_SELECT_UPDATE_RIDER_PREVIEW;
-    pub(crate) use crate::game::fe::festateload::callee::CHAR_SETUP_UPDATE_RIDER_PREVIEW;
-    pub(crate) use crate::game::fe::festateload::callee::BOLT_FILE_CACHE_INIT;
-    pub(crate) use crate::game::fe::festateload::callee::RIDER_PREVIEW_APPLY_TRANSFORM;
     pub(crate) use crate::game::fe::festateload::callee::BE_LIBRARY_GET_INSTANCE;
     pub(crate) use crate::game::fe::festateload::callee::BE_LIBRARY_GET_SAVE_DATA_SIZE;
-    pub(crate) use crate::game::fe::festateload::callee::RIDER_METRIX_SET_SPIN_AMOUNT;
-    pub(crate) use crate::game::fe::festateload::callee::STRLEN_COPY;
-    pub(crate) use crate::game::fe::festateload::callee::WORLD_GET_OBJECT_SCRIPT_FUNC;
-    pub(crate) use crate::game::fe::festateload::callee::I_SIGNAL_SEMA;
+    pub(crate) use crate::game::fe::festateload::callee::BOLT_FILE_CACHE_INIT;
+    pub(crate) use crate::game::fe::festateload::callee::CHAR_SELECT_UPDATE_RIDER_PREVIEW;
+    pub(crate) use crate::game::fe::festateload::callee::CHAR_SETUP_UPDATE_RIDER_PREVIEW;
     pub(crate) use crate::game::fe::festateload::callee::EA_MEM_FREE;
-    pub(crate) use crate::game::fe::festateload::callee::UI_STATE_V13;
-    pub(crate) use crate::game::fe::festateload::callee::UI_BASE_ON_ACTIVATE;
-    pub(crate) use crate::game::fe::festateload::callee::UI_BASE_ON_SHUTDOWN;
     pub(crate) use crate::game::fe::festateload::callee::EVENT_SELECT_ON_ACTIVATE;
     pub(crate) use crate::game::fe::festateload::callee::EVENT_SELECT_ON_SHUTDOWN;
     pub(crate) use crate::game::fe::festateload::callee::EVENT_SELECT_ON_UPDATE;
+    pub(crate) use crate::game::fe::festateload::callee::I_SIGNAL_SEMA;
     pub(crate) use crate::game::fe::festateload::callee::MEM_CARD_BASE_DTOR;
+    pub(crate) use crate::game::fe::festateload::callee::MENU_SYS_ITEM_ON_FOCUS;
+    pub(crate) use crate::game::fe::festateload::callee::MENU_SYS_PAGE_VALIDATE_SELECTION;
+    pub(crate) use crate::game::fe::festateload::callee::MODIFIER_BLOCK_FORWARD_V42;
+    pub(crate) use crate::game::fe::festateload::callee::MODIFIER_BLOCK_FORWARD_V43;
+    pub(crate) use crate::game::fe::festateload::callee::MODIFIER_BLOCK_HANDLE_EVENT;
+    pub(crate) use crate::game::fe::festateload::callee::RIDER_METRIX_SET_SPIN_AMOUNT;
+    pub(crate) use crate::game::fe::festateload::callee::RIDER_PREVIEW_APPLY_TRANSFORM;
+    pub(crate) use crate::game::fe::festateload::callee::SONG_INSTANCE_PAUSE;
+    pub(crate) use crate::game::fe::festateload::callee::SONG_INSTANCE_RESUME;
+    pub(crate) use crate::game::fe::festateload::callee::STRLEN_COPY;
+    pub(crate) use crate::game::fe::festateload::callee::UI_BASE_ON_ACTIVATE;
+    pub(crate) use crate::game::fe::festateload::callee::UI_BASE_ON_SHUTDOWN;
+    pub(crate) use crate::game::fe::festateload::callee::UI_STATE_V13;
+    pub(crate) use crate::game::fe::festateload::callee::WORLD_GET_OBJECT_SCRIPT_FUNC;
+    pub(crate) use crate::game::fe::festateload::callee::WORLD_TRIGGER_MANAGER_DTOR;
+    pub(crate) use crate::game::fe::festateload::callee::WSCRIPT_CACHE_SET_DATA;
+    pub(crate) use crate::game::fe::festateload::callee::WSCRIPT_MAN_RESET_COMMAND_QUEUE;
+    pub(crate) use crate::game::fe::festateload::callee::WSCRIPT_PROCESS_GOTO_TASK;
+    pub(crate) use crate::game::fe::festateload::callee::WSCRIPT_PROCESS_JUMP_TO_TASK;
 }
 
 /// `gp`-relative globals used here.
 pub(crate) mod g {
-    pub(crate) use crate::game::fe::festateload::g::WORLD_TRIGGER_MANAGER;
+    pub(crate) use crate::game::fe::festateload::g::BE_OPTION_SINGLETON;
+    pub(crate) use crate::game::fe::festateload::g::BOLT_FILE_CACHE;
+    pub(crate) use crate::game::fe::festateload::g::FE_BASE_BACK;
     pub(crate) use crate::game::fe::festateload::g::SAVE_BUFFER;
     pub(crate) use crate::game::fe::festateload::g::SAVE_BUFFER_END;
-    pub(crate) use crate::game::fe::festateload::g::BE_OPTION_SINGLETON;
-    pub(crate) use crate::game::fe::festateload::g::FE_BASE_BACK;
-    pub(crate) use crate::game::fe::festateload::g::BOLT_FILE_CACHE;
+    pub(crate) use crate::game::fe::festateload::g::WORLD_TRIGGER_MANAGER;
 }
-
 
 // ---------------------------------------------------------------------------
 // Deferred draw buckets.
@@ -291,7 +374,6 @@ pub fn defer_man_find_bucket(c: &mut Cpu) {
     }
 }
 
-
 /// `DeferStateRecord *DeferMan_InternState(DeferMan *man, const u32 state[5],
 /// int pass)` (0x394ed0): share equal draw states. Look in the chain of
 /// pass `pass & 0xff` for a record whose first four words equal `state`;
@@ -318,7 +400,6 @@ pub fn defer_man_intern_state(c: &mut Cpu) {
     }
     intern_state_insert(c);
 }
-
 
 /// The chain walk of `DeferMan_InternState`: true when it found (and
 /// returned) a record. Registers: t1 the link, t3 the state, t4 + t5 the
@@ -402,7 +483,6 @@ pub(crate) fn intern_state_find(c: &mut Cpu) -> bool {
     }
 }
 
-
 /// The miss path of `DeferMan_InternState`: take pool record `count++`,
 /// copy the five state words (the first four as two unaligned doublewords:
 /// records are 0x18 bytes from +0x51484), push it on the chain.
@@ -437,14 +517,12 @@ pub(crate) fn intern_state_insert(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `lq gpr, from; sq gpr, to` (a quadword moved through a GPR).
 #[inline(always)]
 pub(crate) fn copy_q(c: &mut Cpu, gpr: usize, from: u32, to: u32) {
     c.lq(gpr, from);
     c.sq(gpr, to);
 }
-
 
 /// `void PS2GraphicsMan_CopyViewState(sPtView* dst, const sPtView* src)`
 /// (0x3950c0): copy one saved view (scissor/shorts, floats, matrices, quads,
@@ -511,7 +589,6 @@ pub fn ps2_graphics_man_copy_view_state(c: &mut Cpu) {
     c.pc = c.g[RA][0] as u32;
 }
 
-
 // ---------------------------------------------------------------------------
 // Font / flash trails.
 
@@ -540,7 +617,6 @@ pub fn fx_trail_reset(c: &mut Cpu) {
     frame.close(c);
 }
 
-
 /// `void GridMeshBase_CallV22(GridMeshBase* self, ...)` (0x394b98): call slot
 /// 0x16 of the mesh object at `+0x4` with the remaining arguments.
 pub fn grid_mesh_base_call_v22(c: &mut Cpu) {
@@ -560,7 +636,6 @@ pub fn grid_mesh_base_call_v22(c: &mut Cpu) {
         Ok(())
     });
 }
-
 
 /// `void LightMan_FreeInstances(LightMan* self)` (0x394ce8): free the
 /// instance array at `+0x4`, if any.
@@ -583,55 +658,62 @@ pub fn light_man_free_instances(c: &mut Cpu) {
     });
 }
 
-
 /// `GridMeshBase` base-object destroying destructor (0x394b38): the base
 /// vtable is the second word of the object.
 pub fn grid_mesh_base_base_dtor(c: &mut Cpu) {
-    guest(c, |c| reset_vtable_and_delete(c, 0x0039_4b5c, 0x0049_3938, 0x4))
+    guest(c, |c| {
+        reset_vtable_and_delete(c, 0x0039_4b5c, 0x0049_3938, 0x4)
+    })
 }
-
 
 /// `VfxRenderToggles` destroying destructor (0x3961a8).
 pub fn vfx_render_toggles_dtor(c: &mut Cpu) {
-    guest(c, |c| reset_vtable_and_delete(c, 0x0039_61cc, 0x0048_8680, 0))
+    guest(c, |c| {
+        reset_vtable_and_delete(c, 0x0039_61cc, 0x0048_8680, 0)
+    })
 }
-
 
 /// `VfxPlants` destroying destructor (0x3964c8).
 pub fn vfx_plants_dtor(c: &mut Cpu) {
-    guest(c, |c| reset_vtable_and_delete(c, 0x0039_64ec, 0x0048_8680, 0))
+    guest(c, |c| {
+        reset_vtable_and_delete(c, 0x0039_64ec, 0x0048_8680, 0)
+    })
 }
-
 
 /// `VfxTube` destroying destructor (0x396838).
 pub fn vfx_tube_dtor(c: &mut Cpu) {
-    guest(c, |c| reset_vtable_and_delete(c, 0x0039_685c, 0x0048_8680, 0))
+    guest(c, |c| {
+        reset_vtable_and_delete(c, 0x0039_685c, 0x0048_8680, 0)
+    })
 }
-
 
 /// `PathArrow` destroying destructor (0x3968e8).
 pub fn path_arrow_v01(c: &mut Cpu) {
-    guest(c, |c| reset_vtable_and_delete(c, 0x0039_690c, 0x0048_8680, 0))
+    guest(c, |c| {
+        reset_vtable_and_delete(c, 0x0039_690c, 0x0048_8680, 0)
+    })
 }
-
 
 /// `DetailSystem` destroying destructor (0x396928).
 pub fn detail_system_v01(c: &mut Cpu) {
-    guest(c, |c| reset_vtable_and_delete(c, 0x0039_694c, 0x0048_8680, 0))
+    guest(c, |c| {
+        reset_vtable_and_delete(c, 0x0039_694c, 0x0048_8680, 0)
+    })
 }
-
 
 /// `VfxVisualEffectsTest` destroying destructor (0x396a00).
 pub fn vfx_visual_effects_test_dtor(c: &mut Cpu) {
-    guest(c, |c| reset_vtable_and_delete(c, 0x0039_6a24, 0x0048_8680, 0))
+    guest(c, |c| {
+        reset_vtable_and_delete(c, 0x0039_6a24, 0x0048_8680, 0)
+    })
 }
-
 
 /// `VfxScreenTint` destroying destructor (0x396d30).
 pub fn vfx_screen_tint_dtor(c: &mut Cpu) {
-    guest(c, |c| reset_vtable_and_delete(c, 0x0039_6d54, 0x0048_8680, 0))
+    guest(c, |c| {
+        reset_vtable_and_delete(c, 0x0039_6d54, 0x0048_8680, 0)
+    })
 }
-
 
 // ---------------------------------------------------------------------------
 // FX trail.
@@ -666,7 +748,6 @@ pub fn fxtrail_add_point(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void LightMan_InitInstances(LightMan* self, int n)` (0x394c98): allocate
 /// the `n + 0x32` instance table.
 pub fn light_man_init_instances(c: &mut Cpu) {
@@ -696,7 +777,6 @@ pub fn light_man_init_instances(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Graphics manager / font helpers.
 
@@ -714,7 +794,6 @@ pub fn graphics_man_set_screen_offset(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `int GraphicsMan_GetScreenOffsetX(self)` (0x393fd8): truncate the float at
 /// `+0`.
 pub fn graphics_man_get_screen_offset_x(c: &mut Cpu) {
@@ -726,7 +805,6 @@ pub fn graphics_man_get_screen_offset_x(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `int GraphicsMan_GetScreenOffsetY(self)` (0x393ff0): truncate the float at
 /// `+4`.
 pub fn graphics_man_get_screen_offset_y(c: &mut Cpu) {
@@ -737,7 +815,6 @@ pub fn graphics_man_get_screen_offset_y(c: &mut Cpu) {
     c.mfc1(2, 1);
     abi::ret(c);
 }
-
 
 /// `self GraphicsMan_v58(self)` (0x3942a0): initialise a colour/scale object
 /// to `{1.0f, 1.0f, 0, 1.0f}` and return it.
@@ -754,7 +831,6 @@ pub fn graphics_man_v58(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void* LightMan_NextId(self)` (0x394d18): `base + index` and increment the
 /// index (`+0xc`).
 pub fn light_man_next_id(c: &mut Cpu) {
@@ -768,7 +844,6 @@ pub fn light_man_next_id(c: &mut Cpu) {
     this.off(0xc).sw(c, next);
     abi::ret(c);
 }
-
 
 /// `int PS2GraphicsMan_GetScreenWidth(self)` (0x395330): the current font
 /// entry's `+0x88` (entry size 0xa4).
@@ -784,7 +859,6 @@ pub fn ps2_graphics_man_get_screen_width(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `int PS2GraphicsMan_GetScreenHeight(self)` (0x395350): the current font
 /// entry's `+0x8c`.
 pub fn ps2_graphics_man_get_screen_height(c: &mut Cpu) {
@@ -798,7 +872,6 @@ pub fn ps2_graphics_man_get_screen_height(c: &mut Cpu) {
     c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x8c).lw(c);
     abi::ret(c);
 }
-
 
 /// `void PS2GraphicsMan_SetLighting(self, src)` (0x3954d0): copy the 0xa0-byte
 /// lighting block to `self + 0x6bb0`, a quadword at a time.
@@ -832,7 +905,6 @@ pub fn ps2_graphics_man_set_lighting(c: &mut Cpu) {
     }
 }
 
-
 /// `void PS2GraphicsMan_PushMatrix(self)` (0x3956e8): copy the current matrix
 /// to `top + 0x40` and advance the stack (`+0x13e4`) and depth (`+0x13e0`).
 pub fn ps2_graphics_man_push_matrix(c: &mut Cpu) {
@@ -861,7 +933,6 @@ pub fn ps2_graphics_man_push_matrix(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void PS2GraphicsMan_LoadMatrix(self, m)` (0x395c38): copy `m` over the
 /// current matrix and drop the cached matrix flag (`+0x6b90`).
 pub fn ps2_graphics_man_load_matrix(c: &mut Cpu) {
@@ -881,7 +952,6 @@ pub fn ps2_graphics_man_load_matrix(c: &mut Cpu) {
     this.off(0x6b90).sw(c, 0);
     abi::ret(c);
 }
-
 
 /// `void PS2GraphicsMan_MultMatrix(self, m)` (0x395c70): current = current * m
 /// (four VU0 dot products).
@@ -923,7 +993,6 @@ pub fn ps2_graphics_man_mult_matrix(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void PS2GraphicsMan_LoadIdentity(self)` (0x395cf0): copy the identity
 /// matrix at `0x4ff1a0` over the current matrix.
 pub fn ps2_graphics_man_load_identity(c: &mut Cpu) {
@@ -945,7 +1014,6 @@ pub fn ps2_graphics_man_load_identity(c: &mut Cpu) {
     this.off(0x6b90).sw(c, 0);
     abi::ret(c);
 }
-
 
 /// `void PS2GraphicsMan_Translate(self, v)` (0x395d28): translate the current
 /// matrix by the vector at `v` (VU0 dot product into row 3).
@@ -969,7 +1037,6 @@ pub fn ps2_graphics_man_translate(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void cPS2GridMesh_SetScale(self, range)` (0x396110): store the range and
 /// the reciprocal scale `32767 / range`.
 pub fn c_ps2_grid_mesh_set_scale(c: &mut Cpu) {
@@ -982,7 +1049,6 @@ pub fn c_ps2_grid_mesh_set_scale(c: &mut Cpu) {
     c.swc1(0, this.off(0x198).0);
     abi::ret(c);
 }
-
 
 /// `void RailTube_SetPoint(self, index, point)` (0x3968d0): copy the quadword
 /// `point` into the tube's point array (`ptr + index * 0x10`).
@@ -998,7 +1064,6 @@ pub fn rail_tube_set_point(c: &mut Cpu) {
     c.sq(3, dst);
     abi::ret(c);
 }
-
 
 // ---------------------------------------------------------------------------
 // Fonts and HUD.
@@ -1037,7 +1102,6 @@ pub fn font_draw_text_f(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `Font_DrawTextCenteredF(font, fmt, ap, x, y)` 0x3929f8: format and draw a
 /// centred string.
@@ -1078,7 +1142,6 @@ pub fn font_draw_text_centered_f(c: &mut Cpu) {
     })
 }
 
-
 /// `Font_DrawTextRightF(font, fmt, ap, x, y)` 0x392b40: format and draw a
 /// right-aligned string.
 pub fn font_draw_text_right_f(c: &mut Cpu) {
@@ -1118,7 +1181,6 @@ pub fn font_draw_text_right_f(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Rendering and fonts.
 
@@ -1156,7 +1218,6 @@ pub fn font_draw_text_right(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `Renderer_BuildSineTable(self)` (0x392df0): fill 640 floats with
 /// `sin(i * 2*pi/512)`.
@@ -1202,7 +1263,6 @@ pub fn renderer_build_sine_table(c: &mut Cpu) {
         }
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Fonts.
@@ -1290,7 +1350,6 @@ pub fn font_get_char_width(c: &mut Cpu) {
     c.pc = c.g[RA][0] as u32;
 }
 
-
 /// `float Font_GetCharWidthW(sGlyphTable* t, unsigned short c)` (0x392c60):
 /// the same lookup for wide characters.
 pub fn font_get_char_width_w(c: &mut Cpu) {
@@ -1372,7 +1431,6 @@ pub fn font_get_char_width_w(c: &mut Cpu) {
     }
     c.pc = c.g[RA][0] as u32;
 }
-
 
 /// `void PS2GraphicsMan_RotateAxis(GraphicsMan* self, const float* ang)`
 /// (0x395d60): build the rotation matrix for the three angles through
@@ -1486,76 +1544,75 @@ pub fn ps2_graphics_man_rotate_axis(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::difftest::events::check_events;
-    use crate::difftest::events::schedule;
-    use crate::difftest::fakes::covered;
-    use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::fakes::LOG_RESULTS;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
+    use crate::difftest::compare;
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::schedule;
+    use crate::difftest::events::Events;
+    use crate::difftest::fakes;
+    use crate::difftest::fakes::covered;
+    use crate::difftest::fakes::machine;
+    use crate::difftest::fakes::vtable;
+    use crate::difftest::fakes::FAKE;
+    use crate::difftest::fakes::LOG_RESULTS;
     use crate::difftest::fill;
     use crate::difftest::put_vec;
+    use crate::difftest::put_words;
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
+    use crate::difftest::RA as TEST_RA;
     use crate::difftest::SP;
-    use ssx3_ee::s01;
-    use ssx3_ee::s03;
+    pub(crate) use crate::game::ai::ai::tests::be_library;
+    pub(crate) use crate::game::ai::ai::tests::CHILD;
+    pub(crate) use crate::game::ai::ai::tests::SEEDS_2 as SEEDS_3;
+    pub(crate) use crate::game::ai::control::handplantcontrol::tests::SEEDS_2;
+    pub(crate) use crate::game::be::beintoption::tests::slot;
+    pub(crate) use crate::game::be::beintoption::tests::VT;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as base_3;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_3 as base_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::be_library_4 as be_library_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::globals_11 as globals_3;
+    pub(crate) use crate::game::fe::feasyncfile::tests::globals_4 as globals;
+    pub(crate) use crate::game::fe::feasyncfile::tests::globals_5 as globals_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::pool;
+    pub(crate) use crate::game::fe::feasyncfile::tests::pool_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::pool_9 as pool_3;
+    pub(crate) use crate::game::fe::feasyncfile::tests::w as w_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::w as w_3;
+    pub(crate) use crate::game::fe::feasyncfile::tests::w_3 as w;
+    pub(crate) use crate::game::fe::feasyncfile::tests::world;
+    pub(crate) use crate::game::fe::feasyncfile::tests::BE;
+    pub(crate) use crate::game::fe::feasyncfile::tests::BE_LIBRARY;
+    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ as OBJ_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2_4 as OBJ2_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ3_2 as OBJ3;
+    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ4;
+    pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_2 as WORLD;
+    pub(crate) use crate::game::fe::festateload::tests::clear;
+    pub(crate) use crate::game::fe::festateload::tests::OBJ;
+    pub(crate) use crate::game::object::railmodifier::tests::destructor_setup;
+    pub(crate) use crate::game::render::graphicsman::tests::same;
+    pub(crate) use crate::game::render::particle::tests::base_2 as base;
+    pub(crate) use crate::game::render::particle::tests::SEEDS;
+    pub(crate) use crate::game::wscript::wscriptman::tests::alloc_ready;
+    pub(crate) use crate::game::wscript::wscriptman::tests::clear_3 as clear_2;
+    pub(crate) use crate::game::wscript::wscriptman::tests::load;
+    pub(crate) use crate::game::wscript::wscriptman::tests::SEEDS_6 as SEEDS_4;
+    use ssx3_ee as ee;
     use ssx3_ee::s00;
+    use ssx3_ee::s01;
     use ssx3_ee::s02;
+    use ssx3_ee::s03;
     use ssx3_ee::s08;
     use ssx3_ee::s09;
     use ssx3_ee::s10;
     use ssx3_ee::s11;
     use ssx3_ee::s12;
     use ssx3_ee::s13;
-    use crate::difftest::fakes;
-    use crate::difftest::fakes::vtable;
-    use crate::difftest::put_words;
-    use crate::difftest::RA as TEST_RA;
-    use crate::difftest::events::Events;
-    use ssx3_ee as ee;
-    use crate::difftest::compare;
-    pub(crate) use crate::game::render::particle::tests::SEEDS;
-    pub(crate) use crate::game::render::particle::tests::base_2 as base;
-    pub(crate) use crate::game::ai::control::handplantcontrol::tests::SEEDS_2;
-    pub(crate) use crate::game::fe::festateload::tests::OBJ;
-    pub(crate) use crate::game::be::beintoption::tests::VT;
-    pub(crate) use crate::game::ai::ai::tests::CHILD;
-    pub(crate) use crate::game::be::beintoption::tests::slot;
-    pub(crate) use crate::game::fe::festateload::tests::clear;
-    pub(crate) use crate::game::ai::ai::tests::SEEDS_2 as SEEDS_3;
-    pub(crate) use crate::game::ai::ai::tests::be_library;
-    pub(crate) use crate::game::object::railmodifier::tests::destructor_setup;
-    pub(crate) use crate::game::wscript::wscriptman::tests::SEEDS_6 as SEEDS_4;
-    pub(crate) use crate::game::wscript::wscriptman::tests::load;
-    pub(crate) use crate::game::wscript::wscriptman::tests::clear_3 as clear_2;
-    pub(crate) use crate::game::wscript::wscriptman::tests::alloc_ready;
-    pub(crate) use crate::game::fe::feasyncfile::tests::be_library_4 as be_library_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::world;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool;
-    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ as OBJ_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ4;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE_LIBRARY;
-    pub(crate) use crate::game::fe::feasyncfile::tests::w_3 as w;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_4 as globals;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE;
-    pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_2 as WORLD;
-    pub(crate) use crate::game::fe::feasyncfile::tests::w as w_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_5 as globals_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_3 as base_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2_4 as OBJ2_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ3_2 as OBJ3;
-    pub(crate) use crate::game::fe::feasyncfile::tests::w as w_3;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_11 as globals_3;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_9 as pool_3;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as base_3;
-    pub(crate) use crate::game::render::graphicsman::tests::same;
-
 
     // ------------------------------------------------------------ DeferMan
 
@@ -1592,31 +1649,50 @@ pub(crate) mod tests {
             c.bus.write32(at + 4, k1);
             c.bus.write32(at + 8, k2);
             c.bus.write32(at + defer::NODE_SKIP, skip);
-            c.bus.write32(at + defer::NODE_NEXT, if i + 1 < n { node(i + 1) } else { 0 });
+            c.bus.write32(
+                at + defer::NODE_NEXT,
+                if i + 1 < n { node(i + 1) } else { 0 },
+            );
         }
     }
 
-
     #[test]
     fn defer_man_find_bucket_matches() {
-        check(ssx3_ee::s13::f_00395000__generated, defer_man_find_bucket, 300, &|c, seed| {
-            let mut r = Rng(0x3950_0000 ^ (seed as u64) << 16);
-            scramble(c, &mut r);
-            let n = [0, 1, 2, 3, 5, 8][(seed % 6) as usize];
-            let hit = if n == 0 || seed % 7 == 0 { None } else { Some(r.next_u32() % n) };
-            bucket_chain(c, &mut r, n, hit);
-        });
-        check_events(ssx3_ee::s13::f_00395000__generated, defer_man_find_bucket, 90, &|c, seed| {
-            let mut r = Rng(0x3950_e000 ^ (seed as u64) << 16);
-            scramble(c, &mut r);
-            let events = schedule(c, &mut r, seed, 0x0039_5000);
-            let n = 4 + r.next_u32() % 6;
-            let hit = if seed % 4 == 0 { None } else { Some(n - 1 - r.next_u32() % 2) };
-            bucket_chain(c, &mut r, n, hit);
-            events
-        });
+        check(
+            ssx3_ee::s13::f_00395000__generated,
+            defer_man_find_bucket,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3950_0000 ^ (seed as u64) << 16);
+                scramble(c, &mut r);
+                let n = [0, 1, 2, 3, 5, 8][(seed % 6) as usize];
+                let hit = if n == 0 || seed % 7 == 0 {
+                    None
+                } else {
+                    Some(r.next_u32() % n)
+                };
+                bucket_chain(c, &mut r, n, hit);
+            },
+        );
+        check_events(
+            ssx3_ee::s13::f_00395000__generated,
+            defer_man_find_bucket,
+            90,
+            &|c, seed| {
+                let mut r = Rng(0x3950_e000 ^ (seed as u64) << 16);
+                scramble(c, &mut r);
+                let events = schedule(c, &mut r, seed, 0x0039_5000);
+                let n = 4 + r.next_u32() % 6;
+                let hit = if seed % 4 == 0 {
+                    None
+                } else {
+                    Some(n - 1 - r.next_u32() % 2)
+                };
+                bucket_chain(c, &mut r, n, hit);
+                events
+            },
+        );
     }
-
 
     /// The state chain of a random pass for `DeferMan_InternState`: `n`
     /// records from DATA+0x1000 (0x20 apart), the state at DATA+0x800 or
@@ -1631,7 +1707,8 @@ pub(crate) mod tests {
         c.g[A1][0] = sx(state);
         c.g[A2][0] = (r.next_u32() as u64) << 32 | pass as u64;
         let count = r.next_u32() % 64;
-        c.bus.write32(man + defer::STATE_POOL + defer::STATE_POOL_COUNT, count);
+        c.bus
+            .write32(man + defer::STATE_POOL + defer::STATE_POOL_COUNT, count);
         let rec = |i: u32| DATA + 0x1000 + i * 0x20;
         let slot_at = man + defer::STATE_HEADS + (pass & 0xff) * 4;
         c.bus.write32(slot_at, if n == 0 { 0 } else { rec(0) });
@@ -1645,31 +1722,50 @@ pub(crate) mod tests {
                     c.bus.write32(at + 4 * w, v);
                 }
             }
-            c.bus.write32(at + defer::STATE_NEXT, if i + 1 < n { rec(i + 1) } else { 0 });
+            c.bus.write32(
+                at + defer::STATE_NEXT,
+                if i + 1 < n { rec(i + 1) } else { 0 },
+            );
         }
     }
 
-
     #[test]
     fn defer_man_intern_state_matches() {
-        check_lohi(ssx3_ee::s13::f_00394ed0__generated, defer_man_intern_state, 300, &|c, seed| {
-            let mut r = Rng(0x394e_d000 ^ (seed as u64) << 16);
-            scramble(c, &mut r);
-            let n = [0, 1, 2, 3, 5, 8][(seed % 6) as usize];
-            let hit = if n == 0 || seed % 7 == 0 { None } else { Some(r.next_u32() % n) };
-            state_chain(c, &mut r, n, hit);
-        });
-        check_events(ssx3_ee::s13::f_00394ed0__generated, defer_man_intern_state, 90, &|c, seed| {
-            let mut r = Rng(0x394e_e000 ^ (seed as u64) << 16);
-            scramble(c, &mut r);
-            let events = schedule(c, &mut r, seed, 0x0039_4ed0);
-            let n = 3 + r.next_u32() % 5;
-            let hit = if seed % 4 == 0 { None } else { Some(n - 1 - r.next_u32() % 2) };
-            state_chain(c, &mut r, n, hit);
-            events
-        });
+        check_lohi(
+            ssx3_ee::s13::f_00394ed0__generated,
+            defer_man_intern_state,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x394e_d000 ^ (seed as u64) << 16);
+                scramble(c, &mut r);
+                let n = [0, 1, 2, 3, 5, 8][(seed % 6) as usize];
+                let hit = if n == 0 || seed % 7 == 0 {
+                    None
+                } else {
+                    Some(r.next_u32() % n)
+                };
+                state_chain(c, &mut r, n, hit);
+            },
+        );
+        check_events(
+            ssx3_ee::s13::f_00394ed0__generated,
+            defer_man_intern_state,
+            90,
+            &|c, seed| {
+                let mut r = Rng(0x394e_e000 ^ (seed as u64) << 16);
+                scramble(c, &mut r);
+                let events = schedule(c, &mut r, seed, 0x0039_4ed0);
+                let n = 3 + r.next_u32() % 5;
+                let hit = if seed % 4 == 0 {
+                    None
+                } else {
+                    Some(n - 1 - r.next_u32() % 2)
+                };
+                state_chain(c, &mut r, n, hit);
+                events
+            },
+        );
     }
-
 
     #[test]
     fn ps2_graphics_man_copy_view_state_matches() {
@@ -1689,138 +1785,169 @@ pub(crate) mod tests {
         );
     }
 
-
     // --------------------------------------------------------- font FX trails
 
     #[test]
     fn fx_trail_reset_matches() {
-        check(ee::s13::f_00392d18__generated, fx_trail_reset, SEEDS_2, &|c, seed| {
-            let mut r = Rng(0x0039_2d18 ^ seed as u64);
-            scramble(c, &mut r);
-            let trail = DATA + 0x1000;
-            c.g[A0][0] = trail as u64;
-            // Old contents the reset must clear: the {x,y,z} cursor, the two
-            // endpoint times, and the scratch doubleword on the stack.
-            fill(c, &mut r, trail, 3);
-            fill(c, &mut r, trail + 0xa0, 2);
-            fill(c, &mut r, SP - 0x10, 4);
-        });
+        check(
+            ee::s13::f_00392d18__generated,
+            fx_trail_reset,
+            SEEDS_2,
+            &|c, seed| {
+                let mut r = Rng(0x0039_2d18 ^ seed as u64);
+                scramble(c, &mut r);
+                let trail = DATA + 0x1000;
+                c.g[A0][0] = trail as u64;
+                // Old contents the reset must clear: the {x,y,z} cursor, the two
+                // endpoint times, and the scratch doubleword on the stack.
+                fill(c, &mut r, trail, 3);
+                fill(c, &mut r, trail + 0xa0, 2);
+                fill(c, &mut r, SP - 0x10, 4);
+            },
+        );
     }
-
 
     #[test]
     fn grid_mesh_base_call_v22_matches() {
-        covered(s13::f_00394b98__generated, grid_mesh_base_call_v22, 120, &|c, seed| {
-            machine(c, seed, 0x394b98, 1);
-            clear(c, OBJ, 0x40);
-            clear(c, VT, 0x200);
-            slot(c, VT, 0xb0);
-            c.bus.write32(OBJ + 4, VT);
-            c.g[A0][0] = sx(OBJ);
-            c.g[A1][0] = sx(seed as u32);
-            c.g[A2][0] = sx(seed.wrapping_mul(3));
-            c.g[A3][0] = 0;
-        });
+        covered(
+            s13::f_00394b98__generated,
+            grid_mesh_base_call_v22,
+            120,
+            &|c, seed| {
+                machine(c, seed, 0x394b98, 1);
+                clear(c, OBJ, 0x40);
+                clear(c, VT, 0x200);
+                slot(c, VT, 0xb0);
+                c.bus.write32(OBJ + 4, VT);
+                c.g[A0][0] = sx(OBJ);
+                c.g[A1][0] = sx(seed as u32);
+                c.g[A2][0] = sx(seed.wrapping_mul(3));
+                c.g[A3][0] = 0;
+            },
+        );
     }
-
 
     #[test]
     fn light_man_free_instances_matches() {
-        check(s13::f_00394ce8__generated, light_man_free_instances, 120, &|c, seed| {
-            machine(c, seed, 0x394ce8, 1);
-            clear(c, OBJ, 0x40);
-            c.g[A0][0] = sx(OBJ);
-            let list = if seed % 3 == 0 { 0 } else { CHILD };
-            c.bus.write32(OBJ + 4, list);
-        });
+        check(
+            s13::f_00394ce8__generated,
+            light_man_free_instances,
+            120,
+            &|c, seed| {
+                machine(c, seed, 0x394ce8, 1);
+                clear(c, OBJ, 0x40);
+                c.g[A0][0] = sx(OBJ);
+                let list = if seed % 3 == 0 { 0 } else { CHILD };
+                c.bus.write32(OBJ + 4, list);
+            },
+        );
     }
-
 
     #[test]
     fn grid_mesh_base_base_dtor_matches() {
-        check(ee::s13::f_00394b38__generated, grid_mesh_base_base_dtor, SEEDS_3, &|c, seed| {
-            destructor_setup(c, seed, 0x394b_38)
-        });
+        check(
+            ee::s13::f_00394b38__generated,
+            grid_mesh_base_base_dtor,
+            SEEDS_3,
+            &|c, seed| destructor_setup(c, seed, 0x394b_38),
+        );
     }
-
 
     #[test]
     fn vfx_render_toggles_dtor_matches() {
-        check(ee::s13::f_003961a8__generated, vfx_render_toggles_dtor, SEEDS_3, &|c, seed| {
-            destructor_setup(c, seed, 0x3961_a8)
-        });
+        check(
+            ee::s13::f_003961a8__generated,
+            vfx_render_toggles_dtor,
+            SEEDS_3,
+            &|c, seed| destructor_setup(c, seed, 0x3961_a8),
+        );
     }
-
 
     #[test]
     fn vfx_plants_dtor_matches() {
-        check(ee::s13::f_003964c8__generated, vfx_plants_dtor, SEEDS_3, &|c, seed| {
-            destructor_setup(c, seed, 0x3964_c8)
-        });
+        check(
+            ee::s13::f_003964c8__generated,
+            vfx_plants_dtor,
+            SEEDS_3,
+            &|c, seed| destructor_setup(c, seed, 0x3964_c8),
+        );
     }
-
 
     #[test]
     fn vfx_tube_dtor_matches() {
-        check(ee::s13::f_00396838__generated, vfx_tube_dtor, SEEDS_3, &|c, seed| {
-            destructor_setup(c, seed, 0x3968_38)
-        });
+        check(
+            ee::s13::f_00396838__generated,
+            vfx_tube_dtor,
+            SEEDS_3,
+            &|c, seed| destructor_setup(c, seed, 0x3968_38),
+        );
     }
-
 
     #[test]
     fn path_arrow_v01_matches() {
-        check(ee::s13::f_003968e8__generated, path_arrow_v01, SEEDS_3, &|c, seed| {
-            destructor_setup(c, seed, 0x3968_e8)
-        });
+        check(
+            ee::s13::f_003968e8__generated,
+            path_arrow_v01,
+            SEEDS_3,
+            &|c, seed| destructor_setup(c, seed, 0x3968_e8),
+        );
     }
-
 
     #[test]
     fn detail_system_v01_matches() {
-        check(ee::s13::f_00396928__generated, detail_system_v01, SEEDS_3, &|c, seed| {
-            destructor_setup(c, seed, 0x3969_28)
-        });
+        check(
+            ee::s13::f_00396928__generated,
+            detail_system_v01,
+            SEEDS_3,
+            &|c, seed| destructor_setup(c, seed, 0x3969_28),
+        );
     }
-
 
     #[test]
     fn vfx_visual_effects_test_dtor_matches() {
-        check(ee::s13::f_00396a00__generated, vfx_visual_effects_test_dtor, SEEDS_3, &|c, seed| {
-            destructor_setup(c, seed, 0x396a_00)
-        });
+        check(
+            ee::s13::f_00396a00__generated,
+            vfx_visual_effects_test_dtor,
+            SEEDS_3,
+            &|c, seed| destructor_setup(c, seed, 0x396a_00),
+        );
     }
-
 
     #[test]
     fn vfx_screen_tint_dtor_matches() {
-        check(ee::s13::f_00396d30__generated, vfx_screen_tint_dtor, SEEDS_3, &|c, seed| {
-            destructor_setup(c, seed, 0x396d_30)
-        });
+        check(
+            ee::s13::f_00396d30__generated,
+            vfx_screen_tint_dtor,
+            SEEDS_3,
+            &|c, seed| destructor_setup(c, seed, 0x396d_30),
+        );
     }
-
 
     // ------------------------------------------------------------ FX trail
 
     #[test]
     fn fxtrail_add_point_matches() {
-        check(ee::s13::f_00392d90__generated, fxtrail_add_point, 80, &|c, seed| {
-            let mut r = Rng(0x392d_7a11 ^ seed as u64);
-            scramble(c, &mut r);
-            let t = DATA;
-            c.bus.write32(t + 0xc, r.next_u32() % 4);
-            fill(c, &mut r, t + 0x10, 32);
-            fill(c, &mut r, t + 0x50, 64);
-            let rot = DATA + 0x200;
-            let pos = DATA + 0x300;
-            fill(c, &mut r, rot, 4);
-            fill(c, &mut r, pos, 4);
-            c.g[A0][0] = sx(t);
-            c.g[A1][0] = sx(rot);
-            c.g[A2][0] = sx(pos);
-        });
+        check(
+            ee::s13::f_00392d90__generated,
+            fxtrail_add_point,
+            80,
+            &|c, seed| {
+                let mut r = Rng(0x392d_7a11 ^ seed as u64);
+                scramble(c, &mut r);
+                let t = DATA;
+                c.bus.write32(t + 0xc, r.next_u32() % 4);
+                fill(c, &mut r, t + 0x10, 32);
+                fill(c, &mut r, t + 0x50, 64);
+                let rot = DATA + 0x200;
+                let pos = DATA + 0x300;
+                fill(c, &mut r, rot, 4);
+                fill(c, &mut r, pos, 4);
+                c.g[A0][0] = sx(t);
+                c.g[A1][0] = sx(rot);
+                c.g[A2][0] = sx(pos);
+            },
+        );
     }
-
 
     #[test]
     fn light_man_init_instances_matches() {
@@ -1839,7 +1966,6 @@ pub(crate) mod tests {
         );
     }
 
-
     /// Write `words` at `addr`.
     pub(crate) fn words(c: &mut Cpu, addr: u32, v: &[u32]) {
         for (i, w) in v.iter().enumerate() {
@@ -1847,69 +1973,95 @@ pub(crate) mod tests {
         }
     }
 
-
     pub(crate) fn rand_vec(c: &mut Cpu, r: &mut Rng, addr: u32) {
-        put_vec(c, addr, [r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()]);
+        put_vec(
+            c,
+            addr,
+            [r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()],
+        );
     }
-
 
     #[test]
     fn graphics_man_set_screen_offset_matches() {
-        check(ssx3_ee::s13::f_00393fb8__generated, graphics_man_set_screen_offset, 160, &|c, seed| {
-            let mut r = Rng(0x393f_b800 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = sx(r.next_u32());
-            c.g[A2][0] = sx(r.next_u32());
-            words(c, DATA, &[r.next_u32(), r.next_u32()]);
-        });
+        check(
+            ssx3_ee::s13::f_00393fb8__generated,
+            graphics_man_set_screen_offset,
+            160,
+            &|c, seed| {
+                let mut r = Rng(0x393f_b800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = sx(r.next_u32());
+                c.g[A2][0] = sx(r.next_u32());
+                words(c, DATA, &[r.next_u32(), r.next_u32()]);
+            },
+        );
     }
-
 
     #[test]
     fn graphics_man_get_screen_offset_x_matches() {
-        check(ssx3_ee::s13::f_00393fd8__generated, graphics_man_get_screen_offset_x, 200, &|c, seed| {
-            let mut r = Rng(0x393f_d800 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.bus.write32(DATA, r.edge_f32());
-        });
+        check(
+            ssx3_ee::s13::f_00393fd8__generated,
+            graphics_man_get_screen_offset_x,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x393f_d800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.bus.write32(DATA, r.edge_f32());
+            },
+        );
     }
-
 
     #[test]
     fn graphics_man_get_screen_offset_y_matches() {
-        check(ssx3_ee::s13::f_00393ff0__generated, graphics_man_get_screen_offset_y, 200, &|c, seed| {
-            let mut r = Rng(0x393f_f000 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.bus.write32(DATA + 4, r.edge_f32());
-        });
+        check(
+            ssx3_ee::s13::f_00393ff0__generated,
+            graphics_man_get_screen_offset_y,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x393f_f000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.bus.write32(DATA + 4, r.edge_f32());
+            },
+        );
     }
-
 
     #[test]
     fn graphics_man_v58_matches() {
-        check(ssx3_ee::s13::f_003942a0__generated, graphics_man_v58, 160, &|c, seed| {
-            let mut r = Rng(0x3942_a000 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            words(c, DATA, &[r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()]);
-        });
+        check(
+            ssx3_ee::s13::f_003942a0__generated,
+            graphics_man_v58,
+            160,
+            &|c, seed| {
+                let mut r = Rng(0x3942_a000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                words(
+                    c,
+                    DATA,
+                    &[r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()],
+                );
+            },
+        );
     }
-
 
     #[test]
     fn light_man_next_id_matches() {
-        check(ssx3_ee::s13::f_00394d18__generated, light_man_next_id, 200, &|c, seed| {
-            let mut r = Rng(0x394d_1800 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.bus.write32(DATA + 8, r.next_u32());
-            c.bus.write32(DATA + 0xc, r.next_u32() % 100);
-        });
+        check(
+            ssx3_ee::s13::f_00394d18__generated,
+            light_man_next_id,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x394d_1800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.bus.write32(DATA + 8, r.next_u32());
+                c.bus.write32(DATA + 0xc, r.next_u32() % 100);
+            },
+        );
     }
-
 
     pub(crate) fn screen_entry(c: &mut Cpu, r: &mut Rng, off: u32) {
         c.g[A0][0] = DATA as u64;
@@ -1922,26 +2074,33 @@ pub(crate) mod tests {
         c.bus.write32(entry + idx * 0xa4 + 0x8c, r.next_u32());
     }
 
-
     #[test]
     fn ps2_graphics_man_get_screen_width_matches() {
-        check(ssx3_ee::s13::f_00395330__generated, ps2_graphics_man_get_screen_width, 160, &|c, seed| {
-            let mut r = Rng(0x3953_3000 ^ seed as u64);
-            scramble(c, &mut r);
-            screen_entry(c, &mut r, 0x88);
-        });
+        check(
+            ssx3_ee::s13::f_00395330__generated,
+            ps2_graphics_man_get_screen_width,
+            160,
+            &|c, seed| {
+                let mut r = Rng(0x3953_3000 ^ seed as u64);
+                scramble(c, &mut r);
+                screen_entry(c, &mut r, 0x88);
+            },
+        );
     }
-
 
     #[test]
     fn ps2_graphics_man_get_screen_height_matches() {
-        check(ssx3_ee::s13::f_00395350__generated, ps2_graphics_man_get_screen_height, 160, &|c, seed| {
-            let mut r = Rng(0x3953_5000 ^ seed as u64);
-            scramble(c, &mut r);
-            screen_entry(c, &mut r, 0x8c);
-        });
+        check(
+            ssx3_ee::s13::f_00395350__generated,
+            ps2_graphics_man_get_screen_height,
+            160,
+            &|c, seed| {
+                let mut r = Rng(0x3953_5000 ^ seed as u64);
+                scramble(c, &mut r);
+                screen_entry(c, &mut r, 0x8c);
+            },
+        );
     }
-
 
     #[test]
     fn ps2_graphics_man_set_lighting_matches() {
@@ -1967,144 +2126,175 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn ps2_graphics_man_push_matrix_matches() {
-        check(ssx3_ee::s13::f_003956e8__generated, ps2_graphics_man_push_matrix, 160, &|c, seed| {
-            let mut r = Rng(0x3956_e800 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            let top = DATA + 0x1000;
-            c.bus.write32(DATA + 0x13e4, top);
-            c.bus.write32(DATA + 0x13e0, r.next_u32() % 16);
-            for i in 0..4 {
-                rand_vec(c, &mut r, top + i * 0x10);
-                rand_vec(c, &mut r, top + 0x40 + i * 0x10);
-            }
-        });
+        check(
+            ssx3_ee::s13::f_003956e8__generated,
+            ps2_graphics_man_push_matrix,
+            160,
+            &|c, seed| {
+                let mut r = Rng(0x3956_e800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                let top = DATA + 0x1000;
+                c.bus.write32(DATA + 0x13e4, top);
+                c.bus.write32(DATA + 0x13e0, r.next_u32() % 16);
+                for i in 0..4 {
+                    rand_vec(c, &mut r, top + i * 0x10);
+                    rand_vec(c, &mut r, top + 0x40 + i * 0x10);
+                }
+            },
+        );
     }
-
 
     #[test]
     fn ps2_graphics_man_load_matrix_matches() {
-        check(ssx3_ee::s13::f_00395c38__generated, ps2_graphics_man_load_matrix, 160, &|c, seed| {
-            let mut r = Rng(0x395c_3800 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            let top = DATA + 0x1000;
-            let m = DATA + 0x2000;
-            c.bus.write32(DATA + 0x13e4, top);
-            c.bus.write32(DATA + 0x6b90, r.next_u32());
-            for i in 0..4 {
-                rand_vec(c, &mut r, top + i * 0x10);
-                rand_vec(c, &mut r, m + i * 0x10);
-            }
-        });
+        check(
+            ssx3_ee::s13::f_00395c38__generated,
+            ps2_graphics_man_load_matrix,
+            160,
+            &|c, seed| {
+                let mut r = Rng(0x395c_3800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                let top = DATA + 0x1000;
+                let m = DATA + 0x2000;
+                c.bus.write32(DATA + 0x13e4, top);
+                c.bus.write32(DATA + 0x6b90, r.next_u32());
+                for i in 0..4 {
+                    rand_vec(c, &mut r, top + i * 0x10);
+                    rand_vec(c, &mut r, m + i * 0x10);
+                }
+            },
+        );
     }
-
 
     #[test]
     fn ps2_graphics_man_mult_matrix_matches() {
-        check(ssx3_ee::s13::f_00395c70__generated, ps2_graphics_man_mult_matrix, 160, &|c, seed| {
-            let mut r = Rng(0x395c_7000 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            let top = DATA + 0x1000;
-            let m = DATA + 0x2000;
-            c.bus.write32(DATA + 0x13e4, top);
-            c.bus.write32(DATA + 0x6b90, r.next_u32());
-            for i in 0..4 {
-                rand_vec(c, &mut r, top + i * 0x10);
-                rand_vec(c, &mut r, m + i * 0x10);
-            }
-        });
+        check(
+            ssx3_ee::s13::f_00395c70__generated,
+            ps2_graphics_man_mult_matrix,
+            160,
+            &|c, seed| {
+                let mut r = Rng(0x395c_7000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                let top = DATA + 0x1000;
+                let m = DATA + 0x2000;
+                c.bus.write32(DATA + 0x13e4, top);
+                c.bus.write32(DATA + 0x6b90, r.next_u32());
+                for i in 0..4 {
+                    rand_vec(c, &mut r, top + i * 0x10);
+                    rand_vec(c, &mut r, m + i * 0x10);
+                }
+            },
+        );
     }
-
 
     #[test]
     fn ps2_graphics_man_load_identity_matches() {
-        check(ssx3_ee::s13::f_00395cf0__generated, ps2_graphics_man_load_identity, 160, &|c, seed| {
-            let mut r = Rng(0x395c_f000 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            let top = DATA + 0x1000;
-            c.bus.write32(DATA + 0x13e4, top);
-            c.bus.write32(DATA + 0x6b90, r.next_u32());
-            // The .lit4 identity the original copies.
-            put_vec(c, 0x004f_f1a0, [0x3f80_0000, 0, 0, 0]);
-            put_vec(c, 0x004f_f1b0, [0, 0x3f80_0000, 0, 0]);
-            put_vec(c, 0x004f_f1c0, [0, 0, 0x3f80_0000, 0]);
-            put_vec(c, 0x004f_f1d0, [0, 0, 0, 0x3f80_0000]);
-            for i in 0..4 {
-                rand_vec(c, &mut r, top + i * 0x10);
-            }
-        });
+        check(
+            ssx3_ee::s13::f_00395cf0__generated,
+            ps2_graphics_man_load_identity,
+            160,
+            &|c, seed| {
+                let mut r = Rng(0x395c_f000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                let top = DATA + 0x1000;
+                c.bus.write32(DATA + 0x13e4, top);
+                c.bus.write32(DATA + 0x6b90, r.next_u32());
+                // The .lit4 identity the original copies.
+                put_vec(c, 0x004f_f1a0, [0x3f80_0000, 0, 0, 0]);
+                put_vec(c, 0x004f_f1b0, [0, 0x3f80_0000, 0, 0]);
+                put_vec(c, 0x004f_f1c0, [0, 0, 0x3f80_0000, 0]);
+                put_vec(c, 0x004f_f1d0, [0, 0, 0, 0x3f80_0000]);
+                for i in 0..4 {
+                    rand_vec(c, &mut r, top + i * 0x10);
+                }
+            },
+        );
     }
-
 
     #[test]
     fn ps2_graphics_man_translate_matches() {
-        check(ssx3_ee::s13::f_00395d28__generated, ps2_graphics_man_translate, 160, &|c, seed| {
-            let mut r = Rng(0x395d_2800 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            let top = DATA + 0x1000;
-            let v = DATA + 0x2000;
-            c.bus.write32(DATA + 0x13e4, top);
-            c.bus.write32(DATA + 0x6b90, r.next_u32());
-            for i in 0..4 {
-                rand_vec(c, &mut r, top + i * 0x10);
-            }
-            rand_vec(c, &mut r, v);
-        });
+        check(
+            ssx3_ee::s13::f_00395d28__generated,
+            ps2_graphics_man_translate,
+            160,
+            &|c, seed| {
+                let mut r = Rng(0x395d_2800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                let top = DATA + 0x1000;
+                let v = DATA + 0x2000;
+                c.bus.write32(DATA + 0x13e4, top);
+                c.bus.write32(DATA + 0x6b90, r.next_u32());
+                for i in 0..4 {
+                    rand_vec(c, &mut r, top + i * 0x10);
+                }
+                rand_vec(c, &mut r, v);
+            },
+        );
     }
-
 
     #[test]
     fn c_ps2_grid_mesh_set_scale_matches() {
-        check(ssx3_ee::s13::f_00396110__generated, c_ps2_grid_mesh_set_scale, 200, &|c, seed| {
-            let mut r = Rng(0x3961_1000 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            c.g[A0][0] = DATA as u64;
-            c.bus.write32(GAME_GP - 0x254c, 32767.0f32.to_bits());
-            c.f[12] = if seed % 4 == 0 { 0 } else { r.edge_f32() };
-            c.bus.write32(DATA + 0x194, r.next_u32());
-            c.bus.write32(DATA + 0x198, r.next_u32());
-        });
+        check(
+            ssx3_ee::s13::f_00396110__generated,
+            c_ps2_grid_mesh_set_scale,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x3961_1000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.g[A0][0] = DATA as u64;
+                c.bus.write32(GAME_GP - 0x254c, 32767.0f32.to_bits());
+                c.f[12] = if seed % 4 == 0 { 0 } else { r.edge_f32() };
+                c.bus.write32(DATA + 0x194, r.next_u32());
+                c.bus.write32(DATA + 0x198, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn rail_tube_set_point_matches() {
-        check(ssx3_ee::s13::f_003968d0__generated, rail_tube_set_point, 160, &|c, seed| {
-            let mut r = Rng(0x3968_d000 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = (r.next_u32() % 4) as u64;
-            c.g[A2][0] = (DATA + 0x2000) as u64;
-            c.bus.write32(DATA + 8, DATA + 0x1000);
-            rand_vec(c, &mut r, DATA + 0x2000);
-            for i in 0..4 {
-                rand_vec(c, &mut r, DATA + 0x1000 + i * 0x10);
-            }
-        });
+        check(
+            ssx3_ee::s13::f_003968d0__generated,
+            rail_tube_set_point,
+            160,
+            &|c, seed| {
+                let mut r = Rng(0x3968_d000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (r.next_u32() % 4) as u64;
+                c.g[A2][0] = (DATA + 0x2000) as u64;
+                c.bus.write32(DATA + 8, DATA + 0x1000);
+                rand_vec(c, &mut r, DATA + 0x2000);
+                for i in 0..4 {
+                    rand_vec(c, &mut r, DATA + 0x1000 + i * 0x10);
+                }
+            },
+        );
     }
-
 
     #[test]
     fn font_draw_text_f_matches() {
-        check(ee::s12::f_00391c48__generated, font_draw_text_f, 4, &|c, seed| {
-            let mut r = machine(c, seed, 0x0039_1c48, 2);
-            be_library_2(c);
-            world(c);
-            pool(c);
-            c.g[A0][0] = DATA as u64;
-            c.f[12] = r.edge_f32();
-            c.f[13] = r.edge_f32();
-        });
+        check(
+            ee::s12::f_00391c48__generated,
+            font_draw_text_f,
+            4,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0039_1c48, 2);
+                be_library_2(c);
+                world(c);
+                pool(c);
+                c.g[A0][0] = DATA as u64;
+                c.f[12] = r.edge_f32();
+                c.f[13] = r.edge_f32();
+            },
+        );
     }
-
 
     #[test]
     fn font_draw_text_centered_f_matches() {
@@ -2132,7 +2322,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn font_draw_text_right_f_matches() {
         check(
@@ -2157,24 +2346,27 @@ pub(crate) mod tests {
         );
     }
 
-
     // --------------------------------------------------------- rendering
 
     #[test]
     fn font_draw_text_right_matches() {
-        check(ee::s13::f_00392a60__generated, font_draw_text_right, 4, &|c, seed| {
-            let mut r = base_2(c, seed, 0x0039_2a60, 2);
-            c.g[A0][0] = OBJ as u64;
-            c.g[A1][0] = (DATA + 0x4000) as u64;
-            c.bus.write8(DATA + 0x4000, b't');
-            c.bus.write8(DATA + 0x4001, 0);
-            c.f[12] = r.edge_f32();
-            c.f[13] = r.edge_f32();
-            w_2(c, OBJ + 0x38, r.edge_f32());
-            w_2(c, OBJ + 0x3c, r.edge_f32());
-        });
+        check(
+            ee::s13::f_00392a60__generated,
+            font_draw_text_right,
+            4,
+            &|c, seed| {
+                let mut r = base_2(c, seed, 0x0039_2a60, 2);
+                c.g[A0][0] = OBJ as u64;
+                c.g[A1][0] = (DATA + 0x4000) as u64;
+                c.bus.write8(DATA + 0x4000, b't');
+                c.bus.write8(DATA + 0x4001, 0);
+                c.f[12] = r.edge_f32();
+                c.f[13] = r.edge_f32();
+                w_2(c, OBJ + 0x38, r.edge_f32());
+                w_2(c, OBJ + 0x3c, r.edge_f32());
+            },
+        );
     }
-
 
     #[test]
     fn renderer_build_sine_table_matches() {
@@ -2191,7 +2383,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     // -------------------------------------------------------------------- fonts
 
@@ -2219,22 +2410,25 @@ pub(crate) mod tests {
         }
     }
 
-
     #[test]
     fn font_get_char_width_matches() {
-        check(ee::s13::f_00392ba8__generated, font_get_char_width, 12, &|c, seed| {
-            font_fixture(c, seed, 0x0039_2ba8, false)
-        });
+        check(
+            ee::s13::f_00392ba8__generated,
+            font_get_char_width,
+            12,
+            &|c, seed| font_fixture(c, seed, 0x0039_2ba8, false),
+        );
     }
-
 
     #[test]
     fn font_get_char_width_w_matches() {
-        check(ee::s13::f_00392c60__generated, font_get_char_width_w, 12, &|c, seed| {
-            font_fixture(c, seed, 0x0039_2c60, true)
-        });
+        check(
+            ee::s13::f_00392c60__generated,
+            font_get_char_width_w,
+            12,
+            &|c, seed| font_fixture(c, seed, 0x0039_2c60, true),
+        );
     }
-
 
     #[test]
     fn ps2_graphics_man_rotate_axis_matches() {

@@ -28,7 +28,8 @@ pub fn context() -> Option<&'static GpuContext> {
 static CONTEXT: OnceLock<Option<GpuContext>> = OnceLock::new();
 
 fn context_or_log(r: Result<GpuContext, String>) -> Option<GpuContext> {
-    r.map_err(|e| eprintln!("[gs] GPU backend unavailable: {e}")).ok()
+    r.map_err(|e| eprintln!("[gs] GPU backend unavailable: {e}"))
+        .ok()
 }
 
 /// Create the shared device without blocking (the browser's way; native
@@ -40,7 +41,6 @@ pub async fn init_context() -> Option<&'static GpuContext> {
     }
     CONTEXT.get().and_then(Option::as_ref)
 }
-
 
 async fn create_context() -> Result<GpuContext, String> {
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
@@ -79,4 +79,3 @@ async fn create_context() -> Result<GpuContext, String> {
         queue,
     })
 }
-

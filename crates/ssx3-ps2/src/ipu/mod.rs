@@ -25,7 +25,6 @@ use ssx3_mpeg::{dequantise, luts, DctLookup, Lookup, DEFAULT_INTRA, NON_LINEAR_S
 #[cfg(test)]
 pub(crate) mod tests;
 
-
 use crate::Qword;
 
 /// The IPU's view of its DMA channels.
@@ -600,7 +599,15 @@ impl Ctx<'_> {
         } else {
             NON_LINEAR_SCALE[(qsc & 31) as usize] as i32
         };
-        let f = dequantise(&coef, scan, weights, intra, scale, 8 >> ipu.dc_precision(), mpeg1);
+        let f = dequantise(
+            &coef,
+            scan,
+            weights,
+            intra,
+            scale,
+            8 >> ipu.dc_precision(),
+            mpeg1,
+        );
         idct::idct(&f, out);
         Ok(())
     }

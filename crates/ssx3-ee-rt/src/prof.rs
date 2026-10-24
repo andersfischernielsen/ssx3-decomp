@@ -54,7 +54,15 @@ pub mod trace {
         T.with(|t| {
             if let Some(v) = t.borrow_mut().as_mut() {
                 if v.len() < 4096 {
-                    v.push([start as u64, c.g[4][0], c.g[5][0], c.g[6][0], c.g[7][0], c.f[12] as u64, c.f[13] as u64]);
+                    v.push([
+                        start as u64,
+                        c.g[4][0],
+                        c.g[5][0],
+                        c.g[6][0],
+                        c.g[7][0],
+                        c.f[12] as u64,
+                        c.f[13] as u64,
+                    ]);
                 }
             }
         });
@@ -90,7 +98,11 @@ mod imp {
             let mut it = v.rsplitn(3, ':');
             let to = it.next()?.parse().ok()?;
             let from = it.next()?.parse().ok()?;
-            Some(Conf { out: it.next()?.to_string(), from, to })
+            Some(Conf {
+                out: it.next()?.to_string(),
+                from,
+                to,
+            })
         })
         .as_ref()
     }
@@ -114,7 +126,9 @@ mod imp {
         }
         let caller = func_start((c.g[RA][0] as u32).wrapping_sub(8));
         let mut g = EDGES.lock().unwrap();
-        *g.get_or_insert_with(HashMap::new).entry((caller, start)).or_insert(0) += 1;
+        *g.get_or_insert_with(HashMap::new)
+            .entry((caller, start))
+            .or_insert(0) += 1;
     }
 
     pub fn frame(n: u64) {
@@ -127,12 +141,21 @@ mod imp {
             let edges = EDGES.lock().unwrap().take().unwrap_or_default();
             let mut v: Vec<_> = edges.into_iter().collect();
             v.sort();
-            let mut s = format!("# frames {}..={}\n# caller\tcallee\tcount\n", cf.from + 1, cf.to);
+            let mut s = format!(
+                "# frames {}..={}\n# caller\tcallee\tcount\n",
+                cf.from + 1,
+                cf.to
+            );
             for ((a, b), n) in v {
                 s += &format!("{a:08x}\t{b:08x}\t{n}\n");
             }
             match std::fs::write(&cf.out, s) {
-                Ok(()) => eprintln!("[callprof] frames {}..={} -> {}", cf.from + 1, cf.to, cf.out),
+                Ok(()) => eprintln!(
+                    "[callprof] frames {}..={} -> {}",
+                    cf.from + 1,
+                    cf.to,
+                    cf.out
+                ),
                 Err(e) => eprintln!("[callprof] {}: {e}", cf.out),
             }
         }

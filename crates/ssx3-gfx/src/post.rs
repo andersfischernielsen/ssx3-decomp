@@ -80,13 +80,20 @@ pub(crate) fn show(which: &str) -> bool {
 
 /// The shadow pass's debug views (`SSX3_GFX_SHOW=shadow-map|world|normal`).
 pub(crate) fn debug_view() -> f32 {
-    ["shadow-map", "world", "normal", "light-uv", "light-depth"].iter().position(|w| show(w)).map_or(0.0, |i| i as f32 + 1.0)
+    ["shadow-map", "world", "normal", "light-uv", "light-depth"]
+        .iter()
+        .position(|w| show(w))
+        .map_or(0.0, |i| i as f32 + 1.0)
 }
 
 /// The cascade the debug views show (`SSX3_SHADOW_CASCADE`, the widest by
 /// default).
 fn shadow_cascade() -> usize {
-    std::env::var("SSX3_SHADOW_CASCADE").ok().and_then(|v| v.parse().ok()).unwrap_or(crate::shadow::CASCADES - 1).min(crate::shadow::CASCADES - 1)
+    std::env::var("SSX3_SHADOW_CASCADE")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(crate::shadow::CASCADES - 1)
+        .min(crate::shadow::CASCADES - 1)
 }
 
 /// Formats of the intermediate textures.
@@ -135,7 +142,11 @@ impl Post {
         let tex_entry = |binding, sample_type| wgpu::BindGroupLayoutEntry {
             binding,
             visibility: wgpu::ShaderStages::FRAGMENT,
-            ty: wgpu::BindingType::Texture { sample_type, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false },
+            ty: wgpu::BindingType::Texture {
+                sample_type,
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
             count: None,
         };
         let layout = dev.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -144,7 +155,11 @@ impl Post {
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
                     count: None,
                 },
                 tex_entry(1, wgpu::TextureSampleType::Float { filterable: true }),
@@ -192,7 +207,11 @@ impl Post {
         let mk = |format, usage| {
             dev.create_texture(&wgpu::TextureDescriptor {
                 label: Some("ssx3-gfx post dummy"),
-                size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+                size: wgpu::Extent3d {
+                    width: 1,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
@@ -202,8 +221,14 @@ impl Post {
             })
             .create_view(&Default::default())
         };
-        let dummy_tex = mk(wgpu::TextureFormat::Rgba8Unorm, wgpu::TextureUsages::TEXTURE_BINDING);
-        let dummy_depth = mk(crate::draw::DEPTH_FORMAT, wgpu::TextureUsages::TEXTURE_BINDING);
+        let dummy_tex = mk(
+            wgpu::TextureFormat::Rgba8Unorm,
+            wgpu::TextureUsages::TEXTURE_BINDING,
+        );
+        let dummy_depth = mk(
+            crate::draw::DEPTH_FORMAT,
+            wgpu::TextureUsages::TEXTURE_BINDING,
+        );
         let cmp = dev.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("ssx3-gfx shadow compare"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -213,7 +238,21 @@ impl Post {
             compare: Some(wgpu::CompareFunction::LessEqual),
             ..Default::default()
         });
-        Post { module, layout, pipe_layout, pipes: HashMap::new(), samp, ubufs, next_u: 0, dummy_tex, dummy_depth, cmp, bloom: Vec::new(), ao: Vec::new(), size: (0, 0) }
+        Post {
+            module,
+            layout,
+            pipe_layout,
+            pipes: HashMap::new(),
+            samp,
+            ubufs,
+            next_u: 0,
+            dummy_tex,
+            dummy_depth,
+            cmp,
+            bloom: Vec::new(),
+            ao: Vec::new(),
+            size: (0, 0),
+        }
     }
 
     /// Start a frame (the uniform buffers are reused per frame).
@@ -221,7 +260,13 @@ impl Post {
         self.next_u = 0;
     }
 
-    fn pipe(&mut self, dev: &wgpu::Device, entry: &'static str, format: wgpu::TextureFormat, write: Write) -> wgpu::RenderPipeline {
+    fn pipe(
+        &mut self,
+        dev: &wgpu::Device,
+        entry: &'static str,
+        format: wgpu::TextureFormat,
+        write: Write,
+    ) -> wgpu::RenderPipeline {
         let key = (entry, format, write);
         if let Some(p) = self.pipes.get(&key) {
             return p.clone();
@@ -231,15 +276,27 @@ impl Post {
             Write::All => (None, wgpu::ColorWrites::ALL),
             Write::Add => (
                 Some(wgpu::BlendState {
-                    color: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor: wgpu::BlendFactor::One, operation: wgpu::BlendOperation::Add },
+                    color: wgpu::BlendComponent {
+                        src_factor: wgpu::BlendFactor::One,
+                        dst_factor: wgpu::BlendFactor::One,
+                        operation: wgpu::BlendOperation::Add,
+                    },
                     alpha: wgpu::BlendComponent::REPLACE,
                 }),
                 wgpu::ColorWrites::ALL,
             ),
             Write::Multiply => (
                 Some(wgpu::BlendState {
-                    color: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::Zero, dst_factor: wgpu::BlendFactor::Src, operation: wgpu::BlendOperation::Add },
-                    alpha: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::Zero, dst_factor: wgpu::BlendFactor::One, operation: wgpu::BlendOperation::Add },
+                    color: wgpu::BlendComponent {
+                        src_factor: wgpu::BlendFactor::Zero,
+                        dst_factor: wgpu::BlendFactor::Src,
+                        operation: wgpu::BlendOperation::Add,
+                    },
+                    alpha: wgpu::BlendComponent {
+                        src_factor: wgpu::BlendFactor::Zero,
+                        dst_factor: wgpu::BlendFactor::One,
+                        operation: wgpu::BlendOperation::Add,
+                    },
                 }),
                 wgpu::ColorWrites::COLOR,
             ),
@@ -247,11 +304,20 @@ impl Post {
         let p = dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some(entry),
             layout: Some(&self.pipe_layout),
-            vertex: wgpu::VertexState { module: &self.module, entry_point: Some("vs"), buffers: &[], compilation_options: Default::default() },
+            vertex: wgpu::VertexState {
+                module: &self.module,
+                entry_point: Some("vs"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
             fragment: Some(wgpu::FragmentState {
                 module: &self.module,
                 entry_point: Some(entry),
-                targets: &[Some(wgpu::ColorTargetState { format, blend, write_mask: mask })],
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend,
+                    write_mask: mask,
+                })],
                 compilation_options: Default::default(),
             }),
             primitive: wgpu::PrimitiveState::default(),
@@ -279,7 +345,9 @@ impl Post {
         image: Option<&wgpu::TextureView>,
         u: U,
     ) {
-        self.pass_with(dev, queue, enc, entry, target, write, src, depth, image, None, u)
+        self.pass_with(
+            dev, queue, enc, entry, target, write, src, depth, image, None, u,
+        )
     }
 
     /// [`Post::pass`] with the shadow map bound.
@@ -309,13 +377,36 @@ impl Post {
             label: Some("ssx3-gfx post"),
             layout: &self.layout,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: ub.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(src.unwrap_or(&self.dummy_tex)) },
-                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&self.samp) },
-                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(depth.unwrap_or(&self.dummy_depth)) },
-                wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(image.unwrap_or(&self.dummy_tex)) },
-                wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::TextureView(smap.unwrap_or(&self.dummy_depth)) },
-                wgpu::BindGroupEntry { binding: 6, resource: wgpu::BindingResource::Sampler(&self.cmp) },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: ub.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(src.unwrap_or(&self.dummy_tex)),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&self.samp),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(
+                        depth.unwrap_or(&self.dummy_depth),
+                    ),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(image.unwrap_or(&self.dummy_tex)),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(smap.unwrap_or(&self.dummy_depth)),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::Sampler(&self.cmp),
+                },
             ],
         });
         let view = target.create_view(&Default::default());
@@ -325,7 +416,14 @@ impl Post {
                 view: &view,
                 depth_slice: None,
                 resolve_target: None,
-                ops: wgpu::Operations { load: if write == Write::All { wgpu::LoadOp::Clear(wgpu::Color::BLACK) } else { wgpu::LoadOp::Load }, store: wgpu::StoreOp::Store },
+                ops: wgpu::Operations {
+                    load: if write == Write::All {
+                        wgpu::LoadOp::Clear(wgpu::Color::BLACK)
+                    } else {
+                        wgpu::LoadOp::Load
+                    },
+                    store: wgpu::StoreOp::Store,
+                },
             })],
             depth_stencil_attachment: None,
             timestamp_writes: None,
@@ -346,12 +444,17 @@ impl Post {
         let mk = |w: u32, h: u32, format, label| {
             dev.create_texture(&wgpu::TextureDescriptor {
                 label: Some(label),
-                size: wgpu::Extent3d { width: w.max(1), height: h.max(1), depth_or_array_layers: 1 },
+                size: wgpu::Extent3d {
+                    width: w.max(1),
+                    height: h.max(1),
+                    depth_or_array_layers: 1,
+                },
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             })
         };
@@ -366,83 +469,290 @@ impl Post {
 
     fn copy(enc: &mut wgpu::CommandEncoder, from: &wgpu::Texture, to: &wgpu::Texture) {
         enc.copy_texture_to_texture(
-            wgpu::TexelCopyTextureInfo { texture: from, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
-            wgpu::TexelCopyTextureInfo { texture: to, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
-            wgpu::Extent3d { width: from.width(), height: from.height(), depth_or_array_layers: 1 },
+            wgpu::TexelCopyTextureInfo {
+                texture: from,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyTextureInfo {
+                texture: to,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::Extent3d {
+                width: from.width(),
+                height: from.height(),
+                depth_or_array_layers: 1,
+            },
         );
     }
 
     /// Ambient occlusion onto the image (before the game's post passes).
-    pub fn ao(&mut self, dev: &wgpu::Device, queue: &wgpu::Queue, enc: &mut wgpu::CommandEncoder, f: &Frame, cam: Option<&crate::gs::Cam>, fxy: (f32, f32)) {
+    pub fn ao(
+        &mut self,
+        dev: &wgpu::Device,
+        queue: &wgpu::Queue,
+        enc: &mut wgpu::CommandEncoder,
+        f: &Frame,
+        cam: Option<&crate::gs::Cam>,
+        fxy: (f32, f32),
+    ) {
         self.ensure(dev, f.w, f.h);
         // With the terrain camera, exact view depth (else 1 / z).
-        let mut u = U { size: [f.w as f32, f.h as f32], strength: 0.75, ..Default::default() };
+        let mut u = U {
+            size: [f.w as f32, f.h as f32],
+            strength: 0.75,
+            ..Default::default()
+        };
         if let Some((w2s, s2w, _)) = cam.and_then(cam_matrices) {
             let c = cam.unwrap();
             u.w2s = w2s;
             u.s2w = s2w;
             u.off = [c.off[0], c.off[1], fxy.0, fxy.1];
-            u.zp = [c.zmax as f32 + 1.0, if c.xyzf { 1.0 } else { 16.0 }, 0.0, 0.0];
+            u.zp = [
+                c.zmax as f32 + 1.0,
+                if c.xyzf { 1.0 } else { 16.0 },
+                0.0,
+                0.0,
+            ];
         }
         Self::copy(enc, f.depth, f.zsnap);
         let zv = f.zsnap.create_view(&Default::default());
         let (a0, a1) = (self.ao[0].clone(), self.ao[1].clone());
-        let (v0, v1) = (a0.create_view(&Default::default()), a1.create_view(&Default::default()));
-        self.pass(dev, queue, enc, "fs_ao", &a0, Write::All, None, Some(&zv), None, u);
-        self.pass(dev, queue, enc, "fs_ao_blur", &a1, Write::All, Some(&v0), Some(&zv), None, U { dir: [1.0, 0.0], ..u });
-        self.pass(dev, queue, enc, "fs_ao_blur", &a0, Write::All, Some(&v1), Some(&zv), None, U { dir: [0.0, 1.0], ..u });
-        let w = if show("ao") { Write::Rgb } else { Write::Multiply };
-        self.pass(dev, queue, enc, "fs_ao_apply", f.color, w, Some(&v0), None, None, u);
+        let (v0, v1) = (
+            a0.create_view(&Default::default()),
+            a1.create_view(&Default::default()),
+        );
+        self.pass(
+            dev,
+            queue,
+            enc,
+            "fs_ao",
+            &a0,
+            Write::All,
+            None,
+            Some(&zv),
+            None,
+            u,
+        );
+        self.pass(
+            dev,
+            queue,
+            enc,
+            "fs_ao_blur",
+            &a1,
+            Write::All,
+            Some(&v0),
+            Some(&zv),
+            None,
+            U {
+                dir: [1.0, 0.0],
+                ..u
+            },
+        );
+        self.pass(
+            dev,
+            queue,
+            enc,
+            "fs_ao_blur",
+            &a0,
+            Write::All,
+            Some(&v1),
+            Some(&zv),
+            None,
+            U {
+                dir: [0.0, 1.0],
+                ..u
+            },
+        );
+        let w = if show("ao") {
+            Write::Rgb
+        } else {
+            Write::Multiply
+        };
+        self.pass(
+            dev,
+            queue,
+            enc,
+            "fs_ao_apply",
+            f.color,
+            w,
+            Some(&v0),
+            None,
+            None,
+            u,
+        );
     }
 
     /// Sun shadows onto the image (before the game's post passes): `smap`
     /// drawn from `light` (shadow.rs).
     #[allow(clippy::too_many_arguments)]
-    pub fn shadow(&mut self, dev: &wgpu::Device, queue: &wgpu::Queue, enc: &mut wgpu::CommandEncoder, f: &Frame, cam: &crate::gs::Cam, fxy: (f32, f32), smap: &wgpu::TextureView, light: &crate::shadow::Light) {
+    pub fn shadow(
+        &mut self,
+        dev: &wgpu::Device,
+        queue: &wgpu::Queue,
+        enc: &mut wgpu::CommandEncoder,
+        f: &Frame,
+        cam: &crate::gs::Cam,
+        fxy: (f32, f32),
+        smap: &wgpu::TextureView,
+        light: &crate::shadow::Light,
+    ) {
         self.ensure(dev, f.w, f.h);
-        let Some((w2s, s2w, _)) = cam_matrices(cam) else { return };
+        let Some((w2s, s2w, _)) = cam_matrices(cam) else {
+            return;
+        };
         let t = crate::shadow::tuning();
         let u = U {
             size: [f.w as f32, f.h as f32],
             w2s,
             s2w,
             off: [cam.off[0], cam.off[1], fxy.0, fxy.1],
-            zp: [cam.zmax as f32 + 1.0, if cam.xyzf { 1.0 } else { 16.0 }, 0.0, 0.0],
+            zp: [
+                cam.zmax as f32 + 1.0,
+                if cam.xyzf { 1.0 } else { 16.0 },
+                0.0,
+                0.0,
+            ],
             light: light.lights[shadow_cascade()],
             sun: [light.sun[0], light.sun[1], light.sun[2], t.strength],
-            sp: [light.texel, light.world_texel[shadow_cascade()] * 1.5, debug_view(), 0.0],
+            sp: [
+                light.texel,
+                light.world_texel[shadow_cascade()] * 1.5,
+                debug_view(),
+                0.0,
+            ],
             ..Default::default()
         };
         Self::copy(enc, f.depth, f.zsnap);
         let zv = f.zsnap.create_view(&Default::default());
         let w = Write::Rgb;
-        self.pass_with(dev, queue, enc, "fs_shadow_apply", f.color, w, None, Some(&zv), None, Some(smap), u);
+        self.pass_with(
+            dev,
+            queue,
+            enc,
+            "fs_shadow_apply",
+            f.color,
+            w,
+            None,
+            Some(&zv),
+            None,
+            Some(smap),
+            u,
+        );
     }
 
     /// Modern bloom and FXAA (before the HUD).
-    pub fn before_hud(&mut self, dev: &wgpu::Device, queue: &wgpu::Queue, enc: &mut wgpu::CommandEncoder, f: &Frame, o: &Options) {
+    pub fn before_hud(
+        &mut self,
+        dev: &wgpu::Device,
+        queue: &wgpu::Queue,
+        enc: &mut wgpu::CommandEncoder,
+        f: &Frame,
+        o: &Options,
+    ) {
         self.ensure(dev, f.w, f.h);
         let size = [f.w as f32, f.h as f32];
         let snap = f.snapshot.create_view(&Default::default());
         if o.bloom == Bloom::Modern {
             Self::copy(enc, f.color, f.snapshot);
             let levels: Vec<(wgpu::Texture, u32, u32)> = self.bloom.clone();
-            let views: Vec<wgpu::TextureView> = levels.iter().map(|(t, _, _)| t.create_view(&Default::default())).collect();
+            let views: Vec<wgpu::TextureView> = levels
+                .iter()
+                .map(|(t, _, _)| t.create_view(&Default::default()))
+                .collect();
             let texel = |w: u32, h: u32| [1.0 / w as f32, 1.0 / h as f32];
-            self.pass(dev, queue, enc, "fs_bright", &levels[0].0, Write::All, Some(&snap), None, None, U { texel: texel(f.w, f.h), size, ..Default::default() });
+            self.pass(
+                dev,
+                queue,
+                enc,
+                "fs_bright",
+                &levels[0].0,
+                Write::All,
+                Some(&snap),
+                None,
+                None,
+                U {
+                    texel: texel(f.w, f.h),
+                    size,
+                    ..Default::default()
+                },
+            );
             for i in 0..BLOOM_LEVELS - 1 {
                 let (_, w, h) = levels[i];
-                self.pass(dev, queue, enc, "fs_down", &levels[i + 1].0, Write::All, Some(&views[i]), None, None, U { texel: texel(w, h), size, ..Default::default() });
+                self.pass(
+                    dev,
+                    queue,
+                    enc,
+                    "fs_down",
+                    &levels[i + 1].0,
+                    Write::All,
+                    Some(&views[i]),
+                    None,
+                    None,
+                    U {
+                        texel: texel(w, h),
+                        size,
+                        ..Default::default()
+                    },
+                );
             }
             for i in (0..BLOOM_LEVELS - 1).rev() {
                 let (_, w, h) = levels[i + 1];
-                self.pass(dev, queue, enc, "fs_up", &levels[i].0, Write::Add, Some(&views[i + 1]), None, None, U { texel: texel(w, h), size, ..Default::default() });
+                self.pass(
+                    dev,
+                    queue,
+                    enc,
+                    "fs_up",
+                    &levels[i].0,
+                    Write::Add,
+                    Some(&views[i + 1]),
+                    None,
+                    None,
+                    U {
+                        texel: texel(w, h),
+                        size,
+                        ..Default::default()
+                    },
+                );
             }
-            self.pass(dev, queue, enc, "fs_bloom_mix", f.color, Write::Rgb, Some(&views[0]), None, Some(&snap), U { strength: 0.2, size, ..Default::default() });
+            self.pass(
+                dev,
+                queue,
+                enc,
+                "fs_bloom_mix",
+                f.color,
+                Write::Rgb,
+                Some(&views[0]),
+                None,
+                Some(&snap),
+                U {
+                    strength: 0.2,
+                    size,
+                    ..Default::default()
+                },
+            );
         }
         if o.aa == Aa::Fxaa {
             Self::copy(enc, f.color, f.snapshot);
-            self.pass(dev, queue, enc, "fs_fxaa", f.color, Write::Rgb, Some(&snap), None, None, U { texel: [1.0 / f.w as f32, 1.0 / f.h as f32], size, ..Default::default() });
+            self.pass(
+                dev,
+                queue,
+                enc,
+                "fs_fxaa",
+                f.color,
+                Write::Rgb,
+                Some(&snap),
+                None,
+                None,
+                U {
+                    texel: [1.0 / f.w as f32, 1.0 / f.h as f32],
+                    size,
+                    ..Default::default()
+                },
+            );
         }
     }
 }
@@ -454,7 +764,11 @@ pub(crate) fn screen_matrix(c: &crate::gs::Cam) -> [[f64; 4]; 4] {
     let mut s = [[0f64; 4]; 4];
     for r in 0..4 {
         for k in 0..4 {
-            s[r][k] = if r < 3 { c.gscale[r] as f64 * m(r, k) + c.goffset[r] as f64 * m(3, k) } else { m(3, k) };
+            s[r][k] = if r < 3 {
+                c.gscale[r] as f64 * m(r, k) + c.goffset[r] as f64 * m(3, k)
+            } else {
+                m(3, k)
+            };
         }
     }
     s
@@ -490,7 +804,9 @@ pub(crate) fn cam_matrices(c: &crate::gs::Cam) -> Option<([[f32; 4]; 4], [[f32; 
             inv2[r][c4] -= o[r] * inv[3][c4];
         }
     }
-    let cols = |a: [[f64; 4]; 4]| -> [[f32; 4]; 4] { std::array::from_fn(|k| std::array::from_fn(|r| a[r][k] as f32)) };
+    let cols = |a: [[f64; 4]; 4]| -> [[f32; 4]; 4] {
+        std::array::from_fn(|k| std::array::from_fn(|r| a[r][k] as f32))
+    };
     Some((cols(s2), cols(inv2), o))
 }
 
@@ -532,7 +848,12 @@ mod tests {
 
     #[test]
     fn inverse_round_trip() {
-        let a = [[2.0, 0.0, 0.0, 1.0], [0.0, 3.0, 0.5, 0.0], [0.1, 0.0, 1.0, 4.0], [0.0, 0.0, 1.0, 0.0]];
+        let a = [
+            [2.0, 0.0, 0.0, 1.0],
+            [0.0, 3.0, 0.5, 0.0],
+            [0.1, 0.0, 1.0, 4.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ];
         let b = invert(a).unwrap();
         for r in 0..4 {
             for c in 0..4 {

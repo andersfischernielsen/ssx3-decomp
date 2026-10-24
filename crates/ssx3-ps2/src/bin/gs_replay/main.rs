@@ -117,7 +117,10 @@ fn diff_images(a: &[u32], b: &[u32], out: Option<&mut Vec<u32>>) -> Diff {
 }
 
 fn compare(path: &str, bytes: &[u8], opt: &dyn Fn(&str) -> Option<String>) -> bool {
-    let Trace { gs: mut cpu, events } = Trace::parse(bytes).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let Trace {
+        gs: mut cpu,
+        events,
+    } = Trace::parse(bytes).unwrap_or_else(|e| panic!("{path}: {e}"));
     let Trace { gs: mut gpu, .. } = Trace::parse(bytes).unwrap_or_else(|e| panic!("{path}: {e}"));
     cpu.set_deferred(true);
     gpu.set_deferred(true);
@@ -146,7 +149,8 @@ fn compare(path: &str, bytes: &[u8], opt: &dyn Fn(&str) -> Option<String>) -> bo
             let (w, h) = sa;
             for (suffix, im) in [("cpu", &a), ("gpu", &b), ("diff", &img)] {
                 let out = format!("{dir}/{name}_{suffix}.png");
-                std::fs::write(&out, png::encode(w, h, im)).unwrap_or_else(|e| panic!("{out}: {e}"));
+                std::fs::write(&out, png::encode(w, h, im))
+                    .unwrap_or_else(|e| panic!("{out}: {e}"));
             }
         }
     };
@@ -162,7 +166,12 @@ fn compare(path: &str, bytes: &[u8], opt: &dyn Fn(&str) -> Option<String>) -> bo
     println!("all frames: {}", total.report());
     cpu.sync();
     gpu.sync_vram();
-    let words = cpu.vram.iter().zip(&gpu.vram).filter(|(x, y)| x != y).count();
+    let words = cpu
+        .vram
+        .iter()
+        .zip(&gpu.vram)
+        .filter(|(x, y)| x != y)
+        .count();
     println!(
         "final VRAM: {words} of {} words differ ({:.3}%)",
         cpu.vram.len(),
@@ -211,8 +220,15 @@ fn draws(path: &str, bytes: &[u8], dir: &str) {
                 if written.insert(name.clone()) {
                     let opaque: Vec<u32> = img.iter().map(|v| v | 0xFF00_0000).collect();
                     std::fs::write(format!("{dir}/{name}"), png::encode(*w, *h, &opaque)).unwrap();
-                    let alpha: Vec<u32> = img.iter().map(|v| { let a = v >> 24; a | a << 8 | a << 16 | 0xFF00_0000 }).collect();
-                    std::fs::write(format!("{dir}/alpha-{name}"), png::encode(*w, *h, &alpha)).unwrap();
+                    let alpha: Vec<u32> = img
+                        .iter()
+                        .map(|v| {
+                            let a = v >> 24;
+                            a | a << 8 | a << 16 | 0xFF00_0000
+                        })
+                        .collect();
+                    std::fs::write(format!("{dir}/alpha-{name}"), png::encode(*w, *h, &alpha))
+                        .unwrap();
                 }
             }
             txt += &format!(
@@ -229,14 +245,37 @@ fn draws(path: &str, bytes: &[u8], dir: &str) {
         std::fs::write(format!("{dir}/f{seg:02}.png"), png::encode(w, h, &img)).unwrap();
         // SSX3_DUMP_FB=fbp:fbw:psm:w:h,...: also those buffers as
         // DIR/fNN-fb<fbp>.png (RGB, alpha in DIR/fNN-fb<fbp>-a.png).
-        for spec in std::env::var("SSX3_DUMP_FB").unwrap_or_default().split(',').filter(|s| !s.is_empty()) {
+        for spec in std::env::var("SSX3_DUMP_FB")
+            .unwrap_or_default()
+            .split(',')
+            .filter(|s| !s.is_empty())
+        {
             let v: Vec<u32> = spec.split(':').filter_map(|x| x.parse().ok()).collect();
-            let [fbp, fbw, psm, w, h] = v[..] else { continue };
-            let px: Vec<u32> = (0..h).flat_map(|y| (0..w).map(move |x| (x, y))).map(|(x, y)| ssx3_ps2::gs::swizzle::read_pixel(&gs.vram, psm, fbp * 32, fbw, x, y)).collect();
+            let [fbp, fbw, psm, w, h] = v[..] else {
+                continue;
+            };
+            let px: Vec<u32> = (0..h)
+                .flat_map(|y| (0..w).map(move |x| (x, y)))
+                .map(|(x, y)| ssx3_ps2::gs::swizzle::read_pixel(&gs.vram, psm, fbp * 32, fbw, x, y))
+                .collect();
             let rgb: Vec<u32> = px.iter().map(|v| v | 0xFF00_0000).collect();
-            std::fs::write(format!("{dir}/f{seg:02}-fb{fbp}.png"), png::encode(w, h, &rgb)).unwrap();
-            let a: Vec<u32> = px.iter().map(|v| { let a = v >> 24; a | a << 8 | a << 16 | 0xFF00_0000 }).collect();
-            std::fs::write(format!("{dir}/f{seg:02}-fb{fbp}-a.png"), png::encode(w, h, &a)).unwrap();
+            std::fs::write(
+                format!("{dir}/f{seg:02}-fb{fbp}.png"),
+                png::encode(w, h, &rgb),
+            )
+            .unwrap();
+            let a: Vec<u32> = px
+                .iter()
+                .map(|v| {
+                    let a = v >> 24;
+                    a | a << 8 | a << 16 | 0xFF00_0000
+                })
+                .collect();
+            std::fs::write(
+                format!("{dir}/f{seg:02}-fb{fbp}-a.png"),
+                png::encode(w, h, &a),
+            )
+            .unwrap();
         }
     };
     // --events: also print the event stream with the draw setups it creates
@@ -247,7 +286,9 @@ fn draws(path: &str, bytes: &[u8], dir: &str) {
         ev.apply(&mut gs);
         if verbose {
             match ev {
-                Event::Gif { path, data } => println!("[ev {ei}] gif path {path} {} qw", data.len()),
+                Event::Gif { path, data } => {
+                    println!("[ev {ei}] gif path {path} {} qw", data.len())
+                }
                 Event::Reg { addr, value } => println!("[ev] reg {addr:#x} = {value:#x}"),
                 Event::Priv { offset, value } => println!("[ev] priv {offset:#x} = {value:#x}"),
                 Event::VBlank { .. } => println!("[ev] vblank (segment {seg})"),
@@ -257,7 +298,12 @@ fn draws(path: &str, bytes: &[u8], dir: &str) {
                 let t = e.tex0;
                 println!(
                     "[draw] prim {:#x} tbp {:#x} psm {:#x} cbp {:#x} tme {} texa {:#x}",
-                    e.prim, t & 0x3fff, (t >> 20) & 0x3f, (t >> 37) & 0x3fff, (e.prim >> 4) & 1, gs.persistent_regs()[0].1
+                    e.prim,
+                    t & 0x3fff,
+                    (t >> 20) & 0x3f,
+                    (t >> 37) & 0x3fff,
+                    (e.prim >> 4) & 1,
+                    gs.persistent_regs()[0].1
                 );
             }
         }
@@ -302,7 +348,11 @@ fn packets(path: &str, bytes: &[u8], far: f64) {
             let regs = (tag >> 64) as u64;
             if flg != 0 {
                 // REGLIST / IMAGE: skip.
-                let n = if flg == 1 { (nloop * nreg).div_ceil(2) } else { nloop };
+                let n = if flg == 1 {
+                    (nloop * nreg).div_ceil(2)
+                } else {
+                    nloop
+                };
                 i += n;
                 continue;
             }
@@ -331,8 +381,10 @@ fn packets(path: &str, bytes: &[u8], far: f64) {
                             let a = ((d >> 64) & 0xff) as u8;
                             let v = d as u64;
                             if a == 0x18 || a == 0x19 {
-                                ofs[(a - 0x18) as usize] =
-                                    ((v & 0xffff) as f64 / 16.0, ((v >> 32) & 0xffff) as f64 / 16.0);
+                                ofs[(a - 0x18) as usize] = (
+                                    (v & 0xffff) as f64 / 16.0,
+                                    ((v >> 32) & 0xffff) as f64 / 16.0,
+                                );
                             }
                             ad.push((a, v));
                         }
@@ -340,9 +392,14 @@ fn packets(path: &str, bytes: &[u8], far: f64) {
                     }
                 }
             }
-            let ctx = if cur_prim != u64::MAX { ((cur_prim >> 9) & 1) as usize } else { 0 };
+            let ctx = if cur_prim != u64::MAX {
+                ((cur_prim >> 9) & 1) as usize
+            } else {
+                0
+            };
             let (ox, oy) = ofs[ctx];
-            let mut line = format!("seg {seg} ev {ei} path {p} prim {cur_prim:#x} nloop {nloop} nreg {nreg}");
+            let mut line =
+                format!("seg {seg} ev {ei} path {p} prim {cur_prim:#x} nloop {nloop} nreg {nreg}");
             for (a, v) in &ad {
                 line += &format!(" ad[{a:#x}]={v:#x}");
             }
@@ -376,7 +433,10 @@ fn main() {
             .cloned()
     };
     let flag = |name: &str| args.iter().any(|a| a == name);
-    let iters: usize = opt("--iters").and_then(|s| s.parse().ok()).unwrap_or(1).max(1);
+    let iters: usize = opt("--iters")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1)
+        .max(1);
     let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("{path}: {e}"));
     if flag("--packets") {
         let far = opt("--far").and_then(|s| s.parse().ok()).unwrap_or(2048.0);
@@ -419,20 +479,21 @@ fn main() {
         let mut frames = Vec::new();
         let mut total = 0.0;
         let mut t = Instant::now();
-        let mut end_frame = |gs: &mut Gs, frames: &mut Vec<f64>, total: &mut f64, t: &mut Instant| {
-            gs.sync();
-            if !no_wait {
-                gs.gpu_wait_idle();
-            }
-            let ms = t.elapsed().as_secs_f64() * 1e3;
-            frames.push(ms);
-            *total += ms;
-            if hash {
-                gs.sync_vram();
-                hashes.push(vram_hash(gs));
-            }
-            *t = Instant::now();
-        };
+        let mut end_frame =
+            |gs: &mut Gs, frames: &mut Vec<f64>, total: &mut f64, t: &mut Instant| {
+                gs.sync();
+                if !no_wait {
+                    gs.gpu_wait_idle();
+                }
+                let ms = t.elapsed().as_secs_f64() * 1e3;
+                frames.push(ms);
+                *total += ms;
+                if hash {
+                    gs.sync_vram();
+                    hashes.push(vram_hash(gs));
+                }
+                *t = Instant::now();
+            };
         for ev in &events {
             ev.apply(&mut gs);
             if let Event::VBlank { .. } = ev {
@@ -481,7 +542,11 @@ fn main() {
         let got: Vec<String> = hashes.iter().map(|h| format!("{h:016x}")).collect();
         if want.len() != got.len() {
             ok = false;
-            println!("golden: hash count differs ({} vs {})", got.len(), want.len());
+            println!(
+                "golden: hash count differs ({} vs {})",
+                got.len(),
+                want.len()
+            );
         }
         for (i, (a, b)) in got.iter().zip(&want).enumerate() {
             if a != b {

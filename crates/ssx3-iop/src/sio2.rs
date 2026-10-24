@@ -139,7 +139,11 @@ impl Sio2 {
             return;
         }
         self.tx.push(b);
-        let want = if self.dma_block > 0 { self.dma_block } else { self.cmd_len };
+        let want = if self.dma_block > 0 {
+            self.dma_block
+        } else {
+            self.cmd_len
+        };
         if self.tx.len() >= want {
             self.in_packet = false;
             self.queue_pos += 1;
@@ -169,13 +173,21 @@ impl Sio2 {
                 self.recv1 |= stat::NO_DEVICES_MISSING;
                 let pad = &mut self.pads[(port & 1) as usize];
                 if !pad.connected {
-                    self.recv1 |= if port & 1 == 0 { stat::PORT_1_MISSING } else { stat::PORT_2_MISSING };
+                    self.recv1 |= if port & 1 == 0 {
+                        stat::PORT_1_MISSING
+                    } else {
+                        stat::PORT_2_MISSING
+                    };
                 }
                 pad.transfer(p)
             }
             0x81 => {
                 // Memory cards: port 2 is the card in controller port 1.
-                let card = if port & 1 == 0 { self.card.as_mut() } else { None };
+                let card = if port & 1 == 0 {
+                    self.card.as_mut()
+                } else {
+                    None
+                };
                 match card {
                     Some(card) => {
                         self.recv1 = stat::CONNECTED;
@@ -194,8 +206,19 @@ impl Sio2 {
             }
         };
         if self.trace {
-            let hex = |v: &[u8]| v.iter().take(24).map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ");
-            eprintln!("[sio2] port {port} {} -> {} (recv1 {:#x})", hex(p), hex(&out), self.recv1);
+            let hex = |v: &[u8]| {
+                v.iter()
+                    .take(24)
+                    .map(|b| format!("{b:02x}"))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            };
+            eprintln!(
+                "[sio2] port {port} {} -> {} (recv1 {:#x})",
+                hex(p),
+                hex(&out),
+                self.recv1
+            );
         }
         self.rx.extend(out);
     }
@@ -296,6 +319,11 @@ impl Sio2 {
             Some(c) => format!("card {}", c.describe()),
             None => "no card".into(),
         };
-        format!("sio2 {} xfers {} pkts, pad0 mode {:#x}, {card}", self.transfers, self.packets, self.pads[0].mode_id())
+        format!(
+            "sio2 {} xfers {} pkts, pad0 mode {:#x}, {card}",
+            self.transfers,
+            self.packets,
+            self.pads[0].mode_id()
+        )
     }
 }

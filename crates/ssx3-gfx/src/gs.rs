@@ -190,7 +190,10 @@ impl MeshArena {
     /// keeps ([`Self::kept`]).
     pub fn limit(&mut self) {
         if self.data.len() > Self::CAP {
-            *self = MeshArena { epoch: self.epoch + 1, ..Default::default() };
+            *self = MeshArena {
+                epoch: self.epoch + 1,
+                ..Default::default()
+            };
         }
     }
 
@@ -311,7 +314,11 @@ fn bits(v: u64, lo: u32, n: u32) -> u64 {
 impl Gs {
     pub fn new() -> Gs {
         // Reset values: PRMODECONT.AC = 1 (attributes from PRIM).
-        Gs { texa: 0x80 << 32, prmodecont: 1, ..Gs::default() }
+        Gs {
+            texa: 0x80 << 32,
+            prmodecont: 1,
+            ..Gs::default()
+        }
     }
 
     /// Start a frame: drop the previous frame's geometry.
@@ -340,7 +347,9 @@ impl Gs {
 
     /// IMAGE data for the transfer in progress.
     fn image_data(&mut self, q: &[u128]) {
-        let Some((dbp, up)) = self.capture.as_mut() else { return };
+        let Some((dbp, up)) = self.capture.as_mut() else {
+            return;
+        };
         for v in q {
             for k in 0..4 {
                 up.data.push((v >> (32 * k)) as u32);
@@ -444,7 +453,12 @@ impl Gs {
             0x3 => self.uv = (w(0) & 0x3fff, w(1) & 0x3fff),
             0x4 => {
                 let adc = (d >> 111) & 1 != 0;
-                let (x, y, z, f) = (w(0) & 0xffff, w(1) & 0xffff, (w(2) >> 4) & 0xff_ffff, (w(3) >> 4) & 0xff);
+                let (x, y, z, f) = (
+                    w(0) & 0xffff,
+                    w(1) & 0xffff,
+                    (w(2) >> 4) & 0xff_ffff,
+                    (w(3) >> 4) & 0xff,
+                );
                 self.fog = f as u8;
                 self.vertex(x, y, z, !adc);
             }
@@ -454,7 +468,12 @@ impl Gs {
             }
             0xa => self.fog = (w(3) >> 4) as u8,
             0xc => {
-                let (x, y, z, f) = (w(0) & 0xffff, w(1) & 0xffff, (w(2) >> 4) & 0xff_ffff, (w(3) >> 4) & 0xff);
+                let (x, y, z, f) = (
+                    w(0) & 0xffff,
+                    w(1) & 0xffff,
+                    (w(2) >> 4) & 0xff_ffff,
+                    (w(3) >> 4) & 0xff,
+                );
                 self.fog = f as u8;
                 self.vertex(x, y, z, false);
             }
@@ -481,9 +500,25 @@ impl Gs {
             0x52 => self.trxreg = v,
             0x53 => {
                 // Host→local, PSMCT32, small: capture (CLUTs).
-                let (dbp, dpsm) = (bits(self.bitbltbuf, 32, 14) as u32, bits(self.bitbltbuf, 56, 6) as u32);
-                let (w, h) = (bits(self.trxreg, 0, 12) as u32, bits(self.trxreg, 32, 12) as u32);
-                self.capture = (v & 3 == 0 && dpsm == 0 && w * h <= 1024).then(|| (dbp, Upload { psm: dpsm, w, h, data: Vec::new() }));
+                let (dbp, dpsm) = (
+                    bits(self.bitbltbuf, 32, 14) as u32,
+                    bits(self.bitbltbuf, 56, 6) as u32,
+                );
+                let (w, h) = (
+                    bits(self.trxreg, 0, 12) as u32,
+                    bits(self.trxreg, 32, 12) as u32,
+                );
+                self.capture = (v & 3 == 0 && dpsm == 0 && w * h <= 1024).then(|| {
+                    (
+                        dbp,
+                        Upload {
+                            psm: dpsm,
+                            w,
+                            h,
+                            data: Vec::new(),
+                        },
+                    )
+                });
             }
             0x00 => {
                 self.prim = v;
@@ -500,14 +535,34 @@ impl Gs {
             0x03 => self.uv = (v as u32 & 0x3fff, (v >> 16) as u32 & 0x3fff),
             0x04 => {
                 self.fog = (v >> 56) as u8;
-                self.vertex(v as u32 & 0xffff, (v >> 16) as u32 & 0xffff, (v >> 32) as u32 & 0xff_ffff, true);
+                self.vertex(
+                    v as u32 & 0xffff,
+                    (v >> 16) as u32 & 0xffff,
+                    (v >> 32) as u32 & 0xff_ffff,
+                    true,
+                );
             }
-            0x05 => self.vertex(v as u32 & 0xffff, (v >> 16) as u32 & 0xffff, (v >> 32) as u32, true),
+            0x05 => self.vertex(
+                v as u32 & 0xffff,
+                (v >> 16) as u32 & 0xffff,
+                (v >> 32) as u32,
+                true,
+            ),
             0x0c => {
                 self.fog = (v >> 56) as u8;
-                self.vertex(v as u32 & 0xffff, (v >> 16) as u32 & 0xffff, (v >> 32) as u32 & 0xff_ffff, false);
+                self.vertex(
+                    v as u32 & 0xffff,
+                    (v >> 16) as u32 & 0xffff,
+                    (v >> 32) as u32 & 0xff_ffff,
+                    false,
+                );
             }
-            0x0d => self.vertex(v as u32 & 0xffff, (v >> 16) as u32 & 0xffff, (v >> 32) as u32, false),
+            0x0d => self.vertex(
+                v as u32 & 0xffff,
+                (v >> 16) as u32 & 0xffff,
+                (v >> 32) as u32,
+                false,
+            ),
             0x06 | 0x07 => self.ctx[(a - 6) as usize].tex0 = v,
             0x08 | 0x09 => self.ctx[(a - 8) as usize].clamp = v,
             0x0a => self.fog = (v >> 56) as u8,
@@ -539,7 +594,11 @@ impl Gs {
     fn vertex(&mut self, x: u32, y: u32, z: u32, kick: bool) {
         let p = self.cur_prim();
         let ci = bits(p, 9, 1) as usize;
-        let xy = if self.xyoffset_set[ci] { self.ctx[ci].xyoffset } else { self.ctx[0].xyoffset };
+        let xy = if self.xyoffset_set[ci] {
+            self.ctx[ci].xyoffset
+        } else {
+            self.ctx[0].xyoffset
+        };
         let ox = bits(xy, 0, 16) as f32;
         let oy = bits(xy, 32, 16) as f32;
         let v = QVtx {
@@ -625,7 +684,9 @@ impl Gs {
         let target = bits(c.frame, 0, 9) as u32;
         if target != self.main_fbp {
             let (fbw, fpsm) = (bits(c.frame, 16, 6) as u32, bits(c.frame, 24, 6) as u32);
-            let h = (bits(c.scissor, 48, 11) as u32 + 1).next_power_of_two().clamp(8, 1024);
+            let h = (bits(c.scissor, 48, 11) as u32 + 1)
+                .next_power_of_two()
+                .clamp(8, 1024);
             if fbw == 0 || fbw > 16 {
                 *self.dropped_fbp.entry((target, fbw, fpsm)).or_default() += 1;
                 return None;
@@ -634,7 +695,11 @@ impl Gs {
             // draws 256, then 64, then 32 wide into the same FBP): the
             // texture covers the largest, and each image keeps its pixel
             // positions.
-            let rt = self.rts.entry(target).or_insert(Rt { w: fbw * 64, h, psm: fpsm });
+            let rt = self.rts.entry(target).or_insert(Rt {
+                w: fbw * 64,
+                h,
+                psm: fpsm,
+            });
             rt.w = rt.w.max(fbw * 64);
             rt.h = rt.h.max(h);
             rt.psm = fpsm;
@@ -642,13 +707,22 @@ impl Gs {
         let tbp = bits(c.tex0, 0, 14) as u32;
         let psm = bits(c.tex0, 20, 6);
         let fpsm = bits(c.frame, 24, 6);
-        if p & (1 << 4) != 0 && tbp == self.main_zbp * 32 && (0x30..=0x3a).contains(&psm) && fpsm == 2 && target == self.main_fbp {
+        if p & (1 << 4) != 0
+            && tbp == self.main_zbp * 32
+            && (0x30..=0x3a).contains(&psm)
+            && fpsm == 2
+            && target == self.main_fbp
+        {
             // The depth-fog Z → alpha copy (see ZFOG_TEX).
             self.zalpha = true;
             return None;
         }
         let tex = if p & (1 << 4) != 0 && self.zalpha && tbp == self.main_fbp * 32 && psm == 0x1b {
-            let clut = self.uploads.get(&(bits(c.tex0, 37, 14) as u32)).cloned().unwrap_or_default();
+            let clut = self
+                .uploads
+                .get(&(bits(c.tex0, 37, 14) as u32))
+                .cloned()
+                .unwrap_or_default();
             if self.fog_cluts.last().is_none_or(|l| l.data != clut.data) {
                 self.fog_cluts.push(clut);
             }
@@ -657,7 +731,11 @@ impl Gs {
             // The frame itself (colour filter, speed blur): sampled from a
             // snapshot of the colour target.
             Some(FRAME_TEX)
-        } else if p & (1 << 4) != 0 && tbp % 32 == 0 && matches!(psm, 0 | 1 | 2 | 0xa) && self.rts.contains_key(&(tbp / 32)) {
+        } else if p & (1 << 4) != 0
+            && tbp % 32 == 0
+            && matches!(psm, 0 | 1 | 2 | 0xa)
+            && self.rts.contains_key(&(tbp / 32))
+        {
             // (PSMT8H/T4HL/T4HH textures live in the alpha bits of a
             // colour buffer: those are TexMan textures, not the target.)
             Some(RT_TEX | tbp / 32)
@@ -730,7 +808,15 @@ impl Gs {
                 x1,
                 y1
             );
-            let line = format!("{line} frame {:#x} tex0 {:#x} tex1 {:#x} v{}", c.frame, c.tex0, c.tex1, vs.iter().map(|v| format!(" {:.2},{:.2},q{:.3e}", v.x, v.y, v.q)).collect::<String>());
+            let line = format!(
+                "{line} frame {:#x} tex0 {:#x} tex1 {:#x} v{}",
+                c.frame,
+                c.tex0,
+                c.tex1,
+                vs.iter()
+                    .map(|v| format!(" {:.2},{:.2},q{:.3e}", v.x, v.y, v.q))
+                    .collect::<String>()
+            );
             match self.trace_log.last_mut() {
                 Some(l) if l.ends_with(&format!("|{line}")) || l.starts_with(&line) => {}
                 _ => self.trace_log.push(line),
@@ -750,22 +836,30 @@ impl Gs {
         // size (texels = pixels).
         let (tw, th) = match st.tex {
             Some(FRAME_TEX) => self.size,
-            Some(t) if t & RT_TEX != 0 => self.rts.get(&(t & !RT_TEX)).map_or((1, 1), |r| (r.w, r.h)),
+            Some(t) if t & RT_TEX != 0 => {
+                self.rts.get(&(t & !RT_TEX)).map_or((1, 1), |r| (r.w, r.h))
+            }
             _ => (1u32 << bits(c.tex0, 26, 4), 1u32 << bits(c.tex0, 30, 4)),
         };
         // STQ coordinates are relative to the texture's 2^TW × 2^TH; a
         // render target's texture can be larger.
         let (ss, ts) = match st.tex {
-            Some(t) if t & RT_TEX != 0 && t != FRAME_TEX => {
-                ((1u32 << bits(c.tex0, 26, 4)) as f32 / tw as f32, (1u32 << bits(c.tex0, 30, 4)) as f32 / th as f32)
-            }
+            Some(t) if t & RT_TEX != 0 && t != FRAME_TEX => (
+                (1u32 << bits(c.tex0, 26, 4)) as f32 / tw as f32,
+                (1u32 << bits(c.tex0, 30, 4)) as f32 / th as f32,
+            ),
             _ => (1.0, 1.0),
         };
         let first = self.verts.len() as u32;
         for q in vs {
             let rgba = flat.unwrap_or(q.rgba);
             let stq = if fst {
-                [q.u as f32 / 16.0 / tw as f32, q.v as f32 / 16.0 / th as f32, 1.0, 0.0]
+                [
+                    q.u as f32 / 16.0 / tw as f32,
+                    q.v as f32 / 16.0 / th as f32,
+                    1.0,
+                    0.0,
+                ]
             } else {
                 [q.s * ss, q.t * ts, q.q, 0.0]
             };
@@ -778,14 +872,39 @@ impl Gs {
             self.verts.push(Vtx {
                 pos: [x, q.y, (q.z.min(zmax) as f64 * zscale) as f32],
                 fog: q.fog as f32,
-                col: [rgba[0] as f32, rgba[1] as f32, rgba[2] as f32, rgba[3] as f32],
+                col: [
+                    rgba[0] as f32,
+                    rgba[1] as f32,
+                    rgba[2] as f32,
+                    rgba[3] as f32,
+                ],
                 stq,
             });
         }
         let n = vs.len() as u32;
         match self.batches.last_mut() {
-            Some(b) if b.gpu.is_none() && b.state == st && b.tag == Tag { hud: self.hud, ..self.tag } && b.first + b.count == first => b.count += n,
-            _ => self.batches.push(Batch { state: st, tag: Tag { hud: self.hud, ..self.tag }, first, count: n, gpu: None }),
+            Some(b)
+                if b.gpu.is_none()
+                    && b.state == st
+                    && b.tag
+                        == Tag {
+                            hud: self.hud,
+                            ..self.tag
+                        }
+                    && b.first + b.count == first =>
+            {
+                b.count += n
+            }
+            _ => self.batches.push(Batch {
+                state: st,
+                tag: Tag {
+                    hud: self.hud,
+                    ..self.tag
+                },
+                first,
+                count: n,
+                gpu: None,
+            }),
         }
     }
 
@@ -848,7 +967,8 @@ impl Gs {
                 }
             }
             (None, Some(s)) => {
-                call.uniforms[ssx3_render::gpu::SPLIT_BASE][0] = self.gpu.data.len() as u32 + s as u32;
+                call.uniforms[ssx3_render::gpu::SPLIT_BASE][0] =
+                    self.gpu.data.len() as u32 + s as u32;
                 self.gpu.data.len() as u32
             }
             (None, None) => self.gpu.data.len() as u32,
@@ -868,7 +988,14 @@ impl Gs {
                 }
             },
             Link::Source(k) => {
-                self.gpu.sources.insert(k, (base, call.alpha_max, call.uniforms[ssx3_render::gpu::SPLIT_BASE]));
+                self.gpu.sources.insert(
+                    k,
+                    (
+                        base,
+                        call.alpha_max,
+                        call.uniforms[ssx3_render::gpu::SPLIT_BASE],
+                    ),
+                );
                 0
             }
             Link::None => 0,
@@ -890,17 +1017,24 @@ impl Gs {
         let c = st.ctx;
         let p = self.cur_prim();
         let ci = bits(p, 9, 1) as usize;
-        let xy = if self.xyoffset_set[ci] { self.ctx[ci].xyoffset } else { self.ctx[0].xyoffset };
+        let xy = if self.xyoffset_set[ci] {
+            self.ctx[ci].xyoffset
+        } else {
+            self.ctx[0].xyoffset
+        };
         let zmax = Self::zmax(&c);
         let (tw, th) = match st.tex {
             Some(FRAME_TEX) => self.size,
-            Some(t) if t & RT_TEX != 0 => self.rts.get(&(t & !RT_TEX)).map_or((1, 1), |r| (r.w, r.h)),
+            Some(t) if t & RT_TEX != 0 => {
+                self.rts.get(&(t & !RT_TEX)).map_or((1, 1), |r| (r.w, r.h))
+            }
             _ => (1, 1),
         };
         let (ss, ts) = match st.tex {
-            Some(t) if t & RT_TEX != 0 && t != FRAME_TEX => {
-                ((1u32 << bits(c.tex0, 26, 4)) as f32 / tw as f32, (1u32 << bits(c.tex0, 30, 4)) as f32 / th as f32)
-            }
+            Some(t) if t & RT_TEX != 0 && t != FRAME_TEX => (
+                (1u32 << bits(c.tex0, 26, 4)) as f32 / tw as f32,
+                (1u32 << bits(c.tex0, 30, 4)) as f32 / th as f32,
+            ),
             _ => (1.0, 1.0),
         };
         let (squeeze, cx) = if self.hud && self.hud_squeeze != 1.0 && st.target == self.main_fbp {
@@ -910,20 +1044,35 @@ impl Gs {
         };
         let f = |v: f32| v.to_bits();
         let mut u = call.uniforms;
-        u[gpu_params::OFFSET] = [f(bits(xy, 0, 16) as f32 / 16.0), f(bits(xy, 32, 16) as f32 / 16.0), f((1.0 / (zmax as f64 + 1.0)) as f32), f(zmax as f32)];
+        u[gpu_params::OFFSET] = [
+            f(bits(xy, 0, 16) as f32 / 16.0),
+            f(bits(xy, 32, 16) as f32 / 16.0),
+            f((1.0 / (zmax as f64 + 1.0)) as f32),
+            f(zmax as f32),
+        ];
         u[gpu_params::TEX] = [f(ss), f(ts), f(squeeze), f(cx)];
         // The tag's last register is the vertex kick (XYZ2 / XYZF2).
-        let nreg = match bits(lo, 60, 4) { 0 => 16, n => n as u32 };
+        let nreg = match bits(lo, 60, 4) {
+            0 => 16,
+            n => n as u32,
+        };
         let vreg = ((call.tag >> 64) >> (4 * (nreg - 1))) as u32 & 0xf;
         u[gpu_params::MISC] = [f(self.fog as f32), base, reuse, vreg];
         // The terrain camera (renderer options).
         let fl = |v: [u32; 4]| v.map(f32::from_bits);
-        if call.program == ssx3_render::gpu::Program::Bezier && self.cam.is_none() && st.target == self.main_fbp && call.uniforms[7][0] == 1 {
+        if call.program == ssx3_render::gpu::Program::Bezier
+            && self.cam.is_none()
+            && st.target == self.main_fbp
+            && call.uniforms[7][0] == 1
+        {
             self.cam = Some(Cam {
                 m: std::array::from_fn(|i| fl(call.uniforms[i])),
                 gscale: fl(call.uniforms[4]),
                 goffset: fl(call.uniforms[5]),
-                off: [bits(xy, 0, 16) as f32 / 16.0, bits(xy, 32, 16) as f32 / 16.0],
+                off: [
+                    bits(xy, 0, 16) as f32 / 16.0,
+                    bits(xy, 32, 16) as f32 / 16.0,
+                ],
                 zmax,
                 xyzf: vreg == 4,
             });
@@ -931,12 +1080,19 @@ impl Gs {
         // The key light (sun shadows): the lit meshes' SH lighting's
         // linear terms (L7..L9: the irradiance's gradient over the world
         // normal), summed as unit vectors.
-        if call.program == ssx3_render::gpu::Program::Mat3Mesh && call.uniforms[4][0] != 0 && st.target == self.main_fbp {
+        if call.program == ssx3_render::gpu::Program::Mat3Mesh
+            && call.uniforms[4][0] != 0
+            && st.target == self.main_fbp
+        {
             let lum = |q: [u32; 4]| {
                 let v = fl(q);
                 0.3 * v[0] + 0.59 * v[1] + 0.11 * v[2]
             };
-            let g = [lum(call.uniforms[15]), lum(call.uniforms[16]), lum(call.uniforms[17])];
+            let g = [
+                lum(call.uniforms[15]),
+                lum(call.uniforms[16]),
+                lum(call.uniforms[17]),
+            ];
             let n = (g[0] * g[0] + g[1] * g[1] + g[2] * g[2]).sqrt();
             if n > 1e-3 && n.is_finite() {
                 for (k, v) in self.key_light.iter_mut().zip(g) {
@@ -944,7 +1100,12 @@ impl Gs {
                 }
             }
         }
-        u[gpu_params::RGBAQ] = [u32::from_le_bytes(self.rgbaq), f(self.q), f(self.s), f(self.t)];
+        u[gpu_params::RGBAQ] = [
+            u32::from_le_bytes(self.rgbaq),
+            f(self.q),
+            f(self.s),
+            f(self.t),
+        ];
         // (The terrain's pass 2 draws with the ctx2 tags: PRIM.CTXT.)
         let pass2 = call.program == ssx3_render::gpu::Program::Bezier && (st.prim >> 9) & 1 != 0;
         let gb = GpuBatch {
@@ -955,7 +1116,10 @@ impl Gs {
             alpha_max: call.alpha_max,
         };
         use ssx3_render::gpu::GS_PARAMS;
-        let n = u[..GS_PARAMS].iter().rposition(|q| *q != [0; 4]).map_or(0, |i| i + 1);
+        let n = u[..GS_PARAMS]
+            .iter()
+            .rposition(|q| *q != [0; 4])
+            .map_or(0, |i| i + 1);
         let ubase = self.gpu.calls.len() as u32;
         self.gpu.calls.extend_from_slice(&u[GS_PARAMS..]);
         self.gpu.calls.extend_from_slice(&u[..n]);
@@ -963,18 +1127,48 @@ impl Gs {
         if self.gpu.call_start.is_empty() {
             self.gpu.call_start.push(0);
         }
-        self.gpu.call_start.extend_from_slice(&[gb.first, self.gpu.indices.len() as u32, call.index_mode, ubase, n as u32]);
+        self.gpu.call_start.extend_from_slice(&[
+            gb.first,
+            self.gpu.indices.len() as u32,
+            call.index_mode,
+            ubase,
+            n as u32,
+        ]);
         self.gpu.call_start[0] += 1;
         self.gpu.indices.extend_from_slice(&call.indices);
         self.gpu.verts += gb.count;
         // A call right after one of the same program and state joins its
         // draw.
         match self.batches.last_mut() {
-            Some(Batch { state, gpu: Some(g), tag, .. }) if *state == st && *tag == Tag { hud: self.hud, pass2, ..self.tag } && g.program == gb.program && g.first + g.count == gb.first => {
+            Some(Batch {
+                state,
+                gpu: Some(g),
+                tag,
+                ..
+            }) if *state == st
+                && *tag
+                    == Tag {
+                        hud: self.hud,
+                        pass2,
+                        ..self.tag
+                    }
+                && g.program == gb.program
+                && g.first + g.count == gb.first =>
+            {
                 g.count += gb.count;
                 g.alpha_max = g.alpha_max.max(gb.alpha_max);
             }
-            _ => self.batches.push(Batch { state: st, tag: Tag { hud: self.hud, pass2, ..self.tag }, first: 0, count: 0, gpu: Some(gb) }),
+            _ => self.batches.push(Batch {
+                state: st,
+                tag: Tag {
+                    hud: self.hud,
+                    pass2,
+                    ..self.tag
+                },
+                first: 0,
+                count: 0,
+                gpu: Some(gb),
+            }),
         }
     }
 
@@ -990,7 +1184,15 @@ impl Gs {
     fn sprite(&mut self, a: QVtx, b: QVtx) {
         // Corners: a (x0, y0), b (x1, y1); attributes of b for colour,
         // texture coordinates per corner.
-        let corner = |x: &QVtx, y: &QVtx| QVtx { x: x.x, u: x.u, s: x.s, y: y.y, v: y.v, t: y.t, ..b };
+        let corner = |x: &QVtx, y: &QVtx| QVtx {
+            x: x.x,
+            u: x.u,
+            s: x.s,
+            y: y.y,
+            v: y.v,
+            t: y.t,
+            ..b
+        };
         let (c00, c11) = (corner(&a, &a), corner(&b, &b));
         let (c10, c01) = (corner(&b, &a), corner(&a, &b));
         let f = Some(b.rgba);
@@ -1007,19 +1209,40 @@ impl Gs {
         let (dx, dy) = (b.x - a.x, b.y - a.y);
         let len = (dx * dx + dy * dy).sqrt().max(1e-6);
         let (nx, ny) = (-dy / len * 0.5, dx / len * 0.5);
-        let off = |v: QVtx, s: f32| QVtx { x: v.x + nx * s, y: v.y + ny * s, ..v };
+        let off = |v: QVtx, s: f32| QVtx {
+            x: v.x + nx * s,
+            y: v.y + ny * s,
+            ..v
+        };
         let f = self.flat(&b);
-        let q = [off(a, 1.0), off(b, 1.0), off(b, -1.0), off(a, 1.0), off(b, -1.0), off(a, -1.0)];
+        let q = [
+            off(a, 1.0),
+            off(b, 1.0),
+            off(b, -1.0),
+            off(a, 1.0),
+            off(b, -1.0),
+            off(a, -1.0),
+        ];
         self.emit(&q, f);
     }
 
     fn point(&mut self, a: QVtx) {
-        let c = |dx: f32, dy: f32| QVtx { x: a.x + dx, y: a.y + dy, ..a };
-        let q = [c(-0.5, -0.5), c(0.5, -0.5), c(0.5, 0.5), c(-0.5, -0.5), c(0.5, 0.5), c(-0.5, 0.5)];
+        let c = |dx: f32, dy: f32| QVtx {
+            x: a.x + dx,
+            y: a.y + dy,
+            ..a
+        };
+        let q = [
+            c(-0.5, -0.5),
+            c(0.5, -0.5),
+            c(0.5, 0.5),
+            c(-0.5, -0.5),
+            c(0.5, 0.5),
+            c(-0.5, 0.5),
+        ];
         self.emit(&q, Some(a.rgba));
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -1028,14 +1251,24 @@ mod tests {
     /// One A+D GIF packet writing `regs` in order.
     fn ad(regs: &[(u32, u64)]) -> Vec<u128> {
         let tag = regs.len() as u128 | 1 << 60 | 0xe << 64;
-        std::iter::once(tag).chain(regs.iter().map(|&(a, v)| v as u128 | (a as u128) << 64)).collect()
+        std::iter::once(tag)
+            .chain(regs.iter().map(|&(a, v)| v as u128 | (a as u128) << 64))
+            .collect()
     }
 
     /// A 16×16 PSMCT32 host→local upload of `v` at `dbp`.
     fn upload(dbp: u32, v: u32) -> Vec<u128> {
-        let mut q = ad(&[(0x50, (dbp as u64) << 32 | 1 << 48), (0x51, 0), (0x52, 16 | 16 << 32), (0x53, 0)]);
+        let mut q = ad(&[
+            (0x50, (dbp as u64) << 32 | 1 << 48),
+            (0x51, 0),
+            (0x52, 16 | 16 << 32),
+            (0x53, 0),
+        ]);
         q.push(64 | 2 << 58);
-        q.extend(std::iter::repeat_n(v as u128 * 0x0000_0001_0000_0001_0000_0001_0000_0001, 64));
+        q.extend(std::iter::repeat_n(
+            v as u128 * 0x0000_0001_0000_0001_0000_0001_0000_0001,
+            64,
+        ));
         q
     }
 
@@ -1051,7 +1284,10 @@ mod tests {
         gs.gif(&upload(0x2fd4, 1));
         // The Z → alpha copy: Z as a 16-bit texture into a CT16 view of the
         // frame. Dropped, but it arms the fog pass.
-        let mut a = vec![(0x06, (zbp * 32) as u64 | 0x32 << 20), (0x4c, 8 << 16 | 2 << 24)];
+        let mut a = vec![
+            (0x06, (zbp * 32) as u64 | 0x32 << 20),
+            (0x4c, 8 << 16 | 2 << 24),
+        ];
         a.extend(sprite(6 | 1 << 4));
         gs.gif(&ad(&a));
         assert!(gs.batches.is_empty());
@@ -1074,10 +1310,20 @@ mod tests {
         gs.begin((512, 448), 0, 0xe0);
         // The glow chain: 256×256 (FBW 4) into FBP 0xe0, then 64×64 (FBW 1).
         for (fbw, max) in [(4u64, 255u64), (1, 63)] {
-            let mut a = vec![(0x4c, 0xe0 | fbw << 16 | 1 << 24), (0x40, max << 16 | max << 48)];
+            let mut a = vec![
+                (0x4c, 0xe0 | fbw << 16 | 1 << 24),
+                (0x40, max << 16 | max << 48),
+            ];
             a.extend(sprite(6));
             gs.gif(&ad(&a));
         }
-        assert_eq!(gs.rts[&0xe0], Rt { w: 256, h: 256, psm: 1 });
+        assert_eq!(
+            gs.rts[&0xe0],
+            Rt {
+                w: 256,
+                h: 256,
+                psm: 1
+            }
+        );
     }
 }

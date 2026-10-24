@@ -52,7 +52,9 @@ pub struct VuCall {
 impl VuCall {
     /// Every input qword, in the order to apply them.
     pub fn writes(&self) -> impl Iterator<Item = &(u16, u128)> {
-        self.input.iter().chain(self.shared.as_deref().unwrap_or(&[]))
+        self.input
+            .iter()
+            .chain(self.shared.as_deref().unwrap_or(&[]))
     }
 
     /// The input as one list in address order.
@@ -69,7 +71,8 @@ impl VuCall {
 
 impl PartialEq for VuCall {
     fn eq(&self, o: &Self) -> bool {
-        (self.entry, self.top, self.itop) == (o.entry, o.top, o.itop) && self.merged_input() == o.merged_input()
+        (self.entry, self.top, self.itop) == (o.entry, o.top, o.itop)
+            && self.merged_input() == o.merged_input()
     }
 }
 impl Eq for VuCall {}
@@ -95,7 +98,10 @@ pub enum Event {
     Call(VuCall),
     Direct(Direct),
     /// MPG upload (program code): address in bytes and size in bytes.
-    Microcode { addr: u32, bytes: u32 },
+    Microcode {
+        addr: u32,
+        bytes: u32,
+    },
     /// MSKPATH3.
     MaskPath3(bool),
     /// A packet the game's draw function described natively
@@ -103,7 +109,11 @@ pub enum Event {
     /// registers and VU1 qw0-5 (the header the state change uploaded) at
     /// the packet. Not decoded; its program starts only advance the double
     /// buffering ([`Vif1::skip_starts`]).
-    Native { index: u32, regs: VifRegs, header: [u128; 6] },
+    Native {
+        index: u32,
+        regs: VifRegs,
+        header: [u128; 6],
+    },
 }
 
 pub struct Vif1 {
@@ -153,7 +163,10 @@ impl Rec {
                 self.bad = true;
             }
             self.lanes[a] = 0;
-            v.push((a as u16, u128::from_le_bytes(mem[a * 16..a * 16 + 16].try_into().unwrap())));
+            v.push((
+                a as u16,
+                u128::from_le_bytes(mem[a * 16..a * 16 + 16].try_into().unwrap()),
+            ));
         }
         self.order.clear();
         v
@@ -201,7 +214,12 @@ impl Vif1 {
 
     /// Start recording the effects of the input that follows.
     pub fn record(&mut self) {
-        self.rec = Some(Rec { lanes: Box::new([0; VU1_QWORDS]), order: Vec::new(), calls: Vec::new(), bad: false });
+        self.rec = Some(Rec {
+            lanes: Box::new([0; VU1_QWORDS]),
+            order: Vec::new(),
+            calls: Vec::new(),
+            bad: false,
+        });
     }
 
     /// Stop recording: the effects since [`Vif1::record`], or `None` when
@@ -210,7 +228,12 @@ impl Vif1 {
     pub fn recorded(&mut self) -> Option<Recording> {
         let mut r = self.rec.take()?;
         let tail = r.take(&self.mem);
-        (!r.bad && self.fifo.is_empty()).then(|| Recording { id: 0, calls: r.calls, tail, regs: self.regs })
+        (!r.bad && self.fifo.is_empty()).then(|| Recording {
+            id: 0,
+            calls: r.calls,
+            tail,
+            regs: self.regs,
+        })
     }
 
     /// Apply a recording as if its input were fed again (the registers must
@@ -259,7 +282,12 @@ impl Vif1 {
         let mut words = std::mem::take(&mut self.fifo);
         words.reserve(data.len() * 4);
         for q in data {
-            words.extend_from_slice(&[*q as u32, (*q >> 32) as u32, (*q >> 64) as u32, (*q >> 96) as u32]);
+            words.extend_from_slice(&[
+                *q as u32,
+                (*q >> 32) as u32,
+                (*q >> 64) as u32,
+                (*q >> 96) as u32,
+            ]);
         }
         let mut pos = 0;
         while pos < words.len() {
@@ -288,7 +316,11 @@ impl Vif1 {
             n => n,
         };
         let (cl, wl) = self.cl_wl();
-        let data = if wl > cl && wl != 0 { (num / wl) * cl + (num % wl).min(cl) } else { num };
+        let data = if wl > cl && wl != 0 {
+            (num / wl) * cl + (num % wl).min(cl)
+        } else {
+            num
+        };
         let bits = if vl == 3 { 16 } else { (vn + 1) * (32 >> vl) };
         ((data * bits) as usize).div_ceil(32)
     }
@@ -330,13 +362,24 @@ impl Vif1 {
             0x20 => r.mask = data[0],
             0x30 => r.row.copy_from_slice(&data[..4]),
             0x31 => r.col.copy_from_slice(&data[..4]),
-            0x4a => self.push_event(Event::Microcode { addr: imm * 8, bytes: data.len() as u32 * 4 }),
+            0x4a => self.push_event(Event::Microcode {
+                addr: imm * 8,
+                bytes: data.len() as u32 * 4,
+            }),
             0x50 | 0x51 => {
                 let qwords = data
                     .chunks_exact(4)
-                    .map(|c| c[0] as u128 | (c[1] as u128) << 32 | (c[2] as u128) << 64 | (c[3] as u128) << 96)
+                    .map(|c| {
+                        c[0] as u128
+                            | (c[1] as u128) << 32
+                            | (c[2] as u128) << 64
+                            | (c[3] as u128) << 96
+                    })
                     .collect();
-                self.push_event(Event::Direct(Direct { qwords, native: false }));
+                self.push_event(Event::Direct(Direct {
+                    qwords,
+                    native: false,
+                }));
             }
             _ if op & 0x60 == 0x60 => self.unpack(cmd, data),
             _ => self.errors += 1,
@@ -369,7 +412,10 @@ impl Vif1 {
                 }
                 // (The frame build plays chains: `frame::play_chain`.)
                 Step::Chain(_) => {}
-                Step::Gif(q) => self.push_event(Event::Direct(Direct { qwords: q.clone(), native: true })),
+                Step::Gif(q) => self.push_event(Event::Direct(Direct {
+                    qwords: q.clone(),
+                    native: true,
+                })),
                 Step::MaskPath3(m) => self.push_event(Event::MaskPath3(*m)),
                 Step::Raw(q) => self.write(q),
             }
@@ -409,10 +455,21 @@ impl Vif1 {
         for &a in &self.dirty_list {
             let a = a as usize;
             self.dirty[a] = false;
-            input.push((a as u16, u128::from_le_bytes(self.mem[a * 16..a * 16 + 16].try_into().unwrap())));
+            input.push((
+                a as u16,
+                u128::from_le_bytes(self.mem[a * 16..a * 16 + 16].try_into().unwrap()),
+            ));
         }
         self.dirty_list.clear();
-        self.events.push(Event::Call(VuCall { entry, top, itop, input, shared: None, src: None, native: false }));
+        self.events.push(Event::Call(VuCall {
+            entry,
+            top,
+            itop,
+            input,
+            shared: None,
+            src: None,
+            native: false,
+        }));
     }
 
     fn put(&mut self, addr: u32, j: usize, v: u32) {
@@ -478,7 +535,12 @@ impl Vif1 {
             if !fill {
                 if vl == 3 {
                     let c = read(16);
-                    v = [(c & 0x1f) << 3, ((c >> 5) & 0x1f) << 3, ((c >> 10) & 0x1f) << 3, ((c >> 15) & 1) << 7];
+                    v = [
+                        (c & 0x1f) << 3,
+                        ((c >> 5) & 0x1f) << 3,
+                        ((c >> 10) & 0x1f) << 3,
+                        ((c >> 15) & 1) << 7,
+                    ];
                 } else {
                     let n = vn as usize + 1;
                     for x in v.iter_mut().take(n) {
@@ -493,7 +555,11 @@ impl Vif1 {
             }
             let mrow = cyc.min(3);
             for (j, val) in v.iter().enumerate() {
-                let mut m = if masked { (self.regs.mask >> ((mrow * 4 + j as u32) * 2)) & 3 } else { 0 };
+                let mut m = if masked {
+                    (self.regs.mask >> ((mrow * 4 + j as u32) * 2)) & 3
+                } else {
+                    0
+                };
                 if fill && m == 0 {
                     m = 1;
                 }
@@ -536,17 +602,26 @@ mod tests {
 
     #[test]
     fn unpack_v4_32_then_mscal_reports_input_and_double_buffers() {
-        let mut v = Vif1::new(VifRegs { base: 0x10, ofst: 0x20, ..Default::default() });
+        let mut v = Vif1::new(VifRegs {
+            base: 0x10,
+            ofst: 0x20,
+            ..Default::default()
+        });
         // STCYCL 1,1; OFFSET 0x20 (tops = base); UNPACK V4-32 2 qwords at 0 + TOPS; MSCAL 0x40.
         v.write(&[
             q([0x0100_0101, 0x0200_0020, 0x6c02_8000, 1]),
             q([2, 3, 4, 5]),
             q([6, 7, 8, 0x1400_0040]),
         ]);
-        let Event::Call(c) = &v.events[0] else { panic!("{:?}", v.events) };
+        let Event::Call(c) = &v.events[0] else {
+            panic!("{:?}", v.events)
+        };
         assert_eq!(c.entry, Some(0x200));
         assert_eq!(c.top, 0x10);
-        assert_eq!(c.input, vec![(0x10, q([1, 2, 3, 4])), (0x11, q([5, 6, 7, 8]))]);
+        assert_eq!(
+            c.input,
+            vec![(0x10, q([1, 2, 3, 4])), (0x11, q([5, 6, 7, 8]))]
+        );
         assert_eq!(v.regs.tops, 0x30);
     }
 }

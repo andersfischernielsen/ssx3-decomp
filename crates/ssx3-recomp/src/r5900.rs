@@ -15,8 +15,8 @@ use std::fmt;
 /// ABI register names, index 0..31.
 pub const REG_NAMES: [&str; 32] = [
     "zero", "at", "v0", "v1", "a0", "a1", "a2", "a3", "t0", "t1", "t2", "t3", "t4", "t5", "t6",
-    "t7", "s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7", "t8", "t9", "k0", "k1", "gp", "sp",
-    "fp", "ra",
+    "t7", "s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7", "t8", "t9", "k0", "k1", "gp", "sp", "fp",
+    "ra",
 ];
 
 pub fn reg(n: u8) -> &'static str {
@@ -84,7 +84,13 @@ pub enum Operands {
     /// `offset` — COP1 branch
     Cop1Branch { offset: i16 },
     /// MMI (opcode 0x1C): carries `mmiop` (the `sa` field) and `fct`.
-    Mmi { mmiop: u8, fct: u8, rd: u8, rs: u8, rt: u8 },
+    Mmi {
+        mmiop: u8,
+        fct: u8,
+        rd: u8,
+        rs: u8,
+        rt: u8,
+    },
     /// Unrecognised or not-yet-modelled encoding.
     Word,
 }
@@ -124,16 +130,90 @@ pub fn decode(w: u32) -> Instruction {
     match op {
         0x00 => decode_special(w, rs, rt, rd, sa, funct),
         0x01 => decode_regimm(w, rs, rt, imm),
-        0x02 => mk(w, "j", Operands::Jump { target: w & 0x03FF_FFFF }),
-        0x03 => mk(w, "jal", Operands::Jump { target: w & 0x03FF_FFFF }),
-        0x04 => mk(w, "beq", Operands::Branch { rs, rt, offset: imm as i16 }),
-        0x05 => mk(w, "bne", Operands::Branch { rs, rt, offset: imm as i16 }),
-        0x06 => mk(w, "blez", Operands::Branch1 { rs, offset: imm as i16 }),
-        0x07 => mk(w, "bgtz", Operands::Branch1 { rs, offset: imm as i16 }),
-        0x08 => mk(w, "addi", Operands::RtRsImm { rt, rs, imm: imm as i16 }),
-        0x09 => mk(w, "addiu", Operands::RtRsImm { rt, rs, imm: imm as i16 }),
-        0x0A => mk(w, "slti", Operands::RtRsImm { rt, rs, imm: imm as i16 }),
-        0x0B => mk(w, "sltiu", Operands::RtRsImm { rt, rs, imm: imm as i16 }),
+        0x02 => mk(
+            w,
+            "j",
+            Operands::Jump {
+                target: w & 0x03FF_FFFF,
+            },
+        ),
+        0x03 => mk(
+            w,
+            "jal",
+            Operands::Jump {
+                target: w & 0x03FF_FFFF,
+            },
+        ),
+        0x04 => mk(
+            w,
+            "beq",
+            Operands::Branch {
+                rs,
+                rt,
+                offset: imm as i16,
+            },
+        ),
+        0x05 => mk(
+            w,
+            "bne",
+            Operands::Branch {
+                rs,
+                rt,
+                offset: imm as i16,
+            },
+        ),
+        0x06 => mk(
+            w,
+            "blez",
+            Operands::Branch1 {
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x07 => mk(
+            w,
+            "bgtz",
+            Operands::Branch1 {
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x08 => mk(
+            w,
+            "addi",
+            Operands::RtRsImm {
+                rt,
+                rs,
+                imm: imm as i16,
+            },
+        ),
+        0x09 => mk(
+            w,
+            "addiu",
+            Operands::RtRsImm {
+                rt,
+                rs,
+                imm: imm as i16,
+            },
+        ),
+        0x0A => mk(
+            w,
+            "slti",
+            Operands::RtRsImm {
+                rt,
+                rs,
+                imm: imm as i16,
+            },
+        ),
+        0x0B => mk(
+            w,
+            "sltiu",
+            Operands::RtRsImm {
+                rt,
+                rs,
+                imm: imm as i16,
+            },
+        ),
         0x0C => mk(w, "andi", Operands::RtRsImmU { rt, rs, imm }),
         0x0D => mk(w, "ori", Operands::RtRsImmU { rt, rs, imm }),
         0x0E => mk(w, "xori", Operands::RtRsImmU { rt, rs, imm }),
@@ -141,43 +221,329 @@ pub fn decode(w: u32) -> Instruction {
         0x10 => decode_cop0(w, rs, rt, rd, funct),
         0x11 => decode_cop1(w, rs, rt, rd, funct),
         0x12 => decode_cop2(w, rs, rt, rd, funct),
-        0x14 => mk(w, "beql", Operands::Branch { rs, rt, offset: imm as i16 }),
-        0x15 => mk(w, "bnel", Operands::Branch { rs, rt, offset: imm as i16 }),
-        0x16 => mk(w, "blezl", Operands::Branch1 { rs, offset: imm as i16 }),
-        0x17 => mk(w, "bgtzl", Operands::Branch1 { rs, offset: imm as i16 }),
-        0x18 => mk(w, "daddi", Operands::RtRsImm { rt, rs, imm: imm as i16 }),
-        0x19 => mk(w, "daddiu", Operands::RtRsImm { rt, rs, imm: imm as i16 }),
-        0x1A => mk(w, "ldl", Operands::Mem { rt, rs, offset: imm as i16 }),
-        0x1B => mk(w, "ldr", Operands::Mem { rt, rs, offset: imm as i16 }),
+        0x14 => mk(
+            w,
+            "beql",
+            Operands::Branch {
+                rs,
+                rt,
+                offset: imm as i16,
+            },
+        ),
+        0x15 => mk(
+            w,
+            "bnel",
+            Operands::Branch {
+                rs,
+                rt,
+                offset: imm as i16,
+            },
+        ),
+        0x16 => mk(
+            w,
+            "blezl",
+            Operands::Branch1 {
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x17 => mk(
+            w,
+            "bgtzl",
+            Operands::Branch1 {
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x18 => mk(
+            w,
+            "daddi",
+            Operands::RtRsImm {
+                rt,
+                rs,
+                imm: imm as i16,
+            },
+        ),
+        0x19 => mk(
+            w,
+            "daddiu",
+            Operands::RtRsImm {
+                rt,
+                rs,
+                imm: imm as i16,
+            },
+        ),
+        0x1A => mk(
+            w,
+            "ldl",
+            Operands::Mem {
+                rt,
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x1B => mk(
+            w,
+            "ldr",
+            Operands::Mem {
+                rt,
+                rs,
+                offset: imm as i16,
+            },
+        ),
         0x1C => decode_mmi(w, rs, rt, rd, sa, funct),
-        0x1E => mk(w, "lq", Operands::Mem { rt, rs, offset: imm as i16 }),
-        0x1F => mk(w, "sq", Operands::Mem { rt, rs, offset: imm as i16 }),
-        0x20 => mk(w, "lb", Operands::Mem { rt, rs, offset: imm as i16 }),
-        0x21 => mk(w, "lh", Operands::Mem { rt, rs, offset: imm as i16 }),
-        0x22 => mk(w, "lwl", Operands::Mem { rt, rs, offset: imm as i16 }),
-        0x23 => mk(w, "lw", Operands::Mem { rt, rs, offset: imm as i16 }),
-        0x24 => mk(w, "lbu", Operands::Mem { rt, rs, offset: imm as i16 }),
-        0x25 => mk(w, "lhu", Operands::Mem { rt, rs, offset: imm as i16 }),
-        0x26 => mk(w, "lwr", Operands::Mem { rt, rs, offset: imm as i16 }),
-        0x27 => mk(w, "lwu", Operands::Mem { rt, rs, offset: imm as i16 }),
-        0x28 => mk(w, "sb", Operands::Mem { rt, rs, offset: imm as i16 }),
-        0x29 => mk(w, "sh", Operands::Mem { rt, rs, offset: imm as i16 }),
-        0x2A => mk(w, "swl", Operands::Mem { rt, rs, offset: imm as i16 }),
-        0x2B => mk(w, "sw", Operands::Mem { rt, rs, offset: imm as i16 }),
-        0x2C => mk(w, "sdl", Operands::Mem { rt, rs, offset: imm as i16 }),
-        0x2D => mk(w, "sdr", Operands::Mem { rt, rs, offset: imm as i16 }),
-        0x2E => mk(w, "swr", Operands::Mem { rt, rs, offset: imm as i16 }),
-        0x2F => mk(w, "cache", Operands::Mem { rt, rs, offset: imm as i16 }),
-        0x30 => mk(w, "ll", Operands::Mem { rt, rs, offset: imm as i16 }),
-        0x31 => mk(w, "lwc1", Operands::Mem { rt, rs, offset: imm as i16 }),
-        0x33 => mk(w, "pref", Operands::Mem { rt, rs, offset: imm as i16 }),
-        0x35 => mk(w, "ldc1", Operands::Mem { rt, rs, offset: imm as i16 }),
-        0x36 => mk(w, "lqc2", Operands::Mem { rt, rs, offset: imm as i16 }),
-        0x37 => mk(w, "ld", Operands::Mem { rt, rs, offset: imm as i16 }),
-        0x39 => mk(w, "swc1", Operands::Mem { rt, rs, offset: imm as i16 }),
-        0x3D => mk(w, "sdc1", Operands::Mem { rt, rs, offset: imm as i16 }),
-        0x3E => mk(w, "sqc2", Operands::Mem { rt, rs, offset: imm as i16 }),
-        0x3F => mk(w, "sd", Operands::Mem { rt, rs, offset: imm as i16 }),
+        0x1E => mk(
+            w,
+            "lq",
+            Operands::Mem {
+                rt,
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x1F => mk(
+            w,
+            "sq",
+            Operands::Mem {
+                rt,
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x20 => mk(
+            w,
+            "lb",
+            Operands::Mem {
+                rt,
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x21 => mk(
+            w,
+            "lh",
+            Operands::Mem {
+                rt,
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x22 => mk(
+            w,
+            "lwl",
+            Operands::Mem {
+                rt,
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x23 => mk(
+            w,
+            "lw",
+            Operands::Mem {
+                rt,
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x24 => mk(
+            w,
+            "lbu",
+            Operands::Mem {
+                rt,
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x25 => mk(
+            w,
+            "lhu",
+            Operands::Mem {
+                rt,
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x26 => mk(
+            w,
+            "lwr",
+            Operands::Mem {
+                rt,
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x27 => mk(
+            w,
+            "lwu",
+            Operands::Mem {
+                rt,
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x28 => mk(
+            w,
+            "sb",
+            Operands::Mem {
+                rt,
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x29 => mk(
+            w,
+            "sh",
+            Operands::Mem {
+                rt,
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x2A => mk(
+            w,
+            "swl",
+            Operands::Mem {
+                rt,
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x2B => mk(
+            w,
+            "sw",
+            Operands::Mem {
+                rt,
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x2C => mk(
+            w,
+            "sdl",
+            Operands::Mem {
+                rt,
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x2D => mk(
+            w,
+            "sdr",
+            Operands::Mem {
+                rt,
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x2E => mk(
+            w,
+            "swr",
+            Operands::Mem {
+                rt,
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x2F => mk(
+            w,
+            "cache",
+            Operands::Mem {
+                rt,
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x30 => mk(
+            w,
+            "ll",
+            Operands::Mem {
+                rt,
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x31 => mk(
+            w,
+            "lwc1",
+            Operands::Mem {
+                rt,
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x33 => mk(
+            w,
+            "pref",
+            Operands::Mem {
+                rt,
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x35 => mk(
+            w,
+            "ldc1",
+            Operands::Mem {
+                rt,
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x36 => mk(
+            w,
+            "lqc2",
+            Operands::Mem {
+                rt,
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x37 => mk(
+            w,
+            "ld",
+            Operands::Mem {
+                rt,
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x39 => mk(
+            w,
+            "swc1",
+            Operands::Mem {
+                rt,
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x3D => mk(
+            w,
+            "sdc1",
+            Operands::Mem {
+                rt,
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x3E => mk(
+            w,
+            "sqc2",
+            Operands::Mem {
+                rt,
+                rs,
+                offset: imm as i16,
+            },
+        ),
+        0x3F => mk(
+            w,
+            "sd",
+            Operands::Mem {
+                rt,
+                rs,
+                offset: imm as i16,
+            },
+        ),
         _ => un(w),
     }
 }
@@ -242,12 +608,60 @@ fn decode_regimm(w: u32, rs: u8, rt: u8, imm: u16) -> Instruction {
         0x01 => mk(w, "bgez", one),
         0x02 => mk(w, "bltzl", one),
         0x03 => mk(w, "bgezl", one),
-        0x08 => mk(w, "tgei", Operands::RtRsImm { rt, rs, imm: offset }),
-        0x09 => mk(w, "tgeiu", Operands::RtRsImm { rt, rs, imm: offset }),
-        0x0A => mk(w, "tlti", Operands::RtRsImm { rt, rs, imm: offset }),
-        0x0B => mk(w, "tltiu", Operands::RtRsImm { rt, rs, imm: offset }),
-        0x0C => mk(w, "teqi", Operands::RtRsImm { rt, rs, imm: offset }),
-        0x0E => mk(w, "tnei", Operands::RtRsImm { rt, rs, imm: offset }),
+        0x08 => mk(
+            w,
+            "tgei",
+            Operands::RtRsImm {
+                rt,
+                rs,
+                imm: offset,
+            },
+        ),
+        0x09 => mk(
+            w,
+            "tgeiu",
+            Operands::RtRsImm {
+                rt,
+                rs,
+                imm: offset,
+            },
+        ),
+        0x0A => mk(
+            w,
+            "tlti",
+            Operands::RtRsImm {
+                rt,
+                rs,
+                imm: offset,
+            },
+        ),
+        0x0B => mk(
+            w,
+            "tltiu",
+            Operands::RtRsImm {
+                rt,
+                rs,
+                imm: offset,
+            },
+        ),
+        0x0C => mk(
+            w,
+            "teqi",
+            Operands::RtRsImm {
+                rt,
+                rs,
+                imm: offset,
+            },
+        ),
+        0x0E => mk(
+            w,
+            "tnei",
+            Operands::RtRsImm {
+                rt,
+                rs,
+                imm: offset,
+            },
+        ),
         0x10 => mk(w, "bltzal", one),
         0x11 => mk(w, "bgezal", one),
         0x12 => mk(w, "bltzall", one),
@@ -280,15 +694,41 @@ fn decode_cop0(w: u32, rs: u8, rt: u8, rd: u8, _funct: u8) -> Instruction {
 }
 
 const COP1_FUNCTS: &[(u8, &str)] = &[
-    (0x00, "add"), (0x01, "sub"), (0x02, "mul"), (0x03, "div"),
-    (0x04, "sqrt"), (0x05, "abs"), (0x06, "mov"), (0x07, "neg"),
-    (0x08, "round.l"), (0x09, "trunc.l"), (0x0A, "ceil.l"), (0x0B, "floor.l"),
-    (0x0C, "round.w"), (0x0D, "trunc.w"), (0x0E, "ceil.w"), (0x0F, "floor.w"),
-    (0x18, "adda"), (0x19, "suba"), (0x1A, "mula"), (0x1B, "diva"),
-    (0x20, "cvt.s"), (0x21, "cvt.d"), (0x24, "cvt.w"),
-    (0x30, "c.f"), (0x31, "c.un"), (0x32, "c.eq"), (0x33, "c.ueq"),
-    (0x34, "c.olt"), (0x35, "c.ult"), (0x36, "c.ole"), (0x37, "c.ule"),
-    (0x3C, "c.sf"), (0x3D, "c.ngle"), (0x3E, "c.seq"), (0x3F, "c.ngl"),
+    (0x00, "add"),
+    (0x01, "sub"),
+    (0x02, "mul"),
+    (0x03, "div"),
+    (0x04, "sqrt"),
+    (0x05, "abs"),
+    (0x06, "mov"),
+    (0x07, "neg"),
+    (0x08, "round.l"),
+    (0x09, "trunc.l"),
+    (0x0A, "ceil.l"),
+    (0x0B, "floor.l"),
+    (0x0C, "round.w"),
+    (0x0D, "trunc.w"),
+    (0x0E, "ceil.w"),
+    (0x0F, "floor.w"),
+    (0x18, "adda"),
+    (0x19, "suba"),
+    (0x1A, "mula"),
+    (0x1B, "diva"),
+    (0x20, "cvt.s"),
+    (0x21, "cvt.d"),
+    (0x24, "cvt.w"),
+    (0x30, "c.f"),
+    (0x31, "c.un"),
+    (0x32, "c.eq"),
+    (0x33, "c.ueq"),
+    (0x34, "c.olt"),
+    (0x35, "c.ult"),
+    (0x36, "c.ole"),
+    (0x37, "c.ule"),
+    (0x3C, "c.sf"),
+    (0x3D, "c.ngle"),
+    (0x3E, "c.seq"),
+    (0x3F, "c.ngl"),
 ];
 
 fn decode_cop1(w: u32, rs: u8, rt: u8, _rd: u8, _funct: u8) -> Instruction {
@@ -313,7 +753,13 @@ fn decode_cop1(w: u32, rs: u8, rt: u8, _rd: u8, _funct: u8) -> Instruction {
         0x06 => mk(w, "ctc1", Operands::CopMove { rt, rd: fs, sel: 0 }),
         0x08 => {
             let name = if rt & 1 == 0 { "bc1f" } else { "bc1t" };
-            mk(w, name, Operands::Cop1Branch { offset: w as u16 as i16 })
+            mk(
+                w,
+                name,
+                Operands::Cop1Branch {
+                    offset: w as u16 as i16,
+                },
+            )
         }
         0x10 | 0x11 => {
             let suffix = if rs == 0x10 { 's' } else { 'd' };
@@ -340,19 +786,32 @@ fn decode_cop1(w: u32, rs: u8, rt: u8, _rd: u8, _funct: u8) -> Instruction {
 /// Map a COP1 base mnemonic + format suffix to a stable `'static` string.
 fn cop1_name(base: &str, suffix: char) -> Option<&'static str> {
     const TABLE: &[(&str, &str, &str)] = &[
-        ("add", "add.s", "add.d"), ("sub", "sub.s", "sub.d"),
-        ("mul", "mul.s", "mul.d"), ("div", "div.s", "div.d"),
-        ("sqrt", "sqrt.s", "sqrt.d"), ("abs", "abs.s", "abs.d"),
-        ("mov", "mov.s", "mov.d"), ("neg", "neg.s", "neg.d"),
-        ("adda", "adda.s", "adda.d"), ("suba", "suba.s", "suba.d"),
-        ("mula", "mula.s", "mula.d"), ("diva", "diva.s", "diva.d"),
-        ("cvt.s", "cvt.s", "cvt.s"), ("cvt.d", "cvt.d", "cvt.d"),
-        ("cvt.w", "cvt.w", "cvt.w"), ("c.f", "c.f.s", "c.f.d"),
-        ("c.un", "c.un.s", "c.un.d"), ("c.eq", "c.eq.s", "c.eq.d"),
-        ("c.ueq", "c.ueq.s", "c.ueq.d"), ("c.olt", "c.olt.s", "c.olt.d"),
-        ("c.ult", "c.ult.s", "c.ult.d"), ("c.ole", "c.ole.s", "c.ole.d"),
-        ("c.ule", "c.ule.s", "c.ule.d"), ("c.sf", "c.sf.s", "c.sf.d"),
-        ("c.ngle", "c.ngle.s", "c.ngle.d"), ("c.seq", "c.seq.s", "c.seq.d"),
+        ("add", "add.s", "add.d"),
+        ("sub", "sub.s", "sub.d"),
+        ("mul", "mul.s", "mul.d"),
+        ("div", "div.s", "div.d"),
+        ("sqrt", "sqrt.s", "sqrt.d"),
+        ("abs", "abs.s", "abs.d"),
+        ("mov", "mov.s", "mov.d"),
+        ("neg", "neg.s", "neg.d"),
+        ("adda", "adda.s", "adda.d"),
+        ("suba", "suba.s", "suba.d"),
+        ("mula", "mula.s", "mula.d"),
+        ("diva", "diva.s", "diva.d"),
+        ("cvt.s", "cvt.s", "cvt.s"),
+        ("cvt.d", "cvt.d", "cvt.d"),
+        ("cvt.w", "cvt.w", "cvt.w"),
+        ("c.f", "c.f.s", "c.f.d"),
+        ("c.un", "c.un.s", "c.un.d"),
+        ("c.eq", "c.eq.s", "c.eq.d"),
+        ("c.ueq", "c.ueq.s", "c.ueq.d"),
+        ("c.olt", "c.olt.s", "c.olt.d"),
+        ("c.ult", "c.ult.s", "c.ult.d"),
+        ("c.ole", "c.ole.s", "c.ole.d"),
+        ("c.ule", "c.ule.s", "c.ule.d"),
+        ("c.sf", "c.sf.s", "c.sf.d"),
+        ("c.ngle", "c.ngle.s", "c.ngle.d"),
+        ("c.seq", "c.seq.s", "c.seq.d"),
         ("c.ngl", "c.ngl.s", "c.ngl.d"),
     ];
     TABLE
@@ -371,13 +830,25 @@ fn decode_cop2(w: u32, rs: u8, rt: u8, rd: u8, _funct: u8) -> Instruction {
         0x06 => mk(w, "ctc2", Operands::Cop2Move { rt, rd }),
         0x08 => {
             let name = if rt & 1 == 0 { "bc2f" } else { "bc2t" };
-            mk(w, name, Operands::Cop1Branch { offset: w as u16 as i16 })
+            mk(
+                w,
+                name,
+                Operands::Cop1Branch {
+                    offset: w as u16 as i16,
+                },
+            )
         }
         // COP2 arithmetic (VU0 macro mode) is a large set; preserve structure.
         _ => mk(
             w,
             "cop2",
-            Operands::Mmi { mmiop: rd, fct: funct, rd, rs, rt },
+            Operands::Mmi {
+                mmiop: rd,
+                fct: funct,
+                rd,
+                rs,
+                rt,
+            },
         ),
     }
 }
@@ -385,39 +856,95 @@ fn decode_cop2(w: u32, rs: u8, rt: u8, rd: u8, _funct: u8) -> Instruction {
 /// MMI group names (opcode 0x1C). `mmiop` is the `sa` field, `fct` the funct.
 /// MMI0 group (`fct == 0x08`), keyed by `mmiop`.
 const MMI0: &[(u8, &str)] = &[
-    (0x00, "paddw"), (0x01, "psubw"), (0x02, "pcgtw"), (0x03, "pmaxw"),
-    (0x04, "paddh"), (0x05, "psubh"), (0x06, "pcgth"), (0x07, "pmaxh"),
-    (0x08, "paddb"), (0x09, "psubb"), (0x0A, "pcgtb"),
-    (0x10, "paddsw"), (0x11, "psubsw"), (0x12, "pextlw"), (0x13, "ppacw"),
-    (0x14, "paddsh"), (0x15, "psubsh"), (0x16, "pextlh"), (0x17, "ppach"),
-    (0x18, "paddsb"), (0x19, "psubsb"), (0x1A, "pextlb"), (0x1B, "ppacb"),
-    (0x1E, "pext5"), (0x1F, "ppac5"),
+    (0x00, "paddw"),
+    (0x01, "psubw"),
+    (0x02, "pcgtw"),
+    (0x03, "pmaxw"),
+    (0x04, "paddh"),
+    (0x05, "psubh"),
+    (0x06, "pcgth"),
+    (0x07, "pmaxh"),
+    (0x08, "paddb"),
+    (0x09, "psubb"),
+    (0x0A, "pcgtb"),
+    (0x10, "paddsw"),
+    (0x11, "psubsw"),
+    (0x12, "pextlw"),
+    (0x13, "ppacw"),
+    (0x14, "paddsh"),
+    (0x15, "psubsh"),
+    (0x16, "pextlh"),
+    (0x17, "ppach"),
+    (0x18, "paddsb"),
+    (0x19, "psubsb"),
+    (0x1A, "pextlb"),
+    (0x1B, "ppacb"),
+    (0x1E, "pext5"),
+    (0x1F, "ppac5"),
 ];
 
 /// MMI1 group (`fct == 0x28`), keyed by `mmiop`.
 const MMI1: &[(u8, &str)] = &[
-    (0x01, "pabsw"), (0x02, "pceqw"), (0x03, "pminw"), (0x04, "padsbh"),
-    (0x05, "pabsh"), (0x06, "pceqh"), (0x07, "pminh"), (0x0A, "pceqb"),
-    (0x10, "padduw"), (0x11, "psubuw"), (0x12, "pextuw"), (0x14, "padduh"),
-    (0x15, "psubuh"), (0x16, "pextuh"), (0x18, "paddub"), (0x19, "psubub"),
-    (0x1A, "pextub"), (0x1B, "qfsrv"),
+    (0x01, "pabsw"),
+    (0x02, "pceqw"),
+    (0x03, "pminw"),
+    (0x04, "padsbh"),
+    (0x05, "pabsh"),
+    (0x06, "pceqh"),
+    (0x07, "pminh"),
+    (0x0A, "pceqb"),
+    (0x10, "padduw"),
+    (0x11, "psubuw"),
+    (0x12, "pextuw"),
+    (0x14, "padduh"),
+    (0x15, "psubuh"),
+    (0x16, "pextuh"),
+    (0x18, "paddub"),
+    (0x19, "psubub"),
+    (0x1A, "pextub"),
+    (0x1B, "qfsrv"),
 ];
 
 /// MMI2 group (`fct == 0x09`), keyed by `mmiop`.
 const MMI2: &[(u8, &str)] = &[
-    (0x00, "pmaddw"), (0x02, "psllvw"), (0x03, "psrlvw"), (0x04, "pmsubw"),
-    (0x08, "pmfhi"), (0x09, "pmflo"), (0x0A, "pinth"), (0x0C, "pmultw"),
-    (0x0D, "pdivw"), (0x0E, "pcpyld"), (0x12, "pand"), (0x13, "pxor"),
-    (0x14, "pmaddh"), (0x15, "phmadh"), (0x18, "pmsubh"), (0x19, "phmsdh"),
-    (0x1A, "pexeh"), (0x1B, "prevh"), (0x1C, "pmulth"), (0x1D, "pdivbw"),
-    (0x1E, "pexew"), (0x1F, "prot3w"),
+    (0x00, "pmaddw"),
+    (0x02, "psllvw"),
+    (0x03, "psrlvw"),
+    (0x04, "pmsubw"),
+    (0x08, "pmfhi"),
+    (0x09, "pmflo"),
+    (0x0A, "pinth"),
+    (0x0C, "pmultw"),
+    (0x0D, "pdivw"),
+    (0x0E, "pcpyld"),
+    (0x12, "pand"),
+    (0x13, "pxor"),
+    (0x14, "pmaddh"),
+    (0x15, "phmadh"),
+    (0x18, "pmsubh"),
+    (0x19, "phmsdh"),
+    (0x1A, "pexeh"),
+    (0x1B, "prevh"),
+    (0x1C, "pmulth"),
+    (0x1D, "pdivbw"),
+    (0x1E, "pexew"),
+    (0x1F, "prot3w"),
 ];
 
 /// MMI3 group (`fct == 0x29`), keyed by `mmiop`.
 const MMI3: &[(u8, &str)] = &[
-    (0x00, "pmadduw"), (0x03, "psravw"), (0x08, "pmthi"), (0x09, "pmtlo"),
-    (0x0A, "pinteh"), (0x0C, "pmultuw"), (0x0D, "pdivuw"), (0x0E, "pcpyud"),
-    (0x12, "por"), (0x13, "pnor"), (0x1A, "pexch"), (0x1B, "pcpyh"),
+    (0x00, "pmadduw"),
+    (0x03, "psravw"),
+    (0x08, "pmthi"),
+    (0x09, "pmtlo"),
+    (0x0A, "pinteh"),
+    (0x0C, "pmultuw"),
+    (0x0D, "pdivuw"),
+    (0x0E, "pcpyud"),
+    (0x12, "por"),
+    (0x13, "pnor"),
+    (0x1A, "pexch"),
+    (0x1B, "pcpyh"),
     (0x1E, "pexcw"),
 ];
 
@@ -486,7 +1013,13 @@ fn decode_mmi(w: u32, rs: u8, rt: u8, rd: u8, mmiop: u8, fct: u8) -> Instruction
             return mk(w, "clear", Operands::Rd { rd });
         }
     }
-    let operands = Operands::Mmi { mmiop, fct, rd, rs, rt };
+    let operands = Operands::Mmi {
+        mmiop,
+        fct,
+        rd,
+        rs,
+        rt,
+    };
     match mmi_mnemonic(mmiop, fct) {
         Some(name) => mk(w, name, operands),
         // Unknown MMI: keep the structure instead of discarding it.
@@ -535,7 +1068,13 @@ impl fmt::Display for Instruction {
             }
             Operands::Cop1Cmp { fs, ft } => write!(f, " f{fs}, f{ft}"),
             Operands::Cop1Branch { offset } => write!(f, " {offset}"),
-            Operands::Mmi { mmiop, fct, rd, rs, rt } => match self.mnemonic {
+            Operands::Mmi {
+                mmiop,
+                fct,
+                rd,
+                rs,
+                rt,
+            } => match self.mnemonic {
                 "clear" => write!(f, " {}", reg(rd)),
                 "mthi1" | "mtlo1" => write!(f, " {}", reg(rs)),
                 "mfhi1" | "mflo1" | "pmfhl" => write!(f, " {}", reg(rd)),

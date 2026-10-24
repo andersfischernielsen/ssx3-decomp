@@ -14,16 +14,16 @@ use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
-pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0011_3b10, ai_set_race_state, "AI_SetRaceState"),
-];
-
+pub const OVERRIDES: &[(u32, GuestFn, &str)] =
+    &[(0x0011_3b10, ai_set_race_state, "AI_SetRaceState")];
 
 // ---------------------------------------------------------------------------
 // AI manager: race-state selection.
 
-pub(crate) const AI_SELECT_RACE_STATE: Callee = Callee { addr: 0x0011_3b48, f: ssx3_ee::s00::f_00113b48 };
-
+pub(crate) const AI_SELECT_RACE_STATE: Callee = Callee {
+    addr: 0x0011_3b48,
+    f: ssx3_ee::s00::f_00113b48,
+};
 
 /// `void AI_SetRaceState(AI *ai, int state)` (0x113b10): when the state
 /// changes, remember the old one (+4), snapshot the path pointer (+0x98 into
@@ -55,33 +55,41 @@ pub fn ai_set_race_state(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::difftest::check;
     use crate::difftest::events::check_events;
     use crate::difftest::events::schedule;
     use crate::difftest::events::Events;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
-    use crate::difftest::check;
     use crate::difftest::fill;
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    pub(crate) use crate::game::lib::kernel::tests::SEEDS;
     pub(crate) use crate::game::ai::ai::tests::race_state_table;
-
+    pub(crate) use crate::game::lib::kernel::tests::SEEDS;
 
     #[test]
     fn ai_set_race_state_matches() {
-        check(ssx3_ee::s00::f_00113b10, ai_set_race_state, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 74, 0);
-            race_state_table(c, seed);
-            let ai = DATA + 0x400;
-            let state = (seed % 10) as u32;
-            let cur = if seed % 4 == 0 { state } else { r.next_u32() % 10 };
-            c.bus.write32(ai, cur);
-            c.bus.write32(ai + 0x98, r.next_u32());
-            c.g[A0][0] = ai as u64;
-            c.g[A1][0] = state as u64;
-        });
+        check(
+            ssx3_ee::s00::f_00113b10,
+            ai_set_race_state,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 74, 0);
+                race_state_table(c, seed);
+                let ai = DATA + 0x400;
+                let state = (seed % 10) as u32;
+                let cur = if seed % 4 == 0 {
+                    state
+                } else {
+                    r.next_u32() % 10
+                };
+                c.bus.write32(ai, cur);
+                c.bus.write32(ai + 0x98, r.next_u32());
+                c.g[A0][0] = ai as u64;
+                c.g[A1][0] = state as u64;
+            },
+        );
     }
 }

@@ -94,7 +94,10 @@ fn device_access_is_counted_not_fatal() {
 
 #[test]
 fn syscall_names_are_known() {
-    assert_eq!(syscall::name(syscall::nr::INIT_MAIN_THREAD), Some("InitMainThread"));
+    assert_eq!(
+        syscall::name(syscall::nr::INIT_MAIN_THREAD),
+        Some("InitMainThread")
+    );
     assert_eq!(syscall::name(syscall::nr::INIT_HEAP), Some("InitHeap"));
     assert_eq!(syscall::name(syscall::nr::EXIT), Some("Exit"));
 }

@@ -14,8 +14,8 @@ use std::path::Path;
 
 use ssx3_recomp::codegen;
 use ssx3_recomp::index;
-use ssx3_recomp::r5900::Operands;
 use ssx3_recomp::program::Program;
+use ssx3_recomp::r5900::Operands;
 
 fn main() {
     let mut args = std::env::args().skip(1);
@@ -54,7 +54,9 @@ fn main() {
         if !seen.insert(addr) || chosen.len() >= limit {
             continue;
         }
-        let Some(f) = index().by_address(addr) else { continue };
+        let Some(f) = index().by_address(addr) else {
+            continue;
+        };
         chosen.push(addr);
         if d >= depth {
             continue;

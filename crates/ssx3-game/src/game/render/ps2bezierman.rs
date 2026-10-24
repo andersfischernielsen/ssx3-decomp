@@ -9,17 +9,16 @@ use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 use crate::guest::Addr;
+use callee::*;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
-use callee::*;
 
 /// Replacements in this unit: (address, function, name).
-pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0038_aeb0, ps2_bezier_man_dtor, "PS2BezierMan_dtor"),
-];
+pub const OVERRIDES: &[(u32, GuestFn, &str)] =
+    &[(0x0038_aeb0, ps2_bezier_man_dtor, "PS2BezierMan_dtor")];
 
 // ---------------------------------------------------------------------------
 // Callees (the generated aliases, so a replaced callee is reached too).
@@ -38,7 +37,6 @@ pub(crate) mod callee {
         f: ee::s12::f_00374ca8,
     };
 }
-
 
 /// `void* PS2BezierMan_dtor(this, flags)` (0x38aeb0): install the bezier
 /// manager vtable, free its caches and run the bezier-base destructor.
@@ -69,26 +67,30 @@ pub fn ps2_bezier_man_dtor(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::difftest::check;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::ptr;
     use crate::difftest::fakes::vtable;
-    use crate::difftest::check;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-
 
     // -----------------------------------------------------------------------
     // 0x38aeb0 PS2BezierMan_dtor.
 
     #[test]
     fn ps2_bezier_man_dtor_matches() {
-        check(ee::s12::f_0038aeb0__generated, ps2_bezier_man_dtor, 8, &|c, seed| {
-            let _r = machine(c, seed, 0x38ae_b0, 0);
-            c.g[A0][0] = sx(DATA + 0x1000);
-            c.g[A1][0] = ((seed as u64) & 0xfe) << 1; // flags bit 0 clear: no delete
-            for off in [0x440u32, 0x444, 0x448] {
-                c.bus.write32(DATA + 0x1000 + off, 0);
-            }
-        });
+        check(
+            ee::s12::f_0038aeb0__generated,
+            ps2_bezier_man_dtor,
+            8,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x38ae_b0, 0);
+                c.g[A0][0] = sx(DATA + 0x1000);
+                c.g[A1][0] = ((seed as u64) & 0xfe) << 1; // flags bit 0 clear: no delete
+                for off in [0x440u32, 0x444, 0x448] {
+                    c.bus.write32(DATA + 0x1000 + off, 0);
+                }
+            },
+        );
     }
 }

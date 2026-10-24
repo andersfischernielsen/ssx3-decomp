@@ -114,7 +114,11 @@ pub fn draw_transition(c: &mut Cpu) {
     let table = r32(c, gm + 0x18f4);
     let t = r32(c, table.wrapping_add(i << 2) + 8);
     let vram = r32(c, t + 0x28) as i32;
-    let fbp = (if vram > -1 { vram } else { vram.wrapping_add(0x1f) }) >> 5;
+    let fbp = (if vram > -1 {
+        vram
+    } else {
+        vram.wrapping_add(0x1f)
+    }) >> 5;
     let frame = sx64(fbp as u32) | 0x40000;
     let zbuf = (r32(c, gm + 0x5a80) | 0x0100_0000) as u64 | 0x1_0000_0000;
     let tbp = sx64(r32(c, gm + 0x5a88) << 5);
@@ -124,7 +128,12 @@ pub fn draw_transition(c: &mut Cpu) {
     let h = sx64((r32(c, gm + 0x5a58) << 4).wrapping_sub(8));
     let uv1 = w | h << 16;
     let h16 = |c: &mut Cpu, a: u32| c.bus.read16(gm + a) as u32;
-    let (x0, y0, xw, yh) = (h16(c, 0x5900), h16(c, 0x5902), h16(c, 0x5904), h16(c, 0x5906));
+    let (x0, y0, xw, yh) = (
+        h16(c, 0x5900),
+        h16(c, 0x5902),
+        h16(c, 0x5904),
+        h16(c, 0x5906),
+    );
     let x1 = sx64(x0.wrapping_sub(1).wrapping_add(xw));
     let y1 = sx64(y0.wrapping_sub(1).wrapping_add(yh));
     let scissor = x0 as u64 | x1 << 16 | (y0 as u64) << 32 | y1 << 48;

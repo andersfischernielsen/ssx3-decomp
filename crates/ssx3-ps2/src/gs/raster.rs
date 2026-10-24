@@ -84,7 +84,9 @@ impl SurfRow {
     #[inline(always)]
     fn locate(&self, x: u32) -> (usize, u32) {
         let x = x & 0x7FF;
-        let wb = self.base.wrapping_add((x >> self.pw_shift).wrapping_mul(2048));
+        let wb = self
+            .base
+            .wrapping_add((x >> self.pw_shift).wrapping_mul(2048));
         // SAFETY: `x & pwm` < row length (1 << pw_shift).
         let off = unsafe { *self.tab.add((x & self.pwm) as usize) } as u32;
         let e = (wb << self.es).wrapping_add(off) & self.mask;
@@ -430,7 +432,8 @@ impl Draw {
         let tex0 = ctx.tex0;
         if tme && tex_trace() {
             use std::sync::Mutex;
-            static SEEN: Mutex<Option<std::collections::HashSet<(u64, u64, u64)>>> = Mutex::new(None);
+            static SEEN: Mutex<Option<std::collections::HashSet<(u64, u64, u64)>>> =
+                Mutex::new(None);
             let mut g = SEEN.lock().unwrap();
             let set = g.get_or_insert_with(Default::default);
             if set.len() < 4000 && set.insert((tex0, ctx.clamp, ctx.tex1)) {
@@ -623,7 +626,6 @@ impl Draw {
             .chain(self.mip.iter().flat_map(|m| m.levels.iter()))
             .collect()
     }
-
 
     #[inline(always)]
     fn read_fb(&self, row: &SurfRow, m: Mem, at: (usize, u32)) -> u32 {
@@ -941,7 +943,11 @@ fn sample_mip(m: Mem, t0: &Tex, mip: &Mip, decs: &[Option<Arc<Decoded>>], f: &Fr
         (1.0 / q).log2() * (1u32 << t0.l) as f32 + t0.k
     };
     let level = |l: u32, linear: bool| {
-        let t = if l == 0 { t0 } else { &mip.levels[l as usize - 1] };
+        let t = if l == 0 {
+            t0
+        } else {
+            &mip.levels[l as usize - 1]
+        };
         let scale = 1.0 / (1u32 << l) as f32;
         let (u, v) = (f.u * scale, f.v * scale);
         match decs.get(l as usize) {
@@ -1211,7 +1217,6 @@ fn pixel_g<const TX: u8>(
         }
     }
 
-
     if d.z_used && write_z {
         if d.ztst < 2 {
             zat = rc.zb.locate(xu);
@@ -1232,35 +1237,39 @@ fn pixel_g<const TX: u8>(
                 1 => (dc >> 24) as i32,
                 _ => d.fix,
             };
-            let (dr, dg, db) = ((dc & 0xFF) as i32, ((dc >> 8) & 0xFF) as i32, ((dc >> 16) & 0xFF) as i32);
+            let (dr, dg, db) = (
+                (dc & 0xFF) as i32,
+                ((dc >> 8) & 0xFF) as i32,
+                ((dc >> 16) & 0xFF) as i32,
+            );
             r = (((r - dr) * c) >> 7) + dr;
             g = (((g - dg) * c) >> 7) + dg;
             b = (((b - db) * c) >> 7) + db;
         } else {
-        let cd = [
-            (dc & 0xFF) as i32,
-            ((dc >> 8) & 0xFF) as i32,
-            ((dc >> 16) & 0xFF) as i32,
-        ];
-        let ad = (dc >> 24) as i32;
-        let cs = [r, g, b];
-        let c = match d.bc {
-            0 => a,
-            1 => ad,
-            _ => d.fix,
-        };
-        let mut out = [0i32; 3];
-        for i in 0..3 {
-            let sel = |s: u32| match s {
-                0 => cs[i],
-                1 => cd[i],
-                _ => 0,
+            let cd = [
+                (dc & 0xFF) as i32,
+                ((dc >> 8) & 0xFF) as i32,
+                ((dc >> 16) & 0xFF) as i32,
+            ];
+            let ad = (dc >> 24) as i32;
+            let cs = [r, g, b];
+            let c = match d.bc {
+                0 => a,
+                1 => ad,
+                _ => d.fix,
             };
-            out[i] = (((sel(d.ba) - sel(d.bb)) * c) >> 7) + sel(d.bd);
-        }
-        r = out[0];
-        g = out[1];
-        b = out[2];
+            let mut out = [0i32; 3];
+            for i in 0..3 {
+                let sel = |s: u32| match s {
+                    0 => cs[i],
+                    1 => cd[i],
+                    _ => 0,
+                };
+                out[i] = (((sel(d.ba) - sel(d.bb)) * c) >> 7) + sel(d.bd);
+            }
+            r = out[0];
+            g = out[1];
+            b = out[2];
         }
     }
     if d.dither.is_some() {
@@ -1390,7 +1399,14 @@ fn wrap_span(lo: f64, hi: f64, mode: u32, size_log: i32, min: i32, max: i32) -> 
     }
     // Bilinear reads floor(u - 0.5) and the texel after it; leave a margin
     // for rounding in the per-pixel interpolation.
-    wrap_span_i(lo.floor() as i64 - 2, hi.floor() as i64 + 2, mode, size_log, min, max)
+    wrap_span_i(
+        lo.floor() as i64 - 2,
+        hi.floor() as i64 + 2,
+        mode,
+        size_log,
+        min,
+        max,
+    )
 }
 
 /// Texel range of unwrapped coordinates `lo..=hi` after wrapping.
@@ -1460,7 +1476,10 @@ pub(crate) fn prim_tex_rect(d: &Draw, p: &Prim, prim: u32, verts: &[Vertex]) -> 
             Some(if p.linear {
                 let lo = ((a - 0.5) * 256.0).floor() as i32;
                 let hi = ((b - 0.5) * 256.0).floor() as i32;
-                ((lo >> 8) as i64, ((hi >> 8) + (hi & 255 != 0) as i32) as i64)
+                (
+                    (lo >> 8) as i64,
+                    ((hi >> 8) + (hi & 255 != 0) as i32) as i64,
+                )
             } else {
                 (a.floor() as i32 as i64, b.floor() as i32 as i64)
             })
@@ -1651,7 +1670,10 @@ pub(crate) struct Prim {
 pub(crate) enum Rows {
     All,
     /// Rows in bands of `1 << BAND_SHIFT` with `band % units == unit`.
-    Unit { unit: i32, units: i32 },
+    Unit {
+        unit: i32,
+        units: i32,
+    },
 }
 
 pub(crate) const BAND_SHIFT: i32 = 3;

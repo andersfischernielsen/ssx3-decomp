@@ -32,7 +32,13 @@ pub struct Machine {
 
 impl Machine {
     pub fn new() -> Self {
-        Self { hw: Hw::new(), kernel: Kernel::new(), sif: Sif::new(), sched: Sched::default(), iop: vec![0; 0x20_0000] }
+        Self {
+            hw: Hw::new(),
+            kernel: Kernel::new(),
+            sif: Sif::new(),
+            sched: Sched::default(),
+            iop: vec![0; 0x20_0000],
+        }
     }
 }
 
@@ -61,14 +67,16 @@ pub fn new_cpu() -> Box<Cpu> {
 #[inline]
 pub fn machine_of(p: &mut Box<dyn Platform>) -> &mut Machine {
     let any: &mut dyn std::any::Any = &mut **p;
-    any.downcast_mut::<Machine>().expect("Cpu platform is not an ssx3_ps2 Machine")
+    any.downcast_mut::<Machine>()
+        .expect("Cpu platform is not an ssx3_ps2 Machine")
 }
 
 /// Shared-reference form of [`machine_of`].
 #[inline]
 pub fn machine_ref(p: &Box<dyn Platform>) -> &Machine {
     let any: &dyn std::any::Any = &**p;
-    any.downcast_ref::<Machine>().expect("Cpu platform is not an ssx3_ps2 Machine")
+    any.downcast_ref::<Machine>()
+        .expect("Cpu platform is not an ssx3_ps2 Machine")
 }
 
 /// `m!(c)`: `&mut Machine` of `c: &mut Cpu`, borrowing only `c.bus.plat`.
@@ -91,19 +99,29 @@ macro_rules! mr {
 // (register address, write), for the exit report ([`mmio_profile`]): what
 // of the PS2 the game still talks to.
 static MMIO_PROFILE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-static MMIO_COUNTS: std::sync::Mutex<Option<std::collections::HashMap<(u32, bool), u64>>> = std::sync::Mutex::new(None);
+static MMIO_COUNTS: std::sync::Mutex<Option<std::collections::HashMap<(u32, bool), u64>>> =
+    std::sync::Mutex::new(None);
 
 #[inline]
 fn profile(p: u32, write: bool) {
     if *MMIO_PROFILE.get_or_init(|| std::env::var_os("SSX3_MMIO_PROFILE").is_some()) {
-        *MMIO_COUNTS.lock().unwrap().get_or_insert_with(Default::default).entry((p & !0xf, write)).or_default() += 1;
+        *MMIO_COUNTS
+            .lock()
+            .unwrap()
+            .get_or_insert_with(Default::default)
+            .entry((p & !0xf, write))
+            .or_default() += 1;
     }
 }
 
 /// The MMIO profile, most accessed first: (register, write, count).
 pub fn mmio_profile() -> Vec<(u32, bool, u64)> {
     let g = MMIO_COUNTS.lock().unwrap();
-    let mut v: Vec<_> = g.iter().flat_map(|m| m.iter()).map(|(&(a, w), &n)| (a, w, n)).collect();
+    let mut v: Vec<_> = g
+        .iter()
+        .flat_map(|m| m.iter())
+        .map(|(&(a, w), &n)| (a, w, n))
+        .collect();
     v.sort_by(|a, b| b.2.cmp(&a.2));
     v
 }

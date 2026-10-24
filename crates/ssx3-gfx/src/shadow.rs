@@ -74,7 +74,9 @@ pub fn show() -> f32 {
 /// `SSX3_SHADOW_DEBUG` contains `what` (comma-separated switches).
 pub fn debug(what: &str) -> bool {
     static S: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    S.get_or_init(|| std::env::var("SSX3_SHADOW_DEBUG").unwrap_or_default()).split(',').any(|w| w == what)
+    S.get_or_init(|| std::env::var("SSX3_SHADOW_DEBUG").unwrap_or_default())
+        .split(',')
+        .any(|w| w == what)
 }
 
 /// The tuning values (read once).
@@ -89,13 +91,13 @@ pub struct Tuning {
 
 pub fn tuning() -> Tuning {
     static T: std::sync::OnceLock<Tuning> = std::sync::OnceLock::new();
-    *T.get_or_init(|| {
-        Tuning {
-            sun: env_f("SSX3_SUN").filter(|v| v.len() >= 2).map(|v| (v[0], v[1])),
-            range: env_f("SSX3_SHADOW_RANGE").map_or(24000.0, |v| v[0]),
-            size: env_f("SSX3_SHADOW_SIZE").map_or(8192, |v| (v[0] as u32).clamp(512, 8192)),
-            strength: env_f("SSX3_SHADOW_STRENGTH").map_or(0.5, |v| v[0] as f32),
-        }
+    *T.get_or_init(|| Tuning {
+        sun: env_f("SSX3_SUN")
+            .filter(|v| v.len() >= 2)
+            .map(|v| (v[0], v[1])),
+        range: env_f("SSX3_SHADOW_RANGE").map_or(24000.0, |v| v[0]),
+        size: env_f("SSX3_SHADOW_SIZE").map_or(8192, |v| (v[0] as u32).clamp(512, 8192)),
+        strength: env_f("SSX3_SHADOW_STRENGTH").map_or(0.5, |v| v[0] as f32),
     })
 }
 
@@ -108,7 +110,11 @@ fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
 }
 
 fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
 }
 
 fn norm(a: [f64; 3]) -> [f64; 3] {
@@ -131,7 +137,11 @@ pub fn eye(c: &Cam) -> Option<([f64; 3], [f64; 3])> {
         return None;
     }
     let t = -wa / (wb - wa);
-    let e = [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]), a[2] + t * (b[2] - a[2])];
+    let e = [
+        a[0] + t * (b[0] - a[0]),
+        a[1] + t * (b[1] - a[1]),
+        a[2] + t * (b[2] - a[2]),
+    ];
     Some((e, norm(sub(b, a))))
 }
 
@@ -154,7 +164,11 @@ pub fn light(c: &Cam, key: [f32; 3]) -> Option<Light> {
     };
     // Light axes: x, y across the map, z away from the sun.
     let zl = [-l[0], -l[1], -l[2]];
-    let up = if l[2].abs() < 0.95 { [0.0, 0.0, 1.0] } else { [1.0, 0.0, 0.0] };
+    let up = if l[2].abs() < 0.95 {
+        [0.0, 0.0, 1.0]
+    } else {
+        [1.0, 0.0, 0.0]
+    };
     let xl = norm(cross(up, zl));
     let yl = cross(zl, xl);
     let tile = t.size as f64 / 2.0;
@@ -165,27 +179,54 @@ pub fn light(c: &Cam, key: [f32; 3]) -> Option<Light> {
     for k in 0..CASCADES {
         let r = t.range / 3f64.powi((CASCADES - 1 - k) as i32);
         // The box: ahead of the camera, most of it in view.
-        let centre = [e[0] + f[0] * r * 0.7, e[1] + f[1] * r * 0.7, e[2] + f[2] * r * 0.7];
+        let centre = [
+            e[0] + f[0] * r * 0.7,
+            e[1] + f[1] * r * 0.7,
+            e[2] + f[2] * r * 0.7,
+        ];
         // Snap the centre to whole texels (absolute world: no shimmer as
         // the camera moves).
         let texel = 2.0 * r / tile;
         let snap = |v: f64| (v / texel).round() * texel;
-        let (u0, v0, w0) = (snap(dot(centre, xl)), snap(dot(centre, yl)), dot(centre, zl));
+        let (u0, v0, w0) = (
+            snap(dot(centre, xl)),
+            snap(dot(centre, yl)),
+            dot(centre, zl),
+        );
         // Rebased world p' = p − o: u = dot(p' + o, xl) − u0.
-        let row = |a: [f64; 3], off: f64, scale: f64| -> [f64; 4] { [a[0] * scale, a[1] * scale, a[2] * scale, (dot(o, a) - off) * scale] };
+        let row = |a: [f64; 3], off: f64, scale: f64| -> [f64; 4] {
+            [
+                a[0] * scale,
+                a[1] * scale,
+                a[2] * scale,
+                (dot(o, a) - off) * scale,
+            ]
+        };
         // z = (d + near) / (near + far), d the distance from the centre.
-        let rows = [row(xl, u0, 1.0 / r), row(yl, v0, 1.0 / r), row(zl, w0 - near, 1.0 / (near + far)), [0.0, 0.0, 0.0, 1.0]];
+        let rows = [
+            row(xl, u0, 1.0 / r),
+            row(yl, v0, 1.0 / r),
+            row(zl, w0 - near, 1.0 / (near + far)),
+            [0.0, 0.0, 0.0, 1.0],
+        ];
         lights[k] = std::array::from_fn(|col| std::array::from_fn(|i| rows[i][col] as f32));
         world_texel[k] = texel as f32;
     }
     if debug("print") {
-        eprintln!("shadow: eye {:.0},{:.0},{:.0} fwd {:.2},{:.2},{:.2} sun {:.2},{:.2},{:.2}", e[0], e[1], e[2], f[0], f[1], f[2], l[0], l[1], l[2]);
+        eprintln!(
+            "shadow: eye {:.0},{:.0},{:.0} fwd {:.2},{:.2},{:.2} sun {:.2},{:.2},{:.2}",
+            e[0], e[1], e[2], f[0], f[1], f[2], l[0], l[1], l[2]
+        );
     }
     Some(Light {
         s2w,
         lights,
         sun: l.map(|x| x as f32),
-        eye: [(e[0] - o[0]) as f32, (e[1] - o[1]) as f32, (e[2] - o[2]) as f32],
+        eye: [
+            (e[0] - o[0]) as f32,
+            (e[1] - o[1]) as f32,
+            (e[2] - o[2]) as f32,
+        ],
         texel: 1.0 / t.size as f32,
         world_texel,
         origin: o.map(|x| x as f32),
@@ -212,12 +253,17 @@ impl Shadow {
         let depth = |size: u32, label| {
             dev.create_texture(&wgpu::TextureDescriptor {
                 label: Some(label),
-                size: wgpu::Extent3d { width: size, height: size, depth_or_array_layers: 1 },
+                size: wgpu::Extent3d {
+                    width: size,
+                    height: size,
+                    depth_or_array_layers: 1,
+                },
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format: crate::draw::SHADOW_FORMAT,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             })
             .create_view(&Default::default())
@@ -237,7 +283,14 @@ impl Shadow {
             compare: Some(wgpu::CompareFunction::LessEqual),
             ..Default::default()
         });
-        Shadow { size, casters: None, view: depth(size, "ssx3-gfx shadow map"), dummy: depth(1, "ssx3-gfx shadow dummy"), cmp, ubuf }
+        Shadow {
+            size,
+            casters: None,
+            view: depth(size, "ssx3-gfx shadow map"),
+            dummy: depth(1, "ssx3-gfx shadow dummy"),
+            cmp,
+            ubuf,
+        }
     }
 
     /// This frame's uniforms (`None`: shadows off).
@@ -260,11 +313,25 @@ impl Shadow {
     }
 
     /// The world's casters, uploaded when they changed.
-    pub fn set_casters(&mut self, dev: &wgpu::Device, queue: &wgpu::Queue, c: &ssx3_render::world_casters::Casters) {
-        if self.casters.as_ref().is_some_and(|(g, _, _)| *g == c.generation) {
+    pub fn set_casters(
+        &mut self,
+        dev: &wgpu::Device,
+        queue: &wgpu::Queue,
+        c: &ssx3_render::world_casters::Casters,
+    ) {
+        if self
+            .casters
+            .as_ref()
+            .is_some_and(|(g, _, _)| *g == c.generation)
+        {
             return;
         }
-        let bytes: Vec<u8> = c.triangles.iter().flatten().flat_map(|v| v.to_le_bytes()).collect();
+        let bytes: Vec<u8> = c
+            .triangles
+            .iter()
+            .flatten()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
         let buf = dev.create_buffer(&wgpu::BufferDescriptor {
             label: Some("ssx3-gfx world casters"),
             size: (bytes.len() as u64).max(16),
@@ -273,7 +340,12 @@ impl Shadow {
         });
         queue.write_buffer(&buf, 0, &bytes);
         if debug("print") {
-            eprintln!("shadow: world casters generation {}: {} patches, {} triangles", c.generation, c.patches, c.triangles.len() / 3);
+            eprintln!(
+                "shadow: world casters generation {}: {} patches, {} triangles",
+                c.generation,
+                c.patches,
+                c.triangles.len() / 3
+            );
         }
         self.casters = Some((c.generation, buf, c.triangles.len() as u32));
     }
@@ -282,9 +354,22 @@ impl Shadow {
     /// the shadow pass).
     pub fn entries(&self, real: bool) -> [wgpu::BindGroupEntry<'_>; 3] {
         [
-            wgpu::BindGroupEntry { binding: 5, resource: self.ubuf.as_entire_binding() },
-            wgpu::BindGroupEntry { binding: 6, resource: wgpu::BindingResource::TextureView(if real { &self.view } else { &self.dummy }) },
-            wgpu::BindGroupEntry { binding: 7, resource: wgpu::BindingResource::Sampler(&self.cmp) },
+            wgpu::BindGroupEntry {
+                binding: 5,
+                resource: self.ubuf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 6,
+                resource: wgpu::BindingResource::TextureView(if real {
+                    &self.view
+                } else {
+                    &self.dummy
+                }),
+            },
+            wgpu::BindGroupEntry {
+                binding: 7,
+                resource: wgpu::BindingResource::Sampler(&self.cmp),
+            },
         ]
     }
 }

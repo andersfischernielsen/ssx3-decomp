@@ -2,37 +2,61 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
-use crate::guest::Addr;
-use ssx3_ee_rt::cpu::reg::*;
-use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::Cpu;
-use crate::ps2f::FpuF32;
 use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
+use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
-use ssx3_ee as ee;
-use crate::call::Flow;
-use crate::events::back_edge_unwinds;
 pub(crate) use crate::game::ai::control::handplantcontrol::gp_4 as gp_2;
+pub(crate) use crate::game::fe::feasyncfile::lw_3 as lw_2;
+pub(crate) use crate::game::fe::feasyncfile::p_5 as p_2;
 pub(crate) use crate::game::sound::icepick::worldtriggermanager::gp_2 as gp_3;
 pub(crate) use crate::game::wscript::wscriptman::p;
-pub(crate) use crate::game::fe::feasyncfile::p_5 as p_2;
-pub(crate) use crate::game::fe::feasyncfile::lw_3 as lw_2;
+use crate::guest::Addr;
+use crate::ps2f::FpuF32;
+use ssx3_ee as ee;
+use ssx3_ee_rt::cpu::reg::*;
+use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::funcs::GuestFn;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0028_b180, ssx_audio_system_get_instance, "SSXAudioSystem_GetInstance"),
-    (0x0028_b1b0, ssx_audio_system_is_in_game, "SSXAudioSystem_IsInGame"),
-    (0x0028_b1c0, ssx_audio_system_get_app, "SSXAudioSystem_GetApp"),
-    (0x0028_b1e8, ssx_audio_system_get_be_library, "SSXAudioSystem_GetBELibrary"),
-    (0x0028_b1f8, ssx_audio_system_get_view_count, "SSXAudioSystem_GetViewCount"),
-    (0x0028_b210, ssx_audio_system_get_view, "SSXAudioSystem_GetView"),
+    (
+        0x0028_b180,
+        ssx_audio_system_get_instance,
+        "SSXAudioSystem_GetInstance",
+    ),
+    (
+        0x0028_b1b0,
+        ssx_audio_system_is_in_game,
+        "SSXAudioSystem_IsInGame",
+    ),
+    (
+        0x0028_b1c0,
+        ssx_audio_system_get_app,
+        "SSXAudioSystem_GetApp",
+    ),
+    (
+        0x0028_b1e8,
+        ssx_audio_system_get_be_library,
+        "SSXAudioSystem_GetBELibrary",
+    ),
+    (
+        0x0028_b1f8,
+        ssx_audio_system_get_view_count,
+        "SSXAudioSystem_GetViewCount",
+    ),
+    (
+        0x0028_b210,
+        ssx_audio_system_get_view,
+        "SSXAudioSystem_GetView",
+    ),
     (0x0028_b240, audio_get_frame_rate, "Audio_GetFrameRate"),
     (0x0028_b248, snd_bank_ctor, "SndBank_ctor"),
     (0x0028_b278, snd_bank_dtor, "SndBank_dtor"),
@@ -55,88 +79,36 @@ pub(crate) mod audio {
 pub(crate) mod callee {
     use super::ee;
     use super::Callee;
-    pub(crate) use crate::game::wscript::wscriptman::callee::SET_FADE_GAIN;
-    pub(crate) use crate::game::wscript::wscriptman::callee::SND_BANK_UNLOAD;
-    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_ADD_TIMER;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_AUDIO_INSTANCE_STOP_SOUND;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_AUDIO_INSTANCE_REMOVE_ALL_SOURCES;
-    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_INSTANCE_POLL_FREE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_INSTANCE_SET_PITCH;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CPS2_MEMCARD_SET_STATE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::AVALANCHE_BAKE_NODE_HISTORY;
-    pub(crate) use crate::game::wscript::wscriptman::callee::WSCRIPT_MAN_CALL_FUNC;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_MAN3D_GROUP_FREE_MESHES;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_MAN3D_GROUP_CREATE_MESHES_2 as CROWD_MAN3D_GROUP_CREATE_MESHES;
-    pub(crate) use crate::game::wscript::wscriptman::callee::FLEX_RAIL_UPDATE_SPACE_NODE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::C_FLAG_MANAGER_GROUP_LOAD;
-    pub(crate) use crate::game::wscript::wscriptman::callee::FLOATING_V49;
-    pub(crate) use crate::game::wscript::wscriptman::callee::MOD_OBJ_DTOR;
-    pub(crate) use crate::game::wscript::wscriptman::callee::MODIFIER_LIST_UNLINK;
-    pub(crate) use crate::game::wscript::wscriptman::callee::RAIL_MODIFIER_LIST_UNLINK;
-    pub(crate) use crate::game::wscript::wscriptman::callee::DISABLE_INTC;
-    pub(crate) use crate::game::wscript::wscriptman::callee::REMOVE_INTC_HANDLER;
-    pub(crate) use crate::game::wscript::wscriptman::callee::TEX_MAN_LOAD_TEXTURE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::LIGHT_MAN_EMPTY_HOOK_A;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_GET_STATE_DATA;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_LIST_NODE_DTOR_BODY;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CPS2_CHUNK_RESOLVE_CTOR;
-    pub(crate) use crate::game::wscript::wscriptman::callee::AV_PLAYER_INIT;
-    pub(crate) use crate::game::wscript::wscriptman::callee::FOCUS_MAN_ADD_FOCUS_BOX;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CAM_CONTROLLER_CLEAR_ALGORITHMS;
-    pub(crate) use crate::game::wscript::wscriptman::callee::ALGORITHM_LIST_PUSH;
-    pub(crate) use crate::game::wscript::wscriptman::callee::APP_MODULE_UPDATE_FADE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::DEBUG_MENU_MODULE_UPDATE_CURSOR_TRAIL;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_SHOW_CLAMP_ALPHA_HALF;
-    pub(crate) use crate::game::wscript::wscriptman::callee::C_SETUP_MAN_SEND_QUIT;
-    pub(crate) use crate::game::wscript::wscriptman::callee::C_FE_STATE_ONLINE_CHARACTER_SELECT_EMPTY_CHILD_HANDLER;
-    pub(crate) use crate::game::wscript::wscriptman::callee::NET_FE_STATE_ON_CHILD_EVENT;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_SET_USER_DATA;
-    pub(crate) use crate::game::wscript::wscriptman::callee::EA_FILE_MOUNT_BIG;
-    pub(crate) use crate::game::wscript::wscriptman::callee::NET_FE_STATE_CTOR;
-    pub(crate) use crate::game::wscript::wscriptman::callee::EA_MEM_ALLOC_NAMED;
-    pub(crate) use crate::game::dirtysock::tags2::callee::ON_QUIT_POPUP_EVENT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::EMPTY_CHILD_HANDLER;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_ON_CHILD_EVENT_3 as NET_FE_STATE_ON_CHILD_EVENT_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_UPDATE_2 as NET_FE_STATE_UPDATE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_CTOR_3 as NET_FE_STATE_CTOR_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_DTOR_2 as NET_FE_STATE_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::CHAT_ROOM_UPDATE_PLAYER_QUALITY_2 as CHAT_ROOM_UPDATE_PLAYER_QUALITY;
-    pub(crate) use crate::game::dirtysock::tags2::callee::STATS_SELECT_CATEGORY;
-    pub(crate) use crate::game::dirtysock::tags2::callee::KEYBOARD_POPUP_UPDATE_CURSOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_CARD_SET_USE_SAVE_TITLE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::TROPHY_ROOM_RELEASE_IMAGES;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MESSAGE_CENTER_GET_INBOX;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SECTION_MAN_PUSH_FREE_NODE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MC_MANAGER_END_OPERATION_2 as MC_MANAGER_END_OPERATION;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MC_MANAGER_REQUEST_CARD_INFO;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUDDY_MAN_SET_PRESENCE_ADDR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUDDY_MAN_DESTROY_API;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUDDY_MAN_GET_ROSTER_COUNT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_LIST_STOP;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_OBJ_CAM_SET_OWNER;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_OBJ_TABLE_CTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_RESET_PROCESS_TABLE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_UNLOAD_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_UNLINK;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_FREE_MEMORY_2 as SND_BANK_FREE_MEMORY;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_RECORD_SNAPSHOT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_ADD_SNAPSHOT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BANK_MONITOR_STOP_HANDLE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::STREAM_BUFFER_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BANK_MONITOR_INSTANCE_RESUME;
-    pub(crate) use crate::game::dirtysock::tags2::callee::PATH_PLAT_REFRESH_STATUS;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_CARD_ASCII_CHAR_TO_SJIS;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_SET_STATE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::USTR_TO_ASCII;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_GET_SAVE_NAME;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_REQUEST_READ_SAVE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MENU_SYS_PAGE_SELECT_NEXT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MENU_SYS_ITEM_MEASURE_ROW;
-    pub(crate) use crate::game::dirtysock::tags2::callee::AVALANCHE_FREE_HISTORIES;
     pub(crate) use crate::game::dirtysock::tags2::callee::AVALANCHE_BAKE_GROUP;
     pub(crate) use crate::game::dirtysock::tags2::callee::AVALANCHE_EXPORT_HISTORY_FILES;
+    pub(crate) use crate::game::dirtysock::tags2::callee::AVALANCHE_FREE_HISTORIES;
     pub(crate) use crate::game::dirtysock::tags2::callee::AVALANCHE_LOAD_HISTORY_FILE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SNOW_BOX_RESET;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BANK_MONITOR_INSTANCE_RESUME;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BANK_MONITOR_STOP_HANDLE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BE_LIBRARY_GET_INSTANCE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BE_LIBRARY_GET_INTERFACE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BE_REWARD_INT_IS_UNLOCKED;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BUDDY_MAN_DESTROY_API;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BUDDY_MAN_GET_ROSTER_COUNT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BUDDY_MAN_SET_PRESENCE_ADDR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BUILTIN_DELETE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::CHAT_ROOM_UPDATE_PLAYER_QUALITY_2 as CHAT_ROOM_UPDATE_PLAYER_QUALITY;
+    pub(crate) use crate::game::dirtysock::tags2::callee::C_BX_STRING_DTOR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::C_LUNO_TABLE_DTOR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_GET_SAVE_NAME;
+    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_REQUEST_LIST_DIR_ALL;
+    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_REQUEST_READ_SAVE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_SET_STATE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::C_SETUP_MAN_SEND_QUIT as C_SETUP_MAN_SEND_QUIT_2;
+    pub(crate) use crate::game::dirtysock::tags2::callee::EA_MEMSET;
+    pub(crate) use crate::game::dirtysock::tags2::callee::EMPTY_CHILD_HANDLER;
+    pub(crate) use crate::game::dirtysock::tags2::callee::FE_MODULE_GET_PLAYER_PAD_MASK;
+    pub(crate) use crate::game::dirtysock::tags2::callee::KEYBOARD_POPUP_UPDATE_CURSOR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_LIST_GET_AT_3 as LOBBY_LIST_GET_AT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MC_MANAGER_END_OPERATION_2 as MC_MANAGER_END_OPERATION;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MC_MANAGER_REQUEST_CARD_INFO;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_CARD_ASCII_CHAR_TO_SJIS;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_CARD_SET_USE_SAVE_TITLE;
     pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT0;
     pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT1;
     pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT2;
@@ -144,30 +116,81 @@ pub(crate) mod callee {
     pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT4;
     pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT5;
     pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT6;
-    pub(crate) use crate::game::dirtysock::tags2::callee::FE_MODULE_GET_PLAYER_PAD_MASK;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MENU_SYS_ITEM_MEASURE_ROW;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MENU_SYS_PAGE_SELECT_NEXT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MESSAGE_CENTER_GET_INBOX;
+    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_CTOR_3 as NET_FE_STATE_CTOR_2;
+    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_DTOR_2 as NET_FE_STATE_DTOR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_ON_CHILD_EVENT_3 as NET_FE_STATE_ON_CHILD_EVENT_2;
+    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_UPDATE_2 as NET_FE_STATE_UPDATE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::ON_QUIT_POPUP_EVENT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::PATH_PLAT_REFRESH_STATUS;
+    pub(crate) use crate::game::dirtysock::tags2::callee::RAND_NEXT_MAIN;
+    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_ADD_SNAPSHOT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_RECORD_SNAPSHOT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SCE_MC_FORMAT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_OBJ_TABLE_CTOR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_RESET_PROCESS_TABLE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_LIST_STOP;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_OBJ_CAM_SET_OWNER;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SECTION_MAN_PUSH_FREE_NODE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SLOGIN_MC_GET_PORT_SLOT_2 as SLOGIN_MC_GET_PORT_SLOT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_FREE_MEMORY_2 as SND_BANK_FREE_MEMORY;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_UNLINK;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_UNLOAD_2;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SNOW_BOX_RESET;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SPRINTF_2 as SPRINTF;
+    pub(crate) use crate::game::dirtysock::tags2::callee::STATS_SELECT_CATEGORY;
+    pub(crate) use crate::game::dirtysock::tags2::callee::STRCPY;
+    pub(crate) use crate::game::dirtysock::tags2::callee::STREAM_BUFFER_DTOR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::TROPHY_ROOM_RELEASE_IMAGES;
     pub(crate) use crate::game::dirtysock::tags2::callee::UIMENU_SET_SELECTION;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_ON_ACTIVATE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_TEXT_GET_FONT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_LIBRARY_GET_INSTANCE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_LIBRARY_GET_INTERFACE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_REWARD_INT_IS_UNLOCKED;
+    pub(crate) use crate::game::dirtysock::tags2::callee::UI_OBJECT_SHOW_CLAMP_ALPHA_HALF as UI_OBJECT_SHOW_CLAMP_ALPHA_HALF_2;
     pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_CTOR_3 as UI_STATE_CTOR;
     pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::EA_MEMSET;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_REQUEST_LIST_DIR_ALL;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_BX_STRING_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUILTIN_DELETE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_LIST_GET_AT_3 as LOBBY_LIST_GET_AT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SLOGIN_MC_GET_PORT_SLOT_2 as SLOGIN_MC_GET_PORT_SLOT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCE_MC_FORMAT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::STRCPY;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SPRINTF_2 as SPRINTF;
-    pub(crate) use crate::game::dirtysock::tags2::callee::RAND_NEXT_MAIN;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_SETUP_MAN_SEND_QUIT as C_SETUP_MAN_SEND_QUIT_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_OBJECT_SHOW_CLAMP_ALPHA_HALF as UI_OBJECT_SHOW_CLAMP_ALPHA_HALF_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_LUNO_TABLE_DTOR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_ON_ACTIVATE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::UI_TEXT_GET_FONT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::USTR_TO_ASCII;
+    pub(crate) use crate::game::wscript::wscriptman::callee::ALGORITHM_LIST_PUSH;
+    pub(crate) use crate::game::wscript::wscriptman::callee::APP_MODULE_UPDATE_FADE;
+    pub(crate) use crate::game::wscript::wscriptman::callee::AVALANCHE_BAKE_NODE_HISTORY;
+    pub(crate) use crate::game::wscript::wscriptman::callee::AV_PLAYER_INIT;
+    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_ADD_TIMER;
+    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_INSTANCE_POLL_FREE;
+    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_INSTANCE_SET_PITCH;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CAM_CONTROLLER_CLEAR_ALGORITHMS;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CPS2_CHUNK_RESOLVE_CTOR;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CPS2_MEMCARD_SET_STATE;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_AUDIO_INSTANCE_REMOVE_ALL_SOURCES;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_AUDIO_INSTANCE_STOP_SOUND;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_MAN3D_GROUP_CREATE_MESHES_2 as CROWD_MAN3D_GROUP_CREATE_MESHES;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_MAN3D_GROUP_FREE_MESHES;
+    pub(crate) use crate::game::wscript::wscriptman::callee::C_FE_STATE_ONLINE_CHARACTER_SELECT_EMPTY_CHILD_HANDLER;
+    pub(crate) use crate::game::wscript::wscriptman::callee::C_FLAG_MANAGER_GROUP_LOAD;
+    pub(crate) use crate::game::wscript::wscriptman::callee::C_SETUP_MAN_SEND_QUIT;
+    pub(crate) use crate::game::wscript::wscriptman::callee::DEBUG_MENU_MODULE_UPDATE_CURSOR_TRAIL;
+    pub(crate) use crate::game::wscript::wscriptman::callee::DISABLE_INTC;
+    pub(crate) use crate::game::wscript::wscriptman::callee::EA_FILE_MOUNT_BIG;
+    pub(crate) use crate::game::wscript::wscriptman::callee::EA_MEM_ALLOC_NAMED;
+    pub(crate) use crate::game::wscript::wscriptman::callee::FLEX_RAIL_UPDATE_SPACE_NODE;
+    pub(crate) use crate::game::wscript::wscriptman::callee::FLOATING_V49;
+    pub(crate) use crate::game::wscript::wscriptman::callee::FOCUS_MAN_ADD_FOCUS_BOX;
+    pub(crate) use crate::game::wscript::wscriptman::callee::LIGHT_MAN_EMPTY_HOOK_A;
+    pub(crate) use crate::game::wscript::wscriptman::callee::MODIFIER_LIST_UNLINK;
+    pub(crate) use crate::game::wscript::wscriptman::callee::MOD_OBJ_DTOR;
+    pub(crate) use crate::game::wscript::wscriptman::callee::NET_FE_STATE_CTOR;
+    pub(crate) use crate::game::wscript::wscriptman::callee::NET_FE_STATE_ON_CHILD_EVENT;
+    pub(crate) use crate::game::wscript::wscriptman::callee::RAIL_MODIFIER_LIST_UNLINK;
+    pub(crate) use crate::game::wscript::wscriptman::callee::REMOVE_INTC_HANDLER;
+    pub(crate) use crate::game::wscript::wscriptman::callee::SET_FADE_GAIN;
+    pub(crate) use crate::game::wscript::wscriptman::callee::SND_BANK_UNLOAD;
+    pub(crate) use crate::game::wscript::wscriptman::callee::TEX_MAN_LOAD_TEXTURE;
+    pub(crate) use crate::game::wscript::wscriptman::callee::UI_LIST_NODE_DTOR_BODY;
+    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_GET_STATE_DATA;
+    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_SET_USER_DATA;
+    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_SHOW_CLAMP_ALPHA_HALF;
+    pub(crate) use crate::game::wscript::wscriptman::callee::WSCRIPT_MAN_CALL_FUNC;
 }
-
 
 /// `bool SSXAudioSystem_IsInGame(void)` (0x0028b1b0): whether the game module
 /// pointer (global at `gp-0x848`) has a non-zero app/module word at +0x84.
@@ -180,7 +203,6 @@ pub fn ssx_audio_system_is_in_game(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `BELibrary* SSXAudioSystem_GetBELibrary(void)` (0x0028b1e8): the library
 /// pointer at game module +0x78. `v1` is left holding the game module pointer.
 pub fn ssx_audio_system_get_be_library(c: &mut Cpu) {
@@ -189,7 +211,6 @@ pub fn ssx_audio_system_get_be_library(c: &mut Cpu) {
     c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x78).lw(c);
     abi::ret(c);
 }
-
 
 // ---------------------------------------------------------------------------
 // Sound bank (a doubly-linked list of banks).
@@ -213,13 +234,11 @@ pub fn snd_bank_ctor(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `SSXAudioSystem` globals: the app singleton (`gp - 0x848`, the same word as
 /// the world pointer) and the audio instance (`gp + 0x410`).
 pub(crate) const AUDIO_APP_GP: i32 = -0x848;
 
 pub(crate) const AUDIO_INSTANCE_GP: i32 = 0x410;
-
 
 // ---------------------------------------------------------------------------
 // Register and memory helpers.
@@ -230,13 +249,11 @@ pub(crate) fn lw(c: &mut Cpu, addr: u32) -> u64 {
     c.lw(addr)
 }
 
-
 /// A `gp`-relative global.
 #[inline(always)]
 pub(crate) fn gp(c: &Cpu, off: i32) -> u32 {
     r32(c, GP).wrapping_add(off as u32)
 }
-
 
 // ---------------------------------------------------------------------------
 // SSXAudioSystem singletons.
@@ -250,7 +267,6 @@ pub fn ssx_audio_system_get_instance(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void* SSXAudioSystem_GetApp()` (0x28b1c0): the app object (`gp - 0x848`,
 /// the same global as the world pointer).
 pub fn ssx_audio_system_get_app(c: &mut Cpu) {
@@ -259,9 +275,8 @@ pub fn ssx_audio_system_get_app(c: &mut Cpu) {
     c.g[V0][0] = c.lw(a);
     abi::ret(c);
 }
- // D_004A1208
+// D_004A1208
 pub(crate) const WORLD: i32 = -0x848;
-
 
 // ---------------------------------------------------------------------------
 // Audio system.
@@ -280,7 +295,6 @@ pub fn ssx_audio_system_get_view_count(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void *SSXAudioSystem_GetView(int i)` (0x0028b210): rider view `i` from the
 /// rider table (world → `+0x84` → `+0x84`, entries of 4 bytes at `+0x4`).
 pub fn ssx_audio_system_get_view(c: &mut Cpu) {
@@ -296,7 +310,6 @@ pub fn ssx_audio_system_get_view(c: &mut Cpu) {
     c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(4)).lw(c);
     c.pc = ra;
 }
-
 
 /// `void SndBank_UnloadLinked(SndBank* self)` (0x28b2d0): walk the list of
 /// banks linked from `+0x18` (terminated by `self`) and unload each.
@@ -345,7 +358,6 @@ pub fn snd_bank_unload_linked(c: &mut Cpu) {
     })
 }
 
-
 /// `void SndBank_dtor(self, flags)` (0x28b278): unload, unlink and free the
 /// bank's memory, then free the bank when asked.
 pub fn snd_bank_dtor(c: &mut Cpu) {
@@ -381,7 +393,6 @@ pub fn snd_bank_dtor(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Sound.
@@ -424,7 +435,6 @@ pub fn snd_bank_unload(c: &mut Cpu) {
     });
 }
 
-
 // ---------------------------------------------------------------------------
 // Leaves: constants and field setters.
 
@@ -441,44 +451,43 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
+    use crate::difftest::elf_image;
+    use crate::difftest::fakes::covered;
+    use crate::difftest::fakes::machine;
+    use crate::difftest::fakes::ptr;
+    use crate::difftest::fakes::vtable;
+    use crate::difftest::fakes::FAKE;
+    use crate::difftest::fakes::LOG_RESULTS;
+    use crate::difftest::fakes::LOG_UNWIND_AT;
     use crate::difftest::fill;
+    use crate::difftest::put_vec;
+    use crate::difftest::put_words;
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::put_vec;
-    use crate::difftest::put_words;
-    use crate::difftest::SP;
-    use crate::difftest::fakes::ptr;
-    use crate::difftest::fakes::vtable;
     use crate::difftest::RA as TEST_RA;
-    use crate::difftest::elf_image;
-    use ssx3_ee as ee;
-    use crate::difftest::fakes::covered;
-    use crate::difftest::fakes::LOG_UNWIND_AT;
+    use crate::difftest::SP;
     use crate::difftest::SP as STACK;
+    pub(crate) use crate::game::ai::ai::tests::leaf;
+    pub(crate) use crate::game::ai::ai::tests::leaf_setup;
+    pub(crate) use crate::game::ai::ai::tests::rng;
     pub(crate) use crate::game::ai::control::handplantcontrol::tests::SEEDS_2 as SEEDS;
+    pub(crate) use crate::game::animation::animmodel::tests::SEEDS_4;
     pub(crate) use crate::game::camera::cameraalgorithms::tests::world_chain;
-    pub(crate) use crate::game::wscript::wscriptman::tests::SEEDS_6 as SEEDS_2;
-    pub(crate) use crate::game::wscript::wscriptman::tests::load;
-    pub(crate) use crate::game::wscript::wscriptman::tests::clear_3 as clear;
-    pub(crate) use crate::game::wscript::wscriptman::tests::alloc_ready;
-    pub(crate) use crate::game::dirtysock::tags2::tests::SEEDS_7 as SEEDS_3;
+    pub(crate) use crate::game::dirtysock::tags2::tests::common;
+    pub(crate) use crate::game::dirtysock::tags2::tests::dummy_world;
     pub(crate) use crate::game::dirtysock::tags2::tests::gp_at;
     pub(crate) use crate::game::dirtysock::tags2::tests::heap_block_2 as heap_block;
-    pub(crate) use crate::game::dirtysock::tags2::tests::dummy_world;
-    pub(crate) use crate::game::dirtysock::tags2::tests::common;
-    pub(crate) use crate::game::animation::animmodel::tests::SEEDS_4;
-    pub(crate) use crate::game::fe::feasyncfile::tests::w_2 as w;
+    pub(crate) use crate::game::dirtysock::tags2::tests::SEEDS_7 as SEEDS_3;
     pub(crate) use crate::game::fe::feasyncfile::tests::base_2 as base;
     pub(crate) use crate::game::fe::feasyncfile::tests::pool_allocator_5 as pool_allocator;
-    pub(crate) use crate::game::ai::ai::tests::rng;
-    pub(crate) use crate::game::ai::ai::tests::leaf_setup;
-    pub(crate) use crate::game::ai::ai::tests::leaf;
-
+    pub(crate) use crate::game::fe::feasyncfile::tests::w_2 as w;
+    pub(crate) use crate::game::wscript::wscriptman::tests::alloc_ready;
+    pub(crate) use crate::game::wscript::wscriptman::tests::clear_3 as clear;
+    pub(crate) use crate::game::wscript::wscriptman::tests::load;
+    pub(crate) use crate::game::wscript::wscriptman::tests::SEEDS_6 as SEEDS_2;
+    use ssx3_ee as ee;
 
     #[test]
     fn ssx_audio_system_is_in_game_matches() {
@@ -502,7 +511,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn ssx_audio_system_get_be_library_matches() {
         check(
@@ -514,11 +522,11 @@ pub(crate) mod tests {
                 scramble(c, &mut r);
                 c.g[GP][0] = GAME_GP as u64;
                 c.bus.write32(GAME_GP - 0x848, DATA);
-                c.bus.write32(DATA + 0x78, if seed % 2 == 0 { 0 } else { r.next_u32() });
+                c.bus
+                    .write32(DATA + 0x78, if seed % 2 == 0 { 0 } else { r.next_u32() });
             },
         );
     }
-
 
     #[test]
     fn snd_bank_ctor_matches() {
@@ -532,28 +540,41 @@ pub(crate) mod tests {
         });
     }
 
-
     #[test]
     fn ssx_audio_system_get_instance_matches() {
-        check(ssx3_ee::s07::f_0028b180__generated, ssx_audio_system_get_instance, 100, &|c, seed| {
-            let mut r = Rng(0x2b18_0001 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            c.bus.write32(GAME_GP + 0x410, if seed % 3 == 0 { 0 } else { r.next_u32() });
-        });
+        check(
+            ssx3_ee::s07::f_0028b180__generated,
+            ssx_audio_system_get_instance,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x2b18_0001 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.bus.write32(
+                    GAME_GP + 0x410,
+                    if seed % 3 == 0 { 0 } else { r.next_u32() },
+                );
+            },
+        );
     }
-
 
     #[test]
     fn ssx_audio_system_get_app_matches() {
-        check(ssx3_ee::s07::f_0028b1c0__generated, ssx_audio_system_get_app, 100, &|c, seed| {
-            let mut r = Rng(0x2b1c_0001 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            c.bus.write32(GAME_GP.wrapping_sub(0x848), if seed % 3 == 0 { 0 } else { r.next_u32() });
-        });
+        check(
+            ssx3_ee::s07::f_0028b1c0__generated,
+            ssx_audio_system_get_app,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x2b1c_0001 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.bus.write32(
+                    GAME_GP.wrapping_sub(0x848),
+                    if seed % 3 == 0 { 0 } else { r.next_u32() },
+                );
+            },
+        );
     }
-
 
     // ------------------------------------------------------------------- audio
 
@@ -564,33 +585,40 @@ pub(crate) mod tests {
         world
     }
 
-
     #[test]
     fn ssx_audio_system_get_view_count_matches() {
-        check(ee::s07::f_0028b1f8__generated, ssx_audio_system_get_view_count, SEEDS, &|c, seed| {
-            let mut r = Rng(0x0028_b1f8 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            let world = audio_world(c);
-            c.bus.write32(world + 0x84, DATA + 0x2000);
-            c.bus.write32(DATA + 0x2000 + 0x84, DATA + 0x3000);
-            c.bus.write32(DATA + 0x3000 + 0x10, r.next_u32());
-        });
+        check(
+            ee::s07::f_0028b1f8__generated,
+            ssx_audio_system_get_view_count,
+            SEEDS,
+            &|c, seed| {
+                let mut r = Rng(0x0028_b1f8 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                let world = audio_world(c);
+                c.bus.write32(world + 0x84, DATA + 0x2000);
+                c.bus.write32(DATA + 0x2000 + 0x84, DATA + 0x3000);
+                c.bus.write32(DATA + 0x3000 + 0x10, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn ssx_audio_system_get_view_matches() {
-        check(ee::s07::f_0028b210__generated, ssx_audio_system_get_view, 200, &|c, seed| {
-            let mut r = machine(c, seed, 0x28_b210, 0);
-            world_chain(c, DATA + 0x1000, DATA + 0x2000, DATA + 0x3000);
-            c.g[A0][0] = (r.next_u32() % 8) as u64;
-            for i in 0..8u32 {
-                c.bus.write32(DATA + 0x3000 + 4 + 4 * i, ptr(&mut r));
-            }
-        });
+        check(
+            ee::s07::f_0028b210__generated,
+            ssx_audio_system_get_view,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x28_b210, 0);
+                world_chain(c, DATA + 0x1000, DATA + 0x2000, DATA + 0x3000);
+                c.g[A0][0] = (r.next_u32() % 8) as u64;
+                for i in 0..8u32 {
+                    c.bus.write32(DATA + 0x3000 + 4 + 4 * i, ptr(&mut r));
+                }
+            },
+        );
     }
-
 
     #[test]
     fn snd_bank_unload_linked_matches() {
@@ -618,44 +646,53 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn snd_bank_dtor_matches() {
-        check(ee::s07::f_0028b278__generated, snd_bank_dtor, SEEDS_3, &|c, seed| {
-            let _ = common(c, seed, 0x28b278, 0);
-            alloc_ready(c);
-            let this = heap_block(c, 0x400);
-            clear(c, this, 0x100);
-            c.g[A0][0] = sx(this);
-            c.g[A1][0] = (seed % 2) as u64;
-        });
+        check(
+            ee::s07::f_0028b278__generated,
+            snd_bank_dtor,
+            SEEDS_3,
+            &|c, seed| {
+                let _ = common(c, seed, 0x28b278, 0);
+                alloc_ready(c);
+                let this = heap_block(c, 0x400);
+                clear(c, this, 0x100);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = (seed % 2) as u64;
+            },
+        );
     }
-
-
-    
 
     // ------------------------------------------------------------------
     // Sound.
 
     #[test]
     fn snd_bank_unload_matches() {
-        check(ee::s07::f_0028b528__generated, snd_bank_unload, SEEDS_4, &|c, seed| {
-            let _ = base(c, seed, 0x28b5_28);
-            let s = DATA + 0x100;
-            clear(c, s, 0x40);
-            w(c, s, if seed % 3 == 0 { 1 } else { 0 });
-            w(c, s + 4, if seed % 2 == 0 { 0 } else { DATA + 0x300 });
-            w(c, s + 8, if seed % 4 < 2 { 0 } else { 1 });
-            w(c, s + 0x10, DATA + 0x400);
-            clear(c, DATA + 0x300, 0x40);
-            clear(c, DATA + 0x400, 0x40);
-            c.g[A0][0] = sx(s);
-        });
+        check(
+            ee::s07::f_0028b528__generated,
+            snd_bank_unload,
+            SEEDS_4,
+            &|c, seed| {
+                let _ = base(c, seed, 0x28b5_28);
+                let s = DATA + 0x100;
+                clear(c, s, 0x40);
+                w(c, s, if seed % 3 == 0 { 1 } else { 0 });
+                w(c, s + 4, if seed % 2 == 0 { 0 } else { DATA + 0x300 });
+                w(c, s + 8, if seed % 4 < 2 { 0 } else { 1 });
+                w(c, s + 0x10, DATA + 0x400);
+                clear(c, DATA + 0x300, 0x40);
+                clear(c, DATA + 0x400, 0x40);
+                c.g[A0][0] = sx(s);
+            },
+        );
     }
-
 
     #[test]
     fn audio_get_frame_rate_matches() {
-        leaf(ssx3_ee::s07::f_0028b240__generated, audio_get_frame_rate, 16);
+        leaf(
+            ssx3_ee::s07::f_0028b240__generated,
+            audio_get_frame_rate,
+            16,
+        );
     }
 }

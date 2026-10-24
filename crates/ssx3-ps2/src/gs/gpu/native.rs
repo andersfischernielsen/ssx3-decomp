@@ -414,7 +414,9 @@ impl NativeState {
         // Powers of two: native-3 maps window pixels to NDC exactly over
         // the whole target.
         let (w, h) = (w.next_power_of_two(), h.next_power_of_two());
-        let rt = wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC;
+        let rt = wgpu::TextureUsages::RENDER_ATTACHMENT
+            | wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_SRC;
         let mk = |label, format, usage| {
             dev.create_texture(&wgpu::TextureDescriptor {
                 label: Some(label),
@@ -515,7 +517,10 @@ impl NativeRun<'_> {
         let n = self.gs.native.as_mut().expect("native state");
         let idx = n.records.len() as u32;
         n.records.push(Some(rec));
-        self.gs.cmds.push(Cmd::NativePass { run: self.run, rec: idx });
+        self.gs.cmds.push(Cmd::NativePass {
+            run: self.run,
+            rec: idx,
+        });
     }
 
     /// Queue the swizzle back into VRAM.
@@ -529,7 +534,10 @@ impl NativeRun<'_> {
         }
         self.ended = true;
         let slot = self.gs.native_slot(self.run);
-        self.gs.cmds.push(Cmd::NativeEnd { run: self.run, slot });
+        self.gs.cmds.push(Cmd::NativeEnd {
+            run: self.run,
+            slot,
+        });
     }
 }
 
@@ -544,7 +552,11 @@ impl GpuGs {
     /// stream: closes the open batch (uploading CPU-written pages first) and
     /// queues the unswizzle. The surfaces' pages count as GPU-drawn from
     /// here on; textures decoded from them are dropped.
-    pub(crate) fn begin_native_run(&mut self, s: &NativeSurfaces, vram: &[u32]) -> Result<NativeRun<'_>, NativeError> {
+    pub(crate) fn begin_native_run(
+        &mut self,
+        s: &NativeSurfaces,
+        vram: &[u32],
+    ) -> Result<NativeRun<'_>, NativeError> {
         self.begin_native_run_at(s, 0, 0, vram)
     }
 
@@ -571,9 +583,17 @@ impl GpuGs {
         // submission have lost the device): submit what is queued, without
         // waiting (the batch was just closed).
         if self.native.is_none() {
-            self.native = Some(Box::new(NativeState::new(&self.ctx.device, &self.module, self.hires_scale)));
+            self.native = Some(Box::new(NativeState::new(
+                &self.ctx.device,
+                &self.module,
+                self.hires_scale,
+            )));
         }
-        if self.native.as_ref().is_some_and(|n| n.runs.len() >= MAX_RUNS_PER_SUBMIT) {
+        if self
+            .native
+            .as_ref()
+            .is_some_and(|n| n.runs.len() >= MAX_RUNS_PER_SUBMIT)
+        {
             self.submit_with(|_, _| {});
         }
         // CPU-written pages must be on the GPU before the unswizzle reads
@@ -583,15 +603,28 @@ impl GpuGs {
         n.ensure_targets(&self.ctx.device, s.width, s.height);
         let (x0, y0) = (x0.min(s.width - 1), y0.min(s.height - 1));
         let reuse = !no_reuse() && n.can_reuse(s, &pages, x0, y0);
-        let full = !reuse && !no_reuse() && n.held.is_some_and(|h| compatible(&h.surfaces, s) || compatible(s, &h.surfaces));
+        let full = !reuse
+            && !no_reuse()
+            && n.held
+                .is_some_and(|h| compatible(&h.surfaces, s) || compatible(s, &h.surfaces));
         // A full unswizzle covers the whole target within the buffer width,
         // so runs with other scissors on the same buffers reuse it.
-        let (tw, th) = n.targets.as_ref().map_or((s.width, s.height), |t| (t.w, t.h));
-        let buf_w = s.frame.or(s.z).map_or(s.width, |f| (f.bw * 64).min(tw)).max(s.width);
+        let (tw, th) = n
+            .targets
+            .as_ref()
+            .map_or((s.width, s.height), |t| (t.w, t.h));
+        let buf_w = s
+            .frame
+            .or(s.z)
+            .map_or(s.width, |f| (f.bw * 64).min(tw))
+            .max(s.width);
         let (fw, fh) = (buf_w, th.max(s.height));
         let held_surfaces = match (reuse, &n.held) {
             // Keep the Z buffer the targets still hold for a run without Z.
-            (true, Some(h)) => NativeSurfaces { z: s.z.or(h.surfaces.z), ..*s },
+            (true, Some(h)) => NativeSurfaces {
+                z: s.z.or(h.surfaces.z),
+                ..*s
+            },
             _ => *s,
         };
         let valid = match (reuse, &n.held) {
@@ -599,7 +632,11 @@ impl GpuGs {
             _ if full => [0, 0, fw, fh],
             _ => [x0, y0, s.width, s.height],
         };
-        n.held = Some(Held { surfaces: held_surfaces, valid, clock: n.clock });
+        n.held = Some(Held {
+            surfaces: held_surfaces,
+            valid,
+            clock: n.clock,
+        });
         n.reused += reuse as u64;
         self.stats.native.reused += reuse as u64;
         self.stats.native.miss = n.miss;
@@ -611,7 +648,12 @@ impl GpuGs {
             h.ensure_size(dev, t.w, t.h);
             let (tw, th) = (t.w, t.h);
             let mut acquire = |b: &NativeSurface, depth: bool| {
-                let key = super::hires::Key { bp: b.bp, bw: b.bw, psm: b.psm, depth };
+                let key = super::hires::Key {
+                    bp: b.bp,
+                    bw: b.bw,
+                    psm: b.psm,
+                    depth,
+                };
                 let surf = Surface::new(b.psm, b.bp, b.bw);
                 let pg = surface_pages(&surf, (b.bw * 64).min(tw).max(1), th)
                     .or_else(|_| surface_pages(&surf, s.width, s.height))
@@ -632,15 +674,33 @@ impl GpuGs {
                 slot: 0,
             });
         }
-        n.runs.push(Run { surfaces: *s, x0, y0, reuse, full, full_w: fw, full_h: fh, hi, wb: None });
+        n.runs.push(Run {
+            surfaces: *s,
+            x0,
+            y0,
+            reuse,
+            full,
+            full_w: fw,
+            full_h: fh,
+            hi,
+            wb: None,
+        });
         let slot = self.native_slot(run);
-        if self.native.as_ref().is_some_and(|n| n.runs[run as usize].hi.is_some()) {
+        if self
+            .native
+            .as_ref()
+            .is_some_and(|n| n.runs[run as usize].hi.is_some())
+        {
             // The same parameters with the scale in d.y.
             let mut p = self.slots[slot as usize];
             p[13] = self.hires_scale;
             let hs = self.slots.len() as u32;
             self.slots.push(p);
-            if let Some(h) = self.native.as_mut().and_then(|n| n.runs[run as usize].hi.as_mut()) {
+            if let Some(h) = self
+                .native
+                .as_mut()
+                .and_then(|n| n.runs[run as usize].hi.as_mut())
+            {
                 h.slot = hs;
             }
         }
@@ -659,18 +719,30 @@ impl GpuGs {
 
     /// The destination-read copy of the colour target (`Targets::prev`).
     pub(super) fn native_prev(&self) -> Option<&wgpu::TextureView> {
-        self.native.as_ref().and_then(|n| n.targets.as_ref()).map(|t| &t.prev)
+        self.native
+            .as_ref()
+            .and_then(|n| n.targets.as_ref())
+            .map(|t| &t.prev)
     }
 
     /// The size of the run targets (powers of two); valid after
     /// `begin_native_run`.
     pub(super) fn native_viewport(&self) -> (u32, u32) {
-        let t = self.native.as_ref().and_then(|n| n.targets.as_ref()).expect("native targets");
+        let t = self
+            .native
+            .as_ref()
+            .and_then(|n| n.targets.as_ref())
+            .expect("native targets");
         (t.w, t.h)
     }
 
     /// A whole run: unswizzle, `passes` in order, swizzle.
-    pub(crate) fn native_run(&mut self, s: &NativeSurfaces, vram: &[u32], passes: Vec<NativeRecord>) -> Result<(), NativeError> {
+    pub(crate) fn native_run(
+        &mut self,
+        s: &NativeSurfaces,
+        vram: &[u32],
+        passes: Vec<NativeRecord>,
+    ) -> Result<(), NativeError> {
         let mut run = self.begin_native_run(s, vram)?;
         for p in passes {
             run.record(p);
@@ -737,7 +809,11 @@ impl GpuGs {
         if let Some(z) = &s.z {
             let sw = surf_words(&Surface::new(z.psm, z.bp, z.bw));
             p[4..7].copy_from_slice(&sw);
-            p[7] = if z.psm == swizzle::PSMZ24 { 0xFF_FFFF } else { 0xFFFF };
+            p[7] = if z.psm == swizzle::PSMZ24 {
+                0xFF_FFFF
+            } else {
+                0xFFFF
+            };
         }
         p[8] = ex;
         p[9] = ey;
@@ -838,7 +914,10 @@ impl GpuGs {
                 let (load_c, load_d) = if r.reuse {
                     (wgpu::LoadOp::Load, wgpu::LoadOp::Load)
                 } else {
-                    (wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), wgpu::LoadOp::Clear(0.0))
+                    (
+                        wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        wgpu::LoadOp::Clear(0.0),
+                    )
                 };
                 let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("gs-native-unswizzle"),
@@ -897,7 +976,11 @@ impl GpuGs {
                                 origin: wgpu::Origin3d { x: x0, y: y0, z: 0 },
                                 aspect: wgpu::TextureAspect::All,
                             },
-                            wgpu::Extent3d { width: x1 - x0 + 1, height: y1 - y0 + 1, depth_or_array_layers: 1 },
+                            wgpu::Extent3d {
+                                width: x1 - x0 + 1,
+                                height: y1 - y0 + 1,
+                                depth_or_array_layers: 1,
+                            },
                         );
                         let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                             label: Some("gs-native-n3"),
@@ -905,13 +988,21 @@ impl GpuGs {
                                 view: &t.color,
                                 depth_slice: None,
                                 resolve_target: None,
-                                ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
+                                ops: wgpu::Operations {
+                                    load: wgpu::LoadOp::Load,
+                                    store: wgpu::StoreOp::Store,
+                                },
                             })],
-                            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                                view: &t.depth,
-                                depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store }),
-                                stencil_ops: None,
-                            }),
+                            depth_stencil_attachment: Some(
+                                wgpu::RenderPassDepthStencilAttachment {
+                                    view: &t.depth,
+                                    depth_ops: Some(wgpu::Operations {
+                                        load: wgpu::LoadOp::Load,
+                                        store: wgpu::StoreOp::Store,
+                                    }),
+                                    stencil_ops: None,
+                                },
+                            ),
                             timestamp_writes: None,
                             occlusion_query_set: None,
                             multiview_mask: None,
@@ -973,8 +1064,17 @@ impl GpuGs {
         enc: &mut wgpu::CommandEncoder,
     ) {
         let k = h.scale;
-        let cview = hr.frame.and_then(|key| h.surfs.get(&key)).map(|x| &x.view).or(h.dummy_color.as_ref()).expect("hires colour");
-        let dview = hr.z.and_then(|key| h.surfs.get(&key)).map(|x| &x.view).or(h.dummy_depth.as_ref()).expect("hires depth");
+        let cview = hr
+            .frame
+            .and_then(|key| h.surfs.get(&key))
+            .map(|x| &x.view)
+            .or(h.dummy_color.as_ref())
+            .expect("hires colour");
+        let dview =
+            hr.z.and_then(|key| h.surfs.get(&key))
+                .map(|x| &x.view)
+                .or(h.dummy_depth.as_ref())
+                .expect("hires depth");
         let begin = |enc: &mut wgpu::CommandEncoder| -> wgpu::RenderPass<'static> {
             enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("gs-hires"),
@@ -982,11 +1082,17 @@ impl GpuGs {
                     view: cview,
                     depth_slice: None,
                     resolve_target: None,
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: dview,
-                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store }),
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
                     stencil_ops: None,
                 }),
                 timestamp_writes: None,
@@ -1009,7 +1115,9 @@ impl GpuGs {
                 pass.draw(0..3, 0..1);
             }
         }
-        let (Some(list), Some(bg0h), Some(prev)) = (list, e.bg3h.as_ref(), h.prev.as_ref()) else { return };
+        let (Some(list), Some(bg0h), Some(prev)) = (list, e.bg3h.as_ref(), h.prev.as_ref()) else {
+            return;
+        };
         // A list sampling another buffer's N× copy gets its own bind group.
         let own = self.n3.lists[list as usize]
             .src
@@ -1018,14 +1126,32 @@ impl GpuGs {
         let bg = own.as_ref().unwrap_or(bg0h);
         let s = &r.surfaces;
         for seg in 0..self.n3_segments(list) {
-            let [x0, y0, x1, y1] = if seg == 0 { [r.x0, r.y0, s.width - 1, s.height - 1] } else { self.n3_copy_rect(list, seg) };
+            let [x0, y0, x1, y1] = if seg == 0 {
+                [r.x0, r.y0, s.width - 1, s.height - 1]
+            } else {
+                self.n3_copy_rect(list, seg)
+            };
             let (cx, cy) = ((x0 * k).min(h.w - 1), (y0 * k).min(h.h - 1));
             let cw = ((x1 - x0 + 1) * k).min(h.w - cx);
             let ch = ((y1 - y0 + 1) * k).min(h.h - cy);
             enc.copy_texture_to_texture(
-                wgpu::TexelCopyTextureInfo { texture: cview.texture(), mip_level: 0, origin: wgpu::Origin3d { x: cx, y: cy, z: 0 }, aspect: wgpu::TextureAspect::All },
-                wgpu::TexelCopyTextureInfo { texture: prev.texture(), mip_level: 0, origin: wgpu::Origin3d { x: cx, y: cy, z: 0 }, aspect: wgpu::TextureAspect::All },
-                wgpu::Extent3d { width: cw, height: ch, depth_or_array_layers: 1 },
+                wgpu::TexelCopyTextureInfo {
+                    texture: cview.texture(),
+                    mip_level: 0,
+                    origin: wgpu::Origin3d { x: cx, y: cy, z: 0 },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::TexelCopyTextureInfo {
+                    texture: prev.texture(),
+                    mip_level: 0,
+                    origin: wgpu::Origin3d { x: cx, y: cy, z: 0 },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::Extent3d {
+                    width: cw,
+                    height: ch,
+                    depth_or_array_layers: 1,
+                },
             );
             let mut pass = begin(enc);
             self.n3_encode_at(bg, list, seg, &mut pass, k);
@@ -1045,7 +1171,11 @@ impl GpuGs {
     /// words and depth values). Waits for the GPU.
     #[cfg(test)]
     pub(crate) fn native_read_targets(&mut self, w: u32, h: u32) -> (Vec<u32>, Vec<f32>) {
-        let t = self.native.as_ref().and_then(|n| n.targets.as_ref()).expect("native targets");
+        let t = self
+            .native
+            .as_ref()
+            .and_then(|n| n.targets.as_ref())
+            .expect("native targets");
         let tex_c = t.color.texture().clone();
         let tex_d = t.depth.texture().clone();
         // Depth copies must cover the whole texture.
@@ -1060,9 +1190,12 @@ impl GpuGs {
             mapped_at_creation: false,
         });
         let mut enc = dev.create_command_encoder(&Default::default());
-        for (i, (tex, aspect)) in [(tex_c, wgpu::TextureAspect::All), (tex_d, wgpu::TextureAspect::DepthOnly)]
-            .into_iter()
-            .enumerate()
+        for (i, (tex, aspect)) in [
+            (tex_c, wgpu::TextureAspect::All),
+            (tex_d, wgpu::TextureAspect::DepthOnly),
+        ]
+        .into_iter()
+        .enumerate()
         {
             enc.copy_texture_to_buffer(
                 wgpu::TexelCopyTextureInfo {
@@ -1098,7 +1231,9 @@ impl GpuGs {
         for y in 0..h as usize {
             for x in 0..w as usize {
                 c.push(word(y * row as usize + x * 4));
-                d.push(f32::from_bits(word(bytes as usize + y * row as usize + x * 4)));
+                d.push(f32::from_bits(word(
+                    bytes as usize + y * row as usize + x * 4,
+                )));
             }
         }
         (c, d)
@@ -1109,7 +1244,9 @@ impl GpuGs {
     /// `SSX3_RENDER_SCALE` diagnostics: read back every N× colour copy as
     /// (label, width, height, RGBA words). Waits for the GPU.
     pub(crate) fn hires_snapshots(&mut self) -> Vec<(String, u32, u32, Vec<u32>)> {
-        let Some(h) = self.native.as_ref().and_then(|n| n.hires.as_ref()) else { return Vec::new() };
+        let Some(h) = self.native.as_ref().and_then(|n| n.hires.as_ref()) else {
+            return Vec::new();
+        };
         let (w, hh) = (h.w, h.h);
         let row = (w * 4).div_ceil(256) * 256;
         let bytes = row as u64 * hh as u64;
@@ -1124,12 +1261,25 @@ impl GpuGs {
             });
             let mut enc = dev.create_command_encoder(&Default::default());
             enc.copy_texture_to_buffer(
-                wgpu::TexelCopyTextureInfo { texture: s.view.texture(), mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+                wgpu::TexelCopyTextureInfo {
+                    texture: s.view.texture(),
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
                 wgpu::TexelCopyBufferInfo {
                     buffer: &buf,
-                    layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(row), rows_per_image: Some(hh) },
+                    layout: wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(row),
+                        rows_per_image: Some(hh),
+                    },
                 },
-                wgpu::Extent3d { width: w, height: hh, depth_or_array_layers: 1 },
+                wgpu::Extent3d {
+                    width: w,
+                    height: hh,
+                    depth_or_array_layers: 1,
+                },
             );
             self.drain_submits();
             self.ctx.queue.submit(std::iter::once(enc.finish()));
@@ -1146,9 +1296,13 @@ impl GpuGs {
                     px.push(u32::from_le_bytes([v[o], v[o + 1], v[o + 2], v[o + 3]]));
                 }
             }
-            out.push((format!("{:05x}-{}-{:02x}", key.bp, key.bw, key.psm), bw, hh, px));
+            out.push((
+                format!("{:05x}-{}-{:02x}", key.bp, key.bw, key.psm),
+                bw,
+                hh,
+                px,
+            ));
         }
         out
     }
 }
-

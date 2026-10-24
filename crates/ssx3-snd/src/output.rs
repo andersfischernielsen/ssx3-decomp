@@ -133,7 +133,8 @@ impl Resampler {
                     out[o] = clamp16(a.wrapping_add(p0 >> 7));
                     out[o + 1] = clamp16(((a + b * 3) >> 2).wrapping_add(p0.wrapping_add(p1) >> 8));
                     out[o + 2] = clamp16(((b + cc) >> 1).wrapping_add(p1 >> 7));
-                    out[o + 3] = clamp16(((cc * 3 + d) >> 2).wrapping_add(p1.wrapping_add(p2) >> 8));
+                    out[o + 3] =
+                        clamp16(((cc * 3 + d) >> 2).wrapping_add(p1.wrapping_add(p2) >> 8));
                     ei += 3;
                     p[pi] = 0;
                     p[pi + 1] = 0;
@@ -209,7 +210,10 @@ impl Resampler {
                 out[2] = clamp16(x0.wrapping_add(x1) >> 1);
                 p[1] = 0;
                 out[3] = clamp16(
-                    x1.wrapping_mul(3).wrapping_add(e[2] as i32).wrapping_add(p[2] >> 7) >> 2,
+                    x1.wrapping_mul(3)
+                        .wrapping_add(e[2] as i32)
+                        .wrapping_add(p[2] >> 7)
+                        >> 2,
                 );
                 self.pe[c] = clamp16((e[0xbf] as i32).wrapping_add(p[0xbf] >> 7));
                 let mut i = 2usize;
@@ -225,7 +229,9 @@ impl Resampler {
                     out[o + 2] = clamp16(b.wrapping_add(cc) >> 1);
                     p[i + 2] = 0;
                     out[o + 3] = clamp16(
-                        cc.wrapping_mul(3).wrapping_add(e[i + 3] as i32).wrapping_add(p[i + 3] >> 7)
+                        cc.wrapping_mul(3)
+                            .wrapping_add(e[i + 3] as i32)
+                            .wrapping_add(p[i + 3] >> 7)
                             >> 2,
                     );
                     i += 3;
@@ -273,14 +279,31 @@ mod tests {
             for c in 0..2 {
                 let eo = EE36[s][c];
                 let pb = &bus[IOP_BUS[c]][s * 128..s * 128 + 128];
-                let ev = |i: isize| -> i32 { if i < 0 { pe[c] as i32 } else { ee[eo + i as usize] as i32 } };
-                let pv = |i: isize| -> i32 { if i < 0 { pp[c] } else { pb[i as usize] } };
+                let ev = |i: isize| -> i32 {
+                    if i < 0 {
+                        pe[c] as i32
+                    } else {
+                        ee[eo + i as usize] as i32
+                    }
+                };
+                let pv = |i: isize| -> i32 {
+                    if i < 0 {
+                        pp[c]
+                    } else {
+                        pb[i as usize]
+                    }
+                };
                 for j in 0..64isize {
                     let k = (s * 2 + c) * 256 + 4 * j as usize;
                     half[k] = clamp16(ev(3 * j - 1) + (pv(2 * j - 1) >> 7));
-                    half[k + 1] = clamp16(((ev(3 * j - 1) + 3 * ev(3 * j)) >> 2) + ((pv(2 * j - 1) + pv(2 * j)) >> 8));
+                    half[k + 1] = clamp16(
+                        ((ev(3 * j - 1) + 3 * ev(3 * j)) >> 2) + ((pv(2 * j - 1) + pv(2 * j)) >> 8),
+                    );
                     half[k + 2] = clamp16(((ev(3 * j) + ev(3 * j + 1)) >> 1) + (pv(2 * j) >> 7));
-                    half[k + 3] = clamp16(((3 * ev(3 * j + 1) + ev(3 * j + 2)) >> 2) + ((pv(2 * j) + pv(2 * j + 1)) >> 8));
+                    half[k + 3] = clamp16(
+                        ((3 * ev(3 * j + 1) + ev(3 * j + 2)) >> 2)
+                            + ((pv(2 * j) + pv(2 * j + 1)) >> 8),
+                    );
                 }
                 pe[c] = ee[eo + 191];
                 pp[c] = pb[127];
@@ -359,7 +382,7 @@ mod tests {
         assert_eq!(half[256 + 2], 0x7fff);
         assert_eq!(half[256 + 3], 0); // (p0 + p1) >> 8 = 0
         assert_eq!(half[256 + 4], -0x8000); // p1 >> 7
-        // The history keeps the raw last IOP sample.
+                                            // The history keeps the raw last IOP sample.
         let mut b2 = buses(256);
         b2[1][127] = 1 << 20;
         b2[1][255] = 77 << 7;

@@ -11,7 +11,9 @@
 use crate::cpu::{Cpu, UNWIND};
 use crate::kernel::{self, HANDLER_RETURN, IDLE, THREAD_EXIT};
 
-pub use ssx3_ee_rt::funcs::{call_indirect, has_code, lookup, register_functions, FnEntry, GuestFn};
+pub use ssx3_ee_rt::funcs::{
+    call_indirect, has_code, lookup, register_functions, FnEntry, GuestFn,
+};
 
 /// EE clock and NTSC video timing.
 pub const EE_CLOCK: u64 = 294_912_000;
@@ -27,7 +29,10 @@ static VSYNC_HZ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::ne
 /// Fire VSync at `hz` × 1000/1001 Hz (60: the original 59.94 Hz; 0 too).
 /// Applies from the next VSync.
 pub fn set_vsync_hz(hz: u32) {
-    VSYNC_HZ.store(if hz == 60 { 0 } else { hz }, std::sync::atomic::Ordering::Relaxed);
+    VSYNC_HZ.store(
+        if hz == 60 { 0 } else { hz },
+        std::sync::atomic::Ordering::Relaxed,
+    );
 }
 
 /// The nominal VSync rate: 60 for the original 59.94 Hz.
@@ -123,7 +128,9 @@ const HOST_CLOCK_MAX_JUMP: u64 = EE_CLOCK / 10;
 /// front end's frame pacing waits.
 /// Host clock mode and the next VBlank is already due by the host clock.
 fn host_clock_behind(c: &mut Cpu) -> bool {
-    let Some(hc) = m!(c).sched.host_clock else { return false };
+    let Some(hc) = m!(c).sched.host_clock else {
+        return false;
+    };
     let target = hc.base + (hc.start.elapsed().as_secs_f64() * EE_CLOCK as f64) as u64;
     target >= m!(c).sched.next_vblank
 }
@@ -134,7 +141,12 @@ fn follow_host_clock(c: &mut Cpu) {
         return;
     }
     let now = web_time::Instant::now();
-    let hc = m!(c).sched.host_clock.get_or_insert(HostClock { start: now, base: c.cycles, skipped: 0, jumps: 0 });
+    let hc = m!(c).sched.host_clock.get_or_insert(HostClock {
+        start: now,
+        base: c.cycles,
+        skipped: 0,
+        jumps: 0,
+    });
     let target = hc.base + (now.duration_since(hc.start).as_secs_f64() * EE_CLOCK as f64) as u64;
     if target > c.cycles + HOST_CLOCK_SLACK {
         let behind = target - c.cycles;
@@ -167,7 +179,8 @@ pub fn fatal(c: &mut Cpu, pc: u32, msg: &str) {
         let ra = c.g[31][0] as u32;
         eprintln!(
             "[fatal] {msg} at {pc:#010x} (ra {ra:#010x}, thread {}, cycles {})",
-            m!(c).kernel.current, c.cycles
+            m!(c).kernel.current,
+            c.cycles
         );
         m!(c).kernel.halted = Some(format!("{msg} at {pc:#010x}"));
     }
@@ -325,7 +338,10 @@ pub fn service_events(c: &mut Cpu) -> bool {
 pub fn set_gs_crt(c: &mut Cpu, interlace: u32, mode: u32, ffmd: u32) {
     m!(c).sched.gs_crt = (interlace, mode, ffmd);
     // SMODE2: INT bit 0, FFMD bit 1.
-    m!(c).hw.gs.write_priv(0x20, (interlace & 1) as u64 | ((ffmd & 1) as u64) << 1);
+    m!(c)
+        .hw
+        .gs
+        .write_priv(0x20, (interlace & 1) as u64 | ((ffmd & 1) as u64) << 1);
 }
 
 /// Run until the next VBlank (one video field) or until the machine halts.
@@ -404,7 +420,8 @@ pub fn jump_out(c: &mut Cpu, pc: u32, start: u32, end: u32) {
     if env_flag(&JUMPOUT, "SSX3_TRACE_JUMPOUT") {
         eprintln!(
             "[jump_out] pc {pc:#x} from fn {start:#x}..{end:#x} ra {:#x} thread {}",
-            c.g[31][0] as u32, m!(c).kernel.current
+            c.g[31][0] as u32,
+            m!(c).kernel.current
         );
     }
     if pc >= start && pc < end {

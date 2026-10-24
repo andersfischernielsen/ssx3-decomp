@@ -88,7 +88,8 @@ fn dispatch(c: &mut Iop, lib: usize, idx: u32) {
         ("intrman", 4) => {
             let (line, mode, handler, arg) = (c.arg(0), c.arg(1), c.arg(2), c.arg(3));
             eprintln!("[iop] RegisterIntrHandler({line}, {mode}, {handler:#x}, {arg:#x})");
-            c.k.intr.insert(line, kernel::IntrHandler { handler, arg, mode });
+            c.k.intr
+                .insert(line, kernel::IntrHandler { handler, arg, mode });
             v0(c, 0);
         }
         ("intrman", 5) => {
@@ -134,15 +135,25 @@ fn dispatch(c: &mut Iop, lib: usize, idx: u32) {
         // ------------------------------------------------------- thbase
         ("thbase", 4) => {
             let p = c.arg(0);
-            let (attr, option, entry, stack, prio) = (c.ram32(p), c.ram32(p + 4), c.ram32(p + 8), c.ram32(p + 12), c.ram32(p + 16));
+            let (attr, option, entry, stack, prio) = (
+                c.ram32(p),
+                c.ram32(p + 4),
+                c.ram32(p + 8),
+                c.ram32(p + 12),
+                c.ram32(p + 16),
+            );
             let gp = c.r[28];
-            let id = c.k.create_thread(entry, stack, prio as i32, gp, attr, option);
+            let id =
+                c.k.create_thread(entry, stack, prio as i32, gp, attr, option);
             eprintln!("[iop] CreateThread entry {entry:#x} stack {stack:#x} prio {prio} -> {id}");
             v0(c, id);
         }
         ("thbase", 5) => {
             let id = c.arg(0) as i32;
-            let ok = c.k.threads.get(&id).is_some_and(|t| t.status == kernel::Status::Dormant);
+            let ok =
+                c.k.threads
+                    .get(&id)
+                    .is_some_and(|t| t.status == kernel::Status::Dormant);
             if ok {
                 let st = c.k.threads.remove(&id).unwrap().stack;
                 c.k.free(st);
@@ -169,7 +180,9 @@ fn dispatch(c: &mut Iop, lib: usize, idx: u32) {
         ("thbase", 22) | ("thbase", 23) => {
             let (id, p) = (c.arg(0) as i32, c.arg(1));
             let id = if id == 0 { c.k.current } else { id };
-            let Some(t) = c.k.threads.get(&id) else { return v0(c, E_UNKNOWN_THREAD) };
+            let Some(t) = c.k.threads.get(&id) else {
+                return v0(c, E_UNKNOWN_THREAD);
+            };
             // iop_thread_info_t: attr, option, status, entry, stack, stackSize,
             // gpReg, initPriority, currentPriority, waitType, waitId, wakeupCount.
             let status = match t.status {
@@ -185,7 +198,20 @@ fn dispatch(c: &mut Iop, lib: usize, idx: u32) {
                 Wait::Sema(s) => (3, s),
                 Wait::Event(e) => (4, e),
             };
-            let w = [t.attr, t.option, status, t.entry, t.stack, t.stack_size, t.gp, t.init_prio as u32, t.prio as u32, wt, wid as u32, t.wakeups as u32];
+            let w = [
+                t.attr,
+                t.option,
+                status,
+                t.entry,
+                t.stack,
+                t.stack_size,
+                t.gp,
+                t.init_prio as u32,
+                t.prio as u32,
+                wt,
+                wid as u32,
+                t.wakeups as u32,
+            ];
             for (i, v) in w.iter().enumerate() {
                 c.set_ram32(p + 4 * i as u32, *v);
             }
@@ -227,7 +253,11 @@ fn dispatch(c: &mut Iop, lib: usize, idx: u32) {
         ("thbase", 27) | ("thbase", 28) => {
             let id = c.arg(0) as i32;
             let id = if id == 0 { c.k.current } else { id };
-            let n = c.k.threads.get_mut(&id).map(|t| std::mem::take(&mut t.wakeups)).unwrap_or(0);
+            let n =
+                c.k.threads
+                    .get_mut(&id)
+                    .map(|t| std::mem::take(&mut t.wakeups))
+                    .unwrap_or(0);
             v0(c, n);
         }
         ("thbase", 33) => {
@@ -278,9 +308,23 @@ fn dispatch(c: &mut Iop, lib: usize, idx: u32) {
         // ------------------------------------------------------- thsemap
         ("thsemap", 4) => {
             let p = c.arg(0);
-            let (attr, option, init, max) = (c.ram32(p), c.ram32(p + 4), c.ram32(p + 8) as i32, c.ram32(p + 12) as i32);
+            let (attr, option, init, max) = (
+                c.ram32(p),
+                c.ram32(p + 4),
+                c.ram32(p + 8) as i32,
+                c.ram32(p + 12) as i32,
+            );
             let id = c.k.new_object_id();
-            c.k.semas.insert(id, kernel::Sema { count: init, max, attr, option, waiters: Default::default() });
+            c.k.semas.insert(
+                id,
+                kernel::Sema {
+                    count: init,
+                    max,
+                    attr,
+                    option,
+                    waiters: Default::default(),
+                },
+            );
             v0(c, id);
         }
         ("thsemap", 5) => {
@@ -297,7 +341,9 @@ fn dispatch(c: &mut Iop, lib: usize, idx: u32) {
         }
         ("thsemap", 6) | ("thsemap", 7) => {
             let id = c.arg(0) as i32;
-            let Some(s) = c.k.semas.get_mut(&id) else { return v0(c, E_UNKNOWN_SEMA) };
+            let Some(s) = c.k.semas.get_mut(&id) else {
+                return v0(c, E_UNKNOWN_SEMA);
+            };
             match s.waiters.pop_front() {
                 Some(t) => c.k.wake(t, 0),
                 None => {
@@ -312,7 +358,9 @@ fn dispatch(c: &mut Iop, lib: usize, idx: u32) {
             let id = c.arg(0) as i32;
             let cur = c.k.current;
             v0(c, 0);
-            let Some(s) = c.k.semas.get_mut(&id) else { return v0(c, E_UNKNOWN_SEMA) };
+            let Some(s) = c.k.semas.get_mut(&id) else {
+                return v0(c, E_UNKNOWN_SEMA);
+            };
             if s.count > 0 {
                 s.count -= 1;
                 return;
@@ -322,7 +370,9 @@ fn dispatch(c: &mut Iop, lib: usize, idx: u32) {
         }
         ("thsemap", 9) => {
             let id = c.arg(0) as i32;
-            let Some(s) = c.k.semas.get_mut(&id) else { return v0(c, E_UNKNOWN_SEMA) };
+            let Some(s) = c.k.semas.get_mut(&id) else {
+                return v0(c, E_UNKNOWN_SEMA);
+            };
             if s.count > 0 {
                 s.count -= 1;
                 v0(c, 0)
@@ -332,9 +382,18 @@ fn dispatch(c: &mut Iop, lib: usize, idx: u32) {
         }
         ("thsemap", 11) | ("thsemap", 12) => {
             let (id, p) = (c.arg(0) as i32, c.arg(1));
-            let Some(s) = c.k.semas.get(&id) else { return v0(c, E_UNKNOWN_SEMA) };
+            let Some(s) = c.k.semas.get(&id) else {
+                return v0(c, E_UNKNOWN_SEMA);
+            };
             // iop_sema_info_t: attr, option, initCount, maxCount, currentCount, numWaitThreads.
-            let w = [s.attr, s.option, 0, s.max as u32, s.count as u32, s.waiters.len() as u32];
+            let w = [
+                s.attr,
+                s.option,
+                0,
+                s.max as u32,
+                s.count as u32,
+                s.waiters.len() as u32,
+            ];
             for (i, v) in w.iter().enumerate() {
                 c.set_ram32(p + 4 * i as u32, *v);
             }
@@ -345,7 +404,15 @@ fn dispatch(c: &mut Iop, lib: usize, idx: u32) {
             let p = c.arg(0);
             let (attr, option, bits) = (c.ram32(p), c.ram32(p + 4), c.ram32(p + 8));
             let id = c.k.new_object_id();
-            c.k.events.insert(id, kernel::EventFlag { bits, attr, option, waiters: Default::default() });
+            c.k.events.insert(
+                id,
+                kernel::EventFlag {
+                    bits,
+                    attr,
+                    option,
+                    waiters: Default::default(),
+                },
+            );
             v0(c, id);
         }
         ("thevent", 5) => {
@@ -376,7 +443,9 @@ fn dispatch(c: &mut Iop, lib: usize, idx: u32) {
         }
         ("thevent", 10) | ("thevent", 11) | ("thevent", 12) => {
             let (id, bits, mode, res) = (c.arg(0) as i32, c.arg(1), c.arg(2), c.arg(3));
-            let Some(e) = c.k.events.get_mut(&id) else { return v0(c, E_UNKNOWN_EVENT) };
+            let Some(e) = c.k.events.get_mut(&id) else {
+                return v0(c, E_UNKNOWN_EVENT);
+            };
             if event_matches(e.bits, bits, mode) {
                 let old = e.bits;
                 event_take(&mut e.bits, bits, mode);
@@ -404,7 +473,9 @@ fn dispatch(c: &mut Iop, lib: usize, idx: u32) {
         }
         ("thevent", 13) | ("thevent", 14) => {
             let (id, p) = (c.arg(0) as i32, c.arg(1));
-            let Some(e) = c.k.events.get(&id) else { return v0(c, E_UNKNOWN_EVENT) };
+            let Some(e) = c.k.events.get(&id) else {
+                return v0(c, E_UNKNOWN_EVENT);
+            };
             let (attr, option, bits, n) = (e.attr, e.option, e.bits, e.waiters.len() as u32);
             c.set_ram32(p, attr);
             c.set_ram32(p + 4, option);
@@ -507,7 +578,11 @@ fn dispatch(c: &mut Iop, lib: usize, idx: u32) {
         }
         ("sysclib", 22) | ("sysclib", 29) => {
             let (a, b) = (c.arg(0), c.arg(1));
-            let n = if idx == 29 { c.arg(2) as usize } else { usize::MAX };
+            let n = if idx == 29 {
+                c.arg(2) as usize
+            } else {
+                usize::MAX
+            };
             let mut r = 0i32;
             let mut i = 0usize;
             while i < n {
@@ -559,13 +634,21 @@ fn dispatch(c: &mut Iop, lib: usize, idx: u32) {
         }
         ("dmacman", 33) => {
             let (ch, v) = (c.arg(0), c.arg(1) & 7);
-            let (reg, sh) = if ch < 7 { (&mut c.hw.dpcr, ch * 4) } else { (&mut c.hw.dpcr2, (ch - 7) * 4) };
+            let (reg, sh) = if ch < 7 {
+                (&mut c.hw.dpcr, ch * 4)
+            } else {
+                (&mut c.hw.dpcr2, (ch - 7) * 4)
+            };
             *reg = (*reg & !(7 << sh)) | (v << sh);
             v0(c, 0);
         }
         ("dmacman", 34) | ("dmacman", 35) => {
             let ch = c.arg(0);
-            let (reg, bit) = if ch < 7 { (&mut c.hw.dpcr, 1 << (ch * 4 + 3)) } else { (&mut c.hw.dpcr2, 1 << ((ch - 7) * 4 + 3)) };
+            let (reg, bit) = if ch < 7 {
+                (&mut c.hw.dpcr, 1 << (ch * 4 + 3))
+            } else {
+                (&mut c.hw.dpcr2, 1 << ((ch - 7) * 4 + 3))
+            };
             if idx == 34 {
                 *reg |= bit;
             } else {
@@ -577,14 +660,24 @@ fn dispatch(c: &mut Iop, lib: usize, idx: u32) {
         ("vblank", 8) => {
             let (edge, prio, handler, arg) = (c.arg(0), c.arg(1) as i32, c.arg(2), c.arg(3));
             eprintln!("[iop] RegisterVblankHandler({edge}, {prio}, {handler:#x}, {arg:#x})");
-            let h = kernel::VblankHandler { edge, prio, handler, arg };
-            let at = c.k.vblank.iter().position(|x| x.prio > prio).unwrap_or(c.k.vblank.len());
+            let h = kernel::VblankHandler {
+                edge,
+                prio,
+                handler,
+                arg,
+            };
+            let at =
+                c.k.vblank
+                    .iter()
+                    .position(|x| x.prio > prio)
+                    .unwrap_or(c.k.vblank.len());
             c.k.vblank.insert(at, h);
             v0(c, 0);
         }
         ("vblank", 9) => {
             let (edge, handler) = (c.arg(0), c.arg(1));
-            c.k.vblank.retain(|h| !(h.edge == edge && h.handler == handler));
+            c.k.vblank
+                .retain(|h| !(h.edge == edge && h.handler == handler));
             v0(c, 0);
         }
         // ------------------------------------------------------- modload
@@ -607,7 +700,12 @@ fn dispatch(c: &mut Iop, lib: usize, idx: u32) {
         // modelled; the card is genuine.
         ("secrman", 6) => {
             if c.trace {
-                eprintln!("[iop] SecrAuthCard({}, {}, {})", c.arg(0), c.arg(1), c.arg(2));
+                eprintln!(
+                    "[iop] SecrAuthCard({}, {}, {})",
+                    c.arg(0),
+                    c.arg(1),
+                    c.arg(2)
+                );
             }
             v0(c, 1);
         }
@@ -617,7 +715,10 @@ fn dispatch(c: &mut Iop, lib: usize, idx: u32) {
         ("cdvdman", 24) => {
             let p = c.arg(0);
             let bcd = |v: u32| (((v / 10) << 4) | (v % 10)) as u8;
-            c.write_bytes(p, &[0, bcd(0), bcd(0), bcd(21), 0, bcd(14), bcd(10), bcd(26)]);
+            c.write_bytes(
+                p,
+                &[0, bcd(0), bcd(0), bcd(21), 0, bcd(14), bcd(10), bcd(26)],
+            );
             v0(c, 1);
         }
         _ => {
@@ -644,7 +745,10 @@ fn strtol(s: &str, base: u32) -> (i32, usize) {
         i += 1;
     }
     let mut base = base;
-    if (base == 0 || base == 16) && b.get(i) == Some(&b'0') && matches!(b.get(i + 1), Some(b'x' | b'X')) {
+    if (base == 0 || base == 16)
+        && b.get(i) == Some(&b'0')
+        && matches!(b.get(i + 1), Some(b'x' | b'X'))
+    {
         i += 2;
         base = 16;
     } else if base == 0 && b.get(i) == Some(&b'0') {
@@ -655,7 +759,9 @@ fn strtol(s: &str, base: u32) -> (i32, usize) {
     let start = i;
     let mut v: i64 = 0;
     while i < b.len() {
-        let Some(d) = (b[i] as char).to_digit(base) else { break };
+        let Some(d) = (b[i] as char).to_digit(base) else {
+            break;
+        };
         v = (v * base as i64 + d as i64).min(i32::MAX as i64 + 1);
         i += 1;
     }
@@ -684,12 +790,16 @@ fn event_take(have: &mut u32, bits: u32, mode: u32) {
 }
 
 fn set_event(c: &mut Iop, id: i32, bits: u32) {
-    let Some(e) = c.k.events.get_mut(&id) else { return v0(c, E_UNKNOWN_EVENT) };
+    let Some(e) = c.k.events.get_mut(&id) else {
+        return v0(c, E_UNKNOWN_EVENT);
+    };
     e.bits |= bits;
     let waiters: Vec<i32> = e.waiters.iter().copied().collect();
     let mut woken = Vec::new();
     for t in waiters {
-        let Some(th) = c.k.threads.get(&t) else { continue };
+        let Some(th) = c.k.threads.get(&t) else {
+            continue;
+        };
         let (tb, tm, tr) = (th.ev_bits, th.ev_mode, th.ev_result);
         let e = c.k.events.get_mut(&id).unwrap();
         if event_matches(e.bits, tb, tm) {

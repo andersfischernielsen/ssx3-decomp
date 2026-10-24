@@ -9,19 +9,20 @@ use crate::call::Flow;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::fe::feasyncfile::gp_3 as gp;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
-pub(crate) use crate::game::fe::feasyncfile::gp_3 as gp;
 
 /// Replacements in this unit: (address, function, name).
-pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0020_d190, ov_screen_pda_template_close, "OVScreenPDATemplate_Close"),
-];
-
+pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[(
+    0x0020_d190,
+    ov_screen_pda_template_close,
+    "OVScreenPDATemplate_Close",
+)];
 
 /// `void OVScreenPDATemplate_Close()` (0x20d190): unlink and delete the PDA
 /// template (`gp-0x9e4`), then clear the global.
@@ -61,15 +62,14 @@ pub fn ov_screen_pda_template_close(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::difftest::check;
     use crate::difftest::fakes;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::FAKE;
-    use crate::difftest::check;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
     pub(crate) use crate::game::fe::feasyncfile::tests::slot;
-
 
     #[test]
     fn ov_screen_pda_template_close_matches() {

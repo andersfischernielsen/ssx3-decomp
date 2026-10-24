@@ -64,7 +64,10 @@ pub const CYCLE_BUDGET: u64 = 50_000_000;
 /// machine's real event hook (event-delivery tests set `next_event` lower).
 fn budget_event(c: &mut Cpu) -> bool {
     if c.cycles >= CYCLE_BUDGET {
-        panic!("cycle budget exceeded ({} cycles, pc {:#x}): runaway on test data", c.cycles, c.pc);
+        panic!(
+            "cycle budget exceeded ({} cycles, pc {:#x}): runaway on test data",
+            c.cycles, c.pc
+        );
     }
     (ssx3_ps2::platform::HOOKS.event)(c)
 }
@@ -147,24 +150,42 @@ pub fn compare(generated: GuestFn, hand: GuestFn, setup: &dyn Fn(&mut Cpu)) -> R
     // likely bug ("call args"); a different sequence ("calls") is expected
     // where a replacement computes a callee natively. Both are reported
     // with the scratch registers (`SSX3_DIFF_STRICT` fails on them).
-    let me = [&calls_a, &calls_b].iter().find_map(|v| v.first().filter(|k| k[1..5] == args).map(|k| k[0]));
+    let me = [&calls_a, &calls_b]
+        .iter()
+        .find_map(|v| v.first().filter(|k| k[1..5] == args).map(|k| k[0]));
     if let Some(me) = me {
         calls_a.retain(|k| k[0] != me);
         calls_b.retain(|k| k[0] != me);
     }
     let show = |k: Option<&ssx3_ee_rt::prof::trace::Call>| {
         k.map_or("none".to_string(), |k| {
-            format!("{:#x}(a0-a3 {:x} {:x} {:x} {:x}, f12 {:#x} f13 {:#x})", k[0], k[1], k[2], k[3], k[4], k[5], k[6])
+            format!(
+                "{:#x}(a0-a3 {:x} {:x} {:x} {:x}, f12 {:#x} f13 {:#x})",
+                k[0], k[1], k[2], k[3], k[4], k[5], k[6]
+            )
         })
     };
-    let same_callees = calls_a.len() == calls_b.len() && calls_a.iter().zip(&calls_b).all(|(x, y)| x[0] == y[0]);
+    let same_callees =
+        calls_a.len() == calls_b.len() && calls_a.iter().zip(&calls_b).all(|(x, y)| x[0] == y[0]);
     if same_callees {
         if let Some(i) = calls_a.iter().zip(&calls_b).position(|(x, y)| x != y) {
-            soft.push(format!("call args {i}: {} vs {}", show(calls_a.get(i)), show(calls_b.get(i))));
+            soft.push(format!(
+                "call args {i}: {} vs {}",
+                show(calls_a.get(i)),
+                show(calls_b.get(i))
+            ));
         }
     } else {
-        let i = calls_a.iter().zip(&calls_b).take_while(|(x, y)| x[0] == y[0]).count();
-        soft.push(format!("calls {i}: {} vs {}", show(calls_a.get(i)), show(calls_b.get(i))));
+        let i = calls_a
+            .iter()
+            .zip(&calls_b)
+            .take_while(|(x, y)| x[0] == y[0])
+            .count();
+        soft.push(format!(
+            "calls {i}: {} vs {}",
+            show(calls_a.get(i)),
+            show(calls_b.get(i))
+        ));
     }
     for r in 0..32 {
         // Results, callee-saved and special registers must match; caller-saved
@@ -173,12 +194,20 @@ pub fn compare(generated: GuestFn, hand: GuestFn, setup: &dyn Fn(&mut Cpu)) -> R
         let gpr_hard = matches!(r, 0 | 2 | 3 | 16..=23 | 28..=31);
         if a.g[r] != b.g[r] {
             let msg = format!("gpr {r}: {:x?} vs {:x?}", a.g[r], b.g[r]);
-            if gpr_hard { hard.push(msg) } else { soft.push(msg) }
+            if gpr_hard {
+                hard.push(msg)
+            } else {
+                soft.push(msg)
+            }
         }
         let fpr_hard = matches!(r, 0 | 1 | 20..=31);
         if a.f[r] != b.f[r] {
             let msg = format!("f{r}: {:#x} vs {:#x}", a.f[r], b.f[r]);
-            if fpr_hard { hard.push(msg) } else { soft.push(msg) }
+            if fpr_hard {
+                hard.push(msg)
+            } else {
+                soft.push(msg)
+            }
         }
         let (va, vb) = (a.bus.plat.vf(r), b.bus.plat.vf(r));
         if va != vb {
@@ -219,11 +248,18 @@ pub fn compare(generated: GuestFn, hand: GuestFn, setup: &dyn Fn(&mut Cpu)) -> R
     }
     // RAM: compare only pages written in either machine (`dirty-pages`);
     // comparing all 32 MiB per seed made the tests memory-bandwidth bound.
-    let dirty: Vec<u64> = a.bus.dirty.iter().zip(&b.bus.dirty).map(|(x, y)| x | y).collect();
-    let pages = dirty
+    let dirty: Vec<u64> = a
+        .bus
+        .dirty
         .iter()
-        .enumerate()
-        .flat_map(|(w, bits)| (0..64).filter(move |i| bits >> i & 1 != 0).map(move |i| w * 64 + i));
+        .zip(&b.bus.dirty)
+        .map(|(x, y)| x | y)
+        .collect();
+    let pages = dirty.iter().enumerate().flat_map(|(w, bits)| {
+        (0..64)
+            .filter(move |i| bits >> i & 1 != 0)
+            .map(move |i| w * 64 + i)
+    });
     let mut ram_diffs = 0;
     for page in pages {
         let r = page * 4096..page * 4096 + 4096;
@@ -231,7 +267,11 @@ pub fn compare(generated: GuestFn, hand: GuestFn, setup: &dyn Fn(&mut Cpu)) -> R
             for i in r.step_by(4) {
                 if a.bus.ram[i..i + 4] != b.bus.ram[i..i + 4] {
                     if ram_diffs < 8 {
-                        hard.push(format!("ram {i:#x}: {:02x?} vs {:02x?}", &a.bus.ram[i..i + 4], &b.bus.ram[i..i + 4]));
+                        hard.push(format!(
+                            "ram {i:#x}: {:02x?} vs {:02x?}",
+                            &a.bus.ram[i..i + 4],
+                            &b.bus.ram[i..i + 4]
+                        ));
                     }
                     ram_diffs += 1;
                 }
@@ -321,7 +361,10 @@ pub fn require_paths(generated: GuestFn, seeds: u32, paths: &[u64], setup: &dyn 
         seen.insert(c.cycles - before);
     }
     for p in paths {
-        assert!(seen.contains(p), "path costing {p} cycles never taken (seen {seen:?})");
+        assert!(
+            seen.contains(p),
+            "path costing {p} cycles never taken (seen {seen:?})"
+        );
     }
 }
 
@@ -383,12 +426,18 @@ pub fn scramble(c: &mut Cpu, r: &mut Rng) {
     for f in c.f.iter_mut() {
         *f = r.next_u32();
     }
-    c.fcr31 = if r.next_u32() & 1 != 0 { ssx3_ee_rt::fpu::FCC } else { 0 };
+    c.fcr31 = if r.next_u32() & 1 != 0 {
+        ssx3_ee_rt::fpu::FCC
+    } else {
+        0
+    };
     for reg in 1..32 {
         let v = [r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()];
         c.bus.plat.set_vf(reg, v);
     }
-    c.bus.plat.set_acc([r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()]);
+    c.bus
+        .plat
+        .set_acc([r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()]);
 }
 
 /// Fill `words` 32-bit words at `addr` with random values.
@@ -433,7 +482,11 @@ pub fn elf_image(c: &mut Cpu) {
         let d = std::fs::read(path).expect("orig/SLUS_207.72");
         let u32_at = |o: usize| u32::from_le_bytes(d[o..o + 4].try_into().unwrap());
         let ph = u32_at(0x1c) as usize;
-        let (off, vaddr, size) = (u32_at(ph + 4) as usize, u32_at(ph + 8), u32_at(ph + 16) as usize);
+        let (off, vaddr, size) = (
+            u32_at(ph + 4) as usize,
+            u32_at(ph + 8),
+            u32_at(ph + 16) as usize,
+        );
         (vaddr, d[off..off + size].to_vec())
     });
     let at = *vaddr as usize;
@@ -459,8 +512,16 @@ mod tests {
             &|c, seed| {
                 let mut r = Rng(0x9e37_79b9_7f4a_7c15 ^ seed as u64);
                 c.g[4][0] = DATA as u64;
-                put_vec(c, DATA + 0x110, [r.f32(1e5), r.f32(1e5), r.f32(1e5), r.f32(2.0)]);
-                put_vec(c, DATA + 0x120, [r.f32(1.0), r.f32(1.0), r.f32(1.0), r.f32(1.0)]);
+                put_vec(
+                    c,
+                    DATA + 0x110,
+                    [r.f32(1e5), r.f32(1e5), r.f32(1e5), r.f32(2.0)],
+                );
+                put_vec(
+                    c,
+                    DATA + 0x120,
+                    [r.f32(1.0), r.f32(1.0), r.f32(1.0), r.f32(1.0)],
+                );
                 for reg in 1..32 {
                     let v = [r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()];
                     c.bus.plat.set_vf(reg, v);

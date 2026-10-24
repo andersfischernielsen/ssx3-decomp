@@ -126,7 +126,11 @@ impl KeyCache {
         let snap = m.snapshot();
         if snap != 0 {
             if let Some(&(k, bytes, clut_bytes, seen)) = self.0.get(&(info, texa)) {
-                let same = (word(m, info + ti::PIXELS), word(m, info + ti::CLUT), word(m, info + ti::FORMAT)) == (k.pixels, k.clut, k.format)
+                let same = (
+                    word(m, info + ti::PIXELS),
+                    word(m, info + ti::CLUT),
+                    word(m, info + ti::FORMAT),
+                ) == (k.pixels, k.clut, k.format)
                     && tex0(m, info) & !((0x3fff) | (0x3fffu64 << 37)) == k.tex0
                     && sizes(m, info) == (bytes, clut_bytes)
                     && m.unchanged(k.pixels, k.pixels + bytes.max(4), seen)
@@ -174,12 +178,24 @@ pub fn key(m: &dyn Mem, info: u32, texa: u64) -> TexKey {
         _ => 0,
     };
     let hash = fingerprint(m, pixels, w * h * bpp / 8, clut, clut_bytes);
-    TexKey { info, pixels, clut, format, tex0: t0 & !((0x3fff) | (0x3fffu64 << 37)), texa, hash }
+    TexKey {
+        info,
+        pixels,
+        clut,
+        format,
+        tex0: t0 & !((0x3fff) | (0x3fffu64 << 37)),
+        texa,
+        hash,
+    }
 }
 
 /// TEXA expansion of a 16-bit texel (RGBA5551).
 fn ct16(v: u32, texa: u64) -> u32 {
-    let (ta0, ta1, aem) = ((texa & 0xff) as u32, ((texa >> 32) & 0xff) as u32, (texa >> 15) & 1 != 0);
+    let (ta0, ta1, aem) = (
+        (texa & 0xff) as u32,
+        ((texa >> 32) & 0xff) as u32,
+        (texa >> 15) & 1 != 0,
+    );
     let r = (v & 0x1f) << 3;
     let g = ((v >> 5) & 0x1f) << 3;
     let b = ((v >> 10) & 0x1f) << 3;
@@ -206,17 +222,30 @@ pub fn decode(m: &dyn Mem, info: u32, texa: u64) -> Option<Decoded> {
         return None;
     }
     let n = (w * h) as usize;
-    let indexed = matches!(psm, swizzle::PSMT8 | swizzle::PSMT8H | swizzle::PSMT4 | swizzle::PSMT4HL | swizzle::PSMT4HH);
+    let indexed = matches!(
+        psm,
+        swizzle::PSMT8 | swizzle::PSMT8H | swizzle::PSMT4 | swizzle::PSMT4HL | swizzle::PSMT4HH
+    );
     // CLUT (always uploaded as CT32 by TexMan; CPSM 16-bit handled too).
     let cpsm = ((t0 >> 51) & 0xf) as u32;
     let clut: Vec<u32> = if indexed {
-        let entries = if matches!(psm, swizzle::PSMT8 | swizzle::PSMT8H) { 256 } else { 16 };
+        let entries = if matches!(psm, swizzle::PSMT8 | swizzle::PSMT8H) {
+            256
+        } else {
+            16
+        };
         let raw = read_bytes(m, clut_ptr, entries * 4);
-        let ent = |i: usize| u32::from_le_bytes([raw[4 * i], raw[4 * i + 1], raw[4 * i + 2], raw[4 * i + 3]]);
+        let ent = |i: usize| {
+            u32::from_le_bytes([raw[4 * i], raw[4 * i + 1], raw[4 * i + 2], raw[4 * i + 3]])
+        };
         (0..entries)
             .map(|i| {
                 // CSM1: entries 8-15 and 16-23 of each 32 are swapped.
-                let j = if entries == 256 { (i & !0x18) | (i & 0x8) << 1 | (i & 0x10) >> 1 } else { i };
+                let j = if entries == 256 {
+                    (i & !0x18) | (i & 0x8) << 1 | (i & 0x10) >> 1
+                } else {
+                    i
+                };
                 let v = ent(j);
                 if cpsm == swizzle::PSMCT16 || cpsm == swizzle::PSMCT16S {
                     ct16(v & 0xffff, texa)
@@ -248,14 +277,21 @@ pub fn decode(m: &dyn Mem, info: u32, texa: u64) -> Option<Decoded> {
             for y in 0..uh {
                 for x in 0..uw {
                     let i = ((y * uw + x) * 4) as usize;
-                    wsurf.write(&mut vram, x, y, u32::from_le_bytes([raw[i], raw[i + 1], raw[i + 2], raw[i + 3]]));
+                    wsurf.write(
+                        &mut vram,
+                        x,
+                        y,
+                        u32::from_le_bytes([raw[i], raw[i + 1], raw[i + 2], raw[i + 3]]),
+                    );
                 }
             }
             let rsurf = Surface::new(psm, 0, tbw);
             (0..n)
                 .map(|i| {
                     let (x, y) = (i as u32 % w, i as u32 / w);
-                    clut.get(rsurf.read(&vram, x, y) as usize).copied().unwrap_or(0)
+                    clut.get(rsurf.read(&vram, x, y) as usize)
+                        .copied()
+                        .unwrap_or(0)
                 })
                 .collect()
         }
@@ -266,32 +302,65 @@ pub fn decode(m: &dyn Mem, info: u32, texa: u64) -> Option<Decoded> {
             }
             swizzle::PSMT4 | swizzle::PSMT4HL | swizzle::PSMT4HH => {
                 let raw = read_bytes(m, pixels, n.div_ceil(2));
-                (0..n).map(|i| clut[((raw[i / 2] >> (4 * (i & 1))) & 15) as usize]).collect()
+                (0..n)
+                    .map(|i| clut[((raw[i / 2] >> (4 * (i & 1))) & 15) as usize])
+                    .collect()
             }
             swizzle::PSMCT16 | swizzle::PSMCT16S => {
                 let raw = read_bytes(m, pixels, n * 2);
-                (0..n).map(|i| ct16(u16::from_le_bytes([raw[2 * i], raw[2 * i + 1]]) as u32, texa)).collect()
+                (0..n)
+                    .map(|i| {
+                        ct16(
+                            u16::from_le_bytes([raw[2 * i], raw[2 * i + 1]]) as u32,
+                            texa,
+                        )
+                    })
+                    .collect()
             }
             swizzle::PSMCT24 => {
                 let ta0 = (texa & 0xff) as u32;
                 let raw = read_bytes(m, pixels, n * 3);
-                (0..n).map(|i| raw[3 * i] as u32 | (raw[3 * i + 1] as u32) << 8 | (raw[3 * i + 2] as u32) << 16 | ta0 << 24).collect()
+                (0..n)
+                    .map(|i| {
+                        raw[3 * i] as u32
+                            | (raw[3 * i + 1] as u32) << 8
+                            | (raw[3 * i + 2] as u32) << 16
+                            | ta0 << 24
+                    })
+                    .collect()
             }
             _ => {
                 let raw = read_bytes(m, pixels, n * 4);
-                (0..n).map(|i| u32::from_le_bytes([raw[4 * i], raw[4 * i + 1], raw[4 * i + 2], raw[4 * i + 3]])).collect()
+                (0..n)
+                    .map(|i| {
+                        u32::from_le_bytes([
+                            raw[4 * i],
+                            raw[4 * i + 1],
+                            raw[4 * i + 2],
+                            raw[4 * i + 3],
+                        ])
+                    })
+                    .collect()
             }
         },
     };
     let _ = byte;
-    Some(Decoded { width: w, height: h, rgba })
+    Some(Decoded {
+        width: w,
+        height: h,
+        rgba,
+    })
 }
 
 /// A full mipmap chain for a decoded texture (level 0 is the texture): each
 /// level the 2×2 box average of the one above, colour weighted by alpha so
 /// transparent texels do not darken the edges of cut-outs.
 pub fn mipmaps(d: &Decoded) -> Vec<Decoded> {
-    let mut levels = vec![Decoded { width: d.width, height: d.height, rgba: d.rgba.clone() }];
+    let mut levels = vec![Decoded {
+        width: d.width,
+        height: d.height,
+        rgba: d.rgba.clone(),
+    }];
     while let Some(l) = levels.last().filter(|l| l.width > 1 || l.height > 1) {
         let (w, h) = ((l.width / 2).max(1), (l.height / 2).max(1));
         let mut rgba = Vec::with_capacity((w * h) as usize);
@@ -321,7 +390,11 @@ pub fn mipmaps(d: &Decoded) -> Vec<Decoded> {
                 rgba.push(px);
             }
         }
-        levels.push(Decoded { width: w, height: h, rgba });
+        levels.push(Decoded {
+            width: w,
+            height: h,
+            rgba,
+        });
     }
     levels
 }
@@ -332,7 +405,11 @@ mod mip_tests {
 
     #[test]
     fn chain_down_to_one_texel() {
-        let d = Decoded { width: 8, height: 2, rgba: vec![0x8000_ff00; 16] };
+        let d = Decoded {
+            width: 8,
+            height: 2,
+            rgba: vec![0x8000_ff00; 16],
+        };
         let m = mipmaps(&d);
         let sizes: Vec<(u32, u32)> = m.iter().map(|l| (l.width, l.height)).collect();
         assert_eq!(sizes, [(8, 2), (4, 1), (2, 1), (1, 1)]);
@@ -342,7 +419,11 @@ mod mip_tests {
     #[test]
     fn transparent_texels_do_not_darken() {
         // Opaque white next to transparent black: the average stays white.
-        let d = Decoded { width: 2, height: 1, rgba: vec![0x80ff_ffff, 0x0000_0000] };
+        let d = Decoded {
+            width: 2,
+            height: 1,
+            rgba: vec![0x80ff_ffff, 0x0000_0000],
+        };
         let m = mipmaps(&d);
         assert_eq!(m[1].rgba[0] & 0xff_ffff, 0xff_ffff);
     }

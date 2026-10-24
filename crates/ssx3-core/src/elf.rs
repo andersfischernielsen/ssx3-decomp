@@ -91,7 +91,11 @@ impl Elf {
         let phnum = rd_u16(&bytes, 44) as usize;
 
         let end = phoff
-            .checked_add(phentsize.checked_mul(phnum).ok_or(ElfError::BadProgramHeaders)?)
+            .checked_add(
+                phentsize
+                    .checked_mul(phnum)
+                    .ok_or(ElfError::BadProgramHeaders)?,
+            )
             .ok_or(ElfError::BadProgramHeaders)?;
         if phentsize < 32 || end > bytes.len() {
             return Err(ElfError::BadProgramHeaders);
@@ -158,11 +162,7 @@ impl Elf {
     /// Lowest and highest virtual addresses covered by loadable file data.
     pub fn image_range(&self) -> Option<(u32, u32)> {
         let lo = self.segments.first()?.vaddr;
-        let hi = self
-            .segments
-            .iter()
-            .map(|s| s.vaddr + s.filesz)
-            .max()?;
+        let hi = self.segments.iter().map(|s| s.vaddr + s.filesz).max()?;
         Some((lo, hi))
     }
 }
@@ -220,9 +220,6 @@ mod tests {
     #[test]
     fn rejects_garbage() {
         assert!(matches!(Elf::parse(vec![0u8; 10]), Err(ElfError::TooSmall)));
-        assert!(matches!(
-            Elf::parse(vec![0u8; 64]),
-            Err(ElfError::BadMagic)
-        ));
+        assert!(matches!(Elf::parse(vec![0u8; 64]), Err(ElfError::BadMagic)));
     }
 }

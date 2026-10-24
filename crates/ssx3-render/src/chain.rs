@@ -36,7 +36,15 @@ pub struct WalkEnd {
 /// Walk the chain from `tadr`, handing each transfer's quadwords (and, with
 /// `tte`, the upper half of each tag) to `sink`. Stops at END/REFE, at a
 /// RET with an empty stack, or at a tag with the IRQ bit when `tie` is set.
-pub fn walk(mem: &dyn Mem, tadr: u32, tte: bool, tie: bool, asp: u32, asr: &mut [u32; 2], sink: &mut dyn FnMut(&[u128])) -> WalkEnd {
+pub fn walk(
+    mem: &dyn Mem,
+    tadr: u32,
+    tte: bool,
+    tie: bool,
+    asp: u32,
+    asr: &mut [u32; 2],
+    sink: &mut dyn FnMut(&[u128]),
+) -> WalkEnd {
     let mut q = Vec::new();
     walk_segments(mem, tadr, tte, tie, asp, asr, &mut |s| match s {
         Segment::Tag(t) => sink(&[t]),
@@ -58,7 +66,15 @@ pub enum Segment {
 }
 
 /// [`walk`], handing over where each transfer's data is instead of the data.
-pub fn walk_segments(mem: &dyn Mem, mut tadr: u32, tte: bool, tie: bool, mut asp: u32, asr: &mut [u32; 2], sink: &mut dyn FnMut(Segment)) -> WalkEnd {
+pub fn walk_segments(
+    mem: &dyn Mem,
+    mut tadr: u32,
+    tte: bool,
+    tie: bool,
+    mut asp: u32,
+    asr: &mut [u32; 2],
+    sink: &mut dyn FnMut(Segment),
+) -> WalkEnd {
     let mut tags = 0;
     for _ in 0..1_000_000 {
         tags += 1;

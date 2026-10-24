@@ -102,11 +102,15 @@ impl CasterCache {
         let shown = |p: u32| {
             let w = word(m, p + 0x154);
             let (section, slot) = ((w >> 8) & 0xff, (w >> 16) as i16);
-            slot >= 0 && word(m, sections + section * 8 + 0x24) == 6 && word(m, sections.wrapping_add((slot as u32) * 0x18) + 0x3f0) == 3
+            slot >= 0
+                && word(m, sections + section * 8 + 0x24) == 6
+                && word(m, sections.wrapping_add((slot as u32) * 0x18) + 0x3f0) == 3
         };
         let mut set = Vec::new();
         let mut seen = std::collections::HashSet::new();
-        let mut stack: Vec<(u32, u32)> = (0..8).map(|k| (word(m, nash + 0x14 * k + 0x10), 0)).collect();
+        let mut stack: Vec<(u32, u32)> = (0..8)
+            .map(|k| (word(m, nash + 0x14 * k + 0x10), 0))
+            .collect();
         while let Some((node, depth)) = stack.pop() {
             if !ram(node) || depth > 40 || !seen.insert(node) {
                 continue;
@@ -139,7 +143,11 @@ impl CasterCache {
         }
         self.generation += 1;
         self.set = set;
-        self.current = Some(Arc::new(Casters { generation: self.generation, patches: self.set.len() as u32, triangles }));
+        self.current = Some(Arc::new(Casters {
+            generation: self.generation,
+            patches: self.set.len() as u32,
+            triangles,
+        }));
         self.current.clone()
     }
 }
@@ -172,7 +180,10 @@ fn tessellate(m: &dyn Mem, p: u32) -> Vec<[f32; 6]> {
     let pow = |t: f64| [t * t * t, t * t, t, 1.0];
     let pts: Vec<[f32; 3]> = (0..n * n)
         .map(|i| {
-            let (bu, bv) = (pow((i / n) as f64 / (n - 1) as f64), pow((i % n) as f64 / (n - 1) as f64));
+            let (bu, bv) = (
+                pow((i / n) as f64 / (n - 1) as f64),
+                pow((i % n) as f64 / (n - 1) as f64),
+            );
             let mut s = [0f64; 3];
             for k in 0..4 {
                 for j in 0..4 {
@@ -188,7 +199,11 @@ fn tessellate(m: &dyn Mem, p: u32) -> Vec<[f32; 6]> {
     let mut t = Vec::with_capacity((n - 1) * (n - 1) * 6);
     let mut tri = |a: [f32; 3], b: [f32; 3], c: [f32; 3]| {
         let (u, v) = (sub(b, a), sub(c, a));
-        let mut nrm = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+        let mut nrm = [
+            u[1] * v[2] - u[2] * v[1],
+            u[2] * v[0] - u[0] * v[2],
+            u[0] * v[1] - u[1] * v[0],
+        ];
         let l = (nrm[0] * nrm[0] + nrm[1] * nrm[1] + nrm[2] * nrm[2]).sqrt();
         if l <= 0.0 || !l.is_finite() {
             return;
@@ -201,7 +216,12 @@ fn tessellate(m: &dyn Mem, p: u32) -> Vec<[f32; 6]> {
     };
     for a in 0..n - 1 {
         for b in 0..n - 1 {
-            let (p00, p01, p10, p11) = (pts[a * n + b], pts[a * n + b + 1], pts[(a + 1) * n + b], pts[(a + 1) * n + b + 1]);
+            let (p00, p01, p10, p11) = (
+                pts[a * n + b],
+                pts[a * n + b + 1],
+                pts[(a + 1) * n + b],
+                pts[(a + 1) * n + b + 1],
+            );
             tri(p00, p10, p11);
             tri(p00, p11, p01);
         }
@@ -226,7 +246,9 @@ mod tests {
     }
 
     fn q(v: [f32; 4]) -> u128 {
-        v.iter().enumerate().fold(0, |acc, (i, x)| acc | (x.to_bits() as u128) << (32 * i))
+        v.iter()
+            .enumerate()
+            .fold(0, |acc, (i, x)| acc | (x.to_bits() as u128) << (32 * i))
     }
 
     #[test]
@@ -243,7 +265,9 @@ mod tests {
         let t = tessellate(&M(mem), p);
         assert_eq!(t.len(), (GRID - 1) * (GRID - 1) * 6);
         assert_eq!(t[0][..3], [100.0, 200.0, 300.0]);
-        let last = t.iter().fold([0f32; 3], |m, v| [m[0].max(v[0]), m[1].max(v[1]), m[2].max(v[2])]);
+        let last = t.iter().fold([0f32; 3], |m, v| {
+            [m[0].max(v[0]), m[1].max(v[1]), m[2].max(v[2])]
+        });
         assert_eq!(last, [110.0, 220.0, 300.0]);
         // A flat patch in z = 300: every normal +z.
         assert!(t.iter().all(|v| v[3..] == [0.0, 0.0, 1.0]));

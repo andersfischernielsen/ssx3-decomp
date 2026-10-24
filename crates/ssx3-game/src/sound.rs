@@ -29,7 +29,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003c_6278, snd_list_init, "SND_ListInit"),
     (0x003c_6320, snd_list_remove, "SND_ListRemove"),
     (0x003b_a6e8, snd_handle_to_channel, "SND_HandleToChannel"),
-    (0x003b_a7b0, snd_channel_calc_volume, "SND_ChannelCalcVolume"),
+    (
+        0x003b_a7b0,
+        snd_channel_calc_volume,
+        "SND_ChannelCalcVolume",
+    ),
     (0x003c_62b8, snd_list_push_back, "SND_ListPushBack"),
     (0x003c_6288, snd_list_push_front, "SND_ListPushFront"),
     (0x003c_62e8, snd_list_pop_front, "SND_ListPopFront"),
@@ -40,7 +44,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003b_6a38, sndstrm_get_stream, "SNDSTRM_GetStream"),
     (0x003d_8008, spch_make_id, "SPCH_MakeId"),
     (0x003d_fbd0, stream_file_validate, "StreamFile_Validate"),
-    (0x003d_fc08, stream_file_ring_in_range, "StreamFile_RingInRange"),
+    (
+        0x003d_fc08,
+        stream_file_ring_in_range,
+        "StreamFile_RingInRange",
+    ),
     (0x003d_ef70, async_file_from_handle, "AsyncFile_FromHandle"),
     (0x003e_2500, big_file_get_type, "BigFile_GetType"),
     (0x003e_4e98, ea_timer_get_ticks, "EATimer_GetTicks"),
@@ -790,28 +798,46 @@ mod tests {
 
     #[test]
     fn snd_is_initialized_matches() {
-        check_paths(ssx3_ee::s13::f_003b5440__generated, snd_is_initialized, SEEDS, &[3], &|c, seed| {
-            let mut r = start(c, seed, 1);
-            c.bus.write8(snd::INITIALIZED.0, r.next_u32() as u8);
-        });
+        check_paths(
+            ssx3_ee::s13::f_003b5440__generated,
+            snd_is_initialized,
+            SEEDS,
+            &[3],
+            &|c, seed| {
+                let mut r = start(c, seed, 1);
+                c.bus.write8(snd::INITIALIZED.0, r.next_u32() as u8);
+            },
+        );
     }
 
     #[test]
     fn snd_init_play_params_matches() {
-        check_paths(ssx3_ee::s13::f_003ba020__generated, snd_init_play_params, SEEDS, &[21], &|c, seed| {
-            let mut r = start(c, seed, 2);
-            let p = DATA + (r.next_u32() & 0xffe);
-            fill(c, &mut r, DATA, 0x1000 / 4 + 8);
-            c.g[A0][0] = reg64(&mut r, p);
-        });
+        check_paths(
+            ssx3_ee::s13::f_003ba020__generated,
+            snd_init_play_params,
+            SEEDS,
+            &[21],
+            &|c, seed| {
+                let mut r = start(c, seed, 2);
+                let p = DATA + (r.next_u32() & 0xffe);
+                fill(c, &mut r, DATA, 0x1000 / 4 + 8);
+                c.g[A0][0] = reg64(&mut r, p);
+            },
+        );
     }
 
     #[test]
     fn ea_timer_get_ticks_matches() {
-        check_paths(ssx3_ee::s14::f_003e4e98__generated, ea_timer_get_ticks, SEEDS, &[4], &|c, seed| {
-            let mut r = start(c, seed, 3);
-            c.bus.write32(EA_TIMER_TICKS.0, edge_u32(&mut r));
-        });
+        check_paths(
+            ssx3_ee::s14::f_003e4e98__generated,
+            ea_timer_get_ticks,
+            SEEDS,
+            &[4],
+            &|c, seed| {
+                let mut r = start(c, seed, 3);
+                c.bus.write32(EA_TIMER_TICKS.0, edge_u32(&mut r));
+            },
+        );
     }
 
     // ------------------------------------------------------------- lists
@@ -827,7 +853,10 @@ mod tests {
             let j = (r.next_u32() as usize) % (i + 1);
             slots.swap(i, j);
         }
-        let nodes: Vec<u32> = slots[..n as usize].iter().map(|s| DATA + 0x100 + s * 0x40).collect();
+        let nodes: Vec<u32> = slots[..n as usize]
+            .iter()
+            .map(|s| DATA + 0x100 + s * 0x40)
+            .collect();
         for (i, &a) in nodes.iter().enumerate() {
             let next = nodes.get(i + 1).copied().unwrap_or(0);
             let prev = if i == 0 { 0 } else { nodes[i - 1] };
@@ -836,7 +865,11 @@ mod tests {
         }
         c.bus.write32(DATA, nodes.first().copied().unwrap_or(0));
         c.bus.write32(DATA + 4, nodes.last().copied().unwrap_or(0));
-        let count = if r.next_u32() % 4 == 0 { r.next_u32() } else { n };
+        let count = if r.next_u32() % 4 == 0 {
+            r.next_u32()
+        } else {
+            n
+        };
         c.bus.write32(DATA + 8, count);
         c.g[A0][0] = sx(DATA);
         nodes
@@ -844,66 +877,102 @@ mod tests {
 
     #[test]
     fn snd_list_init_matches() {
-        check_paths(ssx3_ee::s13::f_003c6278__generated, snd_list_init, SEEDS, &[4], &|c, seed| {
-            let mut r = start(c, seed, 10);
-            list_setup(c, &mut r);
-        });
+        check_paths(
+            ssx3_ee::s13::f_003c6278__generated,
+            snd_list_init,
+            SEEDS,
+            &[4],
+            &|c, seed| {
+                let mut r = start(c, seed, 10);
+                list_setup(c, &mut r);
+            },
+        );
     }
 
     #[test]
     fn snd_list_push_front_matches() {
-        check_paths(ssx3_ee::s13::f_003c6288__generated, snd_list_push_front, SEEDS, &[11, 12], &|c, seed| {
-            let mut r = start(c, seed, 11);
-            list_setup(c, &mut r);
-            c.g[A1][0] = sx(DATA + 0x300);
-        });
+        check_paths(
+            ssx3_ee::s13::f_003c6288__generated,
+            snd_list_push_front,
+            SEEDS,
+            &[11, 12],
+            &|c, seed| {
+                let mut r = start(c, seed, 11);
+                list_setup(c, &mut r);
+                c.g[A1][0] = sx(DATA + 0x300);
+            },
+        );
     }
 
     #[test]
     fn snd_list_push_back_matches() {
-        check_paths(ssx3_ee::s13::f_003c62b8__generated, snd_list_push_back, SEEDS, &[11, 12], &|c, seed| {
-            let mut r = start(c, seed, 12);
-            list_setup(c, &mut r);
-            c.g[A1][0] = sx(DATA + 0x300);
-        });
+        check_paths(
+            ssx3_ee::s13::f_003c62b8__generated,
+            snd_list_push_back,
+            SEEDS,
+            &[11, 12],
+            &|c, seed| {
+                let mut r = start(c, seed, 12);
+                list_setup(c, &mut r);
+                c.g[A1][0] = sx(DATA + 0x300);
+            },
+        );
     }
 
     #[test]
     fn snd_list_pop_front_matches() {
-        check_paths(ssx3_ee::s13::f_003c62e8__generated, snd_list_pop_front, SEEDS, &[5, 12, 13], &|c, seed| {
-            let mut r = start(c, seed, 13);
-            list_setup(c, &mut r);
-        });
+        check_paths(
+            ssx3_ee::s13::f_003c62e8__generated,
+            snd_list_pop_front,
+            SEEDS,
+            &[5, 12, 13],
+            &|c, seed| {
+                let mut r = start(c, seed, 13);
+                list_setup(c, &mut r);
+            },
+        );
     }
 
     #[test]
     fn snd_list_remove_matches() {
-        check_paths(ssx3_ee::s13::f_003c6320__generated, snd_list_remove, SEEDS, &[12, 15, 18, 21, 24], &|c, seed| {
-            let mut r = start(c, seed, 14);
-            let nodes = list_setup(c, &mut r);
-            // A member (head, tail, middle or the only node), or a node with
-            // upper-half junk in the register (never matches head/tail).
-            let n = if nodes.is_empty() {
-                DATA + 0x100
-            } else {
-                nodes[(r.next_u32() as usize) % nodes.len()]
-            };
-            if seed % 3 == 0 {
-                // Inconsistent lists (head/tail and links in any
-                // combination), so every branch combination occurs.
-                let pick = |r: &mut Rng| if r.next_u32() % 2 == 0 { 0 } else { DATA + 0x100 + (r.next_u32() % 6) * 0x40 };
-                let (next, prev) = (pick(&mut r), pick(&mut r));
-                c.bus.write32(n, next);
-                c.bus.write32(n + 4, prev);
-                if r.next_u32() % 2 == 0 {
-                    c.bus.write32(DATA, n);
+        check_paths(
+            ssx3_ee::s13::f_003c6320__generated,
+            snd_list_remove,
+            SEEDS,
+            &[12, 15, 18, 21, 24],
+            &|c, seed| {
+                let mut r = start(c, seed, 14);
+                let nodes = list_setup(c, &mut r);
+                // A member (head, tail, middle or the only node), or a node with
+                // upper-half junk in the register (never matches head/tail).
+                let n = if nodes.is_empty() {
+                    DATA + 0x100
+                } else {
+                    nodes[(r.next_u32() as usize) % nodes.len()]
+                };
+                if seed % 3 == 0 {
+                    // Inconsistent lists (head/tail and links in any
+                    // combination), so every branch combination occurs.
+                    let pick = |r: &mut Rng| {
+                        if r.next_u32() % 2 == 0 {
+                            0
+                        } else {
+                            DATA + 0x100 + (r.next_u32() % 6) * 0x40
+                        }
+                    };
+                    let (next, prev) = (pick(&mut r), pick(&mut r));
+                    c.bus.write32(n, next);
+                    c.bus.write32(n + 4, prev);
+                    if r.next_u32() % 2 == 0 {
+                        c.bus.write32(DATA, n);
+                    }
+                    if r.next_u32() % 2 == 0 {
+                        c.bus.write32(DATA + 4, n);
+                    }
                 }
-                if r.next_u32() % 2 == 0 {
-                    c.bus.write32(DATA + 4, n);
-                }
-            }
-            c.g[A1][0] = reg64(&mut r, n);
-        });
+                c.g[A1][0] = reg64(&mut r, n);
+            },
+        );
     }
 
     // ------------------------------------------------------------ channels
@@ -914,86 +983,145 @@ mod tests {
         let table = DATA + 0x1000;
         fill(c, r, table, 8 * snd::CHANNEL_SIZE / 4);
         c.bus.write32(snd::CHANNELS.0, table);
-        c.bus.write16(snd::CHANNEL_COUNT.0, match r.next_u32() % 4 {
-            0 => r.next_u32() as u16,
-            1 => 0,
-            _ => 8,
-        });
+        c.bus.write16(
+            snd::CHANNEL_COUNT.0,
+            match r.next_u32() % 4 {
+                0 => r.next_u32() as u16,
+                1 => 0,
+                _ => 8,
+            },
+        );
         for i in 0..8 {
             let ch = table + i * snd::CHANNEL_SIZE;
             let id = (r.next_u32() & 0x7fff_ff00) | i;
-            c.bus.write32(ch, if r.next_u32() % 4 == 0 { r.next_u32() } else { id });
-            c.bus.write8(ch + snd::CH_ACTIVE, if r.next_u32() % 3 == 0 { 0 } else { r.next_u32() as u8 });
+            c.bus.write32(
+                ch,
+                if r.next_u32() % 4 == 0 {
+                    r.next_u32()
+                } else {
+                    id
+                },
+            );
+            c.bus.write8(
+                ch + snd::CH_ACTIVE,
+                if r.next_u32() % 3 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u8
+                },
+            );
         }
     }
 
     #[test]
     fn snd_handle_to_channel_matches() {
-        check_paths_lohi(ssx3_ee::s13::f_003ba6e8__generated, snd_handle_to_channel, SEEDS, &[5, 11, 17, 20], &|c, seed| {
-            let mut r = start(c, seed, 20);
-            channel_setup(c, &mut r);
-            let handle = match seed % 5 {
-                0 => r.next_u32(),
-                1 => r.next_u32() & 0x7fff_ffff,
-                _ => {
-                    let i = r.next_u32() % 9;
-                    let ch = DATA + 0x1000 + (i % 8) * snd::CHANNEL_SIZE;
-                    c.bus.read32(ch) & !0xff | i
-                }
-            };
-            c.g[A0][0] = reg64(&mut r, handle);
-        });
+        check_paths_lohi(
+            ssx3_ee::s13::f_003ba6e8__generated,
+            snd_handle_to_channel,
+            SEEDS,
+            &[5, 11, 17, 20],
+            &|c, seed| {
+                let mut r = start(c, seed, 20);
+                channel_setup(c, &mut r);
+                let handle = match seed % 5 {
+                    0 => r.next_u32(),
+                    1 => r.next_u32() & 0x7fff_ffff,
+                    _ => {
+                        let i = r.next_u32() % 9;
+                        let ch = DATA + 0x1000 + (i % 8) * snd::CHANNEL_SIZE;
+                        c.bus.read32(ch) & !0xff | i
+                    }
+                };
+                c.g[A0][0] = reg64(&mut r, handle);
+            },
+        );
     }
 
     #[test]
     fn snd_channel_calc_volume_matches() {
-        check_paths_lohi(ssx3_ee::s13::f_003ba7b0__generated, snd_channel_calc_volume, SEEDS * 2, &[32, 42, 44, 54], &|c, seed| {
-            let mut r = start(c, seed, 21);
-            channel_setup(c, &mut r);
-            let idx = r.next_u32() % 8;
-            let ch = DATA + 0x1000 + idx * snd::CHANNEL_SIZE;
-            // Realistic gains most of the time, anything otherwise.
-            let small = seed % 3 != 0;
-            let g = |r: &mut Rng| if small { (r.next_u32() % 0x1001) as u16 } else { r.next_u32() as u16 };
-            let (ga, gb) = (g(&mut r), g(&mut r));
-            c.bus.write16(ch + snd::CH_GAIN_A, ga);
-            c.bus.write16(ch + snd::CH_GAIN_B, gb);
-            if small {
-                c.bus.write8(ch + snd::CH_VOLUME, (r.next_u32() % 128) as u8);
-            }
-            // Scale and curve tables around 16 MB (the curve index can be
-            // about ±140k for wrapped products).
-            let scale = 0x0100_0000;
-            let curve = 0x0110_0000;
-            fill(c, &mut r, scale, 0x40);
-            fill(c, &mut r, curve - 0x400, 0x200);
-            c.bus.write32(ch + snd::CH_SCALE_TABLE, if r.next_u32() % 2 == 0 { 0 } else { scale });
-            c.bus.write32(ch + snd::CH_CURVE_TABLE, if r.next_u32() % 2 == 0 { 0 } else { curve });
-            c.bus.write8(snd::MASTER_VOLUME.0, if r.next_u32() % 4 == 0 { r.next_u32() as u8 } else { 0x7f });
-            c.g[A0][0] = reg64(&mut r, idx);
-        });
+        check_paths_lohi(
+            ssx3_ee::s13::f_003ba7b0__generated,
+            snd_channel_calc_volume,
+            SEEDS * 2,
+            &[32, 42, 44, 54],
+            &|c, seed| {
+                let mut r = start(c, seed, 21);
+                channel_setup(c, &mut r);
+                let idx = r.next_u32() % 8;
+                let ch = DATA + 0x1000 + idx * snd::CHANNEL_SIZE;
+                // Realistic gains most of the time, anything otherwise.
+                let small = seed % 3 != 0;
+                let g = |r: &mut Rng| {
+                    if small {
+                        (r.next_u32() % 0x1001) as u16
+                    } else {
+                        r.next_u32() as u16
+                    }
+                };
+                let (ga, gb) = (g(&mut r), g(&mut r));
+                c.bus.write16(ch + snd::CH_GAIN_A, ga);
+                c.bus.write16(ch + snd::CH_GAIN_B, gb);
+                if small {
+                    c.bus
+                        .write8(ch + snd::CH_VOLUME, (r.next_u32() % 128) as u8);
+                }
+                // Scale and curve tables around 16 MB (the curve index can be
+                // about ±140k for wrapped products).
+                let scale = 0x0100_0000;
+                let curve = 0x0110_0000;
+                fill(c, &mut r, scale, 0x40);
+                fill(c, &mut r, curve - 0x400, 0x200);
+                c.bus.write32(
+                    ch + snd::CH_SCALE_TABLE,
+                    if r.next_u32() % 2 == 0 { 0 } else { scale },
+                );
+                c.bus.write32(
+                    ch + snd::CH_CURVE_TABLE,
+                    if r.next_u32() % 2 == 0 { 0 } else { curve },
+                );
+                c.bus.write8(
+                    snd::MASTER_VOLUME.0,
+                    if r.next_u32() % 4 == 0 {
+                        r.next_u32() as u8
+                    } else {
+                        0x7f
+                    },
+                );
+                c.g[A0][0] = reg64(&mut r, idx);
+            },
+        );
     }
 
     // --------------------------------------------------------------- banks
 
     #[test]
     fn snd_bank_get_patch_matches() {
-        check_paths(ssx3_ee::s13::f_003c6540__generated, snd_bank_get_patch, SEEDS, &[6, 10, 11], &|c, seed| {
-            let mut r = start(c, seed, 30);
-            let bank = DATA + 0x100;
-            fill(c, &mut r, DATA, 0x200 / 4);
-            c.bus.write16(bank + 6, (r.next_u32() % 40) as u16);
-            for i in 0..32 {
-                let off = if r.next_u32() % 4 == 0 { 0 } else { r.next_u32() & 0xffff };
-                c.bus.write32(bank + 0x14 + i * 4, off);
-            }
-            let index = match seed % 4 {
-                0 => (r.next_u32() % 64).wrapping_sub(32), // negatives
-                _ => r.next_u32() % 34,
-            };
-            c.g[A0][0] = sx(bank);
-            c.g[A1][0] = reg64(&mut r, index);
-        });
+        check_paths(
+            ssx3_ee::s13::f_003c6540__generated,
+            snd_bank_get_patch,
+            SEEDS,
+            &[6, 10, 11],
+            &|c, seed| {
+                let mut r = start(c, seed, 30);
+                let bank = DATA + 0x100;
+                fill(c, &mut r, DATA, 0x200 / 4);
+                c.bus.write16(bank + 6, (r.next_u32() % 40) as u16);
+                for i in 0..32 {
+                    let off = if r.next_u32() % 4 == 0 {
+                        0
+                    } else {
+                        r.next_u32() & 0xffff
+                    };
+                    c.bus.write32(bank + 0x14 + i * 4, off);
+                }
+                let index = match seed % 4 {
+                    0 => (r.next_u32() % 64).wrapping_sub(32), // negatives
+                    _ => r.next_u32() % 34,
+                };
+                c.g[A0][0] = sx(bank);
+                c.g[A1][0] = reg64(&mut r, index);
+            },
+        );
     }
 
     /// Bank slots at DATA+0x2000 (16 of them), headers at DATA+0x3000.
@@ -1002,9 +1130,20 @@ mod tests {
         fill(c, r, slots, 16 * 4);
         fill(c, r, DATA + 0x3000, 16 * 4);
         c.bus.write32(snd::BANKS.0, slots);
-        c.bus.write16(snd::BANK_COUNT.0, if r.next_u32() % 4 == 0 { r.next_u32() as u16 } else { 12 });
+        c.bus.write16(
+            snd::BANK_COUNT.0,
+            if r.next_u32() % 4 == 0 {
+                r.next_u32() as u16
+            } else {
+                12
+            },
+        );
         for i in 0..16 {
-            let hdr = if r.next_u32() % 3 == 0 { 0 } else { DATA + 0x3000 + i * 0x10 };
+            let hdr = if r.next_u32() % 3 == 0 {
+                0
+            } else {
+                DATA + 0x3000 + i * 0x10
+            };
             c.bus.write32(slots + i * 0x10, hdr);
             if r.next_u32() % 2 == 0 {
                 c.bus.write8(slots + i * 0x10 + 0xc, 0);
@@ -1014,154 +1153,232 @@ mod tests {
 
     #[test]
     fn snd_bank_get_size_matches() {
-        check_paths(ssx3_ee::s13::f_003b6528__generated, snd_bank_get_size, SEEDS, &[7], &|c, seed| {
-            let mut r = start(c, seed, 31);
-            bank_setup(c, &mut r);
-            let id = r.next_u32() % 16;
-            // Keep the header pointer valid.
-            c.bus.write32(DATA + 0x2000 + id * 0x10, DATA + 0x3000 + id * 0x10);
-            c.g[A0][0] = reg64(&mut r, id);
-        });
+        check_paths(
+            ssx3_ee::s13::f_003b6528__generated,
+            snd_bank_get_size,
+            SEEDS,
+            &[7],
+            &|c, seed| {
+                let mut r = start(c, seed, 31);
+                bank_setup(c, &mut r);
+                let id = r.next_u32() % 16;
+                // Keep the header pointer valid.
+                c.bus
+                    .write32(DATA + 0x2000 + id * 0x10, DATA + 0x3000 + id * 0x10);
+                c.g[A0][0] = reg64(&mut r, id);
+            },
+        );
     }
 
     #[test]
     fn snd_bank_validate_matches() {
-        check_paths(ssx3_ee::s13::f_003b64d8__generated, snd_bank_validate, SEEDS, &[4, 9, 14, 16], &|c, seed| {
-            let mut r = start(c, seed, 32);
-            bank_setup(c, &mut r);
-            let id = match seed % 4 {
-                0 => r.next_u32(),
-                _ => r.next_u32() % 16,
-            };
-            c.g[A0][0] = reg64(&mut r, id);
-        });
+        check_paths(
+            ssx3_ee::s13::f_003b64d8__generated,
+            snd_bank_validate,
+            SEEDS,
+            &[4, 9, 14, 16],
+            &|c, seed| {
+                let mut r = start(c, seed, 32);
+                bank_setup(c, &mut r);
+                let id = match seed % 4 {
+                    0 => r.next_u32(),
+                    _ => r.next_u32() % 16,
+                };
+                c.g[A0][0] = reg64(&mut r, id);
+            },
+        );
     }
 
     // ---------------------------------------------- MIDI, streams, speech
 
     #[test]
     fn sndmidi_get_slot_matches() {
-        check_paths_lohi(ssx3_ee::s13::f_003b8d98__generated, sndmidi_get_slot, SEEDS, &[5, 8, 15], &|c, seed| {
-            let mut r = start(c, seed, 40);
-            for i in 0..16 {
-                let id = (r.next_u32() & 0x7fff_ffe0) | i;
-                let a = snd::MIDI_SLOTS.0 + i * snd::MIDI_SLOT_SIZE + 0x10;
-                c.bus.write32(a, if r.next_u32() % 4 == 0 { r.next_u32() } else { id });
-            }
-            let handle = match seed % 4 {
-                0 => r.next_u32(),
-                1 => (r.next_u32() & 0x7fff_ffe0) | (16 + r.next_u32() % 16),
-                _ => {
-                    let i = r.next_u32() % 16;
-                    c.bus.read32(snd::MIDI_SLOTS.0 + i * snd::MIDI_SLOT_SIZE + 0x10)
+        check_paths_lohi(
+            ssx3_ee::s13::f_003b8d98__generated,
+            sndmidi_get_slot,
+            SEEDS,
+            &[5, 8, 15],
+            &|c, seed| {
+                let mut r = start(c, seed, 40);
+                for i in 0..16 {
+                    let id = (r.next_u32() & 0x7fff_ffe0) | i;
+                    let a = snd::MIDI_SLOTS.0 + i * snd::MIDI_SLOT_SIZE + 0x10;
+                    c.bus.write32(
+                        a,
+                        if r.next_u32() % 4 == 0 {
+                            r.next_u32()
+                        } else {
+                            id
+                        },
+                    );
                 }
-            };
-            c.g[A0][0] = reg64(&mut r, handle);
-        });
+                let handle = match seed % 4 {
+                    0 => r.next_u32(),
+                    1 => (r.next_u32() & 0x7fff_ffe0) | (16 + r.next_u32() % 16),
+                    _ => {
+                        let i = r.next_u32() % 16;
+                        c.bus
+                            .read32(snd::MIDI_SLOTS.0 + i * snd::MIDI_SLOT_SIZE + 0x10)
+                    }
+                };
+                c.g[A0][0] = reg64(&mut r, handle);
+            },
+        );
     }
 
     #[test]
     fn sndstrm_get_stream_matches() {
-        check_paths(ssx3_ee::s13::f_003b6a38__generated, sndstrm_get_stream, SEEDS, &[7, 9, 12], &|c, seed| {
-            let mut r = start(c, seed, 41);
-            fill(c, &mut r, snd::STREAMS.0, 0x40);
-            c.bus.write8(snd::STREAM_COUNT.0, (r.next_u32() % 0x40) as u8);
-            let idx = match seed % 4 {
-                0 => r.next_u32(),
-                1 => 0u32.wrapping_sub(r.next_u32() % 4),
-                _ => r.next_u32() % 0x48,
-            };
-            c.g[A0][0] = reg64(&mut r, idx);
-        });
+        check_paths(
+            ssx3_ee::s13::f_003b6a38__generated,
+            sndstrm_get_stream,
+            SEEDS,
+            &[7, 9, 12],
+            &|c, seed| {
+                let mut r = start(c, seed, 41);
+                fill(c, &mut r, snd::STREAMS.0, 0x40);
+                c.bus
+                    .write8(snd::STREAM_COUNT.0, (r.next_u32() % 0x40) as u8);
+                let idx = match seed % 4 {
+                    0 => r.next_u32(),
+                    1 => 0u32.wrapping_sub(r.next_u32() % 4),
+                    _ => r.next_u32() % 0x48,
+                };
+                c.g[A0][0] = reg64(&mut r, idx);
+            },
+        );
     }
 
     #[test]
     fn spch_make_id_matches() {
-        check_paths(ssx3_ee::s14::f_003d8008__generated, spch_make_id, SEEDS, &[7], &|c, seed| {
-            let mut r = start(c, seed, 42);
-            fill(c, &mut r, crate::difftest::SP - 0x20, 0x10);
-            // Registers keep their scrambled upper bits.
-            let _ = &mut r;
-        });
+        check_paths(
+            ssx3_ee::s14::f_003d8008__generated,
+            spch_make_id,
+            SEEDS,
+            &[7],
+            &|c, seed| {
+                let mut r = start(c, seed, 42);
+                fill(c, &mut r, crate::difftest::SP - 0x20, 0x10);
+                // Registers keep their scrambled upper bits.
+                let _ = &mut r;
+            },
+        );
     }
 
     // --------------------------------------------------------------- files
 
     #[test]
     fn stream_file_validate_matches() {
-        check_paths(ssx3_ee::s14::f_003dfbd0__generated, stream_file_validate, SEEDS, &[4, 9, 10], &|c, seed| {
-            let mut r = start(c, seed, 50);
-            let (file, hdr) = (DATA + 0x100, DATA + 0x200);
-            fill(c, &mut r, DATA, 0x400 / 4);
-            c.bus.write32(file, hdr);
-            c.bus.write32(hdr, if seed % 3 == 0 { r.next_u32() } else { STREAM_MAGIC as u32 });
-            c.g[A0][0] = if seed % 5 == 0 { 0 } else { reg64(&mut r, file) };
-            c.g[A1][0] = reg64(&mut r, DATA + 0x300);
-            c.g[A2][0] = reg64(&mut r, DATA + 0x304);
-        });
+        check_paths(
+            ssx3_ee::s14::f_003dfbd0__generated,
+            stream_file_validate,
+            SEEDS,
+            &[4, 9, 10],
+            &|c, seed| {
+                let mut r = start(c, seed, 50);
+                let (file, hdr) = (DATA + 0x100, DATA + 0x200);
+                fill(c, &mut r, DATA, 0x400 / 4);
+                c.bus.write32(file, hdr);
+                c.bus.write32(
+                    hdr,
+                    if seed % 3 == 0 {
+                        r.next_u32()
+                    } else {
+                        STREAM_MAGIC as u32
+                    },
+                );
+                c.g[A0][0] = if seed % 5 == 0 {
+                    0
+                } else {
+                    reg64(&mut r, file)
+                };
+                c.g[A1][0] = reg64(&mut r, DATA + 0x300);
+                c.g[A2][0] = reg64(&mut r, DATA + 0x304);
+            },
+        );
     }
 
     #[test]
     fn stream_file_ring_in_range_matches() {
-        check_paths(ssx3_ee::s14::f_003dfc08__generated, stream_file_ring_in_range, SEEDS * 2, &[7, 8, 10, 11], &|c, seed| {
-            let mut r = start(c, seed, 51);
-            // Small values so all orderings (and equality) occur; sometimes
-            // full 64-bit values.
-            let v = |r: &mut Rng| -> u64 {
-                match r.next_u32() % 5 {
-                    0 => (r.next_u32() as u64) << 32 | r.next_u32() as u64,
-                    1 => sx(0x8000_0000 | r.next_u32() % 4),
-                    _ => (r.next_u32() % 6) as u64,
-                }
-            };
-            c.g[A0][0] = v(&mut r);
-            c.g[A1][0] = v(&mut r);
-            c.g[A2][0] = v(&mut r);
-        });
+        check_paths(
+            ssx3_ee::s14::f_003dfc08__generated,
+            stream_file_ring_in_range,
+            SEEDS * 2,
+            &[7, 8, 10, 11],
+            &|c, seed| {
+                let mut r = start(c, seed, 51);
+                // Small values so all orderings (and equality) occur; sometimes
+                // full 64-bit values.
+                let v = |r: &mut Rng| -> u64 {
+                    match r.next_u32() % 5 {
+                        0 => (r.next_u32() as u64) << 32 | r.next_u32() as u64,
+                        1 => sx(0x8000_0000 | r.next_u32() % 4),
+                        _ => (r.next_u32() % 6) as u64,
+                    }
+                };
+                c.g[A0][0] = v(&mut r);
+                c.g[A1][0] = v(&mut r);
+                c.g[A2][0] = v(&mut r);
+            },
+        );
     }
 
     #[test]
     fn async_file_from_handle_matches() {
-        check_paths_lohi(ssx3_ee::s14::f_003def70__generated, async_file_from_handle, SEEDS, &[6, 11, 17], &|c, seed| {
-            let mut r = start(c, seed, 52);
-            let slots = DATA + 0x1000;
-            fill(c, &mut r, slots, 0x100 * 0x30 / 4);
-            c.bus.write32(async_file::SLOTS.0, slots);
-            c.bus.write32(async_file::COUNT.0, match r.next_u32() % 4 {
-                0 => r.next_u32(),
-                _ => 1 + r.next_u32() % 0x20,
-            });
-            for i in 0..0x20 {
-                let id = (r.next_u32() & 0x7fff_ff00) | 0x100 | i;
-                c.bus.write32(slots + i * 0x30, id);
-            }
-            let handle = match seed % 5 {
-                0 => r.next_u32(),
-                1 => r.next_u32() % 0x200,
-                _ => c.bus.read32(slots + (r.next_u32() % 0x24) * 0x30),
-            };
-            c.g[A0][0] = reg64(&mut r, handle);
-        });
+        check_paths_lohi(
+            ssx3_ee::s14::f_003def70__generated,
+            async_file_from_handle,
+            SEEDS,
+            &[6, 11, 17],
+            &|c, seed| {
+                let mut r = start(c, seed, 52);
+                let slots = DATA + 0x1000;
+                fill(c, &mut r, slots, 0x100 * 0x30 / 4);
+                c.bus.write32(async_file::SLOTS.0, slots);
+                c.bus.write32(
+                    async_file::COUNT.0,
+                    match r.next_u32() % 4 {
+                        0 => r.next_u32(),
+                        _ => 1 + r.next_u32() % 0x20,
+                    },
+                );
+                for i in 0..0x20 {
+                    let id = (r.next_u32() & 0x7fff_ff00) | 0x100 | i;
+                    c.bus.write32(slots + i * 0x30, id);
+                }
+                let handle = match seed % 5 {
+                    0 => r.next_u32(),
+                    1 => r.next_u32() % 0x200,
+                    _ => c.bus.read32(slots + (r.next_u32() % 0x24) * 0x30),
+                };
+                c.g[A0][0] = reg64(&mut r, handle);
+            },
+        );
     }
 
     #[test]
     fn big_file_get_type_matches() {
-        check_paths(ssx3_ee::s14::f_003e2500__generated, big_file_get_type, SEEDS, &[12, 23, 28], &|c, seed| {
-            let mut r = start(c, seed, 53);
-            let mut hdr: [u8; 4] = r.next_u32().to_le_bytes();
-            match seed % 6 {
-                0 => hdr[..2].copy_from_slice(&[0xc0, 0xfb]),
-                1 => hdr = *b"BIGF",
-                2 => hdr[..3].copy_from_slice(b"BIG"),
-                3 => hdr[..2].copy_from_slice(&[0xc0, r.next_u32() as u8]),
-                4 => hdr[..3].copy_from_slice(&[b'B', b'I', r.next_u32() as u8]),
-                _ => {}
-            }
-            let a = DATA + (r.next_u32() & 0xfff);
-            for (i, b) in hdr.iter().enumerate() {
-                c.bus.write8(a + i as u32, *b);
-            }
-            c.g[A0][0] = reg64(&mut r, a);
-        });
+        check_paths(
+            ssx3_ee::s14::f_003e2500__generated,
+            big_file_get_type,
+            SEEDS,
+            &[12, 23, 28],
+            &|c, seed| {
+                let mut r = start(c, seed, 53);
+                let mut hdr: [u8; 4] = r.next_u32().to_le_bytes();
+                match seed % 6 {
+                    0 => hdr[..2].copy_from_slice(&[0xc0, 0xfb]),
+                    1 => hdr = *b"BIGF",
+                    2 => hdr[..3].copy_from_slice(b"BIG"),
+                    3 => hdr[..2].copy_from_slice(&[0xc0, r.next_u32() as u8]),
+                    4 => hdr[..3].copy_from_slice(&[b'B', b'I', r.next_u32() as u8]),
+                    _ => {}
+                }
+                let a = DATA + (r.next_u32() & 0xfff);
+                for (i, b) in hdr.iter().enumerate() {
+                    c.bus.write8(a + i as u32, *b);
+                }
+                c.g[A0][0] = reg64(&mut r, a);
+            },
+        );
     }
 }

@@ -2,26 +2,25 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
-use crate::guest::Addr;
-use crate::ps2f::FpuF32;
-use ssx3_ee_rt::cpu::reg::*;
-use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::float;
-use ssx3_ee_rt::Cpu;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Frame;
 use crate::events;
-pub(crate) use crate::game::visualfx::worldlightman::DELETE;
 pub(crate) use crate::game::visualfx::worldlightman::deleting_dtor;
+pub(crate) use crate::game::visualfx::worldlightman::DELETE;
+use crate::guest::Addr;
+use crate::ps2f::FpuF32;
+use ssx3_ee_rt::cpu::reg::*;
+use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::float;
+use ssx3_ee_rt::funcs::GuestFn;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0032_0ad8, ps2_exec_man_v01, "PS2ExecMan_v01"),
     (0x0032_0b68, math_ceil_log2, "Math_CeilLog2"),
 ];
-
 
 // ---------------------------------------------------------------------------
 // Math.
@@ -66,7 +65,6 @@ pub fn math_ceil_log2(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `PS2ExecMan_v01` (0x320ad8): vtable at `+0x8`.
 pub fn ps2_exec_man_v01(c: &mut Cpu) {
     deleting_dtor(c, 0x8, 0x0048_dc30, 0x0032_0afc);
@@ -77,19 +75,18 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
-    use crate::difftest::scramble;
-    use crate::difftest::Rng;
-    use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::ptr;
     use crate::difftest::fakes::vtable;
     use crate::difftest::fakes::LOG_RESULTS;
-    use ssx3_ee as ee;
-    pub(crate) use crate::game::visualfx::worldlightman::tests::MEM_MUTEX;
+    use crate::difftest::scramble;
+    use crate::difftest::Rng;
+    use crate::difftest::DATA;
+    use crate::difftest::GAME_GP;
     pub(crate) use crate::game::visualfx::worldlightman::tests::alloc_setup;
     pub(crate) use crate::game::visualfx::worldlightman::tests::dtor_case;
-
+    pub(crate) use crate::game::visualfx::worldlightman::tests::MEM_MUTEX;
+    use ssx3_ee as ee;
 
     #[test]
     fn math_ceil_log2_matches() {
@@ -106,7 +103,6 @@ pub(crate) mod tests {
             c.g[A0][0] = x as u64;
         });
     }
-
 
     #[test]
     fn ps2_exec_man_v01_matches() {

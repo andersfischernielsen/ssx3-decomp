@@ -61,7 +61,16 @@ pub struct Context {
 
 impl Default for Context {
     fn default() -> Self {
-        Self { g: [[0; 2]; 32], hi: [0; 2], lo: [0; 2], sa: 0, f: [0; 32], facc: 0, fcr31: 0, pc: 0 }
+        Self {
+            g: [[0; 2]; 32],
+            hi: [0; 2],
+            lo: [0; 2],
+            sa: 0,
+            f: [0; 32],
+            facc: 0,
+            fcr31: 0,
+            pc: 0,
+        }
     }
 }
 
@@ -212,7 +221,9 @@ impl Kernel {
             if t.status != Status::Ready && t.status != Status::Run {
                 continue;
             }
-            if best.is_none_or(|b| t.priority < b.priority || (t.priority == b.priority && t.order < b.order)) {
+            if best.is_none_or(|b| {
+                t.priority < b.priority || (t.priority == b.priority && t.order < b.order)
+            }) {
                 best = Some(t);
             }
         }
@@ -233,7 +244,16 @@ impl Kernel {
 }
 
 pub fn save_context(c: &Cpu) -> Context {
-    Context { g: c.g, hi: c.hi, lo: c.lo, sa: c.sa, f: c.f, facc: c.facc, fcr31: c.fcr31, pc: c.pc & !UNWIND }
+    Context {
+        g: c.g,
+        hi: c.hi,
+        lo: c.lo,
+        sa: c.sa,
+        f: c.f,
+        facc: c.facc,
+        fcr31: c.fcr31,
+        pc: c.pc & !UNWIND,
+    }
 }
 
 pub fn load_context(c: &mut Cpu, x: &Context) {
@@ -328,7 +348,13 @@ pub fn reschedule(c: &mut Cpu) {
     }
     let cur = m!(c).kernel.current;
     let best = m!(c).kernel.best_ready();
-    if best == Some(cur) && m!(c).kernel.threads.get(&cur).is_some_and(|t| t.status == Status::Run) {
+    if best == Some(cur)
+        && m!(c)
+            .kernel
+            .threads
+            .get(&cur)
+            .is_some_and(|t| t.status == Status::Run)
+    {
         return;
     }
     switch_to(c, best);
@@ -383,7 +409,11 @@ fn add_handler(c: &mut Cpu, dmac: bool) {
     };
     m!(c).kernel.next_handler += 1;
     let next = arg(c, 2) as i32;
-    let list = if dmac { &mut m!(c).kernel.dmac_handlers } else { &mut m!(c).kernel.intc_handlers };
+    let list = if dmac {
+        &mut m!(c).kernel.dmac_handlers
+    } else {
+        &mut m!(c).kernel.intc_handlers
+    };
     if next == 0 {
         list.insert(0, h);
     } else if next == -1 {
@@ -397,7 +427,11 @@ fn add_handler(c: &mut Cpu, dmac: bool) {
 
 fn remove_handler(c: &mut Cpu, dmac: bool) {
     let id = arg(c, 1) as i32;
-    let list = if dmac { &mut m!(c).kernel.dmac_handlers } else { &mut m!(c).kernel.intc_handlers };
+    let list = if dmac {
+        &mut m!(c).kernel.dmac_handlers
+    } else {
+        &mut m!(c).kernel.intc_handlers
+    };
     list.retain(|h| h.id != id);
     ret(c, 0);
 }
@@ -424,8 +458,13 @@ pub fn service(c: &mut Cpu) {
             if dmac != 0 {
                 let chn = dmac.trailing_zeros();
                 m!(c).hw.d_stat &= !(1 << chn);
-                let hs: Vec<Handler> =
-                    m!(c).kernel.dmac_handlers.iter().filter(|h| h.cause == chn).copied().collect();
+                let hs: Vec<Handler> = m!(c)
+                    .kernel
+                    .dmac_handlers
+                    .iter()
+                    .filter(|h| h.cause == chn)
+                    .copied()
+                    .collect();
                 for h in hs {
                     if (run_guest(c, h.address, [chn, h.arg, 0, 0], h.gp) as i32) < 0 {
                         break;
@@ -437,8 +476,13 @@ pub fn service(c: &mut Cpu) {
             } else {
                 let cause = intc.trailing_zeros();
                 m!(c).hw.i_stat &= !(1 << cause);
-                let hs: Vec<Handler> =
-                    m!(c).kernel.intc_handlers.iter().filter(|h| h.cause == cause).copied().collect();
+                let hs: Vec<Handler> = m!(c)
+                    .kernel
+                    .intc_handlers
+                    .iter()
+                    .filter(|h| h.cause == cause)
+                    .copied()
+                    .collect();
                 for h in hs {
                     if (run_guest(c, h.address, [cause, h.arg, 0, 0], h.gp) as i32) < 0 {
                         break;
@@ -461,7 +505,12 @@ pub fn service(c: &mut Cpu) {
 fn run_alarms(c: &mut Cpu) {
     loop {
         let now = c.cycles;
-        let due = m!(c).kernel.alarms.iter().find(|(_, a)| a.due <= now).map(|(id, a)| (*id, *a));
+        let due = m!(c)
+            .kernel
+            .alarms
+            .iter()
+            .find(|(_, a)| a.due <= now)
+            .map(|(id, a)| (*id, *a));
         let Some((id, a)) = due else { break };
         m!(c).kernel.alarms.remove(&id);
         let hsync = (now / crate::machine::HSYNC_CYCLES) as u32;
@@ -784,9 +833,13 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
             if id < 0 {
                 ret(c, -1);
             } else {
-                let due = c.cycles
-                    + (arg(c, 0) & 0xFFFF) as u64 * crate::machine::HSYNC_CYCLES;
-                let a = Alarm { callback: arg(c, 1), arg: arg(c, 2), gp: c.g[28][0] as u32, due };
+                let due = c.cycles + (arg(c, 0) & 0xFFFF) as u64 * crate::machine::HSYNC_CYCLES;
+                let a = Alarm {
+                    callback: arg(c, 1),
+                    arg: arg(c, 2),
+                    gp: c.g[28][0] as u32,
+                    due,
+                };
                 m!(c).kernel.alarms.insert(id, a);
                 c.next_event = c.next_event.min(due);
                 ret(c, id as i64);
@@ -814,7 +867,10 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
                 ret(c, -1);
                 return;
             };
-            let mut ctx = Context { pc: t.entry, ..Default::default() };
+            let mut ctx = Context {
+                pc: t.entry,
+                ..Default::default()
+            };
             ctx.g[4][0] = sx(a1);
             ctx.g[28][0] = sx(t.gp);
             ctx.g[29][0] = sx(t.stack + t.stack_size - CONTEXT_RESERVE);
@@ -981,7 +1037,11 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
         0x35 | 0x36 => {
             let a0 = arg(c, 0);
             let id = m!(c).kernel.thread_id(a0 as i32);
-            let r = m!(c).kernel.threads.get_mut(&id).map(|t| std::mem::take(&mut t.wakeups));
+            let r = m!(c)
+                .kernel
+                .threads
+                .get_mut(&id)
+                .map(|t| std::mem::take(&mut t.wakeups));
             ret(c, r.map(|w| w as i64).unwrap_or(-1))
         }
         0x37 | 0x38 => {
@@ -1031,7 +1091,11 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
         }
         0x3C => {
             let (gp, stack, size, args) = (arg(c, 0), arg(c, 1), arg(c, 2), arg(c, 3));
-            let top = if stack == 0xFFFF_FFFF { crate::bus::RAM_SIZE as u32 - 0x1000 } else { stack + size };
+            let top = if stack == 0xFFFF_FFFF {
+                crate::bus::RAM_SIZE as u32 - 0x1000
+            } else {
+                stack + size
+            };
             if let Some(t) = m!(c).kernel.cur() {
                 t.stack = top - size;
                 t.stack_size = size;
@@ -1135,8 +1199,14 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
                 ret(c, -1);
                 return;
             };
-            let words =
-                [s.count as u32, s.max as u32, s.init as u32, s.waiters.len() as u32, s.attr, s.option];
+            let words = [
+                s.count as u32,
+                s.max as u32,
+                s.init as u32,
+                s.waiters.len() as u32,
+                s.attr,
+                s.option,
+            ];
             for (i, w) in words.iter().enumerate() {
                 c.bus.write32(p + i as u32 * 4, *w);
             }
@@ -1222,7 +1292,10 @@ pub fn syscall(c: &mut Cpu, pc: u32) {
         0x85 => ret(c, 0),
         0x4C..=0x4F => ret(c, 0),
         _ => {
-            eprintln!("[sys] unhandled syscall {n:#04x} ({}) from {pc:#010x}", syscall_name(n));
+            eprintln!(
+                "[sys] unhandled syscall {n:#04x} ({}) from {pc:#010x}",
+                syscall_name(n)
+            );
             ret(c, 0)
         }
     }

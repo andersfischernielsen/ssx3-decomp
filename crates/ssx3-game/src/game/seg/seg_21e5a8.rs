@@ -9,10 +9,8 @@ use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
-pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0031_d5e8, c_csi_cubic_spline_ctor, "cCSICubicSpline_ctor"),
-];
-
+pub const OVERRIDES: &[(u32, GuestFn, &str)] =
+    &[(0x0031_d5e8, c_csi_cubic_spline_ctor, "cCSICubicSpline_ctor")];
 
 /// `cCSICubicSpline *cCSICubicSpline_ctor(cCSICubicSpline *this)`
 /// (0x31d5e8): mask the flags word at +0 and clear the count at +8.
@@ -43,15 +41,19 @@ pub(crate) mod tests {
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
 
-
     #[test]
     fn c_csi_cubic_spline_ctor_matches() {
-        check(ssx3_ee::s10::f_0031d5e8, c_csi_cubic_spline_ctor, 200, &|c, seed| {
-            let mut r = Rng(0x201a ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.bus.write32(DATA, r.next_u32());
-            c.bus.write32(DATA + 8, r.next_u32());
-        });
+        check(
+            ssx3_ee::s10::f_0031d5e8,
+            c_csi_cubic_spline_ctor,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x201a ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.bus.write32(DATA, r.next_u32());
+                c.bus.write32(DATA + 8, r.next_u32());
+            },
+        );
     }
 }

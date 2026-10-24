@@ -47,7 +47,13 @@ pub fn enabled() -> bool {
 fn state(c: &mut Cpu) -> &mut NativeSnd {
     m!(c).sif.native_snd.get_or_insert_with(|| {
         eprintln!("[snd] native sound driver (ssx3-snd) instead of SNDDRV on the IOP");
-        Box::new(NativeSnd { drv: SndDriver::new(), next_tick: None, sink: ssx3_iop::audio::Sink::from_env(), ticks: 0, tag_fresh: false })
+        Box::new(NativeSnd {
+            drv: SndDriver::new(),
+            next_tick: None,
+            sink: ssx3_iop::audio::Sink::from_env(),
+            ticks: 0,
+            tag_fresh: false,
+        })
     })
 }
 
@@ -57,8 +63,12 @@ pub fn rpc(c: &mut Cpu, fno: u32, args: u32, size: u32) {
         // 1 = shutdown, 2 = IOP effect preset (not used during play).
         return;
     }
-    let data = c.bus.read_bytes(args & 0x01FF_FFFF, size.max(0x14) as usize);
-    let Some(p) = InitParams::parse(&data) else { return };
+    let data = c
+        .bus
+        .read_bytes(args & 0x01FF_FFFF, size.max(0x14) as usize);
+    let Some(p) = InitParams::parse(&data) else {
+        return;
+    };
     if m!(c).sif.trace {
         eprintln!("[snd] init {p:?}");
     }
@@ -117,7 +127,13 @@ pub fn service(c: &mut Cpu) -> Option<u64> {
     if !crate::machine::realtime() {
         return Some(due);
     }
-    let queued = |c: &mut Cpu| m!(c).sif.native_snd.as_ref().and_then(|s| s.sink.queued_frames());
+    let queued = |c: &mut Cpu| {
+        m!(c)
+            .sif
+            .native_snd
+            .as_ref()
+            .and_then(|s| s.sink.queued_frames())
+    };
     let fresh = |c: &mut Cpu| m!(c).sif.native_snd.as_ref().is_some_and(|s| s.tag_fresh);
     let lead = (crate::machine::audio_lead_frames() as usize).max(2880);
     if queued(c).is_some_and(|q| q < lead) && fresh(c) {
@@ -143,7 +159,8 @@ fn run_tick(c: &mut Cpu) {
     let status_ee = s.drv.cfg.map_or(0, |p| p.status_ee);
     m!(c).iop = iop;
     if status_ee != 0 {
-        c.bus.write_bytes(status_ee & 0x01FF_FFFF, &out.status.to_bytes());
+        c.bus
+            .write_bytes(status_ee & 0x01FF_FFFF, &out.status.to_bytes());
     }
     crate::sif::send_user_cmd1(c, TAG_RX, 0);
 }
@@ -158,5 +175,9 @@ pub fn shutdown(c: &mut Cpu) {
 /// Status line part.
 pub fn status(c: &Cpu) -> Option<String> {
     let s = mr!(c).sif.native_snd.as_ref()?;
-    Some(format!("snd native ticks {} audio {:.1}s", s.ticks, s.ticks as f64 * 512.0 / 48000.0))
+    Some(format!(
+        "snd native ticks {} audio {:.1}s",
+        s.ticks,
+        s.ticks as f64 * 512.0 / 48000.0
+    ))
 }

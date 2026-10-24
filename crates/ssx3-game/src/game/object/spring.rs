@@ -2,9 +2,18 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::r32;
+use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
+use crate::call::Frame;
+use crate::events::deliver_event_here;
+use crate::events::event_due;
+pub(crate) use crate::game::camera::trigger::cameratriggerfactory::r;
+pub(crate) use crate::game::scripter::ssxscriptengine::lw_at_2 as lw_at;
+use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -15,22 +24,20 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
-use crate::abi::r32;
-use crate::call::call_ptr;
-use crate::call::sp;
-use crate::call::Frame;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
-use crate::guest::Addr;
-pub(crate) use crate::game::camera::trigger::cameratriggerfactory::r;
-pub(crate) use crate::game::scripter::ssxscriptengine::lw_at_2 as lw_at;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0035_3fc0, flex_bridge_springs_step, "FlexBridge_SpringsStep"),
-    (0x0035_45d8, flex_bridge_springs_save, "FlexBridge_SpringsSave"),
+    (
+        0x0035_3fc0,
+        flex_bridge_springs_step,
+        "FlexBridge_SpringsStep",
+    ),
+    (
+        0x0035_45d8,
+        flex_bridge_springs_save,
+        "FlexBridge_SpringsSave",
+    ),
 ];
-
 
 // ---------------------------------------------------------------------------
 // FlexBridge spring chain.
@@ -41,13 +48,11 @@ pub(crate) fn at(a: u32, off: u32) -> u32 {
     a.wrapping_add(off)
 }
 
-
 /// Set a GPR to a sign-extended word.
 #[inline(always)]
 pub(crate) fn set_r(c: &mut Cpu, reg: usize, v: u32) {
     c.g[reg][0] = ssx3_ee_rt::cpu::sx(v);
 }
-
 
 /// `void FlexBridge_SpringsStep(FlexBridge* self)` (0x353fc0): one step of the
 /// spring chain hanging off the bridge -- an implicit Euler integration of a
@@ -636,7 +641,6 @@ pub fn flex_bridge_springs_step(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `FlexBridge_SpringsSave` (0x3545D8): serialize a bridge's springs through
 /// the stream's writer slot (twice: the header at +0x24 and the spring array
 /// at +0x24 * 0x50 bytes).
@@ -680,22 +684,21 @@ pub fn flex_bridge_springs_save(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
+    use crate::difftest::fakes::machine;
+    use crate::difftest::fakes::FAKE;
     use crate::difftest::put_vec;
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
-    use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::FAKE;
     use crate::difftest::GAME_GP;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::ONE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::SEEDS_10 as SEEDS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::w;
     pub(crate) use crate::game::ai::rider::tests::hh;
     pub(crate) use crate::game::ai::rider::tests::slot_2 as slot;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::ONE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::w;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::SEEDS_10 as SEEDS;
 
     /// Where the springs test keeps the chain (16 nodes of 0x50 bytes).
     pub(crate) const NODES: u32 = 0x0000_0200;
-
 
     #[test]
     fn flex_bridge_springs_step_matches() {
@@ -708,9 +711,10 @@ pub(crate) mod tests {
                 scramble(c, &mut r);
                 c.g[GP][0] = sx(crate::difftest::GAME_GP);
                 // The frame-clock singleton the step length comes from.
-                c.bus.write32(crate::difftest::GAME_GP + 0x2a74, DATA + 0x300);
+                c.bus
+                    .write32(crate::difftest::GAME_GP + 0x2a74, DATA + 0x300);
                 c.bus.write32(DATA + 0x310, 0x42f0_0000); // 120.0f
-                // Zero vector used for F[0]/F[n-1] and the cleared forces.
+                                                          // Zero vector used for F[0]/F[n-1] and the cleared forces.
                 put_vec(c, 0x004f_f120, [0, 0, 0, ONE]);
                 // Three or four nodes: both interior-loop lengths, and never
                 // the empty chain (whose `F[0] = F[-1]` write is a no-op).
@@ -722,9 +726,9 @@ pub(crate) mod tests {
                 c.bus.write32(DATA + 0x10, r.edge_f32()); // e
                 c.bus.write32(DATA + 0x1c, r.edge_f32()); // rest
                 c.bus.write32(DATA + 0x20, r.edge_f32()); // scale
-                // The chain sits low in RAM: the node pointer is then small,
-                // so the fixture stays bounded whatever the loops read as the
-                // node count.
+                                                          // The chain sits low in RAM: the node pointer is then small,
+                                                          // so the fixture stays bounded whatever the loops read as the
+                                                          // node count.
                 c.bus.write32(DATA + 0x24, NODES);
                 for i in 0..16 * 0x50 / 4 {
                     c.bus.write32(NODES + 4 * i, r.edge_f32());
@@ -736,18 +740,22 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn flex_bridge_springs_save_matches() {
-        check(ee::s11::f_003545d8__generated, flex_bridge_springs_save, SEEDS, &|c, seed| {
-            machine(c, seed, 0x35_45d8, 2);
-            c.g[A0][0] = (DATA + 0x2000) as u64;
-            c.g[A1][0] = (DATA + 0x2200) as u64;
-            w(c, DATA + 0x2200, DATA + 0x2400);
-            slot(c, DATA + 0x2400, 0x8, 0, FAKE);
-            w(c, DATA + 0x2000, 32);
-            w(c, DATA + 0x2000 + 0x24, 0x10);
-            c.pc = 0x0035_45d8;
-        });
+        check(
+            ee::s11::f_003545d8__generated,
+            flex_bridge_springs_save,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 0x35_45d8, 2);
+                c.g[A0][0] = (DATA + 0x2000) as u64;
+                c.g[A1][0] = (DATA + 0x2200) as u64;
+                w(c, DATA + 0x2200, DATA + 0x2400);
+                slot(c, DATA + 0x2400, 0x8, 0, FAKE);
+                w(c, DATA + 0x2000, 32);
+                w(c, DATA + 0x2000 + 0x24, 0x10);
+                c.pc = 0x0035_45d8;
+            },
+        );
     }
 }

@@ -2,13 +2,13 @@
 
 use ssx3_ee_rt::funcs::GuestFn;
 
-pub mod control;
-pub mod motion;
 pub mod ai;
 pub mod aianimeventmap;
 pub mod airpredictor;
 pub mod computer;
+pub mod control;
 pub mod dangerman;
+pub mod motion;
 pub mod rider;
 pub mod ridermetrix;
 pub mod trick;

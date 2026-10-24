@@ -53,10 +53,9 @@ fn summary(args: &[String]) {
                 match idx.by_address(addr) {
                     Some(f) => println!("{:08x}  {}", f.address, f.name),
                     None => match idx.containing(addr) {
-                        Some(f) => println!(
-                            "{addr:08x} falls inside {:#010x}  {}",
-                            f.address, f.name
-                        ),
+                        Some(f) => {
+                            println!("{addr:08x} falls inside {:#010x}  {}", f.address, f.name)
+                        }
                         None => println!("no function at or containing {addr:#010x}"),
                     },
                 }
@@ -148,7 +147,9 @@ fn flow_check(path: Option<&str>) {
     let mut total = 0usize;
 
     for f in program.functions() {
-        let Some(runs) = b.runs(f.address) else { continue };
+        let Some(runs) = b.runs(f.address) else {
+            continue;
+        };
         total += 1;
         let max = (f.len() as usize / 4) + 64;
         let d = flow::disassemble(&program.elf, f.address, max);
@@ -160,7 +161,10 @@ fn flow_check(path: Option<&str>) {
             .range(f.address..f.end)
             .map(|(a, _)| *a)
             .collect();
-        let gh: BTreeSet<u32> = runs.iter().flat_map(|&(lo, hi)| (lo..hi).step_by(4)).collect();
+        let gh: BTreeSet<u32> = runs
+            .iter()
+            .flat_map(|&(lo, hi)| (lo..hi).step_by(4))
+            .collect();
 
         matched += ours.intersection(&gh).count();
         extra += ours.difference(&gh).count();
@@ -178,7 +182,10 @@ fn flow_check(path: Option<&str>) {
 
 fn disasm(name: &str) {
     let program = open_program(None);
-    let f = match name.strip_prefix("0x").and_then(|h| u32::from_str_radix(h, 16).ok()) {
+    let f = match name
+        .strip_prefix("0x")
+        .and_then(|h| u32::from_str_radix(h, 16).ok())
+    {
         Some(addr) => index().by_address(addr),
         None => index().search(name).next(),
     }

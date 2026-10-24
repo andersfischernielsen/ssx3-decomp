@@ -45,14 +45,39 @@ pub mod world_casters;
 /// are implemented: kicks go to `kick`, VU1 data memory is updated exactly
 /// as the microprogram would. False when the call is not covered (the
 /// caller then runs the translated microcode).
-pub fn run_native(hash: u64, entry: u32, top: u32, itop: u32, mem: &mut [u8; 16384], kick: &mut dyn FnMut(&[u128])) -> bool {
+pub fn run_native(
+    hash: u64,
+    entry: u32,
+    top: u32,
+    itop: u32,
+    mem: &mut [u8; 16384],
+    kick: &mut dyn FnMut(&[u128]),
+) -> bool {
     match hash {
-        mat1::HASH => mat1::implemented(entry) && mat1::run(entry, top, itop, mem, &mut Default::default(), kick),
-        mat2::HASH => mat2::implemented(entry) && mat2::run(entry, top, itop, mem, &mut Default::default(), kick),
-        mat3::HASH => mat3::implemented(entry) && mat3::run(entry, top, itop, mem, &mut Default::default(), kick),
-        mat4::HASH => mat4::implemented(entry) && mat4::run(entry, top, itop, mem, &mut Default::default(), kick),
-        mat5::HASH => mat5::implemented(entry) && mat5::run(entry, top, itop, mem, &mut Default::default(), kick),
-        mat6::HASH => mat6::implemented(entry) && mat6::run(entry, top, itop, mem, &mut Default::default(), kick),
+        mat1::HASH => {
+            mat1::implemented(entry)
+                && mat1::run(entry, top, itop, mem, &mut Default::default(), kick)
+        }
+        mat2::HASH => {
+            mat2::implemented(entry)
+                && mat2::run(entry, top, itop, mem, &mut Default::default(), kick)
+        }
+        mat3::HASH => {
+            mat3::implemented(entry)
+                && mat3::run(entry, top, itop, mem, &mut Default::default(), kick)
+        }
+        mat4::HASH => {
+            mat4::implemented(entry)
+                && mat4::run(entry, top, itop, mem, &mut Default::default(), kick)
+        }
+        mat5::HASH => {
+            mat5::implemented(entry)
+                && mat5::run(entry, top, itop, mem, &mut Default::default(), kick)
+        }
+        mat6::HASH => {
+            mat6::implemented(entry)
+                && mat6::run(entry, top, itop, mem, &mut Default::default(), kick)
+        }
         _ => false,
     }
 }

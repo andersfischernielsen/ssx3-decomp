@@ -16,7 +16,15 @@ fn main() {
     let built = frame_sink::build_dump(&mem, &carry).unwrap();
     let mut q = Vec::new();
     let mut asr = [0u32; 2];
-    ssx3_render::chain::walk(&mem, built.frame.gif_heads[0], false, false, 0, &mut asr, &mut |d: &[u128]| q.extend_from_slice(d));
+    ssx3_render::chain::walk(
+        &mem,
+        built.frame.gif_heads[0],
+        false,
+        false,
+        0,
+        &mut asr,
+        &mut |d: &[u128]| q.extend_from_slice(d),
+    );
     // Cut before the first tag that sets PRIM 0x156 (the CLUT pass).
     let mut i = 0;
     let mut cut = q.len();
@@ -24,7 +32,10 @@ fn main() {
         let lo = q[i] as u64;
         let nloop = (lo & 0x7fff) as usize;
         let flg = (lo >> 58) & 3;
-        let nreg = match (lo >> 60) as usize { 0 => 16, n => n };
+        let nreg = match (lo >> 60) as usize {
+            0 => 16,
+            n => n,
+        };
         if (lo >> 46) & 1 != 0 && (lo >> 47) & 0x7ff == 0x156 {
             cut = i;
             break;
@@ -43,12 +54,18 @@ fn main() {
                 break;
             }
         }
-        i += 1 + match flg { 0 => nloop * nreg, 1 => (nloop * nreg).div_ceil(2), _ => nloop };
+        i += 1 + match flg {
+            0 => nloop * nreg,
+            1 => (nloop * nreg).div_ceil(2),
+            _ => nloop,
+        };
     }
     eprintln!("p1: {} qwords, cut at {cut}", q.len());
     let mut gs = Gs::new_cpu();
     let (zbp, w, h) = (0x1c00u32, 512u32, 448u32);
-    let zof = |x: u32, y: u32| -> u32 { (x.wrapping_mul(2654435761) ^ y.wrapping_mul(40503) ^ (x * 7 + y * 131) << 9) & 0xff_ffff };
+    let zof = |x: u32, y: u32| -> u32 {
+        (x.wrapping_mul(2654435761) ^ y.wrapping_mul(40503) ^ (x * 7 + y * 131) << 9) & 0xff_ffff
+    };
     gs.draw_log = Some(Vec::new());
     let fp = ssx3_render::frame::flip_packet(&mem);
     eprintln!("flip packet {} qwords, first tag {:#x}", fp.len(), fp[0]);
@@ -64,16 +81,37 @@ fn main() {
     gs.gif_write(1, &q[..cut]);
     gs.sync();
     gs.sync_vram();
-    eprintln!("vram nonzero words: {}, backend {:?}", gs.vram.iter().filter(|&&v| v != 0).count(), gs.backend());
-    let nz = (0..h).flat_map(|y| (0..w).map(move |x| (x, y))).filter(|&(x, y)| swizzle::read_pixel(&gs.vram, 0, 0, 8, x, y) != 0).count();
+    eprintln!(
+        "vram nonzero words: {}, backend {:?}",
+        gs.vram.iter().filter(|&&v| v != 0).count(),
+        gs.backend()
+    );
+    let nz = (0..h)
+        .flat_map(|y| (0..w).map(move |x| (x, y)))
+        .filter(|&(x, y)| swizzle::read_pixel(&gs.vram, 0, 0, 8, x, y) != 0)
+        .count();
     for e in gs.draw_log.as_ref().unwrap() {
-        eprintln!("draw prim {:#x} prims {} frame {:#x} tex0 {:#x} test {:#x}", e.prim, e.prims, e.frame, e.tex0, e.test);
+        eprintln!(
+            "draw prim {:#x} prims {} frame {:#x} tex0 {:#x} test {:#x}",
+            e.prim, e.prims, e.frame, e.tex0, e.test
+        );
     }
-    eprintln!("frame pixels nonzero: {nz}; regs {:x?}", gs.persistent_regs());
+    eprintln!(
+        "frame pixels nonzero: {nz}; regs {:x?}",
+        gs.persistent_regs()
+    );
     // For each alpha bit: which Z bit of which neighbour matches everywhere.
     for b in 0..8 {
         let mut found = Vec::new();
-        for (dx, dy) in [(0i32, 0i32), (1, 0), (-1, 0), (0, 1), (0, -1), (8, 0), (-8, 0)] {
+        for (dx, dy) in [
+            (0i32, 0i32),
+            (1, 0),
+            (-1, 0),
+            (0, 1),
+            (0, -1),
+            (8, 0),
+            (-8, 0),
+        ] {
             for k in 0..24 {
                 let mut ok = true;
                 let mut n = 0;
@@ -93,7 +131,10 @@ fn main() {
                 }
             }
         }
-        let ones = (0..h).flat_map(|y| (0..w).map(move |x| (x, y))).filter(|&(x, y)| (swizzle::read_pixel(&gs.vram, 0, 0, 8, x, y) >> (24 + b)) & 1 != 0).count();
+        let ones = (0..h)
+            .flat_map(|y| (0..w).map(move |x| (x, y)))
+            .filter(|&(x, y)| (swizzle::read_pixel(&gs.vram, 0, 0, 8, x, y) >> (24 + b)) & 1 != 0)
+            .count();
         println!("alpha bit {b}: {found:?} (set in {ones} pixels)");
     }
 }

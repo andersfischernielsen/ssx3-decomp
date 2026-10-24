@@ -2,78 +2,130 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
-use crate::guest::Addr;
-use ssx3_ee_rt::cpu::reg::*;
-use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::Cpu;
 use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::dirtysock::tags2::gp_3 as gp_2;
+pub(crate) use crate::game::fe::feasyncfile::gp as gp_3;
+pub(crate) use crate::game::fe::feasyncfile::gp as gp_4;
+pub(crate) use crate::game::fe::festaterewards2::r;
+pub(crate) use crate::game::fe::festaterewards2::Ops;
+pub(crate) use crate::game::fe::ovstates::at as at_2;
+pub(crate) use crate::game::fe::ovstates::close;
+pub(crate) use crate::game::fe::ovstates::open;
+pub(crate) use crate::game::render::particle::this_with_delta;
+pub(crate) use crate::game::util::menu::gp_5;
+pub(crate) use crate::game::visualfx::angerfx::shl32;
+pub(crate) use crate::game::visualfx::boardwakefx::addiu;
+pub(crate) use crate::game::visualfx::boardwakefx::at;
+pub(crate) use crate::game::visualfx::boardwakefx::back_edge;
+pub(crate) use crate::game::visualfx::boardwakefx::copy_record;
+pub(crate) use crate::game::visualfx::boardwakefx::draw;
+pub(crate) use crate::game::visualfx::boardwakefx::fconst;
+pub(crate) use crate::game::visualfx::boardwakefx::gfx;
+pub(crate) use crate::game::visualfx::boardwakefx::gfx_method;
+pub(crate) use crate::game::visualfx::boardwakefx::gp;
+pub(crate) use crate::game::visualfx::boardwakefx::gs_field;
+pub(crate) use crate::game::visualfx::boardwakefx::p;
+pub(crate) use crate::game::visualfx::boardwakefx::pop_record;
+pub(crate) use crate::game::visualfx::boardwakefx::DRAW;
+pub(crate) use crate::game::visualfx::boardwakefx::GFX_MAN;
+pub(crate) use crate::game::visualfx::boardwakefx::GFX_VTABLE;
+pub(crate) use crate::game::visualfx::boardwakefx::GS_DEFAULT;
+pub(crate) use crate::game::visualfx::boardwakefx::GS_TOP;
+pub(crate) use crate::game::visualfx::boardwakefx::RECORD;
+pub(crate) use crate::game::world::wscriptcache::DELETE_2 as DELETE;
+use crate::guest::Addr;
+use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
+use ssx3_ee_rt::cpu::reg::*;
+use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
 use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
-use crate::call::sp;
-use crate::ps2f::FpuF32;
-use crate::events::back_edge_unwinds;
-pub(crate) use crate::game::visualfx::boardwakefx::GFX_MAN;
-pub(crate) use crate::game::visualfx::boardwakefx::GS_TOP;
-pub(crate) use crate::game::visualfx::boardwakefx::RECORD;
-pub(crate) use crate::game::visualfx::boardwakefx::GS_DEFAULT;
-pub(crate) use crate::game::visualfx::boardwakefx::GFX_VTABLE;
-pub(crate) use crate::game::visualfx::boardwakefx::DRAW;
-pub(crate) use crate::game::visualfx::boardwakefx::at;
-pub(crate) use crate::game::visualfx::boardwakefx::gfx;
-pub(crate) use crate::game::visualfx::boardwakefx::addiu;
-pub(crate) use crate::game::visualfx::boardwakefx::copy_record;
-pub(crate) use crate::game::visualfx::boardwakefx::gs_field;
-pub(crate) use crate::game::visualfx::boardwakefx::gfx_method;
-pub(crate) use crate::game::visualfx::boardwakefx::draw;
-pub(crate) use crate::game::visualfx::boardwakefx::pop_record;
-pub(crate) use crate::game::visualfx::boardwakefx::back_edge;
-pub(crate) use crate::game::visualfx::boardwakefx::p;
-pub(crate) use crate::game::visualfx::boardwakefx::gp;
-pub(crate) use crate::game::visualfx::boardwakefx::fconst;
-pub(crate) use crate::game::visualfx::angerfx::shl32;
-pub(crate) use crate::game::fe::festaterewards2::r;
-pub(crate) use crate::game::dirtysock::tags2::gp_3 as gp_2;
-pub(crate) use crate::game::fe::festaterewards2::Ops;
-pub(crate) use crate::game::world::wscriptcache::DELETE_2 as DELETE;
-pub(crate) use crate::game::render::particle::this_with_delta;
-pub(crate) use crate::game::fe::feasyncfile::gp as gp_3;
-pub(crate) use crate::game::fe::feasyncfile::gp as gp_4;
-pub(crate) use crate::game::fe::ovstates::at as at_2;
-pub(crate) use crate::game::fe::ovstates::open;
-pub(crate) use crate::game::fe::ovstates::close;
-pub(crate) use crate::game::util::menu::gp_5;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x002e_87e8, c_board_trail_fx_is_active, "cBoardTrailFX_IsActive"),
+    (
+        0x002e_87e8,
+        c_board_trail_fx_is_active,
+        "cBoardTrailFX_IsActive",
+    ),
     (0x002e_8938, c_board_trail_fx_update, "cBoardTrailFX_Update"),
     (0x002e_a480, c_board_trail_fx_render, "cBoardTrailFX_Render"),
-    (0x002e_a670, c_cut_scene_transition_man_ctor, "cCutSceneTransitionMan_ctor"),
-    (0x002e_a6b8, c_cut_scene_transition_man_start_in, "cCutSceneTransitionMan_StartIn"),
-    (0x002e_a780, c_cut_scene_transition_man_start_out, "cCutSceneTransitionMan_StartOut"),
-    (0x002e_a820, cut_scene_transition_man_force_off, "cCutSceneTransitionMan_ForceOff"),
-    (0x002e_a860, c_cut_scene_transition_man_force_on, "cCutSceneTransitionMan_ForceOn"),
-    (0x002e_a8b8, c_cut_scene_transition_man_set_paused, "cCutSceneTransitionMan_SetPaused"),
-    (0x002e_aa28, ccutscene_transition_man_save_viewport, "cCutSceneTransitionMan_SaveViewport"),
-    (0x002e_adc0, rider_base_reset_power_up_trail, "RiderBase_ResetPowerUpTrail"),
-    (0x002e_add0, rider_base_update_power_up_trail, "RiderBase_UpdatePowerUpTrail"),
-    (0x002e_b198, rider_base_render_power_up_trail, "RiderBase_RenderPowerUpTrail"),
-    (0x002e_bb10, transition_effect_draw_fade, "TransitionEffect_DrawFade"),
+    (
+        0x002e_a670,
+        c_cut_scene_transition_man_ctor,
+        "cCutSceneTransitionMan_ctor",
+    ),
+    (
+        0x002e_a6b8,
+        c_cut_scene_transition_man_start_in,
+        "cCutSceneTransitionMan_StartIn",
+    ),
+    (
+        0x002e_a780,
+        c_cut_scene_transition_man_start_out,
+        "cCutSceneTransitionMan_StartOut",
+    ),
+    (
+        0x002e_a820,
+        cut_scene_transition_man_force_off,
+        "cCutSceneTransitionMan_ForceOff",
+    ),
+    (
+        0x002e_a860,
+        c_cut_scene_transition_man_force_on,
+        "cCutSceneTransitionMan_ForceOn",
+    ),
+    (
+        0x002e_a8b8,
+        c_cut_scene_transition_man_set_paused,
+        "cCutSceneTransitionMan_SetPaused",
+    ),
+    (
+        0x002e_aa28,
+        ccutscene_transition_man_save_viewport,
+        "cCutSceneTransitionMan_SaveViewport",
+    ),
+    (
+        0x002e_adc0,
+        rider_base_reset_power_up_trail,
+        "RiderBase_ResetPowerUpTrail",
+    ),
+    (
+        0x002e_add0,
+        rider_base_update_power_up_trail,
+        "RiderBase_UpdatePowerUpTrail",
+    ),
+    (
+        0x002e_b198,
+        rider_base_render_power_up_trail,
+        "RiderBase_RenderPowerUpTrail",
+    ),
+    (
+        0x002e_bb10,
+        transition_effect_draw_fade,
+        "TransitionEffect_DrawFade",
+    ),
     (0x002e_bba8, transition_wipe_ctor, "TransitionWipe_ctor"),
     (0x002e_bc40, transition_wipe_draw, "TransitionWipe_Draw"),
-    (0x002e_be20, transition_effect_ctor_random2, "TransitionEffect_ctorRandom2"),
+    (
+        0x002e_be20,
+        transition_effect_ctor_random2,
+        "TransitionEffect_ctorRandom2",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -183,186 +235,185 @@ pub(crate) mod board_trail {
 pub(crate) mod callee {
     use super::ee;
     use super::Callee;
-    pub(crate) use crate::game::world::wscriptcache::callee::SCRIPT_ENGINE_GET_INSTANCE;
-    pub(crate) use crate::game::world::wscriptcache::callee::SCRIPT_SOUND_BANK_MAN_FIND_BANK;
-    pub(crate) use crate::game::world::wscriptcache::callee::SSX_AUDIO_SYSTEM_PAUSE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::ALGORITHM_LIST_CLEAR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::ALGORITHM_LIST_PUSH_2 as ALGORITHM_LIST_PUSH;
+    pub(crate) use crate::game::fe::feasyncfile::callee::ATTACHED_EMITTER_FX_DESTROY_EMITTER;
+    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_GET_GAME_MODULE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_LEVEL_TO_VOLUME_2 as AUDIO_LEVEL_TO_VOLUME;
+    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_SET_CHANNEL_VOLUME_2 as AUDIO_SET_CHANNEL_VOLUME;
+    pub(crate) use crate::game::fe::feasyncfile::callee::AVALANCHE_DESTROY_ALL;
+    pub(crate) use crate::game::fe::feasyncfile::callee::AVALANCHE_RESET_ONE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BENEW_PLAYER_INT_GET_SLOT_2 as BENEW_PLAYER_INT_GET_SLOT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BE_COPY_PROFILE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BE_GET_RIDER_PROFILE_5 as BE_GET_RIDER_PROFILE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BE_OPTION_INT_SWAP_PLAYER_FLAGS;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BE_RESET_PROFILE_CHARACTERS;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BE_SET_CHAR_PROFILE_FLAG;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BE_SET_PHASE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BUDDY_API_DESTROY;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BUILTIN_DELETE_6 as BUILTIN_DELETE_2;
+    pub(crate) use crate::game::fe::feasyncfile::callee::CHAT_ROOM_SELECT_PLAYER_BY_NAME;
+    pub(crate) use crate::game::fe::feasyncfile::callee::CLEAR_MUSIC_TRIGGER;
+    pub(crate) use crate::game::fe::feasyncfile::callee::DATA_INSTANCE_FREE_INFO;
+    pub(crate) use crate::game::fe::feasyncfile::callee::FE_MEMCARD_FINISH;
+    pub(crate) use crate::game::fe::feasyncfile::callee::FE_MEMCARD_START_PROFILE_SEARCH;
+    pub(crate) use crate::game::fe::feasyncfile::callee::FE_STRING_HASH;
+    pub(crate) use crate::game::fe::feasyncfile::callee::GAME_MODULE_SET_STATE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::GAME_RAND_NEXT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::GAME_STATE_IS_LOADING;
+    pub(crate) use crate::game::fe::feasyncfile::callee::IN_SEQ_CHANNEL_GET_LENGTH;
+    pub(crate) use crate::game::fe::feasyncfile::callee::LOAD_AGREEMENT_TERMS;
+    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_API_DESTROY_LIST;
+    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_API_FLUSH_ROSTER;
+    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MAN_RELEASE_SNAPSHOT_LISTS;
+    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MAN_SEND_DECLINE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::MC_GET_WORLD;
+    pub(crate) use crate::game::fe::feasyncfile::callee::MC_MANAGER_GET_2 as MC_MANAGER_GET;
+    pub(crate) use crate::game::fe::feasyncfile::callee::MDF_FILE_CREATE_MODEL;
+    pub(crate) use crate::game::fe::feasyncfile::callee::MEMCPY_2 as MEMCPY;
+    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_GET_POPUP_3 as NET_FE_STATE_GET_POPUP;
+    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_ON_CHILD_EVENT_DEFAULT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_SHOW_POPUP_2 as NET_FE_STATE_SHOW_POPUP;
+    pub(crate) use crate::game::fe::feasyncfile::callee::OPERATOR_NEW;
+    pub(crate) use crate::game::fe::feasyncfile::callee::OPERATOR_NEW_NAMED;
+    pub(crate) use crate::game::fe::feasyncfile::callee::OVERLAY_RESET;
+    pub(crate) use crate::game::fe::feasyncfile::callee::OVERLAY_UPDATE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::OVERLAY_UPDATE_CALLEE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::PATH_PLAT_RESUME;
+    pub(crate) use crate::game::fe::feasyncfile::callee::PATH_PLAT_SET_RUNNING;
+    pub(crate) use crate::game::fe::feasyncfile::callee::PATH_PLAT_STOP;
+    pub(crate) use crate::game::fe::feasyncfile::callee::PATH_PLAT_SUSPEND;
+    pub(crate) use crate::game::fe::feasyncfile::callee::POPUP_CFG_SET_OPTION_TEXT_ID;
+    pub(crate) use crate::game::fe::feasyncfile::callee::REPLAY_COUNT_SAVE_SNAPSHOTS;
+    pub(crate) use crate::game::fe::feasyncfile::callee::REPLAY_GET_WORLD;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_CMD_QUEUE_AT_4 as SCRIPT_CMD_QUEUE_AT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_ENGINE_GET_PROCESS_STATE_2 as SCRIPT_ENGINE_GET_PROCESS_STATE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_LIST_IS_MOVIE_ENTRY_3 as SCRIPT_LIST_IS_MOVIE_ENTRY;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_LIST_SET_PAUSED;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SND_BANK_IS_LOADED_WITH_NAME;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SND_BANK_LOAD;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SND_LOAD_QUEUE_CANCEL_BANK;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SND_LOAD_QUEUE_PUSH;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SONG_INSTANCE_PICK_RANDOM_LOOP;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SPRAY_CONFIGURE_FOR_RIDER;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SPRAY_UPDATE_EMITTER_ENABLES;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SPRINTF_6 as SPRINTF_2;
+    pub(crate) use crate::game::fe::feasyncfile::callee::STRCASECMP;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SYNC_PROCESS_CTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::TOOLTIP_MANAGER_HIDE_POPUP;
+    pub(crate) use crate::game::fe::feasyncfile::callee::TOOLTIP_MANAGER_SET_STATE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::TOOLTIP_MANAGER_SET_TEXT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::TRANSITION_EFFECT_CTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::TRANSITION_EFFECT_DRAW_RECT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::TUBE_MENU_BASE_DTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::TUBE_MENU_ITEM_DTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::UI_ADD_SCREEN_BY_HASH_NAME;
+    pub(crate) use crate::game::fe::feasyncfile::callee::UI_LIST_FIRST_6 as UI_LIST_FIRST;
+    pub(crate) use crate::game::fe::feasyncfile::callee::UI_SCREEN_GET_OBJECT_BY_HASH;
+    pub(crate) use crate::game::fe::feasyncfile::callee::UI_SCREEN_LAUNCH_THREAD;
+    pub(crate) use crate::game::fe::feasyncfile::callee::UI_SCREEN_LOOKUP_VALUE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::UI_SCREEN_PLAY_FRAME_3 as UI_SCREEN_PLAY_FRAME;
+    pub(crate) use crate::game::fe::feasyncfile::callee::UI_SCREEN_SET_OBJECT_VALUE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::UI_SCROLL_SET_PARTS_VISIBLE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_CACHE_IS_HULL_FREE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_SOUND_GET_TRIGGER_IDS;
+    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_STATE_CREATE_OBJECT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_STATE_FINALIZE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_TRIGGER_IS_FLAG4;
+    pub(crate) use crate::game::render::particle::callee::ALGORITHM_LIST_DTOR;
+    pub(crate) use crate::game::render::particle::callee::ANIM_OBJECT_BASE_DTOR;
+    pub(crate) use crate::game::render::particle::callee::AVA_SPLINE_MODIFIER_CTOR;
+    pub(crate) use crate::game::render::particle::callee::BANK_MONITOR_INSTANCE_PAUSE;
+    pub(crate) use crate::game::render::particle::callee::BELIBRARY_GET_INSTANCE as BELIBRARY_GET_INSTANCE_2;
+    pub(crate) use crate::game::render::particle::callee::BELIBRARY_GET_INTERFACE as BELIBRARY_GET_INTERFACE_2;
+    pub(crate) use crate::game::render::particle::callee::BENEW_PLAYER_INT_GET_CHARACTER_BY_SLOT;
+    pub(crate) use crate::game::render::particle::callee::BENEW_RACE_INT_IS_STATION_TRACK_BY_INDEX;
+    pub(crate) use crate::game::render::particle::callee::BEREWARD_ON_COLLECTIBLE_COLLECTED;
+    pub(crate) use crate::game::render::particle::callee::BEREWARD_ON_MISSION_COMPLETED;
+    pub(crate) use crate::game::render::particle::callee::BUILTIN_DELETE_4 as BUILTIN_DELETE;
+    pub(crate) use crate::game::render::particle::callee::BXSTRING_ASSIGN_COPY;
+    pub(crate) use crate::game::render::particle::callee::BXSTRING_ASSIGN_CSTR;
+    pub(crate) use crate::game::render::particle::callee::BXSTRING_CONCAT_IN_PLACE;
+    pub(crate) use crate::game::render::particle::callee::CFE_STATE_CHAR_SELECT_UPDATE_ATTRIBUTE_BARS;
+    pub(crate) use crate::game::render::particle::callee::CHASE_CAMERA_ALGORITHM_CTOR as CHASE_CAMERA_ALGORITHM_CTOR_2;
+    pub(crate) use crate::game::render::particle::callee::CHASE_CAM_SET_ALGORITHM_IMMEDIATE;
+    pub(crate) use crate::game::render::particle::callee::CPS2_CHUNK_RESOLVE_DTOR_STUB;
+    pub(crate) use crate::game::render::particle::callee::CPS2_MEM_CARD_SET_STATE;
+    pub(crate) use crate::game::render::particle::callee::CROWD_MAN3D_GROUP_REMOVE_SECTION;
+    pub(crate) use crate::game::render::particle::callee::CUT_SCENE_TRANSITION_SAVE_VIEWPORT;
+    pub(crate) use crate::game::render::particle::callee::EA_MEM_ALLOC_NAMED_2 as EA_MEM_ALLOC_NAMED;
+    pub(crate) use crate::game::render::particle::callee::FLEX_BRIDGE_SPRINGS_SAVE;
+    pub(crate) use crate::game::render::particle::callee::INI_PARSER_SKIP_TO_EOL;
+    pub(crate) use crate::game::render::particle::callee::ISIGNAL_SEMA;
+    pub(crate) use crate::game::render::particle::callee::LOBBY_OCCUPANT_POP;
+    pub(crate) use crate::game::render::particle::callee::LOBBY_OCCUPANT_SELECT;
+    pub(crate) use crate::game::render::particle::callee::MENU_SYS_ITEM_CTOR;
+    pub(crate) use crate::game::render::particle::callee::MENU_SYS_ITEM_DRAW_ROW_2 as MENU_SYS_ITEM_DRAW_ROW;
+    pub(crate) use crate::game::render::particle::callee::MOD_OBJ_SET_TRANSFORM_MODIFIER;
+    pub(crate) use crate::game::render::particle::callee::PATH_POST_EVENT;
+    pub(crate) use crate::game::render::particle::callee::PATH_SET_PAUSED;
+    pub(crate) use crate::game::render::particle::callee::POSITION_MODIFIER_CTOR;
+    pub(crate) use crate::game::render::particle::callee::RIDER_ADD_BOOST;
+    pub(crate) use crate::game::render::particle::callee::RIDER_BOARD_PRESS_SUB_FINISH_PRESS;
+    pub(crate) use crate::game::render::particle::callee::RIDER_BOARD_PRESS_SUB_SETTLE_SLEW;
+    pub(crate) use crate::game::render::particle::callee::RIDER_METRIX_AWARD_POINTS;
+    pub(crate) use crate::game::render::particle::callee::RIDER_METRIX_FINISH_BOARD_PRESS;
+    pub(crate) use crate::game::render::particle::callee::RIDER_METRIX_ON_MISSION_COMPLETED;
+    pub(crate) use crate::game::render::particle::callee::SCE_MC_DELETE;
+    pub(crate) use crate::game::render::particle::callee::SCE_MC_MKDIR;
+    pub(crate) use crate::game::render::particle::callee::SCE_MC_READ;
+    pub(crate) use crate::game::render::particle::callee::SCE_MC_SEEK;
+    pub(crate) use crate::game::render::particle::callee::SCE_MC_WRITE;
+    pub(crate) use crate::game::render::particle::callee::SNDSTRM_SET_PITCH;
+    pub(crate) use crate::game::render::particle::callee::SND_LOCK;
+    pub(crate) use crate::game::render::particle::callee::SND_SPU_MEM_SET_BASE;
+    pub(crate) use crate::game::render::particle::callee::SND_UNLOCK;
+    pub(crate) use crate::game::render::particle::callee::SONG_INSTANCE_GET_MS_TO_NEXT_BEAT;
+    pub(crate) use crate::game::render::particle::callee::SONG_INSTANCE_GET_STREAM_HANDLE;
+    pub(crate) use crate::game::render::particle::callee::STRLEN;
+    pub(crate) use crate::game::render::particle::callee::TEX_MAN_LOAD_TEXTURE;
+    pub(crate) use crate::game::render::particle::callee::UI_LIST_PUSH_BACK_2 as UI_LIST_PUSH_BACK;
+    pub(crate) use crate::game::render::particle::callee::UI_LIST_RESET;
+    pub(crate) use crate::game::render::particle::callee::WORLD_CREATE_DEAD_NODE;
+    pub(crate) use crate::game::render::particle::callee::WORLD_OBJ_SAVE;
+    pub(crate) use crate::game::world::wscriptcache::callee::ACTIVE_CAMERA_TRIGGER_LIST_CLEAR;
     pub(crate) use crate::game::world::wscriptcache::callee::BANK_MONITOR_DELETE_INSTANCE;
     pub(crate) use crate::game::world::wscriptcache::callee::BELIBRARY_GET_INSTANCE;
     pub(crate) use crate::game::world::wscriptcache::callee::BELIBRARY_GET_INTERFACE;
     pub(crate) use crate::game::world::wscriptcache::callee::BE_NEW_RACE_INT_GET_TRACK_INFO;
-    pub(crate) use crate::game::world::wscriptcache::callee::SSX_AUDIO_SYSTEM_IS_TRACK_ID_GROUP5;
+    pub(crate) use crate::game::world::wscriptcache::callee::BE_SCORE_INT_GET_HIGH_SCORE_TABLE;
+    pub(crate) use crate::game::world::wscriptcache::callee::BOLT_FILE_CACHE_SHUTDOWN;
+    pub(crate) use crate::game::world::wscriptcache::callee::CAMERA_RESET_CHASE_CONTROLLER_SWITCHES;
+    pub(crate) use crate::game::world::wscriptcache::callee::CAMERA_TRIGGER_STACK_CLEAR;
+    pub(crate) use crate::game::world::wscriptcache::callee::CHASE_CAMERA_ALGORITHM_CTOR_2 as CHASE_CAMERA_ALGORITHM_CTOR;
+    pub(crate) use crate::game::world::wscriptcache::callee::CINSTANCE_NODE_CTOR_V;
     pub(crate) use crate::game::world::wscriptcache::callee::CROWD_AUDIO_FREE_SAMPLE_LIST;
     pub(crate) use crate::game::world::wscriptcache::callee::CUT_SCENE_TRANSITION_MAN_BASE_CTOR;
     pub(crate) use crate::game::world::wscriptcache::callee::CUT_SCENE_TRANSITION_MAN_INIT;
-    pub(crate) use crate::game::world::wscriptcache::callee::WSCRIPT_MAN_COLLECT_SET_GET_COUNT;
-    pub(crate) use crate::game::world::wscriptcache::callee::WSCRIPT_MAN_COLLECT_SET_ADD_ITEMS;
-    pub(crate) use crate::game::world::wscriptcache::callee::EA_MEM_FREE_2 as EA_MEM_FREE;
-    pub(crate) use crate::game::world::wscriptcache::callee::MDF_FILE_FREE;
-    pub(crate) use crate::game::world::wscriptcache::callee::SPRINTF_2 as SPRINTF;
-    pub(crate) use crate::game::world::wscriptcache::callee::INPUT_PREPROC_WRITE_STRING;
-    pub(crate) use crate::game::world::wscriptcache::callee::CINSTANCE_NODE_CTOR_V;
-    pub(crate) use crate::game::world::wscriptcache::callee::FONT_FREE;
-    pub(crate) use crate::game::world::wscriptcache::callee::UI_LIST_COUNT;
-    pub(crate) use crate::game::world::wscriptcache::callee::UI_ANIM_APPLY;
-    pub(crate) use crate::game::world::wscriptcache::callee::UI_ANIM_ADVANCE;
-    pub(crate) use crate::game::world::wscriptcache::callee::SECTION_ALLOCATOR_FREE_ALL;
     pub(crate) use crate::game::world::wscriptcache::callee::C_WORLD_CACHE_STREAMER_DTOR_STUB;
-    pub(crate) use crate::game::world::wscriptcache::callee::RCMP_SYSTEM_CTOR;
-    pub(crate) use crate::game::world::wscriptcache::callee::PS2_SONY_CODEC_INTERNAL_CTOR;
-    pub(crate) use crate::game::world::wscriptcache::callee::MPEG2_GET_BITS1;
-    pub(crate) use crate::game::world::wscriptcache::callee::MPEG2_FLUSH_BUFFER_3 as MPEG2_FLUSH_BUFFER;
-    pub(crate) use crate::game::world::wscriptcache::callee::RIDER_SET_SUB_STATE;
-    pub(crate) use crate::game::world::wscriptcache::callee::RIDER_SET_MAIN_STATE;
-    pub(crate) use crate::game::world::wscriptcache::callee::BE_SCORE_INT_GET_HIGH_SCORE_TABLE;
-    pub(crate) use crate::game::world::wscriptcache::callee::CHASE_CAMERA_ALGORITHM_CTOR_2 as CHASE_CAMERA_ALGORITHM_CTOR;
-    pub(crate) use crate::game::world::wscriptcache::callee::ACTIVE_CAMERA_TRIGGER_LIST_CLEAR;
-    pub(crate) use crate::game::world::wscriptcache::callee::CAMERA_TRIGGER_STACK_CLEAR;
-    pub(crate) use crate::game::world::wscriptcache::callee::CAMERA_RESET_CHASE_CONTROLLER_SWITCHES;
-    pub(crate) use crate::game::world::wscriptcache::callee::BOLT_FILE_CACHE_SHUTDOWN;
     pub(crate) use crate::game::world::wscriptcache::callee::DELETE;
+    pub(crate) use crate::game::world::wscriptcache::callee::EA_MEM_FREE_2 as EA_MEM_FREE;
+    pub(crate) use crate::game::world::wscriptcache::callee::FONT_FREE;
+    pub(crate) use crate::game::world::wscriptcache::callee::INPUT_PREPROC_WRITE_STRING;
+    pub(crate) use crate::game::world::wscriptcache::callee::MDF_FILE_FREE;
+    pub(crate) use crate::game::world::wscriptcache::callee::MPEG2_FLUSH_BUFFER_3 as MPEG2_FLUSH_BUFFER;
+    pub(crate) use crate::game::world::wscriptcache::callee::MPEG2_GET_BITS1;
+    pub(crate) use crate::game::world::wscriptcache::callee::PS2_SONY_CODEC_INTERNAL_CTOR;
+    pub(crate) use crate::game::world::wscriptcache::callee::RCMP_SYSTEM_CTOR;
+    pub(crate) use crate::game::world::wscriptcache::callee::RIDER_SET_MAIN_STATE;
+    pub(crate) use crate::game::world::wscriptcache::callee::RIDER_SET_SUB_STATE;
+    pub(crate) use crate::game::world::wscriptcache::callee::SCRIPT_ENGINE_GET_INSTANCE;
+    pub(crate) use crate::game::world::wscriptcache::callee::SCRIPT_SOUND_BANK_MAN_FIND_BANK;
+    pub(crate) use crate::game::world::wscriptcache::callee::SECTION_ALLOCATOR_FREE_ALL;
     pub(crate) use crate::game::world::wscriptcache::callee::SND_BANK_MONITOR_MEM_SIZE;
-    pub(crate) use crate::game::render::particle::callee::INI_PARSER_SKIP_TO_EOL;
-    pub(crate) use crate::game::render::particle::callee::BANK_MONITOR_INSTANCE_PAUSE;
-    pub(crate) use crate::game::render::particle::callee::SONG_INSTANCE_GET_STREAM_HANDLE;
-    pub(crate) use crate::game::render::particle::callee::SONG_INSTANCE_GET_MS_TO_NEXT_BEAT;
-    pub(crate) use crate::game::render::particle::callee::CPS2_MEM_CARD_SET_STATE;
-    pub(crate) use crate::game::render::particle::callee::MENU_SYS_ITEM_CTOR;
-    pub(crate) use crate::game::render::particle::callee::MENU_SYS_ITEM_DRAW_ROW_2 as MENU_SYS_ITEM_DRAW_ROW;
-    pub(crate) use crate::game::render::particle::callee::CUT_SCENE_TRANSITION_SAVE_VIEWPORT;
-    pub(crate) use crate::game::render::particle::callee::EA_MEM_ALLOC_NAMED_2 as EA_MEM_ALLOC_NAMED;
-    pub(crate) use crate::game::render::particle::callee::AVA_SPLINE_MODIFIER_CTOR;
-    pub(crate) use crate::game::render::particle::callee::POSITION_MODIFIER_CTOR;
-    pub(crate) use crate::game::render::particle::callee::MOD_OBJ_SET_TRANSFORM_MODIFIER;
-    pub(crate) use crate::game::render::particle::callee::ANIM_OBJECT_BASE_DTOR;
-    pub(crate) use crate::game::render::particle::callee::BUILTIN_DELETE_4 as BUILTIN_DELETE;
-    pub(crate) use crate::game::render::particle::callee::TEX_MAN_LOAD_TEXTURE;
-    pub(crate) use crate::game::render::particle::callee::UI_LIST_RESET;
-    pub(crate) use crate::game::render::particle::callee::UI_LIST_PUSH_BACK_2 as UI_LIST_PUSH_BACK;
-    pub(crate) use crate::game::render::particle::callee::CPS2_CHUNK_RESOLVE_DTOR_STUB;
-    pub(crate) use crate::game::render::particle::callee::RIDER_METRIX_ON_MISSION_COMPLETED;
-    pub(crate) use crate::game::render::particle::callee::RIDER_METRIX_AWARD_POINTS;
-    pub(crate) use crate::game::render::particle::callee::RIDER_BOARD_PRESS_SUB_SETTLE_SLEW;
-    pub(crate) use crate::game::render::particle::callee::RIDER_BOARD_PRESS_SUB_FINISH_PRESS;
-    pub(crate) use crate::game::render::particle::callee::RIDER_ADD_BOOST;
-    pub(crate) use crate::game::render::particle::callee::RIDER_METRIX_FINISH_BOARD_PRESS;
-    pub(crate) use crate::game::render::particle::callee::ALGORITHM_LIST_DTOR;
-    pub(crate) use crate::game::render::particle::callee::CHASE_CAM_SET_ALGORITHM_IMMEDIATE;
-    pub(crate) use crate::game::render::particle::callee::CHASE_CAMERA_ALGORITHM_CTOR as CHASE_CAMERA_ALGORITHM_CTOR_2;
-    pub(crate) use crate::game::render::particle::callee::CFE_STATE_CHAR_SELECT_UPDATE_ATTRIBUTE_BARS;
-    pub(crate) use crate::game::render::particle::callee::BXSTRING_ASSIGN_CSTR;
-    pub(crate) use crate::game::render::particle::callee::BXSTRING_ASSIGN_COPY;
-    pub(crate) use crate::game::render::particle::callee::BXSTRING_CONCAT_IN_PLACE;
-    pub(crate) use crate::game::render::particle::callee::CROWD_MAN3D_GROUP_REMOVE_SECTION;
-    pub(crate) use crate::game::render::particle::callee::WORLD_OBJ_SAVE;
-    pub(crate) use crate::game::render::particle::callee::FLEX_BRIDGE_SPRINGS_SAVE;
-    pub(crate) use crate::game::render::particle::callee::BELIBRARY_GET_INSTANCE as BELIBRARY_GET_INSTANCE_2;
-    pub(crate) use crate::game::render::particle::callee::BELIBRARY_GET_INTERFACE as BELIBRARY_GET_INTERFACE_2;
-    pub(crate) use crate::game::render::particle::callee::BEREWARD_ON_MISSION_COMPLETED;
-    pub(crate) use crate::game::render::particle::callee::BEREWARD_ON_COLLECTIBLE_COLLECTED;
-    pub(crate) use crate::game::render::particle::callee::BENEW_PLAYER_INT_GET_CHARACTER_BY_SLOT;
-    pub(crate) use crate::game::render::particle::callee::BENEW_RACE_INT_IS_STATION_TRACK_BY_INDEX;
-    pub(crate) use crate::game::render::particle::callee::SND_LOCK;
-    pub(crate) use crate::game::render::particle::callee::SND_UNLOCK;
-    pub(crate) use crate::game::render::particle::callee::SND_SPU_MEM_SET_BASE;
-    pub(crate) use crate::game::render::particle::callee::LOBBY_OCCUPANT_POP;
-    pub(crate) use crate::game::render::particle::callee::LOBBY_OCCUPANT_SELECT;
-    pub(crate) use crate::game::render::particle::callee::SNDSTRM_SET_PITCH;
-    pub(crate) use crate::game::render::particle::callee::PATH_SET_PAUSED;
-    pub(crate) use crate::game::render::particle::callee::PATH_POST_EVENT;
-    pub(crate) use crate::game::render::particle::callee::SCE_MC_SEEK;
-    pub(crate) use crate::game::render::particle::callee::SCE_MC_READ;
-    pub(crate) use crate::game::render::particle::callee::SCE_MC_WRITE;
-    pub(crate) use crate::game::render::particle::callee::SCE_MC_MKDIR;
-    pub(crate) use crate::game::render::particle::callee::SCE_MC_DELETE;
-    pub(crate) use crate::game::render::particle::callee::ISIGNAL_SEMA;
-    pub(crate) use crate::game::render::particle::callee::STRLEN;
-    pub(crate) use crate::game::render::particle::callee::WORLD_CREATE_DEAD_NODE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BUILTIN_DELETE_6 as BUILTIN_DELETE_2;
-    pub(crate) use crate::game::fe::feasyncfile::callee::OPERATOR_NEW_NAMED;
-    pub(crate) use crate::game::fe::feasyncfile::callee::OPERATOR_NEW;
-    pub(crate) use crate::game::fe::feasyncfile::callee::TRANSITION_EFFECT_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_GET_POPUP_3 as NET_FE_STATE_GET_POPUP;
-    pub(crate) use crate::game::fe::feasyncfile::callee::POPUP_CFG_SET_OPTION_TEXT_ID;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_SHOW_POPUP_2 as NET_FE_STATE_SHOW_POPUP;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_ON_CHILD_EVENT_DEFAULT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CHAT_ROOM_SELECT_PLAYER_BY_NAME;
-    pub(crate) use crate::game::fe::feasyncfile::callee::LOAD_AGREEMENT_TERMS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MAN_RELEASE_SNAPSHOT_LISTS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MAN_SEND_DECLINE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SONG_INSTANCE_PICK_RANDOM_LOOP;
-    pub(crate) use crate::game::fe::feasyncfile::callee::REPLAY_COUNT_SAVE_SNAPSHOTS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::IN_SEQ_CHANNEL_GET_LENGTH;
-    pub(crate) use crate::game::fe::feasyncfile::callee::ALGORITHM_LIST_PUSH_2 as ALGORITHM_LIST_PUSH;
-    pub(crate) use crate::game::fe::feasyncfile::callee::ALGORITHM_LIST_CLEAR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SND_BANK_IS_LOADED_WITH_NAME;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SND_LOAD_QUEUE_CANCEL_BANK;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SND_LOAD_QUEUE_PUSH;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CLEAR_MUSIC_TRIGGER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SPRAY_CONFIGURE_FOR_RIDER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SPRAY_UPDATE_EMITTER_ENABLES;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_GET_RIDER_PROFILE_5 as BE_GET_RIDER_PROFILE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BENEW_PLAYER_INT_GET_SLOT_2 as BENEW_PLAYER_INT_GET_SLOT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_SET_CHAR_PROFILE_FLAG;
-    pub(crate) use crate::game::fe::feasyncfile::callee::GAME_RAND_NEXT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_TRIGGER_IS_FLAG4;
-    pub(crate) use crate::game::fe::feasyncfile::callee::DATA_INSTANCE_FREE_INFO;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_CMD_QUEUE_AT_4 as SCRIPT_CMD_QUEUE_AT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_LIST_IS_MOVIE_ENTRY_3 as SCRIPT_LIST_IS_MOVIE_ENTRY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_ENGINE_GET_PROCESS_STATE_2 as SCRIPT_ENGINE_GET_PROCESS_STATE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_LIST_SET_PAUSED;
-    pub(crate) use crate::game::fe::feasyncfile::callee::AVALANCHE_DESTROY_ALL;
-    pub(crate) use crate::game::fe::feasyncfile::callee::ATTACHED_EMITTER_FX_DESTROY_EMITTER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_CACHE_IS_HULL_FREE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SYNC_PROCESS_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MDF_FILE_CREATE_MODEL;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_MEMCARD_START_PROFILE_SEARCH;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_MEMCARD_FINISH;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_LIST_FIRST_6 as UI_LIST_FIRST;
-    pub(crate) use crate::game::fe::feasyncfile::callee::TRANSITION_EFFECT_DRAW_RECT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_RESET_PROFILE_CHARACTERS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_COPY_PROFILE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_OPTION_INT_SWAP_PLAYER_FLAGS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_STATE_CREATE_OBJECT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_LEVEL_TO_VOLUME_2 as AUDIO_LEVEL_TO_VOLUME;
-    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_SET_CHANNEL_VOLUME_2 as AUDIO_SET_CHANNEL_VOLUME;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MEMCPY_2 as MEMCPY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::STRCASECMP;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SPRINTF_6 as SPRINTF_2;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_STRING_HASH;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_SCROLL_SET_PARTS_VISIBLE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_ADD_SCREEN_BY_HASH_NAME;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_SCREEN_PLAY_FRAME_3 as UI_SCREEN_PLAY_FRAME;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_SCREEN_GET_OBJECT_BY_HASH;
-    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_API_DESTROY_LIST;
-    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_API_FLUSH_ROSTER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BUDDY_API_DESTROY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::TOOLTIP_MANAGER_HIDE_POPUP;
-    pub(crate) use crate::game::fe::feasyncfile::callee::TOOLTIP_MANAGER_SET_STATE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::TOOLTIP_MANAGER_SET_TEXT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::TUBE_MENU_ITEM_DTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::TUBE_MENU_BASE_DTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::OVERLAY_RESET;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_SET_PHASE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::GAME_MODULE_SET_STATE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_SOUND_GET_TRIGGER_IDS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_GET_GAME_MODULE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MC_GET_WORLD;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MC_MANAGER_GET_2 as MC_MANAGER_GET;
-    pub(crate) use crate::game::fe::feasyncfile::callee::OVERLAY_UPDATE_CALLEE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SND_BANK_LOAD;
-    pub(crate) use crate::game::fe::feasyncfile::callee::AVALANCHE_RESET_ONE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::REPLAY_GET_WORLD;
-    pub(crate) use crate::game::fe::feasyncfile::callee::GAME_STATE_IS_LOADING;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_STATE_FINALIZE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_SCREEN_LOOKUP_VALUE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_SCREEN_LAUNCH_THREAD;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PATH_PLAT_RESUME;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PATH_PLAT_SUSPEND;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PATH_PLAT_SET_RUNNING;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PATH_PLAT_STOP;
-    pub(crate) use crate::game::fe::feasyncfile::callee::OVERLAY_UPDATE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_SCREEN_SET_OBJECT_VALUE;
-
+    pub(crate) use crate::game::world::wscriptcache::callee::SPRINTF_2 as SPRINTF;
+    pub(crate) use crate::game::world::wscriptcache::callee::SSX_AUDIO_SYSTEM_IS_TRACK_ID_GROUP5;
+    pub(crate) use crate::game::world::wscriptcache::callee::SSX_AUDIO_SYSTEM_PAUSE;
+    pub(crate) use crate::game::world::wscriptcache::callee::UI_ANIM_ADVANCE;
+    pub(crate) use crate::game::world::wscriptcache::callee::UI_ANIM_APPLY;
+    pub(crate) use crate::game::world::wscriptcache::callee::UI_LIST_COUNT;
+    pub(crate) use crate::game::world::wscriptcache::callee::WSCRIPT_MAN_COLLECT_SET_ADD_ITEMS;
+    pub(crate) use crate::game::world::wscriptcache::callee::WSCRIPT_MAN_COLLECT_SET_GET_COUNT;
 
     /// `cBoardTrailFX_IsActive(self)` (0x2e87e8).
     pub const IS_ACTIVE: Callee = Callee {
@@ -376,7 +427,6 @@ pub(crate) mod callee {
         f: ee::s09::cBoardTrailFX_ShouldEmit,
     };
 }
-
 
 // ---------------------------------------------------------------------------
 // Cut-scene transitions.
@@ -467,7 +517,6 @@ pub fn c_cut_scene_transition_man_start_out(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void cCutSceneTransitionMan_SetPaused(cCutSceneTransitionMan *this,
 /// int paused)` (0x2ea8b8): while fading (state 2/3), bump or drop the hold
 /// counter at +0x1c.
@@ -507,7 +556,6 @@ pub fn c_cut_scene_transition_man_set_paused(c: &mut Cpu) {
     }
 }
 
-
 /// `void RiderBase_ResetPowerUpTrail(Rider *rider)` (0x2eadc0): clear the
 /// power-up trail state.
 pub fn rider_base_reset_power_up_trail(c: &mut Cpu) {
@@ -517,7 +565,6 @@ pub fn rider_base_reset_power_up_trail(c: &mut Cpu) {
     Addr(this).off(0xc).sw(c, 0);
     abi::ret(c);
 }
-
 
 /// `void RiderBase_RenderPowerUpTrail(RiderBase *r)` (0x2eb198): with at
 /// least two trail sections, push a GS state (texture `gfx+0x1048`, alpha
@@ -553,7 +600,6 @@ pub fn rider_base_render_power_up_trail(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// The trail's drawing (from the GS state push to the pop and the `s0`
 /// reload).
@@ -753,7 +799,6 @@ pub(crate) fn trail_draw(c: &mut Cpu, frame: Frame) -> Flow {
     Ok(())
 }
 
-
 /// The trail colour of vertex `v` from sp+0x550.. (alpha * f5 = 128,
 /// rgb * f3 = 255, as integers at v+0x10..0x1c), r already scaled in f1.
 pub(crate) fn trail_color(c: &mut Cpu, sp: u32, v: u32) {
@@ -773,7 +818,6 @@ pub(crate) fn trail_color(c: &mut Cpu, sp: u32, v: u32) {
     c.cvt_w_s(1, 0);
     c.swc1(1, v.wrapping_add(0x1c));
 }
-
 
 /// Append one vertex to strip `strip` (count at sp+0x540+4*strip, bumped;
 /// the offset through `rd`): colour, `v` (f2) at +4, the point at `src` (via
@@ -801,7 +845,6 @@ pub(crate) fn trail_vertex(c: &mut Cpu, sp: u32, strip: u32, rd: usize, src: u32
         c.sw(v, 0);
     }
 }
-
 
 /// One trail section (loop body at 0x2eb4b8): section `i = t4` of ring
 /// slot `(first + i) % 3`, two vertices per strip. Leaves a0 = `i+1 < n`.
@@ -876,7 +919,6 @@ pub(crate) fn trail_section(c: &mut Cpu, sp: u32) {
     trail_vertex(c, sp, 3, A1, point(0), false);
 }
 
-
 /// `mfc1 rt, f; lqc2 vf4, v; qmtc2 rt, vf3; vmulx vf5, vf4, vf3x; sqc2 vf5,
 /// out; lq r2, out; sq r2, store`: scale vector `v` by FPU register `f` and
 /// leave a copy at `store`.
@@ -891,7 +933,6 @@ pub(crate) fn scale_store(c: &mut Cpu, f: usize, v: u32, out: u32, store: u32) {
     c.sq(2, store);
 }
 
-
 /// `vadd` plus the `lq`/`sq` copy to `store`.
 #[inline(always)]
 pub(crate) fn add_store(c: &mut Cpu, a: u32, b: u32, out: u32, store: u32) {
@@ -903,7 +944,6 @@ pub(crate) fn add_store(c: &mut Cpu, a: u32, b: u32, out: u32, store: u32) {
     c.sq(2, store);
 }
 
-
 /// `vsub` plus the `lq`/`sq` copy to `store`.
 #[inline(always)]
 pub(crate) fn sub_store(c: &mut Cpu, a: u32, b: u32, out: u32, store: u32) {
@@ -914,7 +954,6 @@ pub(crate) fn sub_store(c: &mut Cpu, a: u32, b: u32, out: u32, store: u32) {
     c.lq(2, out);
     c.sq(2, store);
 }
-
 
 /// `void RiderBase_UpdatePowerUpTrail(RiderBase* self)` (0x2eadd0): while the
 /// rider is fast (or the debug override is set) keep a four-point trail
@@ -1029,11 +1068,23 @@ pub fn rider_base_update_power_up_trail(c: &mut Cpu) {
             c.sq(2, p(sp0, 0x30));
             // edge0 = pos - side * 12
             scale_store(c, 1, p(sp0, 0x30), p(sp0, 0x60), p(sp0, 0x50));
-            sub_store(c, sp0, p(sp0, 0x50), p(sp0, 0x60), p(self_at, power_trail::EDGE0));
+            sub_store(
+                c,
+                sp0,
+                p(sp0, 0x50),
+                p(sp0, 0x60),
+                p(self_at, power_trail::EDGE0),
+            );
             c.sq(2, p(sp0, 0x40));
             // edge1 = pos + side * 12
             scale_store(c, 1, p(sp0, 0x30), p(sp0, 0x60), p(sp0, 0x50));
-            add_store(c, sp0, p(sp0, 0x50), p(sp0, 0x60), p(self_at, power_trail::EDGE1));
+            add_store(
+                c,
+                sp0,
+                p(sp0, 0x50),
+                p(sp0, 0x60),
+                p(self_at, power_trail::EDGE1),
+            );
             c.sq(2, p(sp0, 0x40));
             // slot v0 = pos + fwd * 70 - side * 18
             scale_store(c, 0, p(sp0, 0x20), p(sp0, 0x70), p(sp0, 0x60));
@@ -1083,7 +1134,6 @@ pub fn rider_base_update_power_up_trail(c: &mut Cpu) {
     });
 }
 
-
 /// `sll` on a register value (`sx` of the 32-bit result, as the generator
 /// writes it).
 #[inline(always)]
@@ -1091,13 +1141,11 @@ pub(crate) fn shl32_2(v: u64, n: u32) -> u64 {
     sx((v as u32) << n)
 }
 
-
 /// 32-bit wrapping add of two register values.
 #[inline(always)]
 pub(crate) fn add32(a: u64, b: u64) -> u64 {
     sx((a as u32).wrapping_add(b as u32))
 }
-
 
 /// The blocks of `cBoardTrailFX_IsActive`'s state `switch` (its `.rodata`
 /// jump table sits at `0x480000 + 0x7b40`).
@@ -1113,7 +1161,6 @@ pub(crate) const CBFX_GET_SEQUENCE: u32 = 0x0031_1b20;
 
 pub(crate) const CBFX_TEST_FLAGS: u32 = 0x0014_46a0;
 
-
 /// `bool cBoardTrailFX_IsActive(cBoardTrailFX* self)` (0x2e87e8): whether the
 /// wake tail should draw this frame — the rider must be in a drawable state
 /// (or hidden behind the state's flag), playing the board-trail animation
@@ -1125,7 +1172,6 @@ pub fn c_board_trail_fx_is_active(c: &mut Cpu) {
         board_trail_fx_at(c, frame, c.pc)
     })
 }
-
 
 pub(crate) fn board_trail_fx_at(c: &mut Cpu, frame: Frame, pc: u32) -> Flow {
     match pc {
@@ -1178,7 +1224,6 @@ pub(crate) fn board_trail_fx_at(c: &mut Cpu, frame: Frame, pc: u32) -> Flow {
     }
 }
 
-
 /// 0x2e87e8: the entry.
 pub(crate) fn cbfx_entry(c: &mut Cpu, frame: Frame) -> Flow {
     c.cycles += 9;
@@ -1197,7 +1242,6 @@ pub(crate) fn cbfx_entry(c: &mut Cpu, frame: Frame) -> Flow {
     }
 }
 
-
 /// 0x2e880c: state 2: inactive when the state's hidden flag is set.
 pub(crate) fn cbfx_state_two(c: &mut Cpu, frame: Frame) -> Flow {
     c.cycles += 5;
@@ -1213,14 +1257,12 @@ pub(crate) fn cbfx_state_two(c: &mut Cpu, frame: Frame) -> Flow {
     cbfx_anim_check(c, frame)
 }
 
-
 /// 0x2e8820: pop `s0` and return with the caller's `v0` (0).
 pub(crate) fn cbfx_pop(c: &mut Cpu, frame: Frame) {
     c.cycles += 2;
     frame.restore(c, S0, 0x10);
     cbfx_exit(c, frame);
 }
-
 
 /// 0x2e8828: the rider is in some other state: state 0 draws, others need
 /// the drawable check.
@@ -1237,7 +1279,6 @@ pub(crate) fn cbfx_ask_active(c: &mut Cpu, frame: Frame) -> Flow {
     }
 }
 
-
 /// 0x2e8838: `boardTrailCanDraw` inlined (the rider's spray link).
 pub(crate) fn cbfx_can_draw(c: &mut Cpu, frame: Frame) -> Flow {
     c.cycles += 4;
@@ -1252,7 +1293,6 @@ pub(crate) fn cbfx_can_draw(c: &mut Cpu, frame: Frame) -> Flow {
     }
 }
 
-
 /// 0x2e8848.
 pub(crate) fn cbfx_can_draw_sub(c: &mut Cpu, frame: Frame) -> Flow {
     c.cycles += 3;
@@ -1264,7 +1304,6 @@ pub(crate) fn cbfx_can_draw_sub(c: &mut Cpu, frame: Frame) -> Flow {
     }
 }
 
-
 /// 0x2e8854.
 pub(crate) fn cbfx_can_draw_flag(c: &mut Cpu, frame: Frame) -> Flow {
     c.cycles += 2;
@@ -1272,7 +1311,6 @@ pub(crate) fn cbfx_can_draw_flag(c: &mut Cpu, frame: Frame) -> Flow {
     c.g[A1][0] = (0 < c.g[V0][0]) as u64;
     cbfx_a1_known(c, frame)
 }
-
 
 /// 0x2e885c: `a1` says whether the rider is in a spray-tracked state.
 pub(crate) fn cbfx_a1_known(c: &mut Cpu, frame: Frame) -> Flow {
@@ -1286,7 +1324,6 @@ pub(crate) fn cbfx_a1_known(c: &mut Cpu, frame: Frame) -> Flow {
     cbfx_b00_check(c, frame)
 }
 
-
 /// 0x2e8864.
 pub(crate) fn cbfx_b00_check(c: &mut Cpu, frame: Frame) -> Flow {
     c.cycles += 3;
@@ -1299,7 +1336,6 @@ pub(crate) fn cbfx_b00_check(c: &mut Cpu, frame: Frame) -> Flow {
     }
     cbfx_anim_check(c, frame)
 }
-
 
 /// 0x2e8870: is the rider playing the board-trail animation (0x16)?
 pub(crate) fn cbfx_anim_check(c: &mut Cpu, frame: Frame) -> Flow {
@@ -1318,7 +1354,6 @@ pub(crate) fn cbfx_anim_check(c: &mut Cpu, frame: Frame) -> Flow {
     }
 }
 
-
 /// 0x2e888c: the trail sequence's first flag.
 pub(crate) fn cbfx_sequence(c: &mut Cpu, frame: Frame) -> Flow {
     c.cycles += 8;
@@ -1336,7 +1371,6 @@ pub(crate) fn cbfx_sequence(c: &mut Cpu, frame: Frame) -> Flow {
         cbfx_sequence_second(c, frame)
     }
 }
-
 
 /// 0x2e88ac: the trail sequence's second flag.
 pub(crate) fn cbfx_sequence_second(c: &mut Cpu, frame: Frame) -> Flow {
@@ -1358,7 +1392,6 @@ pub(crate) fn cbfx_sequence_second(c: &mut Cpu, frame: Frame) -> Flow {
     cbfx_switch(c, frame)
 }
 
-
 /// 0x2e88d0: the per-state trail intensity `switch` (state < 14).
 pub(crate) fn cbfx_switch(c: &mut Cpu, frame: Frame) -> Flow {
     c.cycles += 4;
@@ -1372,7 +1405,6 @@ pub(crate) fn cbfx_switch(c: &mut Cpu, frame: Frame) -> Flow {
     }
     cbfx_table(c, frame)
 }
-
 
 /// 0x2e88e0: the jump-table read; only the switch's own case blocks are
 /// accepted (any other target is an indirect jump out of the function).
@@ -1398,7 +1430,6 @@ pub(crate) fn cbfx_table(c: &mut Cpu, frame: Frame) -> Flow {
     }
 }
 
-
 /// 0x2e88f8.
 pub(crate) fn cbfx_case_f8(c: &mut Cpu, frame: Frame) -> Flow {
     c.cycles += 2;
@@ -1406,7 +1437,6 @@ pub(crate) fn cbfx_case_f8(c: &mut Cpu, frame: Frame) -> Flow {
     cbfx_store_active(c, frame);
     Ok(())
 }
-
 
 /// 0x2e8900.
 pub(crate) fn cbfx_case_00(c: &mut Cpu, frame: Frame) -> Flow {
@@ -1416,7 +1446,6 @@ pub(crate) fn cbfx_case_00(c: &mut Cpu, frame: Frame) -> Flow {
     Ok(())
 }
 
-
 /// 0x2e8908.
 pub(crate) fn cbfx_case_08(c: &mut Cpu, frame: Frame) -> Flow {
     c.cycles += 2;
@@ -1424,7 +1453,6 @@ pub(crate) fn cbfx_case_08(c: &mut Cpu, frame: Frame) -> Flow {
     cbfx_store_active(c, frame);
     Ok(())
 }
-
 
 /// 0x2e8910.
 pub(crate) fn cbfx_case_10(c: &mut Cpu, frame: Frame) -> Flow {
@@ -1434,7 +1462,6 @@ pub(crate) fn cbfx_case_10(c: &mut Cpu, frame: Frame) -> Flow {
     Ok(())
 }
 
-
 /// 0x2e8914: store the intensity and report active.
 pub(crate) fn cbfx_store_active(c: &mut Cpu, frame: Frame) {
     c.cycles += 3;
@@ -1443,14 +1470,12 @@ pub(crate) fn cbfx_store_active(c: &mut Cpu, frame: Frame) {
     cbfx_return(c, frame);
 }
 
-
 /// 0x2e8920: report inactive.
 pub(crate) fn cbfx_return_false(c: &mut Cpu, frame: Frame) {
     c.cycles += 1;
     c.g[V0][0] = 0;
     cbfx_return(c, frame);
 }
-
 
 /// 0x2e8924: pop `s0`.
 pub(crate) fn cbfx_return(c: &mut Cpu, frame: Frame) {
@@ -1459,14 +1484,12 @@ pub(crate) fn cbfx_return(c: &mut Cpu, frame: Frame) {
     cbfx_exit(c, frame);
 }
 
-
 /// 0x2e8928: the epilogue.
 pub(crate) fn cbfx_exit(c: &mut Cpu, frame: Frame) {
     c.cycles += 3;
     frame.restore_ra(c, 0);
     frame.close(c);
 }
-
 
 // ---------------------------------------------------------------------------
 // Visual effects, memory manager, input, animation, render.
@@ -1501,7 +1524,6 @@ pub fn cut_scene_transition_man_force_off(c: &mut Cpu) {
     })
 }
 
-
 /// `void* cCutSceneTransitionMan_ctor(cCutSceneTransitionMan* m)` (0x2ea670):
 /// the cut-scene transition manager: base process ctor, vtable 0x487f30,
 /// `+0x10 = +0x1c = 0`, then `SaveViewport`. Returns `m`.
@@ -1527,7 +1549,6 @@ pub fn c_cut_scene_transition_man_ctor(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void cCutSceneTransitionMan_ForceOn(Manager* self)` (0x2ea860): force the
 /// transition manager on, saving the viewport once and telling the app's
@@ -1566,7 +1587,6 @@ pub fn c_cut_scene_transition_man_force_on(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `TransitionWipe_ctor` (0x2ebba8): construct the 16-byte parameter struct
 /// passed by value (`a1`) into TransitionEffect's constructor, then install
@@ -1618,7 +1638,6 @@ pub fn transition_wipe_ctor(c: &mut Cpu) {
     })
 }
 
-
 /// `TransitionEffect_DrawFade` (0x2ebb10): draw the fade rectangle (the
 /// effect's 16-byte colour quad, its alpha scaled by `f12`).
 pub fn transition_effect_draw_fade(c: &mut Cpu) {
@@ -1666,7 +1685,6 @@ pub fn transition_effect_draw_fade(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Board trail FX.
@@ -1755,7 +1773,6 @@ pub fn c_board_trail_fx_render(c: &mut Cpu) {
     })
 }
 
-
 /// `void cCutSceneTransitionMan_SaveViewport(cCutSceneTransitionMan* self)`
 /// (0x2eaa28): snapshot the current viewport (16-byte quad + word at_2 +0x10)
 /// and the fade constants into +0x20.., choosing the "snap" variant when the
@@ -1817,7 +1834,6 @@ pub fn ccutscene_transition_man_save_viewport(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `cCutSceneTransitionMan_StartIn(this, dur)` (0x2ea6b8): fade a cut-scene
 /// transition in — save the viewport for the first stage and rescale the
@@ -1946,7 +1962,6 @@ pub fn c_cut_scene_transition_man_start_in(c: &mut Cpu) {
     return;
 }
 
-
 // ---------------------------------------------------------------------------
 // 0x002ebe20 TransitionEffect_ctorRandom2
 // ---------------------------------------------------------------------------
@@ -2070,7 +2085,6 @@ pub fn transition_effect_ctor_random2(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Register and address helpers.
 
@@ -2080,13 +2094,11 @@ pub(crate) fn g(c: &Cpu, r: usize) -> u32 {
     c.g[r][0] as u32
 }
 
-
 /// A `gp_6`-relative global.
 #[inline(always)]
 pub(crate) fn gp_6(c: &Cpu, off: i32) -> u32 {
     g(c, GP).wrapping_add(off as u32)
 }
-
 
 // ---------------------------------------------------------------------------
 // cBoardTrailFX_Update.
@@ -2096,7 +2108,6 @@ pub(crate) fn gp_6(c: &Cpu, off: i32) -> u32 {
 pub fn c_board_trail_fx_update(c: &mut Cpu) {
     guest(c, body)
 }
-
 
 /// The body, split out so `?` on the call protocol has a `Flow` to return.
 pub(crate) fn body(c: &mut Cpu) -> Flow {
@@ -2174,7 +2185,9 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                 c.g[V0][0] = c.lw(p(g(c, S0), 0x90));
                                 c.g[V0][0] = sx(g(c, V0).wrapping_sub(0x3));
                                 c.g[A0][0] = ((c.g[A0][0] as i64) < (c.g[V0][0] as i64)) as u64;
-                                if c.g[A0][0] == 0 { c.g[V0][0] = 0u64; }
+                                if c.g[A0][0] == 0 {
+                                    c.g[V0][0] = 0u64;
+                                }
                                 let t = true;
                                 c.sw(p(g(c, S0), 0x90), c.g[V0][0]);
                                 if t {
@@ -2267,7 +2280,10 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                             let t = (c.g[T2][0] as i64) >= 0;
                             c.sw(p(g(c, A0), 0x18), c.g[V1][0]);
                             if t {
-                                if event_due(c) { deliver_event_here(c, 0x002e8a70); } continue 'l_2e8a70;
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x002e8a70);
+                                }
+                                continue 'l_2e8a70;
                             } else {
                                 break 'b_2e8b30;
                             }
@@ -3946,7 +3962,10 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
             let t = c.g[A0][0] != 0u64;
             c.sw(p(g(c, V1), 0x18), c.g[A2][0]);
             if t {
-                if event_due(c) { deliver_event_here(c, 0x002e9d50); } continue 'l_2e9d50;
+                if event_due(c) {
+                    deliver_event_here(c, 0x002e9d50);
+                }
+                continue 'l_2e9d50;
             } else {
                 c.cycles += 6;
                 c.g[AT][0] = 0x3f800000;
@@ -3965,7 +3984,10 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                     let t = (c.g[A1][0] as i64) >= 0;
                     c.swc1(0, p(g(c, V0), 0x2c));
                     if t {
-                        if event_due(c) { deliver_event_here(c, 0x002e9e80); } continue 'l_2e9e80;
+                        if event_due(c) {
+                            deliver_event_here(c, 0x002e9e80);
+                        }
+                        continue 'l_2e9e80;
                     } else {
                         'b_2e9f3c: {
                             c.cycles += 39;
@@ -4064,11 +4086,15 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                     c.sqc2(5, frame.at(c, 0x210));
                                                     c.g[V1][0] = c.lw(p(g(c, S0), 0x10));
                                                     c.lq(2, frame.at(c, 0x210));
-                                                    c.g[A0][0] = sx(g(c, A2).wrapping_add(g(c, A0)));
-                                                    c.g[V1][0] = sx(g(c, T1).wrapping_add(g(c, V1)));
-                                                    c.g[A1][0] = sx(g(c, A2).wrapping_add(g(c, A1)));
+                                                    c.g[A0][0] =
+                                                        sx(g(c, A2).wrapping_add(g(c, A0)));
+                                                    c.g[V1][0] =
+                                                        sx(g(c, T1).wrapping_add(g(c, V1)));
+                                                    c.g[A1][0] =
+                                                        sx(g(c, A2).wrapping_add(g(c, A1)));
                                                     c.sq(2, frame.at(c, 0x200));
-                                                    c.g[A2][0] = sx(g(c, A2).wrapping_add(g(c, A3)));
+                                                    c.g[A2][0] =
+                                                        sx(g(c, A2).wrapping_add(g(c, A3)));
                                                     c.lqc2(3, p(g(c, V1), 0x20));
                                                     c.lqc2(4, frame.at(c, 0x200));
                                                     c.vu0().add(0b1111, 5, 3, Src::Vec(4));
@@ -4080,13 +4106,15 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                     c.g[V1][0] = c.lw(p(g(c, S0), 0x8c));
                                                     c.g[A0][0] = c.lw(p(g(c, S0), 0x1c));
                                                     c.mult(0, 3, 3, 8);
-                                                    c.g[A0][0] = sx(g(c, A0).wrapping_add(g(c, V1)));
+                                                    c.g[A0][0] =
+                                                        sx(g(c, A0).wrapping_add(g(c, V1)));
                                                     c.lq(2, p(g(c, A0), 0x20));
                                                     c.sq(2, p(g(c, A1), 0x20));
                                                     c.g[V1][0] = c.lw(p(g(c, S0), 0x8c));
                                                     c.g[A0][0] = c.lw(p(g(c, S0), 0x18));
                                                     c.mult(0, 3, 3, 8);
-                                                    c.g[A0][0] = sx(g(c, A0).wrapping_add(g(c, V1)));
+                                                    c.g[A0][0] =
+                                                        sx(g(c, A0).wrapping_add(g(c, V1)));
                                                     c.lq(2, p(g(c, A0), 0x20));
                                                     c.sq(2, p(g(c, A2), 0x20));
                                                     c.g[A1][0] = c.lw(p(g(c, S0), 0x8c));
@@ -4101,11 +4129,15 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                     c.sqc2(5, frame.at(c, 0x210));
                                                     c.g[V1][0] = c.lw(p(g(c, S0), 0x14));
                                                     c.lq(2, frame.at(c, 0x210));
-                                                    c.g[A0][0] = sx(g(c, A1).wrapping_add(g(c, A0)));
-                                                    c.g[V1][0] = sx(g(c, T1).wrapping_add(g(c, V1)));
-                                                    c.g[A2][0] = sx(g(c, A1).wrapping_add(g(c, A2)));
+                                                    c.g[A0][0] =
+                                                        sx(g(c, A1).wrapping_add(g(c, A0)));
+                                                    c.g[V1][0] =
+                                                        sx(g(c, T1).wrapping_add(g(c, V1)));
+                                                    c.g[A2][0] =
+                                                        sx(g(c, A1).wrapping_add(g(c, A2)));
                                                     c.sq(2, frame.at(c, 0x200));
-                                                    c.g[A1][0] = sx(g(c, A1).wrapping_add(g(c, A3)));
+                                                    c.g[A1][0] =
+                                                        sx(g(c, A1).wrapping_add(g(c, A3)));
                                                     c.lqc2(3, p(g(c, V1), 0x20));
                                                     c.lqc2(4, frame.at(c, 0x200));
                                                     c.vu0().add(0b1111, 5, 3, Src::Vec(4));
@@ -4250,7 +4282,10 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                     let t = (c.g[T1][0] as i64) >= 0;
                                     c.sw(p(g(c, V0), 0x1c), 0u64);
                                     if t {
-                                        if event_due(c) { deliver_event_here(c, 0x002ea168); } continue 'l_2ea168;
+                                        if event_due(c) {
+                                            deliver_event_here(c, 0x002ea168);
+                                        }
+                                        continue 'l_2ea168;
                                     } else {
                                         'b_2ea284: {
                                             c.cycles += 30;
@@ -4296,7 +4331,8 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                                 } else {
                                                     c.cycles += 4;
                                                     c.g[V0][0] = sx(p(g(c, A0), 0x2));
-                                                    c.g[V1][0] = ((c.g[V0][0] as i64) < 54i64) as u64;
+                                                    c.g[V1][0] =
+                                                        ((c.g[V0][0] as i64) < 54i64) as u64;
                                                     let t = c.g[V1][0] == 0u64;
                                                     c.sw(p(g(c, S0), 0x90), c.g[V0][0]);
                                                     if t {
@@ -4446,7 +4482,10 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
                                     let t = (c.g[T1][0] as i64) >= 0;
                                     c.sw(p(g(c, V1), 0x18), c.g[A0][0]);
                                     if t {
-                                        if event_due(c) { deliver_event_here(c, 0x002ea388); } continue 'l_2ea388;
+                                        if event_due(c) {
+                                            deliver_event_here(c, 0x002ea388);
+                                        }
+                                        continue 'l_2ea388;
                                     } else {
                                         c.cycles += 2;
                                         c.g[V0][0] = 0x2;
@@ -4486,9 +4525,7 @@ pub(crate) fn body(c: &mut Cpu) -> Flow {
     frame.close(c);
     abi::ret(c);
     Ok(())
-
 }
-
 
 /// `TransitionWipe_Draw` (0x002ebc40): draw the screen-wipe quad of a
 /// transition effect.  `t` (f12) is the wipe progress, `self+0x14`/`self+0x18`
@@ -4599,237 +4636,295 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
+    use crate::difftest::compare;
+    use crate::difftest::fakes;
+    use crate::difftest::fakes::covered;
+    use crate::difftest::fakes::fake_call;
+    use crate::difftest::fakes::machine;
+    use crate::difftest::fakes::ptr;
+    use crate::difftest::fakes::vtable;
+    use crate::difftest::fakes::FAKE;
+    use crate::difftest::fakes::LOG_RESULTS;
+    use crate::difftest::fill;
+    use crate::difftest::put_vec;
+    use crate::difftest::put_words;
     use crate::difftest::scramble;
+    use crate::difftest::seed_count;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::fakes::covered;
-    use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::fill;
-    use crate::difftest::fakes;
-    use crate::difftest::put_words;
-    use ssx3_ee as ee;
-    use crate::difftest::fakes::vtable;
-    use crate::difftest::put_vec;
-    use crate::difftest::fakes::ptr;
-    use ssx3_ee_rt::funcs::GuestFn;
     use crate::difftest::RA as RET;
-    use crate::difftest::fakes::fake_call;
-    use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::compare;
-    use crate::difftest::seed_count;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::SEEDS;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::slot;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::delta;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::gfx_fixture;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::SEEDS_2;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::f;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::gp_at;
-    pub(crate) use crate::game::fe::festaterewards2::tests::SEEDS as SEEDS_3;
-    pub(crate) use crate::game::fe::festaterewards2::tests::w;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_9 as base;
+    pub(crate) use crate::game::fe::feasyncfile::tests::check_all;
+    pub(crate) use crate::game::fe::feasyncfile::tests::game_globals;
+    pub(crate) use crate::game::fe::feasyncfile::tests::BE_4 as BE;
+    pub(crate) use crate::game::fe::feasyncfile::tests::BE_9 as BE_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::RIDER;
+    pub(crate) use crate::game::fe::feasyncfile::tests::RIDERS_2 as RIDERS;
+    pub(crate) use crate::game::fe::feasyncfile::tests::RMAN;
+    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_13 as SEEDS_5;
+    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_15 as SEEDS_6;
+    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_16 as SEEDS_7;
+    pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_7 as WORLD;
+    pub(crate) use crate::game::fe::feasyncfile::tests::W_3 as W;
+    pub(crate) use crate::game::fe::fepopup::tests::f_2;
     pub(crate) use crate::game::fe::festaterewards2::tests::belib;
-    pub(crate) use crate::game::render::particle::tests::SEEDS_7 as SEEDS_4;
+    pub(crate) use crate::game::fe::festaterewards2::tests::w;
+    pub(crate) use crate::game::fe::festaterewards2::tests::SEEDS as SEEDS_3;
     pub(crate) use crate::game::render::particle::tests::clear;
     pub(crate) use crate::game::render::particle::tests::common;
     pub(crate) use crate::game::render::particle::tests::vtable_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_13 as SEEDS_5;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE_4 as BE;
-    pub(crate) use crate::game::fe::feasyncfile::tests::W_3 as W;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_9 as base;
-    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_15 as SEEDS_6;
-    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_16 as SEEDS_7;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE_9 as BE_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_7 as WORLD;
-    pub(crate) use crate::game::fe::feasyncfile::tests::RMAN;
-    pub(crate) use crate::game::fe::feasyncfile::tests::RIDERS_2 as RIDERS;
-    pub(crate) use crate::game::fe::feasyncfile::tests::RIDER;
-    pub(crate) use crate::game::fe::feasyncfile::tests::game_globals;
-    pub(crate) use crate::game::fe::feasyncfile::tests::check_all;
+    pub(crate) use crate::game::render::particle::tests::SEEDS_7 as SEEDS_4;
     pub(crate) use crate::game::util::menu::tests::wf_2 as wf;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::delta;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::f;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::gfx_fixture;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::gp_at;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::slot;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::SEEDS;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::SEEDS_2;
     pub(crate) use crate::game::world::worldcache::tests::check_all as check_all_2;
-    pub(crate) use crate::game::fe::fepopup::tests::f_2;
-
+    use ssx3_ee as ee;
+    use ssx3_ee_rt::funcs::GuestFn;
 
     #[test]
     fn c_cut_scene_transition_man_start_out_matches() {
-        check(ssx3_ee::s09::f_002ea780, c_cut_scene_transition_man_start_out, 300, &|c, seed| {
-            let mut r = Rng(0x100b ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            let state = match seed % 8 {
-                0 => 0,
-                1 => 1,
-                2 => 2,
-                3 => 3,
-                4 => 4,
-                5 => 0x8000_0000, // sign-extends to a negative i64
-                6 => 0xffff_ffff,
-                _ => r.next_u32(),
-            };
-            c.bus.write32(DATA + 0x10, state);
-            c.bus.write32(DATA + 0x14, r.edge_f32());
-            c.bus.write32(DATA + 0x18, r.edge_f32());
-            c.f[12] = r.edge_f32();
-        });
+        check(
+            ssx3_ee::s09::f_002ea780,
+            c_cut_scene_transition_man_start_out,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x100b ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                let state = match seed % 8 {
+                    0 => 0,
+                    1 => 1,
+                    2 => 2,
+                    3 => 3,
+                    4 => 4,
+                    5 => 0x8000_0000, // sign-extends to a negative i64
+                    6 => 0xffff_ffff,
+                    _ => r.next_u32(),
+                };
+                c.bus.write32(DATA + 0x10, state);
+                c.bus.write32(DATA + 0x14, r.edge_f32());
+                c.bus.write32(DATA + 0x18, r.edge_f32());
+                c.f[12] = r.edge_f32();
+            },
+        );
     }
-
 
     #[test]
     fn c_cut_scene_transition_man_set_paused_matches() {
-        check(ssx3_ee::s09::f_002ea8b8, c_cut_scene_transition_man_set_paused, 300, &|c, seed| {
-            let mut r = Rng(0x100c ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = if seed % 2 == 0 { 0 } else { ((r.next_u32() as u64) << 32) | 1 };
-            c.bus.write32(
-                DATA + 0x10,
-                match seed % 3 {
-                    0 => 2,
-                    1 => 3,
-                    _ => r.next_u32(),
-                },
-            );
-            c.bus.write32(
-                DATA + 0x1c,
-                match seed % 4 {
-                    0 => 0,
-                    1 => r.next_u32() & 0x7fff_ffff,
-                    2 => 0x8000_0000,
-                    _ => r.next_u32(),
-                },
-            );
-        });
+        check(
+            ssx3_ee::s09::f_002ea8b8,
+            c_cut_scene_transition_man_set_paused,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x100c ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = if seed % 2 == 0 {
+                    0
+                } else {
+                    ((r.next_u32() as u64) << 32) | 1
+                };
+                c.bus.write32(
+                    DATA + 0x10,
+                    match seed % 3 {
+                        0 => 2,
+                        1 => 3,
+                        _ => r.next_u32(),
+                    },
+                );
+                c.bus.write32(
+                    DATA + 0x1c,
+                    match seed % 4 {
+                        0 => 0,
+                        1 => r.next_u32() & 0x7fff_ffff,
+                        2 => 0x8000_0000,
+                        _ => r.next_u32(),
+                    },
+                );
+            },
+        );
     }
-
 
     #[test]
     fn rider_base_reset_power_up_trail_matches() {
-        check(ssx3_ee::s09::f_002eadc0, rider_base_reset_power_up_trail, 100, &|c, seed| {
-            let mut r = Rng(0x100d ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.bus.write32(DATA + 0xc, r.next_u32());
-            c.bus.write32(DATA + 0x10, r.next_u32());
-        });
+        check(
+            ssx3_ee::s09::f_002eadc0,
+            rider_base_reset_power_up_trail,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x100d ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.bus.write32(DATA + 0xc, r.next_u32());
+                c.bus.write32(DATA + 0x10, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn rider_base_render_power_up_trail_matches() {
-        covered(ssx3_ee::s09::f_002eb198__generated, rider_base_render_power_up_trail, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x2eb1_98, 4);
-            gfx_fixture(c, &mut r);
-            let this = DATA;
-            fill(c, &mut r, this, 0x40);
-            // 0/1/negative: nothing drawn; 2 or 3 sections (3 fills the strips).
-            let n = match seed % 4 {
-                0 => [0, 1, (-3i32) as u32][(r.next_u32() % 3) as usize],
-                1 => 2,
-                _ => 3,
-            };
-            c.bus.write32(this + trail::COUNT, n);
-            c.bus.write32(this + trail::FIRST, r.next_u32() % 16);
-            c.g[A0][0] = sx(this);
-        });
+        covered(
+            ssx3_ee::s09::f_002eb198__generated,
+            rider_base_render_power_up_trail,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2eb1_98, 4);
+                gfx_fixture(c, &mut r);
+                let this = DATA;
+                fill(c, &mut r, this, 0x40);
+                // 0/1/negative: nothing drawn; 2 or 3 sections (3 fills the strips).
+                let n = match seed % 4 {
+                    0 => [0, 1, (-3i32) as u32][(r.next_u32() % 3) as usize],
+                    1 => 2,
+                    _ => 3,
+                };
+                c.bus.write32(this + trail::COUNT, n);
+                c.bus.write32(this + trail::FIRST, r.next_u32() % 16);
+                c.g[A0][0] = sx(this);
+            },
+        );
     }
-
 
     #[test]
     fn rider_base_update_power_up_trail_matches() {
-        check(ee::s09::f_002eadd0__generated, rider_base_update_power_up_trail, SEEDS_2, &|c, seed| {
-            let mut r = machine(c, seed, 0x2ead, 0);
-            let (s, rider, model, skel, nodes, buf) = (
-                DATA,
-                DATA + 0x2000,
-                DATA + 0x4000,
-                DATA + 0x4400,
-                DATA + 0x6000,
-                DATA + 0x4d30,
-            );
-            c.bus.write32(s, rider);
-            c.bus.write32(s + 0xc, r.next_u32() % 5);
-            c.bus.write32(s + 0x10, r.next_u32() % 3);
-            for k in 0..4u32 {
-                c.bus.write32(s + 0xe0 + 4 * k, r.next_u32());
-                c.bus.write32(s + 0xf0 + 4 * k, r.next_u32());
-            }
-            c.bus.write32(rider + 0x2ec, f([-1.0f32, 0.5, 5.0][(seed % 3) as usize]));
-            c.bus.write32(rider + 0x77c, model);
-            c.bus.write32(rider + 0x780, skel);
-            c.bus.write32(rider + 0x8a4, r.next_u32() % 4);
-            c.bus.write32(skel + 0x30, nodes);
-            c.bus.write32(model + 0xde0, (seed % 2) as u32);
-            for off in [0u32, 0x10, 0x20, 0x30, 0x50, 0x64, 0x104, 0x114, 0x124] {
-                c.bus.write32(buf + off, r.next_u32());
-            }
-            for i in 0..4u32 {
-                for k in 0..16u32 {
-                    c.bus.write32(nodes + 0x40 * i + 4 * k, r.edge_f32());
+        check(
+            ee::s09::f_002eadd0__generated,
+            rider_base_update_power_up_trail,
+            SEEDS_2,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2ead, 0);
+                let (s, rider, model, skel, nodes, buf) = (
+                    DATA,
+                    DATA + 0x2000,
+                    DATA + 0x4000,
+                    DATA + 0x4400,
+                    DATA + 0x6000,
+                    DATA + 0x4d30,
+                );
+                c.bus.write32(s, rider);
+                c.bus.write32(s + 0xc, r.next_u32() % 5);
+                c.bus.write32(s + 0x10, r.next_u32() % 3);
+                for k in 0..4u32 {
+                    c.bus.write32(s + 0xe0 + 4 * k, r.next_u32());
+                    c.bus.write32(s + 0xf0 + 4 * k, r.next_u32());
                 }
-            }
-            c.bus.write32(gp_at(0x1630), if seed % 5 == 0 { 1 } else { 0 });
-            c.g[A0][0] = sx(s);
-        });
+                c.bus
+                    .write32(rider + 0x2ec, f([-1.0f32, 0.5, 5.0][(seed % 3) as usize]));
+                c.bus.write32(rider + 0x77c, model);
+                c.bus.write32(rider + 0x780, skel);
+                c.bus.write32(rider + 0x8a4, r.next_u32() % 4);
+                c.bus.write32(skel + 0x30, nodes);
+                c.bus.write32(model + 0xde0, (seed % 2) as u32);
+                for off in [0u32, 0x10, 0x20, 0x30, 0x50, 0x64, 0x104, 0x114, 0x124] {
+                    c.bus.write32(buf + off, r.next_u32());
+                }
+                for i in 0..4u32 {
+                    for k in 0..16u32 {
+                        c.bus.write32(nodes + 0x40 * i + 4 * k, r.edge_f32());
+                    }
+                }
+                c.bus
+                    .write32(gp_at(0x1630), if seed % 5 == 0 { 1 } else { 0 });
+                c.g[A0][0] = sx(s);
+            },
+        );
     }
-
 
     #[test]
     fn c_board_trail_fx_is_active_matches() {
-        check(ee::s09::f_002e87e8__generated, c_board_trail_fx_is_active, 300, &|c, seed| {
-            machine(c, seed, 0x2e87e8, 3);
-            let fx = DATA;
-            let owner = DATA + 0x100;
-            let state = DATA + 0x400;
-            let anim = DATA + 0x500;
-            let seq = DATA + 0x600;
-            c.bus.write32(fx, owner);
-            c.bus.write32(owner + 0x77c, state);
-            c.bus.write32(state + 0xde0, [0u32, 1, 2, 3, 4, 13, 14, 22][(seed % 8) as usize]);
-            c.bus.write32(state + 0x30, if seed % 3 == 0 { 1 } else { 0 });
-            c.bus.write32(owner + 0x438, [0u32, 1, 2, 3, 4, 5, 13, 14, 0x30][(seed % 9) as usize]);
-            c.bus.write32(owner + 0x784, anim);
-            c.bus.write32(anim + 8, if seed % 4 == 1 { 0x16 } else { 0x10 });
-            c.bus.write32(anim + 0x50, seq);
-            c.bus.write32(seq + 0x14, seq); // a one-element sequence list
-            c.bus.write32(seq + 0xb0, if seed % 2 == 0 { 1 } else { 0 });
-            c.bus.write32(seq + 0xb4, if seed % 5 == 2 { 1 } else { 0 });
-            c.bus.write32(owner + 0xac4, if seed % 3 == 1 { 1 } else { 0 });
-            c.bus.write32(owner + 0xad0, if seed % 2 == 0 { 1 } else { 0 });
-            c.bus.write32(owner + 0xafc, if seed % 7 == 3 { 0 } else { 1 });
-            c.bus.write32(owner + 0xb00, if seed % 4 == 0 { 0 } else { 1 });
-            // The state switch's table (all entries are blocks of the
-            // function itself: every state below 14 reaches one of them).
-            let targets = [0x002e_88f8u32, 0x002e_8900, 0x002e_8908, 0x002e_8910, 0x002e_8920];
-            for i in 0..14u32 {
-                c.bus.write32(0x0048_7b40 + 4 * i, targets[(i % 5) as usize]);
-            }
-            put_words(
-                c,
-                GAME_GP + 0x14a0,
-                &[0x3f80_0000, 0x3f80_0000, 0x4000_0000, 0x3f00_0000, 0x3f40_0000],
-            );
-            c.pc = 0x002e_87e8;
-            c.g[A0][0] = sx(fx);
-        });
+        check(
+            ee::s09::f_002e87e8__generated,
+            c_board_trail_fx_is_active,
+            300,
+            &|c, seed| {
+                machine(c, seed, 0x2e87e8, 3);
+                let fx = DATA;
+                let owner = DATA + 0x100;
+                let state = DATA + 0x400;
+                let anim = DATA + 0x500;
+                let seq = DATA + 0x600;
+                c.bus.write32(fx, owner);
+                c.bus.write32(owner + 0x77c, state);
+                c.bus.write32(
+                    state + 0xde0,
+                    [0u32, 1, 2, 3, 4, 13, 14, 22][(seed % 8) as usize],
+                );
+                c.bus
+                    .write32(state + 0x30, if seed % 3 == 0 { 1 } else { 0 });
+                c.bus.write32(
+                    owner + 0x438,
+                    [0u32, 1, 2, 3, 4, 5, 13, 14, 0x30][(seed % 9) as usize],
+                );
+                c.bus.write32(owner + 0x784, anim);
+                c.bus
+                    .write32(anim + 8, if seed % 4 == 1 { 0x16 } else { 0x10 });
+                c.bus.write32(anim + 0x50, seq);
+                c.bus.write32(seq + 0x14, seq); // a one-element sequence list
+                c.bus.write32(seq + 0xb0, if seed % 2 == 0 { 1 } else { 0 });
+                c.bus.write32(seq + 0xb4, if seed % 5 == 2 { 1 } else { 0 });
+                c.bus
+                    .write32(owner + 0xac4, if seed % 3 == 1 { 1 } else { 0 });
+                c.bus
+                    .write32(owner + 0xad0, if seed % 2 == 0 { 1 } else { 0 });
+                c.bus
+                    .write32(owner + 0xafc, if seed % 7 == 3 { 0 } else { 1 });
+                c.bus
+                    .write32(owner + 0xb00, if seed % 4 == 0 { 0 } else { 1 });
+                // The state switch's table (all entries are blocks of the
+                // function itself: every state below 14 reaches one of them).
+                let targets = [
+                    0x002e_88f8u32,
+                    0x002e_8900,
+                    0x002e_8908,
+                    0x002e_8910,
+                    0x002e_8920,
+                ];
+                for i in 0..14u32 {
+                    c.bus
+                        .write32(0x0048_7b40 + 4 * i, targets[(i % 5) as usize]);
+                }
+                put_words(
+                    c,
+                    GAME_GP + 0x14a0,
+                    &[
+                        0x3f80_0000,
+                        0x3f80_0000,
+                        0x4000_0000,
+                        0x3f00_0000,
+                        0x3f40_0000,
+                    ],
+                );
+                c.pc = 0x002e_87e8;
+                c.g[A0][0] = sx(fx);
+            },
+        );
     }
-
 
     // ------------------------------------------------- visual fx and memory
 
     #[test]
     fn cut_scene_transition_man_force_off_matches() {
-        check(ssx3_ee::s09::f_002ea820__generated, cut_scene_transition_man_force_off, SEEDS_3, &|c, seed| {
-            machine(c, seed, 0x2ea8_20, 1);
-            belib(c);
-            c.g[A0][0] = DATA as u64;
-            w(c, DATA + 0x10, if seed % 2 == 0 { 0 } else { 1 });
-            if seed % 4 == 3 {
-                w(c, GAME_GP + 0x2a90, DATA + 0x200);
-            }
-        });
+        check(
+            ssx3_ee::s09::f_002ea820__generated,
+            cut_scene_transition_man_force_off,
+            SEEDS_3,
+            &|c, seed| {
+                machine(c, seed, 0x2ea8_20, 1);
+                belib(c);
+                c.g[A0][0] = DATA as u64;
+                w(c, DATA + 0x10, if seed % 2 == 0 { 0 } else { 1 });
+                if seed % 4 == 3 {
+                    w(c, GAME_GP + 0x2a90, DATA + 0x200);
+                }
+            },
+        );
     }
-
 
     #[test]
     fn c_cut_scene_transition_man_ctor_matches() {
@@ -4850,27 +4945,30 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_cut_scene_transition_man_force_on_matches() {
-        check(ee::s09::f_002ea860__generated, c_cut_scene_transition_man_force_on, SEEDS_4, &|c, seed| {
-            let _ = common(c, seed, 0x2ea860, 1);
-            let this = DATA + 0x100;
-            let app = DATA + 0x200;
-            clear(c, this, 0x100);
-            clear(c, app, 0x1200);
-            c.bus.write32(this + 0x10, (seed % 2) as u32);
-            c.bus.write32(app + 0x10d8, DATA + 0x300);
-            vtable_2(c, DATA + 0x300, &[(0x148, 0, FAKE)]);
-            c.bus.write32(gp_at(0x2a90), app);
-            c.g[A0][0] = sx(this);
-        });
+        check(
+            ee::s09::f_002ea860__generated,
+            c_cut_scene_transition_man_force_on,
+            SEEDS_4,
+            &|c, seed| {
+                let _ = common(c, seed, 0x2ea860, 1);
+                let this = DATA + 0x100;
+                let app = DATA + 0x200;
+                clear(c, this, 0x100);
+                clear(c, app, 0x1200);
+                c.bus.write32(this + 0x10, (seed % 2) as u32);
+                c.bus.write32(app + 0x10d8, DATA + 0x300);
+                vtable_2(c, DATA + 0x300, &[(0x148, 0, FAKE)]);
+                c.bus.write32(gp_at(0x2a90), app);
+                c.g[A0][0] = sx(this);
+            },
+        );
     }
 
     pub(crate) fn u64v(r: &mut Rng) -> u64 {
         ((r.next_u32() as u64) << 32) | r.next_u32() as u64
     }
-
 
     #[test]
     fn transition_wipe_ctor_matches() {
@@ -4893,7 +4991,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn transition_effect_draw_fade_matches() {
         check(
@@ -4912,47 +5009,57 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_board_trail_fx_render_matches() {
-        check(ee::s09::f_002ea480__generated, c_board_trail_fx_render, SEEDS_6, &|c, seed| {
-            let mut r = base(c, seed, 0x2ea4, 0);
-            w(c, GAME_GP + 0x1428, 0);
-            w(c, GAME_GP + 0x142c, 0);
-            let holder = DATA + 0x2_000;
-            w(c, GAME_GP.wrapping_sub(0x854), holder);
-            w(c, holder + 0xe84, DATA + 0x900);
-            for i in 0..0x30u32 {
-                w(c, DATA + 0x900 + 4 * i, r.next_u32());
-            }
-            w(c, DATA + 0x90, seed % 4);
-            c.g[A0][0] = DATA as u64;
-        });
+        check(
+            ee::s09::f_002ea480__generated,
+            c_board_trail_fx_render,
+            SEEDS_6,
+            &|c, seed| {
+                let mut r = base(c, seed, 0x2ea4, 0);
+                w(c, GAME_GP + 0x1428, 0);
+                w(c, GAME_GP + 0x142c, 0);
+                let holder = DATA + 0x2_000;
+                w(c, GAME_GP.wrapping_sub(0x854), holder);
+                w(c, holder + 0xe84, DATA + 0x900);
+                for i in 0..0x30u32 {
+                    w(c, DATA + 0x900 + 4 * i, r.next_u32());
+                }
+                w(c, DATA + 0x90, seed % 4);
+                c.g[A0][0] = DATA as u64;
+            },
+        );
     }
-
 
     #[test]
     fn ccutscene_transition_man_save_viewport_matches() {
-        check(ee::s09::f_002eaa28__generated, ccutscene_transition_man_save_viewport, 200, &|c, seed| {
-            let mut r = machine(c, seed, 0x2e_aa28, 1);
-            let this = DATA;
-            c.g[A0][0] = sx(this);
-            let world = DATA + 0x3000;
-            let vt = DATA + 0x3400;
-            c.bus.write32(GAME_GP + 0x2a90, world);
-            c.bus.write32(world + 0x10d8, vt);
-            c.bus.write16(vt + 0x150, 0);
-            c.bus.write32(vt + 0x154, FAKE);
-            for i in 0..8u32 {
-                c.bus.write32(this + 0x20 + i * 4, r.next_u32());
-            }
-            c.bus.write32(this + 0x20, if seed % 3 == 0 { 2 } else { r.next_u32() % 3 });
-            c.bus.write32(GAME_GP.wrapping_sub(0x39a8), r.edge_f32());
-        });
+        check(
+            ee::s09::f_002eaa28__generated,
+            ccutscene_transition_man_save_viewport,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2e_aa28, 1);
+                let this = DATA;
+                c.g[A0][0] = sx(this);
+                let world = DATA + 0x3000;
+                let vt = DATA + 0x3400;
+                c.bus.write32(GAME_GP + 0x2a90, world);
+                c.bus.write32(world + 0x10d8, vt);
+                c.bus.write16(vt + 0x150, 0);
+                c.bus.write32(vt + 0x154, FAKE);
+                for i in 0..8u32 {
+                    c.bus.write32(this + 0x20 + i * 4, r.next_u32());
+                }
+                c.bus.write32(
+                    this + 0x20,
+                    if seed % 3 == 0 { 2 } else { r.next_u32() % 3 },
+                );
+                c.bus.write32(GAME_GP.wrapping_sub(0x39a8), r.edge_f32());
+            },
+        );
     }
 
-
-        #[test]
+    #[test]
     fn c_cut_scene_transition_man_start_in_matches() {
         check_all(
             ee::s09::f_002ea6b8__generated,
@@ -4971,10 +5078,9 @@ pub(crate) mod tests {
         );
     }
 
-
     // -- 0x001b7650 cFEStateNetAccountMem_ShowPopup ---------------------
 
-        // -- 0x002ebe20 TransitionEffect_ctorRandom2 ------------------------
+    // -- 0x002ebe20 TransitionEffect_ctorRandom2 ------------------------
 
     #[test]
     fn transition_effect_ctor_random2_matches() {
@@ -5000,7 +5106,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     /// The trail object.
     pub(crate) const SELF: u32 = DATA + 0x1000;
@@ -5034,11 +5139,15 @@ pub(crate) mod tests {
     /// Control words the fake callees read.
     pub(crate) const CTRL: u32 = DATA + 0x200;
 
-
     /// `difftest::check`, also requiring the caller-saved scratch state and
     /// LO/HI to match: the fake callees hash every register into their result
     /// and into RAM, and `div`/`mult` leave LO/HI a later read could see.
-    pub(crate) fn check_strict(generated: GuestFn, hand: GuestFn, seeds: u32, setup: &dyn Fn(&mut Cpu, u32)) {
+    pub(crate) fn check_strict(
+        generated: GuestFn,
+        hand: GuestFn,
+        seeds: u32,
+        setup: &dyn Fn(&mut Cpu, u32),
+    ) {
         for seed in 0..seed_count(seeds) {
             let r = compare(generated, hand, &|c| setup(c, seed));
             assert!(r.hard.is_empty(), "seed {seed}: {:#?}", r.hard);
@@ -5051,7 +5160,6 @@ pub(crate) mod tests {
         }
     }
 
-
     /// `cBoardTrailFX_IsActive(self)`: bit 0 of the control word is the
     /// answer, the fade it stores at `self+0x9c` comes from the upper bits.
     pub(crate) fn fake_is_active(c: &mut Cpu) {
@@ -5061,7 +5169,6 @@ pub(crate) mod tests {
         abi::ret(c);
     }
 
-
     /// `func_0011FE98(rider)`: the rider sub-state. 0/1/2/12 reach every
     /// comparison the body makes on it.
     pub(crate) fn fake_sub_state(c: &mut Cpu) {
@@ -5069,7 +5176,6 @@ pub(crate) mod tests {
         c.g[V0][0] = [0u64, 1, 2, 0xc][(r & 3) as usize];
         abi::ret(c);
     }
-
 
     /// `func_00312AA0(animbase, 2)`: the animation state. The body tests
     /// `(v0 - 0x17) < 8`, so 0x16/0x17/0x1e/0x1f cover both sides.
@@ -5079,7 +5185,6 @@ pub(crate) mod tests {
         abi::ret(c);
     }
 
-
     /// `func_0031C228(x)`: a float blend helper returning f0 (the body then
     /// does `mov.s f12, f0`).
     pub(crate) fn fake_blend(c: &mut Cpu) {
@@ -5088,7 +5193,6 @@ pub(crate) mod tests {
         abi::ret(c);
     }
 
-
     /// Installs the fake callees and puts the generated defaults back.
     pub(crate) struct Slots {
         is_active: fn(&mut Cpu),
@@ -5096,7 +5200,6 @@ pub(crate) mod tests {
         anim_state: fn(&mut Cpu),
         blend: fn(&mut Cpu),
     }
-
 
     impl Slots {
         fn install() -> Slots {
@@ -5116,7 +5219,6 @@ pub(crate) mod tests {
         }
     }
 
-
     impl Drop for Slots {
         fn drop(&mut self) {
             unsafe {
@@ -5127,7 +5229,6 @@ pub(crate) mod tests {
             }
         }
     }
-
 
     /// The trail, its rider, the six strips and the globals the body and its
     /// callees read, all varied by `seed`.
@@ -5146,8 +5247,7 @@ pub(crate) mod tests {
             w(c, GAME_GP + off, r.edge_f32());
         }
         for off in [
-            0x39acu32, 0x39b0, 0x39b4, 0x39b8, 0x39bc, 0x39c0, 0x39c4, 0x39c8, 0x39cc,
-            0x39d0,
+            0x39acu32, 0x39b0, 0x39b4, 0x39b8, 0x39bc, 0x39c0, 0x39c4, 0x39c8, 0x39cc, 0x39d0,
         ] {
             w(c, GAME_GP.wrapping_sub(off), r.edge_f32());
         }
@@ -5208,14 +5308,7 @@ pub(crate) mod tests {
         w(c, VSELF + 0x3c, FAKE);
 
         // The vectors the dot products consume.
-        let q = |r: &mut Rng| {
-            [
-                r.edge_f32(),
-                r.edge_f32(),
-                r.edge_f32(),
-                r.edge_f32(),
-            ]
-        };
+        let q = |r: &mut Rng| [r.edge_f32(), r.edge_f32(), r.edge_f32(), r.edge_f32()];
         put_vec(c, RIDER_2 + 0x370, q(&mut r));
         put_vec(c, RIDER_2 + 0x460, q(&mut r));
         put_vec(c, RIDER_2 + 0x1e0, q(&mut r));
@@ -5232,7 +5325,6 @@ pub(crate) mod tests {
         }
     }
 
-
     #[test]
     fn c_board_trail_fx_update_matches() {
         let _slots = Slots::install();
@@ -5244,23 +5336,27 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn transition_wipe_draw_matches() {
-        check_all_2(ee::s09::f_002ebc40__generated, transition_wipe_draw, 32, &|c, seed| {
-            let mut r = machine(c, seed, 0x2ebc40, 2);
-            let self_ = DATA + 0x200;
-            c.g[A0][0] = sx(self_);
-            c.f[12] = r.edge_f32();
-            w(c, self_ + 0x14, r.next_u32() % 3);
-            w(c, self_ + 0x18, r.next_u32() % 3);
-            w(c, self_ + 0x4, r.next_u32());
-            for off in [0xa40u32, 0xa44, 0xa48, 0xa4c, 0xa50, 0xa54] {
-                f_2(c, crate::difftest::GAME_GP + off, r.edge_f32());
-            }
-            for off in [0x39a0u32, 0x39a4, 0x3998, 0x399c] {
-                f_2(c, crate::difftest::GAME_GP.wrapping_sub(off), r.edge_f32());
-            }
-        });
+        check_all_2(
+            ee::s09::f_002ebc40__generated,
+            transition_wipe_draw,
+            32,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2ebc40, 2);
+                let self_ = DATA + 0x200;
+                c.g[A0][0] = sx(self_);
+                c.f[12] = r.edge_f32();
+                w(c, self_ + 0x14, r.next_u32() % 3);
+                w(c, self_ + 0x18, r.next_u32() % 3);
+                w(c, self_ + 0x4, r.next_u32());
+                for off in [0xa40u32, 0xa44, 0xa48, 0xa4c, 0xa50, 0xa54] {
+                    f_2(c, crate::difftest::GAME_GP + off, r.edge_f32());
+                }
+                for off in [0x39a0u32, 0x39a4, 0x3998, 0x399c] {
+                    f_2(c, crate::difftest::GAME_GP.wrapping_sub(off), r.edge_f32());
+                }
+            },
+        );
     }
 }

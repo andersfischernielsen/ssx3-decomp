@@ -175,7 +175,11 @@ pub fn div(c: &mut Cpu, n: u32, d: u32) -> (u32, u32) {
 /// Returns `(quotient, remainder)`.
 #[inline]
 pub fn divu(c: &mut Cpu, n: u32, d: u32) -> (u32, u32) {
-    let (q, r) = if d == 0 { (u32::MAX, n) } else { (n / d, n % d) };
+    let (q, r) = if d == 0 {
+        (u32::MAX, n)
+    } else {
+        (n / d, n % d)
+    };
     c.lo[0] = sx(q);
     c.hi[0] = sx(r);
     (q, r)

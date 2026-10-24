@@ -5,43 +5,99 @@
 //! Replacements here follow the call protocol of [`crate::call`] (stack
 //! frame, registers at each call, unwind check, cycles between calls).
 
+use crate::abi::addu;
+use crate::call::{call_ptr, guest, tail_wrapper, Callee, Flow, Frame, Target, Unwound, VSlot};
 use crate::guest::Addr;
 use crate::ps2f::{FpuF32, Vec4};
 use ssx3_ee as ee;
-use crate::abi::addu;
-use crate::call::{call_ptr, guest, tail_wrapper, Callee, Flow, Frame, Target, Unwound, VSlot};
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this package: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0014_dd58, be_library_get_interface, "BELibrary_GetInterface"),
+    (
+        0x0014_dd58,
+        be_library_get_interface,
+        "BELibrary_GetInterface",
+    ),
     (0x003b_58a0, snd_lock, "SND_Lock"),
     (0x003b_58d8, snd_unlock, "SND_Unlock"),
-    (0x003d_cf70, eafile_set_request_callback, "EAFile_SetRequestCallback"),
+    (
+        0x003d_cf70,
+        eafile_set_request_callback,
+        "EAFile_SetRequestCallback",
+    ),
     (0x0015_df98, game_camera_update, "GameCamera_Update"),
-    (0x0015_edc8, game_camera_set_target_rider, "GameCamera_SetTargetRider"),
-    (0x0015_cfe8, manual_cam_controller_update, "ManualCamController_Update"),
+    (
+        0x0015_edc8,
+        game_camera_set_target_rider,
+        "GameCamera_SetTargetRider",
+    ),
+    (
+        0x0015_cfe8,
+        manual_cam_controller_update,
+        "ManualCamController_Update",
+    ),
     (0x0016_24e8, chase_camera_tick, "ChaseCameraAlgorithm_Tick"),
-    (0x0016_6f28, chase_camera_reset, "ChaseCameraAlgorithm_Reset"),
-    (0x0015_f5b0, rider_camera_target_get_velocity, "RiderCameraTarget_GetVelocity"),
-    (0x0015_f568, rider_camera_target_get_position, "RiderCameraTarget_GetPosition"),
+    (
+        0x0016_6f28,
+        chase_camera_reset,
+        "ChaseCameraAlgorithm_Reset",
+    ),
+    (
+        0x0015_f5b0,
+        rider_camera_target_get_velocity,
+        "RiderCameraTarget_GetVelocity",
+    ),
+    (
+        0x0015_f568,
+        rider_camera_target_get_position,
+        "RiderCameraTarget_GetPosition",
+    ),
     (0x0016_8060, camera_base_update, "CameraBase_Update"),
     (0x0015_d780, camera_base_get_yaw, "CameraBase_GetYaw"),
-    (0x0012_16e0, rider_update_main_state, "Rider_UpdateMainState"),
-    (0x0012_1750, rider_post_update_main_state, "Rider_PostUpdateMainState"),
-    (0x0012_1068, rider_process_control_input, "Rider_ProcessControlInput"),
+    (
+        0x0012_16e0,
+        rider_update_main_state,
+        "Rider_UpdateMainState",
+    ),
+    (
+        0x0012_1750,
+        rider_post_update_main_state,
+        "Rider_PostUpdateMainState",
+    ),
+    (
+        0x0012_1068,
+        rider_process_control_input,
+        "Rider_ProcessControlInput",
+    ),
     (0x0011_fe78, rider_set_main_state, "Rider_SetMainState"),
     (0x0011_fec8, rider_set_sub_state, "Rider_SetSubState"),
-    (0x0013_6958, rider_static_state_update, "RiderStaticState_Update"),
+    (
+        0x0013_6958,
+        rider_static_state_update,
+        "RiderStaticState_Update",
+    ),
     (0x0010_6538, rider_translate, "Rider_Translate"),
-    (0x0031_28e8, anim_controller_play_anim, "AnimController_PlayAnim"),
+    (
+        0x0031_28e8,
+        anim_controller_play_anim,
+        "AnimController_PlayAnim",
+    ),
     (0x0031_7e30, operator_new_named, "operator_new_named"),
     (0x0031_7d70, ea_mem_alloc_named, "EA_MemAllocNamed"),
     (0x0031_7e50, builtin_delete, "__builtin_delete"),
-    (0x0039_5370, ps2_graphics_man_set_viewport_rect, "PS2GraphicsMan_SetViewportRect"),
-    (0x0037_6938, ps2_graphics_man_set_scissor_clamped, "PS2GraphicsMan_SetScissorClamped"),
+    (
+        0x0039_5370,
+        ps2_graphics_man_set_viewport_rect,
+        "PS2GraphicsMan_SetViewportRect",
+    ),
+    (
+        0x0037_6938,
+        ps2_graphics_man_set_scissor_clamped,
+        "PS2GraphicsMan_SetScissorClamped",
+    ),
 ];
 
 /// `lw` (sign-extended, through the CPU load path).
@@ -56,24 +112,50 @@ fn lw(c: &mut Cpu, a: u32) -> u64 {
 mod callee {
     use super::{ee, Callee};
 
-    pub const RIDER_BASE_UPDATE_MAIN_STATE: Callee =
-        Callee { addr: 0x0011_1408, f: ee::s00::RiderBase_UpdateMainState };
-    pub const RIDER_BASE_POST_UPDATE_MAIN_STATE: Callee =
-        Callee { addr: 0x0011_14a0, f: ee::s00::RiderBase_PostUpdateMainState };
-    pub const RIDER_BASE_SET_MAIN_STATE: Callee =
-        Callee { addr: 0x0011_12b8, f: ee::s00::RiderBase_SetMainState };
-    pub const RIDER_BASE_SET_SUB_STATE: Callee =
-        Callee { addr: 0x0011_1538, f: ee::s00::RiderBase_SetSubState };
-    pub const RIDER_BASE_HANDLE_SUB_STATE_INPUT: Callee =
-        Callee { addr: 0x0011_1728, f: ee::s00::RiderBase_HandleSubStateInput };
-    pub const GAME_CAMERA_COMPUTE_VIEW: Callee =
-        Callee { addr: 0x0015_e668, f: ee::s01::GameCamera_ComputeView };
-    pub const EA_MEM_ALLOC_NAMED: Callee = Callee { addr: 0x0031_7d70, f: ee::s10::EA_MemAllocNamed };
-    pub const MEM_ALLOC_INTERNAL: Callee = Callee { addr: 0x0031_9a90, f: ee::s10::MEM_AllocInternal };
-    pub const MEM_FREE_INTERNAL: Callee = Callee { addr: 0x0031_9b48, f: ee::s10::MEM_FreeInternal };
-    pub const ANIM_TABLE_GET_ENTRY: Callee = Callee { addr: 0x0031_15c8, f: ee::s10::AnimTable_GetEntry };
-    pub const ANIM_CONTROLLER_PLAY_ANIM_IMPL: Callee =
-        Callee { addr: 0x0031_1f00, f: ee::s10::AnimController_PlayAnimImpl };
+    pub const RIDER_BASE_UPDATE_MAIN_STATE: Callee = Callee {
+        addr: 0x0011_1408,
+        f: ee::s00::RiderBase_UpdateMainState,
+    };
+    pub const RIDER_BASE_POST_UPDATE_MAIN_STATE: Callee = Callee {
+        addr: 0x0011_14a0,
+        f: ee::s00::RiderBase_PostUpdateMainState,
+    };
+    pub const RIDER_BASE_SET_MAIN_STATE: Callee = Callee {
+        addr: 0x0011_12b8,
+        f: ee::s00::RiderBase_SetMainState,
+    };
+    pub const RIDER_BASE_SET_SUB_STATE: Callee = Callee {
+        addr: 0x0011_1538,
+        f: ee::s00::RiderBase_SetSubState,
+    };
+    pub const RIDER_BASE_HANDLE_SUB_STATE_INPUT: Callee = Callee {
+        addr: 0x0011_1728,
+        f: ee::s00::RiderBase_HandleSubStateInput,
+    };
+    pub const GAME_CAMERA_COMPUTE_VIEW: Callee = Callee {
+        addr: 0x0015_e668,
+        f: ee::s01::GameCamera_ComputeView,
+    };
+    pub const EA_MEM_ALLOC_NAMED: Callee = Callee {
+        addr: 0x0031_7d70,
+        f: ee::s10::EA_MemAllocNamed,
+    };
+    pub const MEM_ALLOC_INTERNAL: Callee = Callee {
+        addr: 0x0031_9a90,
+        f: ee::s10::MEM_AllocInternal,
+    };
+    pub const MEM_FREE_INTERNAL: Callee = Callee {
+        addr: 0x0031_9b48,
+        f: ee::s10::MEM_FreeInternal,
+    };
+    pub const ANIM_TABLE_GET_ENTRY: Callee = Callee {
+        addr: 0x0031_15c8,
+        f: ee::s10::AnimTable_GetEntry,
+    };
+    pub const ANIM_CONTROLLER_PLAY_ANIM_IMPL: Callee = Callee {
+        addr: 0x0031_1f00,
+        f: ee::s10::AnimController_PlayAnimImpl,
+    };
 }
 
 /// Cross-shard direct calls the compiler emitted as `call_indirect(c, addr)`:
@@ -445,7 +527,12 @@ pub fn rider_camera_target_get_position(c: &mut Cpu) {
 
 /// `CameraBase_Update(cam)` (0x168060): `CameraBase_UpdateMatrices(cam)`.
 pub fn camera_base_update(c: &mut Cpu) {
-    tail_wrapper(c, None, table_target(table_callee::CAMERA_BASE_UPDATE_MATRICES), 0x0016_8070)
+    tail_wrapper(
+        c,
+        None,
+        table_target(table_callee::CAMERA_BASE_UPDATE_MATRICES),
+        0x0016_8070,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -461,25 +548,45 @@ const RIDER_OWNER: u32 = 0x77c;
 /// `Rider_UpdateMainState(rider)` (0x1216e0):
 /// `RiderBase_UpdateMainState(rider->owner)`.
 pub fn rider_update_main_state(c: &mut Cpu) {
-    tail_wrapper(c, Some(RIDER_OWNER), Target::Direct(callee::RIDER_BASE_UPDATE_MAIN_STATE), 0x0012_16f0)
+    tail_wrapper(
+        c,
+        Some(RIDER_OWNER),
+        Target::Direct(callee::RIDER_BASE_UPDATE_MAIN_STATE),
+        0x0012_16f0,
+    )
 }
 
 /// `Rider_SetMainState(rider, s)` (0x11fe78):
 /// `RiderBase_SetMainState(rider->owner, s)`.
 pub fn rider_set_main_state(c: &mut Cpu) {
-    tail_wrapper(c, Some(RIDER_OWNER), Target::Direct(callee::RIDER_BASE_SET_MAIN_STATE), 0x0011_fe88)
+    tail_wrapper(
+        c,
+        Some(RIDER_OWNER),
+        Target::Direct(callee::RIDER_BASE_SET_MAIN_STATE),
+        0x0011_fe88,
+    )
 }
 
 /// `Rider_SetSubState(rider, s)` (0x11fec8):
 /// `RiderBase_SetSubState(rider->owner, s)`.
 pub fn rider_set_sub_state(c: &mut Cpu) {
-    tail_wrapper(c, Some(RIDER_OWNER), Target::Direct(callee::RIDER_BASE_SET_SUB_STATE), 0x0011_fed8)
+    tail_wrapper(
+        c,
+        Some(RIDER_OWNER),
+        Target::Direct(callee::RIDER_BASE_SET_SUB_STATE),
+        0x0011_fed8,
+    )
 }
 
 /// `RiderStaticState_Update(state)` (0x136958):
 /// `Rider_BuildWorldMatrix(state->rider(+0))`.
 pub fn rider_static_state_update(c: &mut Cpu) {
-    tail_wrapper(c, Some(0), table_target(table_callee::RIDER_BUILD_WORLD_MATRIX), 0x0013_6968)
+    tail_wrapper(
+        c,
+        Some(0),
+        table_target(table_callee::RIDER_BUILD_WORLD_MATRIX),
+        0x0013_6968,
+    )
 }
 
 /// `Rider_ProcessControlInput(rider)` (0x121068): fill a control record on
@@ -621,7 +728,12 @@ pub fn rider_translate(c: &mut Cpu) {
 }
 
 fn vadd(a: Vec4, b: Vec4) -> Vec4 {
-    Vec4 { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z, w: a.w + b.w }
+    Vec4 {
+        x: a.x + b.x,
+        y: a.y + b.y,
+        z: a.z + b.z,
+        w: a.w + b.w,
+    }
 }
 
 fn vf_set(c: &mut Cpu, reg: usize, v: Vec4) {
@@ -664,7 +776,12 @@ pub fn ps2_graphics_man_set_viewport_rect(c: &mut Cpu) {
 /// `operator_new_named(size, name, flags, ...)` (0x317e30):
 /// `EA_MemAllocNamed(...)` with the arguments unchanged.
 pub fn operator_new_named(c: &mut Cpu) {
-    tail_wrapper(c, None, Target::Direct(callee::EA_MEM_ALLOC_NAMED), 0x0031_7e40)
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(callee::EA_MEM_ALLOC_NAMED),
+        0x0031_7e40,
+    )
 }
 
 /// The block alignment `EA_MemAllocNamed` derives from its flags: the
@@ -1009,7 +1126,12 @@ pub fn ps2_graphics_man_set_scissor_clamped(c: &mut Cpu) {
             let a = frame.at(c, off);
             Addr(a).write_u32(c, c.f[f]);
         }
-        let (mut x, mut y, mut w, mut h) = (FpuF32(c.f[12]), FpuF32(c.f[13]), FpuF32(c.f[14]), FpuF32(c.f[15]));
+        let (mut x, mut y, mut w, mut h) = (
+            FpuF32(c.f[12]),
+            FpuF32(c.f[13]),
+            FpuF32(c.f[14]),
+            FpuF32(c.f[15]),
+        );
         c.f[20] = x.0;
         c.f[21] = y.0;
         c.f[22] = w.0;
@@ -1080,7 +1202,11 @@ pub fn ps2_graphics_man_set_scissor_clamped(c: &mut Cpu) {
             c.cycles += 4;
             let less = smaller(room_x, wi);
             c.g[V0][0] = less as u64;
-            if less { room_x } else { wi }
+            if less {
+                room_x
+            } else {
+                wi
+            }
         };
         c.g[A1][0] = w_out;
 
@@ -1099,7 +1225,11 @@ pub fn ps2_graphics_man_set_scissor_clamped(c: &mut Cpu) {
             c.cycles += 3;
             let less = smaller(room_y, hi);
             c.g[V0][0] = less as u64;
-            if less { room_y } else { hi }
+            if less {
+                room_y
+            } else {
+                hi
+            }
         };
         c.g[V1][0] = h_out;
 
@@ -1128,21 +1258,29 @@ mod tests {
 
     #[test]
     fn be_library_get_interface() {
-        covered(ssx3_ee::s01::f_0014dd58__generated, super::be_library_get_interface, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 1, 1);
-            let index = r.next_u32() % 8;
-            c.bus.write32(GAME_GP - 0x1efc, index);
-            let lib = ptr(&mut r);
-            c.bus.write32(super::BE_LIBRARY + 4 * index, lib);
-            let vt = vtable(c, &mut r, &[8]);
-            c.bus.write32(lib + 4, vt);
-        });
+        covered(
+            ssx3_ee::s01::f_0014dd58__generated,
+            super::be_library_get_interface,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 1, 1);
+                let index = r.next_u32() % 8;
+                c.bus.write32(GAME_GP - 0x1efc, index);
+                let lib = ptr(&mut r);
+                c.bus.write32(super::BE_LIBRARY + 4 * index, lib);
+                let vt = vtable(c, &mut r, &[8]);
+                c.bus.write32(lib + 4, vt);
+            },
+        );
     }
 
     #[test]
     fn snd_lock_unlock() {
         for (gen, hand) in [
-            (ssx3_ee::s13::f_003b58a0__generated as fn(&mut Cpu), super::snd_lock as fn(&mut Cpu)),
+            (
+                ssx3_ee::s13::f_003b58a0__generated as fn(&mut Cpu),
+                super::snd_lock as fn(&mut Cpu),
+            ),
             (ssx3_ee::s13::f_003b58d8__generated, super::snd_unlock),
         ] {
             covered(gen, hand, SEEDS, &|c, seed| {
@@ -1156,147 +1294,204 @@ mod tests {
 
     #[test]
     fn eafile_set_request_callback() {
-        covered(ssx3_ee::s14::f_003dcf70__generated, super::eafile_set_request_callback, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 3, 1);
-            let table = ptr(&mut r);
-            c.bus.write32(super::EAFILE_REQUESTS, table);
-            let slot = r.next_u32() & 0xff;
-            c.g[A0][0] = (r.next_u32() as u64) << 32 | (slot << 24 | r.next_u32() & 0xff_ffff) as u64;
-            c.g[A1][0] = (r.next_u32() as u64) << 32 | FAKE as u64;
-            let req = table + 0x30 * slot;
-            crate::difftest::fill(c, &mut r, req, 12);
-            if r.next_u32() % 2 == 0 {
-                c.bus.write32(req + 8, 0);
-            }
-        });
+        covered(
+            ssx3_ee::s14::f_003dcf70__generated,
+            super::eafile_set_request_callback,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 3, 1);
+                let table = ptr(&mut r);
+                c.bus.write32(super::EAFILE_REQUESTS, table);
+                let slot = r.next_u32() & 0xff;
+                c.g[A0][0] =
+                    (r.next_u32() as u64) << 32 | (slot << 24 | r.next_u32() & 0xff_ffff) as u64;
+                c.g[A1][0] = (r.next_u32() as u64) << 32 | FAKE as u64;
+                let req = table + 0x30 * slot;
+                crate::difftest::fill(c, &mut r, req, 12);
+                if r.next_u32() % 2 == 0 {
+                    c.bus.write32(req + 8, 0);
+                }
+            },
+        );
     }
 
     /// A camera with an active controller whose vtable (at +0x14) points at
     /// fakes. GameCamera_ComputeView then runs for real on zeroed state.
     #[test]
     fn game_camera_update() {
-        covered(ssx3_ee::s01::f_0015df98__generated, super::game_camera_update, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 4, 1);
-            let cam = ptr(&mut r);
-            c.g[A0][0] = cam as u64;
-            let ctrl = ptr(&mut r);
-            c.bus.write32(cam + 0xa0, ctrl);
-            let vt = vtable(c, &mut r, &[0x10]);
-            c.bus.write32(ctrl + 0x14, vt);
-        });
+        covered(
+            ssx3_ee::s01::f_0015df98__generated,
+            super::game_camera_update,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 4, 1);
+                let cam = ptr(&mut r);
+                c.g[A0][0] = cam as u64;
+                let ctrl = ptr(&mut r);
+                c.bus.write32(cam + 0xa0, ctrl);
+                let vt = vtable(c, &mut r, &[0x10]);
+                c.bus.write32(ctrl + 0x14, vt);
+            },
+        );
     }
 
     #[test]
     fn game_camera_set_target_rider() {
-        covered(ssx3_ee::s01::f_0015edc8__generated, super::game_camera_set_target_rider, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 5, 1);
-            let cam = ptr(&mut r);
-            c.g[A0][0] = cam as u64;
-            let chase = ptr(&mut r);
-            c.bus.write32(cam + 0xa8, chase);
-            // Sometimes the state's rider field aliases cam+0xa8.
-            let state = if r.next_u32() % 4 == 0 { cam + 0xa4 } else { ptr(&mut r) };
-            c.bus.write32(chase + 0x20, state);
-            let vt = vtable(c, &mut r, &[0x20]);
-            c.bus.write32(chase + 0x14, vt);
-            if state == cam + 0xa4 {
-                // The rider written becomes the new "chase"; give it a vtable.
-                c.g[A1][0] = ptr(&mut r) as u64;
-                c.bus.write32(c.g[A1][0] as u32 + 0x14, vt);
-            }
-        });
+        covered(
+            ssx3_ee::s01::f_0015edc8__generated,
+            super::game_camera_set_target_rider,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 5, 1);
+                let cam = ptr(&mut r);
+                c.g[A0][0] = cam as u64;
+                let chase = ptr(&mut r);
+                c.bus.write32(cam + 0xa8, chase);
+                // Sometimes the state's rider field aliases cam+0xa8.
+                let state = if r.next_u32() % 4 == 0 {
+                    cam + 0xa4
+                } else {
+                    ptr(&mut r)
+                };
+                c.bus.write32(chase + 0x20, state);
+                let vt = vtable(c, &mut r, &[0x20]);
+                c.bus.write32(chase + 0x14, vt);
+                if state == cam + 0xa4 {
+                    // The rider written becomes the new "chase"; give it a vtable.
+                    c.g[A1][0] = ptr(&mut r) as u64;
+                    c.bus.write32(c.g[A1][0] as u32 + 0x14, vt);
+                }
+            },
+        );
     }
 
     #[test]
     fn manual_cam_controller_update() {
-        covered(ssx3_ee::s01::f_0015cfe8__generated, super::manual_cam_controller_update, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 6, 1);
-            let ctrl = ptr(&mut r);
-            c.g[A0][0] = ctrl as u64;
-            let (algos, sel, algo) = (ptr(&mut r), ptr(&mut r), ptr(&mut r));
-            c.bus.write32(ctrl + 8, algos);
-            c.bus.write32(algos, sel);
-            c.bus.write32(sel, algo);
-            let vt = vtable(c, &mut r, &[0x28]);
-            c.bus.write32(algo + 0x10, vt);
-        });
+        covered(
+            ssx3_ee::s01::f_0015cfe8__generated,
+            super::manual_cam_controller_update,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 6, 1);
+                let ctrl = ptr(&mut r);
+                c.g[A0][0] = ctrl as u64;
+                let (algos, sel, algo) = (ptr(&mut r), ptr(&mut r), ptr(&mut r));
+                c.bus.write32(ctrl + 8, algos);
+                c.bus.write32(algos, sel);
+                c.bus.write32(sel, algo);
+                let vt = vtable(c, &mut r, &[0x28]);
+                c.bus.write32(algo + 0x10, vt);
+            },
+        );
     }
 
     #[test]
     fn chase_camera_tick() {
-        covered(ssx3_ee::s01::f_001624e8__generated, super::chase_camera_tick, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 7, 3);
-            let this = ptr(&mut r);
-            c.g[A0][0] = this as u64;
-            c.bus.write32(this + 0x2f0, if r.next_u32() % 2 == 0 { 0 } else { r.next_u32() });
-            let vt = vtable(c, &mut r, &[0x20, 0x28, 0x40]);
-            c.bus.write32(this + 0x10, vt);
-        });
+        covered(
+            ssx3_ee::s01::f_001624e8__generated,
+            super::chase_camera_tick,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 7, 3);
+                let this = ptr(&mut r);
+                c.g[A0][0] = this as u64;
+                c.bus.write32(
+                    this + 0x2f0,
+                    if r.next_u32() % 2 == 0 {
+                        0
+                    } else {
+                        r.next_u32()
+                    },
+                );
+                let vt = vtable(c, &mut r, &[0x20, 0x28, 0x40]);
+                c.bus.write32(this + 0x10, vt);
+            },
+        );
     }
 
     #[test]
     fn chase_camera_reset() {
-        covered(ssx3_ee::s02::f_00166f28__generated, super::chase_camera_reset, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 8, 2);
-            let this = ptr(&mut r);
-            c.g[A0][0] = this as u64;
-            let vt = ptr(&mut r);
-            c.bus.write16(vt + 0x18, (r.next_u32() as i16 & !3) as u16);
-            c.bus.write32(vt + 0x1c, FAKE + 0x20);
-            c.bus.write32(this + 0x10, vt);
-            let (target, rider) = (ptr(&mut r), ptr(&mut r));
-            c.bus.write32(this + 0x30, target);
-            c.bus.write32(target + 4, rider);
-            let ivt = vtable(c, &mut r, &[0x38]);
-            c.bus.write32(rider + 0x6c0, ivt);
-        });
+        covered(
+            ssx3_ee::s02::f_00166f28__generated,
+            super::chase_camera_reset,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 8, 2);
+                let this = ptr(&mut r);
+                c.g[A0][0] = this as u64;
+                let vt = ptr(&mut r);
+                c.bus.write16(vt + 0x18, (r.next_u32() as i16 & !3) as u16);
+                c.bus.write32(vt + 0x1c, FAKE + 0x20);
+                c.bus.write32(this + 0x10, vt);
+                let (target, rider) = (ptr(&mut r), ptr(&mut r));
+                c.bus.write32(this + 0x30, target);
+                c.bus.write32(target + 4, rider);
+                let ivt = vtable(c, &mut r, &[0x38]);
+                c.bus.write32(rider + 0x6c0, ivt);
+            },
+        );
     }
 
     #[test]
     fn rider_camera_target_get_velocity() {
-        covered(ssx3_ee::s01::f_0015f5b0__generated, super::rider_camera_target_get_velocity, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 9, 1);
-            c.g[A0][0] = ptr(&mut r) as u64;
-            let this = ptr(&mut r);
-            c.g[A1][0] = this as u64;
-            let rider = ptr(&mut r);
-            c.bus.write32(this + 4, rider);
-            let ivt = vtable(c, &mut r, &[0x10]);
-            c.bus.write32(rider + 0x6c0, ivt);
-            crate::difftest::fill(c, &mut r, DATA, 0x4_0000 / 4);
-            c.bus.write32(this + 4, rider);
-            c.bus.write32(rider + 0x6c0, ivt);
-            c.bus.write32(ivt + 0x14, FAKE);
-        });
+        covered(
+            ssx3_ee::s01::f_0015f5b0__generated,
+            super::rider_camera_target_get_velocity,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 9, 1);
+                c.g[A0][0] = ptr(&mut r) as u64;
+                let this = ptr(&mut r);
+                c.g[A1][0] = this as u64;
+                let rider = ptr(&mut r);
+                c.bus.write32(this + 4, rider);
+                let ivt = vtable(c, &mut r, &[0x10]);
+                c.bus.write32(rider + 0x6c0, ivt);
+                crate::difftest::fill(c, &mut r, DATA, 0x4_0000 / 4);
+                c.bus.write32(this + 4, rider);
+                c.bus.write32(rider + 0x6c0, ivt);
+                c.bus.write32(ivt + 0x14, FAKE);
+            },
+        );
     }
 
     #[test]
     fn rider_camera_target_get_position() {
-        check(ssx3_ee::s01::f_0015f568__generated, super::rider_camera_target_get_position, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 10, 0);
-            c.g[A0][0] = ptr(&mut r) as u64;
-            let this = ptr(&mut r);
-            c.g[A1][0] = this as u64;
-            let (rider, model, bones) = (ptr(&mut r), ptr(&mut r), ptr(&mut r));
-            c.bus.write32(this + 4, rider);
-            c.bus.write32(rider + 0x780, model);
-            c.bus.write32(rider + 0x89c, r.next_u32() % 32);
-            c.bus.write32(model + 0x2c, bones);
-            crate::difftest::fill(c, &mut r, bones, 32 * 8);
-        });
+        check(
+            ssx3_ee::s01::f_0015f568__generated,
+            super::rider_camera_target_get_position,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 10, 0);
+                c.g[A0][0] = ptr(&mut r) as u64;
+                let this = ptr(&mut r);
+                c.g[A1][0] = this as u64;
+                let (rider, model, bones) = (ptr(&mut r), ptr(&mut r), ptr(&mut r));
+                c.bus.write32(this + 4, rider);
+                c.bus.write32(rider + 0x780, model);
+                c.bus.write32(rider + 0x89c, r.next_u32() % 32);
+                c.bus.write32(model + 0x2c, bones);
+                crate::difftest::fill(c, &mut r, bones, 32 * 8);
+            },
+        );
     }
 
     #[test]
     fn camera_base_update() {
-        check(ssx3_ee::s02::f_00168060__generated, super::camera_base_update, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 11, 0);
-            let cam = ptr(&mut r);
-            c.g[A0][0] = cam as u64;
-            crate::difftest::fill(c, &mut r, cam, 0x40);
-            for i in 0..16 {
-                c.bus.write32(cam + 0x20 + 4 * i, r.f32(4.0));
-            }
-        });
+        check(
+            ssx3_ee::s02::f_00168060__generated,
+            super::camera_base_update,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 11, 0);
+                let cam = ptr(&mut r);
+                c.g[A0][0] = cam as u64;
+                crate::difftest::fill(c, &mut r, cam, 0x40);
+                for i in 0..16 {
+                    c.bus.write32(cam + 0x20 + 4 * i, r.f32(4.0));
+                }
+            },
+        );
     }
 
     /// The RiderBase state switches read their jump tables from empty RAM:
@@ -1307,7 +1502,11 @@ mod tests {
         let owner = ptr(r);
         c.bus.write32(rider + super::RIDER_OWNER, owner);
         for off in [0xde0, 0xde4] {
-            let s = if r.next_u32() % 4 == 0 { r.next_u32() } else { r.next_u32() % 6 };
+            let s = if r.next_u32() % 4 == 0 {
+                r.next_u32()
+            } else {
+                r.next_u32() % 6
+            };
             c.bus.write32(owner + off, s);
         }
         rider
@@ -1315,17 +1514,28 @@ mod tests {
 
     #[test]
     fn rider_update_main_state() {
-        covered(ssx3_ee::s00::f_001216e0__generated, super::rider_update_main_state, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 12, 1);
-            rider_owner(c, &mut r);
-        });
+        covered(
+            ssx3_ee::s00::f_001216e0__generated,
+            super::rider_update_main_state,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 12, 1);
+                rider_owner(c, &mut r);
+            },
+        );
     }
 
     #[test]
     fn rider_set_main_and_sub_state() {
         for (gen, hand) in [
-            (ssx3_ee::s00::f_0011fe78__generated as fn(&mut Cpu), super::rider_set_main_state as fn(&mut Cpu)),
-            (ssx3_ee::s00::f_0011fec8__generated, super::rider_set_sub_state),
+            (
+                ssx3_ee::s00::f_0011fe78__generated as fn(&mut Cpu),
+                super::rider_set_main_state as fn(&mut Cpu),
+            ),
+            (
+                ssx3_ee::s00::f_0011fec8__generated,
+                super::rider_set_sub_state,
+            ),
         ] {
             covered(gen, hand, SEEDS, &|c, seed| {
                 let mut r = machine(c, seed, 13, 2);
@@ -1337,99 +1547,128 @@ mod tests {
 
     #[test]
     fn rider_static_state_update() {
-        check(ssx3_ee::s01::f_00136958__generated, super::rider_static_state_update, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 14, 0);
-            let state = ptr(&mut r);
-            c.g[A0][0] = state as u64;
-            let rider = ptr(&mut r);
-            c.bus.write32(state, rider);
-            for i in 0..4 {
-                c.bus.write32(rider + 0x110 + 4 * i, r.f32(1e4));
-                c.bus.write32(rider + 0x120 + 4 * i, r.f32(1.0));
-            }
-        });
+        check(
+            ssx3_ee::s01::f_00136958__generated,
+            super::rider_static_state_update,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 14, 0);
+                let state = ptr(&mut r);
+                c.g[A0][0] = state as u64;
+                let rider = ptr(&mut r);
+                c.bus.write32(state, rider);
+                for i in 0..4 {
+                    c.bus.write32(rider + 0x110 + 4 * i, r.f32(1e4));
+                    c.bus.write32(rider + 0x120 + 4 * i, r.f32(1.0));
+                }
+            },
+        );
     }
 
     #[test]
     fn rider_process_control_input() {
-        covered(ssx3_ee::s00::f_00121068__generated, super::rider_process_control_input, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 15, 2);
-            let rider = rider_owner(c, &mut r);
-            let owner = c.bus.read32(rider + super::RIDER_OWNER);
-            let vt = vtable(c, &mut r, &[8]);
-            c.bus.write32(owner + 0xde8, vt);
-        });
+        covered(
+            ssx3_ee::s00::f_00121068__generated,
+            super::rider_process_control_input,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 15, 2);
+                let rider = rider_owner(c, &mut r);
+                let owner = c.bus.read32(rider + super::RIDER_OWNER);
+                let vt = vtable(c, &mut r, &[8]);
+                c.bus.write32(owner + 0xde8, vt);
+            },
+        );
     }
 
     #[test]
     fn rider_post_update_main_state() {
-        covered(ssx3_ee::s00::f_00121750__generated, super::rider_post_update_main_state, 600, &|c, seed| {
-            let mut r = machine(c, seed, 16, 1);
-            let rider = rider_owner(c, &mut r);
-            // An empty model (no nodes to move).
-            let model = ptr(&mut r);
-            c.bus.write32(rider + 0x780, model);
-            c.bus.write32(model + 8, 0);
-            // Equal up to a random lane (sometimes all equal), with -0/+0 and
-            // denormal pairs that compare equal.
-            let diff_from = r.next_u32() % 5;
-            for i in 0..4 {
-                let v = r.edge_f32();
-                c.bus.write32(super::RIDER_MODEL_ORIGIN + 4 * i, v);
-                let w = if i < diff_from {
-                    match r.next_u32() % 3 {
-                        0 if v & 0x7f80_0000 == 0 => r.next_u32() & 0x807f_ffff,
-                        _ => v,
-                    }
-                } else {
-                    r.edge_f32()
-                };
-                c.bus.write32(rider + 0x9d0 + 4 * i, w);
-            }
-        });
+        covered(
+            ssx3_ee::s00::f_00121750__generated,
+            super::rider_post_update_main_state,
+            600,
+            &|c, seed| {
+                let mut r = machine(c, seed, 16, 1);
+                let rider = rider_owner(c, &mut r);
+                // An empty model (no nodes to move).
+                let model = ptr(&mut r);
+                c.bus.write32(rider + 0x780, model);
+                c.bus.write32(model + 8, 0);
+                // Equal up to a random lane (sometimes all equal), with -0/+0 and
+                // denormal pairs that compare equal.
+                let diff_from = r.next_u32() % 5;
+                for i in 0..4 {
+                    let v = r.edge_f32();
+                    c.bus.write32(super::RIDER_MODEL_ORIGIN + 4 * i, v);
+                    let w = if i < diff_from {
+                        match r.next_u32() % 3 {
+                            0 if v & 0x7f80_0000 == 0 => r.next_u32() & 0x807f_ffff,
+                            _ => v,
+                        }
+                    } else {
+                        r.edge_f32()
+                    };
+                    c.bus.write32(rider + 0x9d0 + 4 * i, w);
+                }
+            },
+        );
     }
 
     #[test]
     fn rider_translate() {
-        check(ssx3_ee::s00::f_00106538__generated, super::rider_translate, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 17, 1);
-            let rider = ptr(&mut r);
-            c.g[A0][0] = rider as u64;
-            let delta = if r.next_u32() % 8 == 0 { rider + 0x110 } else { ptr(&mut r) };
-            c.g[A1][0] = delta as u64;
-            for off in [0x110, 0x9d0, 0x400, 0x410] {
-                for i in 0..4 {
-                    c.bus.write32(rider + off + 4 * i, r.edge_f32());
+        check(
+            ssx3_ee::s00::f_00106538__generated,
+            super::rider_translate,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 17, 1);
+                let rider = ptr(&mut r);
+                c.g[A0][0] = rider as u64;
+                let delta = if r.next_u32() % 8 == 0 {
+                    rider + 0x110
+                } else {
+                    ptr(&mut r)
+                };
+                c.g[A1][0] = delta as u64;
+                for off in [0x110, 0x9d0, 0x400, 0x410] {
+                    for i in 0..4 {
+                        c.bus.write32(rider + off + 4 * i, r.edge_f32());
+                    }
                 }
-            }
-            if delta != rider + 0x110 {
-                for i in 0..4 {
-                    c.bus.write32(delta + 4 * i, r.edge_f32());
+                if delta != rider + 0x110 {
+                    for i in 0..4 {
+                        c.bus.write32(delta + 4 * i, r.edge_f32());
+                    }
                 }
-            }
-            // The collision tree: a root and up to three children.
-            // (Away from the rider so its stores can't change the count.)
-            let tree = 0x00a0_0000 + (r.next_u32() & 0xfff0);
-            c.bus.write32(rider + 0xaa0, tree);
-            for i in 0..32 {
-                c.bus.write32(tree + 0x10 + 4 * i, r.edge_f32());
-            }
-            c.bus.write32(tree + 0x2c, r.next_u32() % 4);
-        });
+                // The collision tree: a root and up to three children.
+                // (Away from the rider so its stores can't change the count.)
+                let tree = 0x00a0_0000 + (r.next_u32() & 0xfff0);
+                c.bus.write32(rider + 0xaa0, tree);
+                for i in 0..32 {
+                    c.bus.write32(tree + 0x10 + 4 * i, r.edge_f32());
+                }
+                c.bus.write32(tree + 0x2c, r.next_u32() % 4);
+            },
+        );
     }
 
     #[test]
     fn ps2_graphics_man_set_viewport_rect() {
-        covered(ssx3_ee::s13::f_00395370__generated, super::ps2_graphics_man_set_viewport_rect, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 18, 1);
-            let gm = ptr(&mut r);
-            c.g[A0][0] = gm as u64;
-            let rect = ptr(&mut r);
-            c.g[A1][0] = rect as u64;
-            crate::difftest::fill(c, &mut r, rect, 4);
-            let vt = vtable(c, &mut r, &[0xb8]);
-            c.bus.write32(gm + 0x10d8, vt);
-        });
+        covered(
+            ssx3_ee::s13::f_00395370__generated,
+            super::ps2_graphics_man_set_viewport_rect,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 18, 1);
+                let gm = ptr(&mut r);
+                c.g[A0][0] = gm as u64;
+                let rect = ptr(&mut r);
+                c.g[A1][0] = rect as u64;
+                crate::difftest::fill(c, &mut r, rect, 4);
+                let vt = vtable(c, &mut r, &[0xb8]);
+                c.bus.write32(gm + 0x10d8, vt);
+            },
+        );
     }
     fn alloc_setup(c: &mut Cpu, r: &mut Rng) {
         c.g[A0][0] = match r.next_u32() % 4 {
@@ -1458,8 +1697,14 @@ mod tests {
     #[test]
     fn ea_mem_alloc_named() {
         for (gen, hand) in [
-            (ssx3_ee::s10::f_00317d70__generated as fn(&mut Cpu), super::ea_mem_alloc_named as fn(&mut Cpu)),
-            (ssx3_ee::s10::f_00317e30__generated, super::operator_new_named),
+            (
+                ssx3_ee::s10::f_00317d70__generated as fn(&mut Cpu),
+                super::ea_mem_alloc_named as fn(&mut Cpu),
+            ),
+            (
+                ssx3_ee::s10::f_00317e30__generated,
+                super::operator_new_named,
+            ),
         ] {
             covered(gen, hand, SEEDS, &|c, seed| {
                 let mut r = machine(c, seed, 19, 6);
@@ -1470,94 +1715,126 @@ mod tests {
 
     #[test]
     fn builtin_delete() {
-        covered(ssx3_ee::s10::f_00317e50__generated, super::builtin_delete, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 20, 6);
-            alloc_setup(c, &mut r);
-            c.g[A0][0] = if r.next_u32() % 4 == 0 { 0 } else { ptr(&mut r) as u64 };
-        });
+        covered(
+            ssx3_ee::s10::f_00317e50__generated,
+            super::builtin_delete,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 20, 6);
+                alloc_setup(c, &mut r);
+                c.g[A0][0] = if r.next_u32() % 4 == 0 {
+                    0
+                } else {
+                    ptr(&mut r) as u64
+                };
+            },
+        );
     }
 
     #[test]
     fn camera_base_get_yaw() {
-        check(ssx3_ee::s01::f_0015d780__generated, super::camera_base_get_yaw, 1000, &|c, seed| {
-            let mut r = machine(c, seed, 21, 1);
-            let cam = ptr(&mut r);
-            c.g[A0][0] = cam as u64;
-            let mut q = [r.f32(1.0), r.f32(1.0), r.f32(1.0), r.f32(1.0)];
-            match seed % 6 {
-                // s = 0 with k = 1, k = 0, k = -1, k = 1 - 2z^2.
-                0 => (q[0], q[2]) = (0, 0),
-                1 => (q[0], q[2], q[3]) = (0x3f00_0000, 0x3f00_0000, q[1]),
-                2 => (q[0], q[2], q[3]) = (0, 0x3f80_0000, 0),
-                3 => (q[0], q[3]) = (0x8000_0000, 0),
-                4 => q = [r.edge_f32(), r.edge_f32(), r.edge_f32(), r.edge_f32()],
-                _ => {}
-            }
-            for (i, v) in q.into_iter().enumerate() {
-                c.bus.write32(cam + 0x30 + 4 * i as u32, v);
-            }
-            for off in super::YAW_CONST_GP {
-                c.bus.write32(GAME_GP - off, r.f32(4.0));
-            }
-        });
+        check(
+            ssx3_ee::s01::f_0015d780__generated,
+            super::camera_base_get_yaw,
+            1000,
+            &|c, seed| {
+                let mut r = machine(c, seed, 21, 1);
+                let cam = ptr(&mut r);
+                c.g[A0][0] = cam as u64;
+                let mut q = [r.f32(1.0), r.f32(1.0), r.f32(1.0), r.f32(1.0)];
+                match seed % 6 {
+                    // s = 0 with k = 1, k = 0, k = -1, k = 1 - 2z^2.
+                    0 => (q[0], q[2]) = (0, 0),
+                    1 => (q[0], q[2], q[3]) = (0x3f00_0000, 0x3f00_0000, q[1]),
+                    2 => (q[0], q[2], q[3]) = (0, 0x3f80_0000, 0),
+                    3 => (q[0], q[3]) = (0x8000_0000, 0),
+                    4 => q = [r.edge_f32(), r.edge_f32(), r.edge_f32(), r.edge_f32()],
+                    _ => {}
+                }
+                for (i, v) in q.into_iter().enumerate() {
+                    c.bus.write32(cam + 0x30 + 4 * i as u32, v);
+                }
+                for off in super::YAW_CONST_GP {
+                    c.bus.write32(GAME_GP - off, r.f32(4.0));
+                }
+            },
+        );
     }
 
     #[test]
     fn anim_controller_play_anim() {
-        covered(ssx3_ee::s10::f_003128e8__generated, super::anim_controller_play_anim, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 22, 2);
-            let ctrl = ptr(&mut r);
-            c.g[A0][0] = ctrl as u64;
-            let anim = r.next_u32() % 64;
-            c.g[A1][0] = anim as u64;
-            c.f[12] = if r.next_u32() % 2 == 0 { r.edge_f32() } else { r.f32(1.0) };
-            let vt = vtable(c, &mut r, &[0x20]);
-            c.bus.write32(ctrl + 0x58, vt);
-            let layer = if r.next_u32() % 4 == 0 { 0x207 } else { 1 + r.next_u32() % 3 };
-            c.bus.write32(LOG_RESULTS, layer);
-            if layer != 0x207 {
-                // PlayAnimImpl runs real code on this synthetic controller,
-                // which would not terminate; the first fake it reaches (the
-                // GetThreadId syscall of the allocator mutex, via
-                // AnimSeqList_PushNew -> operator new) unwinds. Its register
-                // dump and frame show the arguments PlayAnim passed.
-                c.bus.write32(LOG_UNWIND_AT, 1);
-            }
-            let tables = ptr(&mut r);
-            c.bus.write32(GAME_GP + super::ANIM_TABLES_GP, tables);
-            c.bus.write32(tables + 4 * layer + 0x1030, ptr(&mut r));
-            // The anim table entry (0x1c bytes at 0x446990 + 0x1c*anim).
-            let entry = 0x0044_6990 + 0x1c * anim;
-            c.bus.write32(entry + 0xc, r.next_u32() % 4);
-            c.bus.write32(entry + 0x10, r.f32(2.0));
-            c.bus.write32(ctrl + 0x50, ptr(&mut r));
-        });
+        covered(
+            ssx3_ee::s10::f_003128e8__generated,
+            super::anim_controller_play_anim,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 22, 2);
+                let ctrl = ptr(&mut r);
+                c.g[A0][0] = ctrl as u64;
+                let anim = r.next_u32() % 64;
+                c.g[A1][0] = anim as u64;
+                c.f[12] = if r.next_u32() % 2 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(1.0)
+                };
+                let vt = vtable(c, &mut r, &[0x20]);
+                c.bus.write32(ctrl + 0x58, vt);
+                let layer = if r.next_u32() % 4 == 0 {
+                    0x207
+                } else {
+                    1 + r.next_u32() % 3
+                };
+                c.bus.write32(LOG_RESULTS, layer);
+                if layer != 0x207 {
+                    // PlayAnimImpl runs real code on this synthetic controller,
+                    // which would not terminate; the first fake it reaches (the
+                    // GetThreadId syscall of the allocator mutex, via
+                    // AnimSeqList_PushNew -> operator new) unwinds. Its register
+                    // dump and frame show the arguments PlayAnim passed.
+                    c.bus.write32(LOG_UNWIND_AT, 1);
+                }
+                let tables = ptr(&mut r);
+                c.bus.write32(GAME_GP + super::ANIM_TABLES_GP, tables);
+                c.bus.write32(tables + 4 * layer + 0x1030, ptr(&mut r));
+                // The anim table entry (0x1c bytes at 0x446990 + 0x1c*anim).
+                let entry = 0x0044_6990 + 0x1c * anim;
+                c.bus.write32(entry + 0xc, r.next_u32() % 4);
+                c.bus.write32(entry + 0x10, r.f32(2.0));
+                c.bus.write32(ctrl + 0x50, ptr(&mut r));
+            },
+        );
     }
     #[test]
     fn ps2_graphics_man_set_scissor_clamped() {
-        covered(ssx3_ee::s12::f_00376938__generated, super::ps2_graphics_man_set_scissor_clamped, 1000, &|c, seed| {
-            let mut r = machine(c, seed, 23, 2);
-            let gm = ptr(&mut r);
-            c.g[A0][0] = gm as u64;
-            let vt = vtable(c, &mut r, &[0x50, 0x58]);
-            c.bus.write32(gm + 0x10d8, vt);
-            // Screen sizes (sometimes 0 or negative).
-            for i in 0..2 {
-                let v = match r.next_u32() % 4 {
-                    0 => r.next_u32() % 3,
-                    1 => r.next_u32(),
-                    _ => 256 + r.next_u32() % 512,
-                };
-                c.bus.write32(LOG_RESULTS + 4 * i, v);
-            }
-            for f in 12..16 {
-                c.f[f] = match r.next_u32() % 4 {
-                    0 => r.edge_f32(),
-                    1 => r.f32(1e6),
-                    _ => r.f32(700.0),
-                };
-            }
-            crate::difftest::fill(c, &mut r, gm + super::GM_SCISSOR, 2);
-        });
+        covered(
+            ssx3_ee::s12::f_00376938__generated,
+            super::ps2_graphics_man_set_scissor_clamped,
+            1000,
+            &|c, seed| {
+                let mut r = machine(c, seed, 23, 2);
+                let gm = ptr(&mut r);
+                c.g[A0][0] = gm as u64;
+                let vt = vtable(c, &mut r, &[0x50, 0x58]);
+                c.bus.write32(gm + 0x10d8, vt);
+                // Screen sizes (sometimes 0 or negative).
+                for i in 0..2 {
+                    let v = match r.next_u32() % 4 {
+                        0 => r.next_u32() % 3,
+                        1 => r.next_u32(),
+                        _ => 256 + r.next_u32() % 512,
+                    };
+                    c.bus.write32(LOG_RESULTS + 4 * i, v);
+                }
+                for f in 12..16 {
+                    c.f[f] = match r.next_u32() % 4 {
+                        0 => r.edge_f32(),
+                        1 => r.f32(1e6),
+                        _ => r.f32(700.0),
+                    };
+                }
+                crate::difftest::fill(c, &mut r, gm + super::GM_SCISSOR, 2);
+            },
+        );
     }
 }

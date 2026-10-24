@@ -30,18 +30,45 @@ fn material_param(c: &mut Cpu, gm: u32, ty: u32, steps: Vec<Step>) {
 pub fn emit_lighting_packet(c: &mut Cpu) {
     let gm = c.g[A0][0] as u32;
     let lights = qwords(c, gm + 0x6bb0, 10);
-    material_param(c, gm, 0x180, vec![Step::Cycle(0x0101), Step::Write { addr: 7, rel: false, data: lights }, Step::Start(0x1150)]);
+    material_param(
+        c,
+        gm,
+        0x180,
+        vec![
+            Step::Cycle(0x0101),
+            Step::Write {
+                addr: 7,
+                rel: false,
+                data: lights,
+            },
+            Step::Start(0x1150),
+        ],
+    );
     ret(c, 40);
 }
 
 /// Slot 101 `SetShadowHeader(gm, matrix, scale, offset)` (0x37ba50): type
 /// 7; the light matrix, scale and offset to VU1 0-5 (absolute).
 pub fn set_shadow_header(c: &mut Cpu) {
-    let (gm, matrix, scale, offset) = (c.g[A0][0] as u32, c.g[A1][0] as u32, c.g[A2][0] as u32, c.g[A3][0] as u32);
+    let (gm, matrix, scale, offset) = (
+        c.g[A0][0] as u32,
+        c.g[A1][0] as u32,
+        c.g[A2][0] as u32,
+        c.g[A3][0] as u32,
+    );
     let mut data = qwords(c, matrix, 4);
     data.push(q(c, scale));
     data.push(q(c, offset));
-    material_param(c, gm, 0x1c0, vec![Step::Write { addr: 0, rel: false, data }]);
+    material_param(
+        c,
+        gm,
+        0x1c0,
+        vec![Step::Write {
+            addr: 0,
+            rel: false,
+            data,
+        }],
+    );
     ret(c, 30);
 }
 
@@ -57,8 +84,16 @@ fn bone_batch(c: &mut Cpu, bones: u32, palette: u32, steps: &mut Vec<Step>) {
         data.extend(qwords(c, bones.wrapping_add(b.wrapping_mul(0x40)), 4));
     }
     steps.push(Step::Cycle(0x0101));
-    steps.push(Step::Write { addr: 0x11, rel: false, data });
-    steps.push(Step::Write { addr: 0x3ff, rel: false, data: vec![q4([n; 4])] });
+    steps.push(Step::Write {
+        addr: 0x11,
+        rel: false,
+        data,
+    });
+    steps.push(Step::Write {
+        addr: 0x3ff,
+        rel: false,
+        data: vec![q4([n; 4])],
+    });
     steps.push(Step::Start(0x80));
     steps.push(Step::Start(0x70));
 }
@@ -69,7 +104,11 @@ fn fgt(a: u32, b: u32) -> bool {
 
 /// The morph weight write (VU1 TOPS+0xb4 = {w, 12800, w, 12800}).
 fn weight(w: u32) -> Step {
-    Step::Write { addr: 0xb4, rel: true, data: vec![q4([w, MORPH_SCALE, w, MORPH_SCALE])] }
+    Step::Write {
+        addr: 0xb4,
+        rel: true,
+        data: vec![q4([w, MORPH_SCALE, w, MORPH_SCALE])],
+    }
 }
 
 /// Slot 99 `DrawSkinnedModel(gm, model, base, whole)` (0x37a610).
@@ -78,7 +117,12 @@ pub fn draw_skinned_model(c: &mut Cpu) {
     if r32(c, gp + 0x1420) != 0 {
         return ret(c, 6);
     }
-    let (gm, model, base, whole) = (c.g[A0][0] as u32, c.g[A1][0] as u32, c.g[A2][0] as u32, c.g[A3][0] as u32 != 0);
+    let (gm, model, base, whole) = (
+        c.g[A0][0] as u32,
+        c.g[A1][0] as u32,
+        c.g[A2][0] as u32,
+        c.g[A3][0] as u32 != 0,
+    );
     push_state(c, gm);
     let (this, func) = model::vmethod(c, gm, 0x3e4);
     c.f[12] = 0x3f80_0000;
@@ -92,7 +136,11 @@ pub fn draw_skinned_model(c: &mut Cpu) {
     c.bus.write16(st + 0x12, env_tex as u16);
     state_word(c, st, 0, !0, 0x30);
     let z = model::sort_value_at(c, gm, bones + 0x30, 0x0037_a714);
-    let sort = if z + 0x10 < 0x401 { model::sort_value_at(c, gm, bones + 0x30, 0x0037_a788) + 0x10 } else { 0x400 };
+    let sort = if z + 0x10 < 0x401 {
+        model::sort_value_at(c, gm, bones + 0x30, 0x0037_a788) + 0x10
+    } else {
+        0x400
+    };
     let alt_blend = r32(c, gp + 0x1440) != 0;
     if whole {
         let st = r32(c, gm + gmf::CUR_STATE);
@@ -153,7 +201,10 @@ pub fn draw_skinned_model(c: &mut Cpu) {
             // Any morph target weighted in?
             let morphs = (0..nmorph.max(0) as u32).any(|j| {
                 let w = r32(c, weights + 4 * j);
-                fgt(w, r32(c, gp.wrapping_sub(if j == 0 { 0x276c } else { 0x2768 })))
+                fgt(
+                    w,
+                    r32(c, gp.wrapping_sub(if j == 0 { 0x276c } else { 0x2768 })),
+                )
             });
             for b in 0..nbatch {
                 bone_batch(c, bones, palettes + 8 * (first_batch + b), &mut steps);
@@ -174,7 +225,11 @@ pub fn draw_skinned_model(c: &mut Cpu) {
                 let mut i = 0;
                 while i < count {
                     let e0 = elems + 8 * i;
-                    let e1 = if count & 1 == 1 && i + 1 >= count { e0 } else { e0 + 8 };
+                    let e1 = if count & 1 == 1 && i + 1 >= count {
+                        e0
+                    } else {
+                        e0 + 8
+                    };
                     let (mut m0, mut m1) = (r32(c, e0 + 4), r32(c, e1 + 4));
                     steps.push(Step::Chain(r32(c, e0)));
                     steps.push(weight(w0));
@@ -221,7 +276,12 @@ pub fn draw_skinned_model(c: &mut Cpu) {
 /// shadow colour (DIRECT RGBAQ), then per batch the bones and the group's
 /// shadow chain.
 pub fn draw_skinned_model_shadow(c: &mut Cpu) {
-    let (gm, model, base, colour) = (c.g[A0][0] as u32, c.g[A1][0] as u32, c.g[A2][0] as u32, c.g[A3][0] as u32);
+    let (gm, model, base, colour) = (
+        c.g[A0][0] as u32,
+        c.g[A1][0] as u32,
+        c.g[A2][0] as u32,
+        c.g[A3][0] as u32,
+    );
     let st = r32(c, gm + gmf::CUR_STATE);
     state_word(c, st, 0, !0, 0x30);
     state_word(c, st, 1, 0xffff_ff83, 4);
@@ -245,10 +305,18 @@ pub fn draw_skinned_model_shadow(c: &mut Cpu) {
             let ch = |c: &mut Cpu, i: u32| (FpuF32(r32(c, colour + 4 * i)) * k).to_i32() as i64;
             let (a, r, g, b) = (ch(c, 0), ch(c, 1), ch(c, 2), ch(c, 3));
             let rgbaq = (r | g << 8 | b << 16 | a << 24 | 0x3f80_0000_0000_0000) as u64;
-            steps.push(Step::Gif(vec![0x1000_0000_0000_8001 | 0xe << 64, rgbaq as u128 | 1 << 64]));
+            steps.push(Step::Gif(vec![
+                0x1000_0000_0000_8001 | 0xe << 64,
+                rgbaq as u128 | 1 << 64,
+            ]));
             let batches = r32(c, group + 0x10);
             for bi in 0..nbatch as i32 {
-                bone_batch(c, bones, palettes + 8 * (first_batch + bi as u32), &mut steps);
+                bone_batch(
+                    c,
+                    bones,
+                    palettes + 8 * (first_batch + bi as u32),
+                    &mut steps,
+                );
                 let elems = r32(c, batches + 8 * bi as u32);
                 steps.push(Step::Chain(r32(c, elems)));
             }
@@ -258,7 +326,14 @@ pub fn draw_skinned_model_shadow(c: &mut Cpu) {
     }
     let work = steps.len() as u64;
     let start = empty_packet(c, gm);
-    record(start, if steps.is_empty() { Cmd::Vu(Vec::new()) } else { Cmd::Vu(steps) });
+    record(
+        start,
+        if steps.is_empty() {
+            Cmd::Vu(Vec::new())
+        } else {
+            Cmd::Vu(steps)
+        },
+    );
     add_record(c, gm, start, start, true);
     clear_type(c, gm);
     ret(c, 100 + 30 * work);

@@ -80,7 +80,12 @@ impl MemoryCard {
             }
         }
         let exists = path.exists();
-        let mut f = OpenOptions::new().read(true).write(true).create(true).truncate(false).open(path)?;
+        let mut f = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(path)?;
         if exists {
             let mut v = Vec::new();
             f.read_to_end(&mut v)?;
@@ -107,7 +112,10 @@ impl MemoryCard {
         }
         match Self::open(Path::new(&p)) {
             Ok(c) => {
-                eprintln!("[mc] memory card in port 1: {p}{}", if c.created { " (new, unformatted)" } else { "" });
+                eprintln!(
+                    "[mc] memory card in port 1: {p}{}",
+                    if c.created { " (new, unformatted)" } else { "" }
+                );
                 Some(c)
             }
             Err(e) => {
@@ -119,7 +127,9 @@ impl MemoryCard {
 
     fn persist(&mut self, at: usize, len: usize) {
         let Some(f) = self.file.as_mut() else { return };
-        let r = f.seek(SeekFrom::Start(at as u64)).and_then(|_| f.write_all(&self.data[at..at + len]));
+        let r = f
+            .seek(SeekFrom::Start(at as u64))
+            .and_then(|_| f.write_all(&self.data[at..at + len]));
         if let Err(e) = r {
             eprintln!("[mc] write to {}: {e}", self.path.display());
         }
@@ -244,7 +254,10 @@ impl MemoryCard {
             }
             0xF7 => self.end(&mut out, 5),
             other => {
-                eprintln!("[mc] unknown memory card command {other:#04x} ({} bytes)", p.len());
+                eprintln!(
+                    "[mc] unknown memory card command {other:#04x} ({} bytes)",
+                    p.len()
+                );
                 self.end(&mut out, p.len().max(4));
             }
         }
@@ -252,6 +265,12 @@ impl MemoryCard {
     }
 
     pub fn describe(&self) -> String {
-        format!("{} r{} w{} e{}", self.path.display(), self.reads, self.writes, self.erases)
+        format!(
+            "{} r{} w{} e{}",
+            self.path.display(),
+            self.reads,
+            self.writes,
+            self.erases
+        )
     }
 }

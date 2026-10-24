@@ -2,57 +2,77 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
-use crate::guest::Addr;
-use crate::ps2f::FpuF32;
-use ssx3_ee_rt::cpu::reg::*;
-use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::float;
-use ssx3_ee_rt::Cpu;
+use crate::abi::addu;
+use crate::abi::r32;
 use crate::call;
 use crate::call::call_ptr;
+use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Unwound;
+use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
-use ssx3_ee as ee;
-use crate::abi::addu;
-use crate::abi::r32;
-use crate::call::guest;
-use crate::call::sp;
-use crate::call::Unwound;
-use crate::call::VSlot;
-use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::X;
-use ssx3_ee_rt::vu0::W;
-use ssx3_ee_rt::vu0::Y;
-use ssx3_ee_rt::vu0::Z;
-use ssx3_ee_rt::funcs::call_indirect;
-pub(crate) use crate::game::intersect::worldsphtree::lw;
+pub(crate) use crate::game::fe::feasyncfile::sw_5 as sw;
 pub(crate) use crate::game::intersect::worldsphtree::fpu;
-pub(crate) use crate::game::intersect::worldsphtree::sw_reg;
+pub(crate) use crate::game::intersect::worldsphtree::lw;
 pub(crate) use crate::game::intersect::worldsphtree::p;
+pub(crate) use crate::game::intersect::worldsphtree::sw_reg;
+pub(crate) use crate::game::render::graphicsman::RegMem;
+pub(crate) use crate::game::render::particle::add32;
 pub(crate) use crate::game::render::particle::at;
 pub(crate) use crate::game::render::particle::ldf;
-pub(crate) use crate::game::render::particle::setf;
 pub(crate) use crate::game::render::particle::lt;
-pub(crate) use crate::game::render::particle::add32;
+pub(crate) use crate::game::render::particle::setf;
 pub(crate) use crate::game::render::particle::shl32;
 pub(crate) use crate::game::render::particle::sra32;
 pub(crate) use crate::game::render::particle::srl32;
-pub(crate) use crate::game::fe::feasyncfile::sw_5 as sw;
-pub(crate) use crate::game::render::graphicsman::RegMem;
+use crate::guest::Addr;
+use crate::ps2f::FpuF32;
+use ssx3_ee as ee;
+use ssx3_ee_rt::cpu::reg::*;
+use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::float;
+use ssx3_ee_rt::funcs::call_indirect;
+use ssx3_ee_rt::funcs::GuestFn;
+use ssx3_ee_rt::vu0::Src;
+use ssx3_ee_rt::vu0::W;
+use ssx3_ee_rt::vu0::X;
+use ssx3_ee_rt::vu0::Y;
+use ssx3_ee_rt::vu0::Z;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0032_7ac0, ai_fwd_diff_cache_touch, "AIFwdDiffCache_Touch"),
-    (0x0032_7b30, ai_fwd_diff_cache_hash_remove, "AIFwdDiffCache_HashRemove"),
-    (0x0032_7bb0, ai_fwd_diff_cache_hash_insert, "AIFwdDiffCache_HashInsert"),
-    (0x0032_7cc8, roller_modifier_copy_matrix_block, "RollerModifier_CopyMatrixBlock"),
-    (0x0032_8030, sphere_tree_collide_triangle2_sided, "SphereTree_CollideTriangle2Sided"),
-    (0x0032_8360, spatial_key_classify_aabb, "SpatialKey_ClassifyAABB"),
+    (
+        0x0032_7b30,
+        ai_fwd_diff_cache_hash_remove,
+        "AIFwdDiffCache_HashRemove",
+    ),
+    (
+        0x0032_7bb0,
+        ai_fwd_diff_cache_hash_insert,
+        "AIFwdDiffCache_HashInsert",
+    ),
+    (
+        0x0032_7cc8,
+        roller_modifier_copy_matrix_block,
+        "RollerModifier_CopyMatrixBlock",
+    ),
+    (
+        0x0032_8030,
+        sphere_tree_collide_triangle2_sided,
+        "SphereTree_CollideTriangle2Sided",
+    ),
+    (
+        0x0032_8360,
+        spatial_key_classify_aabb,
+        "SpatialKey_ClassifyAABB",
+    ),
     (0x0032_8f28, spatial_key_from_aabb, "SpatialKey_FromAABB"),
     (0x0032_91e0, spatial_hash_update, "SpatialHash_Update"),
 ];
@@ -63,42 +83,41 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 pub(crate) mod callee {
     use super::ee;
     use super::Callee;
-    pub(crate) use crate::game::render::particle::callee::DYNAMIC_EMITTER_SPAWN;
-    pub(crate) use crate::game::render::particle::callee::RANDOM;
-    pub(crate) use crate::game::render::particle::callee::POINT_BOX_DISTANCE;
-    pub(crate) use crate::game::render::particle::callee::IS_HULL_RESIDENT;
-    pub(crate) use crate::game::render::particle::callee::REQUEST_HULL;
-    pub(crate) use crate::game::render::particle::callee::STREAMER_UPDATE_VIEW_NODE;
-    pub(crate) use crate::game::render::particle::callee::HUD_DRAW_PANEL_SEGMENT;
-    pub(crate) use crate::game::render::particle::callee::HUD_GET_ELEM_COLOR;
-    pub(crate) use crate::game::render::particle::callee::HUD_GET_ELEM_POS;
-    pub(crate) use crate::game::render::particle::callee::HUD_GET_ELEM_SIZE;
-    pub(crate) use crate::game::render::particle::callee::HUD_ALIGN_ELEM_POS;
-    pub(crate) use crate::game::render::particle::callee::HUD_DRAW_SPRITE;
-    pub(crate) use crate::game::render::particle::callee::FONT_DRAW_TEXT;
-    pub(crate) use crate::game::render::particle::callee::SPATIAL_KEY_FROM_AABB;
-    pub(crate) use crate::game::render::particle::callee::SPATIAL_HASH_REMOVE;
-    pub(crate) use crate::game::render::particle::callee::SPATIAL_HASH_INSERT;
-    pub(crate) use crate::game::render::particle::callee::SPATIAL_HASH_MOVE;
-    pub(crate) use crate::game::render::particle::callee::DELETE;
-    pub(crate) use crate::game::render::particle::callee::SPOT_LIGHT_VECTOR;
-    pub(crate) use crate::game::render::particle::callee::POINT_LIGHT_VECTOR;
     pub(crate) use crate::game::render::particle::callee::ADD_DIRECTIONAL;
-    pub(crate) use crate::game::render::particle::callee::SAMPLE_SURFACE_COLOURS;
-    pub(crate) use crate::game::render::particle::callee::LERP_VIEW_COLOURS;
     pub(crate) use crate::game::render::particle::callee::BLEND_VIEW_COLOURS;
+    pub(crate) use crate::game::render::particle::callee::COMPUTE_COLOUR_FACTOR;
+    pub(crate) use crate::game::render::particle::callee::DELETE;
+    pub(crate) use crate::game::render::particle::callee::DYNAMIC_EMITTER_SPAWN;
+    pub(crate) use crate::game::render::particle::callee::FONT_DRAW_TEXT;
     pub(crate) use crate::game::render::particle::callee::GET_IRRADIANCE0;
     pub(crate) use crate::game::render::particle::callee::GET_IRRADIANCE1;
     pub(crate) use crate::game::render::particle::callee::GET_IRRADIANCE2;
-    pub(crate) use crate::game::render::particle::callee::COMPUTE_COLOUR_FACTOR;
     pub(crate) use crate::game::render::particle::callee::GET_LIGHTING28;
-    pub(crate) use crate::game::render::particle::callee::SECTION_GET_EVENT_WORLD_SECTION;
-    pub(crate) use crate::game::render::particle::callee::RIDER_GET_MAIN_STATE;
+    pub(crate) use crate::game::render::particle::callee::HUD_ALIGN_ELEM_POS;
+    pub(crate) use crate::game::render::particle::callee::HUD_DRAW_PANEL_SEGMENT;
+    pub(crate) use crate::game::render::particle::callee::HUD_DRAW_SPRITE;
+    pub(crate) use crate::game::render::particle::callee::HUD_GET_ELEM_COLOR;
+    pub(crate) use crate::game::render::particle::callee::HUD_GET_ELEM_POS;
+    pub(crate) use crate::game::render::particle::callee::HUD_GET_ELEM_SIZE;
+    pub(crate) use crate::game::render::particle::callee::IRRADIANCE_ADD;
     pub(crate) use crate::game::render::particle::callee::IRRADIANCE_SCALE;
     pub(crate) use crate::game::render::particle::callee::IRRADIANCE_SCALE_IN_PLACE;
-    pub(crate) use crate::game::render::particle::callee::IRRADIANCE_ADD;
+    pub(crate) use crate::game::render::particle::callee::IS_HULL_RESIDENT;
+    pub(crate) use crate::game::render::particle::callee::LERP_VIEW_COLOURS;
+    pub(crate) use crate::game::render::particle::callee::POINT_BOX_DISTANCE;
+    pub(crate) use crate::game::render::particle::callee::POINT_LIGHT_VECTOR;
+    pub(crate) use crate::game::render::particle::callee::RANDOM;
+    pub(crate) use crate::game::render::particle::callee::REQUEST_HULL;
+    pub(crate) use crate::game::render::particle::callee::RIDER_GET_MAIN_STATE;
+    pub(crate) use crate::game::render::particle::callee::SAMPLE_SURFACE_COLOURS;
+    pub(crate) use crate::game::render::particle::callee::SECTION_GET_EVENT_WORLD_SECTION;
+    pub(crate) use crate::game::render::particle::callee::SPATIAL_HASH_INSERT;
+    pub(crate) use crate::game::render::particle::callee::SPATIAL_HASH_MOVE;
+    pub(crate) use crate::game::render::particle::callee::SPATIAL_HASH_REMOVE;
+    pub(crate) use crate::game::render::particle::callee::SPATIAL_KEY_FROM_AABB;
+    pub(crate) use crate::game::render::particle::callee::SPOT_LIGHT_VECTOR;
+    pub(crate) use crate::game::render::particle::callee::STREAMER_UPDATE_VIEW_NODE;
 }
-
 
 // ---------------------------------------------------------------------------
 // Forward-difference cache (continued).
@@ -157,7 +176,6 @@ pub fn ai_fwd_diff_cache_touch(c: &mut Cpu) {
     }
 }
 
-
 /// `void AIFwdDiffCache_HashInsert(AIFwdDiffCache *this, Entry *e)`
 /// (0x327bb0): insert `e` into the hash bucket `e->key % this->bucket_count`
 /// (`this+0xc`), which is a list ordered by descending key (`e->key` at +0,
@@ -203,7 +221,6 @@ pub fn ai_fwd_diff_cache_hash_insert(c: &mut Cpu) {
     c.sw((c.g[A3][0] as u32).wrapping_add(NEXT), c.g[V1][0]);
     c.pc = ret;
 }
-
 
 // ---------------------------------------------------------------------------
 // Assorted leaves and leaf loops.
@@ -298,13 +315,11 @@ pub fn ai_fwd_diff_cache_hash_remove(c: &mut Cpu) {
     }
 }
 
-
 /// A `gp`-relative global.
 #[inline(always)]
 pub(crate) fn gp(c: &Cpu, off: i32) -> u32 {
     r32(c, GP).wrapping_add(off as u32)
 }
-
 
 // ---------------------------------------------------------------------------
 // Spatial keys.
@@ -315,7 +330,6 @@ pub(crate) const SK_ENTRY: u32 = 0x0032_8f28;
 pub(crate) const SK_GROW: u32 = 0x0032_9070;
 
 pub(crate) const SK_END: u32 = 0x0032_91dc;
-
 
 /// `void SpatialKey_FromAABB(SpatialKey* key, const AABB* box)` (0x328f28):
 /// `key = {level, x, y, z}` of the smallest grid cell of size `2^level`
@@ -344,7 +358,6 @@ pub fn spatial_key_from_aabb(c: &mut Cpu) {
     c.g[SP][0] = sx(sp(c).wrapping_add(0x40));
     c.pc = ra;
 }
-
 
 /// Centre and extent (VU0), the start level and the cell of the centre.
 pub(crate) fn spatial_key_initial(c: &mut Cpu) {
@@ -434,7 +447,6 @@ pub(crate) fn spatial_key_initial(c: &mut Cpu) {
     sw_reg(c, p(key, 0xc), V0);
 }
 
-
 /// `v0 = floor(v / cell)` as the original computes it (truncate, then one
 /// less when the quotient is below the truncation).
 pub(crate) fn floor_div(c: &mut Cpu, v: FpuF32, cell: FpuF32) {
@@ -450,7 +462,6 @@ pub(crate) fn floor_div(c: &mut Cpu, v: FpuF32, cell: FpuF32) {
         c.g[V0][0] = sx(r32(c, V0).wrapping_sub(1));
     }
 }
-
 
 /// One level up: `level++`, cell coordinates halved (arithmetic shift),
 /// stored through the stack as the original's unaligned doubleword copy.
@@ -484,7 +495,6 @@ pub(crate) fn spatial_key_grow(c: &mut Cpu) {
     Addr(p(key, 8)).write_u64_unaligned(c, hi);
 }
 
-
 /// One bound of the fit test: `f0 = (cell -/+ margin) * size` against
 /// `f1 = [bound_at]` (`c.le.s`).
 pub(crate) fn key_bound(c: &mut Cpu, cell: u32, bound_at: u32, upper: bool) -> bool {
@@ -493,13 +503,20 @@ pub(crate) fn key_bound(c: &mut Cpu, cell: u32, bound_at: u32, upper: bool) -> b
     let corner = FpuF32::from_i32(cell as i32);
     let margin = FpuF32(c.f[3]);
     let size = FpuF32(c.f[2]);
-    let edge = (if upper { corner + margin } else { corner - margin }) * size;
+    let edge = (if upper {
+        corner + margin
+    } else {
+        corner - margin
+    }) * size;
     c.f[0] = edge.0;
-    let holds = if upper { bound.le(edge) } else { edge.le(bound) };
+    let holds = if upper {
+        bound.le(edge)
+    } else {
+        edge.le(bound)
+    };
     abi::set_fcc(c, holds);
     holds
 }
-
 
 /// Does the box fit the key's cell (with the margin)? Leaves t0 = the
 /// answer and the scratch registers of the original.
@@ -547,7 +564,6 @@ pub(crate) fn spatial_key_fits(c: &mut Cpu) -> bool {
     c.cycles += 2;
     fits
 }
-
 
 // ---------------------------------------------------------------------------
 // Spatial keys.
@@ -667,7 +683,6 @@ pub fn spatial_key_classify_aabb(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 // ---------------------------------------------------------------------------
 // Spatial hash.
 
@@ -686,7 +701,6 @@ pub(crate) const SH_SAME_NONEMPTY: u32 = 0x0032_94f0;
 
 pub(crate) const SH_SAME_TAIL: u32 = 0x0032_9500;
 
-
 /// Where a bucket-emptiness scan starts (or resumes).
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum Probe {
@@ -697,7 +711,6 @@ pub(crate) enum Probe {
     /// The loop over the last three words (a0 counter, v1 pointer).
     Tail,
 }
-
 
 /// `void SpatialHash_Update(SpatialHash* h, void* obj, void* user,
 /// const AABB* box /*a3*/, const AABB* old_box /*t0*/)` (0x3291e0): the
@@ -725,7 +738,6 @@ pub fn spatial_hash_update(c: &mut Cpu) {
         }
     })
 }
-
 
 pub(crate) fn spatial_hash_update_entry(c: &mut Cpu, frame: Frame) -> Flow {
     c.cycles += 25;
@@ -825,7 +837,6 @@ pub(crate) fn spatial_hash_update_entry(c: &mut Cpu, frame: Frame) -> Flow {
     }
 }
 
-
 /// The root octant changed: remove under the old key's root, drop its
 /// bucket array when empty, insert under the new key's root.
 pub(crate) fn sh_moved_root(c: &mut Cpu, frame: Frame, probe: Probe) -> Flow {
@@ -876,7 +887,6 @@ pub(crate) fn sh_moved_root(c: &mut Cpu, frame: Frame, probe: Probe) -> Flow {
     sh_exit(c, frame);
     Ok(())
 }
-
 
 /// Same root octant: does the root's cell (level, x, y, z) still hold the
 /// new key? Then move, else remove and re-insert.
@@ -971,7 +981,6 @@ pub(crate) fn sh_same_root(c: &mut Cpu, frame: Frame) -> Flow {
     sh_reinsert(c, frame, Probe::Words)
 }
 
-
 /// Same root, key no longer held: remove, drop the bucket array when
 /// empty, insert again.
 pub(crate) fn sh_reinsert(c: &mut Cpu, frame: Frame, probe: Probe) -> Flow {
@@ -1005,11 +1014,15 @@ pub(crate) fn sh_reinsert(c: &mut Cpu, frame: Frame, probe: Probe) -> Flow {
     Ok(())
 }
 
-
 /// Is the bucket array of cell s0 (`+0x10`, eleven words) all zero?
 /// Leaves v0 = 1 if so, else 0 (and v1/a0 as the scan leaves them). False
 /// when an event at a loop head asked the thread to unwind (pc there).
-pub(crate) fn bucket_empty(c: &mut Cpu, mut probe: Probe, nonempty_head: u32, tail_head: u32) -> bool {
+pub(crate) fn bucket_empty(
+    c: &mut Cpu,
+    mut probe: Probe,
+    nonempty_head: u32,
+    tail_head: u32,
+) -> bool {
     loop {
         match probe {
             Probe::Words => {
@@ -1073,7 +1086,6 @@ pub(crate) fn bucket_empty(c: &mut Cpu, mut probe: Probe, nonempty_head: u32, ta
     }
 }
 
-
 /// The epilogue: s1..s7 and ra back, `sp += 0xb0` (s0 restored before).
 pub(crate) fn sh_exit(c: &mut Cpu, frame: Frame) {
     c.cycles += 10;
@@ -1088,114 +1100,122 @@ pub(crate) fn sh_exit(c: &mut Cpu, frame: Frame) {
     frame.close(c);
 }
 
-
 // ---------------------------------------------------------------------------
 // RollerModifier_CopyMatrixBlock (0x0000327cc8).
 
 /// `RollerModifier_CopyMatrixBlock`: copy eight quadwords plus a 0xc0-byte matrix block, using unaligned load/store pairs when needed.
 pub fn roller_modifier_copy_matrix_block(c: &mut Cpu) {
     guest(c, |c| {
-    c.cycles += 4;
-    c.g[A2][0] = c.g[A0][0];
-    c.g[V1][0] = c.g[A1][0];
-    c.g[A3][0] = 0x7;
-    'l_327cd8: loop {
-    c.cycles += 7;
-    c.lq(2, (c.g[V1][0] as u32));
-    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x1));
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
-    c.sq(2, (c.g[A2][0] as u32));
-    let t = (c.g[A3][0] as i64) >= 0;
-    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x10));
-    if t {
-    if event_due(c) { deliver_event_here(c, 0x00327cd8); } continue 'l_327cd8;
-    } else {
-    'b_327da0: {
-    'b_327d6c: {
-    c.cycles += 8;
-    c.g[A3][0] = sx((c.g[A0][0] as u32).wrapping_add(0xc0));
-    c.lq(3, (c.g[A1][0] as u32).wrapping_add(0x80));
-    c.g[A2][0] = sx((c.g[A1][0] as u32).wrapping_add(0xc0));
-    c.g[T0][0] = c.g[A3][0];
-    c.g[V0][0] = c.g[A2][0] | c.g[A3][0];
-    c.g[V0][0] = c.g[V0][0] & 0x7;
-    let t = c.g[V0][0] == 0u64;
-    c.sq(3, (c.g[A0][0] as u32).wrapping_add(0x80));
-    if t {
-    break 'b_327d6c;
-    } else {
-    c.cycles += 1;
-    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x140));
-    'l_327d18: loop {
-    c.cycles += 19;
-    c.ldl(2, (c.g[A2][0] as u32).wrapping_add(0x7));
-    c.ldr(2, (c.g[A2][0] as u32));
-    c.ldl(3, (c.g[A2][0] as u32).wrapping_add(0xf));
-    c.ldr(3, (c.g[A2][0] as u32).wrapping_add(0x8));
-    c.ldl(9, (c.g[A2][0] as u32).wrapping_add(0x17));
-    c.ldr(9, (c.g[A2][0] as u32).wrapping_add(0x10));
-    c.ldl(10, (c.g[A2][0] as u32).wrapping_add(0x1f));
-    c.ldr(10, (c.g[A2][0] as u32).wrapping_add(0x18));
-    c.sdl(2, (c.g[A3][0] as u32).wrapping_add(0x7));
-    c.sdr(2, (c.g[A3][0] as u32));
-    c.sdl(3, (c.g[A3][0] as u32).wrapping_add(0xf));
-    c.sdr(3, (c.g[A3][0] as u32).wrapping_add(0x8));
-    c.sdl(9, (c.g[A3][0] as u32).wrapping_add(0x17));
-    c.sdr(9, (c.g[A3][0] as u32).wrapping_add(0x10));
-    c.sdl(10, (c.g[A3][0] as u32).wrapping_add(0x1f));
-    c.sdr(10, (c.g[A3][0] as u32).wrapping_add(0x18));
-    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x20));
-    let t = c.g[A2][0] != c.g[A1][0];
-    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x20));
-    if t {
-    if event_due(c) { deliver_event_here(c, 0x00327d18); } continue 'l_327d18;
-    } else {
-    c.cycles += 2;
-    let t = true;
-    c.sw((c.g[A0][0] as u32).wrapping_add(0x98), c.g[T0][0]);
-    if t {
-    break 'b_327da0;
-    } else {
-    break 'b_327d6c;
-    }
-    }
-    }
-    }
-    }
-    c.cycles += 1;
-    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x140));
-    'l_327d70: loop {
-    c.cycles += 11;
-    c.g[V0][0] = c.ld((c.g[A2][0] as u32));
-    c.g[V1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
-    c.g[T1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x10));
-    c.g[T2][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x18));
-    c.sd((c.g[A3][0] as u32), c.g[V0][0]);
-    c.sd((c.g[A3][0] as u32).wrapping_add(0x8), c.g[V1][0]);
-    c.sd((c.g[A3][0] as u32).wrapping_add(0x10), c.g[T1][0]);
-    c.sd((c.g[A3][0] as u32).wrapping_add(0x18), c.g[T2][0]);
-    c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x20));
-    let t = c.g[A2][0] != c.g[A1][0];
-    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x20));
-    if t {
-    if event_due(c) { deliver_event_here(c, 0x00327d70); } continue 'l_327d70;
-    } else {
-    c.cycles += 1;
-    c.sw((c.g[A0][0] as u32).wrapping_add(0x98), c.g[T0][0]);
-    break 'b_327da0;
-    }
-    }
-    }
-    c.cycles += 2;
-    let t = c.g[RA][0] as u32;
-    c.g[V0][0] = c.g[A0][0];
-    c.pc = t; return Ok(());
-    }
-    }
+        c.cycles += 4;
+        c.g[A2][0] = c.g[A0][0];
+        c.g[V1][0] = c.g[A1][0];
+        c.g[A3][0] = 0x7;
+        'l_327cd8: loop {
+            c.cycles += 7;
+            c.lq(2, (c.g[V1][0] as u32));
+            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_sub(0x1));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x10));
+            c.sq(2, (c.g[A2][0] as u32));
+            let t = (c.g[A3][0] as i64) >= 0;
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x10));
+            if t {
+                if event_due(c) {
+                    deliver_event_here(c, 0x00327cd8);
+                }
+                continue 'l_327cd8;
+            } else {
+                'b_327da0: {
+                    'b_327d6c: {
+                        c.cycles += 8;
+                        c.g[A3][0] = sx((c.g[A0][0] as u32).wrapping_add(0xc0));
+                        c.lq(3, (c.g[A1][0] as u32).wrapping_add(0x80));
+                        c.g[A2][0] = sx((c.g[A1][0] as u32).wrapping_add(0xc0));
+                        c.g[T0][0] = c.g[A3][0];
+                        c.g[V0][0] = c.g[A2][0] | c.g[A3][0];
+                        c.g[V0][0] = c.g[V0][0] & 0x7;
+                        let t = c.g[V0][0] == 0u64;
+                        c.sq(3, (c.g[A0][0] as u32).wrapping_add(0x80));
+                        if t {
+                            break 'b_327d6c;
+                        } else {
+                            c.cycles += 1;
+                            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x140));
+                            'l_327d18: loop {
+                                c.cycles += 19;
+                                c.ldl(2, (c.g[A2][0] as u32).wrapping_add(0x7));
+                                c.ldr(2, (c.g[A2][0] as u32));
+                                c.ldl(3, (c.g[A2][0] as u32).wrapping_add(0xf));
+                                c.ldr(3, (c.g[A2][0] as u32).wrapping_add(0x8));
+                                c.ldl(9, (c.g[A2][0] as u32).wrapping_add(0x17));
+                                c.ldr(9, (c.g[A2][0] as u32).wrapping_add(0x10));
+                                c.ldl(10, (c.g[A2][0] as u32).wrapping_add(0x1f));
+                                c.ldr(10, (c.g[A2][0] as u32).wrapping_add(0x18));
+                                c.sdl(2, (c.g[A3][0] as u32).wrapping_add(0x7));
+                                c.sdr(2, (c.g[A3][0] as u32));
+                                c.sdl(3, (c.g[A3][0] as u32).wrapping_add(0xf));
+                                c.sdr(3, (c.g[A3][0] as u32).wrapping_add(0x8));
+                                c.sdl(9, (c.g[A3][0] as u32).wrapping_add(0x17));
+                                c.sdr(9, (c.g[A3][0] as u32).wrapping_add(0x10));
+                                c.sdl(10, (c.g[A3][0] as u32).wrapping_add(0x1f));
+                                c.sdr(10, (c.g[A3][0] as u32).wrapping_add(0x18));
+                                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x20));
+                                let t = c.g[A2][0] != c.g[A1][0];
+                                c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x20));
+                                if t {
+                                    if event_due(c) {
+                                        deliver_event_here(c, 0x00327d18);
+                                    }
+                                    continue 'l_327d18;
+                                } else {
+                                    c.cycles += 2;
+                                    let t = true;
+                                    c.sw((c.g[A0][0] as u32).wrapping_add(0x98), c.g[T0][0]);
+                                    if t {
+                                        break 'b_327da0;
+                                    } else {
+                                        break 'b_327d6c;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    c.cycles += 1;
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x140));
+                    'l_327d70: loop {
+                        c.cycles += 11;
+                        c.g[V0][0] = c.ld((c.g[A2][0] as u32));
+                        c.g[V1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x8));
+                        c.g[T1][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x10));
+                        c.g[T2][0] = c.ld((c.g[A2][0] as u32).wrapping_add(0x18));
+                        c.sd((c.g[A3][0] as u32), c.g[V0][0]);
+                        c.sd((c.g[A3][0] as u32).wrapping_add(0x8), c.g[V1][0]);
+                        c.sd((c.g[A3][0] as u32).wrapping_add(0x10), c.g[T1][0]);
+                        c.sd((c.g[A3][0] as u32).wrapping_add(0x18), c.g[T2][0]);
+                        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x20));
+                        let t = c.g[A2][0] != c.g[A1][0];
+                        c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(0x20));
+                        if t {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x00327d70);
+                            }
+                            continue 'l_327d70;
+                        } else {
+                            c.cycles += 1;
+                            c.sw((c.g[A0][0] as u32).wrapping_add(0x98), c.g[T0][0]);
+                            break 'b_327da0;
+                        }
+                    }
+                }
+                c.cycles += 2;
+                let t = c.g[RA][0] as u32;
+                c.g[V0][0] = c.g[A0][0];
+                c.pc = t;
+                return Ok(());
+            }
+        }
         Ok(())
     });
 }
-
 
 /// `int SphereTree_CollideTriangle2Sided(void* tree, const Vec4* p, const
 /// Vec4* dir, ...)` (0x328030): the two-sided triangle test: `dot` of the
@@ -1319,7 +1339,6 @@ pub fn sphere_tree_collide_triangle2_sided(c: &mut Cpu) {
     return;
 }
 
-
 /// `int cPS2ChunkResolve_ParseHeader(ChunkResolve* self, char* buf, void* ctx)`
 /// (0x327da8): copy a chunk header into the resolve block, lay the payload
 /// pointers out after it, and return the header size.
@@ -1437,303 +1456,374 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
-    use crate::difftest::scramble;
-    use crate::difftest::Rng;
-    use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
+    use crate::difftest::compare;
     use crate::difftest::fakes::covered;
+    use crate::difftest::fakes::fake_call;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::ptr;
     use crate::difftest::fakes::vtable;
-    use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::fakes::fake_call;
     use crate::difftest::fakes::FAKE;
+    use crate::difftest::fakes::LOG_RESULTS;
     use crate::difftest::fill;
-    use crate::difftest::put_words;
-    use crate::difftest::SP as TEST_SP;
-    use crate::difftest::compare;
-    use crate::difftest::seed_count;
     use crate::difftest::put_vec;
-    pub(crate) use crate::game::world::wscriptcache::tests::SEEDS;
-    pub(crate) use crate::game::intersect::worldsphtree::tests::SEEDS as SEEDS_2;
-    pub(crate) use crate::game::intersect::worldsphtree::tests::f;
-    pub(crate) use crate::game::intersect::worldsphtree::tests::uf;
-    pub(crate) use crate::game::render::particle::tests::SEEDS as SEEDS_3;
-    pub(crate) use crate::game::render::particle::tests::base;
-    pub(crate) use crate::game::render::particle::tests::gp_at;
-    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE;
-    pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_8 as WORLD;
-    pub(crate) use crate::game::fe::feasyncfile::tests::w;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_12 as globals;
-    pub(crate) use crate::game::fe::feasyncfile::tests::ui;
-    pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_12 as heap_init;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_10 as pool;
-    pub(crate) use crate::game::fe::feasyncfile::tests::diff;
-    pub(crate) use crate::game::fe::feasyncfile::tests::fe_base;
-    pub(crate) use crate::game::render::graphicsman::tests::same;
+    use crate::difftest::put_words;
+    use crate::difftest::scramble;
+    use crate::difftest::seed_count;
+    use crate::difftest::Rng;
+    use crate::difftest::DATA;
+    use crate::difftest::GAME_GP;
+    use crate::difftest::SP as TEST_SP;
     pub(crate) use crate::game::ai::ai::tests::generic;
     pub(crate) use crate::game::ai::ai::tests::globals_8 as globals_2;
-
+    pub(crate) use crate::game::fe::feasyncfile::tests::diff;
+    pub(crate) use crate::game::fe::feasyncfile::tests::fe_base;
+    pub(crate) use crate::game::fe::feasyncfile::tests::globals_12 as globals;
+    pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_12 as heap_init;
+    pub(crate) use crate::game::fe::feasyncfile::tests::pool_10 as pool;
+    pub(crate) use crate::game::fe::feasyncfile::tests::ui;
+    pub(crate) use crate::game::fe::feasyncfile::tests::w;
+    pub(crate) use crate::game::fe::feasyncfile::tests::BE;
+    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ;
+    pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_8 as WORLD;
+    pub(crate) use crate::game::intersect::worldsphtree::tests::f;
+    pub(crate) use crate::game::intersect::worldsphtree::tests::uf;
+    pub(crate) use crate::game::intersect::worldsphtree::tests::SEEDS as SEEDS_2;
+    pub(crate) use crate::game::render::graphicsman::tests::same;
+    pub(crate) use crate::game::render::particle::tests::base;
+    pub(crate) use crate::game::render::particle::tests::gp_at;
+    pub(crate) use crate::game::render::particle::tests::SEEDS as SEEDS_3;
+    pub(crate) use crate::game::world::wscriptcache::tests::SEEDS;
 
     #[test]
     fn ai_fwd_diff_cache_touch_matches() {
-        check(ssx3_ee::s10::f_00327ac0, ai_fwd_diff_cache_touch, 200, &|c, seed| {
-            let mut r = Rng(0x100e ^ seed as u64);
-            scramble(c, &mut r);
-            let node = DATA + 0x100;
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = node as u64;
-            let head = DATA + 0x200;
-            let next = DATA + 0x300;
-            match seed % 3 {
-                0 => c.bus.write32(DATA + 4, node),
-                1 => {
-                    c.bus.write32(DATA + 4, head);
-                    c.bus.write32(head + 8, node);
+        check(
+            ssx3_ee::s10::f_00327ac0,
+            ai_fwd_diff_cache_touch,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x100e ^ seed as u64);
+                scramble(c, &mut r);
+                let node = DATA + 0x100;
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = node as u64;
+                let head = DATA + 0x200;
+                let next = DATA + 0x300;
+                match seed % 3 {
+                    0 => c.bus.write32(DATA + 4, node),
+                    1 => {
+                        c.bus.write32(DATA + 4, head);
+                        c.bus.write32(head + 8, node);
+                    }
+                    _ => {
+                        c.bus.write32(DATA + 4, head);
+                        c.bus.write32(head + 8, next);
+                        c.bus.write32(node + 4, DATA + 0x400);
+                        c.bus.write32(node + 8, DATA + 0x500);
+                        c.bus.write32(next + 4, r.next_u32());
+                    }
                 }
-                _ => {
-                    c.bus.write32(DATA + 4, head);
-                    c.bus.write32(head + 8, next);
-                    c.bus.write32(node + 4, DATA + 0x400);
-                    c.bus.write32(node + 8, DATA + 0x500);
-                    c.bus.write32(next + 4, r.next_u32());
-                }
-            }
-        });
+            },
+        );
     }
-
 
     // --------------------------------------------------- assorted leaves
 
     #[test]
     fn ai_fwd_diff_cache_hash_remove_matches() {
-        check(ee::s10::f_00327b30, ai_fwd_diff_cache_hash_remove, SEEDS, &|c, seed| {
-            let mut r = Rng(0x327b30 ^ seed as u64);
-            scramble(c, &mut r);
-            let this = DATA;
-            let node = DATA + 0x100;
-            c.g[A0][0] = this as u64;
-            c.g[A1][0] = node as u64;
-            let count = (seed % 4) + 1;
-            c.bus.write32(this + 0xc, count);
-            let buckets = DATA + 0x400;
-            c.bus.write32(this + 8, buckets);
-            let key = if seed % 6 == 0 { 0xffff_ffff } else { r.next_u32() };
-            c.bus.write32(node, key);
-            // A short chain in the selected bucket; one node matches `key`
-            // when seed % 3 != 0 so the removal path runs.
-            let bucket = buckets + (key % count) * 4;
-            let n = (seed % 3) + 1;
-            let mut cur = bucket;
-            for i in 0..n {
-                let e = DATA + 0x800 + i * 0x10;
-                c.bus.write32(cur, e);
-                let k = if seed % 3 != 0 && i == n - 1 { key } else { r.next_u32() };
-                c.bus.write32(e, k);
-                cur = e + 0xc;
-            }
-            c.bus.write32(cur, 0);
-        });
+        check(
+            ee::s10::f_00327b30,
+            ai_fwd_diff_cache_hash_remove,
+            SEEDS,
+            &|c, seed| {
+                let mut r = Rng(0x327b30 ^ seed as u64);
+                scramble(c, &mut r);
+                let this = DATA;
+                let node = DATA + 0x100;
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = node as u64;
+                let count = (seed % 4) + 1;
+                c.bus.write32(this + 0xc, count);
+                let buckets = DATA + 0x400;
+                c.bus.write32(this + 8, buckets);
+                let key = if seed % 6 == 0 {
+                    0xffff_ffff
+                } else {
+                    r.next_u32()
+                };
+                c.bus.write32(node, key);
+                // A short chain in the selected bucket; one node matches `key`
+                // when seed % 3 != 0 so the removal path runs.
+                let bucket = buckets + (key % count) * 4;
+                let n = (seed % 3) + 1;
+                let mut cur = bucket;
+                for i in 0..n {
+                    let e = DATA + 0x800 + i * 0x10;
+                    c.bus.write32(cur, e);
+                    let k = if seed % 3 != 0 && i == n - 1 {
+                        key
+                    } else {
+                        r.next_u32()
+                    };
+                    c.bus.write32(e, k);
+                    cur = e + 0xc;
+                }
+                c.bus.write32(cur, 0);
+            },
+        );
     }
-
 
     #[test]
     fn ai_fwd_diff_cache_hash_insert_matches() {
-        check(ee::s10::f_00327bb0, ai_fwd_diff_cache_hash_insert, SEEDS, &|c, seed| {
-            let mut r = Rng(0x0032_7bb0 ^ seed as u64);
-            scramble(c, &mut r);
-            let this = DATA;
-            let buckets = DATA + 0x200;
-            c.g[A0][0] = this as u64;
-            c.g[A1][0] = (DATA + 0x100) as u64;
-            let count = (seed % 4) + 1;
-            c.bus.write32(this + 0xc, count);
-            c.bus.write32(this + 8, buckets);
-            c.bus.write32(DATA + 0x100, r.next_u32());
-            // Build a short descending chain in the selected bucket.
-            let bucket = buckets + (c.bus.read32(DATA + 0x100) % count) * 4;
-            let n = seed % 3;
-            let mut cur = bucket;
-            for _ in 0..n {
-                let node = DATA + 0x400 + (r.next_u32() & 0xf0);
-                c.bus.write32(cur, node);
-                c.bus.write32(node, r.next_u32());
-                cur = node + 0xc;
-            }
-            c.bus.write32(cur, 0);
-        });
+        check(
+            ee::s10::f_00327bb0,
+            ai_fwd_diff_cache_hash_insert,
+            SEEDS,
+            &|c, seed| {
+                let mut r = Rng(0x0032_7bb0 ^ seed as u64);
+                scramble(c, &mut r);
+                let this = DATA;
+                let buckets = DATA + 0x200;
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = (DATA + 0x100) as u64;
+                let count = (seed % 4) + 1;
+                c.bus.write32(this + 0xc, count);
+                c.bus.write32(this + 8, buckets);
+                c.bus.write32(DATA + 0x100, r.next_u32());
+                // Build a short descending chain in the selected bucket.
+                let bucket = buckets + (c.bus.read32(DATA + 0x100) % count) * 4;
+                let n = seed % 3;
+                let mut cur = bucket;
+                for _ in 0..n {
+                    let node = DATA + 0x400 + (r.next_u32() & 0xf0);
+                    c.bus.write32(cur, node);
+                    c.bus.write32(node, r.next_u32());
+                    cur = node + 0xc;
+                }
+                c.bus.write32(cur, 0);
+            },
+        );
     }
-
 
     #[test]
     fn spatial_key_from_aabb_matches() {
-        check(ee::s10::f_00328f28__generated, spatial_key_from_aabb, SEEDS_2, &|c, seed| {
-            let mut r = Rng(0x0032_8f28 ^ (seed as u64) << 8);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            c.pc = SK_ENTRY;
-            let scale = [1.0f32, 0.5, 2.0, 0.01][(seed % 4) as usize];
-            c.bus.write32(GAME_GP.wrapping_sub(0x2df8), f(scale));
-            c.bus.write32(GAME_GP.wrapping_sub(0x2df4), f(uf(&mut r, 0.0, 0.5)));
-            let aabb = DATA + 0x100;
-            for k in 0..3 {
-                let lo = uf(&mut r, -20000.0, 20000.0);
-                let ext = match (seed / 4 + k) % 4 {
-                    0 => 0.0,
-                    1 => uf(&mut r, 0.0, 10.0),
-                    2 => uf(&mut r, 0.0, 3000.0),
-                    _ => uf(&mut r, 0.0, 40000.0),
-                };
-                c.bus.write32(aabb + 4 * k, f(lo));
-                c.bus.write32(aabb + 0x10 + 4 * k, f(lo + ext));
-            }
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = sx(aabb);
-        });
+        check(
+            ee::s10::f_00328f28__generated,
+            spatial_key_from_aabb,
+            SEEDS_2,
+            &|c, seed| {
+                let mut r = Rng(0x0032_8f28 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.pc = SK_ENTRY;
+                let scale = [1.0f32, 0.5, 2.0, 0.01][(seed % 4) as usize];
+                c.bus.write32(GAME_GP.wrapping_sub(0x2df8), f(scale));
+                c.bus
+                    .write32(GAME_GP.wrapping_sub(0x2df4), f(uf(&mut r, 0.0, 0.5)));
+                let aabb = DATA + 0x100;
+                for k in 0..3 {
+                    let lo = uf(&mut r, -20000.0, 20000.0);
+                    let ext = match (seed / 4 + k) % 4 {
+                        0 => 0.0,
+                        1 => uf(&mut r, 0.0, 10.0),
+                        2 => uf(&mut r, 0.0, 3000.0),
+                        _ => uf(&mut r, 0.0, 40000.0),
+                    };
+                    c.bus.write32(aabb + 4 * k, f(lo));
+                    c.bus.write32(aabb + 0x10 + 4 * k, f(lo + ext));
+                }
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(aabb);
+            },
+        );
     }
-
 
     #[test]
     fn spatial_key_classify_aabb_matches() {
-        check(ee::s10::f_00328360__generated, spatial_key_classify_aabb, 300, &|c, seed| {
-            let mut r = base(c, seed, 0x3283);
-            let (key, aabb) = (DATA, DATA + 0x40);
-            let level = 11 + r.next_u32() % 3;
-            let size = (1u32 << level) as f32;
-            // Exact corners (no margin) for the degenerate-box seeds.
-            let touching = seed % 10 == 9;
-            let m = if touching { 0.0 } else { uf(&mut r, 0.0, 0.5) };
-            c.bus.write32(gp_at(-0x2dfc), f(m));
-            c.bus.write32(key, level);
-            for k in 0..3u32 {
-                let i = (r.next_u32() % 9) as i32 - 4;
-                c.bus.write32(key + 4 + 4 * k, i as u32);
-                let lo = (i as f32 - m) * size;
-                let hi = (i as f32 + 1.0 + m) * size;
-                let w = hi - lo;
-                let case = if touching {
-                    if k < 2 { 5 } else { 0 }
-                } else if r.next_u32() % 3 != 0 {
-                    0
-                } else {
-                    1 + r.next_u32() % 4
-                };
-                let (mn, mx) = match case {
-                    0 => {
-                        let a = lo + uf(&mut r, 0.05, 0.45) * w;
-                        (a, a + uf(&mut r, 0.0, 0.4) * w)
-                    }
-                    1 => (lo - 0.2 * w, lo + 0.2 * w),
-                    2 => (hi - 0.2 * w, hi + 0.2 * w),
-                    3 => (lo - 0.5 * w, lo - 0.1 * w),
-                    4 => (hi + 0.1 * w, hi + 0.5 * w),
-                    _ => (hi, hi),
-                };
-                c.bus.write32(aabb + 4 * k, f(mn));
-                c.bus.write32(aabb + 0x10 + 4 * k, f(mx));
-            }
-            c.g[A0][0] = sx(key);
-            c.g[A1][0] = sx(aabb);
-        });
+        check(
+            ee::s10::f_00328360__generated,
+            spatial_key_classify_aabb,
+            300,
+            &|c, seed| {
+                let mut r = base(c, seed, 0x3283);
+                let (key, aabb) = (DATA, DATA + 0x40);
+                let level = 11 + r.next_u32() % 3;
+                let size = (1u32 << level) as f32;
+                // Exact corners (no margin) for the degenerate-box seeds.
+                let touching = seed % 10 == 9;
+                let m = if touching { 0.0 } else { uf(&mut r, 0.0, 0.5) };
+                c.bus.write32(gp_at(-0x2dfc), f(m));
+                c.bus.write32(key, level);
+                for k in 0..3u32 {
+                    let i = (r.next_u32() % 9) as i32 - 4;
+                    c.bus.write32(key + 4 + 4 * k, i as u32);
+                    let lo = (i as f32 - m) * size;
+                    let hi = (i as f32 + 1.0 + m) * size;
+                    let w = hi - lo;
+                    let case = if touching {
+                        if k < 2 {
+                            5
+                        } else {
+                            0
+                        }
+                    } else if r.next_u32() % 3 != 0 {
+                        0
+                    } else {
+                        1 + r.next_u32() % 4
+                    };
+                    let (mn, mx) = match case {
+                        0 => {
+                            let a = lo + uf(&mut r, 0.05, 0.45) * w;
+                            (a, a + uf(&mut r, 0.0, 0.4) * w)
+                        }
+                        1 => (lo - 0.2 * w, lo + 0.2 * w),
+                        2 => (hi - 0.2 * w, hi + 0.2 * w),
+                        3 => (lo - 0.5 * w, lo - 0.1 * w),
+                        4 => (hi + 0.1 * w, hi + 0.5 * w),
+                        _ => (hi, hi),
+                    };
+                    c.bus.write32(aabb + 4 * k, f(mn));
+                    c.bus.write32(aabb + 0x10 + 4 * k, f(mx));
+                }
+                c.g[A0][0] = sx(key);
+                c.g[A1][0] = sx(aabb);
+            },
+        );
     }
-
 
     /// The spatial hash test world: level-11 keys (tiny scale), roots at
     /// level 11 holding the coordinates the case needs.
     #[test]
     fn spatial_hash_update_matches() {
-        check(ee::s10::f_003291e0__generated, spatial_hash_update, SEEDS_3, &|c, seed| {
-            let mut r = machine(c, seed, 0x3291, 0);
-            let (hash, obj_node, old_box, new_box) = (DATA, DATA + 0x3000, DATA + 0x100, DATA + 0x140);
-            c.bus.write32(gp_at(-0x2df8), f(1.0e-6));
-            c.bus.write32(gp_at(-0x2df4), f(0.0));
-            let case = seed % 4;
-            let cell = |r: &mut Rng| -> i32 { (r.next_u32() % 6) as i32 - 3 };
-            let old: [i32; 3] = [cell(&mut r), cell(&mut r), cell(&mut r)];
-            let mut new = old;
-            match case {
-                0 => {}
-                1 => new[0] = if old[0] < 0 { 1 } else { -2 },
-                2 => new[1] = if old[1] == -1 { -2 } else if old[1] == 0 { 1 } else { old[1] + old[1].signum() },
-                _ => new[2] = if old[2] == -1 { -2 } else if old[2] == 0 { 1 } else { old[2] + old[2].signum() },
-            }
-            let put_box = |c: &mut Cpu, r: &mut Rng, at: u32, k: &[i32; 3]| {
-                for a in 0..3 {
-                    let centre = (k[a] as f32 + 0.5) * 2048.0 + uf(r, -500.0, 500.0);
-                    let half = uf(r, 0.0, 50.0);
-                    c.bus.write32(at + 4 * a as u32, f(centre - half));
-                    c.bus.write32(at + 0x10 + 4 * a as u32, f(centre + half));
+        check(
+            ee::s10::f_003291e0__generated,
+            spatial_hash_update,
+            SEEDS_3,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3291, 0);
+                let (hash, obj_node, old_box, new_box) =
+                    (DATA, DATA + 0x3000, DATA + 0x100, DATA + 0x140);
+                c.bus.write32(gp_at(-0x2df8), f(1.0e-6));
+                c.bus.write32(gp_at(-0x2df4), f(0.0));
+                let case = seed % 4;
+                let cell = |r: &mut Rng| -> i32 { (r.next_u32() % 6) as i32 - 3 };
+                let old: [i32; 3] = [cell(&mut r), cell(&mut r), cell(&mut r)];
+                let mut new = old;
+                match case {
+                    0 => {}
+                    1 => new[0] = if old[0] < 0 { 1 } else { -2 },
+                    2 => {
+                        new[1] = if old[1] == -1 {
+                            -2
+                        } else if old[1] == 0 {
+                            1
+                        } else {
+                            old[1] + old[1].signum()
+                        }
+                    }
+                    _ => {
+                        new[2] = if old[2] == -1 {
+                            -2
+                        } else if old[2] == 0 {
+                            1
+                        } else {
+                            old[2] + old[2].signum()
+                        }
+                    }
                 }
-            };
-            put_box(c, &mut r, old_box, &old);
-            if case == 0 {
-                for w in 0..8 {
-                    let v = c.bus.read32(old_box + 4 * w);
-                    c.bus.write32(new_box + 4 * w, v);
+                let put_box = |c: &mut Cpu, r: &mut Rng, at: u32, k: &[i32; 3]| {
+                    for a in 0..3 {
+                        let centre = (k[a] as f32 + 0.5) * 2048.0 + uf(r, -500.0, 500.0);
+                        let half = uf(r, 0.0, 50.0);
+                        c.bus.write32(at + 4 * a as u32, f(centre - half));
+                        c.bus.write32(at + 0x10 + 4 * a as u32, f(centre + half));
+                    }
+                };
+                put_box(c, &mut r, old_box, &old);
+                if case == 0 {
+                    for w in 0..8 {
+                        let v = c.bus.read32(old_box + 4 * w);
+                        c.bus.write32(new_box + 4 * w, v);
+                    }
+                } else {
+                    put_box(c, &mut r, new_box, &new);
                 }
-            } else {
-                put_box(c, &mut r, new_box, &new);
-            }
-            // Roots: level 11 at the coordinates of the key that lands
-            // there (case 3: the old key's, so the new one is not held).
-            let sign = |k: &[i32; 3]| -> u32 {
-                0x50 * (k[0] < 0) as u32 + 0x28 * (k[1] < 0) as u32 + 0x14 * (k[2] < 0) as u32
-            };
-            for (i, k) in [old, new].iter().enumerate() {
-                let root = hash + sign(k);
-                let held = if case == 3 { &old } else { k };
-                c.bus.write32(root, 11);
-                for a in 0..3 {
-                    c.bus.write32(root + 4 + 4 * a as u32, held[a] as u32);
+                // Roots: level 11 at the coordinates of the key that lands
+                // there (case 3: the old key's, so the new one is not held).
+                let sign = |k: &[i32; 3]| -> u32 {
+                    0x50 * (k[0] < 0) as u32 + 0x28 * (k[1] < 0) as u32 + 0x14 * (k[2] < 0) as u32
+                };
+                for (i, k) in [old, new].iter().enumerate() {
+                    let root = hash + sign(k);
+                    let held = if case == 3 { &old } else { k };
+                    c.bus.write32(root, 11);
+                    for a in 0..3 {
+                        c.bus.write32(root + 4 + 4 * a as u32, held[a] as u32);
+                    }
+                    // Bucket arrays: empty (a pool-range address, freed) on
+                    // some moved-root seeds; else a live word among the first
+                    // eight, or (odd seeds) only the object's list head, which
+                    // stays set because the object has a successor.
+                    let empty = case == 1 && i == 0 && seed % 8 == 1;
+                    let arr = if empty {
+                        0x200
+                    } else {
+                        DATA + 0x1000 + 0x100 * i as u32
+                    };
+                    c.bus.write32(root + 0x10, arr);
+                    if !empty && seed % 2 == 0 {
+                        let w = r.next_u32() % 8;
+                        c.bus.write32(arr + 4 * w, 1 + r.next_u32() % 100);
+                    }
                 }
-                // Bucket arrays: empty (a pool-range address, freed) on
-                // some moved-root seeds; else a live word among the first
-                // eight, or (odd seeds) only the object's list head, which
-                // stays set because the object has a successor.
-                let empty = case == 1 && i == 0 && seed % 8 == 1;
-                let arr = if empty { 0x200 } else { DATA + 0x1000 + 0x100 * i as u32 };
-                c.bus.write32(root + 0x10, arr);
-                if !empty && seed % 2 == 0 {
-                    let w = r.next_u32() % 8;
-                    c.bus.write32(arr + 4 * w, 1 + r.next_u32() % 100);
-                }
-            }
-            let empty = case == 1 && seed % 8 == 1;
-            c.bus.write32(obj_node, if empty || seed % 2 == 0 { 0 } else { DATA + 0x3100 });
-            c.bus.write32(obj_node + 4, 0);
-            c.g[A0][0] = sx(hash);
-            // (List heads 0..2 lie inside the scanned words.)
-            c.g[A1][0] = (r.next_u32() % 3) as u64;
-            c.g[A2][0] = sx(obj_node);
-            c.g[A3][0] = sx(new_box);
-            c.g[T0][0] = sx(old_box);
-        });
+                let empty = case == 1 && seed % 8 == 1;
+                c.bus.write32(
+                    obj_node,
+                    if empty || seed % 2 == 0 {
+                        0
+                    } else {
+                        DATA + 0x3100
+                    },
+                );
+                c.bus.write32(obj_node + 4, 0);
+                c.g[A0][0] = sx(hash);
+                // (List heads 0..2 lie inside the scanned words.)
+                c.g[A1][0] = (r.next_u32() % 3) as u64;
+                c.g[A2][0] = sx(obj_node);
+                c.g[A3][0] = sx(new_box);
+                c.g[T0][0] = sx(old_box);
+            },
+        );
     }
-
 
     #[test]
     fn roller_modifier_copy_matrix_block_matches() {
-        diff(ee::s10::f_00327cc8__generated, roller_modifier_copy_matrix_block, 30, &|c, seed| {
-            let mut r = fe_base(c, seed, 0x32_7cc8);
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = sx(if seed % 2 == 0 { DATA + 0x2000 } else { DATA + 0x2004 });
-            for i in 0..0x40 {
-                w(c, DATA + 0x2000 + 4 * i, r.next_u32());
-            }
-            for i in 0..0x40 {
-                w(c, DATA + 0x2200 + 4 * i, r.next_u32());
-            }
-        });
+        diff(
+            ee::s10::f_00327cc8__generated,
+            roller_modifier_copy_matrix_block,
+            30,
+            &|c, seed| {
+                let mut r = fe_base(c, seed, 0x32_7cc8);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(if seed % 2 == 0 {
+                    DATA + 0x2000
+                } else {
+                    DATA + 0x2004
+                });
+                for i in 0..0x40 {
+                    w(c, DATA + 0x2000 + 4 * i, r.next_u32());
+                }
+                for i in 0..0x40 {
+                    w(c, DATA + 0x2200 + 4 * i, r.next_u32());
+                }
+            },
+        );
     }
-
 
     /// A deterministic float for fixture fields.
     pub(crate) fn edge(seed: u32, k: u32) -> u32 {
         let mut r = Rng(0x328030 ^ seed as u64 ^ (k as u64) << 32);
         r.f32(10.0)
     }
-
 
     #[test]
     fn sphere_tree_collide_triangle2_sided_matches() {

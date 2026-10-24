@@ -2,68 +2,176 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::r32;
+use crate::call;
+use crate::call::call_ptr;
+use crate::call::guest;
+use crate::call::sp;
+use crate::call::Callee;
+use crate::call::Flow;
+use crate::call::Frame;
+use crate::call::VSlot;
+use crate::events::back_edge_unwinds;
+use crate::events::deliver_event_here;
+use crate::events::event_due;
+pub(crate) use crate::game::be::bedbreward::destroy_instance;
+pub(crate) use crate::game::be::bedbreward::BUILTIN_DELETE;
+pub(crate) use crate::game::be::beintnetwork::NEW_RACE_GP;
+pub(crate) use crate::game::fe::festateload::at;
+pub(crate) use crate::game::sound::soundsys::gp_4 as gp;
+pub(crate) use crate::game::sound::soundsys::p;
 use crate::guest::Addr;
+use crate::ps2f::FpuF32;
+use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::Cpu;
-use crate::ps2f::FpuF32;
-use crate::call;
-use crate::call::call_ptr;
-use crate::call::Callee;
-use crate::call::Frame;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
-use crate::call::guest;
-use crate::call::sp;
-use ssx3_ee as ee;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
 use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
-use crate::abi::r32;
-use crate::call::Flow;
-use crate::call::VSlot;
-use crate::events::back_edge_unwinds;
-pub(crate) use crate::game::be::bedbreward::BUILTIN_DELETE;
-pub(crate) use crate::game::be::beintnetwork::NEW_RACE_GP;
-pub(crate) use crate::game::be::bedbreward::destroy_instance;
-pub(crate) use crate::game::fe::festateload::at;
-pub(crate) use crate::game::sound::soundsys::p;
-pub(crate) use crate::game::sound::soundsys::gp_4 as gp;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0014_4928, be_new_race_int_commit, "BENewRaceInt_Commit"),
     (0x0014_49e8, be_new_race_int_reset, "BENewRaceInt_Reset"),
-    (0x0014_4aa8, be_new_race_int_set_num_human_players, "BENewRaceInt_SetNumHumanPlayers"),
-    (0x0014_4b20, be_new_race_int_set_track_strings, "BENewRaceInt_SetTrackStrings"),
-    (0x0014_4be0, be_new_race_int_get_track, "BENewRaceInt_GetTrack"),
-    (0x0014_4bf0, be_new_race_int_get_track_name, "BENewRaceInt_GetTrackName"),
-    (0x0014_4c48, be_new_race_int_get_track_code_by_index, "BENewRaceInt_GetTrackCodeByIndex"),
-    (0x0014_4c60, be_new_race_int_get_track_name_by_index, "BENewRaceInt_GetTrackNameByIndex"),
-    (0x0014_4c78, be_new_race_int_get_track_peak_by_index, "BENewRaceInt_GetTrackPeakByIndex"),
-    (0x0014_4cc0, benewraceint_is_station_track_by_index, "BENewRaceInt_IsStationTrackByIndex"),
-    (0x0014_4ce0, be_new_race_int_find_track_by_id, "BENewRaceInt_FindTrackById"),
-    (0x0014_4d18, benewraceint_get_track_field60, "BENewRaceInt_GetTrackField60"),
-    (0x0014_4d38, benewraceint_get_section_entry, "BENewRaceInt_GetSectionEntry"),
-    (0x0014_4d50, benewraceint_get_section_field10, "BENewRaceInt_GetSectionField10"),
-    (0x0014_4d70, be_new_race_int_set_rider_slot, "BENewRaceInt_SetRiderSlot"),
-    (0x0014_4d98, be_new_race_int_set_num_ai_riders, "BENewRaceInt_SetNumAIRiders"),
-    (0x0014_5108, be_new_race_int_set_game_mode, "BENewRaceInt_SetGameMode"),
-    (0x0014_5340, be_new_race_int_get_event_name, "BENewRaceInt_GetEventName"),
-    (0x0014_5378, be_new_race_int_get_game_mode_name, "BENewRaceInt_GetGameModeName"),
-    (0x0014_5398, be_new_race_int_get_event_type_name, "BENewRaceInt_GetEventTypeName"),
-    (0x0014_53b8, be_new_race_int_get_event_type_name_by_index, "BENewRaceInt_GetEventTypeNameByIndex"),
-    (0x0014_54f8, benewraceint_get_event_target, "BENewRaceInt_GetEventTarget"),
-    (0x0014_55d0, benew_race_int_get_special_event_field4, "BENewRaceInt_GetSpecialEventField4"),
-    (0x0014_5600, benew_race_int_get_special_event_field6, "BENewRaceInt_GetSpecialEventField6"),
-    (0x0014_5630, be_new_race_int_get_special_event_score, "BENewRaceInt_GetSpecialEventScore"),
-    (0x0014_5668, be_new_race_int_get_special_event_value, "BENewRaceInt_GetSpecialEventValue"),
-    (0x0014_56a0, benew_race_int_get_event_record_target, "BENewRaceInt_GetEventRecordTarget"),
-    (0x0014_5750, benew_race_int_get_peak_rival_character, "BENewRaceInt_GetPeakRivalCharacter"),
-    (0x0015_bb20, be_new_race_int_destroy_instance, "BENewRaceInt_DestroyInstance"),
+    (
+        0x0014_4aa8,
+        be_new_race_int_set_num_human_players,
+        "BENewRaceInt_SetNumHumanPlayers",
+    ),
+    (
+        0x0014_4b20,
+        be_new_race_int_set_track_strings,
+        "BENewRaceInt_SetTrackStrings",
+    ),
+    (
+        0x0014_4be0,
+        be_new_race_int_get_track,
+        "BENewRaceInt_GetTrack",
+    ),
+    (
+        0x0014_4bf0,
+        be_new_race_int_get_track_name,
+        "BENewRaceInt_GetTrackName",
+    ),
+    (
+        0x0014_4c48,
+        be_new_race_int_get_track_code_by_index,
+        "BENewRaceInt_GetTrackCodeByIndex",
+    ),
+    (
+        0x0014_4c60,
+        be_new_race_int_get_track_name_by_index,
+        "BENewRaceInt_GetTrackNameByIndex",
+    ),
+    (
+        0x0014_4c78,
+        be_new_race_int_get_track_peak_by_index,
+        "BENewRaceInt_GetTrackPeakByIndex",
+    ),
+    (
+        0x0014_4cc0,
+        benewraceint_is_station_track_by_index,
+        "BENewRaceInt_IsStationTrackByIndex",
+    ),
+    (
+        0x0014_4ce0,
+        be_new_race_int_find_track_by_id,
+        "BENewRaceInt_FindTrackById",
+    ),
+    (
+        0x0014_4d18,
+        benewraceint_get_track_field60,
+        "BENewRaceInt_GetTrackField60",
+    ),
+    (
+        0x0014_4d38,
+        benewraceint_get_section_entry,
+        "BENewRaceInt_GetSectionEntry",
+    ),
+    (
+        0x0014_4d50,
+        benewraceint_get_section_field10,
+        "BENewRaceInt_GetSectionField10",
+    ),
+    (
+        0x0014_4d70,
+        be_new_race_int_set_rider_slot,
+        "BENewRaceInt_SetRiderSlot",
+    ),
+    (
+        0x0014_4d98,
+        be_new_race_int_set_num_ai_riders,
+        "BENewRaceInt_SetNumAIRiders",
+    ),
+    (
+        0x0014_5108,
+        be_new_race_int_set_game_mode,
+        "BENewRaceInt_SetGameMode",
+    ),
+    (
+        0x0014_5340,
+        be_new_race_int_get_event_name,
+        "BENewRaceInt_GetEventName",
+    ),
+    (
+        0x0014_5378,
+        be_new_race_int_get_game_mode_name,
+        "BENewRaceInt_GetGameModeName",
+    ),
+    (
+        0x0014_5398,
+        be_new_race_int_get_event_type_name,
+        "BENewRaceInt_GetEventTypeName",
+    ),
+    (
+        0x0014_53b8,
+        be_new_race_int_get_event_type_name_by_index,
+        "BENewRaceInt_GetEventTypeNameByIndex",
+    ),
+    (
+        0x0014_54f8,
+        benewraceint_get_event_target,
+        "BENewRaceInt_GetEventTarget",
+    ),
+    (
+        0x0014_55d0,
+        benew_race_int_get_special_event_field4,
+        "BENewRaceInt_GetSpecialEventField4",
+    ),
+    (
+        0x0014_5600,
+        benew_race_int_get_special_event_field6,
+        "BENewRaceInt_GetSpecialEventField6",
+    ),
+    (
+        0x0014_5630,
+        be_new_race_int_get_special_event_score,
+        "BENewRaceInt_GetSpecialEventScore",
+    ),
+    (
+        0x0014_5668,
+        be_new_race_int_get_special_event_value,
+        "BENewRaceInt_GetSpecialEventValue",
+    ),
+    (
+        0x0014_56a0,
+        benew_race_int_get_event_record_target,
+        "BENewRaceInt_GetEventRecordTarget",
+    ),
+    (
+        0x0014_5750,
+        benew_race_int_get_peak_rival_character,
+        "BENewRaceInt_GetPeakRivalCharacter",
+    ),
+    (
+        0x0015_bb20,
+        be_new_race_int_destroy_instance,
+        "BENewRaceInt_DestroyInstance",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -72,27 +180,26 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 pub(crate) mod callee {
     use super::ee;
     use super::Callee;
-    pub(crate) use crate::game::object::debouncenode::callee::HAS_OBJECT_SCRIPT1;
-    pub(crate) use crate::game::object::debouncenode::callee::HAS_OBJECT_SCRIPT3;
+    pub(crate) use crate::game::object::debouncenode::callee::EVAL_SEGMENT;
+    pub(crate) use crate::game::object::debouncenode::callee::GET_CHARACTER;
+    pub(crate) use crate::game::object::debouncenode::callee::GET_HUMAN_RIDER;
     pub(crate) use crate::game::object::debouncenode::callee::GET_OBJECT_SLOT;
     pub(crate) use crate::game::object::debouncenode::callee::GET_PLAYER_INSTANCE;
-    pub(crate) use crate::game::object::debouncenode::callee::GET_HUMAN_RIDER;
-    pub(crate) use crate::game::object::debouncenode::callee::GET_CHARACTER;
     pub(crate) use crate::game::object::debouncenode::callee::GET_TRACK_PEAK;
     pub(crate) use crate::game::object::debouncenode::callee::GET_TRANSFORM_BOUNDS;
-    pub(crate) use crate::game::object::debouncenode::callee::EVAL_SEGMENT;
+    pub(crate) use crate::game::object::debouncenode::callee::HAS_OBJECT_SCRIPT1;
+    pub(crate) use crate::game::object::debouncenode::callee::HAS_OBJECT_SCRIPT3;
 }
 
 /// `gp`-relative globals used here.
 pub(crate) mod g {
-    pub(crate) use crate::game::fe::festateload::g::WORLD_TRIGGER_MANAGER;
+    pub(crate) use crate::game::fe::festateload::g::BE_OPTION_SINGLETON;
+    pub(crate) use crate::game::fe::festateload::g::BOLT_FILE_CACHE;
+    pub(crate) use crate::game::fe::festateload::g::FE_BASE_BACK;
     pub(crate) use crate::game::fe::festateload::g::SAVE_BUFFER;
     pub(crate) use crate::game::fe::festateload::g::SAVE_BUFFER_END;
-    pub(crate) use crate::game::fe::festateload::g::BE_OPTION_SINGLETON;
-    pub(crate) use crate::game::fe::festateload::g::FE_BASE_BACK;
-    pub(crate) use crate::game::fe::festateload::g::BOLT_FILE_CACHE;
+    pub(crate) use crate::game::fe::festateload::g::WORLD_TRIGGER_MANAGER;
 }
-
 
 // ---------------------------------------------------------------------------
 // New race.
@@ -111,7 +218,6 @@ pub fn be_new_race_int_get_track_peak_by_index(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 // ---------------------------------------------------------------------------
 // New race tables.
 
@@ -128,7 +234,6 @@ pub fn be_new_race_int_get_track_name_by_index(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void BENewRaceInt_SetRiderSlot(BENewRaceInt *self, int slot, int rider)`
 /// (0x144d70): `riders[slot] = rider` and `riderSlots[rider] = slot`.
 pub fn be_new_race_int_set_rider_slot(c: &mut Cpu) {
@@ -143,7 +248,6 @@ pub fn be_new_race_int_set_rider_slot(c: &mut Cpu) {
     Addr(c.g[V1][0] as u32).off(0x18).sw(c, c.g[A1][0]);
     abi::ret(c);
 }
-
 
 /// `bool BENewRaceInt_SetNumAIRiders(BENewRaceInt *self, int count)` (0x144d98):
 /// bump a per-race running total by `count`, store it, and report whether the
@@ -171,7 +275,6 @@ pub fn be_new_race_int_set_num_ai_riders(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `char *BENewRaceInt_GetEventName(BENewRaceInt *self)` (0x145340):
 /// `eventNames[eventType]`, records of 84 bytes starting at 0x43e97c.
 pub fn be_new_race_int_get_event_name(c: &mut Cpu) {
@@ -183,7 +286,6 @@ pub fn be_new_race_int_get_event_name(c: &mut Cpu) {
     c.g[V0][0] = sx(base.wrapping_add(low));
     abi::ret(c);
 }
-
 
 /// `char *BENewRaceInt_GetGameModeName(BENewRaceInt *self)` (0x145378):
 /// `gameModeNames[gameMode]`, records of 67 bytes starting at 0x43e707.
@@ -197,7 +299,6 @@ pub fn be_new_race_int_get_game_mode_name(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `char *BENewRaceInt_GetEventTypeName(BENewRaceInt *self)` (0x145398):
 /// `eventTypeNames[eventType]`, records of 60 bytes starting at 0x43e7d0.
 pub fn be_new_race_int_get_event_type_name(c: &mut Cpu) {
@@ -209,7 +310,6 @@ pub fn be_new_race_int_get_event_type_name(c: &mut Cpu) {
     c.g[V0][0] = sx(base.wrapping_add(low));
     abi::ret(c);
 }
-
 
 /// `char *BENewRaceInt_GetEventTypeNameByIndex(BENewRaceInt *self, int index)`
 /// (0x1453b8): `eventTypeNames[index]`, records of 60 bytes at 0x43e7d0.
@@ -224,7 +324,6 @@ pub fn be_new_race_int_get_event_type_name_by_index(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 // ---------------------------------------------------------------------------
 // New-race / character / bolt / reward tables.
 
@@ -237,7 +336,6 @@ pub(crate) const NEW_RACE_TRACK_PTR: u32 = 0x5c08;
 /// The base of the per-track record table.
 pub(crate) const TRACK_RECORDS: u32 = 0x0044_0000;
 
-
 /// `BETrack* BENewRaceInt_GetTrack(void)` (0x144be0): the pointer at
 /// `0x535c08`.
 pub fn be_new_race_int_get_track(c: &mut Cpu) {
@@ -246,7 +344,6 @@ pub fn be_new_race_int_get_track(c: &mut Cpu) {
     c.g[V0][0] = Addr(NEW_RACE_TRACK.wrapping_add(NEW_RACE_TRACK_PTR)).lw(c);
     abi::ret(c);
 }
-
 
 /// `char* BENewRaceInt_GetTrackName(int index)` (0x144bf0): the name of the
 /// selected track plus `index*100` records into the track table.
@@ -262,7 +359,6 @@ pub fn be_new_race_int_get_track_name(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `int BENewRaceInt_GetTrackCodeByIndex(int index)` (0x144c48): the track
 /// code of the `index`-th record.
 pub fn be_new_race_int_get_track_code_by_index(c: &mut Cpu) {
@@ -275,12 +371,10 @@ pub fn be_new_race_int_get_track_code_by_index(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `BENewRaceInt_DestroyInstance()` (0x15bb20): as above for `gp - 0x1f3c`.
 pub fn be_new_race_int_destroy_instance(c: &mut Cpu) {
     destroy_instance(c, NEW_RACE_GP, 0x0015_bb34);
 }
-
 
 // ---------------------------------------------------------------------------
 // New race.
@@ -319,7 +413,6 @@ pub fn be_new_race_int_set_num_human_players(c: &mut Cpu) {
         }
     }
 }
-
 
 /// `BENewRaceInt_SetTrackStrings(self, name)` (0x144b20): append the name to
 /// four track-name buffers inside the new-race info block.
@@ -372,7 +465,6 @@ pub fn be_new_race_int_set_track_strings(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `BENewRaceInt_SetGameMode(self, mode)` (0x145108): record the mode byte,
 /// then set the human/AI rider counts for modes 0, 1 and 2.
@@ -478,7 +570,6 @@ pub fn be_new_race_int_set_game_mode(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Races.
 
@@ -574,7 +665,6 @@ pub fn benew_race_int_get_peak_rival_character(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Fixed addresses (the original materialises these with `lui`/`addiu` pairs).
 
@@ -588,7 +678,6 @@ pub(crate) const TRACK_TABLE: u32 = 0x0043_e250;
 /// `D_0043E254`: the BE new-race section-entry table (0x18-byte entries). The
 /// original materialises it as `0x440000 - 0x1dac`.
 pub(crate) const SECTION_ENTRY_TABLE: u32 = 0x0043_e254;
-
 
 // ---------------------------------------------------------------------------
 // BE race/player/BAGT table getters.
@@ -606,7 +695,6 @@ pub fn benewraceint_is_station_track_by_index(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `int BENewRaceInt_GetTrackField60(int unused, int index)` (0x144d18): field
 /// 0x60 of a section-table entry (0x64-byte records in `D_0043D950`).
 pub fn benewraceint_get_track_field60(c: &mut Cpu) {
@@ -618,7 +706,6 @@ pub fn benewraceint_get_track_field60(c: &mut Cpu) {
     c.g[V0][0] = c.lw(entry.wrapping_add(0x60));
     abi::ret(c);
 }
-
 
 /// `BENewRaceSection* BENewRaceInt_GetSectionEntry(int unused, int index)`
 /// (0x144d38): the address of section-table entry `index` (0x18-byte records at
@@ -634,7 +721,6 @@ pub fn benewraceint_get_section_entry(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `int BENewRaceInt_GetSectionField10(int unused, int index)` (0x144d50):
 /// field 0x14 of a track-table entry (0x18-byte records in `D_0043E250`).
 pub fn benewraceint_get_section_field10(c: &mut Cpu) {
@@ -646,7 +732,6 @@ pub fn benewraceint_get_section_field10(c: &mut Cpu) {
     c.g[V0][0] = c.lw(entry.wrapping_add(0x14));
     abi::ret(c);
 }
-
 
 /// `unsigned short BENewRaceInt_GetSpecialEventField4(self, int event,
 /// int index)` (0x1455d0): field 4 (u16) of `D_00440D18[event - 6][index]`
@@ -667,7 +752,6 @@ pub fn benew_race_int_get_special_event_field4(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `unsigned short BENewRaceInt_GetSpecialEventField6(self, int event,
 /// int index)` (0x145600): field 6 (u16) of the same table entry.
 pub fn benew_race_int_get_special_event_field6(c: &mut Cpu) {
@@ -686,7 +770,6 @@ pub fn benew_race_int_get_special_event_field6(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 // ---------------------------------------------------------------------------
 // BENewRaceInt track lookups and BE_CopyProfile.
 
@@ -698,7 +781,6 @@ pub(crate) const RACE_ENTRY_SIZE: u32 = 0x64;
 
 /// Entries in the table.
 pub(crate) const RACE_COUNT: u32 = 23;
-
 
 /// `sRaceEntryFull* BENewRaceInt_FindTrackById(int id)` (0x144ce0): scan the
 /// race table and return the entry whose `+0x5c` word equals `id`, else
@@ -737,7 +819,6 @@ pub fn be_new_race_int_find_track_by_id(c: &mut Cpu) {
     }
 }
 
-
 /// `int BENewRaceInt_GetSpecialEventScore(BENewRaceInt* r, int track, int i)`
 /// (0x145630): `D_00440D18[i + (track - 6) * 3].+0x12 * 100`.
 pub fn be_new_race_int_get_special_event_score(c: &mut Cpu) {
@@ -757,7 +838,6 @@ pub fn be_new_race_int_get_special_event_score(c: &mut Cpu) {
     c.mult(0, 2, 2, 4);
     c.pc = ret;
 }
-
 
 /// `int BENewRaceInt_GetSpecialEventValue(BENewRaceInt* r, int track, int i,
 /// int k)` (0x145668): `D_00440D18[i + (track - 6) * 3].+0x8[k]`.
@@ -779,13 +859,11 @@ pub fn be_new_race_int_get_special_event_value(c: &mut Cpu) {
     c.pc = ret;
 }
 
-
 /// `void BENewRaceInt_Commit(void)` (0x00144928): copy the working race
 /// settings (0x535bc8) over the live copy (0x5305b0).
 pub fn be_new_race_int_commit(c: &mut Cpu) {
     copy_race_settings(c, 0x0053_5bc8, 0x0053_05b0, 0x0014_4948, 0x0014_499c);
 }
-
 
 /// `void BENewRaceInt_Reset(void)` (0x001449e8): copy the live race
 /// settings (0x5305b0) back over the working ones (0x535bc8).
@@ -793,11 +871,16 @@ pub fn be_new_race_int_reset(c: &mut Cpu) {
     copy_race_settings(c, 0x0053_05b0, 0x0053_5bc8, 0x0014_4a08, 0x0014_4a5c);
 }
 
-
 /// The `sRaceSettings` block copy behind both `BENewRaceInt` entry points:
 /// two 0x20 halves (unaligned `ldl`/`ldr` pairs when the addresses are not
 /// 8-byte aligned, plain `ld`/`sd` otherwise) and a 12-byte tail.
-pub(crate) fn copy_race_settings(c: &mut Cpu, src: u32, dst: u32, head_unaligned: u32, head_aligned: u32) {
+pub(crate) fn copy_race_settings(
+    c: &mut Cpu,
+    src: u32,
+    dst: u32,
+    head_unaligned: u32,
+    head_aligned: u32,
+) {
     c.cycles += 8;
     c.g[V0][0] = sx(src & 0xffff_0000);
     c.g[V1][0] = sx(src);
@@ -867,7 +950,6 @@ pub(crate) fn copy_race_settings(c: &mut Cpu, src: u32, dst: u32, head_unaligned
     c.sw((c.g[A0][0] as u32).wrapping_add(0x8), c.g[A1][0]);
     abi::ret(c);
 }
-
 
 // ---------------------------------------------------------------------------
 // `BENewRaceInt_GetEventRecordTarget` (0x1456a0): map a (row, mode) pair to a
@@ -972,7 +1054,6 @@ pub fn benew_race_int_get_event_record_target(c: &mut Cpu) {
         abi::ret(c);
     }
 }
-
 
 // ---------------------------------------------------------------------------
 // Front end: race event target.
@@ -1145,78 +1226,80 @@ pub fn benewraceint_get_event_target(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::scramble;
-    use crate::difftest::Rng;
-    use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
     use crate::difftest::check_lohi;
+    use crate::difftest::fakes;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::ptr;
     use crate::difftest::fakes::vtable;
-    use crate::difftest::fakes::LOG_RESULTS;
     use crate::difftest::fakes::FAKE;
+    use crate::difftest::fakes::LOG_RESULTS;
+    use crate::difftest::fill;
     use crate::difftest::put_vec;
+    use crate::difftest::put_words;
+    use crate::difftest::scramble;
+    use crate::difftest::Rng;
+    use crate::difftest::DATA;
+    use crate::difftest::GAME_GP;
+    use crate::difftest::RA as SENTINEL;
+    use crate::difftest::SP;
+    pub(crate) use crate::game::ai::ai::tests::be_library;
+    pub(crate) use crate::game::ai::ai::tests::SEEDS_2 as SEEDS_3;
+    pub(crate) use crate::game::ai::rider::tests::clear_2 as clear;
+    pub(crate) use crate::game::bx::bxstring2::tests::base_3 as base_2;
+    pub(crate) use crate::game::bx::bxstring2::tests::gp_at;
+    pub(crate) use crate::game::bx::bxstring2::tests::BE_2 as BE;
+    pub(crate) use crate::game::bx::bxstring2::tests::DB;
+    pub(crate) use crate::game::bx::bxstring2::tests::RIDERS;
+    pub(crate) use crate::game::bx::bxstring2::tests::RM;
+    pub(crate) use crate::game::bx::bxstring2::tests::VTS;
+    pub(crate) use crate::game::bx::bxstring2::tests::W_2 as W;
+    pub(crate) use crate::game::object::debouncenode::tests::base;
+    pub(crate) use crate::game::object::debouncenode::tests::SEEDS;
+    pub(crate) use crate::game::sound::bankmanager::tests::mixed;
+    pub(crate) use crate::game::sound::bankmanager::tests::rng;
+    pub(crate) use crate::game::sound::bankmanager::tests::SEEDS as SEEDS_2;
+    pub(crate) use crate::game::sound::soundsys::tests::alloc_ready;
+    pub(crate) use crate::game::sound::soundsys::tests::base_9 as base_3;
+    pub(crate) use crate::game::sound::soundsys::tests::globals_7 as globals;
+    pub(crate) use crate::game::sound::soundsys::tests::load_2 as load;
+    pub(crate) use crate::game::sound::soundsys::tests::pool_7 as pool;
+    pub(crate) use crate::game::sound::soundsys::tests::w;
+    pub(crate) use crate::game::sound::soundsys::tests::BE as BE_2;
+    pub(crate) use crate::game::sound::soundsys::tests::WORLD;
+    pub(crate) use crate::game::world::worldview::tests::word;
     use ssx3_ee as ee;
-    use ssx3_ee::s01;
-    use ssx3_ee::s03;
     use ssx3_ee::s00;
+    use ssx3_ee::s01;
     use ssx3_ee::s02;
+    use ssx3_ee::s03;
     use ssx3_ee::s08;
     use ssx3_ee::s09;
     use ssx3_ee::s10;
     use ssx3_ee::s11;
     use ssx3_ee::s12;
     use ssx3_ee::s13;
-    use crate::difftest::fakes;
-    use crate::difftest::fill;
-    use crate::difftest::put_words;
-    use crate::difftest::RA as SENTINEL;
-    use crate::difftest::SP;
-    pub(crate) use crate::game::object::debouncenode::tests::SEEDS;
-    pub(crate) use crate::game::object::debouncenode::tests::base;
-    pub(crate) use crate::game::sound::bankmanager::tests::SEEDS as SEEDS_2;
-    pub(crate) use crate::game::sound::bankmanager::tests::rng;
-    pub(crate) use crate::game::sound::bankmanager::tests::mixed;
-    pub(crate) use crate::game::ai::ai::tests::SEEDS_2 as SEEDS_3;
-    pub(crate) use crate::game::ai::ai::tests::be_library;
-    pub(crate) use crate::game::world::worldview::tests::word;
-    pub(crate) use crate::game::bx::bxstring2::tests::W_2 as W;
-    pub(crate) use crate::game::bx::bxstring2::tests::RM;
-    pub(crate) use crate::game::bx::bxstring2::tests::RIDERS;
-    pub(crate) use crate::game::bx::bxstring2::tests::BE_2 as BE;
-    pub(crate) use crate::game::bx::bxstring2::tests::DB;
-    pub(crate) use crate::game::bx::bxstring2::tests::VTS;
-    pub(crate) use crate::game::bx::bxstring2::tests::gp_at;
-    pub(crate) use crate::game::bx::bxstring2::tests::base_3 as base_2;
-    pub(crate) use crate::game::sound::soundsys::tests::BE as BE_2;
-    pub(crate) use crate::game::sound::soundsys::tests::WORLD;
-    pub(crate) use crate::game::sound::soundsys::tests::w;
-    pub(crate) use crate::game::ai::rider::tests::clear_2 as clear;
-    pub(crate) use crate::game::sound::soundsys::tests::globals_7 as globals;
-    pub(crate) use crate::game::sound::soundsys::tests::pool_7 as pool;
-    pub(crate) use crate::game::sound::soundsys::tests::load_2 as load;
-    pub(crate) use crate::game::sound::soundsys::tests::alloc_ready;
-    pub(crate) use crate::game::sound::soundsys::tests::base_9 as base_3;
-
 
     #[test]
     fn be_new_race_int_get_track_peak_by_index_matches() {
-        check(ssx3_ee::s01::f_00144c78__generated, be_new_race_int_get_track_peak_by_index, 100, &|c, seed| {
-            let mut r = Rng(0x9191_9191 ^ seed as u64);
-            scramble(c, &mut r);
-            let index = seed % 8;
-            c.g[A1][0] = index as u64;
-            let base = 0x43d950u32.wrapping_add(index * 0x64);
-            c.bus.write32(base + 0x54, r.next_u32());
-        });
+        check(
+            ssx3_ee::s01::f_00144c78__generated,
+            be_new_race_int_get_track_peak_by_index,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x9191_9191 ^ seed as u64);
+                scramble(c, &mut r);
+                let index = seed % 8;
+                c.g[A1][0] = index as u64;
+                let base = 0x43d950u32.wrapping_add(index * 0x64);
+                c.bus.write32(base + 0x54, r.next_u32());
+            },
+        );
     }
-
 
     /// The `BENewRaceInt` singleton and the player-record base the generated
     /// `GetSlot` computes (`0x534fe0`).
     pub(crate) const RACE: u32 = 0x53_5bc8;
-
 
     #[test]
     fn be_new_race_int_get_track_name_by_index_matches() {
@@ -1237,7 +1320,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn be_new_race_int_set_rider_slot_matches() {
         check_lohi(
@@ -1252,7 +1334,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn be_new_race_int_set_num_ai_riders_matches() {
@@ -1283,7 +1364,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn be_new_race_int_get_event_name_matches() {
         check_lohi(
@@ -1302,7 +1382,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn be_new_race_int_get_game_mode_name_matches() {
@@ -1323,7 +1402,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn be_new_race_int_get_event_type_name_matches() {
         check_lohi(
@@ -1342,7 +1420,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn be_new_race_int_get_event_type_name_by_index_matches() {
@@ -1363,62 +1440,84 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn be_new_race_int_get_track_matches() {
-        check(ssx3_ee::s01::f_00144be0, be_new_race_int_get_track, 100, &|c, seed| {
-            let mut r = Rng(0x1005 ^ seed as u64);
-            scramble(c, &mut r);
-            c.bus.write32(NEW_RACE_TRACK + NEW_RACE_TRACK_PTR, r.next_u32());
-        });
+        check(
+            ssx3_ee::s01::f_00144be0,
+            be_new_race_int_get_track,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x1005 ^ seed as u64);
+                scramble(c, &mut r);
+                c.bus
+                    .write32(NEW_RACE_TRACK + NEW_RACE_TRACK_PTR, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn be_new_race_int_get_track_name_matches() {
-        check_lohi(ssx3_ee::s01::f_00144bf0, be_new_race_int_get_track_name, 100, &|c, seed| {
-            let mut r = Rng(0x1006 ^ seed as u64);
-            scramble(c, &mut r);
-            c.bus.write32(NEW_RACE_TRACK + NEW_RACE_TRACK_PTR, r.next_u32());
-        });
+        check_lohi(
+            ssx3_ee::s01::f_00144bf0,
+            be_new_race_int_get_track_name,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x1006 ^ seed as u64);
+                scramble(c, &mut r);
+                c.bus
+                    .write32(NEW_RACE_TRACK + NEW_RACE_TRACK_PTR, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn be_new_race_int_get_track_code_by_index_matches() {
-        check_lohi(ssx3_ee::s01::f_00144c48, be_new_race_int_get_track_code_by_index, 200, &|c, seed| {
-            let mut r = Rng(0x1007 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A1][0] = (r.next_u32() % 16) as u64;
-        });
+        check_lohi(
+            ssx3_ee::s01::f_00144c48,
+            be_new_race_int_get_track_code_by_index,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x1007 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A1][0] = (r.next_u32() % 16) as u64;
+            },
+        );
     }
-
 
     #[test]
     fn be_new_race_match() {
-        check(ssx3_ee::s01::f_00144aa8, be_new_race_int_set_num_human_players, 120, &|c, seed| {
-            let mut r = Rng(0x44aa_8000 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A1][0] = ((r.next_u32() as u64) << 32) | (seed % 8) as u64;
-            for i in 0..0x80 {
-                c.bus.write32(0x0053_5bc8 + i * 4, r.next_u32());
-            }
-        });
-        check(ssx3_ee::s01::f_00144b20, be_new_race_int_set_track_strings, 60, &|c, seed| {
-            let mut r = Rng(0x44b2_0000 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A1][0] = (DATA + 0x200) as u64;
-            for i in 0..8 {
-                c.bus.write8(DATA + 0x200 + i, (r.next_u32() | 1) as u8);
-            }
-            c.bus.write8(DATA + 0x208, 0);
-            c.bus.write32(0x0053_5bc8 + 0x40, 0);
-            for i in 0..0x60 {
-                c.bus.write32(0x0043_d900 + i * 4, 0);
-            }
-        });
+        check(
+            ssx3_ee::s01::f_00144aa8,
+            be_new_race_int_set_num_human_players,
+            120,
+            &|c, seed| {
+                let mut r = Rng(0x44aa_8000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A1][0] = ((r.next_u32() as u64) << 32) | (seed % 8) as u64;
+                for i in 0..0x80 {
+                    c.bus.write32(0x0053_5bc8 + i * 4, r.next_u32());
+                }
+            },
+        );
+        check(
+            ssx3_ee::s01::f_00144b20,
+            be_new_race_int_set_track_strings,
+            60,
+            &|c, seed| {
+                let mut r = Rng(0x44b2_0000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A1][0] = (DATA + 0x200) as u64;
+                for i in 0..8 {
+                    c.bus.write8(DATA + 0x200 + i, (r.next_u32() | 1) as u8);
+                }
+                c.bus.write8(DATA + 0x208, 0);
+                c.bus.write32(0x0053_5bc8 + 0x40, 0);
+                for i in 0..0x60 {
+                    c.bus.write32(0x0043_d900 + i * 4, 0);
+                }
+            },
+        );
     }
-
 
     #[test]
     fn be_new_race_game_mode_match() {
@@ -1446,200 +1545,273 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn benew_race_int_get_peak_rival_character_matches() {
-        check(ee::s01::f_00145750__generated, benew_race_int_get_peak_rival_character, SEEDS, &|c, seed| {
-            let _r = base(c, seed, 0x1457);
-            // `BENewPlayerInt_GetInstance` singleton (no allocation).
-            c.bus.write32((GAME_GP as u32).wrapping_sub(0x1f30), DATA + 0x800);
-            // `GetSlot(0)` is the slot number the character table is indexed
-            // by; 0 -> the byte at 0x534ff1.
-            c.bus.write32(0x5305b0, 0);
-            c.bus.write8(0x534ff1, (seed % 10) as u8);
-            // The peak the race asks for, and the peak record it comes from.
-            c.bus.write32(0x535c08, 0);
-            c.bus.write32(0x43d950 + 0x54, (seed % 5) as u32);
-            c.g[A0][0] = sx(DATA);
-        });
+        check(
+            ee::s01::f_00145750__generated,
+            benew_race_int_get_peak_rival_character,
+            SEEDS,
+            &|c, seed| {
+                let _r = base(c, seed, 0x1457);
+                // `BENewPlayerInt_GetInstance` singleton (no allocation).
+                c.bus
+                    .write32((GAME_GP as u32).wrapping_sub(0x1f30), DATA + 0x800);
+                // `GetSlot(0)` is the slot number the character table is indexed
+                // by; 0 -> the byte at 0x534ff1.
+                c.bus.write32(0x5305b0, 0);
+                c.bus.write8(0x534ff1, (seed % 10) as u8);
+                // The peak the race asks for, and the peak record it comes from.
+                c.bus.write32(0x535c08, 0);
+                c.bus.write32(0x43d950 + 0x54, (seed % 5) as u32);
+                c.g[A0][0] = sx(DATA);
+            },
+        );
     }
-
 
     #[test]
     fn benewraceint_get_section_entry_matches() {
-        check_lohi(ee::s01::f_00144d38__generated, benewraceint_get_section_entry, SEEDS_2, &|c, seed| {
-            let mut r = rng(0x0014_4d38, seed);
-            scramble(c, &mut r);
-            c.g[A1][0] = mixed(&mut r, seed, (seed % 8) as u32);
-        });
+        check_lohi(
+            ee::s01::f_00144d38__generated,
+            benewraceint_get_section_entry,
+            SEEDS_2,
+            &|c, seed| {
+                let mut r = rng(0x0014_4d38, seed);
+                scramble(c, &mut r);
+                c.g[A1][0] = mixed(&mut r, seed, (seed % 8) as u32);
+            },
+        );
     }
-
 
     #[test]
     fn benewraceint_is_station_track_by_index_matches() {
-        check_lohi(ee::s01::f_00144cc0__generated, benewraceint_is_station_track_by_index, SEEDS_2, &|c, seed| {
-            let mut r = rng(0x0014_4cc0, seed);
-            scramble(c, &mut r);
-            let index = (seed % 8) as u32;
-            c.g[A1][0] = mixed(&mut r, seed, index);
-            c.bus.write32(SECTION_TABLE + index * 0x64 + 0x58, r.next_u32());
-        });
+        check_lohi(
+            ee::s01::f_00144cc0__generated,
+            benewraceint_is_station_track_by_index,
+            SEEDS_2,
+            &|c, seed| {
+                let mut r = rng(0x0014_4cc0, seed);
+                scramble(c, &mut r);
+                let index = (seed % 8) as u32;
+                c.g[A1][0] = mixed(&mut r, seed, index);
+                c.bus
+                    .write32(SECTION_TABLE + index * 0x64 + 0x58, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn benewraceint_get_track_field60_matches() {
-        check_lohi(ee::s01::f_00144d18__generated, benewraceint_get_track_field60, SEEDS_2, &|c, seed| {
-            let mut r = rng(0x0014_4d18, seed);
-            scramble(c, &mut r);
-            let index = (seed % 8) as u32;
-            c.g[A1][0] = mixed(&mut r, seed, index);
-            c.bus.write32(SECTION_TABLE + index * 0x64 + 0x60, r.next_u32());
-        });
+        check_lohi(
+            ee::s01::f_00144d18__generated,
+            benewraceint_get_track_field60,
+            SEEDS_2,
+            &|c, seed| {
+                let mut r = rng(0x0014_4d18, seed);
+                scramble(c, &mut r);
+                let index = (seed % 8) as u32;
+                c.g[A1][0] = mixed(&mut r, seed, index);
+                c.bus
+                    .write32(SECTION_TABLE + index * 0x64 + 0x60, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn benewraceint_get_section_field10_matches() {
-        check_lohi(ee::s01::f_00144d50__generated, benewraceint_get_section_field10, SEEDS_2, &|c, seed| {
-            let mut r = rng(0x0014_4d50, seed);
-            scramble(c, &mut r);
-            let index = (seed % 8) as u32;
-            c.g[A1][0] = mixed(&mut r, seed, index);
-            c.bus.write32(TRACK_TABLE + index * 0x18 + 0x14, r.next_u32());
-        });
+        check_lohi(
+            ee::s01::f_00144d50__generated,
+            benewraceint_get_section_field10,
+            SEEDS_2,
+            &|c, seed| {
+                let mut r = rng(0x0014_4d50, seed);
+                scramble(c, &mut r);
+                let index = (seed % 8) as u32;
+                c.g[A1][0] = mixed(&mut r, seed, index);
+                c.bus
+                    .write32(TRACK_TABLE + index * 0x18 + 0x14, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn benew_race_int_get_special_event_field4_matches() {
-        check_lohi(s01::f_001455d0__generated, benew_race_int_get_special_event_field4, 200, &|c, seed| {
-            let mut r = Rng(0x1455_d0aa ^ seed as u64);
-            scramble(c, &mut r);
-            let event = 6 + (seed % 4) as i32;
-            let index = (seed % 3) as i32;
-            c.g[A1][0] = sx(event as u32);
-            c.g[A2][0] = sx(index as u32);
-            // 12 table entries (4 events x 3 indices) of 20 bytes at 0x440d18.
-            let base = 0x0044_0d18u32;
-            for i in 0..36u32 {
-                c.bus.write32(base + 0x14 * i, r.next_u32());
-                c.bus.write16(base + 0x14 * i + 4, r.next_u32() as u16);
-                c.bus.write16(base + 0x14 * i + 6, r.next_u32() as u16);
-            }
-        });
+        check_lohi(
+            s01::f_001455d0__generated,
+            benew_race_int_get_special_event_field4,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x1455_d0aa ^ seed as u64);
+                scramble(c, &mut r);
+                let event = 6 + (seed % 4) as i32;
+                let index = (seed % 3) as i32;
+                c.g[A1][0] = sx(event as u32);
+                c.g[A2][0] = sx(index as u32);
+                // 12 table entries (4 events x 3 indices) of 20 bytes at 0x440d18.
+                let base = 0x0044_0d18u32;
+                for i in 0..36u32 {
+                    c.bus.write32(base + 0x14 * i, r.next_u32());
+                    c.bus.write16(base + 0x14 * i + 4, r.next_u32() as u16);
+                    c.bus.write16(base + 0x14 * i + 6, r.next_u32() as u16);
+                }
+            },
+        );
     }
-
 
     #[test]
     fn benew_race_int_get_special_event_field6_matches() {
-        check_lohi(s01::f_00145600__generated, benew_race_int_get_special_event_field6, 200, &|c, seed| {
-            let mut r = Rng(0x1456_00aa ^ seed as u64);
-            scramble(c, &mut r);
-            let event = 6 + (seed % 4) as i32;
-            let index = (seed % 3) as i32;
-            c.g[A1][0] = sx(event as u32);
-            c.g[A2][0] = sx(index as u32);
-            let base = 0x0044_0d18u32;
-            for i in 0..36u32 {
-                c.bus.write32(base + 0x14 * i, r.next_u32());
-                c.bus.write16(base + 0x14 * i + 4, r.next_u32() as u16);
-                c.bus.write16(base + 0x14 * i + 6, r.next_u32() as u16);
-            }
-        });
+        check_lohi(
+            s01::f_00145600__generated,
+            benew_race_int_get_special_event_field6,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x1456_00aa ^ seed as u64);
+                scramble(c, &mut r);
+                let event = 6 + (seed % 4) as i32;
+                let index = (seed % 3) as i32;
+                c.g[A1][0] = sx(event as u32);
+                c.g[A2][0] = sx(index as u32);
+                let base = 0x0044_0d18u32;
+                for i in 0..36u32 {
+                    c.bus.write32(base + 0x14 * i, r.next_u32());
+                    c.bus.write16(base + 0x14 * i + 4, r.next_u32() as u16);
+                    c.bus.write16(base + 0x14 * i + 6, r.next_u32() as u16);
+                }
+            },
+        );
     }
-
 
     #[test]
     fn be_new_race_int_find_track_by_id_matches() {
-        check(ee::s01::f_00144ce0__generated, be_new_race_int_find_track_by_id, SEEDS_3, &|c, seed| {
-            let mut r = machine(c, seed, 0x144c_e0, 1);
-            be_library(c);
-            const WANTED: u32 = 0x555;
-            for i in 0..RACE_COUNT {
-                let e = RACE_TABLE + RACE_ENTRY_SIZE * i;
-                c.bus.write32(e, r.next_u32());
-                // Ids in 0x1000..0x1fff can never collide with the probe.
-                let id = if i == 7 { WANTED } else { 0x1000 + r.next_u32() % 0x1000 };
-                c.bus.write32(e + 0x5c, id);
-            }
-            c.g[A1][0] = (if seed % 2 == 0 { WANTED } else { 0x777 }) as u64;
-        });
+        check(
+            ee::s01::f_00144ce0__generated,
+            be_new_race_int_find_track_by_id,
+            SEEDS_3,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x144c_e0, 1);
+                be_library(c);
+                const WANTED: u32 = 0x555;
+                for i in 0..RACE_COUNT {
+                    let e = RACE_TABLE + RACE_ENTRY_SIZE * i;
+                    c.bus.write32(e, r.next_u32());
+                    // Ids in 0x1000..0x1fff can never collide with the probe.
+                    let id = if i == 7 {
+                        WANTED
+                    } else {
+                        0x1000 + r.next_u32() % 0x1000
+                    };
+                    c.bus.write32(e + 0x5c, id);
+                }
+                c.g[A1][0] = (if seed % 2 == 0 { WANTED } else { 0x777 }) as u64;
+            },
+        );
     }
-
 
     #[test]
     fn be_new_race_int_get_special_event_score_matches() {
-        check(ee::s01::f_00145630__generated, be_new_race_int_get_special_event_score, SEEDS_3, &|c, seed| {
-            let mut r = machine(c, seed, 0x1456_30, 1);
-            be_library(c);
-            // The `D_00440D18` records: stride 0x14, the score at +0x12.
-            for i in 0..0x40u32 {
-                c.bus.write32(0x0044_0d18 + 4 * i, r.next_u32());
-            }
-            c.g[A1][0] = if seed % 4 == 0 { 6 + (r.next_u32() % 4) as u64 } else { (r.next_u32() % 9) as u64 };
-            c.g[A2][0] = (r.next_u32() % 4) as u64;
-        });
+        check(
+            ee::s01::f_00145630__generated,
+            be_new_race_int_get_special_event_score,
+            SEEDS_3,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1456_30, 1);
+                be_library(c);
+                // The `D_00440D18` records: stride 0x14, the score at +0x12.
+                for i in 0..0x40u32 {
+                    c.bus.write32(0x0044_0d18 + 4 * i, r.next_u32());
+                }
+                c.g[A1][0] = if seed % 4 == 0 {
+                    6 + (r.next_u32() % 4) as u64
+                } else {
+                    (r.next_u32() % 9) as u64
+                };
+                c.g[A2][0] = (r.next_u32() % 4) as u64;
+            },
+        );
     }
-
 
     #[test]
     fn be_new_race_int_get_special_event_value_matches() {
-        check(ee::s01::f_00145668__generated, be_new_race_int_get_special_event_value, SEEDS_3, &|c, seed| {
-            let mut r = machine(c, seed, 0x1456_68, 1);
-            be_library(c);
-            for i in 0..0x40u32 {
-                c.bus.write32(0x0044_0d18 + 4 * i, r.next_u32());
-            }
-            c.g[A1][0] = if seed % 4 == 0 { 6 + (r.next_u32() % 4) as u64 } else { (r.next_u32() % 9) as u64 };
-            c.g[A2][0] = (r.next_u32() % 4) as u64;
-            c.g[A3][0] = (r.next_u32() % 8) as u64;
-        });
+        check(
+            ee::s01::f_00145668__generated,
+            be_new_race_int_get_special_event_value,
+            SEEDS_3,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1456_68, 1);
+                be_library(c);
+                for i in 0..0x40u32 {
+                    c.bus.write32(0x0044_0d18 + 4 * i, r.next_u32());
+                }
+                c.g[A1][0] = if seed % 4 == 0 {
+                    6 + (r.next_u32() % 4) as u64
+                } else {
+                    (r.next_u32() % 9) as u64
+                };
+                c.g[A2][0] = (r.next_u32() % 4) as u64;
+                c.g[A3][0] = (r.next_u32() % 8) as u64;
+            },
+        );
     }
-
 
     // ------------------------------------------------------------- race settings
 
     #[test]
     fn be_new_race_int_copies_match() {
-        check(ssx3_ee::s01::f_00144928__generated, be_new_race_int_commit, 40, &|c, seed| {
-            let mut r = machine(c, seed, 0x144928, 0);
-            for k in 0..0x14 {
-                word(c, 0x0053_05b0 + 4 * k, r.next_u32());
-                word(c, 0x0053_5bc8 + 4 * k, r.next_u32());
-            }
-        });
-        check(ssx3_ee::s01::f_001449e8__generated, be_new_race_int_reset, 40, &|c, seed| {
-            let mut r = machine(c, seed, 0x1449e8, 0);
-            for k in 0..0x14 {
-                word(c, 0x0053_05b0 + 4 * k, r.next_u32());
-                word(c, 0x0053_5bc8 + 4 * k, r.next_u32());
-            }
-        });
+        check(
+            ssx3_ee::s01::f_00144928__generated,
+            be_new_race_int_commit,
+            40,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x144928, 0);
+                for k in 0..0x14 {
+                    word(c, 0x0053_05b0 + 4 * k, r.next_u32());
+                    word(c, 0x0053_5bc8 + 4 * k, r.next_u32());
+                }
+            },
+        );
+        check(
+            ssx3_ee::s01::f_001449e8__generated,
+            be_new_race_int_reset,
+            40,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1449e8, 0);
+                for k in 0..0x14 {
+                    word(c, 0x0053_05b0 + 4 * k, r.next_u32());
+                    word(c, 0x0053_5bc8 + 4 * k, r.next_u32());
+                }
+            },
+        );
     }
-
 
     #[test]
     fn be_new_race_int_copies_deliver_events() {
         use crate::difftest::events::schedule;
-        check(ssx3_ee::s01::f_00144928__generated, be_new_race_int_commit, 60, &|c, seed| {
-            let mut r = machine(c, seed, 0x244928, 0);
-            for k in 0..0x14 {
-                word(c, 0x0053_05b0 + 4 * k, r.next_u32());
-                word(c, 0x0053_5bc8 + 4 * k, r.next_u32());
-            }
-            schedule(c, &mut r, seed, 0x0014_4928);
-        });
-        check(ssx3_ee::s01::f_001449e8__generated, be_new_race_int_reset, 60, &|c, seed| {
-            let mut r = machine(c, seed, 0x2449e8, 0);
-            for k in 0..0x14 {
-                word(c, 0x0053_05b0 + 4 * k, r.next_u32());
-                word(c, 0x0053_5bc8 + 4 * k, r.next_u32());
-            }
-            schedule(c, &mut r, seed, 0x0014_49e8);
-        });
+        check(
+            ssx3_ee::s01::f_00144928__generated,
+            be_new_race_int_commit,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x244928, 0);
+                for k in 0..0x14 {
+                    word(c, 0x0053_05b0 + 4 * k, r.next_u32());
+                    word(c, 0x0053_5bc8 + 4 * k, r.next_u32());
+                }
+                schedule(c, &mut r, seed, 0x0014_4928);
+            },
+        );
+        check(
+            ssx3_ee::s01::f_001449e8__generated,
+            be_new_race_int_reset,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2449e8, 0);
+                for k in 0..0x14 {
+                    word(c, 0x0053_05b0 + 4 * k, r.next_u32());
+                    word(c, 0x0053_5bc8 + 4 * k, r.next_u32());
+                }
+                schedule(c, &mut r, seed, 0x0014_49e8);
+            },
+        );
     }
-
 
     #[test]
     fn benew_race_int_get_event_record_target_matches() {
@@ -1658,7 +1830,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn benewraceint_get_event_target_matches() {

@@ -12,16 +12,40 @@ use ssx3_ee_rt::Cpu;
 
 /// Replacements in this package: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0023_1250, game_module_request_state, "GameModule_RequestState"),
-    (0x0023_12d8, game_module_is_overlay_state_done, "GameModule_IsOverlayStateDone"),
+    (
+        0x0023_1250,
+        game_module_request_state,
+        "GameModule_RequestState",
+    ),
+    (
+        0x0023_12d8,
+        game_module_is_overlay_state_done,
+        "GameModule_IsOverlayStateDone",
+    ),
     (0x0026_e448, replay_find_snapshot, "Replay_FindSnapshot"),
     (0x0027_0238, replay_free_snapshot, "Replay_FreeSnapshot"),
-    (0x0027_02f8, replay_seek_to_snapshot, "Replay_SeekToSnapshot"),
+    (
+        0x0027_02f8,
+        replay_seek_to_snapshot,
+        "Replay_SeekToSnapshot",
+    ),
     (0x0027_06f0, replay_finish, "Replay_Finish"),
     (0x0027_0970, replay_on_rider_reset, "Replay_OnRiderReset"),
-    (0x0030_a2e8, wscript_man_has_obj_script3, "WScriptMan_HasObjScript3"),
-    (0x0030_a548, wscript_man_run_obj_script3, "WScriptMan_RunObjScript3"),
-    (0x0030_a688, wscript_man_run_obj_script5, "WScriptMan_RunObjScript5"),
+    (
+        0x0030_a2e8,
+        wscript_man_has_obj_script3,
+        "WScriptMan_HasObjScript3",
+    ),
+    (
+        0x0030_a548,
+        wscript_man_run_obj_script3,
+        "WScriptMan_RunObjScript3",
+    ),
+    (
+        0x0030_a688,
+        wscript_man_run_obj_script5,
+        "WScriptMan_RunObjScript5",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -30,34 +54,118 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 mod callee {
     use super::Callee;
 
-    pub const PROCESS_STATE_CHANGE: Callee = Callee { addr: 0x0023_0f40, f: ssx3_ee::s06::f_00230f40 };
-    pub const SNAPSHOT_LIST_FIND_BY_FRAME: Callee = Callee { addr: 0x0026_e6a0, f: ssx3_ee::s07::f_0026e6a0 };
-    pub const SNAPSHOT_LIST_REMOVE: Callee = Callee { addr: 0x0026_e608, f: ssx3_ee::s07::f_0026e608 };
-    pub const SNAPSHOT_LIST_PUSH_BACK: Callee = Callee { addr: 0x0026_e5d0, f: ssx3_ee::s07::f_0026e5d0 };
-    pub const WORLD_STATE_STREAM_RESET: Callee = Callee { addr: 0x0026_d628, f: ssx3_ee::s07::f_0026d628 };
-    pub const REPLAY_SET_STATE: Callee = Callee { addr: 0x0026_f4a0, f: ssx3_ee::s07::f_0026f4a0 };
-    pub const REPLAY_END_PLAYBACK: Callee = Callee { addr: 0x0026_f980, f: ssx3_ee::s07::f_0026f980 };
-    pub const REPLAY_FIND_RIDER_INDEX: Callee = Callee { addr: 0x0027_0730, f: ssx3_ee::s07::f_00270730 };
-    pub const REPLAY_CANCEL_HIGHLIGHT: Callee = Callee { addr: 0x0027_0de0, f: ssx3_ee::s07::f_00270de0 };
-    pub const REPLAY_CANCEL_INSTANT_REPLAY: Callee = Callee { addr: 0x0027_0628, f: ssx3_ee::s07::f_00270628 };
-    pub const REPLAY_SAVE_RESUME_SNAPSHOT: Callee = Callee { addr: 0x0026_f7f8, f: ssx3_ee::s07::f_0026f7f8 };
-    pub const REPLAY_SEEK_TO_SNAPSHOT: Callee = Callee { addr: 0x0027_02f8, f: ssx3_ee::s07::f_002702f8 };
-    pub const REPLAY_STEP_FRAME: Callee = Callee { addr: 0x0027_03f0, f: ssx3_ee::s07::f_002703f0 };
-    pub const F_0026EF30: Callee = Callee { addr: 0x0026_ef30, f: ssx3_ee::s07::f_0026ef30 };
-    pub const F_0026EF80: Callee = Callee { addr: 0x0026_ef80, f: ssx3_ee::s07::f_0026ef80 };
-    pub const REPLAY_ENABLE_REPLAY_CAMERAS: Callee = Callee { addr: 0x0026_ee68, f: ssx3_ee::s07::f_0026ee68 };
-    pub const REPLAY_RESTORE_GAME_CAMERAS: Callee = Callee { addr: 0x0026_eea0, f: ssx3_ee::s07::f_0026eea0 };
-    pub const REPLAY_RESTORE_RESUME_SNAPSHOT: Callee = Callee { addr: 0x0026_f850, f: ssx3_ee::s07::f_0026f850 };
-    pub const SSX_AUDIO_SYSTEM_GET_INSTANCE: Callee = Callee { addr: 0x0028_b180, f: ssx3_ee::s07::f_0028b180 };
-    pub const SSX_AUDIO_SYSTEM_ON_REPLAY_BEGIN: Callee = Callee { addr: 0x0028_f200, f: ssx3_ee::s07::f_0028f200 };
-    pub const SSX_AUDIO_SYSTEM_ON_REPLAY_END: Callee = Callee { addr: 0x0028_f2c0, f: ssx3_ee::s07::f_0028f2c0 };
-    pub const F_0026D4D8: Callee = Callee { addr: 0x0026_d4d8, f: ssx3_ee::s07::f_0026d4d8 };
-    pub const WSCRIPT_MAN_CALL_FUNC: Callee = Callee { addr: 0x0030_9c88, f: ssx3_ee::s10::f_00309c88 };
-    pub const WSCRIPT_PROCESS_LIST_FIND_BY_ID: Callee = Callee { addr: 0x0030_b320, f: ssx3_ee::s10::f_0030b320 };
-    pub const WSCRIPT_MAN_START_PROCESS: Callee = Callee { addr: 0x0030_9750, f: ssx3_ee::s10::f_00309750 };
-    pub const WSCRIPT_MAN_STOP_PROCESS: Callee = Callee { addr: 0x0030_9798, f: ssx3_ee::s10::f_00309798 };
-    pub const WSCRIPT_PROCESS_NEXT_TASK: Callee = Callee { addr: 0x0030_7e10, f: ssx3_ee::s10::f_00307e10 };
-    pub const WSCRIPT_PROCESS_TERMINATE: Callee = Callee { addr: 0x0030_7d78, f: ssx3_ee::s10::f_00307d78 };
+    pub const PROCESS_STATE_CHANGE: Callee = Callee {
+        addr: 0x0023_0f40,
+        f: ssx3_ee::s06::f_00230f40,
+    };
+    pub const SNAPSHOT_LIST_FIND_BY_FRAME: Callee = Callee {
+        addr: 0x0026_e6a0,
+        f: ssx3_ee::s07::f_0026e6a0,
+    };
+    pub const SNAPSHOT_LIST_REMOVE: Callee = Callee {
+        addr: 0x0026_e608,
+        f: ssx3_ee::s07::f_0026e608,
+    };
+    pub const SNAPSHOT_LIST_PUSH_BACK: Callee = Callee {
+        addr: 0x0026_e5d0,
+        f: ssx3_ee::s07::f_0026e5d0,
+    };
+    pub const WORLD_STATE_STREAM_RESET: Callee = Callee {
+        addr: 0x0026_d628,
+        f: ssx3_ee::s07::f_0026d628,
+    };
+    pub const REPLAY_SET_STATE: Callee = Callee {
+        addr: 0x0026_f4a0,
+        f: ssx3_ee::s07::f_0026f4a0,
+    };
+    pub const REPLAY_END_PLAYBACK: Callee = Callee {
+        addr: 0x0026_f980,
+        f: ssx3_ee::s07::f_0026f980,
+    };
+    pub const REPLAY_FIND_RIDER_INDEX: Callee = Callee {
+        addr: 0x0027_0730,
+        f: ssx3_ee::s07::f_00270730,
+    };
+    pub const REPLAY_CANCEL_HIGHLIGHT: Callee = Callee {
+        addr: 0x0027_0de0,
+        f: ssx3_ee::s07::f_00270de0,
+    };
+    pub const REPLAY_CANCEL_INSTANT_REPLAY: Callee = Callee {
+        addr: 0x0027_0628,
+        f: ssx3_ee::s07::f_00270628,
+    };
+    pub const REPLAY_SAVE_RESUME_SNAPSHOT: Callee = Callee {
+        addr: 0x0026_f7f8,
+        f: ssx3_ee::s07::f_0026f7f8,
+    };
+    pub const REPLAY_SEEK_TO_SNAPSHOT: Callee = Callee {
+        addr: 0x0027_02f8,
+        f: ssx3_ee::s07::f_002702f8,
+    };
+    pub const REPLAY_STEP_FRAME: Callee = Callee {
+        addr: 0x0027_03f0,
+        f: ssx3_ee::s07::f_002703f0,
+    };
+    pub const F_0026EF30: Callee = Callee {
+        addr: 0x0026_ef30,
+        f: ssx3_ee::s07::f_0026ef30,
+    };
+    pub const F_0026EF80: Callee = Callee {
+        addr: 0x0026_ef80,
+        f: ssx3_ee::s07::f_0026ef80,
+    };
+    pub const REPLAY_ENABLE_REPLAY_CAMERAS: Callee = Callee {
+        addr: 0x0026_ee68,
+        f: ssx3_ee::s07::f_0026ee68,
+    };
+    pub const REPLAY_RESTORE_GAME_CAMERAS: Callee = Callee {
+        addr: 0x0026_eea0,
+        f: ssx3_ee::s07::f_0026eea0,
+    };
+    pub const REPLAY_RESTORE_RESUME_SNAPSHOT: Callee = Callee {
+        addr: 0x0026_f850,
+        f: ssx3_ee::s07::f_0026f850,
+    };
+    pub const SSX_AUDIO_SYSTEM_GET_INSTANCE: Callee = Callee {
+        addr: 0x0028_b180,
+        f: ssx3_ee::s07::f_0028b180,
+    };
+    pub const SSX_AUDIO_SYSTEM_ON_REPLAY_BEGIN: Callee = Callee {
+        addr: 0x0028_f200,
+        f: ssx3_ee::s07::f_0028f200,
+    };
+    pub const SSX_AUDIO_SYSTEM_ON_REPLAY_END: Callee = Callee {
+        addr: 0x0028_f2c0,
+        f: ssx3_ee::s07::f_0028f2c0,
+    };
+    pub const F_0026D4D8: Callee = Callee {
+        addr: 0x0026_d4d8,
+        f: ssx3_ee::s07::f_0026d4d8,
+    };
+    pub const WSCRIPT_MAN_CALL_FUNC: Callee = Callee {
+        addr: 0x0030_9c88,
+        f: ssx3_ee::s10::f_00309c88,
+    };
+    pub const WSCRIPT_PROCESS_LIST_FIND_BY_ID: Callee = Callee {
+        addr: 0x0030_b320,
+        f: ssx3_ee::s10::f_0030b320,
+    };
+    pub const WSCRIPT_MAN_START_PROCESS: Callee = Callee {
+        addr: 0x0030_9750,
+        f: ssx3_ee::s10::f_00309750,
+    };
+    pub const WSCRIPT_MAN_STOP_PROCESS: Callee = Callee {
+        addr: 0x0030_9798,
+        f: ssx3_ee::s10::f_00309798,
+    };
+    pub const WSCRIPT_PROCESS_NEXT_TASK: Callee = Callee {
+        addr: 0x0030_7e10,
+        f: ssx3_ee::s10::f_00307e10,
+    };
+    pub const WSCRIPT_PROCESS_TERMINATE: Callee = Callee {
+        addr: 0x0030_7d78,
+        f: ssx3_ee::s10::f_00307d78,
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -535,10 +643,34 @@ pub fn wscript_man_process_command(c: &mut Cpu) {
 
         // The process list base and the entry point differ per command.
         let (list_off, find_ret, action, action_ret, action_extra) = match kind {
-            Kind::Start => (0x2b4, 0x0030_a798, callee::WSCRIPT_MAN_START_PROCESS, 0x0030_a7ac, 4),
-            Kind::Stop => (0x2b8, 0x0030_a7d0, callee::WSCRIPT_MAN_STOP_PROCESS, 0x0030_a7e4, 4),
-            Kind::Next => (0x2b8, 0x0030_a808, callee::WSCRIPT_PROCESS_NEXT_TASK, 0x0030_a81c, 4),
-            Kind::Terminate => (0x2b8, 0x0030_a840, callee::WSCRIPT_PROCESS_TERMINATE, 0x0030_a854, 3),
+            Kind::Start => (
+                0x2b4,
+                0x0030_a798,
+                callee::WSCRIPT_MAN_START_PROCESS,
+                0x0030_a7ac,
+                4,
+            ),
+            Kind::Stop => (
+                0x2b8,
+                0x0030_a7d0,
+                callee::WSCRIPT_MAN_STOP_PROCESS,
+                0x0030_a7e4,
+                4,
+            ),
+            Kind::Next => (
+                0x2b8,
+                0x0030_a808,
+                callee::WSCRIPT_PROCESS_NEXT_TASK,
+                0x0030_a81c,
+                4,
+            ),
+            Kind::Terminate => (
+                0x2b8,
+                0x0030_a840,
+                callee::WSCRIPT_PROCESS_TERMINATE,
+                0x0030_a854,
+                3,
+            ),
             Kind::Return => (0, 0, callee::WSCRIPT_PROCESS_TERMINATE, 0, 0),
         };
         if !matches!(kind, Kind::Return) {
@@ -581,99 +713,140 @@ mod tests {
 
     #[test]
     fn game_module_get_transition_man_matches() {
-        check(ssx3_ee::s06::f_00230698, game_module_get_transition_man, SEEDS, &|c, seed| {
-            let mut r = Rng(0x1000_0001 ^ seed as u64);
-            machine(c, seed, 1, 0);
-            let i = (r.next_u32() % 8) as u32;
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = i as u64 | ((r.next_u32() as u64) << 32);
-            c.bus.write32(DATA + i * 4 + 0x5c, r.next_u32());
-        });
+        check(
+            ssx3_ee::s06::f_00230698,
+            game_module_get_transition_man,
+            SEEDS,
+            &|c, seed| {
+                let mut r = Rng(0x1000_0001 ^ seed as u64);
+                machine(c, seed, 1, 0);
+                let i = (r.next_u32() % 8) as u32;
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = i as u64 | ((r.next_u32() as u64) << 32);
+                c.bus.write32(DATA + i * 4 + 0x5c, r.next_u32());
+            },
+        );
     }
 
     #[test]
     fn game_module_get_splash_manager_matches() {
-        check(ssx3_ee::s06::f_002306a8, game_module_get_splash_manager, SEEDS, &|c, seed| {
-            let mut r = Rng(0x1000_0002 ^ seed as u64);
-            machine(c, seed, 2, 0);
-            let i = (r.next_u32() % 8) as u32;
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = i as u64;
-            c.bus.write32(DATA + i * 4 + 0x68, r.next_u32());
-        });
+        check(
+            ssx3_ee::s06::f_002306a8,
+            game_module_get_splash_manager,
+            SEEDS,
+            &|c, seed| {
+                let mut r = Rng(0x1000_0002 ^ seed as u64);
+                machine(c, seed, 2, 0);
+                let i = (r.next_u32() % 8) as u32;
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = i as u64;
+                c.bus.write32(DATA + i * 4 + 0x68, r.next_u32());
+            },
+        );
     }
 
     #[test]
     fn game_module_is_overlay_state_done_matches() {
-        covered(ssx3_ee::s06::f_002312d8, game_module_is_overlay_state_done, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 3, 1);
-            c.g[A0][0] = DATA as u64;
-            let pending = if seed % 3 == 0 { 0 } else { r.next_u32() | 1 };
-            c.bus.write32(DATA + 0x208, pending);
-            let obj = DATA + 0x2000;
-            let have_obj = seed % 3 != 1;
-            c.bus.write32(DATA + 0x204, if have_obj { obj } else { 0 });
-            if have_obj {
-                let vt = vtable(c, &mut r, &[0x40]);
-                c.bus.write32(obj + 0xc, vt);
-            }
-        });
+        covered(
+            ssx3_ee::s06::f_002312d8,
+            game_module_is_overlay_state_done,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 3, 1);
+                c.g[A0][0] = DATA as u64;
+                let pending = if seed % 3 == 0 { 0 } else { r.next_u32() | 1 };
+                c.bus.write32(DATA + 0x208, pending);
+                let obj = DATA + 0x2000;
+                let have_obj = seed % 3 != 1;
+                c.bus.write32(DATA + 0x204, if have_obj { obj } else { 0 });
+                if have_obj {
+                    let vt = vtable(c, &mut r, &[0x40]);
+                    c.bus.write32(obj + 0xc, vt);
+                }
+            },
+        );
     }
 
     #[test]
     fn replay_find_snapshot_matches() {
-        check(ssx3_ee::s07::f_0026e448, replay_find_snapshot, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 4, 0);
-            c.g[A0][0] = DATA as u64;
-            let want = match seed % 4 {
-                0 => 0,
-                1 => 5,
-                2 => 10,
-                _ => r.next_u32() % 20,
-            };
-            c.g[A1][0] = want as u64;
-            let head = if seed % 2 == 0 { 0 } else { DATA + 0x3000 };
-            c.bus.write32(DATA + 0x3b0, head);
-            c.bus.write32(DATA + 0x3000 + 0x14, DATA + 0x3100);
-            c.bus.write32(DATA + 0x3000 + 0x30, 5);
-            c.bus.write32(DATA + 0x3100 + 0x14, 0);
-            c.bus.write32(DATA + 0x3100 + 0x30, 10);
-        });
+        check(
+            ssx3_ee::s07::f_0026e448,
+            replay_find_snapshot,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 4, 0);
+                c.g[A0][0] = DATA as u64;
+                let want = match seed % 4 {
+                    0 => 0,
+                    1 => 5,
+                    2 => 10,
+                    _ => r.next_u32() % 20,
+                };
+                c.g[A1][0] = want as u64;
+                let head = if seed % 2 == 0 { 0 } else { DATA + 0x3000 };
+                c.bus.write32(DATA + 0x3b0, head);
+                c.bus.write32(DATA + 0x3000 + 0x14, DATA + 0x3100);
+                c.bus.write32(DATA + 0x3000 + 0x30, 5);
+                c.bus.write32(DATA + 0x3100 + 0x14, 0);
+                c.bus.write32(DATA + 0x3100 + 0x30, 10);
+            },
+        );
     }
 
     #[test]
     fn replay_highlight_slot_clear_matches() {
-        check(ssx3_ee::s07::f_0026e800, replay_highlight_slot_clear, SEEDS, &|c, seed| {
-            let mut r = Rng(0x1000_0005 ^ seed as u64);
-            machine(c, seed, 5, 0);
-            c.g[A0][0] = DATA as u64;
-            let idx = match seed % 4 {
-                0 => 31,
-                1 => 0,
-                _ => r.next_u32() % 32,
-            };
-            c.bus.write32(DATA, idx);
-            let slot = if seed % 2 == 0 { 0 } else { DATA + 0x3000 };
-            c.bus.write32(DATA + 0xb0, slot);
-            c.bus.write8(DATA + 0x3000 + 0x1e, (r.next_u32() & 0xff) as u8);
-        });
+        check(
+            ssx3_ee::s07::f_0026e800,
+            replay_highlight_slot_clear,
+            SEEDS,
+            &|c, seed| {
+                let mut r = Rng(0x1000_0005 ^ seed as u64);
+                machine(c, seed, 5, 0);
+                c.g[A0][0] = DATA as u64;
+                let idx = match seed % 4 {
+                    0 => 31,
+                    1 => 0,
+                    _ => r.next_u32() % 32,
+                };
+                c.bus.write32(DATA, idx);
+                let slot = if seed % 2 == 0 { 0 } else { DATA + 0x3000 };
+                c.bus.write32(DATA + 0xb0, slot);
+                c.bus
+                    .write8(DATA + 0x3000 + 0x1e, (r.next_u32() & 0xff) as u8);
+            },
+        );
     }
 
     #[test]
     fn replay_free_snapshot_matches() {
-        check(ssx3_ee::s07::f_00270238, replay_free_snapshot, SEEDS, &|c, seed| {
-            machine(c, seed, 6, 0);
-            c.g[A0][0] = DATA as u64;
-            let snap = DATA + 0x3000;
-            c.g[A1][0] = snap as u64;
-            // live list at +0x3b0, free list at +0x3bc
-            c.bus.write32(DATA + 0x3b0, if seed % 2 == 0 { 0 } else { DATA + 0x3100 });
-            c.bus.write32(DATA + 0x3b0 + 4, if seed % 3 == 0 { 0 } else { DATA + 0x3100 });
-            c.bus.write32(DATA + 0x3bc, if seed % 2 == 0 { snap } else { 0 });
-            c.bus.write32(DATA + 0x3bc + 4, if seed % 3 == 0 { 0 } else { DATA + 0x3200 });
-            c.bus.write32(snap + 0x14, if seed % 2 == 0 { 0 } else { DATA + 0x3300 });
-            c.bus.write32(snap + 0x18, if seed % 3 == 0 { 0 } else { DATA + 0x3400 });
-        });
+        check(
+            ssx3_ee::s07::f_00270238,
+            replay_free_snapshot,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 6, 0);
+                c.g[A0][0] = DATA as u64;
+                let snap = DATA + 0x3000;
+                c.g[A1][0] = snap as u64;
+                // live list at +0x3b0, free list at +0x3bc
+                c.bus
+                    .write32(DATA + 0x3b0, if seed % 2 == 0 { 0 } else { DATA + 0x3100 });
+                c.bus.write32(
+                    DATA + 0x3b0 + 4,
+                    if seed % 3 == 0 { 0 } else { DATA + 0x3100 },
+                );
+                c.bus
+                    .write32(DATA + 0x3bc, if seed % 2 == 0 { snap } else { 0 });
+                c.bus.write32(
+                    DATA + 0x3bc + 4,
+                    if seed % 3 == 0 { 0 } else { DATA + 0x3200 },
+                );
+                c.bus
+                    .write32(snap + 0x14, if seed % 2 == 0 { 0 } else { DATA + 0x3300 });
+                c.bus
+                    .write32(snap + 0x18, if seed % 3 == 0 { 0 } else { DATA + 0x3400 });
+            },
+        );
     }
 
     #[test]
@@ -696,88 +869,137 @@ mod tests {
             c.bus.write32(DATA + 0x4000 + 0xc, 0);
             schedule(c, &mut r, seed, 0x0027_02f8)
         };
-        check_events(ssx3_ee::s07::f_002702f8, replay_seek_to_snapshot, SEEDS, &setup);
+        check_events(
+            ssx3_ee::s07::f_002702f8,
+            replay_seek_to_snapshot,
+            SEEDS,
+            &setup,
+        );
     }
 
     #[test]
     fn replay_on_rider_reset_matches() {
-        check(ssx3_ee::s07::f_00270970, replay_on_rider_reset, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 8, 0);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = ptr(&mut r) as u64;
-            c.bus.write32(DATA + 0x61c, if seed % 4 == 0 { 0 } else { r.next_u32() | 1 });
-            c.bus.write32(
-                DATA + 0x620,
-                if seed % 4 == 0 && seed % 3 == 0 { 0 } else { r.next_u32() | 1 },
-            );
-            c.bus.write32(
-                DATA,
-                if seed % 4 == 0 && seed % 3 == 0 && seed % 2 == 0 { 0 } else { r.next_u32() | 1 },
-            );
-            // No world: Replay_FindRiderIndex returns -1 immediately.
-            c.bus.write32(GAME_GP - 0x848, 0);
-        });
+        check(
+            ssx3_ee::s07::f_00270970,
+            replay_on_rider_reset,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 8, 0);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = ptr(&mut r) as u64;
+                c.bus.write32(
+                    DATA + 0x61c,
+                    if seed % 4 == 0 { 0 } else { r.next_u32() | 1 },
+                );
+                c.bus.write32(
+                    DATA + 0x620,
+                    if seed % 4 == 0 && seed % 3 == 0 {
+                        0
+                    } else {
+                        r.next_u32() | 1
+                    },
+                );
+                c.bus.write32(
+                    DATA,
+                    if seed % 4 == 0 && seed % 3 == 0 && seed % 2 == 0 {
+                        0
+                    } else {
+                        r.next_u32() | 1
+                    },
+                );
+                // No world: Replay_FindRiderIndex returns -1 immediately.
+                c.bus.write32(GAME_GP - 0x848, 0);
+            },
+        );
     }
 
     #[test]
     fn game_module_request_state_matches() {
-        check(ssx3_ee::s06::f_00231250, game_module_request_state, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 9, 1);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = r.next_u32() as u64;
-            c.g[A2][0] = r.next_u32() as u64;
-            c.g[A3][0] = (seed % 2) as u64;
-            // Make GameModule_ProcessStateChange bail out of its dispatch:
-            // state field +0x200 = 0 -> straight to its exit path.
-            c.bus.write32(DATA + 0x200, 0);
-            c.bus.write32(DATA + 0x208, 0);
-            c.bus.write32(DATA + 0x204, 0);
-            c.bus.write32(DATA + 0x214, 0);
-        });
+        check(
+            ssx3_ee::s06::f_00231250,
+            game_module_request_state,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 9, 1);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = r.next_u32() as u64;
+                c.g[A3][0] = (seed % 2) as u64;
+                // Make GameModule_ProcessStateChange bail out of its dispatch:
+                // state field +0x200 = 0 -> straight to its exit path.
+                c.bus.write32(DATA + 0x200, 0);
+                c.bus.write32(DATA + 0x208, 0);
+                c.bus.write32(DATA + 0x204, 0);
+                c.bus.write32(DATA + 0x214, 0);
+            },
+        );
     }
 
     #[test]
     fn replay_finish_matches() {
-        check(ssx3_ee::s07::f_002706f0, replay_finish, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 10, 0);
-            c.g[A0][0] = DATA as u64;
-            // Replay_EndPlayback early-returns for states 0xe/0xf.
-            c.bus.write32(DATA, 0xe);
-            c.bus.write32(DATA + 0x61c, if seed % 2 == 0 { r.next_u32() | 1 } else { 0 });
-        });
+        check(
+            ssx3_ee::s07::f_002706f0,
+            replay_finish,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 10, 0);
+                c.g[A0][0] = DATA as u64;
+                // Replay_EndPlayback early-returns for states 0xe/0xf.
+                c.bus.write32(DATA, 0xe);
+                c.bus.write32(
+                    DATA + 0x61c,
+                    if seed % 2 == 0 { r.next_u32() | 1 } else { 0 },
+                );
+            },
+        );
     }
 
     #[test]
     fn wscript_man_has_obj_script3_matches() {
-        check(ssx3_ee::s10::f_0030a2e8, wscript_man_has_obj_script3, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 11, 0);
-            c.g[A0][0] = DATA as u64;
-            let obj = DATA + 0x100;
-            c.g[A1][0] = obj as u64;
-            setup_script_lookup(c, &mut r, obj);
-        });
+        check(
+            ssx3_ee::s10::f_0030a2e8,
+            wscript_man_has_obj_script3,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 11, 0);
+                c.g[A0][0] = DATA as u64;
+                let obj = DATA + 0x100;
+                c.g[A1][0] = obj as u64;
+                setup_script_lookup(c, &mut r, obj);
+            },
+        );
     }
 
     #[test]
     fn wscript_man_run_obj_script3_matches() {
-        check(ssx3_ee::s10::f_0030a548, wscript_man_run_obj_script3, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 12, 0);
-            c.g[A0][0] = DATA as u64;
-            let obj = DATA + 0x100;
-            c.g[A1][0] = obj as u64;
-            setup_script_lookup(c, &mut r, obj);
-        });
+        check(
+            ssx3_ee::s10::f_0030a548,
+            wscript_man_run_obj_script3,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 12, 0);
+                c.g[A0][0] = DATA as u64;
+                let obj = DATA + 0x100;
+                c.g[A1][0] = obj as u64;
+                setup_script_lookup(c, &mut r, obj);
+            },
+        );
     }
 
     #[test]
     fn wscript_man_run_obj_script5_matches() {
-        check(ssx3_ee::s10::f_0030a688, wscript_man_run_obj_script5, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 13, 0);
-            c.g[A0][0] = DATA as u64;
-            let obj = DATA + 0x100;
-            c.g[A1][0] = obj as u64;
-            setup_script_lookup(c, &mut r, obj);
-        });
+        check(
+            ssx3_ee::s10::f_0030a688,
+            wscript_man_run_obj_script5,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 13, 0);
+                c.g[A0][0] = DATA as u64;
+                let obj = DATA + 0x100;
+                c.g[A1][0] = obj as u64;
+                setup_script_lookup(c, &mut r, obj);
+            },
+        );
     }
 
     /// The manager cache and object fields `FUN_003a6b78`/`FUN_003ad120` read,
@@ -792,26 +1014,31 @@ mod tests {
 
     #[test]
     fn wscript_man_process_command_matches() {
-        check(ssx3_ee::s10::f_0030a728, wscript_man_process_command, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 14, 0);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = match seed % 3 {
-                0 => u64::MAX,
-                1 => 0,
-                _ => r.next_u32() as u64,
-            };
-            c.g[A2][0] = match seed % 5 {
-                0 => 0,
-                1 => 1,
-                2 => 2,
-                3 => 0x12,
-                _ => r.next_u32() as u64,
-            };
-            // Empty process lists and no default process: the find returns 0
-            // and no action is taken.
-            c.bus.write32(DATA + 0x2a4, 0);
-            c.bus.write32(DATA + 0x2b4, 0);
-            c.bus.write32(DATA + 0x2b8, 0);
-        });
+        check(
+            ssx3_ee::s10::f_0030a728,
+            wscript_man_process_command,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 14, 0);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = match seed % 3 {
+                    0 => u64::MAX,
+                    1 => 0,
+                    _ => r.next_u32() as u64,
+                };
+                c.g[A2][0] = match seed % 5 {
+                    0 => 0,
+                    1 => 1,
+                    2 => 2,
+                    3 => 0x12,
+                    _ => r.next_u32() as u64,
+                };
+                // Empty process lists and no default process: the find returns 0
+                // and no action is taken.
+                c.bus.write32(DATA + 0x2a4, 0);
+                c.bus.write32(DATA + 0x2b4, 0);
+                c.bus.write32(DATA + 0x2b8, 0);
+            },
+        );
     }
 }

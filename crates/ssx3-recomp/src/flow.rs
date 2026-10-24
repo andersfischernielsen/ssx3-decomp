@@ -41,15 +41,24 @@ impl Disasm {
 enum Term {
     None,
     /// Branch to `target`; `fall_through` says whether pc+8 is also reachable.
-    Branch { target: u32, fall_through: bool },
+    Branch {
+        target: u32,
+        fall_through: bool,
+    },
     /// Jump to `target` (None = indirect); `fall_through` for call returns.
-    Jump { target: Option<u32>, fall_through: bool },
+    Jump {
+        target: Option<u32>,
+        fall_through: bool,
+    },
     Stop,
 }
 
 fn classify(inst: &Instruction, pc: u32) -> Term {
     use Operands::*;
-    let btarget = |offset: i16| pc.wrapping_add(4).wrapping_add((offset as i32 as u32).wrapping_mul(4));
+    let btarget = |offset: i16| {
+        pc.wrapping_add(4)
+            .wrapping_add((offset as i32 as u32).wrapping_mul(4))
+    };
     let jtarget = |t: u32| (pc.wrapping_add(4) & 0xF000_0000) | (t << 2);
 
     match (inst.mnemonic, inst.operands) {
@@ -63,8 +72,8 @@ fn classify(inst: &Instruction, pc: u32) -> Term {
             fall_through: true,
         },
         (
-            "blez" | "bgtz" | "blezl" | "bgtzl" | "bltz" | "bgez" | "bltzl" | "bgezl"
-            | "bltzal" | "bgezal" | "bltzall" | "bgezall",
+            "blez" | "bgtz" | "blezl" | "bgtzl" | "bltz" | "bgez" | "bltzl" | "bgezl" | "bltzal"
+            | "bgezal" | "bltzall" | "bgezall",
             Branch1 { offset, .. },
         ) => Term::Branch {
             target: btarget(offset),
@@ -134,7 +143,10 @@ pub fn disassemble(elf: &Elf, entry: u32, max: usize) -> Disasm {
                             work.push_back(pc.wrapping_add(4));
                         }
                     }
-                    Term::Jump { target, fall_through } => {
+                    Term::Jump {
+                        target,
+                        fall_through,
+                    } => {
                         if let Some(target) = target {
                             work.push_back(target);
                         }

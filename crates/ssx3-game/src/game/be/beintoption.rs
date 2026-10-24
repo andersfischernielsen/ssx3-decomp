@@ -4,53 +4,109 @@
 use crate::abi;
 use crate::call;
 use crate::call::call_ptr;
+use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
+use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::be::bedbreward::destroy_instance;
+pub(crate) use crate::game::be::bedbreward::BUILTIN_DELETE;
+pub(crate) use crate::game::be::beintnetwork::copy_block;
+pub(crate) use crate::game::be::beintnetwork::OPTION_GP;
+pub(crate) use crate::game::be::bestate2::ea;
+pub(crate) use crate::game::fe::debugfe::at as at_2;
+pub(crate) use crate::game::fe::debugfe::r32_2 as r32;
+pub(crate) use crate::game::fe::festateload::at;
+pub(crate) use crate::game::fe::festateload::glo;
+pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
+pub(crate) use crate::game::fe::ovtemplatepausemenu::sw;
 use crate::guest::Addr;
+use crate::ps2f::FpuF32;
+use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::Cpu;
-use crate::call::guest;
-use crate::call::Flow;
-use crate::ps2f::FpuF32;
-use ssx3_ee as ee;
 use ssx3_ee_rt::vu0::Src;
-use crate::events::back_edge_unwinds;
-use crate::call::sp;
-pub(crate) use crate::game::be::bedbreward::BUILTIN_DELETE;
-pub(crate) use crate::game::be::beintnetwork::OPTION_GP;
-pub(crate) use crate::game::be::bedbreward::destroy_instance;
-pub(crate) use crate::game::fe::festateload::at;
-pub(crate) use crate::game::fe::festateload::glo;
-pub(crate) use crate::game::be::bestate2::ea;
-pub(crate) use crate::game::be::beintnetwork::copy_block;
-pub(crate) use crate::game::fe::debugfe::at as at_2;
-pub(crate) use crate::game::fe::debugfe::r32_2 as r32;
-pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
-pub(crate) use crate::game::fe::ovtemplatepausemenu::sw;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0014_f2a8, be_option_int_commit, "BEOptionInt_Commit"),
     (0x0014_f360, be_option_int_reset, "BEOptionInt_Reset"),
     (0x0014_f418, be_option_int_ctor, "BEOptionInt_ctor"),
-    (0x0014_f458, be_option_int_set_sound_defaults, "BEOptionInt_SetSoundDefaults"),
-    (0x0014_f4f8, be_option_int_set_game_defaults, "BEOptionInt_SetGameDefaults"),
-    (0x0014_f600, be_option_int_set_hud_defaults, "BEOptionInt_SetHUDDefaults"),
-    (0x0014_f648, beoption_int_reset_singleton, "BEOptionInt_ResetSingleton"),
-    (0x0014_f678, be_option_int_get_quick_message_key, "BEOptionInt_GetQuickMessageKey"),
-    (0x0014_f6a8, be_option_int_get_quick_message, "BEOptionInt_GetQuickMessage"),
-    (0x0014_f6e8, be_option_int_reset_quick_message, "BEOptionInt_ResetQuickMessage"),
-    (0x0014_f758, be_option_int_reset_quick_messages, "BEOptionInt_ResetQuickMessages"),
-    (0x0014_f7a8, be_option_int_get_player_handicap, "BEOptionInt_GetPlayerHandicap"),
-    (0x0014_f7e8, be_option_int_get_computer_handicap, "BEOptionInt_GetComputerHandicap"),
-    (0x0014_f810, be_option_int_is_any_handicap_set, "BEOptionInt_IsAnyHandicapSet"),
-    (0x0014_f870, be_option_int_get_max_handicap, "BEOptionInt_GetMaxHandicap"),
-    (0x0014_f898, be_option_int_swap_player_settings, "BEOptionInt_SwapPlayerSettings"),
-    (0x0015_bd30, be_option_int_destroy_instance, "BEOptionInt_DestroyInstance"),
+    (
+        0x0014_f458,
+        be_option_int_set_sound_defaults,
+        "BEOptionInt_SetSoundDefaults",
+    ),
+    (
+        0x0014_f4f8,
+        be_option_int_set_game_defaults,
+        "BEOptionInt_SetGameDefaults",
+    ),
+    (
+        0x0014_f600,
+        be_option_int_set_hud_defaults,
+        "BEOptionInt_SetHUDDefaults",
+    ),
+    (
+        0x0014_f648,
+        beoption_int_reset_singleton,
+        "BEOptionInt_ResetSingleton",
+    ),
+    (
+        0x0014_f678,
+        be_option_int_get_quick_message_key,
+        "BEOptionInt_GetQuickMessageKey",
+    ),
+    (
+        0x0014_f6a8,
+        be_option_int_get_quick_message,
+        "BEOptionInt_GetQuickMessage",
+    ),
+    (
+        0x0014_f6e8,
+        be_option_int_reset_quick_message,
+        "BEOptionInt_ResetQuickMessage",
+    ),
+    (
+        0x0014_f758,
+        be_option_int_reset_quick_messages,
+        "BEOptionInt_ResetQuickMessages",
+    ),
+    (
+        0x0014_f7a8,
+        be_option_int_get_player_handicap,
+        "BEOptionInt_GetPlayerHandicap",
+    ),
+    (
+        0x0014_f7e8,
+        be_option_int_get_computer_handicap,
+        "BEOptionInt_GetComputerHandicap",
+    ),
+    (
+        0x0014_f810,
+        be_option_int_is_any_handicap_set,
+        "BEOptionInt_IsAnyHandicapSet",
+    ),
+    (
+        0x0014_f870,
+        be_option_int_get_max_handicap,
+        "BEOptionInt_GetMaxHandicap",
+    ),
+    (
+        0x0014_f898,
+        be_option_int_swap_player_settings,
+        "BEOptionInt_SwapPlayerSettings",
+    ),
+    (
+        0x0015_bd30,
+        be_option_int_destroy_instance,
+        "BEOptionInt_DestroyInstance",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -59,74 +115,91 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 pub(crate) mod callee {
     use super::ee;
     use super::Callee;
-    pub(crate) use crate::game::camera::camera::callee::MEASURE_ROW;
-    pub(crate) use crate::game::camera::camera::callee::MEMCARD_SET_STATE;
-    pub(crate) use crate::game::camera::camera::callee::TRANSITION_MAN_START;
-    pub(crate) use crate::game::camera::camera::callee::WSCRIPT_DELETE_ALL;
-    pub(crate) use crate::game::camera::camera::callee::SPHERE_TREE_RESET_TRANSFORM;
-    pub(crate) use crate::game::camera::camera::callee::CAM_CONTROLLER_RESET;
-    pub(crate) use crate::game::camera::camera::callee::MANUAL_CAM_ALGO_BASE_CTOR;
-    pub(crate) use crate::game::camera::camera::callee::CHASE_CAMERA_ALGORITHM_CTOR;
-    pub(crate) use crate::game::camera::camera::callee::CHASE_CAM_SET_ALGORITHM_2 as CHASE_CAM_SET_ALGORITHM;
-    pub(crate) use crate::game::camera::camera::callee::CAMERA_TRIGGER_FREE_TRIGGERS;
-    pub(crate) use crate::game::camera::camera::callee::CAMERA_TRIGGER_RESET_HEADER;
-    pub(crate) use crate::game::camera::camera::callee::UI_TEXTURE_SET_FIND;
-    pub(crate) use crate::game::camera::camera::callee::UI_STATE_CTOR;
+    pub(crate) use crate::game::camera::camera::callee::BEBAGT_RESET_PROFILE;
     pub(crate) use crate::game::camera::camera::callee::BENEWPLAYER_GET_SLOT;
     pub(crate) use crate::game::camera::camera::callee::BE_LIBRARY_RESET_PROFILE;
-    pub(crate) use crate::game::camera::camera::callee::BEBAGT_RESET_PROFILE;
     pub(crate) use crate::game::camera::camera::callee::BE_OPTION_GET_MAX_HANDICAP;
+    pub(crate) use crate::game::camera::camera::callee::CAMERA_TRIGGER_FREE_TRIGGERS;
+    pub(crate) use crate::game::camera::camera::callee::CAMERA_TRIGGER_RESET_HEADER;
+    pub(crate) use crate::game::camera::camera::callee::CAM_CONTROLLER_RESET;
+    pub(crate) use crate::game::camera::camera::callee::CHASE_CAMERA_ALGORITHM_CTOR;
+    pub(crate) use crate::game::camera::camera::callee::CHASE_CAM_SET_ALGORITHM_2 as CHASE_CAM_SET_ALGORITHM;
     pub(crate) use crate::game::camera::camera::callee::FE_REFRESH_PROFILE_LIST;
     pub(crate) use crate::game::camera::camera::callee::FE_REFRESH_SLOTS;
+    pub(crate) use crate::game::camera::camera::callee::MANUAL_CAM_ALGO_BASE_CTOR;
+    pub(crate) use crate::game::camera::camera::callee::MEASURE_ROW;
+    pub(crate) use crate::game::camera::camera::callee::MEMCARD_SET_STATE;
+    pub(crate) use crate::game::camera::camera::callee::SPHERE_TREE_RESET_TRANSFORM;
+    pub(crate) use crate::game::camera::camera::callee::TRANSITION_MAN_START;
+    pub(crate) use crate::game::camera::camera::callee::UI_STATE_CTOR;
+    pub(crate) use crate::game::camera::camera::callee::UI_TEXTURE_SET_FIND;
+    pub(crate) use crate::game::camera::camera::callee::WSCRIPT_DELETE_ALL;
 
+    pub const REPLAY_FIND_SNAPSHOT: Callee = Callee {
+        addr: 0x0026_e448,
+        f: ee::s07::Replay_FindSnapshot,
+    };
 
-    pub const REPLAY_FIND_SNAPSHOT: Callee =
-        Callee { addr: 0x0026_e448, f: ee::s07::Replay_FindSnapshot };
+    pub const INSEQ_GET_INSTANCE: Callee = Callee {
+        addr: 0x0027_2cc0,
+        f: ee::s07::InSeq_GetInstance,
+    };
 
-    pub const INSEQ_GET_INSTANCE: Callee =
-        Callee { addr: 0x0027_2cc0, f: ee::s07::InSeq_GetInstance };
+    pub const INSEQ_INSTANCE_STOP: Callee = Callee {
+        addr: 0x0027_4918,
+        f: ee::s07::InSeq_InstanceStop,
+    };
 
-    pub const INSEQ_INSTANCE_STOP: Callee =
-        Callee { addr: 0x0027_4918, f: ee::s07::InSeq_InstanceStop };
+    pub const SCRIPT_ENGINE_CLEAR_PROCESS: Callee = Callee {
+        addr: 0x0028_2c88,
+        f: ee::s07::ScriptEngine_ClearProcess,
+    };
 
-    pub const SCRIPT_ENGINE_CLEAR_PROCESS: Callee =
-        Callee { addr: 0x0028_2c88, f: ee::s07::ScriptEngine_ClearProcess };
+    pub const STREAM_ARRAY_STOP: Callee = Callee {
+        addr: 0x002a_ae40,
+        f: ee::s08::StreamArray_Stop,
+    };
 
-    pub const STREAM_ARRAY_STOP: Callee =
-        Callee { addr: 0x002a_ae40, f: ee::s08::StreamArray_Stop };
+    pub const C_WORLD_SOUND_RELOCATE_EMITTERS: Callee = Callee {
+        addr: 0x002b_6b50,
+        f: ee::s08::cWorldSound_RelocateEmitters,
+    };
 
-    pub const C_WORLD_SOUND_RELOCATE_EMITTERS: Callee =
-        Callee { addr: 0x002b_6b50, f: ee::s08::cWorldSound_RelocateEmitters };
+    pub const USTR_FROM_ASCII_2: Callee = Callee {
+        addr: 0x002c_2540,
+        f: ee::s08::UStr_FromAscii_2,
+    };
 
-    pub const USTR_FROM_ASCII_2: Callee =
-        Callee { addr: 0x002c_2540, f: ee::s08::UStr_FromAscii_2 };
+    pub const WORLD_PAINTER_GET_IRRADIANCE_NAME2: Callee = Callee {
+        addr: 0x002e_f198,
+        f: ee::s09::WorldPainter_GetIrradianceName2,
+    };
 
-    pub const WORLD_PAINTER_GET_IRRADIANCE_NAME2: Callee =
-        Callee { addr: 0x002e_f198, f: ee::s09::WorldPainter_GetIrradianceName2 };
+    pub const IRRADIANCE_REF_GET_ENTRY: Callee = Callee {
+        addr: 0x002e_e010,
+        f: ee::s09::IrradianceRef_GetEntry,
+    };
 
-    pub const IRRADIANCE_REF_GET_ENTRY: Callee =
-        Callee { addr: 0x002e_e010, f: ee::s09::IrradianceRef_GetEntry };
-
-    pub const BE_OPTION_INT_GET_MAX_HANDICAP: Callee =
-        Callee { addr: 0x0014_f870, f: ee::s01::BEOptionInt_GetMaxHandicap };
+    pub const BE_OPTION_INT_GET_MAX_HANDICAP: Callee = Callee {
+        addr: 0x0014_f870,
+        f: ee::s01::BEOptionInt_GetMaxHandicap,
+    };
 }
 
 /// `gp`-relative globals used here.
 pub(crate) mod g {
-    pub(crate) use crate::game::fe::festateload::g::WORLD_TRIGGER_MANAGER;
+    pub(crate) use crate::game::fe::festateload::g::BE_OPTION_SINGLETON;
+    pub(crate) use crate::game::fe::festateload::g::BOLT_FILE_CACHE;
+    pub(crate) use crate::game::fe::festateload::g::FE_BASE_BACK;
     pub(crate) use crate::game::fe::festateload::g::SAVE_BUFFER;
     pub(crate) use crate::game::fe::festateload::g::SAVE_BUFFER_END;
-    pub(crate) use crate::game::fe::festateload::g::BE_OPTION_SINGLETON;
-    pub(crate) use crate::game::fe::festateload::g::FE_BASE_BACK;
-    pub(crate) use crate::game::fe::festateload::g::BOLT_FILE_CACHE;
+    pub(crate) use crate::game::fe::festateload::g::WORLD_TRIGGER_MANAGER;
 }
-
 
 /// `BEOptionInt_DestroyInstance()` (0x15bd30): as above for `gp - 0x1ee4`.
 pub fn be_option_int_destroy_instance(c: &mut Cpu) {
     destroy_instance(c, OPTION_GP, 0x0015_bd44);
 }
-
 
 // ---------------------------------------------------------------------------
 // Options.
@@ -158,7 +231,6 @@ pub fn be_option_int_set_hud_defaults(c: &mut Cpu) {
     })
 }
 
-
 /// `BEOptionInt_GetQuickMessageKey(self, index)` (0x14f678): format the index
 /// into a small stack buffer and look the key up.
 pub fn be_option_int_get_quick_message_key(c: &mut Cpu) {
@@ -179,7 +251,6 @@ pub fn be_option_int_get_quick_message_key(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `BEOptionInt_GetQuickMessage(self, index)` (0x14f6a8): the quick-message
 /// string for `index` at `0x535617 + index*0x40`, or 0 when empty.
@@ -206,7 +277,6 @@ pub fn be_option_int_get_quick_message(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Option defaults and quick messages.
 
@@ -232,7 +302,6 @@ pub fn be_option_int_ctor(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `BEOptionInt_SetSoundDefaults(self)` (0x14f458): clear and set the sound
 /// bits of the option flags word at 0x53610, then notify the profile.
@@ -282,7 +351,6 @@ pub fn be_option_int_set_sound_defaults(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `BEOptionInt_SetGameDefaults(self)` (0x14f4f8): set the game-mode bits of
 /// the option flags word from the current mode, then notify the profile.
@@ -365,7 +433,6 @@ pub fn be_option_int_set_game_defaults(c: &mut Cpu) {
     })
 }
 
-
 /// The shared "apply the mode bits" tail of `SetGameDefaults`.
 pub(crate) fn apply_game_mask(c: &mut Cpu) {
     c.cycles += 5;
@@ -374,7 +441,6 @@ pub(crate) fn apply_game_mask(c: &mut Cpu) {
     c.g[V0][0] = c.g[V0][0] | c.g[A1][0];
     Addr(0x0053_5610).sw(c, c.g[V0][0]);
 }
-
 
 /// The "clear the mode bits" tail of `SetGameDefaults` (v0 already holds the
 /// flags word for the 0/>2 path, or the base for the inner path).
@@ -386,7 +452,6 @@ pub(crate) fn clear_game_mask(c: &mut Cpu) {
     c.g[A0][0] = c.g[A0][0] & c.g[V1][0];
     Addr(0x0053_5610).sw(c, c.g[A0][0]);
 }
-
 
 /// `BEOptionInt_ResetQuickMessage(self, index)` (0x14f6e8): format the index
 /// into the controller's key buffer and copy it into the quick-message slot.
@@ -425,7 +490,6 @@ pub fn be_option_int_reset_quick_message(c: &mut Cpu) {
     })
 }
 
-
 /// `BEOptionInt_ResetQuickMessages(self)` (0x14f758): reset all 10 quick
 /// messages.
 pub fn be_option_int_reset_quick_messages(c: &mut Cpu) {
@@ -461,7 +525,6 @@ pub fn be_option_int_reset_quick_messages(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Option / reward backend accessors.
 
@@ -482,7 +545,6 @@ pub fn be_option_int_get_computer_handicap(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `int BEOptionInt_GetMaxHandicap(void)` (0x14f870): the largest of the three
 /// handicap limits in the option state at `0x5308b8`.
@@ -505,7 +567,6 @@ pub fn be_option_int_get_max_handicap(c: &mut Cpu) {
     c.pc = ret;
 }
 
-
 /// `void BEOptionInt_ResetSingleton(void)` (0x14f648): reset the option
 /// singleton's current page (`D_004A120C -> +0xc` object, slot at `+8`).
 pub fn beoption_int_reset_singleton(c: &mut Cpu) {
@@ -527,7 +588,6 @@ pub fn beoption_int_reset_singleton(c: &mut Cpu) {
         Ok(())
     });
 }
-
 
 /// `int BEOptionInt_GetPlayerHandicap(int i)` (0x14f7a8): the maximum handicap
 /// minus the player's stored handicap, both from the option table at
@@ -553,7 +613,6 @@ pub fn be_option_int_get_player_handicap(c: &mut Cpu) {
     })
 }
 
-
 /// `void* BEOptionInt_Commit()` (0x14F2A8): copy the live option block at
 /// 0x535610 over the committed one at 0x535898 (0x280 bytes).
 pub fn be_option_int_commit(c: &mut Cpu) {
@@ -568,7 +627,6 @@ pub fn be_option_int_commit(c: &mut Cpu) {
     copy_block(c, 0x0014_f2c8, 5, 1);
 }
 
-
 /// `void* BEOptionInt_Reset()` (0x14F360): copy the committed option block
 /// back over the live one.
 pub fn be_option_int_reset(c: &mut Cpu) {
@@ -582,7 +640,6 @@ pub fn be_option_int_reset(c: &mut Cpu) {
     c.g[V0][0] = sx(ea(c.g[V1][0], 0x280));
     copy_block(c, 0x0014_f380, 5, 1);
 }
-
 
 /// `void BEOptionInt_IsAnyHandicapSet(...)` (0x14f810): true when any of the
 /// twelve handicap entries of the option table is set.
@@ -627,7 +684,6 @@ pub fn be_option_int_is_any_handicap_set(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void BEOptionInt_SwapPlayerSettings()` (0x14f898): swap the two 12-byte
 /// player option triples at `D_005308B8` through a stack temporary.
 pub fn be_option_int_swap_player_settings(c: &mut Cpu) {
@@ -662,45 +718,44 @@ pub fn be_option_int_swap_player_settings(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::difftest::check;
+    use crate::difftest::check_lohi;
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::driven;
+    use crate::difftest::events::schedule;
+    use crate::difftest::fakes;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::ptr;
     use crate::difftest::fakes::vtable;
+    use crate::difftest::fakes::FAKE;
     use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::check;
+    use crate::difftest::fill;
+    use crate::difftest::put_vec;
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::fakes;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::check_lohi;
-    use ssx3_ee::s01;
-    use ssx3_ee::s03;
+    pub(crate) use crate::game::ai::ai::tests::CHILD;
+    pub(crate) use crate::game::be::bestate2::tests::belib;
+    pub(crate) use crate::game::be::bestate2::tests::w;
+    pub(crate) use crate::game::be::bestate2::tests::SEEDS;
+    pub(crate) use crate::game::fe::debugfe::tests::w as w_2;
+    pub(crate) use crate::game::fe::festateload::tests::clear;
+    pub(crate) use crate::game::fe::festateload::tests::OBJ;
+    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::setup;
+    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY;
+    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY_PTR;
     use ssx3_ee::s00;
+    use ssx3_ee::s01;
     use ssx3_ee::s02;
+    use ssx3_ee::s03;
     use ssx3_ee::s08;
     use ssx3_ee::s09;
     use ssx3_ee::s10;
     use ssx3_ee::s11;
     use ssx3_ee::s12;
     use ssx3_ee::s13;
-    use crate::difftest::events::check_events;
-    use crate::difftest::events::driven;
-    use crate::difftest::events::schedule;
-    use crate::difftest::fill;
-    use crate::difftest::put_vec;
-    pub(crate) use crate::game::fe::festateload::tests::OBJ;
-    pub(crate) use crate::game::ai::ai::tests::CHILD;
-    pub(crate) use crate::game::fe::festateload::tests::clear;
-    pub(crate) use crate::game::be::bestate2::tests::SEEDS;
-    pub(crate) use crate::game::be::bestate2::tests::w;
-    pub(crate) use crate::game::be::bestate2::tests::belib;
-    pub(crate) use crate::game::fe::debugfe::tests::w as w_2;
-    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY;
-    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY_PTR;
-    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::setup;
-
 
     #[test]
     fn be_option_int_set_hud_defaults_matches() {
@@ -720,7 +775,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn be_option_int_get_quick_message_matches() {
@@ -747,7 +801,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn be_option_int_get_quick_message_key_matches() {
         check(
@@ -771,28 +824,31 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn be_option_int_ctor_matches() {
-        covered(ssx3_ee::s01::f_0014f418, be_option_int_ctor, 60, &|c, seed| {
-            let mut r = machine(c, seed, 0xf418, 3);
-            let world = ptr(&mut r);
-            c.bus.write32(GAME_GP - 0x848, world);
-            let sub = ptr(&mut r);
-            c.bus.write32(world + 0x9c, sub);
-            c.bus.write32(sub + 0x24, (seed % 4) as u32);
-            let opt = ptr(&mut r);
-            c.bus.write32(GAME_GP - OPTION_GP, opt);
-            let profile = ptr(&mut r);
-            c.bus.write32(opt + 0xc, profile);
-            let vt = vtable(c, &mut r, &[8]);
-            c.bus.write32(profile + 0xc, vt);
-            c.bus.write32(0x0053_5610, r.next_u32());
-            c.bus.write32(0x0053_5614, r.next_u32());
-            c.g[A0][0] = DATA as u64;
-        });
+        covered(
+            ssx3_ee::s01::f_0014f418,
+            be_option_int_ctor,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0xf418, 3);
+                let world = ptr(&mut r);
+                c.bus.write32(GAME_GP - 0x848, world);
+                let sub = ptr(&mut r);
+                c.bus.write32(world + 0x9c, sub);
+                c.bus.write32(sub + 0x24, (seed % 4) as u32);
+                let opt = ptr(&mut r);
+                c.bus.write32(GAME_GP - OPTION_GP, opt);
+                let profile = ptr(&mut r);
+                c.bus.write32(opt + 0xc, profile);
+                let vt = vtable(c, &mut r, &[8]);
+                c.bus.write32(profile + 0xc, vt);
+                c.bus.write32(0x0053_5610, r.next_u32());
+                c.bus.write32(0x0053_5614, r.next_u32());
+                c.g[A0][0] = DATA as u64;
+            },
+        );
     }
-
 
     #[test]
     fn be_option_defaults_match() {
@@ -835,7 +891,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn be_option_quick_messages_match() {
         fn qm_setup(c: &mut Cpu, r: &mut Rng, seed: u32) {
@@ -877,43 +932,51 @@ pub(crate) mod tests {
         );
     }
 
-
     // ------------------------------------------------------ option / reward
 
     #[test]
     fn be_option_int_get_max_handicap_matches() {
-        check(ee::s01::f_0014f870__generated, be_option_int_get_max_handicap, 200, &|c, seed| {
-            let mut r = Rng(0x14f8_7000 ^ seed as u64);
-            crate::difftest::scramble(c, &mut r);
-            // Three signed limits; keep the ordering varied so both `max`
-            // steps take both outcomes.
-            let vals = [
-                (r.next_u32() % 7) as i32 - 3,
-                (r.next_u32() % 7) as i32 - 3,
-                (r.next_u32() % 7) as i32 - 3,
-            ];
-            for (i, off) in [0x1c, 0x8, 0x14].into_iter().enumerate() {
-                c.bus.write32(0x0053_08b8 + off, vals[i] as u32);
-            }
-        });
+        check(
+            ee::s01::f_0014f870__generated,
+            be_option_int_get_max_handicap,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x14f8_7000 ^ seed as u64);
+                crate::difftest::scramble(c, &mut r);
+                // Three signed limits; keep the ordering varied so both `max`
+                // steps take both outcomes.
+                let vals = [
+                    (r.next_u32() % 7) as i32 - 3,
+                    (r.next_u32() % 7) as i32 - 3,
+                    (r.next_u32() % 7) as i32 - 3,
+                ];
+                for (i, off) in [0x1c, 0x8, 0x14].into_iter().enumerate() {
+                    c.bus.write32(0x0053_08b8 + off, vals[i] as u32);
+                }
+            },
+        );
     }
-
 
     #[test]
     fn be_option_int_get_computer_handicap_matches() {
-        check(ee::s01::f_0014f7e8__generated, be_option_int_get_computer_handicap, 120, &|c, seed| {
-            let mut r = Rng(0x14f7_e800 ^ seed as u64);
-            crate::difftest::scramble(c, &mut r);
-            for (i, off) in [0x1c, 0x8, 0x14, 0x1c].into_iter().enumerate() {
-                c.bus.write32(0x0053_08b8 + off, (r.next_u32() % 9) as u32 + i as u32);
-            }
-            c.bus.write32(0x0053_08d4, r.next_u32() % 9);
-        });
+        check(
+            ee::s01::f_0014f7e8__generated,
+            be_option_int_get_computer_handicap,
+            120,
+            &|c, seed| {
+                let mut r = Rng(0x14f7_e800 ^ seed as u64);
+                crate::difftest::scramble(c, &mut r);
+                for (i, off) in [0x1c, 0x8, 0x14, 0x1c].into_iter().enumerate() {
+                    c.bus
+                        .write32(0x0053_08b8 + off, (r.next_u32() % 9) as u32 + i as u32);
+                }
+                c.bus.write32(0x0053_08d4, r.next_u32() % 9);
+            },
+        );
     }
 
     /// A vtable the object points at.
     pub(crate) const VT: u32 = DATA + 0x8000;
-
 
     /// A `{ short delta; short; void (*fn)(); }` slot pointing at [`FAKE`].
     pub(crate) fn slot(c: &mut Cpu, vt: u32, off: u32) {
@@ -921,64 +984,79 @@ pub(crate) mod tests {
         c.bus.write32(vt + off + 4, FAKE);
     }
 
-
     #[test]
     fn beoption_int_reset_singleton_matches() {
-        covered(s01::f_0014f648__generated, beoption_int_reset_singleton, 120, &|c, seed| {
-            machine(c, seed, 0x14f648, 1);
-            clear(c, OBJ, 0x40);
-            clear(c, VT, 0x40);
-            clear(c, CHILD, 0x40);
-            slot(c, VT, 0x8);
-            // D_004A120C -> current page object (+0xc) -> vtable.
-            c.bus.write32(GAME_GP.wrapping_sub(0x1ee4), OBJ);
-            c.bus.write32(OBJ + 0xc, CHILD);
-            c.bus.write32(CHILD, VT);
-            let _ = seed;
-        });
+        covered(
+            s01::f_0014f648__generated,
+            beoption_int_reset_singleton,
+            120,
+            &|c, seed| {
+                machine(c, seed, 0x14f648, 1);
+                clear(c, OBJ, 0x40);
+                clear(c, VT, 0x40);
+                clear(c, CHILD, 0x40);
+                slot(c, VT, 0x8);
+                // D_004A120C -> current page object (+0xc) -> vtable.
+                c.bus.write32(GAME_GP.wrapping_sub(0x1ee4), OBJ);
+                c.bus.write32(OBJ + 0xc, CHILD);
+                c.bus.write32(CHILD, VT);
+                let _ = seed;
+            },
+        );
     }
-
 
     #[test]
     fn be_option_int_get_player_handicap_matches() {
-        check(ssx3_ee::s01::f_0014f7a8__generated, be_option_int_get_player_handicap, 64, &|c, seed| {
-            let mut r = machine(c, seed, 0x14f7_a8, 0);
-            let table = 0x0053_08b8u32;
-            let i = r.next_u32() % 4;
-            c.g[A0][0] = i as u64;
-            for k in 0..4u32 {
-                c.bus.write32(table + k * 0xc + 8, r.next_u32() % 20);
-            }
-            c.bus.write32(table + 0x1c, r.next_u32() % 20);
-            c.bus.write32(table + 0x8, r.next_u32() % 20);
-            c.bus.write32(table + 0x14, r.next_u32() % 20);
-        });
+        check(
+            ssx3_ee::s01::f_0014f7a8__generated,
+            be_option_int_get_player_handicap,
+            64,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x14f7_a8, 0);
+                let table = 0x0053_08b8u32;
+                let i = r.next_u32() % 4;
+                c.g[A0][0] = i as u64;
+                for k in 0..4u32 {
+                    c.bus.write32(table + k * 0xc + 8, r.next_u32() % 20);
+                }
+                c.bus.write32(table + 0x1c, r.next_u32() % 20);
+                c.bus.write32(table + 0x8, r.next_u32() % 20);
+                c.bus.write32(table + 0x14, r.next_u32() % 20);
+            },
+        );
     }
-
 
     #[test]
     fn be_option_int_commit_matches() {
-        check(ee::s01::f_0014f2a8__generated, be_option_int_commit, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x0014_f2a8, 0);
-            belib(c);
-            for i in 0..0xa0u32 {
-                w(c, 0x0053_5610 + 4 * i, r.next_u32());
-            }
-        });
+        check(
+            ee::s01::f_0014f2a8__generated,
+            be_option_int_commit,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0014_f2a8, 0);
+                belib(c);
+                for i in 0..0xa0u32 {
+                    w(c, 0x0053_5610 + 4 * i, r.next_u32());
+                }
+            },
+        );
     }
-
 
     #[test]
     fn be_option_int_reset_matches() {
-        check(ee::s01::f_0014f360__generated, be_option_int_reset, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x0014_f360, 0);
-            belib(c);
-            for i in 0..0xa0u32 {
-                w(c, 0x0053_5898 + 4 * i, r.next_u32());
-            }
-        });
+        check(
+            ee::s01::f_0014f360__generated,
+            be_option_int_reset,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0014_f360, 0);
+                belib(c);
+                for i in 0..0xa0u32 {
+                    w(c, 0x0053_5898 + 4 * i, r.next_u32());
+                }
+            },
+        );
     }
-
 
     #[test]
     fn be_option_int_is_any_handicap_set_matches() {
@@ -999,7 +1077,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     // ------------------------------------------------------------- option swap
 

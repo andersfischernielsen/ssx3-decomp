@@ -2,332 +2,1268 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::r32;
+use crate::call::call_ptr;
+use crate::call::guest;
+use crate::call::sp;
+use crate::call::Callee;
+use crate::call::Flow;
+use crate::call::Frame;
+use crate::call::Unwound;
+use crate::call::VSlot;
+use crate::events::back_edge_unwinds;
+use crate::events::deliver_event;
+use crate::events::deliver_event_here;
+use crate::events::event_due;
+pub(crate) use crate::game::ai::computer::lh_2 as lh_4;
+pub(crate) use crate::game::be::beintplayer::frame_restore_at;
+pub(crate) use crate::game::camera::trigger::cameratriggerfactory::at as at_3;
+pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw_at as lw_at_5;
+pub(crate) use crate::game::camera::trigger::cameratriggerfactory::open;
+pub(crate) use crate::game::camera::trigger::cameratriggerfactory::spv;
+pub(crate) use crate::game::dirtysock::tags2::at;
+pub(crate) use crate::game::dirtysock::tags2::const_reg;
+pub(crate) use crate::game::dirtysock::tags2::gp_5 as gp_2;
+pub(crate) use crate::game::dirtysock::tags2::gp_9 as gp_5;
+pub(crate) use crate::game::dirtysock::tags2::lb_at;
+pub(crate) use crate::game::dirtysock::tags2::lw;
+pub(crate) use crate::game::dirtysock::tags2::p_2;
+pub(crate) use crate::game::dirtysock::tags2::sw;
+pub(crate) use crate::game::fe::fepopup::ld;
+pub(crate) use crate::game::fe::fepopup::sb;
+pub(crate) use crate::game::fe::fepopup::sw_4 as sw_8;
+pub(crate) use crate::game::fe::fepopup3::lh;
+pub(crate) use crate::game::fe::fepopup3::lw_2;
+pub(crate) use crate::game::fe::fepopup3::p_2 as p_4;
+pub(crate) use crate::game::fe::fepopup3::sw as sw_2;
+pub(crate) use crate::game::fe::festaterewards::at_4;
+pub(crate) use crate::game::fe::festaterewards::lw_3 as lw_4;
+pub(crate) use crate::game::fe::festaterewards2::r;
+pub(crate) use crate::game::fe::ovstates::at as at_6;
+pub(crate) use crate::game::fe::ovstates::close;
+pub(crate) use crate::game::main::gamemode::gpo;
+pub(crate) use crate::game::main::gamemode::low as low_3;
+pub(crate) use crate::game::main::gamemode::sp_2;
+pub(crate) use crate::game::main::gamestate::lw_at_3 as lw_at_4;
+pub(crate) use crate::game::main::ssxappdtor::p;
+pub(crate) use crate::game::main::ssxappdtor::vtable_dtor;
+pub(crate) use crate::game::movie::movieplayer::gp as gp_10;
+pub(crate) use crate::game::movie::movieplayer::lw_at;
+pub(crate) use crate::game::scripter::ssxscriptengine::gp as gp_9;
+pub(crate) use crate::game::scripter::ssxscriptengine::gp_5 as gp_6;
+pub(crate) use crate::game::scripter::ssxscriptengine::low;
+pub(crate) use crate::game::scripter::ssxscriptengine::lw_at_2 as lw_at_3;
+pub(crate) use crate::game::scripter::ssxscriptengine::p_2 as p_3;
+pub(crate) use crate::game::scripter::ssxscriptengine::sw_at;
+pub(crate) use crate::game::sound::icepick::worldtriggermanager::forward;
+pub(crate) use crate::game::sound::icepick::worldtriggermanager::gp_2 as gp;
+pub(crate) use crate::game::wscript::wscriptman::gp as gp_4;
+pub(crate) use crate::game::wscript::wscriptman::gp as gp_14;
+pub(crate) use crate::game::wscript::wscriptman::sw as sw_3;
 use crate::guest::Addr;
+use crate::ps2f::FpuF32;
+use crate::tick;
+use callee::*;
+use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::Cpu;
-use crate::call::call_ptr;
-use crate::call::guest;
-use crate::call::Callee;
-use crate::call::Frame;
-use crate::call::VSlot;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
-use crate::ps2f::FpuF32;
-use crate::tick;
-use ssx3_ee as ee;
-use crate::abi::r32;
-use crate::call::Flow;
-use crate::call::sp;
-use crate::events::back_edge_unwinds;
-use callee::*;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
 use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
-use crate::call::Unwound;
-use crate::events::deliver_event;
-pub(crate) use crate::game::sound::icepick::worldtriggermanager::gp_2 as gp;
-pub(crate) use crate::game::sound::icepick::worldtriggermanager::forward;
-pub(crate) use crate::game::movie::movieplayer::lw_at;
-pub(crate) use crate::game::main::ssxappdtor::p;
-pub(crate) use crate::game::main::ssxappdtor::vtable_dtor;
-pub(crate) use crate::game::fe::festaterewards2::r;
-pub(crate) use crate::game::dirtysock::tags2::at;
-pub(crate) use crate::game::dirtysock::tags2::p_2;
-pub(crate) use crate::game::dirtysock::tags2::gp_5 as gp_2;
-pub(crate) use crate::game::dirtysock::tags2::sw;
-pub(crate) use crate::game::dirtysock::tags2::const_reg;
-pub(crate) use crate::game::wscript::wscriptman::gp as gp_4;
-pub(crate) use crate::game::dirtysock::tags2::gp_9 as gp_5;
-pub(crate) use crate::game::dirtysock::tags2::lw;
-pub(crate) use crate::game::scripter::ssxscriptengine::p_2 as p_3;
-pub(crate) use crate::game::scripter::ssxscriptengine::gp_5 as gp_6;
-pub(crate) use crate::game::fe::fepopup3::p_2 as p_4;
-pub(crate) use crate::game::fe::fepopup3::lw_2;
-pub(crate) use crate::game::fe::fepopup3::sw as sw_2;
-pub(crate) use crate::game::fe::fepopup3::lh;
-pub(crate) use crate::game::scripter::ssxscriptengine::gp as gp_9;
-pub(crate) use crate::game::scripter::ssxscriptengine::lw_at_2 as lw_at_3;
-pub(crate) use crate::game::scripter::ssxscriptengine::sw_at;
-pub(crate) use crate::game::scripter::ssxscriptengine::low;
-pub(crate) use crate::game::main::gamemode::low as low_3;
-pub(crate) use crate::game::main::gamemode::sp_2;
-pub(crate) use crate::game::main::gamemode::gpo;
-pub(crate) use crate::game::movie::movieplayer::gp as gp_10;
-pub(crate) use crate::game::main::gamestate::lw_at_3 as lw_at_4;
-pub(crate) use crate::game::be::beintplayer::frame_restore_at;
-pub(crate) use crate::game::camera::trigger::cameratriggerfactory::at as at_3;
-pub(crate) use crate::game::camera::trigger::cameratriggerfactory::spv;
-pub(crate) use crate::game::camera::trigger::cameratriggerfactory::open;
-pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw_at as lw_at_5;
-pub(crate) use crate::game::dirtysock::tags2::lb_at;
-pub(crate) use crate::game::fe::festaterewards::at_4;
-pub(crate) use crate::game::fe::festaterewards::lw_3 as lw_4;
-pub(crate) use crate::game::wscript::wscriptman::gp as gp_14;
-pub(crate) use crate::game::wscript::wscriptman::sw as sw_3;
-pub(crate) use crate::game::fe::ovstates::at as at_6;
-pub(crate) use crate::game::fe::ovstates::close;
-pub(crate) use crate::game::fe::fepopup::sw_4 as sw_8;
-pub(crate) use crate::game::ai::computer::lh_2 as lh_4;
-pub(crate) use crate::game::fe::fepopup::sb;
-pub(crate) use crate::game::fe::fepopup::ld;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x001a_36e8, fe_async_manager_request_texture, "FEAsyncManager_RequestTexture"),
-    (0x001a_3768, fe_async_manager_request_peak_map, "FEAsyncManager_RequestPeakMap"),
-    (0x001a_37f8, fe_async_manager_request_session_texture, "FEAsyncManager_RequestSessionTexture"),
-    (0x001a_39c0, fe_async_manager_get_state, "FEAsyncManager_GetState"),
-    (0x001a_39d8, fe_async_manager_set_state, "FEAsyncManager_SetState"),
-    (0x001a_3bf0, fe_async_manager_find_free_slot, "FEAsyncManager_FindFreeSlot"),
-    (0x001a_3c50, fe_async_manager_free_all, "FEAsyncManager_FreeAll"),
-    (0x001a_3dc8, c_fe_state_net_messenger_ctor, "cFEStateNetMessenger_ctor"),
-    (0x001a_3f68, c_fe_state_net_messenger_init, "cFEStateNetMessenger_Init"),
-    (0x001a_3fe0, fe_state_net_messenger_update, "cFEStateNetMessenger_Update"),
-    (0x001a_4170, cfe_state_net_messenger_handle_input, "cFEStateNetMessenger_HandleInput"),
-    (0x001a_4670, cfe_state_net_messenger_get_buddy_status, "cFEStateNetMessenger_GetBuddyStatus"),
-    (0x001a_4740, cfe_state_net_messenger_get_list_index, "cFEStateNetMessenger_GetListIndex"),
-    (0x001a_4928, c_fe_state_net_messenger_v33, "cFEStateNetMessenger_v33"),
-    (0x001a_4c58, cfe_state_net_messenger_on_child_event, "cFEStateNetMessenger_OnChildEvent"),
-    (0x001a_4ce8, net_fe_state_show_user_found, "cFEStateNetMessenger_ShowUserFound"),
-    (0x001a_4d90, fe_net_messenger_show_looking_for_self, "cFEStateNetMessenger_ShowLookingForSelf"),
-    (0x001a_4fb0, fe_state_net_messenger_on_find_user_result, "cFEStateNetMessenger_OnFindUserResult"),
-    (0x001a_5450, cfestatenetmessenger_clear_name_list, "cFEStateNetMessenger_ClearNameList"),
-    (0x001a_56d0, fe_net_messenger_has_name, "cFEStateNetMessenger_HasName"),
-    (0x001a_5800, fe_net_messenger_find_name_str, "cFEStateNetMessenger_FindNameStr"),
-    (0x001a_5fb8, cfe_state_net_messenger_highlight_row, "cFEStateNetMessenger_HighlightRow"),
-    (0x001a_6618, c_fe_state_net_messenger_set_row_name, "cFEStateNetMessenger_SetRowName"),
-    (0x001a_6c40, fe_state_net_messenger_set_player_menu_selection, "cFEStateNetMessenger_SetPlayerMenuSelection"),
-    (0x001a_7ed8, c_fe_state_read_message_popup_add_sent_message, "cFEStateReadMessagePopup_AddSentMessage"),
+    (
+        0x001a_36e8,
+        fe_async_manager_request_texture,
+        "FEAsyncManager_RequestTexture",
+    ),
+    (
+        0x001a_3768,
+        fe_async_manager_request_peak_map,
+        "FEAsyncManager_RequestPeakMap",
+    ),
+    (
+        0x001a_37f8,
+        fe_async_manager_request_session_texture,
+        "FEAsyncManager_RequestSessionTexture",
+    ),
+    (
+        0x001a_39c0,
+        fe_async_manager_get_state,
+        "FEAsyncManager_GetState",
+    ),
+    (
+        0x001a_39d8,
+        fe_async_manager_set_state,
+        "FEAsyncManager_SetState",
+    ),
+    (
+        0x001a_3bf0,
+        fe_async_manager_find_free_slot,
+        "FEAsyncManager_FindFreeSlot",
+    ),
+    (
+        0x001a_3c50,
+        fe_async_manager_free_all,
+        "FEAsyncManager_FreeAll",
+    ),
+    (
+        0x001a_3dc8,
+        c_fe_state_net_messenger_ctor,
+        "cFEStateNetMessenger_ctor",
+    ),
+    (
+        0x001a_3f68,
+        c_fe_state_net_messenger_init,
+        "cFEStateNetMessenger_Init",
+    ),
+    (
+        0x001a_3fe0,
+        fe_state_net_messenger_update,
+        "cFEStateNetMessenger_Update",
+    ),
+    (
+        0x001a_4170,
+        cfe_state_net_messenger_handle_input,
+        "cFEStateNetMessenger_HandleInput",
+    ),
+    (
+        0x001a_4670,
+        cfe_state_net_messenger_get_buddy_status,
+        "cFEStateNetMessenger_GetBuddyStatus",
+    ),
+    (
+        0x001a_4740,
+        cfe_state_net_messenger_get_list_index,
+        "cFEStateNetMessenger_GetListIndex",
+    ),
+    (
+        0x001a_4928,
+        c_fe_state_net_messenger_v33,
+        "cFEStateNetMessenger_v33",
+    ),
+    (
+        0x001a_4c58,
+        cfe_state_net_messenger_on_child_event,
+        "cFEStateNetMessenger_OnChildEvent",
+    ),
+    (
+        0x001a_4ce8,
+        net_fe_state_show_user_found,
+        "cFEStateNetMessenger_ShowUserFound",
+    ),
+    (
+        0x001a_4d90,
+        fe_net_messenger_show_looking_for_self,
+        "cFEStateNetMessenger_ShowLookingForSelf",
+    ),
+    (
+        0x001a_4fb0,
+        fe_state_net_messenger_on_find_user_result,
+        "cFEStateNetMessenger_OnFindUserResult",
+    ),
+    (
+        0x001a_5450,
+        cfestatenetmessenger_clear_name_list,
+        "cFEStateNetMessenger_ClearNameList",
+    ),
+    (
+        0x001a_56d0,
+        fe_net_messenger_has_name,
+        "cFEStateNetMessenger_HasName",
+    ),
+    (
+        0x001a_5800,
+        fe_net_messenger_find_name_str,
+        "cFEStateNetMessenger_FindNameStr",
+    ),
+    (
+        0x001a_5fb8,
+        cfe_state_net_messenger_highlight_row,
+        "cFEStateNetMessenger_HighlightRow",
+    ),
+    (
+        0x001a_6618,
+        c_fe_state_net_messenger_set_row_name,
+        "cFEStateNetMessenger_SetRowName",
+    ),
+    (
+        0x001a_6c40,
+        fe_state_net_messenger_set_player_menu_selection,
+        "cFEStateNetMessenger_SetPlayerMenuSelection",
+    ),
+    (
+        0x001a_7ed8,
+        c_fe_state_read_message_popup_add_sent_message,
+        "cFEStateReadMessagePopup_AddSentMessage",
+    ),
     (0x001a_86e8, fe_set_online_mode, "FE_SetOnlineMode"),
     (0x001a_8770, net_fe_state_update, "NetFEState_Update"),
-    (0x001a_87d0, net_fe_state_on_activate, "NetFEState_OnActivate"),
+    (
+        0x001a_87d0,
+        net_fe_state_on_activate,
+        "NetFEState_OnActivate",
+    ),
     (0x001a_8830, net_fe_state_v32, "NetFEState_v32"),
     (0x001a_89b0, net_fe_state_v26, "NetFEState_v26"),
-    (0x001a_8ae8, net_fe_state_queue_net_event, "NetFEState_QueueNetEvent"),
-    (0x001a_9090, net_fe_state_open_keyboard_str, "NetFEState_OpenKeyboardStr"),
-    (0x001a_9150, net_fe_state_open_keyboard_text_id, "NetFEState_OpenKeyboardTextId"),
-    (0x001a_91b0, net_fe_state_create_keyboard_popup, "NetFEState_CreateKeyboardPopup"),
-    (0x001a_9268, net_fe_state_on_messenger_popup_event, "NetFEState_OnMessengerPopupEvent"),
-    (0x001a_9438, net_fe_state_on_mem_card_login_popup_event, "NetFEState_OnMemCardLoginPopupEvent"),
-    (0x001a_94e0, net_fe_state_on_keyboard_popup_event, "NetFEState_OnKeyboardPopupEvent"),
-    (0x001a_9578, net_fe_state_on_session_lost_popup_event, "NetFEState_OnSessionLostPopupEvent"),
-    (0x001a_9638, net_fe_state_on_child_event_ignore_close, "NetFEState_OnChildEventIgnoreClose"),
-    (0x001a_9668, net_fe_state_on_disconnected_popup_event, "NetFEState_OnDisconnectedPopupEvent"),
-    (0x001a_9710, net_fe_state_on_net_interrupted_popup_event, "NetFEState_OnNetInterruptedPopupEvent"),
-    (0x001a_9890, netfe_state_set_selected_user, "NetFEState_SetSelectedUser"),
-    (0x001a_98b8, net_fe_state_make_password_mask, "NetFEState_MakePasswordMask"),
-    (0x001a_9930, net_fe_state_show_disconnected_popup, "NetFEState_ShowDisconnectedPopup"),
-    (0x001a_9a18, net_fe_state_fill_yes_no_list, "NetFEState_FillYesNoList"),
-    (0x001a_9ab8, net_fe_state_fill_on_off_list, "NetFEState_FillOnOffList"),
-    (0x001a_9b58, net_fe_state_open_messenger, "NetFEState_OpenMessenger"),
-    (0x001a_b108, net_fe_state_show_wait_player_popup, "NetFEState_ShowWaitPlayerPopup"),
-    (0x001a_b370, net_fe_state_show_buddy_action_popup, "NetFEState_ShowBuddyActionPopup"),
-    (0x001a_b3d0, net_fe_state_refresh_buddy_action_popup, "NetFEState_RefreshBuddyActionPopup"),
-    (0x001a_bc50, net_fe_state_toggle_block_user, "NetFEState_ToggleBlockUser"),
-    (0x001a_be58, net_fe_state_toggle_messenger_buddy, "NetFEState_ToggleMessengerBuddy"),
-    (0x001a_bed8, net_fe_state_show_max_buddies_popup, "NetFEState_ShowMaxBuddiesPopup"),
+    (
+        0x001a_8ae8,
+        net_fe_state_queue_net_event,
+        "NetFEState_QueueNetEvent",
+    ),
+    (
+        0x001a_9090,
+        net_fe_state_open_keyboard_str,
+        "NetFEState_OpenKeyboardStr",
+    ),
+    (
+        0x001a_9150,
+        net_fe_state_open_keyboard_text_id,
+        "NetFEState_OpenKeyboardTextId",
+    ),
+    (
+        0x001a_91b0,
+        net_fe_state_create_keyboard_popup,
+        "NetFEState_CreateKeyboardPopup",
+    ),
+    (
+        0x001a_9268,
+        net_fe_state_on_messenger_popup_event,
+        "NetFEState_OnMessengerPopupEvent",
+    ),
+    (
+        0x001a_9438,
+        net_fe_state_on_mem_card_login_popup_event,
+        "NetFEState_OnMemCardLoginPopupEvent",
+    ),
+    (
+        0x001a_94e0,
+        net_fe_state_on_keyboard_popup_event,
+        "NetFEState_OnKeyboardPopupEvent",
+    ),
+    (
+        0x001a_9578,
+        net_fe_state_on_session_lost_popup_event,
+        "NetFEState_OnSessionLostPopupEvent",
+    ),
+    (
+        0x001a_9638,
+        net_fe_state_on_child_event_ignore_close,
+        "NetFEState_OnChildEventIgnoreClose",
+    ),
+    (
+        0x001a_9668,
+        net_fe_state_on_disconnected_popup_event,
+        "NetFEState_OnDisconnectedPopupEvent",
+    ),
+    (
+        0x001a_9710,
+        net_fe_state_on_net_interrupted_popup_event,
+        "NetFEState_OnNetInterruptedPopupEvent",
+    ),
+    (
+        0x001a_9890,
+        netfe_state_set_selected_user,
+        "NetFEState_SetSelectedUser",
+    ),
+    (
+        0x001a_98b8,
+        net_fe_state_make_password_mask,
+        "NetFEState_MakePasswordMask",
+    ),
+    (
+        0x001a_9930,
+        net_fe_state_show_disconnected_popup,
+        "NetFEState_ShowDisconnectedPopup",
+    ),
+    (
+        0x001a_9a18,
+        net_fe_state_fill_yes_no_list,
+        "NetFEState_FillYesNoList",
+    ),
+    (
+        0x001a_9ab8,
+        net_fe_state_fill_on_off_list,
+        "NetFEState_FillOnOffList",
+    ),
+    (
+        0x001a_9b58,
+        net_fe_state_open_messenger,
+        "NetFEState_OpenMessenger",
+    ),
+    (
+        0x001a_b108,
+        net_fe_state_show_wait_player_popup,
+        "NetFEState_ShowWaitPlayerPopup",
+    ),
+    (
+        0x001a_b370,
+        net_fe_state_show_buddy_action_popup,
+        "NetFEState_ShowBuddyActionPopup",
+    ),
+    (
+        0x001a_b3d0,
+        net_fe_state_refresh_buddy_action_popup,
+        "NetFEState_RefreshBuddyActionPopup",
+    ),
+    (
+        0x001a_bc50,
+        net_fe_state_toggle_block_user,
+        "NetFEState_ToggleBlockUser",
+    ),
+    (
+        0x001a_be58,
+        net_fe_state_toggle_messenger_buddy,
+        "NetFEState_ToggleMessengerBuddy",
+    ),
+    (
+        0x001a_bed8,
+        net_fe_state_show_max_buddies_popup,
+        "NetFEState_ShowMaxBuddiesPopup",
+    ),
     (0x001a_bf70, fe_screen_blank_ctor, "FEScreenBlank_ctor"),
     (0x001a_bfa8, fe_screen_blank_init, "FEScreenBlank_Init"),
-    (0x001a_c010, c_fe_use_existing_account_ctor, "cFEUseExistingAccount_ctor"),
-    (0x001a_c068, cfe_use_existing_account_dtor, "cFEUseExistingAccount_dtor"),
-    (0x001a_c0b8, c_fe_use_existing_account_init, "cFEUseExistingAccount_Init"),
-    (0x001a_c2b8, cfe_use_existing_account_check_password, "cFEUseExistingAccount_CheckPassword"),
-    (0x001a_c360, cfe_use_existing_account_check_account_name, "cFEUseExistingAccount_CheckAccountName"),
-    (0x001a_c408, c_fe_use_existing_account_validate_fields, "cFEUseExistingAccount_ValidateFields"),
-    (0x001a_c448, cfe_use_existing_account_check_email, "cFEUseExistingAccount_CheckEmail"),
-    (0x001a_c4f0, fe_use_existing_account_v25, "cFEUseExistingAccount_v25"),
-    (0x001a_c5a8, fe_use_existing_account_on_widget_notify, "cFEUseExistingAccount_OnWidgetNotify"),
-    (0x001a_c9c0, cfe_use_existing_account_on_email_popup_event, "cFEUseExistingAccount_OnEmailPopupEvent"),
-    (0x001a_ca88, fe_use_existing_account_on_abort_popup_event, "cFEUseExistingAccount_OnAbortPopupEvent"),
-    (0x001a_d130, fe_state_select_persona_ctor, "cFEStateSelectPersona_ctor"),
-    (0x001a_d308, c_fe_state_select_persona_on_widget_created, "cFEStateSelectPersona_OnWidgetCreated"),
-    (0x001a_d930, cfe_state_select_persona_on_save_account_popup_event, "cFEStateSelectPersona_OnSaveAccountPopupEvent"),
-    (0x001a_d9c8, cfe_state_select_persona_v33, "cFEStateSelectPersona_v33"),
-    (0x001a_ddd0, fe_state_challenge_popup_ctor, "cFEStateChallengePopup_ctor"),
-    (0x001a_dfb8, c_fe_state_challenge_popup_transition_in, "cFEStateChallengePopup_TransitionIn"),
-    (0x001a_e100, fe_state_challenge_popup_on_widget_notify, "cFEStateChallengePopup_OnWidgetNotify"),
-    (0x001a_ebf0, c_fe_state_challenge_popup_v32, "cFEStateChallengePopup_v32"),
-    (0x001a_f3e0, fe_state_challenge_popup_v33, "cFEStateChallengePopup_v33"),
-    (0x001a_f428, c_fe_state_challenge_popup_on_child_event, "cFEStateChallengePopup_OnChildEvent"),
-    (0x001a_f688, cfe_state_challenge_popup_show_set_options, "cFEStateChallengePopup_ShowSetOptions"),
-    (0x001a_fd88, net_fe_show_player_conn_quality, "NetFE_ShowPlayerConnQuality"),
-    (0x001a_fe08, cfe_state_challenge_received_popup_ctor, "cFEStateChallengeReceivedPopup_ctor"),
-    (0x001b_00b8, c_fe_state_challenge_received_popup_v32, "cFEStateChallengeReceivedPopup_v32"),
-    (0x001b_05e0, c_fe_state_challenge_received_popup_on_child_event, "cFEStateChallengeReceivedPopup_OnChildEvent"),
-    (0x001b_0628, fe_state_challenge_received_popup_v33, "cFEStateChallengeReceivedPopup_v33"),
-    (0x001b_0670, c_fe_state_challenge_received_popup_transition_in, "cFEStateChallengeReceivedPopup_TransitionIn"),
-    (0x001b_06e0, fe_state_challenge_received_popup_on_widget_notify, "cFEStateChallengeReceivedPopup_OnWidgetNotify"),
-    (0x001b_0f28, char_to_list_index, "cFEStateOnlineCharacterSelect_CharToListIndex"),
-    (0x001b_0f60, c_fe_state_online_character_select_ctor, "cFEStateOnlineCharacterSelect_ctor"),
-    (0x001b_0fb0, cfe_state_online_character_select_init, "cFEStateOnlineCharacterSelect_Init"),
-    (0x001b_14d8, fe_state_online_character_select_v25, "cFEStateOnlineCharacterSelect_v25"),
-    (0x001b_1590, fe_state_online_character_select_handle_input, "cFEStateOnlineCharacterSelect_HandleInput"),
-    (0x001b_1760, cfe_online_character_select_show_opponent_char, "cFEStateOnlineCharacterSelect_ShowOpponentChar"),
-    (0x001b_1b10, cfestateonlinecharacterselect_show_character, "cFEStateOnlineCharacterSelect_ShowCharacter"),
-    (0x001b_1ec0, c_fe_state_online_character_select_on_child_event, "cFEStateOnlineCharacterSelect_OnChildEvent"),
-    (0x001b_1f18, c_fe_state_online_character_select_on_quit_popup_event, "cFEStateOnlineCharacterSelect_OnQuitPopupEvent"),
-    (0x001b_22a0, c_fe_state_chat_room_v32, "cFEStateChatRoom_v32"),
-    (0x001b_2320, c_fe_state_chat_room_update, "cFEStateChatRoom_Update"),
-    (0x001b_33d8, fe_state_chat_room_on_keyboard_done, "cFEStateChatRoom_OnKeyboardDone"),
-    (0x001b_3490, fe_state_chat_room_transition_in, "cFEStateChatRoom_TransitionIn"),
-    (0x001b_3528, fe_state_chat_room_on_activate, "cFEStateChatRoom_OnActivate"),
-    (0x001b_3568, c_fe_state_chat_room_on_widget_notify, "cFEStateChatRoom_OnWidgetNotify"),
-    (0x001b_3760, c_fe_state_chat_room_on_go_to_char_select_event, "cFEStateChatRoom_OnGoToCharSelectEvent"),
-    (0x001b_37d8, c_fe_state_chat_room_on_go_to_char_select_event_2, "cFEStateChatRoom_OnGoToCharSelectEvent_2"),
-    (0x001b_3850, c_fe_state_chat_room_on_child_event, "cFEStateChatRoom_OnChildEvent"),
-    (0x001b_38d0, cfe_state_chat_room_handle_input, "cFEStateChatRoom_HandleInput"),
-    (0x001b_3978, fe_state_chat_room_select_player_by_name, "cFEStateChatRoom_SelectPlayerByName"),
-    (0x001b_3f78, cfe_state_net_config_ctor, "cFEStateNetConfig_ctor"),
-    (0x001b_4168, c_fe_state_net_config_shutdown, "cFEStateNetConfig_Shutdown"),
-    (0x001b_43a8, cfe_state_net_config_check_card, "cFEStateNetConfig_CheckCard"),
-    (0x001b_47c0, cfe_state_net_config_show_checking_card_popup, "cFEStateNetConfig_ShowCheckingCardPopup"),
-    (0x001b_4c00, c_fe_state_net_config_on_popup_event_passthrough, "cFEStateNetConfig_OnPopupEventPassthrough"),
-    (0x001b_4cd8, cfe_state_net_config_load_config_list, "cFEStateNetConfig_LoadConfigList"),
-    (0x001b_4fa0, cfe_state_net_config_handle_load_error, "cFEStateNetConfig_HandleLoadError"),
-    (0x001b_5268, fe_state_net_config_start_card_scan, "cFEStateNetConfig_StartCardScan"),
-    (0x001b_5cf8, cfe_state_net_config_on_info_popup_closed, "cFEStateNetConfig_OnInfoPopupClosed"),
-    (0x001b_6288, net_config_auth_popup_ctor, "NetConfigAuthPopup_ctor"),
-    (0x001b_6368, net_config_auth_popup_dtor, "NetConfigAuthPopup_dtor"),
-    (0x001b_66b8, net_config_auth_popup_handle_input, "NetConfigAuthPopup_HandleInput"),
-    (0x001b_6740, net_config_auth_popup_v24, "NetConfigAuthPopup_v24"),
-    (0x001b_6770, net_config_auth_popup_on_widget_action, "NetConfigAuthPopup_OnWidgetAction"),
-    (0x001b_6a90, net_config_auth_popup_on_widget_notify, "NetConfigAuthPopup_OnWidgetNotify"),
-    (0x001b_6ab8, c_fe_state_auth_dnas_error_ctor, "cFEStateAuthDNASError_ctor"),
-    (0x001b_6b50, cfe_state_auth_dnas_error_init, "cFEStateAuthDNASError_Init"),
-    (0x001b_6bb8, c_fe_state_auth_dnas_error_on_widget_created, "cFEStateAuthDNASError_OnWidgetCreated"),
-    (0x001b_6e10, c_fe_state_auth_dnas_error_v24, "cFEStateAuthDNASError_v24"),
-    (0x001b_6e40, c_fe_state_auth_dnas_error_on_widget_action, "cFEStateAuthDNASError_OnWidgetAction"),
-    (0x001b_6ea8, fe_state_auth_dnas_error_on_widget_notify, "cFEStateAuthDNASError_OnWidgetNotify"),
-    (0x001b_7030, c_fe_state_net_account_mem_dtor, "cFEStateNetAccountMem_dtor"),
-    (0x001b_7778, cfe_state_net_account_mem_store_account_strings, "cFEStateNetAccountMem_StoreAccountStrings"),
-    (0x001b_77c8, cfe_state_net_account_mem_update_state02, "cFEStateNetAccountMem_UpdateState02"),
-    (0x001b_7820, cfe_state_net_account_mem_update_state06, "cFEStateNetAccountMem_UpdateState06"),
-    (0x001b_78f0, c_fe_state_net_account_mem_update_state08, "cFEStateNetAccountMem_UpdateState08"),
-    (0x001b_7938, cfe_state_net_account_mem_update_state0c, "cFEStateNetAccountMem_UpdateState0C"),
-    (0x001b_7a08, c_fe_state_net_account_mem_update_state0e, "cFEStateNetAccountMem_UpdateState0E"),
-    (0x001b_7a50, c_fe_state_net_account_mem_update_state10, "cFEStateNetAccountMem_UpdateState10"),
-    (0x001b_7bc0, cfe_state_net_account_mem_update_state16, "cFEStateNetAccountMem_UpdateState16"),
-    (0x001b_7c28, c_fe_state_net_account_mem_update_state1a, "cFEStateNetAccountMem_UpdateState1A"),
-    (0x001b_7c70, c_fe_state_net_account_mem_update_state1b, "cFEStateNetAccountMem_UpdateState1B"),
-    (0x001b_8860, c_fe_state_net_account_mem_v24, "cFEStateNetAccountMem_v24"),
-    (0x001b_8890, fe_state_net_account_mem_popup_id_to_state, "cFEStateNetAccountMem_PopupIdToState"),
-    (0x001b_88f0, c_fe_state_create_step1_ctor, "cFEStateCreateStep1_ctor"),
-    (0x001b_8960, c_fe_state_create_step1_init, "cFEStateCreateStep1_Init"),
-    (0x001b_8a08, cfe_state_create_step1_transition_in, "cFEStateCreateStep1_TransitionIn"),
-    (0x001b_9428, cfe_state_create_step1_on_child_event, "cFEStateCreateStep1_OnChildEvent"),
-    (0x001b_9558, cfe_state_create_step1_all_fields_filled, "cFEStateCreateStep1_AllFieldsFilled"),
-    (0x001b_95c0, cfe_state_create_step1_set_account_name_text, "cFEStateCreateStep1_SetAccountNameText"),
-    (0x001b_9610, cfe_state_create_step1_set_password_text, "cFEStateCreateStep1_SetPasswordText"),
-    (0x001b_9678, cfe_state_create_step1_set_confirm_password_text, "cFEStateCreateStep1_SetConfirmPasswordText"),
-    (0x001b_96e0, fe_state_create_step1_set_email_text, "cFEStateCreateStep1_SetEmailText"),
-    (0x001b_9740, c_fe_state_create_step1_set_inform_selection, "cFEStateCreateStep1_SetInformSelection"),
-    (0x001b_97b0, c_fe_state_create_step1_set_share_info_selection, "cFEStateCreateStep1_SetShareInfoSelection"),
-    (0x001b_9cd8, c_fe_state_create_step1_is_email_format_valid, "cFEStateCreateStep1_IsEmailFormatValid"),
-    (0x001b_9f68, cfe_state_create_step1_char_in_range, "cFEStateCreateStep1_CharInRange"),
-    (0x001b_a110, c_fe_state_create_step1_validate_fields, "cFEStateCreateStep1_ValidateFields"),
-    (0x001b_a178, cfe_state_create_step1_backup_account_info, "cFEStateCreateStep1_BackupAccountInfo"),
-    (0x001b_a218, c_fe_state_create_step1_restore_account_info, "cFEStateCreateStep1_RestoreAccountInfo"),
-    (0x001b_a358, c_fe_state_create_step1_detect_changes, "cFEStateCreateStep1_DetectChanges"),
-    (0x001b_a3e0, fe_state_create_step2_ctor, "cFEStateCreateStep2_ctor"),
-    (0x001b_a428, fe_state_create_step2_init, "cFEStateCreateStep2_Init"),
-    (0x001b_a500, cfe_state_create_step2_on_widget_created, "cFEStateCreateStep2_OnWidgetCreated"),
-    (0x001b_a9f8, cfe_state_create_step2_submit_account, "cFEStateCreateStep2_SubmitAccount"),
-    (0x001b_b0e8, c_fe_state_create_step2_on_parent_email_entered, "cFEStateCreateStep2_OnParentEmailEntered"),
-    (0x001b_b2d0, c_fe_state_create_step2_set_month_selection, "cFEStateCreateStep2_SetMonthSelection"),
-    (0x001b_b340, c_fe_state_create_step2_set_day_selection, "cFEStateCreateStep2_SetDaySelection"),
-    (0x001b_b3b0, c_fe_state_create_step2_set_year_selection, "cFEStateCreateStep2_SetYearSelection"),
-    (0x001b_b440, c_fe_state_create_step2_set_gender_selection, "cFEStateCreateStep2_SetGenderSelection"),
-    (0x001b_b4b0, c_fe_state_create_step2_set_legal_selection, "cFEStateCreateStep2_SetLegalSelection"),
-    (0x001b_b520, cfe_state_create_step2_fill_gender_list, "cFEStateCreateStep2_FillGenderList"),
-    (0x001b_b798, cfe_create_step2_fill_year_list, "cFEStateCreateStep2_FillYearList"),
-    (0x001b_b840, c_fe_state_create_step2_fill_day_list, "cFEStateCreateStep2_FillDayList"),
-    (0x001b_b968, cfe_state_create_step2_is_leap_year, "cFEStateCreateStep2_IsLeapYear"),
-    (0x001b_b9b0, c_fe_state_create_step2_get_days_in_month, "cFEStateCreateStep2_GetDaysInMonth"),
-    (0x001b_bd08, c_fe_state_create_duplicate_ctor, "cFEStateCreateDuplicate_ctor"),
-    (0x001b_bd60, c_fe_state_create_duplicate_init, "cFEStateCreateDuplicate_Init"),
-    (0x001b_c290, c_fe_state_create_duplicate_submit_account, "cFEStateCreateDuplicate_SubmitAccount"),
-    (0x001b_c6a0, c_fe_state_create_duplicate_on_child_event, "cFEStateCreateDuplicate_OnChildEvent"),
-    (0x001b_cc30, c_fe_state_lobby_menu_init, "cFEStateLobbyMenu_Init"),
-    (0x001b_cca8, c_fe_state_lobby_menu_v32, "cFEStateLobbyMenu_v32"),
-    (0x001b_cd18, cfestate_lobby_menu_transition_in, "cFEStateLobbyMenu_TransitionIn"),
-    (0x001b_d428, fe_lobby_menu_on_keyboard_done, "cFEStateLobbyMenu_OnKeyboardDone"),
-    (0x001b_d460, c_fe_state_lobby_menu_enter_room, "cFEStateLobbyMenu_EnterRoom"),
-    (0x001b_d848, c_fe_state_lobby_menu_on_net_result, "cFEStateLobbyMenu_OnNetResult"),
-    (0x001b_dcf8, cfe_state_lobby_menu_on_create_room_popup_event, "cFEStateLobbyMenu_OnCreateRoomPopupEvent"),
-    (0x001b_dd60, cfestatelobbymenu_prompt_room_password, "cFEStateLobbyMenu_PromptRoomPassword"),
-    (0x001b_dde8, cfe_state_lobby_menu_on_child_event, "cFEStateLobbyMenu_OnChildEvent"),
-    (0x001b_df60, c_fe_state_lobby_menu_show_room_tab, "cFEStateLobbyMenu_ShowRoomTab"),
-    (0x001b_dfd8, cfe_state_lobby_menu_hide_room_tabs, "cFEStateLobbyMenu_HideRoomTabs"),
-    (0x001b_e038, c_fe_state_lobby_menu_clamp_room_selections, "cFEStateLobbyMenu_ClampRoomSelections"),
-    (0x001b_e510, c_fe_state_lobby_menu_refresh_player_list, "cFEStateLobbyMenu_RefreshPlayerList"),
-    (0x001b_e7d8, c_fe_state_net_create_room_popup_ctor, "cFEStateNetCreateRoomPopup_ctor"),
-    (0x001b_e828, cfe_state_net_create_room_popup_init, "cFEStateNetCreateRoomPopup_Init"),
-    (0x001b_ec78, net_create_room_popup_validate_room_name, "cFEStateNetCreateRoomPopup_ValidateRoomName"),
-    (0x001b_ed28, c_fe_state_net_create_room_popup_v31, "cFEStateNetCreateRoomPopup_v31"),
+    (
+        0x001a_c010,
+        c_fe_use_existing_account_ctor,
+        "cFEUseExistingAccount_ctor",
+    ),
+    (
+        0x001a_c068,
+        cfe_use_existing_account_dtor,
+        "cFEUseExistingAccount_dtor",
+    ),
+    (
+        0x001a_c0b8,
+        c_fe_use_existing_account_init,
+        "cFEUseExistingAccount_Init",
+    ),
+    (
+        0x001a_c2b8,
+        cfe_use_existing_account_check_password,
+        "cFEUseExistingAccount_CheckPassword",
+    ),
+    (
+        0x001a_c360,
+        cfe_use_existing_account_check_account_name,
+        "cFEUseExistingAccount_CheckAccountName",
+    ),
+    (
+        0x001a_c408,
+        c_fe_use_existing_account_validate_fields,
+        "cFEUseExistingAccount_ValidateFields",
+    ),
+    (
+        0x001a_c448,
+        cfe_use_existing_account_check_email,
+        "cFEUseExistingAccount_CheckEmail",
+    ),
+    (
+        0x001a_c4f0,
+        fe_use_existing_account_v25,
+        "cFEUseExistingAccount_v25",
+    ),
+    (
+        0x001a_c5a8,
+        fe_use_existing_account_on_widget_notify,
+        "cFEUseExistingAccount_OnWidgetNotify",
+    ),
+    (
+        0x001a_c9c0,
+        cfe_use_existing_account_on_email_popup_event,
+        "cFEUseExistingAccount_OnEmailPopupEvent",
+    ),
+    (
+        0x001a_ca88,
+        fe_use_existing_account_on_abort_popup_event,
+        "cFEUseExistingAccount_OnAbortPopupEvent",
+    ),
+    (
+        0x001a_d130,
+        fe_state_select_persona_ctor,
+        "cFEStateSelectPersona_ctor",
+    ),
+    (
+        0x001a_d308,
+        c_fe_state_select_persona_on_widget_created,
+        "cFEStateSelectPersona_OnWidgetCreated",
+    ),
+    (
+        0x001a_d930,
+        cfe_state_select_persona_on_save_account_popup_event,
+        "cFEStateSelectPersona_OnSaveAccountPopupEvent",
+    ),
+    (
+        0x001a_d9c8,
+        cfe_state_select_persona_v33,
+        "cFEStateSelectPersona_v33",
+    ),
+    (
+        0x001a_ddd0,
+        fe_state_challenge_popup_ctor,
+        "cFEStateChallengePopup_ctor",
+    ),
+    (
+        0x001a_dfb8,
+        c_fe_state_challenge_popup_transition_in,
+        "cFEStateChallengePopup_TransitionIn",
+    ),
+    (
+        0x001a_e100,
+        fe_state_challenge_popup_on_widget_notify,
+        "cFEStateChallengePopup_OnWidgetNotify",
+    ),
+    (
+        0x001a_ebf0,
+        c_fe_state_challenge_popup_v32,
+        "cFEStateChallengePopup_v32",
+    ),
+    (
+        0x001a_f3e0,
+        fe_state_challenge_popup_v33,
+        "cFEStateChallengePopup_v33",
+    ),
+    (
+        0x001a_f428,
+        c_fe_state_challenge_popup_on_child_event,
+        "cFEStateChallengePopup_OnChildEvent",
+    ),
+    (
+        0x001a_f688,
+        cfe_state_challenge_popup_show_set_options,
+        "cFEStateChallengePopup_ShowSetOptions",
+    ),
+    (
+        0x001a_fd88,
+        net_fe_show_player_conn_quality,
+        "NetFE_ShowPlayerConnQuality",
+    ),
+    (
+        0x001a_fe08,
+        cfe_state_challenge_received_popup_ctor,
+        "cFEStateChallengeReceivedPopup_ctor",
+    ),
+    (
+        0x001b_00b8,
+        c_fe_state_challenge_received_popup_v32,
+        "cFEStateChallengeReceivedPopup_v32",
+    ),
+    (
+        0x001b_05e0,
+        c_fe_state_challenge_received_popup_on_child_event,
+        "cFEStateChallengeReceivedPopup_OnChildEvent",
+    ),
+    (
+        0x001b_0628,
+        fe_state_challenge_received_popup_v33,
+        "cFEStateChallengeReceivedPopup_v33",
+    ),
+    (
+        0x001b_0670,
+        c_fe_state_challenge_received_popup_transition_in,
+        "cFEStateChallengeReceivedPopup_TransitionIn",
+    ),
+    (
+        0x001b_06e0,
+        fe_state_challenge_received_popup_on_widget_notify,
+        "cFEStateChallengeReceivedPopup_OnWidgetNotify",
+    ),
+    (
+        0x001b_0f28,
+        char_to_list_index,
+        "cFEStateOnlineCharacterSelect_CharToListIndex",
+    ),
+    (
+        0x001b_0f60,
+        c_fe_state_online_character_select_ctor,
+        "cFEStateOnlineCharacterSelect_ctor",
+    ),
+    (
+        0x001b_0fb0,
+        cfe_state_online_character_select_init,
+        "cFEStateOnlineCharacterSelect_Init",
+    ),
+    (
+        0x001b_14d8,
+        fe_state_online_character_select_v25,
+        "cFEStateOnlineCharacterSelect_v25",
+    ),
+    (
+        0x001b_1590,
+        fe_state_online_character_select_handle_input,
+        "cFEStateOnlineCharacterSelect_HandleInput",
+    ),
+    (
+        0x001b_1760,
+        cfe_online_character_select_show_opponent_char,
+        "cFEStateOnlineCharacterSelect_ShowOpponentChar",
+    ),
+    (
+        0x001b_1b10,
+        cfestateonlinecharacterselect_show_character,
+        "cFEStateOnlineCharacterSelect_ShowCharacter",
+    ),
+    (
+        0x001b_1ec0,
+        c_fe_state_online_character_select_on_child_event,
+        "cFEStateOnlineCharacterSelect_OnChildEvent",
+    ),
+    (
+        0x001b_1f18,
+        c_fe_state_online_character_select_on_quit_popup_event,
+        "cFEStateOnlineCharacterSelect_OnQuitPopupEvent",
+    ),
+    (
+        0x001b_22a0,
+        c_fe_state_chat_room_v32,
+        "cFEStateChatRoom_v32",
+    ),
+    (
+        0x001b_2320,
+        c_fe_state_chat_room_update,
+        "cFEStateChatRoom_Update",
+    ),
+    (
+        0x001b_33d8,
+        fe_state_chat_room_on_keyboard_done,
+        "cFEStateChatRoom_OnKeyboardDone",
+    ),
+    (
+        0x001b_3490,
+        fe_state_chat_room_transition_in,
+        "cFEStateChatRoom_TransitionIn",
+    ),
+    (
+        0x001b_3528,
+        fe_state_chat_room_on_activate,
+        "cFEStateChatRoom_OnActivate",
+    ),
+    (
+        0x001b_3568,
+        c_fe_state_chat_room_on_widget_notify,
+        "cFEStateChatRoom_OnWidgetNotify",
+    ),
+    (
+        0x001b_3760,
+        c_fe_state_chat_room_on_go_to_char_select_event,
+        "cFEStateChatRoom_OnGoToCharSelectEvent",
+    ),
+    (
+        0x001b_37d8,
+        c_fe_state_chat_room_on_go_to_char_select_event_2,
+        "cFEStateChatRoom_OnGoToCharSelectEvent_2",
+    ),
+    (
+        0x001b_3850,
+        c_fe_state_chat_room_on_child_event,
+        "cFEStateChatRoom_OnChildEvent",
+    ),
+    (
+        0x001b_38d0,
+        cfe_state_chat_room_handle_input,
+        "cFEStateChatRoom_HandleInput",
+    ),
+    (
+        0x001b_3978,
+        fe_state_chat_room_select_player_by_name,
+        "cFEStateChatRoom_SelectPlayerByName",
+    ),
+    (
+        0x001b_3f78,
+        cfe_state_net_config_ctor,
+        "cFEStateNetConfig_ctor",
+    ),
+    (
+        0x001b_4168,
+        c_fe_state_net_config_shutdown,
+        "cFEStateNetConfig_Shutdown",
+    ),
+    (
+        0x001b_43a8,
+        cfe_state_net_config_check_card,
+        "cFEStateNetConfig_CheckCard",
+    ),
+    (
+        0x001b_47c0,
+        cfe_state_net_config_show_checking_card_popup,
+        "cFEStateNetConfig_ShowCheckingCardPopup",
+    ),
+    (
+        0x001b_4c00,
+        c_fe_state_net_config_on_popup_event_passthrough,
+        "cFEStateNetConfig_OnPopupEventPassthrough",
+    ),
+    (
+        0x001b_4cd8,
+        cfe_state_net_config_load_config_list,
+        "cFEStateNetConfig_LoadConfigList",
+    ),
+    (
+        0x001b_4fa0,
+        cfe_state_net_config_handle_load_error,
+        "cFEStateNetConfig_HandleLoadError",
+    ),
+    (
+        0x001b_5268,
+        fe_state_net_config_start_card_scan,
+        "cFEStateNetConfig_StartCardScan",
+    ),
+    (
+        0x001b_5cf8,
+        cfe_state_net_config_on_info_popup_closed,
+        "cFEStateNetConfig_OnInfoPopupClosed",
+    ),
+    (
+        0x001b_6288,
+        net_config_auth_popup_ctor,
+        "NetConfigAuthPopup_ctor",
+    ),
+    (
+        0x001b_6368,
+        net_config_auth_popup_dtor,
+        "NetConfigAuthPopup_dtor",
+    ),
+    (
+        0x001b_66b8,
+        net_config_auth_popup_handle_input,
+        "NetConfigAuthPopup_HandleInput",
+    ),
+    (
+        0x001b_6740,
+        net_config_auth_popup_v24,
+        "NetConfigAuthPopup_v24",
+    ),
+    (
+        0x001b_6770,
+        net_config_auth_popup_on_widget_action,
+        "NetConfigAuthPopup_OnWidgetAction",
+    ),
+    (
+        0x001b_6a90,
+        net_config_auth_popup_on_widget_notify,
+        "NetConfigAuthPopup_OnWidgetNotify",
+    ),
+    (
+        0x001b_6ab8,
+        c_fe_state_auth_dnas_error_ctor,
+        "cFEStateAuthDNASError_ctor",
+    ),
+    (
+        0x001b_6b50,
+        cfe_state_auth_dnas_error_init,
+        "cFEStateAuthDNASError_Init",
+    ),
+    (
+        0x001b_6bb8,
+        c_fe_state_auth_dnas_error_on_widget_created,
+        "cFEStateAuthDNASError_OnWidgetCreated",
+    ),
+    (
+        0x001b_6e10,
+        c_fe_state_auth_dnas_error_v24,
+        "cFEStateAuthDNASError_v24",
+    ),
+    (
+        0x001b_6e40,
+        c_fe_state_auth_dnas_error_on_widget_action,
+        "cFEStateAuthDNASError_OnWidgetAction",
+    ),
+    (
+        0x001b_6ea8,
+        fe_state_auth_dnas_error_on_widget_notify,
+        "cFEStateAuthDNASError_OnWidgetNotify",
+    ),
+    (
+        0x001b_7030,
+        c_fe_state_net_account_mem_dtor,
+        "cFEStateNetAccountMem_dtor",
+    ),
+    (
+        0x001b_7778,
+        cfe_state_net_account_mem_store_account_strings,
+        "cFEStateNetAccountMem_StoreAccountStrings",
+    ),
+    (
+        0x001b_77c8,
+        cfe_state_net_account_mem_update_state02,
+        "cFEStateNetAccountMem_UpdateState02",
+    ),
+    (
+        0x001b_7820,
+        cfe_state_net_account_mem_update_state06,
+        "cFEStateNetAccountMem_UpdateState06",
+    ),
+    (
+        0x001b_78f0,
+        c_fe_state_net_account_mem_update_state08,
+        "cFEStateNetAccountMem_UpdateState08",
+    ),
+    (
+        0x001b_7938,
+        cfe_state_net_account_mem_update_state0c,
+        "cFEStateNetAccountMem_UpdateState0C",
+    ),
+    (
+        0x001b_7a08,
+        c_fe_state_net_account_mem_update_state0e,
+        "cFEStateNetAccountMem_UpdateState0E",
+    ),
+    (
+        0x001b_7a50,
+        c_fe_state_net_account_mem_update_state10,
+        "cFEStateNetAccountMem_UpdateState10",
+    ),
+    (
+        0x001b_7bc0,
+        cfe_state_net_account_mem_update_state16,
+        "cFEStateNetAccountMem_UpdateState16",
+    ),
+    (
+        0x001b_7c28,
+        c_fe_state_net_account_mem_update_state1a,
+        "cFEStateNetAccountMem_UpdateState1A",
+    ),
+    (
+        0x001b_7c70,
+        c_fe_state_net_account_mem_update_state1b,
+        "cFEStateNetAccountMem_UpdateState1B",
+    ),
+    (
+        0x001b_8860,
+        c_fe_state_net_account_mem_v24,
+        "cFEStateNetAccountMem_v24",
+    ),
+    (
+        0x001b_8890,
+        fe_state_net_account_mem_popup_id_to_state,
+        "cFEStateNetAccountMem_PopupIdToState",
+    ),
+    (
+        0x001b_88f0,
+        c_fe_state_create_step1_ctor,
+        "cFEStateCreateStep1_ctor",
+    ),
+    (
+        0x001b_8960,
+        c_fe_state_create_step1_init,
+        "cFEStateCreateStep1_Init",
+    ),
+    (
+        0x001b_8a08,
+        cfe_state_create_step1_transition_in,
+        "cFEStateCreateStep1_TransitionIn",
+    ),
+    (
+        0x001b_9428,
+        cfe_state_create_step1_on_child_event,
+        "cFEStateCreateStep1_OnChildEvent",
+    ),
+    (
+        0x001b_9558,
+        cfe_state_create_step1_all_fields_filled,
+        "cFEStateCreateStep1_AllFieldsFilled",
+    ),
+    (
+        0x001b_95c0,
+        cfe_state_create_step1_set_account_name_text,
+        "cFEStateCreateStep1_SetAccountNameText",
+    ),
+    (
+        0x001b_9610,
+        cfe_state_create_step1_set_password_text,
+        "cFEStateCreateStep1_SetPasswordText",
+    ),
+    (
+        0x001b_9678,
+        cfe_state_create_step1_set_confirm_password_text,
+        "cFEStateCreateStep1_SetConfirmPasswordText",
+    ),
+    (
+        0x001b_96e0,
+        fe_state_create_step1_set_email_text,
+        "cFEStateCreateStep1_SetEmailText",
+    ),
+    (
+        0x001b_9740,
+        c_fe_state_create_step1_set_inform_selection,
+        "cFEStateCreateStep1_SetInformSelection",
+    ),
+    (
+        0x001b_97b0,
+        c_fe_state_create_step1_set_share_info_selection,
+        "cFEStateCreateStep1_SetShareInfoSelection",
+    ),
+    (
+        0x001b_9cd8,
+        c_fe_state_create_step1_is_email_format_valid,
+        "cFEStateCreateStep1_IsEmailFormatValid",
+    ),
+    (
+        0x001b_9f68,
+        cfe_state_create_step1_char_in_range,
+        "cFEStateCreateStep1_CharInRange",
+    ),
+    (
+        0x001b_a110,
+        c_fe_state_create_step1_validate_fields,
+        "cFEStateCreateStep1_ValidateFields",
+    ),
+    (
+        0x001b_a178,
+        cfe_state_create_step1_backup_account_info,
+        "cFEStateCreateStep1_BackupAccountInfo",
+    ),
+    (
+        0x001b_a218,
+        c_fe_state_create_step1_restore_account_info,
+        "cFEStateCreateStep1_RestoreAccountInfo",
+    ),
+    (
+        0x001b_a358,
+        c_fe_state_create_step1_detect_changes,
+        "cFEStateCreateStep1_DetectChanges",
+    ),
+    (
+        0x001b_a3e0,
+        fe_state_create_step2_ctor,
+        "cFEStateCreateStep2_ctor",
+    ),
+    (
+        0x001b_a428,
+        fe_state_create_step2_init,
+        "cFEStateCreateStep2_Init",
+    ),
+    (
+        0x001b_a500,
+        cfe_state_create_step2_on_widget_created,
+        "cFEStateCreateStep2_OnWidgetCreated",
+    ),
+    (
+        0x001b_a9f8,
+        cfe_state_create_step2_submit_account,
+        "cFEStateCreateStep2_SubmitAccount",
+    ),
+    (
+        0x001b_b0e8,
+        c_fe_state_create_step2_on_parent_email_entered,
+        "cFEStateCreateStep2_OnParentEmailEntered",
+    ),
+    (
+        0x001b_b2d0,
+        c_fe_state_create_step2_set_month_selection,
+        "cFEStateCreateStep2_SetMonthSelection",
+    ),
+    (
+        0x001b_b340,
+        c_fe_state_create_step2_set_day_selection,
+        "cFEStateCreateStep2_SetDaySelection",
+    ),
+    (
+        0x001b_b3b0,
+        c_fe_state_create_step2_set_year_selection,
+        "cFEStateCreateStep2_SetYearSelection",
+    ),
+    (
+        0x001b_b440,
+        c_fe_state_create_step2_set_gender_selection,
+        "cFEStateCreateStep2_SetGenderSelection",
+    ),
+    (
+        0x001b_b4b0,
+        c_fe_state_create_step2_set_legal_selection,
+        "cFEStateCreateStep2_SetLegalSelection",
+    ),
+    (
+        0x001b_b520,
+        cfe_state_create_step2_fill_gender_list,
+        "cFEStateCreateStep2_FillGenderList",
+    ),
+    (
+        0x001b_b798,
+        cfe_create_step2_fill_year_list,
+        "cFEStateCreateStep2_FillYearList",
+    ),
+    (
+        0x001b_b840,
+        c_fe_state_create_step2_fill_day_list,
+        "cFEStateCreateStep2_FillDayList",
+    ),
+    (
+        0x001b_b968,
+        cfe_state_create_step2_is_leap_year,
+        "cFEStateCreateStep2_IsLeapYear",
+    ),
+    (
+        0x001b_b9b0,
+        c_fe_state_create_step2_get_days_in_month,
+        "cFEStateCreateStep2_GetDaysInMonth",
+    ),
+    (
+        0x001b_bd08,
+        c_fe_state_create_duplicate_ctor,
+        "cFEStateCreateDuplicate_ctor",
+    ),
+    (
+        0x001b_bd60,
+        c_fe_state_create_duplicate_init,
+        "cFEStateCreateDuplicate_Init",
+    ),
+    (
+        0x001b_c290,
+        c_fe_state_create_duplicate_submit_account,
+        "cFEStateCreateDuplicate_SubmitAccount",
+    ),
+    (
+        0x001b_c6a0,
+        c_fe_state_create_duplicate_on_child_event,
+        "cFEStateCreateDuplicate_OnChildEvent",
+    ),
+    (
+        0x001b_cc30,
+        c_fe_state_lobby_menu_init,
+        "cFEStateLobbyMenu_Init",
+    ),
+    (
+        0x001b_cca8,
+        c_fe_state_lobby_menu_v32,
+        "cFEStateLobbyMenu_v32",
+    ),
+    (
+        0x001b_cd18,
+        cfestate_lobby_menu_transition_in,
+        "cFEStateLobbyMenu_TransitionIn",
+    ),
+    (
+        0x001b_d428,
+        fe_lobby_menu_on_keyboard_done,
+        "cFEStateLobbyMenu_OnKeyboardDone",
+    ),
+    (
+        0x001b_d460,
+        c_fe_state_lobby_menu_enter_room,
+        "cFEStateLobbyMenu_EnterRoom",
+    ),
+    (
+        0x001b_d848,
+        c_fe_state_lobby_menu_on_net_result,
+        "cFEStateLobbyMenu_OnNetResult",
+    ),
+    (
+        0x001b_dcf8,
+        cfe_state_lobby_menu_on_create_room_popup_event,
+        "cFEStateLobbyMenu_OnCreateRoomPopupEvent",
+    ),
+    (
+        0x001b_dd60,
+        cfestatelobbymenu_prompt_room_password,
+        "cFEStateLobbyMenu_PromptRoomPassword",
+    ),
+    (
+        0x001b_dde8,
+        cfe_state_lobby_menu_on_child_event,
+        "cFEStateLobbyMenu_OnChildEvent",
+    ),
+    (
+        0x001b_df60,
+        c_fe_state_lobby_menu_show_room_tab,
+        "cFEStateLobbyMenu_ShowRoomTab",
+    ),
+    (
+        0x001b_dfd8,
+        cfe_state_lobby_menu_hide_room_tabs,
+        "cFEStateLobbyMenu_HideRoomTabs",
+    ),
+    (
+        0x001b_e038,
+        c_fe_state_lobby_menu_clamp_room_selections,
+        "cFEStateLobbyMenu_ClampRoomSelections",
+    ),
+    (
+        0x001b_e510,
+        c_fe_state_lobby_menu_refresh_player_list,
+        "cFEStateLobbyMenu_RefreshPlayerList",
+    ),
+    (
+        0x001b_e7d8,
+        c_fe_state_net_create_room_popup_ctor,
+        "cFEStateNetCreateRoomPopup_ctor",
+    ),
+    (
+        0x001b_e828,
+        cfe_state_net_create_room_popup_init,
+        "cFEStateNetCreateRoomPopup_Init",
+    ),
+    (
+        0x001b_ec78,
+        net_create_room_popup_validate_room_name,
+        "cFEStateNetCreateRoomPopup_ValidateRoomName",
+    ),
+    (
+        0x001b_ed28,
+        c_fe_state_net_create_room_popup_v31,
+        "cFEStateNetCreateRoomPopup_v31",
+    ),
     (0x001b_ee30, c_fe_state_login_ctor, "cFEStateLogin_ctor"),
     (0x001b_ee78, cfe_state_login_dtor, "cFEStateLogin_dtor"),
     (0x001b_eed0, c_fe_state_login_init, "cFEStateLogin_Init"),
     (0x001b_f378, fe_state_login_v33, "cFEStateLogin_v33"),
-    (0x001b_fbf8, cfe_online_main_menu_init, "cFEStateOnlineMainMenu_Init"),
-    (0x001c_0138, c_fe_state_online_main_menu_on_leave_popup_event, "cFEStateOnlineMainMenu_OnLeavePopupEvent"),
-    (0x001c_0240, cfe_online_main_menu_on_disconnect_popup_event, "cFEStateOnlineMainMenu_OnDisconnectPopupEvent"),
-    (0x001c_02f8, cfe_state_online_main_menu_on_child_event, "cFEStateOnlineMainMenu_OnChildEvent"),
-    (0x001c_0358, c_fe_state_online_main_menu_v31, "cFEStateOnlineMainMenu_v31"),
-    (0x001c_0418, c_fe_state_online_agreement_ctor, "cFEStateOnlineAgreement_ctor"),
-    (0x001c_04a8, fe_state_online_agreement_init, "cFEStateOnlineAgreement_Init"),
-    (0x001c_0a28, cfe_state_online_agreement_dtor, "cFEStateOnlineAgreement_dtor"),
-    (0x001c_0a80, c_fe_state_online_agreement_update, "cFEStateOnlineAgreement_Update"),
-    (0x001c_0b08, fe_state_online_agreement_on_widget_notify, "cFEStateOnlineAgreement_OnWidgetNotify"),
-    (0x001c_0ce0, c_fe_state_online_agreement_on_widget_created, "cFEStateOnlineAgreement_OnWidgetCreated"),
-    (0x001c_0ea8, fe_state_online_agreement_v25, "cFEStateOnlineAgreement_v25"),
-    (0x001c_0f40, c_fe_state_net_quick_play_popup_ctor, "cFEStateNetQuickPlayPopup_ctor"),
-    (0x001c_0fc0, c_fe_state_net_quick_play_popup_init, "cFEStateNetQuickPlayPopup_Init"),
-    (0x001c_1038, fe_state_net_quick_play_popup_update, "cFEStateNetQuickPlayPopup_Update"),
-    (0x001c_13e0, cfe_net_quick_play_popup_set_options_hint_visible, "cFEStateNetQuickPlayPopup_SetOptionsHintVisible"),
-    (0x001c_17e0, fe_state_net_quick_play_popup_on_widget_notify, "cFEStateNetQuickPlayPopup_OnWidgetNotify"),
-    (0x001c_17f8, net_quick_play_popup_set_options_enabled, "cFEStateNetQuickPlayPopup_SetOptionsEnabled"),
-    (0x001c_1b48, fe_state_net_quick_play_popup_on_child_event, "cFEStateNetQuickPlayPopup_OnChildEvent"),
-    (0x001c_1b88, cfe_state_net_quick_play_popup_on_options_popup_event, "cFEStateNetQuickPlayPopup_OnOptionsPopupEvent"),
-    (0x001c_1c50, c_fe_state_net_ssx_world_ctor, "cFEStateNetSSXWorld_ctor"),
-    (0x001c_1c90, c_fe_state_net_ssx_world_init, "cFEStateNetSSXWorld_Init"),
-    (0x001c_1e08, c_fe_state_net_ssx_world_on_widget_created, "cFEStateNetSSXWorld_OnWidgetCreated"),
-    (0x001c_20f8, c_fe_state_net_quick_messages_ctor, "cFEStateNetQuickMessages_ctor"),
-    (0x001c_2138, c_fe_state_net_quick_messages_init, "cFEStateNetQuickMessages_Init"),
-    (0x001c_23c0, c_fe_state_net_quick_messages_transition_in, "cFEStateNetQuickMessages_TransitionIn"),
-    (0x001c_2b48, cfe_state_net_quick_messages_on_child_event, "cFEStateNetQuickMessages_OnChildEvent"),
-    (0x001c_2ba8, cfe_net_quick_messages_on_reset_popup_event, "cFEStateNetQuickMessages_OnResetPopupEvent"),
-    (0x001c_2c50, cfe_state_net_quick_messages_on_save_popup_event, "cFEStateNetQuickMessages_OnSavePopupEvent"),
+    (
+        0x001b_fbf8,
+        cfe_online_main_menu_init,
+        "cFEStateOnlineMainMenu_Init",
+    ),
+    (
+        0x001c_0138,
+        c_fe_state_online_main_menu_on_leave_popup_event,
+        "cFEStateOnlineMainMenu_OnLeavePopupEvent",
+    ),
+    (
+        0x001c_0240,
+        cfe_online_main_menu_on_disconnect_popup_event,
+        "cFEStateOnlineMainMenu_OnDisconnectPopupEvent",
+    ),
+    (
+        0x001c_02f8,
+        cfe_state_online_main_menu_on_child_event,
+        "cFEStateOnlineMainMenu_OnChildEvent",
+    ),
+    (
+        0x001c_0358,
+        c_fe_state_online_main_menu_v31,
+        "cFEStateOnlineMainMenu_v31",
+    ),
+    (
+        0x001c_0418,
+        c_fe_state_online_agreement_ctor,
+        "cFEStateOnlineAgreement_ctor",
+    ),
+    (
+        0x001c_04a8,
+        fe_state_online_agreement_init,
+        "cFEStateOnlineAgreement_Init",
+    ),
+    (
+        0x001c_0a28,
+        cfe_state_online_agreement_dtor,
+        "cFEStateOnlineAgreement_dtor",
+    ),
+    (
+        0x001c_0a80,
+        c_fe_state_online_agreement_update,
+        "cFEStateOnlineAgreement_Update",
+    ),
+    (
+        0x001c_0b08,
+        fe_state_online_agreement_on_widget_notify,
+        "cFEStateOnlineAgreement_OnWidgetNotify",
+    ),
+    (
+        0x001c_0ce0,
+        c_fe_state_online_agreement_on_widget_created,
+        "cFEStateOnlineAgreement_OnWidgetCreated",
+    ),
+    (
+        0x001c_0ea8,
+        fe_state_online_agreement_v25,
+        "cFEStateOnlineAgreement_v25",
+    ),
+    (
+        0x001c_0f40,
+        c_fe_state_net_quick_play_popup_ctor,
+        "cFEStateNetQuickPlayPopup_ctor",
+    ),
+    (
+        0x001c_0fc0,
+        c_fe_state_net_quick_play_popup_init,
+        "cFEStateNetQuickPlayPopup_Init",
+    ),
+    (
+        0x001c_1038,
+        fe_state_net_quick_play_popup_update,
+        "cFEStateNetQuickPlayPopup_Update",
+    ),
+    (
+        0x001c_13e0,
+        cfe_net_quick_play_popup_set_options_hint_visible,
+        "cFEStateNetQuickPlayPopup_SetOptionsHintVisible",
+    ),
+    (
+        0x001c_17e0,
+        fe_state_net_quick_play_popup_on_widget_notify,
+        "cFEStateNetQuickPlayPopup_OnWidgetNotify",
+    ),
+    (
+        0x001c_17f8,
+        net_quick_play_popup_set_options_enabled,
+        "cFEStateNetQuickPlayPopup_SetOptionsEnabled",
+    ),
+    (
+        0x001c_1b48,
+        fe_state_net_quick_play_popup_on_child_event,
+        "cFEStateNetQuickPlayPopup_OnChildEvent",
+    ),
+    (
+        0x001c_1b88,
+        cfe_state_net_quick_play_popup_on_options_popup_event,
+        "cFEStateNetQuickPlayPopup_OnOptionsPopupEvent",
+    ),
+    (
+        0x001c_1c50,
+        c_fe_state_net_ssx_world_ctor,
+        "cFEStateNetSSXWorld_ctor",
+    ),
+    (
+        0x001c_1c90,
+        c_fe_state_net_ssx_world_init,
+        "cFEStateNetSSXWorld_Init",
+    ),
+    (
+        0x001c_1e08,
+        c_fe_state_net_ssx_world_on_widget_created,
+        "cFEStateNetSSXWorld_OnWidgetCreated",
+    ),
+    (
+        0x001c_20f8,
+        c_fe_state_net_quick_messages_ctor,
+        "cFEStateNetQuickMessages_ctor",
+    ),
+    (
+        0x001c_2138,
+        c_fe_state_net_quick_messages_init,
+        "cFEStateNetQuickMessages_Init",
+    ),
+    (
+        0x001c_23c0,
+        c_fe_state_net_quick_messages_transition_in,
+        "cFEStateNetQuickMessages_TransitionIn",
+    ),
+    (
+        0x001c_2b48,
+        cfe_state_net_quick_messages_on_child_event,
+        "cFEStateNetQuickMessages_OnChildEvent",
+    ),
+    (
+        0x001c_2ba8,
+        cfe_net_quick_messages_on_reset_popup_event,
+        "cFEStateNetQuickMessages_OnResetPopupEvent",
+    ),
+    (
+        0x001c_2c50,
+        cfe_state_net_quick_messages_on_save_popup_event,
+        "cFEStateNetQuickMessages_OnSavePopupEvent",
+    ),
     (0x001c_2d18, c_fe_state_stats_ctor, "cFEStateStats_ctor"),
     (0x001c_2e00, c_fe_state_stats_init, "cFEStateStats_Init"),
     (0x001c_2e70, c_fe_state_stats_v32, "cFEStateStats_v32"),
-    (0x001c_32b8, c_fe_state_stats_transition_in, "cFEStateStats_TransitionIn"),
-    (0x001c_4b78, cfe_state_stats_reset_results_page, "cFEStateStats_ResetResultsPage"),
-    (0x001c_4b98, fe_state_stats_on_widget_notify, "cFEStateStats_OnWidgetNotify"),
+    (
+        0x001c_32b8,
+        c_fe_state_stats_transition_in,
+        "cFEStateStats_TransitionIn",
+    ),
+    (
+        0x001c_4b78,
+        cfe_state_stats_reset_results_page,
+        "cFEStateStats_ResetResultsPage",
+    ),
+    (
+        0x001c_4b98,
+        fe_state_stats_on_widget_notify,
+        "cFEStateStats_OnWidgetNotify",
+    ),
     (0x001c_4cd8, cfe_state_stats_v31, "cFEStateStats_v31"),
-    (0x001c_4f58, fe_state_stats_format_time, "cFEStateStats_FormatTime"),
-    (0x001c_5018, c_fe_state_net_news_ctor, "cFEStateNetNews_ctor"),
-    (0x001c_5098, c_fe_state_net_news_init, "cFEStateNetNews_Init"),
+    (
+        0x001c_4f58,
+        fe_state_stats_format_time,
+        "cFEStateStats_FormatTime",
+    ),
+    (
+        0x001c_5018,
+        c_fe_state_net_news_ctor,
+        "cFEStateNetNews_ctor",
+    ),
+    (
+        0x001c_5098,
+        c_fe_state_net_news_init,
+        "cFEStateNetNews_Init",
+    ),
     (0x001c_5108, c_fe_state_net_news_v32, "cFEStateNetNews_v32"),
-    (0x001c_5310, cfe_state_net_news_on_widget_created, "cFEStateNetNews_OnWidgetCreated"),
-    (0x001c_5420, fe_state_net_news_on_widget_notify, "cFEStateNetNews_OnWidgetNotify"),
+    (
+        0x001c_5310,
+        cfe_state_net_news_on_widget_created,
+        "cFEStateNetNews_OnWidgetCreated",
+    ),
+    (
+        0x001c_5420,
+        fe_state_net_news_on_widget_notify,
+        "cFEStateNetNews_OnWidgetNotify",
+    ),
     (0x001c_5540, fe_state_net_news_v25, "cFEStateNetNews_v25"),
-    (0x001c_55f8, fe_popup_confirm_cfg_ctor, "cFEPopupConfirm_CfgCtor"),
-    (0x001c_5750, c_fe_popup_confirm_cfg_dtor, "cFEPopupConfirm_CfgDtor"),
-    (0x001c_5780, cfepopupconfirm_cfg_set_option_string, "cFEPopupConfirm_CfgSetOptionString"),
-    (0x001c_57a0, cfepopupconfirm_cfg_set_option_wide_string, "cFEPopupConfirm_CfgSetOptionWideString"),
-    (0x001c_57c0, cfepopupconfirm_cfg_set_option_text_id, "cFEPopupConfirm_CfgSetOptionTextId"),
-    (0x001c_5800, cfepopupconfirm_cfg_get_option, "cFEPopupConfirm_CfgGetOption"),
-    (0x001c_5838, cfepopupconfirm_cfg_set_option_confirm_wide, "cFEPopupConfirm_CfgSetOptionConfirmWide"),
-    (0x001c_5860, cfepopupconfirm_cfg_clear_option_confirm, "cFEPopupConfirm_CfgClearOptionConfirm"),
-    (0x001c_5878, cfepopupconfirm_cfg_set_option_confirm_text_id, "cFEPopupConfirm_CfgSetOptionConfirmTextId"),
-    (0x001c_58d0, cfepopupconfirm_cfg_get_option_confirm, "cFEPopupConfirm_CfgGetOptionConfirm"),
+    (
+        0x001c_55f8,
+        fe_popup_confirm_cfg_ctor,
+        "cFEPopupConfirm_CfgCtor",
+    ),
+    (
+        0x001c_5750,
+        c_fe_popup_confirm_cfg_dtor,
+        "cFEPopupConfirm_CfgDtor",
+    ),
+    (
+        0x001c_5780,
+        cfepopupconfirm_cfg_set_option_string,
+        "cFEPopupConfirm_CfgSetOptionString",
+    ),
+    (
+        0x001c_57a0,
+        cfepopupconfirm_cfg_set_option_wide_string,
+        "cFEPopupConfirm_CfgSetOptionWideString",
+    ),
+    (
+        0x001c_57c0,
+        cfepopupconfirm_cfg_set_option_text_id,
+        "cFEPopupConfirm_CfgSetOptionTextId",
+    ),
+    (
+        0x001c_5800,
+        cfepopupconfirm_cfg_get_option,
+        "cFEPopupConfirm_CfgGetOption",
+    ),
+    (
+        0x001c_5838,
+        cfepopupconfirm_cfg_set_option_confirm_wide,
+        "cFEPopupConfirm_CfgSetOptionConfirmWide",
+    ),
+    (
+        0x001c_5860,
+        cfepopupconfirm_cfg_clear_option_confirm,
+        "cFEPopupConfirm_CfgClearOptionConfirm",
+    ),
+    (
+        0x001c_5878,
+        cfepopupconfirm_cfg_set_option_confirm_text_id,
+        "cFEPopupConfirm_CfgSetOptionConfirmTextId",
+    ),
+    (
+        0x001c_58d0,
+        cfepopupconfirm_cfg_get_option_confirm,
+        "cFEPopupConfirm_CfgGetOptionConfirm",
+    ),
     (0x002c_2718, ustr_sprintf_ascii_fmt, "UStr_SprintfAsciiFmt"),
-    (0x002c_27c0, ustr_sprintf_ascii_fmt_2, "UStr_SprintfAsciiFmt_2"),
-    (0x003d_ef40, async_file_assign_serial, "AsyncFile_AssignSerial"),
+    (
+        0x002c_27c0,
+        ustr_sprintf_ascii_fmt_2,
+        "UStr_SprintfAsciiFmt_2",
+    ),
+    (
+        0x003d_ef40,
+        async_file_assign_serial,
+        "AsyncFile_AssignSerial",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -336,419 +1272,374 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 pub(crate) mod callee {
     use super::ee;
     use super::Callee;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::EVENT_SELECT_HANDLE_INPUT;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::MC_MANAGER_GET_INSTANCE;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::STATS_PROCESS_UPDATE_STUB;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::STATS_PROCESS_RENDER_STUB;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::SCRIPT_ENGINE_PUSH_FREE_NODE;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::SCRIPT_OBJ_DEACTIVATE;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::SCRIPT_DUMMY_OBJ_READ_FIELDS;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::PATH_DATA_READ_FLOAT;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::EA_MEM_COPY;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::RAND_NEXT_MAIN;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::RAND_NEXT;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::TEX_MAN_SET_ALLOC_FLAGS;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::GRAPHICS_MAN_EMPTY_HOOK;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::UI_STATE_MGR_RENDER_STUB;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::UI_LIST_PUSH_BACK;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::UI_LIST_FIRST;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::UI_LIST_NODE_UNLINK;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::WORLD_RESET_SECTIONS;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::STRLEN_AND_STRCPY;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::CBXSTRING_ASSIGN_CSTR;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::LOBBY_MAN_REQUEST_STATS_PAGE;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::SSX_APP_BOOT_LOAD;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::USTR_FROM_ASCII;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::PATH_SET_TRACK_CONTROL_VALUE;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::WORLD_TRIGGER_GET_INFO;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::WORLD_TRIGGER_GET_NAME;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::STREAM_BUFFER_GET_STATUS;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::MENU_SYS_GET_INPUT_CODE;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::IRRADIANCE_REF_GET_ENTRY;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::C_WORLD_SOUND_UNLINK_EMITTERS;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::RIDER_METRIX_BANK_COMBO;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::BUILTIN_DELETE;
-    pub(crate) use crate::game::be::beintmission::callee::WORLD_OBJ_RUN_KILL_SCRIPT;
-    pub(crate) use crate::game::be::beintmission::callee::UITEXT_SET_WIDE_STRING_INTERNAL;
-    pub(crate) use crate::game::be::beintmission::callee::MPEG2_ERROR;
-    pub(crate) use crate::game::be::beintmission::callee::MISSION_COUNT;
-    pub(crate) use crate::game::be::beintmission::callee::MISSION_NTH;
-    pub(crate) use crate::game::be::beintmission::callee::REWARDS_FILE_LOAD;
-    pub(crate) use crate::game::be::beintmission::callee::CHASE_CAM_SET_ALGORITHM;
-    pub(crate) use crate::game::be::beintmission::callee::CAMERA_TRIGGER_EMPTY_STUB;
-    pub(crate) use crate::game::be::beintmission::callee::UBER_TRICK_REFRESH;
-    pub(crate) use crate::game::be::beintmission::callee::MEMCARD_SCAN_STEP;
-    pub(crate) use crate::game::be::beintmission::callee::NET_FE_STATE_ON_WIDGET_ACTION;
-    pub(crate) use crate::game::be::beintmission::callee::VIEW_POPUP_SHOW_MESSAGE;
-    pub(crate) use crate::game::be::beintmission::callee::BUY_ATTRIB_UPDATE_BARS;
-    pub(crate) use crate::game::be::beintmission::callee::CAREER_STATS_SHOW_HIGHLIGHTS;
-    pub(crate) use crate::game::bx::bxstring2::callee::FE_MODULE_RIDER_PREVIEW_REQUEST_CHAR;
-    pub(crate) use crate::game::bx::bxstring2::callee::C_FE_STATE_LOBBY_MENU_FILL_PLAYER_LIST;
-    pub(crate) use crate::game::bx::bxstring2::callee::C_FE_STATE_LOBBY_MENU_UPDATE_PLAYER_SCROLL_ARROWS;
-    pub(crate) use crate::game::bx::bxstring2::callee::EVENT_SELECT_ON_ACTIVATE;
-    pub(crate) use crate::game::bx::bxstring2::callee::EVENT_SELECT_UPDATE;
-    pub(crate) use crate::game::bx::bxstring2::callee::C_OV_STATE_OVERLAY_UPDATE;
-    pub(crate) use crate::game::bx::bxstring2::callee::C_LUNO_TABLE_ALLOC;
-    pub(crate) use crate::game::bx::bxstring2::callee::CROWD_MAN2D_REMOVE_ALL;
-    pub(crate) use crate::game::bx::bxstring2::callee::CROWD_MAN2D_RESET;
-    pub(crate) use crate::game::bx::bxstring2::callee::SECTION_MAN_INIT;
-    pub(crate) use crate::game::bx::bxstring2::callee::GAME_MODULE_REQUEST_STATE;
-    pub(crate) use crate::game::bx::bxstring2::callee::VID_ENGINE_PLAYER_START_PLAYBACK;
-    pub(crate) use crate::game::bx::bxstring2::callee::SCRIPT_LIST_PREPARE;
-    pub(crate) use crate::game::bx::bxstring2::callee::SCRIPT_LIST_SET_PAUSED_NESTED;
-    pub(crate) use crate::game::bx::bxstring2::callee::SCRIPT_LIST_GET_ENTRY_TYPE;
-    pub(crate) use crate::game::bx::bxstring2::callee::SCRIPT_ENGINE_STOP_MAIN_LISTS;
-    pub(crate) use crate::game::bx::bxstring2::callee::SCRIPT_ENGINE_STOP_AUX_LISTS;
-    pub(crate) use crate::game::bx::bxstring2::callee::SNAPSHOT_LIST_REMOVE;
-    pub(crate) use crate::game::bx::bxstring2::callee::PATH_DATA_PARSE;
-    pub(crate) use crate::game::bx::bxstring2::callee::WORLD_STATE_RESTORE;
-    pub(crate) use crate::game::bx::bxstring2::callee::EA_MEM_ALLOC_NAMED;
-    pub(crate) use crate::game::main::ssxappdtor::callee::NET_FE_ON_CHILD_EVENT_DEFAULT;
-    pub(crate) use crate::game::main::ssxappdtor::callee::SHARED_LOGIN_SET_ACCOUNT_NAME;
-    pub(crate) use crate::game::main::ssxappdtor::callee::SHARED_LOGIN_SET_ACCOUNT_PASSWORD;
-    pub(crate) use crate::game::main::ssxappdtor::callee::MESSAGE_CENTER_GET_INBOX;
-    pub(crate) use crate::game::main::ssxappdtor::callee::UI_STATE_ON_ACTIVATE;
-    pub(crate) use crate::game::main::ssxappdtor::callee::AUDIO_GET_INSTANCE;
-    pub(crate) use crate::game::main::ssxappdtor::callee::AUDIO_PLAY_FE_SOUND;
-    pub(crate) use crate::game::main::ssxappdtor::callee::AUDIO_ON_EVENT_SELECT_ENTER;
-    pub(crate) use crate::game::main::ssxappdtor::callee::BUY_ATTRIB_COMMIT_PURCHASE;
-    pub(crate) use crate::game::main::ssxappdtor::callee::FE_STATE_ON_ACTIVATE;
-    pub(crate) use crate::game::main::ssxappdtor::callee::CAREER_STATS_SELECT_PAGE;
-    pub(crate) use crate::game::main::ssxappdtor::callee::REWARD_LIST_SHOW_PAGE;
-    pub(crate) use crate::game::main::ssxappdtor::callee::EVENT_SELECT_SET_MODE;
-    pub(crate) use crate::game::main::ssxappdtor::callee::EVENT_SELECT_SHUTDOWN;
-    pub(crate) use crate::game::main::ssxappdtor::callee::OV_STATE_OVERLAY_SHUTDOWN;
-    pub(crate) use crate::game::main::ssxappdtor::callee::UI_ENGINE_UPDATE;
-    pub(crate) use crate::game::main::ssxappdtor::callee::APP_MODULE_UPDATE;
-    pub(crate) use crate::game::main::ssxappdtor::callee::DELETE;
-    pub(crate) use crate::game::be::beintmission::callee::FIND_MISSION;
-    pub(crate) use crate::game::be::beintmission::callee::CHASE_CAM_RESET_STATE;
-    pub(crate) use crate::game::be::beintmission::callee::CHASE_CAM_SET_ALGORITHM_IMMEDIATE;
-    pub(crate) use crate::game::be::beintmission::callee::CHASE_CAM_SET_ALGORITHM_2;
-    pub(crate) use crate::game::be::beintmission::callee::GET_RIDER_PREVIEW;
-    pub(crate) use crate::game::be::beintmission::callee::RIDER_PREVIEW_SET_VISIBLE;
-    pub(crate) use crate::game::be::beintmission::callee::NET_FE_STATE_CTOR;
-    pub(crate) use crate::game::be::beintmission::callee::LOBBY_MENU_REQUEST_JOIN_ROOM;
-    pub(crate) use crate::game::be::beintmission::callee::POPUP_CONFIRM_CFG_RESET;
-    pub(crate) use crate::game::be::beintmission::callee::REWARD_GALLERY_CHECK_REWARDS_READY;
-    pub(crate) use crate::game::be::beintmission::callee::REWARD_GALLERY_POLL_SHAPE_LOAD;
-    pub(crate) use crate::game::be::beintmission::callee::BUDDY_MAN_GET_ROSTER_ENTRY;
-    pub(crate) use crate::game::be::beintmission::callee::REPLAY_APPLY_CAMERA;
-    pub(crate) use crate::game::be::beintmission::callee::RACE_PROGRESS_RESET_ALL;
-    pub(crate) use crate::game::be::beintmission::callee::MC_MANAGER_END_OPERATION;
-    pub(crate) use crate::game::be::beintmission::callee::SCRIPT_ENGINE_STOP_MAIN_LISTS as SCRIPT_ENGINE_STOP_MAIN_LISTS_2;
-    pub(crate) use crate::game::be::beintmission::callee::SCRIPT_ENGINE_STOP_AUX_LISTS as SCRIPT_ENGINE_STOP_AUX_LISTS_2;
-    pub(crate) use crate::game::be::beintmission::callee::SCRIPT_ENGINE_STOP_ALL_PROCESS_SEQS;
-    pub(crate) use crate::game::be::beintmission::callee::SCRIPT_ENGINE_GET_INSTANCE;
-    pub(crate) use crate::game::be::beintmission::callee::SCRIPT_ENGINE_DEACTIVATE_BINDING;
-    pub(crate) use crate::game::be::beintmission::callee::CROWD_AUDIO_STOP_ALL;
-    pub(crate) use crate::game::be::beintmission::callee::BANK_MONITOR_STOP_ALL;
+    pub(crate) use crate::game::ai::rider::callee::BENEW_PLAYER_INT_GET_SLOT;
+    pub(crate) use crate::game::ai::rider::callee::BE_GET_RIDER_PROFILE_2 as BE_GET_RIDER_PROFILE_4;
+    pub(crate) use crate::game::ai::rider::callee::BUDDY_MAN_GET_ROSTER_COUNT as BUDDY_MAN_GET_ROSTER_COUNT_3;
+    pub(crate) use crate::game::ai::rider::callee::BUDDY_MAN_GET_ROSTER_ENTRY as BUDDY_MAN_GET_ROSTER_ENTRY_3;
+    pub(crate) use crate::game::ai::rider::callee::BUY_POPUP_INIT_BUY_BOLT;
+    pub(crate) use crate::game::ai::rider::callee::CODEC_POP_FREE_FRAME;
+    pub(crate) use crate::game::ai::rider::callee::CREATE_STEP1_ALL_FIELDS_FILLED;
+    pub(crate) use crate::game::ai::rider::callee::CREATE_STEP1_BACKUP_ACCOUNT;
+    pub(crate) use crate::game::ai::rider::callee::CREATE_STEP1_SET_ACCOUNT_NAME;
+    pub(crate) use crate::game::ai::rider::callee::CREATE_STEP1_SET_CONFIRM_PASSWORD;
+    pub(crate) use crate::game::ai::rider::callee::CREATE_STEP1_SET_EMAIL;
+    pub(crate) use crate::game::ai::rider::callee::CREATE_STEP1_SET_INFORM;
+    pub(crate) use crate::game::ai::rider::callee::CREATE_STEP1_SET_PASSWORD;
+    pub(crate) use crate::game::ai::rider::callee::CREATE_STEP1_SET_SHARE_INFO;
+    pub(crate) use crate::game::ai::rider::callee::CROWD_MAN_GROUP_FREE;
+    pub(crate) use crate::game::ai::rider::callee::GAME_UI_OPEN_SCREEN;
+    pub(crate) use crate::game::ai::rider::callee::IN_SEQ_PLAY;
+    pub(crate) use crate::game::ai::rider::callee::LOBBY_MAN_GET_LANGUAGE;
+    pub(crate) use crate::game::ai::rider::callee::LOBBY_MAN_SEND_REQUEST as LOBBY_MAN_SEND_REQUEST_2;
+    pub(crate) use crate::game::ai::rider::callee::LOGIN_ON_ACCOUNT_MEM_POPUP;
+    pub(crate) use crate::game::ai::rider::callee::LOGIN_ON_DISCONNECT_POPUP;
+    pub(crate) use crate::game::ai::rider::callee::MESSAGE_CENTER_GET_LIST_INDEX;
+    pub(crate) use crate::game::ai::rider::callee::MESSAGE_CENTER_OPEN_VIEW_POPUP;
+    pub(crate) use crate::game::ai::rider::callee::MPEG2_GET_BITS;
+    pub(crate) use crate::game::ai::rider::callee::MPEG2_MARKER_BIT;
+    pub(crate) use crate::game::ai::rider::callee::NET_ACCOUNT_MEM_CTOR;
+    pub(crate) use crate::game::ai::rider::callee::NET_FE_STATE_ON_CHILD_EVENT as NET_FE_STATE_ON_CHILD_EVENT_11;
+    pub(crate) use crate::game::ai::rider::callee::RAIL_MAN_ENABLE_RAIL;
+    pub(crate) use crate::game::ai::rider::callee::RIDER_GET_START_DIST_TO_FINISH;
+    pub(crate) use crate::game::ai::rider::callee::SCRIPT_ENGINE_GET_PROCESS as SCRIPT_ENGINE_GET_PROCESS_3;
+    pub(crate) use crate::game::ai::rider::callee::SCRIPT_OBJ_CTOR as SCRIPT_OBJ_CTOR_2;
+    pub(crate) use crate::game::ai::rider::callee::SCRIPT_OBJ_DEACTIVATE as SCRIPT_OBJ_DEACTIVATE_2;
+    pub(crate) use crate::game::ai::rider::callee::SHOW_CHAR_STATS;
+    pub(crate) use crate::game::ai::rider::callee::SHOW_CHECKING_CARD_POPUP;
+    pub(crate) use crate::game::ai::rider::callee::SSX_AUDIO_GET_SURFACE_SOUND_TYPE;
+    pub(crate) use crate::game::ai::rider::callee::SSX_AUDIO_PLAY_FE_SOUND;
+    pub(crate) use crate::game::ai::rider::callee::SSX_AUDIO_START_BOARD_BASE_LOOP;
+    pub(crate) use crate::game::ai::rider::callee::SSX_AUDIO_START_BOARD_EDGE_LOOP;
+    pub(crate) use crate::game::ai::rider::callee::SSX_AUDIO_START_BOARD_SURFACE_LOOP;
+    pub(crate) use crate::game::ai::rider::callee::SSX_AUDIO_STOP_TRICK_METER_SOUND;
+    pub(crate) use crate::game::ai::rider::callee::SSX_AUDIO_STOP_WIPEOUT_LOOP;
+    pub(crate) use crate::game::ai::rider::callee::SSX_AUDIO_STOP_WIPEOUT_LOOP2;
+    pub(crate) use crate::game::ai::rider::callee::START_CARD_SCAN;
+    pub(crate) use crate::game::ai::rider::callee::STREAMER_GET_SECTION_COUNT;
+    pub(crate) use crate::game::ai::rider::callee::SYNC_PROCESS_DTOR;
+    pub(crate) use crate::game::ai::rider::callee::TEX_MAN_EVICT_TEXTURE;
+    pub(crate) use crate::game::ai::rider::callee::VRAM_HEAP_FREE_TEXTURE_BLOCKS;
+    pub(crate) use crate::game::ai::rider::callee::WORLD_CACHE_LOAD;
+    pub(crate) use crate::game::ai::rider::callee::WORLD_CACHE_RESET;
+    pub(crate) use crate::game::ai::rider::callee::WSCRIPT_CACHE_ALLOC;
+    pub(crate) use crate::game::be::beintmission::callee::AUDIO_GET_CHANNEL_VOLUME;
+    pub(crate) use crate::game::be::beintmission::callee::AUDIO_IS_GAME_MUSIC_ENABLED;
     pub(crate) use crate::game::be::beintmission::callee::AUDIO_LEVEL_TO_VOLUME;
     pub(crate) use crate::game::be::beintmission::callee::AUDIO_SET_CHANNEL_VOLUME;
-    pub(crate) use crate::game::be::beintmission::callee::SND_BANK_SET_MEMORY;
-    pub(crate) use crate::game::be::beintmission::callee::AUDIO_IS_GAME_MUSIC_ENABLED;
-    pub(crate) use crate::game::be::beintmission::callee::MUSIC_PLAYER_STOP_SONG;
-    pub(crate) use crate::game::be::beintmission::callee::UI_STATE_UPDATE;
+    pub(crate) use crate::game::be::beintmission::callee::AUDIO_START_PRERACE_MUSIC;
+    pub(crate) use crate::game::be::beintmission::callee::BANK_MONITOR_STOP_ALL;
     pub(crate) use crate::game::be::beintmission::callee::BE_LIBRARY_GET_INSTANCE;
     pub(crate) use crate::game::be::beintmission::callee::BE_LIBRARY_GET_INTERFACE;
     pub(crate) use crate::game::be::beintmission::callee::BE_NEW_PLAYER_GET_INBOX;
-    pub(crate) use crate::game::be::beintmission::callee::WSCRIPT_MAN_EVENT_QUEUE_POP;
-    pub(crate) use crate::game::be::beintmission::callee::AUDIO_START_PRERACE_MUSIC;
-    pub(crate) use crate::game::be::beintmission::callee::SLOGIN_DELETE;
+    pub(crate) use crate::game::be::beintmission::callee::BUDDY_MAN_GET_ROSTER_ENTRY;
+    pub(crate) use crate::game::be::beintmission::callee::BUY_ATTRIB_UPDATE_BARS;
+    pub(crate) use crate::game::be::beintmission::callee::CAMERA_TRIGGER_EMPTY_STUB;
     pub(crate) use crate::game::be::beintmission::callee::CAMERA_TRIGGER_MAN_UPDATE_MASK1;
+    pub(crate) use crate::game::be::beintmission::callee::CAREER_STATS_SHOW_HIGHLIGHTS;
+    pub(crate) use crate::game::be::beintmission::callee::CHASE_CAM_RESET_STATE;
+    pub(crate) use crate::game::be::beintmission::callee::CHASE_CAM_SET_ALGORITHM;
+    pub(crate) use crate::game::be::beintmission::callee::CHASE_CAM_SET_ALGORITHM_2;
+    pub(crate) use crate::game::be::beintmission::callee::CHASE_CAM_SET_ALGORITHM_IMMEDIATE;
+    pub(crate) use crate::game::be::beintmission::callee::CROWD_AUDIO_STOP_ALL;
     pub(crate) use crate::game::be::beintmission::callee::EA_MEMSET;
-    pub(crate) use crate::game::be::beintmission::callee::AUDIO_GET_CHANNEL_VOLUME;
-    pub(crate) use crate::game::fe::festaterewards2::callee::FE_STATE_ON_ACTIVATE as FE_STATE_ON_ACTIVATE_2;
-    pub(crate) use crate::game::fe::festaterewards2::callee::REQUEST_LINE_UPDATE_SONG_NAMES;
-    pub(crate) use crate::game::fe::festaterewards2::callee::REQUEST_LINE_UPDATE_SONG_ICONS;
-    pub(crate) use crate::game::fe::festaterewards2::callee::REQUEST_LINE_UPDATE_SCROLL_ARROWS;
-    pub(crate) use crate::game::fe::festaterewards2::callee::REQUEST_LINE_UPDATE_SONG_COUNT;
-    pub(crate) use crate::game::fe::festaterewards2::callee::NET_FE_STATE_ON_DISCONNECTED_POPUP_EVENT;
-    pub(crate) use crate::game::fe::festaterewards2::callee::NET_FE_STATE_ON_CHILD_EVENT;
-    pub(crate) use crate::game::fe::festaterewards2::callee::NET_FE_STATE_ON_ACTIVATE;
-    pub(crate) use crate::game::fe::festaterewards2::callee::CHAT_ROOM_UPDATE_PLAYER_QUALITY;
-    pub(crate) use crate::game::fe::festaterewards2::callee::FE_STATE_LOGIN_CTOR;
-    pub(crate) use crate::game::fe::festaterewards2::callee::FE_STATE_LOGIN_ON_CHILD_EVENT;
-    pub(crate) use crate::game::fe::festaterewards2::callee::NET_QUICK_PLAY_POPUP_ON_OPTIONS_EVENT;
-    pub(crate) use crate::game::fe::festaterewards2::callee::FE_STATE_STATS_REFRESH_RESULTS;
-    pub(crate) use crate::game::fe::festaterewards2::callee::POPUP_CONFIRM_GET_TEXT_BOX_SIZE;
-    pub(crate) use crate::game::fe::festaterewards2::callee::PREVIEW_REWARD_POLL_IMAGE_LOAD;
-    pub(crate) use crate::game::fe::festaterewards2::callee::MOUNTAIN_ROOM_UPDATE_EVENT_ICONS;
-    pub(crate) use crate::game::fe::festaterewards2::callee::TROPHY_ROOM_LOAD_TROPHY_TEXTURES;
-    pub(crate) use crate::game::fe::festaterewards2::callee::SECTION_MAN_FIND_LOGICAL_SECTION;
-    pub(crate) use crate::game::fe::festaterewards2::callee::GAME_MODULE_REQUEST_STATE as GAME_MODULE_REQUEST_STATE_2;
-    pub(crate) use crate::game::fe::festaterewards2::callee::APP_MODULE_TRY_EXIT;
-    pub(crate) use crate::game::fe::festaterewards2::callee::S_LOGIN_UPDATE;
-    pub(crate) use crate::game::fe::festaterewards2::callee::USB_KB_DEFAULT_CONNECT_CB;
-    pub(crate) use crate::game::fe::festaterewards2::callee::WORLD_STATE_STREAM_RESET;
-    pub(crate) use crate::game::fe::festaterewards2::callee::REPLAY_STREAM_CTOR;
-    pub(crate) use crate::game::fe::festaterewards2::callee::REPLAY_FIND_NEXT_SNAPSHOT;
-    pub(crate) use crate::game::fe::festaterewards2::callee::REPLAY_FIND_PREV_SNAPSHOT;
-    pub(crate) use crate::game::fe::festaterewards2::callee::REPLAY_SNAP_TO_SNAPSHOT;
-    pub(crate) use crate::game::fe::festaterewards2::callee::REPLAY_SET_STATE_2 as REPLAY_SET_STATE;
-    pub(crate) use crate::game::fe::festaterewards2::callee::SCRIPT_LIST_ADD_MOVIE;
-    pub(crate) use crate::game::fe::festaterewards2::callee::SCRIPT_LIST_POLL_LOADING;
-    pub(crate) use crate::game::fe::festaterewards2::callee::SCRIPT_CMD_QUEUE_AT;
-    pub(crate) use crate::game::fe::festaterewards2::callee::SCRIPT_ENGINE_UNLOAD_WORLD_SCRIPTS;
-    pub(crate) use crate::game::fe::festaterewards2::callee::SCRIPT_ENGINE_LIST_STOP;
-    pub(crate) use crate::game::fe::festaterewards2::callee::CROWD_AUDIO_INSTANCE_STOP_SOUND;
-    pub(crate) use crate::game::fe::festaterewards2::callee::SONG_INSTANCE_GET_DUCK_TO_LOOPS;
-    pub(crate) use crate::game::fe::festaterewards2::callee::WORLD_TRIGGER_MANAGER_GET_TRIGGER_INFO;
-    pub(crate) use crate::game::fe::festaterewards2::callee::MEM_MAN_FREE;
-    pub(crate) use crate::game::fe::festaterewards2::callee::MEM_GET_POOL_BLOCK_SIZE;
-    pub(crate) use crate::game::fe::festaterewards2::callee::DL_HEAP_USABLE_SIZE;
-    pub(crate) use crate::game::fe::festaterewards2::callee::MEM_REPORT_POOL_STATS;
-    pub(crate) use crate::game::fe::festaterewards2::callee::PS2_PAD_CREATE;
-    pub(crate) use crate::game::fe::festaterewards2::callee::ANIM_OBJECT_V36;
-    pub(crate) use crate::game::fe::festaterewards2::callee::DYNAMIC_EMITTER_CTOR;
-    pub(crate) use crate::game::fe::festaterewards2::callee::UI_STATE_CTOR;
-    pub(crate) use crate::game::fe::festaterewards2::callee::UI_STATE_UPDATE as UI_STATE_UPDATE_2;
-    pub(crate) use crate::game::fe::festaterewards2::callee::UI_TEXT_SET_STRING;
-    pub(crate) use crate::game::fe::festaterewards2::callee::UI_TEXT_SCROLL_CLEAR_LINES;
-    pub(crate) use crate::game::fe::festaterewards2::callee::UI_TEXT_SCROLL_SET_WIDE_STRING;
-    pub(crate) use crate::game::fe::festaterewards2::callee::TWSCRIPT_CACHE_RELOCATE;
-    pub(crate) use crate::game::fe::festaterewards2::callee::EA_MUTEX_LOCK;
-    pub(crate) use crate::game::fe::festaterewards2::callee::EA_MUTEX_UNLOCK;
-    pub(crate) use crate::game::fe::festaterewards2::callee::SCE_USBKB_SET_ARRANGEMENT;
-    pub(crate) use crate::game::fe::festaterewards2::callee::SCE_USBKB_SET_READ_MODE;
-    pub(crate) use crate::game::fe::festaterewards2::callee::MEMSET;
-    pub(crate) use crate::game::fe::festaterewards2::callee::SPRINTF;
-    pub(crate) use crate::game::fe::ovstatepause::callee::MPEG2_SHOW_BITS;
-    pub(crate) use crate::game::fe::ovstatepause::callee::MPEG2_FLUSH_BUFFER;
-    pub(crate) use crate::game::fe::ovstatepause::callee::AI_DESTROY_MISSION_RIDERS;
-    pub(crate) use crate::game::fe::ovstatepause::callee::AI_CREATE_COMPUTER_RIDERS;
-    pub(crate) use crate::game::fe::ovstatepause::callee::ANIM_CONTROLLER_GET_LAYER_ANIM_ENTRY;
-    pub(crate) use crate::game::fe::ovstatepause::callee::BE_NEW_PLAYER_INT_GET_SLOT;
-    pub(crate) use crate::game::fe::ovstatepause::callee::BE_REWARD_INT_COUNT_SET_BITS;
-    pub(crate) use crate::game::fe::ovstatepause::callee::CHASE_CAMERA_ALGORITHM_CTOR;
-    pub(crate) use crate::game::fe::ovstatepause::callee::BUILTIN_DELETE as BUILTIN_DELETE_2;
-    pub(crate) use crate::game::fe::ovstatepause::callee::RIDER_METRIX_CLEAR_PEAK_A4;
-    pub(crate) use crate::game::fe::ovstatepause::callee::EA_MEM_SET;
-    pub(crate) use crate::game::fe::ovstatepause::callee::MC_MANAGER_GET;
-    pub(crate) use crate::game::fe::ovstatepause::callee::MC_MANAGER_BEGIN_LOAD;
-    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_CTOR as UI_STATE_CTOR_2;
-    pub(crate) use crate::game::fe::ovstatepause::callee::FE_FORMAT_MONEY;
-    pub(crate) use crate::game::fe::ovstatepause::callee::UI_TEXT_SET_STRING as UI_TEXT_SET_STRING_2;
-    pub(crate) use crate::game::fe::ovstatepause::callee::FE_MODULE_RIDER_PREVIEW_UNLOAD;
-    pub(crate) use crate::game::fe::ovstatepause::callee::FE_MODULE_RIDER_PREVIEW_UPDATE;
-    pub(crate) use crate::game::fe::ovstatepause::callee::CHECK_ACCOUNT_NAME;
-    pub(crate) use crate::game::fe::ovstatepause::callee::CHECK_PASSWORD;
-    pub(crate) use crate::game::fe::ovstatepause::callee::NET_FE_STATE_ON_CHILD_EVENT as NET_FE_STATE_ON_CHILD_EVENT_2;
-    pub(crate) use crate::game::fe::ovstatepause::callee::NET_FE_STATE_CTOR_2;
-    pub(crate) use crate::game::fe::ovstatepause::callee::KEYBOARD_POPUP_IS_KEY_ENABLED;
-    pub(crate) use crate::game::fe::ovstatepause::callee::KEYBOARD_POPUP_MOVE_DOWN;
-    pub(crate) use crate::game::fe::ovstatepause::callee::EVENT_SELECT_POST_INPUT;
-    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_POST_INPUT;
-    pub(crate) use crate::game::fe::ovstatepause::callee::STR_HASH;
-    pub(crate) use crate::game::fe::ovstatepause::callee::UI_TEXTURE_SET_FIND;
-    pub(crate) use crate::game::fe::ovstatepause::callee::VID_ENGINE_PLAYER_RENDER;
-    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_RENDER;
-    pub(crate) use crate::game::fe::ovstatepause::callee::SSX_AUDIO_SYSTEM_GET_INSTANCE;
-    pub(crate) use crate::game::fe::ovstatepause::callee::MUSIC_PLAYER_RESUME;
-    pub(crate) use crate::game::fe::ovstatepause::callee::MOUNTAIN_ROOM_POLL_IMAGE_LOAD;
-    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_UPDATE_2 as UI_STATE_UPDATE_3;
-    pub(crate) use crate::game::fe::ovstatepause::callee::C_FE_STATE_ON_ACTIVATE;
-    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_ON_ACTIVATE_2;
-    pub(crate) use crate::game::fe::ovstatepause::callee::PLAY_FE_SOUND;
-    pub(crate) use crate::game::fe::ovstatepause::callee::MEM_CARD_STATE_BASE_CTOR_2;
-    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_MGR_CLOSE_TOP_STATE_AND_POPUPS;
-    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_MGR_CLOSE_TOP_STATES;
-    pub(crate) use crate::game::fe::ovstatepause::callee::OV_SCREEN_SESSION_DESTROY_INDICATORS;
-    pub(crate) use crate::game::fe::ovstatepause::callee::C_OV_STATE_OVERLAY_SHUTDOWN;
-    pub(crate) use crate::game::fe::ovstatepause::callee::FE_ASYNC_MANAGER_CANCEL;
-    pub(crate) use crate::game::fe::ovstatepause::callee::SECTION_MAN_REQUEST_ACTIVATE;
-    pub(crate) use crate::game::fe::ovstatepause::callee::STRCPY;
-    pub(crate) use crate::game::fe::ovstatepause::callee::STRLEN;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REWARDS_FILE_UNLOAD;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BOUNDED_CAMERA_ALGORITHM_BASE_CTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_CTOR_2 as NET_FE_STATE_CTOR_3;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_ON_CHILD_EVENT_2 as NET_FE_STATE_ON_CHILD_EVENT_3;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_UPDATE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SECTION_MAN_IS_EVENT_LOADED;
-    pub(crate) use crate::game::dirtysock::tags2::callee::VID_ENGINE_PLAYER_CLOSE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_MAN_DESTROY_LISTS;
-    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_MAN_DESTROY_LOBBY_API;
-    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_MAN_DESTROY_PEER_TABLE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SHARED_LOGIN_MAN_SHUTDOWN;
-    pub(crate) use crate::game::dirtysock::tags2::callee::VOIP_MAN_STOP;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_CACHE_FREE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_SNAPSHOT_EMPTY_HOOK_B;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_RESTORE_SNAPSHOT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_FREE_SNAPSHOT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_END_PLAYBACK;
-    pub(crate) use crate::game::dirtysock::tags2::callee::IN_SEQ_CHANNEL_RELEASE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::IN_SEQ_HEAP_DELETE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ANIM_BANK_MAN_FIND_BANK;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_POLL_ASYNC_LOADS_2 as SCRIPT_ENGINE_POLL_ASYNC_LOADS;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_IS_BANK_SLOT_LOADED;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_LIST_IS_CURRENT_SKIPPABLE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_LIST_GET_STATE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_LIST_GET_FIELD_B0;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_LIST_IS_PLAYING_SCRIPT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_FIND_BANK_SLOT_BY_ID;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_CANCEL_BANK_LOAD;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_CTOR_2 as UI_STATE_CTOR_3;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_SHUTDOWN;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_LIST_CLOSE_ALL_POPUPS;
-    pub(crate) use crate::game::dirtysock::tags2::callee::EA_MEM_FREE_2 as EA_MEM_FREE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::FEMODULE_SET_PREVIEW_VISIBLE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SSX_APP_START_FE_MODULE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::LOC_STRING_TABLE_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BENEW_PLAYER_INT_IS_MESSAGE_FLAG_SET;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_MESSAGE_FLAG_SET;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_GET_INTERFACE_RIDER;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_MAN_LOAD;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_MAN_UNLOAD;
-    pub(crate) use crate::game::dirtysock::tags2::callee::WORLD_VIEW_SET;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MENU_SYS_EVENT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_STREAM_WRITE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_MAN_REQUEST_UPDATE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_MAN_REQUEST_FREE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_API_ADD_REQUEST;
-    pub(crate) use crate::game::dirtysock::tags2::callee::DIRTY_SOCK_CREATE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::DIRTY_SOCK_DESTROY;
-    pub(crate) use crate::game::dirtysock::tags2::callee::VID_ENGINE_PLAYER_REQUEST;
+    pub(crate) use crate::game::be::beintmission::callee::FIND_MISSION;
+    pub(crate) use crate::game::be::beintmission::callee::GET_RIDER_PREVIEW;
+    pub(crate) use crate::game::be::beintmission::callee::LOBBY_MENU_REQUEST_JOIN_ROOM;
+    pub(crate) use crate::game::be::beintmission::callee::MC_MANAGER_END_OPERATION;
+    pub(crate) use crate::game::be::beintmission::callee::MEMCARD_SCAN_STEP;
+    pub(crate) use crate::game::be::beintmission::callee::MISSION_COUNT;
+    pub(crate) use crate::game::be::beintmission::callee::MISSION_NTH;
+    pub(crate) use crate::game::be::beintmission::callee::MPEG2_ERROR;
+    pub(crate) use crate::game::be::beintmission::callee::MUSIC_PLAYER_STOP_SONG;
+    pub(crate) use crate::game::be::beintmission::callee::NET_FE_STATE_CTOR;
+    pub(crate) use crate::game::be::beintmission::callee::NET_FE_STATE_ON_WIDGET_ACTION;
+    pub(crate) use crate::game::be::beintmission::callee::POPUP_CONFIRM_CFG_RESET;
+    pub(crate) use crate::game::be::beintmission::callee::RACE_PROGRESS_RESET_ALL;
+    pub(crate) use crate::game::be::beintmission::callee::REPLAY_APPLY_CAMERA;
+    pub(crate) use crate::game::be::beintmission::callee::REWARDS_FILE_LOAD;
+    pub(crate) use crate::game::be::beintmission::callee::REWARD_GALLERY_CHECK_REWARDS_READY;
+    pub(crate) use crate::game::be::beintmission::callee::REWARD_GALLERY_POLL_SHAPE_LOAD;
+    pub(crate) use crate::game::be::beintmission::callee::RIDER_PREVIEW_SET_VISIBLE;
+    pub(crate) use crate::game::be::beintmission::callee::SCRIPT_ENGINE_DEACTIVATE_BINDING;
+    pub(crate) use crate::game::be::beintmission::callee::SCRIPT_ENGINE_GET_INSTANCE;
+    pub(crate) use crate::game::be::beintmission::callee::SCRIPT_ENGINE_STOP_ALL_PROCESS_SEQS;
+    pub(crate) use crate::game::be::beintmission::callee::SCRIPT_ENGINE_STOP_AUX_LISTS as SCRIPT_ENGINE_STOP_AUX_LISTS_2;
+    pub(crate) use crate::game::be::beintmission::callee::SCRIPT_ENGINE_STOP_MAIN_LISTS as SCRIPT_ENGINE_STOP_MAIN_LISTS_2;
+    pub(crate) use crate::game::be::beintmission::callee::SLOGIN_DELETE;
+    pub(crate) use crate::game::be::beintmission::callee::SND_BANK_SET_MEMORY;
+    pub(crate) use crate::game::be::beintmission::callee::UBER_TRICK_REFRESH;
+    pub(crate) use crate::game::be::beintmission::callee::UITEXT_SET_WIDE_STRING_INTERNAL;
+    pub(crate) use crate::game::be::beintmission::callee::UI_STATE_UPDATE;
+    pub(crate) use crate::game::be::beintmission::callee::VIEW_POPUP_SHOW_MESSAGE;
+    pub(crate) use crate::game::be::beintmission::callee::WORLD_OBJ_RUN_KILL_SCRIPT;
+    pub(crate) use crate::game::be::beintmission::callee::WSCRIPT_MAN_EVENT_QUEUE_POP;
+    pub(crate) use crate::game::bx::bxstring2::callee::BE_GET_CHAR_PROFILE_EVENT_RECORD as BE_GET_CHAR_PROFILE_EVENT_RECORD_2;
+    pub(crate) use crate::game::bx::bxstring2::callee::BE_GET_RIDER_PROFILE as BE_GET_RIDER_PROFILE_6;
+    pub(crate) use crate::game::bx::bxstring2::callee::CBXSTRING_CTOR_COPY;
+    pub(crate) use crate::game::bx::bxstring2::callee::CBXSTRING_DTOR;
+    pub(crate) use crate::game::bx::bxstring2::callee::CHASE_CAMERA_INIT_FROM_RIDER;
+    pub(crate) use crate::game::bx::bxstring2::callee::CHASE_CAMERA_RESET_FOR_RIDER;
+    pub(crate) use crate::game::bx::bxstring2::callee::CHASE_CAM_CONTROLLER_RESTORE_DEFAULT;
+    pub(crate) use crate::game::bx::bxstring2::callee::CHUNK_RESOLVE_RELOCATE_DMA;
+    pub(crate) use crate::game::bx::bxstring2::callee::CROWD_MAN2D_REMOVE_ALL;
+    pub(crate) use crate::game::bx::bxstring2::callee::CROWD_MAN2D_RESET;
+    pub(crate) use crate::game::bx::bxstring2::callee::CROWD_MAN3D_GROUP_BUILD_MATRICES;
+    pub(crate) use crate::game::bx::bxstring2::callee::CUTSCENE_TRANSITION_MAN_FORCE_ON;
+    pub(crate) use crate::game::bx::bxstring2::callee::C_FE_STATE_LOBBY_MENU_FILL_PLAYER_LIST;
+    pub(crate) use crate::game::bx::bxstring2::callee::C_FE_STATE_LOBBY_MENU_UPDATE_PLAYER_SCROLL_ARROWS;
+    pub(crate) use crate::game::bx::bxstring2::callee::C_LUNO_TABLE_ALLOC;
+    pub(crate) use crate::game::bx::bxstring2::callee::C_OV_STATE_OVERLAY_UPDATE;
+    pub(crate) use crate::game::bx::bxstring2::callee::EA_MEM_ALLOC_NAMED;
+    pub(crate) use crate::game::bx::bxstring2::callee::EA_MEM_ALLOC_NAMED_2 as EA_MEM_ALLOC_NAMED_6;
+    pub(crate) use crate::game::bx::bxstring2::callee::EA_MEM_FREE as EA_MEM_FREE_6;
+    pub(crate) use crate::game::bx::bxstring2::callee::EVENT_SELECT_ON_ACTIVATE;
+    pub(crate) use crate::game::bx::bxstring2::callee::EVENT_SELECT_UPDATE;
+    pub(crate) use crate::game::bx::bxstring2::callee::FE_MODULE_RIDER_PREVIEW_REQUEST_CHAR;
+    pub(crate) use crate::game::bx::bxstring2::callee::FLAG_MANAGER_GROUP_BUILD_MESH;
+    pub(crate) use crate::game::bx::bxstring2::callee::GAME_COMM_RECV_GAME_PACKET;
+    pub(crate) use crate::game::bx::bxstring2::callee::GAME_MODULE_REQUEST_STATE;
+    pub(crate) use crate::game::bx::bxstring2::callee::INI_PARSER_SKIP_WHITESPACE;
+    pub(crate) use crate::game::bx::bxstring2::callee::MEMSET as MEMSET_3;
+    pub(crate) use crate::game::bx::bxstring2::callee::MESSAGE_CENTER_GET_INBOX as MESSAGE_CENTER_GET_INBOX_4;
+    pub(crate) use crate::game::bx::bxstring2::callee::MULTIPARTICLE_CTOR;
+    pub(crate) use crate::game::bx::bxstring2::callee::MULTIPARTICLE_MAN_CLEAR;
+    pub(crate) use crate::game::bx::bxstring2::callee::MUSIC_PLAYER_GET_SONG_TAG;
+    pub(crate) use crate::game::bx::bxstring2::callee::MUSIC_PLAYER_SET_EVENT_STATE;
+    pub(crate) use crate::game::bx::bxstring2::callee::NET_FE_STATE_GET_POPUP as NET_FE_STATE_GET_POPUP_5;
+    pub(crate) use crate::game::bx::bxstring2::callee::NET_FE_STATE_SHOW_POPUP as NET_FE_STATE_SHOW_POPUP_4;
+    pub(crate) use crate::game::bx::bxstring2::callee::NET_MANAGER;
+    pub(crate) use crate::game::bx::bxstring2::callee::OPTIONS_SET_VIBRATION;
+    pub(crate) use crate::game::bx::bxstring2::callee::OV_SCREEN_PDA_TEMPLATE_CLOSE;
+    pub(crate) use crate::game::bx::bxstring2::callee::OV_STATE_OVERLAY_UPDATE;
+    pub(crate) use crate::game::bx::bxstring2::callee::PATH_DATA_PARSE;
+    pub(crate) use crate::game::bx::bxstring2::callee::PATH_DATA_READ_FLOAT_3 as PATH_DATA_READ_FLOAT_2;
+    pub(crate) use crate::game::bx::bxstring2::callee::PATH_DATA_READ_INT;
+    pub(crate) use crate::game::bx::bxstring2::callee::POPUP_SET_WIDGET_ALIGN;
+    pub(crate) use crate::game::bx::bxstring2::callee::POPUP_SET_WRAPPED_TEXT;
+    pub(crate) use crate::game::bx::bxstring2::callee::QSORT as QSORT_2;
+    pub(crate) use crate::game::bx::bxstring2::callee::READ_PRIVATE_MESSAGE_SET_TEXT;
+    pub(crate) use crate::game::bx::bxstring2::callee::RIDER_CAMERA_ALGORITHM_CTOR;
+    pub(crate) use crate::game::bx::bxstring2::callee::SCRIPT_ENGINE_LIST_START as SCRIPT_ENGINE_LIST_START_2;
+    pub(crate) use crate::game::bx::bxstring2::callee::SCRIPT_ENGINE_SET_SKIP_DELAY;
+    pub(crate) use crate::game::bx::bxstring2::callee::SCRIPT_ENGINE_STOP_AUX_LISTS;
+    pub(crate) use crate::game::bx::bxstring2::callee::SCRIPT_ENGINE_STOP_MAIN_LISTS;
+    pub(crate) use crate::game::bx::bxstring2::callee::SCRIPT_LIST_GET_ENTRY_TYPE;
+    pub(crate) use crate::game::bx::bxstring2::callee::SCRIPT_LIST_PREPARE;
+    pub(crate) use crate::game::bx::bxstring2::callee::SCRIPT_LIST_SET_PAUSED_NESTED;
+    pub(crate) use crate::game::bx::bxstring2::callee::SECTION_MAN_DEQUEUE_SECTION;
+    pub(crate) use crate::game::bx::bxstring2::callee::SECTION_MAN_INIT;
+    pub(crate) use crate::game::bx::bxstring2::callee::SECTION_MAN_POP_FREE_NODE;
+    pub(crate) use crate::game::bx::bxstring2::callee::SNAPSHOT_LIST_REMOVE;
+    pub(crate) use crate::game::bx::bxstring2::callee::SPEECH_SYSTEM_SET_EVENT_CONTEXT as SPEECH_SYSTEM_SET_EVENT_CONTEXT_2;
+    pub(crate) use crate::game::bx::bxstring2::callee::SSX_AUDIO_GET_LANGUAGE_MASK;
+    pub(crate) use crate::game::bx::bxstring2::callee::SSX_AUDIO_GET_SPEECH_CONTEXT_MASK;
+    pub(crate) use crate::game::bx::bxstring2::callee::SSX_AUDIO_IS_DJ_SPEECH_ON;
+    pub(crate) use crate::game::bx::bxstring2::callee::STRLEN as STRLEN_4;
+    pub(crate) use crate::game::bx::bxstring2::callee::STR_HASH as STR_HASH_6;
+    pub(crate) use crate::game::bx::bxstring2::callee::SUPERPIPE_COMPUTE_DESIRED_EYE;
+    pub(crate) use crate::game::bx::bxstring2::callee::SUPERPIPE_COMPUTE_LOOK_AT;
+    pub(crate) use crate::game::bx::bxstring2::callee::UITEXT_SET_WIDE_STRING;
+    pub(crate) use crate::game::bx::bxstring2::callee::UI_LISTBOX_ADD_ITEM_STR_ID;
+    pub(crate) use crate::game::bx::bxstring2::callee::UI_LISTBOX_FIND_ITEM_BY_VALUE;
+    pub(crate) use crate::game::bx::bxstring2::callee::UI_LISTBOX_SET_SELECTION;
+    pub(crate) use crate::game::bx::bxstring2::callee::UI_MENU_FIND_FIRST_SELECTABLE;
+    pub(crate) use crate::game::bx::bxstring2::callee::UI_MENU_SET_SELECTION as UI_MENU_SET_SELECTION_2;
+    pub(crate) use crate::game::bx::bxstring2::callee::UI_STATE_MGR_CLOSE_ALL_POPUPS;
+    pub(crate) use crate::game::bx::bxstring2::callee::UI_STATE_MGR_FIND_STATE as UI_STATE_MGR_FIND_STATE_3;
+    pub(crate) use crate::game::bx::bxstring2::callee::UI_STATE_SHUTDOWN as UI_STATE_SHUTDOWN_3;
+    pub(crate) use crate::game::bx::bxstring2::callee::UI_STATE_UPDATE as UI_STATE_UPDATE_4;
+    pub(crate) use crate::game::bx::bxstring2::callee::USTR_CPY as USTR_CPY_3;
+    pub(crate) use crate::game::bx::bxstring2::callee::USTR_FROM_ASCII_2;
+    pub(crate) use crate::game::bx::bxstring2::callee::USTR_LEN as USTR_LEN_3;
+    pub(crate) use crate::game::bx::bxstring2::callee::USTR_SPRINTF;
+    pub(crate) use crate::game::bx::bxstring2::callee::VID_ENGINE_PLAYER_START_PLAYBACK;
+    pub(crate) use crate::game::bx::bxstring2::callee::WORLD_STATE_RESTORE;
+    pub(crate) use crate::game::bx::bxstring2::callee::WSCRIPT_MISSION_CTOR;
+    pub(crate) use crate::game::bx::bxstring2::callee::WSCRIPT_PROCESS_LIST_PUSH_FRONT_2 as WSCRIPT_PROCESS_LIST_PUSH_FRONT;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::AVALANCHE_GET_OBJECT_MATRIX;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_GET_RIDER_CHARACTER;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_GET_RIDER_PROFILE as BE_GET_RIDER_PROFILE_3;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_GET_TRACK_INFO;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_MISSION_SET_COLLECTED;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_SET_CHARACTER_BY_SLOT;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BUDDY_GET_ROSTER_COUNT;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BUDDY_GET_ROSTER_ENTRY;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BUY_POPUP_RESET;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::CLEAR_NEW_REWARDS;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::DYNAMIC_EMITTER_RESET;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::EA_MEM_ALLOC_NAMED_2 as EA_MEM_ALLOC_NAMED_4;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::EA_THREAD_YIELD;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::EA_TIMER_SERVICE;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::FE_ASYNC_SET_STATE;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::GAME_MODULE_REQUEST_STATE_2 as GAME_MODULE_REQUEST_STATE_4;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::GAME_PROCESS_DTOR;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::GROW_LINES;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::INIT_FROM_RIDER;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::INSTANCE_GET_NODE_MATRIX as INSTANCE_GET_NODE_MATRIX_2;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::LOAD_INDICATOR_RENDER;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::LOBBY_API_SEND;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::LOBBY_GET_ROOM_NAME;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MC_END_OPERATION;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MC_ON_OPERATION_DONE;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MEM_REPORT_STATS_LOCKED;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MSG_PRINTF;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::OPERATOR_NEW_NAMED as OPERATOR_NEW_NAMED_3;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::POPUP_CONFIRM_REBUILD;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::QSORT;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RESET_FOR_RIDER;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_ADD_BOOST_2;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_APPLY_SCRIPT_TRACK;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_GATHER_CAM_STATE;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_GET_MAIN_STATE;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_RECORD_BEST_JUMP;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_UPDATE_SCRIPT_SOUNDS;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SECTION_SELECT_PEAK_LIGHTING;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SERIALIZE_READ_U32;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SET_ITEM_YEAR;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SNOW_BOX_DTOR;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SSX_AUDIO_GET_INSTANCE;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SSX_AUDIO_IS_TRACK_GROUP5;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SSX_AUDIO_PLAY_MUSIC;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SSX_AUDIO_RESUME_SFX;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STOP_LOADING_SCREEN_LOOP;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STREAM_FILE_QUEUE_RANGE;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STRLEN as STRLEN_3;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STR_HASH as STR_HASH_4;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STR_LEN;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::TAG_FIELD_COPY;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::TAG_FIELD_SET_RAW;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::TEX_MAN_INIT_TABLE;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_ANIM_CTOR;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_ANIM_SET_CREATE_ANIM as UI_ANIM_SET_CREATE_ANIM_2;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_ANIM_SET_CREATE_ANIM_2 as UI_ANIM_SET_CREATE_ANIM_2_2;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_LISTBOX_SET_ITEM_TEXT;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_LIST_FIRST as UI_LIST_FIRST_5;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_LIST_FIRST_WRAPPER;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_LIST_NODE_SENTINEL;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_OBJECT_FIND_BY_ID;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_OBJECT_SET_ANIM as UI_OBJECT_SET_ANIM_2;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_SCREEN_FIND_OBJECT as UI_SCREEN_FIND_OBJECT_3;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_STATE_CTOR_2_2 as UI_STATE_CTOR_2_3;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_STATE_MGR_PUSH_POPUP;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_TEXT_SET_ASCII;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_TEXT_SET_EVENT_STAT;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_TEXT_SET_STRING as UI_TEXT_SET_STRING_3;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_TEXT_SET_TEXT_ID;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::USTR_CPY;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::USTR_LEN;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::VRAM_HEAP_INIT;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::WORLD_GET_INSTANCE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::ANIM_GET_LAYER_SEQUENCE;
     pub(crate) use crate::game::dirtysock::tags2::callee::APP_SOMETHING;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEMITTER_FREE_DATA;
-    pub(crate) use crate::game::dirtysock::tags2::callee::DYNAMIC_EMITTER_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::DYNAMIC_EMITTER_FREE_DATA;
-    pub(crate) use crate::game::dirtysock::tags2::callee::RCMP_DECODE_FRAME;
-    pub(crate) use crate::game::dirtysock::tags2::callee::RCMP_FRAME_NUMBER;
+    pub(crate) use crate::game::dirtysock::tags2::callee::AUDIO_APPLY_OUTPUT_MODE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::AUDIO_SET_OUTPUT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::AVALANCHE_BAKE_GROUP;
+    pub(crate) use crate::game::dirtysock::tags2::callee::AVALANCHE_EXPORT_HISTORY_FILES;
+    pub(crate) use crate::game::dirtysock::tags2::callee::AVALANCHE_FREE_HISTORIES;
+    pub(crate) use crate::game::dirtysock::tags2::callee::AVALANCHE_LOAD_HISTORY_FILE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BANK_MONITOR_ADD_TIMER_2;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BANK_MONITOR_INSTANCE_RESUME;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BANK_MONITOR_STOP_HANDLE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BENEW_PLAYER_INT_IS_MESSAGE_FLAG_SET;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BE_BAGT_INT_GET_INSTANCE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BE_CHAR_INT_GET_INSTANCE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BE_GET_BE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BE_GET_INTERFACE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BE_GET_INTERFACE_RIDER;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BE_INTERFACE_CALL;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BE_MESSAGE_FLAG_SET;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BE_NEW_PLAYER_INT_GET_INSTANCE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BE_RESET_PROFILE_CHARACTERS_2;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BE_REWARD_INT_IS_UNLOCKED;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BOLT_FILE_INDEX_GET_NEXT_NODE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BOUNDED_CAMERA_ALGORITHM_BASE_CTOR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BUDDY_MAN_DESTROY_API;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BUDDY_MAN_GET_ROSTER_COUNT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BUDDY_MAN_SET_PRESENCE_ADDR;
     pub(crate) use crate::game::dirtysock::tags2::callee::CAM_CONTROLLER_SET_ALGORITHM;
-    pub(crate) use crate::game::dirtysock::tags2::callee::FE_STATE_ON_ACTIVATE_2 as FE_STATE_ON_ACTIVATE_3;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REQUEST_LINE_REFRESH_LIST;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REQUEST_LINE_UPDATE_NOW_PLAYING;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REQUEST_LINE_UPDATE_HELP_TEXT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::FEMODULE_GET_RIDER_PREVIEW;
+    pub(crate) use crate::game::dirtysock::tags2::callee::CBE_GET_INTERFACE as CBE_GET_INTERFACE_2;
+    pub(crate) use crate::game::dirtysock::tags2::callee::CBXSTRING_CTOR;
     pub(crate) use crate::game::dirtysock::tags2::callee::CHAR_EQUIP_REFRESH_BUY_INFO;
     pub(crate) use crate::game::dirtysock::tags2::callee::CHAR_EQUIP_REFRESH_EQUIP_INFO;
     pub(crate) use crate::game::dirtysock::tags2::callee::CHAR_EQUIP_UPDATE_HELP_TEXT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BOLT_FILE_INDEX_GET_NEXT_NODE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_MESSENGER_SET_PLAYER_MENU_SELECTION;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_HANDLE_NET_EVENT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::FE_STATE_STATS_REFRESH_RESULTS_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::KEYBOARD_POPUP_IS_KEY_ENABLED as KEYBOARD_POPUP_IS_KEY_ENABLED_2;
+    pub(crate) use crate::game::dirtysock::tags2::callee::CHAT_ROOM_UPDATE_PLAYER_QUALITY_2;
     pub(crate) use crate::game::dirtysock::tags2::callee::CROWD_MAN2D_INIT_SLOT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::C_BX_STRING_DTOR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::C_LUNO_TABLE_DTOR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::C_MEM_MAN_ALLOC as C_MEM_MAN_ALLOC_2;
+    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_GET_SAVE_NAME;
+    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_REQUEST_LIST_DIR_ALL;
+    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_REQUEST_READ_SAVE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_SET_STATE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::C_SETUP_MAN_SEND_QUIT as C_SETUP_MAN_SEND_QUIT_2;
+    pub(crate) use crate::game::dirtysock::tags2::callee::DIRTY_SOCK_CREATE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::DIRTY_SOCK_DESTROY;
+    pub(crate) use crate::game::dirtysock::tags2::callee::DYNAMIC_EMITTER_DTOR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::DYNAMIC_EMITTER_FREE_DATA;
+    pub(crate) use crate::game::dirtysock::tags2::callee::EA_MEM_ALLOC_NAMED_2;
+    pub(crate) use crate::game::dirtysock::tags2::callee::EA_MEM_FREE_2 as EA_MEM_FREE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::EFFECT_ALLOC;
+    pub(crate) use crate::game::dirtysock::tags2::callee::EFFECT_CTOR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::EMPTY_CHILD_HANDLER;
+    pub(crate) use crate::game::dirtysock::tags2::callee::FEMODULE_GET_RIDER_PREVIEW;
+    pub(crate) use crate::game::dirtysock::tags2::callee::FEMODULE_SET_PREVIEW_VISIBLE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::FE_MODULE_GET_PLAYER_PAD_MASK;
+    pub(crate) use crate::game::dirtysock::tags2::callee::FE_STATE_ON_ACTIVATE_2 as FE_STATE_ON_ACTIVATE_3;
+    pub(crate) use crate::game::dirtysock::tags2::callee::FE_STATE_STATS_REFRESH_RESULTS_2;
+    pub(crate) use crate::game::dirtysock::tags2::callee::FE_STATE_UPDATE_BUTTONS_TEXT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::FLOAT_TO_UINT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::FORMAT_TAGGED;
+    pub(crate) use crate::game::dirtysock::tags2::callee::F_00152948;
+    pub(crate) use crate::game::dirtysock::tags2::callee::F_00152BA8;
+    pub(crate) use crate::game::dirtysock::tags2::callee::F_002C2540;
+    pub(crate) use crate::game::dirtysock::tags2::callee::F_002C26D0;
+    pub(crate) use crate::game::dirtysock::tags2::callee::F_0039E2A0;
+    pub(crate) use crate::game::dirtysock::tags2::callee::GAME_COMM_DESTROY;
     pub(crate) use crate::game::dirtysock::tags2::callee::GAME_STATE_PRE_RACE_MENU_RESUME;
+    pub(crate) use crate::game::dirtysock::tags2::callee::GET_ALT_CHAR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::GET_CHAR_ID;
+    pub(crate) use crate::game::dirtysock::tags2::callee::GET_FINISH_SPEECH_MASK;
+    pub(crate) use crate::game::dirtysock::tags2::callee::GET_HASH_VALUE32;
+    pub(crate) use crate::game::dirtysock::tags2::callee::GET_LANGUAGE_MASK as GET_LANGUAGE_MASK_2;
+    pub(crate) use crate::game::dirtysock::tags2::callee::GET_RIDER_VOICE_MASK;
+    pub(crate) use crate::game::dirtysock::tags2::callee::GET_TRANSITION_MAN;
+    pub(crate) use crate::game::dirtysock::tags2::callee::GM_PICK_OPPONENTS;
+    pub(crate) use crate::game::dirtysock::tags2::callee::INSEQ_EVENT_TRACK_STOP;
+    pub(crate) use crate::game::dirtysock::tags2::callee::INSEQ_HEAP_DELETE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::INSEQ_RAMP_TRACK_STOP;
+    pub(crate) use crate::game::dirtysock::tags2::callee::INSEQ_SPAN_TRACK_STOP;
+    pub(crate) use crate::game::dirtysock::tags2::callee::IN_SEQ_CHANNEL_RELEASE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::IN_SEQ_HEAP_DELETE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::IS_LOCAL_PLAYER;
+    pub(crate) use crate::game::dirtysock::tags2::callee::IS_PA_SPEECH_ON;
+    pub(crate) use crate::game::dirtysock::tags2::callee::IS_RACE_TYPE_4OR5;
+    pub(crate) use crate::game::dirtysock::tags2::callee::IS_REPLAY_PLAYING;
+    pub(crate) use crate::game::dirtysock::tags2::callee::KEYBOARD_POPUP_IS_KEY_ENABLED as KEYBOARD_POPUP_IS_KEY_ENABLED_2;
+    pub(crate) use crate::game::dirtysock::tags2::callee::KEYBOARD_POPUP_SHOW;
+    pub(crate) use crate::game::dirtysock::tags2::callee::KEYBOARD_POPUP_UPDATE_CURSOR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBYMAN_SEND_REQUEST;
+    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_API_ADD_REQUEST;
+    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_LIST_GET_AT_3 as LOBBY_LIST_GET_AT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_MAN_DESTROY_LISTS;
+    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_MAN_DESTROY_LOBBY_API;
+    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_MAN_DESTROY_PEER_TABLE;
     pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_MAN_DISCONNECT;
     pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_MAN_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::GAME_COMM_DESTROY;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SETUP_MAN_SEND_CHARACTER_MSG;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_LIST_IS_PLAYING_SCRIPT_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_DATA_GET_INFO_2 as SCRIPT_DATA_GET_INFO;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_DESTROY_SCRIPT_DATABASE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_REMOVE_ALL_SCRIPT_OBJS;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_GET_INSTANCE_SCRIPT_2 as SCRIPT_ENGINE_GET_INSTANCE_SCRIPT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_MOVIE_STOP;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_HIGHLIGHT_SLOT_CLEAR_2 as REPLAY_HIGHLIGHT_SLOT_CLEAR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::INSEQ_SPAN_TRACK_STOP;
-    pub(crate) use crate::game::dirtysock::tags2::callee::INSEQ_EVENT_TRACK_STOP;
-    pub(crate) use crate::game::dirtysock::tags2::callee::INSEQ_RAMP_TRACK_STOP;
-    pub(crate) use crate::game::dirtysock::tags2::callee::INSEQ_HEAP_DELETE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::OPERATOR_DELETE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::FLOAT_TO_UINT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::STRCPY as STRCPY_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::GET_HASH_VALUE32;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_SCREEN_GET_OBJECT_BY_HASH_NAME;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_TEXT_SET_ASCII_STRING;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_MENU_SET_SELECTED_BY_INDEX;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_OBJECT_SET_VISIBLE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_WIDGET_SLOT_0;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_WIDGET_SLOT_1;
-    pub(crate) use crate::game::dirtysock::tags2::callee::FE_STATE_UPDATE_BUTTONS_TEXT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MESSAGE_CENTER_MESSAGE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::AUDIO_APPLY_OUTPUT_MODE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SOUND_PLAYER_SET_BY_INDEX;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SOUND_PLAYER_START;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_GET_BE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_GET_INTERFACE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_INTERFACE_CALL;
-    pub(crate) use crate::game::dirtysock::tags2::callee::CBXSTRING_CTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::KEYBOARD_POPUP_SHOW;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEMORY_FREE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::EA_MEM_ALLOC_NAMED_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::AUDIO_SET_OUTPUT;
-    pub(crate) use crate::game::wscript::wscriptman::callee::SET_FADE_GAIN;
-    pub(crate) use crate::game::wscript::wscriptman::callee::SND_BANK_UNLOAD;
-    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_ADD_TIMER;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_AUDIO_INSTANCE_STOP_SOUND as CROWD_AUDIO_INSTANCE_STOP_SOUND_2;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_AUDIO_INSTANCE_REMOVE_ALL_SOURCES;
-    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_INSTANCE_POLL_FREE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_INSTANCE_SET_PITCH;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CPS2_MEMCARD_SET_STATE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::AVALANCHE_BAKE_NODE_HISTORY;
-    pub(crate) use crate::game::wscript::wscriptman::callee::WSCRIPT_MAN_CALL_FUNC;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_MAN3D_GROUP_FREE_MESHES;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_MAN3D_GROUP_CREATE_MESHES_2 as CROWD_MAN3D_GROUP_CREATE_MESHES;
-    pub(crate) use crate::game::wscript::wscriptman::callee::FLEX_RAIL_UPDATE_SPACE_NODE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::C_FLAG_MANAGER_GROUP_LOAD;
-    pub(crate) use crate::game::wscript::wscriptman::callee::FLOATING_V49;
-    pub(crate) use crate::game::wscript::wscriptman::callee::MOD_OBJ_DTOR;
-    pub(crate) use crate::game::wscript::wscriptman::callee::MODIFIER_LIST_UNLINK;
-    pub(crate) use crate::game::wscript::wscriptman::callee::RAIL_MODIFIER_LIST_UNLINK;
-    pub(crate) use crate::game::wscript::wscriptman::callee::DISABLE_INTC;
-    pub(crate) use crate::game::wscript::wscriptman::callee::REMOVE_INTC_HANDLER;
-    pub(crate) use crate::game::wscript::wscriptman::callee::TEX_MAN_LOAD_TEXTURE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::LIGHT_MAN_EMPTY_HOOK_A;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_GET_STATE_DATA;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_LIST_NODE_DTOR_BODY;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CPS2_CHUNK_RESOLVE_CTOR;
-    pub(crate) use crate::game::wscript::wscriptman::callee::AV_PLAYER_INIT;
-    pub(crate) use crate::game::wscript::wscriptman::callee::FOCUS_MAN_ADD_FOCUS_BOX;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CAM_CONTROLLER_CLEAR_ALGORITHMS;
-    pub(crate) use crate::game::wscript::wscriptman::callee::ALGORITHM_LIST_PUSH;
-    pub(crate) use crate::game::wscript::wscriptman::callee::APP_MODULE_UPDATE_FADE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::DEBUG_MENU_MODULE_UPDATE_CURSOR_TRAIL;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_SHOW_CLAMP_ALPHA_HALF;
-    pub(crate) use crate::game::wscript::wscriptman::callee::C_SETUP_MAN_SEND_QUIT;
-    pub(crate) use crate::game::wscript::wscriptman::callee::C_FE_STATE_ONLINE_CHARACTER_SELECT_EMPTY_CHILD_HANDLER;
-    pub(crate) use crate::game::wscript::wscriptman::callee::NET_FE_STATE_ON_CHILD_EVENT as NET_FE_STATE_ON_CHILD_EVENT_5;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_SET_USER_DATA;
-    pub(crate) use crate::game::wscript::wscriptman::callee::EA_FILE_MOUNT_BIG;
-    pub(crate) use crate::game::wscript::wscriptman::callee::NET_FE_STATE_CTOR as NET_FE_STATE_CTOR_6;
-    pub(crate) use crate::game::dirtysock::tags2::callee::ON_QUIT_POPUP_EVENT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::EMPTY_CHILD_HANDLER;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_ON_CHILD_EVENT_3 as NET_FE_STATE_ON_CHILD_EVENT_6;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_UPDATE_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_CTOR_3 as NET_FE_STATE_CTOR_7;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_DTOR_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::CHAT_ROOM_UPDATE_PLAYER_QUALITY_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::STATS_SELECT_CATEGORY;
-    pub(crate) use crate::game::dirtysock::tags2::callee::KEYBOARD_POPUP_UPDATE_CURSOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_CARD_SET_USE_SAVE_TITLE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::TROPHY_ROOM_RELEASE_IMAGES;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MESSAGE_CENTER_GET_INBOX as MESSAGE_CENTER_GET_INBOX_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SECTION_MAN_PUSH_FREE_NODE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_MAN_REQUEST_FREE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_MAN_REQUEST_UPDATE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::LOC_STRING_TABLE_DTOR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MC_GET_PRODUCT_CODE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MC_GET_SAVE_TYPE_TAG;
     pub(crate) use crate::game::dirtysock::tags2::callee::MC_MANAGER_END_OPERATION_2;
     pub(crate) use crate::game::dirtysock::tags2::callee::MC_MANAGER_REQUEST_CARD_INFO;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUDDY_MAN_SET_PRESENCE_ADDR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUDDY_MAN_DESTROY_API;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUDDY_MAN_GET_ROSTER_COUNT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_OBJ_CAM_SET_OWNER;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_OBJ_TABLE_CTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_RESET_PROCESS_TABLE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_UNLOAD_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_UNLINK;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_FREE_MEMORY_2 as SND_BANK_FREE_MEMORY;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_RECORD_SNAPSHOT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_ADD_SNAPSHOT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BANK_MONITOR_STOP_HANDLE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::STREAM_BUFFER_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BANK_MONITOR_INSTANCE_RESUME;
-    pub(crate) use crate::game::dirtysock::tags2::callee::PATH_PLAT_REFRESH_STATUS;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MC_SET_MODE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MEASURE_PLAIN;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MEASURE_WRAP;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MEMITTER_FREE_DATA;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MEMORY_FREE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MEMSET_3 as MEMSET_4;
     pub(crate) use crate::game::dirtysock::tags2::callee::MEM_CARD_ASCII_CHAR_TO_SJIS;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_SET_STATE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::USTR_TO_ASCII;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_GET_SAVE_NAME;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_REQUEST_READ_SAVE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MENU_SYS_PAGE_SELECT_NEXT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MENU_SYS_ITEM_MEASURE_ROW;
-    pub(crate) use crate::game::dirtysock::tags2::callee::AVALANCHE_FREE_HISTORIES;
-    pub(crate) use crate::game::dirtysock::tags2::callee::AVALANCHE_BAKE_GROUP;
-    pub(crate) use crate::game::dirtysock::tags2::callee::AVALANCHE_EXPORT_HISTORY_FILES;
-    pub(crate) use crate::game::dirtysock::tags2::callee::AVALANCHE_LOAD_HISTORY_FILE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SNOW_BOX_RESET;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_CARD_SET_USE_SAVE_TITLE;
     pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT0;
     pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT1;
     pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT2;
@@ -756,522 +1647,128 @@ pub(crate) mod callee {
     pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT4;
     pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT5;
     pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT6;
-    pub(crate) use crate::game::dirtysock::tags2::callee::FE_MODULE_GET_PLAYER_PAD_MASK;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MENU_SYS_EVENT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MENU_SYS_ITEM_MEASURE_ROW;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MENU_SYS_PAGE_SELECT_NEXT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MESSAGE_CENTER_GET_INBOX as MESSAGE_CENTER_GET_INBOX_2;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MESSAGE_CENTER_IS_FLAG_SET_2;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MESSAGE_CENTER_MESSAGE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MESSAGE_CENTER_SET_FLAG_2 as MESSAGE_CENTER_SET_FLAG_3;
+    pub(crate) use crate::game::dirtysock::tags2::callee::NET_1;
+    pub(crate) use crate::game::dirtysock::tags2::callee::NET_2;
+    pub(crate) use crate::game::dirtysock::tags2::callee::NET_3;
+    pub(crate) use crate::game::dirtysock::tags2::callee::NET_4;
+    pub(crate) use crate::game::dirtysock::tags2::callee::NET_5;
+    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_CTOR_2 as NET_FE_STATE_CTOR_3;
+    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_CTOR_3 as NET_FE_STATE_CTOR_7;
+    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_DTOR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_DTOR_2;
+    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_HANDLE_NET_EVENT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_ON_CHILD_EVENT_2 as NET_FE_STATE_ON_CHILD_EVENT_3;
+    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_ON_CHILD_EVENT_3 as NET_FE_STATE_ON_CHILD_EVENT_6;
+    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_UPDATE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_UPDATE_2;
+    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FIND;
+    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FLUSH;
+    pub(crate) use crate::game::dirtysock::tags2::callee::NET_MESSENGER_SET_PLAYER_MENU_SELECTION;
+    pub(crate) use crate::game::dirtysock::tags2::callee::NET_REMOVE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::NET_RESET;
+    pub(crate) use crate::game::dirtysock::tags2::callee::ON_QUIT_POPUP_EVENT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::OPERATOR_DELETE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::PATH_PLAT_REFRESH_STATUS;
+    pub(crate) use crate::game::dirtysock::tags2::callee::RCMP_DECODE_FRAME;
+    pub(crate) use crate::game::dirtysock::tags2::callee::RCMP_FRAME_NUMBER;
+    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_ADD_SNAPSHOT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_CACHE_FREE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_END_PLAYBACK;
+    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_FREE_SNAPSHOT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_HIGHLIGHT_SLOT_CLEAR_2 as REPLAY_HIGHLIGHT_SLOT_CLEAR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_RECORD_SNAPSHOT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_RESTORE_SNAPSHOT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_SNAPSHOT_EMPTY_HOOK_B;
+    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_STREAM_WRITE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::REQUEST_LINE_REFRESH_LIST;
+    pub(crate) use crate::game::dirtysock::tags2::callee::REQUEST_LINE_UPDATE_HELP_TEXT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::REQUEST_LINE_UPDATE_NOW_PLAYING;
+    pub(crate) use crate::game::dirtysock::tags2::callee::REWARDS_FILE_UNLOAD;
+    pub(crate) use crate::game::dirtysock::tags2::callee::RIDER_123168;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SCE_MC_FORMAT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ANIM_BANK_MAN_FIND_BANK;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_DATA_GET_INFO_2 as SCRIPT_DATA_GET_INFO;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_CANCEL_BANK_LOAD;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_DESTROY_SCRIPT_DATABASE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_FIND_BANK_SLOT_BY_ID;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_GET_INSTANCE_SCRIPT_2 as SCRIPT_ENGINE_GET_INSTANCE_SCRIPT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_IS_BANK_SLOT_LOADED;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_OBJ_TABLE_CTOR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_POLL_ASYNC_LOADS_2 as SCRIPT_ENGINE_POLL_ASYNC_LOADS;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_REMOVE_ALL_SCRIPT_OBJS;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_RESET_PROCESS_TABLE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_LIST_GET_FIELD_B0;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_LIST_GET_STATE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_LIST_IS_CURRENT_SKIPPABLE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_LIST_IS_PLAYING_SCRIPT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_LIST_IS_PLAYING_SCRIPT_2;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_MAN_LOAD;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_MAN_UNLOAD;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_MOVIE_STOP;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_OBJ_CAM_SET_OWNER;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SECTION_MAN_IS_EVENT_LOADED;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SECTION_MAN_PUSH_FREE_NODE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SETUPMAN_DESTROY;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SETUP_MAN_SEND_CHARACTER_MSG;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SHARED_LOGIN_MAN_SHUTDOWN;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SLOGIN_MC_GET_PORT_SLOT_2 as SLOGIN_MC_GET_PORT_SLOT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_FREE_MEMORY_2 as SND_BANK_FREE_MEMORY;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_UNLINK;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_UNLOAD_2;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SNOW_BOX_RESET;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SNPRINTF;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SOUND_PLAYER_SET_BY_INDEX;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SOUND_PLAYER_START;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SPEECH_QUEUE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SPEECH_SET_EVENT_CONTEXT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SPRINTF_2;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SPRINTF_6 as SPRINTF_8;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SSX_APP_START_FE_MODULE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::STATS_SELECT_CATEGORY;
+    pub(crate) use crate::game::dirtysock::tags2::callee::STRCPY as STRCPY_2;
+    pub(crate) use crate::game::dirtysock::tags2::callee::STRCPY as STRCPY_3;
+    pub(crate) use crate::game::dirtysock::tags2::callee::STREAM_BUFFER_DTOR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::STR_HASH_4 as STR_HASH_7;
+    pub(crate) use crate::game::dirtysock::tags2::callee::STR_INTERN;
+    pub(crate) use crate::game::dirtysock::tags2::callee::TAG_FIELD_FIND;
+    pub(crate) use crate::game::dirtysock::tags2::callee::TAG_FIELD_GET_NUMBER;
+    pub(crate) use crate::game::dirtysock::tags2::callee::TEXT_OBJ;
+    pub(crate) use crate::game::dirtysock::tags2::callee::TRANSITION_START;
+    pub(crate) use crate::game::dirtysock::tags2::callee::TRANSITION_STOP;
+    pub(crate) use crate::game::dirtysock::tags2::callee::TROPHY_ROOM_RELEASE_IMAGES;
     pub(crate) use crate::game::dirtysock::tags2::callee::UIMENU_SET_SELECTION;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_TEXT_GET_FONT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_REWARD_INT_IS_UNLOCKED;
+    pub(crate) use crate::game::dirtysock::tags2::callee::UI_LIST_CLOSE_ALL_POPUPS;
+    pub(crate) use crate::game::dirtysock::tags2::callee::UI_MENU_SET_SELECTED_BY_INDEX;
+    pub(crate) use crate::game::dirtysock::tags2::callee::UI_OBJECT_SET_VISIBLE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::UI_OBJECT_SHOW_CLAMP_ALPHA_HALF as UI_OBJECT_SHOW_CLAMP_ALPHA_HALF_2;
+    pub(crate) use crate::game::dirtysock::tags2::callee::UI_SCREEN_GET_OBJECT_BY_HASH_NAME;
+    pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_CTOR_2 as UI_STATE_CTOR_3;
     pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_CTOR_3 as UI_STATE_CTOR_4;
     pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_REQUEST_LIST_DIR_ALL;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_BX_STRING_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_LIST_GET_AT_3 as LOBBY_LIST_GET_AT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SLOGIN_MC_GET_PORT_SLOT_2 as SLOGIN_MC_GET_PORT_SLOT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCE_MC_FORMAT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::STRCPY as STRCPY_3;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SPRINTF_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_SETUP_MAN_SEND_QUIT as C_SETUP_MAN_SEND_QUIT_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_OBJECT_SHOW_CLAMP_ALPHA_HALF as UI_OBJECT_SHOW_CLAMP_ALPHA_HALF_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_LUNO_TABLE_DTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::APP_VSYNC_CALLBACK;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::INPUT_PREPROC_WRITE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::WORLD_OBJ_CTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::WORLD_OBJ_DTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MOD_OBJ_CREATE_MODIFIER_BLOCK;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MODIFIER_BLOCK_FREE_TEX_FLIP;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MODIFIER_BLOCK_FREE_BOOST;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MULTI_PARTICLE_DTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::DYNAMIC_EMITTER_FREE_DATA_2;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::RCMP_DECODER_RELEASE_CODEC;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::RIDER_METRIX_AWARD_BONUS_POINTS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::RIDER_ADD_BOOST;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::RIDER_METRIX_SHOW_HUD_NUMBER_2 as RIDER_METRIX_SHOW_HUD_NUMBER;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::RIDER_METRIX_AWARD_POINTS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::AI_CREATE_ACTOR_RIDERS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CHASE_CAM_CONTROLLER_RESET_STATE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::ACTIVE_CAMERA_TRIGGER_LIST_CLEAR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CAMERA_TRIGGER_STACK_CLEAR_2 as CAMERA_TRIGGER_STACK_CLEAR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CAMERA_TRIGGER_MAN_REMOVE_ALL_TRIGGERS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CAMERA_TRIGGER_MAN_CLEAR_DATA;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CFE_STATE_OPTIONS_CONTROLLER_SET_VIBRATION;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::FE_LOCALE_UNLOAD_ALL_TABLES;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CFE_STATE_NET_ACCOUNT_MEM_SET_STATE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::NET_FE_STATE_DTOR_3;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CFE_LOAD_STATE_SETUP_RESULT_WIDGET;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::EVENT_SELECT_ON_WIDGET_ACTION;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::PLAYBACK_MAN_STOP_PLAYBACK;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::PLAYBACK_MAN_STOP_RECORDING;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::REPLAY_CACHE_DTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_LIST_STOP_2;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_ENGINE_EXIT_SCRIPT_MODE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_ENGINE_GET_SEQ_PROCESS_ID;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_LIST_ON_SEQ_END;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_ENGINE_GET_TARGET_OBJECT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_ENGINE_DESTROY_SCRIPT_DATABASE_2;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_ENGINE_OBJ_TABLE_DTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_ENGINE_GET_PROCESS_2;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::IN_SEQ_STOP;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SND_BANK_UNLOAD_MEMORY_2 as SND_BANK_UNLOAD_MEMORY;
-    pub(crate) use crate::game::fe::fepopup3::callee::FE_LOCALE_UNLOAD_TABLE;
-    pub(crate) use crate::game::fe::fepopup3::callee::FE_MODULE_RIDER_PREVIEW_CTOR;
-    pub(crate) use crate::game::fe::fepopup3::callee::FE_ASYNC_MANAGER_GET_STATE;
-    pub(crate) use crate::game::fe::fepopup3::callee::NET_FE_STATE_GET_POPUP;
-    pub(crate) use crate::game::fe::fepopup3::callee::NET_FE_STATE_SETUP_BUDDY_ACTION_POPUP;
-    pub(crate) use crate::game::fe::fepopup3::callee::NET_FE_STATE_CTOR as NET_FE_STATE_CTOR_8;
-    pub(crate) use crate::game::fe::fepopup3::callee::NET_FE_STATE_ON_CHILD_EVENT as NET_FE_STATE_ON_CHILD_EVENT_7;
-    pub(crate) use crate::game::fe::fepopup3::callee::CFE_STATE_CREATE_STEP1_ON_SAVE_ACCOUNT_ANSWER;
-    pub(crate) use crate::game::fe::fepopup3::callee::CFE_STATE_CREATE_STEP1_ON_EDIT_DONE_POPUP_EVENT;
-    pub(crate) use crate::game::fe::fepopup3::callee::CFE_STATE_LOBBY_MENU_ON_CREATE_ROOM_POPUP_EVENT;
-    pub(crate) use crate::game::fe::fepopup3::callee::CFE_STATE_LOBBY_MENU_PROMPT_ROOM_PASSWORD;
-    pub(crate) use crate::game::fe::fepopup3::callee::CFE_STATE_ONLINE_MAIN_MENU_ON_LEAVE_POPUP_EVENT;
-    pub(crate) use crate::game::fe::fepopup3::callee::CFE_STATE_ONLINE_MAIN_MENU_ON_DISCONNECT_POPUP_EVENT;
-    pub(crate) use crate::game::fe::fepopup3::callee::CFE_STATE_NET_QUICK_MESSAGES_ON_SAVE_POPUP_EVENT;
-    pub(crate) use crate::game::fe::fepopup3::callee::CFE_STATE_NET_QUICK_MESSAGES_ON_RESET_POPUP_EVENT;
-    pub(crate) use crate::game::fe::fepopup3::callee::CFE_STATE_REWARD_GALLERY_V29;
-    pub(crate) use crate::game::fe::fepopup3::callee::CFE_STATE_REWARD_GALLERY_RELEASE_TEXTURES;
-    pub(crate) use crate::game::fe::fepopup3::callee::MESSAGE_CENTER_GET_INBOX_3;
-    pub(crate) use crate::game::fe::fepopup3::callee::HUD_LAYOUT_ICON_TEXT;
-    pub(crate) use crate::game::fe::fepopup3::callee::GAME_MODULE_CTOR;
-    pub(crate) use crate::game::fe::fepopup3::callee::MC_MANAGER_END_PROGRESS;
-    pub(crate) use crate::game::fe::fepopup3::callee::MC_MANAGER_SET_MODE;
-    pub(crate) use crate::game::fe::fepopup3::callee::MC_MANAGER_END_OPERATION_2 as MC_MANAGER_END_OPERATION_3;
-    pub(crate) use crate::game::fe::fepopup3::callee::MC_MANAGER_REQUEST_CARD_INFO_2;
-    pub(crate) use crate::game::fe::fepopup3::callee::LOBBY_MAN_GET_ROOM_NAME;
-    pub(crate) use crate::game::fe::fepopup3::callee::LOBBY_MAN_MOVE_TO_ROOM;
-    pub(crate) use crate::game::fe::fepopup3::callee::LOBBY_MAN_LOOKUP_PEER_ADDR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BUILD_BUDDY_LIST;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::REFRESH_PLAYER_LIST;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SET_SELECTED_USER;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::GET_SELECTED_USER;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SHOW_BUDDY_ACTION_POPUP;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::ON_CHILD_EVENT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::GOTO_NEXT_STATE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::HANDLE_NET_EVENT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::ONLINE_CHARACTER_SELECT_CTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CHANNEL_GET_TRACK;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::LIST_GET_ENTRY_TYPE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::FIND_FREE_BANK_SLOT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::LOAD_BANK_ASYNC;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::REQUEST_IMAGE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SEND_PACKET;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BANK_MONITOR_RESET;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::RIDER_SAY_20B9;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::STOP_BOARD_LOOPS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::START_RIDER_BOARD_LOOPS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::GET_RACE_MAN;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::LEVEL_TO_VOLUME;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SET_CHANNEL_VOLUME;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::GET_CHANNEL_VOLUME;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::AUDIO_SYSTEM_CTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::STOP_TRANSITION;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::REPLAY_END_SAVE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::REPLAY_SET_CONTROLLER_INDEX;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SND_BANK_UNLOAD as SND_BANK_UNLOAD_3;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_STATE_CTOR_2_2;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_LIST_CTOR_2 as UI_LIST_CTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_MENU_SET_SELECTION;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MEM_CARD_BASE_CTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MEM_CARD_ON_CHILD_EVENT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::RIDER_HAS_RENDER_SLOT;
-    pub(crate) use crate::game::main::gamemode::callee::RIDER_METRIX_RESET_STATS;
-    pub(crate) use crate::game::main::gamemode::callee::RIDER_METRIX_CLEAR_HUD_MESSAGES;
-    pub(crate) use crate::game::main::gamemode::callee::RIDER_METRIX_RESET_TRICK;
-    pub(crate) use crate::game::main::gamemode::callee::RIDER_METRIX_RESET_COMBO;
-    pub(crate) use crate::game::main::gamemode::callee::RIDER_METRIX_BANK_PENDING_SCORE;
-    pub(crate) use crate::game::main::gamemode::callee::RIDER_GET_SYNC_CHECKSUM;
-    pub(crate) use crate::game::main::gamemode::callee::CBE_GET_BE;
-    pub(crate) use crate::game::main::gamemode::callee::BE_GET_RIDER_PROFILE;
-    pub(crate) use crate::game::main::gamemode::callee::BE_NEW_PLAYER_INT_GET_SLOT as BE_NEW_PLAYER_INT_GET_SLOT_2;
-    pub(crate) use crate::game::main::gamemode::callee::BE_REWARD_INT_GET_MEDAL_REWARD_ID;
-    pub(crate) use crate::game::main::gamemode::callee::BE_REWARD_INT_IS_REWARD_GRANTED;
-    pub(crate) use crate::game::main::gamemode::callee::BE_REWARD_INT_GRANT_REWARD;
-    pub(crate) use crate::game::main::gamemode::callee::CAMERA_TRIGGER_MAN_UNLOAD;
-    pub(crate) use crate::game::main::gamemode::callee::CAMERA_TRIGGER_MAN_PARSE;
-    pub(crate) use crate::game::main::gamemode::callee::CAMERA_TRIGGER_MAN_UPDATE_TRIGGERS_MASK2;
-    pub(crate) use crate::game::main::gamemode::callee::UI_OBJECT_SHOW_CLAMP_ALPHA_HALF as UI_OBJECT_SHOW_CLAMP_ALPHA_HALF_3;
-    pub(crate) use crate::game::main::gamemode::callee::FE_MODULE_UNLOAD_RIDER_PREVIEWS;
-    pub(crate) use crate::game::main::gamemode::callee::FE_MODULE_RIDER_PREVIEW_DTOR;
-    pub(crate) use crate::game::main::gamemode::callee::FE_ASYNC_MANAGER_SET_FILE_STATUS;
-    pub(crate) use crate::game::main::gamemode::callee::REPLAY_FIND_SNAPSHOT;
-    pub(crate) use crate::game::main::gamemode::callee::RUN_LIST_SEEK;
-    pub(crate) use crate::game::main::gamemode::callee::SCRIPT_LIST_ON_SEQ_ADVANCE;
-    pub(crate) use crate::game::main::gamemode::callee::SCRIPT_ENGINE_GET_SEQ_PROCESS_ID as SCRIPT_ENGINE_GET_SEQ_PROCESS_ID_2;
-    pub(crate) use crate::game::main::gamemode::callee::REPLAY_REQUEST_INSTANT_REPLAY;
-    pub(crate) use crate::game::main::gamemode::callee::USTR_TO_ASCII as USTR_TO_ASCII_2;
-    pub(crate) use crate::game::main::gamemode::callee::CPS2_MEM_CARD_SET_STATE;
-    pub(crate) use crate::game::main::gamemode::callee::MENU_SYS_ITEM_DRAW_ROW;
-    pub(crate) use crate::game::main::gamemode::callee::WSCRIPT_MAN_RESET_COLLECT_SET;
-    pub(crate) use crate::game::main::gamemode::callee::OPERATOR_NEW_NAMED as OPERATOR_NEW_NAMED_2;
-    pub(crate) use crate::game::main::gamemode::callee::CBX_STRING_ALLOC_BUFFER;
-    pub(crate) use crate::game::main::gamemode::callee::EA_MEM_FREE as EA_MEM_FREE_2;
-    pub(crate) use crate::game::main::gamemode::callee::BUILTIN_DELETE as BUILTIN_DELETE_3;
-    pub(crate) use crate::game::main::gamemode::callee::MODIFIER_BLOCK_HAS_RAIL_MODIFIER;
-    pub(crate) use crate::game::main::gamemode::callee::RAIL_MODIFIER_CTOR;
-    pub(crate) use crate::game::main::gamemode::callee::MOD_OBJ_SET_RAIL_MODIFIER;
-    pub(crate) use crate::game::main::gamemode::callee::MULTI_PARTICLE_DTOR as MULTI_PARTICLE_DTOR_2;
-    pub(crate) use crate::game::main::gamemode::callee::MOD_OBJ_CTOR_2;
-    pub(crate) use crate::game::main::gamemode::callee::FLEX_BRIDGE_ALLOC_SPRING_NODES;
-    pub(crate) use crate::game::main::gamemode::callee::TEX_MAN_UNLOCK_VRAM;
-    pub(crate) use crate::game::main::gamemode::callee::UI_LIST_NODE_IS_SENTINEL;
-    pub(crate) use crate::game::main::gamemode::callee::UI_LIST_FIRST as UI_LIST_FIRST_2;
-    pub(crate) use crate::game::main::gamemode::callee::UI_LIST_DELETE_ALL;
-    pub(crate) use crate::game::main::gamemode::callee::UI_LIST_ACCEPT_VISITOR;
-    pub(crate) use crate::game::main::gamemode::callee::UI_LIST_NODE_DTOR_BODY as UI_LIST_NODE_DTOR_BODY_2;
-    pub(crate) use crate::game::main::gamemode::callee::CUI_TEXT_SCROLL_SET_WIDE_STRING;
-    pub(crate) use crate::game::main::gamemode::callee::CSTREAM_MAN_RESET;
-    pub(crate) use crate::game::main::gamemode::callee::CSTREAM_MAN_FREE_BUFFERS;
-    pub(crate) use crate::game::main::gamemode::callee::STR_HASH as STR_HASH_2;
-    pub(crate) use crate::game::main::gamemode::callee::SPRINTF as SPRINTF_3;
-    pub(crate) use crate::game::main::gamemode::callee::MEMSET as MEMSET_2;
-    pub(crate) use crate::game::main::gamemode::callee::MEMSET_3E6448;
-    pub(crate) use crate::game::main::gamemode::callee::MEMCPY;
-    pub(crate) use crate::game::main::gamemode::callee::STRLEN as STRLEN_2;
-    pub(crate) use crate::game::main::gamemode::callee::STRCPY as STRCPY_4;
-    pub(crate) use crate::game::main::gamemode::callee::CVT_FLOAT_TO_INT;
-    pub(crate) use crate::game::main::gamemode::callee::C_UI_SCREEN_GET_OBJECT_BY_HASH_NAME;
-    pub(crate) use crate::game::main::gamemode::callee::C_UI_ENGINE_ADD_SCREEN_BY_HASH_NAME;
-    pub(crate) use crate::game::main::gamemode::callee::C_UI_SCREEN_PLAY_FRAME;
-    pub(crate) use crate::game::main::gamemode::callee::SSX_AUDIO_SYSTEM_GET_INSTANCE as SSX_AUDIO_SYSTEM_GET_INSTANCE_2;
-    pub(crate) use crate::game::main::gamemode::callee::FUNC_0028F140;
-    pub(crate) use crate::game::main::gamemode::callee::C_MEM_MAN_ALLOC;
-    pub(crate) use crate::game::main::gamemode::callee::AI_RAND;
-    pub(crate) use crate::game::movie::movieplayer::callee::BUDDY_MAN_IS_CONNECTED;
-    pub(crate) use crate::game::movie::movieplayer::callee::LOBBY_MAN;
-    pub(crate) use crate::game::movie::movieplayer::callee::BUDDY_MAN_RECONNECT;
-    pub(crate) use crate::game::movie::movieplayer::callee::LOBBY_MAN_DISCONNECT as LOBBY_MAN_DISCONNECT_2;
-    pub(crate) use crate::game::movie::movieplayer::callee::BUDDY_MAN_DISCONNECT;
-    pub(crate) use crate::game::movie::movieplayer::callee::NET_FE_SET_QUALITY_ICONS;
-    pub(crate) use crate::game::movie::movieplayer::callee::GET_HASH_VALUE_32;
-    pub(crate) use crate::game::movie::movieplayer::callee::UI_SCREEN_FIND_OBJECT;
-    pub(crate) use crate::game::movie::movieplayer::callee::UI_TEXT_SET_UNICODE_STRING_BY_ID;
-    pub(crate) use crate::game::movie::movieplayer::callee::NET_FE_STATE_HANDLE_NET_EVENT as NET_FE_STATE_HANDLE_NET_EVENT_2;
-    pub(crate) use crate::game::movie::movieplayer::callee::LOBBY_MENU_ON_CREATE_ROOM_RESULT;
-    pub(crate) use crate::game::movie::movieplayer::callee::LOBBY_MENU_ON_JOIN_ROOM_RESULT;
-    pub(crate) use crate::game::movie::movieplayer::callee::NET_FE_STATE_CTOR_5 as NET_FE_STATE_CTOR_10;
-    pub(crate) use crate::game::movie::movieplayer::callee::UI_ENGINE_ADD_SCREEN_BY_HASH_NAME;
-    pub(crate) use crate::game::movie::movieplayer::callee::UI_SCREEN_PLAY_FRAME;
-    pub(crate) use crate::game::movie::movieplayer::callee::NET_FE_STATE_SHOW_DISCONNECTED_POPUP;
-    pub(crate) use crate::game::movie::movieplayer::callee::TAG_FIELD_GET_STRING;
-    pub(crate) use crate::game::movie::movieplayer::callee::STRCPY_2 as STRCPY_5;
-    pub(crate) use crate::game::movie::movieplayer::callee::ASYNC_FILE_RELEASE_1;
-    pub(crate) use crate::game::movie::movieplayer::callee::ASYNC_FILE_RELEASE_2;
-    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_ENGINE_UNLOAD_BANK;
-    pub(crate) use crate::game::movie::movieplayer::callee::MEM_FREE;
-    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_ENGINE_GET_PROCESS_IN_SEQ;
-    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_ENGINE_GET_INSTANCE_SCRIPT as SCRIPT_ENGINE_GET_INSTANCE_SCRIPT_2;
-    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_ENGINE_RUN_PROCESS;
-    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_OBJ_ACTIVATE;
-    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_DATA_GET_INFO as SCRIPT_DATA_GET_INFO_2;
-    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_ENGINE_FIND_SOUND_BANK;
-    pub(crate) use crate::game::movie::movieplayer::callee::MENU_SYS_ITEM_ON_FOCUS;
-    pub(crate) use crate::game::movie::movieplayer::callee::MENU_SYS_PAGE_SET_SELECTION;
-    pub(crate) use crate::game::movie::movieplayer::callee::MENU_SYS_PAGE_ON_ACTIVATE;
-    pub(crate) use crate::game::movie::movieplayer::callee::BE_SCORE_INT_UPDATE_BEST_STATS;
-    pub(crate) use crate::game::movie::movieplayer::callee::RIDER_METRIX_RESET_STATS as RIDER_METRIX_RESET_STATS_2;
-    pub(crate) use crate::game::movie::movieplayer::callee::MC_MANAGER_ON_OPERATION_DONE;
-    pub(crate) use crate::game::movie::movieplayer::callee::MC_MANAGER_END_OPERATION_4;
-    pub(crate) use crate::game::movie::movieplayer::callee::MC_MANAGER_SET_MODE_2;
-    pub(crate) use crate::game::movie::movieplayer::callee::FE_POPUP_CONFIRM_RESET_LAYOUT;
-    pub(crate) use crate::game::movie::movieplayer::callee::FE_POPUP_CONFIRM_APPLY_CONFIG;
-    pub(crate) use crate::game::movie::movieplayer::callee::FE_POPUP_CONFIRM_APPLY_BACKGROUND_SCALE;
-    pub(crate) use crate::game::movie::movieplayer::callee::BUILTIN_DELETE_4;
-    pub(crate) use crate::game::movie::movieplayer::callee::PARENT_MODIFIER_CTOR;
-    pub(crate) use crate::game::movie::movieplayer::callee::ROLLER_MODIFIER_CTOR;
-    pub(crate) use crate::game::movie::movieplayer::callee::MOD_OBJ_SET_TRANSFORM_MODIFIER;
-    pub(crate) use crate::game::movie::movieplayer::callee::MULTI_SPLINE_MODIFIER_ADD_REF;
-    pub(crate) use crate::game::movie::movieplayer::callee::MEM_ALLOC_NAMED;
-    pub(crate) use crate::game::movie::movieplayer::callee::MEM_FREE_2;
-    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_ENGINE_LAUNCH_PENDING_PROCESS;
-    pub(crate) use crate::game::movie::movieplayer::callee::C_FE_STATE_CHAR_EQUIP_SET_EQUIP_ROW;
-    pub(crate) use crate::game::movie::movieplayer::callee::C_FE_STATE_CHAR_EQUIP_SET_BUY_ROW;
-    pub(crate) use crate::game::movie::movieplayer::callee::STREAM_BUFFER_CTOR;
-    pub(crate) use crate::game::movie::movieplayer::callee::WSCRIPT_MAN_CREATE_PROCESS;
-    pub(crate) use crate::game::movie::movieplayer::callee::WSCRIPT_CACHE_GET_PROCESS_COUNT;
-    pub(crate) use crate::game::movie::movieplayer::callee::WSCRIPT_CACHE_GET_PROCESSES;
-    pub(crate) use crate::game::movie::movieplayer::callee::RIDER_METRIX_ON_SPLIT_MARKER;
-    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_CMD_QUEUE_CTOR;
-    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_CMD_QUEUE_CLEAR;
-    pub(crate) use crate::game::movie::movieplayer::callee::BX_STRING_ALLOC_COPY;
-    pub(crate) use crate::game::movie::movieplayer::callee::BX_STRING_CTOR_COPY;
-    pub(crate) use crate::game::movie::movieplayer::callee::BX_STRING_DTOR;
-    pub(crate) use crate::game::movie::movieplayer::callee::FONT_PARSE_GLYPHS;
-    pub(crate) use crate::game::movie::movieplayer::callee::SPRINTF_2 as SPRINTF_4;
-    pub(crate) use crate::game::movie::movieplayer::callee::FILE_LOAD;
-    pub(crate) use crate::game::movie::movieplayer::callee::UI_ENGINE_STORE_WORD;
-    pub(crate) use crate::game::movie::movieplayer::callee::UI_ENGINE_LOAD_TEXTURES;
-    pub(crate) use crate::game::movie::movieplayer::callee::FLEX_BRIDGE_ALLOC_SPRING_NODES as FLEX_BRIDGE_ALLOC_SPRING_NODES_2;
-    pub(crate) use crate::game::movie::movieplayer::callee::CBE_GET_BE as CBE_GET_BE_2;
-    pub(crate) use crate::game::movie::movieplayer::callee::CBE_GET_INTERFACE;
-    pub(crate) use crate::game::movie::movieplayer::callee::C_OV_STATE_OVERLAY_INIT;
-    pub(crate) use crate::game::movie::movieplayer::callee::EVENT_SELECT_INIT;
-    pub(crate) use crate::game::movie::movieplayer::callee::C_FLAG_MANAGER_GROUP_INIT_KEY;
-    pub(crate) use crate::game::movie::movieplayer::callee::OV_SCREEN_PDA_TEMPLATE_OPEN;
-    pub(crate) use crate::game::movie::movieplayer::callee::OV_SCREEN_PROFILE_SAVE_PDA_INIT_SLOT_LABELS;
-    pub(crate) use crate::game::movie::movieplayer::callee::GAME_MODULE_REQUEST_STATE as GAME_MODULE_REQUEST_STATE_3;
-    pub(crate) use crate::game::movie::movieplayer::callee::GAME_MODULE_REQUEST_OVERLAY_STATE;
-    pub(crate) use crate::game::movie::movieplayer::callee::UI_STATE_CTOR_2 as UI_STATE_CTOR_5;
-    pub(crate) use crate::game::movie::movieplayer::callee::UI_STATE_MGR_ADD_BACKGROUND_STATE;
-    pub(crate) use crate::game::movie::movieplayer::callee::BEREWARD_INT_IS_PEAK_COMPLETE;
-    pub(crate) use crate::game::main::gamestate::callee::C_FE_STATE_ONLINE_CHARACTER_SELECT_SHOW_OPPONENT_CHAR;
-    pub(crate) use crate::game::main::gamestate::callee::C_FE_STATE_ONLINE_CHARACTER_SELECT_SHOW_CHAR_STATS;
-    pub(crate) use crate::game::main::gamestate::callee::MESSAGE_CENTER_REMOVE_MESSAGE;
-    pub(crate) use crate::game::main::gamestate::callee::MESSAGE_CENTER_COUNT_GROUP_MESSAGES;
-    pub(crate) use crate::game::main::gamestate::callee::MESSAGE_CENTER_GET_MESSAGE_COUNT;
-    pub(crate) use crate::game::main::gamestate::callee::OV_SCREEN_MESSAGE_CENTER_REFRESH_LIST;
-    pub(crate) use crate::game::main::gamestate::callee::OV_SCREEN_MESSAGE_CENTER_UPDATE_COUNT_TEXT;
-    pub(crate) use crate::game::main::gamestate::callee::OV_SCREEN_MESSAGE_CENTER_UPDATE_SCROLL_ARROWS;
-    pub(crate) use crate::game::main::gamestate::callee::INTC_TABLE_CLEAR_SLOTS;
-    pub(crate) use crate::game::main::gamestate::callee::INTC_TABLE_INSTALL_VIF_VU_HANDLERS;
-    pub(crate) use crate::game::main::gamestate::callee::GAME_STATE_LOAD_STATE;
-    pub(crate) use crate::game::main::gamestate::callee::VD_TEXTURE_SINK_CTOR;
-    pub(crate) use crate::game::main::gamestate::callee::BE_GET_RIDER_PROFILE as BE_GET_RIDER_PROFILE_2;
-    pub(crate) use crate::game::main::gamestate::callee::BE_LIBRARY_GET_INSTANCE_3;
-    pub(crate) use crate::game::main::gamestate::callee::BE_LIBRARY_GET_INTERFACE_3;
-    pub(crate) use crate::game::main::gamestate::callee::BE_ECON_INT_GET_TOTAL_EARNED;
-    pub(crate) use crate::game::main::gamestate::callee::BOLTS_FIND_BOLT_INDEX;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_CMD_QUEUE_AT_2;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_LIST_IS_MOVIE_ENTRY;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_ENGINE_GET_PROCESS_IN_SEQ as SCRIPT_ENGINE_GET_PROCESS_IN_SEQ_2;
-    pub(crate) use crate::game::main::gamestate::callee::SECTION_ALLOCATOR_CTOR;
-    pub(crate) use crate::game::main::gamestate::callee::UI_STATE_CTOR_3 as UI_STATE_CTOR_6;
-    pub(crate) use crate::game::main::gamestate::callee::MEMCARD_STATE_BASE_INSTALL_CALLBACKS;
-    pub(crate) use crate::game::main::gamestate::callee::UI_STATE_MGR_FIND_STATE;
-    pub(crate) use crate::game::main::gamestate::callee::UI_STATE_SHUTDOWN_2;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_ENGINE_LIST_STOP_3 as SCRIPT_ENGINE_LIST_STOP_2;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_ENGINE_LIST_START;
-    pub(crate) use crate::game::main::gamestate::callee::SSX_AUDIO_SYSTEM_RESET_RACE_SOUNDS;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_ENGINE_GET_SCRIPT_OBJ;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_OBJ_CAM_IS_BOUND_TO_PROCESS;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_ENGINE_IS_OBJ_BOUND_TO_PROCESS;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_OBJ_CAM_HAS_BINDING;
-    pub(crate) use crate::game::main::gamestate::callee::SPEECH_INSTANCE_DTOR;
-    pub(crate) use crate::game::main::gamestate::callee::SSX_AUDIO_SYSTEM_IS_DJ_SPEECH_ON;
-    pub(crate) use crate::game::main::gamestate::callee::SPEECH_SYSTEM_SET_EVENT_CONTEXT;
-    pub(crate) use crate::game::main::gamestate::callee::SSX_AUDIO_SYSTEM_GET_LANGUAGE_MASK;
-    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_PAGE_VALIDATE_SELECTION;
-    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_PAGE_SELECT_NEXT as MENU_SYS_PAGE_SELECT_NEXT_2;
-    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_PAGE_SELECT_PREV;
-    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_ITEM_HANDLE_INPUT;
-    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_ITEM_IS_DISABLED as MENU_SYS_ITEM_IS_DISABLED_2;
-    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_ITEM_GET_INPUT_CODE;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_BINDING_PAUSE_SEQ;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_BINDING_RESUME_SEQ;
-    pub(crate) use crate::game::main::gamestate::callee::GAME_ANIM_MAP_UNREGISTER_BANK;
-    pub(crate) use crate::game::main::gamestate::callee::ANIM_DATA_BASE_FREE_CHAN_CACHES;
-    pub(crate) use crate::game::main::gamestate::callee::ADF_DATA_SOURCE_DTOR;
-    pub(crate) use crate::game::main::gamestate::callee::C_KEYBOARD_POPUP_SET_KEY_ENABLED;
-    pub(crate) use crate::game::main::gamestate::callee::RIDER_CLEAR_NEARBY_LIGHTS;
-    pub(crate) use crate::game::main::gamestate::callee::SNDSTRM_CLOSE;
-    pub(crate) use crate::game::main::gamestate::callee::EA_MEM_FREE_4 as EA_MEM_FREE_3;
-    pub(crate) use crate::game::main::gamestate::callee::BUILTIN_DELETE_4 as BUILTIN_DELETE_5;
-    pub(crate) use crate::game::main::gamestate::callee::NET_FE_STATE_OPEN_KEYBOARD_TEXT_ID;
-    pub(crate) use crate::game::main::gamestate::callee::NET_FE_STATE_ON_CHILD_EVENT_3 as NET_FE_STATE_ON_CHILD_EVENT_8;
-    pub(crate) use crate::game::main::gamestate::callee::SSX_AUDIO_SYSTEM_GET_CHANNEL_GAIN_PTR;
-    pub(crate) use crate::game::main::gamestate::callee::BANK_MONITOR_STOP_HANDLE as BANK_MONITOR_STOP_HANDLE_2;
-    pub(crate) use crate::game::main::gamestate::callee::UI_LIST_FIRST_2 as UI_LIST_FIRST_3;
-    pub(crate) use crate::game::main::gamestate::callee::C_GAME_COMM_RECV_GAME_PACKET;
-    pub(crate) use crate::game::main::gamestate::callee::C_FE_STATE_BRAGGING_RIGHTS_INIT_PLAYER_ROWS;
-    pub(crate) use crate::game::main::gamestate::callee::EA_MEM_ALLOC_NAMED_3;
-    pub(crate) use crate::game::main::gamestate::callee::MEM_MOVE;
-    pub(crate) use crate::game::main::gamestate::callee::STR_COPY;
-    pub(crate) use crate::game::main::gamestate::callee::TAG_FIELD_SET_STRING;
-    pub(crate) use crate::game::main::gamestate::callee::STR_N_COPY;
-    pub(crate) use crate::game::main::gamestate::callee::SPHERE_TREE_COLLIDE_SPHERE_TREE;
-    pub(crate) use crate::game::main::gamestate::callee::SPHERE_TREE_COLLIDE_AABB;
-    pub(crate) use crate::game::main::gamestate::callee::SPCH_SHUTDOWN;
-    pub(crate) use crate::game::main::gamestate::callee::SPCH_MAKE_ID;
-    pub(crate) use crate::game::main::gamestate::callee::MEM_FREE as MEM_FREE_3;
-    pub(crate) use crate::game::main::gamestate::callee::STR_HASH as STR_HASH_3;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RESET_FOR_RIDER;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::INIT_FROM_RIDER;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::DYNAMIC_EMITTER_RESET;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MC_END_OPERATION;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MC_ON_OPERATION_DONE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BUY_POPUP_RESET;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STOP_LOADING_SCREEN_LOOP;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::CLEAR_NEW_REWARDS;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_GET_MAIN_STATE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_RECORD_BEST_JUMP;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_ADD_BOOST_2;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_APPLY_SCRIPT_TRACK;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_UPDATE_SCRIPT_SOUNDS;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SNOW_BOX_DTOR;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_ANIM_CTOR;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::VRAM_HEAP_INIT;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::TEX_MAN_INIT_TABLE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::TAG_FIELD_COPY;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::TAG_FIELD_SET_RAW;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::GROW_LINES;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_TEXT_SET_EVENT_STAT;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_STATE_CTOR_2_2 as UI_STATE_CTOR_2_3;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::LOAD_INDICATOR_RENDER;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_OBJECT_FIND_BY_ID;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_LIST_FIRST as UI_LIST_FIRST_5;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_LIST_NODE_SENTINEL;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SECTION_SELECT_PEAK_LIGHTING;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::INSTANCE_GET_NODE_MATRIX as INSTANCE_GET_NODE_MATRIX_2;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::AVALANCHE_GET_OBJECT_MATRIX;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::GAME_PROCESS_DTOR;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::WORLD_GET_INSTANCE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_GET_RIDER_PROFILE as BE_GET_RIDER_PROFILE_3;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_GET_RIDER_CHARACTER;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_GET_TRACK_INFO;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_SET_CHARACTER_BY_SLOT;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::LOBBY_GET_ROOM_NAME;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BUDDY_GET_ROSTER_COUNT;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BUDDY_GET_ROSTER_ENTRY;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::FE_ASYNC_SET_STATE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::POPUP_CONFIRM_REBUILD;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SSX_AUDIO_PLAY_MUSIC;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STR_HASH as STR_HASH_4;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STREAM_FILE_QUEUE_RANGE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::USTR_LEN;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::USTR_CPY;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_TEXT_SET_TEXT_ID;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_TEXT_SET_STRING as UI_TEXT_SET_STRING_3;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_SCREEN_FIND_OBJECT as UI_SCREEN_FIND_OBJECT_3;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_ANIM_SET_CREATE_ANIM as UI_ANIM_SET_CREATE_ANIM_2;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_OBJECT_SET_ANIM as UI_OBJECT_SET_ANIM_2;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_STATE_MGR_PUSH_POPUP;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_LISTBOX_SET_ITEM_TEXT;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SET_ITEM_YEAR;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_TEXT_SET_ASCII;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_ANIM_SET_CREATE_ANIM_2 as UI_ANIM_SET_CREATE_ANIM_2_2;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_MISSION_SET_COLLECTED;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MSG_PRINTF;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STR_LEN;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STRLEN as STRLEN_3;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::QSORT;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::EA_TIMER_SERVICE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::EA_THREAD_YIELD;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::GAME_MODULE_REQUEST_STATE_2 as GAME_MODULE_REQUEST_STATE_4;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::LOBBY_API_SEND;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SSX_AUDIO_RESUME_SFX;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SSX_AUDIO_IS_TRACK_GROUP5;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_GATHER_CAM_STATE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SSX_AUDIO_GET_INSTANCE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MEM_REPORT_STATS_LOCKED;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::OPERATOR_NEW_NAMED as OPERATOR_NEW_NAMED_3;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::EA_MEM_ALLOC_NAMED_2 as EA_MEM_ALLOC_NAMED_4;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_LIST_FIRST_WRAPPER;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SERIALIZE_READ_U32;
-    pub(crate) use crate::game::ai::rider::callee::NET_FE_STATE_ON_CHILD_EVENT as NET_FE_STATE_ON_CHILD_EVENT_11;
-    pub(crate) use crate::game::ai::rider::callee::NET_ACCOUNT_MEM_CTOR;
-    pub(crate) use crate::game::ai::rider::callee::SHOW_CHAR_STATS;
-    pub(crate) use crate::game::ai::rider::callee::START_CARD_SCAN;
-    pub(crate) use crate::game::ai::rider::callee::SHOW_CHECKING_CARD_POPUP;
-    pub(crate) use crate::game::ai::rider::callee::CREATE_STEP1_SET_ACCOUNT_NAME;
-    pub(crate) use crate::game::ai::rider::callee::CREATE_STEP1_SET_PASSWORD;
-    pub(crate) use crate::game::ai::rider::callee::CREATE_STEP1_SET_CONFIRM_PASSWORD;
-    pub(crate) use crate::game::ai::rider::callee::CREATE_STEP1_SET_EMAIL;
-    pub(crate) use crate::game::ai::rider::callee::CREATE_STEP1_SET_SHARE_INFO;
-    pub(crate) use crate::game::ai::rider::callee::CREATE_STEP1_SET_INFORM;
-    pub(crate) use crate::game::ai::rider::callee::CREATE_STEP1_BACKUP_ACCOUNT;
-    pub(crate) use crate::game::ai::rider::callee::CREATE_STEP1_ALL_FIELDS_FILLED;
-    pub(crate) use crate::game::ai::rider::callee::LOGIN_ON_ACCOUNT_MEM_POPUP;
-    pub(crate) use crate::game::ai::rider::callee::LOGIN_ON_DISCONNECT_POPUP;
-    pub(crate) use crate::game::ai::rider::callee::MESSAGE_CENTER_GET_LIST_INDEX;
-    pub(crate) use crate::game::ai::rider::callee::MESSAGE_CENTER_OPEN_VIEW_POPUP;
-    pub(crate) use crate::game::ai::rider::callee::LOBBY_MAN_SEND_REQUEST as LOBBY_MAN_SEND_REQUEST_2;
-    pub(crate) use crate::game::ai::rider::callee::LOBBY_MAN_GET_LANGUAGE;
-    pub(crate) use crate::game::ai::rider::callee::BUDDY_MAN_GET_ROSTER_COUNT as BUDDY_MAN_GET_ROSTER_COUNT_3;
-    pub(crate) use crate::game::ai::rider::callee::BUDDY_MAN_GET_ROSTER_ENTRY as BUDDY_MAN_GET_ROSTER_ENTRY_3;
-    pub(crate) use crate::game::ai::rider::callee::SSX_AUDIO_GET_SURFACE_SOUND_TYPE;
-    pub(crate) use crate::game::ai::rider::callee::SSX_AUDIO_START_BOARD_BASE_LOOP;
-    pub(crate) use crate::game::ai::rider::callee::SSX_AUDIO_START_BOARD_SURFACE_LOOP;
-    pub(crate) use crate::game::ai::rider::callee::SSX_AUDIO_START_BOARD_EDGE_LOOP;
-    pub(crate) use crate::game::ai::rider::callee::SSX_AUDIO_PLAY_FE_SOUND;
-    pub(crate) use crate::game::ai::rider::callee::SSX_AUDIO_STOP_WIPEOUT_LOOP;
-    pub(crate) use crate::game::ai::rider::callee::SSX_AUDIO_STOP_WIPEOUT_LOOP2;
-    pub(crate) use crate::game::ai::rider::callee::SSX_AUDIO_STOP_TRICK_METER_SOUND;
-    pub(crate) use crate::game::ai::rider::callee::SCRIPT_OBJ_CTOR as SCRIPT_OBJ_CTOR_2;
-    pub(crate) use crate::game::ai::rider::callee::SCRIPT_OBJ_DEACTIVATE as SCRIPT_OBJ_DEACTIVATE_2;
-    pub(crate) use crate::game::ai::rider::callee::CODEC_POP_FREE_FRAME;
-    pub(crate) use crate::game::ai::rider::callee::MPEG2_GET_BITS;
-    pub(crate) use crate::game::ai::rider::callee::MPEG2_MARKER_BIT;
-    pub(crate) use crate::game::ai::rider::callee::BUY_POPUP_INIT_BUY_BOLT;
-    pub(crate) use crate::game::ai::rider::callee::RIDER_GET_START_DIST_TO_FINISH;
-    pub(crate) use crate::game::ai::rider::callee::BE_GET_RIDER_PROFILE_2 as BE_GET_RIDER_PROFILE_4;
-    pub(crate) use crate::game::ai::rider::callee::BENEW_PLAYER_INT_GET_SLOT;
-    pub(crate) use crate::game::ai::rider::callee::SCRIPT_ENGINE_GET_PROCESS as SCRIPT_ENGINE_GET_PROCESS_3;
-    pub(crate) use crate::game::ai::rider::callee::IN_SEQ_PLAY;
-    pub(crate) use crate::game::ai::rider::callee::CROWD_MAN_GROUP_FREE;
-    pub(crate) use crate::game::ai::rider::callee::RAIL_MAN_ENABLE_RAIL;
-    pub(crate) use crate::game::ai::rider::callee::SYNC_PROCESS_DTOR;
-    pub(crate) use crate::game::ai::rider::callee::TEX_MAN_EVICT_TEXTURE;
-    pub(crate) use crate::game::ai::rider::callee::VRAM_HEAP_FREE_TEXTURE_BLOCKS;
-    pub(crate) use crate::game::ai::rider::callee::GAME_UI_OPEN_SCREEN;
-    pub(crate) use crate::game::ai::rider::callee::WORLD_CACHE_RESET;
-    pub(crate) use crate::game::ai::rider::callee::WORLD_CACHE_LOAD;
-    pub(crate) use crate::game::ai::rider::callee::STREAMER_GET_SECTION_COUNT;
-    pub(crate) use crate::game::ai::rider::callee::WSCRIPT_CACHE_ALLOC;
-    pub(crate) use crate::game::bx::bxstring2::callee::USTR_FROM_ASCII_2;
-    pub(crate) use crate::game::bx::bxstring2::callee::USTR_SPRINTF;
-    pub(crate) use crate::game::bx::bxstring2::callee::POPUP_SET_WIDGET_ALIGN;
-    pub(crate) use crate::game::bx::bxstring2::callee::POPUP_SET_WRAPPED_TEXT;
-    pub(crate) use crate::game::bx::bxstring2::callee::RIDER_CAMERA_ALGORITHM_CTOR;
-    pub(crate) use crate::game::bx::bxstring2::callee::WSCRIPT_MISSION_CTOR;
-    pub(crate) use crate::game::bx::bxstring2::callee::EA_MEM_ALLOC_NAMED_2 as EA_MEM_ALLOC_NAMED_6;
-    pub(crate) use crate::game::bx::bxstring2::callee::WSCRIPT_PROCESS_LIST_PUSH_FRONT_2 as WSCRIPT_PROCESS_LIST_PUSH_FRONT;
-    pub(crate) use crate::game::bx::bxstring2::callee::MULTIPARTICLE_MAN_CLEAR;
-    pub(crate) use crate::game::bx::bxstring2::callee::MULTIPARTICLE_CTOR;
-    pub(crate) use crate::game::bx::bxstring2::callee::MUSIC_PLAYER_SET_EVENT_STATE;
-    pub(crate) use crate::game::bx::bxstring2::callee::MUSIC_PLAYER_GET_SONG_TAG;
-    pub(crate) use crate::game::bx::bxstring2::callee::UI_STATE_UPDATE as UI_STATE_UPDATE_4;
-    pub(crate) use crate::game::bx::bxstring2::callee::OPTIONS_SET_VIBRATION;
-    pub(crate) use crate::game::bx::bxstring2::callee::STR_HASH as STR_HASH_6;
-    pub(crate) use crate::game::bx::bxstring2::callee::UI_MENU_FIND_FIRST_SELECTABLE;
-    pub(crate) use crate::game::bx::bxstring2::callee::UI_MENU_SET_SELECTION as UI_MENU_SET_SELECTION_2;
-    pub(crate) use crate::game::bx::bxstring2::callee::STRLEN as STRLEN_4;
-    pub(crate) use crate::game::bx::bxstring2::callee::SECTION_MAN_DEQUEUE_SECTION;
-    pub(crate) use crate::game::bx::bxstring2::callee::SECTION_MAN_POP_FREE_NODE;
-    pub(crate) use crate::game::bx::bxstring2::callee::UI_LISTBOX_ADD_ITEM_STR_ID;
-    pub(crate) use crate::game::bx::bxstring2::callee::UI_LISTBOX_FIND_ITEM_BY_VALUE;
-    pub(crate) use crate::game::bx::bxstring2::callee::UI_LISTBOX_SET_SELECTION;
-    pub(crate) use crate::game::bx::bxstring2::callee::NET_FE_STATE_GET_POPUP as NET_FE_STATE_GET_POPUP_5;
-    pub(crate) use crate::game::bx::bxstring2::callee::NET_FE_STATE_SHOW_POPUP as NET_FE_STATE_SHOW_POPUP_4;
-    pub(crate) use crate::game::bx::bxstring2::callee::MESSAGE_CENTER_GET_INBOX as MESSAGE_CENTER_GET_INBOX_4;
-    pub(crate) use crate::game::bx::bxstring2::callee::CBXSTRING_CTOR_COPY;
-    pub(crate) use crate::game::bx::bxstring2::callee::CBXSTRING_DTOR;
-    pub(crate) use crate::game::bx::bxstring2::callee::SSX_AUDIO_IS_DJ_SPEECH_ON;
-    pub(crate) use crate::game::bx::bxstring2::callee::SPEECH_SYSTEM_SET_EVENT_CONTEXT as SPEECH_SYSTEM_SET_EVENT_CONTEXT_2;
-    pub(crate) use crate::game::bx::bxstring2::callee::SSX_AUDIO_GET_LANGUAGE_MASK;
-    pub(crate) use crate::game::bx::bxstring2::callee::SSX_AUDIO_GET_SPEECH_CONTEXT_MASK;
-    pub(crate) use crate::game::bx::bxstring2::callee::INI_PARSER_SKIP_WHITESPACE;
-    pub(crate) use crate::game::bx::bxstring2::callee::CHUNK_RESOLVE_RELOCATE_DMA;
-    pub(crate) use crate::game::bx::bxstring2::callee::FLAG_MANAGER_GROUP_BUILD_MESH;
-    pub(crate) use crate::game::bx::bxstring2::callee::BE_GET_RIDER_PROFILE as BE_GET_RIDER_PROFILE_6;
-    pub(crate) use crate::game::bx::bxstring2::callee::BE_GET_CHAR_PROFILE_EVENT_RECORD as BE_GET_CHAR_PROFILE_EVENT_RECORD_2;
-    pub(crate) use crate::game::bx::bxstring2::callee::OV_STATE_OVERLAY_UPDATE;
-    pub(crate) use crate::game::bx::bxstring2::callee::READ_PRIVATE_MESSAGE_SET_TEXT;
-    pub(crate) use crate::game::bx::bxstring2::callee::NET_MANAGER;
-    pub(crate) use crate::game::bx::bxstring2::callee::OV_SCREEN_PDA_TEMPLATE_CLOSE;
-    pub(crate) use crate::game::bx::bxstring2::callee::PATH_DATA_READ_INT;
-    pub(crate) use crate::game::bx::bxstring2::callee::PATH_DATA_READ_FLOAT_3 as PATH_DATA_READ_FLOAT_2;
-    pub(crate) use crate::game::bx::bxstring2::callee::SUPERPIPE_COMPUTE_DESIRED_EYE;
-    pub(crate) use crate::game::bx::bxstring2::callee::SUPERPIPE_COMPUTE_LOOK_AT;
-    pub(crate) use crate::game::bx::bxstring2::callee::CHASE_CAMERA_RESET_FOR_RIDER;
-    pub(crate) use crate::game::bx::bxstring2::callee::CHASE_CAMERA_INIT_FROM_RIDER;
-    pub(crate) use crate::game::bx::bxstring2::callee::MEMSET as MEMSET_3;
-    pub(crate) use crate::game::bx::bxstring2::callee::QSORT as QSORT_2;
-    pub(crate) use crate::game::bx::bxstring2::callee::CROWD_MAN3D_GROUP_BUILD_MATRICES;
-    pub(crate) use crate::game::bx::bxstring2::callee::CHASE_CAM_CONTROLLER_RESTORE_DEFAULT;
-    pub(crate) use crate::game::bx::bxstring2::callee::SCRIPT_ENGINE_LIST_START as SCRIPT_ENGINE_LIST_START_2;
-    pub(crate) use crate::game::bx::bxstring2::callee::SCRIPT_ENGINE_SET_SKIP_DELAY;
-    pub(crate) use crate::game::bx::bxstring2::callee::CUTSCENE_TRANSITION_MAN_FORCE_ON;
-    pub(crate) use crate::game::bx::bxstring2::callee::UI_STATE_MGR_FIND_STATE as UI_STATE_MGR_FIND_STATE_3;
-    pub(crate) use crate::game::bx::bxstring2::callee::UI_STATE_SHUTDOWN as UI_STATE_SHUTDOWN_3;
-    pub(crate) use crate::game::bx::bxstring2::callee::UI_STATE_MGR_CLOSE_ALL_POPUPS;
-    pub(crate) use crate::game::bx::bxstring2::callee::GAME_COMM_RECV_GAME_PACKET;
-    pub(crate) use crate::game::bx::bxstring2::callee::EA_MEM_FREE as EA_MEM_FREE_6;
-    pub(crate) use crate::game::bx::bxstring2::callee::USTR_LEN as USTR_LEN_3;
-    pub(crate) use crate::game::bx::bxstring2::callee::USTR_CPY as USTR_CPY_3;
-    pub(crate) use crate::game::bx::bxstring2::callee::UITEXT_SET_WIDE_STRING;
+    pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_SHUTDOWN;
+    pub(crate) use crate::game::dirtysock::tags2::callee::UI_TEXT_GET_FONT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::UI_TEXT_SET_ASCII_STRING;
+    pub(crate) use crate::game::dirtysock::tags2::callee::UI_WIDGET_SLOT_0;
+    pub(crate) use crate::game::dirtysock::tags2::callee::UI_WIDGET_SLOT_1;
+    pub(crate) use crate::game::dirtysock::tags2::callee::USTR_TO_ASCII;
+    pub(crate) use crate::game::dirtysock::tags2::callee::VID_ENGINE_PLAYER_CLOSE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::VID_ENGINE_PLAYER_REQUEST;
+    pub(crate) use crate::game::dirtysock::tags2::callee::VOIP_DEACTIVATE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::VOIP_MAN_STOP;
+    pub(crate) use crate::game::dirtysock::tags2::callee::VOIP_STOP;
+    pub(crate) use crate::game::dirtysock::tags2::callee::WORLD_VIEW_SET;
     pub(crate) use crate::game::fe::fepopup::callee::C00113f88;
     pub(crate) use crate::game::fe::fepopup::callee::C00115ab0;
     pub(crate) use crate::game::fe::fepopup::callee::C0011fe78;
     pub(crate) use crate::game::fe::fepopup::callee::C0011fe98;
     pub(crate) use crate::game::fe::fepopup::callee::C0011fec8;
-    pub(crate) use crate::game::fe::fepopup::callee::C00125108;
     pub(crate) use crate::game::fe::fepopup::callee::C0014a080;
     pub(crate) use crate::game::fe::fepopup::callee::C0014a0e0;
     pub(crate) use crate::game::fe::fepopup::callee::C0014bdb8;
@@ -1280,27 +1777,22 @@ pub(crate) mod callee {
     pub(crate) use crate::game::fe::fepopup::callee::C0014d998;
     pub(crate) use crate::game::fe::fepopup::callee::C0014dc80;
     pub(crate) use crate::game::fe::fepopup::callee::C0014dd58;
-    pub(crate) use crate::game::fe::fepopup::callee::C00150928;
     pub(crate) use crate::game::fe::fepopup::callee::C00150b48;
     pub(crate) use crate::game::fe::fepopup::callee::C00151c48;
     pub(crate) use crate::game::fe::fepopup::callee::C001535c0;
     pub(crate) use crate::game::fe::fepopup::callee::C001543e0;
-    pub(crate) use crate::game::fe::fepopup::callee::C00156988;
     pub(crate) use crate::game::fe::fepopup::callee::C00156a60;
     pub(crate) use crate::game::fe::fepopup::callee::C001577e0;
     pub(crate) use crate::game::fe::fepopup::callee::C00157bf0;
-    pub(crate) use crate::game::fe::fepopup::callee::C00158910;
     pub(crate) use crate::game::fe::fepopup::callee::C001589b0;
     pub(crate) use crate::game::fe::fepopup::callee::C00158a50;
     pub(crate) use crate::game::fe::fepopup::callee::C00158af0;
     pub(crate) use crate::game::fe::fepopup::callee::C00158c80;
     pub(crate) use crate::game::fe::fepopup::callee::C00158d58;
-    pub(crate) use crate::game::fe::fepopup::callee::C00159170;
     pub(crate) use crate::game::fe::fepopup::callee::C00159cd0;
     pub(crate) use crate::game::fe::fepopup::callee::C0015a2e0;
     pub(crate) use crate::game::fe::fepopup::callee::C0016c6b0;
     pub(crate) use crate::game::fe::fepopup::callee::C0016c718;
-    pub(crate) use crate::game::fe::fepopup::callee::C00176890;
     pub(crate) use crate::game::fe::fepopup::callee::C0017f500;
     pub(crate) use crate::game::fe::fepopup::callee::C0019e2b0;
     pub(crate) use crate::game::fe::fepopup::callee::C0019f878;
@@ -1324,7 +1816,6 @@ pub(crate) mod callee {
     pub(crate) use crate::game::fe::fepopup::callee::C00224c78;
     pub(crate) use crate::game::fe::fepopup::callee::C00224da0;
     pub(crate) use crate::game::fe::fepopup::callee::C00224df0;
-    pub(crate) use crate::game::fe::fepopup::callee::C00225068;
     pub(crate) use crate::game::fe::fepopup::callee::C002259a8;
     pub(crate) use crate::game::fe::fepopup::callee::C00227f80;
     pub(crate) use crate::game::fe::fepopup::callee::C00231f80;
@@ -1335,101 +1826,545 @@ pub(crate) mod callee {
     pub(crate) use crate::game::fe::fepopup::callee::C0026f4a0;
     pub(crate) use crate::game::fe::fepopup::callee::C002702f8;
     pub(crate) use crate::game::fe::fepopup::callee::C002703f0;
-    pub(crate) use crate::game::fe::fepopup::callee::C00275498;
     pub(crate) use crate::game::fe::fepopup::callee::C002758c0;
     pub(crate) use crate::game::fe::fepopup::callee::C00275b98;
     pub(crate) use crate::game::fe::fepopup::callee::C00275cf8;
-    pub(crate) use crate::game::fe::fepopup::callee::C00278308;
     pub(crate) use crate::game::fe::fepopup::callee::C00278e50;
     pub(crate) use crate::game::fe::fepopup::callee::C00278f38;
     pub(crate) use crate::game::fe::fepopup::callee::C00278f68;
     pub(crate) use crate::game::fe::fepopup::callee::C00281ed8;
-    pub(crate) use crate::game::fe::fepopup::callee::C00283228;
-    pub(crate) use crate::game::fe::fepopup::callee::C00283518;
     pub(crate) use crate::game::fe::fepopup::callee::C002837c8;
     pub(crate) use crate::game::fe::fepopup::callee::C0028b180;
     pub(crate) use crate::game::fe::fepopup::callee::C0028bb10;
     pub(crate) use crate::game::fe::fepopup::callee::C0028e8c0;
     pub(crate) use crate::game::fe::fepopup::callee::C002913d8;
     pub(crate) use crate::game::fe::fepopup::callee::C003457c8;
-    pub(crate) use crate::game::fe::fepopup::callee::C00358020;
-    pub(crate) use crate::game::fe::fepopup::callee::C00362478;
     pub(crate) use crate::game::fe::fepopup::callee::C003625c0;
-    pub(crate) use crate::game::fe::fepopup::callee::C00362660;
     pub(crate) use crate::game::fe::fepopup::callee::C003626d8;
     pub(crate) use crate::game::fe::fepopup::callee::C003627a8;
     pub(crate) use crate::game::fe::fepopup::callee::C00364cd0;
     pub(crate) use crate::game::fe::fepopup::callee::C00366ce0;
-    pub(crate) use crate::game::fe::fepopup::callee::C00368170;
     pub(crate) use crate::game::fe::fepopup::callee::C003684f0;
-    pub(crate) use crate::game::fe::fepopup::callee::C00368970;
     pub(crate) use crate::game::fe::fepopup::callee::C0038f460;
     pub(crate) use crate::game::fe::fepopup::callee::C0038f668;
     pub(crate) use crate::game::fe::fepopup::callee::C0039c870;
     pub(crate) use crate::game::fe::fepopup::callee::C0039ff78;
     pub(crate) use crate::game::fe::fepopup::callee::C003b1300;
     pub(crate) use crate::game::fe::fepopup::callee::C003b2360;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEMSET_3 as MEMSET_4;
-    pub(crate) use crate::game::dirtysock::tags2::callee::STR_HASH_4 as STR_HASH_7;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SPRINTF_6 as SPRINTF_8;
-    pub(crate) use crate::game::dirtysock::tags2::callee::FORMAT_TAGGED;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_RESET_PROFILE_CHARACTERS_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_NEW_PLAYER_INT_GET_INSTANCE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_CHAR_INT_GET_INSTANCE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_BAGT_INT_GET_INSTANCE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_MEM_MAN_ALLOC as C_MEM_MAN_ALLOC_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::TAG_FIELD_FIND;
-    pub(crate) use crate::game::dirtysock::tags2::callee::TAG_FIELD_GET_NUMBER;
-    pub(crate) use crate::game::dirtysock::tags2::callee::CBE_GET_INTERFACE as CBE_GET_INTERFACE_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::GET_CHAR_ID;
-    pub(crate) use crate::game::dirtysock::tags2::callee::GET_ALT_CHAR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::GM_PICK_OPPONENTS;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MC_SET_MODE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MC_GET_PRODUCT_CODE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MC_GET_SAVE_TYPE_TAG;
-    pub(crate) use crate::game::dirtysock::tags2::callee::F_00152BA8;
-    pub(crate) use crate::game::dirtysock::tags2::callee::F_00152948;
-    pub(crate) use crate::game::dirtysock::tags2::callee::F_002C2540;
-    pub(crate) use crate::game::dirtysock::tags2::callee::F_002C26D0;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MESSAGE_CENTER_IS_FLAG_SET_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MESSAGE_CENTER_SET_FLAG_2 as MESSAGE_CENTER_SET_FLAG_3;
-    pub(crate) use crate::game::dirtysock::tags2::callee::STR_INTERN;
-    pub(crate) use crate::game::dirtysock::tags2::callee::F_0039E2A0;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SNPRINTF;
-    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBYMAN_SEND_REQUEST;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_1;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_3;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_4;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FLUSH;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_5;
-    pub(crate) use crate::game::dirtysock::tags2::callee::IS_PA_SPEECH_ON;
-    pub(crate) use crate::game::dirtysock::tags2::callee::IS_REPLAY_PLAYING;
-    pub(crate) use crate::game::dirtysock::tags2::callee::RIDER_123168;
-    pub(crate) use crate::game::dirtysock::tags2::callee::IS_RACE_TYPE_4OR5;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BANK_MONITOR_ADD_TIMER_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SPEECH_SET_EVENT_CONTEXT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::GET_LANGUAGE_MASK as GET_LANGUAGE_MASK_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::GET_RIDER_VOICE_MASK;
-    pub(crate) use crate::game::dirtysock::tags2::callee::GET_FINISH_SPEECH_MASK;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SPEECH_QUEUE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FIND;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_REMOVE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::VOIP_DEACTIVATE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::VOIP_STOP;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SETUPMAN_DESTROY;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_RESET;
-    pub(crate) use crate::game::dirtysock::tags2::callee::TEXT_OBJ;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEASURE_PLAIN;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEASURE_WRAP;
-    pub(crate) use crate::game::dirtysock::tags2::callee::ANIM_GET_LAYER_SEQUENCE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::IS_LOCAL_PLAYER;
-    pub(crate) use crate::game::dirtysock::tags2::callee::GET_TRANSITION_MAN;
-    pub(crate) use crate::game::dirtysock::tags2::callee::TRANSITION_STOP;
-    pub(crate) use crate::game::dirtysock::tags2::callee::EFFECT_ALLOC;
-    pub(crate) use crate::game::dirtysock::tags2::callee::EFFECT_CTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::TRANSITION_START;
-
+    pub(crate) use crate::game::fe::fepopup::callee::C00125108;
+    pub(crate) use crate::game::fe::fepopup::callee::C00150928;
+    pub(crate) use crate::game::fe::fepopup::callee::C00156988;
+    pub(crate) use crate::game::fe::fepopup::callee::C00158910;
+    pub(crate) use crate::game::fe::fepopup::callee::C00159170;
+    pub(crate) use crate::game::fe::fepopup::callee::C00176890;
+    pub(crate) use crate::game::fe::fepopup::callee::C00225068;
+    pub(crate) use crate::game::fe::fepopup::callee::C00275498;
+    pub(crate) use crate::game::fe::fepopup::callee::C00278308;
+    pub(crate) use crate::game::fe::fepopup::callee::C00283228;
+    pub(crate) use crate::game::fe::fepopup::callee::C00283518;
+    pub(crate) use crate::game::fe::fepopup::callee::C00358020;
+    pub(crate) use crate::game::fe::fepopup::callee::C00362478;
+    pub(crate) use crate::game::fe::fepopup::callee::C00362660;
+    pub(crate) use crate::game::fe::fepopup::callee::C00368170;
+    pub(crate) use crate::game::fe::fepopup::callee::C00368970;
+    pub(crate) use crate::game::fe::fepopup3::callee::CFE_STATE_CREATE_STEP1_ON_EDIT_DONE_POPUP_EVENT;
+    pub(crate) use crate::game::fe::fepopup3::callee::CFE_STATE_CREATE_STEP1_ON_SAVE_ACCOUNT_ANSWER;
+    pub(crate) use crate::game::fe::fepopup3::callee::CFE_STATE_LOBBY_MENU_ON_CREATE_ROOM_POPUP_EVENT;
+    pub(crate) use crate::game::fe::fepopup3::callee::CFE_STATE_LOBBY_MENU_PROMPT_ROOM_PASSWORD;
+    pub(crate) use crate::game::fe::fepopup3::callee::CFE_STATE_NET_QUICK_MESSAGES_ON_RESET_POPUP_EVENT;
+    pub(crate) use crate::game::fe::fepopup3::callee::CFE_STATE_NET_QUICK_MESSAGES_ON_SAVE_POPUP_EVENT;
+    pub(crate) use crate::game::fe::fepopup3::callee::CFE_STATE_ONLINE_MAIN_MENU_ON_DISCONNECT_POPUP_EVENT;
+    pub(crate) use crate::game::fe::fepopup3::callee::CFE_STATE_ONLINE_MAIN_MENU_ON_LEAVE_POPUP_EVENT;
+    pub(crate) use crate::game::fe::fepopup3::callee::CFE_STATE_REWARD_GALLERY_RELEASE_TEXTURES;
+    pub(crate) use crate::game::fe::fepopup3::callee::CFE_STATE_REWARD_GALLERY_V29;
+    pub(crate) use crate::game::fe::fepopup3::callee::FE_ASYNC_MANAGER_GET_STATE;
+    pub(crate) use crate::game::fe::fepopup3::callee::FE_LOCALE_UNLOAD_TABLE;
+    pub(crate) use crate::game::fe::fepopup3::callee::FE_MODULE_RIDER_PREVIEW_CTOR;
+    pub(crate) use crate::game::fe::fepopup3::callee::GAME_MODULE_CTOR;
+    pub(crate) use crate::game::fe::fepopup3::callee::HUD_LAYOUT_ICON_TEXT;
+    pub(crate) use crate::game::fe::fepopup3::callee::LOBBY_MAN_GET_ROOM_NAME;
+    pub(crate) use crate::game::fe::fepopup3::callee::LOBBY_MAN_LOOKUP_PEER_ADDR;
+    pub(crate) use crate::game::fe::fepopup3::callee::LOBBY_MAN_MOVE_TO_ROOM;
+    pub(crate) use crate::game::fe::fepopup3::callee::MC_MANAGER_END_OPERATION_2 as MC_MANAGER_END_OPERATION_3;
+    pub(crate) use crate::game::fe::fepopup3::callee::MC_MANAGER_END_PROGRESS;
+    pub(crate) use crate::game::fe::fepopup3::callee::MC_MANAGER_REQUEST_CARD_INFO_2;
+    pub(crate) use crate::game::fe::fepopup3::callee::MC_MANAGER_SET_MODE;
+    pub(crate) use crate::game::fe::fepopup3::callee::MESSAGE_CENTER_GET_INBOX_3;
+    pub(crate) use crate::game::fe::fepopup3::callee::NET_FE_STATE_CTOR as NET_FE_STATE_CTOR_8;
+    pub(crate) use crate::game::fe::fepopup3::callee::NET_FE_STATE_GET_POPUP;
+    pub(crate) use crate::game::fe::fepopup3::callee::NET_FE_STATE_ON_CHILD_EVENT as NET_FE_STATE_ON_CHILD_EVENT_7;
+    pub(crate) use crate::game::fe::fepopup3::callee::NET_FE_STATE_SETUP_BUDDY_ACTION_POPUP;
+    pub(crate) use crate::game::fe::festaterewards2::callee::ANIM_OBJECT_V36;
+    pub(crate) use crate::game::fe::festaterewards2::callee::APP_MODULE_TRY_EXIT;
+    pub(crate) use crate::game::fe::festaterewards2::callee::CHAT_ROOM_UPDATE_PLAYER_QUALITY;
+    pub(crate) use crate::game::fe::festaterewards2::callee::CROWD_AUDIO_INSTANCE_STOP_SOUND;
+    pub(crate) use crate::game::fe::festaterewards2::callee::DL_HEAP_USABLE_SIZE;
+    pub(crate) use crate::game::fe::festaterewards2::callee::DYNAMIC_EMITTER_CTOR;
+    pub(crate) use crate::game::fe::festaterewards2::callee::EA_MUTEX_LOCK;
+    pub(crate) use crate::game::fe::festaterewards2::callee::EA_MUTEX_UNLOCK;
+    pub(crate) use crate::game::fe::festaterewards2::callee::FE_STATE_LOGIN_CTOR;
+    pub(crate) use crate::game::fe::festaterewards2::callee::FE_STATE_LOGIN_ON_CHILD_EVENT;
+    pub(crate) use crate::game::fe::festaterewards2::callee::FE_STATE_ON_ACTIVATE as FE_STATE_ON_ACTIVATE_2;
+    pub(crate) use crate::game::fe::festaterewards2::callee::FE_STATE_STATS_REFRESH_RESULTS;
+    pub(crate) use crate::game::fe::festaterewards2::callee::GAME_MODULE_REQUEST_STATE as GAME_MODULE_REQUEST_STATE_2;
+    pub(crate) use crate::game::fe::festaterewards2::callee::MEMSET;
+    pub(crate) use crate::game::fe::festaterewards2::callee::MEM_GET_POOL_BLOCK_SIZE;
+    pub(crate) use crate::game::fe::festaterewards2::callee::MEM_MAN_FREE;
+    pub(crate) use crate::game::fe::festaterewards2::callee::MEM_REPORT_POOL_STATS;
+    pub(crate) use crate::game::fe::festaterewards2::callee::MOUNTAIN_ROOM_UPDATE_EVENT_ICONS;
+    pub(crate) use crate::game::fe::festaterewards2::callee::NET_FE_STATE_ON_ACTIVATE;
+    pub(crate) use crate::game::fe::festaterewards2::callee::NET_FE_STATE_ON_CHILD_EVENT;
+    pub(crate) use crate::game::fe::festaterewards2::callee::NET_FE_STATE_ON_DISCONNECTED_POPUP_EVENT;
+    pub(crate) use crate::game::fe::festaterewards2::callee::NET_QUICK_PLAY_POPUP_ON_OPTIONS_EVENT;
+    pub(crate) use crate::game::fe::festaterewards2::callee::POPUP_CONFIRM_GET_TEXT_BOX_SIZE;
+    pub(crate) use crate::game::fe::festaterewards2::callee::PREVIEW_REWARD_POLL_IMAGE_LOAD;
+    pub(crate) use crate::game::fe::festaterewards2::callee::PS2_PAD_CREATE;
+    pub(crate) use crate::game::fe::festaterewards2::callee::REPLAY_FIND_NEXT_SNAPSHOT;
+    pub(crate) use crate::game::fe::festaterewards2::callee::REPLAY_FIND_PREV_SNAPSHOT;
+    pub(crate) use crate::game::fe::festaterewards2::callee::REPLAY_SET_STATE_2 as REPLAY_SET_STATE;
+    pub(crate) use crate::game::fe::festaterewards2::callee::REPLAY_SNAP_TO_SNAPSHOT;
+    pub(crate) use crate::game::fe::festaterewards2::callee::REPLAY_STREAM_CTOR;
+    pub(crate) use crate::game::fe::festaterewards2::callee::REQUEST_LINE_UPDATE_SCROLL_ARROWS;
+    pub(crate) use crate::game::fe::festaterewards2::callee::REQUEST_LINE_UPDATE_SONG_COUNT;
+    pub(crate) use crate::game::fe::festaterewards2::callee::REQUEST_LINE_UPDATE_SONG_ICONS;
+    pub(crate) use crate::game::fe::festaterewards2::callee::REQUEST_LINE_UPDATE_SONG_NAMES;
+    pub(crate) use crate::game::fe::festaterewards2::callee::SCE_USBKB_SET_ARRANGEMENT;
+    pub(crate) use crate::game::fe::festaterewards2::callee::SCE_USBKB_SET_READ_MODE;
+    pub(crate) use crate::game::fe::festaterewards2::callee::SCRIPT_CMD_QUEUE_AT;
+    pub(crate) use crate::game::fe::festaterewards2::callee::SCRIPT_ENGINE_LIST_STOP;
+    pub(crate) use crate::game::fe::festaterewards2::callee::SCRIPT_ENGINE_UNLOAD_WORLD_SCRIPTS;
+    pub(crate) use crate::game::fe::festaterewards2::callee::SCRIPT_LIST_ADD_MOVIE;
+    pub(crate) use crate::game::fe::festaterewards2::callee::SCRIPT_LIST_POLL_LOADING;
+    pub(crate) use crate::game::fe::festaterewards2::callee::SECTION_MAN_FIND_LOGICAL_SECTION;
+    pub(crate) use crate::game::fe::festaterewards2::callee::SONG_INSTANCE_GET_DUCK_TO_LOOPS;
+    pub(crate) use crate::game::fe::festaterewards2::callee::SPRINTF;
+    pub(crate) use crate::game::fe::festaterewards2::callee::S_LOGIN_UPDATE;
+    pub(crate) use crate::game::fe::festaterewards2::callee::TROPHY_ROOM_LOAD_TROPHY_TEXTURES;
+    pub(crate) use crate::game::fe::festaterewards2::callee::TWSCRIPT_CACHE_RELOCATE;
+    pub(crate) use crate::game::fe::festaterewards2::callee::UI_STATE_CTOR;
+    pub(crate) use crate::game::fe::festaterewards2::callee::UI_STATE_UPDATE as UI_STATE_UPDATE_2;
+    pub(crate) use crate::game::fe::festaterewards2::callee::UI_TEXT_SCROLL_CLEAR_LINES;
+    pub(crate) use crate::game::fe::festaterewards2::callee::UI_TEXT_SCROLL_SET_WIDE_STRING;
+    pub(crate) use crate::game::fe::festaterewards2::callee::UI_TEXT_SET_STRING;
+    pub(crate) use crate::game::fe::festaterewards2::callee::USB_KB_DEFAULT_CONNECT_CB;
+    pub(crate) use crate::game::fe::festaterewards2::callee::WORLD_STATE_STREAM_RESET;
+    pub(crate) use crate::game::fe::festaterewards2::callee::WORLD_TRIGGER_MANAGER_GET_TRIGGER_INFO;
+    pub(crate) use crate::game::fe::ovstatepause::callee::AI_CREATE_COMPUTER_RIDERS;
+    pub(crate) use crate::game::fe::ovstatepause::callee::AI_DESTROY_MISSION_RIDERS;
+    pub(crate) use crate::game::fe::ovstatepause::callee::ANIM_CONTROLLER_GET_LAYER_ANIM_ENTRY;
+    pub(crate) use crate::game::fe::ovstatepause::callee::BE_NEW_PLAYER_INT_GET_SLOT;
+    pub(crate) use crate::game::fe::ovstatepause::callee::BE_REWARD_INT_COUNT_SET_BITS;
+    pub(crate) use crate::game::fe::ovstatepause::callee::BUILTIN_DELETE as BUILTIN_DELETE_2;
+    pub(crate) use crate::game::fe::ovstatepause::callee::CHASE_CAMERA_ALGORITHM_CTOR;
+    pub(crate) use crate::game::fe::ovstatepause::callee::CHECK_ACCOUNT_NAME;
+    pub(crate) use crate::game::fe::ovstatepause::callee::CHECK_PASSWORD;
+    pub(crate) use crate::game::fe::ovstatepause::callee::C_FE_STATE_ON_ACTIVATE;
+    pub(crate) use crate::game::fe::ovstatepause::callee::C_OV_STATE_OVERLAY_SHUTDOWN;
+    pub(crate) use crate::game::fe::ovstatepause::callee::EA_MEM_SET;
+    pub(crate) use crate::game::fe::ovstatepause::callee::EVENT_SELECT_POST_INPUT;
+    pub(crate) use crate::game::fe::ovstatepause::callee::FE_ASYNC_MANAGER_CANCEL;
+    pub(crate) use crate::game::fe::ovstatepause::callee::FE_FORMAT_MONEY;
+    pub(crate) use crate::game::fe::ovstatepause::callee::FE_MODULE_RIDER_PREVIEW_UNLOAD;
+    pub(crate) use crate::game::fe::ovstatepause::callee::FE_MODULE_RIDER_PREVIEW_UPDATE;
+    pub(crate) use crate::game::fe::ovstatepause::callee::KEYBOARD_POPUP_IS_KEY_ENABLED;
+    pub(crate) use crate::game::fe::ovstatepause::callee::KEYBOARD_POPUP_MOVE_DOWN;
+    pub(crate) use crate::game::fe::ovstatepause::callee::MC_MANAGER_BEGIN_LOAD;
+    pub(crate) use crate::game::fe::ovstatepause::callee::MC_MANAGER_GET;
+    pub(crate) use crate::game::fe::ovstatepause::callee::MEM_CARD_STATE_BASE_CTOR_2;
+    pub(crate) use crate::game::fe::ovstatepause::callee::MOUNTAIN_ROOM_POLL_IMAGE_LOAD;
+    pub(crate) use crate::game::fe::ovstatepause::callee::MPEG2_FLUSH_BUFFER;
+    pub(crate) use crate::game::fe::ovstatepause::callee::MPEG2_SHOW_BITS;
+    pub(crate) use crate::game::fe::ovstatepause::callee::MUSIC_PLAYER_RESUME;
+    pub(crate) use crate::game::fe::ovstatepause::callee::NET_FE_STATE_CTOR_2;
+    pub(crate) use crate::game::fe::ovstatepause::callee::NET_FE_STATE_ON_CHILD_EVENT as NET_FE_STATE_ON_CHILD_EVENT_2;
+    pub(crate) use crate::game::fe::ovstatepause::callee::OV_SCREEN_SESSION_DESTROY_INDICATORS;
+    pub(crate) use crate::game::fe::ovstatepause::callee::PLAY_FE_SOUND;
+    pub(crate) use crate::game::fe::ovstatepause::callee::RIDER_METRIX_CLEAR_PEAK_A4;
+    pub(crate) use crate::game::fe::ovstatepause::callee::SECTION_MAN_REQUEST_ACTIVATE;
+    pub(crate) use crate::game::fe::ovstatepause::callee::SSX_AUDIO_SYSTEM_GET_INSTANCE;
+    pub(crate) use crate::game::fe::ovstatepause::callee::STRCPY;
+    pub(crate) use crate::game::fe::ovstatepause::callee::STRLEN;
+    pub(crate) use crate::game::fe::ovstatepause::callee::STR_HASH;
+    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_CTOR as UI_STATE_CTOR_2;
+    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_MGR_CLOSE_TOP_STATES;
+    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_MGR_CLOSE_TOP_STATE_AND_POPUPS;
+    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_ON_ACTIVATE_2;
+    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_POST_INPUT;
+    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_RENDER;
+    pub(crate) use crate::game::fe::ovstatepause::callee::UI_STATE_UPDATE_2 as UI_STATE_UPDATE_3;
+    pub(crate) use crate::game::fe::ovstatepause::callee::UI_TEXTURE_SET_FIND;
+    pub(crate) use crate::game::fe::ovstatepause::callee::UI_TEXT_SET_STRING as UI_TEXT_SET_STRING_2;
+    pub(crate) use crate::game::fe::ovstatepause::callee::VID_ENGINE_PLAYER_RENDER;
+    pub(crate) use crate::game::main::gamemode::callee::AI_RAND;
+    pub(crate) use crate::game::main::gamemode::callee::BE_GET_RIDER_PROFILE;
+    pub(crate) use crate::game::main::gamemode::callee::BE_NEW_PLAYER_INT_GET_SLOT as BE_NEW_PLAYER_INT_GET_SLOT_2;
+    pub(crate) use crate::game::main::gamemode::callee::BE_REWARD_INT_GET_MEDAL_REWARD_ID;
+    pub(crate) use crate::game::main::gamemode::callee::BE_REWARD_INT_GRANT_REWARD;
+    pub(crate) use crate::game::main::gamemode::callee::BE_REWARD_INT_IS_REWARD_GRANTED;
+    pub(crate) use crate::game::main::gamemode::callee::BUILTIN_DELETE as BUILTIN_DELETE_3;
+    pub(crate) use crate::game::main::gamemode::callee::CAMERA_TRIGGER_MAN_PARSE;
+    pub(crate) use crate::game::main::gamemode::callee::CAMERA_TRIGGER_MAN_UNLOAD;
+    pub(crate) use crate::game::main::gamemode::callee::CAMERA_TRIGGER_MAN_UPDATE_TRIGGERS_MASK2;
+    pub(crate) use crate::game::main::gamemode::callee::CBE_GET_BE;
+    pub(crate) use crate::game::main::gamemode::callee::CBX_STRING_ALLOC_BUFFER;
+    pub(crate) use crate::game::main::gamemode::callee::CPS2_MEM_CARD_SET_STATE;
+    pub(crate) use crate::game::main::gamemode::callee::CSTREAM_MAN_FREE_BUFFERS;
+    pub(crate) use crate::game::main::gamemode::callee::CSTREAM_MAN_RESET;
+    pub(crate) use crate::game::main::gamemode::callee::CUI_TEXT_SCROLL_SET_WIDE_STRING;
+    pub(crate) use crate::game::main::gamemode::callee::CVT_FLOAT_TO_INT;
+    pub(crate) use crate::game::main::gamemode::callee::C_MEM_MAN_ALLOC;
+    pub(crate) use crate::game::main::gamemode::callee::C_UI_ENGINE_ADD_SCREEN_BY_HASH_NAME;
+    pub(crate) use crate::game::main::gamemode::callee::C_UI_SCREEN_GET_OBJECT_BY_HASH_NAME;
+    pub(crate) use crate::game::main::gamemode::callee::C_UI_SCREEN_PLAY_FRAME;
+    pub(crate) use crate::game::main::gamemode::callee::EA_MEM_FREE as EA_MEM_FREE_2;
+    pub(crate) use crate::game::main::gamemode::callee::FE_ASYNC_MANAGER_SET_FILE_STATUS;
+    pub(crate) use crate::game::main::gamemode::callee::FE_MODULE_RIDER_PREVIEW_DTOR;
+    pub(crate) use crate::game::main::gamemode::callee::FE_MODULE_UNLOAD_RIDER_PREVIEWS;
+    pub(crate) use crate::game::main::gamemode::callee::FLEX_BRIDGE_ALLOC_SPRING_NODES;
+    pub(crate) use crate::game::main::gamemode::callee::FUNC_0028F140;
+    pub(crate) use crate::game::main::gamemode::callee::MEMCPY;
+    pub(crate) use crate::game::main::gamemode::callee::MEMSET as MEMSET_2;
+    pub(crate) use crate::game::main::gamemode::callee::MEMSET_3E6448;
+    pub(crate) use crate::game::main::gamemode::callee::MENU_SYS_ITEM_DRAW_ROW;
+    pub(crate) use crate::game::main::gamemode::callee::MODIFIER_BLOCK_HAS_RAIL_MODIFIER;
+    pub(crate) use crate::game::main::gamemode::callee::MOD_OBJ_CTOR_2;
+    pub(crate) use crate::game::main::gamemode::callee::MOD_OBJ_SET_RAIL_MODIFIER;
+    pub(crate) use crate::game::main::gamemode::callee::MULTI_PARTICLE_DTOR as MULTI_PARTICLE_DTOR_2;
+    pub(crate) use crate::game::main::gamemode::callee::OPERATOR_NEW_NAMED as OPERATOR_NEW_NAMED_2;
+    pub(crate) use crate::game::main::gamemode::callee::RAIL_MODIFIER_CTOR;
+    pub(crate) use crate::game::main::gamemode::callee::REPLAY_FIND_SNAPSHOT;
+    pub(crate) use crate::game::main::gamemode::callee::REPLAY_REQUEST_INSTANT_REPLAY;
+    pub(crate) use crate::game::main::gamemode::callee::RIDER_GET_SYNC_CHECKSUM;
+    pub(crate) use crate::game::main::gamemode::callee::RIDER_METRIX_BANK_PENDING_SCORE;
+    pub(crate) use crate::game::main::gamemode::callee::RIDER_METRIX_CLEAR_HUD_MESSAGES;
+    pub(crate) use crate::game::main::gamemode::callee::RIDER_METRIX_RESET_COMBO;
+    pub(crate) use crate::game::main::gamemode::callee::RIDER_METRIX_RESET_STATS;
+    pub(crate) use crate::game::main::gamemode::callee::RIDER_METRIX_RESET_TRICK;
+    pub(crate) use crate::game::main::gamemode::callee::RUN_LIST_SEEK;
+    pub(crate) use crate::game::main::gamemode::callee::SCRIPT_ENGINE_GET_SEQ_PROCESS_ID as SCRIPT_ENGINE_GET_SEQ_PROCESS_ID_2;
+    pub(crate) use crate::game::main::gamemode::callee::SCRIPT_LIST_ON_SEQ_ADVANCE;
+    pub(crate) use crate::game::main::gamemode::callee::SPRINTF as SPRINTF_3;
+    pub(crate) use crate::game::main::gamemode::callee::SSX_AUDIO_SYSTEM_GET_INSTANCE as SSX_AUDIO_SYSTEM_GET_INSTANCE_2;
+    pub(crate) use crate::game::main::gamemode::callee::STRCPY as STRCPY_4;
+    pub(crate) use crate::game::main::gamemode::callee::STRLEN as STRLEN_2;
+    pub(crate) use crate::game::main::gamemode::callee::STR_HASH as STR_HASH_2;
+    pub(crate) use crate::game::main::gamemode::callee::TEX_MAN_UNLOCK_VRAM;
+    pub(crate) use crate::game::main::gamemode::callee::UI_LIST_ACCEPT_VISITOR;
+    pub(crate) use crate::game::main::gamemode::callee::UI_LIST_DELETE_ALL;
+    pub(crate) use crate::game::main::gamemode::callee::UI_LIST_FIRST as UI_LIST_FIRST_2;
+    pub(crate) use crate::game::main::gamemode::callee::UI_LIST_NODE_DTOR_BODY as UI_LIST_NODE_DTOR_BODY_2;
+    pub(crate) use crate::game::main::gamemode::callee::UI_LIST_NODE_IS_SENTINEL;
+    pub(crate) use crate::game::main::gamemode::callee::UI_OBJECT_SHOW_CLAMP_ALPHA_HALF as UI_OBJECT_SHOW_CLAMP_ALPHA_HALF_3;
+    pub(crate) use crate::game::main::gamemode::callee::USTR_TO_ASCII as USTR_TO_ASCII_2;
+    pub(crate) use crate::game::main::gamemode::callee::WSCRIPT_MAN_RESET_COLLECT_SET;
+    pub(crate) use crate::game::main::gamestate::callee::ADF_DATA_SOURCE_DTOR;
+    pub(crate) use crate::game::main::gamestate::callee::ANIM_DATA_BASE_FREE_CHAN_CACHES;
+    pub(crate) use crate::game::main::gamestate::callee::BANK_MONITOR_STOP_HANDLE as BANK_MONITOR_STOP_HANDLE_2;
+    pub(crate) use crate::game::main::gamestate::callee::BE_ECON_INT_GET_TOTAL_EARNED;
+    pub(crate) use crate::game::main::gamestate::callee::BE_GET_RIDER_PROFILE as BE_GET_RIDER_PROFILE_2;
+    pub(crate) use crate::game::main::gamestate::callee::BE_LIBRARY_GET_INSTANCE_3;
+    pub(crate) use crate::game::main::gamestate::callee::BE_LIBRARY_GET_INTERFACE_3;
+    pub(crate) use crate::game::main::gamestate::callee::BOLTS_FIND_BOLT_INDEX;
+    pub(crate) use crate::game::main::gamestate::callee::BUILTIN_DELETE_4 as BUILTIN_DELETE_5;
+    pub(crate) use crate::game::main::gamestate::callee::C_FE_STATE_BRAGGING_RIGHTS_INIT_PLAYER_ROWS;
+    pub(crate) use crate::game::main::gamestate::callee::C_FE_STATE_ONLINE_CHARACTER_SELECT_SHOW_CHAR_STATS;
+    pub(crate) use crate::game::main::gamestate::callee::C_FE_STATE_ONLINE_CHARACTER_SELECT_SHOW_OPPONENT_CHAR;
+    pub(crate) use crate::game::main::gamestate::callee::C_GAME_COMM_RECV_GAME_PACKET;
+    pub(crate) use crate::game::main::gamestate::callee::C_KEYBOARD_POPUP_SET_KEY_ENABLED;
+    pub(crate) use crate::game::main::gamestate::callee::EA_MEM_ALLOC_NAMED_3;
+    pub(crate) use crate::game::main::gamestate::callee::EA_MEM_FREE_4 as EA_MEM_FREE_3;
+    pub(crate) use crate::game::main::gamestate::callee::GAME_ANIM_MAP_UNREGISTER_BANK;
+    pub(crate) use crate::game::main::gamestate::callee::GAME_STATE_LOAD_STATE;
+    pub(crate) use crate::game::main::gamestate::callee::INTC_TABLE_CLEAR_SLOTS;
+    pub(crate) use crate::game::main::gamestate::callee::INTC_TABLE_INSTALL_VIF_VU_HANDLERS;
+    pub(crate) use crate::game::main::gamestate::callee::MEMCARD_STATE_BASE_INSTALL_CALLBACKS;
+    pub(crate) use crate::game::main::gamestate::callee::MEM_FREE as MEM_FREE_3;
+    pub(crate) use crate::game::main::gamestate::callee::MEM_MOVE;
+    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_ITEM_GET_INPUT_CODE;
+    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_ITEM_HANDLE_INPUT;
+    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_ITEM_IS_DISABLED as MENU_SYS_ITEM_IS_DISABLED_2;
+    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_PAGE_SELECT_NEXT as MENU_SYS_PAGE_SELECT_NEXT_2;
+    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_PAGE_SELECT_PREV;
+    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_PAGE_VALIDATE_SELECTION;
+    pub(crate) use crate::game::main::gamestate::callee::MESSAGE_CENTER_COUNT_GROUP_MESSAGES;
+    pub(crate) use crate::game::main::gamestate::callee::MESSAGE_CENTER_GET_MESSAGE_COUNT;
+    pub(crate) use crate::game::main::gamestate::callee::MESSAGE_CENTER_REMOVE_MESSAGE;
+    pub(crate) use crate::game::main::gamestate::callee::NET_FE_STATE_ON_CHILD_EVENT_3 as NET_FE_STATE_ON_CHILD_EVENT_8;
+    pub(crate) use crate::game::main::gamestate::callee::NET_FE_STATE_OPEN_KEYBOARD_TEXT_ID;
+    pub(crate) use crate::game::main::gamestate::callee::OV_SCREEN_MESSAGE_CENTER_REFRESH_LIST;
+    pub(crate) use crate::game::main::gamestate::callee::OV_SCREEN_MESSAGE_CENTER_UPDATE_COUNT_TEXT;
+    pub(crate) use crate::game::main::gamestate::callee::OV_SCREEN_MESSAGE_CENTER_UPDATE_SCROLL_ARROWS;
+    pub(crate) use crate::game::main::gamestate::callee::RIDER_CLEAR_NEARBY_LIGHTS;
+    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_BINDING_PAUSE_SEQ;
+    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_BINDING_RESUME_SEQ;
+    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_CMD_QUEUE_AT_2;
+    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_ENGINE_GET_PROCESS_IN_SEQ as SCRIPT_ENGINE_GET_PROCESS_IN_SEQ_2;
+    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_ENGINE_GET_SCRIPT_OBJ;
+    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_ENGINE_IS_OBJ_BOUND_TO_PROCESS;
+    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_ENGINE_LIST_START;
+    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_ENGINE_LIST_STOP_3 as SCRIPT_ENGINE_LIST_STOP_2;
+    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_LIST_IS_MOVIE_ENTRY;
+    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_OBJ_CAM_HAS_BINDING;
+    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_OBJ_CAM_IS_BOUND_TO_PROCESS;
+    pub(crate) use crate::game::main::gamestate::callee::SECTION_ALLOCATOR_CTOR;
+    pub(crate) use crate::game::main::gamestate::callee::SNDSTRM_CLOSE;
+    pub(crate) use crate::game::main::gamestate::callee::SPCH_MAKE_ID;
+    pub(crate) use crate::game::main::gamestate::callee::SPCH_SHUTDOWN;
+    pub(crate) use crate::game::main::gamestate::callee::SPEECH_INSTANCE_DTOR;
+    pub(crate) use crate::game::main::gamestate::callee::SPEECH_SYSTEM_SET_EVENT_CONTEXT;
+    pub(crate) use crate::game::main::gamestate::callee::SPHERE_TREE_COLLIDE_AABB;
+    pub(crate) use crate::game::main::gamestate::callee::SPHERE_TREE_COLLIDE_SPHERE_TREE;
+    pub(crate) use crate::game::main::gamestate::callee::SSX_AUDIO_SYSTEM_GET_CHANNEL_GAIN_PTR;
+    pub(crate) use crate::game::main::gamestate::callee::SSX_AUDIO_SYSTEM_GET_LANGUAGE_MASK;
+    pub(crate) use crate::game::main::gamestate::callee::SSX_AUDIO_SYSTEM_IS_DJ_SPEECH_ON;
+    pub(crate) use crate::game::main::gamestate::callee::SSX_AUDIO_SYSTEM_RESET_RACE_SOUNDS;
+    pub(crate) use crate::game::main::gamestate::callee::STR_COPY;
+    pub(crate) use crate::game::main::gamestate::callee::STR_HASH as STR_HASH_3;
+    pub(crate) use crate::game::main::gamestate::callee::STR_N_COPY;
+    pub(crate) use crate::game::main::gamestate::callee::TAG_FIELD_SET_STRING;
+    pub(crate) use crate::game::main::gamestate::callee::UI_LIST_FIRST_2 as UI_LIST_FIRST_3;
+    pub(crate) use crate::game::main::gamestate::callee::UI_STATE_CTOR_3 as UI_STATE_CTOR_6;
+    pub(crate) use crate::game::main::gamestate::callee::UI_STATE_MGR_FIND_STATE;
+    pub(crate) use crate::game::main::gamestate::callee::UI_STATE_SHUTDOWN_2;
+    pub(crate) use crate::game::main::gamestate::callee::VD_TEXTURE_SINK_CTOR;
+    pub(crate) use crate::game::main::ssxappdtor::callee::APP_MODULE_UPDATE;
+    pub(crate) use crate::game::main::ssxappdtor::callee::AUDIO_GET_INSTANCE;
+    pub(crate) use crate::game::main::ssxappdtor::callee::AUDIO_ON_EVENT_SELECT_ENTER;
+    pub(crate) use crate::game::main::ssxappdtor::callee::AUDIO_PLAY_FE_SOUND;
+    pub(crate) use crate::game::main::ssxappdtor::callee::BUY_ATTRIB_COMMIT_PURCHASE;
+    pub(crate) use crate::game::main::ssxappdtor::callee::CAREER_STATS_SELECT_PAGE;
+    pub(crate) use crate::game::main::ssxappdtor::callee::DELETE;
+    pub(crate) use crate::game::main::ssxappdtor::callee::EVENT_SELECT_SET_MODE;
+    pub(crate) use crate::game::main::ssxappdtor::callee::EVENT_SELECT_SHUTDOWN;
+    pub(crate) use crate::game::main::ssxappdtor::callee::FE_STATE_ON_ACTIVATE;
+    pub(crate) use crate::game::main::ssxappdtor::callee::MESSAGE_CENTER_GET_INBOX;
+    pub(crate) use crate::game::main::ssxappdtor::callee::NET_FE_ON_CHILD_EVENT_DEFAULT;
+    pub(crate) use crate::game::main::ssxappdtor::callee::OV_STATE_OVERLAY_SHUTDOWN;
+    pub(crate) use crate::game::main::ssxappdtor::callee::REWARD_LIST_SHOW_PAGE;
+    pub(crate) use crate::game::main::ssxappdtor::callee::SHARED_LOGIN_SET_ACCOUNT_NAME;
+    pub(crate) use crate::game::main::ssxappdtor::callee::SHARED_LOGIN_SET_ACCOUNT_PASSWORD;
+    pub(crate) use crate::game::main::ssxappdtor::callee::UI_ENGINE_UPDATE;
+    pub(crate) use crate::game::main::ssxappdtor::callee::UI_STATE_ON_ACTIVATE;
+    pub(crate) use crate::game::movie::movieplayer::callee::ASYNC_FILE_RELEASE_1;
+    pub(crate) use crate::game::movie::movieplayer::callee::ASYNC_FILE_RELEASE_2;
+    pub(crate) use crate::game::movie::movieplayer::callee::BEREWARD_INT_IS_PEAK_COMPLETE;
+    pub(crate) use crate::game::movie::movieplayer::callee::BE_SCORE_INT_UPDATE_BEST_STATS;
+    pub(crate) use crate::game::movie::movieplayer::callee::BUDDY_MAN_DISCONNECT;
+    pub(crate) use crate::game::movie::movieplayer::callee::BUDDY_MAN_IS_CONNECTED;
+    pub(crate) use crate::game::movie::movieplayer::callee::BUDDY_MAN_RECONNECT;
+    pub(crate) use crate::game::movie::movieplayer::callee::BUILTIN_DELETE_4;
+    pub(crate) use crate::game::movie::movieplayer::callee::BX_STRING_ALLOC_COPY;
+    pub(crate) use crate::game::movie::movieplayer::callee::BX_STRING_CTOR_COPY;
+    pub(crate) use crate::game::movie::movieplayer::callee::BX_STRING_DTOR;
+    pub(crate) use crate::game::movie::movieplayer::callee::CBE_GET_BE as CBE_GET_BE_2;
+    pub(crate) use crate::game::movie::movieplayer::callee::CBE_GET_INTERFACE;
+    pub(crate) use crate::game::movie::movieplayer::callee::C_FE_STATE_CHAR_EQUIP_SET_BUY_ROW;
+    pub(crate) use crate::game::movie::movieplayer::callee::C_FE_STATE_CHAR_EQUIP_SET_EQUIP_ROW;
+    pub(crate) use crate::game::movie::movieplayer::callee::C_FLAG_MANAGER_GROUP_INIT_KEY;
+    pub(crate) use crate::game::movie::movieplayer::callee::C_OV_STATE_OVERLAY_INIT;
+    pub(crate) use crate::game::movie::movieplayer::callee::EVENT_SELECT_INIT;
+    pub(crate) use crate::game::movie::movieplayer::callee::FE_POPUP_CONFIRM_APPLY_BACKGROUND_SCALE;
+    pub(crate) use crate::game::movie::movieplayer::callee::FE_POPUP_CONFIRM_APPLY_CONFIG;
+    pub(crate) use crate::game::movie::movieplayer::callee::FE_POPUP_CONFIRM_RESET_LAYOUT;
+    pub(crate) use crate::game::movie::movieplayer::callee::FILE_LOAD;
+    pub(crate) use crate::game::movie::movieplayer::callee::FLEX_BRIDGE_ALLOC_SPRING_NODES as FLEX_BRIDGE_ALLOC_SPRING_NODES_2;
+    pub(crate) use crate::game::movie::movieplayer::callee::FONT_PARSE_GLYPHS;
+    pub(crate) use crate::game::movie::movieplayer::callee::GAME_MODULE_REQUEST_OVERLAY_STATE;
+    pub(crate) use crate::game::movie::movieplayer::callee::GAME_MODULE_REQUEST_STATE as GAME_MODULE_REQUEST_STATE_3;
+    pub(crate) use crate::game::movie::movieplayer::callee::GET_HASH_VALUE_32;
+    pub(crate) use crate::game::movie::movieplayer::callee::LOBBY_MAN;
+    pub(crate) use crate::game::movie::movieplayer::callee::LOBBY_MAN_DISCONNECT as LOBBY_MAN_DISCONNECT_2;
+    pub(crate) use crate::game::movie::movieplayer::callee::LOBBY_MENU_ON_CREATE_ROOM_RESULT;
+    pub(crate) use crate::game::movie::movieplayer::callee::LOBBY_MENU_ON_JOIN_ROOM_RESULT;
+    pub(crate) use crate::game::movie::movieplayer::callee::MC_MANAGER_END_OPERATION_4;
+    pub(crate) use crate::game::movie::movieplayer::callee::MC_MANAGER_ON_OPERATION_DONE;
+    pub(crate) use crate::game::movie::movieplayer::callee::MC_MANAGER_SET_MODE_2;
+    pub(crate) use crate::game::movie::movieplayer::callee::MEM_ALLOC_NAMED;
+    pub(crate) use crate::game::movie::movieplayer::callee::MEM_FREE;
+    pub(crate) use crate::game::movie::movieplayer::callee::MEM_FREE_2;
+    pub(crate) use crate::game::movie::movieplayer::callee::MENU_SYS_ITEM_ON_FOCUS;
+    pub(crate) use crate::game::movie::movieplayer::callee::MENU_SYS_PAGE_ON_ACTIVATE;
+    pub(crate) use crate::game::movie::movieplayer::callee::MENU_SYS_PAGE_SET_SELECTION;
+    pub(crate) use crate::game::movie::movieplayer::callee::MOD_OBJ_SET_TRANSFORM_MODIFIER;
+    pub(crate) use crate::game::movie::movieplayer::callee::MULTI_SPLINE_MODIFIER_ADD_REF;
+    pub(crate) use crate::game::movie::movieplayer::callee::NET_FE_SET_QUALITY_ICONS;
+    pub(crate) use crate::game::movie::movieplayer::callee::NET_FE_STATE_CTOR_5 as NET_FE_STATE_CTOR_10;
+    pub(crate) use crate::game::movie::movieplayer::callee::NET_FE_STATE_HANDLE_NET_EVENT as NET_FE_STATE_HANDLE_NET_EVENT_2;
+    pub(crate) use crate::game::movie::movieplayer::callee::NET_FE_STATE_SHOW_DISCONNECTED_POPUP;
+    pub(crate) use crate::game::movie::movieplayer::callee::OV_SCREEN_PDA_TEMPLATE_OPEN;
+    pub(crate) use crate::game::movie::movieplayer::callee::OV_SCREEN_PROFILE_SAVE_PDA_INIT_SLOT_LABELS;
+    pub(crate) use crate::game::movie::movieplayer::callee::PARENT_MODIFIER_CTOR;
+    pub(crate) use crate::game::movie::movieplayer::callee::RIDER_METRIX_ON_SPLIT_MARKER;
+    pub(crate) use crate::game::movie::movieplayer::callee::RIDER_METRIX_RESET_STATS as RIDER_METRIX_RESET_STATS_2;
+    pub(crate) use crate::game::movie::movieplayer::callee::ROLLER_MODIFIER_CTOR;
+    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_CMD_QUEUE_CLEAR;
+    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_CMD_QUEUE_CTOR;
+    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_DATA_GET_INFO as SCRIPT_DATA_GET_INFO_2;
+    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_ENGINE_FIND_SOUND_BANK;
+    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_ENGINE_GET_INSTANCE_SCRIPT as SCRIPT_ENGINE_GET_INSTANCE_SCRIPT_2;
+    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_ENGINE_GET_PROCESS_IN_SEQ;
+    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_ENGINE_LAUNCH_PENDING_PROCESS;
+    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_ENGINE_RUN_PROCESS;
+    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_ENGINE_UNLOAD_BANK;
+    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_OBJ_ACTIVATE;
+    pub(crate) use crate::game::movie::movieplayer::callee::SPRINTF_2 as SPRINTF_4;
+    pub(crate) use crate::game::movie::movieplayer::callee::STRCPY_2 as STRCPY_5;
+    pub(crate) use crate::game::movie::movieplayer::callee::STREAM_BUFFER_CTOR;
+    pub(crate) use crate::game::movie::movieplayer::callee::TAG_FIELD_GET_STRING;
+    pub(crate) use crate::game::movie::movieplayer::callee::UI_ENGINE_ADD_SCREEN_BY_HASH_NAME;
+    pub(crate) use crate::game::movie::movieplayer::callee::UI_ENGINE_LOAD_TEXTURES;
+    pub(crate) use crate::game::movie::movieplayer::callee::UI_ENGINE_STORE_WORD;
+    pub(crate) use crate::game::movie::movieplayer::callee::UI_SCREEN_FIND_OBJECT;
+    pub(crate) use crate::game::movie::movieplayer::callee::UI_SCREEN_PLAY_FRAME;
+    pub(crate) use crate::game::movie::movieplayer::callee::UI_STATE_CTOR_2 as UI_STATE_CTOR_5;
+    pub(crate) use crate::game::movie::movieplayer::callee::UI_STATE_MGR_ADD_BACKGROUND_STATE;
+    pub(crate) use crate::game::movie::movieplayer::callee::UI_TEXT_SET_UNICODE_STRING_BY_ID;
+    pub(crate) use crate::game::movie::movieplayer::callee::WSCRIPT_CACHE_GET_PROCESSES;
+    pub(crate) use crate::game::movie::movieplayer::callee::WSCRIPT_CACHE_GET_PROCESS_COUNT;
+    pub(crate) use crate::game::movie::movieplayer::callee::WSCRIPT_MAN_CREATE_PROCESS;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::ACTIVE_CAMERA_TRIGGER_LIST_CLEAR;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::AI_CREATE_ACTOR_RIDERS;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::APP_VSYNC_CALLBACK;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::AUDIO_SYSTEM_CTOR;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BANK_MONITOR_RESET;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BUILD_BUDDY_LIST;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CAMERA_TRIGGER_MAN_CLEAR_DATA;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CAMERA_TRIGGER_MAN_REMOVE_ALL_TRIGGERS;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CAMERA_TRIGGER_STACK_CLEAR_2 as CAMERA_TRIGGER_STACK_CLEAR;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CFE_LOAD_STATE_SETUP_RESULT_WIDGET;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CFE_STATE_NET_ACCOUNT_MEM_SET_STATE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CFE_STATE_OPTIONS_CONTROLLER_SET_VIBRATION;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CHANNEL_GET_TRACK;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CHASE_CAM_CONTROLLER_RESET_STATE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::DYNAMIC_EMITTER_FREE_DATA_2;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::EVENT_SELECT_ON_WIDGET_ACTION;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::FE_LOCALE_UNLOAD_ALL_TABLES;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::FIND_FREE_BANK_SLOT;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::GET_CHANNEL_VOLUME;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::GET_RACE_MAN;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::GET_SELECTED_USER;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::GOTO_NEXT_STATE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::HANDLE_NET_EVENT;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::INPUT_PREPROC_WRITE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::IN_SEQ_STOP;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::LEVEL_TO_VOLUME;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::LIST_GET_ENTRY_TYPE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::LOAD_BANK_ASYNC;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MEM_CARD_BASE_CTOR;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MEM_CARD_ON_CHILD_EVENT;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MODIFIER_BLOCK_FREE_BOOST;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MODIFIER_BLOCK_FREE_TEX_FLIP;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MOD_OBJ_CREATE_MODIFIER_BLOCK;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MULTI_PARTICLE_DTOR;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::NET_FE_STATE_DTOR_3;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::ONLINE_CHARACTER_SELECT_CTOR;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::ON_CHILD_EVENT;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::PLAYBACK_MAN_STOP_PLAYBACK;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::PLAYBACK_MAN_STOP_RECORDING;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::RCMP_DECODER_RELEASE_CODEC;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::REFRESH_PLAYER_LIST;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::REPLAY_CACHE_DTOR;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::REPLAY_END_SAVE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::REPLAY_SET_CONTROLLER_INDEX;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::REQUEST_IMAGE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::RIDER_ADD_BOOST;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::RIDER_HAS_RENDER_SLOT;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::RIDER_METRIX_AWARD_BONUS_POINTS;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::RIDER_METRIX_AWARD_POINTS;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::RIDER_METRIX_SHOW_HUD_NUMBER_2 as RIDER_METRIX_SHOW_HUD_NUMBER;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::RIDER_SAY_20B9;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_ENGINE_DESTROY_SCRIPT_DATABASE_2;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_ENGINE_EXIT_SCRIPT_MODE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_ENGINE_GET_PROCESS_2;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_ENGINE_GET_SEQ_PROCESS_ID;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_ENGINE_GET_TARGET_OBJECT;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_ENGINE_OBJ_TABLE_DTOR;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_LIST_ON_SEQ_END;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_LIST_STOP_2;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SEND_PACKET;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SET_CHANNEL_VOLUME;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SET_SELECTED_USER;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SHOW_BUDDY_ACTION_POPUP;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SND_BANK_UNLOAD as SND_BANK_UNLOAD_3;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SND_BANK_UNLOAD_MEMORY_2 as SND_BANK_UNLOAD_MEMORY;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::START_RIDER_BOARD_LOOPS;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::STOP_BOARD_LOOPS;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::STOP_TRANSITION;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_LIST_CTOR_2 as UI_LIST_CTOR;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_MENU_SET_SELECTION;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_STATE_CTOR_2_2;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::WORLD_OBJ_CTOR;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::WORLD_OBJ_DTOR;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::BUILTIN_DELETE;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::CBXSTRING_ASSIGN_CSTR;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::C_WORLD_SOUND_UNLINK_EMITTERS;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::EA_MEM_COPY;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::EVENT_SELECT_HANDLE_INPUT;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::GRAPHICS_MAN_EMPTY_HOOK;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::IRRADIANCE_REF_GET_ENTRY;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::LOBBY_MAN_REQUEST_STATS_PAGE;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::MC_MANAGER_GET_INSTANCE;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::MENU_SYS_GET_INPUT_CODE;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::PATH_DATA_READ_FLOAT;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::PATH_SET_TRACK_CONTROL_VALUE;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::RAND_NEXT;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::RAND_NEXT_MAIN;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::RIDER_METRIX_BANK_COMBO;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::SCRIPT_DUMMY_OBJ_READ_FIELDS;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::SCRIPT_ENGINE_PUSH_FREE_NODE;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::SCRIPT_OBJ_DEACTIVATE;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::SSX_APP_BOOT_LOAD;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::STATS_PROCESS_RENDER_STUB;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::STATS_PROCESS_UPDATE_STUB;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::STREAM_BUFFER_GET_STATUS;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::STRLEN_AND_STRCPY;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::TEX_MAN_SET_ALLOC_FLAGS;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::UI_LIST_FIRST;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::UI_LIST_NODE_UNLINK;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::UI_LIST_PUSH_BACK;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::UI_STATE_MGR_RENDER_STUB;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::USTR_FROM_ASCII;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::WORLD_RESET_SECTIONS;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::WORLD_TRIGGER_GET_INFO;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::WORLD_TRIGGER_GET_NAME;
+    pub(crate) use crate::game::wscript::wscriptman::callee::ALGORITHM_LIST_PUSH;
+    pub(crate) use crate::game::wscript::wscriptman::callee::APP_MODULE_UPDATE_FADE;
+    pub(crate) use crate::game::wscript::wscriptman::callee::AVALANCHE_BAKE_NODE_HISTORY;
+    pub(crate) use crate::game::wscript::wscriptman::callee::AV_PLAYER_INIT;
+    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_ADD_TIMER;
+    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_INSTANCE_POLL_FREE;
+    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_INSTANCE_SET_PITCH;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CAM_CONTROLLER_CLEAR_ALGORITHMS;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CPS2_CHUNK_RESOLVE_CTOR;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CPS2_MEMCARD_SET_STATE;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_AUDIO_INSTANCE_REMOVE_ALL_SOURCES;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_AUDIO_INSTANCE_STOP_SOUND as CROWD_AUDIO_INSTANCE_STOP_SOUND_2;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_MAN3D_GROUP_CREATE_MESHES_2 as CROWD_MAN3D_GROUP_CREATE_MESHES;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_MAN3D_GROUP_FREE_MESHES;
+    pub(crate) use crate::game::wscript::wscriptman::callee::C_FE_STATE_ONLINE_CHARACTER_SELECT_EMPTY_CHILD_HANDLER;
+    pub(crate) use crate::game::wscript::wscriptman::callee::C_FLAG_MANAGER_GROUP_LOAD;
+    pub(crate) use crate::game::wscript::wscriptman::callee::C_SETUP_MAN_SEND_QUIT;
+    pub(crate) use crate::game::wscript::wscriptman::callee::DEBUG_MENU_MODULE_UPDATE_CURSOR_TRAIL;
+    pub(crate) use crate::game::wscript::wscriptman::callee::DISABLE_INTC;
+    pub(crate) use crate::game::wscript::wscriptman::callee::EA_FILE_MOUNT_BIG;
+    pub(crate) use crate::game::wscript::wscriptman::callee::FLEX_RAIL_UPDATE_SPACE_NODE;
+    pub(crate) use crate::game::wscript::wscriptman::callee::FLOATING_V49;
+    pub(crate) use crate::game::wscript::wscriptman::callee::FOCUS_MAN_ADD_FOCUS_BOX;
+    pub(crate) use crate::game::wscript::wscriptman::callee::LIGHT_MAN_EMPTY_HOOK_A;
+    pub(crate) use crate::game::wscript::wscriptman::callee::MODIFIER_LIST_UNLINK;
+    pub(crate) use crate::game::wscript::wscriptman::callee::MOD_OBJ_DTOR;
+    pub(crate) use crate::game::wscript::wscriptman::callee::NET_FE_STATE_CTOR as NET_FE_STATE_CTOR_6;
+    pub(crate) use crate::game::wscript::wscriptman::callee::NET_FE_STATE_ON_CHILD_EVENT as NET_FE_STATE_ON_CHILD_EVENT_5;
+    pub(crate) use crate::game::wscript::wscriptman::callee::RAIL_MODIFIER_LIST_UNLINK;
+    pub(crate) use crate::game::wscript::wscriptman::callee::REMOVE_INTC_HANDLER;
+    pub(crate) use crate::game::wscript::wscriptman::callee::SET_FADE_GAIN;
+    pub(crate) use crate::game::wscript::wscriptman::callee::SND_BANK_UNLOAD;
+    pub(crate) use crate::game::wscript::wscriptman::callee::TEX_MAN_LOAD_TEXTURE;
+    pub(crate) use crate::game::wscript::wscriptman::callee::UI_LIST_NODE_DTOR_BODY;
+    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_GET_STATE_DATA;
+    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_SET_USER_DATA;
+    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_SHOW_CLAMP_ALPHA_HALF;
+    pub(crate) use crate::game::wscript::wscriptman::callee::WSCRIPT_MAN_CALL_FUNC;
 
     // Front-end state machine (shard 3).
     pub const NET_FE_STATE_ON_CHILD_EVENT_4: Callee = Callee {
@@ -1462,7 +2397,6 @@ pub(crate) mod callee {
         f: ee::s04::f_001e4758,
     };
 
-
     // Memory card / app modules (shard 6).
     pub const APP_MODULE_CTOR: Callee = Callee {
         addr: 0x0023_1cd0,
@@ -1483,7 +2417,6 @@ pub(crate) mod callee {
         addr: 0x0025_5f50,
         f: ee::s06::f_00255f50,
     };
-
 
     // Replay / script engine (shard 7).
     pub const REPLAY_CACHE_RESET: Callee = Callee {
@@ -1541,7 +2474,6 @@ pub(crate) mod callee {
         f: ee::s07::f_00283c58,
     };
 
-
     // Audio (shard 8).
     pub const BANK_MONITOR_PAUSE_ALL: Callee = Callee {
         addr: 0x002a_d2a8,
@@ -1563,7 +2495,6 @@ pub(crate) mod callee {
         f: ee::s08::f_002c2508,
     };
 
-
     // Menu items (shard 9).
     pub const MENU_SYS_ITEM_IS_VISIBLE: Callee = Callee {
         addr: 0x002c_a378,
@@ -1584,7 +2515,6 @@ pub(crate) mod callee {
         addr: 0x001a_8500,
         f: ee::s03::f_001a8500,
     };
-
 
     pub const UI_LIST_CTOR_2: Callee = Callee {
         addr: 0x0039_77e8,
@@ -1766,168 +2696,254 @@ pub(crate) mod callee {
         f: ee::s03::f_001bdfd8,
     };
 
-
-    pub const SCRIPT_CMD_QUEUE_AT_3: Callee = Callee { addr: 0x0028_3d70, f: ee::s07::f_00283d70 };
-
-    pub const SCRIPT_LIST_IS_MOVIE_ENTRY_2: Callee =
-        Callee { addr: 0x0027_7dd8, f: ee::s07::f_00277dd8 };
-
-    pub const SCRIPT_ENGINE_GET_PROCESS_STATE: Callee =
-        Callee { addr: 0x0028_2798, f: ee::s07::f_00282798 };
-
-
-    pub const UI_SCREEN_FIND_OBJECT_2: Callee = Callee { addr: 0x0039_d860, f: ee::s13::f_0039d860 };
-
-    pub const UI_ANIM_SET_CREATE_ANIM: Callee =
-        Callee { addr: 0x0039_7140, f: ee::s13::f_00397140 };
-
-    pub const UI_OBJECT_SET_ANIM: Callee = Callee { addr: 0x0039_fcc8, f: ee::s13::f_0039fcc8 };
-
-
-    pub const BX_STRING_ALLOC_BUFFER: Callee =
-        Callee { addr: 0x0031_8040, f: ee::s10::f_00318040 };
-
-
-    pub const BOLT_ON_FX_INIT_HANDLE: Callee =
-        Callee { addr: 0x002e_c9d0, f: ee::s09::f_002ec9d0 };
-
-    pub const BOLT_ON_FX_CLEAR_EMITTERS: Callee =
-        Callee { addr: 0x002e_caf0, f: ee::s09::f_002ecaf0 };
-
-
-    pub const WORLD_BLOCK_POOL_INIT: Callee = Callee { addr: 0x003a_7598, f: ee::s13::f_003a7598 };
-
-    pub const WORLD_MEMMAN_CREATE_SECTION_ALLOCATOR: Callee =
-        Callee { addr: 0x003a_7b18, f: ee::s13::f_003a7b18 };
-
-    pub const SECTION_TABLE_CTOR: Callee = Callee { addr: 0x003a_7c88, f: ee::s13::f_003a7c88 };
-
-
-    pub const UI_LIST_FIRST_4: Callee = Callee { addr: 0x0039_7840, f: ee::s13::f_00397840 };
-
-    pub const UI_OBJECT_UPDATE_ANIM_2: Callee = Callee { addr: 0x003a_0000, f: ee::s13::f_003a0000 };
-
-
-    pub const WORLD_OBJ_CTOR_2_2: Callee = Callee { addr: 0x0034_fb90, f: ee::s11::f_0034fb90 };
-
-    pub const FLEX_BRIDGE_SPRINGS_LOAD: Callee =
-        Callee { addr: 0x0035_3e80, f: ee::s11::f_00353e80 };
-
-    pub const FLEX_BRIDGE_BUILD_MESH: Callee =
-        Callee { addr: 0x0034_66a0, f: ee::s11::f_003466a0 };
-
-    pub const FLEX_BRIDGE_UPDATE_VERTS: Callee =
-        Callee { addr: 0x0034_75d8, f: ee::s11::f_003475d8 };
-
-    pub const INSTANCE_GET_NODE_MATRIX: Callee =
-        Callee { addr: 0x0034_fed8, f: ee::s11::f_0034fed8 };
-
-
-    pub const GAME_STATE_FINISH_CLEAR_FLAG40: Callee =
-        Callee { addr: 0x0024_4880, f: ee::s06::f_00244880 };
-
-
-    pub const LUNO_VM_REGISTER_DTOR: Callee = Callee { addr: 0x0022_5b90, f: ee::s05::f_00225b90 };
-
-
-    pub const UI_OBJECT_DTOR: Callee = Callee { addr: 0x0039_fc48, f: ee::s13::f_0039fc48 };
-
-
-    pub const CAM_CONTROLLER_DTOR: Callee = Callee { addr: 0x0015_cc10, f: ee::s01::f_0015cc10 };
-
-
-    pub const GAME_ANIM_MAP_SET_HANDLE: Callee =
-        Callee { addr: 0x0031_4ef0, f: ee::s10::f_00314ef0 };
-
-
-    pub const CAMERA_TRIGGER_LIST_CTOR: Callee =
-        Callee { addr: 0x0016_bee8, f: ee::s02::f_0016bee8 };
-
-    pub const ACTIVE_CAMERA_TRIGGER_LIST_CTOR: Callee =
-        Callee { addr: 0x0016_c5d0, f: ee::s02::f_0016c5d0 };
-
-    pub const CAMERA_TRIGGER_STACK_CTOR: Callee =
-        Callee { addr: 0x0016_d210, f: ee::s02::f_0016d210 };
-
-
-    pub const NET_FE_STATE_INIT: Callee = Callee { addr: 0x001a_8768, f: ee::s03::f_001a8768 };
-
-
-    pub const FE_STATE_CREATE_DUPLICATE_ON_SAVE_ACCOUNT_ANSWER: Callee =
-        Callee { addr: 0x001b_c818, f: ee::s03::f_001bc818 };
-
-    pub const FE_STATE_CREATE_DUPLICATE_ON_ERROR_POPUP_EVENT: Callee =
-        Callee { addr: 0x001b_c728, f: ee::s03::f_001bc728 };
-
-    pub const FE_STATE_CREATE_DUPLICATE_ON_CREATED_POPUP_EVENT: Callee =
-        Callee { addr: 0x001b_c990, f: ee::s03::f_001bc990 };
-
-    pub const NET_FE_STATE_ON_CHILD_EVENT_9: Callee =
-        Callee { addr: 0x001a_97b8, f: ee::s03::f_001a97b8 };
-
-
-    pub const FE_STATE_LOBBY_MENU_SHOW_ROOM_TAB: Callee =
-        Callee { addr: 0x001b_df60, f: ee::s03::f_001bdf60 };
-
-    pub const FE_STATE_LOBBY_MENU_UPDATE_PLAYERS_IN_ROOM: Callee =
-        Callee { addr: 0x001b_e3a8, f: ee::s03::f_001be3a8 };
-
-    pub const FE_STATE_LOBBY_MENU_REFRESH_PLAYER_LIST: Callee =
-        Callee { addr: 0x001b_e510, f: ee::s03::f_001be510 };
-
-    pub const NET_FE_STATE_UPDATE_3: Callee = Callee { addr: 0x001a_8770, f: ee::s03::f_001a8770 };
-
-
-    pub const MESSAGE_CENTER_IS_FLAG_SET: Callee =
-        Callee { addr: 0x001e_3a30, f: ee::s04::f_001e3a30 };
-
-    pub const MESSAGE_CENTER_EMPTY_TRIGGER: Callee =
-        Callee { addr: 0x001e_1548, f: ee::s04::f_001e1548 };
-
-
-    pub const LOBBY_MAN_SEND_REQUEST: Callee = Callee { addr: 0x0025_b608, f: ee::s06::f_0025b608 };
-
-
-    pub const INI_PARSER_NEXT_SECTION: Callee = Callee { addr: 0x002a_7b08, f: ee::s08::f_002a7b08 };
-
-
-    pub const SCRIPT_OBJ_ACTIVATE_2: Callee = Callee { addr: 0x0028_3430, f: ee::s07::f_00283430 };
-
-    pub const SCRIPT_OBJ_CAM_BUILD_MATRIX_FROM_SCRIPT: Callee =
-        Callee { addr: 0x0027_d970, f: ee::s07::f_0027d970 };
-
-
-    pub const SCRIPT_BINDING_CTOR: Callee = Callee { addr: 0x0028_2f60, f: ee::s07::f_00282f60 };
-
-    pub const SCRIPT_OBJ_CTOR: Callee = Callee { addr: 0x0028_3200, f: ee::s07::f_00283200 };
-
-
-    pub const PS2_MEM_CARD_CLEAR_DIR_CACHE: Callee =
-        Callee { addr: 0x002c_5278, f: ee::s08::f_002c5278 };
-
-
-    pub const CHASE_CAMERA_ALGORITHM_RESET_FOR_RIDER: Callee =
-        Callee { addr: 0x0016_6c60, f: ee::s02::f_00166c60 };
-
-    pub const CHASE_CAMERA_ALGORITHM_INIT_FROM_RIDER: Callee =
-        Callee { addr: 0x0016_6550, f: ee::s02::f_00166550 };
+    pub const SCRIPT_CMD_QUEUE_AT_3: Callee = Callee {
+        addr: 0x0028_3d70,
+        f: ee::s07::f_00283d70,
+    };
+
+    pub const SCRIPT_LIST_IS_MOVIE_ENTRY_2: Callee = Callee {
+        addr: 0x0027_7dd8,
+        f: ee::s07::f_00277dd8,
+    };
+
+    pub const SCRIPT_ENGINE_GET_PROCESS_STATE: Callee = Callee {
+        addr: 0x0028_2798,
+        f: ee::s07::f_00282798,
+    };
+
+    pub const UI_SCREEN_FIND_OBJECT_2: Callee = Callee {
+        addr: 0x0039_d860,
+        f: ee::s13::f_0039d860,
+    };
+
+    pub const UI_ANIM_SET_CREATE_ANIM: Callee = Callee {
+        addr: 0x0039_7140,
+        f: ee::s13::f_00397140,
+    };
+
+    pub const UI_OBJECT_SET_ANIM: Callee = Callee {
+        addr: 0x0039_fcc8,
+        f: ee::s13::f_0039fcc8,
+    };
+
+    pub const BX_STRING_ALLOC_BUFFER: Callee = Callee {
+        addr: 0x0031_8040,
+        f: ee::s10::f_00318040,
+    };
+
+    pub const BOLT_ON_FX_INIT_HANDLE: Callee = Callee {
+        addr: 0x002e_c9d0,
+        f: ee::s09::f_002ec9d0,
+    };
+
+    pub const BOLT_ON_FX_CLEAR_EMITTERS: Callee = Callee {
+        addr: 0x002e_caf0,
+        f: ee::s09::f_002ecaf0,
+    };
+
+    pub const WORLD_BLOCK_POOL_INIT: Callee = Callee {
+        addr: 0x003a_7598,
+        f: ee::s13::f_003a7598,
+    };
+
+    pub const WORLD_MEMMAN_CREATE_SECTION_ALLOCATOR: Callee = Callee {
+        addr: 0x003a_7b18,
+        f: ee::s13::f_003a7b18,
+    };
+
+    pub const SECTION_TABLE_CTOR: Callee = Callee {
+        addr: 0x003a_7c88,
+        f: ee::s13::f_003a7c88,
+    };
+
+    pub const UI_LIST_FIRST_4: Callee = Callee {
+        addr: 0x0039_7840,
+        f: ee::s13::f_00397840,
+    };
+
+    pub const UI_OBJECT_UPDATE_ANIM_2: Callee = Callee {
+        addr: 0x003a_0000,
+        f: ee::s13::f_003a0000,
+    };
+
+    pub const WORLD_OBJ_CTOR_2_2: Callee = Callee {
+        addr: 0x0034_fb90,
+        f: ee::s11::f_0034fb90,
+    };
+
+    pub const FLEX_BRIDGE_SPRINGS_LOAD: Callee = Callee {
+        addr: 0x0035_3e80,
+        f: ee::s11::f_00353e80,
+    };
+
+    pub const FLEX_BRIDGE_BUILD_MESH: Callee = Callee {
+        addr: 0x0034_66a0,
+        f: ee::s11::f_003466a0,
+    };
+
+    pub const FLEX_BRIDGE_UPDATE_VERTS: Callee = Callee {
+        addr: 0x0034_75d8,
+        f: ee::s11::f_003475d8,
+    };
+
+    pub const INSTANCE_GET_NODE_MATRIX: Callee = Callee {
+        addr: 0x0034_fed8,
+        f: ee::s11::f_0034fed8,
+    };
+
+    pub const GAME_STATE_FINISH_CLEAR_FLAG40: Callee = Callee {
+        addr: 0x0024_4880,
+        f: ee::s06::f_00244880,
+    };
+
+    pub const LUNO_VM_REGISTER_DTOR: Callee = Callee {
+        addr: 0x0022_5b90,
+        f: ee::s05::f_00225b90,
+    };
+
+    pub const UI_OBJECT_DTOR: Callee = Callee {
+        addr: 0x0039_fc48,
+        f: ee::s13::f_0039fc48,
+    };
+
+    pub const CAM_CONTROLLER_DTOR: Callee = Callee {
+        addr: 0x0015_cc10,
+        f: ee::s01::f_0015cc10,
+    };
+
+    pub const GAME_ANIM_MAP_SET_HANDLE: Callee = Callee {
+        addr: 0x0031_4ef0,
+        f: ee::s10::f_00314ef0,
+    };
+
+    pub const CAMERA_TRIGGER_LIST_CTOR: Callee = Callee {
+        addr: 0x0016_bee8,
+        f: ee::s02::f_0016bee8,
+    };
+
+    pub const ACTIVE_CAMERA_TRIGGER_LIST_CTOR: Callee = Callee {
+        addr: 0x0016_c5d0,
+        f: ee::s02::f_0016c5d0,
+    };
+
+    pub const CAMERA_TRIGGER_STACK_CTOR: Callee = Callee {
+        addr: 0x0016_d210,
+        f: ee::s02::f_0016d210,
+    };
+
+    pub const NET_FE_STATE_INIT: Callee = Callee {
+        addr: 0x001a_8768,
+        f: ee::s03::f_001a8768,
+    };
+
+    pub const FE_STATE_CREATE_DUPLICATE_ON_SAVE_ACCOUNT_ANSWER: Callee = Callee {
+        addr: 0x001b_c818,
+        f: ee::s03::f_001bc818,
+    };
+
+    pub const FE_STATE_CREATE_DUPLICATE_ON_ERROR_POPUP_EVENT: Callee = Callee {
+        addr: 0x001b_c728,
+        f: ee::s03::f_001bc728,
+    };
+
+    pub const FE_STATE_CREATE_DUPLICATE_ON_CREATED_POPUP_EVENT: Callee = Callee {
+        addr: 0x001b_c990,
+        f: ee::s03::f_001bc990,
+    };
+
+    pub const NET_FE_STATE_ON_CHILD_EVENT_9: Callee = Callee {
+        addr: 0x001a_97b8,
+        f: ee::s03::f_001a97b8,
+    };
+
+    pub const FE_STATE_LOBBY_MENU_SHOW_ROOM_TAB: Callee = Callee {
+        addr: 0x001b_df60,
+        f: ee::s03::f_001bdf60,
+    };
+
+    pub const FE_STATE_LOBBY_MENU_UPDATE_PLAYERS_IN_ROOM: Callee = Callee {
+        addr: 0x001b_e3a8,
+        f: ee::s03::f_001be3a8,
+    };
+
+    pub const FE_STATE_LOBBY_MENU_REFRESH_PLAYER_LIST: Callee = Callee {
+        addr: 0x001b_e510,
+        f: ee::s03::f_001be510,
+    };
+
+    pub const NET_FE_STATE_UPDATE_3: Callee = Callee {
+        addr: 0x001a_8770,
+        f: ee::s03::f_001a8770,
+    };
+
+    pub const MESSAGE_CENTER_IS_FLAG_SET: Callee = Callee {
+        addr: 0x001e_3a30,
+        f: ee::s04::f_001e3a30,
+    };
+
+    pub const MESSAGE_CENTER_EMPTY_TRIGGER: Callee = Callee {
+        addr: 0x001e_1548,
+        f: ee::s04::f_001e1548,
+    };
+
+    pub const LOBBY_MAN_SEND_REQUEST: Callee = Callee {
+        addr: 0x0025_b608,
+        f: ee::s06::f_0025b608,
+    };
+
+    pub const INI_PARSER_NEXT_SECTION: Callee = Callee {
+        addr: 0x002a_7b08,
+        f: ee::s08::f_002a7b08,
+    };
+
+    pub const SCRIPT_OBJ_ACTIVATE_2: Callee = Callee {
+        addr: 0x0028_3430,
+        f: ee::s07::f_00283430,
+    };
+
+    pub const SCRIPT_OBJ_CAM_BUILD_MATRIX_FROM_SCRIPT: Callee = Callee {
+        addr: 0x0027_d970,
+        f: ee::s07::f_0027d970,
+    };
+
+    pub const SCRIPT_BINDING_CTOR: Callee = Callee {
+        addr: 0x0028_2f60,
+        f: ee::s07::f_00282f60,
+    };
+
+    pub const SCRIPT_OBJ_CTOR: Callee = Callee {
+        addr: 0x0028_3200,
+        f: ee::s07::f_00283200,
+    };
+
+    pub const PS2_MEM_CARD_CLEAR_DIR_CACHE: Callee = Callee {
+        addr: 0x002c_5278,
+        f: ee::s08::f_002c5278,
+    };
+
+    pub const CHASE_CAMERA_ALGORITHM_RESET_FOR_RIDER: Callee = Callee {
+        addr: 0x0016_6c60,
+        f: ee::s02::f_00166c60,
+    };
+
+    pub const CHASE_CAMERA_ALGORITHM_INIT_FROM_RIDER: Callee = Callee {
+        addr: 0x0016_6550,
+        f: ee::s02::f_00166550,
+    };
 
     pub const UI_LIST_NODE_IS_SENTINEL_2: u32 = 0x0039_7718;
 
     pub const UI_SCREEN_FIND_OBJECT_4: u32 = 0x0039_d860;
 
-
     pub const PROCESS_LIST_FIRST: u32 = 0x0035_4ea8;
 
     pub const PROCESS_LIST_NEXT: u32 = 0x0035_4ef8;
-
 
     pub const UI_SCREEN_PLAY_FRAME_2: u32 = 0x0039_c870;
 
     pub const SSX_AUDIO_SYSTEM_GET_INSTANCE_3: u32 = 0x0028_b180;
 
     pub const AUDIO_SET_TRIGGER: u32 = 0x0029_4f78;
-
 
     pub const NET_FE_STATE_ON_CHILD_EVENT_10: u32 = 0x001a_97b8;
 
@@ -1941,7 +2957,6 @@ pub(crate) mod callee {
 
     pub const NET_FE_STATE_SHOW_DISCONNECTED_POPUP_2: u32 = 0x001a_9930;
 
-
     pub const CFS_GET_CHARACTER_INFO: u32 = 0x0039_a738;
 
     pub const CFS_SHOW_CHARACTER: u32 = 0x001b_1b10;
@@ -1950,20 +2965,17 @@ pub(crate) mod callee {
 
     pub const CFS_FILL_PLAYER_INFO: u32 = 0x001b_1808;
 
-
     pub const MESSAGE_CENTER_SET_FLAG: u32 = 0x001e_3a78;
 
     pub const OVSCREEN_PDA_TEMPLATE_CLOSE: u32 = 0x0020_d190;
 
     pub const OVSCREEN_MESSAGE_CENTER_DTOR: u32 = 0x0020_a430;
 
-
     pub const BUDDY_MAN_GET_ROSTER_COUNT_2: u32 = 0x0026_2598;
 
     pub const BUDDY_MAN_GET_ROSTER_ENTRY_2: u32 = 0x0026_25c8;
 
     pub const STRCMP: u32 = 0x0041_65a8;
-
 
     pub const SCRIPT_DATA_GET_BANK_LIST: u32 = 0x0027_c078;
 
@@ -1972,7 +2984,6 @@ pub(crate) mod callee {
     pub const SCRIPT_ANIM_BANK_MAN_REMOVE_BANK: u32 = 0x0027_5650;
 
     pub const SCRIPT_SOUND_BANK_MAN_REMOVE_BANK: u32 = 0x0028_3610;
-
 
     pub const SCRIPT_ENGINE_GET_INSTANCE_3: u32 = 0x0027_d2e8;
 
@@ -1988,7 +2999,6 @@ pub(crate) mod callee {
 
     pub const SCRIPT_OBJ_ACTIVATE_3: u32 = 0x0028_3430;
 
-
     pub const CUI_TEXT_SCROLL_CLEAR_LINES: u32 = 0x003a_18c0;
 
     pub const UI_LIST_DELETE_ALL_2: u32 = 0x0039_7948;
@@ -1996,7 +3006,6 @@ pub(crate) mod callee {
     pub const UI_LIST_NODE_DTOR_BODY_3: u32 = 0x003a_4868;
 
     pub const UI_OBJECT_DTOR_2: u32 = 0x0039_fc48;
-
 
     pub const WORLD_CACHE_STREAMER_UPDATE_VIEW: u32 = 0x003a_9d60;
 
@@ -2008,7 +3017,6 @@ pub(crate) mod callee {
 
     pub const CAMERA_SET_OWNER: u32 = 0x0016_1f50;
 
-
     pub const WORLD_OBJ_CTOR_3: u32 = 0x0034_fb00;
 
     pub const FLAG_READ_PARAMS: u32 = 0x0034_ac88;
@@ -2017,13 +3025,11 @@ pub(crate) mod callee {
 
     pub const FLAG_MANAGER_ADD_FLAG: u32 = 0x0034_c548;
 
-
     pub const UI_ANIM_APPLY: u32 = 0x0039_75e0;
 
     pub const UI_ANIM_ADVANCE: u32 = 0x0039_74b0;
 
     pub const GAME_PROCESS_DTOR_2: u32 = 0x0035_46c8;
-
 
     pub const GAME_MODULE_RESET_RACE: u32 = 0x0023_0180;
 
@@ -2033,7 +3039,6 @@ pub(crate) mod callee {
 
     pub const GAME_MODULE_START_NEXT_MODE: u32 = 0x0028_70a0;
 
-
     pub const UI_OBJECT_CTOR: u32 = 0x0039_e2a0;
 
     pub const BE_GET_APP: u32 = 0x0014_dc80;
@@ -2042,11 +3047,9 @@ pub(crate) mod callee {
 
     pub const BE_GET_BE_2: u32 = 0x001a_1cb8;
 
-
     pub const SPRINTF_5: u32 = 0x0041_7828;
 
     pub const VSPRINTF: u32 = 0x0041_86c8;
-
 
     pub const CAM_CONTROLLER_CTOR: u32 = 0x0015_cba0;
 
@@ -2058,25 +3061,21 @@ pub(crate) mod callee {
 
     pub const MANUAL_CAM_SELECT_ALGORITHM: u32 = 0x0015_cf80;
 
-
     pub const SND_LIST_FIND_BANK: u32 = 0x0028_36d8;
 
     pub const SND_LIST_FIND_FREE_ENTRY: u32 = 0x0028_3760;
 
     pub const SND_BANK_MAN_LOAD_BANK_FROM_MEMORY: u32 = 0x0028_be60;
 
-
     pub const UI_OBJECT_CTOR_2: u32 = 0x0039_e318;
 
     pub const UI_STRING_CTOR: u32 = 0x0025_3390;
-
 
     pub const AUDIO_GET_MUSIC_TIER: u32 = 0x002b_49e0;
 
     pub const AUDIO_GET_TRACK_TYPE: u32 = 0x002a_1e20;
 
     pub const AUDIO_PLAY_MUSIC: u32 = 0x0028_cf98;
-
 
     pub const SCRIPT_ENGINE_STOP_ALL_PROCESS_SEQS_2: u32 = 0x0028_2390;
 
@@ -2088,7 +3087,6 @@ pub(crate) mod callee {
 
     pub const SCRIPT_ENGINE_RESET_PROCESS_TABLE_2: u32 = 0x0028_28b8;
 
-
     pub const SPHERE_TREE_COMPUTE_OFFSET: u32 = 0x0032_df28;
 
     pub const SPHERE_TREE_COLLIDE_SPHERE_NODE: u32 = 0x0032_cdb0;
@@ -2097,17 +3095,13 @@ pub(crate) mod callee {
 
     pub const SPHERE_TREE_COLLIDE_SPHERE: u32 = 0x0032_c898;
 
-
     pub const WORLD_TRIGGER_INSTANCE_DTOR: u32 = 0x002b_4be0;
 
     pub const PS2_PAD_CTOR: u32 = 0x0032_6df0;
 
-
     pub const WSCRIPT_CACHE_NODE_DTOR: u32 = 0x003a_ca70;
 
-
     pub const UI_ENGINE_ADD_SCREEN_BY_HASH_NAME_2: u32 = 0x0039_7cc0;
-
 
     pub const SCRIPT_ENGINE_GET_SEQ_INSTANCE_2: u32 = 0x001d_9d48;
 
@@ -2118,7 +3112,6 @@ pub(crate) mod callee {
     pub const POPUP_CONFIRM_CFG_SET_OPTION_TEXT_ID: u32 = 0x001c_57c0;
 
     pub const UI_OBJECT_ADD_CHILD: u32 = 0x0039_f290;
-
 
     pub const BUILTIN_DELETE_6: Callee = Callee {
         addr: 0x0031_7e50,
@@ -2352,7 +3345,6 @@ pub(crate) mod callee {
         f: ee::s07::f_00287700,
     };
 
-
     // `call_indirect` targets the generator left as table calls.
     pub const MEMCPY_2: u32 = 0x003e_6574;
 
@@ -2434,96 +3426,205 @@ pub(crate) mod callee {
 
     pub const UI_SCREEN_SET_OBJECT_VALUE: u32 = 0x0039_83f0;
 
+    pub const FE_ON_ABORT_POPUP_EVENT: Callee = Callee {
+        addr: 0x001a_ca88,
+        f: ee::s03::f_001aca88,
+    };
 
-    pub const FE_ON_ABORT_POPUP_EVENT: Callee = Callee { addr: 0x001a_ca88, f: ee::s03::f_001aca88 };
+    pub const FE_ON_EMAIL_POPUP_EVENT: Callee = Callee {
+        addr: 0x001a_c9c0,
+        f: ee::s03::f_001ac9c0,
+    };
 
-    pub const FE_ON_EMAIL_POPUP_EVENT: Callee = Callee { addr: 0x001a_c9c0, f: ee::s03::f_001ac9c0 };
+    pub const FE_ON_LOGIN_POPUP_EVENT: Callee = Callee {
+        addr: 0x001a_cb48,
+        f: ee::s03::f_001acb48,
+    };
 
-    pub const FE_ON_LOGIN_POPUP_EVENT: Callee = Callee { addr: 0x001a_cb48, f: ee::s03::f_001acb48 };
+    pub const FE_ON_SAVE_ACCOUNT_ANSWER: Callee = Callee {
+        addr: 0x001a_ccd0,
+        f: ee::s03::f_001accd0,
+    };
 
-    pub const FE_ON_SAVE_ACCOUNT_ANSWER: Callee = Callee { addr: 0x001a_ccd0, f: ee::s03::f_001accd0 };
+    pub const NET_FE_STATE_ON_CHILD_EVENT_12: Callee = Callee {
+        addr: 0x001a_97b8,
+        f: ee::s03::f_001a97b8,
+    };
 
-    pub const NET_FE_STATE_ON_CHILD_EVENT_12: Callee = Callee { addr: 0x001a_97b8, f: ee::s03::f_001a97b8 };
+    pub const CHALLENGE_POPUP_SET_SETTINGS_LOCKED: Callee = Callee {
+        addr: 0x001a_ec60,
+        f: ee::s03::f_001aec60,
+    };
 
-    pub const CHALLENGE_POPUP_SET_SETTINGS_LOCKED: Callee =
-        Callee { addr: 0x001a_ec60, f: ee::s03::f_001aec60 };
+    pub const NET_FE_STATE_CTOR_11: Callee = Callee {
+        addr: 0x001a_8500,
+        f: ee::s03::f_001a8500,
+    };
 
-    pub const NET_FE_STATE_CTOR_11: Callee = Callee { addr: 0x001a_8500, f: ee::s03::f_001a8500 };
+    pub const VOIP_MAN_DEACTIVATE: Callee = Callee {
+        addr: 0x0026_6e88,
+        f: ee::s07::f_00266e88,
+    };
 
-    pub const VOIP_MAN_DEACTIVATE: Callee = Callee { addr: 0x0026_6e88, f: ee::s07::f_00266e88 };
+    pub const VOIP_MAN_ACTIVATE: Callee = Callee {
+        addr: 0x0026_6e30,
+        f: ee::s07::f_00266e30,
+    };
 
-    pub const VOIP_MAN_ACTIVATE: Callee = Callee { addr: 0x0026_6e30, f: ee::s07::f_00266e30 };
+    pub const AUDIO_RESET_RACE_RESULT_STATE: Callee = Callee {
+        addr: 0x002a_4590,
+        f: ee::s08::f_002a4590,
+    };
 
-    pub const AUDIO_RESET_RACE_RESULT_STATE: Callee =
-        Callee { addr: 0x002a_4590, f: ee::s08::f_002a4590 };
+    pub const AUDIO_IS_TRACK_GROUP0_EVENT: Callee = Callee {
+        addr: 0x002a_4078,
+        f: ee::s08::f_002a4078,
+    };
 
-    pub const AUDIO_IS_TRACK_GROUP0_EVENT: Callee =
-        Callee { addr: 0x002a_4078, f: ee::s08::f_002a4078 };
+    pub const AUDIO_STORE_RACE_RESULT: Callee = Callee {
+        addr: 0x002a_4660,
+        f: ee::s08::f_002a4660,
+    };
 
-    pub const AUDIO_STORE_RACE_RESULT: Callee = Callee { addr: 0x002a_4660, f: ee::s08::f_002a4660 };
+    pub const INI_SKIP_WHITESPACE: Callee = Callee {
+        addr: 0x002a_78f8,
+        f: ee::s08::f_002a78f8,
+    };
 
-    pub const INI_SKIP_WHITESPACE: Callee = Callee { addr: 0x002a_78f8, f: ee::s08::f_002a78f8 };
+    pub const INI_GET_CHAR: Callee = Callee {
+        addr: 0x002a_78e0,
+        f: ee::s08::f_002a78e0,
+    };
 
-    pub const INI_GET_CHAR: Callee = Callee { addr: 0x002a_78e0, f: ee::s08::f_002a78e0 };
+    pub const BE_GET_RIDER_CHARACTER_2: Callee = Callee {
+        addr: 0x0014_a080,
+        f: ee::s01::f_0014a080,
+    };
 
-    pub const BE_GET_RIDER_CHARACTER_2: Callee = Callee { addr: 0x0014_a080, f: ee::s01::f_0014a080 };
+    pub const BE_COUNT_COLLECTED_ON_PEAK: Callee = Callee {
+        addr: 0x0015_3708,
+        f: ee::s01::f_00153708,
+    };
 
-    pub const BE_COUNT_COLLECTED_ON_PEAK: Callee = Callee { addr: 0x0015_3708, f: ee::s01::f_00153708 };
+    pub const BE_COUNT_COMPLETED_ON_PEAK: Callee = Callee {
+        addr: 0x0015_44d0,
+        f: ee::s01::f_001544d0,
+    };
 
-    pub const BE_COUNT_COMPLETED_ON_PEAK: Callee = Callee { addr: 0x0015_44d0, f: ee::s01::f_001544d0 };
+    pub const POPUP_CONFIRM_GET_SELECTION: Callee = Callee {
+        addr: 0x001c_a150,
+        f: ee::s03::f_001ca150,
+    };
 
-    pub const POPUP_CONFIRM_GET_SELECTION: Callee = Callee { addr: 0x001c_a150, f: ee::s03::f_001ca150 };
+    pub const SETUP_BUDDY_ACTION_POPUP: Callee = Callee {
+        addr: 0x001a_b478,
+        f: ee::s03::f_001ab478,
+    };
 
-    pub const SETUP_BUDDY_ACTION_POPUP: Callee = Callee { addr: 0x001a_b478, f: ee::s03::f_001ab478 };
+    pub const NET_FE_STATE_GET_POPUP_4: Callee = Callee {
+        addr: 0x001a_9c50,
+        f: ee::s03::f_001a9c50,
+    };
 
-    pub const NET_FE_STATE_GET_POPUP_4: Callee = Callee { addr: 0x001a_9c50, f: ee::s03::f_001a9c50 };
+    pub const NET_FE_STATE_SHOW_POPUP_3: Callee = Callee {
+        addr: 0x001a_9bc0,
+        f: ee::s03::f_001a9bc0,
+    };
 
-    pub const NET_FE_STATE_SHOW_POPUP_3: Callee = Callee { addr: 0x001a_9bc0, f: ee::s03::f_001a9bc0 };
+    pub const POPUP_CONFIRM_CFG_SET_OPTION_TEXT_ID_2: Callee = Callee {
+        addr: 0x001c_57c0,
+        f: ee::s03::f_001c57c0,
+    };
 
-    pub const POPUP_CONFIRM_CFG_SET_OPTION_TEXT_ID_2: Callee =
-        Callee { addr: 0x001c_57c0, f: ee::s03::f_001c57c0 };
+    pub const MEM_CARD_STATE_BASE_SHUTDOWN: Callee = Callee {
+        addr: 0x001d_58b8,
+        f: ee::s04::f_001d58b8,
+    };
 
-    pub const MEM_CARD_STATE_BASE_SHUTDOWN: Callee =
-        Callee { addr: 0x001d_58b8, f: ee::s04::f_001d58b8 };
+    pub const DEAD_NODE_CTOR: Callee = Callee {
+        addr: 0x0035_06d8,
+        f: ee::s11::f_003506d8,
+    };
 
-    pub const DEAD_NODE_CTOR: Callee = Callee { addr: 0x0035_06d8, f: ee::s11::f_003506d8 };
+    pub const CROWD_MAN3D_RESET: Callee = Callee {
+        addr: 0x0034_3bc0,
+        f: ee::s11::f_00343bc0,
+    };
 
-    pub const CROWD_MAN3D_RESET: Callee = Callee { addr: 0x0034_3bc0, f: ee::s11::f_00343bc0 };
+    pub const CROWD_MAN3D_GROUP_LOAD: Callee = Callee {
+        addr: 0x0034_4ff8,
+        f: ee::s11::f_00344ff8,
+    };
 
-    pub const CROWD_MAN3D_GROUP_LOAD: Callee = Callee { addr: 0x0034_4ff8, f: ee::s11::f_00344ff8 };
+    pub const SPHERE_TREE_COLLIDE_TREE_NODE: Callee = Callee {
+        addr: 0x0032_cbf8,
+        f: ee::s10::f_0032cbf8,
+    };
 
-    pub const SPHERE_TREE_COLLIDE_TREE_NODE: Callee =
-        Callee { addr: 0x0032_cbf8, f: ee::s10::f_0032cbf8 };
+    pub const FEMODULE_RIDER_PREVIEW_UNLOAD: Callee = Callee {
+        addr: 0x0019_eba0,
+        f: ee::s03::f_0019eba0,
+    };
 
-    pub const FEMODULE_RIDER_PREVIEW_UNLOAD: Callee =
-        Callee { addr: 0x0019_eba0, f: ee::s03::f_0019eba0 };
+    pub const RIDER_UPDATE_BOARD_LEAN: Callee = Callee {
+        addr: 0x0011_fa10,
+        f: ee::s00::f_0011fa10,
+    };
 
-    pub const RIDER_UPDATE_BOARD_LEAN: Callee = Callee { addr: 0x0011_fa10, f: ee::s00::f_0011fa10 };
+    pub const RIDER_BUILD_WORLD_MATRIX: Callee = Callee {
+        addr: 0x0011_e098,
+        f: ee::s00::f_0011e098,
+    };
 
-    pub const RIDER_BUILD_WORLD_MATRIX: Callee = Callee { addr: 0x0011_e098, f: ee::s00::f_0011e098 };
+    pub const GAME_STATE_LOAD_STATE_2: Callee = Callee {
+        addr: 0x0023_3b28,
+        f: ee::s06::f_00233b28,
+    };
 
-    pub const GAME_STATE_LOAD_STATE_2: Callee = Callee { addr: 0x0023_3b28, f: ee::s06::f_00233b28 };
+    pub const MC_MANAGER_ON_CARD_SCANNED: Callee = Callee {
+        addr: 0x0024_1fd0,
+        f: ee::s06::f_00241fd0,
+    };
 
-    pub const MC_MANAGER_ON_CARD_SCANNED: Callee = Callee { addr: 0x0024_1fd0, f: ee::s06::f_00241fd0 };
+    pub const GAME_LOAD_UPDATE_PLAYER_RANKING: Callee = Callee {
+        addr: 0x0024_6cf8,
+        f: ee::s06::f_00246cf8,
+    };
 
-    pub const GAME_LOAD_UPDATE_PLAYER_RANKING: Callee =
-        Callee { addr: 0x0024_6cf8, f: ee::s06::f_00246cf8 };
+    pub const LIGHT_MAN_EMPTY_HOOK_D: Callee = Callee {
+        addr: 0x0038_dc68,
+        f: ee::s12::f_0038dc68,
+    };
 
-    pub const LIGHT_MAN_EMPTY_HOOK_D: Callee = Callee { addr: 0x0038_dc68, f: ee::s12::f_0038dc68 };
+    pub const BE_GET_CHAR_PROFILE_EVENT_RECORD: Callee = Callee {
+        addr: 0x0015_2398,
+        f: ee::s01::f_00152398,
+    };
 
-    pub const BE_GET_CHAR_PROFILE_EVENT_RECORD: Callee =
-        Callee { addr: 0x0015_2398, f: ee::s01::f_00152398 };
+    pub const BE_NEW_PLAYER_INT_GET_SLOT_3: Callee = Callee {
+        addr: 0x0014_7798,
+        f: ee::s01::f_00147798,
+    };
 
-    pub const BE_NEW_PLAYER_INT_GET_SLOT_3: Callee = Callee { addr: 0x0014_7798, f: ee::s01::f_00147798 };
+    pub const MENU_SYS_SET_ACTIVE: Callee = Callee {
+        addr: 0x002c_c0b8,
+        f: ee::s09::f_002cc0b8,
+    };
 
-    pub const MENU_SYS_SET_ACTIVE: Callee = Callee { addr: 0x002c_c0b8, f: ee::s09::f_002cc0b8 };
+    pub const MPEG2_GET_BITS_2: Callee = Callee {
+        addr: 0x003b_1300,
+        f: ee::s13::f_003b1300,
+    };
 
-    pub const MPEG2_GET_BITS_2: Callee = Callee { addr: 0x003b_1300, f: ee::s13::f_003b1300 };
+    pub const MPEG2_MARKER_BIT_2: Callee = Callee {
+        addr: 0x003b_2360,
+        f: ee::s13::f_003b2360,
+    };
 
-    pub const MPEG2_MARKER_BIT_2: Callee = Callee { addr: 0x003b_2360, f: ee::s13::f_003b2360 };
-
-    pub const SND_LOAD_QUEUE_FLUSH: Callee = Callee { addr: 0x0028_a230, f: ee::s07::f_0028a230 };
-
+    pub const SND_LOAD_QUEUE_FLUSH: Callee = Callee {
+        addr: 0x0028_a230,
+        f: ee::s07::f_0028a230,
+    };
 
     pub const STR_HASH_5: Callee = Callee {
         addr: 0x0031_7670,
@@ -2925,7 +4026,6 @@ pub(crate) mod callee {
         f: ee::s14::f_003ed678,
     };
 
-
     /// The engine allocator (`cMemMan_alloc`), reached as a table call.
     pub const MALLOC: u32 = 0x0031_7d70;
 
@@ -2934,7 +4034,6 @@ pub(crate) mod callee {
 
     /// `cMemMan_free2` (the second form used by the FE states).
     pub const FREE2: u32 = 0x0031_7e98;
-
 
     pub const VEC3_MAX_COMPONENT: Callee = Callee {
         addr: 0x0017_31c0,
@@ -3112,7 +4211,6 @@ pub(crate) mod callee {
         f: ee::s08::f_002a1e20,
     };
 
-
     // `call_indirect` targets the generator left as table calls.
     pub const AUDIO_GET_GAME_MODULE_2: u32 = 0x0028_b1e8;
 
@@ -3120,11 +4218,15 @@ pub(crate) mod callee {
 
     pub const SPEECH_NEW: u32 = 0x003d_8008;
 
+    pub const TAG_FIELD_COPY_TAG: Callee = Callee {
+        addr: 0x003e_b198,
+        f: ee::s14::f_003eb198,
+    };
 
-    pub const TAG_FIELD_COPY_TAG: Callee = Callee { addr: 0x003e_b198, f: ee::s14::f_003eb198 };
-
-    pub const TAG_FIELD_SET_RAW_2: Callee = Callee { addr: 0x003e_b1e0, f: ee::s14::f_003eb1e0 };
-
+    pub const TAG_FIELD_SET_RAW_2: Callee = Callee {
+        addr: 0x003e_b1e0,
+        f: ee::s14::f_003eb1e0,
+    };
 
     pub const C_FE_STATE_NET_MESSENGER_CLEAR_NAME_LIST: Callee = Callee {
         addr: 0x001a_5450,
@@ -3161,7 +4263,6 @@ pub(crate) mod callee {
         f: ee::s10::cBXString_assign_cstr,
     };
 
-
     pub const C_FE_STATE_NET_CONFIG_SET_LIST_VISIBLE: Callee = Callee {
         addr: 0x001b_5068,
         f: ee::s03::cFEStateNetConfig_SetListVisible,
@@ -3176,7 +4277,6 @@ pub(crate) mod callee {
         addr: 0x001b_4cd8,
         f: ee::s03::cFEStateNetConfig_LoadConfigList,
     };
-
 
     pub const C_FE_STATE_NET_QUICK_PLAY_POPUP_SET_OPTIONS_HINT_VISIBLE: Callee = Callee {
         addr: 0x001c_13e0,
@@ -3203,7 +4303,6 @@ pub(crate) mod callee {
         f: ee::s13::UIText_SetTextId,
     };
 
-
     pub const BE_LIBRARY_GET_INSTANCE_4: Callee = Callee {
         addr: 0x0014_dc80,
         f: ee::s01::BELibrary_GetInstance,
@@ -3229,7 +4328,6 @@ pub(crate) mod callee {
         f: ee::s06::GameModule_AdvanceState,
     };
 
-
     pub const SCRIPT_ENGINE_TICK_PROCESS: Callee = Callee {
         addr: 0x0028_2450,
         f: ee::s07::ScriptEngine_TickProcess,
@@ -3249,7 +4347,6 @@ pub(crate) mod callee {
         addr: 0x0027_d390,
         f: ee::s07::ScriptEngine_RemoveBinding,
     };
-
 
     pub const BANK_MONITOR_KILL_TIMERS_BY_CALLBACK: Callee = Callee {
         addr: 0x002a_dde0,
@@ -3275,7 +4372,6 @@ pub(crate) mod callee {
         addr: 0x001c_c090,
         f: ee::s04::cKeyboardPopup_FindEnabledInColumnFromTop,
     };
-
 
     pub const UI_STATE_CTOR_2_4: Callee = Callee {
         addr: 0x0039_e318,
@@ -3377,7 +4473,6 @@ pub(crate) mod callee {
         f: ee::s06::GameModule_QuitToLoadScreen,
     };
 
-
     pub const IN_SEQ_START_SEQUENCE: Callee = Callee {
         addr: 0x0027_2938,
         f: ee::s07::InSeq_StartSequence,
@@ -3418,7 +4513,6 @@ pub(crate) mod callee {
         f: ee::s09::cCutSceneTransitionMan_SaveViewport,
     };
 
-
     pub const BE_NEW_RACE_INT_GET_TRACK: Callee = Callee {
         addr: 0x0014_4be0,
         f: ee::s01::BENewRaceInt_GetTrack,
@@ -3433,7 +4527,6 @@ pub(crate) mod callee {
         addr: 0x0011_95a8,
         f: ee::s00::RiderMetrix_ShowHUDMsg2A,
     };
-
 
     pub const FE_MODULE_RIDER_PREVIEW_SET_VISIBLE: Callee = Callee {
         addr: 0x0019_e538,
@@ -3454,7 +4547,6 @@ pub(crate) mod callee {
         addr: 0x0030_d540,
         f: ee::s10::RiderModel_dtor,
     };
-
 
     pub const UI_OBJECT_LOAD: Callee = Callee {
         addr: 0x0039_fe00,
@@ -3491,7 +4583,6 @@ pub(crate) mod callee {
         f: ee::s14::UStr_Len,
     };
 
-
     pub const FE_ASYNC_MANAGER_SET_STATE: Callee = Callee {
         addr: 0x001a_39d8,
         f: ee::s03::FEAsyncManager_SetState,
@@ -3506,7 +4597,6 @@ pub(crate) mod callee {
         addr: 0x0028_2bf0,
         f: ee::s07::ScriptEngine_GetProcessInSeq,
     };
-
 
     pub const C_SETUP_MAN_ALLOC_PACKET: Callee = Callee {
         addr: 0x0026_4960,
@@ -3538,7 +4628,6 @@ pub(crate) mod callee {
         f: ee::s10::operator_new_named,
     };
 
-
     pub const NET_FE_STATE_GOTO_NEXT_STATE: Callee = Callee {
         addr: 0x001a_8a40,
         f: ee::s03::NetFEState_GotoNextState,
@@ -3553,7 +4642,6 @@ pub(crate) mod callee {
         addr: 0x0018_d7f0,
         f: ee::s02::cFEStateOptionsDeviceSelect_ctor,
     };
-
 
     pub const SSX_AUDIO_SYSTEM_IS_SPEECH_VOLUME_ON: Callee = Callee {
         addr: 0x0029_f0a0,
@@ -3574,7 +4662,6 @@ pub(crate) mod callee {
         addr: 0x003d_8008,
         f: ee::s14::SPCH_MakeId,
     };
-
 
     pub const RIDER_IS_LOADED: Callee = Callee {
         addr: 0x0011_d640,
@@ -3600,7 +4687,6 @@ pub(crate) mod callee {
         addr: 0x002a_bb38,
         f: ee::s08::BankMonitorInstance_Reset,
     };
-
 
     pub const C_FE_STATE_CHAR_EQUIP_BUY_SELECTED_ITEM: Callee = Callee {
         addr: 0x0019_be80,
@@ -3631,7 +4717,6 @@ pub(crate) mod callee {
         addr: 0x001d_4890,
         f: ee::s04::cFEStateTrophyRoom_ShowTrophyInfo,
     };
-
 
     pub const SHOW_EQUIP_MODE: Callee = Callee {
         addr: 0x0019_a238,
@@ -3761,22 +4846,22 @@ pub(crate) mod callee {
 
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
 pub(crate) mod table {
-    pub(crate) use crate::game::movie::movieplayer::table::UI_STATE_ON_ACTIVATE;
-    pub(crate) use crate::game::movie::movieplayer::table::UI_STATE_SHUTDOWN;
-    pub(crate) use crate::game::movie::movieplayer::table::UI_LIST_SET_FIRST_FLAGS;
-    pub(crate) use crate::game::movie::movieplayer::table::SSX_AUDIO_SYSTEM_GET_INSTANCE;
-    pub(crate) use crate::game::movie::movieplayer::table::SSX_AUDIO_SYSTEM_SET_GAME_STATE;
-    pub(crate) use crate::game::movie::movieplayer::table::LOBBY_LIST_GET_NAME;
-    pub(crate) use crate::game::movie::movieplayer::table::VOIP_RPC_CALL;
-    pub(crate) use crate::game::movie::movieplayer::table::MC_CARD_DESTROY;
     pub(crate) use crate::game::ai::computer::table::DELETE;
+    pub(crate) use crate::game::ai::computer::table::EA_MEM_ALLOC_NAMED;
     pub(crate) use crate::game::ai::computer::table::EA_MEM_FREE;
     pub(crate) use crate::game::ai::computer::table::OPERATOR_NEW_NAMED;
-    pub(crate) use crate::game::ai::computer::table::EA_MEM_ALLOC_NAMED;
-    pub(crate) use crate::game::ai::computer::table::WAIT_SEMA;
-    pub(crate) use crate::game::ai::computer::table::WAKEUP_THREAD;
     pub(crate) use crate::game::ai::computer::table::SLEEP_THREAD;
     pub(crate) use crate::game::ai::computer::table::STR_HASH;
+    pub(crate) use crate::game::ai::computer::table::WAIT_SEMA;
+    pub(crate) use crate::game::ai::computer::table::WAKEUP_THREAD;
+    pub(crate) use crate::game::movie::movieplayer::table::LOBBY_LIST_GET_NAME;
+    pub(crate) use crate::game::movie::movieplayer::table::MC_CARD_DESTROY;
+    pub(crate) use crate::game::movie::movieplayer::table::SSX_AUDIO_SYSTEM_GET_INSTANCE;
+    pub(crate) use crate::game::movie::movieplayer::table::SSX_AUDIO_SYSTEM_SET_GAME_STATE;
+    pub(crate) use crate::game::movie::movieplayer::table::UI_LIST_SET_FIRST_FLAGS;
+    pub(crate) use crate::game::movie::movieplayer::table::UI_STATE_ON_ACTIVATE;
+    pub(crate) use crate::game::movie::movieplayer::table::UI_STATE_SHUTDOWN;
+    pub(crate) use crate::game::movie::movieplayer::table::VOIP_RPC_CALL;
 
     pub const UI_SCREEN_FIND_OBJECT: u32 = 0x0039_d860;
 
@@ -3847,36 +4932,36 @@ pub(crate) mod table {
 // Callees the generator emits as `call_indirect` (cross-shard or indirect).
 
 pub(crate) mod addr {
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::STR_HASH;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::UI_ENGINE_CREATE_SCREEN;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::UI_SCREEN_START_THREAD;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::BANK_MONITOR_ADD;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::BE_GET_BE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::BE_GET_INTERFACE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::BE_GET_INTERFACE_9;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::CHASE_CAMERA_RESET_FOR_RIDER;
     pub(crate) use crate::game::scripter::ssxscriptengine::addr::CLOSE_UNPINNED_POPUPS;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::FE_NET_SEND;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::HUD_SHOW_NUMBER_DELAYED;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MC_STATUS_TEXT;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MEMSET;
     pub(crate) use crate::game::scripter::ssxscriptengine::addr::MEM_MAN_ALLOC;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MENU_DTOR;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MENU_DTOR_2;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MENU_POP_PAGE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MENU_PUSH_PAGE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::POSITION_MODIFIER_CTOR_3;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::RIDER_PREVIEW;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::RIDER_PREVIEW_BOLTS;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::SPATIAL_INSERT;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::SPRINTF;
     pub(crate) use crate::game::scripter::ssxscriptengine::addr::STRCASECMP;
     pub(crate) use crate::game::scripter::ssxscriptengine::addr::STRCMP;
     pub(crate) use crate::game::scripter::ssxscriptengine::addr::STRLEN;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::SPRINTF;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MEMSET;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::BE_GET_BE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::BE_GET_INTERFACE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::CHASE_CAMERA_RESET_FOR_RIDER;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MENU_POP_PAGE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MENU_PUSH_PAGE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::FE_NET_SEND;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MENU_DTOR_2;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MENU_DTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::WORLD_GET;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MC_STATUS_TEXT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::RIDER_PREVIEW;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::RIDER_PREVIEW_BOLTS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::BE_GET_INTERFACE_9;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::HUD_SHOW_NUMBER_DELAYED;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::SPATIAL_INSERT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::POSITION_MODIFIER_CTOR_3;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::WORLD_PAINTER_2D;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::UI_OBJECT_BY_HASH;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::BANK_MONITOR_ADD;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::STR_HASH;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::UI_ENGINE_CREATE_SCREEN;
     pub(crate) use crate::game::scripter::ssxscriptengine::addr::UI_ENGINE_TEARDOWN;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::UI_OBJECT_BY_HASH;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::UI_SCREEN_START_THREAD;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::WORLD_GET;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::WORLD_PAINTER_2D;
 
     pub const __BUILTIN_DELETE: u32 = 0x0031_7e50;
 
@@ -3906,57 +4991,57 @@ pub(crate) mod addr {
 /// `GetHashValue32` (0x317670) and the UI object lookups, which the generator
 /// emitted as cross-shard `call_indirect`s.
 pub(crate) mod table_callee {
-    pub(crate) use crate::game::fe::festaterewards::table_callee::GET_HASH_VALUE32;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::EA_MEM_ALLOC_NAMED;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::STRLEN;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::OPERATOR_NEW;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::STRCPY;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_ENGINE_ADD_SCREEN_BY_HASH_NAME;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_SCREEN_PLAY_FRAME;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_OBJECT_PUSH;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_SCREEN_ADD_OBJECT;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_ENGINE_GET_INTERFACE;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_MENU_SET_SELECTED_BY_INDEX;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::TAG_FIELD_SET_STRING;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::TAG_FIELD_FIND;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::TAG_FIELD_GET_STRING4;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::BUDDY_PRODUCT_COMPARE;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::RIDER_GET_MAIN_STATE;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::SSX_AUDIO_GET_RACE_MAN;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::RIDER_REMOVE_SCRIPT_OBJECT;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::RIDER_SET_SCRIPT_STATE;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::RIDER_SCRIPT_CLEANUP;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_TEXT_SET_RICH_STRING;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_TEXT_SET_ASCII_STRING;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_TEXT_SET_UNICODE_STRING_BY_ID;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::CODEC_DECODE_FRAME;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::AI_SET_AI_STATE;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::APP_MAN_SET_NEXT_MODULE;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::BENEW_PLAYER_INT_GET_CHAR_ID;
     pub(crate) use crate::game::fe::festaterewards::table_callee::BE_GET;
     pub(crate) use crate::game::fe::festaterewards::table_callee::BE_GET_INTERFACE_FV;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::REWARD_GALLERY_GET_BASE;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::BUY_POPUP_CTOR;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::REWARD_GALLERY_POSTERS;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::REWARD_GALLERY_TRADING_CARDS;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::REWARD_GALLERY_CONCEPT_ARTS;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::REWARD_GALLERY_VIDEOS;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::REWARD_GALLERY_TOYS;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::REWARD_GALLERY_CHEAT_CHARS;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_SCREEN_FIND_OBJECT;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_OPEN_FINISH_SCREEN;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::OPERATOR_DELETE;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::AI_SET_AI_STATE;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::BE_SET_STATE;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::FE_STATE_CTOR;
     pub(crate) use crate::game::fe::festaterewards::table_callee::BE_GET_TEXT_FROM_ID;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::BENEW_PLAYER_INT_GET_CHAR_ID;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::FE_MODULE_SMALL_CTOR;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::FE_MODULE_BIG_CTOR;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::APP_MAN_SET_NEXT_MODULE;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::UPLOAD_TEXTURE_PIXELS;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::MUSIC_SLOT_RELEASE;
-    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_STATE_DTOR;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::BE_SET_STATE;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::BUDDY_PRODUCT_COMPARE;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::BUY_POPUP_CTOR;
     pub(crate) use crate::game::fe::festaterewards::table_callee::BXSTRING_CTOR;
     pub(crate) use crate::game::fe::festaterewards::table_callee::BXSTRING_DTOR;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::CODEC_DECODE_FRAME;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::EA_MEM_ALLOC_NAMED;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::FE_MODULE_BIG_CTOR;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::FE_MODULE_SMALL_CTOR;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::FE_STATE_CTOR;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::GET_HASH_VALUE32;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::MUSIC_SLOT_RELEASE;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::OPERATOR_DELETE;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::OPERATOR_NEW;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::REWARD_GALLERY_CHEAT_CHARS;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::REWARD_GALLERY_CONCEPT_ARTS;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::REWARD_GALLERY_GET_BASE;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::REWARD_GALLERY_POSTERS;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::REWARD_GALLERY_TOYS;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::REWARD_GALLERY_TRADING_CARDS;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::REWARD_GALLERY_VIDEOS;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::RIDER_GET_MAIN_STATE;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::RIDER_REMOVE_SCRIPT_OBJECT;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::RIDER_SCRIPT_CLEANUP;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::RIDER_SET_SCRIPT_STATE;
     pub(crate) use crate::game::fe::festaterewards::table_callee::SECTION_TABLE_CTOR;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::SSX_AUDIO_GET_RACE_MAN;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::STRCPY;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::STRLEN;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::TAG_FIELD_FIND;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::TAG_FIELD_GET_STRING4;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::TAG_FIELD_SET_STRING;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_ENGINE_ADD_SCREEN_BY_HASH_NAME;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_ENGINE_GET_INTERFACE;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_MENU_SET_SELECTED_BY_INDEX;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_OBJECT_PUSH;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_OPEN_FINISH_SCREEN;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_SCREEN_ADD_OBJECT;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_SCREEN_FIND_OBJECT;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_SCREEN_PLAY_FRAME;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_STATE_DTOR;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_TEXT_SET_ASCII_STRING;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_TEXT_SET_RICH_STRING;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::UI_TEXT_SET_UNICODE_STRING_BY_ID;
+    pub(crate) use crate::game::fe::festaterewards::table_callee::UPLOAD_TEXTURE_PIXELS;
 }
 
 // ---------------------------------------------------------------------------
@@ -4026,15 +5111,12 @@ pub(crate) mod dnas_error {
     pub const MESSAGE: u32 = 0x0046_42c0;
 }
 
-
 /// Offset of the async manager's state word.
 pub(crate) const FE_ASYNC_MANAGER_STATE: u32 = 0x114;
-
 
 /// The `FEAsyncManager_GetState` / `_SetState` prologue scale: the index is
 /// multiplied by this before being added to `this`.
 pub(crate) const FE_ASYNC_MANAGER_STRIDE: u32 = 0x11c;
-
 
 /// `u32 FEAsyncManager_GetState(FEAsyncManager* m, int index)` (0x001a39c0):
 /// returns the state word for slot `index`. The original computes the element
@@ -4047,12 +5129,9 @@ pub fn fe_async_manager_get_state(c: &mut Cpu) {
     let lo = abi::mult(c, index, FE_ASYNC_MANAGER_STRIDE);
     c.g[V1][0] = sx(lo);
     c.g[A0][0] = sx(lo.wrapping_add(base as u32));
-    c.g[V0][0] = Addr(c.g[A0][0] as u32)
-        .off(FE_ASYNC_MANAGER_STATE)
-        .lw(c);
+    c.g[V0][0] = Addr(c.g[A0][0] as u32).off(FE_ASYNC_MANAGER_STATE).lw(c);
     abi::ret(c);
 }
-
 
 /// `void FEAsyncManager_SetState(FEAsyncManager* m, int index, u32 state)`
 /// (0x001a39d8): stores `state` into slot `index`. Same stride as the getter;
@@ -4071,7 +5150,6 @@ pub fn fe_async_manager_set_state(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `int cFEStateNetMessenger_GetListIndex(cFEStateNetMessenger *self, int i)`
 /// (0x1a4740): `*(u32*)(self+0x6f4) + i`.
 pub fn cfe_state_net_messenger_get_list_index(c: &mut Cpu) {
@@ -4080,7 +5158,6 @@ pub fn cfe_state_net_messenger_get_list_index(c: &mut Cpu) {
     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
     abi::ret(c);
 }
-
 
 // ---------------------------------------------------------------------------
 // Front-end "create account" flow.
@@ -4134,7 +5211,6 @@ pub fn cfe_state_create_step1_all_fields_filled(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `bool cFEStateCreateStep1_CharInRange(void *self, int lo, int ch, int hi)`
 /// (0x1b9f68): treats `lo`, `ch` and `hi` as signed bytes and returns whether
 /// `lo <= ch <= hi`.
@@ -4161,7 +5237,6 @@ pub fn cfe_state_create_step1_char_in_range(c: &mut Cpu) {
     c.cycles += 2;
     abi::ret(c);
 }
-
 
 /// `bool cFEStateCreateStep2_IsLeapYear(void *self, int year)` (0x1bb968):
 /// true for years divisible by 4 that are not divisible by 100 (unless also by
@@ -4192,7 +5267,6 @@ pub fn cfe_state_create_step2_is_leap_year(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 // ---------------------------------------------------------------------------
 // Front-end popup confirm widget (option rows).
 
@@ -4209,7 +5283,6 @@ pub fn cfepopupconfirm_cfg_set_option_string(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void cFEPopupConfirm_CfgSetOptionWideString(Cfg* cfg, int row, void *s)`
 /// (0x1c57a0): same as [`cfepopupconfirm_cfg_set_option_string`] with kind 1.
 pub fn cfepopupconfirm_cfg_set_option_wide_string(c: &mut Cpu) {
@@ -4222,7 +5295,6 @@ pub fn cfepopupconfirm_cfg_set_option_wide_string(c: &mut Cpu) {
     Addr(c.g[A0][0] as u32).off(0x24).sw(c, c.g[V0][0]);
     abi::ret(c);
 }
-
 
 /// `void cFEPopupConfirm_CfgSetOptionTextId(Cfg* cfg, int row, int id)`
 /// (0x1c57c0): same as [`cfepopupconfirm_cfg_set_option_string`] with kind 3.
@@ -4237,7 +5309,6 @@ pub fn cfepopupconfirm_cfg_set_option_text_id(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void* cFEPopupConfirm_CfgGetOption(Cfg* cfg, int row)` (0x1c5800):
 /// `cfg + row*8 + 0x24`.
 pub fn cfepopupconfirm_cfg_get_option(c: &mut Cpu) {
@@ -4247,7 +5318,6 @@ pub fn cfepopupconfirm_cfg_get_option(c: &mut Cpu) {
     c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
     abi::ret(c);
 }
-
 
 /// `void cFEPopupConfirm_CfgSetOptionConfirmWide(Cfg* cfg, int row, void *s, int arg)`
 /// (0x1c5838): sets up a kind-1 option row (`row*0xc` stride).
@@ -4265,7 +5335,6 @@ pub fn cfepopupconfirm_cfg_set_option_confirm_wide(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void cFEPopupConfirm_CfgClearOptionConfirm(Cfg* cfg, int row)`
 /// (0x1c5860): zeroes the option-confirm kind field of `row*0xc`.
 pub fn cfepopupconfirm_cfg_clear_option_confirm(c: &mut Cpu) {
@@ -4276,7 +5345,6 @@ pub fn cfepopupconfirm_cfg_clear_option_confirm(c: &mut Cpu) {
     Addr(c.g[A0][0] as u32).off(0x54).sw(c, 0);
     abi::ret(c);
 }
-
 
 /// `void cFEPopupConfirm_CfgSetOptionConfirmTextId(Cfg* cfg, int row, int id, int arg)`
 /// (0x1c5878): like [`cfepopupconfirm_cfg_set_option_confirm_wide`] with
@@ -4295,7 +5363,6 @@ pub fn cfepopupconfirm_cfg_set_option_confirm_text_id(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void* cFEPopupConfirm_CfgGetOptionConfirm(Cfg* cfg, int row)`
 /// (0x1c58d0): `cfg + row*0xc + 0x54`.
 pub fn cfepopupconfirm_cfg_get_option_confirm(c: &mut Cpu) {
@@ -4307,13 +5374,11 @@ pub fn cfepopupconfirm_cfg_get_option_confirm(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 // ---------------------------------------------------------------------------
 // AsyncFile pool / serial.
 
 /// The serial counter the file system hands out.
 pub(crate) const ASYNC_SERIAL: u32 = 0x0052_0000 - 0x6400;
-
 
 /// `void AsyncFile_AssignSerial(AsyncFile *f)` (0x3def40): bump the pool's
 /// serial counter by 0x100 (or reset it to 0x100 after the wrap to 0) and OR
@@ -4341,7 +5406,6 @@ pub fn async_file_assign_serial(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void NetFEState_SetSelectedUser(this, const char *name)` (0x001a9890):
 /// assign the name to the `cBXString` at `+0x6c0`.
 pub fn netfe_state_set_selected_user(c: &mut Cpu) {
@@ -4354,7 +5418,6 @@ pub fn netfe_state_set_selected_user(c: &mut Cpu) {
         0x001a_98a0,
     )
 }
-
 
 /// `void cFEStateStats_ResetResultsPage(this, int slot)` (0x001c4b78): clear
 /// the page field at `+0x6e8`, then request the stats page from the lobby
@@ -4372,7 +5435,6 @@ pub fn cfe_state_stats_reset_results_page(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // NetConfigAuthPopup_OnWidgetAction.
@@ -4397,7 +5459,6 @@ pub fn net_config_auth_popup_on_widget_action(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Front-end state hooks: virtual methods on a member object.
@@ -4424,7 +5485,6 @@ pub fn c_fe_state_challenge_popup_transition_in(c: &mut Cpu) {
     })
 }
 
-
 /// `cFEStateNetConfig_Shutdown(this)` 0x1b4168: tear down the state's widget
 /// list, then hand the audio system's singleton to its game-state teardown.
 pub fn c_fe_state_net_config_shutdown(c: &mut Cpu) {
@@ -4441,7 +5501,6 @@ pub fn c_fe_state_net_config_shutdown(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// The `OnWidgetAction` hooks: `A1` is forwarded from the caller, the method
 /// is slot +0xc0 of the vtable at `*(*(this + 0x20) + 8)`.
@@ -4466,12 +5525,10 @@ pub(crate) fn widget_action_v24(c: &mut Cpu, ret: u32) {
     })
 }
 
-
 /// `NetConfigAuthPopup_v24(this, a1, a2)` 0x1b6740: forward the widget action.
 pub fn net_config_auth_popup_v24(c: &mut Cpu) {
     widget_action_v24(c, 0x001b_6760)
 }
-
 
 /// `cFEStateAuthDNASError_v24(this, a1, a2)` 0x1b6e10: forward the widget
 /// action.
@@ -4479,20 +5536,17 @@ pub fn c_fe_state_auth_dnas_error_v24(c: &mut Cpu) {
     widget_action_v24(c, 0x001b_6e30)
 }
 
-
 /// `cFEStateNetAccountMem_v24(this, a1, a2)` 0x1b8860: forward the widget
 /// action.
 pub fn c_fe_state_net_account_mem_v24(c: &mut Cpu) {
     widget_action_v24(c, 0x001b_8880)
 }
 
-
 /// `cFEStateNetCreateRoomPopup_v31(this, a1, a2)` 0x1bed28: forward the widget
 /// action.
 pub fn c_fe_state_net_create_room_popup_v31(c: &mut Cpu) {
     widget_action_v24(c, 0x001b_ed48)
 }
-
 
 /// `cFEStateLobbyMenu_RefreshPlayerList(this)` 0x1be510: rebuild the lobby's
 /// player list, then refresh the scroll arrows.
@@ -4513,7 +5567,6 @@ pub fn c_fe_state_lobby_menu_refresh_player_list(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Net / memcard hooks.
@@ -4550,7 +5603,6 @@ pub fn net_fe_state_on_child_event_ignore_close(c: &mut Cpu) {
     })
 }
 
-
 /// `void cFEStateNetAccountMem_StoreAccountStrings(self)` (0x1b7778): copy the
 /// account name (`self+0x6e0`) and password (`self+0x6f1`) into the shared
 /// login manager.
@@ -4573,12 +5625,10 @@ pub fn cfe_state_net_account_mem_store_account_strings(c: &mut Cpu) {
     })
 }
 
-
 /// `cFEPopupConfirm` config destructor (vtable at `+0xc8`).
 pub fn c_fe_popup_confirm_cfg_dtor(c: &mut Cpu) {
     vtable_dtor(c, 0x0046_cca8, 0xc8, 0x001c_5774);
 }
-
 
 /// `FEScreenBlank* FEScreenBlank_ctor(FEScreenBlank* self)` (0x1abf70):
 /// construct the net FE state and install the FEScreenBlank vtable.
@@ -4600,7 +5650,6 @@ pub fn fe_screen_blank_ctor(c: &mut Cpu) {
         Ok(())
     });
 }
-
 
 /// `void cFEStateLobbyMenu_OnKeyboardDone(cFEStateLobbyMenu* self)`
 /// (0x1bd428): when the pending room request is in state 8, join the room
@@ -4628,7 +5677,6 @@ pub fn fe_lobby_menu_on_keyboard_done(c: &mut Cpu) {
     });
 }
 
-
 /// `cFEPopupConfirm* cFEPopupConfirm_CfgCtor(cFEPopupConfirm* self)`
 /// (0x1c55f8): install the vtable and reset the configuration fields.
 pub fn fe_popup_confirm_cfg_ctor(c: &mut Cpu) {
@@ -4649,7 +5697,6 @@ pub fn fe_popup_confirm_cfg_ctor(c: &mut Cpu) {
         Ok(())
     });
 }
-
 
 /// `int cFEStateOnlineCharacterSelect_CharToListIndex(int character)` (0x1b0f28):
 /// index of `character` in the ten-entry character list, or -1.
@@ -4685,7 +5732,6 @@ pub fn char_to_list_index(c: &mut Cpu) {
     }
 }
 
-
 /// `void cFEStateChatRoom_OnActivate(cFEStateChatRoom* self, void* arg)`
 /// (0x1B3528): refresh the player quality, then run the network state's own
 /// activation.
@@ -4709,7 +5755,6 @@ pub fn fe_state_chat_room_on_activate(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `int cFEStateNetQuickPlayPopup_OnChildEvent(self, child, event)` (0x1C1B48):
 /// the options popup (id 0x82F) handles the event itself, every other child
@@ -4735,7 +5780,6 @@ pub fn fe_state_net_quick_play_popup_on_child_event(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `int cFEStateStats_OnWidgetNotify(self, widget, kind, value)` (0x1C4B98):
 /// a stats-tab change (kind 4) records the tab and rebuilds the results list;
@@ -4770,7 +5814,6 @@ pub fn fe_state_stats_on_widget_notify(c: &mut Cpu) {
     })
 }
 
-
 /// The four `NetFEState` constructors: base constructor, class id, vtable,
 /// and (for the online main menu) an explicit "no parent" argument.
 pub(crate) fn net_fe_state_ctor(c: &mut Cpu, id: u32, vt: u32, ret: u32) {
@@ -4796,24 +5839,20 @@ pub(crate) fn net_fe_state_ctor(c: &mut Cpu, id: u32, vt: u32, ret: u32) {
     })
 }
 
-
 /// `void* cFEStateNetSSXWorld_ctor(void* self)` (0x1c1c50): class 0x4a.
 pub fn c_fe_state_net_ssx_world_ctor(c: &mut Cpu) {
     net_fe_state_ctor(c, 0x4a, 0x46_aa18, 0x001c_1c68)
 }
-
 
 /// `void* cFEStateNetQuickMessages_ctor(void* self)` (0x1c20f8): class 0x4b.
 pub fn c_fe_state_net_quick_messages_ctor(c: &mut Cpu) {
     net_fe_state_ctor(c, 0x4b, 0x46_a908, 0x001c_2110)
 }
 
-
 /// `void* cFEStateNetNews_ctor(void* self)` (0x1c5018): class 0x43.
 pub fn c_fe_state_net_news_ctor(c: &mut Cpu) {
     net_fe_state_ctor(c, 0x43, 0x46_8168, 0x001c_5030)
 }
-
 
 /// `int cFEUseExistingAccount_ValidateFields(State* s)` (0x1ac408): true
 /// when both the account name and the password are non-empty.
@@ -4844,7 +5883,6 @@ pub fn c_fe_use_existing_account_validate_fields(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `int cFEStateNetConfig_OnPopupEventPassthrough(State* s, int a1, int a2)`
 /// (0x1b4c00): forward child events, except that the two popup event ids
@@ -4878,7 +5916,6 @@ pub fn c_fe_state_net_config_on_popup_event_passthrough(c: &mut Cpu) {
     })
 }
 
-
 /// `cFEStateSelectPersona* cFEStateSelectPersona_ctor(self)` (0x1ad130): net
 /// front-end state constructor (with a null engine argument), then the
 /// persona-select vtable/state and one cleared field.
@@ -4904,7 +5941,6 @@ pub fn fe_state_select_persona_ctor(c: &mut Cpu) {
         Ok(())
     });
 }
-
 
 /// `void cFEStateChallengePopup_v33(self, event, code)` (0x1af3e0): on the
 /// two popup codes close the state manager's popup list, otherwise pass the
@@ -4940,7 +5976,6 @@ pub fn fe_state_challenge_popup_v33(c: &mut Cpu) {
     });
 }
 
-
 /// `void cFEStateChallengeReceivedPopup_v33(self, event, code)` (0x1b0628):
 /// same dispatch as [`fe_state_challenge_popup_v33`] for the "challenge
 /// received" popup.
@@ -4974,7 +6009,6 @@ pub fn fe_state_challenge_received_popup_v33(c: &mut Cpu) {
         Ok(())
     });
 }
-
 
 /// `bool cFEStateOnlineCharacterSelect_HandleInput(self, input)`
 /// (0x1b1590): unless the menu is disabled (or the pad global is clear),
@@ -5014,7 +6048,6 @@ pub fn fe_state_online_character_select_handle_input(c: &mut Cpu) {
     });
 }
 
-
 /// `cFEStateCreateStep2* cFEStateCreateStep2_ctor(self)` (0x1ba3e0): net
 /// front-end state constructor with a null engine, then the create-step-2
 /// vtable/state and one cleared field.
@@ -5041,12 +6074,10 @@ pub fn fe_state_create_step2_ctor(c: &mut Cpu) {
     });
 }
 
-
 /// The quick-play popup's retry interval: 30 frames (0.5 s at 60 Hz). The
 /// countdown consumes one tick per update, so the value reloaded is the
 /// interval in ticks.
 const QUICK_PLAY_RETRY_FRAMES: u32 = 30;
-
 
 /// `void cFEStateNetQuickPlayPopup_Update(self)` (0x1c1038): count the
 /// popup's timeout down (reloading the interval when it passes 0) while it is
@@ -5078,13 +6109,11 @@ pub fn fe_state_net_quick_play_popup_update(c: &mut Cpu) {
     });
 }
 
-
 /// A `gp_3`-relative global.
 #[inline(always)]
 pub(crate) fn gp_3(c: &Cpu, off: i32) -> u32 {
     abi::r32(c, GP).wrapping_add(off as u32)
 }
-
 
 // ---------------------------------------------------------------------------
 // NetFEState child events.
@@ -5127,7 +6156,6 @@ pub(crate) fn child_event_dispatch(c: &mut Cpu, ret_virtual: u32, ret_other: u32
     Ok(())
 }
 
-
 /// `void cFEStateChallengePopup_OnChildEvent(self, event, arg)` (0x1af428):
 /// the challenge popup's child-event handler; a `0x835` event is the popup's
 /// own (see [`child_event_dispatch`]).
@@ -5135,14 +6163,12 @@ pub fn c_fe_state_challenge_popup_on_child_event(c: &mut Cpu) {
     guest(c, |c| child_event_dispatch(c, 0x001a_f454, 0x001a_f464))
 }
 
-
 /// `void cFEStateChallengeReceivedPopup_OnChildEvent(self, event, arg)`
 /// (0x1b05e0): the "challenge received" popup's child-event handler, the same
 /// shape as [`c_fe_state_challenge_popup_on_child_event`].
 pub fn c_fe_state_challenge_received_popup_on_child_event(c: &mut Cpu) {
     guest(c, |c| child_event_dispatch(c, 0x001b_060c, 0x001b_061c))
 }
-
 
 /// `int cFEStateChatRoom_OnWidgetNotify(self, sender, event, value)`
 /// (0x1b3568): the chat room's widget notification. Only event 4 (a list
@@ -5187,7 +6213,6 @@ pub fn c_fe_state_chat_room_on_widget_notify(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // cFEStateNetAccountMem state stepping.
@@ -5237,7 +6262,6 @@ pub(crate) fn net_account_mem_step(
     Ok(())
 }
 
-
 /// `void cFEStateNetAccountMem_UpdateState08(self)` (0x1b78f0): mode 8 →
 /// state 0xa, mode 9 → state 9.
 pub fn c_fe_state_net_account_mem_update_state08(c: &mut Cpu) {
@@ -5245,7 +6269,6 @@ pub fn c_fe_state_net_account_mem_update_state08(c: &mut Cpu) {
         net_account_mem_step(c, 8, 0xa, 0x001b_7914, 9, 9, 0x001b_792c)
     })
 }
-
 
 /// `void cFEStateNetAccountMem_UpdateState0E(self)` (0x1b7a08): mode 0x15 →
 /// state 0x10, mode 0x16 → state 0xf.
@@ -5255,7 +6278,6 @@ pub fn c_fe_state_net_account_mem_update_state0e(c: &mut Cpu) {
     })
 }
 
-
 /// `void cFEStateNetAccountMem_UpdateState10(self)` (0x1b7a50): mode 0xc →
 /// state 0x12, mode 0xd → state 0x11.
 pub fn c_fe_state_net_account_mem_update_state10(c: &mut Cpu) {
@@ -5263,7 +6285,6 @@ pub fn c_fe_state_net_account_mem_update_state10(c: &mut Cpu) {
         net_account_mem_step(c, 0xc, 0x12, 0x001b_7a74, 0xd, 0x11, 0x001b_7a8c)
     })
 }
-
 
 /// `void cFEStateNetAccountMem_UpdateState1A(self)` (0x1b7c28): mode 0x10 →
 /// state 0x1b, mode 0x11 → state 0x1c.
@@ -5273,7 +6294,6 @@ pub fn c_fe_state_net_account_mem_update_state1a(c: &mut Cpu) {
     })
 }
 
-
 /// `void cFEStateNetAccountMem_UpdateState1B(self)` (0x1b7c70): mode 0xc →
 /// state 0x1d, mode 0xd → state 0x1c.
 pub fn c_fe_state_net_account_mem_update_state1b(c: &mut Cpu) {
@@ -5281,7 +6301,6 @@ pub fn c_fe_state_net_account_mem_update_state1b(c: &mut Cpu) {
         net_account_mem_step(c, 0xc, 0x1d, 0x001b_7c94, 0xd, 0x1c, 0x001b_7cac)
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // cFEStateLogin / cFEStateOnlineAgreement constructors.
@@ -5319,7 +6338,6 @@ pub(crate) fn net_fe_state_ctor_2(
     Ok(())
 }
 
-
 /// `cFEStateLogin* cFEStateLogin_ctor(self, arg)` (0x1bee30): the login
 /// state's constructor (class id 0x33, vtable 0x468388; clears `+0x6d0` and
 /// `+0x6a8`).
@@ -5329,7 +6347,6 @@ pub fn c_fe_state_login_ctor(c: &mut Cpu) {
     })
 }
 
-
 /// `cFEStateOnlineAgreement* cFEStateOnlineAgreement_ctor(self, arg)`
 /// (0x1c0418): the online-agreement state's constructor (class id 0x43,
 /// vtable 0x46ac38; clears `+0x6d0` and `+0x6d8`).
@@ -5338,7 +6355,6 @@ pub fn c_fe_state_online_agreement_ctor(c: &mut Cpu) {
         net_fe_state_ctor_2(c, 0x43, 0x0046_ac38, 0x6d0, 0x6d8, 0x001c_0430)
     })
 }
-
 
 /// `void cFEStateOnlineAgreement_OnWidgetCreated(self, item)` (0x1c0ce0):
 /// if the item's hash (`+0x38`) is the hash of the agreement text the item
@@ -5372,7 +6388,6 @@ pub fn c_fe_state_online_agreement_on_widget_created(c: &mut Cpu) {
     })
 }
 
-
 /// `cFEStateOnlineCharacterSelect* cFEStateOnlineCharacterSelect_ctor(this,
 /// a1)` (0x1b0f60): construct the NetFE base (child-event handler in `a2 =
 /// 0`), install the class vtable and id 0x41, and clear the selection state.
@@ -5402,7 +6417,6 @@ pub fn c_fe_state_online_character_select_ctor(c: &mut Cpu) {
     })
 }
 
-
 /// `cFEStateNetCreateRoomPopup* cFEStateNetCreateRoomPopup_ctor(this, a1)`
 /// (0x1be7d8): construct the NetFE base, install the class vtable and id 0x47,
 /// and copy the current player count into the three popup fields.
@@ -5431,7 +6445,6 @@ pub fn c_fe_state_net_create_room_popup_ctor(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `int cFEStateNetMessenger_HandleInput(cFEStateNetMessenger* s, void* menu)`
 /// (0x1a4170): when the menu's `+8` vtable slot 0xd8 reports that it handled
@@ -5474,7 +6487,6 @@ pub fn cfe_state_net_messenger_handle_input(c: &mut Cpu) {
     })
 }
 
-
 /// `void cFEUseExistingAccount_dtor(cFEUseExistingAccount* s, int flags)`
 /// (0x1ac068): install the vtable at +8, destruct the account-name string at
 /// +0x6dc and run the base destructor. 20 cycles plus the callees.
@@ -5503,7 +6515,6 @@ pub fn cfe_use_existing_account_dtor(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void cFEStateCreateStep1_SetAccountNameText(cFEStateCreateStep1* s)`
 /// (0x1b95c0): look the account-name text object up by hash in the screen at
@@ -5539,7 +6550,6 @@ pub fn cfe_state_create_step1_set_account_name_text(c: &mut Cpu) {
     })
 }
 
-
 /// `int cFEStateStats_v31(cFEStateStats* s, int msg)` (0x1c4cd8): message
 /// 0xe1 refreshes the results, selects the first entry of the table at +0x6dc
 /// and returns 0; every other message goes to the net front-end handler.
@@ -5574,7 +6584,6 @@ pub fn cfe_state_stats_v31(c: &mut Cpu) {
     })
 }
 
-
 /// `void NetFEState_OnActivate(NetFEState* self, int arg)` (0x1a87d0): run
 /// the state's activation hook and mark it active.
 pub fn net_fe_state_on_activate(c: &mut Cpu) {
@@ -5606,7 +6615,6 @@ pub fn net_fe_state_on_activate(c: &mut Cpu) {
     })
 }
 
-
 /// `void* cFEUseExistingAccount_ctor(cFEUseExistingAccount* self, int a1)`
 /// (0x1ac010): construct the account screen's net state and install its
 /// fields.
@@ -5636,7 +6644,6 @@ pub fn c_fe_use_existing_account_ctor(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Front end.
@@ -5674,12 +6681,10 @@ pub fn c_fe_state_online_character_select_on_child_event(c: &mut Cpu) {
     })
 }
 
-
 /// The chat room's player-quality poll period: 10000 frames (166.7 s at
 /// 60 Hz). The divisor is applied to the VSync counter `cAppMan+0x18`, so at
 /// 120 Hz it is 20000 VSyncs.
 const CHAT_ROOM_POLL_FRAMES: u32 = 10000;
-
 
 /// `void cFEStateChatRoom_Update(self)` (0x1b2320): every 10000th VSync
 /// update the player quality, then run the net state's update.
@@ -5709,7 +6714,6 @@ pub fn c_fe_state_chat_room_update(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void cFEStateNetAccountMem_dtor(self, flags)` (0x1b7030): destroy the
 /// shared login manager, install the net-state base vtable and run its dtor.
@@ -5742,7 +6746,6 @@ pub fn c_fe_state_net_account_mem_dtor(c: &mut Cpu) {
     })
 }
 
-
 /// `void* cFEStateCreateDuplicate_ctor(self, a1, a2)` (0x1bbd08): run the net
 /// state ctor, install the create-duplicate class and store the arguments.
 pub fn c_fe_state_create_duplicate_ctor(c: &mut Cpu) {
@@ -5772,7 +6775,6 @@ pub fn c_fe_state_create_duplicate_ctor(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void cFEStateNetQuickMessages_TransitionIn(self, arg)` (0x1c23c0): call
 /// the state's transition hook, then refresh all messages when requested.
@@ -5810,7 +6812,6 @@ pub fn c_fe_state_net_quick_messages_transition_in(c: &mut Cpu) {
     })
 }
 
-
 /// `void cFEStateStats_TransitionIn(self, arg)` (0x1c32b8): call the state's
 /// transition hook, then select the first category when requested.
 pub fn c_fe_state_stats_transition_in(c: &mut Cpu) {
@@ -5845,7 +6846,6 @@ pub fn c_fe_state_stats_transition_in(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void cFEStateNetAccountMem_UpdateState02(cFEStateNetAccountMem* s)`
 /// (0x1b77c8): leave the sub-state machine of the "account memory" screen:
@@ -5907,7 +6907,6 @@ pub fn cfe_state_net_account_mem_update_state02(c: &mut Cpu) {
     frame.close(c);
 }
 
-
 /// `void cFEStateLogin_dtor(cFEStateLogin* s, int flags)` (0x1bee78): set the
 /// vtable, free the buffer at `+0x6d0`, then run the NetFEState destructor.
 pub fn cfe_state_login_dtor(c: &mut Cpu) {
@@ -5941,7 +6940,6 @@ pub fn cfe_state_login_dtor(c: &mut Cpu) {
     frame.close(c);
 }
 
-
 /// `void cFEStateOnlineAgreement_dtor(cFEStateOnlineAgreement* s, int flags)`
 /// (0x1c0a28): the same shape as the login-state destructor.
 pub fn cfe_state_online_agreement_dtor(c: &mut Cpu) {
@@ -5974,7 +6972,6 @@ pub fn cfe_state_online_agreement_dtor(c: &mut Cpu) {
     frame.restore_ra(c, 0);
     frame.close(c);
 }
-
 
 /// `void cFEStateNetNews_OnWidgetCreated(cFEStateNetNews* s, UIWidget* w)`
 /// (0x1c5310): when the created widget is the news list, enable its second
@@ -6011,7 +7008,6 @@ pub fn cfe_state_net_news_on_widget_created(c: &mut Cpu) {
     frame.restore_ra(c, 0);
     frame.close(c);
 }
-
 
 /// `int FEAsyncManager_FindFreeSlot(FEAsyncManager* m)` (0x1a3bf0): the first
 /// of the five async slots whose state word is 0, or -1.
@@ -6058,7 +7054,6 @@ pub fn fe_async_manager_find_free_slot(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Net FE popups and child-event handlers.
 
@@ -6093,7 +7088,6 @@ pub fn net_fe_state_show_buddy_action_popup(c: &mut Cpu) {
     })
 }
 
-
 /// `cFEStateChallengeReceivedPopup_ctor` (0x1afe08): the net-FE state base
 /// plus the challenge-received popup's vtable, name string, and the global
 /// "popup shown" word cleared.
@@ -6125,7 +7119,6 @@ pub fn cfe_state_challenge_received_popup_ctor(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void cFEStateNetConfig_OnInfoPopupClosed(NetFEState* self, void* ev,
 /// int arg)` (0x1b5cf8): on the info-popup event (0x16) also close the popup
@@ -6163,7 +7156,6 @@ pub fn cfe_state_net_config_on_info_popup_closed(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// Dispatch shape shared by the four net-FE child-event handlers below:
 /// compare the event id at `ev+0x18` with two ids and call the matching
@@ -6211,7 +7203,6 @@ macro_rules! child_event_switch {
 }
 pub(crate) use child_event_switch;
 
-
 child_event_switch!(
     cfe_state_create_step1_on_child_event,
     "`void cFEStateCreateStep1_OnChildEvent(NetFEState* self, void* ev, int arg)` \
@@ -6226,7 +7217,6 @@ child_event_switch!(
     callee::CFE_STATE_CREATE_STEP1_ON_SAVE_ACCOUNT_ANSWER,
     callee::CFE_STATE_CREATE_STEP1_ON_EDIT_DONE_POPUP_EVENT
 );
-
 
 child_event_switch!(
     cfe_state_lobby_menu_on_child_event,
@@ -6243,7 +7233,6 @@ child_event_switch!(
     callee::CFE_STATE_LOBBY_MENU_PROMPT_ROOM_PASSWORD
 );
 
-
 child_event_switch!(
     cfe_state_online_main_menu_on_child_event,
     "`void cFEStateOnlineMainMenu_OnChildEvent(NetFEState* self, void* ev, int arg)` \
@@ -6259,7 +7248,6 @@ child_event_switch!(
     callee::CFE_STATE_ONLINE_MAIN_MENU_ON_DISCONNECT_POPUP_EVENT
 );
 
-
 child_event_switch!(
     cfe_state_net_quick_messages_on_child_event,
     "`void cFEStateNetQuickMessages_OnChildEvent(NetFEState* self, void* ev, int arg)` \
@@ -6274,7 +7262,6 @@ child_event_switch!(
     callee::CFE_STATE_NET_QUICK_MESSAGES_ON_SAVE_POPUP_EVENT,
     callee::CFE_STATE_NET_QUICK_MESSAGES_ON_RESET_POPUP_EVENT
 );
-
 
 /// `void cFEStateLobbyMenu_HideRoomTabs(cFEStateLobbyMenu* self)` (0x1bdfd8):
 /// hide the four room tabs at `self+0x730` through their vtable slot 0x48.
@@ -6316,7 +7303,6 @@ pub fn cfe_state_lobby_menu_hide_room_tabs(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Shared bodies of the repeated handler shapes (the generated code is
 // identical for each group; only the address differs).
@@ -6342,7 +7328,6 @@ pub(crate) fn state_notify_low_action(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 // ---------------------------------------------------------------------------
 // Front-end widget-notify handlers.
 
@@ -6361,13 +7346,11 @@ pub fn fe_use_existing_account_on_widget_notify(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `int cFEStateChallengePopup_OnWidgetNotify(void* self, int widget, int action)`
 /// (0x1ae100): see [`state_notify_low_action`].
 pub fn fe_state_challenge_popup_on_widget_notify(c: &mut Cpu) {
     state_notify_low_action(c);
 }
-
 
 /// `int cFEStateChallengeReceivedPopup_OnWidgetNotify(...)` (0x1b06e0): see
 /// [`state_notify_low_action`].
@@ -6375,20 +7358,17 @@ pub fn fe_state_challenge_received_popup_on_widget_notify(c: &mut Cpu) {
     state_notify_low_action(c);
 }
 
-
 /// `int NetConfigAuthPopup_OnWidgetNotify(...)` (0x1b6a90): see
 /// [`state_notify_low_action`].
 pub fn net_config_auth_popup_on_widget_notify(c: &mut Cpu) {
     state_notify_low_action(c);
 }
 
-
 /// `int cFEStateAuthDNASError_OnWidgetNotify(...)` (0x1b6ea8): see
 /// [`state_notify_low_action`].
 pub fn fe_state_auth_dnas_error_on_widget_notify(c: &mut Cpu) {
     state_notify_low_action(c);
 }
-
 
 /// `int cFEStateOnlineAgreement_OnWidgetNotify(...)` (0x1c0b08): 0x100 when
 /// the action is 9 (accept/back), 0x101 otherwise.
@@ -6404,7 +7384,6 @@ pub fn fe_state_online_agreement_on_widget_notify(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `int cFEStateNetQuickPlayPopup_OnWidgetNotify(...)` (0x1c17e0): 0x100
 /// when the action is 9, 0x101 otherwise.
 pub fn fe_state_net_quick_play_popup_on_widget_notify(c: &mut Cpu) {
@@ -6419,7 +7398,6 @@ pub fn fe_state_net_quick_play_popup_on_widget_notify(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `int cFEStateNetNews_OnWidgetNotify(void* self, int widget, int action)`
 /// (0x1c5420): 0 when the action is 4, else 0x101.
 pub fn fe_state_net_news_on_widget_notify(c: &mut Cpu) {
@@ -6433,7 +7411,6 @@ pub fn fe_state_net_news_on_widget_notify(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 // ---------------------------------------------------------------------------
 // Small register helpers.
 
@@ -6443,13 +7420,11 @@ pub(crate) fn p_5(base: u64, off: u32) -> u32 {
     (base as u32).wrapping_add(off)
 }
 
-
 /// `lw_3 a` through the CPU's load path.
 #[inline(always)]
 pub(crate) fn lw_3(c: &mut Cpu, a: u32) -> u64 {
     Addr(a).lw(c)
 }
-
 
 // ---------------------------------------------------------------------------
 // Front-end state: net messenger.
@@ -6459,7 +7434,6 @@ pub(crate) fn lw_3(c: &mut Cpu, a: u32) -> u64 {
 /// compares `elapsed - 1 < 59`, i.e. refreshes once `elapsed` reaches the
 /// period.
 const NET_MESSENGER_REFRESH_FRAMES: u32 = 60;
-
 
 /// `void cFEStateNetMessenger_Update(self)` (0x1a3fe0): refresh the player
 /// list when a second has passed since the last refresh, then poll the net
@@ -6500,7 +7474,6 @@ pub fn fe_state_net_messenger_update(c: &mut Cpu) {
         Ok(())
     });
 }
-
 
 /// `void cFEStateNetMessenger_OnFindUserResult(self, a1, a2)` (0x1a4fb0):
 /// show the find-user error for the "user not found" reply, otherwise hand
@@ -6551,7 +7524,6 @@ pub fn fe_state_net_messenger_on_find_user_result(c: &mut Cpu) {
     });
 }
 
-
 /// `void cFEStateNetMessenger_SetPlayerMenuSelection(self, int idx)`
 /// (0x1a6c40): select entry `idx` in the menu named by the messenger's hash.
 pub fn fe_state_net_messenger_set_player_menu_selection(c: &mut Cpu) {
@@ -6594,7 +7566,6 @@ pub fn fe_state_net_messenger_set_player_menu_selection(c: &mut Cpu) {
     });
 }
 
-
 /// `void NetFEState_Update(NetFEState* self)` (0x1a8770): two virtual hooks,
 /// then the shared UI update and the net event pump.
 pub fn net_fe_state_update(c: &mut Cpu) {
@@ -6629,7 +7600,6 @@ pub fn net_fe_state_update(c: &mut Cpu) {
     });
 }
 
-
 /// `void NetFEState_OpenKeyboardStr(self, a1, str, a3, a4, a5)` (0x1a9090):
 /// create the popup, then set its static text and its initial text.
 pub fn net_fe_state_open_keyboard_str(c: &mut Cpu) {
@@ -6661,7 +7631,6 @@ pub fn net_fe_state_open_keyboard_str(c: &mut Cpu) {
         Ok(())
     });
 }
-
 
 /// `void NetFEState_OpenKeyboardTextId(self, a1, id, a3, a4, a5)` (0x1a9150):
 /// the same popup setup with a static text id instead of a string.
@@ -6695,7 +7664,6 @@ pub fn net_fe_state_open_keyboard_text_id(c: &mut Cpu) {
     });
 }
 
-
 /// `void cFEStateNetConfig_StartCardScan(self)` (0x1b5268): reset the card
 /// status widgets and open the "checking card" popup.
 pub fn fe_state_net_config_start_card_scan(c: &mut Cpu) {
@@ -6727,7 +7695,6 @@ pub fn fe_state_net_config_start_card_scan(c: &mut Cpu) {
         Ok(())
     });
 }
-
 
 /// `int cFEStateNetAccountMem_PopupIdToState(int id)` (0x1b8890): map an
 /// account-memory popup id to the front-end state that owns it.
@@ -6776,7 +7743,6 @@ pub fn fe_state_net_account_mem_popup_id_to_state(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void cFEStateCreateStep1_SetEmailText(self)` (0x1b96e0): find the email
 /// widget and push the current email string into it.
 pub fn fe_state_create_step1_set_email_text(c: &mut Cpu) {
@@ -6811,7 +7777,6 @@ pub fn fe_state_create_step1_set_email_text(c: &mut Cpu) {
         Ok(())
     });
 }
-
 
 /// The shared "init screen by hash" body of the front-end state/overlay
 /// constructors: hash the name, look the screen up in the engine, store it at
@@ -6848,7 +7813,6 @@ pub(crate) fn ui_init_screen(c: &mut Cpu, base: u32, tag: u32) -> Flow {
     Ok(())
 }
 
-
 /// One of the two password-text setters: hash the label, find the UI text
 /// object on the created screen and mask the string stored at `self + 0x5c`
 /// into it.
@@ -6883,12 +7847,10 @@ pub(crate) fn set_password_text(c: &mut Cpu, base: u32, tag: u32, list_off: u32)
     Ok(())
 }
 
-
 /// `void FEScreenBlank_Init(void* self)` (0x1abfa8).
 pub fn fe_screen_blank_init(c: &mut Cpu) {
     guest(c, |c| ui_init_screen(c, 0x001a_bfa8, 0x004a_1a78))
 }
-
 
 /// `void cFEStateSelectPersona_v33(void* self, void* a1, int a2)` (0x1ad9c8):
 /// on the "create" child event ask the lobby manager for the persona list,
@@ -6927,12 +7889,10 @@ pub fn cfe_state_select_persona_v33(c: &mut Cpu) {
     })
 }
 
-
 /// `void cFEStateAuthDNASError_Init(void* self)` (0x1b6b50).
 pub fn cfe_state_auth_dnas_error_init(c: &mut Cpu) {
     guest(c, |c| ui_init_screen(c, 0x001b_6b50, 0x0046_42b0))
 }
-
 
 /// `void cFEStateNetAccountMem_UpdateState16(void* self)` (0x1b7bc0):
 /// 0x10 clears the account strings and moves to state 0x18; 0x11 moves to
@@ -6971,18 +7931,15 @@ pub fn cfe_state_net_account_mem_update_state16(c: &mut Cpu) {
     })
 }
 
-
 /// `void cFEStateCreateStep1_SetPasswordText(void* self)` (0x1b9610).
 pub fn cfe_state_create_step1_set_password_text(c: &mut Cpu) {
     guest(c, |c| set_password_text(c, 0x001b_9610, 0x0046_2ba0, 4))
 }
 
-
 /// `void cFEStateCreateStep1_SetConfirmPasswordText(void* self)` (0x1b9678).
 pub fn cfe_state_create_step1_set_confirm_password_text(c: &mut Cpu) {
     guest(c, |c| set_password_text(c, 0x001b_9678, 0x0046_47f8, 8))
 }
-
 
 /// `void cFEStateLobbyMenu_OnCreateRoomPopupEvent(void* self, void* a1, int a2)`
 /// (0x1bdcf8).
@@ -7020,12 +7977,10 @@ pub fn cfe_state_lobby_menu_on_create_room_popup_event(c: &mut Cpu) {
     })
 }
 
-
 /// `void cFEStateNetCreateRoomPopup_Init(void* self)` (0x1be828).
 pub fn cfe_state_net_create_room_popup_init(c: &mut Cpu) {
     guest(c, |c| ui_init_screen(c, 0x001b_e828, 0x0046_51e0))
 }
-
 
 /// A `gp_7`-relative global address.
 #[inline(always)]
@@ -7033,20 +7988,17 @@ pub(crate) fn gp_7(c: &Cpu, off: i32) -> u32 {
     abi::r32(c, GP).wrapping_add(off as u32)
 }
 
-
 /// `lw` at `base + off`.
 #[inline(always)]
 pub(crate) fn lw_at_2(c: &mut Cpu, base: u32, off: u32) -> u64 {
     Addr(p(base, off)).lw(c)
 }
 
-
 /// `lw` at `base + off` as a 32-bit value.
 #[inline(always)]
 pub(crate) fn u32_at(c: &mut Cpu, base: u32, off: u32) -> u32 {
     lw_at_2(c, base, off) as u32
 }
-
 
 // ---------------------------------------------------------------------------
 // Front end: net messenger creation and screen initialisation.
@@ -7086,7 +8038,6 @@ pub fn c_fe_state_net_messenger_ctor(c: &mut Cpu) {
     })
 }
 
-
 /// `NetFEState_OpenMessenger(state)` 0x1a9b58: allocate and construct the
 /// net messenger, tag it, and add it to the state's messenger list.
 pub fn net_fe_state_open_messenger(c: &mut Cpu) {
@@ -7125,7 +8076,6 @@ pub fn net_fe_state_open_messenger(c: &mut Cpu) {
     })
 }
 
-
 /// `cFEStateCreateStep1_RestoreAccountInfo(this)` 0x1ba218: copy the three
 /// saved account strings back into the form object and restore its two
 /// scalar fields.
@@ -7161,7 +8111,6 @@ pub fn c_fe_state_create_step1_restore_account_info(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `cFEStateNetQuickMessages_Init(this)` 0x1c2138: add the quick-messages
 /// screen, play its first frame and clear the message list.
@@ -7202,7 +8151,6 @@ pub fn c_fe_state_net_quick_messages_init(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `cFEStateAuthDNASError_OnWidgetAction(self, a1, msg)` 0x1b6e40: 5/6 pick the
 /// error dialog's option 0xf, 7/8 do nothing, everything else forwards to the
@@ -7259,7 +8207,6 @@ pub fn c_fe_state_auth_dnas_error_on_widget_action(c: &mut Cpu) {
     })
 }
 
-
 /// `cFEStateCreateStep1_ValidateFields(self)` 0x1ba110: validate account name,
 /// password and e-mail in that order, stopping at the first failure.
 pub fn c_fe_state_create_step1_validate_fields(c: &mut Cpu) {
@@ -7306,7 +8253,6 @@ pub fn c_fe_state_create_step1_validate_fields(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `cFEStateCreateStep2_GetDaysInMonth(self, month, year)` 0x1bb9b0: days in
 /// the month, 29 for a leap February.
@@ -7355,13 +8301,11 @@ pub fn c_fe_state_create_step2_get_days_in_month(c: &mut Cpu) {
     })
 }
 
-
 /// A `gp_8`-relative global.
 #[inline(always)]
 pub(crate) fn gp_8(c: &Cpu, off: i32) -> u32 {
     r32(c, GP).wrapping_add(off as u32)
 }
-
 
 // ---------------------------------------------------------------------------
 // Front-end state helpers.
@@ -7410,7 +8354,6 @@ pub fn c_fe_state_online_character_select_on_quit_popup_event(c: &mut Cpu) {
     })
 }
 
-
 /// `cFEStateAuthDNASError* ctor(self, a1, a2, a3, a4, a5)` (0x1b6ab8): the
 /// five-argument net-front-end state constructor with the fields the auth
 /// state adds.
@@ -7446,7 +8389,6 @@ pub fn c_fe_state_auth_dnas_error_ctor(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `cFEStateCreateStep2::OnParentEmailEntered(self, a1, kind)` (0x1bb0e8):
 /// on the `0xf` child event, hand the entered email to the account and
@@ -7488,7 +8430,6 @@ pub fn c_fe_state_create_step2_on_parent_email_entered(c: &mut Cpu) {
     })
 }
 
-
 /// The shared body of the three create-step-2 selection setters: hash the
 /// label, find the list box on the created screen, look the object's value
 /// up in it and select that row.
@@ -7526,14 +8467,12 @@ pub(crate) fn step2_set_selection(c: &mut Cpu, entry: u32, tag: u32, value_off: 
     Ok(())
 }
 
-
 /// `cFEStateCreateStep2::SetMonthSelection(self)` (0x1bb2d0).
 pub fn c_fe_state_create_step2_set_month_selection(c: &mut Cpu) {
     guest(c, |c| {
         step2_set_selection(c, 0x001b_b2d0, 0x004a_1bd8, 0x28)
     })
 }
-
 
 /// `cFEStateCreateStep2::SetDaySelection(self)` (0x1bb340).
 pub fn c_fe_state_create_step2_set_day_selection(c: &mut Cpu) {
@@ -7542,14 +8481,12 @@ pub fn c_fe_state_create_step2_set_day_selection(c: &mut Cpu) {
     })
 }
 
-
 /// `cFEStateCreateStep2::SetGenderSelection(self)` (0x1bb440).
 pub fn c_fe_state_create_step2_set_gender_selection(c: &mut Cpu) {
     guest(c, |c| {
         step2_set_selection(c, 0x001b_b440, 0x0046_4a18, 0x34)
     })
 }
-
 
 /// The shared body of the `*_v32` presence pushers: make sure the buddy
 /// manager exists, reconnect when it is disconnected, disconnect the lobby
@@ -7596,24 +8533,20 @@ pub(crate) fn presence_v32(c: &mut Cpu, entry: u32, kind: u64) -> Flow {
     Ok(())
 }
 
-
 /// `cFEStateLobbyMenu_v32(self)` (0x1bcca8): push presence kind 2.
 pub fn c_fe_state_lobby_menu_v32(c: &mut Cpu) {
     guest(c, |c| presence_v32(c, 0x001b_cca8, 2))
 }
-
 
 /// `cFEStateStats_v32(self)` (0x1c2e70): push presence kind 5.
 pub fn c_fe_state_stats_v32(c: &mut Cpu) {
     guest(c, |c| presence_v32(c, 0x001c_2e70, 5))
 }
 
-
 /// `cFEStateNetNews_v32(self)` (0x1c5108): push presence kind 4.
 pub fn c_fe_state_net_news_v32(c: &mut Cpu) {
     guest(c, |c| presence_v32(c, 0x001c_5108, 4))
 }
-
 
 /// `cFEStateLogin::Init(self)` (0x1beed0): create the state's screen by tag,
 /// start its thread and initialise the net state.
@@ -7654,7 +8587,6 @@ pub fn c_fe_state_login_init(c: &mut Cpu) {
     })
 }
 
-
 /// `cFEStateStats::Init(self)` (0x1c2e00): create the stats screen, start
 /// its thread and refresh the result rows.
 pub fn c_fe_state_stats_init(c: &mut Cpu) {
@@ -7694,7 +8626,6 @@ pub fn c_fe_state_stats_init(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Small register helpers.
 
@@ -7704,13 +8635,11 @@ pub(crate) fn at_2(c: &Cpu, reg: usize, off: u32) -> u32 {
     (c.g[reg][0] as u32).wrapping_add(off)
 }
 
-
 /// A `gp`-relative global.
 #[inline(always)]
 pub(crate) fn gpr(c: &Cpu, off: i32) -> u32 {
     (c.g[GP][0] as u32).wrapping_add(off as u32)
 }
-
 
 /// `void NetFEState_OnMessengerPopupEvent(NetFEState* self, void* a1, int
 /// event)` (0x1a9268): the messenger popup's confirm event allocates and
@@ -7751,7 +8680,6 @@ pub fn net_fe_state_on_messenger_popup_event(c: &mut Cpu) {
     })
 }
 
-
 /// `void NetFEState_ShowWaitPlayerPopup(NetFEState* self)` (0x1ab108):
 /// configure and show the "waiting for players" popup.
 pub fn net_fe_state_show_wait_player_popup(c: &mut Cpu) {
@@ -7786,7 +8714,6 @@ pub fn net_fe_state_show_wait_player_popup(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void cFEStateChallengePopup_v32(cFEStateChallengePopup* self)` (0x1aebf0):
 /// ensure the buddy manager exists and is connected, disconnect the lobby
@@ -7836,7 +8763,6 @@ pub fn c_fe_state_challenge_popup_v32(c: &mut Cpu) {
     })
 }
 
-
 /// `void cFEStateChallengeReceivedPopup_TransitionIn(cFEState* self, void*
 /// a1)` (0x1b0670): finish the popup transition and, when a challenge is
 /// given, fill in its text.
@@ -7878,7 +8804,6 @@ pub fn c_fe_state_challenge_received_popup_transition_in(c: &mut Cpu) {
     })
 }
 
-
 /// `void* cFEStateCreateStep1_ctor(cFEStateCreateStep1* self, void* a1, int
 /// a2)` (0x1b88f0): construct the net front-end state and install the
 /// create-step-1 class and mode.
@@ -7918,7 +8843,6 @@ pub fn c_fe_state_create_step1_ctor(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void cFEStateCreateStep1_SetSelection(cFEState* self, u32 name_hash,
 /// u32 field)` (0x1b9740): select the list-box item matching the state's
@@ -7965,14 +8889,12 @@ pub(crate) fn create_step1_selection(
     Ok(())
 }
 
-
 /// `void cFEStateCreateStep1_SetInformSelection(cFEState* self)` (0x1b9740).
 pub fn c_fe_state_create_step1_set_inform_selection(c: &mut Cpu) {
     guest(c, |c| {
         create_step1_selection(c, 0x4647_80, 0x38, 0x001b_9760, 0x001b_976c, 0x001b_9790)
     })
 }
-
 
 /// `void cFEStateCreateStep1_SetShareInfoSelection(cFEState* self)`
 /// (0x1b97b0).
@@ -7982,14 +8904,12 @@ pub fn c_fe_state_create_step1_set_share_info_selection(c: &mut Cpu) {
     })
 }
 
-
 /// `void cFEStateCreateStep2_SetLegalSelection(cFEState* self)` (0x1bb4b0).
 pub fn c_fe_state_create_step2_set_legal_selection(c: &mut Cpu) {
     guest(c, |c| {
         create_step1_selection(c, 0x464a_08, 0x40, 0x001b_b4d0, 0x001b_b4dc, 0x001b_b500)
     })
 }
-
 
 /// `void cFEStateCreateDuplicate_SubmitAccount(cFEState* self)` (0x1bc290):
 /// configure and show the account-exists popup, then create the account.
@@ -8025,7 +8945,6 @@ pub fn c_fe_state_create_duplicate_submit_account(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void cFEStateLobbyMenu_ClampRoomSelections(cFEState* self)` (0x1be038):
 /// keep each of the four room-list selections inside its item count.
@@ -8081,7 +9000,6 @@ pub fn c_fe_state_lobby_menu_clamp_room_selections(c: &mut Cpu) {
     })
 }
 
-
 /// `void cFEStateNetNews_Init(cFEStateNetNews* self)` (0x1c5098): create the
 /// net-news screen, start its thread and request the news list.
 pub fn c_fe_state_net_news_init(c: &mut Cpu) {
@@ -8120,7 +9038,6 @@ pub fn c_fe_state_net_news_init(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Front-end states.
@@ -8168,7 +9085,6 @@ pub fn c_fe_state_net_messenger_init(c: &mut Cpu) {
     })
 }
 
-
 /// `cFEStateNetMessenger_v33` (0x1A4928): on a child event with key 0xF, open
 /// the buddy action popup for the selected user if their name matches the
 /// "me" name; every other event goes to the base child-event handler.
@@ -8215,7 +9131,6 @@ pub fn c_fe_state_net_messenger_v33(c: &mut Cpu) {
     })
 }
 
-
 /// `cFEStateChatRoom_OnGoToCharSelectEvent` (0x1B3760): close unpinned popups,
 /// allocate and construct the character-select screen, and switch to it.
 pub fn c_fe_state_chat_room_on_go_to_char_select_event(c: &mut Cpu) {
@@ -8258,7 +9173,6 @@ pub fn c_fe_state_chat_room_on_go_to_char_select_event(c: &mut Cpu) {
     })
 }
 
-
 /// `cFEStateChatRoom_OnGoToCharSelectEvent_2` (0x1B37D8): a second entry point
 /// of the same chat-room transition (identical body).
 pub fn c_fe_state_chat_room_on_go_to_char_select_event_2(c: &mut Cpu) {
@@ -8300,7 +9214,6 @@ pub fn c_fe_state_chat_room_on_go_to_char_select_event_2(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `cFEStateOnlineMainMenu_v31` (0x1C0358): the online main menu's event
 /// filter: 0xEF is swallowed, 0xF3 opens the character select screen, and
@@ -8352,7 +9265,6 @@ pub fn c_fe_state_online_main_menu_v31(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Helpers.
 
@@ -8362,20 +9274,17 @@ pub(crate) fn low_2(c: &Cpu, reg: usize) -> u32 {
     c.g[reg][0] as u32
 }
 
-
 /// `lw off(reg)`.
 #[inline]
 pub(crate) fn lw_r(c: &mut Cpu, reg: usize, off: u32) -> u64 {
     Addr(low_2(c, reg).wrapping_add(off)).lw(c)
 }
 
-
 /// `lh off(reg)` (sign-extended).
 #[inline]
 pub(crate) fn lh_r(c: &mut Cpu, reg: usize, off: u32) -> u64 {
     Addr(low_2(c, reg).wrapping_add(off)).lh(c)
 }
-
 
 /// `sw off(reg)`.
 #[inline]
@@ -8384,14 +9293,12 @@ pub(crate) fn sw_r(c: &mut Cpu, reg: usize, off: u32, v: u64) {
     c.sw(a, v);
 }
 
-
 /// `sb off(reg)`.
 #[inline]
 pub(crate) fn sb_r(c: &mut Cpu, reg: usize, off: u32, v: u64) {
     let a = low_2(c, reg).wrapping_add(off);
     c.sb(a, v);
 }
-
 
 /// `func_001C2D18` (0x1c2d18): the network statistics popup constructor. Runs
 /// `NetFEState_ctor`, installs vtable `0x468278`, sets `+0xc = 0x42` and
@@ -8443,7 +9350,6 @@ pub fn c_fe_state_stats_ctor(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Front-end state helpers.
@@ -8504,7 +9410,6 @@ pub fn c_fe_state_challenge_received_popup_v32(c: &mut Cpu) {
     })
 }
 
-
 /// `func_001BCC30` (0x1bcc30): `cFEStateLobbyMenu::Init`. Creates the screen
 /// widget named `0x464da0` in `this->+0x10` (`0x397cc0`), stores it at `+0x40`
 /// and, if created, shows it (`0x39c870`) and calls the state's `vtable[0xe0]`
@@ -8553,7 +9458,6 @@ pub fn c_fe_state_lobby_menu_init(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `func_001BDF60` (0x1bdf60): `cFEStateLobbyMenu::ShowRoomTab`. Hides all
 /// room tabs (`0x1bdfd8`) and then walks the four tab slots at `this+0x730`
@@ -8611,7 +9515,6 @@ pub fn c_fe_state_lobby_menu_show_room_tab(c: &mut Cpu) {
     })
 }
 
-
 /// `func_001C0FC0` (0x1c0fc0): `cFEStateNetQuickPlayPopup::Init`. Creates the
 /// popup named `0x4657e0` in `this->+0x10`, stores it at `+0x40`, shows it
 /// (`0x39c870`) and copies the 0x20-byte default string at `0x5308b8` into the
@@ -8659,7 +9562,6 @@ pub fn c_fe_state_net_quick_play_popup_init(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `func_001A98B8` (0x1a98b8): `NetFEState_MakePasswordMask`. Masks the
 /// password at `this+0x5c` with `'*'`: every character of the `strlen`
@@ -8727,7 +9629,6 @@ pub fn net_fe_state_make_password_mask(c: &mut Cpu) {
     })
 }
 
-
 /// `void cFEAsyncManager_Load3PeakPic(self, slot, param)` (0x1a36e8): name the
 /// slot's 0x11c-byte file entry, store the parameter and mark it loading.
 pub fn fe_async_manager_request_texture(c: &mut Cpu) {
@@ -8768,7 +9669,6 @@ pub fn fe_async_manager_request_texture(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Front end / net.
@@ -8836,7 +9736,6 @@ pub fn fe_set_online_mode(c: &mut Cpu) {
     })
 }
 
-
 /// `void NetFE_ShowPlayerConnQuality(cUIScreen* screen, player*)`
 /// (0x001afd88): fill the connection-quality text and icons.
 pub fn net_fe_show_player_conn_quality(c: &mut Cpu) {
@@ -8879,7 +9778,6 @@ pub fn net_fe_show_player_conn_quality(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void cFEStateLobbyMenu_OnNetResult(self, msg, a2)` (0x001bd848): dispatch
 /// a net result to the create/join room handlers or the generic handler.
@@ -8927,7 +9825,6 @@ pub fn c_fe_state_lobby_menu_on_net_result(c: &mut Cpu) {
     })
 }
 
-
 /// `cFEStateNetQuickPlayPopup* ctor(self)` (0x001c0f40): the net quick-play
 /// popup state's constructor.
 pub fn c_fe_state_net_quick_play_popup_ctor(c: &mut Cpu) {
@@ -8956,7 +9853,6 @@ pub fn c_fe_state_net_quick_play_popup_ctor(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void cFEStateNetSSXWorld_Init(self)` (0x001c1c90): create the net SSX
 /// World screen and (when disconnected) its popup.
@@ -9005,7 +9901,6 @@ pub fn c_fe_state_net_ssx_world_init(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Small helpers mirroring the generated code's idioms.
 
@@ -9015,13 +9910,11 @@ pub(crate) fn gpa(c: &Cpu, off: u32) -> u32 {
     abi::r32(c, GP).wrapping_add(off)
 }
 
-
 /// A `gp`-relative global written with a negative offset.
 #[inline(always)]
 pub(crate) fn gpn(c: &Cpu, off: u32) -> u32 {
     abi::r32(c, GP).wrapping_sub(off)
 }
-
 
 /// `void NetFEState_ToggleBlockUser(NetFEState* s, void* a, void* b)`
 /// (0x001abc50): make sure the buddy manager exists and is connected, then
@@ -9077,7 +9970,6 @@ pub fn net_fe_state_toggle_block_user(c: &mut Cpu) {
     })
 }
 
-
 /// `void NetFEState_ToggleMessengerBuddy(NetFEState* s, void* a, void* b)`
 /// (0x001abe58): as [`net_fe_state_toggle_block_user`] but changing the entry
 /// to kind 0 (a messenger buddy).
@@ -9131,7 +10023,6 @@ pub fn net_fe_state_toggle_messenger_buddy(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void cFEStateChatRoom_v32(cFEStateChatRoom* s)` (0x001b22a0): ensure the
 /// buddy manager exists and is connected, then set the local presence to
@@ -9187,7 +10078,6 @@ pub fn c_fe_state_chat_room_v32(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void cFEStateChatRoom_OnChildEvent(cFEStateChatRoom* s, UIEvent* ev)`
 /// (0x001b3850): dispatch the event id at `ev+0x18` to the buddy-action
@@ -9252,7 +10142,6 @@ pub fn c_fe_state_chat_room_on_child_event(c: &mut Cpu) {
     })
 }
 
-
 /// `void NetConfigAuthPopup_dtor(NetConfigAuthPopup* p, int flags)`
 /// (0x001b6368): install the class vtable, free the auth buffers, then free
 /// the popup's own buffer and run the base destructor.
@@ -9307,7 +10196,6 @@ pub fn net_config_auth_popup_dtor(c: &mut Cpu) {
     })
 }
 
-
 /// `void cFEStateCreateDuplicate_Init(cFEStateCreateDuplicate* s)`
 /// (0x001bbd60): hash the screen name, create the screen through the engine,
 /// start its thread, then fill in the name suggestions and activate.
@@ -9352,7 +10240,6 @@ pub fn c_fe_state_create_duplicate_init(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void cFEStateNetMessenger_ClearNameList(self)` (0x1a5450): drop the
 /// queued player names from `self+0x6e8 .. +0x6ec`, one `lw` at a time.
@@ -9432,7 +10319,6 @@ pub fn cfestatenetmessenger_clear_name_list(c: &mut Cpu) {
     })
 }
 
-
 /// `void cFEStateOnlineCharacterSelect_ShowCharacter(self, char, opponent)`
 /// (0x1b1b10): show the character rows and their stats, showing the opponent
 /// char on the current slot when one is selected.
@@ -9505,7 +10391,6 @@ pub fn cfestateonlinecharacterselect_show_character(c: &mut Cpu) {
     })
 }
 
-
 /// `void cFEStateLobbyMenu_PromptRoomPassword(self, a1, event)` (0x1bdd60):
 /// when the child event is 0xf, open the room-password keyboard; otherwise
 /// forward the event to the state base.
@@ -9566,13 +10451,11 @@ pub fn cfestatelobbymenu_prompt_room_password(c: &mut Cpu) {
     })
 }
 
-
 /// A `gp_11`-relative global.
 #[inline(always)]
 pub(crate) fn gp_11(c: &Cpu, off: i32) -> u32 {
     r32(c, GP).wrapping_add(off as u32)
 }
-
 
 // ---------------------------------------------------------------------------
 // Front-end async manager.
@@ -9636,7 +10519,6 @@ pub fn fe_async_manager_free_all(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Network configuration popup.
@@ -9765,7 +10647,6 @@ pub fn c_fe_state_create_step1_init(c: &mut Cpu) {
     })
 }
 
-
 /// `void cFEStateCreateStep1_DetectChanges(cFEStateCreateStep1* self)`
 /// (0x1ba358): compare the two account names and ids; set the matching
 /// changed-flags.
@@ -9828,7 +10709,6 @@ pub fn c_fe_state_create_step1_detect_changes(c: &mut Cpu) {
     })
 }
 
-
 /// `void cFEStateCreateDuplicate_OnChildEvent(cFEStateCreateDuplicate* self,
 /// ChildEvent* ev, int, int)` (0x1bc6a0): dispatch the child's event word to
 /// the account, error, created-callbacks.
@@ -9854,7 +10734,8 @@ pub fn c_fe_state_create_duplicate_on_child_event(c: &mut Cpu) {
                 if is_created {
                     c.cycles += 4;
                     c.g[RA][0] = sx(0x001b_c70c);
-                    callee::FE_STATE_CREATE_DUPLICATE_ON_CREATED_POPUP_EVENT.call(c, 0x001b_c70c)?;
+                    callee::FE_STATE_CREATE_DUPLICATE_ON_CREATED_POPUP_EVENT
+                        .call(c, 0x001b_c70c)?;
                 } else {
                     c.cycles += 2;
                     c.cycles += 3;
@@ -9885,7 +10766,6 @@ pub fn c_fe_state_create_duplicate_on_child_event(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `int cFEStateLobbyMenu_OnWidgetNotify(cFEState* self, void* obj, int msg,
 /// int)` (0x1bdc18): apply lobby-room updates for the two child kinds and
@@ -9946,7 +10826,6 @@ pub fn c_fe_state_lobby_menu_on_widget_notify(c: &mut Cpu) {
     })
 }
 
-
 /// `void cFEStateOnlineAgreement_Update(cFEStateOnlineAgreement* self)`
 /// (0x1c0a80): while the agreement has queued ids, look the text object up
 /// and set the next id; then update the base state.
@@ -10000,13 +10879,11 @@ pub fn c_fe_state_online_agreement_update(c: &mut Cpu) {
     })
 }
 
-
 /// `lbu` of `base + off`.
 #[inline(always)]
 pub(crate) fn lbu_at(c: &mut Cpu, base: u64, off: u32) -> u64 {
     Addr(at_3(base as u32, off)).lbu(c)
 }
-
 
 /// `void FEAsyncManager_RequestPeakMap(FEAsyncManager* self, int index,
 /// u32 map, int state)` (0x1a3768): format the peak-map path into the request
@@ -10055,7 +10932,6 @@ pub fn fe_async_manager_request_peak_map(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void cFEStateNetMessenger_SetRowName(cFEStateNetMessenger* self, u32 row,
 /// char* text, u32 id)` (0x1a6618): label a net-messenger list row.
@@ -10112,7 +10988,6 @@ pub fn c_fe_state_net_messenger_set_row_name(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `int cFEStateCreateStep1_IsEmailFormatValid(cFEStateCreateStep1* self,
 /// char* email)` (0x1b9cd8): true when the address has both an `@` and a
@@ -10187,7 +11062,6 @@ pub fn c_fe_state_create_step1_is_email_format_valid(c: &mut Cpu) {
     })
 }
 
-
 /// `void cFEStateCreateStep2_SetYearSelection(cFEStateCreateStep2* self)`
 /// (0x1bb3b0): label the year list box with the current year and select the
 /// rider's year.
@@ -10239,13 +11113,11 @@ pub fn c_fe_state_create_step2_set_year_selection(c: &mut Cpu) {
     })
 }
 
-
 /// A `gp_12`-relative global.
 #[inline(always)]
 pub(crate) fn gp_12(c: &Cpu, off: i32) -> u32 {
     r32(c, GP).wrapping_add(off as u32)
 }
-
 
 /// `void cFEStateNetMessenger_OnChildEvent(self, msg, a2)` (0x1a4c58):
 /// dispatch a child message by its kind: 0x809/0x80b/0x80c go to the
@@ -10307,7 +11179,6 @@ pub fn cfe_state_net_messenger_on_child_event(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void* NetFEState_v26(self, msg)` (0x1a89b0): unless the message's kind is
 /// one of the messenger's own (0x31, 0x33, 0x4d, 0x4e) or the FE library is
@@ -10396,7 +11267,6 @@ pub fn net_fe_state_v26(c: &mut Cpu) {
     })
 }
 
-
 /// `int cFEStateOnlineCharacterSelect_TransitionIn(self, int a1)` (0x1b1068):
 /// if entering, show the local character, ask the BE interface for
 /// interface 7, and if a remote player is present also show their character;
@@ -10451,7 +11321,6 @@ pub fn cfe_state_online_character_select_transition_in(c: &mut Cpu) {
     })
 }
 
-
 /// `void cFEStateCreateStep2_SubmitAccount(self, int a1)` (0x1ba9f8): fill in
 /// and show the network popup (a "connecting" message), then either hide the
 /// lobby overlay or show it.
@@ -10503,7 +11372,6 @@ pub fn cfe_state_create_step2_submit_account(c: &mut Cpu) {
     })
 }
 
-
 /// `void NetFEState_ShowMaxBuddiesPopup(self)` (0x1abed8): fill and show the
 /// "maximum buddies" network popup.
 pub fn net_fe_state_show_max_buddies_popup(c: &mut Cpu) {
@@ -10549,7 +11417,6 @@ pub fn net_fe_state_show_max_buddies_popup(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void cFEUseExistingAccount_Init(self)` (0x1ac0b8): create the account
 /// screen, play it, clear the two global strings and re-init the net state.
@@ -10601,13 +11468,11 @@ pub fn c_fe_use_existing_account_init(c: &mut Cpu) {
     })
 }
 
-
 /// A `gp_13`-relative global.
 #[inline(always)]
 pub(crate) fn gp_13(c: &Cpu, off: i32) -> u32 {
     c.g[GP][0] as u32 + off as u32
 }
-
 
 // ---------------------------------------------------------------------------
 // Front-end / online state handlers.
@@ -10662,7 +11527,6 @@ pub fn cfe_state_select_persona_on_save_account_popup_event(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void cFEStateOnlineCharacterSelect_Init(self)` (0x1b0fb0): add the screen
 /// by hash, play its first frame and show the stat line of the 30 characters.
@@ -10725,7 +11589,6 @@ pub fn cfe_state_online_character_select_init(c: &mut Cpu) {
     })
 }
 
-
 /// `void cFEStateNetConfig_Init(self)` (0x1b40d0): add the screen by hash,
 /// optionally drop the network adapter interface, then start the card scan
 /// and the network config module.
@@ -10781,7 +11644,6 @@ pub fn cfe_state_net_config_init(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void cFEStateNetConfig_OnRetryPopupEvent(self, child, event)` (0x1b4c40):
 /// the checking-card popup's outcome selects whether the config state is
@@ -10861,7 +11723,6 @@ pub fn cfe_state_net_config_on_retry_popup_event(c: &mut Cpu) {
     })
 }
 
-
 /// `void cFEStateCreateStep1_TransitionIn(self, enabled)` (0x1b8a08): refresh
 /// the account text fields and, if the state owns a create-step popup, tell
 /// it whether every field is filled.
@@ -10912,7 +11773,6 @@ pub fn cfe_state_create_step1_transition_in(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void cFEStateLogin_OnChildEvent(self, child, event)` (0x1bf6c0): dispatch
 /// the login state's child events (account-memory popup, disconnect popup,
@@ -10984,13 +11844,11 @@ pub fn cfe_state_login_on_child_event(c: &mut Cpu) {
     })
 }
 
-
 /// `sll x, n` (32-bit, sign-extended).
 #[inline(always)]
 pub(crate) fn shl32(x: u64, n: u32) -> u64 {
     sx((x as u32) << n)
 }
-
 
 /// `sra x, n`.
 #[inline(always)]
@@ -10998,13 +11856,11 @@ pub(crate) fn sra32(x: u64, n: u32) -> u64 {
     sx(((x as u32) as i32 >> n) as u32)
 }
 
-
 /// `addu x, y` (32-bit, sign-extended).
 #[inline(always)]
 pub(crate) fn add32(x: u64, y: u64) -> u64 {
     sx((x as u32).wrapping_add(y as u32))
 }
-
 
 /// `cFEStateNetMessenger_ShowLookingForSelf` (0x1a4d90): open the
 /// "looking for yourself" popup, configure its two option labels and show it
@@ -11061,7 +11917,6 @@ pub fn fe_net_messenger_show_looking_for_self(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `cFEStateNetMessenger_HasName` (0x1a56d0): true when the name string is
 /// one of the entries in the vector at `+0x6e8` (case-insensitive).
@@ -11132,7 +11987,6 @@ pub fn fe_net_messenger_has_name(c: &mut Cpu) {
     })
 }
 
-
 /// `cFEStateNetMessenger_FindNameStr` (0x1a5800): index of the name string in
 /// the vector at `+0x6e8` (case-insensitive), or -1.
 pub fn fe_net_messenger_find_name_str(c: &mut Cpu) {
@@ -11202,7 +12056,6 @@ pub fn fe_net_messenger_find_name_str(c: &mut Cpu) {
     })
 }
 
-
 /// `NetFEState_OnKeyboardPopupEvent` (0x1a94e0): keyboard-popup child events
 /// 0x15/0x16 dispatch to the text field's virtual handler (0x16 also clears
 /// the pending popup flag), everything else to the default child handler.
@@ -11262,7 +12115,6 @@ pub fn net_fe_state_on_keyboard_popup_event(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `cFEStateChatRoom_TransitionIn` (0x1b3490): hide the chat room's scroll
 /// parts and run each player list entry's virtual "transition in" handler,
@@ -11334,7 +12186,6 @@ pub fn fe_state_chat_room_transition_in(c: &mut Cpu) {
     })
 }
 
-
 /// `cFEStateOnlineAgreement_Init` (0x1c04a8): add the agreement screen by its
 /// hash name, start its thread and mark the terms text object dirty.
 pub fn fe_state_online_agreement_init(c: &mut Cpu) {
@@ -11398,7 +12249,6 @@ pub fn fe_state_online_agreement_init(c: &mut Cpu) {
     })
 }
 
-
 /// `cFEStateOnlineAgreement_v25` (0x1c0ea8): populate the agreement dialog's
 /// terms text and the two option rows.
 pub fn fe_state_online_agreement_v25(c: &mut Cpu) {
@@ -11452,7 +12302,6 @@ pub fn fe_state_online_agreement_v25(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Network front end.
@@ -11517,7 +12366,6 @@ pub fn net_fe_state_queue_net_event(c: &mut Cpu) {
     });
 }
 
-
 /// `void NetFEState_FillYesNoList(NetFEState* self, UIListBox* box, int mode)`
 /// (0x1a9a18): mark the box as having a background (bit 0x80 of `+0x14`), add
 /// the "yes" and "no" string ids (the first as the initial item) and select
@@ -11567,7 +12415,6 @@ pub fn net_fe_state_fill_yes_no_list(c: &mut Cpu) {
     });
 }
 
-
 /// `void NetFEState_FillOnOffList(NetFEState* self, UIListBox* box, int mode)`
 /// (0x1a9ab8): the same fill as `NetFEState_FillYesNoList` with the "on"/"off"
 /// string ids.
@@ -11615,7 +12462,6 @@ pub fn net_fe_state_fill_on_off_list(c: &mut Cpu) {
         Ok(())
     });
 }
-
 
 // ---------------------------------------------------------------------------
 // Front-end widgets.
@@ -11690,7 +12536,6 @@ pub fn c_fe_state_net_ssx_world_on_widget_created(c: &mut Cpu) {
     });
 }
 
-
 /// `void NetFEState_OnMemCardLoginPopupEvent(NetFEState*, void* event, int id)`
 /// (0x1a9438): on the login-popup result event (0x16), create a login state
 /// through the vtable at `self+8`, switch to it and forward the event;
@@ -11745,7 +12590,6 @@ pub fn net_fe_state_on_mem_card_login_popup_event(c: &mut Cpu) {
     });
 }
 
-
 // ---------------------------------------------------------------------------
 // Read-message popup.
 
@@ -11798,20 +12642,17 @@ pub fn c_fe_state_read_message_popup_add_sent_message(c: &mut Cpu) {
     });
 }
 
-
 /// `lw_5 reg + off`.
 #[inline(always)]
 pub(crate) fn lw_5(c: &mut Cpu, reg: usize, off: u32) -> u64 {
     Addr(at(c, reg, off)).lw(c)
 }
 
-
 /// `sw_4 reg + off, value`.
 #[inline(always)]
 pub(crate) fn sw_4(c: &mut Cpu, reg: usize, off: u32, v: u64) {
     Addr(at(c, reg, off)).sw(c, v);
 }
-
 
 // ---------------------------------------------------------------------------
 // Front-end / online state handlers.
@@ -11879,7 +12720,6 @@ pub fn cfe_use_existing_account_on_child_event(c: &mut Cpu) {
     })
 }
 
-
 /// `void cFEStateChallengePopup_ShowSetOptions(self)` (0x1af688): reset the
 /// settings lock, refresh the popup's unicode strings and re-apply the
 /// settings-locked state.
@@ -11933,7 +12773,6 @@ pub fn cfe_state_challenge_popup_show_set_options(c: &mut Cpu) {
     })
 }
 
-
 /// `cFEStateNetConfig* cFEStateNetConfig_ctor(this)` (0x1b3f78): base
 /// constructor, the state's vtable and lock fields, the mem-card handler.
 pub fn cfe_state_net_config_ctor(c: &mut Cpu) {
@@ -11982,7 +12821,6 @@ pub fn cfe_state_net_config_ctor(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void cFEStateCreateStep1_BackupAccountInfo(self)` (0x1ba178): copy the
 /// three account strings out of `self->account` (or release them when
@@ -12035,7 +12873,6 @@ pub fn cfe_state_create_step1_backup_account_info(c: &mut Cpu) {
         return Ok(());
     })
 }
-
 
 /// `void NetFEState_RefreshBuddyActionPopup(self, a1, a2)` (0x1ab3d0): if the
 /// buddy popup is open and selected, rebuild it from the stored popup.
@@ -12104,7 +12941,6 @@ pub fn net_fe_state_refresh_buddy_action_popup(c: &mut Cpu) {
     })
 }
 
-
 /// The shared epilogue of `NetFEState_RefreshBuddyActionPopup`: the inline
 /// `lq s0` plus the function's `+5` epilogue.
 pub(crate) fn refresh_popup_return(c: &mut Cpu, frame: Frame, before: u64) {
@@ -12116,7 +12952,6 @@ pub(crate) fn refresh_popup_return(c: &mut Cpu, frame: Frame, before: u64) {
     frame.restore_ra(c, 0);
     frame.close(c);
 }
-
 
 /// `u32 cFEUseExistingAccount_CheckEmail(self)` (0x1ac448): if the account
 /// email string is empty, configure and show the login popup; otherwise
@@ -12171,13 +13006,11 @@ pub fn cfe_use_existing_account_check_email(c: &mut Cpu) {
     })
 }
 
-
 /// A `gp_15`-relative global.
 #[inline(always)]
 pub(crate) fn gp_15(c: &Cpu, off: i32) -> u32 {
     r32(c, GP).wrapping_add(off as u32)
 }
-
 
 // ---------------------------------------------------------------------------
 // Front end.
@@ -12247,7 +13080,6 @@ pub fn cfe_challenge_received_popup_on_widget_action(c: &mut Cpu) {
     })
 }
 
-
 /// `void cFEStateOnlineCharacterSelect_ShowOpponentChar(self, int player)`
 /// (0x1b1760): look the opponent's name text up on the screen and set it from
 /// the character's display name, then flag the text visible.
@@ -12302,7 +13134,6 @@ pub fn cfe_online_character_select_show_opponent_char(c: &mut Cpu) {
     })
 }
 
-
 /// `void cFEStateCreateStep2_FillYearList(box, value)` (0x1bb798): format the
 /// value into the list box's year label and select its row.
 pub fn cfe_create_step2_fill_year_list(c: &mut Cpu) {
@@ -12351,7 +13182,6 @@ pub fn cfe_create_step2_fill_year_list(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void cFEStateOnlineMainMenu_Init(self)` (0x1bfbf8): create the state's
 /// screen, play its first frame, and update the net/menu systems.
@@ -12408,7 +13238,6 @@ pub fn cfe_online_main_menu_init(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void cFEStateNetQuickPlayPopup_SetOptionsHintVisible(self, int show)`
 /// (0x1c13e0): show/hide the popup's two text objects.
@@ -12470,7 +13299,6 @@ pub fn cfe_net_quick_play_popup_set_options_hint_visible(c: &mut Cpu) {
     })
 }
 
-
 /// `void cFEStateNetQuickMessages_OnResetPopupEvent(self, a1, int kind)`
 /// (0x1c2ba8): on kind 0xf clear the pending message, refresh the list and
 /// resend the event as 0xf; other kinds go to the base handler.
@@ -12526,7 +13354,6 @@ pub fn cfe_net_quick_messages_on_reset_popup_event(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Register and memory helpers.
 
@@ -12536,20 +13363,17 @@ pub(crate) fn at_5(base: u64, off: u32) -> u32 {
     (base as u32).wrapping_add(off)
 }
 
-
 /// `lw_6` of a 32-bit object field.
 #[inline(always)]
 pub(crate) fn lw_6(c: &mut Cpu, a: u32) -> u64 {
     Addr(a).lw(c)
 }
 
-
 /// A `gp_16`-relative global.
 #[inline(always)]
 pub(crate) fn gp_16(c: &Cpu, off: i32) -> u32 {
     abi::r32(c, GP).wrapping_add(off as u32)
 }
-
 
 // ---------------------------------------------------------------------------
 // Net messenger: "user found" popup.
@@ -12608,7 +13432,6 @@ pub fn net_fe_state_show_user_found(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Net FE state: disconnected / interrupted popup events.
@@ -12685,7 +13508,6 @@ pub fn net_fe_state_on_disconnected_popup_event(c: &mut Cpu) {
     })
 }
 
-
 /// `void NetFEState_OnNetInterruptedPopupEvent(self, a1, event)` (0x1a9710):
 /// the same for a network interruption, but to the net-config state.
 pub fn net_fe_state_on_net_interrupted_popup_event(c: &mut Cpu) {
@@ -12757,7 +13579,6 @@ pub fn net_fe_state_on_net_interrupted_popup_event(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Use-existing-account: password / account-name validation popups.
 
@@ -12820,7 +13641,6 @@ pub fn cfe_use_existing_account_check_password(c: &mut Cpu) {
     })
 }
 
-
 /// `int cFEUseExistingAccount_CheckAccountName(self)` (0x1ac360): the same
 /// for the account name (option text from the interface's `+0x48` string).
 pub fn cfe_use_existing_account_check_account_name(c: &mut Cpu) {
@@ -12879,7 +13699,6 @@ pub fn cfe_use_existing_account_check_account_name(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Chat room: open the keyboard for the message field.
@@ -12945,7 +13764,6 @@ pub fn cfe_state_chat_room_handle_input(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // ASCII sprintf wrappers (UTF-8 argument to UTF-16 output).
@@ -13018,7 +13836,6 @@ pub fn ustr_sprintf_ascii_fmt(c: &mut Cpu) {
     })
 }
 
-
 /// `int UStr_SprintfAsciiFmt_2(char* buf, const char* fmt, ...)` (0x2c27c0):
 /// the same as [`ustr_sprintf_ascii_fmt`].
 pub fn ustr_sprintf_ascii_fmt_2(c: &mut Cpu) {
@@ -13086,13 +13903,11 @@ pub fn ustr_sprintf_ascii_fmt_2(c: &mut Cpu) {
     })
 }
 
-
 /// The current stack pointer.
 #[inline(always)]
 pub(crate) fn sp_of(c: &Cpu) -> u64 {
     sx(crate::call::sp(c))
 }
-
 
 // ---------------------------------------------------------------------------
 // `cFEStateCreateStep2_FillGenderList` (0x1bb520): add the two gender strings
@@ -13148,7 +13963,6 @@ pub fn cfe_state_create_step2_fill_gender_list(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // `cFEStateNetCreateRoomPopup_ValidateRoomName` (0x1bec78): if the room-name
@@ -13209,7 +14023,6 @@ pub fn net_create_room_popup_validate_room_name(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Front end.
@@ -13286,7 +14099,6 @@ pub fn cfe_state_net_news_on_widget_action(c: &mut Cpu) {
     })
 }
 
-
 /// The `case 6` body of [`cfe_state_net_news_on_widget_action`]: allocate a
 /// 0x6d0-byte SSX World state, construct it and enter it.
 pub(crate) fn net_news_enter_ssx_world(c: &mut Cpu) -> Flow {
@@ -13305,7 +14117,6 @@ pub(crate) fn net_news_enter_ssx_world(c: &mut Cpu) -> Flow {
     call_ptr(c, 0x001a_8a40, 0x001c_53fc)?;
     Ok(())
 }
-
 
 /// `void cFEStateOnlineMainMenu_OnDisconnectPopupEvent(self, item, msg)`
 /// (0x1c0240): on message 0xf tear down the current net connection and push
@@ -13365,7 +14176,6 @@ pub fn cfe_online_main_menu_on_disconnect_popup_event(c: &mut Cpu) {
     })
 }
 
-
 /// `void cFEStateLobbyMenu_UpdatePlayerScrollArrows(self)` (0x1be720): enable
 /// the up arrow's widget when there are entries, and the down arrow's widget
 /// unless the player is already at the bottom of the list.
@@ -13408,7 +14218,6 @@ pub fn cfe_lobby_menu_update_player_scroll_arrows(c: &mut Cpu) {
     })
 }
 
-
 /// Call `widget->v09(enabled)` through the vtable at `*(A2 + 8)` (slot 0x48).
 pub(crate) fn set_widget_enabled(c: &mut Cpu, enabled: u32, ret: u32) -> Flow {
     c.g[A1][0] = enabled as u64;
@@ -13419,7 +14228,6 @@ pub(crate) fn set_widget_enabled(c: &mut Cpu, enabled: u32, ret: u32) -> Flow {
     c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
     call_ptr(c, target, ret)
 }
-
 
 /// `void cFEStateNetMessenger_HighlightRow(self, int row)` (0x1a5fb8): colour
 /// the 15 roster rows, highlighting `row`.
@@ -13490,7 +14298,6 @@ pub fn cfe_state_net_messenger_highlight_row(c: &mut Cpu) {
     })
 }
 
-
 /// `void* NetFEState_CreateKeyboardPopup(self, a1, a2, a3, int a4)`
 /// (0x1a91b0): allocate and construct the keyboard popup and push it on the
 /// state stack.
@@ -13545,7 +14352,6 @@ pub fn net_fe_state_create_keyboard_popup(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // FE state: two-row popup screens (the `_v25` handlers).
@@ -13618,19 +14424,23 @@ pub(crate) fn fe_v25_populate(c: &mut Cpu, base: u32, strings: [u32; 5], icons: 
     Ok(())
 }
 
-
 /// `void cFEUseExistingAccount_v25(cFEState* s, void* tooltip)` (0x1ac4f0).
 pub fn fe_use_existing_account_v25(c: &mut Cpu) {
     guest(c, |c| {
         fe_v25_populate(
             c,
             0x001a_c4f0,
-            [0x0046_2c08, 0x0046_2c28, 0x0045_fe60, 0x0046_2c50, 0x0046_14e8],
+            [
+                0x0046_2c08,
+                0x0046_2c28,
+                0x0045_fe60,
+                0x0046_2c50,
+                0x0046_14e8,
+            ],
             [3, 0, 1],
         )
     })
 }
-
 
 /// `void cFEStateOnlineCharacterSelect_v25(cFEState* s, void* tooltip)`
 /// (0x1b14d8).
@@ -13639,12 +14449,17 @@ pub fn fe_state_online_character_select_v25(c: &mut Cpu) {
         fe_v25_populate(
             c,
             0x001b_14d8,
-            [0x0046_3848, 0x0046_3868, 0x0046_3890, 0x0046_38b0, 0x0046_14e8],
+            [
+                0x0046_3848,
+                0x0046_3868,
+                0x0046_3890,
+                0x0046_38b0,
+                0x0046_14e8,
+            ],
             [4, 0, 1],
         )
     })
 }
-
 
 /// `void cFEStateNetNews_v25(cFEState* s, void* tooltip)` (0x1c5540).
 pub fn fe_state_net_news_v25(c: &mut Cpu) {
@@ -13652,12 +14467,17 @@ pub fn fe_state_net_news_v25(c: &mut Cpu) {
         fe_v25_populate(
             c,
             0x001c_5540,
-            [0x0046_5f58, 0x0046_5f70, 0x0046_5f90, 0x0046_14e8, 0x0046_1458],
+            [
+                0x0046_5f58,
+                0x0046_5f70,
+                0x0046_5f90,
+                0x0046_14e8,
+                0x0046_1458,
+            ],
             [3, 1, 2],
         )
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // FE state: challenge popup.
@@ -13722,7 +14542,6 @@ pub fn fe_state_challenge_popup_ctor(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // FE state: chat room.
@@ -13825,7 +14644,6 @@ pub fn fe_state_chat_room_on_keyboard_done(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // FE state: chat room player selection.
 
@@ -13920,7 +14738,6 @@ pub fn fe_state_chat_room_select_player_by_name(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // FE state: network config teardown.
 
@@ -14007,7 +14824,6 @@ pub fn fe_state_net_config_dtor(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // FE state: create step 2.
 
@@ -14083,7 +14899,6 @@ pub fn fe_state_create_step2_init(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // FE state constructors.
 
@@ -14155,20 +14970,17 @@ pub fn cfe_state_chat_room_ctor(c: &mut Cpu) {
     })
 }
 
-
 /// A `gp_17`-relative global.
 #[inline(always)]
 pub(crate) fn gp_17(c: &Cpu, off: i32) -> u32 {
     r32(c, GP).wrapping_add(off as u32)
 }
 
-
 /// `lw_7` (sign-extended) of `a + off`.
 #[inline(always)]
 pub(crate) fn lw_7(c: &mut Cpu, a: u32, off: u32) -> u64 {
     Addr(p(a, off)).lw(c)
 }
-
 
 /// `lwc1 fN, a+off`.
 #[inline(always)]
@@ -14178,13 +14990,11 @@ pub(crate) fn ldf(c: &mut Cpu, n: usize, a: u32, off: u32) -> FpuF32 {
     v
 }
 
-
 /// FPU register `n`.
 #[inline(always)]
 pub(crate) fn fr(c: &Cpu, n: usize) -> FpuF32 {
     FpuF32(c.f[n])
 }
-
 
 // ---------------------------------------------------------------------------
 // `TagFieldSetBinary` (0x003ec300).
@@ -14194,9 +15004,8 @@ pub(crate) fn fr(c: &Cpu, n: usize) -> FpuF32 {
 // source byte, NUL-terminate, and store the raw text in the record.
 
 pub(crate) const HEX_HIGH: u32 = 0x0049_5fc0;
- // D_00495FC0: high nibble -> character
+// D_00495FC0: high nibble -> character
 pub(crate) const HEX_LOW: u32 = 0x0049_60c0;
-
 
 // ---------------------------------------------------------------------------
 // `NetFEState_OnSessionLostPopupEvent` (0x001a9578).
@@ -14207,121 +15016,120 @@ pub(crate) const HEX_LOW: u32 = 0x0049_60c0;
 
 pub fn net_fe_state_on_session_lost_popup_event(c: &mut Cpu) {
     guest(c, |c| {
-
         'b_1a962c: {
-        'b_1a9620: {
-        'b_1a959c: {
-        c.cycles += 6;
-        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
-        c.g[V0][0] = 0xf;
-        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
-        c.sd((c.g[SP][0] as u32), c.g[RA][0]);
-        let t = c.g[A2][0] == c.g[V0][0];
-        c.g[S0][0] = c.g[A0][0];
-        if t {
-        break 'b_1a959c;
-        } else {
-        c.cycles += 3;
-        c.g[V0][0] = 0x14;
-        let t = c.g[A2][0] != c.g[V0][0];
+            'b_1a9620: {
+                'b_1a959c: {
+                    c.cycles += 6;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
+                    c.g[V0][0] = 0xf;
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    let t = c.g[A2][0] == c.g[V0][0];
+                    c.g[S0][0] = c.g[A0][0];
+                    if t {
+                        break 'b_1a959c;
+                    } else {
+                        c.cycles += 3;
+                        c.g[V0][0] = 0x14;
+                        let t = c.g[A2][0] != c.g[V0][0];
 
-        if t {
-        break 'b_1a9620;
-        } else {
-        break 'b_1a959c;
-        }
-        }
-        }
-        'b_1a9610: {
-        'b_1a95ec: {
-        'b_1a95e8: {
-        c.cycles += 6;
-        c.g[RA][0] = sx(0x001a95a4);
-        c.g[A0][0] = c.g[S0][0];
-        call_ptr(c, 0x001a93d0, 0x001a95a4)?;
-        c.g[RA][0] = sx(0x001a95ac);
-        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
-        call_ptr(c, 0x0025da90, 0x001a95ac)?;
-        let t = c.g[V0][0] == 0u64;
-        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x1d98));
-        if t {
-        break 'b_1a95e8;
-        } else {
-        c.cycles += 2;
-        let t = c.g[V0][0] != 0u64;
-        c.g[A1][0] = 0x460000;
-        if t {
-        break 'b_1a95ec;
-        } else {
-        c.cycles += 11;
-        c.g[A1][0] = 0x460000;
-        c.g[A0][0] = 0x73c;
-        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xf0));
-        c.g[A2][0] = 0u64;
-        c.g[RA][0] = sx(0x001a95d4);
-        c.g[A3][0] = 0u64;
-        call_ptr(c, 0x00317d70, 0x001a95d4)?;
-        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
-        c.g[RA][0] = sx(0x001a95e0);
-        c.g[A0][0] = c.g[V0][0];
-        call_ptr(c, 0x001b1f88, 0x001a95e0)?;
-        let t = true;
-        c.g[A0][0] = c.g[S0][0];
-        if t {
-        break 'b_1a9610;
-        } else {
-        break 'b_1a95e8;
-        }
-        }
-        }
-        }
-        c.cycles += 1;
-        c.g[A1][0] = 0x460000;
-        break 'b_1a95ec;
-        }
-        c.cycles += 9;
-        c.g[A0][0] = 0x6d0;
-        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xd8));
-        c.g[A2][0] = 0u64;
-        c.g[RA][0] = sx(0x001a9600);
-        c.g[A3][0] = 0u64;
-        call_ptr(c, 0x00317d70, 0x001a9600)?;
-        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
-        c.g[RA][0] = sx(0x001a960c);
-        c.g[A0][0] = c.g[V0][0];
-        call_ptr(c, 0x001bfbb8, 0x001a960c)?;
-        c.g[A0][0] = c.g[S0][0];
-        break 'b_1a9610;
-        }
-        c.cycles += 4;
-        c.g[RA][0] = sx(0x001a9618);
-        c.g[A1][0] = c.g[V0][0];
-        call_ptr(c, 0x001a8a40, 0x001a9618)?;
-        let t = true;
-        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
-        if t {
-        break 'b_1a962c;
-        } else {
-        break 'b_1a9620;
-        }
-        }
-        c.cycles += 3;
-        c.g[RA][0] = sx(0x001a9628);
-        c.g[A0][0] = c.g[S0][0];
-        call_ptr(c, 0x001a93d0, 0x001a9628)?;
-        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
-        break 'b_1a962c;
+                        if t {
+                            break 'b_1a9620;
+                        } else {
+                            break 'b_1a959c;
+                        }
+                    }
+                }
+                'b_1a9610: {
+                    'b_1a95ec: {
+                        'b_1a95e8: {
+                            c.cycles += 6;
+                            c.g[RA][0] = sx(0x001a95a4);
+                            c.g[A0][0] = c.g[S0][0];
+                            call_ptr(c, 0x001a93d0, 0x001a95a4)?;
+                            c.g[RA][0] = sx(0x001a95ac);
+                            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+                            call_ptr(c, 0x0025da90, 0x001a95ac)?;
+                            let t = c.g[V0][0] == 0u64;
+                            c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x1d98));
+                            if t {
+                                break 'b_1a95e8;
+                            } else {
+                                c.cycles += 2;
+                                let t = c.g[V0][0] != 0u64;
+                                c.g[A1][0] = 0x460000;
+                                if t {
+                                    break 'b_1a95ec;
+                                } else {
+                                    c.cycles += 11;
+                                    c.g[A1][0] = 0x460000;
+                                    c.g[A0][0] = 0x73c;
+                                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xf0));
+                                    c.g[A2][0] = 0u64;
+                                    c.g[RA][0] = sx(0x001a95d4);
+                                    c.g[A3][0] = 0u64;
+                                    call_ptr(c, 0x00317d70, 0x001a95d4)?;
+                                    c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                                    c.g[RA][0] = sx(0x001a95e0);
+                                    c.g[A0][0] = c.g[V0][0];
+                                    call_ptr(c, 0x001b1f88, 0x001a95e0)?;
+                                    let t = true;
+                                    c.g[A0][0] = c.g[S0][0];
+                                    if t {
+                                        break 'b_1a9610;
+                                    } else {
+                                        break 'b_1a95e8;
+                                    }
+                                }
+                            }
+                        }
+                        c.cycles += 1;
+                        c.g[A1][0] = 0x460000;
+                        break 'b_1a95ec;
+                    }
+                    c.cycles += 9;
+                    c.g[A0][0] = 0x6d0;
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xd8));
+                    c.g[A2][0] = 0u64;
+                    c.g[RA][0] = sx(0x001a9600);
+                    c.g[A3][0] = 0u64;
+                    call_ptr(c, 0x00317d70, 0x001a9600)?;
+                    c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                    c.g[RA][0] = sx(0x001a960c);
+                    c.g[A0][0] = c.g[V0][0];
+                    call_ptr(c, 0x001bfbb8, 0x001a960c)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    break 'b_1a9610;
+                }
+                c.cycles += 4;
+                c.g[RA][0] = sx(0x001a9618);
+                c.g[A1][0] = c.g[V0][0];
+                call_ptr(c, 0x001a8a40, 0x001a9618)?;
+                let t = true;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                if t {
+                    break 'b_1a962c;
+                } else {
+                    break 'b_1a9620;
+                }
+            }
+            c.cycles += 3;
+            c.g[RA][0] = sx(0x001a9628);
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, 0x001a93d0, 0x001a9628)?;
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+            break 'b_1a962c;
         }
         c.cycles += 3;
         c.g[RA][0] = c.ld((c.g[SP][0] as u32));
         let t = c.g[RA][0] as u32;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
-        c.pc = t; return Ok(());
+        c.pc = t;
+        return Ok(());
 
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // `cFEUseExistingAccount_OnAbortPopupEvent` (0x001aca88).
@@ -14332,108 +15140,107 @@ pub fn net_fe_state_on_session_lost_popup_event(c: &mut Cpu) {
 
 pub fn fe_use_existing_account_on_abort_popup_event(c: &mut Cpu) {
     guest(c, |c| {
-
         'b_1acb34: {
-        'b_1acb24: {
-        'b_1acabc: {
-        c.cycles += 10;
-        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
-        c.g[V0][0] = 0xf;
-        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
-        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
-        c.g[S0][0] = c.g[A2][0];
-        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-        c.g[S1][0] = c.g[A0][0];
-        c.sd((c.g[SP][0] as u32), c.g[RA][0]);
-        let t = c.g[S0][0] == c.g[V0][0];
-        c.g[S2][0] = c.g[A1][0];
-        if t {
-        break 'b_1acabc;
-        } else {
-        c.cycles += 3;
-        c.g[V0][0] = 0x14;
-        let t = c.g[S0][0] != c.g[V0][0];
-        c.g[A0][0] = c.g[S1][0];
-        if t {
-        break 'b_1acb24;
-        } else {
-        break 'b_1acabc;
-        }
-        }
-        }
-        'b_1acad0: {
-        c.cycles += 3;
-        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-        let t = c.g[V0][0] != 0u64;
+            'b_1acb24: {
+                'b_1acabc: {
+                    c.cycles += 10;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+                    c.g[V0][0] = 0xf;
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.g[S0][0] = c.g[A2][0];
+                    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[S1][0] = c.g[A0][0];
+                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    let t = c.g[S0][0] == c.g[V0][0];
+                    c.g[S2][0] = c.g[A1][0];
+                    if t {
+                        break 'b_1acabc;
+                    } else {
+                        c.cycles += 3;
+                        c.g[V0][0] = 0x14;
+                        let t = c.g[S0][0] != c.g[V0][0];
+                        c.g[A0][0] = c.g[S1][0];
+                        if t {
+                            break 'b_1acb24;
+                        } else {
+                            break 'b_1acabc;
+                        }
+                    }
+                }
+                'b_1acad0: {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                    let t = c.g[V0][0] != 0u64;
 
-        if t {
-        break 'b_1acad0;
-        } else {
-        c.cycles += 2;
-        c.g[RA][0] = sx(0x001acad0);
-        call_ptr(c, 0x00260f80, 0x001acad0)?;
-        break 'b_1acad0;
-        }
-        }
-        'b_1acaec: {
-        c.cycles += 4;
-        c.g[RA][0] = sx(0x001acad8);
-        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-        call_ptr(c, 0x00261460, 0x001acad8)?;
-        let t = c.g[V0][0] != 0u64;
-        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-        if t {
-        break 'b_1acaec;
-        } else {
-        c.cycles += 3;
-        c.g[RA][0] = sx(0x001acae8);
-        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-        call_ptr(c, 0x002613c8, 0x001acae8)?;
-        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-        break 'b_1acaec;
-        }
-        }
-        'b_1acafc: {
-        c.cycles += 2;
-        let t = c.g[V0][0] != 0u64;
+                    if t {
+                        break 'b_1acad0;
+                    } else {
+                        c.cycles += 2;
+                        c.g[RA][0] = sx(0x001acad0);
+                        call_ptr(c, 0x00260f80, 0x001acad0)?;
+                        break 'b_1acad0;
+                    }
+                }
+                'b_1acaec: {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x001acad8);
+                    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                    call_ptr(c, 0x00261460, 0x001acad8)?;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                    if t {
+                        break 'b_1acaec;
+                    } else {
+                        c.cycles += 3;
+                        c.g[RA][0] = sx(0x001acae8);
+                        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                        call_ptr(c, 0x002613c8, 0x001acae8)?;
+                        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                        break 'b_1acaec;
+                    }
+                }
+                'b_1acafc: {
+                    c.cycles += 2;
+                    let t = c.g[V0][0] != 0u64;
 
-        if t {
-        break 'b_1acafc;
-        } else {
-        c.cycles += 2;
-        c.g[RA][0] = sx(0x001acafc);
-        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
-        call_ptr(c, 0x0025b800, 0x001acafc)?;
-        break 'b_1acafc;
-        }
-        }
-        c.cycles += 10;
-        c.g[RA][0] = sx(0x001acb04);
-        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-        call_ptr(c, 0x00261408, 0x001acb04)?;
-        c.g[RA][0] = sx(0x001acb0c);
-        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
-        call_ptr(c, 0x0025b800, 0x001acb0c)?;
-        c.g[A0][0] = c.g[S1][0];
-        c.g[A1][0] = c.g[S2][0];
-        c.g[RA][0] = sx(0x001acb1c);
-        c.g[A2][0] = c.g[S0][0];
-        call_ptr(c, 0x001a97b8, 0x001acb1c)?;
-        let t = true;
-        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
-        if t {
-        break 'b_1acb34;
-        } else {
-        break 'b_1acb24;
-        }
-        }
-        c.cycles += 4;
-        c.g[A1][0] = c.g[S2][0];
-        c.g[RA][0] = sx(0x001acb30);
-        c.g[A2][0] = c.g[S0][0];
-        call_ptr(c, 0x001a97b8, 0x001acb30)?;
-        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
-        break 'b_1acb34;
+                    if t {
+                        break 'b_1acafc;
+                    } else {
+                        c.cycles += 2;
+                        c.g[RA][0] = sx(0x001acafc);
+                        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+                        call_ptr(c, 0x0025b800, 0x001acafc)?;
+                        break 'b_1acafc;
+                    }
+                }
+                c.cycles += 10;
+                c.g[RA][0] = sx(0x001acb04);
+                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                call_ptr(c, 0x00261408, 0x001acb04)?;
+                c.g[RA][0] = sx(0x001acb0c);
+                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+                call_ptr(c, 0x0025b800, 0x001acb0c)?;
+                c.g[A0][0] = c.g[S1][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x001acb1c);
+                c.g[A2][0] = c.g[S0][0];
+                call_ptr(c, 0x001a97b8, 0x001acb1c)?;
+                let t = true;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                if t {
+                    break 'b_1acb34;
+                } else {
+                    break 'b_1acb24;
+                }
+            }
+            c.cycles += 4;
+            c.g[A1][0] = c.g[S2][0];
+            c.g[RA][0] = sx(0x001acb30);
+            c.g[A2][0] = c.g[S0][0];
+            call_ptr(c, 0x001a97b8, 0x001acb30)?;
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+            break 'b_1acb34;
         }
         c.cycles += 5;
         c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
@@ -14441,120 +15248,119 @@ pub fn fe_use_existing_account_on_abort_popup_event(c: &mut Cpu) {
         c.g[RA][0] = c.ld((c.g[SP][0] as u32));
         let t = c.g[RA][0] as u32;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
-        c.pc = t; return Ok(());
+        c.pc = t;
+        return Ok(());
 
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // `cFEStateLogin_v33` (0x001bf378): the same popup-close sequence as
 // `cFEUseExistingAccount::OnAbortPopupEvent`.
 pub fn fe_state_login_v33(c: &mut Cpu) {
     guest(c, |c| {
-
         'b_1bf424: {
-        'b_1bf414: {
-        'b_1bf3ac: {
-        c.cycles += 10;
-        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
-        c.g[V0][0] = 0xf;
-        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
-        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
-        c.g[S0][0] = c.g[A2][0];
-        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-        c.g[S1][0] = c.g[A0][0];
-        c.sd((c.g[SP][0] as u32), c.g[RA][0]);
-        let t = c.g[S0][0] == c.g[V0][0];
-        c.g[S2][0] = c.g[A1][0];
-        if t {
-        break 'b_1bf3ac;
-        } else {
-        c.cycles += 3;
-        c.g[V0][0] = 0x14;
-        let t = c.g[S0][0] != c.g[V0][0];
-        c.g[A0][0] = c.g[S1][0];
-        if t {
-        break 'b_1bf414;
-        } else {
-        break 'b_1bf3ac;
-        }
-        }
-        }
-        'b_1bf3c0: {
-        c.cycles += 3;
-        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-        let t = c.g[V0][0] != 0u64;
+            'b_1bf414: {
+                'b_1bf3ac: {
+                    c.cycles += 10;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+                    c.g[V0][0] = 0xf;
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.g[S0][0] = c.g[A2][0];
+                    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[S1][0] = c.g[A0][0];
+                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    let t = c.g[S0][0] == c.g[V0][0];
+                    c.g[S2][0] = c.g[A1][0];
+                    if t {
+                        break 'b_1bf3ac;
+                    } else {
+                        c.cycles += 3;
+                        c.g[V0][0] = 0x14;
+                        let t = c.g[S0][0] != c.g[V0][0];
+                        c.g[A0][0] = c.g[S1][0];
+                        if t {
+                            break 'b_1bf414;
+                        } else {
+                            break 'b_1bf3ac;
+                        }
+                    }
+                }
+                'b_1bf3c0: {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                    let t = c.g[V0][0] != 0u64;
 
-        if t {
-        break 'b_1bf3c0;
-        } else {
-        c.cycles += 2;
-        c.g[RA][0] = sx(0x001bf3c0);
-        call_ptr(c, 0x00260f80, 0x001bf3c0)?;
-        break 'b_1bf3c0;
-        }
-        }
-        'b_1bf3dc: {
-        c.cycles += 4;
-        c.g[RA][0] = sx(0x001bf3c8);
-        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-        call_ptr(c, 0x00261460, 0x001bf3c8)?;
-        let t = c.g[V0][0] != 0u64;
-        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-        if t {
-        break 'b_1bf3dc;
-        } else {
-        c.cycles += 3;
-        c.g[RA][0] = sx(0x001bf3d8);
-        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-        call_ptr(c, 0x002613c8, 0x001bf3d8)?;
-        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-        break 'b_1bf3dc;
-        }
-        }
-        'b_1bf3ec: {
-        c.cycles += 2;
-        let t = c.g[V0][0] != 0u64;
+                    if t {
+                        break 'b_1bf3c0;
+                    } else {
+                        c.cycles += 2;
+                        c.g[RA][0] = sx(0x001bf3c0);
+                        call_ptr(c, 0x00260f80, 0x001bf3c0)?;
+                        break 'b_1bf3c0;
+                    }
+                }
+                'b_1bf3dc: {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x001bf3c8);
+                    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                    call_ptr(c, 0x00261460, 0x001bf3c8)?;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                    if t {
+                        break 'b_1bf3dc;
+                    } else {
+                        c.cycles += 3;
+                        c.g[RA][0] = sx(0x001bf3d8);
+                        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                        call_ptr(c, 0x002613c8, 0x001bf3d8)?;
+                        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                        break 'b_1bf3dc;
+                    }
+                }
+                'b_1bf3ec: {
+                    c.cycles += 2;
+                    let t = c.g[V0][0] != 0u64;
 
-        if t {
-        break 'b_1bf3ec;
-        } else {
-        c.cycles += 2;
-        c.g[RA][0] = sx(0x001bf3ec);
-        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
-        call_ptr(c, 0x0025b800, 0x001bf3ec)?;
-        break 'b_1bf3ec;
-        }
-        }
-        c.cycles += 10;
-        c.g[RA][0] = sx(0x001bf3f4);
-        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-        call_ptr(c, 0x00261408, 0x001bf3f4)?;
-        c.g[RA][0] = sx(0x001bf3fc);
-        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
-        call_ptr(c, 0x0025b800, 0x001bf3fc)?;
-        c.g[A0][0] = c.g[S1][0];
-        c.g[A1][0] = c.g[S2][0];
-        c.g[RA][0] = sx(0x001bf40c);
-        c.g[A2][0] = c.g[S0][0];
-        call_ptr(c, 0x001a97b8, 0x001bf40c)?;
-        let t = true;
-        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
-        if t {
-        break 'b_1bf424;
-        } else {
-        break 'b_1bf414;
-        }
-        }
-        c.cycles += 4;
-        c.g[A1][0] = c.g[S2][0];
-        c.g[RA][0] = sx(0x001bf420);
-        c.g[A2][0] = c.g[S0][0];
-        call_ptr(c, 0x001a97b8, 0x001bf420)?;
-        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
-        break 'b_1bf424;
+                    if t {
+                        break 'b_1bf3ec;
+                    } else {
+                        c.cycles += 2;
+                        c.g[RA][0] = sx(0x001bf3ec);
+                        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+                        call_ptr(c, 0x0025b800, 0x001bf3ec)?;
+                        break 'b_1bf3ec;
+                    }
+                }
+                c.cycles += 10;
+                c.g[RA][0] = sx(0x001bf3f4);
+                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                call_ptr(c, 0x00261408, 0x001bf3f4)?;
+                c.g[RA][0] = sx(0x001bf3fc);
+                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+                call_ptr(c, 0x0025b800, 0x001bf3fc)?;
+                c.g[A0][0] = c.g[S1][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[RA][0] = sx(0x001bf40c);
+                c.g[A2][0] = c.g[S0][0];
+                call_ptr(c, 0x001a97b8, 0x001bf40c)?;
+                let t = true;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                if t {
+                    break 'b_1bf424;
+                } else {
+                    break 'b_1bf414;
+                }
+            }
+            c.cycles += 4;
+            c.g[A1][0] = c.g[S2][0];
+            c.g[RA][0] = sx(0x001bf420);
+            c.g[A2][0] = c.g[S0][0];
+            call_ptr(c, 0x001a97b8, 0x001bf420)?;
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+            break 'b_1bf424;
         }
         c.cycles += 5;
         c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
@@ -14562,12 +15368,12 @@ pub fn fe_state_login_v33(c: &mut Cpu) {
         c.g[RA][0] = c.ld((c.g[SP][0] as u32));
         let t = c.g[RA][0] as u32;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
-        c.pc = t; return Ok(());
+        c.pc = t;
+        return Ok(());
 
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // `cFEStateStats_FormatTime` (0x001c4f58).
@@ -14634,7 +15440,6 @@ pub fn fe_state_stats_format_time(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // `cFEStateNetMessenger_SubmitKeyboardInput` (0x001a4750).
 //
@@ -14644,129 +15449,128 @@ pub fn fe_state_stats_format_time(c: &mut Cpu) {
 
 pub fn fe_state_net_messenger_submit_keyboard_input(c: &mut Cpu) {
     guest(c, |c| {
-
         'b_1a4804: {
-        'b_1a4800: {
-        'b_1a479c: {
-        'b_1a4788: {
-        c.cycles += 10;
-        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
-        c.g[V0][0] = 0x1;
-        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
-        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
-        c.g[S1][0] = c.g[A0][0];
-        c.sd((c.g[SP][0] as u32), c.g[RA][0]);
-        c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x69c));
-        c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x18));
-        let t = c.g[V1][0] == c.g[V0][0];
-        c.g[V0][0] = 0x2;
-        if t {
-        break 'b_1a4788;
-        } else {
-        c.cycles += 2;
-        let t = c.g[V1][0] == c.g[V0][0];
-        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
-        if t {
-        break 'b_1a479c;
-        } else {
-        c.cycles += 2;
-        let t = true;
-        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
-        if t {
-        break 'b_1a4804;
-        } else {
-        break 'b_1a4788;
-        }
-        }
-        }
-        }
-        c.cycles += 5;
-        c.g[A0][0] = c.g[S1][0];
-        c.g[RA][0] = sx(0x001a4794);
-        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x74));
-        call_ptr(c, 0x001a4810, 0x001a4794)?;
-        let t = true;
-        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
-        if t {
-        break 'b_1a4800;
-        } else {
-        break 'b_1a479c;
-        }
-        }
-        'b_1a47b0: {
-        c.cycles += 3;
-        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-        let t = c.g[V0][0] != 0u64;
+            'b_1a4800: {
+                'b_1a479c: {
+                    'b_1a4788: {
+                        c.cycles += 10;
+                        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+                        c.g[V0][0] = 0x1;
+                        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+                        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+                        c.g[S1][0] = c.g[A0][0];
+                        c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                        c.g[A1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x69c));
+                        c.g[V1][0] = c.lw((c.g[A1][0] as u32).wrapping_add(0x18));
+                        let t = c.g[V1][0] == c.g[V0][0];
+                        c.g[V0][0] = 0x2;
+                        if t {
+                            break 'b_1a4788;
+                        } else {
+                            c.cycles += 2;
+                            let t = c.g[V1][0] == c.g[V0][0];
+                            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+                            if t {
+                                break 'b_1a479c;
+                            } else {
+                                c.cycles += 2;
+                                let t = true;
+                                c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+                                if t {
+                                    break 'b_1a4804;
+                                } else {
+                                    break 'b_1a4788;
+                                }
+                            }
+                        }
+                    }
+                    c.cycles += 5;
+                    c.g[A0][0] = c.g[S1][0];
+                    c.g[RA][0] = sx(0x001a4794);
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x74));
+                    call_ptr(c, 0x001a4810, 0x001a4794)?;
+                    let t = true;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    if t {
+                        break 'b_1a4800;
+                    } else {
+                        break 'b_1a479c;
+                    }
+                }
+                'b_1a47b0: {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                    let t = c.g[V0][0] != 0u64;
 
-        if t {
-        break 'b_1a47b0;
-        } else {
-        c.cycles += 2;
-        c.g[RA][0] = sx(0x001a47b0);
-        call_ptr(c, 0x00260f80, 0x001a47b0)?;
-        break 'b_1a47b0;
-        }
-        }
-        'b_1a47cc: {
-        c.cycles += 4;
-        c.g[RA][0] = sx(0x001a47b8);
-        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-        call_ptr(c, 0x00261460, 0x001a47b8)?;
-        let t = c.g[V0][0] != 0u64;
-        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-        if t {
-        break 'b_1a47cc;
-        } else {
-        c.cycles += 3;
-        c.g[RA][0] = sx(0x001a47c8);
-        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-        call_ptr(c, 0x002613c8, 0x001a47c8)?;
-        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-        break 'b_1a47cc;
-        }
-        }
-        'b_1a47e0: {
-        c.cycles += 2;
-        let t = c.g[V0][0] != 0u64;
-        c.g[S0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-        if t {
-        break 'b_1a47e0;
-        } else {
-        c.cycles += 3;
-        c.g[RA][0] = sx(0x001a47dc);
-        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
-        call_ptr(c, 0x0025b800, 0x001a47dc)?;
-        c.g[S0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-        break 'b_1a47e0;
-        }
-        }
-        c.cycles += 8;
-        c.g[RA][0] = sx(0x001a47e8);
-        c.g[A0][0] = c.g[S1][0];
-        call_ptr(c, 0x001a98b0, 0x001a47e8)?;
-        c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x69c));
-        c.g[A0][0] = c.g[S0][0];
-        c.g[A1][0] = c.g[V0][0];
-        c.g[RA][0] = sx(0x001a47fc);
-        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x74));
-        call_ptr(c, 0x00262690, 0x001a47fc)?;
-        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
-        break 'b_1a4800;
-        }
-        c.cycles += 1;
-        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
-        break 'b_1a4804;
+                    if t {
+                        break 'b_1a47b0;
+                    } else {
+                        c.cycles += 2;
+                        c.g[RA][0] = sx(0x001a47b0);
+                        call_ptr(c, 0x00260f80, 0x001a47b0)?;
+                        break 'b_1a47b0;
+                    }
+                }
+                'b_1a47cc: {
+                    c.cycles += 4;
+                    c.g[RA][0] = sx(0x001a47b8);
+                    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                    call_ptr(c, 0x00261460, 0x001a47b8)?;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                    if t {
+                        break 'b_1a47cc;
+                    } else {
+                        c.cycles += 3;
+                        c.g[RA][0] = sx(0x001a47c8);
+                        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                        call_ptr(c, 0x002613c8, 0x001a47c8)?;
+                        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                        break 'b_1a47cc;
+                    }
+                }
+                'b_1a47e0: {
+                    c.cycles += 2;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[S0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                    if t {
+                        break 'b_1a47e0;
+                    } else {
+                        c.cycles += 3;
+                        c.g[RA][0] = sx(0x001a47dc);
+                        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+                        call_ptr(c, 0x0025b800, 0x001a47dc)?;
+                        c.g[S0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                        break 'b_1a47e0;
+                    }
+                }
+                c.cycles += 8;
+                c.g[RA][0] = sx(0x001a47e8);
+                c.g[A0][0] = c.g[S1][0];
+                call_ptr(c, 0x001a98b0, 0x001a47e8)?;
+                c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x69c));
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = c.g[V0][0];
+                c.g[RA][0] = sx(0x001a47fc);
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x74));
+                call_ptr(c, 0x00262690, 0x001a47fc)?;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+                break 'b_1a4800;
+            }
+            c.cycles += 1;
+            c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x10));
+            break 'b_1a4804;
         }
         c.cycles += 3;
         c.g[RA][0] = c.ld((c.g[SP][0] as u32));
         let t = c.g[RA][0] as u32;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
-        c.pc = t; return Ok(());
+        c.pc = t;
+        return Ok(());
 
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // `LobbyMan_GetErrorString` (0x00260e50).
@@ -14775,111 +15579,110 @@ pub fn fe_state_net_messenger_submit_keyboard_input(c: &mut Cpu) {
 // decode the packed error/status word into text.
 
 pub(crate) const MSG_LOBBY_DUPLICATE: u32 = 0x6475_706c;
- // "udpl"
+// "udpl"
 pub(crate) const MSG_LOBBY_ITEM: u32 = 0x7469_6d65;
- // "item"
+// "item"
 
 pub fn lobby_man_get_error_string(c: &mut Cpu) {
     guest(c, |c| {
-
         'b_260f00: {
-        'b_260eb8: {
-        'b_260ea0: {
-        'b_260e88: {
-        c.cycles += 8;
-        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
-        c.g[V0][0] = 0x64750000;
-        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
-        c.g[T1][0] = c.g[A2][0];
-        c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
-        c.g[V0][0] = c.g[V0][0] | 0x706c;
-        let t = c.g[T1][0] == c.g[V0][0];
-        c.g[S0][0] = c.g[A0][0];
-        if t {
-        break 'b_260e88;
-        } else {
-        c.cycles += 4;
-        c.g[V0][0] = 0x74690000;
-        c.g[V0][0] = c.g[V0][0] | 0x6d65;
-        let t = c.g[T1][0] == c.g[V0][0];
-        c.g[A2][0] = c.g[T1][0];
-        if t {
-        break 'b_260ea0;
-        } else {
-        c.cycles += 2;
-        let t = true;
-        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xda0));
-        if t {
-        break 'b_260eb8;
-        } else {
-        break 'b_260e88;
-        }
-        }
-        }
-        }
-        c.cycles += 6;
-        c.g[A1][0] = 0x480000;
-        c.g[A0][0] = c.g[S0][0];
-        c.g[RA][0] = sx(0x00260e98);
-        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0xe10));
-        call_ptr(c, 0x003182d8, 0x00260e98)?;
-        let t = true;
-        c.g[V0][0] = c.g[S0][0];
-        if t {
-        break 'b_260f00;
-        } else {
-        break 'b_260ea0;
-        }
-        }
-        c.cycles += 6;
-        c.g[A1][0] = 0x4a0000;
-        c.g[A0][0] = c.g[S0][0];
-        c.g[RA][0] = sx(0x00260eb0);
-        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3320));
-        call_ptr(c, 0x003182d8, 0x00260eb0)?;
-        let t = true;
-        c.g[V0][0] = c.g[S0][0];
-        if t {
-        break 'b_260f00;
-        } else {
-        break 'b_260eb8;
-        }
-        }
-        c.cycles += 18;
-        c.g[T0][0] = sx((c.g[T1][0] as u32) >> 16);
-        c.g[A1][0] = 0x480000;
-        c.g[T1][0] = sx((c.g[T1][0] as u32) >> 8);
-        c.g[A0][0] = c.g[SP][0];
-        c.g[T0][0] = c.g[T0][0] & 0xff;
-        c.g[T1][0] = c.g[T1][0] & 0xff;
-        c.g[A3][0] = sx((c.g[A2][0] as u32) >> 24);
-        c.g[T2][0] = c.g[A2][0] & 0xff;
-        c.sw((c.g[SP][0] as u32), c.g[V0][0]);
-        c.g[RA][0] = sx(0x00260ee4);
-        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0xe20));
-        call_ptr(c, 0x003194a8, 0x00260ee4)?;
-        c.g[A0][0] = c.g[S0][0];
-        c.g[RA][0] = sx(0x00260ef0);
-        c.g[A1][0] = c.g[SP][0];
-        call_ptr(c, 0x00317fe8, 0x00260ef0)?;
-        c.g[A0][0] = c.g[SP][0];
-        c.g[RA][0] = sx(0x00260efc);
-        c.g[A1][0] = 0x2;
-        call_ptr(c, 0x00318260, 0x00260efc)?;
-        c.g[V0][0] = c.g[S0][0];
-        break 'b_260f00;
+            'b_260eb8: {
+                'b_260ea0: {
+                    'b_260e88: {
+                        c.cycles += 8;
+                        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x30));
+                        c.g[V0][0] = 0x64750000;
+                        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
+                        c.g[T1][0] = c.g[A2][0];
+                        c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
+                        c.g[V0][0] = c.g[V0][0] | 0x706c;
+                        let t = c.g[T1][0] == c.g[V0][0];
+                        c.g[S0][0] = c.g[A0][0];
+                        if t {
+                            break 'b_260e88;
+                        } else {
+                            c.cycles += 4;
+                            c.g[V0][0] = 0x74690000;
+                            c.g[V0][0] = c.g[V0][0] | 0x6d65;
+                            let t = c.g[T1][0] == c.g[V0][0];
+                            c.g[A2][0] = c.g[T1][0];
+                            if t {
+                                break 'b_260ea0;
+                            } else {
+                                c.cycles += 2;
+                                let t = true;
+                                c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0xda0));
+                                if t {
+                                    break 'b_260eb8;
+                                } else {
+                                    break 'b_260e88;
+                                }
+                            }
+                        }
+                    }
+                    c.cycles += 6;
+                    c.g[A1][0] = 0x480000;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[RA][0] = sx(0x00260e98);
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0xe10));
+                    call_ptr(c, 0x003182d8, 0x00260e98)?;
+                    let t = true;
+                    c.g[V0][0] = c.g[S0][0];
+                    if t {
+                        break 'b_260f00;
+                    } else {
+                        break 'b_260ea0;
+                    }
+                }
+                c.cycles += 6;
+                c.g[A1][0] = 0x4a0000;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[RA][0] = sx(0x00260eb0);
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3320));
+                call_ptr(c, 0x003182d8, 0x00260eb0)?;
+                let t = true;
+                c.g[V0][0] = c.g[S0][0];
+                if t {
+                    break 'b_260f00;
+                } else {
+                    break 'b_260eb8;
+                }
+            }
+            c.cycles += 18;
+            c.g[T0][0] = sx((c.g[T1][0] as u32) >> 16);
+            c.g[A1][0] = 0x480000;
+            c.g[T1][0] = sx((c.g[T1][0] as u32) >> 8);
+            c.g[A0][0] = c.g[SP][0];
+            c.g[T0][0] = c.g[T0][0] & 0xff;
+            c.g[T1][0] = c.g[T1][0] & 0xff;
+            c.g[A3][0] = sx((c.g[A2][0] as u32) >> 24);
+            c.g[T2][0] = c.g[A2][0] & 0xff;
+            c.sw((c.g[SP][0] as u32), c.g[V0][0]);
+            c.g[RA][0] = sx(0x00260ee4);
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0xe20));
+            call_ptr(c, 0x003194a8, 0x00260ee4)?;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[RA][0] = sx(0x00260ef0);
+            c.g[A1][0] = c.g[SP][0];
+            call_ptr(c, 0x00317fe8, 0x00260ef0)?;
+            c.g[A0][0] = c.g[SP][0];
+            c.g[RA][0] = sx(0x00260efc);
+            c.g[A1][0] = 0x2;
+            call_ptr(c, 0x00318260, 0x00260efc)?;
+            c.g[V0][0] = c.g[S0][0];
+            break 'b_260f00;
         }
         c.cycles += 4;
         c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
         c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x20));
         let t = c.g[RA][0] as u32;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x30));
-        c.pc = t; return Ok(());
+        c.pc = t;
+        return Ok(());
 
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // `cSetupMan_ClientRecvMsg0` (0x00269240) and `cSetupMan_ClientRecvMsg2`
@@ -14907,8 +15710,14 @@ pub(crate) fn client_recv_reply(c: &mut Cpu) {
     let _ = a17;
 }
 
-
-pub(crate) fn recv_msg(c: &mut Cpu, reply: u64, character: u64, ret1: u32, ret2: u32, ret3: u32) -> Flow {
+pub(crate) fn recv_msg(
+    c: &mut Cpu,
+    reply: u64,
+    character: u64,
+    ret1: u32,
+    ret2: u32,
+    ret3: u32,
+) -> Flow {
     c.cycles += 33;
     let frame = Frame::open(c, 0x60);
     frame.save(c, 16, 0x50);
@@ -14954,52 +15763,50 @@ pub(crate) fn recv_msg(c: &mut Cpu, reply: u64, character: u64, ret1: u32, ret2:
     Ok(())
 }
 
-
 pub fn setup_man_client_recv_msg0(c: &mut Cpu) {
     guest(c, |c| {
-
         'b_2692c4: {
-        c.cycles += 33;
-        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x60));
-        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
-        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x40));
-        c.g[S0][0] = 0xf3;
-        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
-        c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[RA][0]);
-        c.sw((c.g[A0][0] as u32), c.g[A2][0]);
-        c.g[RA][0] = sx(0x00269264);
-        c.g[A2][0] = c.g[A3][0];
-        call_ptr(c, 0x00264d80, 0x00269264)?;
-        c.g[A1][0] = 0x480000;
-        c.g[S1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
-        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
-        c.g[A0][0] = 0x8;
-        c.g[A2][0] = 0x20000000;
-        c.g[RA][0] = sx(0x00269280);
-        c.g[A3][0] = 0u64;
-        call_ptr(c, 0x00317d70, 0x00269280)?;
-        c.g[S2][0] = c.g[V0][0];
-        c.g[A1][0] = 0x480000;
-        c.g[V0][0] = 0x480000;
-        c.sw((c.g[S2][0] as u32), c.g[S0][0]);
-        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x12b0));
-        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
-        c.sw((c.g[S2][0] as u32).wrapping_add(0x4), c.g[V0][0]);
-        c.g[A0][0] = 0xc;
-        c.g[A2][0] = 0x20000000;
-        c.g[A3][0] = 0u64;
-        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xf0));
-        c.g[RA][0] = sx(0x002692b4);
-        c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
-        call_ptr(c, 0x00317d70, 0x002692b4)?;
-        c.g[A1][0] = c.g[V0][0];
-        c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x8));
-        if c.g[V0][0] != 0u64 {
-        c.sw((c.g[A1][0] as u32).wrapping_add(0x8), c.g[S2][0]);
-        break 'b_2692c4;
-        } else {
-        break 'b_2692c4;
-        }
+            c.cycles += 33;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x60));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.g[S0][0] = 0xf3;
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[RA][0]);
+            c.sw((c.g[A0][0] as u32), c.g[A2][0]);
+            c.g[RA][0] = sx(0x00269264);
+            c.g[A2][0] = c.g[A3][0];
+            call_ptr(c, 0x00264d80, 0x00269264)?;
+            c.g[A1][0] = 0x480000;
+            c.g[S1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
+            c.g[A0][0] = 0x8;
+            c.g[A2][0] = 0x20000000;
+            c.g[RA][0] = sx(0x00269280);
+            c.g[A3][0] = 0u64;
+            call_ptr(c, 0x00317d70, 0x00269280)?;
+            c.g[S2][0] = c.g[V0][0];
+            c.g[A1][0] = 0x480000;
+            c.g[V0][0] = 0x480000;
+            c.sw((c.g[S2][0] as u32), c.g[S0][0]);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x12b0));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+            c.g[A0][0] = 0xc;
+            c.g[A2][0] = 0x20000000;
+            c.g[A3][0] = 0u64;
+            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xf0));
+            c.g[RA][0] = sx(0x002692b4);
+            c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+            call_ptr(c, 0x00317d70, 0x002692b4)?;
+            c.g[A1][0] = c.g[V0][0];
+            c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x8));
+            if c.g[V0][0] != 0u64 {
+                c.sw((c.g[A1][0] as u32).wrapping_add(0x8), c.g[S2][0]);
+                break 'b_2692c4;
+            } else {
+                break 'b_2692c4;
+            }
         }
         c.cycles += 15;
         c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
@@ -15017,58 +15824,57 @@ pub fn setup_man_client_recv_msg0(c: &mut Cpu) {
         c.sw((c.g[SP][0] as u32), c.g[A1][0]);
         let t = c.g[RA][0] as u32;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x60));
-        c.pc = t; return Ok(());
+        c.pc = t;
+        return Ok(());
 
         Ok(())
     })
 }
-
 
 pub fn setup_man_client_recv_msg2(c: &mut Cpu) {
     guest(c, |c| {
-
         'b_269384: {
-        c.cycles += 33;
-        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x60));
-        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
-        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x40));
-        c.g[S0][0] = 0xf5;
-        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
-        c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[RA][0]);
-        c.sw((c.g[A0][0] as u32), c.g[A2][0]);
-        c.g[RA][0] = sx(0x00269324);
-        c.g[A2][0] = 0u64;
-        call_ptr(c, 0x00264d80, 0x00269324)?;
-        c.g[A1][0] = 0x480000;
-        c.g[S1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
-        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
-        c.g[A0][0] = 0x8;
-        c.g[A2][0] = 0x20000000;
-        c.g[RA][0] = sx(0x00269340);
-        c.g[A3][0] = 0u64;
-        call_ptr(c, 0x00317d70, 0x00269340)?;
-        c.g[S2][0] = c.g[V0][0];
-        c.g[A1][0] = 0x480000;
-        c.g[V0][0] = 0x480000;
-        c.sw((c.g[S2][0] as u32), c.g[S0][0]);
-        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x12b0));
-        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
-        c.sw((c.g[S2][0] as u32).wrapping_add(0x4), c.g[V0][0]);
-        c.g[A0][0] = 0xc;
-        c.g[A2][0] = 0x20000000;
-        c.g[A3][0] = 0u64;
-        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xf0));
-        c.g[RA][0] = sx(0x00269374);
-        c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
-        call_ptr(c, 0x00317d70, 0x00269374)?;
-        c.g[A1][0] = c.g[V0][0];
-        c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x8));
-        if c.g[V0][0] != 0u64 {
-        c.sw((c.g[A1][0] as u32).wrapping_add(0x8), c.g[S2][0]);
-        break 'b_269384;
-        } else {
-        break 'b_269384;
-        }
+            c.cycles += 33;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x60));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.g[S0][0] = 0xf5;
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.sd((c.g[SP][0] as u32).wrapping_add(0x20), c.g[RA][0]);
+            c.sw((c.g[A0][0] as u32), c.g[A2][0]);
+            c.g[RA][0] = sx(0x00269324);
+            c.g[A2][0] = 0u64;
+            call_ptr(c, 0x00264d80, 0x00269324)?;
+            c.g[A1][0] = 0x480000;
+            c.g[S1][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x488));
+            c.g[A0][0] = 0x8;
+            c.g[A2][0] = 0x20000000;
+            c.g[RA][0] = sx(0x00269340);
+            c.g[A3][0] = 0u64;
+            call_ptr(c, 0x00317d70, 0x00269340)?;
+            c.g[S2][0] = c.g[V0][0];
+            c.g[A1][0] = 0x480000;
+            c.g[V0][0] = 0x480000;
+            c.sw((c.g[S2][0] as u32), c.g[S0][0]);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x12b0));
+            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x4a8));
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+            c.g[A0][0] = 0xc;
+            c.g[A2][0] = 0x20000000;
+            c.g[A3][0] = 0u64;
+            c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0xf0));
+            c.g[RA][0] = sx(0x00269374);
+            c.sw((c.g[SP][0] as u32).wrapping_add(0x10), c.g[V0][0]);
+            call_ptr(c, 0x00317d70, 0x00269374)?;
+            c.g[A1][0] = c.g[V0][0];
+            c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x8));
+            if c.g[V0][0] != 0u64 {
+                c.sw((c.g[A1][0] as u32).wrapping_add(0x8), c.g[S2][0]);
+                break 'b_269384;
+            } else {
+                break 'b_269384;
+            }
         }
         c.cycles += 15;
         c.g[V0][0] = c.lw((c.g[SP][0] as u32).wrapping_add(0x10));
@@ -15086,12 +15892,12 @@ pub fn setup_man_client_recv_msg2(c: &mut Cpu) {
         c.sw((c.g[SP][0] as u32), c.g[A1][0]);
         let t = c.g[RA][0] as u32;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x60));
-        c.pc = t; return Ok(());
+        c.pc = t;
+        return Ok(());
 
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Helpers.
@@ -15102,7 +15908,6 @@ pub(crate) fn gp_18(c: &Cpu, off: i32) -> u32 {
     r32(c, GP).wrapping_add(off as u32)
 }
 
-
 /// `gpr = 0xNN0000 + lo` as the `lui`/`addiu` pair in the generated code does
 /// it (through `v0`, as the original does).
 #[inline(always)]
@@ -15111,7 +15916,6 @@ pub(crate) fn lui_add(c: &mut Cpu, hi: u32, lo: u32) -> u64 {
     c.g[V0][0] = sx(hi.wrapping_add(lo));
     c.g[V0][0]
 }
-
 
 // ---------------------------------------------------------------------------
 
@@ -15227,7 +16031,6 @@ pub fn cfe_state_net_messenger_dtor(c: &mut Cpu) {
     return;
 }
 
-
 /// `cFEUseExistingAccount::OnEmailPopupEvent(this, args, id)`
 /// (0x1ac9c0): when the popup id is 0xf, fill the e-mail popup from the
 /// logged-in account, show it, and connect the lobby if the address checks
@@ -15301,7 +16104,6 @@ pub fn cfe_use_existing_account_on_email_popup_event(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `cFEStateNetConfig::CheckCard(this)` (0x1b43a8): query the network
 /// library's card state (v53/v55) and either load the config list or show
@@ -15424,7 +16226,6 @@ pub fn cfe_state_net_config_check_card(c: &mut Cpu) {
     return;
 }
 
-
 /// `cFEStateNetQuickPlayPopup::OnOptionsPopupEvent(this, args, id)`
 /// (0x1c1b88): for the confirm/cancel ids, close the options list, toggle the
 /// options hint, re-label the hint text and forward the event; otherwise
@@ -15539,7 +16340,6 @@ pub fn cfe_state_net_quick_play_popup_on_options_popup_event(c: &mut Cpu) {
     return;
 }
 
-
 /// `FEAsyncManager_RequestSessionTexture(this, id, slot, param)` (0x1a37f8):
 /// format the request file name and mark the slot as pending.
 pub fn fe_async_manager_request_session_texture(c: &mut Cpu) {
@@ -15610,7 +16410,6 @@ pub fn fe_async_manager_request_session_texture(c: &mut Cpu) {
     })
 }
 
-
 /// `cFEStateNetConfig_ShowCheckingCardPopup(this, name)` (0x1b47c0):
 /// format the "checking card" line and show the 0x83F popup.
 pub fn cfe_state_net_config_show_checking_card_popup(c: &mut Cpu) {
@@ -15675,7 +16474,6 @@ pub fn cfe_state_net_config_show_checking_card_popup(c: &mut Cpu) {
     })
 }
 
-
 /// The popup delay `+0x6e0` that `cFEStateNetConfig_LoadConfigList` arms:
 /// `cFEStateNetConfig_Update` takes one per update and acts when it goes
 /// below 0 (15 frames at 60 Hz, then one more update).
@@ -15716,12 +16514,18 @@ fn net_config_load_config_list_leave(c: &mut Cpu, frame: Frame) {
 /// Tick rate: the popup delay counts updates, so it is stored in ticks
 /// (`ticks_from_frames60(15)`; 15 at 60).
 pub fn cfe_state_net_config_load_config_list(c: &mut Cpu) {
-    const SHOW_CHECKING: Callee =
-        Callee { addr: 0x001b_47c0, f: ee::s03::cFEStateNetConfig_ShowCheckingCardPopup };
-    const LOAD_ERROR: Callee =
-        Callee { addr: 0x001b_4fa0, f: ee::s03::cFEStateNetConfig_HandleLoadError };
-    const LIST_VISIBLE: Callee =
-        Callee { addr: 0x001b_5068, f: ee::s03::cFEStateNetConfig_SetListVisible };
+    const SHOW_CHECKING: Callee = Callee {
+        addr: 0x001b_47c0,
+        f: ee::s03::cFEStateNetConfig_ShowCheckingCardPopup,
+    };
+    const LOAD_ERROR: Callee = Callee {
+        addr: 0x001b_4fa0,
+        f: ee::s03::cFEStateNetConfig_HandleLoadError,
+    };
+    const LIST_VISIBLE: Callee = Callee {
+        addr: 0x001b_5068,
+        f: ee::s03::cFEStateNetConfig_SetListVisible,
+    };
     guest(c, |c| {
         c.cycles += 24;
         c.g[V0][0] = Addr(gp_18(c, -0x1570)).lw(c);
@@ -15949,7 +16753,6 @@ pub fn cfe_state_net_config_load_config_list(c: &mut Cpu) {
     });
 }
 
-
 /// `cFEStateNetConfig_HandleLoadError(this, err)` (0x1b4fa0): map a network
 /// load error to the config popup's message and hide the list.
 pub fn cfe_state_net_config_handle_load_error(c: &mut Cpu) {
@@ -16095,7 +16898,6 @@ pub fn cfe_state_net_config_handle_load_error(c: &mut Cpu) {
     return;
 }
 
-
 /// `cFEStateNetQuickMessages_OnSavePopupEvent(this, args, id)` (0x1c2c50):
 /// forward the save-popup event and open the matching next state.
 pub fn cfe_state_net_quick_messages_on_save_popup_event(c: &mut Cpu) {
@@ -16177,13 +16979,11 @@ pub fn cfe_state_net_quick_messages_on_save_popup_event(c: &mut Cpu) {
     })
 }
 
-
 /// `a + off`.
 #[inline(always)]
 pub(crate) fn p_6(a: u64, off: u32) -> u32 {
     (a as u32).wrapping_add(off)
 }
-
 
 // ---------------------------------------------------------------------------
 // Network front-end state machines.
@@ -16273,7 +17073,6 @@ pub fn cfe_state_net_messenger_get_buddy_status(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// The shared body of the two net-account substate updates: on substate 5,
 /// drive the session through the `+0x6d4` sub-substate and set the next
@@ -16383,18 +17182,15 @@ pub(crate) fn net_account_mem_update(c: &mut Cpu, final_state: u64) -> Flow {
     Ok(())
 }
 
-
 /// `void cFEStateNetAccountMem_UpdateState06(self)` (0x1b7820).
 pub fn cfe_state_net_account_mem_update_state06(c: &mut Cpu) {
     guest(c, |c| net_account_mem_update(c, 9))
 }
 
-
 /// `void cFEStateNetAccountMem_UpdateState0C(self)` (0x1b7938).
 pub fn cfe_state_net_account_mem_update_state0c(c: &mut Cpu) {
     guest(c, |c| net_account_mem_update(c, 0x11))
 }
-
 
 /// `addiu a, b, off` on a 64-bit register.
 #[inline(always)]
@@ -16402,13 +17198,11 @@ pub(crate) fn sub(a: u64, off: u32) -> u64 {
     sx((a as u32).wrapping_sub(off))
 }
 
-
 /// `addu a, b` on 64-bit registers.
 #[inline(always)]
 pub(crate) fn addu(a: u64, b: u64) -> u64 {
     sx((a as u32).wrapping_add(b as u32))
 }
-
 
 /// `lw_8` at `a`.
 #[inline(always)]
@@ -16416,13 +17210,11 @@ pub(crate) fn lw_8(c: &mut Cpu, a: u32) -> u64 {
     Addr(a).lw(c)
 }
 
-
 /// `sw_5 v, a`.
 #[inline(always)]
 pub(crate) fn sw_5(c: &mut Cpu, a: u32, v: u64) {
     c.sw(a, v);
 }
-
 
 /// `void cFEStateSelectPersona_OnWidgetCreated(cFEStateSelectPersona* self,
 /// cUIText* text)`: fill the persona list for the title, blank the lock icon,
@@ -16522,7 +17314,6 @@ pub fn c_fe_state_select_persona_on_widget_created(c: &mut Cpu) {
     });
 }
 
-
 /// `void* NetConfigAuthPopup_ctor(NetConfigAuthPopup* self, void* a1,
 /// void* a2)`: initialise the online popup state, then allocate the title
 /// buffer from the measured widget text and return `self`.
@@ -16596,7 +17387,6 @@ pub fn net_config_auth_popup_ctor(c: &mut Cpu) {
         Ok(())
     });
 }
-
 
 /// `void cFEStateAuthDNASError_OnWidgetCreated(cFEStateAuthDNASError* self,
 /// cUIWidget* obj)`: keep the status widgets, press the retry button when the
@@ -16705,100 +17495,99 @@ pub fn c_fe_state_auth_dnas_error_on_widget_created(c: &mut Cpu) {
     });
 }
 
-
 // ---------------------------------------------------------------------------
 // cFEStateLobbyMenu_EnterRoom (0x00001bd460).
 
 /// `cFEStateLobbyMenu_EnterRoom`: open the room popup, store the lobby name (or clear it when empty) and copy the room name into the label.
 pub fn c_fe_state_lobby_menu_enter_room(c: &mut Cpu) {
     guest(c, |c| {
-    'b_1bd50c: {
-    'b_1bd4f4: {
-    'b_1bd4dc: {
-    c.cycles += 26;
-    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
-    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
-    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
-    c.g[S2][0] = c.g[A0][0];
-    c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
-    c.g[S1][0] = c.g[A2][0];
-    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
-    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
-    c.g[S3][0] = c.g[A1][0];
-    call_ptr(c, 0x001a9c50, 0x001bd488)?;
-    c.g[S0][0] = c.g[V0][0];
-    c.g[A0][0] = 0x460000;
-    c.sw((c.g[S0][0] as u32).wrapping_add(0xbc), 0u64);
-    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4fa8));
-    call_ptr(c, 0x00317670, 0x001bd49c)?;
-    c.g[V1][0] = 0x3;
-    c.g[A2][0] = 0x829;
-    c.sw((c.g[S0][0] as u32).wrapping_add(0x164), 0u64);
-    c.g[A1][0] = c.g[S0][0];
-    c.sw((c.g[S0][0] as u32).wrapping_add(0xc4), c.g[V0][0]);
-    c.g[A0][0] = c.g[S2][0];
-    c.sw((c.g[S0][0] as u32).wrapping_add(0xc0), c.g[V1][0]);
-    c.sw((c.g[S0][0] as u32).wrapping_add(0x150), c.g[A2][0]);
-    call_ptr(c, 0x001a9bc0, 0x001bd4c0)?;
-    if c.g[S1][0] == 0u64 {
-    c.sw((c.g[S2][0] as u32).wrapping_add(0x770), 0u64);
-    break 'b_1bd4dc;
-    } else {
-    c.cycles += 4;
-    c.g[A0][0] = c.g[S1][0];
-    call_ptr(c, 0x00416810, 0x001bd4d0)?;
-    let t = c.g[V0][0] != 0u64;
-    c.g[V0][0] = 0x1;
-    if t {
-    break 'b_1bd4f4;
-    } else {
-    c.cycles += 1;
-    c.sw((c.g[S2][0] as u32).wrapping_add(0x770), 0u64);
-    break 'b_1bd4dc;
-    }
-    }
-    }
-    c.cycles += 6;
-    c.g[A1][0] = c.g[S3][0];
-    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
-    c.g[A2][0] = 0u64;
-    call_ptr(c, 0x0025d800, 0x001bd4ec)?;
-    let t = true;
-    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
-    if t {
-    break 'b_1bd50c;
-    } else {
-    break 'b_1bd4f4;
-    }
-    }
-    c.cycles += 6;
-    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
-    c.sw((c.g[S2][0] as u32).wrapping_add(0x770), c.g[V0][0]);
-    c.g[A2][0] = c.g[S1][0];
-    c.g[A1][0] = c.g[S3][0];
-    call_ptr(c, 0x0025d800, 0x001bd508)?;
-    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
-    break 'b_1bd50c;
-    }
-    c.cycles += 13;
-    c.g[A1][0] = c.g[S3][0];
-    c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add(0xb80));
-    call_ptr(c, 0x0025f150, 0x001bd518)?;
-    c.g[A0][0] = c.g[S0][0];
-    c.g[A1][0] = c.g[V0][0];
-    call_ptr(c, 0x003184e8, 0x001bd524)?;
-    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
-    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
-    c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
-    c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
-    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
-    let t = c.g[RA][0] as u32;
-    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
-    c.pc = t; return Ok(());
+        'b_1bd50c: {
+            'b_1bd4f4: {
+                'b_1bd4dc: {
+                    c.cycles += 26;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
+                    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.g[S2][0] = c.g[A0][0];
+                    c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.g[S1][0] = c.g[A2][0];
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    c.g[S3][0] = c.g[A1][0];
+                    call_ptr(c, 0x001a9c50, 0x001bd488)?;
+                    c.g[S0][0] = c.g[V0][0];
+                    c.g[A0][0] = 0x460000;
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0xbc), 0u64);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x4fa8));
+                    call_ptr(c, 0x00317670, 0x001bd49c)?;
+                    c.g[V1][0] = 0x3;
+                    c.g[A2][0] = 0x829;
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x164), 0u64);
+                    c.g[A1][0] = c.g[S0][0];
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0xc4), c.g[V0][0]);
+                    c.g[A0][0] = c.g[S2][0];
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0xc0), c.g[V1][0]);
+                    c.sw((c.g[S0][0] as u32).wrapping_add(0x150), c.g[A2][0]);
+                    call_ptr(c, 0x001a9bc0, 0x001bd4c0)?;
+                    if c.g[S1][0] == 0u64 {
+                        c.sw((c.g[S2][0] as u32).wrapping_add(0x770), 0u64);
+                        break 'b_1bd4dc;
+                    } else {
+                        c.cycles += 4;
+                        c.g[A0][0] = c.g[S1][0];
+                        call_ptr(c, 0x00416810, 0x001bd4d0)?;
+                        let t = c.g[V0][0] != 0u64;
+                        c.g[V0][0] = 0x1;
+                        if t {
+                            break 'b_1bd4f4;
+                        } else {
+                            c.cycles += 1;
+                            c.sw((c.g[S2][0] as u32).wrapping_add(0x770), 0u64);
+                            break 'b_1bd4dc;
+                        }
+                    }
+                }
+                c.cycles += 6;
+                c.g[A1][0] = c.g[S3][0];
+                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+                c.g[A2][0] = 0u64;
+                call_ptr(c, 0x0025d800, 0x001bd4ec)?;
+                let t = true;
+                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+                if t {
+                    break 'b_1bd50c;
+                } else {
+                    break 'b_1bd4f4;
+                }
+            }
+            c.cycles += 6;
+            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+            c.sw((c.g[S2][0] as u32).wrapping_add(0x770), c.g[V0][0]);
+            c.g[A2][0] = c.g[S1][0];
+            c.g[A1][0] = c.g[S3][0];
+            call_ptr(c, 0x0025d800, 0x001bd508)?;
+            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+            break 'b_1bd50c;
+        }
+        c.cycles += 13;
+        c.g[A1][0] = c.g[S3][0];
+        c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add(0xb80));
+        call_ptr(c, 0x0025f150, 0x001bd518)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x003184e8, 0x001bd524)?;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+        c.pc = t;
+        return Ok(());
         Ok(())
     });
 }
-
 
 // ---------------------------------------------------------------------------
 // cFEStateOnlineMainMenu_OnLeavePopupEvent (0x00001c0138).
@@ -16806,119 +17595,119 @@ pub fn c_fe_state_lobby_menu_enter_room(c: &mut Cpu) {
 /// `cFEStateOnlineMainMenu_OnLeavePopupEvent`: forward a popup event; when the "join" popup (id 0xf) closes, queue the lobby entry and tear the old session down.
 pub fn c_fe_state_online_main_menu_on_leave_popup_event(c: &mut Cpu) {
     guest(c, |c| {
-    'b_1c020c: {
-    'b_1c0208: {
-    'b_1c0200: {
-    c.cycles += 6;
-    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
-    c.g[V0][0] = 0xf;
-    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
-    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
-    let t = c.g[A2][0] != c.g[V0][0];
-    c.g[S0][0] = c.g[A0][0];
-    if t {
-    break 'b_1c0200;
-    } else {
-    c.cycles += 18;
-    c.g[A2][0] = 0xf;
-    call_ptr(c, 0x001a97b8, 0x001c0158)?;
-    c.g[V0][0] = 0x1;
-    c.g[A1][0] = 0x460000;
-    c.g[A3][0] = 0u64;
-    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0xba8));
-    c.g[A0][0] = 0x58;
-    c.g[A2][0] = 0u64;
-    c.sw((c.g[S0][0] as u32).wrapping_add(0x6b0), c.g[V0][0]);
-    call_ptr(c, 0x00317d70, 0x001c0178)?;
-    c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
-    c.g[A0][0] = c.g[V0][0];
-    call_ptr(c, 0x00194a60, 0x001c0184)?;
-    c.g[A0][0] = c.g[S0][0];
-    c.g[A1][0] = c.g[V0][0];
-    call_ptr(c, 0x001a8a40, 0x001c0190)?;
-    let t = c.g[V0][0] == 0u64;
-    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-    if t {
-    break 'b_1c0208;
-    } else {
-    'b_1c01a8: {
-    c.cycles += 2;
-    let t = c.g[V0][0] != 0u64;
+        'b_1c020c: {
+            'b_1c0208: {
+                'b_1c0200: {
+                    c.cycles += 6;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
+                    c.g[V0][0] = 0xf;
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                    let t = c.g[A2][0] != c.g[V0][0];
+                    c.g[S0][0] = c.g[A0][0];
+                    if t {
+                        break 'b_1c0200;
+                    } else {
+                        c.cycles += 18;
+                        c.g[A2][0] = 0xf;
+                        call_ptr(c, 0x001a97b8, 0x001c0158)?;
+                        c.g[V0][0] = 0x1;
+                        c.g[A1][0] = 0x460000;
+                        c.g[A3][0] = 0u64;
+                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0xba8));
+                        c.g[A0][0] = 0x58;
+                        c.g[A2][0] = 0u64;
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0x6b0), c.g[V0][0]);
+                        call_ptr(c, 0x00317d70, 0x001c0178)?;
+                        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x10));
+                        c.g[A0][0] = c.g[V0][0];
+                        call_ptr(c, 0x00194a60, 0x001c0184)?;
+                        c.g[A0][0] = c.g[S0][0];
+                        c.g[A1][0] = c.g[V0][0];
+                        call_ptr(c, 0x001a8a40, 0x001c0190)?;
+                        let t = c.g[V0][0] == 0u64;
+                        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                        if t {
+                            break 'b_1c0208;
+                        } else {
+                            'b_1c01a8: {
+                                c.cycles += 2;
+                                let t = c.g[V0][0] != 0u64;
 
-    if t {
-    break 'b_1c01a8;
-    } else {
-    c.cycles += 2;
-    call_ptr(c, 0x00260f80, 0x001c01a8)?;
-    break 'b_1c01a8;
-    }
-    }
-    'b_1c01c4: {
-    c.cycles += 4;
-    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-    call_ptr(c, 0x00261460, 0x001c01b0)?;
-    let t = c.g[V0][0] != 0u64;
-    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-    if t {
-    break 'b_1c01c4;
-    } else {
-    c.cycles += 3;
-    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-    call_ptr(c, 0x002613c8, 0x001c01c0)?;
-    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-    break 'b_1c01c4;
-    }
-    }
-    'b_1c01d4: {
-    c.cycles += 2;
-    let t = c.g[V0][0] != 0u64;
+                                if t {
+                                    break 'b_1c01a8;
+                                } else {
+                                    c.cycles += 2;
+                                    call_ptr(c, 0x00260f80, 0x001c01a8)?;
+                                    break 'b_1c01a8;
+                                }
+                            }
+                            'b_1c01c4: {
+                                c.cycles += 4;
+                                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                                call_ptr(c, 0x00261460, 0x001c01b0)?;
+                                let t = c.g[V0][0] != 0u64;
+                                c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                                if t {
+                                    break 'b_1c01c4;
+                                } else {
+                                    c.cycles += 3;
+                                    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                                    call_ptr(c, 0x002613c8, 0x001c01c0)?;
+                                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                                    break 'b_1c01c4;
+                                }
+                            }
+                            'b_1c01d4: {
+                                c.cycles += 2;
+                                let t = c.g[V0][0] != 0u64;
 
-    if t {
-    break 'b_1c01d4;
-    } else {
-    c.cycles += 2;
-    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
-    call_ptr(c, 0x0025b800, 0x001c01d4)?;
-    break 'b_1c01d4;
-    }
-    }
-    c.cycles += 11;
-    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-    call_ptr(c, 0x00261408, 0x001c01dc)?;
-    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
-    call_ptr(c, 0x0025b800, 0x001c01e4)?;
-    call_ptr(c, 0x002591b8, 0x001c01ec)?;
-    c.g[A0][0] = c.g[V0][0];
-    c.g[A1][0] = 0u64;
-    call_ptr(c, 0x002636f0, 0x001c01f8)?;
-    let t = true;
-    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
-    if t {
-    break 'b_1c020c;
-    } else {
-    break 'b_1c0200;
-    }
-    }
-    }
-    }
-    c.cycles += 2;
-    c.g[A0][0] = c.g[S0][0];
-    call_ptr(c, 0x001a97b8, 0x001c0208)?;
-    break 'b_1c0208;
-    }
-    c.cycles += 1;
-    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
-    break 'b_1c020c;
-    }
-    c.cycles += 3;
-    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
-    let t = c.g[RA][0] as u32;
-    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
-    c.pc = t; return Ok(());
+                                if t {
+                                    break 'b_1c01d4;
+                                } else {
+                                    c.cycles += 2;
+                                    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+                                    call_ptr(c, 0x0025b800, 0x001c01d4)?;
+                                    break 'b_1c01d4;
+                                }
+                            }
+                            c.cycles += 11;
+                            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                            call_ptr(c, 0x00261408, 0x001c01dc)?;
+                            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+                            call_ptr(c, 0x0025b800, 0x001c01e4)?;
+                            call_ptr(c, 0x002591b8, 0x001c01ec)?;
+                            c.g[A0][0] = c.g[V0][0];
+                            c.g[A1][0] = 0u64;
+                            call_ptr(c, 0x002636f0, 0x001c01f8)?;
+                            let t = true;
+                            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                            if t {
+                                break 'b_1c020c;
+                            } else {
+                                break 'b_1c0200;
+                            }
+                        }
+                    }
+                }
+                c.cycles += 2;
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x001a97b8, 0x001c0208)?;
+                break 'b_1c0208;
+            }
+            c.cycles += 1;
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+            break 'b_1c020c;
+        }
+        c.cycles += 3;
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.pc = t;
+        return Ok(());
         Ok(())
     });
 }
-
 
 // ---------------------------------------------------------------------------
 // PS2SoundManager_Init (0x00002a8cb0).
@@ -16926,80 +17715,85 @@ pub fn c_fe_state_online_main_menu_on_leave_popup_event(c: &mut Cpu) {
 /// `PS2SoundManager_Init`: allocate the voice buffer, register it with the PS2 sound library and initialise the 32 voice slots.
 pub fn ps2_sound_manager_init(c: &mut Cpu) {
     guest(c, |c| {
-    c.cycles += 34;
-    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
-    c.g[A2][0] = 0u64;
-    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
-    c.g[A3][0] = 0u64;
-    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
-    c.g[S0][0] = c.g[A1][0];
-    c.g[S1][0] = c.g[A0][0];
-    c.g[A1][0] = 0x480000;
-    c.g[A0][0] = 0x30000;
-    c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
-    c.g[A0][0] = c.g[A0][0] | 0x2000;
-    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3158));
-    call_ptr(c, 0x00317e30, 0x002a8ce4)?;
-    c.sw((c.g[S1][0] as u32).wrapping_add(0x4), c.g[V0][0]);
-    call_ptr(c, 0x003b5478, 0x002a8cec)?;
-    c.g[V1][0] = c.lw((c.g[S1][0] as u32));
-    c.g[A1][0] = c.g[S0][0];
-    c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x10));
-    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14));
-    let t = c.g[V0][0] as u32;
-    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-    c.g[RA][0] = sx(0x002a8d04);
-    c.pc = t;
-    ssx3_ee_rt::funcs::call_indirect(c, t);
-    if c.pc != 0x002a8d04 { return Err(crate::call::Unwound); }
-    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
-    c.g[A1][0] = 0x30000;
-    c.g[A2][0] = 0x80000;
-    c.g[A1][0] = c.g[A1][0] | 0x2000;
-    c.g[A2][0] = c.g[A2][0] | 0x303;
-    call_ptr(c, 0x003b5158, 0x002a8d1c)?;
-    c.g[V1][0] = 0xffffffffffffffff;
-    c.g[V0][0] = 0x1f;
-    c.sw((c.g[S1][0] as u32).wrapping_add(0x318), c.g[V1][0]);
-    c.g[A1][0] = 0xffffffffffffffff;
-    c.sw((c.g[S1][0] as u32).wrapping_add(0x310), c.g[V0][0]);
-    c.g[A0][0] = 0x1f;
-    c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x308));
-    'l_2a8d38: loop {
-    c.cycles += 10;
-    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1));
-    c.sw((c.g[V1][0] as u32).wrapping_sub(0x14), c.g[A0][0]);
-    c.sw((c.g[V1][0] as u32).wrapping_sub(0x10), c.g[A1][0]);
-    c.g[A0][0] = c.g[V0][0];
-    c.sw((c.g[V1][0] as u32).wrapping_sub(0xc), c.g[A1][0]);
-    c.sw((c.g[V1][0] as u32).wrapping_sub(0x8), 0u64);
-    c.sw((c.g[V1][0] as u32).wrapping_sub(0x4), 0u64);
-    c.sw((c.g[V1][0] as u32), c.g[V0][0]);
-    let t = (c.g[A0][0] as i64) >= 0;
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x18));
-    if t {
-    if event_due(c) { deliver_event_here(c, 0x002a8d38); } continue 'l_2a8d38;
-    } else {
-    c.cycles += 12;
-    c.sw((c.g[S1][0] as u32).wrapping_add(0x31c), 0u64);
-    c.g[A0][0] = c.g[SP][0];
-    c.sw((c.g[SP][0] as u32), 0u64);
-    call_ptr(c, 0x003b5b68, 0x002a8d70)?;
-    c.g[V1][0] = c.lw((c.g[SP][0] as u32));
-    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
-    c.sw((c.g[S1][0] as u32).wrapping_add(0x30c), c.g[V1][0]);
-    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
-    let t = c.g[RA][0] as u32;
-    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
-    c.pc = t; return Ok(());
-    }
-    }
+        c.cycles += 34;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+        c.g[A2][0] = 0u64;
+        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.g[A3][0] = 0u64;
+        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[S0][0] = c.g[A1][0];
+        c.g[S1][0] = c.g[A0][0];
+        c.g[A1][0] = 0x480000;
+        c.g[A0][0] = 0x30000;
+        c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
+        c.g[A0][0] = c.g[A0][0] | 0x2000;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0x3158));
+        call_ptr(c, 0x00317e30, 0x002a8ce4)?;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+        call_ptr(c, 0x003b5478, 0x002a8cec)?;
+        c.g[V1][0] = c.lw((c.g[S1][0] as u32));
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x10));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x14));
+        let t = c.g[V0][0] as u32;
+        c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+        c.g[RA][0] = sx(0x002a8d04);
+        c.pc = t;
+        ssx3_ee_rt::funcs::call_indirect(c, t);
+        if c.pc != 0x002a8d04 {
+            return Err(crate::call::Unwound);
+        }
+        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+        c.g[A1][0] = 0x30000;
+        c.g[A2][0] = 0x80000;
+        c.g[A1][0] = c.g[A1][0] | 0x2000;
+        c.g[A2][0] = c.g[A2][0] | 0x303;
+        call_ptr(c, 0x003b5158, 0x002a8d1c)?;
+        c.g[V1][0] = 0xffffffffffffffff;
+        c.g[V0][0] = 0x1f;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x318), c.g[V1][0]);
+        c.g[A1][0] = 0xffffffffffffffff;
+        c.sw((c.g[S1][0] as u32).wrapping_add(0x310), c.g[V0][0]);
+        c.g[A0][0] = 0x1f;
+        c.g[V1][0] = sx((c.g[S1][0] as u32).wrapping_add(0x308));
+        'l_2a8d38: loop {
+            c.cycles += 10;
+            c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_sub(0x1));
+            c.sw((c.g[V1][0] as u32).wrapping_sub(0x14), c.g[A0][0]);
+            c.sw((c.g[V1][0] as u32).wrapping_sub(0x10), c.g[A1][0]);
+            c.g[A0][0] = c.g[V0][0];
+            c.sw((c.g[V1][0] as u32).wrapping_sub(0xc), c.g[A1][0]);
+            c.sw((c.g[V1][0] as u32).wrapping_sub(0x8), 0u64);
+            c.sw((c.g[V1][0] as u32).wrapping_sub(0x4), 0u64);
+            c.sw((c.g[V1][0] as u32), c.g[V0][0]);
+            let t = (c.g[A0][0] as i64) >= 0;
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x18));
+            if t {
+                if event_due(c) {
+                    deliver_event_here(c, 0x002a8d38);
+                }
+                continue 'l_2a8d38;
+            } else {
+                c.cycles += 12;
+                c.sw((c.g[S1][0] as u32).wrapping_add(0x31c), 0u64);
+                c.g[A0][0] = c.g[SP][0];
+                c.sw((c.g[SP][0] as u32), 0u64);
+                call_ptr(c, 0x003b5b68, 0x002a8d70)?;
+                c.g[V1][0] = c.lw((c.g[SP][0] as u32));
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+                c.sw((c.g[S1][0] as u32).wrapping_add(0x30c), c.g[V1][0]);
+                c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+                let t = c.g[RA][0] as u32;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+                c.pc = t;
+                return Ok(());
+            }
+        }
         Ok(())
     });
 }
-
 
 // ---------------------------------------------------------------------------
 // cBXString_ConcatInPlace (0x0000318830).
@@ -17007,92 +17801,92 @@ pub fn ps2_sound_manager_init(c: &mut Cpu) {
 /// `cBXString_ConcatInPlace`: append a C string to a cBXString in place, growing the buffer when needed.
 pub fn c_bx_string_concat_in_place(c: &mut Cpu) {
     guest(c, |c| {
-    'b_3188f8: {
-    'b_3188c4: {
-    'b_318880: {
-    c.cycles += 14;
-    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x60));
-    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x40));
-    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
-    c.g[S1][0] = c.g[A0][0];
-    c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
-    c.g[S2][0] = c.g[A1][0];
-    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
-    c.g[S3][0] = c.g[A2][0];
-    c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
-    c.g[A3][0] = c.lw((c.g[S1][0] as u32));
-    c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_sub(0xc));
-    c.g[V0][0] = ((c.g[V0][0] as i64) < 2i64) as u64;
-    let t = c.g[V0][0] == 0u64;
-    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_sub(0xc));
-    if t {
-    break 'b_318880;
-    } else {
-    c.cycles += 6;
-    c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_sub(0x8));
-    c.g[V1][0] = c.lw((c.g[A3][0] as u32).wrapping_sub(0x4));
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S2][0] as u32)));
-    c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
-    if c.g[V1][0] == 0u64 {
-    c.g[A0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x4));
-    break 'b_3188c4;
-    } else {
-    break 'b_318880;
-    }
-    }
-    }
-    c.cycles += 17;
-    c.g[A0][0] = c.g[SP][0];
-    c.g[A1][0] = c.g[S1][0];
-    call_ptr(c, 0x00317fe8, 0x0031888c)?;
-    c.g[S0][0] = c.lw((c.g[S1][0] as u32));
-    c.g[A0][0] = c.g[S1][0];
-    call_ptr(c, 0x003180b8, 0x00318898)?;
-    c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_sub(0x8));
-    c.g[A0][0] = c.g[S1][0];
-    c.g[A3][0] = c.g[S2][0];
-    c.g[T0][0] = c.g[S3][0];
-    c.g[A2][0] = c.g[S0][0];
-    call_ptr(c, 0x00318540, 0x003188b0)?;
-    c.g[A0][0] = c.g[SP][0];
-    c.g[A1][0] = 0x2;
-    call_ptr(c, 0x00318260, 0x003188bc)?;
-    let t = true;
-    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
-    if t {
-    break 'b_3188f8;
-    } else {
-    break 'b_3188c4;
-    }
-    }
-    c.cycles += 13;
-    c.g[A1][0] = c.g[S3][0];
-    c.g[A2][0] = c.g[S2][0];
-    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-    call_ptr(c, 0x0041605c, 0x003188d4)?;
-    c.g[A0][0] = c.lw((c.g[S1][0] as u32));
-    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_sub(0x8));
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S2][0] as u32)));
-    c.sw((c.g[A0][0] as u32).wrapping_sub(0x8), c.g[V0][0]);
-    c.g[V1][0] = c.lw((c.g[S1][0] as u32));
-    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_sub(0x8));
-    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-    c.sb((c.g[V1][0] as u32), 0u64);
-    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
-    break 'b_3188f8;
-    }
-    c.cycles += 6;
-    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x40));
-    c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
-    c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
-    c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
-    let t = c.g[RA][0] as u32;
-    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x60));
-    c.pc = t; return Ok(());
+        'b_3188f8: {
+            'b_3188c4: {
+                'b_318880: {
+                    c.cycles += 14;
+                    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x60));
+                    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x40));
+                    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
+                    c.g[S1][0] = c.g[A0][0];
+                    c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
+                    c.g[S2][0] = c.g[A1][0];
+                    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
+                    c.g[S3][0] = c.g[A2][0];
+                    c.sd((c.g[SP][0] as u32).wrapping_add(0x10), c.g[RA][0]);
+                    c.g[A3][0] = c.lw((c.g[S1][0] as u32));
+                    c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_sub(0xc));
+                    c.g[V0][0] = ((c.g[V0][0] as i64) < 2i64) as u64;
+                    let t = c.g[V0][0] == 0u64;
+                    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_sub(0xc));
+                    if t {
+                        break 'b_318880;
+                    } else {
+                        c.cycles += 6;
+                        c.g[V0][0] = c.lw((c.g[A3][0] as u32).wrapping_sub(0x8));
+                        c.g[V1][0] = c.lw((c.g[A3][0] as u32).wrapping_sub(0x4));
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S2][0] as u32)));
+                        c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                        if c.g[V1][0] == 0u64 {
+                            c.g[A0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x4));
+                            break 'b_3188c4;
+                        } else {
+                            break 'b_318880;
+                        }
+                    }
+                }
+                c.cycles += 17;
+                c.g[A0][0] = c.g[SP][0];
+                c.g[A1][0] = c.g[S1][0];
+                call_ptr(c, 0x00317fe8, 0x0031888c)?;
+                c.g[S0][0] = c.lw((c.g[S1][0] as u32));
+                c.g[A0][0] = c.g[S1][0];
+                call_ptr(c, 0x003180b8, 0x00318898)?;
+                c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_sub(0x8));
+                c.g[A0][0] = c.g[S1][0];
+                c.g[A3][0] = c.g[S2][0];
+                c.g[T0][0] = c.g[S3][0];
+                c.g[A2][0] = c.g[S0][0];
+                call_ptr(c, 0x00318540, 0x003188b0)?;
+                c.g[A0][0] = c.g[SP][0];
+                c.g[A1][0] = 0x2;
+                call_ptr(c, 0x00318260, 0x003188bc)?;
+                let t = true;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
+                if t {
+                    break 'b_3188f8;
+                } else {
+                    break 'b_3188c4;
+                }
+            }
+            c.cycles += 13;
+            c.g[A1][0] = c.g[S3][0];
+            c.g[A2][0] = c.g[S2][0];
+            c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+            call_ptr(c, 0x0041605c, 0x003188d4)?;
+            c.g[A0][0] = c.lw((c.g[S1][0] as u32));
+            c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_sub(0x8));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S2][0] as u32)));
+            c.sw((c.g[A0][0] as u32).wrapping_sub(0x8), c.g[V0][0]);
+            c.g[V1][0] = c.lw((c.g[S1][0] as u32));
+            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_sub(0x8));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+            c.sb((c.g[V1][0] as u32), 0u64);
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
+            break 'b_3188f8;
+        }
+        c.cycles += 6;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32).wrapping_add(0x10));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x60));
+        c.pc = t;
+        return Ok(());
         Ok(())
     });
 }
-
 
 // ---------------------------------------------------------------------------
 // PS2_SONY_CODEC_INTERNAL_InitFrame (0x00003b07f8).
@@ -17100,86 +17894,86 @@ pub fn c_bx_string_concat_in_place(c: &mut Cpu) {
 /// `PS2_SONY_CODEC_INTERNAL_InitFrame`: initialise one Sony codec frame descriptor.
 pub fn ps2_sony_codec_internal_init_frame(c: &mut Cpu) {
     guest(c, |c| {
-    'b_3b08ac: {
-    'b_3b08a8: {
-    c.cycles += 41;
-    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
-    c.g[V1][0] = 0x3;
-    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-    c.g[V0][0] = 0x2;
-    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
-    c.g[S2][0] = c.g[A0][0];
-    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
-    c.g[A3][0] = 0x510000;
-    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
-    c.g[S0][0] = c.g[A1][0];
-    c.sw((c.g[S2][0] as u32).wrapping_add(0xc), c.g[V1][0]);
-    c.g[S1][0] = c.g[A2][0];
-    c.sw((c.g[S2][0] as u32).wrapping_add(0x8), c.g[V1][0]);
-    c.g[A0][0] = c.g[S0][0];
-    c.sw((c.g[S2][0] as u32), c.g[V0][0]);
-    c.g[A1][0] = c.g[S1][0];
-    c.sw((c.g[S2][0] as u32).wrapping_add(0x10), 0u64);
-    c.g[A2][0] = 0x20;
-    c.g[T0][0] = 0u64;
-    c.g[T2][0] = 0u64;
-    c.g[T1][0] = c.lw((c.g[A3][0] as u32).wrapping_sub(0x6bc8));
-    c.g[T3][0] = 0xf0;
-    c.g[A3][0] = 0u64;
-    call_ptr(c, 0x003b2a68, 0x003b0858)?;
-    c.g[A0][0] = c.g[V0][0];
-    c.sw((c.g[S2][0] as u32).wrapping_add(0x4), c.g[V0][0]);
-    call_ptr(c, 0x003b3d40, 0x003b0864)?;
-    c.g[A0][0] = 0x32;
-    c.g[A1][0] = 0x34;
-    c.g[V1][0] = 0x30;
-    c.sb((c.g[V0][0] as u32).wrapping_add(0x4), c.g[A0][0]);
-    c.sb((c.g[V0][0] as u32).wrapping_add(0x6), c.g[V1][0]);
-    c.g[S0][0] = sx((c.g[S0][0] as u32) >> 4);
-    c.sb((c.g[V0][0] as u32).wrapping_add(0x5), c.g[A1][0]);
-    c.mult(0, 16, 16, 17);
-    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x4));
-    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xc));
-    c.g[S0][0] = sx((c.g[S0][0] as u32) >> 4);
-    c.g[V0][0] = c.g[V0][0] & 0x1000;
-    let t = c.g[V0][0] == 0u64;
-    c.g[A2][0] = sx((c.g[S0][0] as u32) << 10);
-    if t {
-    break 'b_3b08a8;
-    } else {
-    c.cycles += 3;
-    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x10));
-    let t = true;
-    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-    if t {
-    break 'b_3b08ac;
-    } else {
-    break 'b_3b08a8;
-    }
-    }
-    }
-    c.cycles += 1;
-    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x10));
-    break 'b_3b08ac;
-    }
-    c.cycles += 12;
-    c.g[A1][0] = 0u64;
-    call_ptr(c, 0x003e6448, 0x003b08b4)?;
-    c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x4));
-    c.g[V0][0] = c.g[S2][0];
-    c.g[V1][0] = 0x5;
-    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
-    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
-    c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
-    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
-    c.sb((c.g[A0][0] as u32), c.g[V1][0]);
-    let t = c.g[RA][0] as u32;
-    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
-    c.pc = t; return Ok(());
+        'b_3b08ac: {
+            'b_3b08a8: {
+                c.cycles += 41;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x40));
+                c.g[V1][0] = 0x3;
+                c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+                c.g[V0][0] = 0x2;
+                c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+                c.g[S2][0] = c.g[A0][0];
+                c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+                c.g[A3][0] = 0x510000;
+                c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                c.g[S0][0] = c.g[A1][0];
+                c.sw((c.g[S2][0] as u32).wrapping_add(0xc), c.g[V1][0]);
+                c.g[S1][0] = c.g[A2][0];
+                c.sw((c.g[S2][0] as u32).wrapping_add(0x8), c.g[V1][0]);
+                c.g[A0][0] = c.g[S0][0];
+                c.sw((c.g[S2][0] as u32), c.g[V0][0]);
+                c.g[A1][0] = c.g[S1][0];
+                c.sw((c.g[S2][0] as u32).wrapping_add(0x10), 0u64);
+                c.g[A2][0] = 0x20;
+                c.g[T0][0] = 0u64;
+                c.g[T2][0] = 0u64;
+                c.g[T1][0] = c.lw((c.g[A3][0] as u32).wrapping_sub(0x6bc8));
+                c.g[T3][0] = 0xf0;
+                c.g[A3][0] = 0u64;
+                call_ptr(c, 0x003b2a68, 0x003b0858)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.sw((c.g[S2][0] as u32).wrapping_add(0x4), c.g[V0][0]);
+                call_ptr(c, 0x003b3d40, 0x003b0864)?;
+                c.g[A0][0] = 0x32;
+                c.g[A1][0] = 0x34;
+                c.g[V1][0] = 0x30;
+                c.sb((c.g[V0][0] as u32).wrapping_add(0x4), c.g[A0][0]);
+                c.sb((c.g[V0][0] as u32).wrapping_add(0x6), c.g[V1][0]);
+                c.g[S0][0] = sx((c.g[S0][0] as u32) >> 4);
+                c.sb((c.g[V0][0] as u32).wrapping_add(0x5), c.g[A1][0]);
+                c.mult(0, 16, 16, 17);
+                c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x4));
+                c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0xc));
+                c.g[S0][0] = sx((c.g[S0][0] as u32) >> 4);
+                c.g[V0][0] = c.g[V0][0] & 0x1000;
+                let t = c.g[V0][0] == 0u64;
+                c.g[A2][0] = sx((c.g[S0][0] as u32) << 10);
+                if t {
+                    break 'b_3b08a8;
+                } else {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x10));
+                    let t = true;
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                    if t {
+                        break 'b_3b08ac;
+                    } else {
+                        break 'b_3b08a8;
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x10));
+            break 'b_3b08ac;
+        }
+        c.cycles += 12;
+        c.g[A1][0] = 0u64;
+        call_ptr(c, 0x003e6448, 0x003b08b4)?;
+        c.g[A0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x4));
+        c.g[V0][0] = c.g[S2][0];
+        c.g[V1][0] = 0x5;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+        c.sb((c.g[A0][0] as u32), c.g[V1][0]);
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x40));
+        c.pc = t;
+        return Ok(());
         Ok(())
     });
 }
-
 
 // ---------------------------------------------------------------------------
 // NetFEState_v32 (0x00001a8830).
@@ -17187,143 +17981,145 @@ pub fn ps2_sony_codec_internal_init_frame(c: &mut Cpu) {
 /// `NetFEState_v32`: net front-end state helper: refresh the connection status and popup.
 pub fn net_fe_state_v32(c: &mut Cpu) {
     guest(c, |c| {
-    'b_1a8910: {
-    'b_1a88b4: {
-    c.cycles += 9;
-    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
-    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
-    c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
-    c.g[A1][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0xe8));
-    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xec));
-    let t = c.g[V0][0] as u32;
-    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[A1][0] as u32)));
-    c.g[RA][0] = sx(0x001a884c);
-    c.pc = t;
-    ssx3_ee_rt::funcs::call_indirect(c, t);
-    if c.pc != 0x001a884c { return Err(crate::call::Unwound); }
-    let t = c.g[V0][0] == 0u64;
-    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-    if t {
-    break 'b_1a88b4;
-    } else {
-    'b_1a8864: {
-    c.cycles += 2;
-    let t = c.g[V0][0] != 0u64;
+        'b_1a8910: {
+            'b_1a88b4: {
+                c.cycles += 9;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x10));
+                c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                c.g[V1][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x8));
+                c.g[A1][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0xe8));
+                c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xec));
+                let t = c.g[V0][0] as u32;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                c.g[RA][0] = sx(0x001a884c);
+                c.pc = t;
+                ssx3_ee_rt::funcs::call_indirect(c, t);
+                if c.pc != 0x001a884c {
+                    return Err(crate::call::Unwound);
+                }
+                let t = c.g[V0][0] == 0u64;
+                c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                if t {
+                    break 'b_1a88b4;
+                } else {
+                    'b_1a8864: {
+                        c.cycles += 2;
+                        let t = c.g[V0][0] != 0u64;
 
-    if t {
-    break 'b_1a8864;
-    } else {
-    c.cycles += 2;
-    call_ptr(c, 0x00260f80, 0x001a8864)?;
-    break 'b_1a8864;
-    }
-    }
-    'b_1a8880: {
-    c.cycles += 4;
-    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-    call_ptr(c, 0x00261460, 0x001a886c)?;
-    let t = c.g[V0][0] != 0u64;
-    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-    if t {
-    break 'b_1a8880;
-    } else {
-    c.cycles += 3;
-    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-    call_ptr(c, 0x002613c8, 0x001a887c)?;
-    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-    break 'b_1a8880;
-    }
-    }
-    'b_1a8894: {
-    c.cycles += 2;
-    let t = c.g[V0][0] != 0u64;
-    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-    if t {
-    break 'b_1a8894;
-    } else {
-    c.cycles += 3;
-    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
-    call_ptr(c, 0x0025b800, 0x001a8890)?;
-    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-    break 'b_1a8894;
-    }
-    }
-    c.cycles += 8;
-    c.g[A1][0] = 0x1;
-    c.g[A2][0] = 0u64;
-    c.g[A3][0] = 0u64;
-    c.g[T0][0] = 0u64;
-    c.g[T1][0] = 0u64;
-    call_ptr(c, 0x00262768, 0x001a88ac)?;
-    let t = true;
-    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
-    if t {
-    break 'b_1a8910;
-    } else {
-    break 'b_1a88b4;
-    }
-    }
-    }
-    'b_1a88c4: {
-    c.cycles += 2;
-    let t = c.g[V0][0] != 0u64;
+                        if t {
+                            break 'b_1a8864;
+                        } else {
+                            c.cycles += 2;
+                            call_ptr(c, 0x00260f80, 0x001a8864)?;
+                            break 'b_1a8864;
+                        }
+                    }
+                    'b_1a8880: {
+                        c.cycles += 4;
+                        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                        call_ptr(c, 0x00261460, 0x001a886c)?;
+                        let t = c.g[V0][0] != 0u64;
+                        c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                        if t {
+                            break 'b_1a8880;
+                        } else {
+                            c.cycles += 3;
+                            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                            call_ptr(c, 0x002613c8, 0x001a887c)?;
+                            c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                            break 'b_1a8880;
+                        }
+                    }
+                    'b_1a8894: {
+                        c.cycles += 2;
+                        let t = c.g[V0][0] != 0u64;
+                        c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                        if t {
+                            break 'b_1a8894;
+                        } else {
+                            c.cycles += 3;
+                            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+                            call_ptr(c, 0x0025b800, 0x001a8890)?;
+                            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                            break 'b_1a8894;
+                        }
+                    }
+                    c.cycles += 8;
+                    c.g[A1][0] = 0x1;
+                    c.g[A2][0] = 0u64;
+                    c.g[A3][0] = 0u64;
+                    c.g[T0][0] = 0u64;
+                    c.g[T1][0] = 0u64;
+                    call_ptr(c, 0x00262768, 0x001a88ac)?;
+                    let t = true;
+                    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                    if t {
+                        break 'b_1a8910;
+                    } else {
+                        break 'b_1a88b4;
+                    }
+                }
+            }
+            'b_1a88c4: {
+                c.cycles += 2;
+                let t = c.g[V0][0] != 0u64;
 
-    if t {
-    break 'b_1a88c4;
-    } else {
-    c.cycles += 2;
-    call_ptr(c, 0x00260f80, 0x001a88c4)?;
-    break 'b_1a88c4;
-    }
-    }
-    'b_1a88e0: {
-    c.cycles += 4;
-    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-    call_ptr(c, 0x00261460, 0x001a88cc)?;
-    let t = c.g[V0][0] != 0u64;
-    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-    if t {
-    break 'b_1a88e0;
-    } else {
-    c.cycles += 3;
-    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-    call_ptr(c, 0x002613c8, 0x001a88dc)?;
-    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-    break 'b_1a88e0;
-    }
-    }
-    'b_1a88f4: {
-    c.cycles += 2;
-    let t = c.g[V0][0] != 0u64;
-    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-    if t {
-    break 'b_1a88f4;
-    } else {
-    c.cycles += 3;
-    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
-    call_ptr(c, 0x0025b800, 0x001a88f0)?;
-    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
-    break 'b_1a88f4;
-    }
-    }
-    c.cycles += 7;
-    c.g[A1][0] = 0u64;
-    c.g[A2][0] = 0x1;
-    c.g[A3][0] = 0u64;
-    c.g[T0][0] = 0u64;
-    c.g[T1][0] = 0u64;
-    call_ptr(c, 0x00262768, 0x001a890c)?;
-    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
-    break 'b_1a8910;
-    }
-    c.cycles += 2;
-    let t = c.g[RA][0] as u32;
-    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
-    c.pc = t; return Ok(());
+                if t {
+                    break 'b_1a88c4;
+                } else {
+                    c.cycles += 2;
+                    call_ptr(c, 0x00260f80, 0x001a88c4)?;
+                    break 'b_1a88c4;
+                }
+            }
+            'b_1a88e0: {
+                c.cycles += 4;
+                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                call_ptr(c, 0x00261460, 0x001a88cc)?;
+                let t = c.g[V0][0] != 0u64;
+                c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                if t {
+                    break 'b_1a88e0;
+                } else {
+                    c.cycles += 3;
+                    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                    call_ptr(c, 0x002613c8, 0x001a88dc)?;
+                    c.g[V0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                    break 'b_1a88e0;
+                }
+            }
+            'b_1a88f4: {
+                c.cycles += 2;
+                let t = c.g[V0][0] != 0u64;
+                c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                if t {
+                    break 'b_1a88f4;
+                } else {
+                    c.cycles += 3;
+                    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0xc8));
+                    call_ptr(c, 0x0025b800, 0x001a88f0)?;
+                    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_add(0x238));
+                    break 'b_1a88f4;
+                }
+            }
+            c.cycles += 7;
+            c.g[A1][0] = 0u64;
+            c.g[A2][0] = 0x1;
+            c.g[A3][0] = 0u64;
+            c.g[T0][0] = 0u64;
+            c.g[T1][0] = 0u64;
+            call_ptr(c, 0x00262768, 0x001a890c)?;
+            c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+            break 'b_1a8910;
+        }
+        c.cycles += 2;
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x10));
+        c.pc = t;
+        return Ok(());
         Ok(())
     });
 }
-
 
 // ---------------------------------------------------------------------------
 // NetFEState_ShowDisconnectedPopup (0x00001a9930).
@@ -17331,95 +18127,95 @@ pub fn net_fe_state_v32(c: &mut Cpu) {
 /// `NetFEState_ShowDisconnectedPopup`: show the "disconnected" popup and stop the network session.
 pub fn net_fe_state_show_disconnected_popup(c: &mut Cpu) {
     guest(c, |c| {
-    'b_1a9a00: {
-    c.cycles += 10;
-    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
-    c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
-    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
-    c.g[S3][0] = c.g[A0][0];
-    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
-    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
-    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
-    c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x6ac));
-    let t = c.g[V0][0] != 0u64;
-    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
-    if t {
-    break 'b_1a9a00;
-    } else {
-    'b_1a99dc: {
-    'b_1a99d0: {
-    c.cycles += 25;
-    c.g[S1][0] = 0x1;
-    c.g[A0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x10));
-    c.sw((c.g[S3][0] as u32).wrapping_add(0x6ac), c.g[S1][0]);
-    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x18));
-    call_ptr(c, 0x0039f698, 0x001a996c)?;
-    c.g[A0][0] = c.g[S3][0];
-    call_ptr(c, 0x001a9c50, 0x001a9974)?;
-    c.g[S2][0] = c.g[V0][0];
-    c.g[A0][0] = 0x460000;
-    c.sw((c.g[S2][0] as u32).wrapping_add(0xbc), c.g[S1][0]);
-    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1618));
-    c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add(0xbc));
-    call_ptr(c, 0x00317670, 0x001a998c)?;
-    c.g[A2][0] = c.g[V0][0];
-    c.g[A0][0] = c.g[S0][0];
-    c.g[A1][0] = 0u64;
-    call_ptr(c, 0x001c57c0, 0x001a999c)?;
-    c.g[V0][0] = 0x6;
-    c.sw((c.g[S2][0] as u32).wrapping_add(0x170), c.g[S1][0]);
-    c.sw((c.g[S2][0] as u32).wrapping_add(0x164), 0u64);
-    c.sw((c.g[S2][0] as u32).wrapping_add(0x14c), c.g[V0][0]);
-    call_ptr(c, 0x002591b8, 0x001a99b0)?;
-    c.g[V1][0] = c.lw((c.g[V0][0] as u32));
-    let t = c.g[V1][0] != 0u64;
-    c.g[V0][0] = 0x83d;
-    if t {
-    break 'b_1a99d0;
-    } else {
-    c.cycles += 5;
-    c.g[V0][0] = 0x83e;
-    c.g[A0][0] = 0x460000;
-    c.sw((c.g[S2][0] as u32).wrapping_add(0x150), c.g[V0][0]);
-    let t = true;
-    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1c40));
-    if t {
-    break 'b_1a99dc;
-    } else {
-    break 'b_1a99d0;
-    }
-    }
-    }
-    c.cycles += 3;
-    c.g[A0][0] = 0x460000;
-    c.sw((c.g[S2][0] as u32).wrapping_add(0x150), c.g[V0][0]);
-    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1d28));
-    break 'b_1a99dc;
-    }
-    c.cycles += 9;
-    call_ptr(c, 0x00317670, 0x001a99e4)?;
-    c.g[V1][0] = 0x3;
-    c.sw((c.g[S2][0] as u32).wrapping_add(0xc4), c.g[V0][0]);
-    c.sw((c.g[S2][0] as u32).wrapping_add(0xc0), c.g[V1][0]);
-    c.g[A0][0] = c.g[S3][0];
-    c.g[A1][0] = c.g[S2][0];
-    call_ptr(c, 0x001a9bc0, 0x001a99fc)?;
-    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
-    break 'b_1a9a00;
-    }
-    }
-    c.cycles += 6;
-    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
-    c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
-    c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
-    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
-    let t = c.g[RA][0] as u32;
-    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
-    c.pc = t; return Ok(());
+        'b_1a9a00: {
+            c.cycles += 10;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
+            c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.g[S3][0] = c.g[A0][0];
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+            c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x6ac));
+            let t = c.g[V0][0] != 0u64;
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+            if t {
+                break 'b_1a9a00;
+            } else {
+                'b_1a99dc: {
+                    'b_1a99d0: {
+                        c.cycles += 25;
+                        c.g[S1][0] = 0x1;
+                        c.g[A0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(0x10));
+                        c.sw((c.g[S3][0] as u32).wrapping_add(0x6ac), c.g[S1][0]);
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x18));
+                        call_ptr(c, 0x0039f698, 0x001a996c)?;
+                        c.g[A0][0] = c.g[S3][0];
+                        call_ptr(c, 0x001a9c50, 0x001a9974)?;
+                        c.g[S2][0] = c.g[V0][0];
+                        c.g[A0][0] = 0x460000;
+                        c.sw((c.g[S2][0] as u32).wrapping_add(0xbc), c.g[S1][0]);
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1618));
+                        c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add(0xbc));
+                        call_ptr(c, 0x00317670, 0x001a998c)?;
+                        c.g[A2][0] = c.g[V0][0];
+                        c.g[A0][0] = c.g[S0][0];
+                        c.g[A1][0] = 0u64;
+                        call_ptr(c, 0x001c57c0, 0x001a999c)?;
+                        c.g[V0][0] = 0x6;
+                        c.sw((c.g[S2][0] as u32).wrapping_add(0x170), c.g[S1][0]);
+                        c.sw((c.g[S2][0] as u32).wrapping_add(0x164), 0u64);
+                        c.sw((c.g[S2][0] as u32).wrapping_add(0x14c), c.g[V0][0]);
+                        call_ptr(c, 0x002591b8, 0x001a99b0)?;
+                        c.g[V1][0] = c.lw((c.g[V0][0] as u32));
+                        let t = c.g[V1][0] != 0u64;
+                        c.g[V0][0] = 0x83d;
+                        if t {
+                            break 'b_1a99d0;
+                        } else {
+                            c.cycles += 5;
+                            c.g[V0][0] = 0x83e;
+                            c.g[A0][0] = 0x460000;
+                            c.sw((c.g[S2][0] as u32).wrapping_add(0x150), c.g[V0][0]);
+                            let t = true;
+                            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1c40));
+                            if t {
+                                break 'b_1a99dc;
+                            } else {
+                                break 'b_1a99d0;
+                            }
+                        }
+                    }
+                    c.cycles += 3;
+                    c.g[A0][0] = 0x460000;
+                    c.sw((c.g[S2][0] as u32).wrapping_add(0x150), c.g[V0][0]);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1d28));
+                    break 'b_1a99dc;
+                }
+                c.cycles += 9;
+                call_ptr(c, 0x00317670, 0x001a99e4)?;
+                c.g[V1][0] = 0x3;
+                c.sw((c.g[S2][0] as u32).wrapping_add(0xc4), c.g[V0][0]);
+                c.sw((c.g[S2][0] as u32).wrapping_add(0xc0), c.g[V1][0]);
+                c.g[A0][0] = c.g[S3][0];
+                c.g[A1][0] = c.g[S2][0];
+                call_ptr(c, 0x001a9bc0, 0x001a99fc)?;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+                break 'b_1a9a00;
+            }
+        }
+        c.cycles += 6;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+        c.pc = t;
+        return Ok(());
         Ok(())
     });
 }
-
 
 /// `cFEStateStats_v25(self, state)` (0x1c3570): the stats screen's second
 /// constructor vtable entry: set the numeric field, hash and store the title
@@ -17474,13 +18270,11 @@ pub fn cfestate_stats_v25(c: &mut Cpu) {
     })
 }
 
-
 /// `lh_2` (sign-extended).
 #[inline(always)]
 pub(crate) fn lh_2(c: &mut Cpu, a: u32) -> u64 {
     c.lh(a)
 }
-
 
 /// `lbu` (zero-extended).
 #[inline(always)]
@@ -17488,20 +18282,17 @@ pub(crate) fn lbu(c: &mut Cpu, a: u32) -> u64 {
     c.lbu(a)
 }
 
-
 /// `sw_6`.
 #[inline(always)]
 pub(crate) fn sw_6(c: &mut Cpu, a: u32, v: u64) {
     c.sw(a, v)
 }
 
-
 /// The low 32 bits of a register as an address.
 #[inline(always)]
 pub(crate) fn a(c: &Cpu, reg: usize) -> u32 {
     c.g[reg][0] as u32
 }
-
 
 // ---------------------------------------------------------------------------
 // Functions.
@@ -17511,11 +18302,22 @@ pub(crate) fn a(c: &Cpu, reg: usize) -> u32 {
 /// `reset == 0` and a room already chosen, clamp the selected player to the
 /// room's player count and re-show the tab.
 pub fn cfestate_lobby_menu_transition_in(c: &mut Cpu) {
-    const REFRESH_ROOM_LISTS: Callee =
-        Callee { addr: 0x001b_e0a8, f: ee::s03::cFEStateLobbyMenu_RefreshRoomLists };
-    const UPDATE_PLAYER_ARROWS: Callee = Callee { addr: 0x001b_e720, f: ee::s03::cFEStateLobbyMenu_UpdatePlayerScrollArrows };
-    const UPDATE_PLAYERS_IN_ROOM: Callee = Callee { addr: 0x001b_e3a8, f: ee::s03::cFEStateLobbyMenu_UpdatePlayersInRoom };
-    const SHOW_ROOM_TAB: Callee = Callee { addr: 0x001b_df60, f: ee::s03::cFEStateLobbyMenu_ShowRoomTab };
+    const REFRESH_ROOM_LISTS: Callee = Callee {
+        addr: 0x001b_e0a8,
+        f: ee::s03::cFEStateLobbyMenu_RefreshRoomLists,
+    };
+    const UPDATE_PLAYER_ARROWS: Callee = Callee {
+        addr: 0x001b_e720,
+        f: ee::s03::cFEStateLobbyMenu_UpdatePlayerScrollArrows,
+    };
+    const UPDATE_PLAYERS_IN_ROOM: Callee = Callee {
+        addr: 0x001b_e3a8,
+        f: ee::s03::cFEStateLobbyMenu_UpdatePlayersInRoom,
+    };
+    const SHOW_ROOM_TAB: Callee = Callee {
+        addr: 0x001b_df60,
+        f: ee::s03::cFEStateLobbyMenu_ShowRoomTab,
+    };
     const UI_LISTBOX_SET_SELECTION: u32 = 0x0039_a7a8;
     const UI_MENU_SET_SELECTION: u32 = 0x0039_b960;
 
@@ -17605,7 +18407,6 @@ pub fn cfestate_lobby_menu_transition_in(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `cFEStateSelectPersona_FillPersonaList(self, list)` (0x1ad3e8): fill the
 /// list box with one entry per persona in the global persona manager, giving
@@ -17712,7 +18513,6 @@ pub fn cfestate_select_persona_fill_persona_list(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Addresses and helpers.
 
@@ -17729,13 +18529,11 @@ pub(crate) const UI_TEXT_SET_STRING: u32 = 0x003a_0c50;
 /// `sprintf` (0x00417828).
 pub(crate) const SPRINTF: u32 = 0x0041_7828;
 
-
 /// `a + off`.
 #[inline(always)]
 pub(crate) fn p_7(a: u64, off: u32) -> u32 {
     (a as u32).wrapping_add(off)
 }
-
 
 /// `self->field` for a word field.
 #[inline(always)]
@@ -17743,20 +18541,17 @@ pub(crate) fn lw_9(c: &mut Cpu, base: u64, off: u32) -> u64 {
     Addr(p_7(base, off)).lw(c)
 }
 
-
 /// `self->field` for a signed halfword field.
 #[inline(always)]
 pub(crate) fn lh_3(c: &mut Cpu, base: u64, off: u32) -> u64 {
     Addr(p_7(base, off)).lh(c)
 }
 
-
 /// `self->field = v` for a word field.
 #[inline(always)]
 pub(crate) fn sw_7(c: &mut Cpu, base: u64, off: u32, v: u64) {
     Addr(p_7(base, off)).sw(c, v);
 }
-
 
 /// A virtual call of slot `slot` at `*(obj + vt_off)`, with the method pointer
 /// left in `v1` (the vtable is read into `v0` first), as gcc emits for
@@ -17771,7 +18566,6 @@ pub(crate) fn vcall_v1(c: &mut Cpu, obj: u64, vt_off: u32, slot: u32, ret: u32) 
     call_ptr(c, func as u32, ret)
 }
 
-
 /// A virtual call of slot `slot` at `*(obj + vt_off)`, with the method pointer
 /// left in `v0` (the vtable is read into `v1` first), as gcc emits for
 /// `((Vt*)*(void**)(obj + vt_off))->fn(...)` when the vtable is reloaded.
@@ -17784,7 +18578,6 @@ pub(crate) fn vcall_v0(c: &mut Cpu, obj: u64, vt_off: u32, slot: u32, ret: u32) 
     c.g[A0][0] = sx((obj as u32).wrapping_add(delta as u32));
     call_ptr(c, func as u32, ret)
 }
-
 
 // ---------------------------------------------------------------------------
 // Front end: widget-created handlers and stats column navigation.
@@ -17915,7 +18708,6 @@ pub fn cfe_state_create_step2_on_widget_created(c: &mut Cpu) {
     })
 }
 
-
 /// `cFEStateCreateDuplicate_OnWidgetCreated(self, text)` (0x001bbe00): one of
 /// the duplicate-rider widgets was created; give its text the right label (a
 /// fixed caption string, or one of the four weekday names).
@@ -18040,7 +18832,6 @@ pub fn cfe_state_create_duplicate_on_widget_created(c: &mut Cpu) {
     })
 }
 
-
 /// `cFEStateNetConfig_OnChildEvent(self, child, kind)` (0x001bf5a8): a widget
 /// of the network-config screen fired. Kind 15 ("OK") allocates and enters the
 /// network-config state; 16 and 20 (and everything else) go to the base
@@ -18161,7 +18952,6 @@ pub fn cfe_state_net_config_on_child_event(c: &mut Cpu) {
     })
 }
 
-
 /// `cFEStateStats_FocusNextColumn(self)` (0x001c4d28): move to the next stats
 /// column: unfocus the old column, show the new column's items and advance the
 /// index, recursing while the columns are exhausted.
@@ -18277,7 +19067,6 @@ pub fn cfe_state_stats_focus_next_column(c: &mut Cpu) {
     })
 }
 
-
 /// `cFEStateStats_FocusPrevColumn(self)` (0x001c4e40): the mirror image of
 /// [`cfe_state_stats_focus_next_column`]; the column index wraps 0 -> 3.
 pub fn cfe_state_stats_focus_prev_column(c: &mut Cpu) {
@@ -18387,7 +19176,6 @@ pub fn cfe_state_stats_focus_prev_column(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // 0x001b7650 cFEStateNetAccountMem_ShowPopup
@@ -18525,7 +19313,6 @@ pub fn cfe_state_net_account_mem_show_popup(c: &mut Cpu) {
     })
 }
 
-
 /// `void cFEStateNetQuickPlayPopup_SetOptionsEnabled(Popup* self, int value)`
 /// (0x1c17f8): pass `value` to the setter (slot 0x40/0x44 of the object's
 /// vtable) of the fifteen option widgets at +0x6f8..
@@ -18562,7 +19349,6 @@ pub fn net_quick_play_popup_set_options_enabled(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void func_001BB840(void* self, void* box, int month, int year, int sel)`
 /// (0x1bb840): fill the creation screen's day list box: clear it, then for
@@ -18697,7 +19483,6 @@ pub fn c_fe_state_create_step2_fill_day_list(c: &mut Cpu) {
     return;
 }
 
-
 // ---------------------------------------------------------------------------
 // Functions.
 
@@ -18801,131 +19586,130 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
-    use crate::difftest::fill;
-    use crate::difftest::scramble;
-    use crate::difftest::Rng;
-    use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
+    use crate::difftest::compare;
+    use crate::difftest::elf_image;
     use crate::difftest::events::check_events;
     use crate::difftest::events::schedule;
     use crate::difftest::events::Events;
-    use crate::difftest::fakes::*;
+    use crate::difftest::fakes;
+    use crate::difftest::fakes::covered;
+    use crate::difftest::fakes::fake_call;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::ptr;
-    use crate::difftest::fakes::LOG_UNWIND_AT;
-    use crate::difftest::fakes::covered;
     use crate::difftest::fakes::vtable;
-    use crate::difftest::fakes::LOG_RESULTS;
-    use ssx3_ee as ee;
     use crate::difftest::fakes::FAKE;
-    use crate::difftest::RA as SENTINEL_RA;
+    use crate::difftest::fakes::LOG_RESULTS;
+    use crate::difftest::fakes::LOG_UNWIND_AT;
+    use crate::difftest::fakes::*;
+    use crate::difftest::fill;
     use crate::difftest::put_vec;
     use crate::difftest::put_words;
-    use crate::difftest::fakes;
+    use crate::difftest::scramble;
+    use crate::difftest::seed_count;
+    use crate::difftest::Rng;
+    use crate::difftest::DATA;
+    use crate::difftest::GAME_GP;
+    use crate::difftest::RA as SENTINEL_RA;
     use crate::difftest::RA as TEST_RA;
-    use crate::difftest::elf_image;
-    use crate::difftest::SP as STACK_TOP;
-    use ssx3_ee_rt::funcs::GuestFn;
     use crate::difftest::RA as RET;
+    use crate::difftest::RA as SENTINEL;
+    use crate::difftest::SP as STACK_TOP;
     use crate::difftest::SP;
     use crate::difftest::SP as STACK;
-    use crate::difftest::RA as SENTINEL;
-    use crate::difftest::fakes::fake_call;
-    use crate::difftest::compare;
-    use crate::difftest::seed_count;
-    pub(crate) use crate::game::be::beintnetwork::tests::put_str;
     pub(crate) use crate::game::be::beintmission::tests::SEEDS;
-    pub(crate) use crate::game::movie::movieplayer::tests::BE_LIBRARY;
-    pub(crate) use crate::game::movie::movieplayer::tests::globals;
-    pub(crate) use crate::game::main::ssxappdtor::tests::MEM_MUTEX;
-    pub(crate) use crate::game::main::ssxappdtor::tests::alloc_setup;
-    pub(crate) use crate::game::main::ssxappdtor::tests::dtor_case;
-    pub(crate) use crate::game::main::gamemode::tests::SEEDS as SEEDS_2;
-    pub(crate) use crate::game::fe::festaterewards2::tests::SEEDS as SEEDS_3;
-    pub(crate) use crate::game::fe::festaterewards2::tests::w;
-    pub(crate) use crate::game::fe::festaterewards2::tests::belib;
-    pub(crate) use crate::game::fe::ovstatepause::tests::WORLD;
-    pub(crate) use crate::game::fe::ovstatepause::tests::globals_2 as globals_3;
-    pub(crate) use crate::game::dirtysock::tags2::tests::be_library_2 as be_library_3;
-    pub(crate) use crate::game::dirtysock::tags2::tests::ZERO_FN;
-    pub(crate) use crate::game::dirtysock::tags2::tests::gp_at;
-    pub(crate) use crate::game::dirtysock::tags2::tests::base;
-    pub(crate) use crate::game::dirtysock::tags2::tests::put_vtable;
-    pub(crate) use crate::game::wscript::wscriptman::tests::SEEDS_6 as SEEDS_4;
-    pub(crate) use crate::game::wscript::wscriptman::tests::load;
-    pub(crate) use crate::game::wscript::wscriptman::tests::clear_3 as clear_2;
-    pub(crate) use crate::game::wscript::wscriptman::tests::alloc_ready;
-    pub(crate) use crate::game::dirtysock::tags2::tests::SEEDS_7 as SEEDS_5;
-    pub(crate) use crate::game::dirtysock::tags2::tests::clear as clear_3;
-    pub(crate) use crate::game::dirtysock::tags2::tests::heap_block_2 as heap_block;
-    pub(crate) use crate::game::dirtysock::tags2::tests::dummy_world;
-    pub(crate) use crate::game::dirtysock::tags2::tests::common;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::ARENA;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::ARENA_SIZE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::run as run_2;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::heap_init as heap_init_2;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::alloc;
-    pub(crate) use crate::game::dirtysock::tags2::tests::run_4 as run_3;
-    pub(crate) use crate::game::dirtysock::tags2::tests::heap_init_5 as heap_init_3;
-    pub(crate) use crate::game::fe::fepopup3::tests::setup;
-    pub(crate) use crate::game::object::railmodifier::tests::SEEDS_7 as SEEDS_6;
-    pub(crate) use crate::game::object::railmodifier::tests::rng;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::SEEDS_10 as SEEDS_7;
-    pub(crate) use crate::game::dirtysock::tags2::tests::bb;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::belib_2;
-    pub(crate) use crate::game::dirtysock::tags2::tests::world_2;
-    pub(crate) use crate::game::dirtysock::tags2::tests::string;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::heap_setup;
-    pub(crate) use crate::game::main::gamemode::tests::SEEDS_2 as SEEDS_9;
-    pub(crate) use crate::game::main::gamemode::tests::be_library as be_library_6;
-    pub(crate) use crate::game::bx::bxstring::tests::string as string_3;
-    pub(crate) use crate::game::movie::movieplayer::tests::BE_2 as BE_3;
-    pub(crate) use crate::game::movie::movieplayer::tests::W as W_2;
-    pub(crate) use crate::game::movie::movieplayer::tests::run_2 as run_5;
-    pub(crate) use crate::game::movie::movieplayer::tests::heap_init_2 as heap_init_6;
-    pub(crate) use crate::game::movie::movieplayer::tests::pool_allocator as pool_allocator_8;
-    pub(crate) use crate::game::movie::movieplayer::tests::base_3 as base_5;
-    pub(crate) use crate::game::movie::movieplayer::tests::alloc_base as alloc_base_2;
-    pub(crate) use crate::game::main::gamestate::tests::SEEDS_5 as SEEDS_10;
-    pub(crate) use crate::game::main::gamestate::tests::base_3 as base_7;
-    pub(crate) use crate::game::fe::festaterewards::tests::w16 as w16_2;
+    pub(crate) use crate::game::be::beintnetwork::tests::put_str;
     pub(crate) use crate::game::be::beintplayer::tests::w8;
-    pub(crate) use crate::game::fe::festaterewards::tests::slot_2 as slot_7;
-    pub(crate) use crate::game::fe::festaterewards::tests::globals_3 as globals_7;
-    pub(crate) use crate::game::fe::festaterewards::tests::pool_4 as pool_5;
-    pub(crate) use crate::game::fe::festaterewards::tests::heap_init_3 as heap_init_7;
-    pub(crate) use crate::game::fe::festaterewards::tests::base_4 as base_8;
-    pub(crate) use crate::game::wscript::wscriptman::tests::clear_5;
-    pub(crate) use crate::game::wscript::wscriptman::tests::BE_3 as BE_5;
-    pub(crate) use crate::game::wscript::wscriptman::tests::WORLD_3 as WORLD_4;
-    pub(crate) use crate::game::wscript::wscriptman::tests::GAME;
-    pub(crate) use crate::game::wscript::wscriptman::tests::globals_3 as globals_8;
-    pub(crate) use crate::game::wscript::wscriptman::tests::base_6 as base_10;
     pub(crate) use crate::game::bx::bxstring::tests::heap;
-    pub(crate) use crate::game::dirtysock::tags2::tests::pool_7 as pool_6;
     pub(crate) use crate::game::bx::bxstring::tests::put_str_2 as put_str_5;
-    pub(crate) use crate::game::bx::bxstring2::tests::W_2 as W_5;
-    pub(crate) use crate::game::bx::bxstring2::tests::RM as RM_2;
-    pub(crate) use crate::game::bx::bxstring2::tests::RIDERS;
-    pub(crate) use crate::game::bx::bxstring2::tests::BE_2 as BE_7;
-    pub(crate) use crate::game::bx::bxstring2::tests::DB;
-    pub(crate) use crate::game::bx::bxstring2::tests::VTS;
+    pub(crate) use crate::game::bx::bxstring::tests::string as string_3;
     pub(crate) use crate::game::bx::bxstring2::tests::base_3 as base_14;
     pub(crate) use crate::game::bx::bxstring2::tests::slot_2 as slot_10;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::LEAF;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::BE_DUMMY;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::WORLD_4 as WORLD_9;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::base_14 as base_19;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::check3;
-    pub(crate) use crate::game::fe::fepopup::tests::BEL;
-    pub(crate) use crate::game::fe::fepopup::tests::WORLD_4 as WORLD_10;
+    pub(crate) use crate::game::bx::bxstring2::tests::BE_2 as BE_7;
+    pub(crate) use crate::game::bx::bxstring2::tests::DB;
+    pub(crate) use crate::game::bx::bxstring2::tests::RIDERS;
+    pub(crate) use crate::game::bx::bxstring2::tests::RM as RM_2;
+    pub(crate) use crate::game::bx::bxstring2::tests::VTS;
+    pub(crate) use crate::game::bx::bxstring2::tests::W_2 as W_5;
+    pub(crate) use crate::game::dirtysock::tags2::tests::base;
+    pub(crate) use crate::game::dirtysock::tags2::tests::bb;
+    pub(crate) use crate::game::dirtysock::tags2::tests::be_library_2 as be_library_3;
+    pub(crate) use crate::game::dirtysock::tags2::tests::clear as clear_3;
+    pub(crate) use crate::game::dirtysock::tags2::tests::common;
+    pub(crate) use crate::game::dirtysock::tags2::tests::dummy_world;
+    pub(crate) use crate::game::dirtysock::tags2::tests::gp_at;
+    pub(crate) use crate::game::dirtysock::tags2::tests::heap_block_2 as heap_block;
+    pub(crate) use crate::game::dirtysock::tags2::tests::heap_init_5 as heap_init_3;
+    pub(crate) use crate::game::dirtysock::tags2::tests::pool_7 as pool_6;
+    pub(crate) use crate::game::dirtysock::tags2::tests::put_vtable;
+    pub(crate) use crate::game::dirtysock::tags2::tests::run_4 as run_3;
+    pub(crate) use crate::game::dirtysock::tags2::tests::string;
+    pub(crate) use crate::game::dirtysock::tags2::tests::world_2;
+    pub(crate) use crate::game::dirtysock::tags2::tests::SEEDS_7 as SEEDS_5;
+    pub(crate) use crate::game::dirtysock::tags2::tests::ZERO_FN;
+    pub(crate) use crate::game::fe::fepopup::tests::base_14 as base_20;
+    pub(crate) use crate::game::fe::fepopup::tests::check_all_3;
     pub(crate) use crate::game::fe::fepopup::tests::AUX;
-    pub(crate) use crate::game::fe::fepopup::tests::SYS;
+    pub(crate) use crate::game::fe::fepopup::tests::BEL;
     pub(crate) use crate::game::fe::fepopup::tests::RACE;
     pub(crate) use crate::game::fe::fepopup::tests::RMAN_2;
-    pub(crate) use crate::game::fe::fepopup::tests::check_all_3;
-    pub(crate) use crate::game::fe::fepopup::tests::base_14 as base_20;
-
+    pub(crate) use crate::game::fe::fepopup::tests::SYS;
+    pub(crate) use crate::game::fe::fepopup::tests::WORLD_4 as WORLD_10;
+    pub(crate) use crate::game::fe::fepopup3::tests::setup;
+    pub(crate) use crate::game::fe::festaterewards::tests::base_4 as base_8;
+    pub(crate) use crate::game::fe::festaterewards::tests::globals_3 as globals_7;
+    pub(crate) use crate::game::fe::festaterewards::tests::heap_init_3 as heap_init_7;
+    pub(crate) use crate::game::fe::festaterewards::tests::pool_4 as pool_5;
+    pub(crate) use crate::game::fe::festaterewards::tests::slot_2 as slot_7;
+    pub(crate) use crate::game::fe::festaterewards::tests::w16 as w16_2;
+    pub(crate) use crate::game::fe::festaterewards2::tests::belib;
+    pub(crate) use crate::game::fe::festaterewards2::tests::w;
+    pub(crate) use crate::game::fe::festaterewards2::tests::SEEDS as SEEDS_3;
+    pub(crate) use crate::game::fe::ovstatepause::tests::globals_2 as globals_3;
+    pub(crate) use crate::game::fe::ovstatepause::tests::WORLD;
+    pub(crate) use crate::game::main::gamemode::tests::be_library as be_library_6;
+    pub(crate) use crate::game::main::gamemode::tests::SEEDS as SEEDS_2;
+    pub(crate) use crate::game::main::gamemode::tests::SEEDS_2 as SEEDS_9;
+    pub(crate) use crate::game::main::gamestate::tests::base_3 as base_7;
+    pub(crate) use crate::game::main::gamestate::tests::SEEDS_5 as SEEDS_10;
+    pub(crate) use crate::game::main::ssxappdtor::tests::alloc_setup;
+    pub(crate) use crate::game::main::ssxappdtor::tests::dtor_case;
+    pub(crate) use crate::game::main::ssxappdtor::tests::MEM_MUTEX;
+    pub(crate) use crate::game::movie::movieplayer::tests::alloc_base as alloc_base_2;
+    pub(crate) use crate::game::movie::movieplayer::tests::base_3 as base_5;
+    pub(crate) use crate::game::movie::movieplayer::tests::globals;
+    pub(crate) use crate::game::movie::movieplayer::tests::heap_init_2 as heap_init_6;
+    pub(crate) use crate::game::movie::movieplayer::tests::pool_allocator as pool_allocator_8;
+    pub(crate) use crate::game::movie::movieplayer::tests::run_2 as run_5;
+    pub(crate) use crate::game::movie::movieplayer::tests::BE_2 as BE_3;
+    pub(crate) use crate::game::movie::movieplayer::tests::BE_LIBRARY;
+    pub(crate) use crate::game::movie::movieplayer::tests::W as W_2;
+    pub(crate) use crate::game::object::railmodifier::tests::rng;
+    pub(crate) use crate::game::object::railmodifier::tests::SEEDS_7 as SEEDS_6;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::alloc;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::base_14 as base_19;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::belib_2;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::check3;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::heap_init as heap_init_2;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::heap_setup;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::run as run_2;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::ARENA;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::ARENA_SIZE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::BE_DUMMY;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::LEAF;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::SEEDS_10 as SEEDS_7;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::WORLD_4 as WORLD_9;
+    pub(crate) use crate::game::wscript::wscriptman::tests::alloc_ready;
+    pub(crate) use crate::game::wscript::wscriptman::tests::base_6 as base_10;
+    pub(crate) use crate::game::wscript::wscriptman::tests::clear_3 as clear_2;
+    pub(crate) use crate::game::wscript::wscriptman::tests::clear_5;
+    pub(crate) use crate::game::wscript::wscriptman::tests::globals_3 as globals_8;
+    pub(crate) use crate::game::wscript::wscriptman::tests::load;
+    pub(crate) use crate::game::wscript::wscriptman::tests::BE_3 as BE_5;
+    pub(crate) use crate::game::wscript::wscriptman::tests::GAME;
+    pub(crate) use crate::game::wscript::wscriptman::tests::SEEDS_6 as SEEDS_4;
+    pub(crate) use crate::game::wscript::wscriptman::tests::WORLD_3 as WORLD_4;
+    use ssx3_ee as ee;
+    use ssx3_ee_rt::funcs::GuestFn;
 
     #[test]
     fn fe_async_manager_get_state_matches() {
@@ -18942,7 +19726,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn fe_async_manager_set_state_matches() {
@@ -18961,7 +19744,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn cfe_state_net_messenger_get_list_index_matches() {
         check(
@@ -18978,7 +19760,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn cfe_state_create_step1_all_fields_filled_matches() {
         check(
@@ -18994,13 +19775,16 @@ pub(crate) mod tests {
                 for k in 0..4u32 {
                     let q = DATA + 0x200 + k * 0x20;
                     c.bus.write32(s + k * 4, q);
-                    let v = if (seed >> k) & 1 == 0 { 0 } else { r.next_u32() | 1 };
+                    let v = if (seed >> k) & 1 == 0 {
+                        0
+                    } else {
+                        r.next_u32() | 1
+                    };
                     c.bus.write32(q - 8, v);
                 }
             },
         );
     }
-
 
     #[test]
     fn cfe_state_create_step1_char_in_range_matches() {
@@ -19018,7 +19802,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn cfe_state_create_step2_is_leap_year_matches() {
         check_lohi(
@@ -19032,7 +19815,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn cfepopupconfirm_cfg_set_option_string_matches() {
@@ -19050,7 +19832,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn cfepopupconfirm_cfg_set_option_wide_string_matches() {
         check(
@@ -19066,7 +19847,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn cfepopupconfirm_cfg_set_option_text_id_matches() {
@@ -19084,7 +19864,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn cfepopupconfirm_cfg_get_option_matches() {
         check(
@@ -19099,7 +19878,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn cfepopupconfirm_cfg_set_option_confirm_wide_matches() {
@@ -19118,7 +19896,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn cfepopupconfirm_cfg_clear_option_confirm_matches() {
         check_lohi(
@@ -19133,7 +19910,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn cfepopupconfirm_cfg_set_option_confirm_text_id_matches() {
@@ -19152,7 +19928,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn cfepopupconfirm_cfg_get_option_confirm_matches() {
         check_lohi(
@@ -19168,24 +19943,27 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn async_file_assign_serial_matches() {
-        check(ssx3_ee::s14::f_003def40, async_file_assign_serial, 100, &|c, seed| {
-            let mut r = Rng(0x3def_4000 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.bus.write32(DATA, r.next_u32());
-            let serial = match seed % 4 {
-                0 => 0xffff_ff00,
-                1 => 0,
-                2 => r.next_u32(),
-                _ => 0xffff_ffff,
-            };
-            c.bus.write32(ASYNC_SERIAL, serial);
-        });
+        check(
+            ssx3_ee::s14::f_003def40,
+            async_file_assign_serial,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x3def_4000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.bus.write32(DATA, r.next_u32());
+                let serial = match seed % 4 {
+                    0 => 0xffff_ff00,
+                    1 => 0,
+                    2 => r.next_u32(),
+                    _ => 0xffff_ffff,
+                };
+                c.bus.write32(ASYNC_SERIAL, serial);
+            },
+        );
     }
-
 
     /// The lazily built BE singleton (`gp - 0x1f04`) pointed at a zeroed dummy:
     /// with it zero some callees run to the file system looking for disc data.
@@ -19194,7 +19972,6 @@ pub(crate) mod tests {
         c.bus.write32(GAME_GP.wrapping_sub(0x1efc), 0);
     }
 
-
     /// The allocator mutex (`0x538b00`) marked as held by the fake
     /// `GetThreadId` result, so allocations take their fast path.
     pub(crate) fn allocator(c: &mut Cpu) {
@@ -19202,54 +19979,68 @@ pub(crate) mod tests {
         c.bus.write32(crate::difftest::fakes::LOG_RESULTS, 0x42);
     }
 
-
     #[test]
     fn netfe_state_set_selected_user_matches() {
-        check(ee::s03::f_001a9890__generated, netfe_state_set_selected_user, 200, &|c, seed| {
-            machine(c, seed, 0x1a_9890, 0);
-            let src = DATA + 0x800;
-            match seed % 3 {
-                0 => put_str(c, src, ""),
-                1 => put_str(c, src, "abc"),
-                _ => put_str(c, src, "selected user"),
-            }
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = src as u64;
-        });
+        check(
+            ee::s03::f_001a9890__generated,
+            netfe_state_set_selected_user,
+            200,
+            &|c, seed| {
+                machine(c, seed, 0x1a_9890, 0);
+                let src = DATA + 0x800;
+                match seed % 3 {
+                    0 => put_str(c, src, ""),
+                    1 => put_str(c, src, "abc"),
+                    _ => put_str(c, src, "selected user"),
+                }
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = src as u64;
+            },
+        );
     }
-
 
     #[test]
     fn cfe_state_stats_reset_results_page_matches() {
-        check(ee::s03::f_001c4b78__generated, cfe_state_stats_reset_results_page, 50, &|c, seed| {
-            let mut r = machine(c, seed, 0x1c_4b78, 0);
-            be_library(c);
-            allocator(c);
-            c.g[A0][0] = (DATA + 0x1000) as u64;
-            c.g[A1][0] = (r.next_u32() % 4) as u64;
-            c.bus.write32(DATA + 0x1000 + 0x6e8, r.next_u32());
-        });
+        check(
+            ee::s03::f_001c4b78__generated,
+            cfe_state_stats_reset_results_page,
+            50,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1c_4b78, 0);
+                be_library(c);
+                allocator(c);
+                c.g[A0][0] = (DATA + 0x1000) as u64;
+                c.g[A1][0] = (r.next_u32() % 4) as u64;
+                c.bus.write32(DATA + 0x1000 + 0x6e8, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn net_config_auth_popup_on_widget_action_matches() {
-        crate::difftest::check(ee::s03::f_001b6770__generated, net_config_auth_popup_on_widget_action, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x1b67_70, 2);
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = sx(DATA + 0x300);
-            c.g[A2][0] = if seed % 2 == 0 { 0xd } else { (r.next_u32() & 0xff) as u64 };
-            c.bus.write32(DATA + 4, r.next_u32());
-        });
+        crate::difftest::check(
+            ee::s03::f_001b6770__generated,
+            net_config_auth_popup_on_widget_action,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1b67_70, 2);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x300);
+                c.g[A2][0] = if seed % 2 == 0 {
+                    0xd
+                } else {
+                    (r.next_u32() & 0xff) as u64
+                };
+                c.bus.write32(DATA + 4, r.next_u32());
+            },
+        );
     }
-
 
     /// A vtable for `*(obj + 8)` whose two slots call the fake (delta 0, so
     /// the callee is `obj` itself).
     pub(crate) fn plain_vtable(c: &mut Cpu, r: &mut Rng) -> u32 {
         vtable(c, r, &[0x40, 0x48])
     }
-
 
     #[test]
     fn c_fe_state_challenge_popup_transition_in_matches() {
@@ -19271,7 +20062,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_net_config_shutdown_matches() {
         check(
@@ -19285,7 +20075,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     /// The five `OnWidgetAction`/`v24` wrappers share one shape.
     pub(crate) fn widget_action_test(generated: GuestFn, hand: GuestFn, salt: u64, obj_off: u32) {
@@ -19302,7 +20091,6 @@ pub(crate) mod tests {
         });
     }
 
-
     #[test]
     fn net_config_auth_popup_v24_matches() {
         widget_action_test(
@@ -19312,7 +20100,6 @@ pub(crate) mod tests {
             0x20,
         );
     }
-
 
     #[test]
     fn c_fe_state_auth_dnas_error_v24_matches() {
@@ -19324,7 +20111,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_net_account_mem_v24_matches() {
         widget_action_test(
@@ -19335,7 +20121,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_net_create_room_popup_v31_matches() {
         widget_action_test(
@@ -19345,7 +20130,6 @@ pub(crate) mod tests {
             0x20,
         );
     }
-
 
     #[test]
     fn c_fe_state_lobby_menu_refresh_player_list_matches() {
@@ -19386,7 +20170,6 @@ pub(crate) mod tests {
         );
     }
 
-
     /// The behaviour library singleton (a zeroed dummy, so
     /// `BELibrary_GetInstance` neither constructs one nor reads the disc) and
     /// a world whose race manager holds one rider (rider loops in the sound
@@ -19402,7 +20185,6 @@ pub(crate) mod tests {
         c.bus.write32(arr + 0x7c, 1);
     }
 
-
     /// Zero `words` words from the object page, so no callee reads a stale
     /// value.
     pub(crate) fn clear(c: &mut Cpu, base: u32, words: u32) {
@@ -19411,27 +20193,30 @@ pub(crate) mod tests {
         }
     }
 
-
     // ---------------------------------------------------------------- net/fe
 
     #[test]
     fn net_fe_state_on_child_event_ignore_close_matches() {
-        check(ee::s03::f_001a9638__generated, net_fe_state_on_child_event_ignore_close, 60, &|c, seed| {
-            let mut r = machine(c, seed, 0x1a9638, 1);
-            globals_2(c);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = r.next_u32() as u64;
-            // 0xf (ignored), 0x14 (ignored), and an id the base handler
-            // forwards without reaching its jump table.
-            c.g[A2][0] = match seed % 3 {
-                0 => 0xf,
-                1 => 0x14,
-                _ => (3 + r.next_u32() % 4) as u64,
-            };
-            c.g[A3][0] = r.next_u32() as u64;
-        });
+        check(
+            ee::s03::f_001a9638__generated,
+            net_fe_state_on_child_event_ignore_close,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1a9638, 1);
+                globals_2(c);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+                // 0xf (ignored), 0x14 (ignored), and an id the base handler
+                // forwards without reaching its jump table.
+                c.g[A2][0] = match seed % 3 {
+                    0 => 0xf,
+                    1 => 0x14,
+                    _ => (3 + r.next_u32() % 4) as u64,
+                };
+                c.g[A3][0] = r.next_u32() as u64;
+            },
+        );
     }
-
 
     #[test]
     fn cfe_state_net_account_mem_store_account_strings_matches() {
@@ -19457,19 +20242,20 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_popup_confirm_cfg_dtor_matches() {
-        dtor_case(ee::s03::f_001c5750__generated, c_fe_popup_confirm_cfg_dtor, 0x1c5750);
+        dtor_case(
+            ee::s03::f_001c5750__generated,
+            c_fe_popup_confirm_cfg_dtor,
+            0x1c5750,
+        );
     }
-
 
     /// `BELibrary_GetInstance` fast path: the singleton must be non-null,
     /// otherwise it allocates and initialises itself.
     pub(crate) fn be_library_2(c: &mut Cpu) {
         c.bus.write32(GAME_GP.wrapping_sub(0x1f04), DATA + 0x3000);
     }
-
 
     /// The engine's size-class pool allocator (`gp + 0xdd8` flag and the pool
     /// heads at `gp + 0x2a60..0x2a84`), so constructors that allocate do not
@@ -19498,103 +20284,130 @@ pub(crate) mod tests {
         }
     }
 
-
     #[test]
     fn fe_screen_blank_ctor_matches() {
-        check(ssx3_ee::s03::f_001abf70__generated, fe_screen_blank_ctor, SEEDS_2, &|c, seed| {
-            let mut r = machine(c, seed, 0xabf70, 0);
-            pool_allocator(c);
-            be_library_2(c);
-            let self_ = DATA + 0x100;
-            fill(c, &mut r, self_, 0x40);
-            c.g[A0][0] = sx(self_);
-        });
+        check(
+            ssx3_ee::s03::f_001abf70__generated,
+            fe_screen_blank_ctor,
+            SEEDS_2,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0xabf70, 0);
+                pool_allocator(c);
+                be_library_2(c);
+                let self_ = DATA + 0x100;
+                fill(c, &mut r, self_, 0x40);
+                c.g[A0][0] = sx(self_);
+            },
+        );
     }
-
 
     #[test]
     fn fe_lobby_menu_on_keyboard_done_matches() {
-        check(ssx3_ee::s03::f_001bd428__generated, fe_lobby_menu_on_keyboard_done, SEEDS_2, &|c, seed| {
-            let mut r = machine(c, seed, 0xbd428, 0);
-            let self_ = DATA + 0x100;
-            let menu = DATA + 0x800;
-            c.bus.write32(self_ + 0x69c, menu);
-            // Not state 8: leave without requesting a room (the join path
-            // needs a live lobby menu; see the report).
-            c.bus.write32(menu + 0x18, r.next_u32() % 7);
-            c.g[A0][0] = sx(self_);
-        });
+        check(
+            ssx3_ee::s03::f_001bd428__generated,
+            fe_lobby_menu_on_keyboard_done,
+            SEEDS_2,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0xbd428, 0);
+                let self_ = DATA + 0x100;
+                let menu = DATA + 0x800;
+                c.bus.write32(self_ + 0x69c, menu);
+                // Not state 8: leave without requesting a room (the join path
+                // needs a live lobby menu; see the report).
+                c.bus.write32(menu + 0x18, r.next_u32() % 7);
+                c.g[A0][0] = sx(self_);
+            },
+        );
     }
-
 
     #[test]
     fn fe_popup_confirm_cfg_ctor_matches() {
-        check(ssx3_ee::s03::f_001c55f8__generated, fe_popup_confirm_cfg_ctor, SEEDS_2, &|c, seed| {
-            let mut r = machine(c, seed, 0xc55f8, 0);
-            let self_ = DATA + 0x100;
-            fill(c, &mut r, self_, 0x40);
-            c.g[A0][0] = sx(self_);
-        });
+        check(
+            ssx3_ee::s03::f_001c55f8__generated,
+            fe_popup_confirm_cfg_ctor,
+            SEEDS_2,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0xc55f8, 0);
+                let self_ = DATA + 0x100;
+                fill(c, &mut r, self_, 0x40);
+                c.g[A0][0] = sx(self_);
+            },
+        );
     }
-
 
     #[test]
     fn char_to_list_index_matches() {
-        check(ee::s03::f_001b0f28__generated, char_to_list_index, 80, &|c, seed| {
-            let _ = machine(c, seed, 0x1b0f_28, 0);
-            c.g[A0][0] = sx(seed % 12);
-            for i in 0..10u32 {
-                let v = if seed % 3 == 0 {
-                    (i + 5) as u8
-                } else {
-                    (i % 12) as u8
-                };
-                c.bus.write8(0x0044_0f68 + i, v);
-            }
-        });
+        check(
+            ee::s03::f_001b0f28__generated,
+            char_to_list_index,
+            80,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x1b0f_28, 0);
+                c.g[A0][0] = sx(seed % 12);
+                for i in 0..10u32 {
+                    let v = if seed % 3 == 0 {
+                        (i + 5) as u8
+                    } else {
+                        (i % 12) as u8
+                    };
+                    c.bus.write8(0x0044_0f68 + i, v);
+                }
+            },
+        );
     }
-
 
     #[test]
     fn fe_state_chat_room_on_activate_matches() {
-        check(ssx3_ee::s03::f_001b3528__generated, fe_state_chat_room_on_activate, 60, &|c, seed| {
-            machine(c, seed, 0x1b35_28, 2);
-            belib(c);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = (DATA + 0x200) as u64;
-        });
+        check(
+            ssx3_ee::s03::f_001b3528__generated,
+            fe_state_chat_room_on_activate,
+            60,
+            &|c, seed| {
+                machine(c, seed, 0x1b35_28, 2);
+                belib(c);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (DATA + 0x200) as u64;
+            },
+        );
     }
-
 
     #[test]
     fn fe_state_net_quick_play_popup_on_child_event_matches() {
-        check(ssx3_ee::s03::f_001c1b48__generated, fe_state_net_quick_play_popup_on_child_event, 60, &|c, seed| {
-            machine(c, seed, 0x1c1b_48, 2);
-            belib(c);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = (DATA + 0x300) as u64;
-            let event = if seed % 2 == 0 { 0x82f } else { 0x900 };
-            w(c, DATA + 0x300 + 0x18, event);
-        });
+        check(
+            ssx3_ee::s03::f_001c1b48__generated,
+            fe_state_net_quick_play_popup_on_child_event,
+            60,
+            &|c, seed| {
+                machine(c, seed, 0x1c1b_48, 2);
+                belib(c);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (DATA + 0x300) as u64;
+                let event = if seed % 2 == 0 { 0x82f } else { 0x900 };
+                w(c, DATA + 0x300 + 0x18, event);
+            },
+        );
     }
-
 
     #[test]
     fn fe_state_stats_on_widget_notify_matches() {
-        check(ssx3_ee::s03::f_001c4b98__generated, fe_state_stats_on_widget_notify, SEEDS_3, &|c, seed| {
-            machine(c, seed, 0x1c4b_98, 1);
-            belib(c);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = (DATA + 0x100) as u64;
-            c.g[A2][0] = match seed % 3 {
-                0 => 4,
-                1 => 6,
-                _ => 8,
-            };
-            c.g[A3][0] = 0x1234;
-        });
+        check(
+            ssx3_ee::s03::f_001c4b98__generated,
+            fe_state_stats_on_widget_notify,
+            SEEDS_3,
+            &|c, seed| {
+                machine(c, seed, 0x1c4b_98, 1);
+                belib(c);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (DATA + 0x100) as u64;
+                c.g[A2][0] = match seed % 3 {
+                    0 => 4,
+                    1 => 6,
+                    _ => 8,
+                };
+                c.g[A3][0] = 0x1234;
+            },
+        );
     }
-
 
     pub(crate) fn net_fe_state_ctor_test(generated: GuestFn, hand: GuestFn, salt: u64) {
         check(generated, hand, 30, &|c, seed| {
@@ -19605,7 +20418,6 @@ pub(crate) mod tests {
         });
     }
 
-
     #[test]
     fn c_fe_state_net_ssx_world_ctor_matches() {
         net_fe_state_ctor_test(
@@ -19614,7 +20426,6 @@ pub(crate) mod tests {
             0x17,
         );
     }
-
 
     #[test]
     fn c_fe_state_net_quick_messages_ctor_matches() {
@@ -19625,12 +20436,14 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_net_news_ctor_matches() {
-        net_fe_state_ctor_test(ssx3_ee::s03::f_001c5018__generated, c_fe_state_net_news_ctor, 0x19);
+        net_fe_state_ctor_test(
+            ssx3_ee::s03::f_001c5018__generated,
+            c_fe_state_net_news_ctor,
+            0x19,
+        );
     }
-
 
     #[test]
     fn c_fe_use_existing_account_validate_fields_matches() {
@@ -19651,7 +20464,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn c_fe_state_net_config_on_popup_event_passthrough_matches() {
@@ -19674,7 +20486,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     /// The game's pool allocator: `gp_2+0xdd8` ready plus four free nodes in
     /// each of the seven size classes (8 to 512 bytes).
@@ -19703,14 +20514,12 @@ pub(crate) mod tests {
         }
     }
 
-
     /// A dummy movie-player object whose method slot `off` calls the fake
     /// callee.
     pub(crate) fn fake_method(c: &mut Cpu, base: u32, off: u32) {
         c.bus.write16(base + off, 0);
         c.bus.write32(base + off + 4, FAKE);
     }
-
 
     /// `NetFEState_ctor` allocates from the pool: the constructors below need
     /// the dummy BE library and the allocator.
@@ -19721,7 +20530,6 @@ pub(crate) mod tests {
         c.g[A0][0] = sx(DATA + 0x100);
         c.g[A1][0] = 0;
     }
-
 
     #[test]
     fn fe_state_select_persona_ctor_matches() {
@@ -19734,7 +20542,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn fe_state_challenge_popup_v33_matches() {
@@ -19758,7 +20565,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn fe_state_challenge_received_popup_v33_matches() {
         check(
@@ -19778,7 +20584,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn fe_state_online_character_select_handle_input_matches() {
@@ -19806,7 +20611,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn fe_state_create_step2_ctor_matches() {
         check(
@@ -19818,7 +20622,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn fe_state_net_quick_play_popup_update_matches() {
@@ -19840,10 +20643,8 @@ pub(crate) mod tests {
         );
     }
 
-
     /// The main heap's arena header (initialised by [`heap_init`]).
     pub(crate) const MEM_HEAP: u32 = 0x004f_f250;
-
 
     pub(crate) fn run(c: &mut Cpu, addr: u32, f: GuestFn, args: &[u64]) -> u64 {
         for (i, a) in args.iter().enumerate() {
@@ -19859,7 +20660,6 @@ pub(crate) mod tests {
         );
         c.g[V0][0]
     }
-
 
     /// `gp_3 + 0xdd8` says the size-class pools are ready, and the pool free
     /// lists are populated: on a fresh machine's zeroed globals the pool
@@ -19889,7 +20689,6 @@ pub(crate) mod tests {
         }
     }
 
-
     /// A dlmalloc arena over 256 KiB of test RAM (allocations above 0x200
     /// bytes, and the frees of them, come from here).
     pub(crate) fn heap_init(c: &mut Cpu) {
@@ -19900,7 +20699,6 @@ pub(crate) mod tests {
             &[MEM_HEAP as u64, (DATA + 0x40000) as u64, 0x40000],
         );
     }
-
 
     /// A machine for functions that call into game code: fake callees for the
     /// misses, the pool free lists, a real heap arena, and (for some seeds) an
@@ -19920,14 +20718,12 @@ pub(crate) mod tests {
         r
     }
 
-
     /// A `{delta, fn}` vtable entry at `vt + off`.
     pub(crate) fn slot(c: &mut Cpu, r: &mut Rng, vt: u32, off: u32, target: u32) {
         c.bus
             .write16(vt + off, (r.next_u32() as i16 as i32 & !3) as u16);
         c.bus.write32(vt + off + 4, target);
     }
-
 
     // ----------------------------------------------------------------- child events
 
@@ -19958,7 +20754,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_challenge_received_popup_on_child_event_matches() {
         check(
@@ -19984,7 +20779,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn c_fe_state_chat_room_on_widget_notify_matches() {
@@ -20014,10 +20808,15 @@ pub(crate) mod tests {
         );
     }
 
-
     // -------------------------------------------------- net account mem stepping
 
-    pub(crate) fn net_account_mem_machine(c: &mut Cpu, seed: u32, salt: u64, from_a: u32, from_b: u32) {
+    pub(crate) fn net_account_mem_machine(
+        c: &mut Cpu,
+        seed: u32,
+        salt: u64,
+        from_a: u32,
+        from_b: u32,
+    ) {
         let mut r = call_machine(c, seed, salt, 1);
         c.bus.write32(GAME_GP + 0x2e0, DATA + 0x1000);
         let mode = match seed % 4 {
@@ -20028,7 +20827,6 @@ pub(crate) mod tests {
         c.bus.write32(DATA + 0x1000, mode);
         c.g[A0][0] = sx(DATA + 0x100);
     }
-
 
     #[test]
     fn c_fe_state_net_account_mem_update_state08_matches() {
@@ -20042,7 +20840,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_net_account_mem_update_state0e_matches() {
         check(
@@ -20054,7 +20851,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn c_fe_state_net_account_mem_update_state10_matches() {
@@ -20068,7 +20864,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_net_account_mem_update_state1a_matches() {
         check(
@@ -20081,7 +20876,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_net_account_mem_update_state1b_matches() {
         check(
@@ -20093,7 +20887,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     // ------------------------------------------------------------ state ctors
 
@@ -20113,7 +20906,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_online_agreement_ctor_matches() {
         check(
@@ -20129,7 +20921,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn c_fe_state_online_agreement_on_widget_created_matches() {
@@ -20149,7 +20940,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     /// The engine's size-class pool allocator: `gp+0xdd8` ready plus 64 free
     /// nodes in each of the seven size classes, spaced by that class's block
@@ -20181,101 +20971,129 @@ pub(crate) mod tests {
         }
     }
 
-
     // -----------------------------------------------------------------------
     // 0x1b0f60 cFEStateOnlineCharacterSelect_ctor.
 
     #[test]
     fn c_fe_state_online_character_select_ctor_matches() {
-        check(ee::s03::f_001b0f60__generated, c_fe_state_online_character_select_ctor, 8, &|c, seed| {
-            let _r = machine(c, seed, 0x1b0f_60, 1);
-            let this = DATA + 0x1000;
-            pool_allocator_4(c);
-            c.g[A0][0] = sx(this);
-            c.g[A1][0] = (seed % 4) as u64;
-        });
+        check(
+            ee::s03::f_001b0f60__generated,
+            c_fe_state_online_character_select_ctor,
+            8,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1b0f_60, 1);
+                let this = DATA + 0x1000;
+                pool_allocator_4(c);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = (seed % 4) as u64;
+            },
+        );
     }
-
 
     // -----------------------------------------------------------------------
     // 0x1be7d8 cFEStateNetCreateRoomPopup_ctor.
 
     #[test]
     fn c_fe_state_net_create_room_popup_ctor_matches() {
-        check(ee::s03::f_001be7d8__generated, c_fe_state_net_create_room_popup_ctor, 8, &|c, seed| {
-            let _r = machine(c, seed, 0x1be7_d8, 1);
-            let this = DATA + 0x1000;
-            pool_allocator_4(c);
-            c.g[A0][0] = sx(this);
-            c.g[A1][0] = (seed % 4) as u64;
-            c.bus.write32(GAME_GP + 0xda0, seed.wrapping_mul(7));
-        });
+        check(
+            ee::s03::f_001be7d8__generated,
+            c_fe_state_net_create_room_popup_ctor,
+            8,
+            &|c, seed| {
+                let _r = machine(c, seed, 0x1be7_d8, 1);
+                let this = DATA + 0x1000;
+                pool_allocator_4(c);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = (seed % 4) as u64;
+                c.bus.write32(GAME_GP + 0xda0, seed.wrapping_mul(7));
+            },
+        );
     }
-
 
     #[test]
     fn cfe_state_net_messenger_handle_input_matches() {
-        check(ee::s03::f_001a4170__generated, cfe_state_net_messenger_handle_input, 80, &|c, seed| {
-            let mut r = base(c, seed, 0x1a41);
-            let s = DATA;
-            let menu = DATA + 0x400;
-            let vt = put_vtable(c, &mut r, DATA + 0x800, &[0xd8]);
-            if seed % 3 == 0 {
-                c.bus.write32(vt + 0xdc, ZERO_FN);
-                c.bus.write16(vt + 0xd8, 0);
-            }
-            c.bus.write32(menu + 8, vt);
-            c.bus.write32(s + 0x6f8, r.next_u32() % 8);
-            fill(c, &mut r, menu, 16);
-            c.g[A0][0] = sx(s);
-            c.g[A1][0] = sx(menu);
-        });
+        check(
+            ee::s03::f_001a4170__generated,
+            cfe_state_net_messenger_handle_input,
+            80,
+            &|c, seed| {
+                let mut r = base(c, seed, 0x1a41);
+                let s = DATA;
+                let menu = DATA + 0x400;
+                let vt = put_vtable(c, &mut r, DATA + 0x800, &[0xd8]);
+                if seed % 3 == 0 {
+                    c.bus.write32(vt + 0xdc, ZERO_FN);
+                    c.bus.write16(vt + 0xd8, 0);
+                }
+                c.bus.write32(menu + 8, vt);
+                c.bus.write32(s + 0x6f8, r.next_u32() % 8);
+                fill(c, &mut r, menu, 16);
+                c.g[A0][0] = sx(s);
+                c.g[A1][0] = sx(menu);
+            },
+        );
     }
-
 
     #[test]
     fn cfe_use_existing_account_dtor_matches() {
-        check(ee::s03::f_001ac068__generated, cfe_use_existing_account_dtor, 24, &|c, seed| {
-            let _r = base(c, seed, 0x1ac0);
-            let flags = if seed % 4 == 0 { 1u32 } else { 0 };
-            let obj = if flags == 1 { 0x100 } else { DATA };
-            c.g[A0][0] = sx(obj);
-            c.g[A1][0] = sx(flags);
-        });
+        check(
+            ee::s03::f_001ac068__generated,
+            cfe_use_existing_account_dtor,
+            24,
+            &|c, seed| {
+                let _r = base(c, seed, 0x1ac0);
+                let flags = if seed % 4 == 0 { 1u32 } else { 0 };
+                let obj = if flags == 1 { 0x100 } else { DATA };
+                c.g[A0][0] = sx(obj);
+                c.g[A1][0] = sx(flags);
+            },
+        );
     }
-
 
     #[test]
     fn cfe_state_create_step1_set_account_name_text_matches() {
-        check(ee::s03::f_001b95c0__generated, cfe_state_create_step1_set_account_name_text, 60, &|c, seed| {
-            base(c, seed, 0x1b95);
-            let s = DATA;
-            let screen = DATA + 0x400;
-            let name = DATA + 0x1000;
-            c.bus.write32(s + 0x40, screen);
-            c.bus.write32(s + 0x6d0, name);
-            c.bus.write32(name, name + 0x10);
-            for k in 0..8u32 {
-                c.bus.write8(name + 0x10 + k, b'a' + ((seed + k) % 26) as u8);
-            }
-            c.bus.write8(name + 0x18, 0);
-            fill(c, &mut Rng(0x1b95_0000 ^ seed as u64), screen, 4);
-            c.bus.write32(s + 0x40, screen);
-            c.g[A0][0] = sx(s);
-        });
+        check(
+            ee::s03::f_001b95c0__generated,
+            cfe_state_create_step1_set_account_name_text,
+            60,
+            &|c, seed| {
+                base(c, seed, 0x1b95);
+                let s = DATA;
+                let screen = DATA + 0x400;
+                let name = DATA + 0x1000;
+                c.bus.write32(s + 0x40, screen);
+                c.bus.write32(s + 0x6d0, name);
+                c.bus.write32(name, name + 0x10);
+                for k in 0..8u32 {
+                    c.bus
+                        .write8(name + 0x10 + k, b'a' + ((seed + k) % 26) as u8);
+                }
+                c.bus.write8(name + 0x18, 0);
+                fill(c, &mut Rng(0x1b95_0000 ^ seed as u64), screen, 4);
+                c.bus.write32(s + 0x40, screen);
+                c.g[A0][0] = sx(s);
+            },
+        );
     }
-
 
     #[test]
     fn cfe_state_stats_v31_matches() {
-        check(ee::s03::f_001c4cd8__generated, cfe_state_stats_v31, 24, &|c, seed| {
-            let _r = base(c, seed, 0x1c4c);
-            c.bus.write32(DATA + 0x6dc, DATA + 0x1000);
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = if seed % 2 == 0 { 0xe1u64 } else { (seed % 5) as u64 };
-        });
+        check(
+            ee::s03::f_001c4cd8__generated,
+            cfe_state_stats_v31,
+            24,
+            &|c, seed| {
+                let _r = base(c, seed, 0x1c4c);
+                c.bus.write32(DATA + 0x6dc, DATA + 0x1000);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = if seed % 2 == 0 {
+                    0xe1u64
+                } else {
+                    (seed % 5) as u64
+                };
+            },
+        );
     }
-
 
     #[test]
     fn net_fe_state_on_activate_matches() {
@@ -20296,7 +21114,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_use_existing_account_ctor_matches() {
         check(
@@ -20314,7 +21131,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     // ------------------------------------------------------------------
     // Front end.
@@ -20342,7 +21158,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_chat_room_update_matches() {
         check_lohi(
@@ -20364,7 +21179,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_net_account_mem_dtor_matches() {
         check(
@@ -20384,7 +21198,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_create_duplicate_ctor_matches() {
         check(
@@ -20402,7 +21215,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn c_fe_state_net_quick_messages_transition_in_matches() {
@@ -20424,7 +21236,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_stats_transition_in_matches() {
         check(
@@ -20442,7 +21253,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn cfe_state_net_account_mem_update_state02_matches() {
@@ -20464,7 +21274,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn cfe_state_login_dtor_matches() {
         check(
@@ -20483,7 +21292,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn cfe_state_online_agreement_dtor_matches() {
         check(
@@ -20501,7 +21309,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn cfe_state_net_news_on_widget_created_matches() {
@@ -20532,14 +21339,12 @@ pub(crate) mod tests {
         );
     }
 
-
     pub(crate) fn put_str_2(c: &mut Cpu, at: u32, s: &str) {
         for (i, b) in s.bytes().enumerate() {
             c.bus.write8(at + i as u32, b);
         }
         c.bus.write8(at + s.len() as u32, 0);
     }
-
 
     #[test]
     fn fe_async_manager_find_free_slot_matches() {
@@ -20559,7 +21364,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     // ------------------------------------------------------- net FE handlers
 
@@ -20581,7 +21385,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn cfe_state_challenge_received_popup_ctor_matches() {
@@ -20606,7 +21409,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn cfe_state_net_config_on_info_popup_closed_matches() {
         check(
@@ -20629,7 +21431,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn cfe_state_create_step1_on_child_event_matches() {
         check(
@@ -20648,7 +21449,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn cfe_state_lobby_menu_on_child_event_matches() {
         check(
@@ -20666,7 +21466,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn cfe_state_lobby_menu_hide_room_tabs_matches() {
@@ -20688,7 +21487,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn cfe_state_online_main_menu_on_child_event_matches() {
         check(
@@ -20706,7 +21504,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn cfe_state_net_quick_messages_on_child_event_matches() {
@@ -20726,7 +21523,6 @@ pub(crate) mod tests {
         );
     }
 
-
     /// An action/key code covering the small ranges the handlers switch on.
     pub(crate) fn action_key(seed: u32, r: &mut Rng) -> u64 {
         match seed % 8 {
@@ -20740,7 +21536,6 @@ pub(crate) mod tests {
             _ => (r.next_u32() as u64) << 8 | (r.next_u32() % 4) as u64,
         }
     }
-
 
     #[test]
     fn fe_use_existing_account_on_widget_notify_matches() {
@@ -20760,7 +21555,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn fe_state_challenge_popup_on_widget_notify_matches() {
         check(
@@ -20774,7 +21568,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn fe_state_challenge_received_popup_on_widget_notify_matches() {
@@ -20790,7 +21583,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn net_config_auth_popup_on_widget_notify_matches() {
         check(
@@ -20805,7 +21597,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn fe_state_auth_dnas_error_on_widget_notify_matches() {
         check(
@@ -20819,7 +21610,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn fe_state_online_agreement_on_widget_notify_matches() {
@@ -20839,7 +21629,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn fe_state_net_quick_play_popup_on_widget_notify_matches() {
         check(
@@ -20857,7 +21646,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn fe_state_net_news_on_widget_notify_matches() {
@@ -20877,7 +21665,6 @@ pub(crate) mod tests {
         );
     }
 
-
     /// Zero `words` words at `at`.
     pub(crate) fn clear_4(c: &mut Cpu, at: u32, words: u32) {
         for i in 0..words {
@@ -20885,12 +21672,10 @@ pub(crate) mod tests {
         }
     }
 
-
     /// Store a 32-bit word at `at`.
     pub(crate) fn w_2(c: &mut Cpu, at: u32, v: u32) {
         c.bus.write32(at, v);
     }
-
 
     /// [`machine`] plus the BELibrary dummy at `gp-0x1f04` (without it
     /// `BELibrary_GetInstance` builds a library and waits on its rewards
@@ -20921,7 +21706,6 @@ pub(crate) mod tests {
         pool_allocator_5(c);
         r
     }
-
 
     /// The engine's size-class pools (`MEM_PoolAlloc`): free lists hung off
     /// `gp + 0x2a60..`, live only when the "pools ready" flag at `gp+0xdd8`
@@ -20954,30 +21738,37 @@ pub(crate) mod tests {
         }
     }
 
-
     // ------------------------------------------------------------------
     // Front-end.
 
     #[test]
     fn fe_state_net_messenger_update_matches() {
-        check(ee::s03::f_001a3fe0__generated, fe_state_net_messenger_update, 24, &|c, seed| {
-            let mut r = base_2(c, seed, 0x1a3f_e0);
-            let s = DATA + 0x100;
-            clear_4(c, s, 0x800);
-            let obj = DATA + 0x1000;
-            clear_4(c, obj, 0x40);
-            let now = r.next_u32();
-            w_2(c, obj + 0x18, now);
-            w_2(c, gp_at(0x2a74), obj as u32);
-            w_2(
-                c,
-                s + 0x6dc,
-                if seed % 2 == 0 { now.wrapping_sub(1) } else { now.wrapping_sub(100) },
-            );
-            c.g[A0][0] = sx(s);
-        });
+        check(
+            ee::s03::f_001a3fe0__generated,
+            fe_state_net_messenger_update,
+            24,
+            &|c, seed| {
+                let mut r = base_2(c, seed, 0x1a3f_e0);
+                let s = DATA + 0x100;
+                clear_4(c, s, 0x800);
+                let obj = DATA + 0x1000;
+                clear_4(c, obj, 0x40);
+                let now = r.next_u32();
+                w_2(c, obj + 0x18, now);
+                w_2(c, gp_at(0x2a74), obj as u32);
+                w_2(
+                    c,
+                    s + 0x6dc,
+                    if seed % 2 == 0 {
+                        now.wrapping_sub(1)
+                    } else {
+                        now.wrapping_sub(100)
+                    },
+                );
+                c.g[A0][0] = sx(s);
+            },
+        );
     }
-
 
     // ------------------------------------------------- rate: front-end timers
 
@@ -20989,7 +21780,6 @@ pub(crate) mod tests {
         c.pc = c.g[RA][0] as u32;
     }
 
-
     /// The app manager at rate `hz` with its VSync counter at `now`, installed
     /// both where `tick::rate` reads it (`tick::APPMAN_PTR`) and where the game
     /// reads it (`gp+0x2a74`, the same `D_004A5B64`).
@@ -21000,7 +21790,6 @@ pub(crate) mod tests {
         c.bus.write32(GAME_GP.wrapping_add(0x2a74), app);
         app
     }
-
 
     /// `cFEStateNetMessenger_Update` (0x1a3fe0) at rate `hz` with the last
     /// refresh `elapsed` VSyncs ago: true when it refreshed. The refresh path
@@ -21020,7 +21809,6 @@ pub(crate) mod tests {
         c.bus.read32(s + 0x6dc) == NOW
     }
 
-
     /// The player-list refresh is a one-second period of the VSync counter:
     /// 60 VSyncs at 60 Hz, 120 at 120, 240 at 240.
     #[test]
@@ -21035,7 +21823,6 @@ pub(crate) mod tests {
         // 60 VSyncs are one second only at 60 Hz: at 120 the list waits on.
         assert!(!messenger_refreshes(120, 60));
     }
-
 
     /// `cFEStateChatRoom_Update` (0x1b2320) at rate `hz` with the VSync counter
     /// at `now`: true when it ran the player-quality poll (0x1b3bf0), which is
@@ -21055,15 +21842,20 @@ pub(crate) mod tests {
         calls.iter().any(|k| k[0] == 0x001b_3bf0)
     }
 
-
     /// The player-quality poll runs every 10000 frames of the VSync counter:
     /// every 10000 VSyncs at 60 Hz, 20000 at 120, 40000 at 240.
     #[test]
     fn c_fe_state_chat_room_poll_follows_the_rate() {
         for (hz, period) in [(60u32, 10_000u32), (120, 20_000), (240, 40_000)] {
             assert!(chat_room_polls(hz, period), "{hz} Hz: no poll at {period}");
-            assert!(chat_room_polls(hz, 3 * period), "{hz} Hz: no poll at 3 x {period}");
-            assert!(!chat_room_polls(hz, period - 1), "{hz} Hz: poll just before");
+            assert!(
+                chat_room_polls(hz, 3 * period),
+                "{hz} Hz: no poll at 3 x {period}"
+            );
+            assert!(
+                !chat_room_polls(hz, period - 1),
+                "{hz} Hz: poll just before"
+            );
             assert!(
                 !chat_room_polls(hz, period + period / 2),
                 "{hz} Hz: poll half a period late"
@@ -21072,7 +21864,6 @@ pub(crate) mod tests {
         // 10000 VSyncs are the period only at 60 Hz.
         assert!(!chat_room_polls(120, 10_000));
     }
-
 
     /// `cFEStateNetQuickPlayPopup_Update` (0x1c1038) at rate `hz`, one update
     /// from `value` in `self+0x6e8`, armed: the counter afterwards.
@@ -21092,7 +21883,6 @@ pub(crate) mod tests {
         c.bus.read32(this + 0x6e8)
     }
 
-
     /// The quick-play popup's retry interval is 0.5 s: the reloaded countdown is
     /// 30 ticks at 60 Hz, 60 at 120, 120 at 240, while the countdown itself
     /// still takes one off per update.
@@ -21106,180 +21896,214 @@ pub(crate) mod tests {
         }
     }
 
-
     #[test]
     fn fe_state_net_messenger_on_find_user_result_matches() {
-        check(ee::s03::f_001a4fb0__generated, fe_state_net_messenger_on_find_user_result, 48, &|c, seed| {
-            let mut r = base_2(c, seed, 0x1a4f_b0);
-            let s = DATA + 0x100;
-            clear_4(c, s, 0x800);
-            w_2(c, s + 0x1c, if seed % 2 == 0 { 0 } else { 6 });
-            let reply = DATA + 0x400;
-            clear_4(c, reply, 0x40);
-            w_2(c, s + 0x6a0, if seed % 3 == 0 { 0 } else { reply as u32 });
-            w_2(c, reply + 0x18, if seed % 4 == 0 { 0x807 } else { r.next_u32() });
-            c.g[A0][0] = sx(s);
-            c.g[A1][0] = r.next_u32() as u64;
-            c.g[A2][0] = sx(DATA + 0x500);
-            clear_4(c, DATA + 0x500, 0x40);
-        });
+        check(
+            ee::s03::f_001a4fb0__generated,
+            fe_state_net_messenger_on_find_user_result,
+            48,
+            &|c, seed| {
+                let mut r = base_2(c, seed, 0x1a4f_b0);
+                let s = DATA + 0x100;
+                clear_4(c, s, 0x800);
+                w_2(c, s + 0x1c, if seed % 2 == 0 { 0 } else { 6 });
+                let reply = DATA + 0x400;
+                clear_4(c, reply, 0x40);
+                w_2(c, s + 0x6a0, if seed % 3 == 0 { 0 } else { reply as u32 });
+                w_2(
+                    c,
+                    reply + 0x18,
+                    if seed % 4 == 0 { 0x807 } else { r.next_u32() },
+                );
+                c.g[A0][0] = sx(s);
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = sx(DATA + 0x500);
+                clear_4(c, DATA + 0x500, 0x40);
+            },
+        );
     }
-
 
     #[test]
     fn fe_state_net_messenger_set_player_menu_selection_matches() {
-        check(ee::s03::f_001a6c40__generated, fe_state_net_messenger_set_player_menu_selection, 48, &|c, seed| {
-            let _ = base_2(c, seed, 0x1a6c_40);
-            let s = DATA + 0x100;
-            clear_4(c, s, 0x40);
-            let screen = DATA + 0x300;
-            clear_4(c, screen, 0x40);
-            if seed % 3 != 0 {
-                w_2(c, s + 0x40, screen as u32);
-                let objs = DATA + 0x400;
-                let count = DATA + 0x440;
-                let menu = DATA + 0x480;
-                clear_4(c, objs, 0x10);
-                clear_4(c, count, 4);
-                clear_4(c, menu, 0x100);
-                w_2(c, screen + 0x3c, objs as u32);
-                w_2(c, screen + 0x38, count as u32);
-                if seed % 2 == 0 {
-                    w_2(c, count, 0);
-                } else {
-                    w_2(c, count, 1);
-                    w_2(c, objs, menu as u32);
-                    w_2(c, menu + 0x38, 0);
+        check(
+            ee::s03::f_001a6c40__generated,
+            fe_state_net_messenger_set_player_menu_selection,
+            48,
+            &|c, seed| {
+                let _ = base_2(c, seed, 0x1a6c_40);
+                let s = DATA + 0x100;
+                clear_4(c, s, 0x40);
+                let screen = DATA + 0x300;
+                clear_4(c, screen, 0x40);
+                if seed % 3 != 0 {
+                    w_2(c, s + 0x40, screen as u32);
+                    let objs = DATA + 0x400;
+                    let count = DATA + 0x440;
+                    let menu = DATA + 0x480;
+                    clear_4(c, objs, 0x10);
+                    clear_4(c, count, 4);
+                    clear_4(c, menu, 0x100);
+                    w_2(c, screen + 0x3c, objs as u32);
+                    w_2(c, screen + 0x38, count as u32);
+                    if seed % 2 == 0 {
+                        w_2(c, count, 0);
+                    } else {
+                        w_2(c, count, 1);
+                        w_2(c, objs, menu as u32);
+                        w_2(c, menu + 0x38, 0);
+                    }
                 }
-            }
-            c.g[A0][0] = sx(s);
-            c.g[A1][0] = if seed % 2 == 0 { 0 } else { sx(0xffff_ffff) };
-        });
+                c.g[A0][0] = sx(s);
+                c.g[A1][0] = if seed % 2 == 0 { 0 } else { sx(0xffff_ffff) };
+            },
+        );
     }
-
 
     #[test]
     fn net_fe_state_update_matches() {
-        check(ee::s03::f_001a8770__generated, net_fe_state_update, 24, &|c, seed| {
-            let mut r = base_2(c, seed, 0x1a87_70);
-            let s = DATA + 0x100;
-            clear_4(c, s, 0x800);
-            c.g[A0][0] = sx(s);
-            c.g[A1][0] = r.next_u32() as u64;
-        });
+        check(
+            ee::s03::f_001a8770__generated,
+            net_fe_state_update,
+            24,
+            &|c, seed| {
+                let mut r = base_2(c, seed, 0x1a87_70);
+                let s = DATA + 0x100;
+                clear_4(c, s, 0x800);
+                c.g[A0][0] = sx(s);
+                c.g[A1][0] = r.next_u32() as u64;
+            },
+        );
     }
-
 
     #[test]
     fn net_fe_state_open_keyboard_str_matches() {
-        check(ee::s03::f_001a9090__generated, net_fe_state_open_keyboard_str, 32, &|c, seed| {
-            let mut r = base_2(c, seed, 0x1a90_90);
-            let s = DATA + 0x100;
-            clear_4(c, s, 0x800);
-            c.g[A0][0] = sx(s);
-            c.g[A1][0] = r.next_u32() as u64;
-            c.g[A2][0] = sx(DATA + 0x200);
-            c.g[A3][0] = sx(DATA + 0x300);
-            c.g[T0][0] = r.next_u32() as u64;
-            c.g[T1][0] = r.next_u32() as u64;
-            c.g[T2][0] = r.next_u32() as u64;
-        });
+        check(
+            ee::s03::f_001a9090__generated,
+            net_fe_state_open_keyboard_str,
+            32,
+            &|c, seed| {
+                let mut r = base_2(c, seed, 0x1a90_90);
+                let s = DATA + 0x100;
+                clear_4(c, s, 0x800);
+                c.g[A0][0] = sx(s);
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = sx(DATA + 0x200);
+                c.g[A3][0] = sx(DATA + 0x300);
+                c.g[T0][0] = r.next_u32() as u64;
+                c.g[T1][0] = r.next_u32() as u64;
+                c.g[T2][0] = r.next_u32() as u64;
+            },
+        );
     }
-
 
     #[test]
     fn net_fe_state_open_keyboard_text_id_matches() {
-        check(ee::s03::f_001a9150__generated, net_fe_state_open_keyboard_text_id, 32, &|c, seed| {
-            let mut r = base_2(c, seed, 0x1a91_50);
-            let s = DATA + 0x100;
-            clear_4(c, s, 0x800);
-            c.g[A0][0] = sx(s);
-            c.g[A1][0] = r.next_u32() as u64;
-            c.g[A2][0] = sx(DATA + 0x200);
-            c.g[A3][0] = sx(DATA + 0x300);
-            c.g[T0][0] = r.next_u32() as u64;
-            c.g[T1][0] = r.next_u32() as u64;
-            c.g[T2][0] = r.next_u32() as u64;
-        });
+        check(
+            ee::s03::f_001a9150__generated,
+            net_fe_state_open_keyboard_text_id,
+            32,
+            &|c, seed| {
+                let mut r = base_2(c, seed, 0x1a91_50);
+                let s = DATA + 0x100;
+                clear_4(c, s, 0x800);
+                c.g[A0][0] = sx(s);
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = sx(DATA + 0x200);
+                c.g[A3][0] = sx(DATA + 0x300);
+                c.g[T0][0] = r.next_u32() as u64;
+                c.g[T1][0] = r.next_u32() as u64;
+                c.g[T2][0] = r.next_u32() as u64;
+            },
+        );
     }
-
 
     #[test]
     fn fe_state_net_config_start_card_scan_matches() {
-        check(ee::s03::f_001b5268__generated, fe_state_net_config_start_card_scan, 32, &|c, seed| {
-            let mut r = base_2(c, seed, 0x1b52_68);
-            let s = DATA + 0x100;
-            clear_4(c, s, 0x800);
-            w_2(c, s + 0x6e4, DATA + 0x400);
-            w_2(c, s + 0x6e8, DATA + 0x480);
-            w_2(c, s + 0x6f4, DATA + 0x500);
-            clear_4(c, DATA + 0x400, 0x40);
-            clear_4(c, DATA + 0x480, 0x40);
-            clear_4(c, DATA + 0x500, 0x40);
-            w_2(c, gp_at(-0x1570), r.next_u32());
-            c.g[A0][0] = sx(s);
-        });
+        check(
+            ee::s03::f_001b5268__generated,
+            fe_state_net_config_start_card_scan,
+            32,
+            &|c, seed| {
+                let mut r = base_2(c, seed, 0x1b52_68);
+                let s = DATA + 0x100;
+                clear_4(c, s, 0x800);
+                w_2(c, s + 0x6e4, DATA + 0x400);
+                w_2(c, s + 0x6e8, DATA + 0x480);
+                w_2(c, s + 0x6f4, DATA + 0x500);
+                clear_4(c, DATA + 0x400, 0x40);
+                clear_4(c, DATA + 0x480, 0x40);
+                clear_4(c, DATA + 0x500, 0x40);
+                w_2(c, gp_at(-0x1570), r.next_u32());
+                c.g[A0][0] = sx(s);
+            },
+        );
     }
-
 
     #[test]
     fn fe_state_net_account_mem_popup_id_to_state_matches() {
-        check(ee::s03::f_001b8890__generated, fe_state_net_account_mem_popup_id_to_state, 120, &|c, seed| {
-            base_2(c, seed, 0x1b88_90);
-            c.g[A1][0] = match seed % 8 {
-                0 => 13,
-                1 => 21,
-                2 => 7,
-                3 => 25,
-                4 => 14,
-                5 => 0,
-                6 => 20,
-                _ => sx(0xffff_fff0),
-            };
-        });
+        check(
+            ee::s03::f_001b8890__generated,
+            fe_state_net_account_mem_popup_id_to_state,
+            120,
+            &|c, seed| {
+                base_2(c, seed, 0x1b88_90);
+                c.g[A1][0] = match seed % 8 {
+                    0 => 13,
+                    1 => 21,
+                    2 => 7,
+                    3 => 25,
+                    4 => 14,
+                    5 => 0,
+                    6 => 20,
+                    _ => sx(0xffff_fff0),
+                };
+            },
+        );
     }
-
 
     #[test]
     fn fe_state_create_step1_set_email_text_matches() {
-        check(ee::s03::f_001b96e0__generated, fe_state_create_step1_set_email_text, 48, &|c, seed| {
-            let mut r = base_2(c, seed, 0x1b96_e0);
-            let s = DATA + 0x100;
-            clear_4(c, s, 0x800);
-            let screen = DATA + 0x300;
-            clear_4(c, screen, 0x40);
-            if seed % 3 != 0 {
-                w_2(c, s + 0x40, screen as u32);
-                let objs = DATA + 0x400;
-                let count = DATA + 0x440;
-                let text = DATA + 0x480;
-                clear_4(c, objs, 0x10);
-                clear_4(c, count, 4);
-                clear_4(c, text, 0x40);
-                w_2(c, screen + 0x3c, objs as u32);
-                w_2(c, screen + 0x38, count as u32);
-                w_2(c, count, 1);
-                w_2(c, objs, text as u32);
-                w_2(c, text + 0x38, r.next_u32());
-                let holder = DATA + 0x500;
-                clear_4(c, holder, 0x20);
-                w_2(c, s + 0x6d0, holder as u32);
-                w_2(c, holder + 0xc, DATA + 0x600);
-                // A string with a non-zero length word at `s - 8`.
-                w_2(c, DATA + 0x600, 0);
-                w_2(c, DATA + 0x5f8, if seed % 2 == 0 { 0 } else { 4 });
-            }
-            c.g[A0][0] = sx(s);
-        });
+        check(
+            ee::s03::f_001b96e0__generated,
+            fe_state_create_step1_set_email_text,
+            48,
+            &|c, seed| {
+                let mut r = base_2(c, seed, 0x1b96_e0);
+                let s = DATA + 0x100;
+                clear_4(c, s, 0x800);
+                let screen = DATA + 0x300;
+                clear_4(c, screen, 0x40);
+                if seed % 3 != 0 {
+                    w_2(c, s + 0x40, screen as u32);
+                    let objs = DATA + 0x400;
+                    let count = DATA + 0x440;
+                    let text = DATA + 0x480;
+                    clear_4(c, objs, 0x10);
+                    clear_4(c, count, 4);
+                    clear_4(c, text, 0x40);
+                    w_2(c, screen + 0x3c, objs as u32);
+                    w_2(c, screen + 0x38, count as u32);
+                    w_2(c, count, 1);
+                    w_2(c, objs, text as u32);
+                    w_2(c, text + 0x38, r.next_u32());
+                    let holder = DATA + 0x500;
+                    clear_4(c, holder, 0x20);
+                    w_2(c, s + 0x6d0, holder as u32);
+                    w_2(c, holder + 0xc, DATA + 0x600);
+                    // A string with a non-zero length word at `s - 8`.
+                    w_2(c, DATA + 0x600, 0);
+                    w_2(c, DATA + 0x5f8, if seed % 2 == 0 { 0 } else { 4 });
+                }
+                c.g[A0][0] = sx(s);
+            },
+        );
     }
-
 
     /// The lazily built BELibrary singleton (`gp - 0x1f04`): a zeroed dummy,
     /// so nothing tries to read the file system for it.
     pub(crate) fn be_library_4(c: &mut Cpu) {
         c.bus.write32(GAME_GP.wrapping_sub(0x1f04), DATA + 0x3_0000);
     }
-
 
     /// A dummy world (`gp - 0x848`) with one rider, so rider loops in the
     /// callees terminate.
@@ -21293,7 +22117,6 @@ pub(crate) mod tests {
         c.bus.write32(arr + 0x28, DATA + 0x8_3000);
         c.bus.write32(arr + 0x7c, 1);
     }
-
 
     /// The engine's size-class pool allocator: `gp + 0xdd8` ready plus eight
     /// free nodes per size class. The front-end constructors allocate a screen
@@ -21322,7 +22145,6 @@ pub(crate) mod tests {
         }
     }
 
-
     /// A screen-shaped object whose hash list contains one entry with hash 0
     /// (the test machine's string globals are zero, so `StrHashElf` returns 0).
     pub(crate) fn hash_screen(c: &mut Cpu, screen: u32, node: u32) {
@@ -21332,7 +22154,6 @@ pub(crate) mod tests {
         c.bus.write32(DATA + 0x40_00, node);
         c.bus.write32(node + 0x38, 0);
     }
-
 
     pub(crate) fn init_setup(c: &mut Cpu, seed: u32, salt: u64) {
         machine(c, seed, salt, 3);
@@ -21344,14 +22165,17 @@ pub(crate) mod tests {
         c.bus.write32(DATA + 0x10, DATA + 0x1000);
     }
 
-
     #[test]
     fn fe_screen_blank_init_matches() {
-        check(ee::s03::f_001abfa8__generated, fe_screen_blank_init, 6, &|c, seed| {
-            init_setup(c, seed, 0x001a_bfa8);
-        });
+        check(
+            ee::s03::f_001abfa8__generated,
+            fe_screen_blank_init,
+            6,
+            &|c, seed| {
+                init_setup(c, seed, 0x001a_bfa8);
+            },
+        );
     }
-
 
     #[test]
     fn cfe_state_select_persona_v33_matches() {
@@ -21376,7 +22200,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn cfe_state_auth_dnas_error_init_matches() {
         check(
@@ -21388,7 +22211,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn cfe_state_net_account_mem_update_state16_matches() {
@@ -21408,7 +22230,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn cfe_state_create_step1_set_password_text_matches() {
@@ -21435,7 +22256,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn cfe_state_create_step1_set_confirm_password_text_matches() {
         check(
@@ -21460,7 +22280,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn cfe_state_lobby_menu_on_create_room_popup_event_matches() {
@@ -21488,7 +22307,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn cfe_state_net_create_room_popup_init_matches() {
         check(
@@ -21501,7 +22319,6 @@ pub(crate) mod tests {
         );
     }
 
-
     pub(crate) const OBJ: u32 = DATA + 0x1000;
 
     pub(crate) const OBJ2: u32 = DATA + 0x2000;
@@ -21512,18 +22329,15 @@ pub(crate) mod tests {
 
     pub(crate) const VT: u32 = DATA + 0x8000;
 
-
     pub(crate) fn w_3(c: &mut Cpu, at: u32, v: u32) {
         c.bus.write32(at, v);
     }
-
 
     /// A vtable slot_2 `{ short delta; short; fn }` at `vt + off`.
     pub(crate) fn slot_2(c: &mut Cpu, vt: u32, off: u32, delta: i16, func: u32) {
         c.bus.write16(vt + off, delta as u16);
         w_3(c, vt + off + 4, func);
     }
-
 
     /// The BELibrary singleton at `gp_7 - 0x1f04` and the world at `gp_7 - 0x848`
     /// (world -> +0x84 -> +0xc race, rider count at +0x7c).
@@ -21537,7 +22351,6 @@ pub(crate) mod tests {
         w_3(c, game + 0xc, race);
         w_3(c, race + 0x7c, 0);
     }
-
 
     #[test]
     fn c_fe_state_net_messenger_ctor_matches() {
@@ -21555,7 +22368,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn net_fe_state_open_messenger_matches() {
@@ -21576,7 +22388,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn c_fe_state_create_step1_restore_account_info_matches() {
@@ -21602,7 +22413,6 @@ pub(crate) mod tests {
         );
     }
 
-
     pub(crate) fn init_screen_test(generated: GuestFn, hand: GuestFn, salt: u64) {
         check(generated, hand, 20, &|c, seed| {
             fakes::machine(c, seed, salt, 0);
@@ -21615,7 +22425,6 @@ pub(crate) mod tests {
         });
     }
 
-
     #[test]
     fn c_fe_state_net_quick_messages_init_matches() {
         init_screen_test(
@@ -21624,7 +22433,6 @@ pub(crate) mod tests {
             0x1c2138,
         );
     }
-
 
     #[test]
     fn c_fe_state_auth_dnas_error_on_widget_action_matches() {
@@ -21650,7 +22458,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_create_step1_validate_fields_matches() {
         check(
@@ -21668,7 +22475,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn c_fe_state_create_step2_get_days_in_month_matches() {
@@ -21699,7 +22505,6 @@ pub(crate) mod tests {
         );
     }
 
-
     /// The engine's size-class pool allocator (`gp_7 + 0xdd8` and the free lists
     /// at `gp_7 + 0x2a60..0x2a84`), copied from `oc57`/`oc69`.
     pub(crate) fn pool_allocator_6(c: &mut Cpu) {
@@ -21726,7 +22531,6 @@ pub(crate) mod tests {
         }
     }
 
-
     /// The object under test.
     pub(crate) const OBJ_2: u32 = DATA;
 
@@ -21742,7 +22546,6 @@ pub(crate) mod tests {
     /// The dummy world.
     pub(crate) const WORLD_2: u32 = DATA + 0x8_0000;
 
-
     /// The BELibrary singleton (`gp_8 - 0x1f04`, a zeroed dummy so nothing reads
     /// the disc) and the world (`gp_8 - 0x848`, with no riders).
     pub(crate) fn globals_5(c: &mut Cpu) {
@@ -21754,7 +22557,6 @@ pub(crate) mod tests {
         w(c, game + 0xc, race);
         w(c, race + 0x7c, 0);
     }
-
 
     /// The engine's size-class pool_2 allocator: `gp_8 + 0xdd8` ready plus eight
     /// free nodes per size class (a zeroed heap walks garbage).
@@ -21785,7 +22587,6 @@ pub(crate) mod tests {
         }
     }
 
-
     /// Scrambled state, fake call hooks, a game-like `gp_8` and the standard
     /// fixtures.
     pub(crate) fn base_3(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
@@ -21794,7 +22595,6 @@ pub(crate) mod tests {
         pool_2(c);
         r
     }
-
 
     /// A screen whose hash table holds `node` with hash 0 (`StrHash("")` is 0
     /// on the test machine: the tag strings are not loaded).
@@ -21806,7 +22606,6 @@ pub(crate) mod tests {
         w(c, node + 0x38, 0);
     }
 
-
     /// The UI `*_Init` pattern: a state with a dummy engine, the pool_2 and the
     /// globals_5.
     pub(crate) fn ui_init_setup(c: &mut Cpu, seed: u32, salt: u64) {
@@ -21816,7 +22615,6 @@ pub(crate) mod tests {
         c.g[A0][0] = OBJ_2 as u64;
         w(c, OBJ_2 + 0x10, DATA + 0x1000);
     }
-
 
     // ---------------------------------------------------------------- front end
 
@@ -21847,7 +22645,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_auth_dnas_error_ctor_matches() {
         check(
@@ -21863,7 +22660,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn c_fe_state_create_step2_on_parent_email_entered_matches() {
@@ -21891,7 +22687,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_create_step2_set_month_selection_matches() {
         step2_selection_test(
@@ -21901,7 +22696,6 @@ pub(crate) mod tests {
             0x28,
         );
     }
-
 
     #[test]
     fn c_fe_state_create_step2_set_day_selection_matches() {
@@ -21913,7 +22707,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_create_step2_set_gender_selection_matches() {
         step2_selection_test(
@@ -21923,7 +22716,6 @@ pub(crate) mod tests {
             0x34,
         );
     }
-
 
     pub(crate) fn step2_selection_test(gen: GuestFn, hand: GuestFn, salt: u64, value_off: u32) {
         check(gen, hand, 8, &|c, seed| {
@@ -21946,7 +22738,6 @@ pub(crate) mod tests {
         });
     }
 
-
     pub(crate) fn presence_test(gen: GuestFn, hand: GuestFn, salt: u64) {
         check(gen, hand, 8, &|c, seed| {
             let _ = base_3(c, seed, salt, 6);
@@ -21962,38 +22753,55 @@ pub(crate) mod tests {
         });
     }
 
-
     #[test]
     fn c_fe_state_lobby_menu_v32_matches() {
-        presence_test(ee::s03::f_001bcca8__generated, c_fe_state_lobby_menu_v32, 0x001b_cca8);
+        presence_test(
+            ee::s03::f_001bcca8__generated,
+            c_fe_state_lobby_menu_v32,
+            0x001b_cca8,
+        );
     }
-
 
     #[test]
     fn c_fe_state_stats_v32_matches() {
-        presence_test(ee::s03::f_001c2e70__generated, c_fe_state_stats_v32, 0x001c_2e70);
+        presence_test(
+            ee::s03::f_001c2e70__generated,
+            c_fe_state_stats_v32,
+            0x001c_2e70,
+        );
     }
-
 
     #[test]
     fn c_fe_state_net_news_v32_matches() {
-        presence_test(ee::s03::f_001c5108__generated, c_fe_state_net_news_v32, 0x001c_5108);
+        presence_test(
+            ee::s03::f_001c5108__generated,
+            c_fe_state_net_news_v32,
+            0x001c_5108,
+        );
     }
-
 
     #[test]
     fn c_fe_state_login_init_matches() {
-        check(ee::s03::f_001beed0__generated, c_fe_state_login_init, 4, &|c, seed| {
-            ui_init_setup(c, seed, 0x001b_eed0);
-        });
+        check(
+            ee::s03::f_001beed0__generated,
+            c_fe_state_login_init,
+            4,
+            &|c, seed| {
+                ui_init_setup(c, seed, 0x001b_eed0);
+            },
+        );
     }
-
 
     #[test]
     fn c_fe_state_stats_init_matches() {
-        check(ee::s03::f_001c2e00__generated, c_fe_state_stats_init, 4, &|c, seed| {
-            ui_init_setup(c, seed, 0x001c_2e00);
-        });
+        check(
+            ee::s03::f_001c2e00__generated,
+            c_fe_state_stats_init,
+            4,
+            &|c, seed| {
+                ui_init_setup(c, seed, 0x001c_2e00);
+            },
+        );
     }
 
     /// The test world / race manager / BE_2 singleton live high in `DATA`.
@@ -22002,7 +22810,6 @@ pub(crate) mod tests {
     pub(crate) const RM: u32 = DATA + 0x3d_0100;
 
     pub(crate) const BE_2: u32 = DATA + 0x3d_2000;
-
 
     pub(crate) fn run_4(c: &mut Cpu, addr: u32, f: GuestFn, args: &[u64]) -> u64 {
         for (i, a) in args.iter().enumerate() {
@@ -22015,7 +22822,6 @@ pub(crate) mod tests {
         c.g[V0][0]
     }
 
-
     pub(crate) fn heap_init_4(c: &mut Cpu) {
         c.g[GP][0] = GAME_GP as u64;
         run_4(
@@ -22025,7 +22831,6 @@ pub(crate) mod tests {
             &[MEM_HEAP as u64, (DATA + 0x4_0000) as u64, 0x4_0000],
         );
     }
-
 
     /// The engine's size-class pool allocator, enabled through `gp + 0xdd8`.
     pub(crate) fn pool_allocator_7(c: &mut Cpu) {
@@ -22053,7 +22858,6 @@ pub(crate) mod tests {
         }
     }
 
-
     /// A machine with a plausible game `gp`: the BE_2 singleton, the world,
     /// race manager and frame counter.
     pub(crate) fn base_4(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
@@ -22070,7 +22874,6 @@ pub(crate) mod tests {
         r
     }
 
-
     /// [`base_4`] plus a working pool allocator and dlmalloc arena.
     pub(crate) fn alloc_base(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
         let r = base_4(c, seed, salt);
@@ -22078,7 +22881,6 @@ pub(crate) mod tests {
         heap_init_4(c);
         r
     }
-
 
     #[test]
     fn net_fe_state_on_messenger_popup_event_matches() {
@@ -22100,7 +22902,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn net_fe_state_show_wait_player_popup_matches() {
         check(
@@ -22113,7 +22914,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn c_fe_state_challenge_popup_v32_matches() {
@@ -22130,7 +22930,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_challenge_received_popup_transition_in_matches() {
         check(
@@ -22146,7 +22945,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_create_step1_ctor_matches() {
         check(
@@ -22161,7 +22959,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     /// Set up a step-1 list-box lookup for `name_addr` and the boolean field.
     pub(crate) fn selection_setup(c: &mut Cpu, name_addr: u32, field: u32) {
@@ -22186,7 +22983,6 @@ pub(crate) mod tests {
         }
     }
 
-
     #[test]
     fn c_fe_state_create_step1_set_inform_selection_matches() {
         check(
@@ -22204,7 +23000,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn c_fe_state_create_step1_set_share_info_selection_matches() {
@@ -22224,7 +23019,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_create_step2_set_legal_selection_matches() {
         check(
@@ -22243,7 +23037,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_create_duplicate_submit_account_matches() {
         check(
@@ -22257,7 +23050,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn c_fe_state_lobby_menu_clamp_room_selections_matches() {
@@ -22279,7 +23071,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_net_news_init_matches() {
         check(
@@ -22295,43 +23086,50 @@ pub(crate) mod tests {
         );
     }
 
-
     // ---------------------------------------------------------- front-end states
 
     #[test]
     fn c_fe_state_net_messenger_init_matches() {
-        check(ee::s03::f_001a3f68__generated, c_fe_state_net_messenger_init, 12, &|c, seed| {
-            machine(c, seed, 0x1a_3f68, 5);
-            belib_2(c);
-            heap_setup(c);
-            world_2(c);
-            c.g[A0][0] = (DATA + 0x2000) as u64;
-            w(c, DATA + 0x2000 + 0x10, DATA + 0x2200);
-            c.pc = 0x001a_3f68;
-        });
+        check(
+            ee::s03::f_001a3f68__generated,
+            c_fe_state_net_messenger_init,
+            12,
+            &|c, seed| {
+                machine(c, seed, 0x1a_3f68, 5);
+                belib_2(c);
+                heap_setup(c);
+                world_2(c);
+                c.g[A0][0] = (DATA + 0x2000) as u64;
+                w(c, DATA + 0x2000 + 0x10, DATA + 0x2200);
+                c.pc = 0x001a_3f68;
+            },
+        );
     }
-
 
     #[test]
     fn c_fe_state_net_messenger_v33_matches() {
-        check(ee::s03::f_001a4928__generated, c_fe_state_net_messenger_v33, SEEDS_7, &|c, seed| {
-            machine(c, seed, 0x1a_4928, 4);
-            belib_2(c);
-            world_2(c);
-            c.g[A0][0] = (DATA + 0x2000) as u64;
-            w(c, DATA + 0x2000 + 0x6d0, DATA + 0x2400);
-            string(c, DATA + 0x2400, "");
-            if seed % 2 == 0 {
-                c.g[A2][0] = 0xf;
-            } else {
-                c.g[A1][0] = 0;
-                c.g[A2][0] = 0;
-                w(c, DATA + 0x2000 + 0x69c, DATA + 0x2500);
-            }
-            c.pc = 0x001a_4928;
-        });
+        check(
+            ee::s03::f_001a4928__generated,
+            c_fe_state_net_messenger_v33,
+            SEEDS_7,
+            &|c, seed| {
+                machine(c, seed, 0x1a_4928, 4);
+                belib_2(c);
+                world_2(c);
+                c.g[A0][0] = (DATA + 0x2000) as u64;
+                w(c, DATA + 0x2000 + 0x6d0, DATA + 0x2400);
+                string(c, DATA + 0x2400, "");
+                if seed % 2 == 0 {
+                    c.g[A2][0] = 0xf;
+                } else {
+                    c.g[A1][0] = 0;
+                    c.g[A2][0] = 0;
+                    w(c, DATA + 0x2000 + 0x69c, DATA + 0x2500);
+                }
+                c.pc = 0x001a_4928;
+            },
+        );
     }
-
 
     #[test]
     fn c_fe_state_chat_room_on_go_to_char_select_event_matches() {
@@ -22358,7 +23156,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_chat_room_on_go_to_char_select_event_2_matches() {
         check(
@@ -22384,22 +23181,25 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_online_main_menu_v31_matches() {
-        check(ee::s03::f_001c0358__generated, c_fe_state_online_main_menu_v31, SEEDS_7, &|c, seed| {
-            machine(c, seed, 0x1c_0358, 5);
-            belib_2(c);
-            heap_setup(c);
-            world_2(c);
-            c.g[A0][0] = (DATA + 0x2000) as u64;
-            c.g[A1][0] = [0xefu64, 0xf3, 0x42][(seed % 3) as usize];
-            c.g[A2][0] = 0;
-            w(c, DATA + 0x2000 + 0x10, DATA + 0x2200);
-            c.pc = 0x001c_0358;
-        });
+        check(
+            ee::s03::f_001c0358__generated,
+            c_fe_state_online_main_menu_v31,
+            SEEDS_7,
+            &|c, seed| {
+                machine(c, seed, 0x1c_0358, 5);
+                belib_2(c);
+                heap_setup(c);
+                world_2(c);
+                c.g[A0][0] = (DATA + 0x2000) as u64;
+                c.g[A1][0] = [0xefu64, 0xf3, 0x42][(seed % 3) as usize];
+                c.g[A2][0] = 0;
+                w(c, DATA + 0x2000 + 0x10, DATA + 0x2200);
+                c.pc = 0x001c_0358;
+            },
+        );
     }
-
 
     pub(crate) const SEEDS_8: u32 = 64;
 
@@ -22411,13 +23211,11 @@ pub(crate) mod tests {
         c.bus.write8(a, v);
     }
 
-
     /// The zeroed BE-library singleton at `gp-0x1f04` (else the FE helpers walk
     /// into the lazy disc load).
     pub(crate) fn be_library_5(c: &mut Cpu) {
         w(c, GAME_GP.wrapping_sub(0x1f04), DATA + 0x30_0000);
     }
-
 
     /// The dummy world_3 at `gp-0x848` with the race-manager chain.
     pub(crate) fn world_3(c: &mut Cpu) {
@@ -22429,7 +23227,6 @@ pub(crate) mod tests {
         w(c, DATA + 0x1200 + 0x78, 0);
         w(c, wld + 0x7c, DATA + 0x1500);
     }
-
 
     /// `DLHeap_InitArena(&MEM_HEAP, arena, 0x40000)`: the game heap over test
     /// memory, for the paths that allocate.
@@ -22444,13 +23241,11 @@ pub(crate) mod tests {
         assert_eq!(c.pc, TEST_RA as u32, "DLHeap_InitArena did not return");
     }
 
-
     /// A vtable slot_3 `{delta, fn}` at `vt + off`.
     pub(crate) fn slot_3(c: &mut Cpu, vt: u32, off: u32, delta: i16, f: u32) {
         h(c, vt + off, delta as u16);
         w(c, vt + off + 4, f);
     }
-
 
     /// A NUL-terminated string_2 at `a`.
     pub(crate) fn string_2(c: &mut Cpu, a: u32, s: &str) {
@@ -22459,7 +23254,6 @@ pub(crate) mod tests {
         }
         b(c, a + s.len() as u32, 0);
     }
-
 
     #[test]
     fn net_fe_state_make_password_mask_matches() {
@@ -22480,7 +23274,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn c_fe_state_challenge_received_popup_v32_matches() {
@@ -22506,7 +23299,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_lobby_menu_init_matches() {
         check(
@@ -22525,7 +23317,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn c_fe_state_lobby_menu_show_room_tab_matches() {
@@ -22559,7 +23350,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_net_quick_play_popup_init_matches() {
         check(
@@ -22578,7 +23368,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn c_fe_state_stats_ctor_matches() {
@@ -22599,47 +23388,54 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn fe_async_manager_request_texture_matches() {
-        check(ee::s03::f_001a36e8__generated, fe_async_manager_request_texture, SEEDS_9, &|c, seed| {
-            let mut r = machine(c, seed, 0x1a36e8, 2);
-            be_library_6(c);
-            let obj = DATA;
-            c.g[A0][0] = obj as u64;
-            c.g[A1][0] = (seed % 4) as u64;
-            c.g[A2][0] = r.next_u32() as u64;
-            w(c, GAME_GP.wrapping_sub(0x1700), DATA + 0x2000);
-            string_3(c, DATA + 0x2000, "pic");
-        });
+        check(
+            ee::s03::f_001a36e8__generated,
+            fe_async_manager_request_texture,
+            SEEDS_9,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1a36e8, 2);
+                be_library_6(c);
+                let obj = DATA;
+                c.g[A0][0] = obj as u64;
+                c.g[A1][0] = (seed % 4) as u64;
+                c.g[A2][0] = r.next_u32() as u64;
+                w(c, GAME_GP.wrapping_sub(0x1700), DATA + 0x2000);
+                string_3(c, DATA + 0x2000, "pic");
+            },
+        );
     }
-
 
     // ------------------------------------------------------------------ front end
 
     #[test]
     fn fe_set_online_mode_matches() {
-        check(ee::s03::f_001a86e8__generated, fe_set_online_mode, 24, &|c, seed| {
-            let _ = base_5(c, seed, 0x1a86_e8, 6);
-            c.g[A0][0] = if seed % 3 == 0 {
-                0
-            } else {
-                (1 + seed % 2) as u64
-            };
-            match seed % 4 {
-                0 => w(c, GAME_GP.wrapping_add(0x238), 0),
-                _ => {
-                    let bm = DATA + 0x1000;
-                    w(c, GAME_GP.wrapping_add(0x238), bm);
-                    w(c, bm + 0xc8, (seed % 3) as u32);
-                    w(c, bm + 0xd8, ((seed / 3) % 2) as u32);
-                    w(c, bm + 0xe0, ((seed / 5) % 2) as u32);
+        check(
+            ee::s03::f_001a86e8__generated,
+            fe_set_online_mode,
+            24,
+            &|c, seed| {
+                let _ = base_5(c, seed, 0x1a86_e8, 6);
+                c.g[A0][0] = if seed % 3 == 0 {
+                    0
+                } else {
+                    (1 + seed % 2) as u64
+                };
+                match seed % 4 {
+                    0 => w(c, GAME_GP.wrapping_add(0x238), 0),
+                    _ => {
+                        let bm = DATA + 0x1000;
+                        w(c, GAME_GP.wrapping_add(0x238), bm);
+                        w(c, bm + 0xc8, (seed % 3) as u32);
+                        w(c, bm + 0xd8, ((seed / 3) % 2) as u32);
+                        w(c, bm + 0xe0, ((seed / 5) % 2) as u32);
+                    }
                 }
-            }
-            w(c, GAME_GP.wrapping_sub(0xc8), DATA + 0x2000);
-        });
+                w(c, GAME_GP.wrapping_sub(0xc8), DATA + 0x2000);
+            },
+        );
     }
-
 
     #[test]
     fn net_fe_show_player_conn_quality_matches() {
@@ -22668,7 +23464,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_lobby_menu_on_net_result_matches() {
         check(
@@ -22695,7 +23490,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_net_quick_play_popup_ctor_matches() {
         check(
@@ -22708,7 +23502,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn c_fe_state_net_ssx_world_init_matches() {
@@ -22734,18 +23527,15 @@ pub(crate) mod tests {
     /// The dummy world (`world -> +0x84 -> game -> +0xc -> race`).
     pub(crate) const WORLD_3: u32 = DATA + 0x8_0000;
 
-
     pub(crate) fn wh(c: &mut Cpu, a: u32, v: u16) {
         c.bus.write16(a, v);
     }
-
 
     /// A vtable slot_4 `{delta = 0, fn}`.
     pub(crate) fn slot_4(c: &mut Cpu, vt: u32, off: u32, func: u32) {
         wh(c, vt + off, 0);
         w(c, vt + off + 4, func);
     }
-
 
     /// The BELibrary singleton, the world/race globals_6 and the `gp` slots the
     /// front-end code keeps singletons in.
@@ -22758,7 +23548,6 @@ pub(crate) mod tests {
         w(c, game + 0xc, race);
         w(c, race + 0x7c, 0);
     }
-
 
     /// The engine's size-class pool_3 allocator (`gp + 0xdd8` ready plus eight
     /// free nodes per size class; a zeroed heap walks garbage).
@@ -22786,7 +23575,6 @@ pub(crate) mod tests {
         }
     }
 
-
     /// Scrambled state, the fake call hooks, a game-like `gp`, the standard
     /// fixtures and a prepared UIEngine phase table (slot_4 0/1/2/3 -> fake
     /// objects whose `+4` is a vtable that calls the fake).
@@ -22805,7 +23593,6 @@ pub(crate) mod tests {
         }
         r
     }
-
 
     #[test]
     fn net_fe_state_toggle_block_user_matches() {
@@ -22826,7 +23613,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn net_fe_state_toggle_messenger_buddy_matches() {
         check(
@@ -22846,7 +23632,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_chat_room_v32_matches() {
         check(
@@ -22863,7 +23648,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn c_fe_state_chat_room_on_child_event_matches() {
@@ -22888,7 +23672,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn net_config_auth_popup_dtor_matches() {
         check(
@@ -22907,7 +23690,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_create_duplicate_init_matches() {
         check(
@@ -22923,7 +23705,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     // -----------------------------------------------------------------------
     // Net/online front-end states.
@@ -22956,7 +23737,6 @@ pub(crate) mod tests {
         }
     }
 
-
     #[test]
     fn cfestateonlinecharacterselect_show_character_matches() {
         check(
@@ -22972,7 +23752,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn cfestatelobbymenu_prompt_room_password_matches() {
@@ -22997,9 +23776,7 @@ pub(crate) mod tests {
         );
     }
 
-
     pub(crate) const SEEDS_11: u32 = 40;
-
 
     /// A vtable slot_5 `{delta, fn}` at `vt + off`.
     pub(crate) fn slot_5(c: &mut Cpu, vt: u32, off: u32, delta: i16, f: u32) {
@@ -23007,13 +23784,11 @@ pub(crate) mod tests {
         w(c, vt + off + 4, f);
     }
 
-
     /// The zeroed BE-library singleton at `gp_11-0x1f04` (else the FE helpers walk
     /// into the lazy disc load).
     pub(crate) fn be_library_7(c: &mut Cpu) {
         w(c, GAME_GP.wrapping_sub(0x1f04), DATA + 0x30_0000);
     }
-
 
     /// The dummy world_4 at `gp_11-0x848` with the race-manager chain.
     pub(crate) fn world_4(c: &mut Cpu) {
@@ -23026,7 +23801,6 @@ pub(crate) mod tests {
         w(c, wld + 0x7c, DATA + 0x1500);
     }
 
-
     /// A NUL-terminated string_4 at `a`.
     pub(crate) fn string_4(c: &mut Cpu, a: u32, s: &str) {
         for (i, ch) in s.bytes().enumerate() {
@@ -23035,33 +23809,36 @@ pub(crate) mod tests {
         b(c, a + s.len() as u32, 0);
     }
 
-
     #[test]
     fn fe_async_manager_free_all_matches() {
-        check(ssx3_ee::s03::f_001a3c50__generated, fe_async_manager_free_all, SEEDS_11, &|c, seed| {
-            let mut r = machine(c, seed, 0x1a3c50, 4);
-            be_library_7(c);
-            world_4(c);
-            let mgr = DATA + 0x100;
-            c.g[A0][0] = mgr as u64;
-            // gp_11-0x854: the object whose vtable slot_5 50 releases a file.
-            let obj = DATA + 0x200;
-            let vt = DATA + 0x600;
-            w(c, GAME_GP.wrapping_sub(0x854), obj);
-            w(c, obj + 0x10d8, vt);
-            slot_5(c, vt, 0x190, 0, FAKE);
-            slot_5(c, vt, 0x194, 0, FAKE + 0x10);
-            for i in 0..5 {
-                let file = mgr + 0x100 + 0x11c * i;
-                if seed % 3 != 0 || i == 0 {
-                    w(c, file, r.next_u32() & 0xffff);
-                    w(c, file + 8, r.next_u32());
-                    w(c, file - 0x10, DATA + 0x4000 + 0x40 * i);
+        check(
+            ssx3_ee::s03::f_001a3c50__generated,
+            fe_async_manager_free_all,
+            SEEDS_11,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1a3c50, 4);
+                be_library_7(c);
+                world_4(c);
+                let mgr = DATA + 0x100;
+                c.g[A0][0] = mgr as u64;
+                // gp_11-0x854: the object whose vtable slot_5 50 releases a file.
+                let obj = DATA + 0x200;
+                let vt = DATA + 0x600;
+                w(c, GAME_GP.wrapping_sub(0x854), obj);
+                w(c, obj + 0x10d8, vt);
+                slot_5(c, vt, 0x190, 0, FAKE);
+                slot_5(c, vt, 0x194, 0, FAKE + 0x10);
+                for i in 0..5 {
+                    let file = mgr + 0x100 + 0x11c * i;
+                    if seed % 3 != 0 || i == 0 {
+                        w(c, file, r.next_u32() & 0xffff);
+                        w(c, file + 8, r.next_u32());
+                        w(c, file - 0x10, DATA + 0x4000 + 0x40 * i);
+                    }
                 }
-            }
-        });
+            },
+        );
     }
-
 
     // ------------------------------------------------------------------
     // Front-end network states.
@@ -23092,22 +23869,25 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_create_step1_init_matches() {
-        check(ssx3_ee::s03::f_001b8960__generated, c_fe_state_create_step1_init, SEEDS_11, &|c, seed| {
-            let mut r = machine(c, seed, 0x1b8960, 4);
-            be_library_7(c);
-            world_4(c);
-            let st = DATA + 0x100;
-            c.g[A0][0] = st as u64;
-            w(c, st + 0x6ec, if seed % 2 == 0 { 0 } else { 1 });
-            w(c, st + 0x10, 0);
-            w(c, GAME_GP.wrapping_sub(0xc8), DATA + 0x200);
-            let _ = r.next_u32();
-        });
+        check(
+            ssx3_ee::s03::f_001b8960__generated,
+            c_fe_state_create_step1_init,
+            SEEDS_11,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1b8960, 4);
+                be_library_7(c);
+                world_4(c);
+                let st = DATA + 0x100;
+                c.g[A0][0] = st as u64;
+                w(c, st + 0x6ec, if seed % 2 == 0 { 0 } else { 1 });
+                w(c, st + 0x10, 0);
+                w(c, GAME_GP.wrapping_sub(0xc8), DATA + 0x200);
+                let _ = r.next_u32();
+            },
+        );
     }
-
 
     #[test]
     fn c_fe_state_create_step1_detect_changes_matches() {
@@ -23139,7 +23919,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_create_duplicate_on_child_event_matches() {
         check(
@@ -23167,8 +23946,7 @@ pub(crate) mod tests {
         );
     }
 
-
-        #[test]
+    #[test]
     fn c_fe_state_online_agreement_update_matches() {
         check(
             ssx3_ee::s03::f_001c0a80__generated,
@@ -23196,7 +23974,6 @@ pub(crate) mod tests {
         );
     }
 
-
     /// Call a guest function with `args` in a0.. and return `v0`.
     pub(crate) fn run_6(c: &mut Cpu, addr: u32, f: GuestFn, args: &[u64]) -> u64 {
         for (i, a) in args.iter().enumerate() {
@@ -23209,12 +23986,10 @@ pub(crate) mod tests {
         c.g[V0][0]
     }
 
-
     /// The ELF string hash of the string at_3 `s`.
     pub(crate) fn str_hash(c: &mut Cpu, s: u32) -> u32 {
         run_6(c, 0x0031_7670, ee::s10::f_00317670, &[s as u64]) as u32
     }
-
 
     /// A NUL-terminated byte string at_3 `addr`.
     pub(crate) fn put_str_3(c: &mut Cpu, addr: u32, s: &[u8]) {
@@ -23223,7 +23998,6 @@ pub(crate) mod tests {
         }
         c.bus.write8(addr + s.len() as u32, 0);
     }
-
 
     /// A UIScreen at_3 `screen` whose only child (`+0x38` -> count cell, `+0x3c`
     /// -> array) has id `id`; the child is a UI text object whose `+0x8` slot
@@ -23240,7 +24014,6 @@ pub(crate) mod tests {
         node
     }
 
-
     #[test]
     fn fe_async_manager_request_peak_map_matches() {
         check(
@@ -23256,7 +24029,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn c_fe_state_net_messenger_set_row_name_matches() {
@@ -23279,7 +24051,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn c_fe_state_create_step1_is_email_format_valid_matches() {
@@ -23307,7 +24078,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_create_step2_set_year_selection_matches() {
         check(
@@ -23329,7 +24099,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     pub(crate) const SEEDS_12: u32 = 200;
 
@@ -23407,7 +24176,6 @@ pub(crate) mod tests {
         pool_4(c);
     }
 
-
     #[test]
     fn cfe_state_net_messenger_on_child_event_matches() {
         check(
@@ -23433,33 +24201,36 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn net_fe_state_v26_matches() {
-        check(ee::s03::f_001a89b0__generated, net_fe_state_v26, SEEDS_12, &|c, seed| {
-            machine(c, seed, 0x1a89, 0);
-            env(c);
-            let this = DATA + 0x400;
-            let msg = DATA + 0x500;
-            let vt = DATA + 0x800;
-            let popup = DATA + 0x900;
-            let kind = [0x31u32, 0x33, 0x4d, 0x4e, 0x800, 0x999][(seed % 6) as usize];
-            w32(c, this + 0x6a8, if seed % 4 == 0 { 0 } else { 1 });
-            // The disconnected popup returns at once when it is already open
-            // (its full path walks the UI tree and is not this test's subject).
-            w32(c, this + 0x6ac, 1);
-            w32(c, this + 0x6a0, popup);
-            w32(c, gpat(-0xc8), if seed % 5 == 0 { 1 } else { 0 });
-            w32(c, msg + 0xc, kind);
-            w32(c, msg + 8, vt);
-            slot_6(c, vt, 8, EMPTY);
-            c.g[A0][0] = sx(this);
-            c.g[A1][0] = sx(msg);
-        });
+        check(
+            ee::s03::f_001a89b0__generated,
+            net_fe_state_v26,
+            SEEDS_12,
+            &|c, seed| {
+                machine(c, seed, 0x1a89, 0);
+                env(c);
+                let this = DATA + 0x400;
+                let msg = DATA + 0x500;
+                let vt = DATA + 0x800;
+                let popup = DATA + 0x900;
+                let kind = [0x31u32, 0x33, 0x4d, 0x4e, 0x800, 0x999][(seed % 6) as usize];
+                w32(c, this + 0x6a8, if seed % 4 == 0 { 0 } else { 1 });
+                // The disconnected popup returns at once when it is already open
+                // (its full path walks the UI tree and is not this test's subject).
+                w32(c, this + 0x6ac, 1);
+                w32(c, this + 0x6a0, popup);
+                w32(c, gpat(-0xc8), if seed % 5 == 0 { 1 } else { 0 });
+                w32(c, msg + 0xc, kind);
+                w32(c, msg + 8, vt);
+                slot_6(c, vt, 8, EMPTY);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(msg);
+            },
+        );
     }
 
-
-        #[test]
+    #[test]
     fn cfe_state_create_step2_submit_account_matches() {
         check(
             ee::s03::f_001ba9f8__generated,
@@ -23479,7 +24250,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn net_fe_state_show_max_buddies_popup_matches() {
         check(
@@ -23498,7 +24268,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn c_fe_use_existing_account_init_matches() {
@@ -23521,7 +24290,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     // ------------------------------------------------------------------
     // Front-end / online state handlers.
@@ -23556,7 +24324,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn cfe_state_online_character_select_init_matches() {
         check(
@@ -23576,8 +24343,7 @@ pub(crate) mod tests {
         );
     }
 
-
-            #[test]
+    #[test]
     fn cfe_state_create_step1_transition_in_matches() {
         check(
             ee::s03::f_001b8a08__generated,
@@ -23599,7 +24365,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     pub(crate) const SEEDS_13: u32 = 200;
 
@@ -23627,7 +24392,6 @@ pub(crate) mod tests {
         w(c, vt + off + 4, target);
     }
 
-
     /// EAFile's request and file-handle pools (see oc117): with no free entry
     /// the allocators spin forever (`0x3de768`).
     pub(crate) fn eafile_pools(c: &mut Cpu) {
@@ -23644,7 +24408,6 @@ pub(crate) mod tests {
         }
     }
 
-
     pub(crate) fn run_7(c: &mut Cpu, addr: u32, f: GuestFn, args: &[u64]) -> u64 {
         for (i, a) in args.iter().enumerate() {
             c.g[[A0, A1, A2, A3, T0, T1][i]][0] = *a;
@@ -23655,7 +24418,6 @@ pub(crate) mod tests {
         c.g[V0][0]
     }
 
-
     pub(crate) fn heap_init_8(c: &mut Cpu) {
         c.g[GP][0] = GAME_GP as u64;
         run_7(
@@ -23665,7 +24427,6 @@ pub(crate) mod tests {
             &[MEM_HEAP as u64, (DATA + 0x4_0000) as u64, 0x4_0000],
         );
     }
-
 
     /// The engine's size-class pool allocator, enabled through `gp + 0xdd8`.
     pub(crate) fn pool_allocator_9(c: &mut Cpu) {
@@ -23693,7 +24454,6 @@ pub(crate) mod tests {
         }
     }
 
-
     /// Scrambled registers, fake hooks, a game-like `gp`, the BE_4 singleton and
     /// a world with no riders.
     pub(crate) fn base_9(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
@@ -23709,7 +24469,6 @@ pub(crate) mod tests {
         r
     }
 
-
     /// [`base_9`] plus the pool allocator and dlmalloc arena.
     pub(crate) fn alloc_base_3(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
         let r = base_9(c, seed, salt, calls);
@@ -23718,7 +24477,6 @@ pub(crate) mod tests {
         heap_init_8(c);
         r
     }
-
 
     #[test]
     fn fe_net_messenger_show_looking_for_self_matches() {
@@ -23739,7 +24497,6 @@ pub(crate) mod tests {
             }),
         );
     }
-
 
     #[test]
     fn fe_net_messenger_has_name_matches() {
@@ -23770,7 +24527,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn fe_net_messenger_find_name_str_matches() {
@@ -23803,7 +24559,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn net_fe_state_on_keyboard_popup_event_matches() {
         check(
@@ -23822,7 +24577,6 @@ pub(crate) mod tests {
             }),
         );
     }
-
 
     #[test]
     fn fe_state_chat_room_transition_in_matches() {
@@ -23855,7 +24609,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn fe_state_online_agreement_init_matches() {
         check(
@@ -23875,7 +24628,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn fe_state_online_agreement_v25_matches() {
         check(
@@ -23892,7 +24644,6 @@ pub(crate) mod tests {
         );
     }
 
-
     // A setup wrapper that also runs `alloc_base_3`.
     pub(crate) fn alloc_base_setup<'a>(
         f: impl Fn(&mut Cpu, u32, &mut Rng) + 'a,
@@ -23903,44 +24654,47 @@ pub(crate) mod tests {
         }
     }
 
-
     // --------------------------------------------------------------- net events
 
     #[test]
     fn net_fe_state_queue_net_event_matches() {
-        check(ssx3_ee::s03::f_001a8ae8__generated, net_fe_state_queue_net_event, 16, &|c, seed| {
-            let mut r = base_10(c, seed, 0x001a_8ae8);
-            elf_image(c);
-            heap(c);
-            pool_6(c);
-            let state = DATA + 0x100;
-            let event = DATA + 0x900;
-            let vtable = DATA + 0xa00;
-            let node = DATA + 0x3000;
-            clear_5(c, state, 0x700);
-            clear_5(c, node, 0x20);
-            w(c, state + 0x6cc, node);
-            w(c, node + 4, 0);
-            clear_5(c, event, 0x40);
-            clear_5(c, vtable, 0x40);
-            w(c, event + 4, vtable);
-            if seed % 3 == 0 {
-                // Virtual conversion returns the payload.
-                c.bus.write16(vtable + 0x10, 0);
-                w(c, vtable + 0x14, crate::difftest::fakes::FAKE);
-                w(c, crate::difftest::fakes::LOG_RESULTS, 0x4242);
-            } else {
-                // Virtual conversion returns null (MenuSys_IsActive on a
-                // zeroed first word), so nothing is queued.
-                c.bus.write16(vtable + 0x10, 0);
-                w(c, vtable + 0x14, 0x002c_c098);
-                w(c, event, 0);
-            }
-            c.g[A0][0] = sx(state);
-            c.g[A1][0] = if seed % 5 == 0 { 0 } else { sx(event) };
-        });
+        check(
+            ssx3_ee::s03::f_001a8ae8__generated,
+            net_fe_state_queue_net_event,
+            16,
+            &|c, seed| {
+                let mut r = base_10(c, seed, 0x001a_8ae8);
+                elf_image(c);
+                heap(c);
+                pool_6(c);
+                let state = DATA + 0x100;
+                let event = DATA + 0x900;
+                let vtable = DATA + 0xa00;
+                let node = DATA + 0x3000;
+                clear_5(c, state, 0x700);
+                clear_5(c, node, 0x20);
+                w(c, state + 0x6cc, node);
+                w(c, node + 4, 0);
+                clear_5(c, event, 0x40);
+                clear_5(c, vtable, 0x40);
+                w(c, event + 4, vtable);
+                if seed % 3 == 0 {
+                    // Virtual conversion returns the payload.
+                    c.bus.write16(vtable + 0x10, 0);
+                    w(c, vtable + 0x14, crate::difftest::fakes::FAKE);
+                    w(c, crate::difftest::fakes::LOG_RESULTS, 0x4242);
+                } else {
+                    // Virtual conversion returns null (MenuSys_IsActive on a
+                    // zeroed first word), so nothing is queued.
+                    c.bus.write16(vtable + 0x10, 0);
+                    w(c, vtable + 0x14, 0x002c_c098);
+                    w(c, event, 0);
+                }
+                c.g[A0][0] = sx(state);
+                c.g[A1][0] = if seed % 5 == 0 { 0 } else { sx(event) };
+            },
+        );
     }
-
 
     pub(crate) fn fill_setup(c: &mut Cpu, seed: u32, salt: u64) -> (Rng, u32) {
         let mut r = base_10(c, seed, salt);
@@ -23968,28 +24722,35 @@ pub(crate) mod tests {
         (r, list_box)
     }
 
-
     #[test]
     fn net_fe_state_fill_yes_no_list_matches() {
-        check(ssx3_ee::s03::f_001a9a18__generated, net_fe_state_fill_yes_no_list, 12, &|c, seed| {
-            let (_, list_box) = fill_setup(c, seed, 0x001a_9a18);
-            c.g[A0][0] = sx(DATA + 0x1000);
-            c.g[A1][0] = sx(list_box);
-            c.g[A2][0] = (seed % 3) as u64;
-        });
+        check(
+            ssx3_ee::s03::f_001a9a18__generated,
+            net_fe_state_fill_yes_no_list,
+            12,
+            &|c, seed| {
+                let (_, list_box) = fill_setup(c, seed, 0x001a_9a18);
+                c.g[A0][0] = sx(DATA + 0x1000);
+                c.g[A1][0] = sx(list_box);
+                c.g[A2][0] = (seed % 3) as u64;
+            },
+        );
     }
-
 
     #[test]
     fn net_fe_state_fill_on_off_list_matches() {
-        check(ssx3_ee::s03::f_001a9ab8__generated, net_fe_state_fill_on_off_list, 12, &|c, seed| {
-            let (_, list_box) = fill_setup(c, seed, 0x001a_9ab8);
-            c.g[A0][0] = sx(DATA + 0x1000);
-            c.g[A1][0] = sx(list_box);
-            c.g[A2][0] = (seed % 3) as u64;
-        });
+        check(
+            ssx3_ee::s03::f_001a9ab8__generated,
+            net_fe_state_fill_on_off_list,
+            12,
+            &|c, seed| {
+                let (_, list_box) = fill_setup(c, seed, 0x001a_9ab8);
+                c.g[A0][0] = sx(DATA + 0x1000);
+                c.g[A1][0] = sx(list_box);
+                c.g[A2][0] = (seed % 3) as u64;
+            },
+        );
     }
-
 
     // ------------------------------------------------------- front-end widget
 
@@ -24023,7 +24784,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn net_fe_state_on_mem_card_login_popup_event_matches() {
         check(
@@ -24048,11 +24808,14 @@ pub(crate) mod tests {
                 w(c, crate::difftest::fakes::LOG_RESULTS, 1);
                 c.g[A0][0] = sx(state);
                 c.g[A1][0] = sx(event_obj);
-                c.g[A2][0] = if seed % 3 == 0 { 0x16 } else { (seed % 0x20) as u64 };
+                c.g[A2][0] = if seed % 3 == 0 {
+                    0x16
+                } else {
+                    (seed % 0x20) as u64
+                };
             },
         );
     }
-
 
     // ---------------------------------------------------- read-message popup
 
@@ -24081,14 +24844,12 @@ pub(crate) mod tests {
         );
     }
 
-
     // ------------------------------------------------------------------
     // Shared fixtures.
 
     pub(crate) fn w_4(c: &mut Cpu, at: u32, v: u32) {
         c.bus.write32(at, v);
     }
-
 
     /// The BELibrary dummy, the world/race-manager chain and the interface
     /// table the game normally builds at boot.
@@ -24109,7 +24870,6 @@ pub(crate) mod tests {
         w_4(c, DATA + 0x30_2000 + 8, 0);
         w_4(c, DATA + 0x30_2000 + 0xc, fakes::FAKE);
     }
-
 
     /// The engine's size-class pool_7 allocator: each pool_7's start is stored in
     /// its `gp` slot, its free-list head at `start + size`, and eight free
@@ -24137,7 +24897,6 @@ pub(crate) mod tests {
         }
     }
 
-
     pub(crate) fn heap_init_9(c: &mut Cpu) {
         const MEM_HEAP: u32 = 0x004f_f250;
         const RET: u64 = 0x0012_3450;
@@ -24150,7 +24909,6 @@ pub(crate) mod tests {
         assert_eq!(c.pc, RET as u32, "DLHeap_InitArena did not return");
     }
 
-
     pub(crate) fn base_11(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
         c.g[GP][0] = GAME_GP as u64;
         heap_init_9(c);
@@ -24159,7 +24917,6 @@ pub(crate) mod tests {
         pool_7(c);
         r
     }
-
 
     /// A screen whose object list returns `node` for hash 0 (`StrHash("")` is 0
     /// on the test machine: the tag strings are not loaded).
@@ -24171,96 +24928,135 @@ pub(crate) mod tests {
         w_4(c, node + 0x38, 0);
     }
 
-
     // ------------------------------------------------------------------
     // Front end / online states.
 
-        #[test]
+    #[test]
     fn cfe_state_challenge_popup_show_set_options_matches() {
-        check(ssx3_ee::s03::f_001af688__generated, cfe_state_challenge_popup_show_set_options, 20, &|c, seed| {
-            let _r = base_11(c, seed, 0x1af688, 0);
-            let this = DATA + 0x1000;
-            let screen = DATA + 0x2000;
-            c.g[A0][0] = this as u64;
-            w_4(c, this + 0x40, screen);
-            w_4(c, this + 0x6d0, 0xdead);
-            if seed % 2 == 0 {
-                w_4(c, screen + 0x38, DATA + 0x32_0100);
-                w_4(c, DATA + 0x32_0100, 0);
-                w_4(c, screen + 0x3c, DATA + 0x32_0000);
-            } else {
-                let node = DATA + 0x3000;
-                hash_object_2(c, screen, node);
-                w_4(c, node + 8, DATA + 0x4000);
-                c.bus.write16(DATA + 0x4000 + 0x40, 0x40);
-                w_4(c, DATA + 0x4000 + 0x44, 1);
-            }
-        });
+        check(
+            ssx3_ee::s03::f_001af688__generated,
+            cfe_state_challenge_popup_show_set_options,
+            20,
+            &|c, seed| {
+                let _r = base_11(c, seed, 0x1af688, 0);
+                let this = DATA + 0x1000;
+                let screen = DATA + 0x2000;
+                c.g[A0][0] = this as u64;
+                w_4(c, this + 0x40, screen);
+                w_4(c, this + 0x6d0, 0xdead);
+                if seed % 2 == 0 {
+                    w_4(c, screen + 0x38, DATA + 0x32_0100);
+                    w_4(c, DATA + 0x32_0100, 0);
+                    w_4(c, screen + 0x3c, DATA + 0x32_0000);
+                } else {
+                    let node = DATA + 0x3000;
+                    hash_object_2(c, screen, node);
+                    w_4(c, node + 8, DATA + 0x4000);
+                    c.bus.write16(DATA + 0x4000 + 0x40, 0x40);
+                    w_4(c, DATA + 0x4000 + 0x44, 1);
+                }
+            },
+        );
     }
-
 
     #[test]
     fn cfe_state_net_config_ctor_matches() {
-        check(ssx3_ee::s03::f_001b3f78__generated, cfe_state_net_config_ctor, 8, &|c, seed| {
-            let mut r = base_11(c, seed, 0x1b3f78, 2);
-            let this = DATA + 0x1000;
-            c.g[A0][0] = this as u64;
-            c.g[A1][0] = (DATA + 0x2000) as u64;
-            c.g[A2][0] = (r.next_u32() & 0xff) as u64;
-            w_4(c, this + 0x6ec, r.next_u32());
-        });
+        check(
+            ssx3_ee::s03::f_001b3f78__generated,
+            cfe_state_net_config_ctor,
+            8,
+            &|c, seed| {
+                let mut r = base_11(c, seed, 0x1b3f78, 2);
+                let this = DATA + 0x1000;
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = (DATA + 0x2000) as u64;
+                c.g[A2][0] = (r.next_u32() & 0xff) as u64;
+                w_4(c, this + 0x6ec, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn cfe_state_create_step1_backup_account_info_matches() {
-        check(ssx3_ee::s03::f_001ba178__generated, cfe_state_create_step1_backup_account_info, 30, &|c, seed| {
-            let _r = base_11(c, seed, 0x1ba178, 2);
-            let this = DATA + 0x1000;
-            let acct = DATA + 0x2000;
-            c.g[A0][0] = this as u64;
-            w_4(c, this + 0x6ec, if seed % 2 == 0 { 0 } else { 1 });
-            w_4(c, this + 0x6d0, acct);
-            w_4(c, acct + 4, 0);
-            w_4(c, acct + 8, 0);
-            w_4(c, acct + 0xc, 0);
-            w_4(c, acct + 0x38, 0x11);
-            w_4(c, acct + 0x3c, 0x22);
-        });
+        check(
+            ssx3_ee::s03::f_001ba178__generated,
+            cfe_state_create_step1_backup_account_info,
+            30,
+            &|c, seed| {
+                let _r = base_11(c, seed, 0x1ba178, 2);
+                let this = DATA + 0x1000;
+                let acct = DATA + 0x2000;
+                c.g[A0][0] = this as u64;
+                w_4(c, this + 0x6ec, if seed % 2 == 0 { 0 } else { 1 });
+                w_4(c, this + 0x6d0, acct);
+                w_4(c, acct + 4, 0);
+                w_4(c, acct + 8, 0);
+                w_4(c, acct + 0xc, 0);
+                w_4(c, acct + 0x38, 0x11);
+                w_4(c, acct + 0x3c, 0x22);
+            },
+        );
     }
 
-
-        #[test]
+    #[test]
     fn net_fe_state_refresh_buddy_action_popup_matches() {
-        check(ssx3_ee::s03::f_001ab3d0__generated, net_fe_state_refresh_buddy_action_popup, 30, &|c, seed| {
-            let _r = base_11(c, seed, 0x1ab3d0, 2);
-            let this = DATA + 0x1000;
-            c.g[A0][0] = this as u64;
-            c.g[A1][0] = (DATA + 0x2000) as u64;
-            c.g[A2][0] = (DATA + 0x3000) as u64;
-            w_4(c, this + 0x1c, match seed % 4 { 0 => 0, 1 => 2, 2 => 4, _ => 6 });
-            let popup = DATA + 0x4000;
-            w_4(c, this + 0x6a0, if seed % 5 == 0 { 0 } else { popup });
-            w_4(c, this + 0x6c4, if seed % 3 == 0 { 0 } else { 1 });
-            w_4(c, popup + 0x18, [0x80bu32, 0x80c, 0x900, 0x80b][seed as usize % 4]);
-            c.bus.write8(popup + 0x1d, match seed % 3 { 0 => 0, 1 => 5, _ => 0x40 });
-        });
+        check(
+            ssx3_ee::s03::f_001ab3d0__generated,
+            net_fe_state_refresh_buddy_action_popup,
+            30,
+            &|c, seed| {
+                let _r = base_11(c, seed, 0x1ab3d0, 2);
+                let this = DATA + 0x1000;
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = (DATA + 0x2000) as u64;
+                c.g[A2][0] = (DATA + 0x3000) as u64;
+                w_4(
+                    c,
+                    this + 0x1c,
+                    match seed % 4 {
+                        0 => 0,
+                        1 => 2,
+                        2 => 4,
+                        _ => 6,
+                    },
+                );
+                let popup = DATA + 0x4000;
+                w_4(c, this + 0x6a0, if seed % 5 == 0 { 0 } else { popup });
+                w_4(c, this + 0x6c4, if seed % 3 == 0 { 0 } else { 1 });
+                w_4(
+                    c,
+                    popup + 0x18,
+                    [0x80bu32, 0x80c, 0x900, 0x80b][seed as usize % 4],
+                );
+                c.bus.write8(
+                    popup + 0x1d,
+                    match seed % 3 {
+                        0 => 0,
+                        1 => 5,
+                        _ => 0x40,
+                    },
+                );
+            },
+        );
     }
-
 
     #[test]
     fn cfe_use_existing_account_check_email_matches() {
-        check(ssx3_ee::s03::f_001ac448__generated, cfe_use_existing_account_check_email, 20, &|c, seed| {
-            let _r = base_11(c, seed, 0x1ac448, 3);
-            let this = DATA + 0x1000;
-            c.g[A0][0] = this as u64;
-            let email = DATA + 0x2000;
-            w_4(c, this + 0x6dc, email + 8);
-            w_4(c, email, if seed % 2 == 0 { 0 } else { 0x10 });
-            w_4(c, this + 0x6a0, 0);
-        });
+        check(
+            ssx3_ee::s03::f_001ac448__generated,
+            cfe_use_existing_account_check_email,
+            20,
+            &|c, seed| {
+                let _r = base_11(c, seed, 0x1ac448, 3);
+                let this = DATA + 0x1000;
+                c.g[A0][0] = this as u64;
+                let email = DATA + 0x2000;
+                w_4(c, this + 0x6dc, email + 8);
+                w_4(c, email, if seed % 2 == 0 { 0 } else { 0x10 });
+                w_4(c, this + 0x6a0, 0);
+            },
+        );
     }
-
 
     /// Objects and buffers in the test data area (below the fixtures'
     /// reserved blocks: BE at +0x30000, WORLD_5 at +0x80000, the fake log at
@@ -24281,7 +25077,6 @@ pub(crate) mod tests {
 
     pub(crate) const WORLD_5: u32 = DATA + 0x8_0000;
 
-
     /// The BELibrary singleton (`gp_15 - 0x1f04`, zeroed so nothing waits for
     /// the disc) and the world (`gp_15 - 0x848`, a dummy with no riders).
     pub(crate) fn globals_10(c: &mut Cpu) {
@@ -24293,7 +25088,6 @@ pub(crate) mod tests {
         w(c, game + 0xc, race);
         w(c, race + 0x7c, 0);
     }
-
 
     /// The engine's size-class pool_8 allocator (same fixture as the other
     /// waves): `gp_15 + 0xdd8` ready plus eight free nodes per size class.
@@ -24321,7 +25115,6 @@ pub(crate) mod tests {
         }
     }
 
-
     /// Scrambled state, fake call hooks, a game-like `gp_15` and the standard
     /// fixtures.
     pub(crate) fn base_12(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
@@ -24331,10 +25124,9 @@ pub(crate) mod tests {
         r
     }
 
-
     // ---------------------------------------------------------------- front end
 
-        #[test]
+    #[test]
     fn cfe_online_character_select_show_opponent_char_matches() {
         check(
             ee::s03::f_001b1760__generated,
@@ -24349,7 +25141,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn cfe_create_step2_fill_year_list_matches() {
@@ -24370,7 +25161,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn cfe_online_main_menu_init_matches() {
@@ -24394,7 +25184,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn cfe_net_quick_play_popup_set_options_hint_visible_matches() {
         check(
@@ -24411,7 +25200,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn cfe_net_quick_messages_on_reset_popup_event_matches() {
@@ -24434,7 +25222,6 @@ pub(crate) mod tests {
         );
     }
 
-
     pub(crate) const SEEDS_14: u32 = 40;
 
     /// The zeroed BELibrary / interface dummy.
@@ -24448,13 +25235,11 @@ pub(crate) mod tests {
     /// General scratch (objects, vtables) below the pool area.
     pub(crate) const SCRATCH: u32 = DATA + 0x5000;
 
-
     /// A vtable slot_9 `{ short delta; void (*fn)(); }` pointing at_5 fake `i`.
     pub(crate) fn slot_9(c: &mut Cpu, vt: u32, off: u32, i: u32) {
         wh(c, vt + off, 0);
         w(c, vt + off + 4, fakes::FAKE + 0x10 * i);
     }
-
 
     /// Run a generated function for setup (entering at_5 its own address, so a
     /// dispatcher-shaped one starts at_5 its entry), returning `v0`.
@@ -24467,7 +25252,6 @@ pub(crate) mod tests {
         c.g[V0][0]
     }
 
-
     pub(crate) fn heap_init_10(c: &mut Cpu) {
         c.g[GP][0] = GAME_GP as u64;
         run_8(
@@ -24477,7 +25261,6 @@ pub(crate) mod tests {
             &[MEM_HEAP as u64, (DATA + 0x4_0000) as u64, 0x4_0000],
         );
     }
-
 
     /// The engine's size-class pool allocator, enabled through `gp_16 + 0xdd8`.
     pub(crate) fn pool_allocator_10(c: &mut Cpu) {
@@ -24504,7 +25287,6 @@ pub(crate) mod tests {
             nodes += block * 16;
         }
     }
-
 
     /// Scrambled registers, the fake hooks, a game-like `gp_16`, the BE_6/interface
     /// singleton, a world with no riders, a working heap and pool allocator.
@@ -24533,7 +25315,6 @@ pub(crate) mod tests {
         r
     }
 
-
     #[test]
     fn net_fe_state_show_user_found_matches() {
         check(
@@ -24560,7 +25341,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn net_fe_state_on_disconnected_popup_event_matches() {
         check(
@@ -24585,7 +25365,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn net_fe_state_on_net_interrupted_popup_event_matches() {
         check(
@@ -24608,7 +25387,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn cfe_use_existing_account_check_password_matches() {
@@ -24641,7 +25419,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn cfe_use_existing_account_check_account_name_matches() {
         check(
@@ -24672,7 +25449,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn cfe_state_chat_room_handle_input_matches() {
         check(
@@ -24702,7 +25478,6 @@ pub(crate) mod tests {
         );
     }
 
-
     // ------------------------------------------------------- ASCII formatting
 
     pub(crate) fn format_fixture(c: &mut Cpu, seed: u32, buf: u32, fmt: u32) {
@@ -24722,7 +25497,6 @@ pub(crate) mod tests {
         w(c, buf + 0x84, 0xdead);
         w(c, buf + 0x88, 7);
     }
-
 
     #[test]
     fn ustr_sprintf_ascii_fmt_matches() {
@@ -24750,7 +25524,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn ustr_sprintf_ascii_fmt_2_matches() {
         check(
@@ -24777,7 +25550,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn cfe_state_create_step2_fill_gender_list_matches() {
         check(
@@ -24796,7 +25568,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn net_create_room_popup_validate_room_name_matches() {
@@ -24821,7 +25592,6 @@ pub(crate) mod tests {
         );
     }
 
-
     // Objects and buffers in the test data area (below the fixtures'
     // reserved blocks: BE at +0x30000, WORLD_6 at +0x80000, the fake log at
     // 0x900000 and the pools above +0x400000).
@@ -24835,7 +25605,6 @@ pub(crate) mod tests {
 
     pub(crate) const WORLD_6: u32 = DATA + 0x8_0000;
 
-
     /// The BELibrary singleton (`gp - 0x1f04`, zeroed so nothing waits for
     /// the disc) and the world (`gp - 0x848`, a dummy with no riders).
     pub(crate) fn globals_11(c: &mut Cpu) {
@@ -24847,7 +25616,6 @@ pub(crate) mod tests {
         w(c, game + 0xc, race);
         w(c, race + 0x7c, 0);
     }
-
 
     /// The engine's size-class pool_9 allocator: `gp + 0xdd8` ready plus eight
     /// free nodes per size class.
@@ -24875,7 +25643,6 @@ pub(crate) mod tests {
         }
     }
 
-
     pub(crate) fn base_15(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
         let r = machine(c, seed, salt, calls);
         globals_11(c);
@@ -24883,10 +25650,9 @@ pub(crate) mod tests {
         r
     }
 
-
     // ---------------------------------------------------------------- front end
 
-        #[test]
+    #[test]
     fn cfe_online_main_menu_on_disconnect_popup_event_matches() {
         check(
             ee::s03::f_001c0240__generated,
@@ -24896,7 +25662,11 @@ pub(crate) mod tests {
                 let _ = base_15(c, seed, 0x001c_0240, 6);
                 c.g[A0][0] = OBJ_4 as u64;
                 c.g[A1][0] = OBJ2_4 as u64;
-                c.g[A2][0] = if seed % 2 == 0 { 0xf } else { (seed % 16) as u64 };
+                c.g[A2][0] = if seed % 2 == 0 {
+                    0xf
+                } else {
+                    (seed % 16) as u64
+                };
                 w(c, OBJ_4 + 0x10, OBJ3_2);
                 w(c, OBJ_4 + 0x40, OBJ4_2);
                 w(c, OBJ4_2 + 0xd0, OBJ3_2);
@@ -24907,15 +25677,26 @@ pub(crate) mod tests {
         );
     }
 
-
     /// Two arrow widgets whose `v09(enabled)` dispatches through a fake vtable
     /// slot at +0x48.
-    pub(crate) fn arrows(c: &mut Cpu, seed: u32, salt: u64, count_off: u32, max_off: u32, up: u32, down: u32) {
+    pub(crate) fn arrows(
+        c: &mut Cpu,
+        seed: u32,
+        salt: u64,
+        count_off: u32,
+        max_off: u32,
+        up: u32,
+        down: u32,
+    ) {
         let mut r = base_15(c, seed, salt, 2);
         c.g[A0][0] = OBJ_4 as u64;
         let count = if seed % 4 == 0 { 0 } else { (seed % 5) as u32 };
         w(c, OBJ_4 + count_off, count);
-        w(c, OBJ_4 + max_off, if seed % 3 == 0 { 0x40 } else { count + 4 });
+        w(
+            c,
+            OBJ_4 + max_off,
+            if seed % 3 == 0 { 0x40 } else { count + 4 },
+        );
         w(c, OBJ_4 + up, OBJ2_4);
         w(c, OBJ_4 + down, OBJ3_2);
         let vt = vtable(c, &mut r, &[0x48]);
@@ -24923,7 +25704,6 @@ pub(crate) mod tests {
         let vt = vtable(c, &mut r, &[0x48]);
         w(c, OBJ3_2 + 8, vt);
     }
-
 
     #[test]
     fn cfe_state_net_messenger_highlight_row_matches() {
@@ -24940,7 +25720,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn net_fe_state_create_keyboard_popup_matches() {
@@ -24964,7 +25743,6 @@ pub(crate) mod tests {
         );
     }
 
-
     pub(crate) const SEEDS_15: u32 = 120;
 
     /// The zeroed BELibrary dummy and the world singleton.
@@ -24978,7 +25756,6 @@ pub(crate) mod tests {
         w(c, vt + off + 4, target);
     }
 
-
     pub(crate) fn run_9(c: &mut Cpu, addr: u32, f: GuestFn, args: &[u64]) -> u64 {
         for (i, a) in args.iter().enumerate() {
             c.g[[A0, A1, A2, A3, T0, T1][i]][0] = *a;
@@ -24989,7 +25766,6 @@ pub(crate) mod tests {
         c.g[V0][0]
     }
 
-
     pub(crate) fn heap_init_11(c: &mut Cpu) {
         c.g[GP][0] = GAME_GP as u64;
         run_9(
@@ -24999,7 +25775,6 @@ pub(crate) mod tests {
             &[MEM_HEAP as u64, (DATA + 0x4_0000) as u64, 0x4_0000],
         );
     }
-
 
     /// The engine's size-class pool allocator, enabled through `gp + 0xdd8`.
     pub(crate) fn pool_allocator_11(c: &mut Cpu) {
@@ -25027,7 +25802,6 @@ pub(crate) mod tests {
         }
     }
 
-
     /// A real heap block of `size` bytes.
     pub(crate) fn alloc_2(c: &mut Cpu, size: u32) -> u32 {
         run_9(
@@ -25037,7 +25811,6 @@ pub(crate) mod tests {
             &[size as u64, 0x0048_0000, 0, 0],
         ) as u32
     }
-
 
     /// Scrambled registers, a game-like `gp`, the BE_8 singleton and a world
     /// with no riders.
@@ -25054,7 +25827,6 @@ pub(crate) mod tests {
         r
     }
 
-
     /// [`base_16`] plus the pool allocator and dlmalloc arena.
     pub(crate) fn alloc_base_4(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
         let r = base_16(c, seed, salt, calls);
@@ -25064,26 +25836,33 @@ pub(crate) mod tests {
         r
     }
 
-
     #[test]
     fn fe_state_create_step2_init_matches() {
-        check(ee::s03::f_001ba428__generated, fe_state_create_step2_init, 40, &|c, seed| {
-            alloc_base_4(c, seed, 0x1ba4, 5);
-            c.g[A0][0] = DATA as u64;
-            w(c, DATA + 0x10, DATA + 0x400);
-            w(c, DATA + 0x6d0, DATA + 0x500);
-        });
+        check(
+            ee::s03::f_001ba428__generated,
+            fe_state_create_step2_init,
+            40,
+            &|c, seed| {
+                alloc_base_4(c, seed, 0x1ba4, 5);
+                c.g[A0][0] = DATA as u64;
+                w(c, DATA + 0x10, DATA + 0x400);
+                w(c, DATA + 0x6d0, DATA + 0x500);
+            },
+        );
     }
-
 
     #[test]
     fn fe_state_challenge_popup_ctor_matches() {
-        check(ee::s03::f_001addd0__generated, fe_state_challenge_popup_ctor, 40, &|c, seed| {
-            alloc_base_4(c, seed, 0x1add, 5);
-            c.g[A0][0] = DATA as u64;
-        });
+        check(
+            ee::s03::f_001addd0__generated,
+            fe_state_challenge_popup_ctor,
+            40,
+            &|c, seed| {
+                alloc_base_4(c, seed, 0x1add, 5);
+                c.g[A0][0] = DATA as u64;
+            },
+        );
     }
-
 
     #[test]
     fn fe_use_existing_account_v25_matches() {
@@ -25099,7 +25878,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn fe_state_online_character_select_v25_matches() {
         check(
@@ -25114,16 +25892,19 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn fe_state_net_news_v25_matches() {
-        check(ee::s03::f_001c5540__generated, fe_state_net_news_v25, SEEDS_15, &|c, seed| {
-            base_16(c, seed, 0x1c55, 0);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = (DATA + 0x800) as u64;
-        });
+        check(
+            ee::s03::f_001c5540__generated,
+            fe_state_net_news_v25,
+            SEEDS_15,
+            &|c, seed| {
+                base_16(c, seed, 0x1c55, 0);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (DATA + 0x800) as u64;
+            },
+        );
     }
-
 
     #[test]
     fn fe_state_chat_room_on_keyboard_done_matches() {
@@ -25144,7 +25925,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn fe_state_chat_room_select_player_by_name_matches() {
         check(
@@ -25156,27 +25936,34 @@ pub(crate) mod tests {
                 c.g[A0][0] = DATA as u64;
                 c.g[A1][0] = (DATA + 0x900) as u64;
                 w(c, DATA + 0x40, if seed % 3 == 0 { 0 } else { DATA + 0x800 });
-                w(c, GAME_GP.wrapping_sub(0xc8), if seed % 2 == 0 { 0 } else { DATA + 0xa00 });
+                w(
+                    c,
+                    GAME_GP.wrapping_sub(0xc8),
+                    if seed % 2 == 0 { 0 } else { DATA + 0xa00 },
+                );
                 w(c, DATA + 0xa00, 0);
                 let _ = r.next_u32();
             },
         );
     }
 
-
-                    #[test]
+    #[test]
     fn fe_state_stats_format_time_matches() {
-        check(ee::s03::f_001c4f58__generated, fe_state_stats_format_time, 80, &|c, seed| {
-            let mut r = Rng(0x001c_4f58 ^ (seed as u64) << 8);
-            scramble(c, &mut r);
-            elf_image(c);
-            c.g[GP][0] = GAME_GP as u64;
-            c.bus.write32(GAME_GP - 0x590c, (1.0f32 / 60.0).to_bits());
-            c.g[A1][0] = sx(DATA);
-            c.g[A2][0] = ((r.next_u32() % 200_000) as i32) as u64;
-        });
+        check(
+            ee::s03::f_001c4f58__generated,
+            fe_state_stats_format_time,
+            80,
+            &|c, seed| {
+                let mut r = Rng(0x001c_4f58 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                elf_image(c);
+                c.g[GP][0] = GAME_GP as u64;
+                c.bus.write32(GAME_GP - 0x590c, (1.0f32 / 60.0).to_bits());
+                c.g[A1][0] = sx(DATA);
+                c.g[A2][0] = ((r.next_u32() % 200_000) as i32) as u64;
+            },
+        );
     }
-
 
     /// Compare against the generated body and require *everything* to match:
     /// hard state, caller-saved registers (`soft`) and LO/HI.
@@ -25193,53 +25980,70 @@ pub(crate) mod tests {
         }
     }
 
-
-                #[test]
+    #[test]
     fn net_fe_state_on_session_lost_popup_event_matches() {
-        strict(ee::s03::f_001a9578__generated, net_fe_state_on_session_lost_popup_event, 40, &|c, seed| {
-            let mut r = Rng(0x001a_9578 ^ (seed as u64) << 8);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            c.bus.write32(GAME_GP + 0x1d98, if seed % 2 == 0 { 0 } else { 1 });
-            c.bus.write32(GAME_GP - 0xc8, DATA + 0x1000);
-            c.g[A0][0] = sx(DATA);
-            c.g[A2][0] = [0u64, 0xf, 0x14, 3][(seed % 4) as usize];
-        });
+        strict(
+            ee::s03::f_001a9578__generated,
+            net_fe_state_on_session_lost_popup_event,
+            40,
+            &|c, seed| {
+                let mut r = Rng(0x001a_9578 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.bus
+                    .write32(GAME_GP + 0x1d98, if seed % 2 == 0 { 0 } else { 1 });
+                c.bus.write32(GAME_GP - 0xc8, DATA + 0x1000);
+                c.g[A0][0] = sx(DATA);
+                c.g[A2][0] = [0u64, 0xf, 0x14, 3][(seed % 4) as usize];
+            },
+        );
     }
-
 
     #[test]
     fn fe_use_existing_account_on_abort_popup_event_matches() {
-        strict(ee::s03::f_001aca88__generated, fe_use_existing_account_on_abort_popup_event, 40, &|c, seed| {
-            let mut r = Rng(0x001a_ca88 ^ (seed as u64) << 8);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            c.bus.write32(GAME_GP + 0x238, if seed % 2 == 0 { 0 } else { DATA + 0x1000 });
-            c.bus.write32(GAME_GP - 0xc8, DATA + 0x1800);
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = sx(DATA + 0x100);
-            c.g[A2][0] = [0u64, 2, 0xf, 0x14][(seed % 4) as usize];
-        });
+        strict(
+            ee::s03::f_001aca88__generated,
+            fe_use_existing_account_on_abort_popup_event,
+            40,
+            &|c, seed| {
+                let mut r = Rng(0x001a_ca88 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.bus.write32(
+                    GAME_GP + 0x238,
+                    if seed % 2 == 0 { 0 } else { DATA + 0x1000 },
+                );
+                c.bus.write32(GAME_GP - 0xc8, DATA + 0x1800);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x100);
+                c.g[A2][0] = [0u64, 2, 0xf, 0x14][(seed % 4) as usize];
+            },
+        );
     }
-
 
     #[test]
     fn fe_state_login_v33_matches() {
-        strict(ee::s03::f_001bf378__generated, fe_state_login_v33, 40, &|c, seed| {
-            let mut r = Rng(0x001b_f378 ^ (seed as u64) << 8);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            c.bus.write32(GAME_GP + 0x238, if seed % 2 == 0 { 0 } else { DATA + 0x1000 });
-            c.bus.write32(GAME_GP - 0xc8, DATA + 0x1800);
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = sx(DATA + 0x100);
-            c.g[A2][0] = [0u64, 2, 0xf, 0x14][(seed % 4) as usize];
-        });
+        strict(
+            ee::s03::f_001bf378__generated,
+            fe_state_login_v33,
+            40,
+            &|c, seed| {
+                let mut r = Rng(0x001b_f378 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.bus.write32(
+                    GAME_GP + 0x238,
+                    if seed % 2 == 0 { 0 } else { DATA + 0x1000 },
+                );
+                c.bus.write32(GAME_GP - 0xc8, DATA + 0x1800);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x100);
+                c.g[A2][0] = [0u64, 2, 0xf, 0x14][(seed % 4) as usize];
+            },
+        );
     }
 
-
     pub(crate) const SEEDS_16: u32 = 200;
-
 
     /// The BELibrary dummy and the world/race-manager/rider graph the
     /// front-end and overlay functions read.
@@ -25257,7 +26061,6 @@ pub(crate) mod tests {
     /// `gp_18-0x1efc`).
     pub(crate) const IFACE_TABLE: u32 = 0x0053_08a8;
 
-
     pub(crate) fn game_globals(c: &mut Cpu) {
         c.g[GP][0] = GAME_GP as u64;
         c.bus.write32(GAME_GP - 0x1f04, BE_9);
@@ -25266,7 +26069,6 @@ pub(crate) mod tests {
         c.bus.write32(RMAN + 0xc, RIDERS_2);
         c.bus.write32(RIDERS_2 + 0x28, RIDER);
     }
-
 
     /// `BELibrary_GetInstance` returns the dummy; `GetInterface(dummy, 1)`
     /// finds an object whose slot 8 is a fake method.
@@ -25277,7 +26079,6 @@ pub(crate) mod tests {
         let vt = vtable(c, r, &[8]);
         c.bus.write32(iface + 4, vt);
     }
-
 
     /// A fake that returns a small value instead of a pointer, keyed by slot.
     pub(crate) fn fake_small(c: &mut Cpu, target: u32) {
@@ -25296,7 +26097,6 @@ pub(crate) mod tests {
             _ => 0,
         };
     }
-
 
     #[test]
     fn cfe_use_existing_account_on_email_popup_event_matches() {
@@ -25324,7 +26124,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn fe_async_manager_request_session_texture_matches() {
         check(
@@ -25347,7 +26146,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn cfe_state_net_config_show_checking_card_popup_matches() {
@@ -25372,7 +26170,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn cfe_state_net_quick_messages_on_save_popup_event_matches() {
@@ -25400,7 +26197,12 @@ pub(crate) mod tests {
 
     /// `check`, but a caller-saved difference fails too: the fake-call log lives
     /// in RAM and every GPR is visible to it, so nothing may differ.
-    pub(crate) fn check_all(generated: GuestFn, hand: GuestFn, seeds: u32, setup: &dyn Fn(&mut Cpu, u32)) {
+    pub(crate) fn check_all(
+        generated: GuestFn,
+        hand: GuestFn,
+        seeds: u32,
+        setup: &dyn Fn(&mut Cpu, u32),
+    ) {
         for seed in 0..crate::difftest::seed_count(seeds) {
             let r = crate::difftest::compare(generated, hand, &|c| setup(c, seed));
             assert!(
@@ -25413,8 +26215,7 @@ pub(crate) mod tests {
         }
     }
 
-
-        #[test]
+    #[test]
     fn cfe_state_net_config_check_card_matches() {
         check_all(
             ee::s03::f_001b43a8__generated,
@@ -25434,7 +26235,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn cfe_state_net_quick_play_popup_on_options_popup_event_matches() {
@@ -25464,7 +26264,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn cfe_state_net_config_handle_load_error_matches() {
         check_all(
@@ -25493,13 +26292,11 @@ pub(crate) mod tests {
         );
     }
 
-
     pub(crate) const W_7: u32 = DATA + 0x5_0000;
 
     pub(crate) const RM_3: u32 = DATA + 0x5_1000;
 
     pub(crate) const BE_10: u32 = DATA + 0x5_2000;
-
 
     /// A dummy world (`gp-0x848`), its rider manager, and the BELibrary
     /// singleton (`gp-0x1f04`).
@@ -25513,7 +26310,6 @@ pub(crate) mod tests {
         c.bus.write32(RM_3 + 0x10, 0);
         r
     }
-
 
     #[test]
     fn cfe_state_net_messenger_get_buddy_status_matches() {
@@ -25531,7 +26327,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn cfe_state_net_account_mem_update_state06_matches() {
         check(
@@ -25548,7 +26343,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn cfe_state_net_account_mem_update_state0c_matches() {
@@ -25569,14 +26363,12 @@ pub(crate) mod tests {
     /// The dummy world.
     pub(crate) const WORLD_8: u32 = DATA + 0x8_0000;
 
-
     pub(crate) fn put_str_6(c: &mut Cpu, a: u32, s: &[u8]) {
         for (i, b) in s.iter().enumerate() {
             c.bus.write8(a + i as u32, *b);
         }
         c.bus.write8(a + s.len() as u32, 0);
     }
-
 
     /// The BELibrary singleton (`gp - 0x1f04`, a zeroed dummy so nothing reads
     /// the disc) and the world (`gp - 0x848`, with no riders).
@@ -25590,12 +26382,10 @@ pub(crate) mod tests {
         w(c, race + 0x7c, 0);
     }
 
-
     /// The UI manager singleton (`gp - 0xc8`, `D_004A3028`).
     pub(crate) fn ui(c: &mut Cpu) {
         w(c, GAME_GP.wrapping_sub(0xc8), OBJ);
     }
-
 
     /// `DLHeap_InitArena(&MEM_HEAP, arena, size)` over a test arena.
     pub(crate) fn heap_init_12(c: &mut Cpu) {
@@ -25609,7 +26399,6 @@ pub(crate) mod tests {
         ee::s10::DLHeap_InitArena(c);
         assert_eq!(c.pc, RET, "DLHeap_InitArena did not return");
     }
-
 
     /// The engine's size-class pool_10 allocator: `gp + 0xdd8` ready plus eight
     /// free nodes per size class.
@@ -25637,7 +26426,6 @@ pub(crate) mod tests {
         }
     }
 
-
     /// `StrHash(s)` (0x317670) on the string at `a`, to build name-hash
     /// fixtures.
     pub(crate) fn str_hash_2(c: &mut Cpu, a: u32) -> u32 {
@@ -25650,39 +26438,45 @@ pub(crate) mod tests {
         c.g[V0][0] as u32
     }
 
-
     /// Assert no differences at all (hard, caller-saved and LO/HI).
     pub(crate) fn diff(gen: GuestFn, hand: GuestFn, seeds: u32, setup: &dyn Fn(&mut Cpu, u32)) {
         for seed in 0..seed_count(seeds) {
             let r = compare(gen, hand, &|c| setup(c, seed));
             assert!(r.hard.is_empty(), "seed {seed}: {:#?}", r.hard);
-            assert!(r.soft.is_empty(), "seed {seed} (caller-saved): {:#?}", r.soft);
+            assert!(
+                r.soft.is_empty(),
+                "seed {seed} (caller-saved): {:#?}",
+                r.soft
+            );
             assert!(r.lohi.is_empty(), "seed {seed} (LO/HI): {:#?}", r.lohi);
         }
     }
 
-
-        #[test]
+    #[test]
     fn net_config_auth_popup_ctor_matches() {
-        diff(ee::s03::f_001b6288__generated, net_config_auth_popup_ctor, 40, &|c, seed| {
-            let mut r = machine(c, seed, 0x1b_6288, 0);
-            globals_12(c);
-            ui(c);
-            heap_init_12(c);
-            pool_10(c);
-            // `USTR_length` goes through the current UI object's vtable; a zero
-            // vtable pointer makes that call a fake.
-            w(c, WORLD_8 + 0x8c, DATA + 0x3000);
-            w(c, DATA + 0x3004, 0);
-            put_str_6(c, DATA + 0x300, b"config");
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = sx(r.next_u32());
-            c.g[A2][0] = sx(r.next_u32());
-            w(c, DATA + 0x6fc, 0);
-            w(c, DATA + 0x6dc, r.next_u32());
-        });
+        diff(
+            ee::s03::f_001b6288__generated,
+            net_config_auth_popup_ctor,
+            40,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1b_6288, 0);
+                globals_12(c);
+                ui(c);
+                heap_init_12(c);
+                pool_10(c);
+                // `USTR_length` goes through the current UI object's vtable; a zero
+                // vtable pointer makes that call a fake.
+                w(c, WORLD_8 + 0x8c, DATA + 0x3000);
+                w(c, DATA + 0x3004, 0);
+                put_str_6(c, DATA + 0x300, b"config");
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(r.next_u32());
+                c.g[A2][0] = sx(r.next_u32());
+                w(c, DATA + 0x6fc, 0);
+                w(c, DATA + 0x6dc, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn auth_dnas_error_on_widget_created_matches() {
@@ -25719,7 +26513,6 @@ pub(crate) mod tests {
         );
     }
 
-
     /// A scratch world/UI object graph used by the front-end tests.
     pub(crate) fn fe_base(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
         let r = machine(c, seed, salt, 0);
@@ -25730,23 +26523,26 @@ pub(crate) mod tests {
         r
     }
 
-
     #[test]
     fn lobby_menu_enter_room_matches() {
-        diff(ee::s03::f_001bd460__generated, c_fe_state_lobby_menu_enter_room, 40, &|c, seed| {
-            let _r = fe_base(c, seed, 0x1b_d460);
-            let s = if seed % 3 == 0 { 0 } else { DATA + 0x300 };
-            if s != 0 {
-                put_str_6(c, s, b"room name");
-            }
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = (seed % 4) as u64;
-            c.g[A2][0] = sx(s);
-            w(c, DATA + 0x770, 0);
-            w(c, DATA + 0xb80, 0);
-        });
+        diff(
+            ee::s03::f_001bd460__generated,
+            c_fe_state_lobby_menu_enter_room,
+            40,
+            &|c, seed| {
+                let _r = fe_base(c, seed, 0x1b_d460);
+                let s = if seed % 3 == 0 { 0 } else { DATA + 0x300 };
+                if s != 0 {
+                    put_str_6(c, s, b"room name");
+                }
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = (seed % 4) as u64;
+                c.g[A2][0] = sx(s);
+                w(c, DATA + 0x770, 0);
+                w(c, DATA + 0xb80, 0);
+            },
+        );
     }
-
 
     #[test]
     fn online_main_menu_on_leave_popup_event_matches() {
@@ -25758,28 +26554,43 @@ pub(crate) mod tests {
                 let mut r = fe_base(c, seed, 0x1c_0138);
                 c.g[A0][0] = sx(DATA);
                 c.g[A1][0] = sx(DATA + 0x2000);
-                c.g[A2][0] = if seed % 5 == 0 { 0xf } else { (seed % 0x10) as u64 };
+                c.g[A2][0] = if seed % 5 == 0 {
+                    0xf
+                } else {
+                    (seed % 0x10) as u64
+                };
                 w(c, DATA + 0x10, r.next_u32());
                 w(c, DATA + 0x6b0, 0);
                 w(c, DATA + 0x2000, r.next_u32());
-                w(c, GAME_GP.wrapping_add(0x238), if seed % 3 == 0 { 0 } else { DATA + 0x3000 });
+                w(
+                    c,
+                    GAME_GP.wrapping_add(0x238),
+                    if seed % 3 == 0 { 0 } else { DATA + 0x3000 },
+                );
             },
         );
     }
 
-
     #[test]
     fn net_fe_state_v32_matches() {
-        diff(ee::s03::f_001a8830__generated, net_fe_state_v32, 20, &|c, seed| {
-            let mut r = fe_base(c, seed, 0x1a_8830);
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = (seed % 3) as u64;
-            w(c, DATA + 8, 0);
-            w(c, DATA + 0x3000, r.next_u32());
-            w(c, GAME_GP.wrapping_add(0x238), if seed % 2 == 0 { 0 } else { DATA + 0x3000 });
-        });
+        diff(
+            ee::s03::f_001a8830__generated,
+            net_fe_state_v32,
+            20,
+            &|c, seed| {
+                let mut r = fe_base(c, seed, 0x1a_8830);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = (seed % 3) as u64;
+                w(c, DATA + 8, 0);
+                w(c, DATA + 0x3000, r.next_u32());
+                w(
+                    c,
+                    GAME_GP.wrapping_add(0x238),
+                    if seed % 2 == 0 { 0 } else { DATA + 0x3000 },
+                );
+            },
+        );
     }
-
 
     #[test]
     fn net_fe_state_show_disconnected_popup_matches() {
@@ -25790,16 +26601,18 @@ pub(crate) mod tests {
             &|c, seed| {
                 let mut r = fe_base(c, seed, 0x1a_9930);
                 c.g[A0][0] = sx(DATA);
-                w(c, DATA + 0x6ac, if seed % 2 == 0 { 0 } else { (r.next_u32() | 1) });
+                w(
+                    c,
+                    DATA + 0x6ac,
+                    if seed % 2 == 0 { 0 } else { (r.next_u32() | 1) },
+                );
                 w(c, DATA + 0x6b0, 0);
                 w(c, DATA + 0x6dc, 0);
             },
         );
     }
 
-
     pub(crate) const SEEDS_17: u32 = 120;
-
 
     /// Every compared state must match: hard, caller-saved (`soft`) and LO/HI.
     pub(crate) fn strict_2(g: GuestFn, h: GuestFn, seeds: u32, setup: &dyn Fn(&mut Cpu, u32)) {
@@ -25815,7 +26628,6 @@ pub(crate) mod tests {
         }
     }
 
-
     /// The `BELibrary` singleton (`gp - 0x1f04`) and the world (`gp - 0x848`).
     pub(crate) fn globals_13(c: &mut Cpu) {
         let be = DATA + 0x3_0000;
@@ -25828,7 +26640,6 @@ pub(crate) mod tests {
         w(c, game + 0xc, race);
         w(c, race + 0x7c, 0);
     }
-
 
     /// The engine's size-class pool_11 allocator behind `gp + 0xdd8`.
     pub(crate) fn pool_11(c: &mut Cpu) {
@@ -25855,7 +26666,6 @@ pub(crate) mod tests {
         }
     }
 
-
     /// Scrambled state, the fake call hooks, `gp`, the globals_13 and the pools.
     pub(crate) fn base_18(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
         let r = machine(c, seed, salt, 0);
@@ -25863,7 +26673,6 @@ pub(crate) mod tests {
         pool_11(c);
         r
     }
-
 
     #[test]
     fn cfestate_lobby_menu_transition_in_matches() {
@@ -25897,7 +26706,6 @@ pub(crate) mod tests {
         );
     }
 
-
     /// `check`, but a caller-saved difference fails too: scratch registers are
     /// visible to fake callees, so nothing may differ.
     pub(crate) fn check_all_2(
@@ -25918,14 +26726,12 @@ pub(crate) mod tests {
         }
     }
 
-
     /// Write the one-character string `"A"` (hash 0x41) at a constant-name
     /// address so a `StrHash` comparison can match a name.
     pub(crate) fn name_a(c: &mut Cpu, addr: u32) {
         c.bus.write8(addr, b'A');
         c.bus.write8(addr + 1, 0);
     }
-
 
     #[test]
     fn cfe_state_create_step2_on_widget_created_matches() {
@@ -25961,8 +26767,7 @@ pub(crate) mod tests {
         );
     }
 
-
-            /// The stats-column fixture: a self object, a panel with an old focus
+    /// The stats-column fixture: a self object, a panel with an old focus
     /// widget, five column items with vtables of fakes, and a chosen column.
     pub(crate) fn stats_fixture(c: &mut Cpu, seed: u32, salt: u64, forward: bool) -> u64 {
         let mut r = machine(c, seed, salt, 0);
@@ -25995,31 +26800,33 @@ pub(crate) mod tests {
         this_ as u64
     }
 
-
     #[test]
     fn net_quick_play_popup_set_options_enabled_matches() {
-        check3(ee::s03::f_001c17f8__generated, net_quick_play_popup_set_options_enabled, 40, &|c, seed| {
-            let mut r = base_19(c, seed, 0x1c17f8);
-            let obj = DATA;
-            for i in 0..15u32 {
-                let w = DATA + 0x2000 + 0x40 * i;
-                c.bus.write32(obj + 0x6f8 + 4 * i, w);
-                c.bus.write32(w + 8, w + 0x20);
-                c.bus.write16(w + 0x20 + 0x40, 0);
-                c.bus.write32(w + 0x20 + 0x44, LEAF);
-            }
-            c.g[A0][0] = sx(obj);
-            c.g[A1][0] = (r.next_u32() as u64) << 32 | r.next_u32() as u64;
-        });
+        check3(
+            ee::s03::f_001c17f8__generated,
+            net_quick_play_popup_set_options_enabled,
+            40,
+            &|c, seed| {
+                let mut r = base_19(c, seed, 0x1c17f8);
+                let obj = DATA;
+                for i in 0..15u32 {
+                    let w = DATA + 0x2000 + 0x40 * i;
+                    c.bus.write32(obj + 0x6f8 + 4 * i, w);
+                    c.bus.write32(w + 8, w + 0x20);
+                    c.bus.write16(w + 0x20 + 0x40, 0);
+                    c.bus.write32(w + 0x20 + 0x44, LEAF);
+                }
+                c.g[A0][0] = sx(obj);
+                c.g[A1][0] = (r.next_u32() as u64) << 32 | r.next_u32() as u64;
+            },
+        );
     }
-
 
     pub(crate) const DAY_SELF: u32 = DATA + 0x1_0000;
 
     pub(crate) const DAY_BOX: u32 = DATA + 0x1_1000;
 
     pub(crate) const DAY_SEL: u32 = DATA + 0x1_2000;
-
 
     #[test]
     fn c_fe_state_create_step2_fill_day_list_matches() {
@@ -26041,7 +26848,6 @@ pub(crate) mod tests {
         );
     }
 
-
     // ------------------------------------- cFEStateNetConfig_LoadConfigList
 
     /// The configuration count `NetConfig_QueryConnections` stores in
@@ -26052,7 +26858,6 @@ pub(crate) mod tests {
     pub(crate) fn net_config_count(c: &mut Cpu, count: u32) {
         c.bus.write32(SP - 0x280, count);
     }
-
 
     /// No configurations or a card error: the first try ("checking card"),
     /// none found, an error before and after a retry.
@@ -26078,7 +26883,10 @@ pub(crate) mod tests {
                 c.bus.write32(obj + 0x20, 0);
                 // HandleLoadError.
                 c.bus.write32(this + 0x10, DATA + 0x2000);
-                c.bus.write32(GAME_GP - 0x1570, if seed % 4 == 0 { 0 } else { 1 + seed % 2 });
+                c.bus.write32(
+                    GAME_GP - 0x1570,
+                    if seed % 4 == 0 { 0 } else { 1 + seed % 2 },
+                );
                 c.bus.write32(GAME_GP - 0x238, r.next_u32());
                 c.bus.write32(this + 0x70c, (seed / 4 % 2) * r.next_u32());
                 let count = match seed / 8 % 4 {
@@ -26091,7 +26899,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     /// One to four configurations (five is clamped to four): the list rows,
     /// with and without the number prefix, the ASCII name matching the
@@ -26132,7 +26939,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     /// The popup delay `+0x6e0` is 15 frames at 60 Hz: 15 ticks at 60, 30
     /// at 120, 60 at 240.
