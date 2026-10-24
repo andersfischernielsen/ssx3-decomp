@@ -139,8 +139,10 @@ fn sun_factor(w: vec3<f32>, dx: vec3<f32>, dy: vec3<f32>) -> f32 {
 // (flag 16384, the terrain's base layer; its baked layer is not drawn):
 // sky fill + sun · N·L · lit. Returns (L, the lit amount, N·L).
 fn terrain_light(w: vec3<f32>, n_in: vec3<f32>) -> mat3x3<f32> {
+    // Terrain faces the sky (the camera can dip under a lip: turning the
+    // normal to the eye would light its underside); walls, to the eye.
     var n = normalize(n_in);
-    if (dot(n, sh.eye.xyz - w) < 0.0) {
+    if ((abs(n.z) > 0.2 && n.z < 0.0) || (abs(n.z) <= 0.2 && dot(n, sh.eye.xyz - w) < 0.0)) {
         n = -n;
     }
     let ndl = max(dot(n, sh.sun.xyz), 0.0);

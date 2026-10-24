@@ -1714,7 +1714,12 @@ impl Inner {
                     && it.scissor.is_some()
                     && it.gpu.is_some_and(|g| {
                         shadow::receives(g.program)
-                            && !(native_terrain && g.program == ssx3_render::gpu::Program::Bezier)
+                            && !(native_terrain
+                                && matches!(
+                                    g.program,
+                                    ssx3_render::gpu::Program::Bezier
+                                        | ssx3_render::gpu::Program::Mat3Mesh
+                                ))
                     })
             };
             let end = ao_at.min(items.len());

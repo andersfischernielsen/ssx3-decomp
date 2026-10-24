@@ -56,6 +56,13 @@ pub fn enabled() -> bool {
     ON.load(Ordering::Relaxed)
 }
 
+/// `SSX3_CASTERS_SHOWN=1`: cast only from the sections the game draws (the
+/// default casts from every active section's loaded geometry).
+fn shown_only() -> bool {
+    static S: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *S.get_or_init(|| std::env::var_os("SSX3_CASTERS_SHOWN").is_some())
+}
+
 /// The world's casters: world-space triangles, per vertex its position and
 /// its triangle's normal (oriented up, +z: the terrain's sky side).
 #[derive(Debug, Default)]
@@ -121,9 +128,13 @@ impl CasterCache {
         let shown = |p: u32| {
             let w = word(m, p + 0x154);
             let (section, slot) = ((w >> 8) & 0xff, (w >> 16) as i16);
+            // (Its hull slot need not be resident yet: casting from what is
+            // loaded keeps shadows from popping in as the game switches
+            // sections on; `SSX3_CASTERS_SHOWN=1` keeps to what it draws.)
             slot >= 0
                 && word(m, sections + section * 8 + 0x24) == 6
-                && word(m, sections.wrapping_add((slot as u32) * 0x18) + 0x3f0) == 3
+                && (!shown_only()
+                    || word(m, sections.wrapping_add((slot as u32) * 0x18) + 0x3f0) == 3)
         };
         // Instances (`docs/investigation/world-instances.md`): the static
         // models (kind 3) in shown sections (0xff: shared, always shown).
@@ -139,10 +150,11 @@ impl CasterCache {
                 && (section == 0xff || (0..4096).contains(&slot))
                 && (section == 0xff
                     || (word(m, sections + section * 8 + 0x24) == 6
-                        && word(
-                            m,
-                            sections.wrapping_add((slot as i32 as u32) * 0x18) + 0x3f0,
-                        ) == 3))
+                        && (!shown_only()
+                            || word(
+                                m,
+                                sections.wrapping_add((slot as i32 as u32) * 0x18) + 0x3f0,
+                            ) == 3)))
         };
         let mut set = Vec::new();
         let mut seen = std::collections::HashSet::new();
