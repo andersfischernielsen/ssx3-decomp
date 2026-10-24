@@ -2,7 +2,7 @@
 
 [![SSX 3 running as recompiled Rust: title screen, mode select, race start and three moments of a Snow Jam race](docs/images/screenshots.jpg)](docs/ssx3.mp4)
 
-▶ **[Video)](docs/ssx3.mp4)**
+▶ **[Video](docs/ssx3.mp4)**
 
 > SSX 3 is © Electronic Arts; "SSX" is an EA trademark. This project is not affiliated
 > with or endorsed by EA. **The repository contains no game data and no game code.** The
