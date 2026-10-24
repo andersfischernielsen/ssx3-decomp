@@ -136,7 +136,9 @@ fn bezier_vertex(vi: u32, c: u32) -> VOut {
     let f2 = bz_flags(h2);
     let fa = f0 | f1 | f2;
     if (!fans) {
-        if (fa != 0u) {
+        // (The shadow pass draws every strip triangle whole, in or out of
+        // the camera's view, and none of the clipped copies below.)
+        if (fa != 0u && !SHADOW_PASS) {
             return bz_killed();
         }
         let h = select(select(h0, h1, r == 1u), h2, r == 2u);
@@ -152,7 +154,7 @@ fn bezier_vertex(vi: u32, c: u32) -> VOut {
         return bz_out(c, h, stq, false);
     }
     let dropped = (fa & 16u) != 0u || (f0 & f1 & f2) != 0u;
-    if (fa == 0u || dropped) {
+    if (fa == 0u || dropped || SHADOW_PASS) {
         return bz_killed();
     }
     let k = r / 3u;

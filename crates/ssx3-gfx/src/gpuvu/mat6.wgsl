@@ -74,7 +74,7 @@ fn mat6_skin_vertex(vi: u32, c: u32) -> VOut {
     let c0 = mat6_clip(c, b, k - 2u);
     let c1 = mat6_clip(c, b, k - 1u);
     let c2 = mat6_clip(c, b, k);
-    if (!(mat6_inside(c0) && mat6_inside(c1) && mat6_inside(c2))) {
+    if (!(mat6_inside(c0) && mat6_inside(c1) && mat6_inside(c2)) && !SHADOW_PASS) {
         return mat6_culled();
     }
     let v = k - 2u + corner;

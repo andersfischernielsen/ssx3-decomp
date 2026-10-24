@@ -78,3 +78,16 @@ match `main`.
     only lighting), detail (Cs·Ad + Cd). Multiplying every layer's source by
     the shadow factor shadows the sum (the blends are linear). See
     `terrain-lighting.md`. Debug: `SSX3_SHADOW_DEBUG=no-sub|no-add|sub-only|blend`.
+- 2026-10-24: casters off screen, quick pass (option 1). With shadows on,
+  `Nash_CullNode` (Rust, world.rs) widens the frame's cull matrix once per
+  frame, in RAM (world +0x10) and in VU0 (qwords 0x40-0x43, the patch and
+  instance tests): x, y of its clip output / k (`SSX3_SHADOW_CULL=k,d`,
+  default 2,0; `=0` off). The shadow pass draws terrain strip triangles and
+  rider skin whole, ignoring the camera's clip test, and none of the
+  clipped fan copies. Terrain sent to the GPU +40 % at k = 3.
+  - A margin behind the eye (d > 0) draws garbage: geometry behind the eye
+    counts as inside the widened volume and is drawn unclipped (mirrored).
+  - The race plays out differently with it on: the extra geometry costs EE
+    cycles. Off: race gate identical.
+  - Behind the camera, and the views from big jumps, need the native caster
+    pass (option 2): next.
