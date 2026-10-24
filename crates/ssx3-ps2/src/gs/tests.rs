@@ -3,6 +3,7 @@
 
 use super::swizzle::*;
 use super::*;
+use ssx3_ee_rt::Qword;
 
 // ------------------------------------------------------------------ helpers
 
