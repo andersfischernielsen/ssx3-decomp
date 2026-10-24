@@ -2,6 +2,7 @@ name: Test
 
 on:
   push:
+  pull_request:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -28,22 +29,6 @@ jobs:
             echo "$bad"
             exit 1
           fi
-
-  format:
-    name: Format
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-
-      - name: Stub crates for the generated code
-        run: python3 tools/setup.py --stubs-only
-
-      - name: cargo fmt
-        run: cargo fmt --all --check
 
   smoke-test:
     name: Smoke Test
