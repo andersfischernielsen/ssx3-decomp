@@ -692,9 +692,18 @@ pub mod gpu {
             });
         };
         for (t, ps) in s.runs(m) {
-            // (A fan slot holding another program's data would make the
-            // GS read it as registers: `fan_tags_ok` keeps that on the CPU.)
-            if fans_draw(t, fan) {
+            // A fan slot holding another program's data (the program does
+            // not always write its fan tags) would make the GS read that
+            // data as registers. Here the clipped triangles are drawn with
+            // the program's own fan tag for the strip's context instead:
+            // what the slot was meant to hold (renderer only: no game state
+            // depends on it).
+            let fan = if fans_draw(t, fan) {
+                Some(fan)
+            } else {
+                [m.ld(FAN_TAG_CTX1), m.ld(FAN_TAG_CTX2)].into_iter().find(|&f| fans_draw(t, f)).map(|f| [fan[0], f[1], f[2], f[3]])
+            };
+            if let Some(fan) = fan {
                 call(FANS, fan, fan_indices(s.triangles(ps.clone())), out);
             }
             call(STRIPS, t, strip_indices(s.triangles(ps)), out);
@@ -839,8 +848,9 @@ pub mod gpu {
     /// Whether the fan tags a draw finds in memory (when it does not write
     /// them) are fan tags: other programs use the slots, and a clipped
     /// triangle kicked with what they leave there makes the GS read their
-    /// data as registers (texture setup among them). Such calls stay on the
-    /// CPU, which kicks exactly that.
+    /// data as registers (texture setup among them). The CPU programs kick
+    /// exactly that; the GPU draws use the program's own fan tag instead
+    /// ([`draw_data`]).
     pub fn fan_tags_ok(m: &Mem) -> bool {
         let (a, b) = (m.ld(FAN_TAG_A), m.ld(FAN_TAG_B));
         a[1..] == b[1..] && fans_draw(m.ld(STRIP_TAG_CTX1), a)

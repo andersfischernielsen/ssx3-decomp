@@ -765,6 +765,14 @@ impl Inner {
         }
         // Sun shadows (shadow.rs): this frame's light, the map and its
         // uniforms (bound with the GPU draws, group 1).
+        if shadow::debug("gpustats") {
+            // The VU calls of this frame left to the CPU programs.
+            let mut st = ssx3_render::gpu::STATS.lock().unwrap();
+            let cpu: Vec<String> = st.iter().filter(|(k, _)| !k.3).map(|((h, e, i, _), n)| format!("{h:x}/{e:#x}{} x{n}", if *i { " itop" } else { "" })).collect();
+            let gpu: u64 = st.iter().filter(|(k, _)| k.3).map(|(_, n)| n).sum();
+            eprintln!("gpustats frame {}: gpu {gpu} cpu {cpu:?}", self.stats.frames);
+            st.clear();
+        }
         let k = self.gs.key_light;
         let kn = (k[0] * k[0] + k[1] * k[1] + k[2] * k[2]).sqrt();
         if kn > 1e-3 {
@@ -780,7 +788,7 @@ impl Inner {
             self.shadow = Some(shadow::Shadow::new(&self.dev, map_size));
         }
         let sh = self.shadow.as_ref().unwrap();
-        sh.upload(&self.queue, light.as_ref(), post::show("shadow"));
+        sh.upload(&self.queue, light.as_ref(), shadow::show());
         // GPU-computed draws (ssx3_render::gpu): their uniforms, inputs and
         // triangle lists, bound as group 1 (and again with the placeholder
         // shadow map for the shadow pass).
@@ -905,6 +913,17 @@ impl Inner {
             if !opts.keeps_post(b.tag.post) {
                 continue;
             }
+            // Debug: the terrain without its second pass.
+            if b.tag.pass2 && shadow::debug("no-pass2") {
+                continue;
+            }
+            let terrain_blend = (b.gpu.is_some_and(|g| g.program == ssx3_render::gpu::Program::Bezier) && st.prim & (1 << 6) != 0).then_some(st.ctx.alpha & 0xff);
+            if (terrain_blend == Some(0x81) && shadow::debug("no-sub")) || (terrain_blend == Some(0x58) && shadow::debug("no-add")) {
+                continue;
+            }
+            if shadow::debug("blend") && b.gpu.is_some_and(|g| g.program == ssx3_render::gpu::Program::Bezier) {
+                eprintln!("blend: pass2 {} prim {:#x} alpha {:#x} tfx {} tcc {} test {:#x} zbuf-msk {}", b.tag.pass2, st.prim, st.ctx.alpha, (st.ctx.tex0 >> 35) & 3, (st.ctx.tex0 >> 34) & 1, st.ctx.test, (st.ctx.zbuf >> 32) & 1);
+            }
             let alpha_only = (st.ctx.frame >> 32) as u32 & 0x00ff_ffff == 0x00ff_ffff;
             // `z`: keep the batch but without depth writes.
             let no_zw = skip_test.iter().any(|&(t, m)| t == st.ctx.test && m == b'z');
@@ -991,9 +1010,20 @@ impl Inner {
                     _ => ta,
                 }
             };
+            // Debug: the terrain's subtractive (baked lighting) layer alone,
+            // drawn opaque (its colour is what it subtracts).
+            if shadow::debug("sub-only") && b.gpu.is_some_and(|g| g.program == ssx3_render::gpu::Program::Bezier) && terrain_blend != Some(0x81) {
+                continue;
+            }
             for mut p in draw::plans(st, (tw, th), rt_psm, as_max) {
                 if no_zw {
                     p.key.depth_write = false;
+                }
+                if shadow::debug("sub-only") && terrain_blend == Some(0x81) {
+                    p.key.blend = None;
+                    p.u.src_mode = 0;
+                    p.key.depth = wgpu::CompareFunction::GreaterEqual;
+                    p.key.depth_write = true;
                 }
                 if dbg.planlog == Some(st.ctx.test) {
                     eprintln!("[gfx-plan] alpha {:#x} fba {} flags {:#x} tfx {} src_mode {} cs {} {} c_kind {} fix {} key {:?}", st.ctx.alpha, st.ctx.fba, p.u.flags, p.u.tfx, p.u.src_mode, p.u.cs_a, p.u.cs_b, p.u.c_kind, p.u.fix, p.key);
@@ -1133,7 +1163,7 @@ impl Inner {
                     && it.gpu.is_some_and(|g| shadow::receives(g.program))
             };
             let end = ao_at.min(items.len());
-            if std::env::var_os("SSX3_SHADOW_DEBUG").is_some() {
+            if shadow::debug("items") {
                 let mut by: std::collections::BTreeMap<String, (u32, u32)> = Default::default();
                 for it in items[..end].iter().filter(|it| it.target == main && !it.tag.hud) {
                     let k = format!("{:?} zw {}", it.gpu.map(|g| g.program), it.key.depth_write);

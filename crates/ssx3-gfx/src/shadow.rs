@@ -57,6 +57,24 @@ pub fn receives(p: ssx3_render::gpu::Program) -> bool {
     matches!(p, P::Mat3Mesh | P::Mat6Skin | P::Bezier)
 }
 
+/// `SSX3_SHADOW_SHOW`: the receivers show the shadow factor (1), their
+/// cascade (2) or N·L (3) instead of their colour (0: off).
+pub fn show() -> f32 {
+    static S: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
+    *S.get_or_init(|| match std::env::var("SSX3_SHADOW_SHOW").as_deref() {
+        Ok("factor") => 1.0,
+        Ok("cascade") => 2.0,
+        Ok("ndl") => 3.0,
+        _ => 0.0,
+    })
+}
+
+/// `SSX3_SHADOW_DEBUG` contains `what` (comma-separated switches).
+pub fn debug(what: &str) -> bool {
+    static S: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    S.get_or_init(|| std::env::var("SSX3_SHADOW_DEBUG").unwrap_or_default()).split(',').any(|w| w == what)
+}
+
 /// The tuning values (read once).
 #[derive(Clone, Copy, Debug)]
 pub struct Tuning {
@@ -158,7 +176,7 @@ pub fn light(c: &Cam, key: [f32; 3]) -> Option<Light> {
         lights[k] = std::array::from_fn(|col| std::array::from_fn(|i| rows[i][col] as f32));
         world_texel[k] = texel as f32;
     }
-    if std::env::var_os("SSX3_SHADOW_DEBUG").is_some() {
+    if debug("print") {
         eprintln!("shadow: eye {:.0},{:.0},{:.0} fwd {:.2},{:.2},{:.2} sun {:.2},{:.2},{:.2}", e[0], e[1], e[2], f[0], f[1], f[2], l[0], l[1], l[2]);
     }
     Some(Light {
@@ -218,7 +236,7 @@ impl Shadow {
     }
 
     /// This frame's uniforms (`None`: shadows off).
-    pub fn upload(&self, queue: &wgpu::Queue, l: Option<&Light>, show: bool) {
+    pub fn upload(&self, queue: &wgpu::Queue, l: Option<&Light>, show: f32) {
         let mut w: Vec<f32> = Vec::with_capacity(U_BYTES as usize / 4);
         match l {
             Some(l) => {
@@ -226,7 +244,7 @@ impl Shadow {
                 w.extend(l.lights.iter().flatten().flatten());
                 w.extend([l.sun[0], l.sun[1], l.sun[2], tuning().strength]);
                 w.extend([l.eye[0], l.eye[1], l.eye[2], 1.0]);
-                w.extend([l.texel, 0.0, 1.0, show as u32 as f32]);
+                w.extend([l.texel, 0.0, 1.0, show]);
                 w.extend(l.world_texel);
             }
             None => w.resize(U_BYTES as usize / 4, 0.0),

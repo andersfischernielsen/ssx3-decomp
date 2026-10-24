@@ -78,9 +78,13 @@ struct ShadowU {
 // The shadow pass's cascade (the draw's instance).
 var<private> cascade: u32;
 
+// The cascade `sun_lit` last used (debug view), 4 = none.
+var<private> used_cascade: u32;
+
 // How much sun reaches world point `w` with normal `n` (3×3 PCF in the
 // first cascade that holds it): 1 outside them all.
 fn sun_lit(w: vec3<f32>, n: vec3<f32>) -> f32 {
+    used_cascade = 4u;
     for (var c = 0u; c < 4u; c = c + 1u) {
         let lc = sh.lights[c] * vec4<f32>(w + n * sh.wt[c] * 1.5, 1.0);
         let uv = vec2<f32>(lc.x * 0.5 + 0.5, 0.5 - lc.y * 0.5);
@@ -88,6 +92,7 @@ fn sun_lit(w: vec3<f32>, n: vec3<f32>) -> f32 {
         if (any(uv < vec2<f32>(m)) || any(uv > vec2<f32>(1.0 - m)) || lc.z > 1.0 || lc.z < 0.0) {
             continue;
         }
+        used_cascade = c;
         let at = (uv + vec2<f32>(f32(c & 1u), f32(c >> 1u))) * 0.5;
         var s = 0.0;
         for (var i = -1; i <= 1; i = i + 1) {
@@ -190,8 +195,23 @@ fn fs_gpu(v: VOut) -> FsOut {
     // Sun shadows on the receivers (flag 4096).
     if ((b.flags & 4096u) != 0u && v.wp.w > 0.5 && b.src_mode != 2u) {
         let f = sun_factor(v.wp.xyz, dx, dy);
-        if (sh.p.w > 0.5) {
+        // (Debug views: on the opaque layer only; the blended ones would
+        // add or subtract the view's colours.)
+        if (sh.p.w > 0.0 && b.src_mode != 0u) {
+            discard;
+        }
+        if (sh.p.w == 1.0) {
             o.color = vec4<f32>(vec3<f32>(f), o.color.a);
+        } else if (sh.p.w == 2.0) {
+            let cc = array<vec3<f32>, 5>(vec3<f32>(1.0, 0.3, 0.3), vec3<f32>(0.3, 1.0, 0.3), vec3<f32>(0.3, 0.3, 1.0), vec3<f32>(1.0, 1.0, 0.3), vec3<f32>(0.5));
+            o.color = vec4<f32>(cc[used_cascade] * (0.4 + 0.6 * f), o.color.a);
+        } else if (sh.p.w == 3.0) {
+            var n = normalize(cross(dx, dy));
+            if (dot(n, sh.eye.xyz - v.wp.xyz) < 0.0) {
+                n = -n;
+            }
+            let ndl = dot(n, sh.sun.xyz);
+            o.color = vec4<f32>(max(ndl, 0.0), max(-ndl, 0.0), select(0.0, 1.0, ndl > 0.0 && ndl < 0.2), o.color.a);
         } else {
             o.color = vec4<f32>(o.color.rgb * f, o.color.a);
         }

@@ -120,6 +120,9 @@ pub struct Tag {
     pub terrain: bool,
     /// HUD (layers 9 and up).
     pub hud: bool,
+    /// The terrain's second pass (its UV2 texture: the lightmap, a
+    /// projector or shine).
+    pub pass2: bool,
     /// The post pass it belongs to (`RenderDepthFog` / `RenderBloom` /
     /// `RenderColorFilter`).
     pub post: Option<ssx3_render::direct::PostKind>,
@@ -942,6 +945,8 @@ impl Gs {
             }
         }
         u[gpu_params::RGBAQ] = [u32::from_le_bytes(self.rgbaq), f(self.q), f(self.s), f(self.t)];
+        // (The terrain's pass 2 draws with the ctx2 tags: PRIM.CTXT.)
+        let pass2 = call.program == ssx3_render::gpu::Program::Bezier && (st.prim >> 9) & 1 != 0;
         let gb = GpuBatch {
             program: call.program,
             call: self.gpu.call_start.first().copied().unwrap_or(0),
@@ -965,11 +970,11 @@ impl Gs {
         // A call right after one of the same program and state joins its
         // draw.
         match self.batches.last_mut() {
-            Some(Batch { state, gpu: Some(g), tag, .. }) if *state == st && *tag == Tag { hud: self.hud, ..self.tag } && g.program == gb.program && g.first + g.count == gb.first => {
+            Some(Batch { state, gpu: Some(g), tag, .. }) if *state == st && *tag == Tag { hud: self.hud, pass2, ..self.tag } && g.program == gb.program && g.first + g.count == gb.first => {
                 g.count += gb.count;
                 g.alpha_max = g.alpha_max.max(gb.alpha_max);
             }
-            _ => self.batches.push(Batch { state: st, tag: Tag { hud: self.hud, ..self.tag }, first: 0, count: 0, gpu: Some(gb) }),
+            _ => self.batches.push(Batch { state: st, tag: Tag { hud: self.hud, pass2, ..self.tag }, first: 0, count: 0, gpu: Some(gb) }),
         }
     }
 

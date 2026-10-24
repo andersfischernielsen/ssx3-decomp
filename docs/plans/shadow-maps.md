@@ -28,8 +28,7 @@ match `main`.
 ## Open questions
 
 - Casters the game culls (off screen, behind the camera) are missing.
-- CPU-path draws (35 batches with depth writes at frame 5100) and meshes
-  without depth writes do not cast.
+- Meshes without depth writes do not cast.
 - The game's own rider shadow is still drawn as well.
 
 - Does the baked lighting agree with the sun's direction on each course?
@@ -63,3 +62,19 @@ match `main`.
     blended decals.
   - Not shadows: a triangle sawtooth on the terrain near the camera is in
     the original native render too (renderer artefact, open).
+- 2026-10-24: flicker, found with dense captures (every 2 frames,
+  5800-6000) and receiver debug views (`SSX3_SHADOW_SHOW=cascade|factor|ndl`).
+  - Mixed-LOD terrain (mat2) went to the CPU programs in some frames (all
+    5,751 such calls in the race: `fan_tags_ok`, fan slots holding another
+    program's data), and CPU draws neither cast nor received. The GPU draws
+    now use the program's own fan tag when the slot holds something else,
+    so mat2 always plans for the GPU (race gate identical). No triangle draws
+    are left on the CPU (`SSX3_SHADOW_DEBUG=gpustats`): only mat6 bone
+    setup, morph, coefficient scaling and the ctx2 kick, mat3's PRIM kick
+    and its cubic lines.
+  - What still changes from frame to frame: casters the game stops drawing
+    (a rider leaving the view, the rail below the camera).
+  - Terrain layers on Snow Jam: base (Cs), bake ((Cd − Cs)·As, the terrain's
+    only lighting), detail (Cs·Ad + Cd). Multiplying every layer's source by
+    the shadow factor shadows the sum (the blends are linear). See
+    `terrain-lighting.md`. Debug: `SSX3_SHADOW_DEBUG=no-sub|no-add|sub-only|blend`.
