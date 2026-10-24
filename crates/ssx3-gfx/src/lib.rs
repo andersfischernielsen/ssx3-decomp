@@ -25,6 +25,7 @@ pub mod gs;
 mod options;
 pub mod pack;
 mod post;
+mod shadow;
 pub mod tex;
 
 pub use options::{Aa, Bloom, Options};
@@ -132,6 +133,10 @@ pub struct Inner {
     opts: Options,
     /// The renderer's own passes (created on first use).
     post: Option<post::Post>,
+    /// The shadow map (options: shadows).
+    shadow: Option<shadow::Shadow>,
+    /// The game's key light (towards it), eased from frame to frame.
+    key_light: [f32; 3],
     /// Seconds since the renderer started (animated effects).
     t0: web_time::Instant,
     /// Batches of VIF phase 1 (the 3D scene) in this frame.
@@ -256,6 +261,8 @@ impl Renderer {
             hud_squeeze: 1.0,
             opts: Options::default(),
             post: None,
+            shadow: None,
+            key_light: [0.0, 0.6, 0.8],
             t0: web_time::Instant::now(),
             phase1_end: usize::MAX,
             want_depth: false,
@@ -756,8 +763,28 @@ impl Inner {
         if !vbytes.is_empty() {
             self.queue.write_buffer(&vbuf, 0, vbytes);
         }
+        // Sun shadows (shadow.rs): this frame's light, the map and its
+        // uniforms (bound with the GPU draws, group 1).
+        let k = self.gs.key_light;
+        let kn = (k[0] * k[0] + k[1] * k[1] + k[2] * k[2]).sqrt();
+        if kn > 1e-3 {
+            let p = self.key_light;
+            let m: [f32; 3] = std::array::from_fn(|i| p[i] * 0.9 + k[i] / kn * 0.1);
+            let mn = (m[0] * m[0] + m[1] * m[1] + m[2] * m[2]).sqrt().max(1e-6);
+            self.key_light = m.map(|x| x / mn);
+        }
+        let key = self.key_light;
+        let light = if self.opts.shadows { self.gs.cam.as_ref().and_then(|c| shadow::light(c, key)) } else { None };
+        let map_size = if light.is_some() { shadow::tuning().size } else { self.shadow.as_ref().map_or(1, |s| s.size) };
+        if self.shadow.as_ref().is_none_or(|s| s.size != map_size) {
+            self.shadow = Some(shadow::Shadow::new(&self.dev, map_size));
+        }
+        let sh = self.shadow.as_ref().unwrap();
+        sh.upload(&self.queue, light.as_ref(), post::show("shadow"));
         // GPU-computed draws (ssx3_render::gpu): their uniforms, inputs and
-        // triangle lists, bound as group 1.
+        // triangle lists, bound as group 1 (and again with the placeholder
+        // shadow map for the shadow pass).
+        let mut gpu_bind_shadow = None;
         let gpu_bind = (!self.gs.gpu.calls.is_empty()).then(|| {
             let g = &self.gs.gpu;
             // (u32 slices as their bytes, no copy: the GPU reads little-endian
@@ -806,18 +833,27 @@ impl Inner {
                 }
                 ab
             };
-            let bg = self.dev.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("ssx3-gfx gpuvu"),
-                layout: &self.pipes.gpu_layout,
-                entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: cb.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 1, resource: db.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 2, resource: ib.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 3, resource: ob.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 4, resource: ab.as_entire_binding() },
-                ],
-            });
-            bg
+            let group = |real: bool| {
+                let [s5, s6, s7] = sh.entries(real);
+                self.dev.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("ssx3-gfx gpuvu"),
+                    layout: &self.pipes.gpu_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry { binding: 0, resource: cb.as_entire_binding() },
+                        wgpu::BindGroupEntry { binding: 1, resource: db.as_entire_binding() },
+                        wgpu::BindGroupEntry { binding: 2, resource: ib.as_entire_binding() },
+                        wgpu::BindGroupEntry { binding: 3, resource: ob.as_entire_binding() },
+                        wgpu::BindGroupEntry { binding: 4, resource: ab.as_entire_binding() },
+                        s5,
+                        s6,
+                        s7,
+                    ],
+                })
+            };
+            if light.is_some() {
+                gpu_bind_shadow = Some(group(false));
+            }
+            group(true)
         });
         // Plans per batch, uniforms, bind groups.
         let batches = std::mem::take(&mut self.gs.batches);
@@ -966,6 +1002,10 @@ impl Inner {
                 if date {
                     p.u.flags |= 64 | (((st.ctx.test >> 15) & 1) as u32) << 7;
                 }
+                // Sun shadows: the 3D draws receive them.
+                if light.is_some() && st.target == self.gs.main_fbp && !b.tag.hud && b.tag.post.is_none() && b.gpu.is_some_and(|g| shadow::receives(g.program)) {
+                    p.u.flags |= 4096;
+                }
                 // Glints on bright snow (textured terrain).
                 if opts.snow && b.tag.terrain && st.tex.is_some() {
                     p.u.flags |= 2048;
@@ -1067,9 +1107,9 @@ impl Inner {
         // The renderer's own passes: AO before the game's post passes, the
         // rest before the HUD (or at the end of a frame without them).
         let hud_post = opts.bloom == Bloom::Modern || opts.aa != Aa::Off;
-        let ao_at = if opts.ao { items.iter().position(|it| it.tag.post.is_some() || it.tag.hud).unwrap_or(items.len()) } else { usize::MAX };
+        let ao_at = if opts.ao || opts.shadows { items.iter().position(|it| it.tag.post.is_some() || it.tag.hud).unwrap_or(items.len()) } else { usize::MAX };
         let hud_at = if hud_post { items.iter().position(|it| it.tag.hud).unwrap_or(items.len()) } else { usize::MAX };
-        if (opts.ao || hud_post) && self.post.is_none() {
+        if (opts.ao || opts.shadows || hud_post) && self.post.is_none() {
             self.post = Some(post::Post::new(&self.dev));
         }
         if let Some(po) = self.post.as_mut() {
@@ -1080,6 +1120,61 @@ impl Inner {
         let dv = t.depth.create_view(&Default::default());
         let mut enc = self.dev.create_command_encoder(&Default::default());
         let main = self.gs.main_fbp;
+        // Sun shadows: the 3D draws before the game's post passes again,
+        // into the shadow map (shadow.rs), before everything else.
+        if let (Some(_), Some(gb)) = (light.as_ref(), gpu_bind_shadow.as_ref()) {
+            let sh = self.shadow.as_ref().unwrap();
+            let casts = |it: &Item| {
+                it.target == main
+                    && !it.tag.hud
+                    && it.tag.post.is_none()
+                    && it.key.depth_write
+                    && it.scissor.is_some()
+                    && it.gpu.is_some_and(|g| shadow::receives(g.program))
+            };
+            let end = ao_at.min(items.len());
+            if std::env::var_os("SSX3_SHADOW_DEBUG").is_some() {
+                let mut by: std::collections::BTreeMap<String, (u32, u32)> = Default::default();
+                for it in items[..end].iter().filter(|it| it.target == main && !it.tag.hud) {
+                    let k = format!("{:?} zw {}", it.gpu.map(|g| g.program), it.key.depth_write);
+                    let e = by.entry(k).or_default();
+                    e.0 += 1;
+                    e.1 += it.gpu.map_or(it.count, |g| g.count);
+                }
+                eprintln!("shadow items: {by:?}");
+            }
+            for it in items[..end].iter().filter(|it| casts(it)) {
+                self.pipes.shadow(&self.dev, it.gpu.unwrap().program);
+            }
+            let mut sp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("ssx3-gfx shadow map"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &sh.view,
+                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            sp.set_bind_group(1, gb, &[]);
+            // One quarter of the atlas per cascade (the instance index).
+            let tile = (sh.size / 2) as f32;
+            for c in 0..shadow::CASCADES as u32 {
+                sp.set_viewport((c & 1) as f32 * tile, (c >> 1) as f32 * tile, tile, tile, 0.0, 1.0);
+                let mut last_prog = None;
+                for it in items[..end].iter().filter(|it| casts(it)) {
+                    let g = it.gpu.unwrap();
+                    if last_prog != Some(g.program) {
+                        last_prog = Some(g.program);
+                        sp.set_pipeline(self.pipes.cached_shadow(g.program));
+                    }
+                    sp.set_bind_group(0, &groups[it.bind], &[it.ubo * draw::UNIFORM_STRIDE as u32]);
+                    sp.draw(g.first..g.first + g.count, c..c + 1);
+                }
+            }
+        }
         let rts = &self.rts;
         // A pass on target `fbp`; depth starts cleared on a target's first
         // pass of the frame.
@@ -1155,7 +1250,12 @@ impl Inner {
                 drop(pass);
                 let po = self.post.as_mut().expect("post passes");
                 if k == ao_at {
-                    po.ao(&self.dev, &self.queue, &mut enc, &post_frame, self.gs.cam.as_ref(), self.fxy);
+                    if let (Some(l), Some(sh), Some(cam), true) = (light.as_ref(), self.shadow.as_ref(), self.gs.cam.as_ref(), post::debug_view() != 0.0) {
+                        po.shadow(&self.dev, &self.queue, &mut enc, &post_frame, cam, self.fxy, &sh.view, l);
+                    }
+                    if opts.ao {
+                        po.ao(&self.dev, &self.queue, &mut enc, &post_frame, self.gs.cam.as_ref(), self.fxy);
+                    }
                 }
                 if k == hud_at {
                     po.before_hud(&self.dev, &self.queue, &mut enc, &post_frame, &opts);
@@ -1261,7 +1361,12 @@ impl Inner {
         if ao_at == items.len() || hud_at == items.len() {
             let po = self.post.as_mut().expect("post passes");
             if ao_at == items.len() {
-                po.ao(&self.dev, &self.queue, &mut enc, &post_frame, self.gs.cam.as_ref(), self.fxy);
+                if let (Some(l), Some(sh), Some(cam), true) = (light.as_ref(), self.shadow.as_ref(), self.gs.cam.as_ref(), post::debug_view() != 0.0) {
+                    po.shadow(&self.dev, &self.queue, &mut enc, &post_frame, cam, self.fxy, &sh.view, l);
+                }
+                if opts.ao {
+                    po.ao(&self.dev, &self.queue, &mut enc, &post_frame, self.gs.cam.as_ref(), self.fxy);
+                }
             }
             if hud_at == items.len() {
                 po.before_hud(&self.dev, &self.queue, &mut enc, &post_frame, &opts);

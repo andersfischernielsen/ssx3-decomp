@@ -405,7 +405,7 @@ pub fn aspect_box() -> Option<f32> {
 }
 
 /// The modern graphics options from the settings (F10) or environment:
-/// `SSX3_AA`, `SSX3_MIPMAPS`, `SSX3_LOD_BIAS`, `SSX3_TERRAIN`, `SSX3_AO`,
+/// `SSX3_AA`, `SSX3_MIPMAPS`, `SSX3_LOD_BIAS`, `SSX3_TERRAIN`, `SSX3_AO`, `SSX3_SHADOWS`,
 /// `SSX3_BLOOM`, `SSX3_SNOW`. Unset: the original look.
 pub fn gfx_options() -> ssx3_gfx::Options {
     let get = |k: &str| crate::settings::get(k);
@@ -419,6 +419,7 @@ pub fn gfx_options() -> ssx3_gfx::Options {
         lod_bias: get("SSX3_LOD_BIAS").and_then(|v| v.parse::<f32>().ok()).map_or(0.0, |b| b.clamp(-2.0, 2.0)),
         terrain: get("SSX3_TERRAIN").and_then(|v| v.parse().ok()).map_or(1, |n: u32| n.clamp(1, 4)),
         ao: on("SSX3_AO"),
+        shadows: on("SSX3_SHADOWS"),
         bloom: match get("SSX3_BLOOM").as_deref() {
             Some("modern") => ssx3_gfx::Bloom::Modern,
             Some("off") => ssx3_gfx::Bloom::Off,

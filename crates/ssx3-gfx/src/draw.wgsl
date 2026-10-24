@@ -66,6 +66,9 @@ struct VOut {
     // (XYZF2, ZMAX) for the GS depth rules.
     @location(3) @interpolate(perspective) zw: vec2<f32>,
     @location(4) @interpolate(flat) zm: vec2<f32>,
+    // Sun shadows (gpuvu.wgsl): the world position (relative to a point
+    // near the camera), w = 1; w = 0 without.
+    @location(5) @interpolate(perspective) wp: vec4<f32>,
 }
 
 @vertex
@@ -79,6 +82,7 @@ fn vs(v: VIn) -> VOut {
     o.fog = v.fog;
     o.zw = vec2<f32>(0.0, 1.0);
     o.zm = vec2<f32>(0.0);
+    o.wp = vec4<f32>(0.0);
     return o;
 }
 

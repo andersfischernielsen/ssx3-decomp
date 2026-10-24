@@ -243,6 +243,13 @@ const GPUVU_SOURCES: &[&str] = &[
     include_str!("gpuvu/bezier.wgsl"),
 ];
 
+/// The GPU-vertex module's shadow hook when it draws for the screen
+/// (shadow.wgsl replaces it in the shadow pass).
+const NO_SHADOW: &str = "const SHADOW_PASS: bool = false;\nfn shadow_out(o: VOut, hc: vec4<f32>) -> VOut { return o; }\n";
+
+/// The shadow pass's depth format.
+pub const SHADOW_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+
 pub struct Pipelines {
     module: wgpu::ShaderModule,
     pub layout: wgpu::BindGroupLayout,
@@ -254,6 +261,10 @@ pub struct Pipelines {
     pub gpu_layout: wgpu::BindGroupLayout,
     gpu_pl: wgpu::PipelineLayout,
     gpu_cache: HashMap<(PipeKey, ssx3_render::gpu::Program), wgpu::RenderPipeline>,
+    /// The shadow pass (shadow.wgsl; bind group 1 with a placeholder map).
+    shadow_module: wgpu::ShaderModule,
+    shadow_pl: wgpu::PipelineLayout,
+    shadow_cache: HashMap<ssx3_render::gpu::Program, wgpu::RenderPipeline>,
 }
 
 impl Pipelines {
@@ -323,7 +334,11 @@ impl Pipelines {
         });
         let gpu_module = dev.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("ssx3-gfx gpuvu.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(GPUVU_SOURCES.join("\n").into()),
+            source: wgpu::ShaderSource::Wgsl((GPUVU_SOURCES.join("\n") + "\n" + NO_SHADOW).into()),
+        });
+        let shadow_module = dev.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("ssx3-gfx shadow.wgsl"),
+            source: wgpu::ShaderSource::Wgsl((GPUVU_SOURCES.join("\n") + "\n" + include_str!("shadow.wgsl")).into()),
         });
         let storage = |binding| wgpu::BindGroupLayoutEntry {
             binding,
@@ -331,13 +346,79 @@ impl Pipelines {
             ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None },
             count: None,
         };
-        let gpu_layout = dev.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("ssx3-gfx gpuvu"), entries: &[storage(0), storage(1), storage(2), storage(3), storage(4)] });
+        // 5..7: sun shadows (shadow.rs): uniforms, the map, its sampler.
+        let shadow_entries = [
+            wgpu::BindGroupLayoutEntry {
+                binding: 5,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 6,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Depth, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry { binding: 7, visibility: wgpu::ShaderStages::FRAGMENT, ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison), count: None },
+        ];
+        let gpu_layout = dev.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("ssx3-gfx gpuvu"),
+            entries: &[storage(0), storage(1), storage(2), storage(3), storage(4), shadow_entries[0], shadow_entries[1], shadow_entries[2]],
+        });
         let gpu_pl = dev.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("ssx3-gfx gpuvu"),
             bind_group_layouts: &[Some(&layout), Some(&gpu_layout)],
             immediate_size: 0,
         });
-        Pipelines { module, layout, pl, cache: HashMap::new(), gpu_module, gpu_layout, gpu_pl, gpu_cache: HashMap::new() }
+        let shadow_pl = dev.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("ssx3-gfx shadow"),
+            bind_group_layouts: &[Some(&layout), Some(&gpu_layout)],
+            immediate_size: 0,
+        });
+        Pipelines {
+            module,
+            layout,
+            pl,
+            cache: HashMap::new(),
+            gpu_module,
+            gpu_layout,
+            gpu_pl,
+            gpu_cache: HashMap::new(),
+            shadow_module,
+            shadow_pl,
+            shadow_cache: HashMap::new(),
+        }
+    }
+
+    /// A shadow pipeline made earlier with [`Pipelines::shadow`].
+    pub fn cached_shadow(&self, p: ssx3_render::gpu::Program) -> &wgpu::RenderPipeline {
+        &self.shadow_cache[&p]
+    }
+
+    /// The shadow pass's pipeline for program `p` (depth only, nearest
+    /// wins; a slope-scaled bias against self-shadowing).
+    pub fn shadow(&mut self, dev: &wgpu::Device, p: ssx3_render::gpu::Program) -> &wgpu::RenderPipeline {
+        let (module, pl) = (&self.shadow_module, &self.shadow_pl);
+        self.shadow_cache.entry(p).or_insert_with(|| {
+            dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("ssx3-gfx shadow"),
+                layout: Some(pl),
+                vertex: wgpu::VertexState { module, entry_point: Some(p.vs_entry()), compilation_options: Default::default(), buffers: &[] },
+                primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: SHADOW_FORMAT,
+                    depth_write_enabled: Some(true),
+                    depth_compare: Some(wgpu::CompareFunction::Less),
+                    stencil: Default::default(),
+                    bias: wgpu::DepthBiasState { constant: 2, slope_scale: 1.5, clamp: 0.0 },
+                }),
+                multisample: Default::default(),
+                fragment: Some(wgpu::FragmentState { module, entry_point: Some("fs_shadow"), compilation_options: Default::default(), targets: &[] }),
+                multiview_mask: None,
+                cache: None,
+            })
+        })
     }
 
     /// A GPU-vertex pipeline made earlier with [`Pipelines::get_gpu`].

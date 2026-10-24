@@ -37,6 +37,7 @@ pub const ITEMS: &[Item] = &[
     Item { key: "SSX3_TERRAIN", label: "Terrain detail", choices: &[("", "Original"), ("2", "2x"), ("4", "4x")], live: true },
     Item { key: "SSX3_DRAW_DIST", label: "Rider detail dist.", choices: &[("", "Original"), ("1.5", "1.5x"), ("2", "2x"), ("3", "3x")], live: true },
     Item { key: "SSX3_AO", label: "Ambient occlusion", choices: &[("", "Off"), ("1", "On")], live: true },
+    Item { key: "SSX3_SHADOWS", label: "Sun shadows", choices: &[("", "Off"), ("1", "On")], live: true },
     Item { key: "SSX3_BLOOM", label: "Bloom", choices: &[("", "Original"), ("modern", "Modern"), ("off", "Off")], live: true },
     Item { key: "SSX3_SNOW", label: "Snow sparkle", choices: &[("", "Off"), ("1", "On")], live: true },
     Item { key: "SSX3_RENDER", label: "Renderer", choices: &[("", "Native (wgpu)"), ("emu", "Emulated GS")], live: false },

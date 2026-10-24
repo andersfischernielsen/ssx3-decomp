@@ -58,6 +58,61 @@ fn uq(c: u32, i: u32) -> vec4<u32> {
 // Vertex data kept from frame to frame (gs::MeshArena).
 @group(1) @binding(4) var<storage, read> arena: array<vec4<u32>>;
 
+// Sun shadows (shadow.rs): GS screen → world (relative to a point near the
+// camera), world → light clip per cascade (4, in the atlas' quarters:
+// 0 top left, 1 top right, 2 bottom left, 3 bottom right), (towards the
+// sun, strength), the eye (world), (atlas texel in UV, -, on, show the
+// factor), each cascade's world units per texel.
+struct ShadowU {
+    s2w: mat4x4<f32>,
+    lights: array<mat4x4<f32>, 4>,
+    sun: vec4<f32>,
+    eye: vec4<f32>,
+    p: vec4<f32>,
+    wt: vec4<f32>,
+}
+@group(1) @binding(5) var<uniform> sh: ShadowU;
+@group(1) @binding(6) var smap: texture_depth_2d;
+@group(1) @binding(7) var scmp: sampler_comparison;
+
+// The shadow pass's cascade (the draw's instance).
+var<private> cascade: u32;
+
+// How much sun reaches world point `w` with normal `n` (3×3 PCF in the
+// first cascade that holds it): 1 outside them all.
+fn sun_lit(w: vec3<f32>, n: vec3<f32>) -> f32 {
+    for (var c = 0u; c < 4u; c = c + 1u) {
+        let lc = sh.lights[c] * vec4<f32>(w + n * sh.wt[c] * 1.5, 1.0);
+        let uv = vec2<f32>(lc.x * 0.5 + 0.5, 0.5 - lc.y * 0.5);
+        let m = 4.0 * sh.p.x;
+        if (any(uv < vec2<f32>(m)) || any(uv > vec2<f32>(1.0 - m)) || lc.z > 1.0 || lc.z < 0.0) {
+            continue;
+        }
+        let at = (uv + vec2<f32>(f32(c & 1u), f32(c >> 1u))) * 0.5;
+        var s = 0.0;
+        for (var i = -1; i <= 1; i = i + 1) {
+            for (var j = -1; j <= 1; j = j + 1) {
+                s = s + textureSampleCompareLevel(smap, scmp, at + vec2<f32>(f32(i), f32(j)) * sh.p.x, lc.z);
+            }
+        }
+        return s / 9.0;
+    }
+    return 1.0;
+}
+
+// The shadow factor at world point `w` with face derivatives `dx`, `dy`.
+// Surfaces turned away from the sun are left alone: the game's baked
+// lighting already darkens them.
+fn sun_factor(w: vec3<f32>, dx: vec3<f32>, dy: vec3<f32>) -> f32 {
+    var n = normalize(cross(dx, dy));
+    if (dot(n, sh.eye.xyz - w) < 0.0) {
+        n = -n;
+    }
+    let ndl = dot(n, sh.sun.xyz);
+    let lit = mix(1.0, sun_lit(w, n), smoothstep(0.0, 0.2, ndl));
+    return 1.0 - sh.sun.w * (1.0 - lit);
+}
+
 // A call's data qword: from the arena when the index has gs::ARENA_BIT.
 fn rd(i: u32) -> vec4<u32> {
     if ((i & 0x80000000u) != 0u) {
@@ -100,7 +155,12 @@ fn gs_vertex(c: u32, hc: vec4<f32>, cz: f32, adc: bool, col: vec4<f32>, stq: vec
     o.col = col;
     o.stq = vec3<f32>(stq.x * tx.x, stq.y * tx.y, stq.z);
     o.fog = fog;
-    return o;
+    if (sh.p.z > 0.5) {
+        let h = sh.s2w * hc;
+        o.wp = vec4<f32>(h.xyz / h.w, 1.0);
+    }
+    // (The shadow pass, shadow.wgsl: the same point seen from the sun.)
+    return shadow_out(o, hc);
 }
 
 struct FsOut {
@@ -111,6 +171,9 @@ struct FsOut {
 // The GS fragment stage with the GS depth (the position's z is the clip z).
 @fragment
 fn fs_gpu(v: VOut) -> FsOut {
+    // (Derivatives before any discard.)
+    let dx = dpdx(v.wp.xyz);
+    let dy = dpdy(v.wp.xyz);
     // The program's FTOI4 depth (x16): XYZ2 takes it as is, XYZF2 / 16 (24
     // bits); negative values wrap (XYZ2: a huge Z; XYZF2: & 0xffffff).
     let sz = v.zw.x / v.zw.y;
@@ -124,6 +187,15 @@ fn fs_gpu(v: VOut) -> FsOut {
     let d = min(z, zmax) / (zmax + 1.0);
     var o: FsOut;
     o.color = shade(v);
+    // Sun shadows on the receivers (flag 4096).
+    if ((b.flags & 4096u) != 0u && v.wp.w > 0.5 && b.src_mode != 2u) {
+        let f = sun_factor(v.wp.xyz, dx, dy);
+        if (sh.p.w > 0.5) {
+            o.color = vec4<f32>(vec3<f32>(f), o.color.a);
+        } else {
+            o.color = vec4<f32>(o.color.rgb * f, o.color.a);
+        }
+    }
     o.depth = d;
     return o;
 }

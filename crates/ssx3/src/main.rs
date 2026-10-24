@@ -77,6 +77,7 @@ const GFX_KEYS: &[&str] = &[
     "SSX3_LOD_BIAS",
     "SSX3_TERRAIN",
     "SSX3_AO",
+    "SSX3_SHADOWS",
     "SSX3_BLOOM",
     "SSX3_SNOW",
 ];

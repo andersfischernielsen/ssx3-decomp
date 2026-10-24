@@ -42,7 +42,7 @@ fn mat3_mesh_vertex(vi: u32, c: u32) -> VOut {
     let g = fq(c, 18u);
     let cz = (hc.z - g.y * hc.w) / g.x;
     var o = gs_vertex(c, hc, cz, rd(base + 3u).x != 0u, col, vec3<f32>(t * q, q));
-    if (uq(c, 4).w == 0u) {
+    if (uq(c, 4).w == 0u && !SHADOW_PASS) {
         // A mesh without the clip flag: the program draws its projection
         // as is (a vertex behind the eye too, mirrored by the divide), and
         // the GS only scissors. So no clipping here: the screen position.
@@ -53,7 +53,8 @@ fn mat3_mesh_vertex(vi: u32, c: u32) -> VOut {
 }
 
 @vertex
-fn vs_mat3_mesh(@builtin(vertex_index) k: u32) -> VOut {
+fn vs_mat3_mesh(@builtin(vertex_index) k: u32, @builtin(instance_index) inst: u32) -> VOut {
+    cascade = inst;
     let c = call_of(k);
     return mat3_mesh_vertex(call_index(k, c), c);
 }

@@ -16,6 +16,11 @@ struct P {
     s2w: mat4x4<f32>,
     off: vec4<f32>,
     zp: vec4<f32>,
+    // Sun shadows: rebased world → light clip, (towards the sun, strength),
+    // (shadow-map texel in UV, normal offset in world units, -, -).
+    light: mat4x4<f32>,
+    sun: vec4<f32>,
+    sp: vec4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> p: P;
@@ -24,6 +29,9 @@ struct P {
 @group(0) @binding(3) var depth: texture_depth_2d;
 // A second image (the bloom composite: the frame before the bloom).
 @group(0) @binding(4) var image: texture_2d<f32>;
+// The shadow map (shadow.rs) and its comparison sampler.
+@group(0) @binding(5) var smap: texture_depth_2d;
+@group(0) @binding(6) var scmp: sampler_comparison;
 
 struct VOut {
     @builtin(position) pos: vec4<f32>,
@@ -339,4 +347,70 @@ fn to_screen(w: vec3<f32>) -> vec4<f32> {
     let h = p.w2s * vec4<f32>(w, 1.0);
     let s = h.xyz / h.w;
     return vec4<f32>((s.x - p.off.x + 0.5) * p.off.z, (s.y - p.off.y + 0.5) * p.off.w, h.w, s.z);
+}
+
+// ---------------------------------------------------------------- shadows
+// How much sun reaches world point `w` (normal `n`): the shadow map,
+// 5×5 percentage-closer filtered; outside the map, all of it.
+fn sun_lit(w: vec3<f32>, n: vec3<f32>) -> f32 {
+    let lc = p.light * vec4<f32>(w + n * p.sp.y, 1.0);
+    let uv = vec2<f32>(lc.x * 0.5 + 0.5, 0.5 - lc.y * 0.5);
+    if (any(uv < vec2<f32>(0.0)) || any(uv > vec2<f32>(1.0)) || lc.z > 1.0 || lc.z < 0.0) {
+        return 1.0;
+    }
+    var s = 0.0;
+    for (var i = -2; i <= 2; i = i + 1) {
+        for (var j = -2; j <= 2; j = j + 1) {
+            s = s + textureSampleCompareLevel(smap, scmp, uv + vec2<f32>(f32(i), f32(j)) * p.sp.x, lc.z);
+        }
+    }
+    return s / 25.0;
+}
+
+// The shadow factor, multiplied onto the image. Surfaces turned away from
+// the sun are left alone: the game's baked lighting already darkens them.
+@fragment
+fn fs_shadow_apply(v: VOut) -> @location(0) vec4<f32> {
+    let px = vec2<i32>(v.pos.xy);
+    let z = textureLoad(depth, px, 0);
+    if (z <= 1e-6) {
+        return vec4<f32>(1.0);
+    }
+    let pc = wpos(px);
+    let rx = wpos(px + vec2<i32>(1, 0)) - pc;
+    let lx = pc - wpos(px - vec2<i32>(1, 0));
+    let dy = wpos(px + vec2<i32>(0, 1)) - pc;
+    let uy = pc - wpos(px - vec2<i32>(0, 1));
+    let ex = select(lx, rx, dot(rx, rx) < dot(lx, lx));
+    let ey = select(uy, dy, dot(dy, dy) < dot(uy, uy));
+    var n = normalize(cross(ex, ey));
+    let s0 = to_screen(pc).xy;
+    let to_cam = normalize(to_world(s0, 0.9).xyz - to_world(s0, 0.0001).xyz);
+    if (dot(n, to_cam) < 0.0) {
+        n = -n;
+    }
+    // Debug views (SSX3_GFX_SHOW=shadow-map / world / normal).
+    if (p.sp.z == 1.0) {
+        let uv = v.pos.xy / p.size;
+        let d = textureLoad(smap, vec2<i32>(uv * vec2<f32>(textureDimensions(smap))), 0);
+        return vec4<f32>(vec3<f32>(fract(d * 8.0)), 1.0);
+    }
+    if (p.sp.z == 2.0) {
+        return vec4<f32>(fract(pc / 1000.0), 1.0);
+    }
+    if (p.sp.z == 3.0) {
+        return vec4<f32>(n * 0.5 + 0.5, 1.0);
+    }
+    if (p.sp.z >= 4.0) {
+        let lc = p.light * vec4<f32>(pc, 1.0);
+        let uv = vec2<f32>(lc.x * 0.5 + 0.5, 0.5 - lc.y * 0.5);
+        if (p.sp.z == 4.0) {
+            return vec4<f32>(fract(uv * 4.0), clamp(lc.z, 0.0, 1.0), 1.0);
+        }
+        let d = textureLoad(smap, vec2<i32>(clamp(uv, vec2<f32>(0.0), vec2<f32>(0.999)) * vec2<f32>(textureDimensions(smap))), 0);
+        return vec4<f32>(clamp((lc.z - d) * 200.0, 0.0, 1.0), clamp((d - lc.z) * 200.0, 0.0, 1.0), 0.0, 1.0);
+    }
+    let ndl = dot(n, p.sun.xyz);
+    let lit = mix(1.0, sun_lit(pc, n), smoothstep(0.0, 0.2, ndl));
+    return vec4<f32>(vec3<f32>(1.0 - p.sun.w * (1.0 - lit)), 1.0);
 }

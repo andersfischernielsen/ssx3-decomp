@@ -263,6 +263,9 @@ pub struct Gs {
     pub tag: Tag,
     /// This frame's terrain camera (ambient occlusion).
     pub cam: Option<Cam>,
+    /// The lit meshes' key light this frame (unnormalised sum of unit
+    /// vectors towards it; zero without lit meshes).
+    pub key_light: [f32; 3],
     /// CLUTs of this frame's depth-fog passes (see ZFOG_TEX).
     pub fog_cluts: Vec<Upload>,
     /// XYOFFSET_1/2 written: the game sets context 2's once at startup,
@@ -321,6 +324,7 @@ impl Gs {
         self.gpu.sources.clear();
         self.gpu.last_split = None;
         self.cam = None;
+        self.key_light = [0.0; 3];
         self.queue.clear();
         self.size = size;
         self.main_fbp = fbp;
@@ -920,6 +924,22 @@ impl Gs {
                 zmax,
                 xyzf: vreg == 4,
             });
+        }
+        // The key light (sun shadows): the lit meshes' SH lighting's
+        // linear terms (L7..L9: the irradiance's gradient over the world
+        // normal), summed as unit vectors.
+        if call.program == ssx3_render::gpu::Program::Mat3Mesh && call.uniforms[4][0] != 0 && st.target == self.main_fbp {
+            let lum = |q: [u32; 4]| {
+                let v = fl(q);
+                0.3 * v[0] + 0.59 * v[1] + 0.11 * v[2]
+            };
+            let g = [lum(call.uniforms[15]), lum(call.uniforms[16]), lum(call.uniforms[17])];
+            let n = (g[0] * g[0] + g[1] * g[1] + g[2] * g[2]).sqrt();
+            if n > 1e-3 && n.is_finite() {
+                for (k, v) in self.key_light.iter_mut().zip(g) {
+                    *k += v / n;
+                }
+            }
         }
         u[gpu_params::RGBAQ] = [u32::from_le_bytes(self.rgbaq), f(self.q), f(self.s), f(self.t)];
         let gb = GpuBatch {
