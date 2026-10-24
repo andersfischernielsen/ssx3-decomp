@@ -1268,8 +1268,12 @@ impl Inner {
                 && b.gpu
                     .is_some_and(|g| g.program == ssx3_render::gpu::Program::Bezier)
                 && (st.prim & (1 << 6) == 0 || terrain_blend == Some(0x2a));
+            // The bake keeps only its colour (flag 32768: the artists' zone
+            // tints; its darkening is ours to give): `SSX3_SHADOW_DEBUG=
+            // no-tint` drops it as well.
+            let bake_tint = native_light && terrain_blend == Some(0x81);
             if native_light
-                && (terrain_blend == Some(0x81)
+                && ((bake_tint && (shadow::debug("no-tint") || shadow::show() >= 4.0))
                     || (shadow::show() >= 4.0 && !lit_base && st.target == self.gs.main_fbp))
             {
                 continue;
@@ -1449,6 +1453,8 @@ impl Inner {
                 // Sun shadows: the 3D draws receive them.
                 if lit_base {
                     p.u.flags |= 16384;
+                } else if bake_tint {
+                    p.u.flags |= 32768;
                 } else if light.is_some()
                     && !shadow::debug("no-recv")
                     && st.target == self.gs.main_fbp

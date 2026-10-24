@@ -232,6 +232,13 @@ fn fs_gpu(v: VOut) -> FsOut {
     let d = min(z, zmax) / (zmax + 1.0);
     var o: FsOut;
     o.color = shade(v);
+    // The bake's colour only (flag 32768, Native shadows): its source
+    // (premultiplied: what it subtracts) less its grey part, and the
+    // destination kept (alpha 1: the blend scales it by As).
+    if ((b.flags & 32768u) != 0u) {
+        let c = o.color.rgb;
+        o.color = vec4<f32>(max(c - vec3<f32>(min(min(c.r, c.g), c.b)), vec3<f32>(0.0)), 1.0);
+    }
     // The renderer's terrain lighting (flag 16384).
     if ((b.flags & 16384u) != 0u && v.wp.w > 0.5 && v.nrm.w > 0.5) {
         let t = terrain_light(v.wp.xyz, v.nrm.xyz);
