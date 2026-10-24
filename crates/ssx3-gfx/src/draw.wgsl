@@ -69,6 +69,8 @@ struct VOut {
     // Sun shadows (gpuvu.wgsl): the world position (relative to a point
     // near the camera), w = 1; w = 0 without.
     @location(5) @interpolate(perspective) wp: vec4<f32>,
+    // The terrain's smooth normal (renderer lighting), w = 1; w = 0 without.
+    @location(6) @interpolate(perspective) nrm: vec4<f32>,
 }
 
 @vertex
@@ -83,6 +85,7 @@ fn vs(v: VIn) -> VOut {
     o.zw = vec2<f32>(0.0, 1.0);
     o.zm = vec2<f32>(0.0);
     o.wp = vec4<f32>(0.0);
+    o.nrm = vec4<f32>(0.0);
     return o;
 }
 

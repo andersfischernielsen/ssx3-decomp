@@ -63,14 +63,29 @@ pub struct Casters {
     /// Renewed with every change of the set (the renderer uploads then).
     pub generation: u64,
     pub triangles: Vec<[f32; 6]>,
+    /// Alpha cut-out triangles (position, UV), in runs per texture:
+    /// (TexMan id, first vertex, vertices).
+    pub cutouts: Vec<[f32; 5]>,
+    pub cutout_runs: Vec<(i16, u32, u32)>,
     pub patches: u32,
     pub instances: u32,
+    /// The world file's name (`BAM` for Snow Jam): cWorldCache +0x304 holds
+    /// `|data/worlds/<name>.ssb`.
+    pub world: String,
+}
+
+/// One object's casters: solid triangles, and alpha cut-outs per texture
+/// (TexMan id; position and UV per vertex).
+#[derive(Default, Debug)]
+pub struct Geometry {
+    pub solid: Vec<[f32; 6]>,
+    pub cut: Vec<(i16, Vec<[f32; 5]>)>,
 }
 
 /// The tessellated patches, kept from frame to frame.
 #[derive(Default)]
 pub struct CasterCache {
-    meshes: HashMap<u32, (u64, Vec<[f32; 6]>)>,
+    meshes: HashMap<u32, (u64, Geometry)>,
     /// (object, its hash, an instance (else a patch)).
     set: Vec<(u32, u64, bool)>,
     current: Option<Arc<Casters>>,
@@ -193,11 +208,26 @@ impl CasterCache {
                 let t = if instance {
                     decode_instance(m, p)
                 } else {
-                    tessellate(m, p)
+                    Geometry {
+                        solid: tessellate(m, p),
+                        cut: Vec::new(),
+                    }
                 };
                 self.meshes.insert(p, (h, t));
             }
-            triangles.extend_from_slice(&self.meshes[&p].1);
+            triangles.extend_from_slice(&self.meshes[&p].1.solid);
+        }
+        // The cut-outs, gathered by texture.
+        let mut by_tex: std::collections::BTreeMap<i16, Vec<[f32; 5]>> = Default::default();
+        for &(p, _, _) in &set {
+            for (t, v) in &self.meshes[&p].1.cut {
+                by_tex.entry(*t).or_default().extend_from_slice(v);
+            }
+        }
+        let (mut cutouts, mut cutout_runs) = (Vec::new(), Vec::new());
+        for (t, v) in by_tex {
+            cutout_runs.push((t, cutouts.len() as u32, v.len() as u32));
+            cutouts.extend(v);
         }
         self.generation += 1;
         let instances = set.iter().filter(|e| e.2).count() as u32;
@@ -207,9 +237,34 @@ impl CasterCache {
             patches: self.set.len() as u32 - instances,
             instances,
             triangles,
+            cutouts,
+            cutout_runs,
+            world: world_name(m, module),
         }));
         self.current.clone()
     }
+}
+
+/// The world file's name from cWorldCache (GameModule+0x10 → World → cache)
+/// +0x304: `|data/worlds/<name>.ssb`.
+fn world_name(m: &dyn Mem, module: u32) -> String {
+    let world = word(m, module + GAME_MODULE_SECTIONS);
+    let cache = if ram(world) { word(m, world) } else { 0 };
+    if !ram(cache) {
+        return String::new();
+    }
+    let bytes: Vec<u8> = (0..12)
+        .flat_map(|k| word(m, cache + 0x304 + 4 * k).to_le_bytes())
+        .take_while(|&b| b != 0)
+        .collect();
+    let path = String::from_utf8_lossy(&bytes);
+    path.rsplit('/')
+        .next()
+        .unwrap_or("")
+        .split('.')
+        .next()
+        .unwrap_or("")
+        .to_string()
 }
 
 /// A hash of what an instance's geometry comes from: its matrix, scale,
@@ -248,12 +303,12 @@ fn mul(a: &[[f64; 4]; 4], b: &[[f64; 4]; 4]) -> [[f64; 4]; 4] {
 /// strips: header (UNPACK V4-32 ×2), strip lengths (V2-8), positions (the
 /// first V3-16 after the header, int16 / 32768). Blended materials (glass,
 /// decals) do not cast.
-fn decode_instance(m: &dyn Mem, i: u32) -> Vec<[f32; 6]> {
-    let mut out = Vec::new();
+fn decode_instance(m: &dyn Mem, i: u32) -> Geometry {
+    let mut geo = Geometry::default();
     let desc = word(m, i + 0x80);
     let sc = f32::from_bits(word(m, i + 0x84)) as f64;
     if !ram(desc) || !sc.is_finite() {
-        return out;
+        return geo;
     }
     let ds = |k: u32| f32::from_bits(word(m, desc + 0x18 + 4 * k)) as f64 * sc;
     let s = [
@@ -272,7 +327,7 @@ fn decode_instance(m: &dyn Mem, i: u32) -> Vec<[f32; 6]> {
     let count = word(m, desc + 4) as usize;
     let nodes = word(m, desc + 8);
     if count == 0 || count > 64 || !ram(nodes) {
-        return out;
+        return geo;
     }
     let mats = word(m, i + 0x94);
     let mut n: Vec<[[f64; 4]; 4]> = Vec::with_capacity(count);
@@ -315,14 +370,20 @@ fn decode_instance(m: &dyn Mem, i: u32) -> Vec<[f32; 6]> {
             }
             let gw = word(m, ga);
             let material = gw as u16 as i16;
+            // Alpha-tested cut-outs (trees): with their texture, by id.
+            let mut cutout: Option<i16> = None;
             if ram(mats) && material >= 0 && (material as u32) < word(m, mats) {
                 let mat = word(m, mats + 4 + 4 * material as u32);
-                if ram(mat) && matches!(word(m, mat + 0xc) & 0x66_0000, 0x4_0000 | 0x6_0000) {
-                    continue;
+                if ram(mat) {
+                    match word(m, mat + 0xc) & 0x66_0000 {
+                        0x4_0000 | 0x6_0000 => continue,
+                        0x2_0000 => cutout = Some(word(m, mat) as u16 as i16).filter(|&t| t >= 0),
+                        _ => {}
+                    }
                 }
             }
             let chain = base.wrapping_add(word(m, ga + 4));
-            for (lens, xyz) in batches(&chain_words(m, chain)) {
+            for (lens, xyz, uv) in batches(&chain_words(m, chain)) {
                 let world: Vec<[f32; 3]> = xyz
                     .iter()
                     .map(|p| {
@@ -335,22 +396,39 @@ fn decode_instance(m: &dyn Mem, i: u32) -> Vec<[f32; 6]> {
                         std::array::from_fn(|c| (0..4).map(|r| v[r] * h[r][c]).sum::<f64>() as f32)
                     })
                     .collect();
+                // The strips' triangles (vertex indices; a short last strip
+                // would leave a partial triangle).
+                let mut tris: Vec<usize> = Vec::new();
                 let mut at = 0usize;
                 for len in lens {
                     let len = len as usize;
                     for t in 0..len.saturating_sub(2) {
-                        for v in &world[(at + t).min(world.len())..(at + t + 3).min(world.len())] {
-                            out.push([v[0], v[1], v[2], 0.0, 0.0, 0.0]);
+                        if at + t + 2 < world.len() {
+                            tris.extend([at + t, at + t + 1, at + t + 2]);
                         }
                     }
                     at += len;
                 }
-                // (A short last strip would leave a partial triangle.)
-                out.truncate(out.len() / 3 * 3);
+                match cutout {
+                    Some(t) if uv.len() == world.len() => {
+                        if geo.cut.last().is_none_or(|c| c.0 != t) {
+                            geo.cut.push((t, Vec::new()));
+                        }
+                        let c = &mut geo.cut.last_mut().unwrap().1;
+                        c.extend(tris.iter().map(|&k| {
+                            let (v, u) = (world[k], uv[k]);
+                            [v[0], v[1], v[2], u[0] as f32 / 4096.0, u[1] as f32 / 4096.0]
+                        }));
+                    }
+                    _ => geo.solid.extend(tris.iter().map(|&k| {
+                        let v = world[k];
+                        [v[0], v[1], v[2], 0.0, 0.0, 0.0]
+                    })),
+                }
             }
         }
     }
-    out
+    geo
 }
 
 /// The VIF words a group's DMA chain transfers (tag upper halves, then each
@@ -390,10 +468,19 @@ fn chain_words(m: &dyn Mem, mut t: u32) -> Vec<u32> {
 
 /// The pass-1 batches of a type-3 mesh chain: per batch (a V4-32 ×2 header
 /// up to its MSCAL), its strip lengths and positions.
-fn batches(w: &[u32]) -> Vec<(Vec<u8>, Vec<[i16; 3]>)> {
+/// A batch: strip lengths, positions, UVs (4.12; empty if none came).
+type BatchData = (Vec<u8>, Vec<[i16; 3]>, Vec<[i16; 2]>);
+
+fn batches(w: &[u32]) -> Vec<BatchData> {
     let mut out = Vec::new();
-    // (lens, positions, base address, closed)
-    let mut cur: Option<(Option<Vec<u8>>, Option<Vec<[i16; 3]>>, u32)> = None;
+    // (lens, positions, base address, UVs)
+    #[allow(clippy::type_complexity)]
+    let mut cur: Option<(
+        Option<Vec<u8>>,
+        Option<Vec<[i16; 3]>>,
+        u32,
+        Option<Vec<[i16; 2]>>,
+    )> = None;
     let mut i = 0;
     while i < w.len() {
         let c = w[i];
@@ -411,9 +498,24 @@ fn batches(w: &[u32]) -> Vec<(Vec<u8>, Vec<[i16; 3]>)> {
             i += size;
             let bytes: Vec<u8> = raw.iter().flat_map(|x| x.to_le_bytes()).collect();
             match (vn, vl) {
-                (3, 0) if n == 2 => cur = Some((None, None, imm & 0x3ff)),
+                (3, 0) if n == 2 => cur = Some((None, None, imm & 0x3ff, None)),
+                (1, 1) => {
+                    if let Some((_, _, _, uv @ None)) = cur.as_mut() {
+                        *uv = Some(
+                            (0..n)
+                                .map(|k| {
+                                    std::array::from_fn(|l| {
+                                        bytes
+                                            .get(4 * k + 2 * l..4 * k + 2 * l + 2)
+                                            .map_or(0, |b| i16::from_le_bytes([b[0], b[1]]))
+                                    })
+                                })
+                                .collect(),
+                        );
+                    }
+                }
                 (1, 2) => {
-                    if let Some((lens @ None, _, _)) = cur.as_mut() {
+                    if let Some((lens @ None, _, _, _)) = cur.as_mut() {
                         *lens = Some(
                             (0..n)
                                 .map(|k| bytes.get(2 * k).copied().unwrap_or(0))
@@ -422,7 +524,7 @@ fn batches(w: &[u32]) -> Vec<(Vec<u8>, Vec<[i16; 3]>)> {
                     }
                 }
                 (2, 1) => {
-                    if let Some((Some(_), pos @ None, _)) = cur.as_mut() {
+                    if let Some((Some(_), pos @ None, _, _)) = cur.as_mut() {
                         *pos = Some(
                             (0..n)
                                 .map(|k| {
@@ -445,8 +547,8 @@ fn batches(w: &[u32]) -> Vec<(Vec<u8>, Vec<[i16; 3]>)> {
                 0x50 | 0x51 => i += (if imm == 0 { 65536 } else { imm as usize }) * 4,
                 // MSCAL / MSCALF: the batch is complete.
                 0x14 | 0x15 => {
-                    if let Some((Some(lens), Some(pos), _)) = cur.take() {
-                        out.push((lens, pos));
+                    if let Some((Some(lens), Some(pos), _, uv)) = cur.take() {
+                        out.push((lens, pos, uv.unwrap_or_default()));
                     }
                 }
                 _ => {}

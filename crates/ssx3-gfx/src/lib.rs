@@ -140,6 +140,12 @@ pub struct Inner {
     /// The sun's direction where the game last drew it (the lens flare's
     /// query), eased from frame to frame.
     flare_sun: Option<[f32; 3]>,
+    /// The game's live light (the lit meshes': ambient, key colour; ×255),
+    /// eased from frame to frame (`gs::Gs::key_ambient`).
+    live_ambient: [f32; 3],
+    live_colour: [f32; 3],
+    /// The GraphicsMan of the frame being drawn (TexMan for the cut-outs).
+    frame_gm: u32,
     /// The world's shadow casters of the frame being drawn.
     world_casters: Option<std::sync::Arc<ssx3_render::world_casters::Casters>>,
     /// Seconds since the renderer started (animated effects).
@@ -299,6 +305,9 @@ impl Renderer {
                 shadow: None,
                 key_light: [0.0, 0.6, 0.8],
                 world_casters: None,
+                frame_gm: 0,
+                live_ambient: [110.0, 112.0, 120.0],
+                live_colour: [90.0, 85.0, 70.0],
                 flare_sun: None,
                 t0: web_time::Instant::now(),
                 phase1_end: usize::MAX,
@@ -927,6 +936,7 @@ impl Inner {
         let t_start = web_time::Instant::now();
         let mut b = self.take_build();
         self.world_casters = built.casters.clone();
+        self.frame_gm = built.frame.gm;
         Build::run(&mut b, built, mem);
         self.put_build(b);
         self.timing.1[0] += t_start.elapsed().as_secs_f64() * 1e3;
@@ -995,6 +1005,26 @@ impl Inner {
                 self.key_light, projector
             );
         }
+        if self.gs.key_count > 0 {
+            let n = self.gs.key_count as f32;
+            for c in 0..3 {
+                self.live_ambient[c] =
+                    self.live_ambient[c] * 0.9 + self.gs.key_ambient[c] / n * 0.1;
+                self.live_colour[c] = self.live_colour[c] * 0.9 + self.gs.key_colour[c] / n * 0.1;
+            }
+        }
+        if shadow::debug("lightlog") {
+            eprintln!(
+                "[light] {} amb {:.1} {:.1} {:.1} col {:.1} {:.1} {:.1}",
+                self.world_casters.as_ref().map_or("", |c| c.world.as_str()),
+                self.live_ambient[0],
+                self.live_ambient[1],
+                self.live_ambient[2],
+                self.live_colour[0],
+                self.live_colour[1],
+                self.live_colour[2]
+            );
+        }
         let k = self.gs.key_light;
         let kn = (k[0] * k[0] + k[1] * k[1] + k[2] * k[2]).sqrt();
         if kn > 1e-3 {
@@ -1049,7 +1079,18 @@ impl Inner {
         let native_terrain =
             light.is_some() && self.world_casters.is_some() && !shadow::debug("no-world");
         let sh = self.shadow.as_ref().unwrap();
-        sh.upload(&self.queue, light.as_ref(), shadow::show());
+        let world = self.world_casters.as_ref().map_or("", |c| c.world.as_str());
+        let g = shadow::lighting(world);
+        let (amb, col) = (
+            self.live_ambient.map(|v| v / 128.0),
+            self.live_colour.map(|v| v / 128.0),
+        );
+        let lt = shadow::Lighting {
+            sun: std::array::from_fn(|c| g.sun[c] * col[c]),
+            sky: std::array::from_fn(|c| g.sky[c] * amb[c]),
+            ground: std::array::from_fn(|c| g.ground[c] * amb[c]),
+        };
+        sh.upload(&self.queue, light.as_ref(), shadow::show(), lt);
         // GPU-computed draws (ssx3_render::gpu): their uniforms, inputs and
         // triangle lists, bound as group 1 (and again with the placeholder
         // shadow map for the shadow pass).
@@ -1213,6 +1254,21 @@ impl Inner {
                 .is_some_and(|g| g.program == ssx3_render::gpu::Program::Bezier)
                 && st.prim & (1 << 6) != 0)
                 .then_some(st.ctx.alpha & 0xff);
+            // The renderer's terrain lighting: the game's baked layer goes,
+            // the base layer is lit (flag 16384). For fitting
+            // (`SSX3_SHADOW_SHOW=normals|sunlit`) only the lit terrain draws.
+            let native_light = light.is_some() && !shadow::debug("baked");
+            let lit_base = native_light
+                && st.target == self.gs.main_fbp
+                && !b.tag.hud
+                && b.tag.post.is_none()
+                && b.gpu
+                    .is_some_and(|g| g.program == ssx3_render::gpu::Program::Bezier)
+                && (st.prim & (1 << 6) == 0 || terrain_blend == Some(0x2a));
+            if native_light && (terrain_blend == Some(0x81) || (shadow::show() >= 4.0 && !lit_base))
+            {
+                continue;
+            }
             if (terrain_blend == Some(0x81) && shadow::debug("no-sub"))
                 || (terrain_blend == Some(0x58) && shadow::debug("no-add"))
             {
@@ -1386,7 +1442,9 @@ impl Inner {
                     p.u.flags |= 64 | (((st.ctx.test >> 15) & 1) as u32) << 7;
                 }
                 // Sun shadows: the 3D draws receive them.
-                if light.is_some()
+                if lit_base {
+                    p.u.flags |= 16384;
+                } else if light.is_some()
                     && !shadow::debug("no-recv")
                     && st.target == self.gs.main_fbp
                     && !b.tag.hud
@@ -1578,6 +1636,52 @@ impl Inner {
         if let Some(po) = self.post.as_mut() {
             po.begin_frame();
         }
+        // The world's cut-outs (trees): each texture's bind group.
+        let mut cut_groups: Vec<(wgpu::BindGroup, u32, u32)> = Vec::new();
+        let runs = self
+            .shadow
+            .as_ref()
+            .and_then(|s| s.cutouts.as_ref())
+            .map(|c| c.1.clone());
+        if let (true, Some(runs), Some(_)) = (native_terrain, runs, light.as_ref()) {
+            let texman = frame::word(mem, self.frame_gm + frame::gm::TEXMAN);
+            let samp = self.dev.create_sampler(&wgpu::SamplerDescriptor {
+                label: Some("ssx3-gfx cut-out"),
+                address_mode_u: wgpu::AddressMode::Repeat,
+                address_mode_v: wgpu::AddressMode::Repeat,
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
+                ..Default::default()
+            });
+            for (t, first, n) in runs {
+                let info = if texman != 0 {
+                    tex::info(mem, texman, t as u16)
+                } else {
+                    0
+                };
+                let Some((view, _)) = (info != 0)
+                    .then(|| self.texture(info, 0x80 << 32, mem))
+                    .flatten()
+                else {
+                    continue;
+                };
+                let bg = self.dev.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("ssx3-gfx cut-out"),
+                    layout: &self.pipes.cut_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(&view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::Sampler(&samp),
+                        },
+                    ],
+                });
+                cut_groups.push((bg, first, n));
+            }
+        }
         let t = self.targets.as_ref().expect("targets");
         let cv = t.color.create_view(&Default::default());
         let dv = t.depth.create_view(&Default::default());
@@ -1661,6 +1765,15 @@ impl Inner {
                     sp.set_bind_group(0, &groups[0], &[0]);
                     sp.set_vertex_buffer(0, buf.slice(..));
                     sp.draw(0..*n, c..c + 1);
+                }
+                if let (false, Some((buf, _))) = (cut_groups.is_empty(), sh.cutouts.as_ref()) {
+                    sp.set_pipeline(&self.pipes.caster_cut);
+                    sp.set_bind_group(0, &groups[0], &[0]);
+                    sp.set_vertex_buffer(0, buf.slice(..));
+                    for (bg, first, n) in &cut_groups {
+                        sp.set_bind_group(2, bg, &[]);
+                        sp.draw(*first..*first + *n, c..c + 1);
+                    }
                 }
             }
         }

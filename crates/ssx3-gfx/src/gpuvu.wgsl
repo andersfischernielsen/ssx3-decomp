@@ -75,6 +75,10 @@ struct ShadowU {
     // Full shadow: the colour lit surfaces are multiplied by (sky-lit
     // shade, cool like the game's baked shadows).
     shade: vec4<f32>,
+    // Terrain lighting (shadow.rs `Lighting`).
+    sun_col: vec4<f32>,
+    sky_col: vec4<f32>,
+    ground_col: vec4<f32>,
 }
 @group(1) @binding(5) var<uniform> sh: ShadowU;
 @group(1) @binding(6) var smap: texture_depth_2d;
@@ -129,6 +133,24 @@ fn sun_factor(w: vec3<f32>, dx: vec3<f32>, dy: vec3<f32>) -> f32 {
     let ndl = dot(n, sh.sun.xyz);
     let lit = mix(1.0, sun_lit(w, n), smoothstep(0.0, 0.2, ndl));
     return sh.sun.w * (1.0 - lit);
+}
+
+// The renderer's terrain lighting at world point `w` with smooth normal `n`
+// (flag 16384, the terrain's base layer; its baked layer is not drawn):
+// sky fill + sun · N·L · lit. Returns (L, the lit amount, N·L).
+fn terrain_light(w: vec3<f32>, n_in: vec3<f32>) -> mat3x3<f32> {
+    var n = normalize(n_in);
+    if (dot(n, sh.eye.xyz - w) < 0.0) {
+        n = -n;
+    }
+    let ndl = max(dot(n, sh.sun.xyz), 0.0);
+    var lit = 0.0;
+    if (ndl > 0.0) {
+        lit = sun_lit(w, n);
+    }
+    let sky = mix(sh.ground_col.rgb, sh.sky_col.rgb, n.z * 0.5 + 0.5);
+    let l = sky + sh.sun_col.rgb * (ndl * lit);
+    return mat3x3<f32>(l, vec3<f32>(lit, ndl, 1.0), n);
 }
 
 // The colour a lit surface is multiplied by for shadow amount `s`.
@@ -210,8 +232,17 @@ fn fs_gpu(v: VOut) -> FsOut {
     let d = min(z, zmax) / (zmax + 1.0);
     var o: FsOut;
     o.color = shade(v);
-    // Sun shadows on the receivers (flag 4096).
-    if ((b.flags & 4096u) != 0u && v.wp.w > 0.5 && b.src_mode != 2u) {
+    // The renderer's terrain lighting (flag 16384).
+    if ((b.flags & 16384u) != 0u && v.wp.w > 0.5 && v.nrm.w > 0.5) {
+        let t = terrain_light(v.wp.xyz, v.nrm.xyz);
+        if (sh.p.w == 4.0) {
+            o.color = vec4<f32>(t[2] * 0.5 + 0.5, 1.0);
+        } else if (sh.p.w == 5.0) {
+            o.color = vec4<f32>(t[1], 1.0);
+        } else {
+            o.color = vec4<f32>(o.color.rgb * t[0], o.color.a);
+        }
+    } else if ((b.flags & 4096u) != 0u && v.wp.w > 0.5 && b.src_mode != 2u) {
         let s = sun_factor(v.wp.xyz, dx, dy);
         let f = 1.0 - s;
         // (Debug views: on the opaque layer only; the blended ones would

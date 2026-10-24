@@ -748,7 +748,7 @@ pub mod gpu {
     ) {
         let r = Raster::load(m);
         let nv = s.verts.len() as u32;
-        let mut data = Some(data);
+        let mut data = Some(with_normals(s, &data));
         let alpha_max = colour[3] as i32 as f32;
         let fan = m.ld(FAN_TAG_A);
         let mut call =
@@ -794,6 +794,70 @@ pub mod gpu {
         m.st(PACKET_A + 1, [MARK, mark_nv, n as u32, program]);
         m.st(PACKET_A + 2, colour);
     }
+
+    /// The draw's vertex data with a smooth normal per vertex: {position,
+    /// UV} per strip vertex in, {position, UV, normal} out (`DATA_STRIDE`).
+    /// The normal sums the faces around each grid point (keyed by its
+    /// position, so the strips sharing a row agree), consistently wound
+    /// (strip triangles alternate), not oriented (the shader turns it to
+    /// the camera). For the renderer's lighting; the game has none.
+    fn with_normals(s: &Strips, data: &[[u32; 4]]) -> Vec<[u32; 4]> {
+        let nv = s.verts.len().min(data.len() / 2);
+        let pos =
+            |v: usize| -> [f32; 3] { std::array::from_fn(|l| f32::from_bits(data[2 * v][l])) };
+        let key = |v: usize| -> [u32; 3] { [data[2 * v][0], data[2 * v][1], data[2 * v][2]] };
+        let mut acc: std::collections::HashMap<[u32; 3], [f32; 3]> = Default::default();
+        let mut start = 0usize;
+        for &len in &s.lens {
+            let len = len as usize;
+            for k in 2..len {
+                let (a, b, c) = (start + k - 2, start + k - 1, start + k);
+                if c >= nv {
+                    break;
+                }
+                let (pa, pb, pc) = (pos(a), pos(b), pos(c));
+                let (u, w) = (
+                    [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]],
+                    [pc[0] - pa[0], pc[1] - pa[1], pc[2] - pa[2]],
+                );
+                let sg = if k % 2 == 1 { -1.0 } else { 1.0 };
+                let n = [
+                    sg * (u[1] * w[2] - u[2] * w[1]),
+                    sg * (u[2] * w[0] - u[0] * w[2]),
+                    sg * (u[0] * w[1] - u[1] * w[0]),
+                ];
+                if !n.iter().all(|x| x.is_finite()) {
+                    continue;
+                }
+                for v in [a, b, c] {
+                    let e = acc.entry(key(v)).or_default();
+                    for l in 0..3 {
+                        e[l] += n[l];
+                    }
+                }
+            }
+            start += len;
+        }
+        let mut out = Vec::with_capacity(nv * DATA_STRIDE);
+        for v in 0..nv {
+            let n = acc.get(&key(v)).copied().unwrap_or_default();
+            let l = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+            let n = if l > 0.0 && l.is_finite() {
+                n.map(|x| x / l)
+            } else {
+                [0.0; 3]
+            };
+            out.extend_from_slice(&[
+                data[2 * v],
+                data[2 * v + 1],
+                [n[0].to_bits(), n[1].to_bits(), n[2].to_bits(), 0],
+            ]);
+        }
+        out
+    }
+
+    /// Qwords per vertex in a draw's data: position, UV, normal.
+    pub const DATA_STRIDE: usize = 3;
 
     /// The mark of the last GPU-planned draw: (vertex count, n, program,
     /// colour).
@@ -1073,12 +1137,12 @@ pub mod gpu {
         let (gs, go) = (f(uni::GUARD_SCALE), f(uni::GUARD_OFFSET));
         let nv = info[2] as usize;
         let h = |v: usize| -> F4 {
-            let p = src[2 * v].map(f32::from_bits);
+            let p = src[DATA_STRIDE * v].map(f32::from_bits);
             std::array::from_fn(|l| {
                 m[0][l] * p[0] + m[1][l] * p[1] + m[2][l] * p[2] + m[3][l] * p[3]
             })
         };
-        let uv = |v: usize| -> F4 { src[2 * v + 1].map(f32::from_bits) };
+        let uv = |v: usize| -> F4 { src[DATA_STRIDE * v + 1].map(f32::from_bits) };
         let screen = |c: F4| -> [f32; 3] {
             let q = 1.0 / c[3];
             std::array::from_fn(|l| go[l] + c[l] * q * gs[l])

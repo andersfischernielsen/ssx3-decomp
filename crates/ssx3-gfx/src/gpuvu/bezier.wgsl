@@ -24,7 +24,7 @@ struct BzVert {
 }
 
 fn bz_clip(c: u32, src: u32, v: u32) -> vec4<f32> {
-    let p = bitcast<vec4<f32>>(data[src + 2u * v]);
+    let p = bitcast<vec4<f32>>(data[src + 3u * v]);
     return fq(c, 0u) * p.x + fq(c, 1u) * p.y + fq(c, 2u) * p.z + fq(c, 3u) * p.w;
 }
 
@@ -144,14 +144,16 @@ fn bezier_vertex(vi: u32, c: u32) -> VOut {
         let h = select(select(h0, h1, r == 1u), h2, r == 2u);
         let v = i - 2u + r;
         let q = 1.0 / h.w;
-        let uv = bitcast<vec4<f32>>(data[src + 2u * v + 1u]);
+        let uv = bitcast<vec4<f32>>(data[src + 3u * v + 1u]);
         var stq = uv.xyz * q;
         if (info.y != 0u) {
             // Pass 2 "flag 0": ST := UV2 · STQ.w (Q stays).
             let uv2 = bitcast<vec4<f32>>(data[uq(c, 30).y + v]);
             stq = vec3<f32>(uv2.xy * (uv.w * q), uv.z * q);
         }
-        return bz_out(c, h, stq, false);
+        var o = bz_out(c, h, stq, false);
+        o.nrm = vec4<f32>(bitcast<vec4<f32>>(data[src + 3u * v + 2u]).xyz, 1.0);
+        return o;
     }
     let dropped = (fa & 16u) != 0u || (f0 & f1 & f2) != 0u;
     if (fa == 0u || dropped || SHADOW_PASS) {
@@ -159,9 +161,9 @@ fn bezier_vertex(vi: u32, c: u32) -> VOut {
     }
     let k = r / 3u;
     let j = r % 3u;
-    bz_poly[0] = BzVert(h0, bitcast<vec4<f32>>(data[src + 2u * (i - 2u) + 1u]));
-    bz_poly[1] = BzVert(h1, bitcast<vec4<f32>>(data[src + 2u * (i - 1u) + 1u]));
-    bz_poly[2] = BzVert(h2, bitcast<vec4<f32>>(data[src + 2u * i + 1u]));
+    bz_poly[0] = BzVert(h0, bitcast<vec4<f32>>(data[src + 3u * (i - 2u) + 1u]));
+    bz_poly[1] = BzVert(h1, bitcast<vec4<f32>>(data[src + 3u * (i - 1u) + 1u]));
+    bz_poly[2] = BzVert(h2, bitcast<vec4<f32>>(data[src + 3u * i + 1u]));
     if (h0.w > 0.0 && h1.w > 0.0 && h2.w > 0.0) {
         // In front of the eye the program's planes are the true ones: the
         // GPU clips the triangle itself (numerically closer to the
@@ -172,7 +174,9 @@ fn bezier_vertex(vi: u32, c: u32) -> VOut {
         }
         let p = bz_poly[j];
         let q = 1.0 / p.p.w;
-        return bz_out(c, p.p, vec3<f32>(p.st.xy * q, q), false);
+        var o = bz_out(c, p.p, vec3<f32>(p.st.xy * q, q), false);
+        o.nrm = vec4<f32>(bitcast<vec4<f32>>(data[src + 3u * (i - 2u + j) + 2u]).xyz, 1.0);
+        return o;
     }
     // Fan triangle k = (v0, vk+1, vk+2) of the program's polygon.
     let n = bz_clipper();
@@ -181,7 +185,9 @@ fn bezier_vertex(vi: u32, c: u32) -> VOut {
     }
     let p = bz_poly[select(k + j, 0u, j == 0u)];
     let q = 1.0 / p.p.w;
-    return bz_out(c, p.p, p.st.xyz * q, true);
+    var o = bz_out(c, p.p, p.st.xyz * q, true);
+    o.nrm = vec4<f32>(bitcast<vec4<f32>>(data[src + 3u * i + 2u]).xyz, 1.0);
+    return o;
 }
 
 @vertex

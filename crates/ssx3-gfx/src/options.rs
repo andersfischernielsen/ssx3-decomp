@@ -36,7 +36,9 @@ pub struct Options {
     pub terrain: u32,
     /// Screen-space ambient occlusion on the 3D image.
     pub ao: bool,
-    /// Sun shadows (shadow maps, shadow.rs).
+    /// Sun shadows (shadow maps, shadow.rs): the terrain lit by the
+    /// renderer (sun, sky, these shadows) instead of the game's baked
+    /// layer (`docs/plans/terrain-lighting.md`).
     pub shadows: bool,
     pub bloom: Bloom,
     /// Glints on bright snow.

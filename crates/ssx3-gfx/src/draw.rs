@@ -374,6 +374,9 @@ pub struct Pipelines {
     shadow_cache: HashMap<ssx3_render::gpu::Program, wgpu::RenderPipeline>,
     /// The world's casters (shadow.wgsl `vs_caster`).
     pub caster: wgpu::RenderPipeline,
+    /// Their alpha cut-outs (`vs_caster_cut`; group 2: texture, sampler).
+    pub caster_cut: wgpu::RenderPipeline,
+    pub cut_layout: wgpu::BindGroupLayout,
 }
 
 impl Pipelines {
@@ -546,8 +549,74 @@ impl Pipelines {
             multiview_mask: None,
             cache: None,
         });
+        let cut_layout = dev.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("ssx3-gfx cut-out"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+        let cut_pl = dev.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("ssx3-gfx cut-out"),
+            bind_group_layouts: &[Some(&layout), Some(&gpu_layout), Some(&cut_layout)],
+            immediate_size: 0,
+        });
+        let caster_cut = dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("ssx3-gfx world cut-outs"),
+            layout: Some(&cut_pl),
+            vertex: wgpu::VertexState {
+                module: &shadow_module,
+                entry_point: Some("vs_caster_cut"),
+                compilation_options: Default::default(),
+                buffers: &[Some(wgpu::VertexBufferLayout {
+                    array_stride: 20,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2],
+                })],
+            },
+            primitive: wgpu::PrimitiveState {
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: SHADOW_FORMAT,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
+                stencil: Default::default(),
+                bias: wgpu::DepthBiasState {
+                    constant: 2,
+                    slope_scale: 1.5,
+                    clamp: 0.0,
+                },
+            }),
+            multisample: Default::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &shadow_module,
+                entry_point: Some("fs_caster_cut"),
+                compilation_options: Default::default(),
+                targets: &[],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
         Pipelines {
             caster,
+            caster_cut,
+            cut_layout,
             module,
             layout,
             pl,

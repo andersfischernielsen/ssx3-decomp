@@ -1,6 +1,8 @@
-# Terrain lighting (future work)
+# Terrain lighting
 
-Not started. Follows from the shadow-map work (`shadow-maps.md`).
+In progress (2026-10-24, branch `shadow-maps`): the F10 setting "Native shadows"
+(`SSX3_SHADOWS`) replaces the bake. Follows from the shadow-map work
+(`shadow-maps.md`).
 
 Goal: a new terrain lighting model, tuned per course, that makes every
 existing track look the way it does now, but is computed live with modern
@@ -59,3 +61,17 @@ Peak 1, then Peaks 2 and 3 and the backcountry.
 Keep the bake and weaken our shadows where the bake already darkens, so
 they add only what it lacks (moving riders, objects and angles it did not
 bake).
+
+## Status
+
+- Smooth terrain normals: `bezier::gpu::with_normals` (faces summed per grid
+  point, keyed by position), a third qword per vertex (`DATA_STRIDE`),
+  passed to the fragment shader.
+- The model: `gpuvu.wgsl` `terrain_light` on the base layer (flag 16384);
+  the bake layer (ALPHA 0x81) is not drawn with "Native shadows" on
+  (`SSX3_SHADOW_DEBUG=baked` keeps it).
+- Per-course colours: `shadow.rs` `COURSES` by world file name (cWorldCache
+  +0x304, `|data/worlds/BAM.ssb` = Snow Jam), `SSX3_LIGHT` overrides.
+- Fitting: reference shots of all 20 race/freestyle courses taken once
+  (scenario inputs, every 150 frames of play, the default look), then
+  `tools/fit_lighting.py REF NOSUB NORMALS SUNLIT` per course.

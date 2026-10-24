@@ -29,6 +29,32 @@ fn vs_caster(@location(0) p: vec3<f32>, @location(1) n: vec3<f32>, @builtin(inst
     return sh.lights[inst] * vec4<f32>(p - sh.origin.xyz, 1.0);
 }
 
+// The world's alpha cut-outs (trees): position and UV, the texture in
+// group 2; transparent texels let the light through.
+@group(2) @binding(0) var cut_tex: texture_2d<f32>;
+@group(2) @binding(1) var cut_samp: sampler;
+
+struct CutOut {
+    @builtin(position) pos: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+}
+
+@vertex
+fn vs_caster_cut(@location(0) p: vec3<f32>, @location(1) uv: vec2<f32>, @builtin(instance_index) inst: u32) -> CutOut {
+    var o: CutOut;
+    o.pos = sh.lights[inst] * vec4<f32>(p - sh.origin.xyz, 1.0);
+    o.uv = uv;
+    return o;
+}
+
+// (TexMan alpha: 0x80 is opaque, stored as a / 255.)
+@fragment
+fn fs_caster_cut(v: CutOut) {
+    if (textureSampleLevel(cut_tex, cut_samp, v.uv, 0.0).a < 0.25) {
+        discard;
+    }
+}
+
 // Depth only; cut-outs (alpha test, blended texels below half) let the
 // light through.
 @fragment

@@ -272,6 +272,12 @@ pub struct Gs {
     /// The lit meshes' key light this frame (unnormalised sum of unit
     /// vectors towards it; zero without lit meshes).
     pub key_light: [f32; 3],
+    /// The lit meshes' light this frame (the game's live lighting, after
+    /// its triggers), summed: the ambient (SH L0, ×255) and the key light's
+    /// colour (the linear terms' length per channel, ×255), and how many.
+    pub key_ambient: [f32; 3],
+    pub key_colour: [f32; 3],
+    pub key_count: u32,
     /// CLUTs of this frame's depth-fog passes (see ZFOG_TEX).
     pub fog_cluts: Vec<Upload>,
     /// XYOFFSET_1/2 written: the game sets context 2's once at startup,
@@ -335,6 +341,9 @@ impl Gs {
         self.gpu.last_split = None;
         self.cam = None;
         self.key_light = [0.0; 3];
+        self.key_ambient = [0.0; 3];
+        self.key_colour = [0.0; 3];
+        self.key_count = 0;
         self.queue.clear();
         self.size = size;
         self.main_fbp = fbp;
@@ -1098,6 +1107,20 @@ impl Gs {
                 for (k, v) in self.key_light.iter_mut().zip(g) {
                     *k += v / n;
                 }
+                let (a, l) = (
+                    fl(call.uniforms[8]),
+                    [
+                        fl(call.uniforms[15]),
+                        fl(call.uniforms[16]),
+                        fl(call.uniforms[17]),
+                    ],
+                );
+                for c in 0..3 {
+                    self.key_ambient[c] += a[c];
+                    self.key_colour[c] +=
+                        (l[0][c] * l[0][c] + l[1][c] * l[1][c] + l[2][c] * l[2][c]).sqrt();
+                }
+                self.key_count += 1;
             }
         }
         u[gpu_params::RGBAQ] = [

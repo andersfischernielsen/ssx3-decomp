@@ -59,6 +59,60 @@ pub fn receives(p: ssx3_render::gpu::Program) -> bool {
     matches!(p, P::Mat3Mesh | P::Mat6Skin | P::Bezier)
 }
 
+/// The renderer's terrain lighting (options: lighting): L = sky fill
+/// (between `ground` facing down and `sky` facing up) + `sun` · N·L · lit.
+/// Fitted per course to the game's baked look (`tools/fit_lighting.py`).
+#[derive(Clone, Copy, Debug)]
+pub struct Lighting {
+    pub sun: [f32; 3],
+    pub sky: [f32; 3],
+    pub ground: [f32; 3],
+}
+
+/// Each course's terrain lighting, fitted to its baked look
+/// (`tools/fit_lighting.py`), by world file name.
+const COURSES: &[(&str, Lighting)] = &[];
+
+/// The gains from the game's live light (the lit meshes' ambient and key
+/// colour, 128 = 1) to the terrain's: sun ← key colour, sky and ground ←
+/// ambient (fitted to the baked look: `tools/fit_lighting.py`).
+const DEFAULT_LIGHTING: Lighting = Lighting {
+    sun: [1.0, 1.0, 1.0],
+    sky: [1.0, 1.0, 1.0],
+    ground: [0.8, 0.8, 0.8],
+};
+
+/// The terrain lighting of world `world`: `SSX3_LIGHT=sun r,g,b;sky r,g,b;
+/// ground r,g,b` (parts given override), else the course's fit.
+pub fn lighting(world: &str) -> Lighting {
+    let mut l = COURSES
+        .iter()
+        .find(|(w, _)| w.eq_ignore_ascii_case(world))
+        .map_or(DEFAULT_LIGHTING, |c| c.1);
+    static ENV: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    for part in ENV
+        .get_or_init(|| std::env::var("SSX3_LIGHT").unwrap_or_default())
+        .split(';')
+    {
+        let mut it = part.split_whitespace();
+        let (Some(k), Some(v)) = (it.next(), it.next()) else {
+            continue;
+        };
+        let c: Vec<f32> = v.split(',').filter_map(|x| x.parse().ok()).collect();
+        if c.len() < 3 {
+            continue;
+        }
+        let c = [c[0], c[1], c[2]];
+        match k {
+            "sun" => l.sun = c,
+            "sky" => l.sky = c,
+            "ground" => l.ground = c,
+            _ => {}
+        }
+    }
+    l
+}
+
 /// `SSX3_SHADOW_SHOW`: the receivers show the shadow factor (1), their
 /// cascade (2) or N·L (3) instead of their colour (0: off).
 pub fn show() -> f32 {
@@ -67,6 +121,9 @@ pub fn show() -> f32 {
         Ok("factor") => 1.0,
         Ok("cascade") => 2.0,
         Ok("ndl") => 3.0,
+        // (For fitting the lighting: the lit terrain only, unprocessed.)
+        Ok("normals") => 4.0,
+        Ok("sunlit") => 5.0,
         _ => 0.0,
     })
 }
@@ -264,6 +321,8 @@ pub struct Shadow {
     pub size: u32,
     /// The world's casters on the GPU: (generation, buffer, vertices).
     pub casters: Option<(u64, wgpu::Buffer, u32)>,
+    /// Their alpha cut-outs: buffer (position, UV) and runs per texture.
+    pub cutouts: Option<(wgpu::Buffer, Vec<(i16, u32, u32)>)>,
     pub view: wgpu::TextureView,
     /// A 1×1 map for the shadow pass itself (it draws into `view`).
     pub dummy: wgpu::TextureView,
@@ -272,7 +331,7 @@ pub struct Shadow {
 }
 
 /// `ShadowU`'s size in bytes.
-const U_BYTES: u64 = 416;
+const U_BYTES: u64 = 464;
 
 impl Shadow {
     pub fn new(dev: &wgpu::Device, size: u32) -> Shadow {
@@ -312,6 +371,7 @@ impl Shadow {
         Shadow {
             size,
             casters: None,
+            cutouts: None,
             view: depth(size, "ssx3-gfx shadow map"),
             dummy: depth(1, "ssx3-gfx shadow dummy"),
             cmp,
@@ -320,7 +380,7 @@ impl Shadow {
     }
 
     /// This frame's uniforms (`None`: shadows off).
-    pub fn upload(&self, queue: &wgpu::Queue, l: Option<&Light>, show: f32) {
+    pub fn upload(&self, queue: &wgpu::Queue, l: Option<&Light>, show: f32, lt: Lighting) {
         let mut w: Vec<f32> = Vec::with_capacity(U_BYTES as usize / 4);
         match l {
             Some(l) => {
@@ -331,8 +391,11 @@ impl Shadow {
                 w.extend([l.texel, 0.0, 1.0, show]);
                 w.extend(l.world_texel);
                 w.extend([l.origin[0], l.origin[1], l.origin[2], 0.0]);
-                let t = tuning().tint;
-                w.extend([t[0], t[1], t[2], 0.0]);
+                let t = tuning();
+                w.extend([t.tint[0], t.tint[1], t.tint[2], 0.0]);
+                for c in [lt.sun, lt.sky, lt.ground] {
+                    w.extend([c[0], c[1], c[2], 0.0]);
+                }
             }
             None => w.resize(U_BYTES as usize / 4, 0.0),
         }
@@ -367,6 +430,20 @@ impl Shadow {
             mapped_at_creation: false,
         });
         queue.write_buffer(&buf, 0, &bytes);
+        let cut: Vec<u8> = c
+            .cutouts
+            .iter()
+            .flatten()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
+        let cbuf = dev.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("ssx3-gfx world cut-outs"),
+            size: (cut.len() as u64).max(20),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&cbuf, 0, &cut);
+        self.cutouts = Some((cbuf, c.cutout_runs.clone()));
         if debug("print") {
             eprintln!(
                 "shadow: world casters generation {}: {} patches, {} instances, {} triangles",

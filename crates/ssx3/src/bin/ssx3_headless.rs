@@ -190,6 +190,9 @@ fn main() {
         }
         if shot_every > 0 && f % shot_every == 0 && f >= shot_from {
             let path = format!("{shot_dir}/frame{f:05}.png");
+            if std::env::var("SSX3_SHADOW_DEBUG").is_ok_and(|v| v.contains("lightlog")) {
+                eprintln!("[shot] {f}");
+            }
             // Native: the draw-layer renderer's image is the one shown.
             match gfx
                 .as_ref()
