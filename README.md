@@ -132,5 +132,8 @@ Mostly Python 3, run from the repository root.
 - **Exactness is the rule.** A scripted headless race must give identical RAM before and
   after a change unless the change is meant to alter behaviour
   (`python3 tools/integrate_wave.py gate`).
+- **CI** builds and tests every crate that doesn't need the disc (`python3 tools/setup.py
+  --stubs-only` gives the same setup locally). Changes to `ssx3-game` or the game itself
+  need the differential tests and the RAM gate, run locally.
 - **Never commit game material**: the disc or its files, `generated/` code, disassembly,
   RAM/VRAM dumps, or screenshots of large parts of the game.

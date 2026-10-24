@@ -4,6 +4,7 @@ game's executable from your disc image and translate the game into Rust
 (`generated/`, not in git: it is made from your own copy of the game).
 
     python3 tools/setup.py [--iso PATH] [recomp-ee args...]
+    python3 tools/setup.py --stubs-only     # no disc: only the stub crates (CI)
 
 What `tools/extract-from-iso.sh` and `tools/bootstrap.sh` do, in Python (no
 POSIX shell or bsdtar needed):
@@ -91,6 +92,12 @@ def stubs():
             f.write(lib)
 
 
+def vu_placeholder():
+    os.makedirs(os.path.join(ROOT, "generated", "vu"), exist_ok=True)
+    with open(os.path.join(ROOT, "generated", "vu", "mod.rs"), "w") as f:
+        f.write(VU_PLACEHOLDER)
+
+
 def needs_vu():
     p = os.path.join(ROOT, "generated", "vu", "mod.rs")
     return not os.path.isfile(p) or open(p).read().startswith("//! Placeholder")
@@ -99,14 +106,20 @@ def needs_vu():
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--iso", default=os.environ.get("SSX3_ISO", os.path.join(ROOT, "SSX 3 (USA).iso")))
+    ap.add_argument("--stubs-only", action="store_true",
+                    help="only write the stub crates (no disc needed): enough for the crates "
+                         "that do not use the generated game (CI)")
     a, recomp_args = ap.parse_known_args(argv)
+    if a.stubs_only:
+        stubs()
+        if needs_vu():
+            vu_placeholder()
+        return
     extract(a.iso)
     stubs()
     if needs_vu():
         # Empty registry so ssx3-vu builds; vu_recomp then translates the microcode.
-        os.makedirs(os.path.join(ROOT, "generated", "vu"), exist_ok=True)
-        with open(os.path.join(ROOT, "generated", "vu", "mod.rs"), "w") as f:
-            f.write(VU_PLACEHOLDER)
+        vu_placeholder()
         run(["cargo", "run", "--release", "-p", "ssx3-ps2", "--bin", "vu_recomp"])
     run(["cargo", "run", "--release", "-p", "ssx3-recomp", "--bin", "recomp-ee", "--", *recomp_args])
 
